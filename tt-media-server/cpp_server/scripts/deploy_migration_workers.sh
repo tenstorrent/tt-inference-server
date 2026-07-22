@@ -96,9 +96,8 @@ CONTROL_PORT="${CONTROL_PORT:-18650}"
 # can't touch a root-in-container process, leaving stale workers + squatted ports
 # (exabox Bug A). Empty => host-side pkill (bare-host/in-container deploys).
 CONTAINER="${CONTAINER:-}"
-# Mirrors mooncake_kv_migration_worker's K_DEFAULT_HOST_DRAM_BYTES (4 GiB).
-# Kept in sync by hand; the worker also clamps/validates this against physical
-# RAM.
+# Mirrors bringup_mooncake_worker's K_DEFAULT_HOST_DRAM_BYTES (4 GiB). Kept in
+# sync by hand; the worker also clamps/validates this against physical RAM.
 HOST_DRAM_BYTES=$((4 * 1024 * 1024 * 1024))
 DISCOVERY_TIMEOUT_SEC=60
 KAFKA_BROKERS="kafka:9092"
@@ -396,7 +395,8 @@ peersForWorker() {
 # Fail fast when two prefills would share the same decode peer. Control TCP
 # multi-accept allows N sessions, but Kafka broadcast means every prefill
 # consumes/acks the same migration UUID — shared decode peers stay unsafe until
-# there is an explicit single Kafka owner.
+# there is an explicit single Kafka owner. See migration_worker_rank_launch.sh
+# for a round-robin WORKER_PEERS pattern.
 assertExclusiveDecodePeers() {
   declare -A decodeOwner=()
   local s peers peer
@@ -409,7 +409,8 @@ assertExclusiveDecodePeers() {
         die "decode peer '${peer}' assigned to both '${decodeOwner[$peer]}' and '${WK_TAG[$s]}'. \
 Each prefill has its own Kafka group (broadcast), so two prefills cannot safely \
 share a decode even though control TCP multi-accepts. Use one prefill, or set \
-WORKER_PEERS so each decode has a single prefill owner."
+WORKER_PEERS so each decode has a single prefill owner \
+(see migration_worker_rank_launch.sh round-robin)."
       fi
       decodeOwner[$peer]="${WK_TAG[$s]}"
     done

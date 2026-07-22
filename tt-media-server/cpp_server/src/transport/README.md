@@ -338,7 +338,7 @@ retry-the-whole-request applies). The `Begin→…→Done→Ack` ordering is una
 | | `kv_migration_endpoints.*` | prefill control-channel connector + decode receiver-server (injected socket transport) |
 | | `kv_table_provisioning.*` | `loadKvTableFile` (+ optional table-blob exchange over the control channel) |
 | | `device_map.hpp`, `engine_table_handoff.*` | `FabricNode→UMD chip` map + engine→worker `{table, device map}` handoff contract |
-| PoC (#3890) | `i_storage_backend.hpp`, `*_storage_backend.*` | dummy-tensor storage/transport split |
+| PoC (#3890) | `i_storage_backend.hpp`, `*_storage_backend.*`, `mooncake_migration_worker.*` | original dummy-tensor storage/transport split |
 
 ## Build guards
 
@@ -406,10 +406,24 @@ file, no fixed port. **Host RAM only.**
                  └─► submitTransfer (TCP, one tensor)
 ```
 
-`mooncake_kv_migration_worker` uses this same register-by-name / resolve-by-name discovery
-for the KV data plane: the mirror is registered under the worker's logical name (`--name`)
-and the sender opens that logical name — no hard-coded endpoint. Only `P2PHANDSHAKE`
-(no metadata registry) falls back to the engine's live `IP:port`.
+Driver: `migration_worker_discovery` (`--mooncake` only). Start the metadata service on a
+host both peers can reach, then run a receiver and a sender:
+
+```bash
+# Single-host smoke test (auto-starts the service, runs both workers):
+tests/e2e/scripts/run_migration_worker_discovery.sh
+
+# Two-host run:
+#  metadata host (META_HOST): serves http://0.0.0.0:18080/metadata
+tests/integration/run_mooncake_metadata_server.sh
+#  receiver host:
+MC_TCP_BIND_ADDRESS=<receiver-ip> build/migration_worker_discovery --role receiver \
+  --metadata http://META_HOST:18080/metadata --name kv-receiver-0 --bytes 1048576
+#  sender host:
+build/migration_worker_discovery --role sender \
+  --metadata http://META_HOST:18080/metadata --name kv-sender-0 \
+  --peer kv-receiver-0 --bytes 1048576
+```
 
 Gotchas:
 - **HTTP metadata plugin must be compiled in** (`USE_HTTP ON` in
@@ -422,6 +436,29 @@ Gotchas:
   a reachable interface (auto-detect may pick `docker0`/`flannel.1`).
 - The `404 metadata not found` lines at startup are **expected** — the engine probes for
   its own name before registering it.
+
+## Mooncake Migration Worker discovery
+
+`bringup_mooncake_worker` is the worker's entry point / composition root (one process per
+worker). `PeerDiscoveryService` owns *how* peers are resolved (the resolve-with-retry loop +
+timeout); `MooncakeMigrationWorker` owns the ordered lifecycle — allocate host-DRAM pool → init
+engine → register/publish (makes us discoverable) → **delegate** peer discovery → hold until
+SIGTERM → teardown in reverse. **Register-before-discover** is the invariant the worker owns.
+Workers are symmetric peers: each takes its own `--name` and its peers as `--peer`; success
+is `CONNECTED to N peers` then `READY`. Logic is launcher-agnostic — a bash loop, MPI, or an
+orchestrator all just spawn one process per worker.
+
+**MPI e2e test** (`tests/e2e/scripts/run_migration_workers_mpi.sh`, ctest
+`MooncakeMpiDiscovery`): starts the metadata service, then `mpirun -np 20` launches 4 prefill +
+16 decode workers on one host. `migration_worker_rank_launch.sh` maps each rank to a
+disaggregated topology — `prefill-p` peers `decode-(4p..4p+3)`, each `decode-d` peers back to
+`prefill-(d/4)` — and the test passes once all 20 log `CONNECTED` within the timeout.
+
+```bash
+# all 20 workers, self-contained (auto-starts metadata service):
+WORKER_BIN=./build/bringup_mooncake_worker \
+  tests/e2e/scripts/run_migration_workers_mpi.sh
+```
 
 ## KV table exchange at bring-up (#4295)
 
@@ -453,8 +490,12 @@ finish at bring-up.
 | Mooncake transport loopback TCP (host backend, `--mooncake`) | impl |
 | Two-galaxy acceptance, both backends enabled | **validated** — byte-verified 1→1 across 2 galaxies (real `.pb`, device DRAM, Mooncake TCP) |
 | Unified worker `mooncake_kv_migration_worker` (Kafka→migration→ack), 2 galaxies | **validated** — real Kafka trigger, byte-verified via `kv_seed_verify` (run guide §13) |
+| Metadata-service worker discovery, two hosts, host RAM (#4209, `migration_worker_discovery`) | **validated** (two hosts, 1 MiB tensor, byte-verified MATCH) |
+| Productionized discovery worker (#4294, `bringup_mooncake_worker`) | **validated locally** (single host, MPI `-np 20` = 4 prefill + 16 decode, all `CONNECTED`→`READY`; run manually, not yet wired into CI) |
 
-Note: the unit/smoke `transport_test` runs in any CI build.
+Note: the unit/smoke `transport_test` runs in any CI build; the MPI discovery
+e2e (`MooncakeMpiDiscovery`) is currently a manual/local check (it needs the
+Mooncake build + a metadata service) and is not yet in a GitHub workflow.
 
 ## Future work
 

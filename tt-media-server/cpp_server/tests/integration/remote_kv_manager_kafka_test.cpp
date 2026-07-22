@@ -14,8 +14,9 @@
 // Broker address: KAFKA_BROKERS env var, default "localhost:9092".
 //
 // Each test mints fresh topic names and consumer-group ids derived from the
-// pid + microsecond timestamp, so concurrent runs (and any dev consumer
-// subscribed to the production topics) cannot leak into the test.
+// pid + microsecond timestamp, so concurrent runs (and the dev
+// tt_kv_migration_consumer binary that may be subscribed to the production
+// topics) cannot leak into the test.
 
 #include <gtest/gtest.h>
 #include <unistd.h>

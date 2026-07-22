@@ -13,8 +13,9 @@
 //                    KvMigrationReceiverServer, answering the migration control
 //                    protocol (prepareMirror / drain) for inbound migrations.
 //
-// First binary that actually moves KV on a Kafka trigger (previous consumer
-// only ran a StubMigrationExecutor).
+// This supersedes bringup_mooncake_worker (Kafka loop that only logged) and
+// tt_kv_migration_consumer (StubMigrationExecutor): it is the first binary that
+// actually moves KV on a Kafka trigger.
 //
 // Table source: each worker loads ONLY its own .pb. Prefill and decode swap
 // tables over the control channel (TABLE_EXCHANGE / #4295) at bring-up and
@@ -895,11 +896,11 @@ int runDecode(const WorkerConfig& cfg) {
 
   // Segment name the sender opens for the data plane. With a metadata service
   // the mirror is registered under — and resolvable by — the worker's LOGICAL
-  // name (cfg.name): register-by-name / resolve-by-name discovery, so the
-  // sender finds the peer through the metadata service instead of a hard-coded
-  // endpoint. Only P2PHANDSHAKE (no metadata registry to resolve a logical
-  // name) falls back to the engine's live IP:port. An explicit --segment
-  // always overrides.
+  // name (cfg.name): the same register-by-name / resolve-by-name discovery the
+  // bringup worker uses on main (PeerDiscoveryService), so the sender finds the
+  // peer through the metadata service instead of a hard-coded endpoint. Only
+  // P2PHANDSHAKE (no metadata registry to resolve a logical name) falls back to
+  // the engine's live IP:port. An explicit --segment always overrides.
   std::string segment = cfg.segment;
   if (segment.empty()) {
     segment = (cfg.metadata_uri == "P2PHANDSHAKE") ? engine->localServerName()

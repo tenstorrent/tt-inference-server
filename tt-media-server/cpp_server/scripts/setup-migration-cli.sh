@@ -2,13 +2,14 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 #
-# Create cpp_server/.venv with the migration-CLI deps (confluent-kafka) so
+# Create cpp_server/.venv with the migration-CLI deps (confluent-kafka) so the
+# Kafka e2e (migration_e2e/_bootstrap.py) can re-exec into it, and
 # scripts/migration_cli.py runs. Idempotent.
 #
 #   bash scripts/setup-migration-cli.sh
 #
-# The venv lives at cpp_server/.venv; set nothing else. Override the
-# interpreter with PYTHON=/usr/bin/python3.
+# The venv lives at cpp_server/.venv (the path _bootstrap.py auto-detects); set
+# nothing else. Override the interpreter with PYTHON=/usr/bin/python3.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

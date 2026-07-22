@@ -5,9 +5,9 @@
 # local_kv_migration_lab.sh — single-host mesh of mooncake_kv_migration_worker
 # (production binary) for control-plane TABLE_EXCHANGE bring-up.
 #
-# Unlike the multi-host deploy (one worker per box, shared CONTROL_PORT), this
-# lab co-locates N prefills + M decodes on 127.0.0.1 with per-worker health +
-# control ports.
+# Unlike local_worker_lab.sh (bringup_mooncake_worker) and the multi-host
+# deploy (one worker per box, shared CONTROL_PORT), this lab co-locates N
+# prefills + M decodes on 127.0.0.1 with per-worker health + control ports.
 #
 # Usage:
 #   ./local_kv_migration_lab.sh up [--prefill N] [--decode N]

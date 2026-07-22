@@ -13,9 +13,10 @@
 //   control channel (TCP):  BeginMigration -> MirrorReady -> [WRITEs]
 //                           -> DoneMarker -> Ack
 //
-// Exercises the real address layer: KvCacheMirror / RemoteRegion built from a
-// KV table, device-group fan-out, per-(device,channel) physical offsets, and
-// the KvMigration{Sender,Receiver} orchestrators.
+// Unlike transport_migration_e2e (the dummy single-tensor PoC), this exercises
+// the real address layer: KvCacheMirror / RemoteRegion built from a KV table,
+// device-group fan-out, per-(device,channel) physical offsets, and the
+// KvMigration{Sender,Receiver} orchestrators.
 //
 // Modes:
 //   --mode host    : a host-backed device store stands in for device DRAM.
