@@ -1840,57 +1840,6 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
 endif()
 
 
-# Consumer executable (separate Drogon instance for Kafka consumption)
-if(KAFKA_ENABLED)
-    add_executable(tt_consumer
-        src/consumer_main.cpp
-    )
-    target_include_directories(tt_consumer PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-    )
-    target_link_libraries(tt_consumer PRIVATE
-        Drogon::Drogon
-        llm_runner_lib
-        migration_worker
-        messaging
-    )
-    if(USE_EXTERNAL_FMT)
-        target_link_libraries(tt_consumer PRIVATE spdlog::spdlog fmt::fmt)
-    else()
-        target_link_libraries(tt_consumer PRIVATE spdlog::spdlog)
-    endif()
-    target_compile_options(tt_consumer PRIVATE
-        -Wall
-        -Wextra
-        -Wpedantic
-    )
-
-    # Separate process so the legacy `tt_consumer` is untouched.
-    add_executable(tt_kv_migration_consumer
-        src/kv_migration_consumer_main.cpp
-    )
-    target_include_directories(tt_kv_migration_consumer PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-    )
-    target_link_libraries(tt_kv_migration_consumer PRIVATE
-        Drogon::Drogon
-        llm_runner_lib
-        kv_migration_worker
-        messaging
-    )
-    if(USE_EXTERNAL_FMT)
-        target_link_libraries(tt_kv_migration_consumer PRIVATE
-            spdlog::spdlog fmt::fmt)
-    else()
-        target_link_libraries(tt_kv_migration_consumer PRIVATE spdlog::spdlog)
-    endif()
-    target_compile_options(tt_kv_migration_consumer PRIVATE
-        -Wall
-        -Wextra
-        -Wpedantic
-    )
-endif()
-
 # AddressSanitizer for executables (must be after all add_executable calls)
 if(SANITIZE_ADDRESS)
     set(ASAN_FLAGS -fsanitize=address -fno-omit-frame-pointer -g)
@@ -1901,9 +1850,6 @@ if(SANITIZE_ADDRESS)
         cancel_queue_test
         structured_output_test
     )
-    if(KAFKA_ENABLED)
-        list(APPEND ASAN_TARGETS tt_consumer)
-    endif()
     foreach(target IN LISTS ASAN_TARGETS)
         target_compile_options(${target} PRIVATE ${ASAN_FLAGS})
         target_link_options(${target} PRIVATE -fsanitize=address)

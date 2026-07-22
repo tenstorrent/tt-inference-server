@@ -13,8 +13,8 @@
 //                    KvMigrationReceiverServer, answering the migration control
 //                    protocol (prepareMirror / drain) for inbound migrations.
 //
-// This supersedes tt_kv_migration_consumer (StubMigrationExecutor): it is the
-// first binary that actually moves KV on a Kafka trigger.
+// First binary that actually moves KV on a Kafka trigger (previous consumer
+// only ran a StubMigrationExecutor).
 //
 // Table source: each worker loads ONLY its own .pb. Prefill and decode swap
 // tables over the control channel (TABLE_EXCHANGE / #4295) at bring-up and
