@@ -32,9 +32,9 @@
 # Optional: PEERS (see above), KAFKA_BROKERS, KAFKA_GROUP_ID, MC_TCP_BIND_ADDRESS
 #   (unset/"auto" => detect this host's routable IP so peers can reach it),
 #   CONTROL_PORT (KV control port a decode binds + publishes to metadata;
-#   defaults to the worker's own default when unset), DEVICE_MAP (a <tag>.`devma`p
-#   file; omit for discovery-only e2e with no transfer — the worker then falls
-#   back to its placeholder chip mapping).
+#   defaults to the worker's own default when unset), DEVICE_MAP (legacy file
+#   fallback), ENGINE_HANDOFF_PORT (listen for DeviceMap over localhost; preferred
+#   when deploy pushes via engine_handoff_sender). Omit both for discovery-only.
 set -euo pipefail
 
 die() { echo "ERROR: $*" >&2; exit 2; }
@@ -67,10 +67,13 @@ control_args=()
 [[ -n "${CONTROL_PORT:-}" ]] && control_args=(--control-port "${CONTROL_PORT}")
 peer_control_args=()
 [[ -n "${CONTROL_PORT:-}" ]] && peer_control_args=(--peer-control-port "${CONTROL_PORT}")
-# Transfer-plane only: without a devmap the worker uses its placeholder chip
-# mapping, which is enough to register + be discovered but NOT to move KV.
+# Transfer-plane: socket DeviceMap (deploy pushes after start) wins over file.
 device_args=()
-[[ -n "${DEVICE_MAP:-}" ]] && device_args=(--device-map "${DEVICE_MAP}")
+if [[ -n "${ENGINE_HANDOFF_PORT:-}" && "${ENGINE_HANDOFF_PORT}" != "0" ]]; then
+  device_args=(--engine-handoff-port "${ENGINE_HANDOFF_PORT}")
+elif [[ -n "${DEVICE_MAP:-}" ]]; then
+  device_args=(--device-map "${DEVICE_MAP}")
+fi
 
 # Peers are a GENERIC per-worker input (PEERS = CSV of peer tags), independent of
 # role: a worker is just a migration worker with a peer list, resolved through
