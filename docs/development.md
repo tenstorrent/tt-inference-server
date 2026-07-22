@@ -8,7 +8,7 @@ All development uses the following workflows in git for the repo repository http
 
 All normal development work should be done using this simple workflow, making branches off `main` and making PRs back to `main`.
 
-> **Note:** `main` is the active development / integration branch. The `dev` branch is legacy and has lagged `main` substantially — do not branch off `dev` for new work.
+> **Note:** `main` is the active development / integration branch.
 
 **branches:**
 - `<namett>/<my-description>`
@@ -53,7 +53,7 @@ workflow for release:
   - squash to merge in GitHub
 
 `dev` (legacy):
-- previously the development consolidation branch; retained for history and no longer the target for new work (has lagged `main` substantially)
+- previously the development consolidation branch; retained for history and no longer the target for new work.
 
 `<namett>/<my-description>`:
 - specific WIP development work
