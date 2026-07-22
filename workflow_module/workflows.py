@@ -12,6 +12,7 @@ registry edit, not a structural change.
 from __future__ import annotations
 
 from dataclasses import replace
+import os
 import time
 from pathlib import Path
 from typing import ClassVar, Dict, List, Optional, Sequence, Type
@@ -212,6 +213,16 @@ class PrefillDecodeWorkflow(WorkflowExecution):
     def apply_acceptance_criteria(self, schema, task_outcomes):
         self.logger.info("Acceptance: N/A (prefill_decode has no acceptance gate)")
         return True, {}
+
+    def _inject_model_spec_metadata(self, meta: dict) -> None:
+        """Report the served model, not the placeholder catalog spec."""
+        served = meta.get("model_name") or os.environ.get("MODEL")
+        meta["model_repo"] = served
+        meta["model_id"] = None
+        meta["inference_engine"] = None
+        meta["tt_metal_commit"] = None
+        meta["vllm_commit"] = None
+        meta["model_impl"] = None
 
     def run_tasks(self) -> List[TaskOutcome]:
         from test_module.llm_tests.smoke_tests.runner import run_smoke_tests
