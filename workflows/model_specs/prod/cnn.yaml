@@ -202,3 +202,45 @@ templates:
       max_concurrency: 1
       max_context: 65536  # 64 * 1024
       default_impl: true
+- weights:
+    - tiiuae/Falcon3-7B-Instruct
+  version: "0.18.0"
+  tt_metal_commit: "c49bb76"
+  impl: forge_vllm_plugin
+  min_disk_gb: 20
+  min_ram_gb: 12
+  model_type: LLM
+  inference_engine: FORGE
+  uses_tensor_model_cache: false
+  device_model_specs:
+    - device: P150
+      max_concurrency: 4
+      max_context: 16384
+      default_impl: true
+      eval_max_retries: 1
+      env_vars:
+        MAX_MODEL_LENGTH: "16384"
+        MAX_NUM_SEQS: "4"
+        GPU_MEMORY_UTILIZATION: "0.225"
+        TT_KV_POOL_GB: "32"
+        OPTIMIZATION_LEVEL: "1"
+        ENABLE_TRACE: "true"
+- weights:
+    - yolox_nano
+  version: "0.18.0"
+  tt_metal_commit: "c49bb76"
+  impl: tt_transformers
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: CNN
+  inference_engine: FORGE
+  status: COMPLETE
+  device_model_specs:
+    - device: N150
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+    - device: P150
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true

@@ -30,7 +30,10 @@ Models with EXPERIMENTAL status are under active development and may have stabil
 | [gpt-oss-20b](gpt-oss-20b_galaxy.md) | - | - | [🛠️ Experimental](gpt-oss-20b_galaxy.md) | - | - | - | - | - | [🛠️ Experimental](gpt-oss-20b_t3k.md) | - | - |
 | [AFM-4.5B](AFM-4.5B_t3k.md) | - | - | - | - | - | - | - | - | [🛠️ Experimental](AFM-4.5B_t3k.md) | - | [🛠️ Experimental](AFM-4.5B_n300.md) |
 | [DeepSeek-R1-0528](DeepSeek-R1-0528_dual_galaxy.md) | [🛠️ Experimental](DeepSeek-R1-0528_dual_galaxy.md) | [🛠️ Experimental](DeepSeek-R1-0528_quad_galaxy.md) | [🛠️ Experimental](DeepSeek-R1-0528_galaxy.md) | - | - | - | - | - | - | - | - |
+| [Falcon3-7B-Instruct](Falcon3-7B-Instruct_p150.md) | - | - | - | - | - | - | - | [🛠️ Experimental](Falcon3-7B-Instruct_p150.md) | - | - | - |
 | [gemma-3-1b-it](gemma-3-1b-it_n150.md) | - | - | - | - | - | - | - | - | - | [🛠️ Experimental](gemma-3-1b-it_n150.md) | - |
+| [gemma-4-31B-it](gemma-4-31B-it_p300x2.md) | - | - | - | - | - | [🛠️ Experimental](gemma-4-31B-it_p300x2.md) | - | - | - | - | - |
 | [Qwen2.5-7B](Qwen2.5-7B_n300.md) | - | - | - | - | - | - | - | - | - | - | [🛠️ Experimental](Qwen2.5-7B_n300.md) |
 | [Qwen2.5-Coder-32B-Instruct](Qwen2.5-Coder-32B-Instruct_galaxy.md) | - | - | [🛠️ Experimental](Qwen2.5-Coder-32B-Instruct_galaxy.md) | - | - | - | - | - | [🛠️ Experimental](Qwen2.5-Coder-32B-Instruct_t3k.md) | - | - |
 | [Qwen3-4B](Qwen3-4B_n150.md) | - | - | - | - | - | - | - | - | - | [🛠️ Experimental](Qwen3-4B_n150.md) | [🛠️ Experimental](Qwen3-4B_n300.md) |
+| [Qwen3.6-27B](Qwen3.6-27B_p300x2.md) | - | - | - | - | - | [🛠️ Experimental](Qwen3.6-27B_p300x2.md) | - | - | - | - | - |
