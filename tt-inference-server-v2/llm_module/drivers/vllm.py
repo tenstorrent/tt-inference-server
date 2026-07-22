@@ -76,6 +76,8 @@ def build_vllm_bench_serve_argv(
         str(config.osl),
         "--percentile-metrics",
         "ttft,tpot,itl,e2el",
+        "--temperature",
+        "0",
         "--save-result",
         "--save-detailed",
         "--result-filename",
