@@ -1,8 +1,6 @@
 name: Release Automation (promote specs, docs & helm)
 
-run-name: >-
-  Release automation on ${{ github.ref_name }}
-  (promote + commit + tag from pipeline)
+run-name: ${{ inputs.version && format('Release automation v{0}', inputs.version) || 'Release automation (push)' }}
 
 # ---------------------------------------------------------------------------
 # Automates the middle of scripts/release/README_MANUAL.md, entirely from the
@@ -29,6 +27,11 @@ run-name: >-
 on:
   workflow_dispatch:
     inputs:
+      version:
+        description: "Release version for the run title, e.g. 0.18.0 (must match the VERSION file, which stays the source of truth)"
+        required: true
+        default: "0.18.0"
+        type: string
       tt-metal-commit:
         description: "tt-metal commit SHA pinned into the promoted prod specs"
         required: true
@@ -121,17 +124,23 @@ jobs:
         # inputs are empty, so the shell `:-default` fallbacks apply.
         env:
           EVENT_NAME: ${{ github.event_name }}
+          IN_VERSION: ${{ github.event.inputs.version }}
           IN_TT_METAL_COMMIT: ${{ github.event.inputs['tt-metal-commit'] }}
           IN_VLLM_COMMIT: ${{ github.event.inputs['vllm-commit'] }}
           IN_TT_SHIELD_RUN_ID: ${{ github.event.inputs['tt-shield-run-id'] }}
           IN_TAG_SUFFIX: ${{ github.event.inputs['tag-suffix'] }}
           IN_POST_RELEASE_SUFFIX: ${{ github.event.inputs['post-release-suffix'] }}
         run: |
-          # Version is the single source of truth from the VERSION file (no
-          # input); checkout runs before this step so the file is present.
+          # The VERSION file is the source of truth (checkout runs first, so it
+          # is present). The `version` input is only for the run title; require
+          # it to match the file so the title can never misrepresent the release.
           RELEASE_VERSION="$(tr -d '[:space:]' < VERSION)"
           if [ -z "$RELEASE_VERSION" ]; then
             echo "::error::VERSION file is empty or missing"; exit 1
+          fi
+          if [ -n "$IN_VERSION" ] && [ "$IN_VERSION" != "$RELEASE_VERSION" ]; then
+            echo "::error::version input ('$IN_VERSION') does not match the VERSION file ('$RELEASE_VERSION'). Update the input or the VERSION file so they agree."
+            exit 1
           fi
           {
             echo "RELEASE_VERSION=${RELEASE_VERSION}"
