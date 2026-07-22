@@ -342,9 +342,9 @@ jobs:
             --endpoint /v1/chat/completions \
             --base-url http://127.0.0.1:8001 \
             --dataset-name random \
-            --random-input-len 2048 \
+            --random-input-len 55000 \
             --random-output-len 500 \
-            --num-prompts 1000 \
+            --num-prompts 100 \
             --max-concurrency 16 \
             --save-result \
             --result-filename "vllm-bench-split-zmq-result.json" \
