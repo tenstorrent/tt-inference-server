@@ -187,7 +187,7 @@ TEST_F(DynamoRoutingBigIslTest, BigIsl_RoutesPrefillThenDecode) {
   ASSERT_TRUE(resp.ok()) << "frontend returned error: statusCode="
                          << resp.statusCode << " error=" << resp.error;
 
-  // (4) Decode responded successfully — frontend closed the SSE stream with a
+  // Decode responded successfully — frontend closed the SSE stream with a
   // usage block reporting a positive completion count.
   EXPECT_GT(resp.usage.completionTokens, 0)
       << "expected completion_tokens > 0 (decode should have produced at least "
@@ -195,7 +195,7 @@ TEST_F(DynamoRoutingBigIslTest, BigIsl_RoutesPrefillThenDecode) {
       << resp.usage.promptTokens
       << " usage.completion=" << resp.usage.completionTokens;
 
-  // (1) Request hits prefill first — pull the taskId out so the remaining
+  // Request hits prefill first — pull the taskId out so the remaining
   // assertions key off the same request.
   std::optional<uint32_t> taskId;
   ASSERT_TRUE(waitFor(
@@ -210,7 +210,7 @@ TEST_F(DynamoRoutingBigIslTest, BigIsl_RoutesPrefillThenDecode) {
   std::cout << "[test] prefill-first slot reservation seen: taskId=" << *taskId
             << std::endl;
 
-  // (2a) Decode saw the slot-reservation ZMQ request for the same taskId.
+  // Decode saw the slot-reservation ZMQ request for the same taskId.
   ASSERT_TRUE(waitFor(
       [&] { return findSlotReservationRequest(readFile(decodeLog), *taskId); },
       K_LOG_ASSERTION_TIMEOUT_SEC, K_LOG_POLL_INTERVAL_MS))
@@ -221,7 +221,7 @@ TEST_F(DynamoRoutingBigIslTest, BigIsl_RoutesPrefillThenDecode) {
   std::cout << "[test] decode saw slot reservation request for taskId="
             << *taskId << std::endl;
 
-  // (2b) Prefill was granted a valid slot.
+  // Prefill was granted a valid slot.
   std::optional<uint32_t> slotId;
   ASSERT_TRUE(waitFor(
       [&] {
@@ -237,24 +237,6 @@ TEST_F(DynamoRoutingBigIslTest, BigIsl_RoutesPrefillThenDecode) {
       << "slot reservation was granted but with INVALID_SLOT_ID for taskId="
       << *taskId;
 
-  // (3) Decode ran with the reserved slot — the frontend's non-empty
-  // completion above already implies decode responded, and (2a) confirms it
-  // received the reservation for this same taskId. This combination proves
-  // the full prefill → slot-reserve → decode → response chain executed for
-  // one request.
-
-  // (5) Decode released the session after the final chunk. The
-  // DYNAMO_ROUTING=1 isFinal branch of the decode request handler calls
-  // SessionManager::releaseInFlight, moving the session IN_FLIGHT → IDLE so
-  // the slot can be reused by a follow-up turn. Without this, a hang in the
-  // release path would leak in-flight state under repeated big-ISL traffic.
-  //
-  // Note: the taskId in this log line is the DECODE worker's task_id (its
-  // TaskIDGenerator counts independently from prefill's), so we cannot key
-  // off *taskId. We rely on the fact that only DYNAMO_ROUTING=1 decode
-  // requests carrying a prefill_result exercise this path, and this test
-  // only sends one such request — so the first (and only) release log line
-  // in DECODE_LOG belongs to our request.
   std::optional<DecodeSessionReleaseLog> release;
   ASSERT_TRUE(waitFor(
       [&] {
