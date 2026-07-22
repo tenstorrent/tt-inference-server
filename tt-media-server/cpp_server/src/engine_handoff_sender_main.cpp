@@ -57,7 +57,11 @@ void usage() {
       << "usage: engine_handoff_sender --host HOST --port N\n"
          "  (--device-map PATH | --device-map-stdin)\n"
          "  pushes DeviceMap only; worker loads .pb from --table /tmp path\n"
-         "  refuses empty/unreadable maps (exit non-zero)\n";
+         "  refuses empty/unreadable maps (exit non-zero)\n"
+         "exit codes:\n"
+         "  0  success (DeviceMap handed off)\n"
+         "  1  runtime failure (load/connect/send)\n"
+         "  2  bad/missing CLI args (usage printed)\n";
 }
 
 bool parseArgs(int argc, char** argv, SenderConfig& cfg) {
@@ -138,6 +142,7 @@ int main(int argc, char** argv) {
   tt::utils::ZeroOverheadLogger::initialize("engine-handoff-sender");
 
   SenderConfig cfg;
+  // Exit codes: 0 success, 1 runtime failure, 2 bad CLI args.
   if (!parseArgs(argc, argv, cfg)) {
     usage();
     return 2;

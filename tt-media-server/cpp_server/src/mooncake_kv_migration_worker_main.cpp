@@ -253,7 +253,11 @@ bool parseConfig(int argc, char** argv, WorkerConfig& cfg) {
         const int port = std::stoi(v);
         if (port <= 0 || port > 65535) throw std::out_of_range("range");
         cfg.engine_handoff_port = static_cast<uint16_t>(port);
+        TT_LOG_INFO("[worker] --engine-handoff-port={}",
+                    cfg.engine_handoff_port);
       } catch (...) {
+        TT_LOG_ERROR(
+            "[worker] --engine-handoff-port must be 1..65535, got: {}", v);
         std::cerr << "--engine-handoff-port must be 1..65535, got: " << v
                   << "\n";
         return false;
