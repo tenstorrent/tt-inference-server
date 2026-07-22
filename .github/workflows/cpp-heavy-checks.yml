@@ -12,6 +12,7 @@ on:
     # Europe year-round (give or take the one-hour DST shift).
     - cron: '0 11 * * *'   # ~12:00 CET / 13:00 CEST  (noon)
     - cron: '0 23 * * *'   # ~00:00 CET / 01:00 CEST  (night)
+  workflow_dispatch:
 
 concurrency:
   group: cpp-heavy-${{ github.ref }}
