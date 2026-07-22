@@ -1143,6 +1143,8 @@ def _build_template(data: Dict, env: str = "prod") -> "ModelSpecTemplate":
 
 
 def load_templates_from_yaml(path: Path) -> List["ModelSpecTemplate"]:
+    if not path.is_file():
+        return []
     with open(path, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f)
     if not data or "templates" not in data:
