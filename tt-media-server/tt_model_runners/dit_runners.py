@@ -65,6 +65,12 @@ DIT_WEIGHTS_DISTRIBUTION_TIMEOUT_SECONDS = 6000
 
 
 class TTDiTRunner(BaseMetalDeviceRunner):
+    # Set True by runners that require image conditioning (I2V). The SP inference
+    # loop uses this to reject image-less requests with a clean per-request error
+    # instead of letting a base VideoGenerateRequest reach the runner and crash
+    # on the missing ``image_prompts`` field.
+    requires_image_conditioning: bool = False
+
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.pipeline = None
@@ -571,6 +577,8 @@ class TTWan22I2VProdiaRunner(TTDiTRunner):
     does not accept multi-frame conditioning).
     """
 
+    requires_image_conditioning = True
+
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.image_manager = ImageManager("img")
@@ -675,6 +683,8 @@ class TTWan22I2VRunner(TTDiTRunner):
     Wan2.2 image-to-video runner.
     """
 
+    requires_image_conditioning = True
+
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.resolution = wan22_target_resolution(self.settings.device_mesh_shape)
@@ -773,6 +783,8 @@ def _wan22_i2v_warmup_request(prompt: str = "Sunrise on a beach"):
 class TTWan22I2VAniSoraRunner(TTDiTRunner):
     """Wan2.2 I2V with AniSora V3.2 anime fine-tune weights."""
 
+    requires_image_conditioning = True
+
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.resolution = wan22_target_resolution(self.settings.device_mesh_shape)
@@ -862,6 +874,8 @@ class TTWan22I2VDistillRunner(TTDiTRunner):
     to 1.0 and ``num_inference_steps`` defaults to 4.
     """
 
+    requires_image_conditioning = True
+
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.resolution = wan22_target_resolution(self.settings.device_mesh_shape)
@@ -949,6 +963,8 @@ class TTWan22I2VLoRARunner(TTDiTRunner):
     LoRA weights are resolved from ``LORA_HIGH_PATH`` / ``LORA_LOW_PATH``
     environment variables by the pipeline's ``__init__``.
     """
+
+    requires_image_conditioning = True
 
     def __init__(self, device_id: str):
         super().__init__(device_id)
