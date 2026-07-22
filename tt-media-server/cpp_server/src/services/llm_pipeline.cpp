@@ -19,6 +19,7 @@
 #include "services/session_manager.hpp"
 #include "services/session_resolution.hpp"
 #include "sockets/inter_server_service.hpp"
+#include "utils/conversation_hasher.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::services {
@@ -81,6 +82,17 @@ void LLMPipeline::resolveSession(
       "messages={} promptKind={} promptTokens={}",
       req->task_id, req->model.value_or("default"), req->stream,
       req->messages.size(), promptKind, tokens ? tokens->size() : 0);
+
+  if (tt::config::llmMode() == tt::config::LLMMode::PREFILL_ONLY &&
+      tt::config::dynamoRoutingEnabled()) {
+    SessionInfo info;
+    if (tokens) {
+      info.registrationHashes =
+          tt::utils::computePrefixCachingInfoFromTokens(*tokens).hashes();
+    }
+    onResolved(info);
+    return;
+  }
 
   if (!sessionManager_) {
     TT_LOG_WARN("[LLMPipeline] SessionManager not available");
@@ -280,6 +292,22 @@ void LLMPipeline::dispatchGeneration(
       disaggregationService_->handleStreamingRequest(
           request, sessionInfo.registrationHashes, cb);
     }
+    return;
+  }
+
+  if (mode == tt::config::LLMMode::PREFILL_ONLY) {
+    if (!tt::config::dynamoRoutingEnabled()) {
+      throw std::runtime_error(
+          "LLM Mode must be regular or decode only for chat completions");
+    }
+    if (!disaggregationService_) {
+      throw std::runtime_error(
+          "[LLMPipeline] Prefill-first disaggregation requires "
+          "DisaggregationService");
+    }
+    request.max_tokens = 1;
+    disaggregationService_->handlePrefillFirstStreamingRequest(
+        request, sessionInfo.registrationHashes, cb);
     return;
   }
 

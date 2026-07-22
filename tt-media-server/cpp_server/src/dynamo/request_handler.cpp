@@ -121,38 +121,44 @@ void DynamoRequestHandler::handle(const GenerateRequest& dynReq,
     }
     auto prefillMessage = buildPrefillRequestMessage(dynReq);
     auto prefillDone = std::make_shared<std::atomic<bool>>(false);
-    disaggregation->handlePrefillRequest(
-        prefillMessage, [sendChunk, signalDone, prefillDone](
-                            const tt::sockets::PrefillResultMessage& result) {
-          bool expected = false;
-          if (!prefillDone->compare_exchange_strong(expected, true)) {
-            return;
-          }
-          TokenChunk out;
-          if (result.error) {
-            out.error = result.generatedText.empty() ? "prefill error"
-                                                     : result.generatedText;
-            out.error_code = 500;
+    try {
+      disaggregation->handlePrefillFirstRequest(
+          *req, prefillMessage.registrationHashes,
+          [sendChunk, signalDone,
+           prefillDone](const tt::sockets::PrefillResultMessage& result) {
+            bool expected = false;
+            if (!prefillDone->compare_exchange_strong(expected, true)) {
+              return;
+            }
+            TokenChunk out;
+            if (result.error) {
+              out.error = result.generatedText.empty() ? "prefill error"
+                                                       : result.generatedText;
+              out.error_code = 500;
+              sendChunk(out);
+              signalDone();
+              return;
+            }
+            auto resultForDynamo = result;
+            if (!resultForDynamo.slotId.has_value()) {
+              resultForDynamo.slotId = tt::domain::INVALID_SLOT_ID;
+            }
+            Json::Value params(Json::objectValue);
+            params["tt_prefill_result"] = prefillResultToJson(resultForDynamo);
+            out.disaggregated_params = std::move(params);
+            DynamoUsage du;
+            du.prompt_tokens =
+                static_cast<int>(resultForDynamo.tokenIds.size());
+            du.completion_tokens = 0;
+            du.total_tokens = du.prompt_tokens;
+            du.cached_tokens = resultForDynamo.cachedTokens;
+            out.completion_usage = du;
             sendChunk(out);
             signalDone();
-            return;
-          }
-          auto resultForDynamo = result;
-          if (!resultForDynamo.slotId.has_value()) {
-            resultForDynamo.slotId = tt::domain::INVALID_SLOT_ID;
-          }
-          Json::Value params(Json::objectValue);
-          params["tt_prefill_result"] = prefillResultToJson(resultForDynamo);
-          out.disaggregated_params = std::move(params);
-          DynamoUsage du;
-          du.prompt_tokens = static_cast<int>(resultForDynamo.tokenIds.size());
-          du.completion_tokens = 0;
-          du.total_tokens = du.prompt_tokens;
-          du.cached_tokens = resultForDynamo.cachedTokens;
-          out.completion_usage = du;
-          sendChunk(out);
-          signalDone();
-        });
+          });
+    } catch (const std::exception& e) {
+      sendErrorAndDone(e.what(), 503);
+    }
     return;
   }
 
@@ -210,55 +216,22 @@ void DynamoRequestHandler::handle(const GenerateRequest& dynReq,
               *prefillResult, {.skip_apply_chat_template = true,
                                .skip_text_decode = true,
                                .populate_token_counts = true}));
+      // Dynamo sends the client completion budget on the decode hop
+      // (e.g. max_tokens=32). Prefill is invoked with max_tokens=1, so any
+      // remaining_tokens echoed in tt_prefill_result is not the decode
+      // budget — prefer the decode GenerateRequest's max_tokens.
+      if (dynReq.max_tokens.has_value()) {
+        decodeReq->max_tokens = *dynReq.max_tokens;
+      }
       const bool hasReservedDecodeSlot =
           prefillResult->slotId.has_value() &&
           *prefillResult->slotId != tt::domain::INVALID_SLOT_ID;
       if (!hasReservedDecodeSlot) {
-        const auto runnerType = tt::config::blazeConfig().runner_type;
-        const bool isMockDecode =
-            runnerType == tt::config::ModelRunnerType::MOCK_PIPELINE ||
-            runnerType == tt::config::ModelRunnerType::MOCK_SCHEDULER ||
-            runnerType == tt::config::ModelRunnerType::MOCK;
-        if (!isMockDecode) {
-          sendErrorAndDone(
-              "DYNAMO_ROUTING=1: prefill result did not include a "
-              "reserved decode slot_id; slot reservation must be wired "
-              "before "
-              "Dynamo-routed remote prefill can continue on decode",
-              500);
-          return;
-        }
-        auto sessionManager = pipeline->sessionManager();
-        if (!sessionManager) {
-          sendErrorAndDone(
-              "DYNAMO_ROUTING=1: decode worker has no session manager "
-              "for mock slot allocation",
-              500);
-          return;
-        }
-        TT_LOG_INFO(
-            "[DynamoRequestHandler] Dynamo-routed prefill result has no decode "
-            "slot_id; "
-            "allocating mock_pipeline decode-local slot for taskId={}",
-            decodeReq->task_id);
-        sessionManager->createSession(
-            [decodeReq, sessionManager,
-             submitDecode](const tt::domain::Session& session) {
-              decodeReq->sessionId = session.getSessionId();
-              decodeReq->slotId = sessionManager->acquireInFlight(
-                  session.getSessionId(), nullptr);
-              decodeReq->session =
-                  sessionManager->getSession(session.getSessionId());
-              submitDecode(decodeReq, sessionManager, session.getSessionId());
-            },
-            [sendErrorAndDone](std::string_view error) {
-              sendErrorAndDone(
-                  "DYNAMO_ROUTING=1: failed to allocate mock decode "
-                  "slot: " +
-                      std::string(error),
-                  503);
-            },
-            loop);
+        sendErrorAndDone(
+            "DYNAMO_ROUTING=1: prefill result did not include a "
+            "reserved decode slot_id; slot reservation must complete "
+            "before decode can continue",
+            500);
         return;
       }
       submitDecode(decodeReq, nullptr);

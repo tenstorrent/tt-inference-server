@@ -3,7 +3,7 @@
     "DeepSeek-R1-0528": {
       "inference_engine": "vLLM",
       "ci": {
-        "nightly": {
+        "weekly": {
           "devices": [
             "QUAD_GALAXY"
           ]
@@ -27,20 +27,19 @@
           "ci": {
             "nightly": {
               "devices": [
-                "GALAXY",
                 "N150",
-                "N300",
-                "P100",
                 "P150",
                 "P300",
-                "P150X4",
-                "P300X2",
-                "T3K"
+                "P300X2"
               ]
             },
             "weekly": {
               "devices": [
-                "GALAXY"
+                "GALAXY",
+                "N300",
+                "P100",
+                "P150X4",
+                "T3K"
               ]
             },
             "release": {
@@ -65,7 +64,7 @@
     "Llama-3.2-11B-Vision-Instruct": {
       "inference_engine": "vLLM",
       "ci": {
-        "nightly": {
+        "weekly": {
           "devices": [
             "N300",
             "T3K"
@@ -76,7 +75,7 @@
     "Llama-3.2-1B-Instruct": {
       "inference_engine": "vLLM",
       "ci": {
-        "nightly": {
+        "weekly": {
           "devices": [
             "N150",
             "N300",
@@ -90,7 +89,7 @@
         {
           "inference_engine": "vLLM",
           "ci": {
-            "nightly": {
+            "weekly": {
               "devices": [
                 "N150",
                 "N300",
@@ -102,7 +101,7 @@
         {
           "inference_engine": "FORGE",
           "ci": {
-            "nightly": {
+            "weekly": {
               "devices": [
                 "P150"
               ]
@@ -114,7 +113,7 @@
     "Llama-3.2-90B-Vision-Instruct": {
       "inference_engine": "vLLM",
       "ci": {
-        "nightly": {
+        "weekly": {
           "devices": [
             "T3K"
           ]
@@ -128,14 +127,14 @@
           "devices": [
             "GALAXY",
             "BH_GALAXY",
-            "P150X4",
-            "P300X2",
-            "T3K"
+            "P300X2"
           ]
         },
         "weekly": {
           "devices": [
-            "GALAXY"
+            "GALAXY",
+            "P150X4",
+            "T3K"
           ]
         }
       }
@@ -143,7 +142,7 @@
     "Mistral-7B-Instruct-v0.3": {
       "inference_engine": "vLLM",
       "ci": {
-        "nightly": {
+        "weekly": {
           "devices": [
             "N150",
             "N300"
@@ -154,7 +153,7 @@
     "Mistral-Small-3.1-24B-Instruct-2503": {
       "inference_engine": "vLLM",
       "ci": {
-        "nightly": {
+        "weekly": {
           "devices": [
             "T3K"
           ]
@@ -164,15 +163,10 @@
     "QwQ-32B": {
       "inference_engine": "vLLM",
       "ci": {
-        "nightly": {
+        "weekly": {
           "devices": [
             "GALAXY",
             "T3K"
-          ]
-        },
-        "weekly": {
-          "devices": [
-            "GALAXY"
           ]
         }
       }
@@ -180,15 +174,10 @@
     "Qwen2.5-72B-Instruct": {
       "inference_engine": "vLLM",
       "ci": {
-        "nightly": {
+        "weekly": {
           "devices": [
             "GALAXY",
             "T3K"
-          ]
-        },
-        "weekly": {
-          "devices": [
-            "GALAXY"
           ]
         }
       }
@@ -247,7 +236,7 @@
     "Qwen2.5-VL-7B-Instruct": {
       "inference_engine": "vLLM",
       "ci": {
-        "nightly": {
+        "weekly": {
           "devices": [
             "N300"
           ]
@@ -263,18 +252,18 @@
               "devices": [
                 "GALAXY",
                 "BH_GALAXY",
-                "P300X2",
-                "T3K"
+                "P300X2"
               ]
             },
             "release": {
-                "devices": [
-                "GALAXY"
-              ]
-            },            
-            "weekly": {
               "devices": [
                 "GALAXY"
+              ]
+            },
+            "weekly": {
+              "devices": [
+                "GALAXY",
+                "T3K"
               ]
             }
           }
@@ -296,17 +285,12 @@
         {
           "inference_engine": "vLLM",
           "ci": {
-            "nightly": {
+            "weekly": {
               "devices": [
                 "GALAXY",
                 "N150",
                 "N300",
                 "T3K"
-              ]
-            },
-            "weekly": {
-              "devices": [
-                "GALAXY"
               ]
             }
           }
@@ -314,7 +298,7 @@
         {
           "inference_engine": "FORGE",
           "ci": {
-            "nightly": {
+            "weekly": {
               "devices": [
                 "P150"
               ]
@@ -341,7 +325,7 @@
     "Qwen3-4B": {
       "inference_engine": "FORGE",
       "ci": {
-        "nightly": {
+        "weekly": {
           "devices": [
             "P150"
           ]
@@ -351,7 +335,7 @@
     "Qwen3-Embedding-4B": {
       "inference_engine": "FORGE",
       "ci": {
-        "nightly": {
+        "weekly": {
           "devices": [
             "N150"
           ]
@@ -483,7 +467,7 @@
     "gemma-3-1b-it": {
       "inference_engine": "vLLM",
       "ci": {
-        "nightly": {
+        "weekly": {
           "devices": [
             "N150"
           ]
@@ -493,15 +477,11 @@
     "gemma-3-27b-it": {
       "inference_engine": "vLLM",
       "ci": {
-        "nightly": {
-          "devices": [
-            "T3K",
-            "P300X2"
-          ]
-        },
         "weekly": {
           "devices": [
-            "GALAXY"
+            "GALAXY",
+            "T3K",
+            "P300X2"
           ]
         }
       }
@@ -511,9 +491,13 @@
       "ci": {
         "nightly": {
           "devices": [
+            "T3K"
+          ]
+        },
+        "weekly": {
+          "devices": [
             "N150",
             "N300",
-            "T3K",
             "P150"
           ]
         }
@@ -595,7 +579,7 @@
     "mochi-1-preview": {
       "inference_engine": "MEDIA",
       "ci": {
-        "nightly": {
+        "weekly": {
           "devices": [
             "GALAXY",
             "BH_GALAXY",
