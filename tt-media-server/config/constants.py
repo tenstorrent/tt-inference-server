@@ -980,9 +980,6 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 1,
     },
-    # Kokoro-82M: single-chip P150, full pipeline on device (TT plbert, StyleTTS2
-    # predictor, text encoder, ISTFTNet vocoder; no ring fabric, no CCL). See
-    # models/demos/audio/kokoro (KokoroGenerator).
     (ModelRunners.TT_KOKORO_82M, DeviceTypes.P150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
