@@ -402,8 +402,8 @@ def test_streaming_json_object_no_reasoning_leak(report_test, api_client, reques
 
     Reproduces the Qwen3-32B streaming reasoning-parser bug: with
     ``response_format: {"type": "json_object"}``, ``stream: true``, ``temperature = 1``
-    and  ``top_p = 1``, the trailing reasoning tokens and the literal ``</think>`` 
-    close tag are emitted as *content* deltas instead of ``reasoning_content``, 
+    and  ``top_p = 1``, the trailing reasoning tokens and the literal ``</think>``
+    close tag are emitted as *content* deltas instead of ``reasoning_content``,
     so the accumulated content is not valid JSON (observed 4/4 in the issue). Non-streaming is
     clean, isolating the defect to ``extract_reasoning_content_streaming``.
 
