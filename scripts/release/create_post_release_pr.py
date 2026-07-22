@@ -39,6 +39,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -66,6 +67,14 @@ STATIC_SW_VERSIONS = (
     "- Firmware: 19.8.1\n"
     "- tt-kmd: 2.7.0\n"
 )
+
+
+def _safe_repo_path(p) -> Path:
+    """Resolve a supplied path and confine it to the repo root (guards path traversal)."""
+    resolved = Path(p).expanduser().resolve()
+    if resolved != REPO_ROOT and REPO_ROOT not in resolved.parents:
+        sys.exit(f"ERROR: path '{resolved}' is outside the repository root {REPO_ROOT}")
+    return resolved
 
 
 # ---------------------------------------------------------------------------
@@ -123,8 +132,9 @@ def _parse_catalogue(text: str) -> list[dict]:
 
 
 def load_prod_blocks_from_dir(prod_dir: Path) -> list[dict]:
+    prod_dir = _safe_repo_path(prod_dir)
     blocks: list[dict] = []
-    for f in sorted(Path(prod_dir).glob("*.yaml")):
+    for f in sorted(prod_dir.glob("*.yaml")):
         blocks += _parse_catalogue(f.read_text())
     return blocks
 
@@ -346,7 +356,7 @@ def render_body(version: str, rows) -> str:
 # CLI
 # ---------------------------------------------------------------------------
 def read_version(version_file: Path) -> str:
-    return version_file.read_text().strip()
+    return _safe_repo_path(version_file).read_text().strip()
 
 
 def current_branch() -> str:
@@ -359,6 +369,14 @@ def current_branch() -> str:
 
 
 def create_pr(repo, base, head, title, body) -> None:
+    # Validate the values that flow into the gh command. The call is list-form
+    # (not shell-interpreted), but validate anyway as defence-in-depth.
+    if not re.fullmatch(r"[A-Za-z0-9._-]+/[A-Za-z0-9._-]+", repo):
+        sys.exit(f"ERROR: invalid repo '{repo}'")
+    if not re.fullmatch(r"[A-Za-z0-9._/-]+", base) or not re.fullmatch(
+        r"[A-Za-z0-9._/-]+", head
+    ):
+        sys.exit("ERROR: invalid branch ref for --base/--head")
     with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False) as fh:
         fh.write(body)
         body_path = fh.name
@@ -443,7 +461,9 @@ def main() -> None:
     combos = collect_release_combos(ci_config)
 
     new_blocks = load_prod_blocks_from_dir(args.prod_dir)
-    prod_filenames = [f.name for f in sorted(Path(args.prod_dir).glob("*.yaml"))]
+    prod_filenames = [
+        f.name for f in sorted(_safe_repo_path(args.prod_dir).glob("*.yaml"))
+    ]
     old_blocks = load_prod_blocks_from_ref(args.base_ref, prod_filenames)
 
     # CI jobs (best-effort; UNKNOWN on any failure).

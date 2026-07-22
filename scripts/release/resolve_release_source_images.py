@@ -102,7 +102,9 @@ def extract_dev_image_tag(log_text: str) -> str | None:
 
 def resolve_source_images(repo: str, run_id: str) -> dict[str, dict]:
     """Return {family: {"image": tag|None, "build_job": name|None, "job_id": id|None}}."""
-    result = {fam: {"image": None, "build_job": None, "job_id": None} for fam in FAMILIES}
+    result = {
+        fam: {"image": None, "build_job": None, "job_id": None} for fam in FAMILIES
+    }
     for job in list_jobs(repo, run_id):
         fam = job_family(job.get("name", ""))
         if fam is None or result[fam]["image"] is not None:
@@ -119,8 +121,12 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     ap.add_argument("--run-id", required=True, help="tt-shield Release Actions run ID")
-    ap.add_argument("--repo", default=DEFAULT_REPO, help=f"GitHub repo (default: {DEFAULT_REPO})")
-    ap.add_argument("--json", action="store_true", help="Emit JSON instead of human-readable text")
+    ap.add_argument(
+        "--repo", default=DEFAULT_REPO, help=f"GitHub repo (default: {DEFAULT_REPO})"
+    )
+    ap.add_argument(
+        "--json", action="store_true", help="Emit JSON instead of human-readable text"
+    )
     args = ap.parse_args()
 
     result = resolve_source_images(args.repo, args.run_id)
