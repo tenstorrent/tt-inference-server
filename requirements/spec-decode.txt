@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+#
+# Dependencies for the SPEC_DECODE workflow venv (Python 3.11).
+# Used by direct invocations of run_workflows.py when
+# --spec-decode is set (via the run_spec_decode.py launcher).
+#
+# Mirrors requirements/benchmarks-spec-decode.txt (the v1 spec-decode
+# venv) plus aiohttp for the v2 orchestrator's eager import chain
+# (workflow_module -> test_module.context -> health_tests). Like its v1
+# counterpart, this file intentionally omits `-c constraints.txt`:
+# aiperf >= 0.8.0 (needed for the Spec-Bench / SPEED-Bench dataset
+# plugins) requires pillow >= 12.2, which conflicts with the shared
+# pillow==11.1 pin in constraints.txt. pyjwt is pinned explicitly to
+# keep cross-venv alignment for the JWT auth path.
+
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+# Our CPU-only torch is pinned to 2.4 so transformers is capped at <5 to
+# avoid `ModuleNotFoundError: torch.distributed.tensor.device_mesh` on
+# import of `AutoTokenizer`.
+torch==2.4.0+cpu
+aiperf==0.8.0
+transformers<5
+pyjwt==2.7.0
+requests
+datasets
+
+# v2 orchestrator eager-import: workflow_module -> test_module.context ->
+# health_tests uses aiohttp at module top.
+aiohttp

@@ -18,9 +18,6 @@ python_files = ["test_*.py"]
 python_functions = ["test_*"]
 # Optional: specify test class patterns
 python_classes = ["Test*"]
-# Ignore integration tests that require external service
-# To run this test, see: docs/run_vllm_param_tests.md
-addopts = "--ignore=server_tests/test_cases"
 
 # Test markers for selective test execution
 markers = [

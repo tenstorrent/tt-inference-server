@@ -15,11 +15,7 @@ import logging
 from pathlib import Path
 from typing import Optional, Tuple
 
-# Add project root to Python path to allow imports from workflows
-import sys
-
-project_root = Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(project_root))
+import _bootstrap  # noqa: F401,E402  (sets sys.path for imports below)
 from workflows.utils import parse_commits_from_docker_image
 
 logger = logging.getLogger(__name__)
