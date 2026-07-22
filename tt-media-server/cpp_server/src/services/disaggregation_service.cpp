@@ -604,6 +604,7 @@ void DisaggregationService::handleSlotReservationRequest(
         response.taskId = taskId;
         response.hasSlot = slot.slotId != tt::domain::INVALID_SLOT_ID;
         response.slotId = slot.slotId;
+        response.sessionId = slot.sessionId;
         response.decodePositionId = slot.decodePositionId;
         response.decodeSkipTokens = slot.decodeSkipTokens;
         response.continuation = slot.continuation;
@@ -686,67 +687,70 @@ void DisaggregationService::applySlotReservationAndLaunch(
   const auto topK = work.request->top_k;
   const bool fastMode = work.request->fast_mode;
   const auto slotId = work.request->slotId;
+  const std::string decodeSessionId = result.sessionId;
 
   resolvePrefillSession(
       work.request, registrationHashes,
       [this, work = std::move(work), streamCallback,
        resultCallback = std::move(resultCallback), taskId, fullPromptTokenIds,
-       temperature, topP, topK, fastMode, slotId]() mutable {
+       temperature, topP, topK, fastMode, slotId, decodeSessionId]() mutable {
         const auto requestPtr = work.request;
-        launchPrefillWork(std::move(work), [streamCallback, resultCallback,
-                                            taskId, fullPromptTokenIds,
-                                            temperature, topP, topK, fastMode,
-                                            slotId, requestPtr](
-                                               const LLMStreamChunk& response,
-                                               bool isFinal) {
-          if (resultCallback.has_value()) {
-            if (!isFinal && !response.choices.empty() &&
-                response.choices.back().finish_reason.has_value() &&
-                isErrorFinishReason(*response.choices.back().finish_reason)) {
-              // fall through to build error result below
-            } else if (!isFinal) {
-              return;
-            }
-            auto prefillResult = tt::sockets::PrefillResultMessage(taskId);
-            prefillResult.slotId = slotId;
-            prefillResult.temperature = temperature;
-            prefillResult.topP = topP;
-            prefillResult.topK = topK;
-            prefillResult.fastMode = fastMode;
+        launchPrefillWork(
+            std::move(work),
+            [streamCallback, resultCallback, taskId, fullPromptTokenIds,
+             temperature, topP, topK, fastMode, slotId, decodeSessionId,
+             requestPtr](const LLMStreamChunk& response, bool isFinal) {
+              if (resultCallback.has_value()) {
+                if (!isFinal && !response.choices.empty() &&
+                    response.choices.back().finish_reason.has_value() &&
+                    isErrorFinishReason(
+                        *response.choices.back().finish_reason)) {
+                  // fall through to build error result below
+                } else if (!isFinal) {
+                  return;
+                }
+                auto prefillResult = tt::sockets::PrefillResultMessage(taskId);
+                prefillResult.slotId = slotId;
+                prefillResult.sessionId = decodeSessionId;
+                prefillResult.temperature = temperature;
+                prefillResult.topP = topP;
+                prefillResult.topK = topK;
+                prefillResult.fastMode = fastMode;
 
-            const auto finishReason =
-                response.choices.empty()
-                    ? std::optional<std::string>{}
-                    : response.choices.back().finish_reason;
-            const bool isError = finishReason.has_value() &&
-                                 isErrorFinishReason(finishReason.value());
-            if (isError) {
-              prefillResult.error = true;
-              const auto reason =
-                  errorReasonFromFinishReason(finishReason.value());
-              prefillResult.generatedText =
-                  tt::sockets::prefillErrorTextForReason(
-                      reason, response.error.value_or("error"));
-            } else {
-              // Dynamo invokes prefill with max_tokens=1 and sends the
-              // real client budget on the decode hop; do not echo the
-              // prefill-forced 1 as remaining_tokens.
-              prefillResult.remainingTokens = std::nullopt;
-              prefillResult.tokenIds = fullPromptTokenIds;
-              if (!response.choices.empty()) {
-                prefillResult.generatedText = response.choices.back().text;
+                const auto finishReason =
+                    response.choices.empty()
+                        ? std::optional<std::string>{}
+                        : response.choices.back().finish_reason;
+                const bool isError = finishReason.has_value() &&
+                                     isErrorFinishReason(finishReason.value());
+                if (isError) {
+                  prefillResult.error = true;
+                  const auto reason =
+                      errorReasonFromFinishReason(finishReason.value());
+                  prefillResult.generatedText =
+                      tt::sockets::prefillErrorTextForReason(
+                          reason, response.error.value_or("error"));
+                } else {
+                  // Dynamo invokes prefill with max_tokens=1 and sends the
+                  // real client budget on the decode hop; do not echo the
+                  // prefill-forced 1 as remaining_tokens.
+                  prefillResult.remainingTokens = std::nullopt;
+                  prefillResult.tokenIds = fullPromptTokenIds;
+                  if (!response.choices.empty()) {
+                    prefillResult.generatedText = response.choices.back().text;
+                  }
+                  prefillResult.cachedTokens =
+                      response.cached_prompt_tokens.value_or(0);
+                  prefillResult.migrationId =
+                      requestPtr->migrationId.value_or(0);
+                }
+                (*resultCallback)(prefillResult);
+                return;
               }
-              prefillResult.cachedTokens =
-                  response.cached_prompt_tokens.value_or(0);
-              prefillResult.migrationId = requestPtr->migrationId.value_or(0);
-            }
-            (*resultCallback)(prefillResult);
-            return;
-          }
-          if (streamCallback) {
-            streamCallback(response, isFinal);
-          }
-        });
+              if (streamCallback) {
+                streamCallback(response, isFinal);
+              }
+            });
       },
       [taskId, streamCallback,
        resultCallback = std::move(resultCallback)](std::string_view error) {

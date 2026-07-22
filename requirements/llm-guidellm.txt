@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+#
+# Dependencies for the LLM_GUIDELLM workflow venv (Python 3.11).
+# Used by launchers/run_llm_bench.py for --tools guidellm.
+#
+# Mirrors v1's requirements/benchmarks-guidellm.txt: `guidellm[all]` pulls in
+# every optional extra (the audio extra ships torchcodec, which pins its own
+# compatible torch, so torch is deliberately not pinned here). `aiohttp`
+# covers the v2 orchestrator's eager import chain (workflow_module ->
+# test_module.context -> health_tests); `requests`/`pyjwt` back the health
+# checks + JWT minting.
+
+-c constraints.txt
+
+guidellm[all]
+aiohttp
+requests
+pyjwt

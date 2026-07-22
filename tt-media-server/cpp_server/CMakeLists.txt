@@ -635,6 +635,8 @@ add_library(transport_lib
     # table + device map (FabricNode -> ASIC id) to the worker. Our own contract,
     # not the disaggregation shmem client.
     src/transport/engine_table_handoff.cpp
+    src/transport/device_map_io.cpp
+    src/transport/engine_table_resolve.cpp
     src/utils/logger.cpp
 )
 target_include_directories(transport_lib PUBLIC
@@ -988,6 +990,34 @@ target_link_libraries(engine_table_handoff_test PRIVATE transport_lib GTest::gte
 target_include_directories(engine_table_handoff_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
+
+# resolveEngineTables + device_map_io + localhost TCP send-then-close.
+# Compiles tcp_socket_transport.cpp for the real loopback case.
+add_executable(engine_table_resolve_test
+    tests/unit/transport/engine_table_resolve_test.cpp
+    src/sockets/tcp_socket_transport.cpp)
+target_link_libraries(engine_table_resolve_test PRIVATE transport_lib GTest::gtest_main)
+target_include_directories(engine_table_resolve_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/unit/transport
+)
+
+# Host-local bridge: push DeviceMap only to a listening migration worker via
+# sendEngineHandoff (worker loads .pb from disk). No Metal / ENABLE_KV_TABLE.
+# Compiles tcp_socket_transport.cpp directly (transport_lib stays socket-decoupled).
+add_executable(engine_handoff_sender
+    src/engine_handoff_sender_main.cpp
+    src/sockets/tcp_socket_transport.cpp)
+target_link_libraries(engine_handoff_sender PRIVATE transport_lib)
+target_include_directories(engine_handoff_sender PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+if(USE_EXTERNAL_FMT)
+    target_link_libraries(engine_handoff_sender PRIVATE spdlog::spdlog fmt::fmt)
+else()
+    target_link_libraries(engine_handoff_sender PRIVATE spdlog::spdlog)
+endif()
+target_compile_options(engine_handoff_sender PRIVATE -Wall -Wextra -Wpedantic)
 
 # Real-table adapter test: loads an actual serialized KvChunkAddressTable (.pb)
 # and checks real NoC addresses resolve. Only built when ENABLE_KV_TABLE=ON
@@ -1416,6 +1446,7 @@ gtest_discover_tests(kv_migration_orchestrator_test)
 gtest_discover_tests(mooncake_migration_executor_test)
 gtest_discover_tests(kv_migration_endpoints_test)
 gtest_discover_tests(engine_table_handoff_test)
+gtest_discover_tests(engine_table_resolve_test)
 if(ENABLE_KV_TABLE)
     gtest_discover_tests(kv_chunk_address_table_adapter_test)
 endif()
@@ -1535,13 +1566,16 @@ if(KAFKA_ENABLED)
         )
         target_include_directories(remote_kv_adapter PUBLIC
             ${CMAKE_CURRENT_SOURCE_DIR}/include
-            ${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/include
-            ${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/disaggregation/migration/include
         )
         target_link_libraries(remote_kv_adapter PUBLIC
             messaging
             spdlog::spdlog
         )
+        if(TARGET TtLlmEngine::Full)
+            target_link_libraries(remote_kv_adapter PUBLIC TtLlmEngine::Full)
+        else()
+            target_link_libraries(remote_kv_adapter PUBLIC TtLlmEngine::Core)
+        endif()
         message(STATUS "remote_kv_adapter: ENABLED (ENABLE_BLAZE=ON)")
 
         # Wire the Kafka-backed RemoteKVManagerAdapter into the PrefillScheduler factory (blaze_utils.hpp)

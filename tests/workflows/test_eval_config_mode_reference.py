@@ -17,7 +17,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from evals.eval_config import (
+from reference_config.evals.eval_config import (
     EvalTaskScore,
     ModeReferenceScore,
     accept_eval_score,

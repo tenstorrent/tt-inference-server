@@ -7,9 +7,9 @@ import os
 import stat
 from pathlib import Path
 
-from benchmarking.benchmark_config import get_benchmark_config
-from workflows.v2_bridge import can_route_to_v2
-from evals.eval_config import EVAL_CONFIGS
+from reference_config.benchmarking.benchmark_config import get_benchmark_config
+from workflows.workflow_dispatch import can_dispatch_to_engine
+from reference_config.evals.eval_config import EVAL_CONFIGS
 from workflows.model_spec import MODEL_SPECS
 from workflows.utils import (
     MIN_SUPPORTED_IMAGE_VERSION,
@@ -109,7 +109,7 @@ def validate_runtime_args(model_spec, runtime_config):
         workflow_type == WorkflowType.BENCHMARKS
         and not getattr(args, "prefix_cache", False)
         and not getattr(args, "spec_decode", False)
-        and not can_route_to_v2(model_spec, runtime_config)
+        and not can_dispatch_to_engine(model_spec, runtime_config)
     ):
         if os.getenv("OVERRIDE_BENCHMARKS"):
             logger.warning("OVERRIDE_BENCHMARKS is active, using override benchmarks")
@@ -144,7 +144,7 @@ def validate_runtime_args(model_spec, runtime_config):
         assert model_spec.model_name in EVAL_CONFIGS, (
             f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
         )
-        if not can_route_to_v2(model_spec, runtime_config):
+        if not can_dispatch_to_engine(model_spec, runtime_config):
             get_benchmark_config(model_spec)
 
     if DeviceTypes.from_string(args.device) == DeviceTypes.GPU:

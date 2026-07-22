@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+
 #!/bin/bash
 # Patches the Dynamo frontend binary to change owned_by from "nvidia" to "TT Inc"
 # Run after: pip install ai-dynamo
