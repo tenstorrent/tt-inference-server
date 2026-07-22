@@ -53,7 +53,6 @@ class RuntimeConfig:
     override_docker_image: Optional[str] = None
     override_tt_config: Optional[str] = None
     vllm_override_args: Optional[str] = None
-    override_env_vars: Optional[str] = None
     runtime_model_spec_json: Optional[str] = None
 
     # Workflow control
@@ -146,7 +145,6 @@ class RuntimeConfig:
             override_docker_image=args.override_docker_image,
             override_tt_config=args.override_tt_config,
             vllm_override_args=args.vllm_override_args,
-            override_env_vars=args.override_env_vars,
             runtime_model_spec_json=args.runtime_model_spec_json,
             tools=args.tools,
             goodput=getattr(args, "goodput", None),

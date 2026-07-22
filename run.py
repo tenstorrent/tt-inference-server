@@ -214,11 +214,6 @@ def parse_arguments():
         help='Override vLLM arguments as JSON string (e.g., \'{"max_model_len": 4096, "enable_chunked_prefill": true}\')',
     )
     parser.add_argument(
-        "--override-env-vars",
-        type=str,
-        help='Override/add model container env vars as JSON string (e.g., \'{"QWEN_SDPA_BF8": "1"}\')',
-    )
-    parser.add_argument(
         "--reset-venvs",
         action="store_true",
         help="If there are Python dependency issues, remove .workflow_venvs/ directory so it can be automatically recreated.",

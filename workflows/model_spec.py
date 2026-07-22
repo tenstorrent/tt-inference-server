@@ -878,14 +878,6 @@ class ModelSpec:
                     self, "env_vars", {**self.env_vars, **overridden_env}
                 )
 
-        if runtime_config.override_env_vars:
-            env_vars_from_cli = json.loads(runtime_config.override_env_vars)
-            object.__setattr__(
-                self,
-                "env_vars",
-                {**self.env_vars, **{k: str(v) for k, v in env_vars_from_cli.items()}},
-            )
-
         if runtime_config.service_port:
             merged_vllm_args = {
                 **self.device_model_spec.vllm_args,
