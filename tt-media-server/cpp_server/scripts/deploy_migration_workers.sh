@@ -339,20 +339,36 @@ startDiscoveryService() {
 # sane.
 sweepScript() {
   local port="$1" grace="$2" name="${3:-}"
-  local pat="mooncake_kv_migration_worker --metadata"
-  [[ -n "${name}" ]] && pat="mooncake_kv_migration_worker.*--name ${name}([[:space:]]|\$)"
-  # When CONTAINER is set the worker runs as root inside it, so pkill/pgrep must
-  # target the container's PID namespace, not the host's. Ports live in the host
-  # namespace (workers use --network host), so the `ss` check stays host-side.
+  # Workers launched via docker-exec wrappers run as root with --pid=host.
+  # A non-root `docker exec … pkill` gets Permission denied and leaves them
+  # alive — always use -u root when CONTAINER is set.
   local run=""
-  [[ -n "${CONTAINER}" ]] && run="docker exec ${CONTAINER} "
+  [[ -n "${CONTAINER}" ]] && run="docker exec -u root ${CONTAINER} "
+  # Prefer exact binary name (avoids pkill -f matching the ssh/docker cmdline).
+  # Optional --name scope for single-worker restart; teardown passes name too.
   cat <<EOF
-pat='${pat}'
-${run}pkill -TERM -f "\$pat" 2>/dev/null || true
-for _ in \$(seq 1 ${grace}); do ${run}pgrep -f "\$pat" >/dev/null 2>&1 || break; sleep 1; done
-${run}pkill -KILL -f "\$pat" 2>/dev/null || true
-sleep 1
-if ${run}pgrep -f "\$pat" >/dev/null 2>&1; then
+killWorkers() {
+  if [ -n '${name}' ]; then
+    ${run}bash -lc 'pkill -9 -f "mooncake_kv_migration_worker.*--name ${name}([[:space:]]|\\\$)" 2>/dev/null || true'
+  else
+    ${run}bash -lc 'pids=\$(pgrep -x mooncake_kv_migration_worker 2>/dev/null); [ -n "\$pids" ] && kill -9 \$pids; true'
+  fi
+}
+killWorkers
+for _ in \$(seq 1 ${grace}); do
+  if [ -n '${name}' ]; then
+    ${run}bash -lc 'pgrep -af mooncake_kv_migration_worker 2>/dev/null | grep -q -- "--name ${name}"' || break
+  else
+    ${run}bash -lc 'pgrep -x mooncake_kv_migration_worker >/dev/null 2>&1' || break
+  fi
+  sleep 1
+  killWorkers
+done
+if [ -n '${name}' ]; then
+  if ${run}bash -lc 'pgrep -af mooncake_kv_migration_worker 2>/dev/null | grep -q -- "--name ${name}"'; then
+    echo "SWEEP_FAIL: worker still alive on \$(hostname -s)" >&2; exit 1
+  fi
+elif ${run}bash -lc 'pgrep -x mooncake_kv_migration_worker >/dev/null 2>&1'; then
   echo "SWEEP_FAIL: worker still alive on \$(hostname -s)" >&2; exit 1
 fi
 if command -v ss >/dev/null 2>&1 && ss -ltnH 2>/dev/null | grep -q ":${port} "; then
@@ -383,10 +399,10 @@ sweepWorkerOnHost() {
 # relaunch registers cleanly. Harmless on a first launch (keys won't exist).
 # Manual revive MUST call this too — skipping it is a common bring-up failure.
 clearRpcMeta() {
-  curl -sS -X DELETE "${META_URI}?key=mooncake/rpc_meta/$1" >/dev/null 2>&1 || \
-    echo "[deploy] WARN: could not clear rpc_meta for '$1' (discovery unreachable?);" \
-         "launch may fail on a duplicate rpc_meta key" >&2
-  curl -sS -X DELETE "${META_URI}?key=kv_control/$1" >/dev/null 2>&1 || true
+  # Short timeout — never hang teardown when metadata is already dead.
+  curl -sS --max-time 1 -X DELETE "${META_URI}?key=mooncake/rpc_meta/$1" >/dev/null 2>&1 || true
+  curl -sS --max-time 1 -X DELETE "${META_URI}?key=kv_control/$1" >/dev/null 2>&1 || true
+  curl -sS --max-time 1 -X DELETE "${META_URI}?key=mooncake/ram/$1" >/dev/null 2>&1 || true
 }
 
 # Register one worker slot (role, role-local index, host, tag) in the arrays.
@@ -633,34 +649,59 @@ superviseLoop() {
   done
 }
 
+# One-shot teardown. Bash INT traps resume the interrupted loop unless we
+# disable traps and exit — that was the "Ctrl-C forever / unhealthy spam" bug.
+CLEANUP_DONE=0
 cleanup() {
+  local exitCode="${1:-0}"
+  (( CLEANUP_DONE )) && return 0
+  CLEANUP_DONE=1
+  # Ignore further Ctrl-C so a signal mash cannot abort mid-sweep.
+  trap "" INT TERM
+  trap - EXIT
+
   echo ""
   echo "[deploy] tearing down..."
   local s
-  # Unpublish before kill so peers do not keep resolving dead workers if the
-  # metadata service outlives this deploy.
+  # Best-effort meta clear (never blocks long — see clearRpcMeta).
   for (( s = 0; s < ${#WK_TAG[@]}; s++ )); do
     clearRpcMeta "${WK_TAG[$s]}"
   done
   for (( s = 0; s < ${#WK_PID[@]}; s++ )); do
-    [[ -n "${WK_PID[$s]:-}" ]] && kill "${WK_PID[$s]}" 2>/dev/null
+    [[ -n "${WK_PID[$s]:-}" ]] && kill -9 "${WK_PID[$s]}" 2>/dev/null
   done
-  [[ -n "${META_PID}" ]] && kill "${META_PID}" 2>/dev/null
-  # Sweep our workers by name, in parallel (each blocks up to the grace period;
-  # serial across 17 hosts would make teardown crawl). Keep each background PID
-  # so we can wait on it individually and surface a failed sweep instead of
-  # swallowing it — a straggler left holding :HEALTH_PORT matters next deploy.
+  [[ -n "${META_PID:-}" ]] && kill -9 "${META_PID}" 2>/dev/null
+
+  # Hard-kill workers in parallel (root inside CONTAINER). Short grace — Ctrl-C
+  # must finish in seconds, not hang on TERM waits.
+  local savedGrace="${SWEEP_GRACE_SEC}"
+  SWEEP_GRACE_SEC=2
   local -a sweepPids=() sweepLabels=()
   for (( s = 0; s < ${#WK_ROLE[@]}; s++ )); do
     sweepWorkerOnHost "${WK_HOST[$s]}" "${WK_TAG[$s]}" >/dev/null 2>&1 &
     sweepPids+=("$!")
     sweepLabels+=("${WK_ROLE[$s]}-${WK_INDEX[$s]}@${WK_HOST[$s]}")
   done
-  local i
+  local i waited
   for (( i = 0; i < ${#sweepPids[@]}; i++ )); do
-    wait "${sweepPids[$i]}" || \
-      echo "[deploy] WARN: sweep of ${sweepLabels[$i]} failed; a straggler may still hold :${HEALTH_PORT}" >&2
+    # Bound wait so a wedged ssh cannot trap Ctrl-C forever.
+    # timeout(1) cannot wait on this shell's children — poll instead.
+    waited=0
+    while kill -0 "${sweepPids[$i]}" 2>/dev/null; do
+      if (( waited >= 15 )); then
+        kill -9 "${sweepPids[$i]}" 2>/dev/null || true
+        echo "[deploy] WARN: sweep of ${sweepLabels[$i]} timed out" >&2
+        break
+      fi
+      sleep 1
+      waited=$((waited + 1))
+    done
+    wait "${sweepPids[$i]}" 2>/dev/null || \
+      echo "[deploy] WARN: sweep of ${sweepLabels[$i]} failed" >&2
   done
+  SWEEP_GRACE_SEC="${savedGrace}"
+  echo "[deploy] tear down complete"
+  exit "${exitCode}"
 }
 
 main() {
@@ -682,7 +723,8 @@ main() {
     echo "[deploy] DeviceMap via --device-map file (ENGINE_HANDOFF_PORT=0)"
   fi
 
-  trap cleanup EXIT INT TERM
+  trap 'cleanup 130' INT TERM
+  trap 'cleanup 0' EXIT
   startDiscoveryService || exit 1
   initWorkerSlots
   assertExclusiveDecodePeers
@@ -693,7 +735,7 @@ main() {
       echo "[dry-run] ${WK_HOST[$s]} (${WK_TAG[$s]}): $(workerCmd "${s}")"
       pushDeviceMapSlot "${s}"
     done
-    echo "[deploy] dry-run complete"; trap - EXIT INT TERM; exit 0
+    echo "[deploy] dry-run complete"; CLEANUP_DONE=1; trap - EXIT INT TERM; exit 0
   fi
 
   launchAllWorkers
