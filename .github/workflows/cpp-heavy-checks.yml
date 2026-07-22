@@ -1347,6 +1347,9 @@ jobs:
           sudo sysctl -w kernel.core_uses_pid=1
           # apport may still intercept; stop it just in case.
           sudo systemctl stop apport.service 2>/dev/null || true
+          # Package indexes on ubuntu-latest runners are often stale/empty until
+          # update; without it apt reports "gdb has no installation candidate".
+          sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends gdb
           gdb --version | head -1
 
