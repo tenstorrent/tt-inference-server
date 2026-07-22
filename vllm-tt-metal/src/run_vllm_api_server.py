@@ -737,6 +737,75 @@ def set_vllm_sys_argv(args, remaining_sys_argv, default_vllm_args):
     logger.info(f"vLLM command:\n{format_vllm_serve_command(sys.argv)}")
 
 
+def inject_tt_data_parallel(default_vllm_args):
+    """Route the co-located RL launcher's ``TT_DATA_PARALLEL`` env var into
+    ``additional_config['tt']['tt_data_parallel']`` so the in-process submesh-DP
+    degree survives to the EngineCore.
+
+    The launcher sets ``TT_DATA_PARALLEL=N`` inline in the launch command (next to
+    ``MESH_DEVICE``). Recent vLLM spawns the EngineCore with a curated environment
+    that does NOT forward arbitrary env vars, so by the time the TT plugin's
+    ``get_inprocess_data_parallel()`` runs in the worker, ``TT_DATA_PARALLEL`` is
+    gone and DP silently falls back to 1 (a single submesh spanning the whole tray,
+    which then fails ModelArgs' batch cap -- "Batch size 256 not supported").
+    ``additional_config`` is part of ``vllm_config`` and IS reliably serialized to
+    the EngineCore, and the plugin already resolves it before the env var, so
+    threading the value through here makes in-process submesh DP actually engage.
+    Only fires when TT_DATA_PARALLEL>1, so every other mode is unchanged.
+    """
+    raw = os.environ.get("TT_DATA_PARALLEL")
+    if raw is None:
+        return
+    try:
+        n = int(raw)
+    except (TypeError, ValueError):
+        return
+    if n <= 1:
+        return
+    additional = default_vllm_args.get("additional_config")
+    if not isinstance(additional, dict):
+        additional = {}
+    tt_cfg = additional.get("tt")
+    if not isinstance(tt_cfg, dict):
+        tt_cfg = {}
+    tt_cfg["tt_data_parallel"] = n
+    additional["tt"] = tt_cfg
+    default_vllm_args["additional_config"] = additional
+    logger.info(
+        f"Injected tt_data_parallel={n} into additional_config['tt'] from "
+        "TT_DATA_PARALLEL (in-process submesh DP)"
+    )
+
+
+def inject_tt_weight_bridge_dir(default_vllm_args):
+    """Route the co-located RL launcher's ``TT_WEIGHT_BRIDGE_DIR`` env var into
+    ``additional_config['tt']['tt_weight_bridge_dir']`` so the receiver worker
+    can locate tt-metal's ``inference_bridge.py`` even though recent vLLM spawns
+    the EngineCore with a curated environment that drops arbitrary env vars
+    (same failure mode addressed by ``inject_tt_data_parallel`` for
+    ``TT_DATA_PARALLEL``). Only fires when the launcher set the env var (the
+    co-located device-socket weight-bridge path), so all other modes are
+    unchanged; the worker also has env-independent fallbacks (TT_METAL_HOME and
+    a ttnn-derived path), so this is belt-and-suspenders.
+    """
+    bridge_dir = os.environ.get("TT_WEIGHT_BRIDGE_DIR")
+    if not bridge_dir:
+        return
+    additional = default_vllm_args.get("additional_config")
+    if not isinstance(additional, dict):
+        additional = {}
+    tt_cfg = additional.get("tt")
+    if not isinstance(tt_cfg, dict):
+        tt_cfg = {}
+    tt_cfg["tt_weight_bridge_dir"] = bridge_dir
+    additional["tt"] = tt_cfg
+    default_vllm_args["additional_config"] = additional
+    logger.info(
+        f"Injected tt_weight_bridge_dir={bridge_dir} into additional_config['tt'] "
+        "from TT_WEIGHT_BRIDGE_DIR (co-located device-socket weight bridge)"
+    )
+
+
 def main():
     # Step 1: Parse --model argument (if provided)
     args, remaining_sys_argv = parse_args()
@@ -777,6 +846,8 @@ def main():
     set_runtime_env_vars(model_spec)
     runtime_settings(model_spec, no_auth=args.no_auth)
     default_vllm_args = model_spec["device_model_spec"]["vllm_args"]
+    inject_tt_data_parallel(default_vllm_args)
+    inject_tt_weight_bridge_dir(default_vllm_args)
     set_vllm_sys_argv(args, remaining_sys_argv, default_vllm_args)
 
     # Step 5: Start trace capture if needed

@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 import importlib
+import importlib.util
 import os
 import sys
 from contextlib import suppress
@@ -222,64 +223,93 @@ class TTWorker(WorkerBase):
         return runner is not None and getattr(runner, "model", None) is not None
 
     @staticmethod
-    def _import_weight_bridge():
+    def _import_weight_bridge(config_bridge_dir: Optional[str] = None):
         """Import tt-metal's ``WeightBridge`` module.
 
         The bridge ships inside the tt-metal examples tree
-        (``tt-train/sources/examples/grpo_speedup/utils/inference_bridge.py``,
-        PR #45734; originally named ``weight_bridge.py`` before the bridge +
-        Ttt server/client were consolidated into ``inference_bridge.py``)
-        rather than an installed package, so we add that directory to
-        ``sys.path`` and import it as a top-level module. The module has no
-        relative imports, so importing it standalone avoids colliding with the
+        (``tt-train/sources/examples/grpo/utils/inference_bridge.py``; older
+        checkouts kept it under ``grpo_speedup/utils`` and/or named it
+        ``weight_bridge.py`` before the bridge + Ttt server/client were
+        consolidated into ``inference_bridge.py``) rather than an installed
+        package. We load it by file path (``spec_from_file_location`` with a
+        unique module name) so importing it standalone never collides with the
         server's own ``utils`` package. The ``WeightBridge`` class name is
-        stable across the rename, so only the module name has to be probed; the
-        sender (tt-training-service) probes the same names so both ends speak
-        the same wire protocol.
+        stable across the rename, so only the module/file name is probed; the
+        sender (tt-training-service ``rl/weight_publisher.py``) probes the same
+        names so both ends speak the same wire protocol.
 
-        Override the location with ``TT_WEIGHT_BRIDGE_DIR`` if the bridge
-        moves to a different path.
+        Resolution order (env-independent on purpose: recent vLLM spawns the
+        EngineCore with a curated environment that drops arbitrary env vars, so
+        ``TT_WEIGHT_BRIDGE_DIR`` may not survive to this worker):
+          1. Already on ``sys.path`` (bare import).
+          2. ``config_bridge_dir`` -- threaded via ``additional_config`` /
+             ``override_tt_config['tt_weight_bridge_dir']`` (reliable channel).
+          3. ``TT_WEIGHT_BRIDGE_DIR`` env var (if it did survive).
+          4. ``TT_METAL_HOME`` + ``tt-train/sources/examples/{grpo,grpo_speedup}/utils``.
+          5. Derived from the imported ``ttnn`` package location (works even
+             when no relevant env var reached this process).
         """
-        # Module names to try, newest first (``weight_bridge`` kept as a
+        # Module / file names to try, newest first (``weight_bridge`` kept as a
         # fallback for older tt-metal checkouts).
         mod_names = ("inference_bridge", "weight_bridge")
+        file_names = ("inference_bridge.py", "weight_bridge.py")
 
-        def _try_import():
-            for mod_name in mod_names:
-                try:
-                    return importlib.import_module(mod_name)
-                except ImportError:
-                    continue
-            return None
+        for mod_name in mod_names:
+            try:
+                return importlib.import_module(mod_name)
+            except ImportError:
+                continue
 
-        module = _try_import()
-        if module is not None:
-            return module
+        search_dirs: list = []
 
-        bridge_dir = os.getenv("TT_WEIGHT_BRIDGE_DIR")
-        if not bridge_dir:
-            tt_metal_home = os.getenv("TT_METAL_HOME")
-            if tt_metal_home:
-                bridge_dir = os.path.join(
-                    tt_metal_home,
-                    "tt-train",
-                    "sources",
-                    "examples",
-                    "grpo_speedup",
-                    "utils",
-                )
-        if bridge_dir and bridge_dir not in sys.path:
-            sys.path.append(bridge_dir)
-        module = _try_import()
-        if module is not None:
-            return module
+        def _add_examples_root(examples_root: Path) -> None:
+            # The GRPO example (and its inference_bridge.py) currently lives
+            # under examples/grpo/utils; older checkouts kept it under
+            # grpo_speedup/utils. Search both, newest layout first.
+            search_dirs.append(examples_root / "grpo" / "utils")
+            search_dirs.append(examples_root / "grpo_speedup" / "utils")
+
+        if config_bridge_dir:
+            search_dirs.append(Path(config_bridge_dir))
+        env_dir = os.getenv("TT_WEIGHT_BRIDGE_DIR")
+        if env_dir:
+            search_dirs.append(Path(env_dir))
+        tt_metal_home = os.getenv("TT_METAL_HOME")
+        if tt_metal_home:
+            _add_examples_root(Path(tt_metal_home) / "tt-train" / "sources" / "examples")
+        # Env-independent fallback: locate the tt-metal checkout from the
+        # already-imported ttnn package ($TT_METAL/ttnn/ttnn/__init__.py).
+        with suppress(Exception):
+            ttnn_file = getattr(ttnn, "__file__", None)
+            if ttnn_file:
+                tt_metal_root = Path(ttnn_file).resolve().parents[2]
+                _add_examples_root(tt_metal_root / "tt-train" / "sources" / "examples")
+
+        seen: set = set()
+        for directory in search_dirs:
+            directory = directory.resolve()
+            if directory in seen:
+                continue
+            seen.add(directory)
+            for file_name in file_names:
+                path = directory / file_name
+                if path.is_file():
+                    spec = importlib.util.spec_from_file_location(path.stem, path)
+                    assert spec and spec.loader
+                    module = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(module)
+                    return module
+
         raise ImportError(
-                "Could not import tt-metal's WeightBridge. Set TT_WEIGHT_BRIDGE_DIR "
-                "to the directory containing inference_bridge.py (from tt-metal "
-                "PR #45734, tt-train/.../grpo_speedup/utils; older checkouts named "
-                "it weight_bridge.py), or ensure TT_METAL_HOME points at a tt-metal "
-                "checkout that contains it."
-            )
+            "Could not import tt-metal's WeightBridge. Set TT_WEIGHT_BRIDGE_DIR "
+            "to the directory containing inference_bridge.py "
+            "(tt-train/sources/examples/grpo/utils; older checkouts kept it under "
+            "grpo_speedup/utils or named it weight_bridge.py), pass it via "
+            "additional_config['tt']['tt_weight_bridge_dir'], or ensure "
+            "TT_METAL_HOME points at a tt-metal checkout that contains it. This "
+            "MUST be the same module the trainer (sender) imports so both ends "
+            "speak the same wire protocol."
+        )
 
     def _get_weight_bridge(self, sender_rank: int):
         """Create (or reuse) the receiver-side ``WeightBridge`` (role='ttt').
@@ -292,7 +322,11 @@ class TTWorker(WorkerBase):
         if self._weight_bridge is not None and self._weight_bridge_peer == sender_rank:
             return self._weight_bridge
 
-        weight_bridge = self._import_weight_bridge()
+        # Prefer the dir threaded through additional_config (survives the
+        # EngineCore's curated env, unlike TT_WEIGHT_BRIDGE_DIR).
+        override_tt_config = getattr(self.model_config, "override_tt_config", None) or {}
+        config_bridge_dir = override_tt_config.get("tt_weight_bridge_dir")
+        weight_bridge = self._import_weight_bridge(config_bridge_dir)
 
         # The bridge requires an initialized ttnn distributed context.
         if not ttnn.distributed_context_is_initialized():
@@ -476,21 +510,15 @@ class TTWorker(WorkerBase):
         return kv_cache_spec
 
     def determine_available_memory(self) -> int:
-        """
-        For the GPU/TPU backends, this method runs profiling to determine
-        available memory for the KV cache. The available memory is then used
-        in conjunction with the output of get_kv_cache_spec to determine
-        the number of kv cache blocks (total memory / page_size / num layers).
 
-        Currenly we just return a large dummy number of bytes similar to the
-        Spyre/Neuron backends and override the number of kv cache blocks.
-        """
-
-        # TODO: Once we can run profiling, return real available memory
-        # instead of overriding the number of blocks.
         num_tt_blocks = get_num_available_blocks_tt(self.vllm_config)
         self.cache_config.num_gpu_blocks_override = num_tt_blocks
-        return 1 << 64
+
+        # page_size_bytes of the single dummy spec we hand vLLM in
+        # get_kv_cache_spec(); this is exactly the per-block divisor vLLM uses.
+        kv_cache_spec = self.get_kv_cache_spec()
+        page_size_bytes = next(iter(kv_cache_spec.values())).page_size_bytes
+        return num_tt_blocks * page_size_bytes
 
     def initialize_from_config(self, kv_cache_config: KVCacheConfig) -> None:
         """Allocate TT KV cache (only DP rank 0) and initialize persistent
