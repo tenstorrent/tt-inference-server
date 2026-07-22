@@ -3,8 +3,7 @@ name: Release Automation (promote specs, docs & helm)
 run-name: ${{ inputs.version && format('Release automation v{0}', inputs.version) || 'Release automation (push)' }}
 
 # ---------------------------------------------------------------------------
-# Automates the middle of scripts/release/README_MANUAL.md, entirely from the
-# pipeline (nothing is run from a developer terminal):
+# Automates the release pipeline:
 #   1. promote_dev_spec_to_prod.py  (dev -> prod model specs, release-scoped)
 #   2. export_model_spec.py         (docs/model_support + release_model_spec.json)
 #   3. python -m workflows.helm_generator  (charts/.../values.yaml)
@@ -14,14 +13,7 @@ run-name: ${{ inputs.version && format('Release automation v{0}', inputs.version
 #   git tag v<version><suffix> && git push origin v<version><suffix>
 # finally:
 #   create branch post-release-v<version><post-suffix> off main, carrying this
-#   branch's VERSION + models-ci-config.json onto it, and push it.
-#
-# The commit/push/tag run only if the four generators succeeded, and the commit
-# is skipped if they produced no changes. `tag-suffix` (default "-temp") and
-# `post-release-suffix` (default "-test") mark testing artifacts — clear them on
-# a workflow_dispatch run to cut a real "v<version>" / "post-release-v<version>".
-# Pushing uses the default GITHUB_TOKEN, whose pushes do NOT re-trigger this
-# workflow, so there is no push -> run -> push loop.
+#   branch's VERSION + models-ci-config.json onto it, re-run all 4 steps from above and push it.
 # ---------------------------------------------------------------------------
 
 on:
@@ -81,14 +73,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      # The release scripts self-insert the repo root, and `python -m` adds the
-      # CWD; PYTHONPATH is set defensively to match the repo's other workflows.
       PYTHONPATH: ${{ github.workspace }}
     steps:
       - name: Checkout
-        # Check out the branch (not a detached SHA) with credentials persisted,
-        # so the runner can commit and push back to it. fetch-depth: 0 avoids
-        # shallow-push edge cases.
         uses: actions/checkout@v5
         with:
           ref: ${{ github.ref_name }}
@@ -103,9 +90,9 @@ jobs:
 
       - name: Install Python dependencies
         # requirements-dev.txt provides ruamel.yaml + jsonschema for the helm
-        # generator and (transitively, via pre-commit) PyYAML for the promote /
-        # export scripts. One environment serves all four commands — CI does not
-        # need the throwaway .venv the manual laptop steps create.
+        # generator and PyYAML for the promote /
+        # export scripts. 
+        # One environment serves all four commands — CI does not .venv.
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements-dev.txt
@@ -118,10 +105,7 @@ jobs:
           sudo tar -xzf /tmp/helm-docs.tar.gz -C /usr/local/bin helm-docs
           helm-docs --version
 
-      - name: Resolve inputs (dispatch values, or defaults on push)
-        # Map the (untrusted) dispatch inputs into env via the `env:` block so no
-        # user value is interpolated straight into the shell. On `push` the
-        # inputs are empty, so the shell `:-default` fallbacks apply.
+      - name: Resolve inputs
         env:
           EVENT_NAME: ${{ github.event_name }}
           IN_VERSION: ${{ github.event.inputs.version }}
@@ -192,7 +176,7 @@ jobs:
             --template-files=README.md.gotmpl
 
       # ----- Show what the generators produced (before committing) ------------
-      - name: "Show generated changes"
+      - name: "Show generated changes (added or modified files)"
         if: always()
         run: |
           echo "=== git status ==="
@@ -211,12 +195,12 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       # ----- Commit + push + tag, from the pipeline (only if steps 1-4 ok) -----
-      - name: Configure git identity
+      - name: Configure git identity for push operation
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: "git add + git commit -m v<version><suffix>"
+      - name: "git add + git commit on stable branch"
         run: |
           TAG="v${RELEASE_VERSION}${TAG_SUFFIX}"
           git add .
@@ -229,11 +213,11 @@ jobs:
             echo "COMMITTED=true" >> "$GITHUB_ENV"
           fi
 
-      - name: "git push (branch)"
+      - name: "git push on stable branch"
         if: env.COMMITTED == 'true'
         run: git push origin "HEAD:${{ github.ref_name }}"
 
-      - name: "git tag v<version><suffix> + git push origin <tag>"
+      - name: "git tag + git push origin <tag>"
         # Force so re-runs of the pipeline re-point/replace the (temp) tag
         # instead of failing on an already-existing tag.
         run: |
@@ -258,16 +242,6 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-      # ----- Build the release-artifacts zip (README_MANUAL "Downloading
-      #       workflow artifacts"). Reuses scripts/release/build_release_artifacts.py
-      #       (unchanged; still runnable locally) to download the tt-shield
-      #       Release run's per-model/device bundles and pack them into
-      #       v<version>-release_artifacts.zip. The model/device scope is read
-      #       automatically from this branch's models-ci-config.json release list.
-      #       Runs on the base-branch working tree, BEFORE the post-release branch
-      #       switch; output goes to RUNNER_TEMP (outside the repo) so it never
-      #       lands in a git commit. gh needs tt-shield read access -> GH_TOKEN is
-      #       the tt-shield PAT (GITHUB_TOKEN cannot read another repo). -----
       - name: "Build release artifacts zip (download from tt-shield)"
         env:
           GH_TOKEN: ${{ secrets.TMP_VCANKOVIC_SHIELD_CRANE_PAT }}
@@ -289,11 +263,8 @@ jobs:
 
       # ----- Resolve the source dev images (vllm/media/forge) built by the
       #       tt-shield run, and expose them as STEP OUTPUTS for later steps
-      #       (e.g. a future publish step) plus a run-summary table. A family
-      #       with no build job resolves to "None". Reuses
-      #       scripts/release/resolve_release_source_images.py (also runnable
-      #       locally). gh needs tt-shield read access -> GH_TOKEN is the PAT. -----
-      - name: "Resolve release source images (vllm/media/forge)"
+      #       plus a run-summary table.
+      - name: "Resolve source docker images (vllm/media/forge)"
         id: source-images
         env:
           GH_TOKEN: ${{ secrets.TMP_VCANKOVIC_SHIELD_CRANE_PAT }}
@@ -310,7 +281,7 @@ jobs:
 
           # Human-readable summary on the run page.
           {
-            echo "## Release source images (tt-shield run ${TT_SHIELD_RUN_ID})"
+            echo "## Resolve source docker images (tt-shield run ${TT_SHIELD_RUN_ID})"
             echo
             echo "| Engine | Source dev image |"
             echo "|--------|------------------|"
@@ -322,17 +293,11 @@ jobs:
 
       # ----- Map each source dev image to the tt-inference-server RELEASE image
       #       to publish, and emit the publish plan (source -> destination) as
-      #       step outputs + a crane-copy preview. Destination repo/tag mirror
-      #       workflows/model_spec.py generate_default_docker_link: the source
-      #       tag is discarded and the destination tag is built from the release
-      #       INPUTS (version-tt_metal[-vllm]) — so the published version is the
-      #       run's `version` input, NOT whatever version the dev image carries.
+      #       step outputs + a crane-copy preview.
       #         vllm  -> ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:<ver>-<ttm>-<vllm>
       #         media -> ghcr.io/tenstorrent/tt-media-inference-server:<ver>-<ttm>
       #         forge -> ghcr.io/tenstorrent/tt-media-inference-server-forge:<ver>-<ttm>
-      #       A family whose source image is "None" maps to "None" (nothing to
-      #       publish). This PREPARES the plan only; it does not run crane. -----
-      - name: "Map source -> release images to publish (publish plan)"
+      - name: "Map source -> target docker images to publish"
         id: image-mapping
         env:
           SRC_VLLM: ${{ steps.source-images.outputs.vllm }}
@@ -378,8 +343,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       # ----- Install crane (google/go-containerregistry) — used to promote the
-      #       release images from tt-shield to tt-inference-server. Not present
-      #       on ubuntu-latest. -----
+      #       release images from tt-shield to tt-inference-server
       - name: "Install crane"
         run: |
           curl -fsSL "https://github.com/google/go-containerregistry/releases/download/v${CRANE_VERSION}/go-containerregistry_Linux_x86_64.tar.gz" \
@@ -409,7 +373,7 @@ jobs:
           for src in "$SRC_VLLM" "$SRC_MEDIA" "$SRC_FORGE"; do
             [ "$src" = "None" ] && continue
             if crane manifest "$src" >/dev/null 2>&1; then
-              echo "✅ verified authed pull: $src"
+              echo "✅ verified pull: $src"
             else
               echo "::warning::crane could not pull '$src' — the PAT likely lacks read:packages; crane copy would fail."
             fi
@@ -422,7 +386,7 @@ jobs:
       #       InferenceEngine enum — same rule as generate_default_docker_link).
       #       A family is copied only if it is in the release AND a source image
       #       was built. Nothing is executed (dry-run). -----
-      - name: "crane copy simulation (release-scoped publish plan, dry-run)"
+      - name: "crane copy preparation (dry-run)"
         env:
           SRC_VLLM: ${{ steps.image-mapping.outputs.vllm_source }}
           DST_VLLM: ${{ steps.image-mapping.outputs.vllm_dest }}
@@ -491,12 +455,9 @@ jobs:
           echo "✅ crane copy test succeeded -> ${DST_TEST}"
       # ===== END TEMPORARY ==================================================
 
-      # ----- Post-release branch off main (README_MANUAL "Create post-release
-      #       branch"). Branches from origin/main, carries this branch's VERSION
+      # ----- Post-release branch off main. Branches from origin/main, carries this branch's VERSION
       #       + models-ci-config.json onto it, RE-RUNS the same four generators
-      #       there, then commits everything in ONE commit and pushes. Runs LAST
-      #       so the working-tree switch to main does not disturb the base-branch
-      #       steps above. -----
+      #       there, then commits everything in ONE commit and pushes.
       - name: "Post-release: branch from main + carry VERSION/config"
         env:
           SRC_REF: ${{ github.ref_name }}
@@ -521,10 +482,7 @@ jobs:
           cp "${RUNNER_TEMP}/VERSION.carry" VERSION
           cp "${RUNNER_TEMP}/models-ci-config.json.carry" .github/workflows/models-ci-config.json
 
-      - name: "Post-release: regenerate artifacts (same 4 steps, on this branch)"
-        # Now on the post-release branch (main + carried files). Re-run the same
-        # four generators against main's scripts + dev catalogue with the carried
-        # release list. Re-install deps in case main's requirements-dev.txt differs.
+      - name: "Post-release: regenerate artifacts (same 4 steps, on post-release branch)"
         run: |
           python -m pip install -r requirements-dev.txt
           python3 scripts/release/promote_dev_spec_to_prod.py \
@@ -552,12 +510,7 @@ jobs:
           echo "Pushed '${POST_RELEASE_BRANCH}'."
 
       # ----- FINAL step: open the draft "Post release v<version>" PR
-      #       (post-release branch -> main) in the PR #4398 format. The
-      #       post-release branch is main-based and does not carry this script,
-      #       so restore it from RUNNER_TEMP first. It renders the Model Spec
-      #       Release Updates table from this branch's prod (new) vs origin/main
-      #       (old). CI Job Links need TMP_VCANKOVIC_SHIELD_CRANE_PAT (tt-shield read access);
-      #       when it is absent or lacks access they render as UNKNOWN. -----
+      #       (post-release branch -> main) in the PR #4398 format.
       - name: "Post-release: open draft PR -> main"
         env:
           GH_TOKEN: ${{ github.token }}
