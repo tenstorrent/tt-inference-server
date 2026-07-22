@@ -225,7 +225,7 @@ TEST_F(DynamoRoutingBigIslTest, BigIsl_RoutesPrefillThenDecode) {
   ChatResponse resp = client->sendChat(messages, /*maxTokens=*/8);
 
   ASSERT_TRUE(resp.ok()) << "frontend returned error: statusCode="
-                        << resp.statusCode << " error=" << resp.error;
+                         << resp.statusCode << " error=" << resp.error;
 
   // (4) Decode responded successfully — frontend closed the SSE stream with a
   // usage block reporting a positive completion count.
@@ -255,8 +255,9 @@ TEST_F(DynamoRoutingBigIslTest, BigIsl_RoutesPrefillThenDecode) {
       [&] { return findSlotReservationRequest(readFile(decodeLog), *taskId); },
       K_LOG_ASSERTION_TIMEOUT_SEC, K_LOG_POLL_INTERVAL_MS))
       << "decode worker never logged 'Slot reservation request taskId="
-      << *taskId << "' — slot reservation RPC did not reach decode (log="
-      << decodeLog << ")";
+      << *taskId
+      << "' — slot reservation RPC did not reach decode (log=" << decodeLog
+      << ")";
   std::cout << "[test] decode saw slot reservation request for taskId="
             << *taskId << std::endl;
 
@@ -269,8 +270,9 @@ TEST_F(DynamoRoutingBigIslTest, BigIsl_RoutesPrefillThenDecode) {
       },
       K_LOG_ASSERTION_TIMEOUT_SEC, K_LOG_POLL_INTERVAL_MS))
       << "prefill worker never logged 'Slot reservation granted taskId="
-      << *taskId << " slotId=…' — slot reservation was not granted (log="
-      << prefillLog << ")";
+      << *taskId
+      << " slotId=…' — slot reservation was not granted (log=" << prefillLog
+      << ")";
   EXPECT_NE(*slotId, K_INVALID_SLOT_ID)
       << "slot reservation was granted but with INVALID_SLOT_ID for taskId="
       << *taskId;

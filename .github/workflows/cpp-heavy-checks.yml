@@ -1336,30 +1336,12 @@ jobs:
             }
           done
 
-      - name: Enable core dumps
-        working-directory: .
-        run: |
-          sudo mkdir -p /tmp/cores
-          sudo chmod 1777 /tmp/cores
-          # Ubuntu-latest's default core_pattern pipes to apport; override so
-          # cores land as files we can grep for.
-          echo '/tmp/cores/core.%e.%p.%t' | sudo tee /proc/sys/kernel/core_pattern
-          sudo sysctl -w kernel.core_uses_pid=1
-          # apport may still intercept; stop it just in case.
-          sudo systemctl stop apport.service 2>/dev/null || true
-          # Package indexes on ubuntu-latest runners are often stale/empty until
-          # update; without it apt reports "gdb has no installation candidate".
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends gdb
-          gdb --version | head -1
-
       # Startup order: decode first (listens on the inter-server socket),
       # then prefill (dials it), then the Dynamo frontend. Each worker gets its
       # own TT_* IPC queue namespace so the mock_pipeline backends don't share
       # shared-memory segments.
       - name: Start decode worker (LLM_MODE=decode DYNAMO_ROUTING=1, port 8001)
         run: |
-          ulimit -c unlimited
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8001 --port 9500 --label "Dynamo-routing decode"
           cd cpp_server/build
           NS=dyn_route_decode
@@ -1391,7 +1373,6 @@ jobs:
 
       - name: Start prefill worker (LLM_MODE=prefill DYNAMO_ROUTING=1, port 8002)
         run: |
-          ulimit -c unlimited
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8002 --label "Dynamo-routing prefill"
           cd cpp_server/build
           NS=dyn_route_prefill
@@ -1504,41 +1485,6 @@ jobs:
             echo ""
           done
 
-      - name: Collect core dumps + backtraces
-        if: always()
-        working-directory: .
-        run: |
-          mkdir -p tt-media-server/cores
-          shopt -s nullglob
-          cores=(/tmp/cores/core.*)
-          if [[ ${#cores[@]} -eq 0 ]]; then
-            echo "No core dumps in /tmp/cores."
-            ls -la /tmp/cores || true
-            exit 0
-          fi
-          BIN="${GITHUB_WORKSPACE}/tt-media-server/cpp_server/build/tt_media_server_cpp"
-          for c in "${cores[@]}"; do
-            base="$(basename "$c")"
-            echo "=== ${base} ==="
-            file "$c" || true
-            {
-              echo "=== core: ${c} ==="
-              echo "=== info threads ==="
-              gdb -batch -nx \
-                -ex 'set pagination off' \
-                -ex 'set print pretty on' \
-                -ex 'info threads' \
-                "${BIN}" "$c" 2>&1 || true
-              echo "=== thread apply all bt full ==="
-              gdb -batch -nx \
-                -ex 'set pagination off' \
-                -ex 'set print pretty on' \
-                -ex 'thread apply all bt full' \
-                "${BIN}" "$c" 2>&1 || true
-            } | tee "tt-media-server/cores/${base}.bt.txt"
-            cp "$c" "tt-media-server/cores/${base}"
-          done
-
       - name: Upload server logs
         if: always()
         uses: actions/upload-artifact@v6
@@ -1549,7 +1495,6 @@ jobs:
             tt-media-server/frontend.log
             tt-media-server/decode.log
             tt-media-server/prefill.log
-            tt-media-server/cores/**
           retention-days: 1
           if-no-files-found: warn
 

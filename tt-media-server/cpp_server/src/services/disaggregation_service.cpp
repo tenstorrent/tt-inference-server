@@ -691,8 +691,8 @@ void DisaggregationService::applySlotReservationAndLaunch(
   const auto request = work.request;
   auto resultCallbackShared =
       resultCallback.has_value()
-          ? std::make_shared<std::function<void(
-                const tt::sockets::PrefillResultMessage&)>>(
+          ? std::make_shared<
+                std::function<void(const tt::sockets::PrefillResultMessage&)>>(
                 std::move(*resultCallback))
           : std::shared_ptr<std::function<void(
                 const tt::sockets::PrefillResultMessage&)>>{};
@@ -760,8 +760,7 @@ void DisaggregationService::applySlotReservationAndLaunch(
               }
             });
       },
-      [taskId, streamCallback,
-       resultCallbackShared](std::string_view error) {
+      [taskId, streamCallback, resultCallbackShared](std::string_view error) {
         TT_LOG_WARN(
             "[DisaggregationService] Prefill session resolution failed after "
             "slot reservation taskId={}: {}",
