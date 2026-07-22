@@ -378,6 +378,29 @@ class TestRank0LoadImagePrompts:
         assert skip is False
         assert encode_queue.qsize() == 0
 
+    def test_rejects_image_less_request_when_runner_requires_image(self):
+        """An I2V runner (``requires_image_conditioning=True``) that receives a
+        request with no image (empty ``image_path``) — e.g. a text-only request
+        routed to the I2V endpoint — must be rejected with an enqueued error and
+        ``skip=True``, not fall through to a base request that crashes the
+        runner on the missing ``image_prompts`` field."""
+        import queue as _queue
+
+        req = _make_request(image_path="")
+        encode_queue: _queue.Queue = _queue.Queue()
+
+        prompts, skip = _rank0_load_image_prompts(
+            req, encode_queue, requires_image=True
+        )
+
+        assert prompts == []
+        assert skip is True
+        assert encode_queue.qsize() == 1
+        job = encode_queue.get_nowait()
+        assert job.task_id == req.task_id
+        assert job.error is not None
+        assert "no image conditioning" in job.error
+
     def test_returns_none_false_when_raw_req_is_none(self):
         """Shutdown iteration: rank 0 read None from input ring. The helper
         must not touch the queue or attempt any I/O."""
@@ -662,6 +685,7 @@ class TestRunInferenceLoop:
         mock_comm.bcast.side_effect = [(req, None, False), (None, None, False)]
 
         mock_runner = MagicMock()
+        mock_runner.requires_image_conditioning = False
         mock_frames = MagicMock()
         mock_runner.run.return_value = mock_frames
 
@@ -696,6 +720,7 @@ class TestRunInferenceLoop:
         mock_comm.bcast.side_effect = [(req, None, False), (None, None, False)]
 
         mock_runner = MagicMock()
+        mock_runner.requires_image_conditioning = False
         mock_runner.run.side_effect = RuntimeError("inference exploded")
 
         mock_input_shm = MagicMock()
