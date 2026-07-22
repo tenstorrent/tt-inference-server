@@ -22,6 +22,9 @@
                         "image_generation_time": 10
                     },
                     "model_targets": {
+                        "sdxl+n150": {
+                            "image_generation_time": 12
+                        },
                         "sdxl+galaxy": {
                             "image_generation_time": 20,
                             "num_concurrent_requests": 32
@@ -37,6 +40,9 @@
                         "image_generation_time": 14
                     },
                     "model_targets": {
+                        "sdxl+n150": {
+                            "image_generation_time": 16
+                        },
                         "sdxl+galaxy": {
                             "image_generation_time": 28,
                             "num_concurrent_requests": 32
@@ -64,6 +70,11 @@
                     "description": "Param validation",
                     "targets": {
                         "same_seed_min_ssim": 0.94
+                    },
+                    "model_targets": {
+                        "sdxl+n150": {
+                            "diff_params_max_ssim": 0.985
+                        }
                     }
                 },
                 {
