@@ -213,7 +213,7 @@
             "_comment": "n150 distil-whisper: unique test list (includes StabilityTest)",
             "id": "distil-whisper-n150",
             "weights": [
-                "distil-large-v3"
+                "distil-whisper/distil-large-v3"
             ],
             "device": "n150",
             "model_marker": "distil_whisper",
@@ -251,7 +251,7 @@
             "_comment": "p150 distil-whisper (includes StabilityTest)",
             "id": "distil-whisper-p150",
             "weights": [
-                "distil-large-v3"
+                "distil-whisper/distil-large-v3"
             ],
             "device": "p150",
             "model_marker": "distil_whisper",
@@ -289,7 +289,7 @@
             "_comment": "n150 whisper: unique test list (no ParamTest, has single-device test)",
             "id": "whisper-n150",
             "weights": [
-                "whisper-large-v3"
+                "openai/whisper-large-v3"
             ],
             "device": "n150",
             "model_marker": "whisper",

@@ -77,7 +77,7 @@ def get_llm_eval_tasks(model_spec, runtime_config=None) -> List:
     """
     from evals.eval_config import EVAL_CONFIGS
 
-    eval_config = EVAL_CONFIGS.get(model_spec.model_name)
+    eval_config = EVAL_CONFIGS.get(model_spec.hf_model_repo)
     if eval_config is None or not eval_config.tasks:
         logger.info("No EVAL_CONFIGS entry / tasks for model=%s", model_spec.model_name)
         return []

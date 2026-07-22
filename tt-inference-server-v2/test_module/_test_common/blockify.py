@@ -40,7 +40,11 @@ def sweep_envelope(ctx: "MediaContext") -> Dict[str, Any]:
     model_id = getattr(spec, "model_id", None)
     generated_at = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
     envelope: Dict[str, Any] = {
-        "model_name": getattr(spec, "model_name", ""),
+        # Report identity is the full HF repo id (e.g.
+        # "meta-llama/Llama-3.1-8B-Instruct"). ModelSpec.model_name (basename)
+        # stays the path/volume token; report filenames slugify the "/".
+        "model_name": getattr(spec, "hf_model_repo", "")
+        or getattr(spec, "model_name", ""),
         "device": ctx.device.name,
         "generated_at": generated_at,
     }

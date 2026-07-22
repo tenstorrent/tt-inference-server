@@ -197,12 +197,17 @@ def build_summary_schema(schemas: Sequence[ReportSchema]) -> Optional[ReportSche
     sections = [aggregate_to_block(aggregate) for aggregate in aggregates]
     first = aggregates[0]
     generated_at = _latest_generated_at(schemas)
+    # ``aggregate.model`` is the full HF repo id (e.g.
+    # "meta-llama/Llama-3.1-8B-Instruct"), which is the report identity used
+    # everywhere. report_id slugifies the "/" so the filename stays safe.
+    model_repo = first.model
     report_id = (
-        f"summary_{_slug(first.model)}_{_slug(first.device)}"
+        f"summary_{_slug(model_repo)}_{_slug(first.device)}"
         f"_{_compact_timestamp(generated_at)}"
     )
     metadata = {
-        "model_name": first.model,
+        "model_name": model_repo,
+        "model_repo": model_repo,
         "device": first.device,
         "generated_at": generated_at,
         "report_id": report_id,

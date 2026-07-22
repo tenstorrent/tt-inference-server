@@ -5,7 +5,7 @@ Supported weights variants for this model implementation are:
 - `Qwen-Image`: [Qwen/Qwen-Image](https://huggingface.co/Qwen/Qwen-Image) **(default)** 
 - `Qwen-Image-2512`: [Qwen/Qwen-Image-2512](https://huggingface.co/Qwen/Qwen-Image-2512)
 
-To use non-default weights, replace `Qwen-Image` in commands below.
+To use non-default weights, replace `Qwen/Qwen-Image` in commands below.
 
 #### Useful links
 
@@ -26,7 +26,7 @@ This model is supported by [tt-media-server](../../../tt-media-server/README.md)
 **via run.py command**
 
 ```bash
-python3 run.py --model Qwen-Image --device galaxy --workflow server --docker-server
+python3 run.py --model Qwen/Qwen-Image --device galaxy --workflow server --docker-server
 ```
 For details on the run.py command, see the [run.py CLI Options](../../workflows_user_guide.md#runpy-cli-options) section of the User Guide.
 

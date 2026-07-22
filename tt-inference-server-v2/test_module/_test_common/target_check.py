@@ -100,29 +100,33 @@ def _load_reference() -> Dict[str, Any]:
 
 
 def get_performance_targets(
-    model_name: str, device_str: Optional[str]
+    hf_model_repo: str, device_str: Optional[str]
 ) -> PerformanceTargets:
-    """Look up performance targets for ``model_name`` on ``device_str``.
+    """Look up performance targets for ``hf_model_repo`` on ``device_str``.
+
+    ``hf_model_repo`` is the full HF repo id (e.g.
+    ``"meta-llama/Llama-3.1-8B-Instruct"``), matching the keys in
+    ``model_performance_reference.json``.
 
     Returns an empty ``PerformanceTargets`` (all ``None``) if no entry is
     found; callers handle that as ``ReportCheckTypes.NA``.
     """
     if not device_str:
         logger.warning(
-            f"No device specified for model '{model_name}'; skipping target lookup"
+            f"No device specified for model '{hf_model_repo}'; skipping target lookup"
         )
         return PerformanceTargets()
     device_key = device_str.lower()
     reference = _load_reference()
-    model_data = reference.get(model_name, {})
+    model_data = reference.get(hf_model_repo, {})
     device_list = model_data.get(device_key, [])
     if device_list:
         logger.info(
-            f"Found performance targets for model '{model_name}' on device '{device_key}'"
+            f"Found performance targets for model '{hf_model_repo}' on device '{device_key}'"
         )
         return PerformanceTargets.from_device_config(device_list[0])
     logger.warning(
-        f"No performance targets found for model '{model_name}' on device '{device_key}'"
+        f"No performance targets found for model '{hf_model_repo}' on device '{device_key}'"
     )
     return PerformanceTargets()
 
@@ -146,7 +150,7 @@ class MetricSpec:
 
 def load_targets(ctx: "MediaContext") -> PerformanceTargets:
     device_str = ctx.model_spec.cli_args.get("device")
-    targets = get_performance_targets(ctx.model_spec.model_name, device_str)
+    targets = get_performance_targets(ctx.model_spec.hf_model_repo, device_str)
     logger.info(f"Performance targets: {targets}")
     return targets
 

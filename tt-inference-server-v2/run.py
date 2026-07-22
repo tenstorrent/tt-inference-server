@@ -104,7 +104,13 @@ class WorkflowRunner:
 def parse_args() -> argparse.Namespace:
     from workflow_module import WORKFLOW_REGISTRY
 
-    valid_models = sorted({spec.model_name for spec in MODEL_SPECS.values()})
+    # Canonical --model value is the full HF repo id; the basename is still
+    # accepted for backwards compatibility (resolution dual-accepts both).
+    full_repo_models = sorted({spec.hf_model_repo for spec in MODEL_SPECS.values()})
+    valid_models = sorted(
+        {spec.hf_model_repo for spec in MODEL_SPECS.values()}
+        | {spec.model_name for spec in MODEL_SPECS.values()}
+    )
     valid_devices = sorted({d.name.lower() for d in DeviceTypes})
     valid_workflows = sorted(WORKFLOW_REGISTRY)
 
@@ -114,10 +120,10 @@ def parse_args() -> argparse.Namespace:
             "against an already-running inference server. For full server "
             "bring-up + workflow runs, invoke through v1 /run.py instead."
         ),
-        epilog="Available models:\n  " + "\n  ".join(valid_models),
+        epilog="Available models:\n  " + "\n  ".join(full_repo_models),
         formatter_class=argparse.RawTextHelpFormatter,
     )
-    parser.add_argument("--model", required=True, choices=valid_models)
+    parser.add_argument("--model", required=True, choices=valid_models, metavar="MODEL")
     parser.add_argument("--workflow", required=True, choices=valid_workflows)
     parser.add_argument("--device", required=True, choices=valid_devices)
     parser.add_argument("--service-port", type=int, default=8000)

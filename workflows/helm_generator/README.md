@@ -77,7 +77,7 @@ python -m workflows.helm_generator
 python -m workflows.helm_generator --dry-run
 
 # Regenerate just one model or device
-python -m workflows.helm_generator --model Qwen3-32B --device galaxy
+python -m workflows.helm_generator --model Qwen/Qwen3-32B --device galaxy
 python -m workflows.helm_generator --engine media
 ```
 

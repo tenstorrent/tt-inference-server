@@ -29,14 +29,14 @@ docker run \
   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
   --volume volume_id_Qwen3-32B:/home/container_app_user/cache_root \
   ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.11.1-bac8b34-7c6685a \
-  --model Qwen3-32B \
+  --model Qwen/Qwen3-32B \
   --tt-device galaxy
 ```
 
 **via run.py command**
 
 ```bash
-python3 run.py --model Qwen3-32B --device galaxy --workflow server --docker-server
+python3 run.py --model Qwen/Qwen3-32B --device galaxy --workflow server --docker-server
 ```
 For details on the run.py command, see the [run.py CLI Options](../../workflows_user_guide.md#runpy-cli-options) section of the User Guide.
 
@@ -70,14 +70,14 @@ docker run \
   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
   --volume volume_id_Qwen3-32B:/home/container_app_user/cache_root \
   ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-e95ffa5-48eba14 \
-  --model Qwen3-32B \
+  --model Qwen/Qwen3-32B \
   --tt-device galaxy_t3k
 ```
 
 **via run.py command**
 
 ```bash
-python3 run.py --model Qwen3-32B --device galaxy_t3k --workflow server --docker-server
+python3 run.py --model Qwen/Qwen3-32B --device galaxy_t3k --workflow server --docker-server
 ```
 
 ### Model Parameters

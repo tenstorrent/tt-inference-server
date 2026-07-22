@@ -19,16 +19,16 @@ All tools use the same CLI pattern:
 
 ```bash
 # vLLM (default)
-python run.py --model gemma-3-4b-it --device n300 --workflow benchmarks --docker-server
+python run.py --model google/gemma-3-4b-it --device n300 --workflow benchmarks --docker-server
 
 # GenAI-Perf
-python run.py --model gemma-3-4b-it --device n300 --workflow benchmarks --docker-server --tools genai
+python run.py --model google/gemma-3-4b-it --device n300 --workflow benchmarks --docker-server --tools genai
 
 # AIPerf
-python run.py --model gemma-3-4b-it --device n300 --workflow benchmarks --docker-server --tools aiperf
+python run.py --model google/gemma-3-4b-it --device n300 --workflow benchmarks --docker-server --tools aiperf
 
 # GuideLLM
-python run.py --model gemma-3-4b-it --device n300 --workflow benchmarks --docker-server --tools guidellm
+python run.py --model google/gemma-3-4b-it --device n300 --workflow benchmarks --docker-server --tools guidellm
 ```
 
 ## Tool Comparison
@@ -253,7 +253,7 @@ AIPerf also generates detailed raw output in `.workflow_venvs/.venv_benchmarks_a
 Run the reports workflow to generate unified summary tables:
 
 ```bash
-python run.py --model gemma-3-4b-it --device n300 --workflow reports
+python run.py --model google/gemma-3-4b-it --device n300 --workflow reports
 ```
 
 ### Report Structure
@@ -289,7 +289,7 @@ orchestrator against an already-running vLLM-compatible server:
 ```bash
 # CI smoke (~12 runs)
 python tt-inference-server-v2/run.py \
-  --model Llama-3.1-8B-Instruct \
+  --model meta-llama/Llama-3.1-8B-Instruct \
   --workflow benchmarks \
   --device gpu \
   --service-port 8000 \
@@ -299,7 +299,7 @@ python tt-inference-server-v2/run.py \
 
 # Full validation sweep
 python tt-inference-server-v2/run.py \
-  --model Llama-3.1-8B-Instruct \
+  --model meta-llama/Llama-3.1-8B-Instruct \
   --workflow benchmarks \
   --device gpu \
   --service-port 8000 \
@@ -337,11 +337,11 @@ Limit benchmark runs to 2 configurations for quick validation:
 
 ```bash
 # Works for vLLM (default) and AIPerf
-python run.py --model gemma-3-4b-it --device n300 --workflow benchmarks \
+python run.py --model google/gemma-3-4b-it --device n300 --workflow benchmarks \
   --docker-server --tools aiperf --limit-samples-mode smoke-test
 
 # Works for GenAI-Perf
-python run.py --model gemma-3-4b-it --device n300 --workflow benchmarks \
+python run.py --model google/gemma-3-4b-it --device n300 --workflow benchmarks \
   --docker-server --tools genai --limit-samples-mode smoke-test
 ```
 
@@ -445,7 +445,7 @@ vLLM automatically switches to `openai-chat` for image requests because it uses 
 ### Step 1: Run vLLM Benchmarks (baseline)
 
 ```bash
-python run.py --model gemma-3-4b-it --device n300 --workflow benchmarks --docker-server
+python run.py --model google/gemma-3-4b-it --device n300 --workflow benchmarks --docker-server
 ```
 
 **Output:**
@@ -456,7 +456,7 @@ python run.py --model gemma-3-4b-it --device n300 --workflow benchmarks --docker
 ### Step 2: Run AIPerf Benchmarks
 
 ```bash
-python run.py --model gemma-3-4b-it --device n300 --workflow benchmarks --tools aiperf
+python run.py --model google/gemma-3-4b-it --device n300 --workflow benchmarks --tools aiperf
 ```
 
 **Note:** Server already running from Step 1, so omit `--docker-server`.
@@ -470,7 +470,7 @@ python run.py --model gemma-3-4b-it --device n300 --workflow benchmarks --tools 
 ### Step 3: Run GenAI-Perf Benchmarks
 
 ```bash
-python run.py --model gemma-3-4b-it --device n300 --workflow benchmarks --tools genai
+python run.py --model google/gemma-3-4b-it --device n300 --workflow benchmarks --tools genai
 ```
 
 **Output:**
@@ -480,7 +480,7 @@ python run.py --model gemma-3-4b-it --device n300 --workflow benchmarks --tools 
 ### Step 4: Generate Unified Report
 
 ```bash
-python run.py --model gemma-3-4b-it --device n300 --workflow reports
+python run.py --model google/gemma-3-4b-it --device n300 --workflow reports
 ```
 
 **Output:**
@@ -525,7 +525,7 @@ Skip sweep and only run configurations with defined targets:
 
 ```bash
 export ONLY_BENCHMARK_TARGETS=1
-python run.py --model gemma-3-4b-it --device n300 --workflow benchmarks
+python run.py --model google/gemma-3-4b-it --device n300 --workflow benchmarks
 ```
 
 ### Override Benchmark Parameters
@@ -534,7 +534,7 @@ Use custom benchmark configurations:
 
 ```bash
 export OVERRIDE_BENCHMARK_TARGETS=/path/to/custom_benchmarks.json
-python run.py --model gemma-3-4b-it --device n300 --workflow benchmarks
+python run.py --model google/gemma-3-4b-it --device n300 --workflow benchmarks
 ```
 
 Example `custom_benchmarks.json`:
@@ -592,7 +592,7 @@ If vLLM server is already running and healthy:
 
 ```bash
 # Skip --docker-server to run benchmarks only
-python run.py --model gemma-3-4b-it --device n300 --workflow benchmarks --tools aiperf
+python run.py --model google/gemma-3-4b-it --device n300 --workflow benchmarks --tools aiperf
 ```
 
 ### Quick Smoke Test
@@ -600,7 +600,7 @@ python run.py --model gemma-3-4b-it --device n300 --workflow benchmarks --tools 
 Run only 2 benchmarks for rapid validation:
 
 ```bash
-python run.py --model gemma-3-4b-it --device n300 --workflow benchmarks \
+python run.py --model google/gemma-3-4b-it --device n300 --workflow benchmarks \
   --docker-server --tools aiperf --limit-samples-mode smoke-test
 ```
 

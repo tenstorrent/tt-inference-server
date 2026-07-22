@@ -56,7 +56,7 @@ def filter_models(device_str, evals_only):
             continue
 
         # Filter by evals availability if requested
-        if evals_only and model_spec.model_name not in EVAL_CONFIGS:
+        if evals_only and model_spec.hf_model_repo not in EVAL_CONFIGS:
             continue
 
         filtered_models.append(model_spec)
@@ -74,7 +74,7 @@ def run_release_workflow(model_spec, device_str, passthrough_args):
         sys.executable,
         str(run_py),
         "--model",
-        model_spec.model_name,
+        model_spec.hf_model_repo,
         "--device",
         device_str,
         "--workflow",

@@ -83,20 +83,30 @@ def parse_arguments():
     valid_devices = {device.name.lower() for device in DeviceTypes}
     valid_engines = {engine.to_string() for engine in InferenceEngine}
 
-    # Build valid models set, including full HF repo names for whisper models
+    # Build valid models set. The canonical model identifier is the full HF
+    # repo id (e.g. "meta-llama/Llama-3.1-8B-Instruct"); the bare basename
+    # (e.g. "Llama-3.1-8B-Instruct") is still accepted for backwards
+    # compatibility. Only full repo ids are listed as "Available models".
+    full_repo_models = set()
     valid_models = set()
     for _, config in MODEL_SPECS.items():
+        full_repo_models.add(config.hf_model_repo)
+        valid_models.add(config.hf_model_repo)
         valid_models.add(config.model_name)
 
     valid_impls = {config.impl.impl_name for _, config in MODEL_SPECS.items()}
     # required
     parser = argparse.ArgumentParser(
         description="A CLI for running workflows with optional docker, device, and workflow-args.",
-        epilog="\nAvailable models:\n  " + "\n  ".join(valid_models),
+        epilog="\nAvailable models:\n  " + "\n  ".join(sorted(full_repo_models)),
         formatter_class=argparse.RawTextHelpFormatter,
     )
     parser.add_argument(
-        "--model", required=True, choices=valid_models, help="Model to run"
+        "--model",
+        required=True,
+        choices=valid_models,
+        metavar="MODEL",
+        help="Model to run (full HF repo id, e.g. meta-llama/Llama-3.1-8B-Instruct)",
     )
     parser.add_argument(
         "--workflow",

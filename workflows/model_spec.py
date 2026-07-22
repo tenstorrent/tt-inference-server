@@ -97,10 +97,11 @@ model_performance_reference = read_performance_reference_json()
 
 
 def get_perf_reference_map(
-    model_name: str, perf_targets_map: Dict[str, float]
+    hf_model_repo: str, perf_targets_map: Dict[str, float]
 ) -> Dict[DeviceTypes, List[BenchmarkTaskParams]]:
     perf_reference_map: Dict[DeviceTypes, List[BenchmarkTaskParams]] = {}
-    model_data = model_performance_reference.get(model_name, {})
+    # Keyed by full HF repo id (e.g. "meta-llama/Llama-3.1-8B-Instruct").
+    model_data = model_performance_reference.get(hf_model_repo, {})
 
     for device_str, benchmarks in model_data.items():
         device_type = DeviceTypes.from_string(device_str)
@@ -979,10 +980,12 @@ class ModelSpecTemplate:
         """Expand this template into individual ModelSpec instances."""
         specs = []
 
-        # Generate performance reference map
-        main_model_name = model_weights_to_model_name(self.weights[0])
+        # Generate performance reference map. The perf reference JSON is keyed
+        # by the full HF repo id (e.g. "meta-llama/Llama-3.1-8B-Instruct"), so
+        # pass the weight repo directly rather than its basename.
+        main_hf_model_repo = self.weights[0]
         perf_reference_map = get_perf_reference_map(
-            main_model_name, self.perf_targets_map
+            main_hf_model_repo, self.perf_targets_map
         )
 
         for weight in self.weights:
@@ -1297,7 +1300,8 @@ def get_runtime_model_spec(
     candidate_specs = [
         spec
         for spec in MODEL_SPECS.values()
-        if spec.model_name == model
+        # Accept either the full HF repo id or the bare basename.
+        if model in (spec.model_name, spec.hf_model_repo)
         and spec.device_type == device_type
         and (not engine or spec.inference_engine == engine)
         and (not impl or spec.impl.impl_name == impl)
