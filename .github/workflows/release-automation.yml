@@ -49,9 +49,6 @@ on:
         required: false
         default: "-test"
         type: string
-  push:
-    branches:
-      - test-release-automation-for-v0180
 
 # The pipeline commits generated files + a tag to the branch and opens a draft PR.
 permissions:
