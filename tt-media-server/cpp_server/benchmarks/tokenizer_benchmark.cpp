@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "config/settings.hpp"
+#include "support/approx_token_prompt.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 
 using namespace tt::utils::tokenizers;
@@ -22,72 +23,6 @@ struct BenchmarkResult {
   double per_token_us;
   double throughput_tokens_per_sec;
 };
-
-std::string generateTextWithTokens(size_t targetTokens) {
-  std::string text;
-  text.reserve(targetTokens * 5);
-
-  std::vector<std::string> words = {"The",
-                                    "quick",
-                                    "brown",
-                                    "fox",
-                                    "jumps",
-                                    "over",
-                                    "the",
-                                    "lazy",
-                                    "dog",
-                                    "In",
-                                    "a",
-                                    "world",
-                                    "where",
-                                    "technology",
-                                    "advances",
-                                    "rapidly",
-                                    "machine",
-                                    "learning",
-                                    "and",
-                                    "artificial",
-                                    "intelligence",
-                                    "are",
-                                    "transforming",
-                                    "industries",
-                                    "across",
-                                    "the",
-                                    "globe",
-                                    "from",
-                                    "healthcare",
-                                    "to",
-                                    "finance",
-                                    "education",
-                                    "and",
-                                    "entertainment",
-                                    "These",
-                                    "innovations",
-                                    "enable",
-                                    "computers",
-                                    "to",
-                                    "learn",
-                                    "patterns",
-                                    "make",
-                                    "predictions",
-                                    "and",
-                                    "solve",
-                                    "complex",
-                                    "problems",
-                                    "at",
-                                    "scale"};
-
-  size_t wordIdx = 0;
-  while (text.length() < targetTokens * 5) {
-    if (!text.empty()) {
-      text += " ";
-    }
-    text += words[wordIdx % words.size()];
-    wordIdx++;
-  }
-
-  return text;
-}
 
 BenchmarkResult benchmarkEncode(const Tokenizer& tokenizer,
                                 const std::string& text) {
@@ -191,7 +126,7 @@ int main(int argc, char* argv[]) {
   printHeader(std::cout, "TOKENIZATION (text -> tokens)");
 
   for (size_t target : encodeTargets) {
-    std::string text = generateTextWithTokens(target);
+    std::string text = tt::test::generatePromptWithApproxTokens(target);
     BenchmarkResult result = benchmarkEncode(*tokenizer, text);
     printResult(std::cout, result);
   }

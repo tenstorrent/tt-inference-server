@@ -8,13 +8,6 @@
 // decode worker (LLM_MODE=decode DYNAMO_ROUTING=1) sharing an etcd store. The
 // `dynamo-routing-e2e` job in cpp-heavy-checks.yml sets that stack up.
 //
-// Env inputs (also see dynamo_test_helpers.hpp::DynamoConfig::fromEnv):
-//   DYNAMO_HOST   (default: docker gateway or 127.0.0.1)
-//   DYNAMO_PORT   (default: 8080; the CI job sets 8000)
-//   DYNAMO_MODEL  (default: tt-cpp-server; the CI job sets DeepSeek-R1-0528)
-//   PREFILL_LOG   absolute path to the prefill worker's stdout+stderr log
-//   DECODE_LOG    absolute path to the decode worker's stdout+stderr log
-//
 // The test sends a ~2000-word big-ISL prompt through the frontend and verifies
 // the four routing invariants for prefill-first disaggregation:
 //
@@ -58,39 +51,18 @@
 #include <vector>
 
 #include "dynamo_test_helpers.hpp"
+#include "support/approx_token_prompt.hpp"
 
 namespace {
 
 using namespace tt::test::dynamo;
 
-// uint32 max — the sentinel that means "no slot"
-// (see cpp_server/include/domain/sentinel_values.hpp).
 constexpr uint32_t K_INVALID_SLOT_ID = std::numeric_limits<uint32_t>::max();
 
-// ~2000 short-word tokens. Well past any reasonable prefill-vs-decode routing
-// threshold the frontend might apply.
 constexpr int K_BIG_ISL_WORD_COUNT = 2000;
 
-// Poll worker logs up to this long looking for the required markers. Worker
-// log writes are buffered so the SSE stream can close before the last line
-// hits disk.
 constexpr int K_LOG_ASSERTION_TIMEOUT_SEC = 30;
 constexpr int K_LOG_POLL_INTERVAL_MS = 500;
-
-std::string generateBigIslPrompt(int targetTokens) {
-  // Simple single-token words repeated. Matches the pattern used by
-  // disaggregated_e2e_test.cpp's generatePromptWithApproxTokens — actual token
-  // count is close to targetTokens once the chat template is applied.
-  const std::vector<std::string> words = {"hello", "world", "test", "data",
-                                          "check"};
-  std::string out;
-  out.reserve(static_cast<size_t>(targetTokens) * 7);
-  for (int i = 0; i < targetTokens; ++i) {
-    out += words[i % words.size()];
-    out += ' ';
-  }
-  return out;
-}
 
 std::string readFile(const std::string& path) {
   std::ifstream in(path);
@@ -109,13 +81,13 @@ std::optional<uint32_t> findPrefillFirstTaskId(const std::string& log) {
 }
 
 bool findSlotReservationRequest(const std::string& log, uint32_t taskId) {
-  const std::string needle =
+  const std::string match =
       "[DisaggregationService] Slot reservation request taskId=" +
       std::to_string(taskId);
   // Anchor at a word boundary (space) so taskId=1 doesn't accidentally match
   // taskId=10.
-  return log.find(needle + " ") != std::string::npos ||
-         log.find(needle + "\n") != std::string::npos;
+  return log.find(match + " ") != std::string::npos ||
+         log.find(match + "\n") != std::string::npos;
 }
 
 std::optional<uint32_t> findSlotReservationGranted(const std::string& log,
@@ -129,18 +101,6 @@ std::optional<uint32_t> findSlotReservationGranted(const std::string& log,
   return static_cast<uint32_t>(std::stoul(m[1].str()));
 }
 
-// Match "[DynamoRequestHandler] Released decode session taskId=<T>
-// sessionId=<S>" and return (decodeTaskId, sessionId). The log line is emitted
-// by the isFinal branch of the DYNAMO_ROUTING=1 decode path once
-// SessionManager::releaseInFlight has moved the session IN_FLIGHT → IDLE.
-//
-// Note: the taskId in this log is the DECODE worker's task_id, generated
-// locally by TaskIDGenerator on the decode side — it is NOT the same value as
-// the prefill worker's task_id from the "Prefill-first slot reservation" line
-// (each worker's TaskIDGenerator counts independently). So we don't correlate
-// by taskId here — we rely on the fact that only DYNAMO_ROUTING=1 decode
-// requests with a prefill_result exercise this path, and this test only sends
-// one such request.
 struct DecodeSessionReleaseLog {
   uint32_t decodeTaskId = 0;
   std::string sessionId;
@@ -158,8 +118,7 @@ std::optional<DecodeSessionReleaseLog> findDecodeSessionReleased(
   return out;
 }
 
-// Poll `predicate` (returning true on success) up to timeoutSec. Sleeps
-// intervalMs between attempts.
+
 template <typename F>
 bool waitFor(F predicate, int timeoutSec, int intervalMs) {
   const auto deadline =
@@ -219,7 +178,8 @@ std::string DynamoRoutingBigIslTest::decodeLog;
 // ---------------------------------------------------------------------------
 
 TEST_F(DynamoRoutingBigIslTest, BigIsl_RoutesPrefillThenDecode) {
-  const std::string prompt = generateBigIslPrompt(K_BIG_ISL_WORD_COUNT);
+  const std::string prompt =
+      tt::test::generatePromptWithApproxTokens(K_BIG_ISL_WORD_COUNT);
 
   std::vector<Json::Value> messages = {makeMessage("user", prompt)};
   ChatResponse resp = client->sendChat(messages, /*maxTokens=*/8);
