@@ -70,10 +70,14 @@ WORKER_BIN=""
 # The KV tables the real worker migrates (see migration_deploy.conf). Required.
 PREFILL_TABLE="${PREFILL_TABLE:-}"
 DECODE_TABLE="${DECODE_TABLE:-}"
-# OPTIONAL directory of per-host FabricNode->UMD chip maps; each worker reads
-# <DEVICE_MAP_DIR>/<tag>.devmap (host-specific, so prefill/each decode differ).
-# Unset => discovery-only e2e (transfer plane needs it; discovery does not).
+# OPTIONAL directory of per-host FabricNode->UMD chip maps
+# (<DEVICE_MAP_DIR>/<tag>.devmap). Unset => discovery-only e2e.
 DEVICE_MAP_DIR="${DEVICE_MAP_DIR:-}"
+# When DEVICE_MAP_DIR is set, deploy pushes each map over localhost
+# (engine_handoff_sender → --engine-handoff-port) after the worker starts with
+# its .pb file. 0 disables the socket path and passes --device-map as a file.
+ENGINE_HANDOFF_PORT="${ENGINE_HANDOFF_PORT:-}"
+HANDOFF_SENDER_BIN="${HANDOFF_SENDER_BIN:-}"
 # Optional table host tags (fabric_node_host), aligned with the host CSVs.
 # Empty => default to logical prefill-<i> / decode-<i>.
 PREFILL_TAGS="${PREFILL_TAGS:-}"
@@ -135,15 +139,20 @@ fabric_node_host, not on the CLI):
   --prefill-table PATH     prefill source table (.pb)
   --decode-table PATH      cluster decode table (.pb), shared by all decodes
   --device-map-dir DIR     OPTIONAL dir of per-host <tag>.devmap files ('mesh
-                           chip umd' per line); each worker reads its own
-                           <tag>.devmap. Omit for discovery-only e2e (workers
-                           register + are discoverable but cannot move KV)
+                           chip umd' per line). With --engine-handoff-port
+                           (default 18700 when this dir is set), deploy pushes
+                           each map over localhost after the worker loads its
+                           .pb; set --engine-handoff-port 0 for legacy
+                           --device-map file mode. Omit dir for discovery-only
   --prefill-tags CSV       table host tags per prefill host (default prefill-<i>)
   --decode-tags CSV        table host tags per decode host (default decode-<i>)
 
 Options:
   --build-dir PATH         cpp_server build dir (default ${BUILD_DIR})
   --worker-bin PATH        worker binary (default <build-dir>/mooncake_kv_migration_worker)
+  --handoff-sender PATH    engine_handoff_sender (default <build-dir>/engine_handoff_sender)
+  --engine-handoff-port N  DeviceMap socket port (default 18700 if
+                           --device-map-dir set; 0 = file --device-map)
   --container NAME          workers run inside this container (docker-exec
                            --worker-bin wrapper); sweep/teardown kill via
                            'docker exec NAME pkill'. Omit for host-side pkill
@@ -199,6 +208,8 @@ parseArgs() {
       --device-map-dir) DEVICE_MAP_DIR="$2"; shift 2 ;;
       --prefill-tags) PREFILL_TAGS="$2"; shift 2 ;;
       --decode-tags) DECODE_TAGS="$2"; shift 2 ;;
+      --handoff-sender) HANDOFF_SENDER_BIN="$2"; shift 2 ;;
+      --engine-handoff-port) ENGINE_HANDOFF_PORT="$2"; shift 2 ;;
       --discovery-port) DISCOVERY_PORT="$2"; shift 2 ;;
       --health-port) HEALTH_PORT="$2"; shift 2 ;;
       --control-port) CONTROL_PORT="$2"; shift 2 ;;
@@ -222,6 +233,7 @@ validateArgs() {
   [[ -n "${DECODE_HOSTS}" ]] || die "--decode-hosts is required"
   [[ "${HEALTH_PORT}" != "0" ]] || die "--health-port is required (the watchdog probes it)"
   [[ -z "${WORKER_BIN}" ]] && WORKER_BIN="${BUILD_DIR}/mooncake_kv_migration_worker"
+  [[ -z "${HANDOFF_SENDER_BIN}" ]] && HANDOFF_SENDER_BIN="${BUILD_DIR}/engine_handoff_sender"
   [[ -n "${PREFILL_TABLE}" ]] || die "--prefill-table (or PREFILL_TABLE in config) is required"
   [[ -n "${DECODE_TABLE}" ]] || die "--decode-table (or DECODE_TABLE in config) is required"
   # Tables live on the NFS-shared path, so a local check on the lead is enough.
@@ -230,8 +242,19 @@ validateArgs() {
   # Device maps are OPTIONAL: unset => discovery-only e2e (no transfer). When set
   # it's a real transfer run, so the dir must exist and every worker's own
   # <tag>.devmap is checked in addWorkerSlot (fail-fast before any launch).
+  # Default: push maps over localhost (ENGINE_HANDOFF_PORT=18700). Set to 0 for
+  # legacy --device-map file mode.
   if [[ -n "${DEVICE_MAP_DIR}" ]]; then
     [[ -d "${DEVICE_MAP_DIR}" ]] || die "device map dir not found: ${DEVICE_MAP_DIR}"
+    if [[ -z "${ENGINE_HANDOFF_PORT}" ]]; then
+      ENGINE_HANDOFF_PORT=18700
+    fi
+    if [[ "${ENGINE_HANDOFF_PORT}" != "0" ]]; then
+      [[ -x "${HANDOFF_SENDER_BIN}" || -f "${HANDOFF_SENDER_BIN}" ]] || \
+        die "engine_handoff_sender not found: ${HANDOFF_SENDER_BIN}"
+    fi
+  else
+    ENGINE_HANDOFF_PORT=0
   fi
   command -v curl >/dev/null 2>&1 || die "curl not found; needed for health/readiness probes"
   command -v python3 >/dev/null 2>&1 || die "python3 not found; needed to probe the discovery service"
@@ -462,16 +485,53 @@ initWorkerSlots() {
 workerCmd() {
   local s="$1" role="${WK_ROLE[$s]}" tag="${WK_TAG[$s]}" devmap="${WK_DEVMAP[$s]}"
   local peers="${WK_PEERS[$s]}"
-  # DEVICE_MAP only when this slot resolved one (transfer runs); omitted for
-  # discovery-only so the launcher drops --device-map entirely.
+  # Socket DeviceMap: pass ENGINE_HANDOFF_PORT (deploy pushes the .devmap after
+  # start). File mode (port 0): pass DEVICE_MAP for --device-map. Discovery-only:
+  # neither.
+  local mapEnv=""
+  if [[ "${ENGINE_HANDOFF_PORT}" != "0" && -n "${devmap}" ]]; then
+    mapEnv="ENGINE_HANDOFF_PORT=${ENGINE_HANDOFF_PORT} "
+  elif [[ -n "${devmap}" ]]; then
+    mapEnv="DEVICE_MAP=${devmap} "
+  fi
   printf '%s' "WORKER_ROLE=${role} WORKER_TAG=${tag} \
 WORKER_BIN=${WORKER_BIN} METADATA=${META_URI} \
 KAFKA_BROKERS=${KAFKA_BROKERS} HEALTH_PORT=${HEALTH_PORT} \
 CONTROL_PORT=${CONTROL_PORT} \
 ${CONTAINER:+CTR=${CONTAINER} }\
 PREFILL_TABLE=${PREFILL_TABLE} DECODE_TABLE=${DECODE_TABLE} \
-${devmap:+DEVICE_MAP=${devmap} }PEERS=${peers} \
+${mapEnv}PEERS=${peers} \
 MC_TCP_BIND_ADDRESS=auto bash ${RANK_LAUNCH}"
+}
+
+# Push <tag>.devmap to the worker on 127.0.0.1:ENGINE_HANDOFF_PORT (same box).
+# Retries until the worker is listening after loading its .pb.
+pushDeviceMapSlot() {
+  local s="$1" host="${WK_HOST[$s]}" devmap="${WK_DEVMAP[$s]}"
+  local tag="${WK_TAG[$s]}"
+  [[ "${ENGINE_HANDOFF_PORT}" != "0" && -n "${devmap}" ]] || return 0
+  local sendCmd="${HANDOFF_SENDER_BIN} --host 127.0.0.1 --port ${ENGINE_HANDOFF_PORT} --device-map ${devmap}"
+  local attempt=0 maxAttempts=60
+  while (( attempt < maxAttempts )); do
+    if (( DRY_RUN )); then
+      echo "[dry-run] push DeviceMap ${tag} on ${host}: ${sendCmd}"
+      return 0
+    fi
+    if isLocalHost "${host}"; then
+      if bash -c "${sendCmd}" >/dev/null 2>&1; then
+        echo "[deploy] DeviceMap pushed to ${tag} on ${host} (port ${ENGINE_HANDOFF_PORT})"
+        return 0
+      fi
+    else
+      if ssh "${SSH_OPTS[@]}" "${host}" "${sendCmd}" >/dev/null 2>&1; then
+        echo "[deploy] DeviceMap pushed to ${tag} on ${host} (port ${ENGINE_HANDOFF_PORT})"
+        return 0
+      fi
+    fi
+    sleep 1
+    attempt=$((attempt + 1))
+  done
+  die "failed to push DeviceMap to ${tag} on ${host} after ${maxAttempts}s (is worker listening on :${ENGINE_HANDOFF_PORT}?)"
 }
 
 # (Re)launch the worker in slot $1, locally or over ssh, tracking its PID as a
@@ -493,6 +553,7 @@ launchWorkerSlot() {
   WK_PID[$s]=$!
   WK_FAILS[$s]=0
   echo "[deploy] ${role}-${index} on ${host} started (pid ${WK_PID[$s]}, log ${log})"
+  pushDeviceMapSlot "${s}"
 }
 
 launchAllWorkers() {
@@ -613,7 +674,13 @@ main() {
 
   echo "[deploy] prefill hosts=${NUM_PREFILL} decode hosts=${NUM_DECODE} kafka=${KAFKA_BROKERS}"
   echo "[deploy] tables: prefill=${PREFILL_TABLE} decode=${DECODE_TABLE}${DEVICE_MAP_DIR:+ device-map-dir=${DEVICE_MAP_DIR}}"
-  [[ -z "${DEVICE_MAP_DIR}" ]] && echo "[deploy] no device-map-dir: discovery-only (workers register + are discoverable, but cannot move KV)"
+  if [[ -z "${DEVICE_MAP_DIR}" ]]; then
+    echo "[deploy] no device-map-dir: discovery-only (workers register + are discoverable, but cannot move KV)"
+  elif [[ "${ENGINE_HANDOFF_PORT}" != "0" ]]; then
+    echo "[deploy] DeviceMap via socket handoff port=${ENGINE_HANDOFF_PORT} sender=${HANDOFF_SENDER_BIN}"
+  else
+    echo "[deploy] DeviceMap via --device-map file (ENGINE_HANDOFF_PORT=0)"
+  fi
 
   trap cleanup EXIT INT TERM
   startDiscoveryService || exit 1
@@ -624,6 +691,7 @@ main() {
     local s
     for (( s = 0; s < ${#WK_ROLE[@]}; s++ )); do
       echo "[dry-run] ${WK_HOST[$s]} (${WK_TAG[$s]}): $(workerCmd "${s}")"
+      pushDeviceMapSlot "${s}"
     done
     echo "[deploy] dry-run complete"; trap - EXIT INT TERM; exit 0
   fi

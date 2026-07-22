@@ -635,6 +635,8 @@ add_library(transport_lib
     # table + device map (FabricNode -> ASIC id) to the worker. Our own contract,
     # not the disaggregation shmem client.
     src/transport/engine_table_handoff.cpp
+    src/transport/device_map_io.cpp
+    src/transport/engine_table_resolve.cpp
     src/utils/logger.cpp
 )
 target_include_directories(transport_lib PUBLIC
@@ -749,16 +751,49 @@ if(ENABLE_KV_TABLE)
             "is OFF. Set TT_METAL_HOME to a tt-metal checkout/build (e.g. "
             "tt-llm-engine/tt-metal) so tt_metal/api is on the include path.")
     endif()
-    # tt-metal's spdlog headers (pulled in transitively by the table headers)
-    # require external fmt; a BUILT tt-metal provides both that fmt and the
-    # protobuf runtime this path links. With external fmt, spdlog::spdlog carries
-    # SPDLOG_FMT_EXTERNAL PUBLIC, so the adapter TU in transport_lib compiles
-    # against the same fmt without any extra per-target define.
+    # Prefer fmt from a built tt-metal (USE_EXTERNAL_FMT). For CI control-plane
+    # builds that only need submodule headers (no full metal build), fetch fmt
+    # so kv_table_lib / tt_stl/assert.hpp can compile. This does not change
+    # spdlog's already-configured SPDLOG_FMT_EXTERNAL; kv_table_lib links
+    # fmt::fmt privately with SPDLOG_FMT_EXTERNAL on its own TUs.
     if(NOT USE_EXTERNAL_FMT)
-        message(FATAL_ERROR
-            "ENABLE_KV_TABLE=ON requires a BUILT tt-metal that provides fmt "
-            "(USE_EXTERNAL_FMT). Build tt-metal so "
-            "${TT_METAL_HOME}/build_Release/lib/cmake/fmt exists.")
+        find_package(fmt QUIET)
+        if(NOT fmt_FOUND)
+            message(STATUS
+                "ENABLE_KV_TABLE: no built tt-metal fmt; FetchContent fmt 11.1.4")
+            FetchContent_Declare(fmt_for_kv_table
+                GIT_REPOSITORY https://github.com/fmtlib/fmt.git
+                GIT_TAG        11.1.4
+                GIT_SHALLOW    TRUE)
+            set(FMT_INSTALL OFF CACHE BOOL "" FORCE)
+            FetchContent_MakeAvailable(fmt_for_kv_table)
+        else()
+            message(STATUS "ENABLE_KV_TABLE: using system/package fmt (${fmt_VERSION})")
+        endif()
+        if(NOT TARGET fmt::fmt)
+            message(FATAL_ERROR
+                "ENABLE_KV_TABLE=ON needs fmt::fmt (built tt-metal, system fmt, "
+                "or FetchContent).")
+        endif()
+    endif()
+    # tt_stl/assert.hpp includes <tt-logger/tt-logger.hpp>. A built metal puts
+    # that on the include path; header-only CI checkouts need a FetchContent.
+    set(_KV_TT_LOGGER_INC "")
+    if(EXISTS "${TT_METAL_HOME}/build_Release/include/tt-logger/tt-logger.hpp")
+        set(_KV_TT_LOGGER_INC "${TT_METAL_HOME}/build_Release/include")
+    elseif(EXISTS "${TT_METAL_HOME}/build/include/tt-logger/tt-logger.hpp")
+        set(_KV_TT_LOGGER_INC "${TT_METAL_HOME}/build/include")
+    else()
+        FetchContent_Declare(tt_logger_for_kv_table
+            GIT_REPOSITORY https://github.com/tenstorrent/tt-logger.git
+            GIT_TAG        v1.1.8
+            GIT_SHALLOW    TRUE)
+        FetchContent_GetProperties(tt_logger_for_kv_table)
+        if(NOT tt_logger_for_kv_table_POPULATED)
+            FetchContent_Populate(tt_logger_for_kv_table)
+        endif()
+        set(_KV_TT_LOGGER_INC "${tt_logger_for_kv_table_SOURCE_DIR}/include")
+        message(STATUS "ENABLE_KV_TABLE: FetchContent tt-logger headers")
     endif()
 
     # Protobuf: prefer tt-metal's vendored build (matches the .proto's runtime),
@@ -811,6 +846,7 @@ if(ENABLE_KV_TABLE)
         "${_KV_TTM}/tt_metal/impl"          # experimental/disaggregation/...protobuf.hpp
         ${CMAKE_CURRENT_BINARY_DIR}          # generated kv_chunk_address_table.pb.h
         ${_KV_PROTO_INC}                     # protobuf/ alias
+        ${_KV_TT_LOGGER_INC}                 # tt-logger (built metal or FetchContent)
     )
     # tt-metal's spdlog headers expect external fmt; PRIVATE so the define stays
     # on kv_table_lib's own sources and does not leak onto transport_lib's other
@@ -988,6 +1024,34 @@ target_link_libraries(engine_table_handoff_test PRIVATE transport_lib GTest::gte
 target_include_directories(engine_table_handoff_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
+
+# resolveEngineTables + device_map_io + localhost TCP send-then-close.
+# Compiles tcp_socket_transport.cpp for the real loopback case.
+add_executable(engine_table_resolve_test
+    tests/unit/transport/engine_table_resolve_test.cpp
+    src/sockets/tcp_socket_transport.cpp)
+target_link_libraries(engine_table_resolve_test PRIVATE transport_lib GTest::gtest_main)
+target_include_directories(engine_table_resolve_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/unit/transport
+)
+
+# Host-local bridge: push DeviceMap only to a listening migration worker via
+# sendEngineHandoff (worker loads .pb from disk). No Metal / ENABLE_KV_TABLE.
+# Compiles tcp_socket_transport.cpp directly (transport_lib stays socket-decoupled).
+add_executable(engine_handoff_sender
+    src/engine_handoff_sender_main.cpp
+    src/sockets/tcp_socket_transport.cpp)
+target_link_libraries(engine_handoff_sender PRIVATE transport_lib)
+target_include_directories(engine_handoff_sender PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+if(USE_EXTERNAL_FMT)
+    target_link_libraries(engine_handoff_sender PRIVATE spdlog::spdlog fmt::fmt)
+else()
+    target_link_libraries(engine_handoff_sender PRIVATE spdlog::spdlog)
+endif()
+target_compile_options(engine_handoff_sender PRIVATE -Wall -Wextra -Wpedantic)
 
 # Real-table adapter test: loads an actual serialized KvChunkAddressTable (.pb)
 # and checks real NoC addresses resolve. Only built when ENABLE_KV_TABLE=ON
@@ -1416,6 +1480,7 @@ gtest_discover_tests(kv_migration_orchestrator_test)
 gtest_discover_tests(mooncake_migration_executor_test)
 gtest_discover_tests(kv_migration_endpoints_test)
 gtest_discover_tests(engine_table_handoff_test)
+gtest_discover_tests(engine_table_resolve_test)
 if(ENABLE_KV_TABLE)
     gtest_discover_tests(kv_chunk_address_table_adapter_test)
 endif()
@@ -1667,6 +1732,25 @@ if(KAFKA_ENABLED)
         target_compile_options(mooncake_kv_migration_worker PRIVATE
             -Wall -Wextra -Wpedantic)
         message(STATUS "mooncake_kv_migration_worker: ENABLED (unified Kafka->migration worker)")
+
+        # Control-plane bring-up e2e (production worker): DeviceMap socket handoff
+        # → kv_control → TABLE_EXCHANGE → READY. Does NOT migrate KV tensors.
+        # Needs ENABLE_KV_TABLE so .pb fixtures parse. Distinct from
+        # MooncakeMpiDiscovery (bringup CONNECTED-only) and migrate lab/nightly.
+        if(ENABLE_KV_TABLE AND TARGET engine_handoff_sender)
+            add_test(NAME MooncakeWorkerControlPlane
+                COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/e2e/scripts/run_mooncake_worker_control_plane_e2e.sh
+                WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+            set_tests_properties(MooncakeWorkerControlPlane PROPERTIES
+                TIMEOUT 240
+                RESOURCE_LOCK integration_server
+                ENVIRONMENT
+                  "WORKER_BIN=$<TARGET_FILE:mooncake_kv_migration_worker>;HANDOFF_SENDER_BIN=$<TARGET_FILE:engine_handoff_sender>")
+            message(STATUS "MooncakeWorkerControlPlane: ENABLED (1P+2D handoff+TABLE_EXCHANGE)")
+        else()
+            message(STATUS
+                "MooncakeWorkerControlPlane: SKIPPED (needs ENABLE_KV_TABLE + engine_handoff_sender)")
+        endif()
 
         # MPI discovery e2e test: launches 4 prefill + 16 decode
         # bringup_mooncake_worker processes on one host and checks every worker

@@ -169,13 +169,24 @@ process, `--role prefill|decode`. The transport-lib pieces it composes:
   `KvMigrationReceiver::run()` behind a server transport. `run()` waits
   indefinitely between requests (an idle receive is retried) and exits only when
   the connection closes.
-- **Tables & device map** — `loadKvTableFile` (`kv_table_provisioning.*`) loads
-  each side's `.pb`; chip resolution uses an optional `--device-map`
-  (`device_map.hpp`) — **required** when a decode host's table spans multiple
-  meshes, or the placeholder `chip = chip_id` aliases meshes onto the same
-  physical chips and a multi-layer migration silently corrupts. In production the
-  table + device map arrive from the engine via `engine_table_handoff.*`; the
-  file paths are a bring-up stand-in.
+- **Tables & device map** — `resolveEngineTables` (`engine_table_resolve.*`)
+  always loads the KV `.pb` from disk (`--prefill-table` / `--table`; production
+  path is typically the engine export under `/tmp`). The FabricNode→UMD
+  DeviceMap is separate: prefer `--engine-handoff-port N` (worker listens;
+  co-located engine or `engine_handoff_sender` / deploy pushes the map only),
+  else `--device-map` file (`device_map_io.*`, `mesh chip umd` lines). The raw
+  `.pb` blob is kept for peer `TABLE_EXCHANGE`. Transfer path is fail-closed:
+  `engine_handoff_sender` exits non-zero on a missing/unreadable/empty map, and
+  socket resolve rejects an empty handoff (no silent placeholder push). Device
+  map is **required** when a host's table spans multiple meshes — the
+  `& 0xFFFF` placeholder collides across meshes and is refused once a non-empty
+  map is in play. Until the model runner pushes the map itself:
+
+  ```bash
+  mooncake_kv_migration_worker ... --table /tmp/local.pb --engine-handoff-port 18700
+  print_local_device_map | engine_handoff_sender --host 127.0.0.1 --port 18700 \
+    --device-map-stdin
+  ```
 
 The worker does **no** byte-verify of its own (it moves real KV). To validate the
 data plane end-to-end without a model, bracket a migration with the standalone
@@ -337,7 +348,7 @@ retry-the-whole-request applies). The `Begin→…→Done→Ack` ordering is una
 | integration | `mooncake_migration_executor.*` | `IMigrationExecutor` driving `KvMigrationMultiHostSender` — the Kafka worker's trigger→data-plane bridge |
 | | `kv_migration_endpoints.*` | prefill control-channel connector + decode receiver-server (injected socket transport) |
 | | `kv_table_provisioning.*` | `loadKvTableFile` (+ optional table-blob exchange over the control channel) |
-| | `device_map.hpp`, `engine_table_handoff.*` | `FabricNode→UMD chip` map + engine→worker `{table, device map}` handoff contract |
+| | `device_map.hpp`, `device_map_io.*`, `engine_table_handoff.*`, `engine_table_resolve.*` | `FabricNode→UMD chip` map + file `.pb` resolve + socket DeviceMap handoff |
 | PoC (#3890) | `i_storage_backend.hpp`, `*_storage_backend.*`, `mooncake_migration_worker.*` | original dummy-tensor storage/transport split |
 
 ## Build guards
@@ -448,17 +459,35 @@ Workers are symmetric peers: each takes its own `--name` and its peers as `--pee
 is `CONNECTED to N peers` then `READY`. Logic is launcher-agnostic — a bash loop, MPI, or an
 orchestrator all just spawn one process per worker.
 
-**MPI e2e test** (`tests/e2e/scripts/run_migration_workers_mpi.sh`, ctest
-`MooncakeMpiDiscovery`): starts the metadata service, then `mpirun -np 20` launches 4 prefill +
-16 decode workers on one host. `migration_worker_rank_launch.sh` maps each rank to a
-disaggregated topology — `prefill-p` peers `decode-(4p..4p+3)`, each `decode-d` peers back to
-`prefill-(d/4)` — and the test passes once all 20 log `CONNECTED` within the timeout.
+**MPI discovery e2e** (`tests/e2e/scripts/run_migration_workers_mpi.sh`, ctest
+`MooncakeMpiDiscovery`, GH job `mooncake-mpi-e2e`): starts the metadata service, then
+`mpirun` launches `bringup_mooncake_worker` ranks and checks mesh `CONNECTED`. This is
+**name discovery only** — no `.pb`, DeviceMap handoff, or `TABLE_EXCHANGE`.
 
 ```bash
 # all 20 workers, self-contained (auto-starts metadata service):
 WORKER_BIN=./build/bringup_mooncake_worker \
   tests/e2e/scripts/run_migration_workers_mpi.sh
 ```
+
+### Control-plane CI vs migrate e2e
+
+| Gate | Binary | What it proves | Where |
+|------|--------|----------------|-------|
+| **Control-plane CI** | `mooncake_kv_migration_worker` | `.pb` load → DeviceMap **socket** handoff → `kv_control` → peer connect → `TABLE_EXCHANGE` → `/readyz` READY | ctest `MooncakeWorkerControlPlane`, GH `mooncake-worker-control-plane-e2e` |
+| **Discovery CI** | `bringup_mooncake_worker` | Mooncake `rpc_meta` mesh `CONNECTED` | ctest `MooncakeMpiDiscovery`, GH `mooncake-mpi-e2e` |
+| **Migrate e2e** | production worker + Kafka seed/verify | Real KV tensor move + ack | lab / nightly / Exabox — **not** this PR gate |
+
+```bash
+# 1P+2D control-plane (needs --mooncake --kafka --kv-table):
+./build.sh --mooncake --kafka --kv-table
+ctest -R MooncakeWorkerControlPlane --output-on-failure
+# or:
+tests/e2e/scripts/run_mooncake_worker_control_plane_e2e.sh
+```
+
+Fixtures: `tests/e2e/fixtures/control_plane/` (tiny synthetic `.pb` + `ci-host.devmap`).
+Regenerate with `tests/e2e/scripts/gen_control_plane_fixtures.py`.
 
 ## KV table exchange at bring-up (#4295)
 
@@ -491,11 +520,11 @@ finish at bring-up.
 | Two-galaxy acceptance, both backends enabled | **validated** — byte-verified 1→1 across 2 galaxies (real `.pb`, device DRAM, Mooncake TCP) |
 | Unified worker `mooncake_kv_migration_worker` (Kafka→migration→ack), 2 galaxies | **validated** — real Kafka trigger, byte-verified via `kv_seed_verify` (run guide §13) |
 | Metadata-service worker discovery, two hosts, host RAM (#4209, `migration_worker_discovery`) | **validated** (two hosts, 1 MiB tensor, byte-verified MATCH) |
-| Productionized discovery worker (#4294, `bringup_mooncake_worker`) | **validated locally** (single host, MPI `-np 20` = 4 prefill + 16 decode, all `CONNECTED`→`READY`; run manually, not yet wired into CI) |
+| Productionized discovery worker (#4294, `bringup_mooncake_worker`) | **CI** — `MooncakeMpiDiscovery` / `mooncake-mpi-e2e` |
+| Production worker control-plane (handoff + `kv_control` + `TABLE_EXCHANGE` → READY) | **CI** — `MooncakeWorkerControlPlane` / `mooncake-worker-control-plane-e2e` (no KV migrate) |
 
-Note: the unit/smoke `transport_test` runs in any CI build; the MPI discovery
-e2e (`MooncakeMpiDiscovery`) is currently a manual/local check (it needs the
-Mooncake build + a metadata service) and is not yet in a GitHub workflow.
+Note: unit/smoke `transport_test` runs in any CI build. Control-plane CI stops
+before TE moves KV; migrate byte-verify remains lab/nightly.
 
 ## Future work
 

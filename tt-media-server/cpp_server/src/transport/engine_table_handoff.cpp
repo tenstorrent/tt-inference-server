@@ -5,7 +5,6 @@
 
 #include <utility>
 
-#include "transport/kv_table_provisioning.hpp"  // deserializeKvTable
 #include "utils/logger.hpp"
 
 namespace tt::transport {
@@ -36,12 +35,6 @@ class Reader {
       v |= static_cast<uint64_t>(bytes[pos++]) << (8 * i);
     return true;
   }
-  bool getBytes(std::vector<uint8_t>& out, uint32_t len) {
-    if (pos + len > bytes.size()) return false;
-    out.assign(bytes.begin() + pos, bytes.begin() + pos + len);
-    pos += len;
-    return true;
-  }
   bool atEnd() const { return pos == bytes.size(); }
 
  private:
@@ -51,12 +44,8 @@ class Reader {
 
 }  // namespace
 
-std::vector<uint8_t> serializeEngineHandoff(
-    const std::vector<uint8_t>& tableBlob, const DeviceMap& deviceMap) {
+std::vector<uint8_t> serializeEngineHandoff(const DeviceMap& deviceMap) {
   std::vector<uint8_t> out;
-  putU32(out, static_cast<uint32_t>(tableBlob.size()));
-  out.insert(out.end(), tableBlob.begin(), tableBlob.end());
-
   putU32(out, static_cast<uint32_t>(deviceMap.size()));
   for (const auto& [device, umdChipId] : deviceMap.entries()) {
     // Invert encodeDevice = (mesh << 16) | chip so the engine's (mesh, chip)
@@ -73,10 +62,6 @@ std::optional<EngineHandoffPayload> parseEngineHandoff(
   Reader r(bytes);
   EngineHandoffPayload payload;
 
-  uint32_t tableLen = 0;
-  if (!r.getU32(tableLen)) return std::nullopt;
-  if (!r.getBytes(payload.table_blob, tableLen)) return std::nullopt;
-
   uint32_t count = 0;
   if (!r.getU32(count)) return std::nullopt;
   for (uint32_t i = 0; i < count; ++i) {
@@ -89,8 +74,6 @@ std::optional<EngineHandoffPayload> parseEngineHandoff(
     payload.device_map.set(FabricNode{mesh, chip}, umdChipId);
   }
   if (!r.atEnd()) {
-    // Trailing garbage means a framing/version mismatch — reject rather than
-    // silently accept a partially-understood message.
     TT_LOG_ERROR("[engine_table_handoff] trailing bytes after parse");
     return std::nullopt;
   }
@@ -98,38 +81,30 @@ std::optional<EngineHandoffPayload> parseEngineHandoff(
 }
 
 bool sendEngineHandoff(sockets::ISocketTransport& transport,
-                       const std::vector<uint8_t>& tableBlob,
                        const DeviceMap& deviceMap) {
-  const auto bytes = serializeEngineHandoff(tableBlob, deviceMap);
-  return transport.sendRawData(bytes);
+  return transport.sendRawData(serializeEngineHandoff(deviceMap));
 }
 
-std::optional<EngineTables> receiveEngineHandoff(
+std::optional<DeviceMap> receiveEngineHandoff(
     sockets::ISocketTransport& transport) {
-  const std::vector<uint8_t> raw = transport.receiveRawData();
-  if (raw.empty()) {
+  const sockets::ReceiveResult result = transport.tryReceiveMessage();
+  if (result.status == sockets::ReceiveStatus::NO_DATA) {
+    return std::nullopt;
+  }
+  if (result.status == sockets::ReceiveStatus::CLOSED) {
     TT_LOG_ERROR("[engine_table_handoff] empty/closed receive");
     return std::nullopt;
   }
-  auto payload = parseEngineHandoff(raw);
-  if (!payload) {
-    return std::nullopt;
-  }
-  auto table = deserializeKvTable(payload->table_blob);
-  if (!table) {
-    TT_LOG_ERROR(
-        "[engine_table_handoff] table failed to parse (bad bytes, or "
-        "ENABLE_KV_TABLE is OFF)");
-    return std::nullopt;
-  }
-  return EngineTables{std::move(table), std::move(payload->device_map)};
+  auto payload = parseEngineHandoff(result.data);
+  if (!payload) return std::nullopt;
+  return std::move(payload->device_map);
 }
 
-SocketEngineTableSource::SocketEngineTableSource(
+SocketEngineDeviceMapSource::SocketEngineDeviceMapSource(
     std::shared_ptr<sockets::ISocketTransport> transport)
     : transport_(std::move(transport)) {}
 
-std::optional<EngineTables> SocketEngineTableSource::fetch() {
+std::optional<DeviceMap> SocketEngineDeviceMapSource::fetch() {
   if (!transport_) return std::nullopt;
   return receiveEngineHandoff(*transport_);
 }
