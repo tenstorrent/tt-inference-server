@@ -4,14 +4,19 @@
 #
 # run_stack.sh — bring up the Dynamo frontend + cpp_server (mock_pipeline) for
 # the prefill/decode test suite, without any tt-shield image. Frontend runs from
-# a host ai-dynamo venv; etcd runs as the public quay image; workers run as the
-# locally-built Blaze binary with the mock_pipeline backend (real Blaze prefill
-# and decode schedulers, pipeline-simulator latency model). The binary must be
-# built with --blaze; otherwise mock_pipeline silently falls back to LLMRunner's
-# legacy mock path. 
+# a host ai-dynamo venv; etcd runs as the public quay image (or a local no-docker
+# etcd); workers run as the locally-built Blaze binary with the mock_pipeline
+# backend (real Blaze prefill and decode schedulers, pipeline-simulator latency
+# model). The binary must be built with --blaze; otherwise mock_pipeline silently
+# falls back to LLMRunner's legacy mock path. See benchmarks/test_prefill_decode.py.
 #
-#   ./run_stack.sh up                      # disaggregated: decode + prefill split
+#   ./run_stack.sh up                      # direct cpp_server socket split
+#   DYNAMO_ROUTING=1 ./run_stack.sh up
+#                                          # Dynamo decode/prefill routing split
 #   ./run_stack.sh down                    # tear everything down
+#
+# This local mock stack supports the direct cpp_server split and Dynamo routing.
+# Use dynamo_frontend/deploy.sh when PrefillGateway is part of the test.
 #
 # Logs -> /tmp/tt_decode.log + /tmp/tt_prefill.log ; frontend -> /tmp/tt_frontend.log.
 
@@ -31,10 +36,12 @@ export DOCKER_API_VERSION="${DOCKER_API_VERSION:-1.43}"
 MODEL="${MODEL:-moonshotai/Kimi-K2.6}"
 MODEL_NAME="${MODEL_NAME:-tt-cpp-server}"
 HTTP_PORT="${HTTP_PORT:-8080}"
-SERVER_PORT="${SERVER_PORT:-8001}"       # decode/regular REST + dynamo endpoint
+SERVER_PORT="${SERVER_PORT:-8001}"       # decode/regular REST + Dynamo worker server
 PREFILL_PORT="${PREFILL_PORT:-8002}"     # prefill REST
 SOCKET_PORT="${SOCKET_PORT:-9000}"       # decode<->prefill inter-server socket
 MAX_TOKENS_TO_PREFILL_ON_DECODE="${MAX_TOKENS_TO_PREFILL_ON_DECODE:-1000}"
+DYNAMO_ROUTING="${DYNAMO_ROUTING:-0}"
+DYNAMO_ROUTING_NAMESPACE="${DYNAMO_ROUTING_NAMESPACE:-dynamo}"
 ETCD_NAME="${ETCD_NAME:-etcd}"
 PIDFILE="/tmp/tt_stack.pids"
 
@@ -50,6 +57,7 @@ teardown() {
     # also sweep stray workers/frontend (orphaned --worker children, prior runs)
     for p in $(ls /proc 2>/dev/null | grep -E '^[0-9]+$'); do
         [[ "$p" == "$$" ]] && continue
+        [[ -r "/proc/$p/cmdline" ]] || continue
         local c; c=$(tr '\0' ' ' < "/proc/$p/cmdline" 2>/dev/null) || continue
         case "$c" in *"${BIN}"*|*"-m dynamo.frontend"*) pids="$pids $p" ;; esac
     done
@@ -132,19 +140,99 @@ ensure_etcd() {
     log "etcd at ${ETCD_ENDPOINTS}"
 }
 
+# Dynamo registration env. Direct mode registers only the decode worker under
+# default/backend/generate. Dynamo routing mode registers decode and prefill
+# workers as separate Dynamo worker types under dynamo/{decode,prefill}/generate.
+worker_dynamo_env() {
+    local namespace="${1:-default}"
+    local component="${2:-backend}"
+    local worker_type="${3:-}"
+    local model_type="${4-Chat}"
+    echo "DYNAMO_ENDPOINT_ENABLED=1"
+    echo "DYNAMO_DISCOVERY_BACKEND=etcd"
+    echo "DYNAMO_ETCD_ENDPOINTS=${ETCD_ENDPOINTS}"
+    echo "DYNAMO_NAMESPACE=${namespace}"
+    echo "DYNAMO_COMPONENT=${component}"
+    echo "DYNAMO_ENDPOINT_NAME=generate"
+    [[ -n "${model_type}" ]] && echo "DYNAMO_MODEL_TYPE=${model_type}"
+    [[ -n "${worker_type}" ]] && echo "DYNAMO_WORKER_TYPE=${worker_type}"
+}
+
+worker_ipc_env() {
+    local ns="$1"
+    echo "TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_${ns}"
+    echo "TT_TASK_QUEUE=tt_tasks_${ns}"
+    echo "TT_RESULT_QUEUE=tt_results_${ns}"
+    echo "TT_CANCEL_QUEUE=tt_cancels_${ns}"
+    echo "TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_${ns}"
+    echo "TT_MEMORY_RESULT_QUEUE=tt_mem_results_${ns}"
+    echo "TT_WORKER_METRICS_SHM=/tt_worker_metrics_${ns}"
+}
+
 start_frontend() {
     [[ -x "${DYN_VENV}/bin/python3" ]] || die "dynamo venv not found at ${DYN_VENV}"
+    "${DYN_VENV}/bin/python3" -c 'import dynamo.frontend' >/dev/null 2>&1 \
+        || die "dynamo.frontend not importable from ${DYN_VENV}; install ai-dynamo there or set DYN_VENV to a Dynamo venv"
     log "frontend -> ${FRONTEND_LOG} (http :${HTTP_PORT})"
     setsid nohup env \
         DYN_DISCOVERY_BACKEND=etcd ETCD_ENDPOINTS="${ETCD_ENDPOINTS}" \
         DYN_REQUEST_PLANE=tcp DYN_EVENT_PLANE=zmq \
+        DYN_REQUEST_PLANE_CODEC="${DYN_REQUEST_PLANE_CODEC:-json}" \
         DYN_TOKENIZER="${DYN_TOKENIZER:-fastokens}" \
         "${DYN_VENV}/bin/python3" -m dynamo.frontend \
             --http-port "${HTTP_PORT}" \
+            --router-mode "${ROUTER_MODE:-kv}" \
             --model-name "${MODEL_NAME}" \
             --model-path "${CPP_DIR}/tokenizers/${MODEL}" \
         > "${FRONTEND_LOG}" 2>&1 < /dev/null &
     echo $! >> "${PIDFILE}"
+}
+
+ensure_binary() {
+    local rebuild=0
+    if [[ ! -x "${BIN}" ]]; then
+        log "no binary; building with --blaze for mock_pipeline"
+        rebuild=1
+    elif [[ ! -f "${CPP_DIR}/build/CMakeCache.txt" ]] || \
+         ! grep -q '^ENABLE_BLAZE:BOOL=ON$' "${CPP_DIR}/build/CMakeCache.txt"; then
+        log "existing binary was not built with --blaze; rebuilding for mock_pipeline"
+        rebuild=1
+    else
+        local src
+        for src in \
+            "${CPP_DIR}/src/dynamo/worker_server.cpp" \
+            "${CPP_DIR}/src/dynamo/request_handler.cpp" \
+            "${CPP_DIR}/src/dynamo/transport_protocol.cpp" \
+            "${CPP_DIR}/src/dynamo/transport_server.cpp" \
+            "${CPP_DIR}/src/dynamo/discovery.cpp" \
+            "${CPP_DIR}/src/dynamo/etcd_client.cpp" \
+            "${CPP_DIR}/src/dynamo/llm_mapping.cpp" \
+            "${CPP_DIR}/src/dynamo/prefill_result_mapping.cpp" \
+            "${CPP_DIR}/src/services/disaggregation_service.cpp" \
+            "${CPP_DIR}/src/services/llm_pipeline.cpp" \
+            "${CPP_DIR}/src/utils/service_factory.cpp" \
+            "${CPP_DIR}/src/main.cpp" \
+            "${CPP_DIR}/include/dynamo/worker_server.hpp" \
+            "${CPP_DIR}/include/dynamo/request_handler.hpp" \
+            "${CPP_DIR}/include/dynamo/transport_protocol.hpp" \
+            "${CPP_DIR}/include/dynamo/transport_server.hpp" \
+            "${CPP_DIR}/include/dynamo/discovery.hpp" \
+            "${CPP_DIR}/include/dynamo/etcd_client.hpp" \
+            "${CPP_DIR}/include/dynamo/llm_mapping.hpp" \
+            "${CPP_DIR}/include/dynamo/prefill_result_mapping.hpp" \
+            "${CPP_DIR}/include/services/disaggregation_service.hpp" \
+            "${CPP_DIR}/include/services/llm_pipeline.hpp"; do
+            if [[ "${src}" -nt "${BIN}" ]]; then
+                log "source newer than binary: ${src#$CPP_DIR/}"
+                rebuild=1
+                break
+            fi
+        done
+    fi
+
+    if [[ "${rebuild}" == "1" ]]; then
+        (cd "${CPP_DIR}" && env -u TT_METAL_HOME ./build.sh --blaze)
+    fi
 }
 
 # start_worker <logfile> <rest-port> <env line>...
@@ -160,38 +248,100 @@ wait_ready() {
     log "waiting for /v1/models to list ${MODEL}"
     for i in $(seq 1 40); do
         if curl -s "http://127.0.0.1:${HTTP_PORT}/v1/models" 2>/dev/null | grep -q "${MODEL}"; then
-            log "ready after ${i}s"; return 0
+            log "/v1/models ready after ${i}s"
+            break
+        fi
+        sleep 1
+        if [[ "${i}" == "40" ]]; then
+            die "frontend never listed ${MODEL}; see ${FRONTEND_LOG} and worker logs"
+        fi
+    done
+
+    log "waiting for /v1/chat/completions route"
+    for i in $(seq 1 40); do
+        if grep -aq "chat endpoints enabled" "${FRONTEND_LOG}"; then
+            log "chat completions route ready after ${i}s"
+            break
+        fi
+        sleep 1
+        if [[ "${i}" == "40" ]]; then
+            die "frontend chat completions route did not become ready; see ${FRONTEND_LOG}"
+        fi
+    done
+
+    if [[ "${DYNAMO_ROUTING}" == "1" ]]; then
+        log "waiting for Dynamo router activation"
+        for i in $(seq 1 40); do
+            if grep -aq "Prefill router activated successfully" "${FRONTEND_LOG}"; then
+                log "Dynamo router ready after ${i}s"
+                return 0
+            fi
+            sleep 1
+        done
+        die "Dynamo router did not finish activation; see ${FRONTEND_LOG}"
+    fi
+
+    log "ready"
+}
+
+wait_worker_healthy() {
+    local name="$1" port="$2" logf="$3"
+    log "waiting for ${name} worker health on :${port}"
+    for i in $(seq 1 40); do
+        local body
+        body="$(curl -s "http://127.0.0.1:${port}/health" 2>/dev/null || true)"
+        if [[ "${body}" == *'"status":"healthy"'* ]]; then
+            log "${name} healthy after ${i}s"
+            return 0
+        fi
+        if [[ "${body}" == *'"no workers are alive"'* ]]; then
+            die "${name} has no live workers; see ${logf}"
         fi
         sleep 1
     done
-    die "frontend never listed ${MODEL}; see ${FRONTEND_LOG} and worker logs"
+    die "${name} did not become healthy; see ${logf}"
 }
 
 up() {
-    [[ -x "${BIN}" ]] || { log "no binary; building (blaze)"; (cd "${CPP_DIR}" && env -u TT_METAL_HOME ./build.sh --blaze); }
+    ensure_binary
     teardown
     : > "${PIDFILE}"
     ensure_etcd
 
-    log "decode :${SERVER_PORT} socket :${SOCKET_PORT}, prefill :${PREFILL_PORT}"
-    # The decode worker registers with the frontend; the prefill worker does NOT.
-    start_worker "${DECODE_LOG}" "${SERVER_PORT}" \
-        $(dynamo_worker_env "${ETCD_ENDPOINTS}") \
-        LLM_MODE=decode LLM_DEVICE_BACKEND=mock_pipeline \
-        SOCKET_TRANSPORT=tcp SOCKET_HOST=0.0.0.0 SOCKET_PORT="${SOCKET_PORT}" \
-        MAX_TOKENS_TO_PREFILL_ON_DECODE="${MAX_TOKENS_TO_PREFILL_ON_DECODE}"
-    sleep 3
-    # Distinct memory-queue + metrics shm names: decode and prefill are
-    # co-located on one host, and these default to fixed names
-    # (tt_mem_requests/_results, /tt_worker_metrics) — sharing them makes the
-    # prefill worker's KV allocation requests race the decode worker's and hang.
-    start_worker "${PREFILL_LOG}" "${PREFILL_PORT}" \
-        LLM_MODE=prefill LLM_DEVICE_BACKEND=mock_pipeline \
-        SOCKET_TRANSPORT=tcp SOCKET_HOST=127.0.0.1 SOCKET_PORT="${SOCKET_PORT}" \
-        TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_prefill \
-        TT_MEMORY_RESULT_QUEUE=tt_mem_results_prefill \
-        TT_WORKER_METRICS_SHM=/tt_worker_metrics_prefill
-    sleep 2
+    if [[ "${DYNAMO_ROUTING}" == "1" ]]; then
+        log "Dynamo routing: decode :${SERVER_PORT} socket :${SOCKET_PORT}, prefill :${PREFILL_PORT}"
+        start_worker "${DECODE_LOG}" "${SERVER_PORT}" \
+            $(worker_dynamo_env "${DYNAMO_ROUTING_NAMESPACE}" decode decode Chat) \
+            $(worker_ipc_env dynamo_decode) \
+            LLM_MODE=decode LLM_DEVICE_BACKEND=mock_pipeline \
+            SOCKET_HOST=0.0.0.0 SOCKET_PORT="${SOCKET_PORT}" \
+            USE_PREFILL_GATEWAY=0 DYNAMO_ROUTING=1
+        wait_worker_healthy "decode" "${SERVER_PORT}" "${DECODE_LOG}"
+        start_worker "${PREFILL_LOG}" "${PREFILL_PORT}" \
+            $(worker_dynamo_env "${DYNAMO_ROUTING_NAMESPACE}" prefill prefill Prefill) \
+            $(worker_ipc_env dynamo_prefill) \
+            LLM_MODE=prefill LLM_DEVICE_BACKEND=mock_pipeline \
+            SOCKET_HOST=127.0.0.1 SOCKET_PORT="${SOCKET_PORT}" \
+            USE_PREFILL_GATEWAY=0 DYNAMO_ROUTING=1 \
+            DYNAMO_MODEL_INPUT=Tokens
+        wait_worker_healthy "prefill" "${PREFILL_PORT}" "${PREFILL_LOG}"
+    else
+        # Direct-mode /health requires the decode<->prefill socket to be
+        # connected, so start both workers before waiting on either.
+        log "direct cpp_server socket routing: decode :${SERVER_PORT} socket :${SOCKET_PORT}, prefill :${PREFILL_PORT}"
+        start_worker "${DECODE_LOG}" "${SERVER_PORT}" \
+            $(worker_dynamo_env) \
+            $(worker_ipc_env direct_decode) \
+            LLM_MODE=decode LLM_DEVICE_BACKEND=mock_pipeline \
+            SOCKET_HOST=0.0.0.0 SOCKET_PORT="${SOCKET_PORT}" \
+            MAX_TOKENS_TO_PREFILL_ON_DECODE="${MAX_TOKENS_TO_PREFILL_ON_DECODE}"
+        start_worker "${PREFILL_LOG}" "${PREFILL_PORT}" \
+            $(worker_ipc_env direct_prefill) \
+            LLM_MODE=prefill LLM_DEVICE_BACKEND=mock_pipeline \
+            SOCKET_HOST=127.0.0.1 SOCKET_PORT="${SOCKET_PORT}"
+        wait_worker_healthy "decode" "${SERVER_PORT}" "${DECODE_LOG}"
+        wait_worker_healthy "prefill" "${PREFILL_PORT}" "${PREFILL_LOG}"
+    fi
     start_frontend
     wait_ready
     log "decode log: ${DECODE_LOG}  prefill log: ${PREFILL_LOG}"

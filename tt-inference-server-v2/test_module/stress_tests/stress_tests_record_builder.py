@@ -311,6 +311,13 @@ def to_report_record(files: List[str]) -> Dict[str, Any]:
     return record
 
 
+def to_block(files: List[str]) -> "Block":  # noqa: F821 - Block imported lazily
+    """Aggregate sweep JSONs into a single report ``Block`` (kind ``stress_tests``)."""
+    from report_module.schema import Block
+
+    return Block(kind=RECORD_KIND, data=to_report_record(files))
+
+
 def main():
     args = parse_args()
     print("\nStress Test Summary:")

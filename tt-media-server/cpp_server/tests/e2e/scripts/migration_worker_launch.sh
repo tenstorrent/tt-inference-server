@@ -21,9 +21,10 @@
 # deploy pins them to a single tag per worker.
 #
 # Peers (PEERS): CSV of peer tags for THIS worker, role-agnostic — the deploy
-#   fills it (default: prefill gets every decode, a decode gets none) and this
-#   launcher just forwards it. The worker resolves each tag's control host:port
-#   from metadata; role only decides who ACTS on the peers (prefill = sender).
+#   fills it (default: prefill → every decode for control TABLE_EXCHANGE +
+#   migrate; decode → none) and this launcher just forwards it. The worker
+#   resolves each tag for control host:port from metadata; role decides who
+#   initiates (prefill = sender).
 #
 # Required env (all roles): WORKER_ROLE, WORKER_BIN, METADATA, WORKER_TAG,
 #   HEALTH_PORT, DECODE_TABLE.
@@ -86,9 +87,8 @@ done
 
 case "${WORKER_ROLE}" in
   decode)
-    # Receiver: registers its KV mirror + serves the control protocol. Normally
-    # peerless, but if the deploy gave it peers it resolves + holds them (it does
-    # not initiate). No prefill identity / Kafka.
+    # Receiver: registers KV mirror + serves control (TABLE_EXCHANGE reply +
+    # migrate). Prefill initiates; decode does not. No Kafka.
     exec "${WORKER_BIN}" \
       --role "${WORKER_ROLE}" \
       --metadata "${METADATA}" --name "${WORKER_TAG}" --host "${WORKER_TAG}" \

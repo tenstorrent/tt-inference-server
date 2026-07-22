@@ -62,9 +62,51 @@ std::string base64Encode(const std::string& in) {
   return out;
 }
 
+int base64Value(char c) {
+  if (c >= 'A' && c <= 'Z') return c - 'A';
+  if (c >= 'a' && c <= 'z') return c - 'a' + 26;
+  if (c >= '0' && c <= '9') return c - '0' + 52;
+  if (c == '+') return 62;
+  if (c == '/') return 63;
+  return -1;
+}
+
+std::string base64Decode(const std::string& in) {
+  std::string out;
+  out.reserve(in.size() * 3 / 4);
+  int val = 0;
+  int valBits = -8;
+  for (char c : in) {
+    if (c == '=' || c == '\n' || c == '\r') continue;
+    const int d = base64Value(c);
+    if (d < 0) continue;
+    val = (val << 6) + d;
+    valBits += 6;
+    if (valBits >= 0) {
+      out.push_back(static_cast<char>((val >> valBits) & 0xFF));
+      valBits -= 8;
+    }
+  }
+  return out;
+}
+
+/// etcd range_end for a prefix: last byte incremented (with carry).
+std::string prefixRangeEnd(const std::string& prefix) {
+  std::string end = prefix;
+  while (!end.empty()) {
+    auto& last = reinterpret_cast<unsigned char&>(end.back());
+    if (last < 0xFF) {
+      ++last;
+      return end;
+    }
+    end.pop_back();
+  }
+  return std::string(1, '\0');
+}
+
 // ---------------------------------------------------------------------------
 // URL parsing for etcd endpoints lives in include/utils/net.hpp (parseUrl) so
-// the DynamoEndpoint advertise-host detection can share it.
+// the DynamoWorkerServer advertise-host detection can share it.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -433,6 +475,40 @@ void EtcdClient::put(const std::string& key, const std::string& value,
   body["value"] = base64Encode(value);
   if (leaseId != 0) body["lease"] = static_cast<Json::Int64>(leaseId);
   httpPostJson(host_, port_, "/v3/kv/put", serialize(body), timeout_ms_);
+}
+
+std::optional<std::string> EtcdClient::get(const std::string& key) {
+  Json::Value body(Json::objectValue);
+  body["key"] = base64Encode(key);
+  auto resp = parseJson(
+      httpPostJson(host_, port_, "/v3/kv/range", serialize(body), timeout_ms_));
+  if (!resp.isMember("kvs") || !resp["kvs"].isArray() || resp["kvs"].empty()) {
+    return std::nullopt;
+  }
+  const auto& kv = resp["kvs"][0];
+  if (!kv.isMember("value")) return std::nullopt;
+  return base64Decode(kv["value"].asString());
+}
+
+std::vector<std::pair<std::string, std::string>> EtcdClient::getPrefix(
+    const std::string& prefix) {
+  Json::Value body(Json::objectValue);
+  body["key"] = base64Encode(prefix);
+  body["range_end"] = base64Encode(prefixRangeEnd(prefix));
+  auto resp = parseJson(
+      httpPostJson(host_, port_, "/v3/kv/range", serialize(body), timeout_ms_));
+  std::vector<std::pair<std::string, std::string>> out;
+  if (!resp.isMember("kvs") || !resp["kvs"].isArray()) {
+    return out;
+  }
+  out.reserve(resp["kvs"].size());
+  for (const auto& kv : resp["kvs"]) {
+    if (!kv.isMember("key")) continue;
+    out.emplace_back(base64Decode(kv["key"].asString()),
+                     kv.isMember("value") ? base64Decode(kv["value"].asString())
+                                          : std::string{});
+  }
+  return out;
 }
 
 void EtcdClient::deleteRange(const std::string& key) {
