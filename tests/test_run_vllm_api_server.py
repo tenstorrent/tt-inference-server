@@ -14,12 +14,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-MODULE_PATH = (
-    Path(__file__).resolve().parents[1]
-    / "vllm-tt-metal"
-    / "src"
-    / "run_vllm_api_server.py"
-)
+from workflows.utils import get_repo_root_path
+
+MODULE_PATH = get_repo_root_path() / "vllm-tt-metal" / "src" / "run_vllm_api_server.py"
 
 
 def _build_catalog():
@@ -62,7 +59,7 @@ def run_vllm_api_server_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "vllm", vllm)
 
     utils = types.ModuleType("utils")
-    utils.__path__ = [str(Path(__file__).resolve().parents[1] / "utils")]
+    utils.__path__ = [str(get_repo_root_path() / "utils")]
     monkeypatch.setitem(sys.modules, "utils", utils)
 
     logging_utils = types.ModuleType("utils.logging_utils")

@@ -17,7 +17,6 @@ from workflows.model_spec import (
     MODEL_SPECS,
     get_model_id,
 )
-from workflows.workflow_result import WorkflowResult
 from workflows.setup_host import HostSetupManager
 from workflows.utils import (
     ensure_readwriteable_dir,
@@ -376,6 +375,22 @@ class TestHostSetupIntegration:
             manager.setup_model_environment()
 
 
+class _FakeEngineCommand:
+    """Stand-in for a build_engine_commands() result: records whether the
+    WorkflowRunner executed it and returns a chosen code."""
+
+    def __init__(self, return_code=0):
+        self.name = "fake-engine"
+        self._return_code = return_code
+        self.executed = False
+
+    def execute(self):
+        from workflow_module.commands import CommandResult
+
+        self.executed = True
+        return CommandResult(command_name=self.name, return_code=self._return_code)
+
+
 class TestMainWorkflowIntegration:
     """Test main run.py integration with minimal mocking."""
 
@@ -411,7 +426,7 @@ class TestMainWorkflowIntegration:
 
         Uses a post-0.11 model — pre-0.11 specs are refused by
         validate_runtime_args (_check_image_version_supported). LLM benchmarks
-        route to the v2 engine (run_v2_workflows), not the v1 run_workflows.
+        route to the v2 engine (dispatch_workflows), not the v1 run_workflows.
         """
         test_args = [
             "run.py",
@@ -424,15 +439,15 @@ class TestMainWorkflowIntegration:
         ]
 
         with patch("sys.argv", test_args), patch(
-            "run.run_v2_workflows",
-            return_value=[WorkflowResult(workflow_name="benchmarks", return_code=0)],
-        ) as mock_run_v2_workflows, patch(
+            "run.build_engine_commands",
+            return_value=[_FakeEngineCommand(return_code=0)],
+        ) as mock_build, patch(
             "workflows.utils.get_default_workflow_root_log_dir", return_value=temp_dir
         ), patch("workflows.log_setup.setup_run_logger"):
             # Run main
             result = main()
 
-            assert mock_run_v2_workflows.called
+            assert mock_build.called
             assert result == 0
 
     def test_main_returns_one_when_any_workflow_fails(
@@ -442,7 +457,7 @@ class TestMainWorkflowIntegration:
 
         Uses a post-0.11 model — pre-0.11 specs are refused by
         validate_runtime_args (_check_image_version_supported). LLM benchmarks
-        route to the v2 engine (run_v2_workflows); main() propagates a non-zero
+        route to the v2 engine (dispatch_workflows); main() propagates a non-zero
         return code from either dispatch path identically.
         """
         test_args = [
@@ -456,17 +471,14 @@ class TestMainWorkflowIntegration:
         ]
 
         with patch("sys.argv", test_args), patch(
-            "run.run_v2_workflows",
-            return_value=[
-                WorkflowResult(workflow_name="benchmarks", return_code=1),
-                WorkflowResult(workflow_name="reports", return_code=0),
-            ],
-        ) as mock_run_v2_workflows, patch(
+            "run.build_engine_commands",
+            return_value=[_FakeEngineCommand(return_code=1)],
+        ) as mock_build, patch(
             "workflows.utils.get_default_workflow_root_log_dir", return_value=temp_dir
         ), patch("workflows.log_setup.setup_run_logger"):
             result = main()
 
-            assert mock_run_v2_workflows.called
+            assert mock_build.called
             assert result == 1
 
     def test_main_release_raises_when_validate_setup_fails(
@@ -486,13 +498,13 @@ class TestMainWorkflowIntegration:
         with patch("sys.argv", test_args), patch(
             "run.validate_setup",
             side_effect=RuntimeError("validation failed"),
-        ), patch("run.run_v2_workflows") as mock_run_v2_workflows, patch(
+        ), patch("run.build_engine_commands") as mock_build, patch(
             "workflows.utils.get_default_workflow_root_log_dir", return_value=temp_dir
         ), patch("workflows.log_setup.setup_run_logger"):
             with pytest.raises(RuntimeError, match="validation failed"):
                 main()
 
-        assert not mock_run_v2_workflows.called
+        assert not mock_build.called
 
     def test_main_release_raises_when_server_setup_fails(
         self, temp_dir, mock_env_vars, mock_version_file
@@ -512,18 +524,24 @@ class TestMainWorkflowIntegration:
         with patch("sys.argv", test_args), patch("run.validate_setup"), patch(
             "run.setup_host",
             side_effect=RuntimeError("host setup failed"),
-        ), patch("run.run_v2_workflows") as mock_run_v2_workflows, patch(
+        ), patch("run.build_engine_commands") as mock_build, patch(
             "workflows.utils.get_default_workflow_root_log_dir", return_value=temp_dir
         ), patch("workflows.log_setup.setup_run_logger"):
             with pytest.raises(RuntimeError, match="host setup failed"):
                 main()
 
-        assert not mock_run_v2_workflows.called
+        assert not mock_build.called
 
-    def test_main_release_raises_when_server_start_fails(
+    def test_main_release_aborts_when_server_start_fails(
         self, temp_dir, mock_env_vars, mock_version_file
     ):
-        """Test release propagates inference server startup exceptions."""
+        """Server bring-up failure aborts the run before the workflow runs.
+
+        The combined [ServerCommand, engine] list is driven by one
+        WorkflowRunner; the ServerCommand catches the launcher exception and
+        returns non-zero, so the runner stops and the engine command never
+        executes. main() returns that non-zero code.
+        """
         test_args = [
             "run.py",
             "--model",
@@ -535,19 +553,20 @@ class TestMainWorkflowIntegration:
             "--docker-server",
         ]
 
+        engine_cmd = _FakeEngineCommand(return_code=0)
         with patch("sys.argv", test_args), patch("run.validate_setup"), patch(
             "run.setup_host",
             return_value=Namespace(),
         ), patch(
-            "run.run_docker_server",
+            "workflows.run_docker_server.run_docker_server",
             side_effect=RuntimeError("docker start failed"),
-        ), patch("run.run_v2_workflows") as mock_run_v2_workflows, patch(
+        ), patch("run.build_engine_commands", return_value=[engine_cmd]), patch(
             "workflows.utils.get_default_workflow_root_log_dir", return_value=temp_dir
         ), patch("workflows.log_setup.setup_run_logger"):
-            with pytest.raises(RuntimeError, match="docker start failed"):
-                main()
+            assert main() != 0
 
-        assert not mock_run_v2_workflows.called
+        # Server command failed first, so the workflow command never ran.
+        assert not engine_cmd.executed
 
     def test_main_release_raises_when_run_workflows_raises(
         self, temp_dir, mock_env_vars, mock_version_file
@@ -564,7 +583,7 @@ class TestMainWorkflowIntegration:
         ]
 
         with patch("sys.argv", test_args), patch(
-            "run.run_v2_workflows",
+            "run.build_engine_commands",
             side_effect=RuntimeError("venv setup failed"),
         ), patch(
             "run.validate_setup",
@@ -602,17 +621,11 @@ class TestMainWorkflowIntegration:
             "run.setup_host",
             return_value=Namespace(),
         ), patch(
-            "run.run_docker_server",
+            "workflows.run_docker_server.run_docker_server",
             return_value=mock_server_handle,
         ), patch(
-            "run.run_v2_workflows",
-            return_value=[
-                WorkflowResult(workflow_name="evals", return_code=0),
-                WorkflowResult(workflow_name="benchmarks", return_code=0),
-                WorkflowResult(workflow_name="spec_tests", return_code=0),
-                WorkflowResult(workflow_name="tests", return_code=0),
-                WorkflowResult(workflow_name="reports", return_code=0),
-            ],
+            "run.build_engine_commands",
+            return_value=[_FakeEngineCommand(return_code=0)],
         ), patch("subprocess.run") as mock_subprocess_run, patch(
             "run.get_current_commit_sha", return_value="deadbeefdead"
         ), patch(

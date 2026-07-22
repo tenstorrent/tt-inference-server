@@ -82,6 +82,7 @@ def generate_default_docker_link(
 def read_performance_reference_json() -> Dict[DeviceTypes, List[BenchmarkTaskParams]]:
     default_filepath = (
         get_repo_root_path()
+        / "reference_config"
         / "benchmarking"
         / "benchmark_targets"
         / "model_performance_reference.json"

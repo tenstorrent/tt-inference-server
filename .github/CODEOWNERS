@@ -59,5 +59,10 @@ docs/ @tenstorrent/tt-inference-server-codeowners
 # dynamo_frontend
 dynamo_frontend/ @idjuricTT @ljovanovicTT @lmuravljovTT @vpetrovicTT @ztorlakTT
 
-# tt-inference-server-v2
-tt-inference-server-v2/ @idjuricTT @fivanovicTT @vpetrovicTT @ddjukicTT
+# workflow engine + modules (formerly tt-inference-server-v2/)
+run_workflows.py @idjuricTT @fivanovicTT @vpetrovicTT @ddjukicTT
+launchers/ @idjuricTT @fivanovicTT @vpetrovicTT @ddjukicTT
+llm_module/ @idjuricTT @fivanovicTT @vpetrovicTT @ddjukicTT
+report_module/ @idjuricTT @fivanovicTT @vpetrovicTT @ddjukicTT
+test_module/ @idjuricTT @fivanovicTT @vpetrovicTT @ddjukicTT
+workflow_module/ @idjuricTT @fivanovicTT @vpetrovicTT @ddjukicTT
