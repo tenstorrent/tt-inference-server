@@ -3,7 +3,7 @@
     "DeepSeek-R1-0528": {
       "inference_engine": "vLLM",
       "ci": {
-        "nightly": {
+        "weekly": {
           "devices": [
             "QUAD_GALAXY"
           ]
@@ -325,7 +325,7 @@
     "Qwen3-4B": {
       "inference_engine": "FORGE",
       "ci": {
-        "nightly": {
+        "weekly": {
           "devices": [
             "P150"
           ]
@@ -568,7 +568,7 @@
     "mochi-1-preview": {
       "inference_engine": "MEDIA",
       "ci": {
-        "nightly": {
+        "weekly": {
           "devices": [
             "GALAXY",
             "BH_GALAXY",
