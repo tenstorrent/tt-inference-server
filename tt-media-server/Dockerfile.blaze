@@ -126,9 +126,9 @@ COPY VERSION ${APP_DIR}/VERSION
 RUN rm -rf ${APP_DIR}/server/cpp_server/build \
     && rm -rf ${APP_DIR}/server/cpp_server/tt-llm-engine
 
-# cpp_server build deps (Drogon, libboost, libjsoncpp, clang-format-20).
+# cpp_server build deps (Drogon, libboost, libjsoncpp, librdkafka, clang-format-20).
 # Idempotent — apt packages it overlaps with above are no-ops.
-RUN cd ${APP_DIR}/server/cpp_server && ./install_dependencies.sh
+RUN cd ${APP_DIR}/server/cpp_server && ./install_dependencies.sh --kafka
 
 # Rust toolchain — needed by cpp_server's CMake which FetchContent's
 # tokenizers-cpp directly (separate from tt-llm-engine's tokenizers).
@@ -154,7 +154,7 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && export RUSTUP_HOME=${HOME_DIR}/.rustup \
     && export PATH=${HOME_DIR}/.cargo/bin:${PATH} \
     && cd ${APP_DIR}/server/cpp_server \
-    && ./build.sh --blaze-with-migration"
+    && ./build.sh --blaze-with-migration --kafka"
 
 # Runtime helper that picks Python vs C++ server mode.
 COPY "tt-media-server/run_cpp.sh" "${APP_DIR}/server/run_cpp.sh"
@@ -297,6 +297,8 @@ RUN apt-get update && apt-get install -y \
     ffmpeg \
     gosu \
     libjsoncpp-dev \
+    librdkafka1 \
+    librdkafka++1 \
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_USERNAME} \
@@ -335,15 +337,17 @@ RUN SRV="${APP_DIR}/server"; \
     fi; \
     echo "verified: no first-party cpp_server C/C++ source under ${SRV}/cpp_server"
 
-# ── Informational: surface any unresolved shared libs for the C++ binary ────
+# ── Verify the C++ binary has no unresolved shared libraries ────────────────
 # A linking gap (e.g. Drogon, the engine libtt_llm_engine, or an RPATH
-# into a stripped build tree) shows up here in the build log. Non-fatal
-# by design.
+# into a stripped build tree) fails the image build.
 RUN BIN="${APP_DIR}/server/cpp_server/build/tt_media_server_cpp"; \
     if [ -x "$BIN" ]; then \
-        echo "ldd $BIN:"; ldd "$BIN" || true; \
-        if ldd "$BIN" 2>/dev/null | grep -q "not found"; then \
-            echo "WARNING: unresolved shared libraries for $BIN (see 'not found' above)"; \
+        echo "ldd $BIN:"; \
+        LDD_OUTPUT="$(ldd "$BIN" 2>&1)" || { echo "$LDD_OUTPUT"; exit 1; }; \
+        echo "$LDD_OUTPUT"; \
+        if echo "$LDD_OUTPUT" | grep -q "not found"; then \
+            echo "ERROR: unresolved shared libraries for $BIN (see 'not found' above)"; \
+            exit 1; \
         else \
             echo "ldd: all shared libraries resolved for $BIN"; \
         fi; \
