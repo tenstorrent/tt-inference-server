@@ -1535,8 +1535,8 @@ if(KAFKA_ENABLED)
         )
         target_include_directories(remote_kv_adapter PUBLIC
             ${CMAKE_CURRENT_SOURCE_DIR}/include
-            ${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/include
-            ${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/disaggregation/migration/include
+            ${_TT_LLM_ENGINE_ROOT}/include
+            ${_TT_LLM_ENGINE_ROOT}/disaggregation/migration/include
         )
         target_link_libraries(remote_kv_adapter PUBLIC
             messaging
