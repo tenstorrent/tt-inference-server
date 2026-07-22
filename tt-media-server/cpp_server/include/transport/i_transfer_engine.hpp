@@ -43,9 +43,9 @@ class ITransferEngine {
   /**
    * @brief The storage backend transfers are staged through.
    *
-   * Exposed so a driver (e.g. MooncakeMigrationWorker) can run the
-   * bounce-buffer flow — stage device DRAM into the registered host buffer with
-   * the backend, then move the host buffer with this engine. May be null.
+   * Exposed so a driver can run the bounce-buffer flow — stage device DRAM
+   * into the registered host buffer with the backend, then move the host
+   * buffer with this engine. May be null.
    */
   virtual std::shared_ptr<IStorageBackend> storage() const = 0;
 

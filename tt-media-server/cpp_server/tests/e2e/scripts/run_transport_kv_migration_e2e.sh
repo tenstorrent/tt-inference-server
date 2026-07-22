@@ -13,8 +13,7 @@
 # drive the paths that gtest can't: MODE=device (hardware) and TABLE=<pb>
 # (real protobuf tables, -DENABLE_KV_TABLE=ON).
 #
-# Unlike run_transport_migration_e2e.sh (the dummy single-tensor PoC), this
-# drives the real table-addressed path: KvCacheMirror / RemoteRegion, device-
+# Drives the real table-addressed path: KvCacheMirror / RemoteRegion, device-
 # group fan-out, and the BeginMigration/MirrorReady/DoneMarker/Ack control flow.
 #
 # Usage:
