@@ -688,9 +688,10 @@ void DisaggregationService::applySlotReservationAndLaunch(
   const bool fastMode = work.request->fast_mode;
   const auto slotId = work.request->slotId;
   const std::string decodeSessionId = result.sessionId;
+  const auto request = work.request;
 
   resolvePrefillSession(
-      work.request, registrationHashes,
+      request, registrationHashes,
       [this, work = std::move(work), streamCallback,
        resultCallback = std::move(resultCallback), taskId, fullPromptTokenIds,
        temperature, topP, topK, fastMode, slotId, decodeSessionId]() mutable {
