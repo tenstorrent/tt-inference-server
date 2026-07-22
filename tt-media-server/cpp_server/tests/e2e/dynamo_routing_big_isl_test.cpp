@@ -187,16 +187,14 @@ TEST_F(DynamoRoutingBigIslTest, BigIsl_RoutesPrefillThenDecode) {
   ASSERT_TRUE(resp.ok()) << "frontend returned error: statusCode="
                          << resp.statusCode << " error=" << resp.error;
 
-  // Decode responded successfully — frontend closed the SSE stream with a
-  // usage block reporting a positive completion count.
+  // Confirm decode produced at least one token.
   EXPECT_GT(resp.usage.completionTokens, 0)
       << "expected completion_tokens > 0 (decode should have produced at least "
          "one token); usage.prompt="
       << resp.usage.promptTokens
       << " usage.completion=" << resp.usage.completionTokens;
 
-  // Request hits prefill first — pull the taskId out so the remaining
-  // assertions key off the same request.
+  // Confirm prefill is sending a slot reservation request.
   std::optional<uint32_t> taskId;
   ASSERT_TRUE(waitFor(
       [&] {
@@ -210,7 +208,7 @@ TEST_F(DynamoRoutingBigIslTest, BigIsl_RoutesPrefillThenDecode) {
   std::cout << "[test] prefill-first slot reservation seen: taskId=" << *taskId
             << std::endl;
 
-  // Decode saw the slot-reservation ZMQ request for the same taskId.
+  // Confirm decode is receiving the slot reservation request.
   ASSERT_TRUE(waitFor(
       [&] { return findSlotReservationRequest(readFile(decodeLog), *taskId); },
       K_LOG_ASSERTION_TIMEOUT_SEC, K_LOG_POLL_INTERVAL_MS))
@@ -237,6 +235,7 @@ TEST_F(DynamoRoutingBigIslTest, BigIsl_RoutesPrefillThenDecode) {
       << "slot reservation was granted but with INVALID_SLOT_ID for taskId="
       << *taskId;
 
+  // Confirm decode is releasing the session after the final chunk.
   std::optional<DecodeSessionReleaseLog> release;
   ASSERT_TRUE(waitFor(
       [&] {
