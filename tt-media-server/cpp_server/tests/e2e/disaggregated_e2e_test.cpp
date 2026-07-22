@@ -704,7 +704,8 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
   // caches.
   TT_LOG_INFO("[Test] Sending second big delta to verify prefix cache update");
 
-  std::string secondBigFollowUp = tt::test::generatePromptWithApproxTokens(1196);
+  std::string secondBigFollowUp =
+      tt::test::generatePromptWithApproxTokens(1196);
 
   auto secondBigDeltaFuture = std::async(std::launch::async, [&] {
     return tt::test::sendAndReceive("127.0.0.1", DECODE_HTTP_PORT,

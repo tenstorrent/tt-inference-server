@@ -9,31 +9,14 @@
 // `dynamo-routing-e2e` job in cpp-heavy-checks.yml sets that stack up.
 //
 // The test sends a ~2000-word big-ISL prompt through the frontend and verifies
-// the four routing invariants for prefill-first disaggregation:
-//
-//   1. The request hits the prefill worker first.
-//      Marker: "[DisaggregationService] Prefill-first slot reservation
-//      taskId=<T>" in PREFILL_LOG.
-//
-//   2. Slot reservation succeeds (decode-side accepts, prefill-side is granted
-//      a valid slot).
-//      Markers: "[DisaggregationService] Slot reservation request taskId=<T>"
-//      in DECODE_LOG for the same taskId, and
-//      "[DisaggregationService] Slot reservation granted taskId=<T>
-//      slotId=<S>" in PREFILL_LOG with slotId != INVALID_SLOT_ID.
-//
-//   3. The request then hits the decode worker.
-//      Implied by (2)'s decode-side log line + the frontend receiving a
-//      non-empty completion (see 4).
-//
-//   4. Decode responds successfully.
-//      usage.completion_tokens > 0 on the streamed response.
-//
-//   5. Decode releases the session after the final chunk.
-//      Marker: "[DynamoRequestHandler] Released decode session taskId=<T>
-//      sessionId=<S>" in DECODE_LOG. Emitted by the isFinal branch of the
-//      DYNAMO_ROUTING=1 decode path once SessionManager::releaseInFlight has
-//      moved the session IN_FLIGHT → IDLE.
+// prefill-first disaggregation.
+
+// 1. prefill was hit first
+//  2. prefill sent the slot reservation request
+//  3. decode received and handled the slot reservation request
+//  4. prefill received slot reservation response
+//  5. decode was hit afterwards and produced tokens
+//  6. decode released the proper session
 
 #include <gtest/gtest.h>
 
@@ -117,7 +100,6 @@ std::optional<DecodeSessionReleaseLog> findDecodeSessionReleased(
   out.sessionId = m[2].str();
   return out;
 }
-
 
 template <typename F>
 bool waitFor(F predicate, int timeoutSec, int intervalMs) {
