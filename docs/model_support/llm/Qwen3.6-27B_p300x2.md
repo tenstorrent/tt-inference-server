@@ -40,7 +40,7 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 |-----------|-------|
 | Weights | [Qwen/Qwen3.6-27B](https://huggingface.co/Qwen/Qwen3.6-27B) |
 | Model Status | 🛠️ Experimental |
-| Max Batch Size | 1 |
+| Max Batch Size | 8 |
 | Max Context Length | 262144 |
 | Implementation Code | [qwen36-blackhole](https://github.com/tenstorrent/tt-metal/tree/c49bb76/models/demos/blackhole/qwen36) |
 | tt-metal Commit | `c49bb76` |
