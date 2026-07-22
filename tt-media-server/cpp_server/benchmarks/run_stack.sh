@@ -2,13 +2,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 #
-# run_stack.sh — bring up the Dynamo frontend + cpp_server (mock_pipeline) for
+# run_stack.sh — bring up the Dynamo frontend + cpp_server (mock_scheduler) for
 # the prefill/decode test suite, without any tt-shield image. Frontend runs from
 # a host ai-dynamo venv; etcd runs as the public quay image (or a local no-docker
-# etcd); workers run as the locally-built Blaze binary with the mock_pipeline
-# backend (real Blaze prefill and decode schedulers, pipeline-simulator latency
-# model). The binary must be built with --blaze; otherwise mock_pipeline silently
-# falls back to LLMRunner's legacy mock path. See benchmarks/test_prefill_decode.py.
+# etcd); workers run as the locally-built Blaze binary with the mock_scheduler
+# backend (real Blaze prefill and decode schedulers). The binary must be built
+# with --blaze; otherwise the backend silently falls back to LLMRunner's legacy
+# mock path. See benchmarks/test_prefill_decode.py.
 #
 #   ./run_stack.sh up                      # direct cpp_server socket split
 #   DYNAMO_ROUTING=1 ./run_stack.sh up
@@ -191,11 +191,11 @@ start_frontend() {
 ensure_binary() {
     local rebuild=0
     if [[ ! -x "${BIN}" ]]; then
-        log "no binary; building with --blaze for mock_pipeline"
+        log "no binary; building with --blaze for mock_scheduler"
         rebuild=1
     elif [[ ! -f "${CPP_DIR}/build/CMakeCache.txt" ]] || \
          ! grep -q '^ENABLE_BLAZE:BOOL=ON$' "${CPP_DIR}/build/CMakeCache.txt"; then
-        log "existing binary was not built with --blaze; rebuilding for mock_pipeline"
+        log "existing binary was not built with --blaze; rebuilding for mock_scheduler"
         rebuild=1
     else
         local src
@@ -313,14 +313,14 @@ up() {
         start_worker "${DECODE_LOG}" "${SERVER_PORT}" \
             $(worker_dynamo_env "${DYNAMO_ROUTING_NAMESPACE}" decode decode Chat) \
             $(worker_ipc_env dynamo_decode) \
-            LLM_MODE=decode LLM_DEVICE_BACKEND=mock_pipeline \
+            LLM_MODE=decode LLM_DEVICE_BACKEND=mock_scheduler \
             SOCKET_HOST=0.0.0.0 SOCKET_PORT="${SOCKET_PORT}" \
             USE_PREFILL_GATEWAY=0 DYNAMO_ROUTING=1
         wait_worker_healthy "decode" "${SERVER_PORT}" "${DECODE_LOG}"
         start_worker "${PREFILL_LOG}" "${PREFILL_PORT}" \
             $(worker_dynamo_env "${DYNAMO_ROUTING_NAMESPACE}" prefill prefill Prefill) \
             $(worker_ipc_env dynamo_prefill) \
-            LLM_MODE=prefill LLM_DEVICE_BACKEND=mock_pipeline \
+            LLM_MODE=prefill LLM_DEVICE_BACKEND=mock_scheduler \
             SOCKET_HOST=127.0.0.1 SOCKET_PORT="${SOCKET_PORT}" \
             USE_PREFILL_GATEWAY=0 DYNAMO_ROUTING=1 \
             DYNAMO_MODEL_INPUT=Tokens
@@ -332,12 +332,12 @@ up() {
         start_worker "${DECODE_LOG}" "${SERVER_PORT}" \
             $(worker_dynamo_env) \
             $(worker_ipc_env direct_decode) \
-            LLM_MODE=decode LLM_DEVICE_BACKEND=mock_pipeline \
+            LLM_MODE=decode LLM_DEVICE_BACKEND=mock_scheduler \
             SOCKET_HOST=0.0.0.0 SOCKET_PORT="${SOCKET_PORT}" \
             MAX_TOKENS_TO_PREFILL_ON_DECODE="${MAX_TOKENS_TO_PREFILL_ON_DECODE}"
         start_worker "${PREFILL_LOG}" "${PREFILL_PORT}" \
             $(worker_ipc_env direct_prefill) \
-            LLM_MODE=prefill LLM_DEVICE_BACKEND=mock_pipeline \
+            LLM_MODE=prefill LLM_DEVICE_BACKEND=mock_scheduler \
             SOCKET_HOST=127.0.0.1 SOCKET_PORT="${SOCKET_PORT}"
         wait_worker_healthy "decode" "${SERVER_PORT}" "${DECODE_LOG}"
         wait_worker_healthy "prefill" "${PREFILL_PORT}" "${PREFILL_LOG}"
