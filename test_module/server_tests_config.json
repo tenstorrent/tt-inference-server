@@ -871,6 +871,21 @@
                 "break_on_failure": false,
                 "mock_mode": false
             }
+        },
+        "VLLMQwen3StreamingParamConformanceTest": {
+            "module": "test_module.llm_tests.vllm_param_conformance_test",
+            "markers": [
+                "param",
+                "e2e",
+                "slow"
+            ],
+            "test_config": {
+                "test_timeout": 3600,
+                "retry_attempts": 0,
+                "retry_delay": 10,
+                "break_on_failure": false,
+                "mock_mode": false
+            }
         }
     },
     "_comment": "test_suites are loaded from test_suites/*.json files",
