@@ -5016,6 +5016,111 @@ _eval_config_list = [
             ),
         ],
     ),
+    # Janus-Pro-7B multimodal understanding. Two tasks per the add_support_for_new_model
+    # guide's coverage recommendation ("Minimum: at least 2 tasks per model"). Both are
+    # drawn from the paper's own understanding suite (arXiv:2501.17811 Table 3, which
+    # reports Janus-Pro-7B on GQA/POPE/MME/SEED/MMB/MM-Vet/MMMU) and restricted to what
+    # lmms-eval (EVALS_VISION venv) exposes as ready-to-run tasks today: MMBench-EN dev
+    # (mmbench_en_dev) + MMMU val (mmmu_val). MMBench is the headline number the paper
+    # leads with (79.2); MMMU adds a harder, exam-style discipline-coverage signal so the
+    # suite isn't single-benchmark. Other Table 3 benchmarks (POPE/MME/SEED/GQA/MM-Vet)
+    # were skipped only to keep the first bring-up minimal, not for any technical reason.
+    # NOTE: mmbench_en_dev extracts the chosen option letter with lmms-eval's
+    #   rule-based matcher first (can_infer_option/can_infer_text); the GPT
+    #   answer-extraction is only a fallback for predictions that don't parse.
+    #   That fallback POSTs to OPENAI_API_URL via `requests` (the `openai`
+    #   package is optional, not imported), and if no key/endpoint is set it
+    #   does NOT abort - unparsable items just get a random-guess letter. Our
+    #   gen prompt asks the model to answer with the letter directly, so the
+    #   rule-based path handles the common case. Set OPENAI_API_URL/OPENAI_API_KEY
+    #   (and MODEL_VERSION, default gpt-4o-2024-11-20) only to enable the fallback.
+    # NOTE: the paper reports MMBench 79.2, but the community could not reproduce it
+    #   with lmms-eval (mmbench_en_dev = 65.81, github.com/deepseek-ai/Janus/issues/205);
+    #   published_score keeps the paper figure for reference only. Since we run the
+    #   same lmms-eval mmbench_en_dev task, mmbench_en_dev's gpu_reference_score uses
+    #   that reproducible community number (65.81) as the reference/sanity anchor.
+    #   mmmu_val has no comparable community number yet, so it stays None (no gate).
+    EvalConfig(
+        hf_model_repo="deepseek-community/Janus-Pro-7B",
+        tasks=[
+            EvalTask(
+                eval_class="openai_compatible",
+                task_name="mmbench_en_dev",
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                apply_chat_template=False,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=79.2,
+                    published_score_ref="https://arxiv.org/abs/2501.17811",
+                    # Reproducible community lmms-eval score (mmbench_en_dev), used as the
+                    # reference since we run the identical task; the paper's 79.2 is not
+                    # reproducible and is kept only as published_score.
+                    gpu_reference_score=65.81,
+                    gpu_reference_score_ref="https://github.com/deepseek-ai/Janus/issues/205",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "gpt_eval_score,none",
+                        ],
+                        # lmms-eval's mmbench aggregation already returns overall_acc
+                        # * 100 (0-100), so do NOT re-scale with unit="percent".
+                        "unit": "raw",
+                    },
+                ),
+                model_kwargs={
+                    "num_concurrent": 32,
+                    "max_retries": 1,
+                    "tokenized_requests": "False",
+                    "add_bos_token": "True",
+                    "timeout": "9999",
+                    "eos_string": "<|end_of_text|>",
+                },
+                gen_kwargs={
+                    "stop": "<|eot_id|>",
+                    "stream": "False",
+                    "max_new_tokens": "512",
+                },
+            ),
+            EvalTask(
+                eval_class="openai_compatible",
+                task_name="mmmu_val",
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                apply_chat_template=False,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    # Source: Janus-Pro paper (arXiv:2501.17811), Table 3 "Multimodal
+                    # Understanding", MMMU column for Janus-Pro-7B = 41.0 (val split; the
+                    # same MMMU val that lmms-eval's mmmu_val runs). It is a paper figure
+                    # only, not independently reproduced here, hence gpu_reference_score
+                    # stays None (no PASS/FAIL gate) until a CPU/GPU reference run exists.
+                    published_score=41.0,
+                    published_score_ref="https://arxiv.org/abs/2501.17811",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD: measure CPU/GPU reference run",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "mmmu_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "num_concurrent": 32,
+                    "max_retries": 1,
+                    "tokenized_requests": "False",
+                    "add_bos_token": "True",
+                    "timeout": "9999",
+                    "eos_string": "<|end_of_text|>",
+                },
+                gen_kwargs={
+                    "stop": "<|eot_id|>",
+                    "stream": "False",
+                    "max_new_tokens": "512",
+                },
+            ),
+        ],
+    ),
 ]
 
 

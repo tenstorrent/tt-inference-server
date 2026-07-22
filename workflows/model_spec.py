@@ -294,6 +294,12 @@ qwen36_blackhole_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/blackhole/qwen36",
 )
+janus_pro_impl = ImplSpec(
+    impl_id="janus_pro",
+    impl_name="janus-pro",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/experimental/janus_pro",
+)
 
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "tt_transformers": tt_transformers_impl,
@@ -307,6 +313,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "tt_vllm_plugin": tt_vllm_plugin_impl,
     "sdxl_forge": sdxl_forge_impl,
     "qwen36_blackhole": qwen36_blackhole_impl,
+    "janus_pro": janus_pro_impl,
 }
 
 
