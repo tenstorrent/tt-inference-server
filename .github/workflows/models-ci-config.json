@@ -512,6 +512,16 @@
         }
       }
     },
+    "Devstral-2-123B-Instruct-2512": {
+      "inference_engine": "FORGE",
+      "ci": {
+        "nightly": {
+          "devices": [
+            "BH_GALAXY"
+          ]
+        }
+      }
+    },
     "gemma-4-12B-it": {
       "inference_engine": "vLLM",
       "ci": {

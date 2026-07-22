@@ -5016,6 +5016,171 @@ _eval_config_list = [
             ),
         ],
     ),
+    # =========================================================================
+    # Devstral-2-123B (forge / tt-xla, BH Galaxy 4x8 DP+TP).
+    # Devstral 2 is an agentic *coding* model (256k native context, FP8). Its
+    # published benchmarks are all agentic SWE/terminal tasks -- there is no
+    # published GPQA/MMLU/AIME score -- so the eval suite mirrors those exactly:
+    # swe_bench_verified, swe_bench (multilingual), and terminal_bench_2, modeled
+    # on the gemma-4-31B agentic block above.
+    #
+    # published_score values are from the HF model card benchmark table
+    # (https://huggingface.co/mistralai/Devstral-2-123B-Instruct-2512).
+    # gpu_reference_score is left None (a supported "TBD" state -- run_reports
+    # skips the ratio check when it is falsy) -- TODO(CSE): fill from a
+    # bring-your-own vLLM reference run, as was done for gemma-4-31B.
+    #
+    # Token budgets mirror gemma (same 256k native context). These agentic evals
+    # send ~192k-token requests, so min_context_required guards them: at the
+    # 128-ctx first-light spec (workflows/model_specs/dev/cnn.yaml) they SKIP
+    # cleanly (llm_eval_tests.py honors min_context_required) and start running
+    # automatically once max_context is raised toward the model max.
+    # Sampling follows the model card (temperature=0.15); Devstral is not a
+    # thinking model, so no top_k / enable_thinking (unlike gemma/Qwen3.6).
+    # =========================================================================
+    EvalConfig(
+        hf_model_repo="mistralai/Devstral-2-123B-Instruct-2512",
+        tasks=[
+            EvalTask(
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                min_context_required=192 * 1024,
+                score=EvalTaskScore(
+                    published_score=72.2,
+                    published_score_ref="https://huggingface.co/mistralai/Devstral-2-123B-Instruct-2512 (SWE-bench Verified)",
+                    gpu_reference_score=None,  # TODO(CSE): bring-your-own vLLM reference run
+                    gpu_reference_score_ref="TBD -- TODO(CSE): bring-your-own vLLM reference run",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                swebench_eval_config=SWEbenchEvalConfig(
+                    dataset_name="SWE-bench/SWE-bench_Verified",
+                    sweagent_subset="verified",
+                    dataset_split="test",
+                    agent_backend="mini-swe-agent",
+                    n_concurrent_trials=5,
+                    max_workers=8,
+                    n_tasks=None,  # full dataset (500)
+                    temperature=0.15,  # model card recommendation
+                    top_p=0.95,
+                    # Devstral native ctx is 256k; keep max_input + max_output
+                    # under the served max-model-len. 160K + 32K = 192K.
+                    max_input_tokens=160 * 1024,
+                    max_output_tokens=32 * 1024,
+                    instance_ids_map={
+                        # Generic SWE-bench Verified instances (model-agnostic),
+                        # same nightly subset used by the gemma-4-31B block.
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-11299",
+                            "astropy__astropy-14096",
+                            "matplotlib__matplotlib-25332",
+                            "sympy__sympy-13551",
+                            "scikit-learn__scikit-learn-14629",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+            EvalTask(
+                task_name="swe_bench_multilingual",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                min_context_required=192 * 1024,
+                score=EvalTaskScore(
+                    published_score=61.3,
+                    published_score_ref="https://huggingface.co/mistralai/Devstral-2-123B-Instruct-2512 (SWE-bench Multilingual)",
+                    gpu_reference_score=None,  # TODO(CSE): bring-your-own vLLM reference run
+                    gpu_reference_score_ref="TBD -- TODO(CSE): bring-your-own vLLM reference run",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                swebench_eval_config=SWEbenchEvalConfig(
+                    # SWE-bench Multilingual reuses the SWEbench runner with the
+                    # multilingual dataset + mini-swe-agent "multilingual" subset.
+                    dataset_name="SWE-bench/SWE-bench_Multilingual",
+                    sweagent_subset="multilingual",
+                    dataset_split="test",
+                    agent_backend="mini-swe-agent",
+                    n_concurrent_trials=5,
+                    max_workers=8,
+                    n_tasks=None,  # full dataset
+                    temperature=0.15,  # model card recommendation
+                    top_p=0.95,
+                    max_input_tokens=160 * 1024,
+                    max_output_tokens=32 * 1024,
+                    # No pinned nightly instance_ids (verified IDs don't exist in
+                    # the multilingual set); CI_NIGHTLY slices via limit below.
+                    # TODO(CSE): pin real multilingual instance_ids for a
+                    # deterministic nightly subset.
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 5,
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+            EvalTask(
+                task_name="terminal_bench_2",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                min_context_required=192 * 1024,
+                score=EvalTaskScore(
+                    published_score=32.6,
+                    published_score_ref="https://huggingface.co/mistralai/Devstral-2-123B-Instruct-2512 (Terminal Bench 2)",
+                    gpu_reference_score=None,  # TODO(CSE): bring-your-own vLLM reference run
+                    gpu_reference_score_ref="TBD -- TODO(CSE): bring-your-own vLLM reference run",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2",
+                    agent="terminus-2",
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=None,  # full dataset (89)
+                    override_cpus=32,
+                    override_memory_mb=48 * 1024,
+                    agent_timeout_sec=3 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 0.15,  # model card recommendation
+                        "model_info": {
+                            # 112K + 80K = 192K, under the served max-model-len.
+                            "max_input_tokens": 112 * 1024,
+                            "max_output_tokens": 80 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 80 * 1024,
+                            "timeout": 60 * 60,
+                        },
+                    },
+                    task_names_map={
+                        # Generic terminal-bench-2 tasks (model-agnostic), same
+                        # nightly subset used by the gemma-4-31B block.
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/caffe-cifar-10",
+                            "terminal-bench/password-recovery",
+                            "terminal-bench/portfolio-optimization",
+                            "terminal-bench/hf-model-inference",
+                            "terminal-bench/financial-document-processor",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+        ],
+    ),
 ]
 
 

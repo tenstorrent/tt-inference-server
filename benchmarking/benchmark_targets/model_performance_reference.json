@@ -1,4 +1,26 @@
 {
+    "_devstral_2_123b_note": "Devstral-2-123B on BH Galaxy (4x8 DP+TP). Device key 'blackhole_galaxy' == DeviceTypes.BLACKHOLE_GALAXY member name (from_string uppercases; 'bh-galaxy'/'bh_galaxy' would raise). ttft_ms/tput_user/tput below are PLACEHOLDER targets -- TODO(CSE): replace with theoretical numbers derived from a comparable 123B DP+TP model.",
+    "Devstral-2-123B-Instruct-2512": {
+        "blackhole_galaxy": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 0,
+                        "tput_user": 0,
+                        "tput": 0
+                    }
+                }
+            }
+        ]
+    },
     "gemma-4-31b-it": {
         "p300x2": [
             {
