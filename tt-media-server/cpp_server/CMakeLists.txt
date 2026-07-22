@@ -1535,13 +1535,16 @@ if(KAFKA_ENABLED)
         )
         target_include_directories(remote_kv_adapter PUBLIC
             ${CMAKE_CURRENT_SOURCE_DIR}/include
-            ${_TT_LLM_ENGINE_ROOT}/include
-            ${_TT_LLM_ENGINE_ROOT}/disaggregation/migration/include
         )
         target_link_libraries(remote_kv_adapter PUBLIC
             messaging
             spdlog::spdlog
         )
+        if(TARGET TtLlmEngine::Full)
+            target_link_libraries(remote_kv_adapter PUBLIC TtLlmEngine::Full)
+        else()
+            target_link_libraries(remote_kv_adapter PUBLIC TtLlmEngine::Core)
+        endif()
         message(STATUS "remote_kv_adapter: ENABLED (ENABLE_BLAZE=ON)")
 
         # Wire the Kafka-backed RemoteKVManagerAdapter into the PrefillScheduler factory (blaze_utils.hpp)
