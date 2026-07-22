@@ -350,7 +350,7 @@ jobs:
             --dataset-name random \
             --random-input-len 55000 \
             --random-output-len 500 \
-            --num-prompts 16 \
+            --num-prompts 1000 \
             --max-concurrency 16 \
             --save-result \
             --result-filename "vllm-bench-split-zmq-result.json" \
