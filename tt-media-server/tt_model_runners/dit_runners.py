@@ -10,6 +10,8 @@ from abc import abstractmethod
 
 import ttnn
 from config.constants import (
+    LTX23_NUM_FRAMES,
+    LTX23_RESOLUTION,
     WAN22_NUM_FRAMES,
     ModelRunners,
     ModelServices,
@@ -23,6 +25,8 @@ from domain.video_generate_request import VideoGenerateRequest
 from domain.video_i2v_generate_request import ImagePromptEntry, VideoI2VGenerateRequest
 from models.common.utility_functions import is_blackhole
 from models.tt_dit.pipelines.flux1.pipeline_flux1 import Flux1Pipeline
+from models.tt_dit.pipelines.ltx.pipeline_ltx_distilled import LTXDistilledPipeline
+from models.tt_dit.pipelines.ltx.pipeline_ltx import DEFAULT_NEGATIVE_PROMPT as LTX23_REFERENCE_NEGATIVE_PROMPT
 from models.tt_dit.pipelines.mochi.pipeline_mochi import MochiPipeline
 from models.tt_dit.pipelines.motif.pipeline_motif import MotifPipeline
 from models.tt_dit.pipelines.qwenimage.pipeline_qwenimage import (
@@ -55,6 +59,7 @@ dit_runner_log_map = {
     ModelRunners.TT_WAN_2_2_I2V_ANISORA.value: "Wan22-I2V-AniSora",
     ModelRunners.TT_WAN_2_2_I2V_DISTILL.value: "Wan22-I2V-Distill",
     ModelRunners.TT_WAN_2_2_I2V_LORA.value: "Wan22-I2V-LoRA",
+    ModelRunners.TT_LTX_2_3.value: "LTX-2.3",
     ModelRunners.TT_QWEN_IMAGE.value: "Qwen-Image",
     ModelRunners.TT_QWEN_IMAGE_2512.value: "Qwen-Image-2512",
     ModelRunners.SP_RUNNER.value: "SP-Runner",
@@ -945,3 +950,136 @@ class TTWan22I2VLoRARunner(TTDiTRunner):
 
     def _build_warmup_video_request(self) -> VideoI2VGenerateRequest:
         return _wan22_i2v_warmup_request("A golden retriever running on a sandy beach")
+
+
+LTX23_TRACE_REGION_BYTES = 500_000_000  # video s1+s2 + BWE/vocoder traces at 1080p
+LTX23_GALAXY_ROUTER_MAX_PAYLOAD_BYTES = 8192
+# Depthwise audio taps (native ttnn.conv1d) run an UntilizeWithHalo gather that needs L1_SMALL.
+LTX23_L1_SMALL_BYTES = 32768
+# Distilled transformer file + Gemma-3 encoder; the latent upscaler is pinned in the pipeline.
+LTX23_DISTILLED_FILENAME = "ltx-2.3-22b-distilled-1.1.safetensors"
+LTX23_GEMMA_REPO = "google/gemma-3-12b-it-qat-q4_0-unquantized"
+LTX23_FPS = 24  # distilled output frame rate; audio decode + AV mux must agree
+# Distilled denoise is a fixed sigma schedule (8 + 3) and guidance-free (no CFG), so the request's
+# num_inference_steps and negative_prompt have no effect; surfaced (not applied) for transparency.
+LTX23_STAGE1_STEPS = 8
+LTX23_STAGE2_STEPS = 3
+LTX23_TOTAL_STEPS = LTX23_STAGE1_STEPS + LTX23_STAGE2_STEPS
+
+
+def _ltx23_dit_device_params(mesh_shape: tuple) -> dict:
+    # Tracing is always on for LTX-2.3, so the trace region is always reserved.
+    device_params: dict = {
+        "l1_small_size": LTX23_L1_SMALL_BYTES,
+        "trace_region_size": LTX23_TRACE_REGION_BYTES,
+    }
+    if is_large_mesh(mesh_shape):
+        device_params["fabric_config"] = ttnn.FabricConfig.FABRIC_1D_RING
+        router_config = ttnn.FabricRouterConfig()
+        router_config.max_packet_payload_size_bytes = (
+            LTX23_GALAXY_ROUTER_MAX_PAYLOAD_BYTES
+        )
+        device_params["fabric_router_config"] = router_config
+    else:
+        device_params["fabric_config"] = ttnn.FabricConfig.FABRIC_1D
+    if is_blackhole():
+        device_params["reliability_mode"] = ttnn.FabricReliabilityMode.RELAXED_INIT
+    return device_params
+
+
+def _ltx23_pipeline_args(request, resolution) -> dict:
+    # Distilled generate() has no steps/negative_prompt knob (fixed sigma schedule). No output_path →
+    # generate() returns (frames, audio); "rgb" = on-device uint8 RGB planar for the server to encode.
+    pipeline_args = {
+        "prompt": request.prompt,
+        "output_type": "rgb",
+        "num_frames": LTX23_NUM_FRAMES,
+        "height": resolution.height,
+        "width": resolution.width,
+        "fps": LTX23_FPS,
+    }
+    if request.seed is not None:
+        pipeline_args["seed"] = int(request.seed)
+    return pipeline_args
+
+
+class TTLtx23DistilledRunner(TTDiTRunner):
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
+        self.resolution = LTX23_RESOLUTION
+        # Encode AV in the device-worker process so raw frames never cross the result-queue pickle.
+        self.export_in_runner = True
+
+    def create_pipeline(self):
+        try:
+            # A real file path, not "dir:file": the pipeline's checkpoint resolver treats a
+            # ":"-joined value as an HF "repo_id:file" and rejects an absolute mount path.
+            checkpoint_path = os.path.join(
+                self.settings.model_weights_path, LTX23_DISTILLED_FILENAME
+            )
+            return LTXDistilledPipeline.create_pipeline(
+                mesh_device=self.ttnn_device,
+                checkpoint_name=checkpoint_path,
+                gemma_path=LTX23_GEMMA_REPO,
+                num_frames=LTX23_NUM_FRAMES,
+                height=self.resolution.height,
+                width=self.resolution.width,
+                traced=True,
+                run_warmup=True,
+            )
+        except Exception as e:
+            log_exception_chain(
+                self.logger,
+                self.device_id,
+                "LTX-2.3 pipeline creation failed",
+                e,
+            )
+            raise
+
+    def load_weights(self):
+        return False
+
+    def get_pipeline_device_params(self):
+        return _ltx23_dit_device_params(self.settings.device_mesh_shape)
+
+    def _log_distilled_contract(self, request: VideoGenerateRequest) -> None:
+        """Surface, once, that the distilled model ignores num_inference_steps/negative_prompt
+        rather than silently dropping them: it runs a fixed 8+3 sigma schedule and is guidance-free
+        (no CFG). num_inference_steps has a non-None default, so it can't be told from an explicit
+        value — hence the contract is stated once, not re-logged per request. The negative_prompt
+        note is per-request because it keys off a value the client actually supplied."""
+        if not getattr(self, "_logged_distilled_contract", False):
+            self.logger.info(
+                f"LTX-2.3 distilled: fixed {LTX23_TOTAL_STEPS}-step schedule "
+                f"(stage1={LTX23_STAGE1_STEPS} + stage2={LTX23_STAGE2_STEPS}); guidance-free (no CFG). "
+                f"num_inference_steps is ignored. "
+                f"Reference negative prompt (NOT applied): {LTX23_REFERENCE_NEGATIVE_PROMPT}"
+            )
+            self._logged_distilled_contract = True
+        if request.negative_prompt:
+            self.logger.info("Ignoring negative_prompt: distilled model is guidance-free.")
+
+    @log_execution_time(
+        f"{dit_runner_log_map[get_settings().model_runner]} inference",
+        TelemetryEvent.MODEL_INFERENCE,
+        os.environ.get("TT_VISIBLE_DEVICES"),
+    )
+    def run(self, requests: list[VideoGenerateRequest]):
+        self.logger.debug(f"Device {self.device_id}: Running inference")
+        self._log_distilled_contract(requests[0])
+        frames, audio = self.pipeline.generate(
+            **_ltx23_pipeline_args(requests[0], self.resolution)
+        )
+        self.logger.debug(f"Device {self.device_id}: Inference completed")
+        if self.export_in_runner:
+            from utils.video_manager import VideoManager
+
+            return [
+                VideoManager().export_rgb_planar_to_mp4_with_audio(
+                    frames,
+                    audio.waveform,
+                    audio.sampling_rate,
+                    fps=LTX23_FPS,
+                )
+            ]
+        return (frames, audio)

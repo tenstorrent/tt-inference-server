@@ -6,7 +6,10 @@ from __future__ import annotations
 
 import os
 import subprocess
+import tempfile
+import threading
 import uuid
+import wave
 from pathlib import Path
 
 import numpy as np
@@ -65,6 +68,115 @@ class VideoManager:
         except Exception as e:
             self._logger.error(f"Video export failed: {e}")
             raise RuntimeError(f"Failed to export video: {e}") from e
+
+    @log_execution_time("Exporting RGB-planar video+audio to MP4")
+    def export_rgb_planar_to_mp4_with_audio(
+        self,
+        frames,
+        audio_waveform,
+        sample_rate: int,
+        fps: int = 24,
+    ) -> str:
+        """Export planar RGB frames + audio to an AV MP4 (H.264 yuv420p + AAC).
+
+        ``frames`` is RGB planar, (B, 3, T, H, W) or (3, T, H, W) uint8 (planes R, G, B). It streams
+        as ffmpeg ``gbrp`` (channels-first, so the device gather has a large innermost dim); libx264
+        does RGB→yuv420p. Audio is muxed from a temp WAV.
+        """
+        arr = frames.frames if hasattr(frames, "frames") else frames
+        arr = np.asarray(arr)
+        if arr.ndim == 5:
+            arr = arr[0]
+        if arr.ndim != 4 or arr.shape[0] != 3:
+            raise ValueError(f"Expected RGB planar (3, T, H, W), got {arr.shape}")
+        _, t_frames, height, width = arr.shape
+
+        _VIDEO_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        output_path = str(_VIDEO_OUTPUT_DIR / f"{uuid.uuid4()}.mp4")
+        crf = max(_MIN_CRF, min(_MAX_CRF, int(os.environ.get("TT_VIDEO_EXPORT_CRF", "23"))))
+        preset = os.environ.get("TT_VIDEO_EXPORT_PRESET", "ultrafast").strip()
+
+        wav_path = _write_temp_wav(audio_waveform, sample_rate)
+        try:
+            cmd = [
+                "ffmpeg", "-y", "-nostats", "-loglevel", "error",
+                "-f", "rawvideo", "-pix_fmt", "gbrp",
+                "-s", f"{width}x{height}", "-r", str(fps),
+                "-i", "-",
+                "-i", wav_path,
+                "-c:v", "libx264", "-crf", str(crf), "-pix_fmt", "yuv420p",
+            ]
+            if preset:
+                cmd += ["-preset", preset]
+            cmd += ["-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", output_path]
+            # gbrp plane order is G, B, R; frames are R, G, B.
+            self._stream_planar_to_ffmpeg(cmd, arr, t_frames, plane_order=(1, 2, 0))
+            return output_path
+        except Exception as e:
+            self._logger.error(f"RGB-planar export failed: {e}")
+            raise RuntimeError(f"Failed to export RGB-planar video+audio: {e}") from e
+        finally:
+            try:
+                os.remove(wav_path)
+            except OSError:
+                pass
+
+    @staticmethod
+    def _run_streaming_ffmpeg(cmd, write_stdin, timeout: int = _FFMPEG_ENCODE_TIMEOUT_S) -> None:
+        """Run ffmpeg while ``write_stdin(pipe)`` feeds its stdin.
+
+        stderr is drained on a separate thread throughout the write: for the
+        largest payloads (1080p planar) ffmpeg's stderr can outrun a fixed pipe
+        buffer, and reading it only after the full stdin write would let a full
+        stderr pipe stall ffmpeg's stdin reads and deadlock the writer.
+        """
+        process = subprocess.Popen(
+            cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE
+        )
+        stderr_box: list[bytes] = []
+        drainer = threading.Thread(
+            target=lambda: stderr_box.append(process.stderr.read()), daemon=True
+        )
+        drainer.start()
+        try:
+            write_stdin(process.stdin)
+            process.stdin.close()
+            rc = process.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+            drainer.join(timeout=5)
+            raise RuntimeError("FFmpeg export timed out") from None
+        except Exception:
+            process.kill()
+            process.wait()
+            drainer.join(timeout=5)
+            raise
+        drainer.join(timeout=5)
+        if rc != 0:
+            stderr = b"".join(c for c in stderr_box if c)
+            error_msg = stderr.decode(errors="replace") if stderr else "Unknown error"
+            raise RuntimeError(f"FFmpeg failed: {error_msg}")
+
+    @classmethod
+    def _stream_planar_to_ffmpeg(
+        cls,
+        cmd: list[str],
+        arr: NDArray,
+        t_frames: int,
+        plane_order: tuple[int, int, int] = (0, 1, 2),
+        timeout: int = _FFMPEG_ENCODE_TIMEOUT_S,
+    ) -> None:
+        """Stream planar frames (arr[c, t] = (H, W) per plane) to ffmpeg in ``plane_order``."""
+
+        def write_stdin(stdin):
+            for t in range(t_frames):
+                for c in plane_order:
+                    # arr[c, t] is already C-contiguous; write its buffer directly to skip a
+                    # ~900MB/frame-set tobytes() copy on the export critical path.
+                    stdin.write(np.ascontiguousarray(arr[c, t]))
+
+        cls._run_streaming_ffmpeg(cmd, write_stdin, timeout)
 
     @staticmethod
     def _build_encode_cmd(
@@ -144,40 +256,22 @@ class VideoManager:
             error_msg = stderr.decode(errors="replace") if stderr else "Unknown error"
             raise RuntimeError(f"FFmpeg failed: {error_msg}")
 
-    @staticmethod
+    @classmethod
     def _stream_to_ffmpeg(
+        cls,
         cmd: list[str],
         frames: NDArray,
         timeout: int = _FFMPEG_ENCODE_TIMEOUT_S,
     ) -> None:
         """Stream frames one-by-one to ffmpeg, converting dtype per-frame."""
-        process = subprocess.Popen(
-            cmd,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-        )
 
-        try:
+        def write_stdin(stdin):
             for frame in frames:
                 if frame.dtype != np.uint8:
                     frame = _normalize_dtype_single(frame)
-                process.stdin.write(frame.tobytes())
-            process.stdin.close()
-            stderr = process.stderr.read()
-            rc = process.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait()
-            raise RuntimeError("FFmpeg export timed out") from None
-        except Exception:
-            process.kill()
-            process.wait()
-            raise
+                stdin.write(frame.tobytes())
 
-        if rc != 0:
-            error_msg = stderr.decode(errors="replace") if stderr else "Unknown error"
-            raise RuntimeError(f"FFmpeg failed: {error_msg}")
+        cls._run_streaming_ffmpeg(cmd, write_stdin, timeout)
 
     @classmethod
     def ensure_faststart(cls, input_path: str, output_path: str) -> None:
@@ -231,3 +325,36 @@ def _normalize_dtype_single(frame: NDArray) -> NDArray[np.uint8]:
         return frame.clip(0, 255).astype(np.uint8)
 
     return frame.clip(0, 255).astype(np.uint8)
+
+
+def _write_temp_wav(waveform, sample_rate: int) -> str:
+    """Stage an audio waveform to a temp 16-bit PCM WAV for ffmpeg muxing.
+
+    Accepts torch or numpy: mono ``(N,)``, interleaved ``(N, C)``, or
+    channels-first stereo ``(2, N)`` (the decoder's layout), float [-1, 1] or
+    int16. Channels-first is only disambiguated for stereo.
+    """
+    arr = waveform.detach().cpu().numpy() if hasattr(waveform, "detach") else np.asarray(waveform)
+    if arr.ndim == 1:
+        arr = arr[:, None]
+    # (2, N) → (N, 2): the decoder emits channels-first stereo.
+    if arr.shape[1] != 2 and arr.shape[0] == 2:
+        arr = arr.T
+    if arr.dtype != np.int16:
+        arr = (np.clip(arr, -1.0, 1.0) * 32767.0).astype(np.int16)
+
+    fd, path = tempfile.mkstemp(suffix=".wav")
+    os.close(fd)
+    try:
+        with wave.open(path, "wb") as w:
+            w.setnchannels(arr.shape[1])
+            w.setsampwidth(2)
+            w.setframerate(int(sample_rate))
+            w.writeframes(np.ascontiguousarray(arr).tobytes())
+    except Exception:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+        raise
+    return path
