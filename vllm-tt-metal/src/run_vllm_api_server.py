@@ -633,6 +633,9 @@ def _append_vllm_arg(argv: list[str], arg_name: str, value) -> None:
         if value:
             argv.append(arg_name)
         return
+    if isinstance(value, (dict, list)):
+        argv.extend([arg_name, json.dumps(value)])
+        return
     argv.extend([arg_name, str(value)])
 
 
