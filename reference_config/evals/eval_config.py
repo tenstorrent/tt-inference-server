@@ -5067,16 +5067,19 @@ _eval_config_list = [
                         "unit": "raw",
                     },
                 ),
+                # Janus tokenizer (not Llama): eos id 100001 = <｜end▁of▁sentence｜>.
+                # Conversation template also stops on <|User|> (see deepseek-ai/Janus
+                # janus/utils/conversation.py "deepseek" template).
                 model_kwargs={
                     "num_concurrent": 32,
                     "max_retries": 1,
                     "tokenized_requests": "False",
                     "add_bos_token": "True",
                     "timeout": "9999",
-                    "eos_string": "<|end_of_text|>",
+                    "eos_string": "<｜end▁of▁sentence｜>",
                 },
                 gen_kwargs={
-                    "stop": "<|eot_id|>",
+                    "stop": "<｜end▁of▁sentence｜>",
                     "stream": "False",
                     "max_new_tokens": "512",
                 },
@@ -5111,10 +5114,10 @@ _eval_config_list = [
                     "tokenized_requests": "False",
                     "add_bos_token": "True",
                     "timeout": "9999",
-                    "eos_string": "<|end_of_text|>",
+                    "eos_string": "<｜end▁of▁sentence｜>",
                 },
                 gen_kwargs={
-                    "stop": "<|eot_id|>",
+                    "stop": "<｜end▁of▁sentence｜>",
                     "stream": "False",
                     "max_new_tokens": "512",
                 },
