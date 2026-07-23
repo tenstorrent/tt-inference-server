@@ -47,6 +47,25 @@
                     "description": "vLLM responses parameter conformance"
                 }
             ]
+        },
+        {
+            "models": [
+                "qwen3_32b"
+            ],
+            "devices": [
+                "galaxy",
+                "t3k",
+                "galaxy_t3k",
+                "p150x8",
+                "p300x2"
+            ],
+            "test_cases": [
+                {
+                    "template": "VLLMQwen3StreamingParamConformanceTest",
+                    "enabled": true,
+                    "description": "Qwen3-32B streaming reasoning/tool-call regressions"
+                }
+            ]
         }
     ]
 }

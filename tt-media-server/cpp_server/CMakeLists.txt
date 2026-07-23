@@ -602,8 +602,6 @@ add_library(transport_lib
     src/transport/device_dram_storage_backend.cpp
     src/transport/umd_device_access.cpp
     src/transport/mooncake_transfer_engine.cpp
-    src/transport/mooncake_migration_worker.cpp
-    src/transport/peer_discovery_service.cpp
     src/transport/worker_health.cpp
     src/transport/worker_health_server.cpp
     # Real KV-cache addressing: physical mirror layout + sender/receiver views +
@@ -831,31 +829,10 @@ endif()
 target_compile_features(transport_lib PUBLIC cxx_std_20)
 target_compile_options(transport_lib PRIVATE -Wall -Wextra -Wpedantic)
 
-# Two-process acceptance harness for the #3890 migration path (the "Two
-# galaxies" validation in mooncake/poc-transfer-engine/adr-mooncake-backend.md). It is a manual
-# sender/receiver driver, not a ctest case, and is only built when Mooncake is
-# in the build (the engine is otherwise a no-op). Run it via
-# tests/e2e/scripts/run_transport_migration_e2e.sh.
+# #4294 production worker entry point is defined later, inside the
+# KAFKA_ENABLED block, because it links kv_migration_worker for the Kafka
+# request loop. See `if(KAFKA_ENABLED)` further down.
 if(TARGET transfer_engine)
-    add_executable(transport_migration_e2e
-        tests/e2e/transport_migration_e2e.cpp)
-    target_link_libraries(transport_migration_e2e PRIVATE transport_lib)
-    target_include_directories(transport_migration_e2e PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include)
-    message(STATUS "transport_migration_e2e: ENABLED (Mooncake acceptance harness)")
-
-    # #4209 migration-worker discovery PoC (see src/transport/README.md).
-    add_executable(migration_worker_discovery
-        tests/e2e/migration_worker_discovery.cpp)
-    target_link_libraries(migration_worker_discovery PRIVATE transport_lib)
-    target_include_directories(migration_worker_discovery PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include)
-    message(STATUS "migration_worker_discovery: ENABLED (#4209 discovery PoC)")
-
-    # #4294 production worker entry point is defined later, inside the
-    # KAFKA_ENABLED block, because it links kv_migration_worker for the Kafka
-    # request loop. See `if(KAFKA_ENABLED)` further down.
-
     # Real KV-cache migration (table-addressed mirror + orchestration over a
     # TCP control channel). Self-contained TCP control transport, links only
     # transport_lib. host mode runs with no hardware; device mode needs --blaze;
@@ -1566,13 +1543,16 @@ if(KAFKA_ENABLED)
         )
         target_include_directories(remote_kv_adapter PUBLIC
             ${CMAKE_CURRENT_SOURCE_DIR}/include
-            ${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/include
-            ${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/disaggregation/migration/include
         )
         target_link_libraries(remote_kv_adapter PUBLIC
             messaging
             spdlog::spdlog
         )
+        if(TARGET TtLlmEngine::Full)
+            target_link_libraries(remote_kv_adapter PUBLIC TtLlmEngine::Full)
+        else()
+            target_link_libraries(remote_kv_adapter PUBLIC TtLlmEngine::Core)
+        endif()
         message(STATUS "remote_kv_adapter: ENABLED (ENABLE_BLAZE=ON)")
 
         # Wire the Kafka-backed RemoteKVManagerAdapter into the PrefillScheduler factory (blaze_utils.hpp)
@@ -1660,26 +1640,11 @@ if(KAFKA_ENABLED)
     # the bring-up meaningful; without it the binary would have nothing to
     # publish/discover and would only exercise the stub executor path.
     if(TARGET transfer_engine)
-        # Links `messaging` (Kafka clients + migration_message parsers) rather
-        # than the heavier `kv_migration_worker` lib: the Kafka loop is inlined
-        # in bringup_mooncake_worker.cpp on purpose so MooncakeMigrationWorker
-        # stays Kafka-blind and this binary doesn't share its consumer-loop
-        # body with src/kv_migration_consumer_main.cpp.
-        add_executable(bringup_mooncake_worker
-            src/transport/bringup_mooncake_worker.cpp)
-        target_link_libraries(bringup_mooncake_worker PRIVATE
-            transport_lib
-            messaging)
-        target_include_directories(bringup_mooncake_worker PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/include)
-        message(STATUS "bringup_mooncake_worker: ENABLED (#4294 production worker)")
-
         # Unified Kafka->migration worker: one --role prefill|decode binary that
-        # drives the real data plane on a Kafka trigger (supersedes
-        # bringup_mooncake_worker's log-only loop and tt_kv_migration_consumer's
-        # stub executor). Compiles tcp_socket_transport.cpp directly for the
-        # control channels (the connector + receiver server take an injected
-        # ISocketTransport, so transport_lib stays socket-decoupled).
+        # drives the real data plane on a Kafka trigger. Compiles
+        # tcp_socket_transport.cpp directly for the control channels (the
+        # connector + receiver server take an injected ISocketTransport, so
+        # transport_lib stays socket-decoupled).
         add_executable(mooncake_kv_migration_worker
             src/mooncake_kv_migration_worker_main.cpp
             src/sockets/tcp_socket_transport.cpp)
@@ -1698,40 +1663,8 @@ if(KAFKA_ENABLED)
         target_compile_options(mooncake_kv_migration_worker PRIVATE
             -Wall -Wextra -Wpedantic)
         message(STATUS "mooncake_kv_migration_worker: ENABLED (unified Kafka->migration worker)")
-
-        # MPI discovery e2e test: launches 4 prefill + 16 decode
-        # bringup_mooncake_worker processes on one host and checks every worker
-        # discovers its peers. Registered here so the bringup_mooncake_worker
-        # target is guaranteed to exist; skipped when mpirun/mpiexec is missing.
-        # MooncakeKafkaMigration extends this with the Kafka request/ack
-        # path; it needs the dev Kafka broker running (scripts/dev-kafka.sh up)
-        # and topics provisioned (scripts/migration_cli.py setup), so it is
-        # skipped automatically when those aren't available.
-        find_program(MPIEXEC_EXECUTABLE NAMES mpirun mpiexec)
-        if(MPIEXEC_EXECUTABLE)
-            add_test(NAME MooncakeMpiDiscovery
-                COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/e2e/scripts/run_migration_workers_mpi.sh
-                WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
-            set_tests_properties(MooncakeMpiDiscovery PROPERTIES
-                TIMEOUT 180
-                RESOURCE_LOCK integration_server
-                ENVIRONMENT "WORKER_BIN=$<TARGET_FILE:bringup_mooncake_worker>")
-            message(STATUS "MooncakeMpiDiscovery: ENABLED (#4294 MPI e2e test)")
-
-            add_test(NAME MooncakeKafkaMigration
-                COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/e2e/scripts/run_kafka_migration_workers_mpi.py
-                WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
-            set_tests_properties(MooncakeKafkaMigration PROPERTIES
-                TIMEOUT 240
-                RESOURCE_LOCK integration_server
-                ENVIRONMENT "WORKER_BIN=$<TARGET_FILE:bringup_mooncake_worker>")
-            message(STATUS "MooncakeKafkaMigration: ENABLED (4 prefill + 16 decode, end-to-end Kafka)")
-        else()
-            message(STATUS "MooncakeMpiDiscovery: SKIPPED (mpirun/mpiexec not found)")
-            message(STATUS "MooncakeKafkaMigration: SKIPPED (mpirun/mpiexec not found)")
-        endif()
     else()
-        message(STATUS "bringup_mooncake_worker: SKIPPED (requires Mooncake transfer_engine target)")
+        message(STATUS "mooncake_kv_migration_worker: SKIPPED (requires Mooncake transfer_engine target)")
     endif()
 
     # Unit test for KvMigrationWorker (uses in-process fake Kafka + mock executor).
@@ -1941,57 +1874,6 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
 endif()
 
 
-# Consumer executable (separate Drogon instance for Kafka consumption)
-if(KAFKA_ENABLED)
-    add_executable(tt_consumer
-        src/consumer_main.cpp
-    )
-    target_include_directories(tt_consumer PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-    )
-    target_link_libraries(tt_consumer PRIVATE
-        Drogon::Drogon
-        llm_runner_lib
-        migration_worker
-        messaging
-    )
-    if(USE_EXTERNAL_FMT)
-        target_link_libraries(tt_consumer PRIVATE spdlog::spdlog fmt::fmt)
-    else()
-        target_link_libraries(tt_consumer PRIVATE spdlog::spdlog)
-    endif()
-    target_compile_options(tt_consumer PRIVATE
-        -Wall
-        -Wextra
-        -Wpedantic
-    )
-
-    # Separate process so the legacy `tt_consumer` is untouched.
-    add_executable(tt_kv_migration_consumer
-        src/kv_migration_consumer_main.cpp
-    )
-    target_include_directories(tt_kv_migration_consumer PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-    )
-    target_link_libraries(tt_kv_migration_consumer PRIVATE
-        Drogon::Drogon
-        llm_runner_lib
-        kv_migration_worker
-        messaging
-    )
-    if(USE_EXTERNAL_FMT)
-        target_link_libraries(tt_kv_migration_consumer PRIVATE
-            spdlog::spdlog fmt::fmt)
-    else()
-        target_link_libraries(tt_kv_migration_consumer PRIVATE spdlog::spdlog)
-    endif()
-    target_compile_options(tt_kv_migration_consumer PRIVATE
-        -Wall
-        -Wextra
-        -Wpedantic
-    )
-endif()
-
 # AddressSanitizer for executables (must be after all add_executable calls)
 if(SANITIZE_ADDRESS)
     set(ASAN_FLAGS -fsanitize=address -fno-omit-frame-pointer -g)
@@ -2002,9 +1884,6 @@ if(SANITIZE_ADDRESS)
         cancel_queue_test
         structured_output_test
     )
-    if(KAFKA_ENABLED)
-        list(APPEND ASAN_TARGETS tt_consumer)
-    endif()
     foreach(target IN LISTS ASAN_TARGETS)
         target_compile_options(${target} PRIVATE ${ASAN_FLAGS})
         target_link_options(${target} PRIVATE -fsanitize=address)

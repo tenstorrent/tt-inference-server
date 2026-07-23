@@ -13,11 +13,6 @@ on:
     - cron: '0 11 * * *'   # ~12:00 CET / 13:00 CEST  (noon)
     - cron: '0 23 * * *'   # ~00:00 CET / 01:00 CEST  (night)
   workflow_dispatch:
-    inputs:
-      run_split_tests:
-        description: 'Run the prefill/decode split test'
-        type: boolean
-        default: false
 
 concurrency:
   group: cpp-heavy-${{ github.ref }}
@@ -250,7 +245,6 @@ jobs:
           fi
 
   cpp-server-prefill-decode-split:
-    if: ${{ inputs.run_split_tests }}
     name: C++ Server Prefill/Decode Split Test
     # Self-hosted: this job launches 2-4 cpp_server processes (each -t 4)
     # concurrently. On a 4-core GitHub runner that oversubscribes the CPU and
@@ -305,7 +299,7 @@ jobs:
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8001 --port 9000 --label "ZMQ direct split decode"
           cd cpp_server/build
           NS=zmq_decode
-          SOCKET_TRANSPORT=zmq LLM_MODE=decode MAX_TOKENS_TO_PREFILL_ON_DECODE=0 SOCKET_HOST=0.0.0.0 SOCKET_PORT=9000 \
+          SOCKET_TRANSPORT=zmq LLM_MODE=decode LLM_DEVICE_BACKEND=mock_scheduler MAX_TOKENS_TO_PREFILL_ON_DECODE=0 SOCKET_HOST=0.0.0.0 SOCKET_PORT=9000 \
           TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
           TT_TASK_QUEUE=tt_tasks_$NS \
           TT_RESULT_QUEUE=tt_results_$NS \
@@ -323,7 +317,7 @@ jobs:
           bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8002 --label "ZMQ direct split prefill"
           cd cpp_server/build
           NS=zmq_prefill
-          SOCKET_TRANSPORT=zmq LLM_MODE=prefill LLM_DEVICE_BACKEND=mock_pipeline SOCKET_HOST=127.0.0.1 SOCKET_PORT=9000 \
+          SOCKET_TRANSPORT=zmq LLM_MODE=prefill LLM_DEVICE_BACKEND=mock_scheduler SOCKET_HOST=127.0.0.1 SOCKET_PORT=9000 \
           TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
           TT_TASK_QUEUE=tt_tasks_$NS \
           TT_RESULT_QUEUE=tt_results_$NS \
@@ -348,10 +342,10 @@ jobs:
             --endpoint /v1/chat/completions \
             --base-url http://127.0.0.1:8001 \
             --dataset-name random \
-            --random-input-len 1024 \
-            --random-output-len 128 \
-            --num-prompts 1000 \
-            --max-concurrency 64 \
+            --random-input-len 55000 \
+            --random-output-len 500 \
+            --num-prompts 100 \
+            --max-concurrency 16 \
             --save-result \
             --result-filename "vllm-bench-split-zmq-result.json" \
             2>&1 | tee bench_split_zmq_output.txt
