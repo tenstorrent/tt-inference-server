@@ -23,6 +23,7 @@
 #include "transport/in_memory_kv_table.hpp"
 #include "transport/kv_control_channel.hpp"
 #include "transport/kv_migration_multi_host_sender.hpp"
+#include "transport/kv_table_provisioning.hpp"
 #include "transport/mooncake_kv_receiver.hpp"
 #include "transport/mooncake_kv_sender.hpp"
 #include "transport/mooncake_migration_executor.hpp"
