@@ -22,8 +22,10 @@
 // DeviceMap comes from a localhost socket (--engine-handoff-port) or a
 // --device-map file; socket wins if both are set. Prefill and decode then swap
 // tables over the control channel (TABLE_EXCHANGE / #4295). TE/Mooncake moves
-// KV bytes only. MultiDeviceUmd uses the map; an empty map may use the
-// single-mesh placeholder, but a non-empty map with a missing entry is fatal.
+// KV bytes only. MultiDeviceUmd uses the map, resolving each entry's ASIC
+// unique_id to the device index UMD open() expects; an empty map may use the
+// single-mesh placeholder, but a non-empty map with a missing/unresolvable
+// entry is fatal.
 // KV_MIGRATION_MODE=dry-run keeps discovery, control-table exchange, health,
 // and Kafka active without opening devices or moving KV data.
 
@@ -391,10 +393,14 @@ std::shared_ptr<MooncakeTransferEngine> makeEngine(const WorkerConfig& cfg) {
 }
 
 // One UmdDeviceAccess per device this host owns in `table`.
-// - Non-empty deviceMap: every local device must be present (hard error if
-// not).
-// - Empty deviceMap: single-mesh hosts may use the & 0xFFFF placeholder; a
-//   multi-mesh host with no map is a hard error (cross-mesh collision).
+// - Non-empty deviceMap: the entry's value is a chip's 64-bit ASIC unique_id
+//   (the third device-map column), NOT a device index. It is resolved through
+//   the once-built unique_id -> index lookup into the 0-based index
+//   UmdDevice::open() expects; every local device must resolve (hard error if
+//   not).
+// - Empty deviceMap: single-mesh hosts may use the & 0xFFFF placeholder (which
+//   feeds the raw low 16 bits of the device id straight to open() as an index);
+//   a multi-mesh host with no map is a hard error (cross-mesh collision).
 std::unique_ptr<MultiDeviceUmd> buildDeviceIo(const IKvTable& table,
                                               const std::string& host,
                                               const DeviceMap& deviceMap) {
@@ -418,12 +424,34 @@ std::unique_ptr<MultiDeviceUmd> buildDeviceIo(const IKvTable& table,
     return nullptr;
   }
 
+  // Build the unique_id -> device-index lookup ONCE (enumerating opens every
+  // visible chip). Only map mode consults it; the empty-map placeholder path
+  // never needs it, so skip the enumeration cost there.
+  const std::unordered_map<uint64_t, int> uniqueIdToIndex =
+      deviceMap.empty() ? std::unordered_map<uint64_t, int>{}
+                        : enumerateUmdDevicesByUniqueId();
+
+  // DRAM-channel count per opened device, for the channel-range check below.
+  std::unordered_map<LocalDeviceId, uint32_t> channelsByDevice;
+
   for (const auto& loc : allHostLocations(table, host)) {
     if (umd->hasDevice(loc.device)) continue;
     const auto mapped = deviceMap.umdChip(loc.device);
     int chip = 0;
     if (mapped) {
-      chip = static_cast<int>(*mapped);
+      // Map mode: `*mapped` is the chip's ASIC unique_id — resolve it to the
+      // index open() expects. A miss means the map names a chip not visible on
+      // this host: open nothing and fail cleanly (a wrong index would open the
+      // wrong chip and corrupt KV).
+      const auto it = uniqueIdToIndex.find(*mapped);
+      if (it == uniqueIdToIndex.end()) {
+        TT_LOG_ERROR(
+            "[worker] DeviceMap unique_id {} for device {} (mesh={} chip={}) "
+            "on host '{}' matches no visible UMD device — not opening",
+            *mapped, loc.device, loc.device >> 16, loc.device & 0xFFFFu, host);
+        return nullptr;
+      }
+      chip = it->second;
     } else if (deviceMap.empty()) {
       chip = static_cast<int>(loc.device & 0xFFFFu);
     } else {
@@ -433,7 +461,26 @@ std::unique_ptr<MultiDeviceUmd> buildDeviceIo(const IKvTable& table,
           loc.device, loc.device >> 16, loc.device & 0xFFFFu, host);
       return nullptr;
     }
-    umd->addDevice(loc.device, std::make_shared<UmdDeviceAccess>(chip));
+    auto access = std::make_shared<UmdDeviceAccess>(chip);
+    channelsByDevice[loc.device] = access->numDramChannels();
+    umd->addDevice(loc.device, std::move(access));
+  }
+
+  // Reject KV locations whose NoC channel is out of range for the opened
+  // device — an early catch for a table/device-map mismatch (wrong chip, or a
+  // table built for a different arch) before any migration read/write. A 0
+  // channel count means unknown (open failed / fallback build), so skip.
+  for (const auto& loc : allHostLocations(table, host)) {
+    const auto chIt = channelsByDevice.find(loc.device);
+    if (chIt == channelsByDevice.end() || chIt->second == 0) continue;
+    const uint32_t channel = nocChannel(loc.noc_addr);
+    if (channel >= chIt->second) {
+      TT_LOG_ERROR(
+          "[worker] KV location on device {} (host '{}') uses DRAM channel {} "
+          "but the device has only {} channel(s) — table/device-map mismatch",
+          loc.device, host, channel, chIt->second);
+      return nullptr;
+    }
   }
   return umd;
 }
