@@ -150,6 +150,9 @@ templates:
     # (constants.py only carries the TP mesh topology), mirroring the single-chip
     # forge LLMs above.
     - google/gemma-4-31b-it
+  # Real HF id for download; weights basename stays lowercase so model_name
+  # stays distinct from the tt-transformers gemma-4-31B-it Model Readiness path.
+  hf_weights_repo: google/gemma-4-31B-it
   impl: forge_vllm_plugin
   min_disk_gb: 80
   min_ram_gb: 32
@@ -161,11 +164,14 @@ templates:
     - device: P300X2
       max_concurrency: 16
       max_context: 4096
-      # gemma-4-31b-it on P300X2 also has a tt_transformers/vLLM spec (llm.yaml,
-      # this model's Model Readiness path); that one is the default impl. Both
-      # can't be default_impl or determine_server_type raises "Multiple default
-      # impls". This EXPERIMENTAL forge path stays selectable via explicit impl.
-      default_impl: false
+      # Sole impl of model_name gemma-4-31b-it (lowercase) on P300X2, so it is
+      # its own default. The tt_transformers/vLLM Model Readiness spec (llm.yaml)
+      # is a DISTINCT group -- model_name gemma-4-31B-it (capital B), engine VLLM
+      # -- so assert_single_default_impl groups them separately and there is no
+      # "multiple defaults" collision. Without default_impl=true, resolving
+      # `--model gemma-4-31b-it --device p300x2` (no --impl/--engine, as CI does)
+      # fails with "does not have a default impl".
+      default_impl: true
       eval_max_retries: 1
       env_vars:
         MAX_MODEL_LENGTH: "4096"
