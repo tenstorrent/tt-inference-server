@@ -150,6 +150,16 @@ class Settings(BaseSettings):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
+        # CI / the v2 orchestrator pass DEVICE as "blackhole_galaxy"
+        # (device_type.name.lower()), but the media-server DeviceTypes value is the
+        # short form "bh-galaxy". Canonicalize once here so every consumer of
+        # settings.device (config overrides, runner_utils mesh/grid setup, telemetry)
+        # sees the enum value; any other device string passes through unchanged.
+        if self.device:
+            self.device = {"blackhole_galaxy": "bh-galaxy"}.get(
+                self.device, self.device
+            )
+
         self.sdxl_image_resolution = tuple(self.sdxl_image_resolution)
         if self.sdxl_image_resolution not in SDXL_VALID_IMAGE_RESOLUTIONS:
             raise ValueError(
@@ -351,11 +361,6 @@ class Settings(BaseSettings):
         )
 
     def _set_config_overrides(self, model_to_run: str, device: str):
-        # CI / the v2 orchestrator pass DEVICE as "blackhole_galaxy"
-        # (device_type.name.lower()), but the DeviceTypes enum value is the short
-        # form "bh-galaxy". Translate that one alias so DeviceTypes(device) resolves;
-        # any other device string passes through unchanged.
-        device = {"blackhole_galaxy": "bh-galaxy"}.get(device, device)
         model_name_enum = ModelNames(model_to_run)
 
         explicit_runner = os.getenv("MODEL_RUNNER")
