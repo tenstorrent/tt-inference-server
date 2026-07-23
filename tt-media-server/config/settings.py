@@ -371,7 +371,16 @@ class Settings(BaseSettings):
                     break
 
         if model_runner_enum:
-            device_type_enum = DeviceTypes(device)
+            # DEVICE may arrive as the enum VALUE (e.g. "bh-galaxy", the
+            # bring-your-own-server / local path) or as the enum NAME lowercased
+            # (e.g. "blackhole_galaxy", what run_docker_server.py sets via
+            # device_type.name.lower()). BLACKHOLE_GALAXY is the only device whose
+            # name.lower() ("blackhole_galaxy") != value ("bh-galaxy"), so a plain
+            # value lookup crashes the docker/CI path. Accept both forms.
+            try:
+                device_type_enum = DeviceTypes(device)
+            except ValueError:
+                device_type_enum = DeviceTypes[device.upper()]
             config_key = (model_runner_enum, device_type_enum)
             matching_config = ModelConfigs.get(config_key)
             logger.info(
