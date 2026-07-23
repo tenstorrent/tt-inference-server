@@ -2104,6 +2104,7 @@ _eval_config_list = [
         tasks=[
             EvalTask(
                 task_name="r1_aime24",
+                min_context_required=40960,  # skip at small first-light ctx (else overflows -> fails/hangs the release; #context)
                 score=EvalTaskScore(
                     published_score=81.40,
                     published_score_ref="https://qwenlm.github.io/blog/qwen3/",
@@ -2139,6 +2140,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="r1_math500",
+                min_context_required=40960,  # skip at small first-light ctx (else overflows -> fails/hangs the release; #context)
                 score=EvalTaskScore(
                     published_score=96.1,
                     published_score_ref="https://artificialanalysis.ai/models/comparisons/qwen3-32b-instruct-reasoning-vs-qwen3-4b-instruct",
@@ -2174,6 +2176,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="r1_gpqa_diamond",
+                min_context_required=40960,  # skip at small first-light ctx (else overflows -> fails/hangs the release; #context)
                 score=EvalTaskScore(
                     published_score=66.80,
                     published_score_ref="https://artificialanalysis.ai/models/comparisons/qwen3-32b-instruct-reasoning-vs-qwen3-4b-instruct",
@@ -2217,6 +2220,7 @@ _eval_config_list = [
             # context and only run once MAX_MODEL_LENGTH is raised.
             EvalTask(
                 task_name="mbpp_instruct",
+                min_context_required=8192,  # skip at small first-light ctx (else overflows -> fails/hangs the release; #context)
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 score=EvalTaskScore(
                     published_score=78.20,
