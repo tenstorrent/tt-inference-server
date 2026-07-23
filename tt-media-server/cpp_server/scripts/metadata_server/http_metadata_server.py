@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+
 #!/usr/bin/env python3
 """
 HTTP Metadata Server for Mooncake.
