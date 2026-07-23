@@ -150,6 +150,9 @@ templates:
     # (constants.py only carries the TP mesh topology), mirroring the single-chip
     # forge LLMs above.
     - google/gemma-4-31b-it
+  # Real HF id for download; weights basename stays lowercase so model_name
+  # stays distinct from the tt-transformers gemma-4-31B-it Model Readiness path.
+  hf_weights_repo: google/gemma-4-31B-it
   impl: forge_vllm_plugin
   min_disk_gb: 80
   min_ram_gb: 32

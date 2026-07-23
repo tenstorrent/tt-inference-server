@@ -4181,6 +4181,53 @@ _eval_config_list = [
             ),
         ],
     ),
+    # Forge gemma-4-31b-it (dev cnn.yaml). Lowercase hf_model_repo matches the
+    # Forge weights basename so model_name gemma-4-31b-it joins EVAL_CONFIGS;
+    # the Model Readiness / tt-transformers path uses google/gemma-4-31B-it
+    # below. Tasks are sized for Forge max_context=4096
+    EvalConfig(
+        hf_model_repo="google/gemma-4-31b-it",
+        tasks=[
+            EvalTask(
+                task_name="ifeval",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                            "inst_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="gpqa_diamond_generative_n_shot",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,flexible-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
     # =========================================================================
     # Gemma 4 family - GPU reference eval configs.
     #
