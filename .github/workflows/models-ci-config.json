@@ -503,14 +503,18 @@
       }
     },
     "gemma-4-31b-it": {
-      "inference_engine": "FORGE",
-      "ci": {
-        "nightly": {
-          "devices": [
-            "P300X2"
-          ]
+      "implementations": [
+        {
+          "inference_engine": "FORGE",
+          "ci": {
+            "nightly": {
+              "devices": [
+                "P300X2"
+              ]
+            }
+          }
         }
-      }
+      ]
     },
     "gemma-4-12B-it": {
       "inference_engine": "vLLM",
