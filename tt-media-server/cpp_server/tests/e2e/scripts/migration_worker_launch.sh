@@ -31,7 +31,8 @@
 # Decode also needs DECODE_TABLE. Prefill needs PREFILL_TABLE and non-empty
 #   PEERS; DECODE_TABLE is an optional disk fallback to control TABLE_EXCHANGE.
 # Optional: PEERS (see above), KAFKA_BROKERS, KAFKA_GROUP_ID,
-#   KV_MIGRATION_EXECUTOR (prefill: mooncake|stub), MC_TCP_BIND_ADDRESS
+#   KV_MIGRATION_MODE (device|dry-run; applies to both roles),
+#   MC_TCP_BIND_ADDRESS
 #   (unset/"auto" => detect this host's routable IP so peers can reach it),
 #   CONTROL_PORT (KV control port a decode binds + publishes to metadata;
 #   defaults to the worker's own default when unset), DEVICE_MAP (legacy file

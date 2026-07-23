@@ -24,6 +24,8 @@
 // tables over the control channel (TABLE_EXCHANGE / #4295). TE/Mooncake moves
 // KV bytes only. MultiDeviceUmd uses the map; an empty map may use the
 // single-mesh placeholder, but a non-empty map with a missing entry is fatal.
+// KV_MIGRATION_MODE=dry-run keeps discovery, control-table exchange, health,
+// and Kafka active without opening devices or moving KV data.
 
 #include <unistd.h>
 
@@ -108,11 +110,11 @@ std::string envOr(const char* key, const char* fallback) {
 }
 
 enum class Role { PREFILL, DECODE };
-enum class ExecutorMode { MOONCAKE, STUB };
+enum class MigrationMode { DEVICE, DRY_RUN };
 
 struct WorkerConfig {
   Role role = Role::PREFILL;
-  ExecutorMode executorMode = ExecutorMode::MOONCAKE;
+  MigrationMode migrationMode = MigrationMode::DEVICE;
   std::string metadata_uri;     // Mooncake metadata service (or P2PHANDSHAKE).
   std::string name;             // this worker's Mooncake server/segment name.
   std::string host;             // this node's host tag in the table.
@@ -180,8 +182,9 @@ void usage() {
          "  Kafka (prefill) via env: KAFKA_BROKERS, "
          "KAFKA_MIGRATION_REQUEST_TOPIC, KAFKA_MIGRATION_ACK_TOPIC, "
          "KAFKA_GROUP_ID\n"
-         "  prefill executor via env: KV_MIGRATION_EXECUTOR=mooncake|stub "
-         "(default mooncake; stub skips device I/O and data transfer)\n";
+         "  worker mode via env: KV_MIGRATION_MODE=device|dry-run "
+         "(default device; dry-run keeps discovery, table exchange, health, "
+         "and Kafka but does not open devices or move KV data)\n";
 }
 
 // Parse "NAME=host:port" into (logical name, endpoint).
@@ -225,12 +228,12 @@ std::string hostOf(const std::string& serverName) {
 }
 
 bool parseConfig(int argc, char** argv, WorkerConfig& cfg) {
-  const std::string executorMode = envOr("KV_MIGRATION_EXECUTOR", "mooncake");
-  if (executorMode == "stub") {
-    cfg.executorMode = ExecutorMode::STUB;
-  } else if (executorMode != "mooncake") {
-    std::cerr << "KV_MIGRATION_EXECUTOR must be mooncake|stub, got: "
-              << executorMode << "\n";
+  const std::string migrationMode = envOr("KV_MIGRATION_MODE", "device");
+  if (migrationMode == "dry-run") {
+    cfg.migrationMode = MigrationMode::DRY_RUN;
+  } else if (migrationMode != "device") {
+    std::cerr << "KV_MIGRATION_MODE must be device|dry-run, got: "
+              << migrationMode << "\n";
     return false;
   }
 
@@ -471,7 +474,7 @@ std::optional<ResolvedEngineTables> resolveWorkerTables(
   if (!includeDeviceMap) {
     if (cfg.engine_handoff_port != 0 || !cfg.device_map_path.empty()) {
       TT_LOG_WARN(
-          "[worker] stub executor ignores --engine-handoff-port and "
+          "[worker] dry-run mode ignores --engine-handoff-port and "
           "--device-map");
     }
     const std::string& tablePath =
@@ -715,7 +718,7 @@ int runPrefill(const WorkerConfig& cfg) {
   if (!engine) return 1;
 
   auto resolved =
-      resolveWorkerTables(cfg, cfg.executorMode == ExecutorMode::MOONCAKE);
+      resolveWorkerTables(cfg, cfg.migrationMode == MigrationMode::DEVICE);
   if (!resolved) {
     if (gStop.load()) {
       TT_LOG_WARN(
@@ -727,7 +730,7 @@ int runPrefill(const WorkerConfig& cfg) {
     return 1;
   }
   std::unique_ptr<MultiDeviceUmd> device;
-  if (cfg.executorMode == ExecutorMode::MOONCAKE) {
+  if (cfg.migrationMode == MigrationMode::DEVICE) {
     device = buildDeviceIo(*resolved->table, cfg.host, resolved->deviceMap);
     if (!device) {
       TT_LOG_ERROR("[worker] prefill '{}' failed to open devices (DeviceMap)",
@@ -736,8 +739,8 @@ int runPrefill(const WorkerConfig& cfg) {
     }
   } else {
     TT_LOG_WARN(
-        "[worker] prefill '{}' using stub executor: device I/O and Mooncake "
-        "data transfer are disabled",
+        "[worker] prefill '{}' running in dry-run mode: device I/O and "
+        "Mooncake data transfer are disabled",
         cfg.name);
   }
 
@@ -802,7 +805,7 @@ int runPrefill(const WorkerConfig& cfg) {
 
   std::unique_ptr<KvMigrationMultiHostSender> sender;
   std::unique_ptr<tt::worker::IMigrationExecutor> executor;
-  if (cfg.executorMode == ExecutorMode::STUB) {
+  if (cfg.migrationMode == MigrationMode::DRY_RUN) {
     executor = std::make_unique<tt::worker::StubMigrationExecutor>();
   } else {
     sender = std::make_unique<KvMigrationMultiHostSender>(
@@ -843,9 +846,10 @@ int runPrefill(const WorkerConfig& cfg) {
   health.setLifecycle(WorkerLifecycle::Ready);
   TT_LOG_INFO(
       "[worker] prefill '{}' READY: {}/{} decode channels connected, "
-      "executor={} brokers={} req={} ack={}",
+      "mode={} brokers={} req={} ack={}",
       cfg.name, connector.connectedCount(), connector.channelCount(),
-      cfg.executorMode == ExecutorMode::STUB ? "stub" : "mooncake", brokers,
+      cfg.migrationMode == MigrationMode::DRY_RUN ? "dry-run" : "device",
+      brokers,
       reqTopic, ackTopic);
   worker.start();
 
@@ -942,6 +946,13 @@ int runPrefill(const WorkerConfig& cfg) {
           continue;
         }
         TT_LOG_INFO("[worker] TABLE_EXCHANGE with peer '{}' succeeded", name);
+        if (cfg.migrationMode == MigrationMode::DRY_RUN) {
+          TT_LOG_INFO(
+              "[worker] dry-run mode skips Mooncake segment refresh for '{}'",
+              name);
+          wasConnected[name] = now;
+          continue;
+        }
         if (engine->refreshSegment(name) == K_INVALID_SEGMENT) {
           TT_LOG_WARN(
               "[worker] refreshSegment('{}') after control UP failed; next "
@@ -988,7 +999,8 @@ int runDecode(const WorkerConfig& cfg) {
   auto engine = makeEngine(cfg);
   if (!engine) return 1;
 
-  auto resolved = resolveWorkerTables(cfg);
+  auto resolved =
+      resolveWorkerTables(cfg, cfg.migrationMode == MigrationMode::DEVICE);
   if (!resolved) {
     if (gStop.load()) {
       TT_LOG_WARN(
@@ -999,40 +1011,50 @@ int runDecode(const WorkerConfig& cfg) {
     TT_LOG_ERROR("[worker] failed to resolve decode table + device map");
     return 1;
   }
-  auto device = buildDeviceIo(*resolved->table, cfg.host, resolved->deviceMap);
-  if (!device) {
-    TT_LOG_ERROR("[worker] decode '{}' failed to open devices (DeviceMap)",
-                 cfg.name);
-    return 1;
-  }
+  std::unique_ptr<MultiDeviceUmd> device;
+  std::unique_ptr<MooncakeKvReceiver> receiver;
+  std::string segment;
+  if (cfg.migrationMode == MigrationMode::DEVICE) {
+    device = buildDeviceIo(*resolved->table, cfg.host, resolved->deviceMap);
+    if (!device) {
+      TT_LOG_ERROR("[worker] decode '{}' failed to open devices (DeviceMap)",
+                   cfg.name);
+      return 1;
+    }
 
-  // Segment name the sender opens for the data plane. With a metadata service
-  // the mirror is registered under — and resolvable by — the worker's LOGICAL
-  // name (cfg.name): the same register-by-name / resolve-by-name discovery the
-  // bringup worker uses on main (PeerDiscoveryService), so the sender finds the
-  // peer through the metadata service instead of a hard-coded endpoint. Only
-  // P2PHANDSHAKE (no metadata registry to resolve a logical name) falls back to
-  // the engine's live IP:port. An explicit --segment always overrides.
-  std::string segment = cfg.segment;
-  if (segment.empty()) {
-    segment = (cfg.metadata_uri == "P2PHANDSHAKE") ? engine->localServerName()
-                                                   : cfg.name;
-  }
-  // The mirror is registered as the Mooncake segment inside MooncakeKvReceiver.
-  MooncakeKvReceiver receiver(engine, *device, resolved->table, cfg.host,
-                              segment);
-  if (!receiver.registered()) {
-    TT_LOG_ERROR("[worker] decode '{}' failed to register mirror segment '{}'",
-                 cfg.name, segment);
-    return 1;
+    // Segment name the sender opens for the data plane. With a metadata service
+    // the mirror is registered under — and resolvable by — the worker's LOGICAL
+    // name (cfg.name): the same register-by-name / resolve-by-name discovery the
+    // bringup worker uses on main (PeerDiscoveryService), so the sender finds
+    // the peer through the metadata service instead of a hard-coded endpoint.
+    // Only P2PHANDSHAKE (no metadata registry to resolve a logical name) falls
+    // back to the engine's live IP:port. An explicit --segment always overrides.
+    segment = cfg.segment;
+    if (segment.empty()) {
+      segment = (cfg.metadata_uri == "P2PHANDSHAKE")
+                    ? engine->localServerName()
+                    : cfg.name;
+    }
+    receiver = std::make_unique<MooncakeKvReceiver>(
+        engine, *device, resolved->table, cfg.host, segment);
+    if (!receiver->registered()) {
+      TT_LOG_ERROR("[worker] decode '{}' failed to register mirror segment '{}'",
+                   cfg.name, segment);
+      return 1;
+    }
+  } else {
+    TT_LOG_WARN(
+        "[worker] decode '{}' running in dry-run mode: device I/O and "
+        "Mooncake mirror registration are disabled",
+        cfg.name);
   }
 
   // Control server stores peer prefill .pb on TABLE_EXCHANGE, replies with
   // this decode .pb, then serves migrate Begin/Done. Long receive timeout
   // covers large table provisioning.
-  KvMigrationReceiverServer server(cfg.control_port, makeServerTransport,
-                                   receiver, resolved->blob,
-                                   kDefaultTableExchangeTimeout);
+  KvMigrationReceiverServer server{
+      cfg.control_port, makeServerTransport, receiver.get(), resolved->blob,
+      kDefaultTableExchangeTimeout};
   if (!server.start()) {
     TT_LOG_ERROR("[worker] decode '{}' failed to start control server on :{}",
                  cfg.name, cfg.control_port);
@@ -1069,11 +1091,14 @@ int runDecode(const WorkerConfig& cfg) {
         cfg.name, cfg.peers.size() + cfg.discover_peers.size());
   }
 
-  // Mirror registered, control server listening, endpoint published: the decode
-  // worker has finished its own bring-up, so flip it Ready.
+  // Control server listening and endpoint published: the decode worker has
+  // finished its own bring-up, so flip it Ready.
   health.setLifecycle(WorkerLifecycle::Ready);
-  TT_LOG_INFO("[worker] decode '{}' READY: segment={} control_port={}",
-              cfg.name, segment, cfg.control_port);
+  TT_LOG_INFO("[worker] decode '{}' READY: mode={} segment={} control_port={}",
+              cfg.name,
+              cfg.migrationMode == MigrationMode::DRY_RUN ? "dry-run"
+                                                          : "device",
+              segment.empty() ? "disabled" : segment, cfg.control_port);
   while (!gStop.load()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(K_IDLE_POLL_MS));
   }

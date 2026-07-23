@@ -148,6 +148,11 @@ bool KvMigrationSender::migrate(uint64_t uuid,
 KvMigrationReceiver::KvMigrationReceiver(
     KvControlChannel& channel, MooncakeKvReceiver& receiver,
     std::shared_ptr<const std::vector<uint8_t>> localTableBlob)
+    : KvMigrationReceiver(channel, &receiver, std::move(localTableBlob)) {}
+
+KvMigrationReceiver::KvMigrationReceiver(
+    KvControlChannel& channel, MooncakeKvReceiver* receiver,
+    std::shared_ptr<const std::vector<uint8_t>> localTableBlob)
     : channel_(channel),
       receiver_(receiver),
       local_table_blob_(std::move(localTableBlob)) {}
@@ -217,7 +222,16 @@ bool KvMigrationReceiver::handle(const KvControlMessage& in) {
     case KvControlType::TABLE_EXCHANGE:
       return handleTableExchange(*msg);
     case KvControlType::BEGIN_MIGRATION: {
-      const auto segment = receiver_.prepareMirror(sliceOf(*msg), msg->uuid);
+      if (receiver_ == nullptr) {
+        TT_LOG_WARN(
+            "[KvMigrationReceiver] dry-run migration_id={} received; no "
+            "device or mirror is available",
+            msg->uuid);
+      }
+      const auto segment =
+          receiver_ != nullptr
+              ? receiver_->prepareMirror(sliceOf(*msg), msg->uuid)
+              : std::nullopt;
       KvControlMessage ready;
       ready.type = KvControlType::MIRROR_READY;
       ready.uuid = msg->uuid;
@@ -231,9 +245,11 @@ bool KvMigrationReceiver::handle(const KvControlMessage& in) {
       break;
     }
     case KvControlType::DONE_MARKER: {
-      const bool ok = receiver_.drain(msg->uuid);
+      const bool ok = receiver_ != nullptr && receiver_->drain(msg->uuid);
       if (!ok) {
-        TT_LOG_ERROR("[KvMigrationReceiver] drain(uuid={}) failed", msg->uuid);
+        TT_LOG_ERROR(
+            "[KvMigrationReceiver] drain(uuid={}) failed{}",
+            msg->uuid, receiver_ == nullptr ? " (dry-run mode)" : "");
       }
       // The Ack carries the drain status so the sender does not treat a failed
       // (partial/corrupt) drain as a successful migration.

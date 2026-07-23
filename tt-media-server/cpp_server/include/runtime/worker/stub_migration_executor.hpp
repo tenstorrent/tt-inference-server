@@ -11,7 +11,7 @@
 namespace tt::worker {
 
 /**
- * Placeholder executor used until the real Mooncake-backed executor lands.
+ * Device-less executor used by migration-worker dry-run mode.
  *
  * Behaviour: logs the request and invokes onDone synchronously with the
  * configured terminal status (default SUCCESSFUL). The "synchronous fast

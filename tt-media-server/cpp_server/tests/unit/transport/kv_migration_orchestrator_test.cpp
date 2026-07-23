@@ -91,6 +91,47 @@ struct DecodeNode {
   ~DecodeNode() { shutdown(); }
 };
 
+TEST(KvMigrationOrchestrator, DryRunServesTableExchangeAndRejectsMigration) {
+  auto ab = std::make_shared<Pipe>();
+  auto ba = std::make_shared<Pipe>();
+  auto senderTp =
+      std::make_shared<BlockingFakeTransport>(/*in=*/ba, /*out=*/ab);
+  auto receiverTp =
+      std::make_shared<BlockingFakeTransport>(/*in=*/ab, /*out=*/ba);
+  KvControlChannel senderCh{senderTp};
+  KvControlChannel receiverCh{receiverTp};
+
+  const std::vector<uint8_t> localTable{4, 5, 6};
+  KvMigrationReceiver receiverOrch{
+      receiverCh, static_cast<MooncakeKvReceiver*>(nullptr),
+      std::make_shared<const std::vector<uint8_t>>(localTable)};
+
+  KvControlMessage exchange;
+  exchange.type = KvControlType::TABLE_EXCHANGE;
+  exchange.role = static_cast<uint8_t>(TableExchangeRole::Sender);
+  exchange.table_blob = {1, 2, 3};
+  ASSERT_TRUE(senderCh.send(exchange));
+  ASSERT_TRUE(receiverOrch.serveOne());
+
+  const auto exchangeReply = senderCh.receive();
+  ASSERT_TRUE(exchangeReply.has_value());
+  EXPECT_EQ(exchangeReply->type, KvControlType::TABLE_EXCHANGE);
+  EXPECT_EQ(exchangeReply->table_blob, localTable);
+
+  KvControlMessage begin;
+  begin.type = KvControlType::BEGIN_MIGRATION;
+  begin.uuid = 42;
+  ASSERT_TRUE(senderCh.send(begin));
+  ASSERT_TRUE(receiverOrch.serveOne());
+
+  const auto ready = senderCh.receive();
+  ASSERT_TRUE(ready.has_value());
+  EXPECT_EQ(ready->type, KvControlType::MIRROR_READY);
+  EXPECT_EQ(ready->uuid, 42u);
+  EXPECT_FALSE(ready->ok);
+  EXPECT_TRUE(ready->segment_name.empty());
+}
+
 // The orchestrators drive a complete migration over the control channel: the
 // receiver runs on its own thread reacting to BeginMigration / DoneMarker while
 // the sender drives the sequence, and the bytes land on the decode devices.

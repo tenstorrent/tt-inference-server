@@ -165,8 +165,9 @@ class KvControlChannelConnector {
  * Unit-test fakes: factory returns an already-connected peer transport; the
  * server keeps the historical single-session path.
  *
- * Lifetime: `receiver` must outlive this server. stop() (also called by the
- * dtor) tears listen + all sessions down and joins threads; it is idempotent.
+ * Lifetime: a non-null `receiver` must outlive this server. A null receiver
+ * enables control-only dry-run mode. stop() (also called by the dtor) tears
+ * listen + all sessions down and joins threads; it is idempotent.
  */
 class KvMigrationReceiverServer {
  public:
@@ -181,6 +182,13 @@ class KvMigrationReceiverServer {
   ///        and shared by every accepted prefill session.
   KvMigrationReceiverServer(uint16_t port, ServerTransportFactory factory,
                             MooncakeKvReceiver& receiver,
+                            std::vector<uint8_t> localTableBlob = {},
+                            std::chrono::milliseconds receiveTimeout =
+                                KvControlChannel::kDefaultReceiveTimeout,
+                            std::chrono::milliseconds pollInterval =
+                                KvControlChannel::kDefaultPollInterval);
+  KvMigrationReceiverServer(uint16_t port, ServerTransportFactory factory,
+                            MooncakeKvReceiver* receiver,
                             std::vector<uint8_t> localTableBlob = {},
                             std::chrono::milliseconds receiveTimeout =
                                 KvControlChannel::kDefaultReceiveTimeout,
@@ -224,7 +232,7 @@ class KvMigrationReceiverServer {
 
   uint16_t port_;
   ServerTransportFactory factory_;
-  MooncakeKvReceiver& receiver_;
+  MooncakeKvReceiver* receiver_;
   std::shared_ptr<const std::vector<uint8_t>> local_table_blob_;
   std::chrono::milliseconds receive_timeout_;
   std::chrono::milliseconds poll_interval_;
