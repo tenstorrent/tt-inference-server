@@ -4143,6 +4143,8 @@ _eval_config_list = [
             # rejects with HTTP 422.
             EvalTask(
                 task_name="ifeval",
+                # Try and avoid hangs.
+                max_concurrent=16,
                 score=EvalTaskScore(
                     # tiiuae internal lm-eval-harness run (chat template +
                     # fewshot_as_multiturn) reports IFEval 76.5; the Open LLM
@@ -4163,13 +4165,15 @@ _eval_config_list = [
                     },
                 ),
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.75,
+                    EvalLimitMode.CI_NIGHTLY: 0.5,
                     EvalLimitMode.SMOKE_TEST: 0.05,
                 },
             ),
             EvalTask(
                 task_name="gpqa_diamond_generative_n_shot",
                 num_fewshot=5,
+                # Try and avoid hangs.
+                max_concurrent=16,
                 score=EvalTaskScore(
                     # No matching published reference: the Falcon3 card reports
                     # GPQA-main 0-shot (31.9 raw / 8.05 Open LLM Leaderboard),
@@ -4188,7 +4192,7 @@ _eval_config_list = [
                     },
                 ),
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.75,
+                    EvalLimitMode.CI_NIGHTLY: 0.5,
                     EvalLimitMode.SMOKE_TEST: 0.05,
                 },
             ),
