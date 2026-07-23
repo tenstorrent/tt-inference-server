@@ -671,7 +671,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.11.1-bac8b34-7c6685a
+              tag: 0.18.0-feb3c81-a2f077a
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -699,7 +699,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.9.0-e95ffa5-48eba14
+              tag: 0.18.0-feb3c81-a2f077a
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -732,7 +732,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.9.0-e95ffa5-48eba14
+              tag: 0.18.0-feb3c81-a2f077a
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -765,7 +765,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.9.0-e95ffa5-48eba14
+              tag: 0.18.0-feb3c81-a2f077a
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -849,6 +849,67 @@ models:
                 value: P300x2
               - name: TORCHDYNAMO_DISABLE
                 value: '1'
+              - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
+                value: '1'
+              - name: VLLM_CONFIGURE_LOGGING
+                value: '1'
+              - name: VLLM_RPC_TIMEOUT
+                value: '900000'
+              - name: VLLM_TARGET_DEVICE
+                value: tt
+      blackhole_galaxy:
+        defaultImpl: qwen3_32b_galaxy
+        impls:
+          qwen3_32b_galaxy:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+              tag: 0.18.0-feb3c81-a2f077a
+            probes:
+              liveness:
+                initialDelaySeconds: 2400
+              readiness:
+                initialDelaySeconds: 2400
+            resources:
+              requests:
+                memory: 80Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: MESH_DEVICE
+                value: BH-Galaxy
+              - name: TORCHDYNAMO_DISABLE
+                value: '1'
+              - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
+                value: '1'
+              - name: VLLM_CONFIGURE_LOGGING
+                value: '1'
+              - name: VLLM_RPC_TIMEOUT
+                value: '900000'
+              - name: VLLM_TARGET_DEVICE
+                value: tt
+          tt_transformers:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+              tag: 0.18.0-feb3c81-a2f077a
+            probes:
+              liveness:
+                initialDelaySeconds: 2400
+              readiness:
+                initialDelaySeconds: 2400
+            resources:
+              requests:
+                memory: 80Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: MESH_DEVICE
+                value: BH-Galaxy
+              - name: TORCHDYNAMO_DISABLE
+                value: '1'
+              - name: TT_MM_THROTTLE_PERF
+                value: '5'
               - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
                 value: '1'
               - name: VLLM_CONFIGURE_LOGGING
@@ -3065,7 +3126,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.17.0-8c48a10-f52987a
+              tag: 0.18.0-feb3c81-a2f077a
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -3094,7 +3155,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.17.0-8c48a10-f52987a
+              tag: 0.18.0-feb3c81-a2f077a
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -3110,6 +3171,8 @@ models:
                 value: P300
               - name: TORCHDYNAMO_DISABLE
                 value: '1'
+              - name: TT_MESH_GRAPH_DESC_PATH
+                value: ../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_mesh_graph_descriptor.textproto
               - name: VLLM_CONFIGURE_LOGGING
                 value: '1'
               - name: VLLM_RPC_TIMEOUT
@@ -3428,7 +3491,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.17.0-8c48a10-f52987a
+              tag: 0.18.0-feb3c81-a2f077a
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -3457,7 +3520,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.17.0-8c48a10-f52987a
+              tag: 0.18.0-feb3c81-a2f077a
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -3473,6 +3536,8 @@ models:
                 value: P300
               - name: TORCHDYNAMO_DISABLE
                 value: '1'
+              - name: TT_MESH_GRAPH_DESC_PATH
+                value: ../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_mesh_graph_descriptor.textproto
               - name: VLLM_CONFIGURE_LOGGING
                 value: '1'
               - name: VLLM_RPC_TIMEOUT
@@ -7674,7 +7739,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.18.0-c49bb76-6b4a3a7
+              tag: 0.18.0-feb3c81-a2f077a
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -7690,6 +7755,40 @@ models:
                 value: Qwen/Qwen3.6-27B
               - name: MESH_DEVICE
                 value: (1, 4)
+              - name: TORCHDYNAMO_DISABLE
+                value: '1'
+              - name: TT_MESH_GRAPH_DESC_PATH
+                value: ../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto
+              - name: TT_QWEN35_TEXT_VER
+                value: qwen36_blackhole
+              - name: VLLM_CONFIGURE_LOGGING
+                value: '1'
+              - name: VLLM_RPC_TIMEOUT
+                value: '900000'
+              - name: VLLM_TARGET_DEVICE
+                value: tt
+          qwen36_blackhole_b8:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+              tag: 0.18.0-feb3c81-a2f077a
+            probes:
+              liveness:
+                initialDelaySeconds: 2400
+              readiness:
+                initialDelaySeconds: 2400
+            resources:
+              requests:
+                memory: 67Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: HF_MODEL
+                value: Qwen/Qwen3.6-27B
+              - name: MESH_DEVICE
+                value: (1, 4)
+              - name: QWEN36_MAX_TOKENS_ALL_USERS
+                value: '525312'
               - name: TORCHDYNAMO_DISABLE
                 value: '1'
               - name: TT_MESH_GRAPH_DESC_PATH

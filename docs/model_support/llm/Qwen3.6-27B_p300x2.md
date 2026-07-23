@@ -22,7 +22,7 @@ docker run \
   --device /dev/tenstorrent \
   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
   --volume volume_id_Qwen3.6-27B:/home/container_app_user/cache_root \
-  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.18.0-c49bb76-6b4a3a7 \
+  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.18.0-feb3c81-a2f077a \
   --model Qwen3.6-27B \
   --tt-device p300x2
 ```
@@ -42,7 +42,7 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Model Status | 🛠️ Experimental |
 | Max Batch Size | 1 |
 | Max Context Length | 262144 |
-| Implementation Code | [qwen36-blackhole](https://github.com/tenstorrent/tt-metal/tree/c49bb76/models/demos/blackhole/qwen36) |
-| tt-metal Commit | `c49bb76` |
-| vLLM Commit | `6b4a3a7` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.18.0-c49bb76-6b4a3a7` |
+| Implementation Code | [qwen36-blackhole](https://github.com/tenstorrent/tt-metal/tree/feb3c81/models/demos/blackhole/qwen36) |
+| tt-metal Commit | `feb3c81` |
+| vLLM Commit | `a2f077a` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.18.0-feb3c81-a2f077a` |

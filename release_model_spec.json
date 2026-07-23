@@ -21,6 +21,7 @@
               "device": "T3K",
               "max_concurrency": 1,
               "max_context": 16384,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -86,7 +87,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -146,6 +148,7 @@
               "device": "GALAXY_T3K",
               "max_concurrency": 1,
               "max_context": 16384,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [],
@@ -169,7 +172,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -228,6 +232,7 @@
               "device": "GALAXY",
               "max_concurrency": 128,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -291,7 +296,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -350,6 +356,7 @@
               "device": "T3K",
               "max_concurrency": 1,
               "max_context": 16384,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -415,7 +422,8 @@
               "tensor_cache_timeout": 5400.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -475,6 +483,7 @@
               "device": "GALAXY",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -553,7 +562,8 @@
                   "task_name": "gpqa_diamond_cot_zeroshot"
                 }
               ],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -614,6 +624,7 @@
               "device": "P300X2",
               "max_concurrency": 1,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -691,7 +702,8 @@
                   "task_name": "gpqa_diamond_cot_zeroshot"
                 }
               ],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -754,6 +766,7 @@
               "device": "N300",
               "max_concurrency": 32,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [],
@@ -777,7 +790,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -831,6 +845,7 @@
               "device": "T3K",
               "max_concurrency": 32,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [],
@@ -854,7 +869,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -910,6 +926,7 @@
               "device": "N150",
               "max_concurrency": 32,
               "max_context": 32768,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [],
@@ -934,7 +951,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -992,6 +1010,7 @@
               "device": "N150",
               "max_concurrency": 32,
               "max_context": 40960,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -1056,7 +1075,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -1114,6 +1134,7 @@
               "device": "N300",
               "max_concurrency": 32,
               "max_context": 40960,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -1179,7 +1200,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -1238,6 +1260,7 @@
               "device": "T3K",
               "max_concurrency": 32,
               "max_context": 40960,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -1301,7 +1324,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -1358,6 +1382,7 @@
               "device": "GALAXY_T3K",
               "max_concurrency": 32,
               "max_context": 40960,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [],
@@ -1384,7 +1409,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -1445,6 +1471,7 @@
               "device": "GALAXY",
               "max_concurrency": 128,
               "max_context": 40960,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -1508,7 +1535,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -1565,6 +1593,7 @@
               "device": "P300",
               "max_concurrency": 32,
               "max_context": 40960,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [],
@@ -1586,7 +1615,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -1653,6 +1683,7 @@
               "device": "GALAXY",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -1723,7 +1754,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -1744,18 +1776,18 @@
               "ARCH_NAME": "wormhole_b0",
               "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1
             },
-            "tt_metal_commit": "bac8b34",
-            "vllm_commit": "7c6685a",
+            "tt_metal_commit": "feb3c81",
+            "vllm_commit": "a2f077a",
             "hf_weights_repo": "Qwen/Qwen3-32B",
             "param_count": 32,
             "min_disk_gb": 84,
             "min_ram_gb": 80.0,
             "model_type": "LLM",
             "repacked": 0,
-            "version": "0.11.1",
-            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.11.1-bac8b34-7c6685a",
+            "version": "0.18.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.18.0-feb3c81-a2f077a",
             "status": "COMPLETE",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/bac8b34/models/demos/llama3_70b_galaxy",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/feb3c81/models/demos/llama3_70b_galaxy",
             "override_tt_config": {
               "dispatch_core_axis": "col",
               "sample_on_device_mode": "all",
@@ -1791,6 +1823,7 @@
               "device": "GALAXY",
               "max_concurrency": 128,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": false,
               "perf_reference": [
@@ -1858,7 +1891,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -1871,18 +1905,18 @@
               "ARCH_NAME": "wormhole_b0",
               "TT_MM_THROTTLE_PERF": 5
             },
-            "tt_metal_commit": "e95ffa5",
-            "vllm_commit": "48eba14",
+            "tt_metal_commit": "feb3c81",
+            "vllm_commit": "a2f077a",
             "hf_weights_repo": "Qwen/Qwen3-32B",
             "param_count": 32,
             "min_disk_gb": 84,
             "min_ram_gb": 80.0,
             "model_type": "LLM",
             "repacked": 0,
-            "version": "0.9.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-e95ffa5-48eba14",
+            "version": "0.18.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.18.0-feb3c81-a2f077a",
             "status": "FUNCTIONAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/e95ffa5/models/tt_transformers",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/feb3c81/models/tt_transformers",
             "override_tt_config": {
               "trace_region_size": 66147328,
               "sample_on_device_mode": "decode_only"
@@ -1919,6 +1953,7 @@
               "device": "T3K",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -1984,7 +2019,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -1997,18 +2033,18 @@
               "MESH_DEVICE": "T3K",
               "ARCH_NAME": "wormhole_b0"
             },
-            "tt_metal_commit": "e95ffa5",
-            "vllm_commit": "48eba14",
+            "tt_metal_commit": "feb3c81",
+            "vllm_commit": "a2f077a",
             "hf_weights_repo": "Qwen/Qwen3-32B",
             "param_count": 32,
             "min_disk_gb": 84,
             "min_ram_gb": 80.0,
             "model_type": "LLM",
             "repacked": 0,
-            "version": "0.9.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-e95ffa5-48eba14",
+            "version": "0.18.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.18.0-feb3c81-a2f077a",
             "status": "FUNCTIONAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/e95ffa5/models/tt_transformers",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/feb3c81/models/tt_transformers",
             "override_tt_config": {
               "trace_region_size": 54000000
             },
@@ -2044,6 +2080,7 @@
               "device": "GALAXY_T3K",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [],
@@ -2070,7 +2107,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -2085,18 +2123,18 @@
               "TT_MM_THROTTLE_PERF": 5,
               "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
             },
-            "tt_metal_commit": "e95ffa5",
-            "vllm_commit": "48eba14",
+            "tt_metal_commit": "feb3c81",
+            "vllm_commit": "a2f077a",
             "hf_weights_repo": "Qwen/Qwen3-32B",
             "param_count": 32,
             "min_disk_gb": 84,
             "min_ram_gb": 80.0,
             "model_type": "LLM",
             "repacked": 0,
-            "version": "0.9.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-e95ffa5-48eba14",
+            "version": "0.18.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.18.0-feb3c81-a2f077a",
             "status": "FUNCTIONAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/e95ffa5/models/tt_transformers",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/feb3c81/models/tt_transformers",
             "override_tt_config": {
               "fabric_config": "FABRIC_1D"
             },
@@ -2132,6 +2170,7 @@
               "device": "P150X8",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [],
@@ -2155,7 +2194,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -2223,6 +2263,7 @@
               "device": "P300X2",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -2287,7 +2328,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -2336,6 +2378,194 @@
             "cli_args": {}
           }
         }
+      },
+      "BLACKHOLE_GALAXY": {
+        "vLLM": {
+          "qwen3_32b_galaxy": {
+            "model_id": "id_qwen3-32b-galaxy_Qwen3-32B_blackhole_galaxy",
+            "impl": {
+              "impl_id": "qwen3_32b_galaxy",
+              "impl_name": "qwen3-32b-galaxy",
+              "repo_url": "https://github.com/tenstorrent/tt-metal",
+              "code_path": "models/demos/llama3_70b_galaxy"
+            },
+            "hf_model_repo": "Qwen/Qwen3-32B",
+            "model_name": "Qwen3-32B",
+            "inference_engine": "vLLM",
+            "device_type": "BLACKHOLE_GALAXY",
+            "device_model_spec": {
+              "device": "BLACKHOLE_GALAXY",
+              "max_concurrency": 32,
+              "max_context": 131072,
+              "max_tokens_all_users_override": null,
+              "perf_targets_map": {},
+              "default_impl": true,
+              "perf_reference": [],
+              "vllm_args": {
+                "model": "Qwen/Qwen3-32B",
+                "block_size": "64",
+                "max_model_len": "131072",
+                "max_num_seqs": "8",
+                "max_num_batched_tokens": "131072",
+                "max-log-len": "32",
+                "seed": "9472",
+                "additional_config": "{\"tt\": {\"dispatch_core_axis\": \"col\", \"sample_on_device_mode\": \"all\", \"fabric_config\": \"FABRIC_1D_RING\", \"worker_l1_size\": 1344544, \"trace_region_size\": 184915840}}",
+                "data_parallel_size": 4
+              },
+              "override_tt_config": {
+                "dispatch_core_axis": "col",
+                "sample_on_device_mode": "all",
+                "fabric_config": "FABRIC_1D_RING",
+                "worker_l1_size": 1344544,
+                "trace_region_size": 184915840
+              },
+              "env_vars": {
+                "MESH_DEVICE": "BH-Galaxy",
+                "ARCH_NAME": "blackhole",
+                "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1
+              },
+              "tensor_cache_timeout": 3600.0,
+              "system_requirements": null,
+              "known_issues": [],
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
+            },
+            "system_requirements": {
+              "firmware": {
+                "specifier": ">=18.6.0",
+                "mode": "STRICT"
+              },
+              "kmd": {
+                "specifier": ">=2.1.0",
+                "mode": "STRICT"
+              }
+            },
+            "env_vars": {
+              "VLLM_CONFIGURE_LOGGING": "1",
+              "VLLM_RPC_TIMEOUT": "900000",
+              "VLLM_TARGET_DEVICE": "tt",
+              "TORCHDYNAMO_DISABLE": "1",
+              "MESH_DEVICE": "BH-Galaxy",
+              "ARCH_NAME": "blackhole",
+              "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1
+            },
+            "tt_metal_commit": "feb3c81",
+            "vllm_commit": "a2f077a",
+            "hf_weights_repo": "Qwen/Qwen3-32B",
+            "param_count": 32,
+            "min_disk_gb": 84,
+            "min_ram_gb": 80.0,
+            "model_type": "LLM",
+            "repacked": 0,
+            "version": "0.18.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.18.0-feb3c81-a2f077a",
+            "status": "COMPLETE",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/feb3c81/models/demos/llama3_70b_galaxy",
+            "override_tt_config": {
+              "dispatch_core_axis": "col",
+              "sample_on_device_mode": "all",
+              "fabric_config": "FABRIC_1D_RING",
+              "worker_l1_size": 1344544,
+              "trace_region_size": 184915840
+            },
+            "supported_modalities": [
+              "text"
+            ],
+            "subdevice_type": "P150X8",
+            "uses_tensor_model_cache": true,
+            "has_builtin_warmup": true,
+            "metadata": {
+              "reasoning_parser_name": "qwen3",
+              "tool_call_parser_name": "hermes"
+            },
+            "cli_args": {}
+          },
+          "tt_transformers": {
+            "model_id": "id_tt-transformers_Qwen3-32B_blackhole_galaxy",
+            "impl": {
+              "impl_id": "tt_transformers",
+              "impl_name": "tt-transformers",
+              "repo_url": "https://github.com/tenstorrent/tt-metal",
+              "code_path": "models/tt_transformers"
+            },
+            "hf_model_repo": "Qwen/Qwen3-32B",
+            "model_name": "Qwen3-32B",
+            "inference_engine": "vLLM",
+            "device_type": "BLACKHOLE_GALAXY",
+            "device_model_spec": {
+              "device": "BLACKHOLE_GALAXY",
+              "max_concurrency": 128,
+              "max_context": 131072,
+              "max_tokens_all_users_override": null,
+              "perf_targets_map": {},
+              "default_impl": false,
+              "perf_reference": [],
+              "vllm_args": {
+                "model": "Qwen/Qwen3-32B",
+                "block_size": "64",
+                "max_model_len": "131072",
+                "max_num_seqs": "32",
+                "max_num_batched_tokens": "131072",
+                "max-log-len": "32",
+                "seed": "9472",
+                "additional_config": "{\"tt\": {\"trace_region_size\": 66147328, \"sample_on_device_mode\": \"decode_only\"}}",
+                "data_parallel_size": 4
+              },
+              "override_tt_config": {
+                "trace_region_size": 66147328,
+                "sample_on_device_mode": "decode_only"
+              },
+              "env_vars": {
+                "MESH_DEVICE": "BH-Galaxy",
+                "ARCH_NAME": "blackhole",
+                "TT_MM_THROTTLE_PERF": 5
+              },
+              "tensor_cache_timeout": 3600.0,
+              "system_requirements": null,
+              "known_issues": [],
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
+            },
+            "system_requirements": null,
+            "env_vars": {
+              "VLLM_CONFIGURE_LOGGING": "1",
+              "VLLM_RPC_TIMEOUT": "900000",
+              "VLLM_TARGET_DEVICE": "tt",
+              "TORCHDYNAMO_DISABLE": "1",
+              "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+              "MESH_DEVICE": "BH-Galaxy",
+              "ARCH_NAME": "blackhole",
+              "TT_MM_THROTTLE_PERF": 5
+            },
+            "tt_metal_commit": "feb3c81",
+            "vllm_commit": "a2f077a",
+            "hf_weights_repo": "Qwen/Qwen3-32B",
+            "param_count": 32,
+            "min_disk_gb": 84,
+            "min_ram_gb": 80.0,
+            "model_type": "LLM",
+            "repacked": 0,
+            "version": "0.18.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.18.0-feb3c81-a2f077a",
+            "status": "FUNCTIONAL",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/feb3c81/models/tt_transformers",
+            "override_tt_config": {
+              "trace_region_size": 66147328,
+              "sample_on_device_mode": "decode_only"
+            },
+            "supported_modalities": [
+              "text"
+            ],
+            "subdevice_type": "P150X8",
+            "uses_tensor_model_cache": true,
+            "has_builtin_warmup": false,
+            "metadata": {
+              "reasoning_parser_name": "qwen3",
+              "tool_call_parser_name": "hermes"
+            },
+            "cli_args": {}
+          }
+        }
       }
     },
     "mistralai/Mistral-7B-Instruct-v0.3": {
@@ -2357,6 +2587,7 @@
               "device": "N150",
               "max_concurrency": 32,
               "max_context": 32768,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -2419,7 +2650,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -2473,6 +2705,7 @@
               "device": "N300",
               "max_concurrency": 32,
               "max_context": 32768,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [],
@@ -2495,7 +2728,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -2550,6 +2784,7 @@
               "device": "T3K",
               "max_concurrency": 32,
               "max_context": 32768,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [],
@@ -2572,7 +2807,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -2629,6 +2865,7 @@
               "device": "T3K",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -2692,7 +2929,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -2750,6 +2988,7 @@
               "device": "GALAXY",
               "max_concurrency": 128,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -2815,7 +3054,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -2875,6 +3115,7 @@
               "device": "GALAXY_T3K",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [],
@@ -2901,7 +3142,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -2965,6 +3207,7 @@
               "device": "T3K",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -3070,7 +3313,8 @@
               "tensor_cache_timeout": 5400.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -3130,6 +3374,7 @@
               "device": "GALAXY",
               "max_concurrency": 128,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -3235,7 +3480,8 @@
               "tensor_cache_timeout": 5400.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -3295,6 +3541,7 @@
               "device": "GALAXY_T3K",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [],
@@ -3322,7 +3569,8 @@
               "tensor_cache_timeout": 5400.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -3387,6 +3635,7 @@
               "device": "T3K",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -3492,7 +3741,8 @@
               "tensor_cache_timeout": 5400.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -3552,6 +3802,7 @@
               "device": "GALAXY",
               "max_concurrency": 128,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -3657,7 +3908,8 @@
               "tensor_cache_timeout": 5400.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -3717,6 +3969,7 @@
               "device": "GALAXY_T3K",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [],
@@ -3744,7 +3997,8 @@
               "tensor_cache_timeout": 5400.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -3809,6 +4063,7 @@
               "device": "N300",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -3874,7 +4129,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -3933,6 +4189,7 @@
               "device": "N150X4",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [],
@@ -3954,7 +4211,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -4012,6 +4270,7 @@
               "device": "N300",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -4077,7 +4336,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -4136,6 +4396,7 @@
               "device": "N150X4",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [],
@@ -4157,7 +4418,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -4215,6 +4477,7 @@
               "device": "GALAXY",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -4284,7 +4547,8 @@
               "tensor_cache_timeout": 5400.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -4354,6 +4618,7 @@
               "device": "T3K",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -4421,7 +4686,8 @@
               "tensor_cache_timeout": 5400.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -4490,6 +4756,7 @@
               "device": "P150X4",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -4563,7 +4830,8 @@
                 }
               },
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -4629,6 +4897,7 @@
               "device": "P150X8",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -4702,7 +4971,8 @@
                 }
               },
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -4768,6 +5038,7 @@
               "device": "P300X2",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -4838,7 +5109,8 @@
                   "task_name": "test_penalties"
                 }
               ],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -4904,6 +5176,7 @@
               "device": "GALAXY_T3K",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [],
@@ -4932,7 +5205,8 @@
               "tensor_cache_timeout": 5400.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -5005,6 +5279,7 @@
               "device": "GALAXY",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -5074,7 +5349,8 @@
               "tensor_cache_timeout": 5400.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -5144,6 +5420,7 @@
               "device": "T3K",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -5211,7 +5488,8 @@
               "tensor_cache_timeout": 5400.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -5280,6 +5558,7 @@
               "device": "P150X4",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -5353,7 +5632,8 @@
                 }
               },
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -5419,6 +5699,7 @@
               "device": "P150X8",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -5492,7 +5773,8 @@
                 }
               },
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -5558,6 +5840,7 @@
               "device": "P300X2",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -5628,7 +5911,8 @@
                   "task_name": "test_penalties"
                 }
               ],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -5694,6 +5978,7 @@
               "device": "GALAXY_T3K",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [],
@@ -5722,7 +6007,8 @@
               "tensor_cache_timeout": 5400.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -5795,6 +6081,7 @@
               "device": "GALAXY",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -5864,7 +6151,8 @@
               "tensor_cache_timeout": 5400.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -5934,6 +6222,7 @@
               "device": "T3K",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -6001,7 +6290,8 @@
               "tensor_cache_timeout": 5400.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -6070,6 +6360,7 @@
               "device": "P150X4",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -6143,7 +6434,8 @@
                 }
               },
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -6209,6 +6501,7 @@
               "device": "P150X8",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -6282,7 +6575,8 @@
                 }
               },
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -6348,6 +6642,7 @@
               "device": "P300X2",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -6418,7 +6713,8 @@
                   "task_name": "test_penalties"
                 }
               ],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -6484,6 +6780,7 @@
               "device": "GALAXY_T3K",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [],
@@ -6512,7 +6809,8 @@
               "tensor_cache_timeout": 5400.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -6585,6 +6883,7 @@
               "device": "GALAXY",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -6654,7 +6953,8 @@
               "tensor_cache_timeout": 5400.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -6725,6 +7025,7 @@
               "device": "T3K",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -6792,7 +7093,8 @@
               "tensor_cache_timeout": 5400.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -6862,6 +7164,7 @@
               "device": "P150X4",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -6935,7 +7238,8 @@
                 }
               },
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -7002,6 +7306,7 @@
               "device": "P150X8",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -7075,7 +7380,8 @@
                 }
               },
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -7142,6 +7448,7 @@
               "device": "P300X2",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -7212,7 +7519,8 @@
                   "task_name": "test_penalties"
                 }
               ],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -7279,6 +7587,7 @@
               "device": "GALAXY_T3K",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [],
@@ -7307,7 +7616,8 @@
               "tensor_cache_timeout": 5400.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -7381,6 +7691,7 @@
               "device": "GALAXY",
               "max_concurrency": 256,
               "max_context": 2048,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [],
@@ -7402,7 +7713,8 @@
               "tensor_cache_timeout": 6400.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -7458,6 +7770,7 @@
               "device": "DUAL_GALAXY",
               "max_concurrency": 256,
               "max_context": 32768,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [],
@@ -7487,7 +7800,8 @@
               "tensor_cache_timeout": 6400.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -7550,6 +7864,7 @@
               "device": "QUAD_GALAXY",
               "max_concurrency": 512,
               "max_context": 32768,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [],
@@ -7579,7 +7894,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -7644,6 +7960,7 @@
               "device": "N150",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -7706,7 +8023,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -7762,6 +8080,7 @@
               "device": "N300",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -7825,7 +8144,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -7882,6 +8202,7 @@
               "device": "T3K",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -7945,7 +8266,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -8004,6 +8326,7 @@
               "device": "N150",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -8066,7 +8389,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -8122,6 +8446,7 @@
               "device": "N300",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -8185,7 +8510,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -8242,6 +8568,7 @@
               "device": "T3K",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -8305,7 +8632,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -8364,6 +8692,7 @@
               "device": "N150",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -8428,7 +8757,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -8483,6 +8813,7 @@
               "device": "N150",
               "max_concurrency": 1,
               "max_context": 2048,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": false,
               "perf_reference": [
@@ -8548,7 +8879,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -8600,6 +8932,7 @@
               "device": "N300",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -8663,7 +8996,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -8717,6 +9051,7 @@
               "device": "N300",
               "max_concurrency": 1,
               "max_context": 2048,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": false,
               "perf_reference": [
@@ -8783,7 +9118,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -8836,6 +9172,7 @@
               "device": "T3K",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -8899,7 +9236,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -8957,6 +9295,7 @@
               "device": "N150",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -9021,7 +9360,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -9078,6 +9418,7 @@
               "device": "N300",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -9141,7 +9482,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -9197,6 +9539,7 @@
               "device": "T3K",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -9260,7 +9603,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -9318,6 +9662,7 @@
               "device": "N150",
               "max_concurrency": 32,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -9382,7 +9727,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -9439,6 +9785,7 @@
               "device": "N300",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -9504,7 +9851,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -9562,6 +9910,7 @@
               "device": "T3K",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -9667,7 +10016,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -9725,6 +10075,7 @@
               "device": "GPU",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [],
@@ -9745,7 +10096,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -9799,6 +10151,7 @@
               "device": "P100",
               "max_concurrency": 32,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -9863,7 +10216,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -9920,6 +10274,7 @@
               "device": "P150",
               "max_concurrency": 32,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -10010,7 +10365,8 @@
                   "task_name": "longbench_code_e"
                 }
               ],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -10067,6 +10423,7 @@
               "device": "P150X4",
               "max_concurrency": 128,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -10132,7 +10489,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -10190,6 +10548,7 @@
               "device": "P150X8",
               "max_concurrency": 256,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -10255,7 +10614,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -10321,6 +10681,7 @@
               "device": "P300X2",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -10412,7 +10773,8 @@
                   "task_name": "longbench_summarization_e"
                 }
               ],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -10432,18 +10794,18 @@
               "MESH_DEVICE": "P300x2",
               "ARCH_NAME": "blackhole"
             },
-            "tt_metal_commit": "8c48a10",
-            "vllm_commit": "f52987a",
+            "tt_metal_commit": "feb3c81",
+            "vllm_commit": "a2f077a",
             "hf_weights_repo": "meta-llama/Llama-3.1-8B",
             "param_count": 8,
             "min_disk_gb": 36,
             "min_ram_gb": 20.0,
             "model_type": "LLM",
             "repacked": 0,
-            "version": "0.17.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.17.0-8c48a10-f52987a",
+            "version": "0.18.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.18.0-feb3c81-a2f077a",
             "status": "FUNCTIONAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/8c48a10/models/tt_transformers",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/feb3c81/models/tt_transformers",
             "override_tt_config": {
               "sample_on_device_mode": "decode_only",
               "trace_region_size": 155000000
@@ -10479,6 +10841,7 @@
               "device": "P300",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [],
@@ -10498,12 +10861,40 @@
               },
               "env_vars": {
                 "MESH_DEVICE": "P300",
-                "ARCH_NAME": "blackhole"
+                "ARCH_NAME": "blackhole",
+                "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_mesh_graph_descriptor.textproto"
               },
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
-              "known_issues": [],
-              "eval_max_retries": null
+              "known_issues": [
+                {
+                  "workflow_type": "EVALS",
+                  "reason": "meta_ifeval measured scores flakily pass the >=95% threshold https://github.com/tenstorrent/tt-inference-server/issues/4360#issuecomment-4799932610.",
+                  "task_name": "meta_ifeval"
+                },
+                {
+                  "workflow_type": "EVALS",
+                  "reason": "meta_gpqa_cot measured scores flakily pass the >=95% threshold https://github.com/tenstorrent/tt-inference-server/issues/4360#issuecomment-4799932610.",
+                  "task_name": "meta_gpqa_cot"
+                },
+                {
+                  "workflow_type": "EVALS",
+                  "reason": "longbench_code_e known issue with longbench code sub-task where the chat templating interferes with prompt templating https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121. Masked due to other longbench subtasks passing.",
+                  "task_name": "longbench_code_e"
+                },
+                {
+                  "workflow_type": "EVALS",
+                  "reason": "longbench_fewshot_e known issue with longbench code sub-task where the chat templating interferes with prompt templating https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121. Masked due to other longbench subtasks passing.",
+                  "task_name": "longbench_fewshot_e"
+                },
+                {
+                  "workflow_type": "EVALS",
+                  "reason": "longbench_summarization_e measured score is ~94% which does not satisfy the >=95% threshold  https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121. Masked due to other longbench subtasks passing.",
+                  "task_name": "longbench_summarization_e"
+                }
+              ],
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -10521,20 +10912,21 @@
               "VLLM_TARGET_DEVICE": "tt",
               "TORCHDYNAMO_DISABLE": "1",
               "MESH_DEVICE": "P300",
-              "ARCH_NAME": "blackhole"
+              "ARCH_NAME": "blackhole",
+              "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_mesh_graph_descriptor.textproto"
             },
-            "tt_metal_commit": "8c48a10",
-            "vllm_commit": "f52987a",
+            "tt_metal_commit": "feb3c81",
+            "vllm_commit": "a2f077a",
             "hf_weights_repo": "meta-llama/Llama-3.1-8B",
             "param_count": 8,
             "min_disk_gb": 36,
             "min_ram_gb": 20.0,
             "model_type": "LLM",
             "repacked": 0,
-            "version": "0.17.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.17.0-8c48a10-f52987a",
+            "version": "0.18.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.18.0-feb3c81-a2f077a",
             "status": "FUNCTIONAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/8c48a10/models/tt_transformers",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/feb3c81/models/tt_transformers",
             "override_tt_config": {
               "sample_on_device_mode": "decode_only",
               "trace_region_size": 56000000
@@ -10570,6 +10962,7 @@
               "device": "GALAXY",
               "max_concurrency": 128,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -10677,7 +11070,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -10745,6 +11139,7 @@
               "device": "GALAXY_T3K",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [],
@@ -10772,7 +11167,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -10844,6 +11240,7 @@
               "device": "N150",
               "max_concurrency": 32,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -10908,7 +11305,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -10965,6 +11363,7 @@
               "device": "N300",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -11030,7 +11429,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -11088,6 +11488,7 @@
               "device": "T3K",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -11193,7 +11594,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -11251,6 +11653,7 @@
               "device": "GPU",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [],
@@ -11271,7 +11674,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -11325,6 +11729,7 @@
               "device": "P100",
               "max_concurrency": 32,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -11389,7 +11794,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -11446,6 +11852,7 @@
               "device": "P150",
               "max_concurrency": 32,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -11536,7 +11943,8 @@
                   "task_name": "longbench_code_e"
                 }
               ],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -11593,6 +12001,7 @@
               "device": "P150X4",
               "max_concurrency": 128,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -11658,7 +12067,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -11716,6 +12126,7 @@
               "device": "P150X8",
               "max_concurrency": 256,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -11781,7 +12192,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -11847,6 +12259,7 @@
               "device": "P300X2",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -11938,7 +12351,8 @@
                   "task_name": "longbench_summarization_e"
                 }
               ],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -11958,18 +12372,18 @@
               "MESH_DEVICE": "P300x2",
               "ARCH_NAME": "blackhole"
             },
-            "tt_metal_commit": "8c48a10",
-            "vllm_commit": "f52987a",
+            "tt_metal_commit": "feb3c81",
+            "vllm_commit": "a2f077a",
             "hf_weights_repo": "meta-llama/Llama-3.1-8B-Instruct",
             "param_count": 8,
             "min_disk_gb": 36,
             "min_ram_gb": 20.0,
             "model_type": "LLM",
             "repacked": 0,
-            "version": "0.17.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.17.0-8c48a10-f52987a",
+            "version": "0.18.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.18.0-feb3c81-a2f077a",
             "status": "FUNCTIONAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/8c48a10/models/tt_transformers",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/feb3c81/models/tt_transformers",
             "override_tt_config": {
               "sample_on_device_mode": "decode_only",
               "trace_region_size": 155000000
@@ -12005,6 +12419,7 @@
               "device": "P300",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [],
@@ -12024,12 +12439,40 @@
               },
               "env_vars": {
                 "MESH_DEVICE": "P300",
-                "ARCH_NAME": "blackhole"
+                "ARCH_NAME": "blackhole",
+                "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_mesh_graph_descriptor.textproto"
               },
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
-              "known_issues": [],
-              "eval_max_retries": null
+              "known_issues": [
+                {
+                  "workflow_type": "EVALS",
+                  "reason": "meta_ifeval measured scores flakily pass the >=95% threshold https://github.com/tenstorrent/tt-inference-server/issues/4360#issuecomment-4799932610.",
+                  "task_name": "meta_ifeval"
+                },
+                {
+                  "workflow_type": "EVALS",
+                  "reason": "meta_gpqa_cot measured scores flakily pass the >=95% threshold https://github.com/tenstorrent/tt-inference-server/issues/4360#issuecomment-4799932610.",
+                  "task_name": "meta_gpqa_cot"
+                },
+                {
+                  "workflow_type": "EVALS",
+                  "reason": "longbench_code_e known issue with longbench code sub-task where the chat templating interferes with prompt templating https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121. Masked due to other longbench subtasks passing.",
+                  "task_name": "longbench_code_e"
+                },
+                {
+                  "workflow_type": "EVALS",
+                  "reason": "longbench_fewshot_e known issue with longbench code sub-task where the chat templating interferes with prompt templating https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121. Masked due to other longbench subtasks passing.",
+                  "task_name": "longbench_fewshot_e"
+                },
+                {
+                  "workflow_type": "EVALS",
+                  "reason": "longbench_summarization_e measured score is ~94% which does not satisfy the >=95% threshold  https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121. Masked due to other longbench subtasks passing.",
+                  "task_name": "longbench_summarization_e"
+                }
+              ],
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -12047,20 +12490,21 @@
               "VLLM_TARGET_DEVICE": "tt",
               "TORCHDYNAMO_DISABLE": "1",
               "MESH_DEVICE": "P300",
-              "ARCH_NAME": "blackhole"
+              "ARCH_NAME": "blackhole",
+              "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_mesh_graph_descriptor.textproto"
             },
-            "tt_metal_commit": "8c48a10",
-            "vllm_commit": "f52987a",
+            "tt_metal_commit": "feb3c81",
+            "vllm_commit": "a2f077a",
             "hf_weights_repo": "meta-llama/Llama-3.1-8B-Instruct",
             "param_count": 8,
             "min_disk_gb": 36,
             "min_ram_gb": 20.0,
             "model_type": "LLM",
             "repacked": 0,
-            "version": "0.17.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.17.0-8c48a10-f52987a",
+            "version": "0.18.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.18.0-feb3c81-a2f077a",
             "status": "FUNCTIONAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/8c48a10/models/tt_transformers",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/feb3c81/models/tt_transformers",
             "override_tt_config": {
               "sample_on_device_mode": "decode_only",
               "trace_region_size": 56000000
@@ -12096,6 +12540,7 @@
               "device": "GALAXY",
               "max_concurrency": 128,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -12203,7 +12648,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -12271,6 +12717,7 @@
               "device": "GALAXY_T3K",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [],
@@ -12298,7 +12745,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": {
               "firmware": {
@@ -12370,6 +12818,7 @@
               "device": "T3K",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -12435,7 +12884,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -12494,6 +12944,7 @@
               "device": "GALAXY_T3K",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [],
@@ -12520,7 +12971,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -12583,6 +13035,7 @@
               "device": "P300X2",
               "max_concurrency": 1,
               "max_context": 49152,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [],
@@ -12614,7 +13067,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -12679,6 +13133,7 @@
               "device": "P300X2",
               "max_concurrency": 1,
               "max_context": 262144,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [],
@@ -12690,7 +13145,7 @@
                 "max_num_batched_tokens": "262144",
                 "max-log-len": "32",
                 "seed": "9472",
-                "additional_config": "{\"tt\": {\"fabric_config\": \"FABRIC_1D\", \"trace_region_size\": 268435456}}",
+                "additional_config": "{\"tt\": {\"fabric_config\": \"FABRIC_1D\", \"trace_region_size\": 268435456, \"l1_small_size\": 24576, \"sample_on_device_mode\": \"decode_only\"}}",
                 "async_scheduling": true,
                 "enable_auto_tool_choice": true,
                 "reasoning_parser": "qwen3",
@@ -12698,7 +13153,9 @@
               },
               "override_tt_config": {
                 "fabric_config": "FABRIC_1D",
-                "trace_region_size": 268435456
+                "trace_region_size": 268435456,
+                "l1_small_size": 24576,
+                "sample_on_device_mode": "decode_only"
               },
               "env_vars": {
                 "MESH_DEVICE": "(1, 4)",
@@ -12710,7 +13167,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -12724,8 +13182,8 @@
               "HF_MODEL": "Qwen/Qwen3.6-27B",
               "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
             },
-            "tt_metal_commit": "c49bb76",
-            "vllm_commit": "6b4a3a7",
+            "tt_metal_commit": "feb3c81",
+            "vllm_commit": "a2f077a",
             "hf_weights_repo": "Qwen/Qwen3.6-27B",
             "param_count": 27,
             "min_disk_gb": 74,
@@ -12733,12 +13191,111 @@
             "model_type": "LLM",
             "repacked": 0,
             "version": "0.18.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.18.0-c49bb76-6b4a3a7",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.18.0-feb3c81-a2f077a",
             "status": "EXPERIMENTAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/c49bb76/models/demos/blackhole/qwen36",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/feb3c81/models/demos/blackhole/qwen36",
             "override_tt_config": {
               "fabric_config": "FABRIC_1D",
-              "trace_region_size": 268435456
+              "trace_region_size": 268435456,
+              "l1_small_size": 24576,
+              "sample_on_device_mode": "decode_only"
+            },
+            "supported_modalities": [
+              "text"
+            ],
+            "subdevice_type": null,
+            "uses_tensor_model_cache": true,
+            "has_builtin_warmup": true,
+            "metadata": {
+              "reasoning_parser_name": "qwen3",
+              "tool_call_parser_name": "qwen3_coder"
+            },
+            "cli_args": {}
+          },
+          "qwen36_blackhole_b8": {
+            "model_id": "id_qwen36-blackhole-b8_Qwen3.6-27B_p300x2",
+            "impl": {
+              "impl_id": "qwen36_blackhole_b8",
+              "impl_name": "qwen36-blackhole-b8",
+              "repo_url": "https://github.com/tenstorrent/tt-metal",
+              "code_path": "models/demos/blackhole/qwen36"
+            },
+            "hf_model_repo": "Qwen/Qwen3.6-27B",
+            "model_name": "Qwen3.6-27B",
+            "inference_engine": "vLLM",
+            "device_type": "P300X2",
+            "device_model_spec": {
+              "device": "P300X2",
+              "max_concurrency": 8,
+              "max_context": 262144,
+              "max_tokens_all_users_override": 525312,
+              "perf_targets_map": {},
+              "default_impl": false,
+              "perf_reference": [],
+              "vllm_args": {
+                "model": "Qwen/Qwen3.6-27B",
+                "block_size": "64",
+                "max_model_len": "262144",
+                "max_num_seqs": "8",
+                "max_num_batched_tokens": "262144",
+                "max-log-len": "32",
+                "seed": "9472",
+                "additional_config": "{\"tt\": {\"fabric_config\": \"FABRIC_1D\", \"trace_region_size\": 1073741824, \"l1_small_size\": 24576, \"sample_on_device_mode\": \"decode_only\"}}",
+                "async_scheduling": true,
+                "enable_auto_tool_choice": true,
+                "reasoning_parser": "qwen3",
+                "tool_call_parser": "qwen3_coder"
+              },
+              "override_tt_config": {
+                "fabric_config": "FABRIC_1D",
+                "trace_region_size": 1073741824,
+                "l1_small_size": 24576,
+                "sample_on_device_mode": "decode_only"
+              },
+              "env_vars": {
+                "MESH_DEVICE": "(1, 4)",
+                "ARCH_NAME": "blackhole",
+                "TT_QWEN35_TEXT_VER": "qwen36_blackhole",
+                "HF_MODEL": "Qwen/Qwen3.6-27B",
+                "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto",
+                "QWEN36_MAX_TOKENS_ALL_USERS": "525312"
+              },
+              "tensor_cache_timeout": 3600.0,
+              "system_requirements": null,
+              "known_issues": [],
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
+            },
+            "system_requirements": null,
+            "env_vars": {
+              "VLLM_CONFIGURE_LOGGING": "1",
+              "VLLM_RPC_TIMEOUT": "900000",
+              "VLLM_TARGET_DEVICE": "tt",
+              "TORCHDYNAMO_DISABLE": "1",
+              "MESH_DEVICE": "(1, 4)",
+              "ARCH_NAME": "blackhole",
+              "TT_QWEN35_TEXT_VER": "qwen36_blackhole",
+              "HF_MODEL": "Qwen/Qwen3.6-27B",
+              "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto",
+              "QWEN36_MAX_TOKENS_ALL_USERS": "525312"
+            },
+            "tt_metal_commit": "feb3c81",
+            "vllm_commit": "a2f077a",
+            "hf_weights_repo": "Qwen/Qwen3.6-27B",
+            "param_count": 27,
+            "min_disk_gb": 74,
+            "min_ram_gb": 67.5,
+            "model_type": "LLM",
+            "repacked": 0,
+            "version": "0.18.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.18.0-feb3c81-a2f077a",
+            "status": "EXPERIMENTAL",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/feb3c81/models/demos/blackhole/qwen36",
+            "override_tt_config": {
+              "fabric_config": "FABRIC_1D",
+              "trace_region_size": 1073741824,
+              "l1_small_size": 24576,
+              "sample_on_device_mode": "decode_only"
             },
             "supported_modalities": [
               "text"
@@ -12774,6 +13331,7 @@
               "device": "N150",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -12841,7 +13399,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -12898,6 +13457,7 @@
               "device": "N300",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -12966,7 +13526,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -13026,6 +13587,7 @@
               "device": "N150",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -13093,7 +13655,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -13150,6 +13713,7 @@
               "device": "N300",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -13218,7 +13782,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -13278,6 +13843,7 @@
               "device": "T3K",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -13347,7 +13913,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -13406,6 +13973,7 @@
               "device": "GALAXY_T3K",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [],
@@ -13436,7 +14004,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -13497,6 +14066,7 @@
               "device": "GALAXY",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -13567,7 +14137,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -13628,6 +14199,7 @@
               "device": "T3K",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -13697,7 +14269,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -13756,6 +14329,7 @@
               "device": "GALAXY_T3K",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [],
@@ -13786,7 +14360,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -13847,6 +14422,7 @@
               "device": "GALAXY",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -13917,7 +14493,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -13978,6 +14555,7 @@
               "device": "T3K",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -14042,7 +14620,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -14100,6 +14679,7 @@
               "device": "N150",
               "max_concurrency": 32,
               "max_context": 32768,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -14162,7 +14742,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -14219,6 +14800,7 @@
               "device": "N300",
               "max_concurrency": 32,
               "max_context": 32768,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -14282,7 +14864,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -14342,6 +14925,7 @@
               "device": "N150",
               "max_concurrency": 32,
               "max_context": 32768,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -14404,7 +14988,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -14461,6 +15046,7 @@
               "device": "N300",
               "max_concurrency": 32,
               "max_context": 32768,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -14527,7 +15113,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -14589,6 +15176,7 @@
               "device": "T3K",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -14653,7 +15241,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -14713,6 +15302,7 @@
               "device": "T3K",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -14779,7 +15369,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -14841,6 +15432,7 @@
               "device": "N300",
               "max_concurrency": 16,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -14904,7 +15496,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -14959,6 +15552,7 @@
               "device": "T3K",
               "max_concurrency": 16,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -15022,7 +15616,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -15079,6 +15674,7 @@
               "device": "N300",
               "max_concurrency": 16,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -15142,7 +15738,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -15197,6 +15794,7 @@
               "device": "T3K",
               "max_concurrency": 16,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -15260,7 +15858,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -15317,6 +15916,7 @@
               "device": "T3K",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -15381,7 +15981,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -15439,6 +16040,7 @@
               "device": "T3K",
               "max_concurrency": 32,
               "max_context": 131072,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -15503,7 +16105,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -15561,6 +16164,7 @@
               "device": "T3K",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -15624,7 +16228,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -15674,6 +16279,7 @@
               "device": "GALAXY",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -15736,7 +16342,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -15785,6 +16392,7 @@
               "device": "P150X4",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -15849,7 +16457,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -15900,6 +16509,7 @@
               "device": "P150X8",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -15964,7 +16574,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -16015,6 +16626,7 @@
               "device": "P300X2",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -16079,7 +16691,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -16132,6 +16745,7 @@
               "device": "T3K",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -16195,7 +16809,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -16245,6 +16860,7 @@
               "device": "GALAXY",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -16307,7 +16923,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -16356,6 +16973,7 @@
               "device": "P150X4",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -16420,7 +17038,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -16471,6 +17090,7 @@
               "device": "P150X8",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -16535,7 +17155,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -16586,6 +17207,7 @@
               "device": "P300X2",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -16650,7 +17272,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -16704,6 +17327,7 @@
               "device": "N150",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -16766,7 +17390,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -16815,6 +17440,7 @@
               "device": "N300",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -16878,7 +17504,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -16928,6 +17555,7 @@
               "device": "T3K",
               "max_concurrency": 4,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -16991,7 +17619,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -17041,6 +17670,7 @@
               "device": "GALAXY",
               "max_concurrency": 16,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -17103,7 +17733,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -17154,6 +17785,7 @@
               "device": "N150",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -17216,7 +17848,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -17265,6 +17898,7 @@
               "device": "N300",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -17328,7 +17962,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -17378,6 +18013,7 @@
               "device": "T3K",
               "max_concurrency": 4,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -17441,7 +18077,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -17491,6 +18128,7 @@
               "device": "GALAXY",
               "max_concurrency": 16,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -17553,7 +18191,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -17604,6 +18243,7 @@
               "device": "T3K",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -17667,7 +18307,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -17717,6 +18358,7 @@
               "device": "GALAXY",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -17779,7 +18421,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -17830,6 +18473,7 @@
               "device": "N150",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -17892,7 +18536,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -17941,6 +18586,7 @@
               "device": "N300",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -18004,7 +18650,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -18054,6 +18701,7 @@
               "device": "T3K",
               "max_concurrency": 4,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -18117,7 +18765,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -18167,6 +18816,7 @@
               "device": "GALAXY",
               "max_concurrency": 32,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -18229,7 +18879,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -18280,6 +18931,7 @@
               "device": "T3K",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -18343,7 +18995,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -18393,6 +19046,7 @@
               "device": "GALAXY",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -18455,7 +19109,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -18504,6 +19159,7 @@
               "device": "P300",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -18566,7 +19222,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -18615,6 +19272,7 @@
               "device": "P150X4",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -18677,7 +19335,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -18726,6 +19385,7 @@
               "device": "P150X8",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -18788,7 +19448,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -18837,6 +19498,7 @@
               "device": "P300X2",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -18901,7 +19563,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -18954,6 +19617,7 @@
               "device": "T3K",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -19017,7 +19681,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -19067,6 +19732,7 @@
               "device": "GALAXY",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -19129,7 +19795,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -19178,6 +19845,7 @@
               "device": "P300",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -19240,7 +19908,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -19289,6 +19958,7 @@
               "device": "P150X4",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -19351,7 +20021,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -19400,6 +20071,7 @@
               "device": "P150X8",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -19462,7 +20134,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -19511,6 +20184,7 @@
               "device": "P300X2",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -19575,7 +20249,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -19628,6 +20303,7 @@
               "device": "T3K",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -19691,7 +20367,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -19741,6 +20418,7 @@
               "device": "GALAXY",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -19803,7 +20481,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -19852,6 +20531,7 @@
               "device": "P150X8",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -19914,7 +20594,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -19963,6 +20644,7 @@
               "device": "P300X2",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [],
@@ -19984,7 +20666,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -20035,6 +20718,7 @@
               "device": "T3K",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [],
@@ -20058,7 +20742,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -20109,6 +20794,7 @@
               "device": "GALAXY",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [],
@@ -20130,7 +20816,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -20181,6 +20868,7 @@
               "device": "T3K",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [],
@@ -20204,7 +20892,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -20255,6 +20944,7 @@
               "device": "GALAXY",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [],
@@ -20276,7 +20966,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -20327,6 +21018,7 @@
               "device": "P300X2",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -20389,7 +21081,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -20440,6 +21133,7 @@
               "device": "N150",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -20502,7 +21196,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -20551,6 +21246,7 @@
               "device": "N300",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [],
@@ -20573,7 +21269,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -20623,6 +21320,7 @@
               "device": "GALAXY",
               "max_concurrency": 32,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -20685,7 +21383,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -20734,6 +21433,7 @@
               "device": "T3K",
               "max_concurrency": 4,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -20797,7 +21497,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -20847,6 +21548,7 @@
               "device": "P150",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -20910,7 +21612,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -20960,6 +21663,7 @@
               "device": "P300X2",
               "max_concurrency": 4,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -21023,7 +21727,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -21075,6 +21780,7 @@
               "device": "N150",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -21137,7 +21843,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -21186,6 +21893,7 @@
               "device": "N300",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [],
@@ -21208,7 +21916,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -21258,6 +21967,7 @@
               "device": "GALAXY",
               "max_concurrency": 32,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -21320,7 +22030,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -21369,6 +22080,7 @@
               "device": "T3K",
               "max_concurrency": 4,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -21432,7 +22144,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -21482,6 +22195,7 @@
               "device": "P150",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -21545,7 +22259,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -21595,6 +22310,7 @@
               "device": "P300X2",
               "max_concurrency": 4,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -21658,7 +22374,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -21710,6 +22427,7 @@
               "device": "N150",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -21772,7 +22490,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -21821,6 +22540,7 @@
               "device": "N300",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -21884,7 +22604,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -21934,6 +22655,7 @@
               "device": "P150",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [],
@@ -21956,7 +22678,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -22006,6 +22729,7 @@
               "device": "P300X2",
               "max_concurrency": 4,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [],
@@ -22028,7 +22752,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -22080,6 +22805,7 @@
               "device": "N150",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -22148,7 +22874,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -22203,6 +22930,7 @@
               "device": "N300",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -22272,7 +23000,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -22328,6 +23057,7 @@
               "device": "T3K",
               "max_concurrency": 4,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -22397,7 +23127,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -22453,6 +23184,7 @@
               "device": "GALAXY",
               "max_concurrency": 32,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -22522,7 +23254,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -22580,6 +23313,7 @@
               "device": "N150",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -22646,7 +23380,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -22699,6 +23434,7 @@
               "device": "N300",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -22766,7 +23502,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -22820,6 +23557,7 @@
               "device": "T3K",
               "max_concurrency": 4,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -22887,7 +23625,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -22941,6 +23680,7 @@
               "device": "GALAXY",
               "max_concurrency": 32,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -23007,7 +23747,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -23062,6 +23803,7 @@
               "device": "N150",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -23130,7 +23872,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -23185,6 +23928,7 @@
               "device": "N300",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -23254,7 +23998,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -23310,6 +24055,7 @@
               "device": "T3K",
               "max_concurrency": 4,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -23379,7 +24125,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -23435,6 +24182,7 @@
               "device": "GALAXY",
               "max_concurrency": 32,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -23503,7 +24251,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -23560,6 +24309,7 @@
               "device": "N150",
               "max_concurrency": 1,
               "max_context": 2048,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -23625,7 +24375,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -23677,6 +24428,7 @@
               "device": "N300",
               "max_concurrency": 1,
               "max_context": 2048,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -23743,7 +24495,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -23798,6 +24551,7 @@
               "device": "N150",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -23860,7 +24614,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -23909,6 +24664,7 @@
               "device": "N300",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -23972,7 +24728,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -24024,6 +24781,7 @@
               "device": "N150",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -24086,7 +24844,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -24135,6 +24894,7 @@
               "device": "N300",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -24198,7 +24958,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -24250,6 +25011,7 @@
               "device": "N150",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -24312,7 +25074,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -24361,6 +25124,7 @@
               "device": "N300",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -24424,7 +25188,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -24476,6 +25241,7 @@
               "device": "N150",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -24538,7 +25304,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -24587,6 +25354,7 @@
               "device": "N300",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -24650,7 +25418,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -24702,6 +25471,7 @@
               "device": "N150",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -24764,7 +25534,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -24813,6 +25584,7 @@
               "device": "N300",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -24876,7 +25648,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -24928,6 +25701,7 @@
               "device": "N150",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -24990,7 +25764,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -25039,6 +25814,7 @@
               "device": "N300",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -25102,7 +25878,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -25154,6 +25931,7 @@
               "device": "N150",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -25216,7 +25994,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -25265,6 +26044,7 @@
               "device": "N300",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -25328,7 +26108,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -25380,6 +26161,7 @@
               "device": "P150",
               "max_concurrency": 32,
               "max_context": 32768,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -25453,7 +26235,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": 1
+              "eval_max_retries": 1,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -25515,6 +26298,7 @@
               "device": "N150",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -25577,7 +26361,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
@@ -25626,6 +26411,7 @@
               "device": "P150",
               "max_concurrency": 1,
               "max_context": 65536,
+              "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [
@@ -25688,7 +26474,8 @@
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
               "known_issues": [],
-              "eval_max_retries": null
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
             },
             "system_requirements": null,
             "env_vars": {
