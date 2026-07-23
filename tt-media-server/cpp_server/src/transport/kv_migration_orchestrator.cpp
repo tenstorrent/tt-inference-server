@@ -228,10 +228,9 @@ bool KvMigrationReceiver::handle(const KvControlMessage& in) {
             "device or mirror is available",
             msg->uuid);
       }
-      const auto segment =
-          receiver_ != nullptr
-              ? receiver_->prepareMirror(sliceOf(*msg), msg->uuid)
-              : std::nullopt;
+      const auto segment = receiver_ != nullptr ? receiver_->prepareMirror(
+                                                      sliceOf(*msg), msg->uuid)
+                                                : std::nullopt;
       KvControlMessage ready;
       ready.type = KvControlType::MIRROR_READY;
       ready.uuid = msg->uuid;
@@ -247,9 +246,8 @@ bool KvMigrationReceiver::handle(const KvControlMessage& in) {
     case KvControlType::DONE_MARKER: {
       const bool ok = receiver_ != nullptr && receiver_->drain(msg->uuid);
       if (!ok) {
-        TT_LOG_ERROR(
-            "[KvMigrationReceiver] drain(uuid={}) failed{}",
-            msg->uuid, receiver_ == nullptr ? " (dry-run mode)" : "");
+        TT_LOG_ERROR("[KvMigrationReceiver] drain(uuid={}) failed{}", msg->uuid,
+                     receiver_ == nullptr ? " (dry-run mode)" : "");
       }
       // The Ack carries the drain status so the sender does not treat a failed
       // (partial/corrupt) drain as a successful migration.

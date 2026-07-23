@@ -849,8 +849,7 @@ int runPrefill(const WorkerConfig& cfg) {
       "mode={} brokers={} req={} ack={}",
       cfg.name, connector.connectedCount(), connector.channelCount(),
       cfg.migrationMode == MigrationMode::DRY_RUN ? "dry-run" : "device",
-      brokers,
-      reqTopic, ackTopic);
+      brokers, reqTopic, ackTopic);
   worker.start();
 
   std::vector<std::string> peerNames;
@@ -1024,22 +1023,23 @@ int runDecode(const WorkerConfig& cfg) {
 
     // Segment name the sender opens for the data plane. With a metadata service
     // the mirror is registered under — and resolvable by — the worker's LOGICAL
-    // name (cfg.name): the same register-by-name / resolve-by-name discovery the
-    // bringup worker uses on main (PeerDiscoveryService), so the sender finds
-    // the peer through the metadata service instead of a hard-coded endpoint.
-    // Only P2PHANDSHAKE (no metadata registry to resolve a logical name) falls
-    // back to the engine's live IP:port. An explicit --segment always overrides.
+    // name (cfg.name): the same register-by-name / resolve-by-name discovery
+    // the bringup worker uses on main (PeerDiscoveryService), so the sender
+    // finds the peer through the metadata service instead of a hard-coded
+    // endpoint. Only P2PHANDSHAKE (no metadata registry to resolve a logical
+    // name) falls back to the engine's live IP:port. An explicit --segment
+    // always overrides.
     segment = cfg.segment;
     if (segment.empty()) {
-      segment = (cfg.metadata_uri == "P2PHANDSHAKE")
-                    ? engine->localServerName()
-                    : cfg.name;
+      segment = (cfg.metadata_uri == "P2PHANDSHAKE") ? engine->localServerName()
+                                                     : cfg.name;
     }
     receiver = std::make_unique<MooncakeKvReceiver>(
         engine, *device, resolved->table, cfg.host, segment);
     if (!receiver->registered()) {
-      TT_LOG_ERROR("[worker] decode '{}' failed to register mirror segment '{}'",
-                   cfg.name, segment);
+      TT_LOG_ERROR(
+          "[worker] decode '{}' failed to register mirror segment '{}'",
+          cfg.name, segment);
       return 1;
     }
   } else {
@@ -1052,9 +1052,9 @@ int runDecode(const WorkerConfig& cfg) {
   // Control server stores peer prefill .pb on TABLE_EXCHANGE, replies with
   // this decode .pb, then serves migrate Begin/Done. Long receive timeout
   // covers large table provisioning.
-  KvMigrationReceiverServer server{
-      cfg.control_port, makeServerTransport, receiver.get(), resolved->blob,
-      kDefaultTableExchangeTimeout};
+  KvMigrationReceiverServer server{cfg.control_port, makeServerTransport,
+                                   receiver.get(), resolved->blob,
+                                   kDefaultTableExchangeTimeout};
   if (!server.start()) {
     TT_LOG_ERROR("[worker] decode '{}' failed to start control server on :{}",
                  cfg.name, cfg.control_port);
@@ -1094,11 +1094,11 @@ int runDecode(const WorkerConfig& cfg) {
   // Control server listening and endpoint published: the decode worker has
   // finished its own bring-up, so flip it Ready.
   health.setLifecycle(WorkerLifecycle::Ready);
-  TT_LOG_INFO("[worker] decode '{}' READY: mode={} segment={} control_port={}",
-              cfg.name,
-              cfg.migrationMode == MigrationMode::DRY_RUN ? "dry-run"
-                                                          : "device",
-              segment.empty() ? "disabled" : segment, cfg.control_port);
+  TT_LOG_INFO(
+      "[worker] decode '{}' READY: mode={} segment={} control_port={}",
+      cfg.name,
+      cfg.migrationMode == MigrationMode::DRY_RUN ? "dry-run" : "device",
+      segment.empty() ? "disabled" : segment, cfg.control_port);
   while (!gStop.load()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(K_IDLE_POLL_MS));
   }
