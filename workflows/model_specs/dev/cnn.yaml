@@ -122,7 +122,7 @@ templates:
   model_type: LLM
   inference_engine: FORGE
   uses_tensor_model_cache: false
-  # status: FUNCTIONAL #TODO(@ddilbazTT, @kmabeeTT): Add when model passes functional.
+  status: EXPERIMENTAL
   device_model_specs:
     - device: P150
       max_concurrency: 32
