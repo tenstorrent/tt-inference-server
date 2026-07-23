@@ -255,3 +255,22 @@ def test_catalog_yaml_loads_and_every_template_expands(env, yaml_name):
     for t in templates:
         specs = t.expand_to_specs()
         assert specs, f"{env}/{yaml_name}: template {t.weights} expanded to zero specs"
+
+
+def test_diffusiongemma_dev_spec_enables_thinking_and_reasoning_parser():
+    templates = load_templates_from_yaml(MODEL_SPECS_DIR / "dev" / "llm.yaml")
+    template = next(
+        t
+        for t in templates
+        if t.weights == ["google/diffusiongemma-26B-A4B-it"]
+    )
+    spec = template.expand_to_specs()[0]
+
+    assert (
+        spec.device_model_spec.vllm_args["default-chat-template-kwargs"]
+        == '{"enable_thinking": true}'
+    )
+    assert (
+        spec.device_model_spec.vllm_args["reasoning-parser"] == "diffusion_gemma"
+    )
+    assert spec.metadata["reasoning_parser_name"] == "diffusion_gemma"

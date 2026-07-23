@@ -320,10 +320,12 @@ templates:
     - device: P300X2  # QB2 (2x P300 dual-Blackhole cards, 4-chip TP mesh) -- near-term target HW
       max_concurrency: 1  # Functional milestone: batch 1 (--max-num-seqs 1)
       # Served context. The model's native contract is 256K (canvas_length 256 *
-      # max_blocks 1024 == HF max_position_embeddings 262144), but the VALIDATED
-      # serving config (2026-07-17, GPQA answered correctly) ran at 8192 with
-      # DG_VLLM_TRACE=0; 256K multi-block generation is not yet validated here.
-      # Keep 8192 so CI reproduces the validated config; raise once 256K is proven.
+      # max_blocks 1024 == HF max_position_embeddings 262144). The correctness-
+      # validated serving config (2026-07-17, GPQA answered correctly) ran at 8192;
+      # trace was subsequently enabled here with a 12 GiB trace_region_size (see
+      # override_tt_config) -- PCC-neutral, pending QB2 fit confirmation. 256K
+      # multi-block generation is not yet validated here.
+      # Keep 8192 so CI reproduces the validated context; raise once 256K is proven.
       max_context: 8192  # 8 * 1024 (validated); native contract is 262144
       default_impl: true
       # Env below is the VALIDATED production config (2026-07-17: served a GPQA-Diamond
@@ -341,15 +343,28 @@ templates:
         DG_SPARSE_MOE: "1"
         DG_SPARSE_MOE_TUNED: "1"
         DG_VLLM_MAX_DENOISE_STEPS: "48"
-        # Trace OFF: chunked-Gumbel trace buffers exceed the 10 GiB DG_TRACE_REGION_SIZE
-        # -> TT_FATAL mesh_trace.cpp EngineDead. Re-enable only with tuned DRAM.
-        DG_VLLM_TRACE: "0"
+        # Trace ON. The real trace-region knob is override_tt_config.trace_region_size
+        # below (worker.py -> open_mesh_device); the env DG_TRACE_REGION_SIZE is
+        # metrics-only and does NOT carve the region. chunked-Gumbel single-step
+        # traces accumulate ~10-11 GiB of command stream (256 vocab chunks x 48
+        # denoise steps); 10 GiB overflowed at msl>=2048 (TT_FATAL mesh_trace.cpp:80).
+        # The 12 GiB region below fits msl=8192 with pool headroom. See trace_region_size.
+        DG_VLLM_TRACE: "1"
       override_tt_config:
         # On-device canvas sampling (Gumbel-max -> entropy-budget accept -> renoise
         # over all 256 positions, no host readback).
         sample_on_device_mode: all
         # Block-diffusion warms lazily on the first prefill/decode.
         enable_model_warmup: false
+        # Capture/replay the full denoise loop (MoE forward + chunked-Gumbel terminal).
+        trace_mode: all
+        # Sized for the chunked-Gumbel 48-step single-step trace command stream at
+        # msl=8192: pool = 31.87 - 12 = 19.87 GiB/chip vs ~15.2 GiB peak -> ~4.5 GiB
+        # free. Ceiling is 13 GiB (13958643712). Do NOT carry this region to high
+        # context (msl=262144 KV alone is ~15 GiB) -- that regime needs the hybrid
+        # eager-terminal controller and/or bf8 weights. PCC-neutral (allocator-only;
+        # never enters an op/seed/command stream). Confirm on QB2 before relying on it.
+        trace_region_size: 12884901888  # 12 GiB
       vllm_args:
         # REQUIRED. Without it vLLM honors the model's generation_config.json
         # max_new_tokens=256, capping EVERY request to one 256-token canvas block, so
@@ -357,11 +372,18 @@ templates:
         # max_tokens drive multi-block decode -> answers complete. Validated 2026-07-17.
         generation-config: vllm
         max-num-batched-tokens: 8192
+        # DiffusionGemma uses the Gemma-family channel tokens. Enable the
+        # checkpoint's built-in reasoning mode for clients that do not supply
+        # chat_template_kwargs, and expose the thought channel separately from
+        # the final answer through the plugin's DiffusionGemma parser alias.
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: diffusion_gemma
   status: EXPERIMENTAL
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
   metadata:
     google/diffusiongemma-26B-A4B-it:
+      reasoning_parser_name: diffusion_gemma
       # transformers loads DiffusionGemmaForBlockDiffusion via remote code, and the
       # tokenizer is loaded with trust_remote_code=True (checkpoint.py:load_tokenizer).
       tokenizer_trust_remote_code: true

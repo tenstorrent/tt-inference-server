@@ -4826,11 +4826,10 @@ _eval_config_list = [
         tasks=[
             EvalTask(
                 # GPQA-Diamond, lightweight bring-up eval for the QB2 text path.
-                # DiffusionGemma is a discrete text-diffusion model with NO
-                # reasoning/thinking channel (unlike the gemma-4 backbone entry),
-                # so there is no enable_thinking and no reasoning-parser. Output is
-                # emitted in 256-token canvas blocks, so keep the generation budget
-                # small for a first run (block latency is ~minutes at full depth).
+                # DiffusionGemma has the Gemma-family thinking channel. The model
+                # spec enables it server-side with enable_thinking=true and uses the
+                # DiffusionGemma reasoning-parser alias so lm-eval receives the final
+                # answer as message.content.
                 task_name="r1_gpqa_diamond",
                 score=EvalTaskScore(
                     # No published / GPU reference baseline yet -- this run is to
@@ -4857,9 +4856,10 @@ _eval_config_list = [
                     # lm-eval local-chat-completions streaming parser KeyErrors on
                     # 'message'; non-streamed is required.
                     "stream": "false",
-                    # A few canvas blocks (256/block) of answer headroom; raise if
-                    # answers truncate.
-                    "max_gen_toks": 2048,
+                    # Thinking plus the final answer needs more than the previous
+                    # 1024/2048-token budgets on hard GPQA prompts. Sixteen canvas
+                    # blocks fit with the longest current prompt under max_length=8192.
+                    "max_gen_toks": 4096,
                     "until": [],
                     "do_sample": "true",
                     # The vLLM plugin maps TTSamplingParams (temperature/top_k/top_p)
