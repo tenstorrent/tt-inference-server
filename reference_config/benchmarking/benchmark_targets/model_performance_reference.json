@@ -17,6 +17,24 @@
                     }
                 }
             }
+        ],
+        "p150": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "vlm",
+                "image_height": 384,
+                "image_width": 384,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 39,
+                        "tput_user": 43
+                    }
+                }
+            }
         ]
     },
     "gemma-4-31b-it": {

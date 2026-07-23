@@ -274,10 +274,10 @@ templates:
 
 # Janus-Pro-7B: multimodal understanding (image+text -> text). tt-metal impl lives
 # in models/experimental/janus_pro (LLaMA-style bf8 decoder + bf16 SigLIP vision
-# tower). Provisional bring-up validated on N150 (see tt-metal PERF.md). The pins
-# below track the ctr-mmicic/janus_pro_benchmark_impl branch; vllm_commit is omitted
-# because the Tenstorrent vLLM generator is not wired up yet, so serving/eval over a
-# vLLM endpoint is prepared here but not yet runnable end-to-end.
+# tower). Bring-up validated on N150; P150 uses the same impl (janus_pro model_config
+# already has BH/P150 L1 decode matmul workarounds). The pins below track the
+# ctr-mmicic/janus_pro_benchmark_impl branch; vllm_commit must point at a fork that
+# includes janus_pro MultiModalProcessor + TT plugin registration.
 - weights:
     - deepseek-community/Janus-Pro-7B
   impl: janus_pro
@@ -289,6 +289,10 @@ templates:
     - device: N150
       max_concurrency: 32
       max_context: 4096  # DeepSeek-LLM-7B base context window
+      default_impl: true
+    - device: P150
+      max_concurrency: 32
+      max_context: 4096
       default_impl: true
   status: EXPERIMENTAL
   env_vars:

@@ -54,6 +54,7 @@ For instructions on how to add evals for a new model see: [add_support_for_new_m
 - meta_gpqa_cot
 - meta_ifeval
 - meta_math
+- mmbench_en_dev
 - mmlu_pro
 - mmmu_val
 - r1_aime24
