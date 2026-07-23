@@ -257,7 +257,7 @@ def test_catalog_yaml_loads_and_every_template_expands(env, yaml_name):
         assert specs, f"{env}/{yaml_name}: template {t.weights} expanded to zero specs"
 
 
-def test_diffusiongemma_dev_spec_enables_thinking_and_reasoning_parser():
+def test_diffusiongemma_dev_spec_enables_upfront_early_halt_and_thinking():
     templates = load_templates_from_yaml(MODEL_SPECS_DIR / "dev" / "llm.yaml")
     template = next(
         t
@@ -274,3 +274,18 @@ def test_diffusiongemma_dev_spec_enables_thinking_and_reasoning_parser():
         spec.device_model_spec.vllm_args["reasoning-parser"] == "diffusion_gemma"
     )
     assert spec.metadata["reasoning_parser_name"] == "diffusion_gemma"
+    assert spec.device_model_spec.max_context == 8192
+    assert spec.device_model_spec.override_tt_config["enable_model_warmup"] is True
+
+    env = spec.device_model_spec.env_vars
+    assert env["DG_UPFRONT_CAPTURE"] == "1"
+    assert env["DG_DENOISE_REVEAL_MASK"] == "1"
+    assert env["DG_DENOISE_REVEAL_PMAX"] == "8192"
+    assert env["DG_DENOISE_LAZY_CAPTURE"] == "0"
+    assert env["DG_DENOISE_EARLY_HALT"] == "1"
+    assert env["DG_DENOISE_EARLY_HALT_WINDOW"] == "1"
+    assert env["DG_TRACE_REGION_SIZE"] == "12884901888"
+    assert env["DG_UPFRONT_PREFILL_WARMUP_LENS"] == (
+        "128,160,192,224,256,288,320,352,384,416,448,480,"
+        "512,544,608,672,832,2432"
+    )

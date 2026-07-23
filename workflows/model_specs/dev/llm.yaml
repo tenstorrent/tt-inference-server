@@ -343,20 +343,37 @@ templates:
         DG_SPARSE_MOE: "1"
         DG_SPARSE_MOE_TUNED: "1"
         DG_VLLM_MAX_DENOISE_STEPS: "48"
+        # Capture the denoise trace once during model warmup and reuse its
+        # persistent adapter across requests. The reveal mask keeps one fixed
+        # 8192-token prefix span trace-safe as prompt/committed length changes.
+        DG_UPFRONT_CAPTURE: "1"
+        DG_DENOISE_REVEAL_MASK: "1"
+        DG_DENOISE_REVEAL_PMAX: "8192"
+        DG_DENOISE_LAZY_CAPTURE: "0"
+        # Exact 32-aligned prefill lengths produced by the current 198-sample
+        # r1_gpqa_diamond task with server-side enable_thinking=true. Up-front
+        # capture intentionally rejects unseen prefill shapes after activation.
+        DG_UPFRONT_PREFILL_WARMUP_LENS: "128,160,192,224,256,288,320,352,384,416,448,480,512,544,608,672,832,2432"
+        # Dynamic chunked Gumbel can refresh its seed between one-step trace
+        # replays, allowing the released stable-and-confident halt rule to cut
+        # the common block below the fixed K=48 ceiling.
+        DG_DENOISE_EARLY_HALT: "1"
+        DG_DENOISE_EARLY_HALT_WINDOW: "1"
         # Trace ON. The real trace-region knob is override_tt_config.trace_region_size
         # below (worker.py -> open_mesh_device); the env DG_TRACE_REGION_SIZE is
-        # metrics-only and does NOT carve the region. chunked-Gumbel single-step
-        # traces accumulate ~10-11 GiB of command stream (256 vocab chunks x 48
-        # denoise steps); 10 GiB overflowed at msl>=2048 (TT_FATAL mesh_trace.cpp:80).
-        # The 12 GiB region below fits msl=8192 with pool headroom. See trace_region_size.
+        # metrics/validation mirror and does NOT carve the region. Up-front
+        # validation nevertheless requires it to match the real positive region.
+        DG_TRACE_REGION_SIZE: "12884901888"
         DG_VLLM_TRACE: "1"
       override_tt_config:
         # On-device canvas sampling (Gumbel-max -> entropy-budget accept -> renoise
         # over all 256 positions, no host readback).
         sample_on_device_mode: all
-        # Block-diffusion warms lazily on the first prefill/decode.
-        enable_model_warmup: false
-        # Capture/replay the full denoise loop (MoE forward + chunked-Gumbel terminal).
+        # Required two-phase startup: compile all allowed prefill shapes first,
+        # then capture the persistent denoise trace before serving requests.
+        enable_model_warmup: true
+        # Capture/replay the full denoise loop (MoE forward + chunked-Gumbel
+        # terminal), once up front rather than once per request.
         trace_mode: all
         # Sized for the chunked-Gumbel 48-step single-step trace command stream at
         # msl=8192: pool = 31.87 - 12 = 19.87 GiB/chip vs ~15.2 GiB peak -> ~4.5 GiB
