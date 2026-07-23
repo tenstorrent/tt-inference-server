@@ -71,6 +71,12 @@ class VLLMForgeRunner(BaseDeviceRunner):
         # "false" -> bf16 matmul dest accumulation (smaller buffers). Only passed
         # when set, so other models keep the plugin default.
         fp32_dest_acc_en = os.getenv("FP32_DEST_ACC_EN")
+        # Math fidelity override for ttnn compute kernels. One of
+        # "lofi"/"hifi2"/"hifi3"/"hifi4"/"ttnn_default". At optimization_level > 0
+        # the compiler leaves fidelity per-op-default, so set this explicitly
+        # (e.g. "hifi2" or "hifi4") to raise fidelity for accuracy. Only passed
+        # when set, so other models keep the plugin default.
+        math_fidelity = os.getenv("MATH_FIDELITY")
         # b1-prefill (tt-xla #5281): compile a small [min_num_seqs, n] prefill graph
         # alongside b32 and route <= prefill_batch_threshold pending prefills to it
         # (lower TTFT) while decode stays at max_num_seqs. Only passed when set.
@@ -94,6 +100,8 @@ class VLLMForgeRunner(BaseDeviceRunner):
             additional_config["prefill_chunk_size"] = int(prefill_chunk_size)
         if fp32_dest_acc_en is not None:
             additional_config["fp32_dest_acc_en"] = fp32_dest_acc_en.lower() == "true"
+        if math_fidelity:
+            additional_config["math_fidelity"] = math_fidelity
         if min_num_seqs:
             additional_config["min_num_seqs"] = int(min_num_seqs)
         if prefill_batch_threshold:
