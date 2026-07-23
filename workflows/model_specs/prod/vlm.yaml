@@ -271,3 +271,47 @@ templates:
   supported_modalities:
     - text
     - image
+
+- weights:
+    - Qwen/Qwen3.6-27B
+  # VLM (vision) variant of Qwen3.6-27B on p150x4 (4x p150a, QB2 AE). Pins a
+  # tt-metal commit that includes the qwen3.6 vision tower (tt/vision/*, added in
+  # tenstorrent/tt-metal#49531 + optimizations #48861); the release pin c49bb76
+  # predates vision and reports image=0. vLLM 6b4a3a7 already ships
+  # Qwen3VLMultiModalProcessor, so no vLLM bump is needed.
+  version: "0.18.0"
+  tt_metal_commit: "045f7704"
+  vllm_commit: "6b4a3a7"
+  impl: qwen36_blackhole_vlm
+  inference_engine: VLLM
+  model_type: VLM
+  device_model_specs:
+    - device: P150X4
+      max_concurrency: 1
+      max_context: 262144
+      default_impl: true
+      env_vars:
+        TT_QWEN35_TEXT_VER: qwen36_blackhole
+        HF_MODEL: Qwen/Qwen3.6-27B
+        MESH_DEVICE: "P150x4"
+      vllm_args:
+        async_scheduling: true
+        enable_auto_tool_choice: true
+        reasoning_parser: qwen3
+        tool_call_parser: qwen3_coder
+        limit-mm-per-prompt: '{"image": 1, "video": 1}'
+        mm-processor-cache-gb: 0
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        l1_small_size: 24576
+        trace_region_size: 402653184  # 384 * 1024 * 1024 (vision needs larger trace)
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  supported_modalities:
+    - text
+    - image
+    - video
+  metadata:
+    Qwen/Qwen3.6-27B:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: qwen3_coder
