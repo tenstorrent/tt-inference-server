@@ -351,6 +351,11 @@ class Settings(BaseSettings):
         )
 
     def _set_config_overrides(self, model_to_run: str, device: str):
+        # CI / the v2 orchestrator pass DEVICE as "blackhole_galaxy"
+        # (device_type.name.lower()), but the DeviceTypes enum value is the short
+        # form "bh-galaxy". Translate that one alias so DeviceTypes(device) resolves;
+        # any other device string passes through unchanged.
+        device = {"blackhole_galaxy": "bh-galaxy"}.get(device, device)
         model_name_enum = ModelNames(model_to_run)
 
         explicit_runner = os.getenv("MODEL_RUNNER")
