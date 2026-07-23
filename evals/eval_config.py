@@ -2207,6 +2207,108 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
+            # --- Non-thinking published benchmark suite (https://qwenlm.github.io/blog/qwen3/) ---
+            # Added for the BH-galaxy DP+TP deploy. These are the NON-thinking
+            # scores (e.g. GPQA 49.49 vs the thinking 66.80 above) -- do NOT reuse
+            # the thinking gen_kwargs above. Only the framework-supported tasks are
+            # added here; SuperGPQA / MultiPL-E / CRUX-O / INCLUDE / EvalPlus-bundle
+            # have no stock lm-eval task and are omitted. Long-prompt few-shot tasks
+            # carry min_context_required so they SKIP at the 128/4K first-light
+            # context and only run once MAX_MODEL_LENGTH is raised.
+            EvalTask(
+                task_name="mbpp_instruct",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                score=EvalTaskScore(
+                    published_score=78.20,
+                    published_score_ref="https://qwenlm.github.io/blog/qwen3/",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "pass_at_1,extract_code",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                apply_chat_template=True,
+                gen_kwargs={
+                    "max_gen_toks": "256",
+                    "do_sample": "false",
+                    "stream": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.5,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                min_context_required=16384,
+                score=EvalTaskScore(
+                    published_score=65.54,
+                    published_score_ref="https://qwenlm.github.io/blog/qwen3/",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="gpqa_diamond_generative_n_shot",
+                num_fewshot=5,
+                use_chat_api=True,
+                min_context_required=16384,
+                score=EvalTaskScore(
+                    published_score=49.49,
+                    published_score_ref="https://qwenlm.github.io/blog/qwen3/",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,flexible-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="mmlu_generative",
+                use_chat_api=True,
+                min_context_required=16384,
+                score=EvalTaskScore(
+                    published_score=83.61,
+                    published_score_ref="https://qwenlm.github.io/blog/qwen3/",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,get_response",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.15,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
         ],
     ),
     EvalConfig(

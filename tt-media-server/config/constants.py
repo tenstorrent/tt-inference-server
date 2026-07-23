@@ -1111,6 +1111,23 @@ ModelConfigs = {
         "max_batch_size": 1,
         "queue_for_multiprocessing": QueueType.FasterFifo.value,
     },
+    (ModelRunners.VLLMForge_QWEN_32B, DeviceTypes.BLACKHOLE_GALAXY): {
+        # Qwen3-32B on the BH Galaxy (32 chips) as an 8x4 DP+TP mesh:
+        # device_mesh_shape=(DP=8, TP=4), matching tt-xla's qwen3-32b-galaxy-tp
+        # mesh_shape=[8,4]. NOTE the (DP,TP) axis order is the transpose of
+        # devstral's (4,8). The forge vLLM plugin does the 2D DP+TP split
+        # internally, so tt-media-server hands it ONE worker owning all 32
+        # devices (a single DEVICE_IDS_32_GROUP). is_galaxy=False + static
+        # device_ids bypasses settings._set_device_pairs_overrides() (no (8,4)
+        # discovery branch). Dims (batch-256 / GMU 0.45 / dtypes) are env-driven
+        # via dev/cnn.yaml env_vars; the mesh-aware runner switches on DP+TP when
+        # device_mesh_shape[0] > 1.
+        "device_mesh_shape": (8, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "queue_for_multiprocessing": QueueType.FasterFifo.value,
+    },
     (ModelRunners.VLLMForge_DEVSTRAL_123B, DeviceTypes.BLACKHOLE_GALAXY): {
         # Devstral-2-123B on the BH Galaxy (32 chips) as a 4x8 DP+TP mesh:
         # device_mesh_shape=(DP=4, TP=8), matching tt-xla's mesh_shape=[4,8] on

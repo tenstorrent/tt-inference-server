@@ -205,6 +205,31 @@ templates:
         ENABLE_TRACE: "true"
         CPU_SAMPLING: "false"
         TT_MESH_GRAPH_DESC_PATH: "/home/container_app_user/app/server/venv-worker/lib/python3.12/site-packages/pjrt_plugin_tt/tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
+    - device: BLACKHOLE_GALAXY
+      # Qwen3-32B DP+TP on the BH Galaxy (32 chips) as an 8x4 mesh (DP=8, TP=4),
+      # mirroring the devstral galaxy block below. Config from tt-xla benchmark
+      # id "qwen3-32b-galaxy-tp": mesh [8,4], batch 256, GMU 0.45, bfp_bf8.
+      # max_concurrency = served aggregate batch = 256 (8 DP replicas x 32
+      # seqs/replica). CONSTRAINT: MAX_MODEL_LENGTH (ctx) must be >= MAX_NUM_SEQS
+      # (batch) -- the forge plugin sizes seq_lens_cpu by ctx but indexes it by
+      # batch, so batch > ctx overflows at prefill (a 256-vs-128 RuntimeError).
+      # So ctx=256 here; batch 256 @ ctx 128 is structurally unsupported until
+      # tt-xla sizes those buffers by max(tokens, reqs). The DP+TP
+      # additional_config keys are set by the mesh-aware runner when
+      # device_mesh_shape[0] > 1; this block carries the served dims + env.
+      max_concurrency: 256
+      max_context: 256
+      eval_max_retries: 1
+      env_vars:
+        MAX_MODEL_LENGTH: "256"          # >= MAX_NUM_SEQS (batch<=ctx constraint); raise for real evals
+        MAX_NUM_SEQS: "256"
+        GPU_MEMORY_UTILIZATION: "0.45"   # tt-xla qwen3-32b-galaxy-tp value
+        OPTIMIZATION_LEVEL: "0"
+        ENABLE_TRACE: "true"
+        CPU_SAMPLING: "true"             # REQUIRED on the 2D DP+TP mesh (#4440)
+        TT_RUNTIME_USING_BH_GALAXY: "1"
+        # TODO(verify): pin a BH-galaxy 8x4 mesh_graph_descriptor here only if
+        # compile hits "unknown mesh: @mesh" (analogous to the p300_x2 pin above).
 
 - weights:
     # Devstral-2-123B Forge LLM (DP+TP) on the BH Galaxy (32 chips, 4x8 DP+TP

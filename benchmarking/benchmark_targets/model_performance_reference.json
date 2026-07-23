@@ -235,6 +235,25 @@
         ]
     },
     "Qwen3-32B": {
+        "blackhole_galaxy": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 30.0,
+                        "tput_user": 156.0,
+                        "tput": 5329.0
+                    }
+                }
+            }
+        ],
         "galaxy": [
             {
                 "isl": 128,

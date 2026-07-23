@@ -284,6 +284,7 @@
           "ci": {
             "nightly": {
               "devices": [
+                "BH_GALAXY",
                 "P300X2"
               ]
             }

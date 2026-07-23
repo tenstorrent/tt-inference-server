@@ -50,6 +50,31 @@ class VLLMForgeQwen32BRunner(BaseDeviceRunner):
         optimization_level = int(os.getenv("OPTIMIZATION_LEVEL", "0"))
         cpu_sampling = os.getenv("CPU_SAMPLING", "false").lower() == "true"
         enable_trace = os.getenv("ENABLE_TRACE", "true").lower() == "true"
+        # Mesh-aware: the SAME runner serves P300X2 (mesh (1,4), pure 1D TP) and
+        # the BH Galaxy (mesh (8,4), DP+TP). When the DP replica dim
+        # (device_mesh_shape[0]) > 1 we switch on the 2D DP+TP path (mirrors
+        # vllm_forge_devstral_123b.py): enable_data_parallel + use_2d_mesh +
+        # mesh_shape, weights replicated across DP replicas
+        # (shard_weights_on_batch_axis=False). On P300X2 (mesh[0]==1) the config
+        # stays exactly the prior 1D TP shape. On the 2D mesh CPU_SAMPLING must be
+        # true (tt-inference-server#4440) -- driven via cnn.yaml env.
+        mesh_shape = list(self.settings.device_mesh_shape)  # P300X2 [1,4]; galaxy [8,4]
+        is_dp_tp = mesh_shape[0] > 1
+        additional_config = {
+            "enable_const_eval": True,
+            "min_context_len": self.settings.vllm.min_context_length,
+            "enable_tensor_parallel": True,
+            "use_2d_mesh": is_dp_tp,
+            "experimental_weight_dtype": "bfp_bf8",
+            "cpu_sampling": cpu_sampling,
+            "optimization_level": optimization_level,
+            "enable_trace": enable_trace,
+        }
+        if is_dp_tp:
+            # 2D DP+TP (BH galaxy) keys the 1D TP path never sets.
+            additional_config["enable_data_parallel"] = True
+            additional_config["shard_weights_on_batch_axis"] = False
+            additional_config["mesh_shape"] = mesh_shape
         engine_args = AsyncEngineArgs(
             model=self.settings.vllm.model,
             max_model_len=self.settings.vllm.max_model_length,
@@ -57,16 +82,7 @@ class VLLMForgeQwen32BRunner(BaseDeviceRunner):
             max_num_seqs=self.settings.vllm.max_num_seqs,
             enable_chunked_prefill=False,
             gpu_memory_utilization=self.settings.vllm.gpu_memory_utilization,
-            additional_config={
-                "enable_const_eval": True,
-                "min_context_len": self.settings.vllm.min_context_length,
-                "enable_tensor_parallel": True,
-                "use_2d_mesh": False,
-                "experimental_weight_dtype": "bfp_bf8",
-                "cpu_sampling": cpu_sampling,
-                "optimization_level": optimization_level,
-                "enable_trace": enable_trace,
-            },
+            additional_config=additional_config,
         )
         self.logger.info(
             f"Device {self.device_id}: additional_config={engine_args.additional_config}"
