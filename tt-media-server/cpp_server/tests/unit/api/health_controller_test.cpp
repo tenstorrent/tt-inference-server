@@ -34,6 +34,8 @@ std::string InterServerService::getStatus() const { return fakeSocketStatus; }
 
 bool InterServerService::isConnected() const { return fakeSocketConnected; }
 
+bool InterServerService::isEnabled() const { return true; }
+
 }  // namespace tt::sockets
 
 namespace {

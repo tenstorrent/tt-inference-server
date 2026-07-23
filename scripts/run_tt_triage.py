@@ -7,14 +7,11 @@ import argparse
 import subprocess
 import logging
 import sys
-from pathlib import Path
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-project_root = Path(__file__).resolve().parent.parent
-if project_root not in sys.path:
-    sys.path.insert(0, str(project_root))
+import _bootstrap  # noqa: F401,E402  (sets sys.path for imports below)
 from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import get_model_id
 from workflows.utils import get_default_workflow_root_log_dir, ensure_readwriteable_dir

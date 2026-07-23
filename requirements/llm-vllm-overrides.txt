@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+#
+# uv --override file for the LLM_VLLM venv (see requirements/llm-vllm.txt
+# and the overrides_file hook in workflows/workflow_venvs.py).
+#
+# vllm==0.13.0 declares `transformers>=4.56.0,<5`, so the venv otherwise
+# resolves transformers 4.x. gemma-4's tokenizer_config.json stores
+# `extra_special_tokens` as a list that only transformers 5.x parses; under 4.x
+# `_set_model_specific_special_tokens` calls `.keys()` on the list and raises
+#   AttributeError: 'list' object has no attribute 'keys'
+# during `vllm bench serve` prompt tokenization, failing every sweep point
+# before it reaches the server.
+#
+# uv treats overrides as authoritative over a package's declared constraints,
+# so this forces transformers 5.x past vllm's cap. transformers 5.x needs
+# torch>=2.5 (torch.distributed.tensor.device_mesh); the venv's torch already
+# satisfies that. `vllm bench serve` is a pure client (tokenizer + HTTP) and
+# was verified to install and run under vllm 0.13.0 + transformers 5.12.1, so
+# the client tolerates the newer library while its CLI/behavior stay unchanged.
+transformers>=5.5.0,<6

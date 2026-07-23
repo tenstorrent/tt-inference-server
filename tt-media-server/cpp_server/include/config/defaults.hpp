@@ -138,6 +138,8 @@ constexpr int DECODE_MAX_TOKEN_IDS = 1;
 // frontends). All defaults are overridable via env vars; the endpoint is
 // off unless DYNAMO_ENDPOINT_ENABLED=1.
 constexpr bool DYNAMO_ENDPOINT_ENABLED = false;
+// When true, Dynamo owns prefill/decode routing and prefill-first
+// disaggregation is enabled (etcd discovers decode; ZMQ reserves slots).
 constexpr bool DYNAMO_ROUTING = false;
 constexpr const char* DYNAMO_BIND_HOST = "0.0.0.0";
 constexpr uint16_t DYNAMO_BIND_PORT = 0;  // 0 = OS-assigned ephemeral port.

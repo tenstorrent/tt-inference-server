@@ -24,14 +24,12 @@ from workflows.helm_generator.merge import (
 from workflows.helm_generator.schema import HelmModelSpec
 from workflows.helm_generator.yaml_io import dump_values, dumps_values, load_values
 from workflows.model_spec import IMAGE_PINNED_MODEL_SPECS, ModelSpec
+from workflows.utils import get_repo_root_path
 
 logger = logging.getLogger("helm_generator")
 
 DEFAULT_VALUES_PATH = (
-    Path(__file__).resolve().parents[2]
-    / "charts"
-    / "tt-inference-server"
-    / "values.yaml"
+    get_repo_root_path() / "charts" / "tt-inference-server" / "values.yaml"
 )
 
 

@@ -86,8 +86,7 @@ from pathlib import Path
 
 # Make the repo root importable so we can reuse the canonical DeviceTypes enum
 # (scripts/release/ -> repo root is three parents up).
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(REPO_ROOT))
+from _bootstrap import REPO_ROOT  # noqa: E402  (sets sys.path for imports below)
 from workflows.workflow_types import DeviceTypes  # noqa: E402
 
 ARTIFACT_PREFIX = "workflow_logs_release_"
