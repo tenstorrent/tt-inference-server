@@ -294,10 +294,7 @@ qwen36_blackhole_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/blackhole/qwen36",
 )
-# Same underlying implementation as qwen36_blackhole; distinct impl_id only so the
-# batch=8 device_model_spec (different memory tuning) gets its own model_id and is
-# selectable via --impl, since default_impl selection can't disambiguate two
-# device_model_specs for the same device within one template.
+# Same impl as qwen36_blackhole; separate impl_id so the batch=8 spec is selectable via --impl.
 qwen36_blackhole_b8_impl = ImplSpec(
     impl_id="qwen36_blackhole_b8",
     impl_name="qwen36-blackhole-b8",
