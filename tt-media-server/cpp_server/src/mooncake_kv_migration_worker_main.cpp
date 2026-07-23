@@ -47,6 +47,7 @@
 #include "messaging/kafka_consumer.hpp"
 #include "messaging/kafka_producer.hpp"
 #include "runtime/worker/kv_migration_worker.hpp"
+#include "runtime/worker/stub_migration_executor.hpp"
 #include "sockets/tcp_socket_transport.hpp"
 #include "transport/device_map.hpp"  // DeviceMap (FabricNode -> UMD chip)
 #include "transport/engine_table_resolve.hpp"
@@ -107,9 +108,11 @@ std::string envOr(const char* key, const char* fallback) {
 }
 
 enum class Role { PREFILL, DECODE };
+enum class ExecutorMode { MOONCAKE, STUB };
 
 struct WorkerConfig {
   Role role = Role::PREFILL;
+  ExecutorMode executorMode = ExecutorMode::MOONCAKE;
   std::string metadata_uri;     // Mooncake metadata service (or P2PHANDSHAKE).
   std::string name;             // this worker's Mooncake server/segment name.
   std::string host;             // this node's host tag in the table.
@@ -176,7 +179,9 @@ void usage() {
          "0.0.0.0)\n"
          "  Kafka (prefill) via env: KAFKA_BROKERS, "
          "KAFKA_MIGRATION_REQUEST_TOPIC, KAFKA_MIGRATION_ACK_TOPIC, "
-         "KAFKA_GROUP_ID\n";
+         "KAFKA_GROUP_ID\n"
+         "  prefill executor via env: KV_MIGRATION_EXECUTOR=mooncake|stub "
+         "(default mooncake; stub skips device I/O and data transfer)\n";
 }
 
 // Parse "NAME=host:port" into (logical name, endpoint).
@@ -220,6 +225,15 @@ std::string hostOf(const std::string& serverName) {
 }
 
 bool parseConfig(int argc, char** argv, WorkerConfig& cfg) {
+  const std::string executorMode = envOr("KV_MIGRATION_EXECUTOR", "mooncake");
+  if (executorMode == "stub") {
+    cfg.executorMode = ExecutorMode::STUB;
+  } else if (executorMode != "mooncake") {
+    std::cerr << "KV_MIGRATION_EXECUTOR must be mooncake|stub, got: "
+              << executorMode << "\n";
+    return false;
+  }
+
   bool roleGiven = false;
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
@@ -453,7 +467,19 @@ void warnIgnoredDeviceMapFile(const WorkerConfig& cfg) {
 }
 
 std::optional<ResolvedEngineTables> resolveWorkerTables(
-    const WorkerConfig& cfg) {
+    const WorkerConfig& cfg, bool includeDeviceMap = true) {
+  if (!includeDeviceMap) {
+    if (cfg.engine_handoff_port != 0 || !cfg.device_map_path.empty()) {
+      TT_LOG_WARN(
+          "[worker] stub executor ignores --engine-handoff-port and "
+          "--device-map");
+    }
+    const std::string& tablePath =
+        (cfg.role == Role::PREFILL) ? cfg.prefill_table_path : cfg.table_path;
+    return resolveEngineTables(0, makeHandoffListenTransport, tablePath, "",
+                               gStop);
+  }
+
   warnIgnoredDeviceMapFile(cfg);
   const std::string& tablePath =
       (cfg.role == Role::PREFILL) ? cfg.prefill_table_path : cfg.table_path;
@@ -688,7 +714,8 @@ int runPrefill(const WorkerConfig& cfg) {
   auto engine = makeEngine(cfg);
   if (!engine) return 1;
 
-  auto resolved = resolveWorkerTables(cfg);
+  auto resolved =
+      resolveWorkerTables(cfg, cfg.executorMode == ExecutorMode::MOONCAKE);
   if (!resolved) {
     if (gStop.load()) {
       TT_LOG_WARN(
@@ -699,11 +726,19 @@ int runPrefill(const WorkerConfig& cfg) {
     TT_LOG_ERROR("[worker] failed to resolve prefill table + device map");
     return 1;
   }
-  auto device = buildDeviceIo(*resolved->table, cfg.host, resolved->deviceMap);
-  if (!device) {
-    TT_LOG_ERROR("[worker] prefill '{}' failed to open devices (DeviceMap)",
-                 cfg.name);
-    return 1;
+  std::unique_ptr<MultiDeviceUmd> device;
+  if (cfg.executorMode == ExecutorMode::MOONCAKE) {
+    device = buildDeviceIo(*resolved->table, cfg.host, resolved->deviceMap);
+    if (!device) {
+      TT_LOG_ERROR("[worker] prefill '{}' failed to open devices (DeviceMap)",
+                   cfg.name);
+      return 1;
+    }
+  } else {
+    TT_LOG_WARN(
+        "[worker] prefill '{}' using stub executor: device I/O and Mooncake "
+        "data transfer are disabled",
+        cfg.name);
   }
 
   // Full-mesh barrier (k8s-friendly): stay alive with /healthz up and /readyz
@@ -765,10 +800,16 @@ int runPrefill(const WorkerConfig& cfg) {
     return 1;
   }
 
-  KvMigrationMultiHostSender sender(engine, *device, resolved->table,
-                                    decodeTable, cfg.host, connector.channels(),
-                                    &health);
-  auto executor = std::make_unique<MooncakeMigrationExecutor>(sender);
+  std::unique_ptr<KvMigrationMultiHostSender> sender;
+  std::unique_ptr<tt::worker::IMigrationExecutor> executor;
+  if (cfg.executorMode == ExecutorMode::STUB) {
+    executor = std::make_unique<tt::worker::StubMigrationExecutor>();
+  } else {
+    sender = std::make_unique<KvMigrationMultiHostSender>(
+        engine, *device, resolved->table, decodeTable, cfg.host,
+        connector.channels(), &health);
+    executor = std::make_unique<MooncakeMigrationExecutor>(*sender);
+  }
 
   const std::string brokers =
       envOr("KAFKA_BROKERS", tt::config::defaults::KAFKA_BROKERS);
@@ -802,8 +843,9 @@ int runPrefill(const WorkerConfig& cfg) {
   health.setLifecycle(WorkerLifecycle::Ready);
   TT_LOG_INFO(
       "[worker] prefill '{}' READY: {}/{} decode channels connected, "
-      "brokers={} req={} ack={}",
-      cfg.name, connector.connectedCount(), connector.channelCount(), brokers,
+      "executor={} brokers={} req={} ack={}",
+      cfg.name, connector.connectedCount(), connector.channelCount(),
+      cfg.executorMode == ExecutorMode::STUB ? "stub" : "mooncake", brokers,
       reqTopic, ackTopic);
   worker.start();
 
@@ -859,7 +901,8 @@ int runPrefill(const WorkerConfig& cfg) {
         }
         const auto channels = connector.channels();
         const auto chIt = channels.find(name);
-        if (chIt == channels.end() || !sender.addHost(name, chIt->second)) {
+        if (chIt == channels.end() ||
+            (sender != nullptr && !sender->addHost(name, chIt->second))) {
           wasConnected[name] = false;
           continue;
         }
