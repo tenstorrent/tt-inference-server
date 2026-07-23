@@ -20,3 +20,9 @@ tt-media-server/Dockerfile.*
 **/node_modules
 **/*.log
 **/*.tmp
+
+# cpp_server local artifacts are large and are never image inputs.
+tt-media-server/cpp_server/build
+tt-media-server/cpp_server/build-*
+tt-media-server/cpp_server/compile_commands.json
+tt-media-server/cpp_server/tt-llm-engine
