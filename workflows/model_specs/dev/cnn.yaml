@@ -207,6 +207,35 @@ templates:
         TT_MESH_GRAPH_DESC_PATH: "/home/container_app_user/app/server/venv-worker/lib/python3.12/site-packages/pjrt_plugin_tt/tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
 
 - weights:
+    # Mistral-Small-3.1-24B-Instruct-2503 Forge LLM (tensor-parallel) on blackhole galaxy,
+    # mirroring gemma-4-31b above. basename matches tt-media-server
+    # ModelNames.MISTRAL_SMALL_3_1_24B_INSTRUCT_2503. Pixtral-based multimodal
+    # model served text-only (runner zeros limit_mm_per_prompt). Config mirrors
+    # the tt-xla vLLM benchmark: b32 / 8K context / bfp8 weights+KV.
+    - mistralai/Mistral-Small-3.1-24B-Instruct-2503
+  impl: forge_vllm_plugin
+  min_disk_gb: 80
+  min_ram_gb: 32
+  model_type: LLM
+  inference_engine: FORGE
+  uses_tensor_model_cache: false
+  status: EXPERIMENTAL
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 32  # 8 * 4
+      max_context: 8192
+      default_impl: true
+      eval_max_retries: 1
+      env_vars:
+        MAX_MODEL_LENGTH: "8192"
+        MAX_NUM_SEQS: "32"
+        GPU_MEMORY_UTILIZATION: "0.65"
+        OPTIMIZATION_LEVEL: "1"
+        ENABLE_TRACE: "true"
+        CPU_SAMPLING: "true"
+        TT_MESH_GRAPH_DESC_PATH: "/home/container_app_user/app/server/venv-worker/lib/python3.12/site-packages/pjrt_plugin_tt/tt-metal/tt_metal/fabric/mesh_graph_descriptors/single_bh_galaxy_mesh_graph_descriptor.textproto"
+
+- weights:
     - resnet-50
   impl: tt_transformers
   min_disk_gb: 15

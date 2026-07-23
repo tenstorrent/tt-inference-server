@@ -151,14 +151,28 @@
       }
     },
     "Mistral-Small-3.1-24B-Instruct-2503": {
-      "inference_engine": "vLLM",
-      "ci": {
-        "weekly": {
-          "devices": [
-            "T3K"
-          ]
+      "implementations": [
+        {
+          "inference_engine": "vLLM",
+          "ci": {
+            "weekly": {
+              "devices": [
+                "T3K"
+              ]
+            }
+          }
+        },
+        {
+          "inference_engine": "FORGE",
+          "ci": {
+            "weekly": {
+              "devices": [
+                "BH_GALAXY"
+              ]
+            }
+          }
         }
-      }
+      ]
     },
     "QwQ-32B": {
       "inference_engine": "vLLM",
