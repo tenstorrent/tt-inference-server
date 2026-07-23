@@ -380,7 +380,7 @@ templates:
         TT_QWEN35_TEXT_VER: qwen36_blackhole
         HF_MODEL: Qwen/Qwen3.6-27B
         MESH_DEVICE: "(1, 4)"
-        TT_MESH_GRAPH_DESC_PATH: "/home/ttuser/atupe/tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
+        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
       vllm_args:
         async_scheduling: true
         enable_auto_tool_choice: true
@@ -415,7 +415,7 @@ templates:
         TT_QWEN35_TEXT_VER: qwen36_blackhole
         HF_MODEL: Qwen/Qwen3.6-27B
         MESH_DEVICE: "(1, 4)"
-        TT_MESH_GRAPH_DESC_PATH: "/home/ttuser/atupe/tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
+        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
         QWEN36_MAX_TOKENS_ALL_USERS: "525312"
       vllm_args:
         async_scheduling: true
