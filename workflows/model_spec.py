@@ -293,6 +293,13 @@ qwen36_blackhole_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/blackhole/qwen36",
 )
+# Same impl as qwen36_blackhole; separate impl_id so the batch=8 spec is selectable via --impl.
+qwen36_blackhole_b8_impl = ImplSpec(
+    impl_id="qwen36_blackhole_b8",
+    impl_name="qwen36-blackhole-b8",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/blackhole/qwen36",
+)
 
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "tt_transformers": tt_transformers_impl,
@@ -306,6 +313,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "tt_vllm_plugin": tt_vllm_plugin_impl,
     "sdxl_forge": sdxl_forge_impl,
     "qwen36_blackhole": qwen36_blackhole_impl,
+    "qwen36_blackhole_b8": qwen36_blackhole_b8_impl,
 }
 
 
