@@ -1,14 +1,7 @@
-# Model spec catalog: Training templates.
-# Edit this file to add or modify a Training model spec.
-# Schema: workflows/model_spec.py (ModelSpecTemplate, DeviceModelSpec).
-# Dev entries carry no release pins (version / tt_metal_commit / docker_image);
-# the launch image is supplied at runtime (e.g. --override_docker_image).
-templates:
-# =============================================================================
-# Training templates
-# =============================================================================
 - weights:
     - google/gemma-1.1-2b-it
+  version: "0.18.0"
+  tt_metal_commit: "PLACEHOLDER_TT_METAL_COMMIT"
   impl: training_lora
   model_type: TRAINING
   inference_engine: FORGE
@@ -31,6 +24,8 @@ templates:
       max_context: 1024
 - weights:
     - meta-llama/Llama-3.1-8B
+  version: "0.18.0"
+  tt_metal_commit: "PLACEHOLDER_TT_METAL_COMMIT"
   impl: training_lora
   model_type: TRAINING
   inference_engine: FORGE
