@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "config/settings.hpp"
+#include "domain/prefix_cache/block_matcher.hpp"
 #include "metrics/metrics.hpp"
 #include "services/disaggregation_service.hpp"
 #include "services/llm_service.hpp"
@@ -112,12 +113,13 @@ void LLMPipeline::resolveSession(
   opts.responseId = req->responseId;
   opts.cancelFn = std::move(cancelFn);
 
-  const uint32_t promptTokens = static_cast<uint32_t>(tokens->size());
   sessionManager_->getSlot(
       *tokens, std::move(opts), loop,
       // onResolved callback
-      [req, onResolved, mgr = sessionManager_,
-       promptTokens](SlotAcquireResult result) {
+      [req, onResolved, mgr = sessionManager_](SlotAcquireResult result) {
+        const uint32_t promptTokens =
+            domain::prefix_cache::BlockMatcher::blocksToTokens(
+                result.blocks.size());
         tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(
             promptTokens, result.isNewSession ? 0u : result.matchedTokens);
 
