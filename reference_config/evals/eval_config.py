@@ -315,8 +315,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=91.2,
                     published_score_ref="https://huggingface.co/zai-org/GLM-5.2",
-                    gpu_reference_score=86.36,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4641#issuecomment-5032779273",
+                    gpu_reference_score=88.4,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4641#issuecomment-5042840653",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
