@@ -186,7 +186,7 @@ class TestSetupRunnerEnvironment:
                             mock_galaxy.assert_called_once_with("/opt/tt-metal")
 
     def test_skips_galaxy_setup_for_non_qualifying_runner(self):
-        """Test that galaxy mesh config is NOT set up for runners like tt-sdxl-trace"""
+        """Test that galaxy mesh config is NOT set up for runners like tt-flux.1-dev"""
         with patch.dict(os.environ, {"TT_METAL_HOME": "/opt/tt-metal"}, clear=True):
             with patch("utils.runner_utils.set_torch_thread_limits"):
                 with patch("utils.runner_utils.get_telemetry_client"):
@@ -196,7 +196,7 @@ class TestSetupRunnerEnvironment:
                         mock_settings_galaxy = Mock()
                         mock_settings_galaxy.enable_telemetry = False
                         mock_settings_galaxy.is_galaxy = True
-                        mock_settings_galaxy.model_runner = "tt-sdxl-trace"
+                        mock_settings_galaxy.model_runner = "tt-flux.1-dev"
                         mock_settings_galaxy.default_throttle_level = None
 
                         with patch("utils.runner_utils.settings", mock_settings_galaxy):
@@ -621,8 +621,8 @@ class TestSetupRunnerEnvironmentBlackhole:
 
                             mock_bh.assert_called_once_with("/opt/tt-metal")
 
-    def test_skips_blackhole_setup_for_sdxl_on_bh_device(self):
-        """Test that _setup_blackhole_mesh_config is NOT called for tt-sdxl-trace on BH"""
+    def test_skips_blackhole_setup_for_non_qualifying_runner_on_bh_device(self):
+        """Test that _setup_blackhole_mesh_config is NOT called for tt-flux.1-dev on BH"""
         with patch.dict(os.environ, {"TT_METAL_HOME": "/opt/tt-metal"}, clear=True):
             with patch("utils.runner_utils.set_torch_thread_limits"):
                 with patch("utils.runner_utils.get_telemetry_client"):
@@ -633,7 +633,7 @@ class TestSetupRunnerEnvironmentBlackhole:
                         mock_settings_bh.enable_telemetry = False
                         mock_settings_bh.is_galaxy = False
                         mock_settings_bh.device = "p150x8"
-                        mock_settings_bh.model_runner = "tt-sdxl-trace"
+                        mock_settings_bh.model_runner = "tt-flux.1-dev"
                         mock_settings_bh.default_throttle_level = None
 
                         with patch("utils.runner_utils.settings", mock_settings_bh):
