@@ -235,6 +235,7 @@ All fields under `defaults` apply to every model/engine/device/impl unless overr
 | `Qwen2.5-VL-72B-Instruct` | t3k |
 | `Qwen2.5-VL-7B-Instruct` | n150 |
 | `Qwen2.5-VL-7B-Instruct` | n300 |
+| `Qwen3-32B` | blackhole_galaxy |
 | `Qwen3-32B` | galaxy |
 | `Qwen3-32B` | galaxy_t3k |
 | `Qwen3-32B` | p150x8 |
