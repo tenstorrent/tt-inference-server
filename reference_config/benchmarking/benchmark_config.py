@@ -99,6 +99,7 @@ BENCHMARK_ISL_OSL_PAIRS = [
     (32768, 128),
     (65536, 128),
     (131072, 128),
+    (262144, 128),  # 256k — enabled when model max_context >= 262144
 ]
 SMOKE_TEST_BENCHMARK_PAIR = (16, 4)
 

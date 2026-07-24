@@ -164,8 +164,8 @@ templates:
       # Decode batch ceiling is 32 (metal batch-32 demo). Prefill is still
       # micro-batched ≤4 users inside the generator.
       max_concurrency: 32
-      # 256k serve: metal auto-bounds at ≥64k; chunk policy:
-      #   default 4096; ISL≥128k + bounded → 2048 (coherency).
+      # Metal policy (generator_trace 31B/_QB2): auto-bounded at ≥64k; at
+      # ISL≥128k + bounded → chunk 2048 (coherency). Serve 256k with that path.
       # Scheduler tokens must match the resolved metal chunk (2048 here).
       max_context: 262144  # 256 * 1024
       default_impl: true
@@ -183,6 +183,8 @@ templates:
         GEMMA4_DEMO_SINGLE_CHUNK: "0"
         # Trace middle-chunk (sp1) path for long-ISL multi-chunk replay.
         GEMMA4_CHUNKED_PREFILL_TRACE: "1"
+        GEMMA4_TRACE_PREFILL_SEQ_LENS: "128"
+        TT_LEAN_DECODE_WARMUP: "1"
         DISABLE_METAL_OP_TIMEOUT: "1"
       override_tt_config:
         fabric_config: FABRIC_1D
@@ -209,7 +211,7 @@ templates:
         # --reasoning-parser separates the thought channel into reasoning_content.
         default-chat-template-kwargs: '{"enable_thinking": true}'
         reasoning-parser: gemma4
-        # Token-chunked prefill (tenstorrent/vllm#448). Match metal 2048 @ 256k.
+        # Token-chunked prefill (tenstorrent/vllm#448). Match metal 2048 @ ≥128k.
         enable_chunked_prefill: true
         max_num_batched_tokens: 2048
         long_prefill_token_threshold: 2048
@@ -230,6 +232,8 @@ templates:
         # force full-ISL warmup (hangs at 128k/256k on LB).
         GEMMA4_DEMO_SINGLE_CHUNK: "0"
         GEMMA4_CHUNKED_PREFILL_TRACE: "1"
+        GEMMA4_TRACE_PREFILL_SEQ_LENS: "128"
+        TT_LEAN_DECODE_WARMUP: "1"
         DISABLE_METAL_OP_TIMEOUT: "1"
       override_tt_config:
         fabric_config: FABRIC_1D
@@ -273,9 +277,10 @@ templates:
   device_model_specs:
     - device: P300X2  # QB2 (2x P300, 4-chip TP mesh)
       max_concurrency: 32
-      # 12B hybrid-off ~131K all-user KV pool fits QB2 DRAM. Server: full-ISL
-      # single-chunk only (GEMMA4_VLLM_SINGLE_CHUNK=1).
-      max_context: 131072  # 128 * 1024
+      # Metal policy (generator_trace 12B/_QB2): unbounded through 128k; auto
+      # bounded + multi-chunk (4096) at 256k (unbounded 256k OOM). Match demo.
+      # Warm only seq_len=128 (GEMMA4_TRACE_PREFILL_SEQ_LENS) for boot.
+      max_context: 262144  # 256 * 1024
       default_impl: true
       env_vars:
         # QB2's 4 Blackhole chips are driven as a P150x4 (1,4) mesh — matches the
@@ -285,11 +290,18 @@ templates:
         MESH_DEVICE: "P150x4"
         GEMMA4_CCL_TOPOLOGY: "linear"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
-        GEMMA4_MAX_TOKENS_ALL_USERS: "131072"
-        GEMMA4_VLLM_SINGLE_CHUNK: "1"
+        GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
+        # Do not set GEMMA4_GEN_PREFILL_CHUNK — metal resolve picks 4096.
+        GEMMA4_VLLM_SINGLE_CHUNK: "0"
+        GEMMA4_DEMO_SINGLE_CHUNK: "0"
+        GEMMA4_CHUNKED_PREFILL_TRACE: "1"
+        GEMMA4_TRACE_PREFILL_SEQ_LENS: "128"
+        TT_LEAN_DECODE_WARMUP: "1"
+        DISABLE_METAL_OP_TIMEOUT: "1"
       override_tt_config:
         fabric_config: FABRIC_1D
-        trace_region_size: 100000000  # match vLLM nightly QB2 Gemma4-12B entry
+        # B=32 decode traces (match 31B QB2 headroom).
+        trace_region_size: 512000000
         sample_on_device_mode: decode_only
       vllm_args:
         # Sampling params (temp=1.0 / top_k=64 / top_p=0.95) load from the
@@ -309,34 +321,45 @@ templates:
         # --reasoning-parser separates the thought channel into reasoning_content.
         default-chat-template-kwargs: '{"enable_thinking": true}'
         reasoning-parser: gemma4
-    # LoudBox: metal isl_sweep unbounded through 256k PASS for 12B. Server is
-    # full-ISL single-chunk only — keep 128k until single-chunk 256k is revalidated
-    # under vLLM (prefill scratch + hybrid-off pool).
+        # Token-chunked prefill (tenstorrent/vllm#448). Match metal 4096.
+        enable_chunked_prefill: true
+        max_num_batched_tokens: 4096
+        long_prefill_token_threshold: 4096
+    # LoudBox: metal isl_sweep unbounded through 256k PASS for 12B; multi-chunk
+    # prefill (4096) matches demo policy (no auto-bound until >256k).
     - device: P150X8
       max_concurrency: 32
-      max_context: 131072  # 128 * 1024
+      max_context: 262144  # 256 * 1024
       default_impl: true
       env_vars:
         MESH_DEVICE: "P150x8"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
-        GEMMA4_MAX_TOKENS_ALL_USERS: "131072"
-        GEMMA4_VLLM_SINGLE_CHUNK: "1"
+        GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
+        GEMMA4_VLLM_SINGLE_CHUNK: "0"
+        GEMMA4_DEMO_SINGLE_CHUNK: "0"
+        GEMMA4_CHUNKED_PREFILL_TRACE: "1"
+        GEMMA4_TRACE_PREFILL_SEQ_LENS: "128"
+        TT_LEAN_DECODE_WARMUP: "1"
+        DISABLE_METAL_OP_TIMEOUT: "1"
       override_tt_config:
         fabric_config: FABRIC_1D
-        trace_region_size: 100000000
+        trace_region_size: 512000000
         sample_on_device_mode: decode_only
       vllm_args:
         enable-auto-tool-choice: true
         tool-call-parser: gemma4
         default-chat-template-kwargs: '{"enable_thinking": true}'
         reasoning-parser: gemma4
+        enable_chunked_prefill: true
+        max_num_batched_tokens: 4096
+        long_prefill_token_threshold: 4096
     # GPU (H100 NVL) bring-your-own vLLM server (see docs/gpu_workflows.md); used
     # to collect GPU reference eval scores for GPQA-Diamond, Terminal-Bench 2.0,
     # and SWE-Bench Verified. Dev-only; no tt_metal_commit/version pin needed
     # (the bring-your-own-server path builds no tt-metal docker image).
     - device: GPU
       max_concurrency: 32
-      max_context: 131072  # 128 * 1024
+      max_context: 204800  # 200 * 1024; native ctx is 256K but a single H100 NVL caps ~205K
       default_impl: true
   status: EXPERIMENTAL
   has_builtin_warmup: true
@@ -1385,11 +1408,73 @@ templates:
   impl: tt_transformers
   inference_engine: VLLM
   device_model_specs:
+    # Matches vLLM nightly [BH-QB-2] Gemma4-26B-A4B (P150x4, max_model_len 128k).
+    # Nightly uses max_num_seqs=1 + TT_LEAN_DECODE_WARMUP + 300MB. Serving
+    # max_concurrency=32 needs a larger trace region even with lean warmup.
+    - device: P300X2
+      max_concurrency: 32
+      max_context: 131072  # 128 * 1024
+      default_impl: true
+      env_vars:
+        MESH_DEVICE: "P150x4"
+        GEMMA4_CCL_TOPOLOGY: "linear"
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+        GEMMA4_MAX_TOKENS_ALL_USERS: "131072"
+        GEMMA4_VLLM_SINGLE_CHUNK: "0"
+        GEMMA4_DEMO_SINGLE_CHUNK: "0"
+        # Off by default: traced multi-chunk sp1 alone needs ~1.08GB on 26B.
+        # Enable with GEMMA4_CHUNKED_PREFILL_TRACE=1 once trace_region covers it.
+        GEMMA4_CHUNKED_PREFILL_TRACE: "0"
+        GEMMA4_TRACE_PREFILL_SEQ_LENS: "128"
+        TT_LEAN_DECODE_WARMUP: "1"
+        DISABLE_METAL_OP_TIMEOUT: "1"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        # B=1+B=32 lean decode; nightly uses 300MB + max_num_seqs=1.
+        trace_region_size: 1200000000
+        sample_on_device_mode: decode_only
+      vllm_args:
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: gemma4
+        enable_chunked_prefill: true
+        max_num_batched_tokens: 4096
+        long_prefill_token_threshold: 4096
+    - device: P150X8
+      max_concurrency: 32
+      max_context: 131072  # 128 * 1024
+      default_impl: true
+      env_vars:
+        MESH_DEVICE: "P150x8"
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+        GEMMA4_MAX_TOKENS_ALL_USERS: "131072"
+        GEMMA4_VLLM_SINGLE_CHUNK: "0"
+        GEMMA4_DEMO_SINGLE_CHUNK: "0"
+        GEMMA4_CHUNKED_PREFILL_TRACE: "0"
+        GEMMA4_TRACE_PREFILL_SEQ_LENS: "128"
+        TT_LEAN_DECODE_WARMUP: "1"
+        DISABLE_METAL_OP_TIMEOUT: "1"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 1200000000
+        sample_on_device_mode: decode_only
+      vllm_args:
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: gemma4
+        enable_chunked_prefill: true
+        max_num_batched_tokens: 4096
+        long_prefill_token_threshold: 4096
     - device: GPU
       max_concurrency: 32
       max_context: 131072  # 128 * 1024
       default_impl: true
   status: EXPERIMENTAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
   metadata:
     google/gemma-4-26B-A4B-it:
       reasoning_parser_name: gemma4
