@@ -287,12 +287,17 @@ templates:
   model_type: VLM
   device_model_specs:
     - device: N150
-      max_concurrency: 32
-      max_context: 4096  # DeepSeek-LLM-7B base context window
+      # bf16 vision + bf8 decoder leave ~56MB free DRAM/bank on N150. Cap
+      # concurrency+context to what fits after weights (demo uses batch-1 /
+      # max_seq_len=2048). KV pool is max_context*max_concurrency.
+      max_concurrency: 1
+      max_context: 2048
       default_impl: true
     - device: P150
-      max_concurrency: 32
-      max_context: 4096
+      # Same bring-up caps as N150 until BH DRAM headroom is measured with
+      # vision+decoder weights resident. KV pool is max_context*max_concurrency.
+      max_concurrency: 1
+      max_context: 2048
       default_impl: true
   status: EXPERIMENTAL
   env_vars:
