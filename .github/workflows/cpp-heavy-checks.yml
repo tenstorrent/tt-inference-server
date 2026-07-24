@@ -733,12 +733,11 @@ jobs:
       ETCD_ENDPOINTS: http://127.0.0.1:2379
       DYN_REQUEST_PLANE: tcp
       DYN_EVENT_PLANE: zmq
-      DYNAMO_DISCOVERY_BACKEND: etcd
-      DYNAMO_ETCD_ENDPOINTS: http://127.0.0.1:2379
-      DYNAMO_NAMESPACE: default
-      DYNAMO_COMPONENT: backend
-      DYNAMO_ENDPOINT_NAME: generate
-      DYNAMO_ENDPOINT_ENABLED: "1"
+      DYN_ETCD_ENDPOINTS: http://127.0.0.1:2379
+      DYN_NAMESPACE: default
+      DYN_COMPONENT: backend
+      DYN_ENDPOINT_NAME: generate
+      DYN_ENDPOINT_ENABLED: "1"
       LLM_DEVICE_BACKEND: mock_pipeline
       MODEL_NAME: deepseek-ai/DeepSeek-R1-0528
     defaults:
@@ -760,7 +759,7 @@ jobs:
 
       # No-docker etcd: grab the upstream signed binary tarball from the
       # etcd-io GitHub release. Two cpp_server backends registering under the
-      # same DYNAMO_NAMESPACE/COMPONENT/ENDPOINT need a shared discovery
+      # same DYN_NAMESPACE/COMPONENT/ENDPOINT need a shared discovery
       # store; the script's default `file` backend does an unconditional
       # `rm -rf ${DYN_FILE_STORE}` at startup, so concurrent starts would
       # race-delete each other's registrations. etcd avoids that.
@@ -1072,12 +1071,11 @@ jobs:
       ETCD_ENDPOINTS: http://127.0.0.1:2379
       DYN_REQUEST_PLANE: tcp
       DYN_EVENT_PLANE: zmq
-      DYNAMO_DISCOVERY_BACKEND: etcd
-      DYNAMO_ETCD_ENDPOINTS: http://127.0.0.1:2379
-      DYNAMO_NAMESPACE: default
-      DYNAMO_COMPONENT: backend
-      DYNAMO_ENDPOINT_NAME: generate
-      DYNAMO_ENDPOINT_ENABLED: "1"
+      DYN_ETCD_ENDPOINTS: http://127.0.0.1:2379
+      DYN_NAMESPACE: default
+      DYN_COMPONENT: backend
+      DYN_ENDPOINT_NAME: generate
+      DYN_ENDPOINT_ENABLED: "1"
       LLM_DEVICE_BACKEND: mock_pipeline
       MODEL_NAME: deepseek-ai/DeepSeek-R1-0528
     defaults:
@@ -1198,9 +1196,9 @@ jobs:
 
       - name: Run prefix cache E2E tests against Dynamo frontend
         env:
-          DYNAMO_HOST: '127.0.0.1'
-          DYNAMO_PORT: '8000'
-          DYNAMO_MODEL: 'deepseek-ai/DeepSeek-R1-0528'
+          DYN_HOST: '127.0.0.1'
+          DYN_PORT: '8000'
+          DYN_MODEL: 'deepseek-ai/DeepSeek-R1-0528'
           KV_CACHE_FIRST_BLOCK_SIZE: '128'
           KV_CACHE_BLOCK_SIZE: '32'
         run: |

@@ -215,7 +215,7 @@ KubeClient::KubeClient(KubeClientConfig config) : cfg_(std::move(config)) {
   if (!cfg_.validate_cert) {
     TT_LOG_WARN(
         "[KubeClient] TLS certificate validation DISABLED "
-        "(DYNAMO_KUBE_VALIDATE_CERT=0) for {}",
+        "(DYN_KUBE_VALIDATE_CERT=0) for {}",
         cfg_.api_server);
   }
 }

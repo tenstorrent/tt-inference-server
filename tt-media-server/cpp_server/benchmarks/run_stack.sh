@@ -8,7 +8,7 @@
 # locally-built mock_pipeline binary. See benchmarks/test_prefill_decode.py.
 #
 #   ./run_stack.sh up                      # direct cpp_server socket split
-#   DYNAMO_ROUTING=1 ./run_stack.sh up
+#   DYN_ROUTING=1 ./run_stack.sh up
 #                                          # Dynamo decode/prefill routing split
 #   ./run_stack.sh down                    # tear everything down
 #
@@ -34,8 +34,8 @@ SERVER_PORT="${SERVER_PORT:-8001}"       # decode/regular REST + Dynamo worker s
 PREFILL_PORT="${PREFILL_PORT:-8002}"     # prefill REST
 SOCKET_PORT="${SOCKET_PORT:-9000}"       # decode<->prefill inter-server socket
 MAX_TOKENS_TO_PREFILL_ON_DECODE="${MAX_TOKENS_TO_PREFILL_ON_DECODE:-1000}"
-DYNAMO_ROUTING="${DYNAMO_ROUTING:-0}"
-DYNAMO_ROUTING_NAMESPACE="${DYNAMO_ROUTING_NAMESPACE:-dynamo}"
+DYN_ROUTING="${DYN_ROUTING:-0}"
+DYN_ROUTING_NAMESPACE="${DYN_ROUTING_NAMESPACE:-dynamo}"
 ETCD_NAME="${ETCD_NAME:-etcd}"
 PIDFILE="/tmp/tt_stack.pids"
 
@@ -108,14 +108,14 @@ worker_dynamo_env() {
     local component="${2:-backend}"
     local worker_type="${3:-}"
     local model_type="${4-Chat}"
-    echo "DYNAMO_ENDPOINT_ENABLED=1"
-    echo "DYNAMO_DISCOVERY_BACKEND=etcd"
-    echo "DYNAMO_ETCD_ENDPOINTS=${ETCD_ENDPOINTS}"
-    echo "DYNAMO_NAMESPACE=${namespace}"
-    echo "DYNAMO_COMPONENT=${component}"
-    echo "DYNAMO_ENDPOINT_NAME=generate"
-    [[ -n "${model_type}" ]] && echo "DYNAMO_MODEL_TYPE=${model_type}"
-    [[ -n "${worker_type}" ]] && echo "DYNAMO_WORKER_TYPE=${worker_type}"
+    echo "DYN_ENDPOINT_ENABLED=1"
+    echo "DYN_DISCOVERY_BACKEND=etcd"
+    echo "DYN_ETCD_ENDPOINTS=${ETCD_ENDPOINTS}"
+    echo "DYN_NAMESPACE=${namespace}"
+    echo "DYN_COMPONENT=${component}"
+    echo "DYN_ENDPOINT_NAME=generate"
+    [[ -n "${model_type}" ]] && echo "DYN_MODEL_TYPE=${model_type}"
+    [[ -n "${worker_type}" ]] && echo "DYN_WORKER_TYPE=${worker_type}"
 }
 
 worker_ipc_env() {
@@ -229,7 +229,7 @@ wait_ready() {
         fi
     done
 
-    if [[ "${DYNAMO_ROUTING}" == "1" ]]; then
+    if [[ "${DYN_ROUTING}" == "1" ]]; then
         log "waiting for Dynamo router activation"
         for i in $(seq 1 40); do
             if grep -aq "Prefill router activated successfully" "${FRONTEND_LOG}"; then
@@ -268,22 +268,22 @@ up() {
     : > "${PIDFILE}"
     ensure_etcd
 
-    if [[ "${DYNAMO_ROUTING}" == "1" ]]; then
+    if [[ "${DYN_ROUTING}" == "1" ]]; then
         log "Dynamo routing: decode :${SERVER_PORT} socket :${SOCKET_PORT}, prefill :${PREFILL_PORT}"
         start_worker "${DECODE_LOG}" "${SERVER_PORT}" \
-            $(worker_dynamo_env "${DYNAMO_ROUTING_NAMESPACE}" decode decode Chat) \
+            $(worker_dynamo_env "${DYN_ROUTING_NAMESPACE}" decode decode Chat) \
             $(worker_ipc_env dynamo_decode) \
             LLM_MODE=decode LLM_DEVICE_BACKEND=mock_pipeline \
             SOCKET_HOST=0.0.0.0 SOCKET_PORT="${SOCKET_PORT}" \
-            USE_PREFILL_GATEWAY=0 DYNAMO_ROUTING=1
+            USE_PREFILL_GATEWAY=0 DYN_ROUTING=1
         wait_worker_healthy "decode" "${SERVER_PORT}" "${DECODE_LOG}"
         start_worker "${PREFILL_LOG}" "${PREFILL_PORT}" \
-            $(worker_dynamo_env "${DYNAMO_ROUTING_NAMESPACE}" prefill prefill Prefill) \
+            $(worker_dynamo_env "${DYN_ROUTING_NAMESPACE}" prefill prefill Prefill) \
             $(worker_ipc_env dynamo_prefill) \
             LLM_MODE=prefill LLM_DEVICE_BACKEND=mock_pipeline \
             SOCKET_HOST=127.0.0.1 SOCKET_PORT="${SOCKET_PORT}" \
-            USE_PREFILL_GATEWAY=0 DYNAMO_ROUTING=1 \
-            DYNAMO_MODEL_INPUT=Tokens
+            USE_PREFILL_GATEWAY=0 DYN_ROUTING=1 \
+            DYN_MODEL_INPUT=Tokens
         wait_worker_healthy "prefill" "${PREFILL_PORT}" "${PREFILL_LOG}"
     else
         # Direct-mode /health requires the decode<->prefill socket to be
