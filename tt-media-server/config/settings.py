@@ -89,7 +89,8 @@ class Settings(BaseSettings):
     # Canary monitor settings (see health_monitoring/).
     canary_enabled: bool = True
     # When False, monitor observes only (logs/metrics); set True to gate /health with 503.
-    canary_gate_readiness: bool = False
+    # Kill-switch: set CANARY_GATE_READINESS=false in container env to disable without code change.
+    canary_gate_readiness: bool = True
     # Seconds of idle before a probe fires.
     canary_wait_seconds: float = 5.0
     # Per-probe round-trip deadline; a timeout counts as one miss.
@@ -102,8 +103,8 @@ class Settings(BaseSettings):
     # For multihost pipelines set this >= sp_warmup_timeout_seconds.
     canary_startup_grace_seconds: float = 30.0
     # When True, every Nth probe replays the compiled warmup forward to certify device liveness.
-    # Off by default: consumes device cycles and requires the warmup shape to avoid recompiles.
-    canary_deep_probe_enabled: bool = False
+    # Kill-switch: set CANARY_DEEP_PROBE_ENABLED=false in container env to disable without code change.
+    canary_deep_probe_enabled: bool = True
     # Run a deep probe every Nth idle probe; the rest are cheap host collectives.
     canary_deep_every_n: int = 3
     # Deadline for deep probes; must be much larger than canary_probe_timeout_seconds.
