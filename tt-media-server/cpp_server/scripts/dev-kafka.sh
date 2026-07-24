@@ -5,12 +5,12 @@
 # Single-container dev Kafka broker for cpp_server.
 #
 # Brings up apache/kafka:4.0.0 in single-node KRaft mode (combined broker +
-# controller) attached to the tt_net network. Cluster config is declared in
-# kafka-server.properties (sibling of this script), mounted into the image's
-# user-config layer.
+# controller), publishes port 9092, and advertises a host-routable address.
+# Cluster config is declared in kafka-server.properties (sibling of this
+# script), mounted into the image's user-config layer.
 #
 # Topic provisioning is intentionally NOT done here -- run
-#   python migration_cli.py setup
+#   python migration_cli.py --brokers <host-ip>:9092 setup
 # which uses the Kafka AdminClient over TCP. This mirrors the production
 # pattern (admin SDK called at deploy time) and avoids `docker exec`.
 
@@ -23,13 +23,9 @@ IMAGE="${KAFKA_IMAGE:-apache/kafka:4.0.0}"
 NETWORK="${KAFKA_NETWORK:-tt_net}"
 PROPS_FILE="${KAFKA_PROPS:-$SCRIPT_DIR/kafka-server.properties}"
 READY_TIMEOUT_S="${KAFKA_READY_TIMEOUT_S:-30}"
-# When non-empty, publish 9092 on the host so clients not attached to
-# NETWORK can reach the broker via localhost:9092. Callers must also
-# resolve `kafka` to 127.0.0.1 (e.g. /etc/hosts) because the broker
-# advertises listener as kafka:9092 -- clients get redirected there
-# after their initial connect. Used by CI; leave unset for local dev
-# where clients run inside NETWORK and get the hostname for free.
-PUBLISH_PORT="${KAFKA_PUBLISH_PORT:-}"
+ADVERTISED_HOST="${KAFKA_ADVERTISED_HOST:-10.32.89.65}"
+PUBLISH_ADDRESS="${KAFKA_PUBLISH_ADDRESS:-0.0.0.0}"
+BROKER_ENDPOINT="${ADVERTISED_HOST}:9092"
 
 usage() {
   cat <<EOF
@@ -49,8 +45,8 @@ Environment overrides:
   KAFKA_NETWORK           (default: $NETWORK)
   KAFKA_PROPS             (default: $PROPS_FILE)
   KAFKA_READY_TIMEOUT_S   (default: $READY_TIMEOUT_S)
-  KAFKA_PUBLISH_PORT      when non-empty, publish 9092 to the host
-                          (CI; requires host resolving 'kafka' to 127.0.0.1)
+  KAFKA_ADVERTISED_HOST   address clients use (default: $ADVERTISED_HOST)
+  KAFKA_PUBLISH_ADDRESS   host address Docker binds (default: $PUBLISH_ADDRESS)
 EOF
 }
 
@@ -70,7 +66,7 @@ wait_ready() {
   local deadline=$((SECONDS + READY_TIMEOUT_S))
   while [ $SECONDS -lt $deadline ]; do
     if docker exec "$CONTAINER" /opt/kafka/bin/kafka-broker-api-versions.sh \
-        --bootstrap-server kafka:9092 >/dev/null 2>&1; then
+        --bootstrap-server "$BROKER_ENDPOINT" >/dev/null 2>&1; then
       echo "Broker ready."
       return 0
     fi
@@ -92,24 +88,22 @@ cmd_up() {
   fi
   ensure_network
   docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
-  local port_args=()
-  if [ -n "$PUBLISH_PORT" ]; then
-    port_args=(-p 9092:9092)
-  fi
   docker run -d \
     --name "$CONTAINER" \
     --network "$NETWORK" \
     --restart unless-stopped \
-    "${port_args[@]}" \
+    -p "${PUBLISH_ADDRESS}:9092:9092" \
+    -e "KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093" \
+    -e "KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://${BROKER_ENDPOINT}" \
     -v "$PROPS_FILE:/mnt/shared/config/server.properties:ro" \
     "$IMAGE" >/dev/null
-  echo "Started container '$CONTAINER' (image=$IMAGE network=$NETWORK${PUBLISH_PORT:+ port=9092->host})"
+  echo "Started container '$CONTAINER' (image=$IMAGE endpoint=$BROKER_ENDPOINT)"
   wait_ready
   cat <<EOF
 
 Next steps:
-  python $SCRIPT_DIR/migration_cli.py setup    # create app topics
-  python $SCRIPT_DIR/migration_cli.py status   # confirm
+  python $SCRIPT_DIR/migration_cli.py --brokers $BROKER_ENDPOINT setup
+  python $SCRIPT_DIR/migration_cli.py --brokers $BROKER_ENDPOINT status
 EOF
 }
 
@@ -131,7 +125,7 @@ cmd_status() {
     echo ""
     echo "=== topics ==="
     docker exec "$CONTAINER" /opt/kafka/bin/kafka-topics.sh \
-      --bootstrap-server kafka:9092 --list
+      --bootstrap-server "$BROKER_ENDPOINT" --list
   fi
 }
 
