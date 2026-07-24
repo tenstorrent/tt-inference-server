@@ -149,10 +149,53 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && ./fix_dependencies.sh"
 
 # Install tt-vllm-plugin
+# VLLM_TARGET_DEVICE=empty + CPU extra-index prevents the resolver from pulling
+# CUDA torch wheels and the nvidia-* closure, which would overwrite the CPU
+# torch installed by fix_dependencies.sh above.  Mirrors the pattern used in
+# vllm-tt-metal/vllm.tt-metal.src.dev.Dockerfile (line 98).
 COPY "tt-vllm-plugin" "${TT_METAL_HOME}/tt-vllm-plugin"
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && cd ${TT_METAL_HOME}/tt-vllm-plugin \
-    && uv pip install ."
+    && VLLM_TARGET_DEVICE=empty uv pip install \
+        --index-strategy unsafe-best-match \
+        --extra-index-url https://download.pytorch.org/whl/cpu \
+        ."
+
+# Prune packages that are dead weight at runtime:
+#   - Any residual nvidia-* CUDA packages (safety net in case the CPU-index fix
+#     above ever regresses or create_venv.sh pulls them transitively)
+#   - CUDA-only packages never used on TT hardware
+#   - Packages from tt-metal's create_venv.sh not imported by tt-media-server
+# Keep: ctranslate2, onnxruntime (real whisperx deps used in audio_manager.py)
+# opencv note: opencv-python (full GUI build, pulled transitively by whisperx) and
+#   opencv-python-headless (shipped by tt-metal's venv) install into the SAME cv2/
+#   directory and are mutually exclusive. When both are present their file records
+#   overlap, so uninstalling either one deletes the shared cv2/ files and leaves the
+#   survivor as dead metadata (No module named 'cv2'). To guarantee a single clean
+#   install we uninstall BOTH variants and then reinstall only the headless build,
+#   which is the correct variant for a display-less server (and smaller).
+RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
+    && CUDA_PKGS=\$(uv pip list 2>/dev/null | grep -i '^nvidia-' | awk '{print \$1}' | tr '\n' ' ') \
+    && if [ -n \"\${CUDA_PKGS}\" ]; then \
+        echo \"Removing CUDA packages: \${CUDA_PKGS}\"; \
+        uv pip uninstall --yes \${CUDA_PKGS} 2>/dev/null || true; \
+    fi \
+    && uv pip uninstall --yes \
+        xformers \
+        triton \
+        cupy-cuda12x \
+        cusparselt \
+        SimpleITK \
+        casadi \
+        fiftyone \
+        ray \
+        plotly \
+        bokeh \
+        dash \
+        llvmlite \
+        2>/dev/null || true \
+    && uv pip uninstall --yes opencv-python opencv-python-headless 2>/dev/null || true \
+    && uv pip install --no-cache-dir opencv-python-headless"
 
 # Fix GPG keys before installing cpp_server dependencies
 RUN apt-get clean && rm -rf /var/lib/apt/lists/* \
@@ -197,7 +240,17 @@ RUN rm -rf ${HOME_DIR}/.rustup \
     && rm -rf ${HOME_DIR}/tt-metal/server/tests \
     && rm -rf ${HOME_DIR}/tt-metal/server/scripts \
     && rm -rf /usr/local/rustup \
-    && rm -rf /usr/include
+    && rm -rf /usr/include \
+    # Strip cpp_server build intermediates: keep only the runtime binary + .so files.
+    # CMake _deps (fetched sources/builds), CMakeFiles, compile_commands.json, and
+    # *_test binaries are needed only at build time — ~1.7 GB total.
+    && rm -rf ${TT_METAL_HOME}/server/cpp_server/build/_deps \
+    && rm -rf ${TT_METAL_HOME}/server/cpp_server/build/CMakeFiles \
+    && rm -rf ${TT_METAL_HOME}/server/cpp_server/build/compile_commands.json \
+    && find ${TT_METAL_HOME}/server/cpp_server/build -maxdepth 1 -name '*_test' -type f -delete \
+    # Strip tt-metal's own CMake build intermediates (keep build/lib for runtime .so)
+    && rm -rf ${TT_METAL_HOME}/build_Release/_deps \
+    && rm -rf ${TT_METAL_HOME}/build_Release/CMakeFiles
 
 
 # ==============================================================================
