@@ -276,11 +276,14 @@ def test_diffusiongemma_dev_spec_enables_upfront_early_halt_and_thinking():
     assert spec.metadata["reasoning_parser_name"] == "diffusion_gemma"
     assert spec.device_model_spec.max_context == 8192
     assert spec.device_model_spec.override_tt_config["enable_model_warmup"] is True
+    # The model warms its own prefill shapes; the generic background trace
+    # capture would probe unwhitelisted lengths and kill the engine.
+    assert spec.has_builtin_warmup is True
 
     env = spec.device_model_spec.env_vars
     assert env["DG_UPFRONT_CAPTURE"] == "1"
     assert env["DG_DENOISE_REVEAL_PMAX"] == "8192"
-    assert env["DG_VLLM_GUMBEL_MODE"] == "host"
+    assert env["DG_VLLM_GUMBEL_MODE"] == "device"
     assert env["DG_TRACE_REGION_SIZE"] == "12884901888"
     for removed in (
         "DG_VLLM_TRACE",
@@ -290,7 +293,10 @@ def test_diffusiongemma_dev_spec_enables_upfront_early_halt_and_thinking():
         "DG_DENOISE_EARLY_HALT_WINDOW",
     ):
         assert removed not in env
-    assert env["DG_UPFRONT_PREFILL_WARMUP_LENS"] == (
-        "128,160,192,224,256,288,320,352,384,416,448,480,"
-        "512,544,608,672,832,2432"
-    )
+    warmup_lens = [int(v) for v in env["DG_UPFRONT_PREFILL_WARMUP_LENS"].split(",")]
+    assert all(n % 32 == 0 for n in warmup_lens)
+    # gpqa_diamond_cot_zeroshot occupies a contiguous 128..896 band plus a 2432
+    # outlier; keep the band gap-free so prompt-template drift cannot land on an
+    # unwarmed shape.
+    assert set(range(128, 896 + 32, 32)).issubset(warmup_lens)
+    assert {2432, 2464}.issubset(warmup_lens)

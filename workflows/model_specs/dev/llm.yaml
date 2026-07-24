@@ -336,9 +336,13 @@ templates:
         MESH_DEVICE: "P150x4"
         # denoise blocks are ~tens of seconds; 900000 default RPC timeout is too tight.
         VLLM_RPC_TIMEOUT: "1800000"
-        # The sole supported up-front trace profile refreshes official IID
-        # full-vocabulary Gumbel noise from a host-materialized persistent buffer.
-        DG_VLLM_GUMBEL_MODE: "host"
+        # On-device permuted-vocab Gumbel: keeps the RNG on device (outside the
+        # trace), dropping the ~313 ms/step host RNG and the ~1 GiB/step
+        # replicated PCIe DMA for ~1.8x denoise/step. This is a distribution
+        # change rather than a bit-exact swap, so this eval doubles as its
+        # GPQA re-gate; set "host" to fall back to IID full-vocabulary host
+        # Gumbel (bit-identical to the 2026-07-17 validated config).
+        DG_VLLM_GUMBEL_MODE: "device"
         # Sparse tuned MoE -- ~4x faster than the dense 128-expert eager path.
         DG_SPARSE_MOE: "1"
         DG_SPARSE_MOE_TUNED: "1"
@@ -348,10 +352,14 @@ templates:
         # one-step early halt are intrinsic to this path.
         DG_UPFRONT_CAPTURE: "1"
         DG_DENOISE_REVEAL_PMAX: "8192"
-        # Exact 32-aligned prefill lengths produced by the current 198-sample
-        # r1_gpqa_diamond task with server-side enable_thinking=true. Up-front
-        # capture intentionally rejects unseen prefill shapes after activation.
-        DG_UPFRONT_PREFILL_WARMUP_LENS: "128,160,192,224,256,288,320,352,384,416,448,480,512,544,608,672,832,2432"
+        # Up-front capture intentionally rejects unseen prefill shapes after
+        # activation, so this must cover every 32-aligned prefill length the
+        # server can see. The 198-sample gpqa_diamond_cot_zeroshot task with
+        # server-side enable_thinking=true occupies 128..832 plus a single
+        # 2432 outlier; the range is listed contiguously (and 2432 is paired
+        # with 2464) so a few tokens of prompt-template drift cannot push a
+        # doc into an unwarmed bucket and kill the engine.
+        DG_UPFRONT_PREFILL_WARMUP_LENS: "128,160,192,224,256,288,320,352,384,416,448,480,512,544,576,608,640,672,704,736,768,800,832,864,896,2432,2464"
         # The real trace-region knob is override_tt_config.trace_region_size
         # below (worker.py -> open_mesh_device); the env DG_TRACE_REGION_SIZE is
         # metrics/validation mirror and does NOT carve the region. Up-front
@@ -388,6 +396,12 @@ templates:
         default-chat-template-kwargs: '{"enable_thinking": true}'
         reasoning-parser: diffusion_gemma
   status: EXPERIMENTAL
+  # enable_model_warmup + DG_UPFRONT_PREFILL_WARMUP_LENS already warm every
+  # admitted prefill shape and capture the denoise trace before serving. The
+  # generic background trace capture is not just redundant here: it probes
+  # /v1/completions at 128/256/512/1024/2048/4096, and the first length outside
+  # the whitelist makes up-front capture raise, which kills EngineCore.
+  has_builtin_warmup: true
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
   metadata:
