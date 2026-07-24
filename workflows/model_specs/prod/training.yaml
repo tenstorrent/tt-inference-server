@@ -1,3 +1,10 @@
+# Model spec catalog: Training templates.
+# Do not edit manually. This file is updated through the automated release process.
+# Schema: workflows/model_spec.py (ModelSpecTemplate, DeviceModelSpec).
+templates:
+# =============================================================================
+# Training templates
+# =============================================================================
 - weights:
     - google/gemma-1.1-2b-it
   version: "0.18.0"
