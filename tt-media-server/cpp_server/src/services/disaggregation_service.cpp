@@ -841,7 +841,8 @@ void DisaggregationService::resolvePrefillSession(
         "hashes={}, creating new session",
         request->task_id, routingHashes.size());
 
-    tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(promptTokens, 0u);
+    tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(promptTokens,
+                                                               0u);
 
     sessionManager->createSession(
         [this, request, infos = std::move(blockInfos), sm = sessionManager,

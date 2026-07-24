@@ -66,8 +66,8 @@ void resolveDecodeDestinationSlot(
       if (acquired.has_value()) {
         auto [matchedTokens, thinkTokens] = sessionManager.computeMatchedTokens(
             acquired->sessionId, blockInfos);
-        tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(promptTokens,
-                                                                   matchedTokens);
+        tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(
+            promptTokens, matchedTokens);
         sessionManager.registerPrefixHash(acquired->sessionId, blockInfos);
 
         DecodeDestinationSlot slot;

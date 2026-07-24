@@ -108,9 +108,9 @@ class ServerMetrics {
   void onHttpResponse(const std::string& method, int statusCode);
 
   /**
-   * Record one prefix-cache lookup on a per-token basis. Called once per request that enters
-   * the hash-based prefix cache routing path, on every worker role
-   * (prefill, decode, or aggregated).
+   * Record one prefix-cache lookup on a per-token basis. Called once per
+   * request that enters the hash-based prefix cache routing path, on every
+   * worker role (prefill, decode, or aggregated).
    *
    * `promptTokens` is the request's full (block-aligned) prompt length and
    * increments the queries denominator; `matchedTokens` is how many of
