@@ -2,6 +2,9 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+import sys
+import types
+from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -17,6 +20,22 @@ from utils.lora_utils import (
 
 REPO_ID = "artificialguybr/ColoringBookRedmond-V2"
 LORA_FILENAME = "ColoringBookRedmond-ColoringBook-ColoringBookAF.safetensors"
+
+
+@contextmanager
+def fake_safetensors(mock_file):
+    """Inject a stub ``safetensors`` module exposing ``safe_open``.
+
+    ``safetensors`` lives in the heavy ML venv and is imported lazily inside
+    ``utils.lora_utils``. Patching ``safetensors.safe_open`` directly would force
+    ``mock.patch`` to import the real module, which isn't present in the lean
+    test venv. Injecting a stub into ``sys.modules`` mirrors how the code imports
+    it (``from safetensors import safe_open``) without the real dependency.
+    """
+    stub = types.ModuleType("safetensors")
+    stub.safe_open = MagicMock(return_value=mock_file)
+    with patch.dict(sys.modules, {"safetensors": stub}):
+        yield stub
 
 
 class TestFindSafetensorsFilename:
@@ -188,7 +207,7 @@ class TestGetTriggersFromSafetensors:
         mock_file.__exit__ = MagicMock(return_value=False)
         mock_file.metadata.return_value = {"trigger_word": "pixel art, style"}
 
-        with patch("safetensors.safe_open", return_value=mock_file):
+        with fake_safetensors(mock_file):
             result = _get_triggers_from_safetensors("/fake/path.safetensors")
 
         assert result == ["pixel art", "style"]
@@ -199,7 +218,7 @@ class TestGetTriggersFromSafetensors:
         mock_file.__exit__ = MagicMock(return_value=False)
         mock_file.metadata.return_value = {"ss_trigger_words": "my_style"}
 
-        with patch("safetensors.safe_open", return_value=mock_file):
+        with fake_safetensors(mock_file):
             result = _get_triggers_from_safetensors("/fake/path")
 
         assert result == ["my_style"]
@@ -210,7 +229,7 @@ class TestGetTriggersFromSafetensors:
         mock_file.__exit__ = MagicMock(return_value=False)
         mock_file.metadata.return_value = None
 
-        with patch("safetensors.safe_open", return_value=mock_file):
+        with fake_safetensors(mock_file):
             assert _get_triggers_from_safetensors("/fake/path") is None
 
     def test_returns_none_on_import_error(self):
