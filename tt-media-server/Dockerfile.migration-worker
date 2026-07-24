@@ -1,0 +1,143 @@
+# syntax=docker/dockerfile:1.7
+
+ARG TT_LLM_ENGINE_IMAGE
+
+FROM ${TT_LLM_ENGINE_IMAGE} AS engine
+
+FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-dev-light-amd64:latest AS builder
+
+ARG TT_LLM_ENGINE_IMAGE
+ARG TT_INFERENCE_SERVER_COMMIT_SHA=unknown
+
+ENV TT_METAL_HOME=/opt/tt-llm-engine-src/tt-metal \
+    TT_METAL_RUNTIME_ROOT=/opt/tt-llm-engine-src/tt-metal \
+    CMAKE_PREFIX_PATH=/opt/tt-llm-engine:/opt/tt-llm-engine-src/tt-metal/build_Release/lib/cmake:/opt/tt-llm-engine-src/tt-metal/build_Release/_deps/nlohmann_json-build \
+    LD_LIBRARY_PATH=/opt/tt-llm-engine-src/tt-metal/build_Release/lib:/opt/tt-llm-engine-src/tt-metal/build_Release/tt_stl:/opt/tt-llm-engine/lib
+
+COPY --from=engine /opt/tt-llm-engine /opt/tt-llm-engine
+COPY --from=engine /opt/tt-llm-engine-src /opt/tt-llm-engine-src
+
+COPY tt-media-server/cpp_server/install_dependencies.sh /tmp/install_dependencies.sh
+RUN /tmp/install_dependencies.sh --kafka \
+    && apt-get update -qq \
+    && apt-get install -y --no-install-recommends \
+        libasio-dev \
+        libcurl4-openssl-dev \
+        libgflags-dev \
+        libgoogle-glog-dev \
+        libgrpc++-dev \
+        libgrpc-dev \
+        libhiredis-dev \
+        libibverbs-dev \
+        libjemalloc-dev \
+        libmsgpack-dev \
+        libnuma-dev \
+        libprotobuf-dev \
+        libunwind-dev \
+        liburing-dev \
+        libxxhash-dev \
+        libyaml-cpp-dev \
+        libzstd-dev \
+        ninja-build \
+        patchelf \
+        protobuf-compiler \
+        protobuf-compiler-grpc \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY tt-media-server/cpp_server/third_party/Mooncake/extern/yalantinglibs /tmp/yalantinglibs
+RUN cmake -S /tmp/yalantinglibs -B /tmp/yalantinglibs-build -G Ninja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DBUILD_BENCHMARK=OFF \
+        -DBUILD_EXAMPLES=OFF \
+        -DBUILD_UNIT_TESTS=OFF \
+    && cmake --build /tmp/yalantinglibs-build \
+    && cmake --install /tmp/yalantinglibs-build \
+    && rm -rf /tmp/yalantinglibs /tmp/yalantinglibs-build
+
+WORKDIR /src/cpp_server
+COPY tt-media-server/cpp_server /src/cpp_server
+RUN rm -rf /src/cpp_server/build /src/cpp_server/tt-llm-engine \
+    && ln -s /opt/tt-llm-engine-src /src/cpp_server/tt-llm-engine
+
+RUN --mount=type=cache,id=migration-worker-cmake,target=/work/build \
+    --mount=type=cache,id=migration-worker-ccache,target=/root/.cache/ccache \
+    set -eux; \
+    marker=/work/build/.tt-llm-engine-image; \
+    if [ ! -f "${marker}" ] || [ "$(cat "${marker}")" != "${TT_LLM_ENGINE_IMAGE}" ]; then \
+        rm -rf /work/build/* /work/build/.[!.]* /work/build/..?*; \
+        printf '%s' "${TT_LLM_ENGINE_IMAGE}" > "${marker}"; \
+    fi; \
+    cmake -S /src/cpp_server -B /work/build -G Ninja \
+        -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+        -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+        -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+        -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+        -DCMAKE_TOOLCHAIN_FILE="${TT_METAL_HOME}/cmake/x86_64-linux-clang-20-libstdcpp-toolchain.cmake" \
+        -DTT_METAL_HOME="${TT_METAL_HOME}" \
+        -DENABLE_BLAZE=ON \
+        -DENABLE_KV_TABLE=ON \
+        -DENABLE_MOONCAKE=ON \
+        -DKAFKA_ENABLED=ON; \
+    cmake --build /work/build --target mooncake_kv_migration_worker -j"$(nproc)"; \
+    install -D /work/build/mooncake_kv_migration_worker /out/bin/mooncake_kv_migration_worker; \
+    mkdir -p /out/lib; \
+    ldd /out/bin/mooncake_kv_migration_worker | awk '/=> \// {print $3}' | while read -r library; do \
+        case "${library}" in \
+            /opt/*|/work/*|/src/*|/usr/local/lib/*) \
+                cp -L "${library}" "/out/lib/$(basename "${library}")" ;; \
+        esac; \
+    done; \
+    ldd /out/bin/mooncake_kv_migration_worker \
+        | awk 'index($0, "not found") { missing=1 } END { exit missing }'
+
+FROM ubuntu:22.04 AS runtime
+
+ARG TT_LLM_ENGINE_IMAGE
+ARG TT_INFERENCE_SERVER_COMMIT_SHA=unknown
+
+LABEL org.opencontainers.image.revision="${TT_INFERENCE_SERVER_COMMIT_SHA}" \
+      org.opencontainers.image.source="https://github.com/tenstorrent/tt-inference-server" \
+      tt-llm-engine.image="${TT_LLM_ENGINE_IMAGE}"
+
+RUN apt-get update -qq \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        hostname \
+        libatomic1 \
+        libcurl4 \
+        libgflags2.2 \
+        libgoogle-glog0v5 \
+        libhwloc15 \
+        libibverbs1 \
+        libjsoncpp25 \
+        libnl-3-200 \
+        libnl-route-3-200 \
+        libnuma1 \
+        libprotobuf23 \
+        librdkafka++1 \
+        librdkafka1 \
+        libssl3 \
+        libudev1 \
+        libunwind8 \
+        libyaml-cpp0.7 \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV WORKER_BIN=/usr/local/bin/mooncake_kv_migration_worker \
+    TT_METAL_HOME=/opt/tt-metal-runtime \
+    TT_METAL_RUNTIME_ROOT=/opt/tt-metal-runtime \
+    LD_LIBRARY_PATH=/usr/local/lib
+
+COPY --from=builder /out/bin/mooncake_kv_migration_worker /usr/local/bin/mooncake_kv_migration_worker
+COPY --from=builder /out/lib/ /usr/local/lib/
+COPY --from=engine /opt/tt-llm-engine-src/tt-metal/tt_metal/soc_descriptors /opt/tt-metal-runtime/tt_metal/soc_descriptors
+COPY --from=builder /src/cpp_server/tests/e2e/scripts/migration_worker_launch.sh /usr/local/bin/migration_worker_launch.sh
+
+RUN chmod 0755 /usr/local/bin/migration_worker_launch.sh \
+    && ldconfig \
+    && ldd /usr/local/bin/mooncake_kv_migration_worker \
+    && ldd /usr/local/bin/mooncake_kv_migration_worker \
+        | awk 'index($0, "not found") { missing=1 } END { exit missing }'
+
+STOPSIGNAL SIGTERM
+ENTRYPOINT ["/usr/local/bin/migration_worker_launch.sh"]

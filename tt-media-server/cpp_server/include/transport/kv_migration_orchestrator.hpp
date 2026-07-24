@@ -73,6 +73,11 @@ class KvMigrationReceiver {
   KvMigrationReceiver(
       KvControlChannel& channel, MooncakeKvReceiver& receiver,
       std::shared_ptr<const std::vector<uint8_t>> localTableBlob = nullptr);
+  /// A null receiver enables control-only dry-run mode: TABLE_EXCHANGE is
+  /// served, while migration requests are logged and rejected.
+  KvMigrationReceiver(
+      KvControlChannel& channel, MooncakeKvReceiver* receiver,
+      std::shared_ptr<const std::vector<uint8_t>> localTableBlob = nullptr);
 
   /// Init-time table exchange: receive the peer's table, then send ours.
   /// Also stores the peer blob via peerTableBlob() / peerTable().
@@ -109,7 +114,7 @@ class KvMigrationReceiver {
   bool handleTableExchange(const KvControlMessage& msg);
 
   KvControlChannel& channel_;
-  MooncakeKvReceiver& receiver_;
+  MooncakeKvReceiver* receiver_;
   std::shared_ptr<const std::vector<uint8_t>> local_table_blob_;
   std::vector<uint8_t> peer_table_blob_;
   std::shared_ptr<const IKvTable> peer_table_;
