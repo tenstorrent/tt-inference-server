@@ -29,13 +29,24 @@
 # ip:port with the port open; the decode CONTROL_PORT must be reachable from the
 # prefill host. See tests/e2e/TRANSPORT_KV_MIGRATION_E2E.md for full details.
 #
-# Common env: MODE=host|device, SEED_VERIFY=1|0 (default 1), DEVICE_MAP=<file>,
+# Common env: MODE=host|device, PROTOCOL=tcp|rdma (default tcp; rdma needs an
+#   RDMA NIC + an RDMA-enabled Mooncake build), TRANSPORT=bounce (the only path),
+#   METADATA=<uri> (Mooncake segment metadata; default P2PHANDSHAKE = direct peer
+#   connect; a service URI resolves segments via that service; control stays a
+#   direct dial), SEED_VERIFY=1|0 (default 1), DEVICE_MAP=<file>,
 #   SLOT/LAYER_BEGIN/LAYER_END/POS_BEGIN/POS_END, TIMEOUT_SEC.
 set -uo pipefail
 
 BIN="${1:-./build/transport_kv_migration_e2e}"
 ROLE="${ROLE:-both}"
 MODE="${MODE:-host}"
+PROTOCOL="${PROTOCOL:-tcp}"       # Mooncake transport: tcp | rdma. rdma needs an
+                                  # RDMA NIC + an RDMA-enabled Mooncake build.
+TRANSPORT="${TRANSPORT:-bounce}"  # RDMA-over-host bounce buffer; the only path.
+METADATA="${METADATA:-P2PHANDSHAKE}"  # Mooncake segment metadata; default =
+                                  # direct peer connect. A service URI resolves
+                                  # segments via that service (control stays a
+                                  # direct dial).
 TABLE="${TABLE:-builtin2}"        # THIS role's local table.
 DECODE_TABLE="${DECODE_TABLE:-}"  # sender real-table mode: the decode .pb.
 DEVICE_MAP="${DEVICE_MAP:-}"
@@ -69,8 +80,12 @@ if [[ "${MODE}" == "device" && -z "${TT_METAL_RUNTIME_ROOT:-}" && -n "${TT_METAL
   export TT_METAL_RUNTIME_ROOT="${TT_METAL_HOME}"
 fi
 
-# Shared request/mode flags (NOT --table: that's per role).
-common=(--mode "${MODE}" --slot "${SLOT}"
+# Shared request/mode flags (NOT --table: that's per role). --protocol and
+# --transport apply to every role, so the sender's one-sided writes and each
+# receiver's bounce registration agree on the wire.
+common=(--mode "${MODE}" --protocol "${PROTOCOL}" --transport "${TRANSPORT}"
+        --metadata "${METADATA}"
+        --slot "${SLOT}"
         --layer-begin "${LAYER_BEGIN}" --layer-end "${LAYER_END}"
         --pos-begin "${POS_BEGIN}" --pos-end "${POS_END}"
         --timeout-sec "${TIMEOUT_SEC}")

@@ -23,8 +23,6 @@ namespace tt::transport {
  *
  * Implementations:
  *   - HostDramStorageBackend   — plain host memory.
- *   - DeviceDramStorageBackend — TT device DRAM via the UMD (the custom backend
- *                                #3890 targets).
  *
  * `addr` is interpreted by the concrete backend: a NocAddr
  * (`channel << 32 | local_addr`) for device DRAM, or a host virtual address

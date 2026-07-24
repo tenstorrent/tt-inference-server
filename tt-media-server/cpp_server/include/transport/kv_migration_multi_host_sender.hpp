@@ -9,9 +9,11 @@
 #include <string>
 #include <unordered_map>
 
+#include "transport/double_pinned_buffer.hpp"
 #include "transport/i_device_io.hpp"
 #include "transport/i_transfer_engine.hpp"
 #include "transport/kv_control_channel.hpp"
+#include "transport/kv_staging_pool.hpp"
 #include "transport/kv_table_adapter.hpp"
 #include "transport/kv_table_view.hpp"
 #include "transport/mooncake_kv_sender.hpp"
@@ -21,72 +23,50 @@ namespace tt::transport {
 class WorkerHealth;
 
 /**
- * @brief Sender-side fan-out across the N decode hosts a slot spans (n->m).
+ * @brief Sender-side fan-out across the N decode hosts a slot spans, over the
+ *        RDMA-over-host bounce-buffer protocol (n->m).
  *
- * A whole-slot migration is spread across several decode hosts (layers on
- * different meshes, replicas in different device groups). Each decode host is
- * its own receiver process with its own Mooncake segment + mirror + control
- * channel. This composes one per-host MooncakeKvSender (the destination
- * addressing for that host, built from the shared decode table) and reuses
- * KvMigrationSender for the per-host Begin/MirrorReady/Done/Ack protocol.
+ * Routing (which decode hosts a request touches, from hostsForRequest on the
+ * shared decode table) and host->control-channel resolution are injected; each
+ * per-host leg runs the windowed bounce protocol (MooncakeKvSender +
+ * KvMigrationSender: Begin -> BounceReady -> [WindowReady/WindowAck]* -> Done
+ * -> Ack). Each decode host is its own bounce-buffer receiver process with its
+ * own bounce buffer + segment + control channel.
  *
- * Two concerns are kept separate:
- *   - ROUTING — which hosts a request touches — is computed from the decode
- *     table (hostsForRequest), so it is exact and table-driven.
- *   - RESOLUTION — host -> control channel — is injected. A static map drives
- *     standalone tests and the e2e; a discovery service supplies the same map
- *     in production, with no change to this class.
- *
- * The injected map defines the known decode cluster at construction. addHost()
- * upserts a host and refreshes the control-channel shared_ptr (metadata
- * rediscovery after a decode restart). Owns no threads; the per-host receivers
- * run in their own processes.
+ * A single staging pool is shared across all per-host senders (the fan-out is
+ * serial). When `deviceMap` is set (DRISC), the staging is double-pinned (the
+ * same buffer the engine ibv_reg_mr's is NOC-mapped).
  */
 class KvMigrationMultiHostSender {
  public:
-  /// @param channels host -> already-connected control channel for that decode
-  ///        host's receiver. One per-host MooncakeKvSender is built up front
-  ///        for each key (destination layout is whole-table-stable, so it is
-  ///        reused across migrations). Shared ownership keeps an in-flight
-  ///        migrate() channel alive if the connector replaceChannel()s.
-  /// @param health optional; forwarded to each per-host sender so a stale-peer
-  ///        transfer failure bumps the re-resolve counters (observability
-  ///        only).
   KvMigrationMultiHostSender(
       std::shared_ptr<ITransferEngine> engine, IDeviceIo& device,
       std::shared_ptr<const IKvTable> prefillTable,
       std::shared_ptr<const IKvTable> decodeTable, std::string prefillHost,
       std::unordered_map<std::string, std::shared_ptr<KvControlChannel>>
           channels,
-      WorkerHealth* health = nullptr);
+      DeviceMapFn deviceMap = {}, WorkerHealth* health = nullptr);
 
-  /**
-   * @brief Upsert a decode host and bind/refresh its control channel.
-   * @return true if the host is present after the call. false if @p channel is
-   *         null.
-   *
-   * Thread-safe vs migrate(). Re-binding the channel is required when the
-   * connector replaceChannel()s after metadata republishes a new endpoint.
-   */
+  /// Upsert a decode host and bind/refresh its control channel (thread-safe vs
+  /// migrate()). @return true if present after the call; false if @p channel is
+  /// null.
   bool addHost(const std::string& host,
                std::shared_ptr<KvControlChannel> channel);
 
-  /**
-   * @brief Drive the migration to every decode host the request touches.
-   *
-   * Hosts are driven in a deterministic (sorted) order. A host involved in the
-   * request but absent from the channel map, or whose per-host migration fails,
-   * makes the whole call fail — but the remaining hosts are still attempted so
-   * the failure is reported comprehensively.
-   *
-   * @return true iff every involved host completed. false means the slot is
-   * only partially migrated across the cluster; the same all-or-nothing retry
-   * contract as KvMigrationSender::migrate applies (re-drive the same request).
-   */
+  /// Drive the bounce migration to every decode host the request touches
+  /// (sorted order). A missing/failed host fails the whole call, but the rest
+  /// are still attempted (comprehensive report). @return true iff every
+  /// involved host completed (all-or-nothing retry contract: re-drive the same
+  /// request).
   bool migrate(uint64_t uuid, const MigrationRequest& request);
 
-  /// Number of known decode hosts (channel-map size).
   std::size_t hostCount() const;
+
+  /// True iff the shared staging pool registered with the engine (and, on
+  /// DRISC, NOC-mapped). False means every migration will fail at runtime, so
+  /// the worker must fail bring-up rather than advertise Ready — mirrors the
+  /// receiver's registered() on the decode side.
+  bool registered() const { return staging_ && staging_->registered(); }
 
  private:
   std::shared_ptr<ITransferEngine> engine_;
@@ -98,10 +78,7 @@ class KvMigrationMultiHostSender {
 
   mutable std::mutex mutex_;
   std::unordered_map<std::string, std::shared_ptr<KvControlChannel>> channels_;
-  // One staging pool shared by all per-host senders: the fan-out is serial, so
-  // only one sender stages at a time, and sharing avoids N * 2 * 32 MiB of
-  // registered host memory across the decode hosts. Declared before senders_ so
-  // it outlives them.
+  // Shared staging pool (declared before senders_ so it outlives them).
   std::shared_ptr<KvStagingPool> staging_;
   std::unordered_map<std::string, std::unique_ptr<MooncakeKvSender>> senders_;
 };

@@ -16,29 +16,31 @@
 // Reuses the exact addressing (loadKvTableFile + buildHostPlan), the device
 // map, and the pattern the e2e harness (transport_kv_migration_e2e) uses, so a
 // VERIFY: PASS here means the same byte-for-byte guarantee. The device I/O
-// (UmdDeviceAccess) needs a device build (--blaze); the .pb loading needs a
-// --kv-table build.
+// (DriscDeviceIo) needs a device build (--blaze) + MIGRATION_DRISC_SERVICE_ELF;
+// the .pb loading needs a --kv-table build.
 //
 // Symmetric request only (src slot/positions == dst), which is the whole-slot
 // migration the worker performs; the pattern is a pure function of (layer,
 // position) so seed and verify agree without a dst->src ordinal remap.
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
+#include "transport/device_enumeration.hpp"
 #include "transport/device_map.hpp"
+#include "transport/drisc_device_io.hpp"
 #include "transport/i_device_io.hpp"
 #include "transport/kv_table_adapter.hpp"  // buildHostPlan, KvSlice, HostKvPlan
 #include "transport/kv_table_provisioning.hpp"  // loadKvTableFile
 #include "transport/kv_table_view.hpp"          // IKvTable, FabricNode
-#include "transport/multi_device_umd.hpp"
 #include "transport/transfer_types.hpp"
-#include "transport/umd_device_access.hpp"
 
 namespace {
 using namespace tt::transport;
@@ -70,22 +72,42 @@ DeviceMap loadDeviceMap(const std::string& path) {
   return dm;
 }
 
-// One UmdDeviceAccess per device the plan touches; chip via the map, else the
-// placeholder (device & 0xFFFF). Must match the worker's resolution so we
-// read/write the same physical chips.
-std::unique_ptr<MultiDeviceUmd> makeUmd(const HostKvPlan& plan,
-                                        const DeviceMap& dm) {
-  auto umd = std::make_unique<MultiDeviceUmd>();
+// One DRISC link per device the plan touches. The map's value is a chip's
+// 64-bit ASIC unique_id, resolved through the once-built unique_id -> index
+// lookup into the index addDevice() expects (else the &0xFFFF placeholder).
+// Must match the worker's resolution (buildDeviceIo) so we read/write the same
+// physical chips. addDevice launches the per-chip DRISC service kernel (needs
+// MIGRATION_DRISC_SERVICE_ELF + HW).
+std::unique_ptr<DriscDeviceIo> makeDrisc(const HostKvPlan& plan,
+                                         const DeviceMap& dm) {
+  auto io = std::make_unique<DriscDeviceIo>();
+  const std::unordered_map<uint64_t, int> uniqueIdToIndex =
+      dm.size() == 0 ? std::unordered_map<uint64_t, int>{}
+                     : enumerateDevicesByUniqueId();
   for (const auto& chunk : plan.chunks) {
     for (const auto& t : chunk.targets) {
-      if (umd->hasDevice(t.device)) continue;
+      if (io->hasDevice(t.device)) continue;
       const auto mapped = dm.umdChip(t.device);
-      const int chip = mapped ? static_cast<int>(*mapped)
-                              : static_cast<int>(t.device & 0xFFFFu);
-      umd->addDevice(t.device, std::make_shared<UmdDeviceAccess>(chip));
+      int chip = 0;
+      if (mapped) {
+        const auto it = uniqueIdToIndex.find(*mapped);
+        if (it == uniqueIdToIndex.end()) {
+          std::cerr << "[seed-verify] device-map unique_id " << *mapped
+                    << " matches no visible device; skipping device "
+                    << t.device << "\n";
+          continue;
+        }
+        chip = it->second;
+      } else {
+        chip = static_cast<int>(t.device & 0xFFFFu);
+      }
+      if (!io->addDevice(t.device, chip)) {
+        std::cerr << "[seed-verify] failed to open/launch DRISC on device "
+                  << t.device << " (chip index " << chip << ")\n";
+      }
     }
   }
-  return umd;
+  return io;
 }
 
 struct Args {
@@ -163,8 +185,19 @@ int main(int argc, char** argv) {
   }
 
   const DeviceMap dm = loadDeviceMap(a.device_map);
-  auto umd = makeUmd(plan, dm);
-  IDeviceIo& dev = *umd;
+  auto drisc = makeDrisc(plan, dm);
+  IDeviceIo& dev = *drisc;
+
+  // One reusable scratch buffer sized to the largest chunk, NOC-mapped once for
+  // zero-copy DRISC DMA — it backs every read/write below.
+  uint64_t maxChunk = 0;
+  for (const auto& chunk : plan.chunks) {
+    for (const auto& t : chunk.targets) {
+      maxChunk = std::max<uint64_t>(maxChunk, t.size_bytes);
+    }
+  }
+  std::vector<uint8_t> scratch(maxChunk);
+  drisc->registerHostRegion(scratch.data(), scratch.size());
 
   const bool seed = (a.mode == "seed");
   uint64_t chunks = 0, replicas = 0, bytes = 0, bad = 0;
@@ -174,15 +207,15 @@ int main(int argc, char** argv) {
       ++replicas;
       const auto expected = patternN(chunk.layer, chunk.position, t.size_bytes);
       if (seed) {
-        if (dev.write(t.device, t.noc_addr, expected.data(), expected.size())) {
+        std::copy(expected.begin(), expected.end(), scratch.begin());
+        if (dev.write(t.device, t.noc_addr, scratch.data(), t.size_bytes)) {
           bytes += t.size_bytes;
         } else {
           ++bad;
         }
       } else {
-        std::vector<uint8_t> buf(t.size_bytes);
-        if (dev.read(t.device, t.noc_addr, t.size_bytes, buf.data()) &&
-            buf == expected) {
+        if (dev.read(t.device, t.noc_addr, t.size_bytes, scratch.data()) &&
+            std::equal(expected.begin(), expected.end(), scratch.begin())) {
           bytes += t.size_bytes;
         } else {
           ++bad;
@@ -190,6 +223,10 @@ int main(int argc, char** argv) {
       }
     }
   }
+
+  // Metal coexistence: free any low-IOVA reservations (no-op unless
+  // MIGRATION_IOVA_RESERVE_MB was set) before exit.
+  drisc->releaseIovaReservations();
 
   std::cout << "[seed-verify] mode=" << a.mode << " host=" << a.host
             << " chunks=" << chunks << " replicas=" << replicas

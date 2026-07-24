@@ -32,6 +32,10 @@
 #   PEERS; DECODE_TABLE is an optional disk fallback to control TABLE_EXCHANGE.
 # Optional: PEERS (see above), KAFKA_BROKERS, KAFKA_GROUP_ID,
 #   KV_MIGRATION_MODE (device|dry-run; applies to both roles),
+#   PROTOCOL (tcp|rdma; Mooncake wire, applies to both roles; unset => the
+#     worker's default tcp / its own MIGRATION_MOONCAKE_PROTOCOL env),
+#   RDMA_NICS (CSV of RDMA NIC device names, e.g. "mlx5_0,mlx5_1"; rdma only;
+#     unset => auto-discover the present NIC),
 #   MC_TCP_BIND_ADDRESS
 #   (unset/"auto" => detect this host's routable IP so peers can reach it),
 #   CONTROL_PORT (KV control port a decode binds + publishes to metadata;
@@ -90,10 +94,24 @@ for tag in "${peer_tags[@]}"; do
   [[ -n "${tag}" ]] && peer_args+=(--peer "${tag}")
 done
 
+# Mooncake wire transport, applies to both roles. Only forwarded when PROTOCOL
+# is set, so the worker's tcp default (and its MIGRATION_MOONCAKE_PROTOCOL env
+# fallback) stay intact when the deploy doesn't pin it. --protocol wins over the
+# env in the worker, so a set PROTOCOL is authoritative.
+protocol_args=()
+[[ -n "${PROTOCOL:-}" ]] && protocol_args=(--protocol "${PROTOCOL}")
+# RDMA NIC allowlist (rdma only): CSV of device names -> one --rdma-nic each.
+# Unset/empty => the worker auto-discovers the single present NIC.
+rdma_nic_args=()
+IFS=',' read -ra rdma_nics <<<"${RDMA_NICS:-}"
+for nic in "${rdma_nics[@]}"; do
+  [[ -n "${nic}" ]] && rdma_nic_args+=(--rdma-nic "${nic}")
+done
+
 case "${WORKER_ROLE}" in
   decode)
     : "${DECODE_TABLE:?DECODE_TABLE required for decode}"
-    # Receiver: registers KV mirror + serves control (TABLE_EXCHANGE reply +
+    # Receiver: registers the bounce buffer + serves control (TABLE_EXCHANGE reply +
     # migrate). Prefill initiates; decode does not. No Kafka.
     exec "${WORKER_BIN}" \
       --role "${WORKER_ROLE}" \
@@ -103,6 +121,8 @@ case "${WORKER_ROLE}" in
       ${peer_control_args[@]+"${peer_control_args[@]}"} \
       ${control_args[@]+"${control_args[@]}"} \
       ${device_args[@]+"${device_args[@]}"} \
+      ${protocol_args[@]+"${protocol_args[@]}"} \
+      ${rdma_nic_args[@]+"${rdma_nic_args[@]}"} \
       ${health_args[@]+"${health_args[@]}"}
     ;;
   prefill)
@@ -122,6 +142,8 @@ case "${WORKER_ROLE}" in
       "${peer_args[@]}" \
       ${peer_control_args[@]+"${peer_control_args[@]}"} \
       ${device_args[@]+"${device_args[@]}"} \
+      ${protocol_args[@]+"${protocol_args[@]}"} \
+      ${rdma_nic_args[@]+"${rdma_nic_args[@]}"} \
       ${health_args[@]+"${health_args[@]}"}
     ;;
   *)

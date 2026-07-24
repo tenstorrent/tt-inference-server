@@ -3,194 +3,113 @@
 
 #include "transport/mooncake_kv_receiver.hpp"
 
-#include <mutex>
 #include <utility>
 
 #include "utils/logger.hpp"
 
 namespace tt::transport {
 
-MooncakeKvReceiver::MooncakeKvReceiver(
-    std::shared_ptr<ITransferEngine> engine, IDeviceIo& device,
-    std::shared_ptr<const IKvTable> localTable, std::string host,
-    std::string advertisedSegmentName)
+MooncakeKvReceiver::MooncakeKvReceiver(std::shared_ptr<ITransferEngine> engine,
+                                       IDeviceIo& device,
+                                       std::string advertisedSegmentName,
+                                       BounceGeometry geometry,
+                                       DeviceMapFn deviceMap)
     : engine_(std::move(engine)),
       device_(device),
-      local_table_(std::move(localTable)),
-      host_(std::move(host)),
-      advertised_segment_name_(std::move(advertisedSegmentName)) {
-  if (!engine_ || !local_table_) {
-    TT_LOG_ERROR("[MooncakeKvReceiver] no engine/table; mirror not registered");
-    return;
-  }
-  // One mirror over the *full* local table, registered once. Its offsets are a
-  // stable function of (device, noc_addr) for the receiver's lifetime, so every
-  // migration — even concurrent ones to disjoint chunks — addresses the same
-  // segment with the same offsets the sender computes from the exchanged table.
-  mirror_ = KvCacheMirror(allHostLocations(*local_table_, host_));
-  if (mirror_.totalBytes() == 0) {
-    TT_LOG_WARN(
-        "[MooncakeKvReceiver] local table holds no chunks for host {}; mirror "
-        "not registered",
-        host_);
-    return;
-  }
-  if (!engine_->registerLocalMemory(mirror_.base(), mirror_.totalBytes())) {
+      advertised_segment_name_(std::move(advertisedSegmentName)),
+      buffer_(geometry),
+      device_map_(std::move(deviceMap)) {
+  if (!engine_) {
     TT_LOG_ERROR(
-        "[MooncakeKvReceiver] registerLocalMemory({} bytes) failed; mirror not "
+        "[MooncakeKvReceiver] no engine; bounce buffer not registered");
+    return;
+  }
+  if (!geometry.valid() || buffer_.totalBytes() == 0) {
+    TT_LOG_ERROR(
+        "[MooncakeKvReceiver] invalid bounce geometry (sections={}, "
+        "section_size={}); not registered",
+        geometry.section_count, geometry.section_size);
+    return;
+  }
+  // totalBytes() is the geometry-derived capacity, non-zero even when the
+  // allocation failed; guard the actual pointer before registering it (an
+  // env-tunable geometry can request more than aligned_alloc can serve).
+  if (buffer_.base() == nullptr) {
+    TT_LOG_ERROR(
+        "[MooncakeKvReceiver] bounce buffer allocation failed ({} bytes); not "
         "registered",
-        mirror_.totalBytes());
+        buffer_.totalBytes());
     return;
   }
-  // Remote WRITEs always target buffers[0]. Table exchange must have
-  // unregistered its recv region first so the mirror lands at index 0.
-  // Skip when the engine does not track registration order (test fakes).
-  if (engine_->registeredLocalBufferCount() > 0 &&
-      engine_->firstRegisteredLocalBuffer() != mirror_.base()) {
+  if (!engine_->registerLocalMemory(buffer_.base(), buffer_.totalBytes())) {
     TT_LOG_ERROR(
-        "[MooncakeKvReceiver] mirror is not buffers[0] after register "
-        "(count={}); migration would write the wrong region — aborting",
+        "[MooncakeKvReceiver] registerLocalMemory({} bytes) failed; bounce "
+        "buffer "
+        "not registered",
+        buffer_.totalBytes());
+    return;
+  }
+  // Remote WRITEs resolve against buffers[0] (see ITransferEngine::
+  // firstRegisteredLocalBuffer), so the bounce buffer must be that slot.
+  if (engine_->registeredLocalBufferCount() > 0 &&
+      engine_->firstRegisteredLocalBuffer() != buffer_.base()) {
+    TT_LOG_ERROR(
+        "[MooncakeKvReceiver] bounce buffer is not buffers[0] after register "
+        "(count={}); aborting",
         engine_->registeredLocalBufferCount());
-    engine_->unregisterLocalMemory(mirror_.base());
+    engine_->unregisterLocalMemory(buffer_.base());
     return;
   }
   registered_ = true;
+  // Double-pin: NOC-map the SAME bounce buffer for device DMA so the drain
+  // DMAs straight from the bounce buffer to device DRAM (no bounce). Null in
+  // host/MMIO mode. The bounce buffer outlives the DriscDeviceIo links (this
+  // receiver owns it), so the map — released with those links — never dangles.
+  if (device_map_) {
+    device_map_(buffer_.base(), buffer_.totalBytes());
+  }
   TT_LOG_INFO(
-      "[MooncakeKvReceiver] registered mirror: {} bytes, {} regions, "
-      "segment={}",
-      mirror_.totalBytes(), mirror_.layout().numRegions(),
-      advertised_segment_name_);
+      "[MooncakeKvReceiver] registered bounce buffer: {} sections x {} bytes = "
+      "{} B, "
+      "segment={}{}",
+      geometry.section_count, geometry.section_size, buffer_.totalBytes(),
+      advertised_segment_name_, device_map_ ? " (NOC-mapped for DRISC)" : "");
 }
 
 MooncakeKvReceiver::~MooncakeKvReceiver() {
   if (registered_ && engine_) {
-    engine_->unregisterLocalMemory(mirror_.base());
+    engine_->unregisterLocalMemory(buffer_.base());
   }
 }
 
-std::size_t MooncakeKvReceiver::pendingCount() const {
-  std::lock_guard<std::mutex> lock(pendingMutex_);
-  return pending_.size();
-}
-
-std::optional<std::string> MooncakeKvReceiver::prepareMirror(
-    const KvSlice& slice, uint64_t uuid) {
+bool MooncakeKvReceiver::drainWindow(
+    const std::vector<BounceSectionDescriptor>& window) {
   if (!registered_) {
     TT_LOG_ERROR(
-        "[MooncakeKvReceiver] prepareMirror(uuid={}): mirror not registered",
-        uuid);
-    return std::nullopt;
+        "[MooncakeKvReceiver] drainWindow: bounce buffer not registered");
+    return false;
   }
-
-  // All-or-nothing: every requested chunk must resolve in the table. A
-  // partially-satisfiable request would otherwise migrate only the found subset
-  // and ACK success, leaving stale KV at the gaps on decode.
-  if (const auto missing = firstUnresolvedChunk(*local_table_, slice)) {
-    TT_LOG_ERROR(
-        "[MooncakeKvReceiver] prepareMirror(uuid={}): requested chunk "
-        "(slot={}, layer={}, pos={}) absent from table; rejecting whole "
-        "request (layers=[{},{}), pos=[{},{}))",
-        uuid, slice.slot, missing->layer, missing->position, slice.layer_begin,
-        slice.layer_end, slice.position_begin, slice.position_end);
-    return std::nullopt;
-  }
-
-  HostKvPlan plan = buildHostPlan(*local_table_, host_, slice);
-  if (plan.empty()) {
-    TT_LOG_ERROR(
-        "[MooncakeKvReceiver] prepareMirror(uuid={}): no local chunks for "
-        "request (slot={}, layers=[{},{}), pos=[{},{}))",
-        uuid, slice.slot, slice.layer_begin, slice.layer_end,
-        slice.position_begin, slice.position_end);
-    return std::nullopt;
-  }
-
-  // Every requested chunk must fall inside the pre-registered full-table
-  // mirror; otherwise the sender's WRITE (and our drain) would address outside
-  // it.
-  for (const KvChunkLocation& loc : plan.locations) {
-    if (!mirror_.offsetOf(loc.device, loc.noc_addr)) {
-      TT_LOG_ERROR(
-          "[MooncakeKvReceiver] prepareMirror(uuid={}): chunk device={:#x} "
-          "noc={:#x} outside registered mirror",
-          uuid, loc.device, loc.noc_addr);
-      return std::nullopt;
-    }
-  }
-
-  const std::size_t n = plan.chunks.size();
-  {
-    std::lock_guard<std::mutex> lock(pendingMutex_);
-    // Reject a duplicate uuid: emplace below would not overwrite, so the stale
-    // Pending would linger and the second drain would be lost.
-    if (pending_.find(uuid) != pending_.end()) {
-      TT_LOG_ERROR(
-          "[MooncakeKvReceiver] prepareMirror(uuid={}): already prepared",
-          uuid);
-      return std::nullopt;
-    }
-    pending_.emplace(uuid, std::move(plan));
-  }
-  TT_LOG_INFO(
-      "[MooncakeKvReceiver] prepareMirror(uuid={}) ready: {} chunks, "
-      "segment={}",
-      uuid, n, advertised_segment_name_);
-  return advertised_segment_name_;
-}
-
-bool MooncakeKvReceiver::drain(uint64_t uuid) {
-  HostKvPlan plan;
-  {
-    std::lock_guard<std::mutex> lock(pendingMutex_);
-    const auto it = pending_.find(uuid);
-    if (it == pending_.end()) {
-      TT_LOG_ERROR("[MooncakeKvReceiver] drain(uuid={}): no prepared mirror",
-                   uuid);
-      return false;
-    }
-    plan = it->second;
-  }
-
   bool ok = true;
-  // Selective: write back only this migration's chunks (fan-out: each replica
-  // on this host) from the shared mirror, never the untouched span of the
-  // mirror.
-  for (const ChunkPlan& chunk : plan.chunks) {
-    for (const ChunkTarget& target : chunk.targets) {
-      const auto offset = mirror_.offsetOf(target.device, target.noc_addr);
-      if (!offset) {
+  for (const BounceSectionDescriptor& d : window) {
+    const uint8_t* src = buffer_.sectionPtr(d.section_offset, d.size);
+    if (src == nullptr) {
+      TT_LOG_ERROR(
+          "[MooncakeKvReceiver] descriptor section [{:#x}, +{}) escapes the "
+          "bounce buffer ({} B); rejecting",
+          d.section_offset, d.size, buffer_.totalBytes());
+      ok = false;
+      continue;
+    }
+    for (const DrainTarget& t : d.targets) {
+      if (!device_.write(t.device, t.noc_addr, src, d.size)) {
         TT_LOG_ERROR(
-            "[MooncakeKvReceiver] drain(uuid={}): no mirror offset for "
-            "device={:#x} noc={:#x}",
-            uuid, target.device, target.noc_addr);
-        ok = false;
-        continue;
-      }
-      const uint8_t* src = mirror_.base() + *offset;
-      if (!device_.write(target.device, target.noc_addr, src,
-                         target.size_bytes)) {
-        TT_LOG_ERROR(
-            "[MooncakeKvReceiver] drain(uuid={}): device write failed "
-            "device={:#x} noc={:#x}",
-            uuid, target.device, target.noc_addr);
+            "[MooncakeKvReceiver] device write failed device={:#x} "
+            "noc={:#x} size={}",
+            t.device, t.noc_addr, d.size);
         ok = false;
       }
     }
   }
-
-  // On success, forget the uuid. On failure, KEEP the per-uuid plan: the sender
-  // already WROTE the bytes into the persistent mirror, so a re-sent DoneMarker
-  // can re-drive the same drain with no re-transfer (forward recovery). The
-  // shared mirror segment stays registered either way. drain() is NOT atomic
-  // across chunks — on failure the decode device may hold a partial mix of new
-  // and stale KV, so the caller must not consume the slot until a drain
-  // succeeds (see README "Contract for a higher-layer caller").
-  if (ok) {
-    std::lock_guard<std::mutex> lock(pendingMutex_);
-    pending_.erase(uuid);
-  }
-  TT_LOG_INFO("[MooncakeKvReceiver] drain(uuid={}) -> {}", uuid,
-              ok ? "OK" : "PARTIAL (retryable)");
   return ok;
 }
 

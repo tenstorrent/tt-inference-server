@@ -18,14 +18,14 @@ namespace tt::transport {
  *
  * A thin wrapper that serializes KvControlMessages onto an ISocketTransport
  * (one sendRawData == one logical message) and parses them back. It carries
- * only setup/coordination — table exchange, the migration request, the mirror
+ * only setup/coordination — table exchange, the migration request, the bounce
  * segment name, done-marker, and ack — never the bulk KV bytes, which move
  * one-sided over Mooncake.
  *
- * Multi-message protocols (migrate: Begin→MirrorReady→Done→Ack; TABLE_EXCHANGE:
- * send→recv) must run under Transaction: a recursive mutex held across the
- * whole sequence. Per-call locking alone is not enough — releasing between
- * send and receive lets another thread steal the peer's reply.
+ * Multi-message protocols (migrate: Begin→BounceReady→[Window*]→Done→Ack;
+ * TABLE_EXCHANGE: send→recv) must run under Transaction: a recursive mutex held
+ * across the whole sequence. Per-call locking alone is not enough — releasing
+ * between send and receive lets another thread steal the peer's reply.
  *
  * The transport is injected so this is independent of the socket factory and
  * usable over a loopback pair in tests. The receive timeout/poll interval are
@@ -100,7 +100,7 @@ class KvControlChannel {
   ReceiveOutcome receiveMessage(KvControlMessage& out,
                                 std::chrono::milliseconds ioTimeout);
 
-  /// Channel-default IO / receive budget (migrate MirrorReady/Ack on prefill).
+  /// Channel-default IO / receive budget (migrate BounceReady/Ack on prefill).
   std::chrono::milliseconds receiveTimeout() const { return receive_timeout_; }
 
  private:

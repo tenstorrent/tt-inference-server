@@ -14,8 +14,9 @@
 # (real protobuf tables, -DENABLE_KV_TABLE=ON).
 #
 # Unlike run_transport_migration_e2e.sh (the dummy single-tensor PoC), this
-# drives the real table-addressed path: KvCacheMirror / RemoteRegion, device-
-# group fan-out, and the BeginMigration/MirrorReady/DoneMarker/Ack control flow.
+# drives the real table-addressed RDMA-over-host path: the double-pinned bounce
+# bounce buffer, device-group fan-out, and the windowed BeginMigration/BounceReady/
+# WindowReady/WindowAck/DoneMarker/Ack control flow.
 #
 # Usage:
 #   tests/e2e/scripts/run_transport_kv_migration_e2e.sh [path-to-binary]
@@ -23,7 +24,19 @@
 # Env overrides:
 #   ROLE=both|receiver|sender  (default both — both procs on this host/loopback;
 #                          receiver/sender launch ONE side for a two-galaxy run)
-#   MODE=host|device      (default host — runs anywhere; device needs HW+--blaze)
+#   MODE=host|device      (default host — runs anywhere; device is DRISC NOC-DMA
+#                          and needs HW + --blaze + MIGRATION_DRISC_SERVICE_ELF)
+#   PROTOCOL=tcp|rdma      (Mooncake transport; default tcp. rdma needs an RDMA
+#                          NIC + an RDMA-enabled Mooncake build)
+#   TRANSPORT=bounce         (RDMA-over-host bounce buffer; the only path)
+#   METADATA=<uri>         (Mooncake segment metadata; default P2PHANDSHAKE =
+#                          direct peer connect. A service URI e.g.
+#                          http://HOST:PORT/metadata resolves segments via that
+#                          service. Applies to both roles; control stays a
+#                          direct dial)
+#   BOUNCE_SECTIONS=N BOUNCE_SECTION_SIZE=B  (bounce receiver geometry; 0/unset = default.
+#                          a small bounce buffer — e.g. BOUNCE_SECTIONS=1 — forces the
+#                          multi-window credit handshake over the wire)
 #   TABLE=builtin|<path>   (default builtin; <path> needs -DENABLE_KV_TABLE=ON)
 #   DECODE_TABLE=<path>    (sender, real-table mode: the decode-side .pb)
 #   CONTROL_HOST=<ip>      (sender: where the receiver's control channel lives;
@@ -58,6 +71,11 @@ set -uo pipefail
 BIN="${1:-./build/transport_kv_migration_e2e}"
 ROLE="${ROLE:-both}"
 MODE="${MODE:-host}"
+PROTOCOL="${PROTOCOL:-tcp}"
+TRANSPORT="${TRANSPORT:-bounce}"
+METADATA="${METADATA:-P2PHANDSHAKE}"
+BOUNCE_SECTIONS="${BOUNCE_SECTIONS:-0}"
+BOUNCE_SECTION_SIZE="${BOUNCE_SECTION_SIZE:-0}"
 TABLE="${TABLE:-builtin}"
 DECODE_TABLE="${DECODE_TABLE:-}"
 CONTROL_HOST="${CONTROL_HOST:-127.0.0.1}"
@@ -95,8 +113,12 @@ fi
 
 req=(--slot "${SLOT}" --layer-begin "${LAYER_BEGIN}" --layer-end "${LAYER_END}"
      --pos-begin "${POS_BEGIN}" --pos-end "${POS_END}"
-     --mode "${MODE}" --table "${TABLE}" --control-port "${CONTROL_PORT}"
-     --timeout-sec "${TIMEOUT_SEC}")
+     --mode "${MODE}"
+     --protocol "${PROTOCOL}" --transport "${TRANSPORT}" --table "${TABLE}"
+     --metadata "${METADATA}"
+     --control-port "${CONTROL_PORT}" --timeout-sec "${TIMEOUT_SEC}")
+[[ "${BOUNCE_SECTIONS}" != "0" ]] && req+=(--bounce-sections "${BOUNCE_SECTIONS}")
+[[ "${BOUNCE_SECTION_SIZE}" != "0" ]] && req+=(--bounce-section-size "${BOUNCE_SECTION_SIZE}")
 [[ "${SEED_VERIFY}" == "1" ]] && req+=(--seed-verify)
 [[ -n "${DEVICE_MAP}" ]] && req+=(--device-map "${DEVICE_MAP}")
 [[ -n "${PREFILL_HOST}" ]] && req+=(--prefill-host "${PREFILL_HOST}")
