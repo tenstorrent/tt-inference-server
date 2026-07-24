@@ -318,7 +318,12 @@
         "release": {
           "devices": [
             "P300X2"
-          ]
+          ],
+          "device-args": {
+            "P300X2": {
+              "additional-args": "--impl qwen36-blackhole-b8"
+            }
+          }
         }
       }
     },
