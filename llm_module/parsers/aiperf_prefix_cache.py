@@ -68,7 +68,22 @@ def _compute_sla_checks(raw: Mapping[str, Any]) -> dict:
         ),
         "sla_hit_rate_pass": _ge(raw.get("prefix_cache_hit_rate"), SLA_HIT_RATE_MIN),
     }
-    values = list(checks.values())
+    # Disaggregated deployments report prefill and decode as separate caches.
+    # Both verdicts are computed and surfaced, but only DECODE gates the
+    # overall SLA. Prefill is informational: by design it disproportionately
+    # handles cache MISSES, so its hit-rate is structurally low and a
+    # >=90% gate on it would spuriously fail healthy deployments.
+    for role in ("prefill", "decode"):
+        role_rate = raw.get(f"prefix_cache_hit_rate_{role}")
+        if role_rate is not None:
+            checks[f"sla_hit_rate_{role}_pass"] = _ge(role_rate, SLA_HIT_RATE_MIN)
+
+    # Pick the checks that gate the overall verdict
+    gating = dict(checks)
+    gating.pop("sla_hit_rate_prefill_pass", None)
+    if "sla_hit_rate_decode_pass" in gating:
+        gating.pop("sla_hit_rate_pass", None)
+    values = list(gating.values())
     if any(v is False for v in values):
         overall: Optional[bool] = False
     elif any(v is None for v in values):
@@ -102,6 +117,13 @@ class AIPerfPrefixCacheParser(LLMResultParser):
         hit_rate = raw.get("prefix_cache_hit_rate")
         if isinstance(hit_rate, (int, float)):
             record["prefix_cache_hit_rate_pct"] = hit_rate * 100.0
+
+        # Per-role display percents (disaggregated deployments). Absent for
+        # aggregated runs, so the renderer's role columns stay hidden there.
+        for role in ("prefill", "decode"):
+            role_rate = raw.get(f"prefix_cache_hit_rate_{role}")
+            if isinstance(role_rate, (int, float)):
+                record[f"prefix_cache_hit_rate_{role}_pct"] = role_rate * 100.0
 
         analysis = raw.get("trace_analysis") or {}
         theo = analysis.get("cache_hit_rate") if isinstance(analysis, Mapping) else None

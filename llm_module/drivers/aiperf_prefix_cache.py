@@ -212,6 +212,21 @@ class AIPerfPrefixCacheDriver:
             shutil.rmtree(artifact_dir)
         artifact_dir.mkdir(parents=True, exist_ok=True)
 
+        # Each metrics spec may carry an optional ``role=`` prefix
+        # (prefill/decode) for disaggregated deployments. Strip it for the
+        # AIPerf ``--server-metrics`` flag (which wants bare URLs) and build
+        # an endpoint->role map for the parser so prefill and decode caches
+        # are reported on their own denominators instead of being blended.
+        role_url_pairs = [
+            _split_role_and_url(spec)
+            for spec in server.prefix_cache_metrics_urls
+            if spec and spec.strip()
+        ]
+        metrics_urls = tuple(url for _role, url in role_url_pairs)
+        endpoint_roles = {
+            _normalize_metrics_url(url): role for role, url in role_url_pairs if role
+        }
+
         cmd = _build_aiperf_cmd(
             run=prefix_run,
             venv_python=self.venv_python,
@@ -221,7 +236,7 @@ class AIPerfPrefixCacheDriver:
             artifact_dir=str(artifact_dir),
             auth_token=server.auth_token,
             tokenizer_trust_remote_code=server.tokenizer_trust_remote_code,
-            metrics_urls=server.prefix_cache_metrics_urls,
+            metrics_urls=metrics_urls,
         )
         _log_run_header(prefix_run)
         logger.info("Executing: %s", " ".join(cmd))
@@ -240,7 +255,9 @@ class AIPerfPrefixCacheDriver:
             return PrefixCacheDriverResult(return_code=rc, payload=None, raw_path=None)
 
         metrics = _parse_aiperf_output(artifact_dir)
-        cache_metrics = _parse_server_metrics_for_prefix_cache(artifact_dir)
+        cache_metrics = _parse_server_metrics_for_prefix_cache(
+            artifact_dir, endpoint_roles=endpoint_roles
+        )
 
         if not metrics:
             logger.error(
@@ -320,6 +337,18 @@ def _normalize_metrics_url(value: str) -> str:
     if parsed.path in ("", "/"):
         candidate = f"{candidate.rstrip('/')}/metrics"
     return candidate
+
+
+_METRICS_ROLE_TOKENS = ("prefill", "decode", "regular")
+
+
+def _split_role_and_url(entry: str) -> Tuple[str, str]:
+    """Split a ``role=url`` metrics spec into ``(role, url)``."""
+    candidate = entry.strip()
+    head, sep, tail = candidate.partition("=")
+    if sep and head.strip().lower() in _METRICS_ROLE_TOKENS:
+        return head.strip().lower(), tail.strip()
+    return "", candidate
 
 
 def _build_aiperf_cmd(
@@ -719,8 +748,22 @@ def _collect_metric_samples(
 
 def _parse_server_metrics_for_prefix_cache(
     artifact_dir: Path,
+    endpoint_roles: Optional[Mapping[str, str]] = None,
 ) -> Dict[str, Optional[float]]:
-    """Compute the prefix-cache hit rate from AIPerf's Prometheus scrape."""
+    """Compute the prefix-cache hit rate from AIPerf's Prometheus scrape.
+
+    ``endpoint_roles`` optionally maps a worker metrics URL to its
+    disaggregation role (``"prefill"`` / ``"decode"``). Keys are matched
+    after ``_normalize_metrics_url`` so the caller-supplied form lines up
+    with the ``endpoint_url`` AIPerf stamps into the scrape. When roles are
+    supplied, each role's hit rate is reported on its OWN denominator
+    (``*_prefill`` / ``*_decode`` keys) — prefill and decode are separate
+    caches, and summing them would double-count every prompt (each request
+    touches both). The single ``prefix_cache_hit_rate`` stays the
+    all-endpoint sum for backward compatibility (aggregated / KV-routed
+    peer-worker deployments, and every caller that passes no roles).
+    """
+    roles = ("prefill", "decode")
     out: Dict[str, Optional[float]] = {
         "prefix_cache_hit_rate": None,
         "prefix_cache_hits_delta": None,
@@ -728,6 +771,10 @@ def _parse_server_metrics_for_prefix_cache(
         "prefix_cache_hits_final": None,
         "prefix_cache_queries_final": None,
     }
+    for role in roles:
+        out[f"prefix_cache_hit_rate_{role}"] = None
+        out[f"prefix_cache_hits_delta_{role}"] = None
+        out[f"prefix_cache_queries_delta_{role}"] = None
 
     candidates: List[Path] = [artifact_dir / "server_metrics_export.jsonl"]
     for sub in glob.glob(os.path.join(str(artifact_dir), "*")):
@@ -758,25 +805,52 @@ def _parse_server_metrics_for_prefix_cache(
                 return values
         return []
 
+    norm_roles = {
+        _normalize_metrics_url(url): role
+        for url, role in (endpoint_roles or {}).items()
+        if url and role
+    }
+    per_role = {
+        role: {
+            "hits": 0.0,
+            "queries": 0.0,
+            "saw_hits": False,
+            "saw_queries": False,
+        }
+        for role in roles
+    }
+
     # Per worker (endpoint_url) compute last - first, then sum across
     # workers so KV-routed multi-worker deployments aggregate correctly.
+    # In parallel, accumulate per-role deltas keyed by endpoint_url so a
+    # disaggregated prefill+decode deployment reports each cache separately.
     hits_delta = 0.0
     queries_delta = 0.0
     hits_final = 0.0
     queries_final = 0.0
     saw_hits = False
     saw_queries = False
-    for series in by_endpoint.values():
+    for endpoint, series in by_endpoint.items():
+        role = norm_roles.get(_normalize_metrics_url(endpoint)) if endpoint else None
+        role_acc = per_role.get(role) if role is not None else None
         hits = _first_populated(series, PREFIX_CACHE_HITS_METRIC_ALIASES)
         queries = _first_populated(series, PREFIX_CACHE_QUERIES_METRIC_ALIASES)
         if hits:
-            hits_delta += max(hits[-1] - hits[0], 0.0)
+            delta = max(hits[-1] - hits[0], 0.0)
+            hits_delta += delta
             hits_final += hits[-1]
             saw_hits = True
+            if role_acc is not None:
+                role_acc["hits"] += delta
+                role_acc["saw_hits"] = True
         if queries:
-            queries_delta += max(queries[-1] - queries[0], 0.0)
+            delta = max(queries[-1] - queries[0], 0.0)
+            queries_delta += delta
             queries_final += queries[-1]
             saw_queries = True
+            if role_acc is not None:
+                role_acc["queries"] += delta
+                role_acc["saw_queries"] = True
 
     if not saw_hits or not saw_queries:
         logger.warning(
@@ -794,6 +868,18 @@ def _parse_server_metrics_for_prefix_cache(
     out["prefix_cache_hit_rate"] = (
         (hits_delta / queries_delta) if queries_delta > 0 else 0.0
     )
+
+    # Per-role rates: only populated for a role that had both counters on at
+    # least one of its tagged endpoints. Each divides by its own denominator.
+    for role in roles:
+        acc = per_role[role]
+        if acc["saw_hits"] and acc["saw_queries"]:
+            role_queries = acc["queries"]
+            out[f"prefix_cache_hits_delta_{role}"] = acc["hits"]
+            out[f"prefix_cache_queries_delta_{role}"] = role_queries
+            out[f"prefix_cache_hit_rate_{role}"] = (
+                (acc["hits"] / role_queries) if role_queries > 0 else 0.0
+            )
     return out
 
 
