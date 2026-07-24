@@ -61,6 +61,10 @@ For more details see [reference_config/benchmarking/README.md](reference_config/
 
 For more details see [reference_config/evals/README.md](reference_config/evals/README.md)
 
+## Contributing
+
+Before opening a pull request, please read the contribution guidelines — git workflow, branching, pre-commit setup, and code review — in [docs/development.md](docs/development.md).
+
 ## Development
 
 Developer documentation: [docs/README.md](docs/README.md)
