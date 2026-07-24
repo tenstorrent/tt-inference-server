@@ -841,8 +841,10 @@ void DisaggregationService::resolvePrefillSession(
         "hashes={}, creating new session",
         request->task_id, routingHashes.size());
 
-    tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(promptTokens,
-                                                               0u);
+    // A slot copy still reuses copyMatchedTokens of KV cache, so credit those
+    // as hits (0 when no copy happened) rather than always reporting a full miss 
+    tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(
+        promptTokens, copyMatchedTokens);
 
     sessionManager->createSession(
         [this, request, infos = std::move(blockInfos), sm = sessionManager,

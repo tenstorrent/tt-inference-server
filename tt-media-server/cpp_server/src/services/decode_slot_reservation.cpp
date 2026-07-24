@@ -118,8 +118,6 @@ void resolveDecodeDestinationSlot(
         return;
       }
 
-      tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(promptTokens,
-                                                                 0u);
       TT_LOG_INFO("{} taskId={} prefix MISS blocks={} → allocating new session",
                   K_LOG_PREFIX, input.taskId, blockInfos.size());
     } catch (const SessionInFlightException& e) {
@@ -145,6 +143,11 @@ void resolveDecodeDestinationSlot(
                            : std::nullopt;
   uint32_t copyMatchedTokens =
       copyPlan.has_value() ? copyPlan->matchedTokens : 0;
+
+  if (!useResponseId && !blockInfos.empty()) {
+    tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(
+        promptTokens, copyMatchedTokens);
+  }
 
   sessionManager.createSession(
       [&sessionManager, blockInfos, slotToCopyFrom, copyMatchedTokens,
