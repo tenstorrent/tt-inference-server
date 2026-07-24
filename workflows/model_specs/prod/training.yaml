@@ -12,6 +12,7 @@ templates:
   impl: training_lora
   model_type: TRAINING
   inference_engine: FORGE
+  docker_image: "tt-media-server-forge:local"
   status: EXPERIMENTAL
   uses_tensor_model_cache: false
   env_vars:
@@ -36,6 +37,7 @@ templates:
   impl: training_lora
   model_type: TRAINING
   inference_engine: FORGE
+  docker_image: "tt-media-server-forge:local"
   status: EXPERIMENTAL
   uses_tensor_model_cache: false
   env_vars:
