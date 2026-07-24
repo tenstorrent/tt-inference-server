@@ -4825,12 +4825,16 @@ _eval_config_list = [
         hf_model_repo="google/diffusiongemma-26B-A4B-it",
         tasks=[
             EvalTask(
-                # GPQA-Diamond, lightweight bring-up eval for the QB2 text path.
+                # GPQA-Diamond, 0-shot chain-of-thought (standard lm-eval CoT task) —
+                # the apples-to-apples protocol behind the official DiffusionGemma
+                # GPQA-Diamond 73.2%. Replaces the R1-specific r1_gpqa_diamond template
+                # (which forced a \boxed answer); the CoT task's flexible-extract filter
+                # (last "(X)") parses DiffusionGemma's natural answer robustly.
                 # DiffusionGemma has the Gemma-family thinking channel. The model
                 # spec enables it server-side with enable_thinking=true and uses the
                 # DiffusionGemma reasoning-parser alias so lm-eval receives the final
                 # answer as message.content.
-                task_name="r1_gpqa_diamond",
+                task_name="gpqa_diamond_cot_zeroshot",
                 score=EvalTaskScore(
                     # No published / GPU reference baseline yet -- this run is to
                     # SEE the raw score; the report's accuracy_check will be NA.
@@ -4840,7 +4844,9 @@ _eval_config_list = [
                     gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
-                        "result_keys": ["exact_match,none"],
+                        # CoT task emits strict-match / flexible-extract filter keys
+                        # (not "none"); flexible-extract (last "(X)") is the robust score.
+                        "result_keys": ["exact_match,flexible-extract"],
                         "unit": "percent",
                     },
                 ),
