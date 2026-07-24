@@ -77,8 +77,13 @@ class TextToSpeechService(BaseService):
         """
         Convert result.audio (base64 WAV from runner) to requested format.
         If mp3/ogg requested but ffmpeg is unavailable or encoding fails, fall back to WAV.
+
+        ``input_request`` may be a request type with no ``response_format``
+        (e.g. ``VoiceEncodeRequest`` -- POST /v1/audio/voices shares this
+        service/post_process with POST /v1/audio/speech), in which case this
+        is a no-op passthrough.
         """
-        fmt = input_request.response_format.lower()
+        fmt = (getattr(input_request, "response_format", None) or "").lower()
         if fmt not in AUDIO_RESPONSE_FORMATS:
             return result
 

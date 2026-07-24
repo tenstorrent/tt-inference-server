@@ -149,6 +149,9 @@ AVAILABLE_RUNNERS = {
         "tt_model_runners.z_image_turbo_runner",
         fromlist=["ZImageTurboRunner"],
     ).ZImageTurboRunner(wid),
+    ModelRunners.TT_INWORLD_TTS: lambda wid: __import__(
+        "tt_model_runners.inworld_tts_runner", fromlist=["TTInworldTTSRunner"]
+    ).TTInworldTTSRunner(wid),
 }
 
 

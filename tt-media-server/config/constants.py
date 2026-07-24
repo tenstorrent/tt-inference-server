@@ -46,6 +46,10 @@ class SupportedModels(Enum):
     FALCON3_7B_INSTRUCT = "tiiuae/Falcon3-7B-Instruct"
     Z_IMAGE_TURBO = "Tongyi-MAI/Z-Image-Turbo"
     YOLOX_NANO = "Megvii-BaseDetection/YOLOX-Nano"
+    # No HF repo: checkpoints are local disk paths (INWORLD_TTS_*_PATH env vars,
+    # see tt_model_runners/inworld_tts_runner.py). Value is a local-only
+    # placeholder identifier, not a downloadable repo id.
+    INWORLD_TTS_2 = "inworld-tts-2"
 
 
 # MODEL environment variable
@@ -96,6 +100,7 @@ class ModelNames(Enum):
     FALCON3_7B_INSTRUCT = "Falcon3-7B-Instruct"
     YOLOX_NANO = "yolox_nano"
     Z_IMAGE_TURBO = "Z-Image-Turbo"
+    INWORLD_TTS_2 = "inworld-tts-2"
 
 
 class ModelRunners(Enum):
@@ -143,6 +148,7 @@ class ModelRunners(Enum):
     TT_SPEECHT5_TTS = "tt-speecht5-tts"
     TT_XLA_SDXL = "tt-xla-sdxl"
     TT_Z_IMAGE_TURBO = "tt-z-image-turbo"
+    TT_INWORLD_TTS = "tt-inworld-tts"
 
 
 class ModelServices(Enum):
@@ -215,6 +221,7 @@ MODEL_SERVICE_RUNNER_MAP = {
     },
     ModelServices.TEXT_TO_SPEECH: {
         ModelRunners.TT_SPEECHT5_TTS,
+        ModelRunners.TT_INWORLD_TTS,
     },
 }
 
@@ -270,6 +277,7 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
         ModelNames.FALCON3_7B_INSTRUCT,
     },
     ModelRunners.TT_SPEECHT5_TTS: {ModelNames.SPEECHT5_TTS},
+    ModelRunners.TT_INWORLD_TTS: {ModelNames.INWORLD_TTS_2},
     ModelRunners.TT_XLA_SDXL: {
         ModelNames.STABLE_DIFFUSION_XL_BASE,
         ModelNames.STABLE_DIFFUSION_XL_512,
@@ -974,6 +982,13 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 1,
+    },
+    (ModelRunners.TT_INWORLD_TTS, DeviceTypes.P150X8): {
+        "device_mesh_shape": (1, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_8_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 600,
     },
     (ModelRunners.TT_WHISPER, DeviceTypes.N300): {
         "device_mesh_shape": (1, 1),

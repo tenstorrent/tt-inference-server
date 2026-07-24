@@ -39,6 +39,11 @@ class TextToSpeechRequest(BaseRequest):
     )
     speaker_id: Optional[str] = None  # ID for pre-configured speaker embeddings
 
+    # Optional voice-clone ID (Inworld TTS runner): a voice_id previously
+    # registered via POST /v1/audio/voices. When set, synthesis uses that
+    # voice's registered VQ-code prompt instead of TVD (no-reference-audio) mode.
+    voice_id: Optional[str] = None
+
     # Response format: wav (default), mp3, ogg, json, or verbose_json
     response_format: str = "wav"
 

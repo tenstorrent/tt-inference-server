@@ -2,10 +2,22 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+from typing import Optional
 
 from config.constants import AUDIO_RESPONSE_FORMATS
 from domain.text_to_speech_request import TextToSpeechRequest
-from fastapi import APIRouter, Depends, HTTPException, Response, Security
+from domain.voice_encode_request import VoiceEncodeRequest
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Request,
+    Response,
+    Security,
+    UploadFile,
+)
 from model_services.base_service import BaseService
 from resolver.service_resolver import service_resolver
 from security.api_key_checker import get_api_key
@@ -73,6 +85,54 @@ async def text_to_speech(
         output not available (e.g. ffmpeg missing for mp3/ogg).
     """
     return await handle_tts_request(tts_request, service)
+
+
+async def parse_voice_encode_request(
+    request: Request,
+    file: Optional[UploadFile] = File(None),
+    voice_id: Optional[str] = Form(None),
+) -> VoiceEncodeRequest:
+    content_type = request.headers.get("content-type", "").lower()
+
+    if file is not None:
+        file_content = await file.read()
+        return VoiceEncodeRequest(reference_audio=file_content, voice_id=voice_id)
+    if "application/json" in content_type:
+        json_body = await request.json()
+        return VoiceEncodeRequest(**json_body)
+    raise HTTPException(
+        status_code=400,
+        detail="Use either multipart/form-data with file upload or application/json",
+    )
+
+
+@router.post("/voices")
+async def register_voice(
+    voice_encode_request: VoiceEncodeRequest = Depends(parse_voice_encode_request),
+    service: BaseService = Depends(service_resolver),
+    api_key: str = Security(get_api_key),
+):
+    """
+    Register a reference audio clip as a reusable voice-clone prompt.
+
+    Accepts either multipart/form-data (file upload, optional voice_id form
+    field) or application/json (reference_audio + optional voice_id).
+
+    Returns:
+        JSON body with the assigned/echoed voice_id and the number of VQ
+        codes the reference audio was encoded into. Pass voice_id back on a
+        subsequent POST /v1/audio/speech request to synthesize in that voice.
+
+    Raises:
+        HTTPException: If voice registration fails.
+    """
+    try:
+        result = await service.process_request(voice_encode_request)
+        return get_dict_response(result)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 def get_dict_response(obj):
