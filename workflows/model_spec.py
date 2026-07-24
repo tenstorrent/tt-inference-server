@@ -293,6 +293,12 @@ qwen36_blackhole_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/blackhole/qwen36",
 )
+training_lora_impl = ImplSpec(
+    impl_id="training_lora",
+    impl_name="training-lora",
+    repo_url="https://github.com/tenstorrent/tt-inference-server",
+    code_path="tt-media-server/tt_model_runners/forge_training_runners/training_lora_runner.py",
+)
 
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "tt_transformers": tt_transformers_impl,
@@ -306,6 +312,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "tt_vllm_plugin": tt_vllm_plugin_impl,
     "sdxl_forge": sdxl_forge_impl,
     "qwen36_blackhole": qwen36_blackhole_impl,
+    "training_lora": training_lora_impl,
 }
 
 
@@ -1143,8 +1150,6 @@ def _build_template(data: Dict, env: str = "prod") -> "ModelSpecTemplate":
 
 
 def load_templates_from_yaml(path: Path) -> List["ModelSpecTemplate"]:
-    if not path.is_file():
-        return []
     with open(path, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f)
     if not data or "templates" not in data:

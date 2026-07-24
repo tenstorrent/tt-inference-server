@@ -9,7 +9,7 @@ templates:
 # =============================================================================
 - weights:
     - google/gemma-1.1-2b-it
-  impl: tt_transformers
+  impl: training_lora
   min_disk_gb: 15
   min_ram_gb: 6
   model_type: TRAINING
@@ -19,6 +19,10 @@ templates:
   env_vars:
     MODEL_RUNNER: "training-gemma-lora"
     TRAINING_MODEL: "gemma-1.1-2b-it"
+    ENABLE_JOB_PERSISTENCE: true
+    JOB_CLEANUP_INTERVAL_SECONDS: 10000
+    JOB_MAX_STUCK_TIME_SECONDS: 100000
+    REQUEST_PROCESSING_TIMEOUT_SECONDS: 100000
   device_model_specs:
     - device: P150
       max_concurrency: 1

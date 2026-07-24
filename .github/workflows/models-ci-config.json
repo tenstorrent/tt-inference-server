@@ -469,17 +469,6 @@
         }
       }
     },
-    "gemma-1.1-2b-it": {
-      "inference_engine": "FORGE",
-      "ci": {
-        "release": {
-          "devices": [
-            "P150",
-            "P300"
-          ]
-        }
-      }
-    },
     "gemma-3-1b-it": {
       "inference_engine": "vLLM",
       "ci": {
