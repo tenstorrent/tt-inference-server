@@ -261,9 +261,14 @@ def parse_args() -> argparse.Namespace:
             "the cpp_server worker, which the prefix-unaware frontend does "
             "not aggregate. Accepts a full URL, host:port, or "
             "host:port/metrics (http:// and /metrics are added if missing). "
-            "Repeat for multi-worker (KV-routed) deployments; the parser "
-            "sums hit/query deltas across endpoints. Without it the scrape "
-            "hits the frontend and the hit-rate column is null."
+            "Optionally prefix a disaggregation role, e.g. "
+            "'prefill=worker0:9091' or 'decode=worker1:9091', to report each "
+            "cache's hit rate on its own denominator (prefill and decode are "
+            "separate caches; summing them double-counts every prompt). "
+            "Repeat for multi-worker (KV-routed) deployments; without a role "
+            "prefix the parser sums hit/query deltas across endpoints. "
+            "Without the flag the scrape hits the frontend and the hit-rate "
+            "column is null."
         ),
     )
     # ----- Speculative-decoding benchmark (LLM-only) ------------------

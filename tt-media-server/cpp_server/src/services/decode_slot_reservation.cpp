@@ -3,6 +3,7 @@
 
 #include "services/decode_slot_reservation.hpp"
 
+#include "domain/prefix_cache/block_matcher.hpp"
 #include "metrics/metrics.hpp"
 #include "services/session_resolution.hpp"
 #include "utils/conversation_hasher.hpp"
@@ -52,6 +53,9 @@ void resolveDecodeDestinationSlot(
     std::function<void(std::string_view)> onError,
     std::function<void()> cancelFn) {
   auto blockInfos = utils::hashesToBlockInfos(input.registrationHashes);
+  // Per-token prefix-cache denominator: the full (block-aligned) prompt.
+  const uint32_t promptTokens =
+      domain::prefix_cache::BlockMatcher::blocksToTokens(blockInfos.size());
 
   const bool useResponseId = input.previousResponseId.has_value() &&
                              !input.previousResponseId->empty();
@@ -60,9 +64,10 @@ void resolveDecodeDestinationSlot(
       auto acquired = sessionManager.tryAcquireByResponseId(
           *input.previousResponseId, cancelFn);
       if (acquired.has_value()) {
-        tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(true);
         auto [matchedTokens, thinkTokens] = sessionManager.computeMatchedTokens(
             acquired->sessionId, blockInfos);
+        tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(
+            promptTokens, matchedTokens);
         sessionManager.registerPrefixHash(acquired->sessionId, blockInfos);
 
         DecodeDestinationSlot slot;
@@ -81,7 +86,8 @@ void resolveDecodeDestinationSlot(
         return;
       }
 
-      tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(false);
+      tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(promptTokens,
+                                                                 0u);
       TT_LOG_INFO(
           "{} taskId={} response-id MISS prevId={} → allocating new session",
           K_LOG_PREFIX, input.taskId, *input.previousResponseId);
@@ -98,7 +104,8 @@ void resolveDecodeDestinationSlot(
     try {
       acquired = sessionManager.tryAcquireByPrefixHash(blockInfos, cancelFn);
       if (acquired.has_value() && acquired->sessionFound) {
-        tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(true);
+        tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(
+            promptTokens, acquired->numberOfMatchedTokens);
         sessionManager.registerPrefixHash(acquired->sessionId, blockInfos);
 
         auto slot = fromAcquiredPrefix(*acquired);
@@ -111,7 +118,6 @@ void resolveDecodeDestinationSlot(
         return;
       }
 
-      tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(false);
       TT_LOG_INFO("{} taskId={} prefix MISS blocks={} → allocating new session",
                   K_LOG_PREFIX, input.taskId, blockInfos.size());
     } catch (const SessionInFlightException& e) {
@@ -137,6 +143,11 @@ void resolveDecodeDestinationSlot(
                            : std::nullopt;
   uint32_t copyMatchedTokens =
       copyPlan.has_value() ? copyPlan->matchedTokens : 0;
+
+  if (!useResponseId && !blockInfos.empty()) {
+    tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(
+        promptTokens, copyMatchedTokens);
+  }
 
   sessionManager.createSession(
       [&sessionManager, blockInfos, slotToCopyFrom, copyMatchedTokens,
