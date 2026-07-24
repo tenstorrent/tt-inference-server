@@ -10,7 +10,9 @@
 #include "config/settings.hpp"
 #include "domain/llm/llm_request.hpp"
 #include "domain/llm/llm_response.hpp"
+#include "domain/prefix_cache/block_matcher.hpp"
 #include "dynamo/etcd_client.hpp"
+#include "metrics/metrics.hpp"
 #include "runtime/worker/worker_manager.hpp"
 #include "services/decode_slot_reservation.hpp"
 #include "services/disaggregation_contract_mapping.hpp"
@@ -787,6 +789,8 @@ void DisaggregationService::resolvePrefillSession(
   // Convert hashes to BlockHashInfo for session manager calls.
   // Think token counts are 0 since prefill server doesn't track them.
   auto blockInfos = utils::hashesToBlockInfos(routingHashes);
+  const uint32_t promptTokens =
+      domain::prefix_cache::BlockMatcher::blocksToTokens(blockInfos.size());
 
   auto acquired = sessionManager->tryAcquireByPrefixHash(blockInfos, nullptr);
 
@@ -796,6 +800,8 @@ void DisaggregationService::resolvePrefillSession(
         "sessionId={} slotId={} matchedTokens={}",
         request->task_id, acquired->sessionId, acquired->slotId,
         acquired->numberOfMatchedTokens);
+    tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(
+        promptTokens, acquired->numberOfMatchedTokens);
     request->prefillSlotId = acquired->slotId;
     // Record the acquired session so the prefill completion can release its
     // in-flight hold (see clearInFlight below).
@@ -834,6 +840,8 @@ void DisaggregationService::resolvePrefillSession(
         "[DisaggregationService] Prefill prefix cache MISS taskId={} "
         "hashes={}, creating new session",
         request->task_id, routingHashes.size());
+
+    tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(promptTokens, 0u);
 
     sessionManager->createSession(
         [this, request, infos = std::move(blockInfos), sm = sessionManager,

@@ -112,13 +112,14 @@ void LLMPipeline::resolveSession(
   opts.responseId = req->responseId;
   opts.cancelFn = std::move(cancelFn);
 
+  const uint32_t promptTokens = static_cast<uint32_t>(tokens->size());
   sessionManager_->getSlot(
       *tokens, std::move(opts), loop,
       // onResolved callback
-      [req, onResolved, mgr = sessionManager_](SlotAcquireResult result) {
-        // Track metrics
+      [req, onResolved, mgr = sessionManager_,
+       promptTokens](SlotAcquireResult result) {
         tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(
-            !result.isNewSession);
+            promptTokens, result.isNewSession ? 0u : result.matchedTokens);
 
         TT_LOG_INFO(
             "[LLMPipeline] Slot acquired taskId={} sessionId={} slotId={} "

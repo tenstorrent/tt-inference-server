@@ -108,18 +108,21 @@ class ServerMetrics {
   void onHttpResponse(const std::string& method, int statusCode);
 
   /**
-   * Record one prefix-cache lookup attempt. Called once per request that
-   * enters the hash-based prefix cache routing path (i.e. has a prior
-   * [assistant, user] turn pair).
+   * Record one prefix-cache lookup on a per-token basis. Called once per request that enters
+   * the hash-based prefix cache routing path, on every worker role
+   * (prefill, decode, or aggregated).
    *
-   * `hit` is true if an existing session matching the lookup hash was
-   * acquired and its KV cache reused; false if the lookup missed and a new
-   * session had to be allocated.
+   * `promptTokens` is the request's full (block-aligned) prompt length and
+   * increments the queries denominator; `matchedTokens` is how many of
+   * those tokens were already cached and reused, incrementing the hits
+   * numerator (0 on a miss). Hit rate is then
+   * `rate(hits) / rate(queries)` — a continuous per-token measure rather
+   * than the old whole-prompt hit/miss.
    *
-   * Writes directly to the counter; lookup rate is request-level, not
-   * token-level, so queueing would be unnecessary overhead.
+   * Writes directly to the counters (two Increments per request, not per
+   * token), so queueing would be unnecessary overhead.
    */
-  void onPrefixCacheLookup(bool hit);
+  void onPrefixCacheLookup(uint32_t promptTokens, uint32_t matchedTokens);
 
   /** Render the full registry in Prometheus text exposition format. */
   std::string renderText() const;
