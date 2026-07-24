@@ -279,12 +279,17 @@ def test_diffusiongemma_dev_spec_enables_upfront_early_halt_and_thinking():
 
     env = spec.device_model_spec.env_vars
     assert env["DG_UPFRONT_CAPTURE"] == "1"
-    assert env["DG_DENOISE_REVEAL_MASK"] == "1"
     assert env["DG_DENOISE_REVEAL_PMAX"] == "8192"
-    assert env["DG_DENOISE_LAZY_CAPTURE"] == "0"
-    assert env["DG_DENOISE_EARLY_HALT"] == "1"
-    assert env["DG_DENOISE_EARLY_HALT_WINDOW"] == "1"
+    assert env["DG_VLLM_GUMBEL_MODE"] == "host"
     assert env["DG_TRACE_REGION_SIZE"] == "12884901888"
+    for removed in (
+        "DG_VLLM_TRACE",
+        "DG_DENOISE_REVEAL_MASK",
+        "DG_DENOISE_LAZY_CAPTURE",
+        "DG_DENOISE_EARLY_HALT",
+        "DG_DENOISE_EARLY_HALT_WINDOW",
+    ):
+        assert removed not in env
     assert env["DG_UPFRONT_PREFILL_WARMUP_LENS"] == (
         "128,160,192,224,256,288,320,352,384,416,448,480,"
         "512,544,608,672,832,2432"
