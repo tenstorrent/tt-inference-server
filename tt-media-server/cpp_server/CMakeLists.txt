@@ -1258,6 +1258,7 @@ set(INTEGRATION_TEST_COMMON_SOURCES
     src/services/session_manager.cpp
     src/services/prefix_cache_router.cpp
     src/services/session_resolution.cpp
+    src/services/decode_slot_reservation.cpp
     src/services/memory_services/memory_manager.cpp
     src/domain/session.cpp
     src/domain/prefix_cache/prefix_index.cpp
@@ -1296,6 +1297,7 @@ set(INTEGRATION_TEST_COMMON_SOURCES
     src/services/disaggregation_contract_mapping.cpp
     src/services/disaggregation_service.cpp
     src/services/llm_pipeline.cpp
+    src/dynamo/etcd_client.cpp
     src/sockets/inter_server_service.cpp
     src/sockets/socket_manager.cpp
     src/sockets/zmq_socket_transport.cpp
@@ -1762,6 +1764,7 @@ set(SOURCES
     src/services/session_manager.cpp
     src/services/prefix_cache_router.cpp
     src/services/session_resolution.cpp
+    src/services/decode_slot_reservation.cpp
     src/domain/session.cpp
     src/runtime/worker/single_process_worker.cpp
     src/runtime/worker/worker_manager.cpp
