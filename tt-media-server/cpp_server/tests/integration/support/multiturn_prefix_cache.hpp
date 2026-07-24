@@ -16,6 +16,9 @@
 // the Dynamo frontend tokenizes Kimi). So Kimi's think-marker condition is
 // reproduced under the DeepSeek tokenizer by feeding <think>…</think> tags in
 // the assistant history rather than by running a Kimi-tokenized binary.
+//
+// All requests are routed through the external Dynamo frontend. Tests must have
+// Dynamo running: cd dynamo_frontend && ./deploy.sh --local-build
 
 #pragma once
 
@@ -23,12 +26,10 @@
 
 #include <cstdint>
 #include <future>
-#include <optional>
 #include <string>
 #include <vector>
 
-#include "../../support/chat_request.hpp"
-#include "../../support/http_client.hpp"
+#include "../../support/dynamo_test_fixture.hpp"
 #include "../../support/worker_response.hpp"
 #include "test_server.hpp"
 
@@ -54,21 +55,25 @@ namespace tt::test {
 // Each user message must be long enough to add at least one full block, and the
 // generated token (42) must differ from the first fed-back assistant token so
 // the seed session and the next prompt diverge right after the prior prompt.
+//
+// Requests are routed through the Dynamo frontend using the provided config.
 inline void verifyMultiTurnPrefixGrowth(
     TestServer& server, const std::vector<std::string>& userMessages,
-    const std::string& assistantReply, uint32_t blockSize) {
+    const std::string& assistantReply, uint32_t blockSize,
+    const DynamoConfig& dynamoConfig) {
   ASSERT_GE(userMessages.size(), 2u)
       << "need at least an opener plus one follow-up";
 
   ChatRequest convo;
+  convo.model(dynamoConfig.model);
   uint32_t prevKvPos = 0;
   bool havePrev = false;
 
   for (size_t turn = 0; turn < userMessages.size(); ++turn) {
     convo.user(userMessages[turn]).maxTokens(1).stream();
     const std::string body = convo.toJson();
-    auto future = std::async(std::launch::async, [&server, body] {
-      return sendAndReceive(server.host(), server.port(), body);
+    auto future = std::async(std::launch::async, [&dynamoConfig, body] {
+      return sendDynamoRequest(dynamoConfig, body, /*timeoutMs=*/30000);
     });
 
     auto seq = server.taskQueue().receive();

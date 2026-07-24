@@ -239,6 +239,28 @@ void DynamoWorkerServer::start() {
   }
 }
 
+void DynamoWorkerServer::abandon() {
+  if (!running_.exchange(false)) {
+    return;
+  }
+
+  TT_LOG_INFO("[DynamoWorkerServer] Abandoning (test teardown)");
+  if (server_) {
+    server_->shutdown();
+  }
+  if (discovery_) {
+    discovery_->unregisterSelf();
+  }
+  if (keepalive_thread_.joinable()) {
+    keepalive_thread_.join();
+  }
+  // In-flight Dynamo call-home streams can block loop_pool destruction;
+  // the test process exits immediately after this.
+  server_.release();
+  loop_pool_.release();
+  discovery_.reset();
+}
+
 void DynamoWorkerServer::stop() {
   if (!running_.exchange(false)) {
     return;

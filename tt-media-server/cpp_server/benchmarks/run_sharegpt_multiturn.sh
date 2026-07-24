@@ -96,8 +96,8 @@ while [[ $# -gt 0 ]]; do
 done
 
 if ! command -v guidellm >/dev/null 2>&1; then
-    echo "error: 'guidellm' not found in PATH. Activate the venv that has it" >&2
-    echo "       (e.g. tt-media-server/cpp_server/.venv) or pip install guidellm." >&2
+    echo "error: 'guidellm' not found in PATH. Activate cpp_server/.venv" >&2
+    echo "       (source .venv/bin/activate) or pip install 'guidellm>=0.7'." >&2
     exit 127
 fi
 
@@ -163,6 +163,33 @@ mkdir -p "${OUTPUT_DIR}"
 RUN_TS="$(date +%Y%m%d-%H%M%S)"
 RESULT_FILE="${OUTPUT_DIR}/benchmark_${RUN_TS}.json"
 
+SCENARIO_FILE="${OUTPUT_DIR}/scenario_${RUN_TS}.json"
+# guidellm 0.7: scenario file (CLI changed from `guidellm benchmark run`).
+python3 - "${SCENARIO_FILE}" "${TARGET}" "${MODEL}" "${API_KEY}" \
+    "${CACHE_FILE}" "${CONCURRENCY}" "${DURATION_SECONDS}" "${RESULT_FILE}" <<'PY'
+import json, sys
+(
+    scenario_file, target, model, api_key, cache_file,
+    concurrency, duration_seconds, result_file,
+) = sys.argv[1:]
+spec = {
+    "backend": {
+        "kind": "openai_http",
+        "target": target,
+        "model": model,
+        "api_key": api_key,
+        "request_format": "/v1/chat/completions",
+    },
+    "profile": {"kind": "concurrent", "streams": [int(concurrency)]},
+    "constraints": [{"kind": "max_duration", "seconds": float(duration_seconds)}],
+    "data": [{"kind": "json_file", "path": cache_file}],
+    "outputs": [{"kind": "json", "path": result_file}],
+}
+with open(scenario_file, "w", encoding="utf-8") as f:
+    json.dump({"spec": spec}, f, indent=2)
+    f.write("\n")
+PY
+
 echo "=== ShareGPT multi-turn benchmark (guidellm) ==="
 echo "target           : ${TARGET}"
 echo "model            : ${MODEL}"
@@ -172,19 +199,11 @@ echo "dataset          : ${DATASET_ID}/${DATASET_FILE}"
 echo "turns range      : [${MIN_TURNS}, ${MAX_TURNS}]"
 echo "max_output_tokens: ${MAX_OUTPUT_TOKENS} per turn"
 echo "data cache       : ${CACHE_FILE}"
+echo "scenario         : ${SCENARIO_FILE}"
 echo "result file      : ${RESULT_FILE}"
 echo ""
 
-guidellm benchmark run \
-    --target "${TARGET}" \
-    --model "${MODEL}" \
-    --request-format /v1/chat/completions \
-    --data "${CACHE_FILE}" \
-    --profile concurrent \
-    --rate "${CONCURRENCY}" \
-    --max-seconds "${DURATION_SECONDS}" \
-    --backend-kwargs "{\"api_key\":\"${API_KEY}\"}" \
-    --output-path "${RESULT_FILE}"
+guidellm run --scenario "${SCENARIO_FILE}"
 
 echo ""
 echo "Done. Result: ${RESULT_FILE}"
