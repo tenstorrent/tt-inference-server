@@ -1108,7 +1108,8 @@ templates:
     - google/gemma-4-31B-it
   version: "0.18.0"
   tt_metal_commit: "c49bb76"
-  vllm_commit: "6b4a3a7"
+  # tenstorrent/vllm#448 token-chunked prefill (pin until merge to dev).
+  vllm_commit: "2593865"
   impl: tt_transformers
   # Dev specs omit tt_metal_commit/vllm_commit (base ModelSpecTemplate rejects
   # them; only prod specs carry commits). The image is supplied at runtime via
@@ -1116,14 +1117,9 @@ templates:
   inference_engine: VLLM
   device_model_specs:
     - device: P300X2  # QB2 (2x P300, 4-chip TP mesh)
-      max_concurrency: 1
-      # Hybrid-off DRAM ceiling on QB2: with hybrid KV groups disabled every one
-      # of the 60 layers allocates a full-length KV buffer, so the largest pool
-      # that fits in DRAM (and leaves prefill scratch headroom) is ~49K, not 131K.
-      # Drives max_model_len + max_num_batched_tokens; the matching KV-pool size is
-      # set via GEMMA4_MAX_TOKENS_ALL_USERS below. Servable prompt tops out at the
-      # 32768 power-of-2 prefill bucket (next bucket, 65536, exceeds this pool).
-      max_context: 49152  # 48 * 1024
+      max_concurrency: 32
+      # 256k serve: metal auto-bounds at ≥64k; chunk 2048 @ ≥128k bounded.
+      max_context: 262144  # 256 * 1024
       default_impl: true
       env_vars:
         # QB2's 4 Blackhole chips are driven as a P150x4 (1,4) mesh — matches the
@@ -1131,15 +1127,18 @@ templates:
         # laid the TP collectives over the wrong fabric links and corrupted decode
         # logits; the default p150_x4 descriptor (selected from MESH_DEVICE) is correct.
         MESH_DEVICE: "P150x4"
+        GEMMA4_CCL_TOPOLOGY: "linear"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
-        # Size the hybrid-off all-user KV pool to fit QB2 DRAM. The container
-        # sizes the pool from Gemma4ForCausalLM.get_max_tokens_all_users, which
-        # honors this env override (value kept here, gated by device + model,
-        # rather than hardcoded in tt-metal).
-        GEMMA4_MAX_TOKENS_ALL_USERS: "49152"
+        GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
+        # Do not set GEMMA4_GEN_PREFILL_CHUNK — metal resolve picks 2048 @ ≥128k bounded.
+        GEMMA4_VLLM_SINGLE_CHUNK: "0"
+        GEMMA4_DEMO_SINGLE_CHUNK: "0"
+        GEMMA4_CHUNKED_PREFILL_TRACE: "1"
+        DISABLE_METAL_OP_TIMEOUT: "1"
       override_tt_config:
         fabric_config: FABRIC_1D
-        trace_region_size: 200000000
+        # B=32 decode-trace: warmup ~270MB; live B=32 ~362MB; isl=1k B=28 ~420MB.
+        trace_region_size: 512000000
         # On-device decode sampling is required on the TP mesh so token ids
         # >= 65536 are reachable (host sampling only sees device 0's vocab shard).
         sample_on_device_mode: decode_only
@@ -1161,6 +1160,36 @@ templates:
         # --reasoning-parser separates the thought channel into reasoning_content.
         default-chat-template-kwargs: '{"enable_thinking": true}'
         reasoning-parser: gemma4
+        # Match metal 2048 chunk @ 256k bounded.
+        enable_chunked_prefill: true
+        max_num_batched_tokens: 2048
+        long_prefill_token_threshold: 2048
+    # LoudBox (8x P150). Metal policy: unbounded through 128k; auto-bounded at
+    # 256k. Default chunk 4096. Leave GEMMA4_GEN_PREFILL_CHUNK unset.
+    - device: P150X8
+      max_concurrency: 32
+      max_context: 262144  # 256 * 1024
+      default_impl: true
+      env_vars:
+        MESH_DEVICE: "P150x8"
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+        GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
+        GEMMA4_VLLM_SINGLE_CHUNK: "0"
+        GEMMA4_DEMO_SINGLE_CHUNK: "0"
+        GEMMA4_CHUNKED_PREFILL_TRACE: "1"
+        DISABLE_METAL_OP_TIMEOUT: "1"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 512000000
+        sample_on_device_mode: decode_only
+      vllm_args:
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: gemma4
+        enable_chunked_prefill: true
+        max_num_batched_tokens: 4096
+        long_prefill_token_threshold: 4096
   status: EXPERIMENTAL
   has_builtin_warmup: true
   env_vars:

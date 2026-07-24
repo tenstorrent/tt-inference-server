@@ -161,14 +161,13 @@ templates:
   inference_engine: VLLM
   device_model_specs:
     - device: P300X2  # QB2 (2x P300, 4-chip TP mesh)
-      max_concurrency: 1
-      # Hybrid-off DRAM ceiling on QB2: with hybrid KV groups disabled every one
-      # of the 60 layers allocates a full-length KV buffer, so the largest pool
-      # that fits in DRAM (and leaves prefill scratch headroom) is ~49K, not 131K.
-      # Drives max_model_len + max_num_batched_tokens; the matching KV-pool size is
-      # set via GEMMA4_MAX_TOKENS_ALL_USERS below. Servable prompt tops out at the
-      # 32768 power-of-2 prefill bucket (next bucket, 65536, exceeds this pool).
-      max_context: 49152  # 48 * 1024
+      # Decode batch ceiling is 32 (metal batch-32 demo). Prefill is still
+      # micro-batched ≤4 users inside the generator.
+      max_concurrency: 32
+      # 256k serve: metal auto-bounds at ≥64k; chunk policy:
+      #   default 4096; ISL≥128k + bounded → 2048 (coherency).
+      # Scheduler tokens must match the resolved metal chunk (2048 here).
+      max_context: 262144  # 256 * 1024
       default_impl: true
       env_vars:
         # QB2's 4 Blackhole chips are driven as a P150x4 (1,4) mesh — matches the
@@ -176,15 +175,19 @@ templates:
         # laid the TP collectives over the wrong fabric links and corrupted decode
         # logits; the default p150_x4 descriptor (selected from MESH_DEVICE) is correct.
         MESH_DEVICE: "P150x4"
+        GEMMA4_CCL_TOPOLOGY: "linear"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
-        # Size the hybrid-off all-user KV pool to fit QB2 DRAM. The container
-        # sizes the pool from Gemma4ForCausalLM.get_max_tokens_all_users, which
-        # honors this env override (value kept here, gated by device + model,
-        # rather than hardcoded in tt-metal).
-        GEMMA4_MAX_TOKENS_ALL_USERS: "49152"
+        GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
+        # Do not set GEMMA4_GEN_PREFILL_CHUNK — metal resolve picks 2048 @ ≥128k bounded.
+        GEMMA4_VLLM_SINGLE_CHUNK: "0"
+        GEMMA4_DEMO_SINGLE_CHUNK: "0"
+        # Trace middle-chunk (sp1) path for long-ISL multi-chunk replay.
+        GEMMA4_CHUNKED_PREFILL_TRACE: "1"
+        DISABLE_METAL_OP_TIMEOUT: "1"
       override_tt_config:
         fabric_config: FABRIC_1D
-        trace_region_size: 200000000
+        # B=32 decode-trace: warmup ~270MB; live B=32 ~362MB; isl=1k B=28 ~420MB.
+        trace_region_size: 512000000
         # On-device decode sampling is required on the TP mesh so token ids
         # >= 65536 are reachable (host sampling only sees device 0's vocab shard).
         sample_on_device_mode: decode_only
@@ -206,6 +209,41 @@ templates:
         # --reasoning-parser separates the thought channel into reasoning_content.
         default-chat-template-kwargs: '{"enable_thinking": true}'
         reasoning-parser: gemma4
+        # Token-chunked prefill (tenstorrent/vllm#448). Match metal 2048 @ 256k.
+        enable_chunked_prefill: true
+        max_num_batched_tokens: 2048
+        long_prefill_token_threshold: 2048
+    # LoudBox (8x P150). Metal policy: unbounded through 128k; auto-bounded at
+    # 256k for DRAM. Prefill chunk default 4096 (no QB2-style 2048 tier).
+    # Leave GEMMA4_GEN_PREFILL_CHUNK unset. B=32 needs ≥512MB trace region;
+    # disable 5s metal op timeout for long ISL.
+    - device: P150X8
+      max_concurrency: 32
+      max_context: 262144  # 256 * 1024
+      default_impl: true
+      env_vars:
+        MESH_DEVICE: "P150x8"
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+        GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
+        GEMMA4_VLLM_SINGLE_CHUNK: "0"
+        # Explicitly clear demo single-chunk so a polluted parent shell cannot
+        # force full-ISL warmup (hangs at 128k/256k on LB).
+        GEMMA4_DEMO_SINGLE_CHUNK: "0"
+        GEMMA4_CHUNKED_PREFILL_TRACE: "1"
+        DISABLE_METAL_OP_TIMEOUT: "1"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 512000000
+        sample_on_device_mode: decode_only
+      vllm_args:
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: gemma4
+        # Token-chunked prefill (tenstorrent/vllm#448). Match metal default chunk.
+        enable_chunked_prefill: true
+        max_num_batched_tokens: 4096
+        long_prefill_token_threshold: 4096
     # GPU (H100 NVL) bring-your-own vLLM server (see docs/gpu_workflows.md); used
     # to collect GPU reference eval scores for GPQA-Diamond, Terminal-Bench 2.0,
     # and SWE-Bench Verified. Dev-only; no tt_metal_commit/version pin needed
@@ -234,18 +272,9 @@ templates:
   inference_engine: VLLM
   device_model_specs:
     - device: P300X2  # QB2 (2x P300, 4-chip TP mesh)
-      max_concurrency: 1
-      # 12B (unlike 31B) is NOT pool-capped: hybrid-off, its ~131K all-user KV
-      # pool fits QB2 DRAM, so no GEMMA4_MAX_TOKENS_ALL_USERS override is set and
-      # the pool == the largest prefill bucket (131072). That means the
-      # page-table "negative dimension" fault (which bites 31B because its 49152
-      # pool is smaller than the 65536 bucket) cannot occur here — every prefill
-      # bucket <= 131072 fits. The pool must also stay this large to leave block
-      # headroom for decode above a 64K-input (65536-bucket) prompt. The only
-      # real limit is the >64K eager-prefill fabric hang (tt-metal#48289), which
-      # is guarded at the eval layer (max_input_tokens = 64K, pads to the 65536
-      # bucket — the largest validated one). Hence max_context stays 131072
-      # rather than a hard 65536 cap, which would zero out decode room at 64K in.
+      max_concurrency: 32
+      # 12B hybrid-off ~131K all-user KV pool fits QB2 DRAM. Server: full-ISL
+      # single-chunk only (GEMMA4_VLLM_SINGLE_CHUNK=1).
       max_context: 131072  # 128 * 1024
       default_impl: true
       env_vars:
@@ -254,7 +283,10 @@ templates:
         # laid the TP collectives over the wrong fabric links and corrupted decode
         # logits; the default p150_x4 descriptor (selected from MESH_DEVICE) is correct.
         MESH_DEVICE: "P150x4"
+        GEMMA4_CCL_TOPOLOGY: "linear"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
+        GEMMA4_MAX_TOKENS_ALL_USERS: "131072"
+        GEMMA4_VLLM_SINGLE_CHUNK: "1"
       override_tt_config:
         fabric_config: FABRIC_1D
         trace_region_size: 100000000  # match vLLM nightly QB2 Gemma4-12B entry
@@ -275,6 +307,27 @@ templates:
         # tenstorrent/tt-inference-server#4331) get the reasoning channel the
         # chat template otherwise suppresses (gemma-4 scores ~10pts lower w/o it).
         # --reasoning-parser separates the thought channel into reasoning_content.
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: gemma4
+    # LoudBox: metal isl_sweep unbounded through 256k PASS for 12B. Server is
+    # full-ISL single-chunk only — keep 128k until single-chunk 256k is revalidated
+    # under vLLM (prefill scratch + hybrid-off pool).
+    - device: P150X8
+      max_concurrency: 32
+      max_context: 131072  # 128 * 1024
+      default_impl: true
+      env_vars:
+        MESH_DEVICE: "P150x8"
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+        GEMMA4_MAX_TOKENS_ALL_USERS: "131072"
+        GEMMA4_VLLM_SINGLE_CHUNK: "1"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 100000000
+        sample_on_device_mode: decode_only
+      vllm_args:
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
         default-chat-template-kwargs: '{"enable_thinking": true}'
         reasoning-parser: gemma4
     # GPU (H100 NVL) bring-your-own vLLM server (see docs/gpu_workflows.md); used
