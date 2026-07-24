@@ -142,6 +142,10 @@ TEST_F(MainIntegrationTest, HappyPath_RequestToMemoryToTaskToResponse) {
   ASSERT_NE(seq, nullptr);
   EXPECT_GT(seq->getNumPromptTokens(), 0u);
   EXPECT_FALSE(seq->isContinuation());
+  ASSERT_TRUE(seq->getKVPositionId().has_value())
+      << "new session must set kv_position_id (first free KV index)";
+  EXPECT_EQ(*seq->getKVPositionId(), 0u)
+      << "new session first free KV index must be 0";
 
   // 5. Mock the worker: one token, then FINAL.
   tt::test::WorkerResponse(seq->taskId)
@@ -346,7 +350,8 @@ TEST_F(MainIntegrationTest, MultiTurn_MatchedTokensEqualPriorPromptBlocks) {
     if (turn == 0) {
       // First turn: fresh allocation, nothing to match.
       EXPECT_FALSE(seq->isContinuation()) << "turn 0 must allocate";
-      EXPECT_FALSE(seq->getKVPositionId().has_value()) << "turn 0";
+      ASSERT_TRUE(seq->getKVPositionId().has_value()) << "turn 0";
+      EXPECT_EQ(*seq->getKVPositionId(), 0u) << "turn 0 first free KV index";
       priorFullPrompt = seq->getNumPromptTokens();
       ASSERT_GE(priorFullPrompt, kBlock)
           << "opener must form at least one block";
