@@ -286,6 +286,7 @@ class TestParseServerMetrics:
         assert out["prefix_cache_hit_rate"] is None
         assert out["prefix_cache_hits_delta"] is None
 
+
 class TestParseServerMetricsByRole:
     def test_role_split_prefill_vs_decode(self, tmp_path):
         """Prefill and decode get their own denominators, never blended."""
