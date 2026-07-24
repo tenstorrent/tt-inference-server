@@ -11,11 +11,11 @@
 
 import shutil
 import subprocess
-from pathlib import Path
-
 import pytest
 
-CHART = Path(__file__).resolve().parents[2] / "charts" / "tt-inference-server"
+from workflows.utils import get_repo_root_path
+
+CHART = get_repo_root_path() / "charts" / "tt-inference-server"
 
 pytestmark = pytest.mark.skipif(
     shutil.which("helm") is None, reason="helm CLI not available"

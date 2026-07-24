@@ -148,6 +148,15 @@ KvMigrationReceiverServer::KvMigrationReceiverServer(
     std::vector<uint8_t> localTableBlob,
     std::chrono::milliseconds receiveTimeout,
     std::chrono::milliseconds pollInterval)
+    : KvMigrationReceiverServer(port, std::move(factory), &receiver,
+                                std::move(localTableBlob), receiveTimeout,
+                                pollInterval) {}
+
+KvMigrationReceiverServer::KvMigrationReceiverServer(
+    uint16_t port, ServerTransportFactory factory, MooncakeKvReceiver* receiver,
+    std::vector<uint8_t> localTableBlob,
+    std::chrono::milliseconds receiveTimeout,
+    std::chrono::milliseconds pollInterval)
     : port_(port),
       factory_(std::move(factory)),
       receiver_(receiver),

@@ -27,14 +27,17 @@
 #   initiates (prefill = sender).
 #
 # Required env (all roles): WORKER_ROLE, WORKER_BIN, METADATA, WORKER_TAG,
-#   HEALTH_PORT, DECODE_TABLE.
-# Prefill also needs: PREFILL_TABLE, and a non-empty PEERS.
-# Optional: PEERS (see above), KAFKA_BROKERS, KAFKA_GROUP_ID, MC_TCP_BIND_ADDRESS
+#   HEALTH_PORT.
+# Decode also needs DECODE_TABLE. Prefill needs PREFILL_TABLE and non-empty
+#   PEERS; DECODE_TABLE is an optional disk fallback to control TABLE_EXCHANGE.
+# Optional: PEERS (see above), KAFKA_BROKERS, KAFKA_GROUP_ID,
+#   KV_MIGRATION_MODE (device|dry-run; applies to both roles),
+#   MC_TCP_BIND_ADDRESS
 #   (unset/"auto" => detect this host's routable IP so peers can reach it),
 #   CONTROL_PORT (KV control port a decode binds + publishes to metadata;
-#   defaults to the worker's own default when unset), DEVICE_MAP (a <tag>.`devma`p
-#   file; omit for discovery-only e2e with no transfer — the worker then falls
-#   back to its placeholder chip mapping).
+#   defaults to the worker's own default when unset), DEVICE_MAP (legacy file
+#   fallback), ENGINE_HANDOFF_PORT (listen for DeviceMap over localhost; preferred
+#   when deploy pushes via engine_handoff_sender). Omit both for discovery-only.
 set -euo pipefail
 
 die() { echo "ERROR: $*" >&2; exit 2; }
@@ -44,7 +47,6 @@ die() { echo "ERROR: $*" >&2; exit 2; }
 : "${METADATA:?METADATA required}"
 : "${WORKER_TAG:?WORKER_TAG required}"
 : "${HEALTH_PORT:?HEALTH_PORT required}"
-: "${DECODE_TABLE:?DECODE_TABLE required}"
 
 # Cross-host deployment: advertise the IP peers can reach us on, never a
 # loopback. Only unset/"auto" is resolved here; a concrete value (e.g. a local
@@ -67,10 +69,13 @@ control_args=()
 [[ -n "${CONTROL_PORT:-}" ]] && control_args=(--control-port "${CONTROL_PORT}")
 peer_control_args=()
 [[ -n "${CONTROL_PORT:-}" ]] && peer_control_args=(--peer-control-port "${CONTROL_PORT}")
-# Transfer-plane only: without a devmap the worker uses its placeholder chip
-# mapping, which is enough to register + be discovered but NOT to move KV.
+# Transfer-plane: socket DeviceMap (deploy pushes after start) wins over file.
 device_args=()
-[[ -n "${DEVICE_MAP:-}" ]] && device_args=(--device-map "${DEVICE_MAP}")
+if [[ -n "${ENGINE_HANDOFF_PORT:-}" && "${ENGINE_HANDOFF_PORT}" != "0" ]]; then
+  device_args=(--engine-handoff-port "${ENGINE_HANDOFF_PORT}")
+elif [[ -n "${DEVICE_MAP:-}" ]]; then
+  device_args=(--device-map "${DEVICE_MAP}")
+fi
 
 # Peers are a GENERIC per-worker input (PEERS = CSV of peer tags), independent of
 # role: a worker is just a migration worker with a peer list, resolved through
@@ -87,6 +92,7 @@ done
 
 case "${WORKER_ROLE}" in
   decode)
+    : "${DECODE_TABLE:?DECODE_TABLE required for decode}"
     # Receiver: registers KV mirror + serves control (TABLE_EXCHANGE reply +
     # migrate). Prefill initiates; decode does not. No Kafka.
     exec "${WORKER_BIN}" \
@@ -101,6 +107,8 @@ case "${WORKER_ROLE}" in
     ;;
   prefill)
     : "${PREFILL_TABLE:?PREFILL_TABLE required for prefill}"
+    decode_table_args=()
+    [[ -n "${DECODE_TABLE:-}" ]] && decode_table_args=(--decode-table "${DECODE_TABLE}")
     # The sender needs a control channel to every peer it might route to.
     (( ${#peer_args[@]} > 0 )) || die "prefill has no peers (PEERS empty)"
     # One consumer group per prefill so every prefill sees each request (Kafka
@@ -109,7 +117,8 @@ case "${WORKER_ROLE}" in
     exec "${WORKER_BIN}" \
       --role "${WORKER_ROLE}" \
       --metadata "${METADATA}" --name "${WORKER_TAG}" --host "${WORKER_TAG}" \
-      --prefill-table "${PREFILL_TABLE}" --decode-table "${DECODE_TABLE}" \
+      --prefill-table "${PREFILL_TABLE}" \
+      ${decode_table_args[@]+"${decode_table_args[@]}"} \
       "${peer_args[@]}" \
       ${peer_control_args[@]+"${peer_control_args[@]}"} \
       ${device_args[@]+"${device_args[@]}"} \

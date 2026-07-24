@@ -601,6 +601,6 @@ Key concepts:
 - **RuntimeConfig**: Captures all CLI/runtime state (workflow, service port, Docker flags, overrides) separately from the static model definition. Created via `RuntimeConfig.from_args()` and applied to the model spec via `model_spec.apply_overrides(runtime_config)`.
 - **model_spec.json**: Exported at `run.py` startup from `MODEL_SPECS` and bundled into Docker images. The container interface uses this catalog to resolve a model spec from `--model` + `--tt-device` without needing `run.py`.
 
-Performance targets for each model-hardware combination are defined in `benchmarking/benchmark_targets/model_performance_reference.json`. The key is the default-impl `ModelSpec`'s first model weights name (e.g. `Llama-3.3-70B`), which uniquely defines targets for all weight variants of the same architecture. Targets can be added directly to a specific `ModelSpec` for additional comparison points.
+Performance targets for each model-hardware combination are defined in `reference_config/benchmarking/benchmark_targets/model_performance_reference.json`. The key is the default-impl `ModelSpec`'s first model weights name (e.g. `Llama-3.3-70B`), which uniquely defines targets for all weight variants of the same architecture. Targets can be added directly to a specific `ModelSpec` for additional comparison points.
 
 Evaluation targets are defined per model weights because they depend on model output, not on the implementation or hardware.
