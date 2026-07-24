@@ -842,7 +842,8 @@ void DisaggregationService::resolvePrefillSession(
         request->task_id, routingHashes.size());
 
     // A slot copy still reuses copyMatchedTokens of KV cache, so credit those
-    // as hits (0 when no copy happened) rather than always reporting a full miss 
+    // as hits (0 when no copy happened) rather than always reporting a full
+    // miss
     tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(
         promptTokens, copyMatchedTokens);
 
