@@ -375,7 +375,7 @@ templates:
     - device: P300X2
       max_concurrency: 1
       max_context: 262144
-      default_impl: true
+      default_impl: false
       env_vars:
         TT_QWEN35_TEXT_VER: qwen36_blackhole
         HF_MODEL: Qwen/Qwen3.6-27B
@@ -410,7 +410,7 @@ templates:
       max_concurrency: 8
       max_context: 262144
       max_tokens_all_users_override: 525312
-      default_impl: false
+      default_impl: true
       env_vars:
         TT_QWEN35_TEXT_VER: qwen36_blackhole
         HF_MODEL: Qwen/Qwen3.6-27B
