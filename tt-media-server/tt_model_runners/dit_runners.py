@@ -423,7 +423,10 @@ def _wan22_dit_device_params(mesh_shape: tuple) -> dict:
 
     if is_large_mesh(mesh_shape) and is_blackhole():
         device_params["trace_region_size"] = WAN22_GALAXY_BH_TRACE_REGION_BYTES
-        device_params["fabric_router_config"] = _wan22_galaxy_router_config()
+        # Do NOT cap the fabric router packet payload (was _wan22_galaxy_router_config(),
+        # max_packet_payload_size_bytes=8192). The 8192B cap corrupts the multi-host
+        # all-gather packetization and produces horizontal garbage bands on I2V 4x32.
+        # Library-default payload gathers correctly. See fabric-payload band RCA.
 
     return device_params
 
@@ -502,9 +505,11 @@ def _prodia_wan_device_params(device_mesh_shape) -> dict:
     mesh_size = device_mesh_shape[0] * device_mesh_shape[1]
     if mesh_size >= 32 and is_blackhole():
         device_params["trace_region_size"] = 150_000_000
-        config = ttnn.FabricRouterConfig()
-        config.max_packet_payload_size_bytes = 8192
-        device_params["fabric_router_config"] = config
+        # Do NOT cap the fabric router packet payload (was max_packet_payload_size_bytes=8192).
+        # An 8192B cap shrinks the multi-host all-gather's per-packet page batching and
+        # mis-assembles the inter-host decode output → horizontal garbage bands on I2V 4x32.
+        # Confirmed by bisection: 8192 cap => banded; library-default payload => clean
+        # (necessary+sufficient, independent of reliability_mode). See fabric-payload band RCA.
     return device_params
 
 
