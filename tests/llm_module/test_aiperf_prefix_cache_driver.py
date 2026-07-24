@@ -23,6 +23,7 @@ from llm_module.drivers.aiperf_prefix_cache import (
     _build_aiperf_cmd,
     _normalize_metrics_url,
     _parse_server_metrics_for_prefix_cache,
+    _split_role_and_url,
 )
 from llm_module.prefix_cache import PrefixCacheRun
 
@@ -148,6 +149,44 @@ class TestBuildAiperfCmd:
         assert "--goodput" not in cmd
 
 
+class TestSplitRoleAndUrl:
+    def test_prefill_role_is_peeled_off(self):
+        assert _split_role_and_url("prefill=worker0:9091") == (
+            "prefill",
+            "worker0:9091",
+        )
+
+    def test_decode_role_case_insensitive(self):
+        assert _split_role_and_url("DECODE=http://w:9091/metrics") == (
+            "decode",
+            "http://w:9091/metrics",
+        )
+
+    def test_bare_host_port_has_no_role(self):
+        assert _split_role_and_url("worker0:9091") == ("", "worker0:9091")
+
+    def test_full_url_has_no_role(self):
+        assert _split_role_and_url("http://worker0:9091/metrics") == (
+            "",
+            "http://worker0:9091/metrics",
+        )
+
+    def test_unknown_prefix_is_not_a_role(self):
+        # A non-role token before ``=`` (e.g. a query string) stays part of
+        # the URL, not misread as a role.
+        assert _split_role_and_url("http://w:9091/metrics?foo=bar") == (
+            "",
+            "http://w:9091/metrics?foo=bar",
+        )
+
+    def test_role_url_normalizes_to_match_scrape_endpoint(self):
+        # The role map key must line up with the endpoint_url AIPerf stamps,
+        # which is the normalized URL. Prove the round-trip matches.
+        role, url = _split_role_and_url("prefill=worker0:9091")
+        assert role == "prefill"
+        assert _normalize_metrics_url(url) == "http://worker0:9091/metrics"
+
+
 def _write_jsonl(path: Path, lines: list) -> None:
     with open(path, "w", encoding="utf-8") as f:
         for obj in lines:
@@ -246,3 +285,164 @@ class TestParseServerMetrics:
         out = _parse_server_metrics_for_prefix_cache(tmp_path)
         assert out["prefix_cache_hit_rate"] is None
         assert out["prefix_cache_hits_delta"] is None
+
+class TestParseServerMetricsByRole:
+    def test_role_split_prefill_vs_decode(self, tmp_path):
+        """Prefill and decode get their own denominators, never blended."""
+        jsonl = tmp_path / "server_metrics_export.jsonl"
+        prefill = _normalize_metrics_url("worker-prefill:9091")
+        decode = _normalize_metrics_url("worker-decode:9091")
+        _write_jsonl(
+            jsonl,
+            [
+                # Baselines (first snapshot per endpoint).
+                {
+                    "endpoint_url": prefill,
+                    "metrics": {
+                        "tt_prefix_cache_hits_total": [{"value": 0.0}],
+                        "tt_prefix_cache_queries_total": [{"value": 0.0}],
+                    },
+                },
+                {
+                    "endpoint_url": decode,
+                    "metrics": {
+                        "tt_prefix_cache_hits_total": [{"value": 0.0}],
+                        "tt_prefix_cache_queries_total": [{"value": 0.0}],
+                    },
+                },
+                # Finals: prefill matched 200/1000 prompt tokens -> 0.2;
+                # decode matched 900/1000 prompt tokens -> 0.9.
+                {
+                    "endpoint_url": prefill,
+                    "metrics": {
+                        "tt_prefix_cache_hits_total": [{"value": 200.0}],
+                        "tt_prefix_cache_queries_total": [{"value": 1000.0}],
+                    },
+                },
+                {
+                    "endpoint_url": decode,
+                    "metrics": {
+                        "tt_prefix_cache_hits_total": [{"value": 900.0}],
+                        "tt_prefix_cache_queries_total": [{"value": 1000.0}],
+                    },
+                },
+            ],
+        )
+        endpoint_roles = {prefill: "prefill", decode: "decode"}
+        out = _parse_server_metrics_for_prefix_cache(
+            tmp_path, endpoint_roles=endpoint_roles
+        )
+
+        assert out["prefix_cache_hits_delta_prefill"] == 200.0
+        assert out["prefix_cache_queries_delta_prefill"] == 1000.0
+        assert out["prefix_cache_hit_rate_prefill"] == 0.2
+
+        assert out["prefix_cache_hits_delta_decode"] == 900.0
+        assert out["prefix_cache_queries_delta_decode"] == 1000.0
+        assert out["prefix_cache_hit_rate_decode"] == 0.9
+
+        # The role-blind blend (1100 / 2000 = 0.55) is exactly the bug this
+        # fix removes: neither role rate may collapse to it.
+        blended = (200.0 + 900.0) / (1000.0 + 1000.0)
+        assert out["prefix_cache_hit_rate_prefill"] != blended
+        assert out["prefix_cache_hit_rate_decode"] != blended
+
+    def test_no_roles_preserves_legacy_combined_rate(self, tmp_path):
+        """No roles supplied (every current caller, aggregated/``regular``
+        deployments): identical to today — all endpoints sum into the single
+        ``prefix_cache_hit_rate``. The per-role keys exist but are null."""
+        jsonl = tmp_path / "server_metrics_export.jsonl"
+        a = "http://worker-a:9000/metrics"
+        b = "http://worker-b:9000/metrics"
+        _write_jsonl(
+            jsonl,
+            [
+                {
+                    "endpoint_url": a,
+                    "metrics": {
+                        "tt_prefix_cache_hits_total": [{"value": 0.0}],
+                        "tt_prefix_cache_queries_total": [{"value": 0.0}],
+                    },
+                },
+                {
+                    "endpoint_url": b,
+                    "metrics": {
+                        "tt_prefix_cache_hits_total": [{"value": 0.0}],
+                        "tt_prefix_cache_queries_total": [{"value": 0.0}],
+                    },
+                },
+                {
+                    "endpoint_url": a,
+                    "metrics": {
+                        "tt_prefix_cache_hits_total": [{"value": 30.0}],
+                        "tt_prefix_cache_queries_total": [{"value": 50.0}],
+                    },
+                },
+                {
+                    "endpoint_url": b,
+                    "metrics": {
+                        "tt_prefix_cache_hits_total": [{"value": 70.0}],
+                        "tt_prefix_cache_queries_total": [{"value": 50.0}],
+                    },
+                },
+            ],
+        )
+        out = _parse_server_metrics_for_prefix_cache(tmp_path)
+        # Unchanged legacy behavior: summed 100 / 100 -> 1.0.
+        assert out["prefix_cache_hit_rate"] == 1.0
+        assert out["prefix_cache_hits_delta"] == 100.0
+        assert out["prefix_cache_queries_delta"] == 100.0
+        # No role information -> no per-role rate.
+        assert out["prefix_cache_hit_rate_prefill"] is None
+        assert out["prefix_cache_hit_rate_decode"] is None
+
+    def test_untagged_endpoint_falls_back_to_combined_only(self, tmp_path):
+        """Partial classification (operator forgot to tag one URL): the untagged
+        endpoint must not corrupt a role bucket. It still counts toward the
+        combined legacy total, but only tagged endpoints populate role rates."""
+        jsonl = tmp_path / "server_metrics_export.jsonl"
+        decode = _normalize_metrics_url("worker-decode:9091")
+        untagged = "http://mystery:9000/metrics"
+        _write_jsonl(
+            jsonl,
+            [
+                {
+                    "endpoint_url": decode,
+                    "metrics": {
+                        "tt_prefix_cache_hits_total": [{"value": 0.0}],
+                        "tt_prefix_cache_queries_total": [{"value": 0.0}],
+                    },
+                },
+                {
+                    "endpoint_url": untagged,
+                    "metrics": {
+                        "tt_prefix_cache_hits_total": [{"value": 0.0}],
+                        "tt_prefix_cache_queries_total": [{"value": 0.0}],
+                    },
+                },
+                {
+                    "endpoint_url": decode,
+                    "metrics": {
+                        "tt_prefix_cache_hits_total": [{"value": 40.0}],
+                        "tt_prefix_cache_queries_total": [{"value": 50.0}],
+                    },
+                },
+                {
+                    "endpoint_url": untagged,
+                    "metrics": {
+                        "tt_prefix_cache_hits_total": [{"value": 10.0}],
+                        "tt_prefix_cache_queries_total": [{"value": 50.0}],
+                    },
+                },
+            ],
+        )
+        endpoint_roles = {decode: "decode"}  # ``untagged`` deliberately absent
+        out = _parse_server_metrics_for_prefix_cache(
+            tmp_path, endpoint_roles=endpoint_roles
+        )
+        # decode reported on its own tokens: 40 / 50 = 0.8.
+        assert out["prefix_cache_hit_rate_decode"] == 0.8
+        # No endpoint tagged prefill -> null.
+        assert out["prefix_cache_hit_rate_prefill"] is None
+        # Combined legacy total still sums BOTH endpoints: 50 / 100 = 0.5.
+        assert out["prefix_cache_hit_rate"] == 0.5
