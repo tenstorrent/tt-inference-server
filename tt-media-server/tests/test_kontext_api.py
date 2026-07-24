@@ -4,10 +4,10 @@
 
 """Unit tests for the FLUX.1-Kontext-dev media API surface.
 
-Exercises the kontext endpoint handlers (edit / generate / lora apply·clear·
-status) directly with a mocked service, plus the constants/request-model
-registration. Device and pipeline code (dit_runners / tt_dit) runs on hardware,
-not here."""
+Kontext reuses the shared /generations and /edits handlers (edit / generate) and
+adds only the LoRA routes (apply·clear·status). This exercises those handlers
+directly with a mocked service, plus the constants/request-model registration.
+Device and pipeline code (dit_runners / tt_dit) runs on hardware, not here."""
 
 import asyncio
 import base64
@@ -20,8 +20,8 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from fastapi import UploadFile
 
+from domain.image_edit_request import ImageEditRequest
 from domain.image_generate_request import ImageGenerateRequest
-from domain.image_to_image_request import ImageToImageRequest
 
 
 # Load open_ai_api/image.py as a standalone module. Importing it through the
@@ -67,25 +67,33 @@ def _upload(data: bytes, filename: str) -> UploadFile:
 
 
 def test_edit_returns_images(mock_service):
-    req = ImageToImageRequest.model_construct(
+    # Kontext edits go through the shared /edits handler with no mask.
+    req = ImageEditRequest.model_construct(
         prompt="add a red hat", image=_B64, num_inference_steps=28
     )
     code, body = _json(
-        asyncio.run(
-            image_mod.kontext_edit_image(req, service=mock_service, api_key="k")
-        )
+        asyncio.run(image_mod.edit_image(req, service=mock_service, api_key="k"))
     )
     assert code == 200 and body["images"] == [_B64]
     mock_service.process_request.assert_awaited_once()
 
 
+def test_edit_request_allows_no_mask():
+    # The shared /edits endpoint must accept mask-free requests (Kontext) while
+    # still permitting a mask (SDXL) — mask is optional after the refactor.
+    req = ImageEditRequest(prompt="add a red hat", image=_B64)
+    assert req.mask is None
+    assert ImageEditRequest(prompt="p", image=_B64, mask=_B64).mask == _B64
+
+
 def test_generate_returns_images(mock_service):
+    # Kontext text->image goes through the shared /generations handler.
     req = ImageGenerateRequest.model_construct(
         prompt="a red car", num_inference_steps=28, width=1024, height=1024
     )
     code, body = _json(
         asyncio.run(
-            image_mod.kontext_generate_image(req, service=mock_service, api_key="k")
+            image_mod.generate_image(req, service=mock_service, api_key="k")
         )
     )
     assert code == 200 and body["images"] == [_B64]
