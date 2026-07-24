@@ -26,6 +26,11 @@ class BaseImageRequest(BaseRequest):
     image_return_format: Optional[str] = Field(default="JPEG")
     image_quality: Optional[int] = Field(default=85, ge=50, le=100)
 
+    # Optional output resolution (width/height). Runners that support per-request
+    # resolution (e.g. FLUX.1-Kontext) honor these; others ignore them.
+    width: Optional[int] = Field(default=None, ge=256, le=1536)
+    height: Optional[int] = Field(default=None, ge=256, le=1536)
+
     # Private fields for internal processing
     _segments: Optional[List[int]] = PrivateAttr(default=None)
 
