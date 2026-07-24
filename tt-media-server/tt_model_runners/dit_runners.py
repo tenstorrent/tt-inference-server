@@ -50,6 +50,7 @@ dit_runner_log_map = {
     ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW.value: "Motif-Image-6B-Preview",
     ModelRunners.TT_MOCHI_1.value: "Mochi1",
     ModelRunners.TT_WAN_2_2.value: "Wan22",
+    ModelRunners.TT_WAN_2_2_T2V_PRODIA.value: "Wan22-T2V-Prodia",
     ModelRunners.TT_WAN_2_2_I2V.value: "Wan22-I2V",
     ModelRunners.TT_WAN_2_2_I2V_PRODIA.value: "Wan22-I2V-Prodia",
     ModelRunners.TT_WAN_2_2_I2V_ANISORA.value: "Wan22-I2V-AniSora",
@@ -64,6 +65,12 @@ DIT_WEIGHTS_DISTRIBUTION_TIMEOUT_SECONDS = 6000
 
 
 class TTDiTRunner(BaseMetalDeviceRunner):
+    # Set True by runners that require image conditioning (I2V). The SP inference
+    # loop uses this to reject image-less requests with a clean per-request error
+    # instead of letting a base VideoGenerateRequest reach the runner and crash
+    # on the missing ``image_prompts`` field.
+    requires_image_conditioning: bool = False
+
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.pipeline = None
@@ -416,7 +423,10 @@ def _wan22_dit_device_params(mesh_shape: tuple) -> dict:
 
     if is_large_mesh(mesh_shape) and is_blackhole():
         device_params["trace_region_size"] = WAN22_GALAXY_BH_TRACE_REGION_BYTES
-        device_params["fabric_router_config"] = _wan22_galaxy_router_config()
+        # Do NOT cap the fabric router packet payload (was _wan22_galaxy_router_config(),
+        # max_packet_payload_size_bytes=8192). The 8192B cap corrupts the multi-host
+        # all-gather packetization and produces horizontal garbage bands on I2V 4x32.
+        # Library-default payload gathers correctly. See fabric-payload band RCA.
 
     return device_params
 
@@ -484,6 +494,86 @@ class TTWan22Runner(TTDiTRunner):
         return _wan22_dit_device_params(self.settings.device_mesh_shape)
 
 
+def _prodia_wan_device_params(device_mesh_shape) -> dict:
+    """Shared device params for Prodia Wan T2V/I2V distilled runners.
+
+    The 4x8 LoudBox trace binary needs ~30.6MB; the default 30MB region
+    rejects it and warmup OOMs. Both 4x8 (32 chips) and 4x32 (128 chips)
+    Blackhole meshes get the bumped trace region.
+    """
+    device_params = {"fabric_config": ttnn.FabricConfig.FABRIC_1D_RING}
+    mesh_size = device_mesh_shape[0] * device_mesh_shape[1]
+    if mesh_size >= 32 and is_blackhole():
+        device_params["trace_region_size"] = 150_000_000
+        # Do NOT cap the fabric router packet payload (was max_packet_payload_size_bytes=8192).
+        # An 8192B cap shrinks the multi-host all-gather's per-packet page batching and
+        # mis-assembles the inter-host decode output → horizontal garbage bands on I2V 4x32.
+        # Confirmed by bisection: 8192 cap => banded; library-default payload => clean
+        # (necessary+sufficient, independent of reliability_mode). See fabric-payload band RCA.
+    return device_params
+
+
+class TTWan22T2VProdiaRunner(TTDiTRunner):
+    """Wan2.2 T2V runner using the Prodia distilled pipeline (no image prompt)."""
+
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
+        # Export MP4 inside the device worker by default to avoid pickling the
+        # raw frame array (~226MB at 720p×81 frames) over IPC.
+        self.export_in_runner = True
+
+    def load_weights(self):
+        return False
+
+    def get_pipeline_device_params(self):
+        return _prodia_wan_device_params(self.settings.device_mesh_shape)
+
+    def create_pipeline(self):
+        try:
+            from pipelines.pipeline import create_pipeline
+
+            resolution = wan22_target_resolution(self.settings.device_mesh_shape)
+            return create_pipeline(
+                self.ttnn_device,
+                weights_dir=self.settings.model_weights_path,
+                height=resolution.height,
+                width=resolution.width,
+                num_frames=WAN22_NUM_FRAMES,
+            )
+        except Exception as e:
+            log_exception_chain(
+                self.logger,
+                self.device_id,
+                "Prodia T2V pipeline creation failed",
+                e,
+            )
+            raise
+
+    @log_execution_time(
+        f"{dit_runner_log_map[get_settings().model_runner]} inference",
+        TelemetryEvent.MODEL_INFERENCE,
+        os.environ.get("TT_VISIBLE_DEVICES"),
+    )
+    def run(self, requests: list[VideoGenerateRequest]):
+        self.logger.debug(f"Device {self.device_id}: Running inference")
+        request = requests[0]
+        resolution = wan22_target_resolution(self.settings.device_mesh_shape)
+        frames = self.pipeline(
+            prompt=request.prompt,
+            height=resolution.height,
+            width=resolution.width,
+            num_frames=WAN22_NUM_FRAMES,
+            seed=int(request.seed or 0),
+            traced=True,
+        )
+        self.logger.debug(f"Device {self.device_id}: Inference completed")
+        if self.export_in_runner:
+            from utils.video_manager import VideoManager
+
+            return [VideoManager().export_to_mp4(frames)]
+        return frames
+
+
 class TTWan22I2VProdiaRunner(TTDiTRunner):
     """Wan2.2 I2V runner using the Prodia distilled pipeline.
     Single-image conditioning only — when the broadcast carries
@@ -491,6 +581,8 @@ class TTWan22I2VProdiaRunner(TTDiTRunner):
     ``frame_pos`` is selected and the rest are dropped (the distilled pipeline
     does not accept multi-frame conditioning).
     """
+
+    requires_image_conditioning = True
 
     def __init__(self, device_id: str):
         super().__init__(device_id)
@@ -521,23 +613,11 @@ class TTWan22I2VProdiaRunner(TTDiTRunner):
         return False
 
     def get_pipeline_device_params(self):
-        # The 4x8 LoudBox trace binary needs ~30.6MB; the default 30MB region
-        # rejects it and warmup OOMs. Both 4x8 (32 chips) and 4x32 (128 chips)
-        # Blackhole meshes get the bumped trace region.
-        device_params = {"fabric_config": ttnn.FabricConfig.FABRIC_1D_RING}
-        mesh_size = (
-            self.settings.device_mesh_shape[0] * self.settings.device_mesh_shape[1]
-        )
-        if mesh_size >= 32 and is_blackhole():
-            device_params["trace_region_size"] = 120_000_000
-            config = ttnn.FabricRouterConfig()
-            config.max_packet_payload_size_bytes = 8192
-            device_params["fabric_router_config"] = config
-        return device_params
+        return _prodia_wan_device_params(self.settings.device_mesh_shape)
 
     def create_pipeline(self):
         try:
-            from models.tt_dit.prodia.pipelines.pipeline_i2v import (
+            from pipelines.pipeline_i2v import (
                 create_i2v_pipeline,
             )
 
@@ -607,6 +687,8 @@ class TTWan22I2VRunner(TTDiTRunner):
     """
     Wan2.2 image-to-video runner.
     """
+
+    requires_image_conditioning = True
 
     def __init__(self, device_id: str):
         super().__init__(device_id)
@@ -706,6 +788,8 @@ def _wan22_i2v_warmup_request(prompt: str = "Sunrise on a beach"):
 class TTWan22I2VAniSoraRunner(TTDiTRunner):
     """Wan2.2 I2V with AniSora V3.2 anime fine-tune weights."""
 
+    requires_image_conditioning = True
+
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.resolution = wan22_target_resolution(self.settings.device_mesh_shape)
@@ -795,6 +879,8 @@ class TTWan22I2VDistillRunner(TTDiTRunner):
     to 1.0 and ``num_inference_steps`` defaults to 4.
     """
 
+    requires_image_conditioning = True
+
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.resolution = wan22_target_resolution(self.settings.device_mesh_shape)
@@ -882,6 +968,8 @@ class TTWan22I2VLoRARunner(TTDiTRunner):
     LoRA weights are resolved from ``LORA_HIGH_PATH`` / ``LORA_LOW_PATH``
     environment variables by the pipeline's ``__init__``.
     """
+
+    requires_image_conditioning = True
 
     def __init__(self, device_id: str):
         super().__init__(device_id)

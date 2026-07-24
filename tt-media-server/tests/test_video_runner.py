@@ -109,7 +109,11 @@ class TestWriteErrorToShm:
 class TestCreateDitRunner:
     @staticmethod
     def _make_dit_module(
-        mock_mochi, mock_wan, mock_wan_i2v=None, mock_wan_i2v_prodia=None
+        mock_mochi,
+        mock_wan,
+        mock_wan_i2v=None,
+        mock_wan_i2v_prodia=None,
+        mock_wan_t2v_prodia=None,
     ):
         mock_mochi.__name__ = "TTMochi1Runner"
         mock_wan.__name__ = "TTWan22Runner"
@@ -122,6 +126,9 @@ class TestCreateDitRunner:
         if mock_wan_i2v_prodia is not None:
             mock_wan_i2v_prodia.__name__ = "TTWan22I2VProdiaRunner"
             mod.TTWan22I2VProdiaRunner = mock_wan_i2v_prodia
+        if mock_wan_t2v_prodia is not None:
+            mock_wan_t2v_prodia.__name__ = "TTWan22T2VProdiaRunner"
+            mod.TTWan22T2VProdiaRunner = mock_wan_t2v_prodia
         return {"tt_model_runners.dit_runners": mod}
 
     def test_creates_mochi_runner(self):
@@ -176,6 +183,26 @@ class TestCreateDitRunner:
             _create_dit_runner("tt-wan2.2-i2v-prodia", 0)
             mock_wan_i2v_prodia.assert_called_once_with("")
             mock_wan_i2v.assert_not_called()
+            mock_wan.assert_not_called()
+            mock_mochi.assert_not_called()
+
+    def test_creates_wan_t2v_prodia_runner(self):
+        """``tt-wan2.2-t2v-prodia`` must resolve to ``TTWan22T2VProdiaRunner``."""
+        mock_mochi = Mock()
+        mock_wan = Mock()
+        mock_wan_i2v = Mock()
+        mock_wan_t2v_prodia = Mock()
+        with patch.dict(
+            sys.modules,
+            self._make_dit_module(
+                mock_mochi,
+                mock_wan,
+                mock_wan_i2v,
+                mock_wan_t2v_prodia=mock_wan_t2v_prodia,
+            ),
+        ):
+            _create_dit_runner("tt-wan2.2-t2v-prodia", 0)
+            mock_wan_t2v_prodia.assert_called_once_with("")
             mock_wan.assert_not_called()
             mock_mochi.assert_not_called()
 
@@ -350,6 +377,29 @@ class TestRank0LoadImagePrompts:
         assert prompts is None
         assert skip is False
         assert encode_queue.qsize() == 0
+
+    def test_rejects_image_less_request_when_runner_requires_image(self):
+        """An I2V runner (``requires_image_conditioning=True``) that receives a
+        request with no image (empty ``image_path``) — e.g. a text-only request
+        routed to the I2V endpoint — must be rejected with an enqueued error and
+        ``skip=True``, not fall through to a base request that crashes the
+        runner on the missing ``image_prompts`` field."""
+        import queue as _queue
+
+        req = _make_request(image_path="")
+        encode_queue: _queue.Queue = _queue.Queue()
+
+        prompts, skip = _rank0_load_image_prompts(
+            req, encode_queue, requires_image=True
+        )
+
+        assert prompts == []
+        assert skip is True
+        assert encode_queue.qsize() == 1
+        job = encode_queue.get_nowait()
+        assert job.task_id == req.task_id
+        assert job.error is not None
+        assert "no image conditioning" in job.error
 
     def test_returns_none_false_when_raw_req_is_none(self):
         """Shutdown iteration: rank 0 read None from input ring. The helper
@@ -635,6 +685,7 @@ class TestRunInferenceLoop:
         mock_comm.bcast.side_effect = [(req, None, False), (None, None, False)]
 
         mock_runner = MagicMock()
+        mock_runner.requires_image_conditioning = False
         mock_frames = MagicMock()
         mock_runner.run.return_value = mock_frames
 
@@ -669,6 +720,7 @@ class TestRunInferenceLoop:
         mock_comm.bcast.side_effect = [(req, None, False), (None, None, False)]
 
         mock_runner = MagicMock()
+        mock_runner.requires_image_conditioning = False
         mock_runner.run.side_effect = RuntimeError("inference exploded")
 
         mock_input_shm = MagicMock()
