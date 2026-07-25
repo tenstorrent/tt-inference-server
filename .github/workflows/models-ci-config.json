@@ -41,11 +41,6 @@
                 "P150X4",
                 "T3K"
               ]
-            },
-            "release": {
-              "devices": [
-                "P300"
-              ]
             }
           }
         },
@@ -255,6 +250,11 @@
                 "P300X2"
               ]
             },
+            "release": {
+              "devices": [
+                "GALAXY"
+              ]
+            },
             "weekly": {
               "devices": [
                 "GALAXY",
@@ -306,6 +306,11 @@
       "inference_engine": "vLLM",
       "ci": {
         "nightly": {
+          "devices": [
+            "P300X2"
+          ]
+        },
+        "release": {
           "devices": [
             "P300X2"
           ]
