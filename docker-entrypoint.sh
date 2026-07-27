@@ -14,6 +14,10 @@
 
 set -eo pipefail
 
+if [ -z "${CACHE_ROOT}" ]; then
+    CACHE_ROOT="/home/${CONTAINER_APP_USERNAME}/cache_root"
+fi
+
 set_group_permissions() {
     local var_dir="$1"
     local shared_group="$2"
