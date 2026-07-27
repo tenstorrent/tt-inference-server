@@ -178,17 +178,11 @@ templates:
         GEMMA4_CCL_TOPOLOGY: "linear"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
         GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
-        # Do not set GEMMA4_GEN_PREFILL_CHUNK — metal resolve picks 2048 @ ≥128k bounded.
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
-        GEMMA4_DEMO_SINGLE_CHUNK: "0"
         # Trace middle-chunk (sp1) path for long-ISL multi-chunk replay.
         GEMMA4_CHUNKED_PREFILL_TRACE: "1"
-        GEMMA4_TRACE_PREFILL_SEQ_LENS: "128"
-        TT_LEAN_DECODE_WARMUP: "1"
-        DISABLE_METAL_OP_TIMEOUT: "1"
       override_tt_config:
         fabric_config: FABRIC_1D
-        # B=32 decode-trace: warmup ~270MB; live B=32 ~362MB; isl=1k B=28 ~420MB.
         trace_region_size: 512000000
         # On-device decode sampling is required on the TP mesh so token ids
         # >= 65536 are reachable (host sampling only sees device 0's vocab shard).
@@ -230,11 +224,7 @@ templates:
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
         # Explicitly clear demo single-chunk so a polluted parent shell cannot
         # force full-ISL warmup (hangs at 128k/256k on LB).
-        GEMMA4_DEMO_SINGLE_CHUNK: "0"
         GEMMA4_CHUNKED_PREFILL_TRACE: "1"
-        GEMMA4_TRACE_PREFILL_SEQ_LENS: "128"
-        TT_LEAN_DECODE_WARMUP: "1"
-        DISABLE_METAL_OP_TIMEOUT: "1"
       override_tt_config:
         fabric_config: FABRIC_1D
         trace_region_size: 512000000
@@ -279,7 +269,6 @@ templates:
       max_concurrency: 32
       # Metal policy (generator_trace 12B/_QB2): unbounded through 128k; auto
       # bounded + multi-chunk (4096) at 256k (unbounded 256k OOM). Match demo.
-      # Warm only seq_len=128 (GEMMA4_TRACE_PREFILL_SEQ_LENS) for boot.
       max_context: 262144  # 256 * 1024
       default_impl: true
       env_vars:
@@ -291,13 +280,8 @@ templates:
         GEMMA4_CCL_TOPOLOGY: "linear"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
         GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
-        # Do not set GEMMA4_GEN_PREFILL_CHUNK — metal resolve picks 4096.
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
-        GEMMA4_DEMO_SINGLE_CHUNK: "0"
         GEMMA4_CHUNKED_PREFILL_TRACE: "1"
-        GEMMA4_TRACE_PREFILL_SEQ_LENS: "128"
-        TT_LEAN_DECODE_WARMUP: "1"
-        DISABLE_METAL_OP_TIMEOUT: "1"
       override_tt_config:
         fabric_config: FABRIC_1D
         # B=32 decode traces (match 31B QB2 headroom).
@@ -336,11 +320,7 @@ templates:
         GEMMA4_PAGE_BLOCK_SIZE: "64"
         GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
-        GEMMA4_DEMO_SINGLE_CHUNK: "0"
         GEMMA4_CHUNKED_PREFILL_TRACE: "1"
-        GEMMA4_TRACE_PREFILL_SEQ_LENS: "128"
-        TT_LEAN_DECODE_WARMUP: "1"
-        DISABLE_METAL_OP_TIMEOUT: "1"
       override_tt_config:
         fabric_config: FABRIC_1D
         trace_region_size: 512000000
@@ -1421,13 +1401,9 @@ templates:
         GEMMA4_PAGE_BLOCK_SIZE: "64"
         GEMMA4_MAX_TOKENS_ALL_USERS: "131072"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
-        GEMMA4_DEMO_SINGLE_CHUNK: "0"
         # Off by default: traced multi-chunk sp1 alone needs ~1.08GB on 26B.
         # Enable with GEMMA4_CHUNKED_PREFILL_TRACE=1 once trace_region covers it.
         GEMMA4_CHUNKED_PREFILL_TRACE: "0"
-        GEMMA4_TRACE_PREFILL_SEQ_LENS: "128"
-        TT_LEAN_DECODE_WARMUP: "1"
-        DISABLE_METAL_OP_TIMEOUT: "1"
       override_tt_config:
         fabric_config: FABRIC_1D
         # B=1+B=32 lean decode; nightly uses 300MB + max_num_seqs=1.
@@ -1450,11 +1426,7 @@ templates:
         GEMMA4_PAGE_BLOCK_SIZE: "64"
         GEMMA4_MAX_TOKENS_ALL_USERS: "131072"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
-        GEMMA4_DEMO_SINGLE_CHUNK: "0"
         GEMMA4_CHUNKED_PREFILL_TRACE: "0"
-        GEMMA4_TRACE_PREFILL_SEQ_LENS: "128"
-        TT_LEAN_DECODE_WARMUP: "1"
-        DISABLE_METAL_OP_TIMEOUT: "1"
       override_tt_config:
         fabric_config: FABRIC_1D
         trace_region_size: 1200000000

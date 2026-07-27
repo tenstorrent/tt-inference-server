@@ -7636,7 +7636,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.18.0-c49bb76-2593865
+              tag: 0.18.0-c49bb76-6b4a3a7
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -7648,27 +7648,19 @@ models:
             env:
               - name: ARCH_NAME
                 value: blackhole
-              - name: DISABLE_METAL_OP_TIMEOUT
-                value: '1'
               - name: GEMMA4_CCL_TOPOLOGY
                 value: linear
               - name: GEMMA4_CHUNKED_PREFILL_TRACE
                 value: '1'
-              - name: GEMMA4_DEMO_SINGLE_CHUNK
-                value: '0'
               - name: GEMMA4_MAX_TOKENS_ALL_USERS
                 value: '262144'
               - name: GEMMA4_PAGE_BLOCK_SIZE
                 value: '64'
-              - name: GEMMA4_TRACE_PREFILL_SEQ_LENS
-                value: '128'
               - name: GEMMA4_VLLM_SINGLE_CHUNK
                 value: '0'
               - name: MESH_DEVICE
                 value: P150x4
               - name: TORCHDYNAMO_DISABLE
-                value: '1'
-              - name: TT_LEAN_DECODE_WARMUP
                 value: '1'
               - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
                 value: '1'
@@ -7685,7 +7677,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.18.0-c49bb76-2593865
+              tag: 0.18.0-c49bb76-6b4a3a7
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -7697,25 +7689,17 @@ models:
             env:
               - name: ARCH_NAME
                 value: blackhole
-              - name: DISABLE_METAL_OP_TIMEOUT
-                value: '1'
               - name: GEMMA4_CHUNKED_PREFILL_TRACE
                 value: '1'
-              - name: GEMMA4_DEMO_SINGLE_CHUNK
-                value: '0'
               - name: GEMMA4_MAX_TOKENS_ALL_USERS
                 value: '262144'
               - name: GEMMA4_PAGE_BLOCK_SIZE
                 value: '64'
-              - name: GEMMA4_TRACE_PREFILL_SEQ_LENS
-                value: '128'
               - name: GEMMA4_VLLM_SINGLE_CHUNK
                 value: '0'
               - name: MESH_DEVICE
                 value: P150x8
               - name: TORCHDYNAMO_DISABLE
-                value: '1'
-              - name: TT_LEAN_DECODE_WARMUP
                 value: '1'
               - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
                 value: '1'
@@ -7773,7 +7757,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.18.0-c49bb76-2593865
+              tag: 0.18.0-c49bb76-6b4a3a7
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -7785,27 +7769,19 @@ models:
             env:
               - name: ARCH_NAME
                 value: blackhole
-              - name: DISABLE_METAL_OP_TIMEOUT
-                value: '1'
               - name: GEMMA4_CCL_TOPOLOGY
                 value: linear
               - name: GEMMA4_CHUNKED_PREFILL_TRACE
                 value: '1'
-              - name: GEMMA4_DEMO_SINGLE_CHUNK
-                value: '0'
               - name: GEMMA4_MAX_TOKENS_ALL_USERS
                 value: '262144'
               - name: GEMMA4_PAGE_BLOCK_SIZE
                 value: '64'
-              - name: GEMMA4_TRACE_PREFILL_SEQ_LENS
-                value: '128'
               - name: GEMMA4_VLLM_SINGLE_CHUNK
                 value: '0'
               - name: MESH_DEVICE
                 value: P150x4
               - name: TORCHDYNAMO_DISABLE
-                value: '1'
-              - name: TT_LEAN_DECODE_WARMUP
                 value: '1'
               - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
                 value: '1'
@@ -7822,7 +7798,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.18.0-c49bb76-2593865
+              tag: 0.18.0-c49bb76-6b4a3a7
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -7834,25 +7810,17 @@ models:
             env:
               - name: ARCH_NAME
                 value: blackhole
-              - name: DISABLE_METAL_OP_TIMEOUT
-                value: '1'
               - name: GEMMA4_CHUNKED_PREFILL_TRACE
                 value: '1'
-              - name: GEMMA4_DEMO_SINGLE_CHUNK
-                value: '0'
               - name: GEMMA4_MAX_TOKENS_ALL_USERS
                 value: '262144'
               - name: GEMMA4_PAGE_BLOCK_SIZE
                 value: '64'
-              - name: GEMMA4_TRACE_PREFILL_SEQ_LENS
-                value: '128'
               - name: GEMMA4_VLLM_SINGLE_CHUNK
                 value: '0'
               - name: MESH_DEVICE
                 value: P150x8
               - name: TORCHDYNAMO_DISABLE
-                value: '1'
-              - name: TT_LEAN_DECODE_WARMUP
                 value: '1'
               - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
                 value: '1'
@@ -7872,7 +7840,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.18.0-c49bb76-2593865
+              tag: 0.18.0-c49bb76-6b4a3a7
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -7884,27 +7852,19 @@ models:
             env:
               - name: ARCH_NAME
                 value: blackhole
-              - name: DISABLE_METAL_OP_TIMEOUT
-                value: '1'
               - name: GEMMA4_CCL_TOPOLOGY
                 value: linear
               - name: GEMMA4_CHUNKED_PREFILL_TRACE
-                value: '0'
-              - name: GEMMA4_DEMO_SINGLE_CHUNK
                 value: '0'
               - name: GEMMA4_MAX_TOKENS_ALL_USERS
                 value: '131072'
               - name: GEMMA4_PAGE_BLOCK_SIZE
                 value: '64'
-              - name: GEMMA4_TRACE_PREFILL_SEQ_LENS
-                value: '128'
               - name: GEMMA4_VLLM_SINGLE_CHUNK
                 value: '0'
               - name: MESH_DEVICE
                 value: P150x4
               - name: TORCHDYNAMO_DISABLE
-                value: '1'
-              - name: TT_LEAN_DECODE_WARMUP
                 value: '1'
               - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
                 value: '1'
@@ -7921,7 +7881,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.18.0-c49bb76-2593865
+              tag: 0.18.0-c49bb76-6b4a3a7
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -7933,25 +7893,17 @@ models:
             env:
               - name: ARCH_NAME
                 value: blackhole
-              - name: DISABLE_METAL_OP_TIMEOUT
-                value: '1'
               - name: GEMMA4_CHUNKED_PREFILL_TRACE
-                value: '0'
-              - name: GEMMA4_DEMO_SINGLE_CHUNK
                 value: '0'
               - name: GEMMA4_MAX_TOKENS_ALL_USERS
                 value: '131072'
               - name: GEMMA4_PAGE_BLOCK_SIZE
                 value: '64'
-              - name: GEMMA4_TRACE_PREFILL_SEQ_LENS
-                value: '128'
               - name: GEMMA4_VLLM_SINGLE_CHUNK
                 value: '0'
               - name: MESH_DEVICE
                 value: P150x8
               - name: TORCHDYNAMO_DISABLE
-                value: '1'
-              - name: TT_LEAN_DECODE_WARMUP
                 value: '1'
               - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
                 value: '1'

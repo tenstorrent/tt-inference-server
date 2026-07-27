@@ -1108,8 +1108,7 @@ templates:
     - google/gemma-4-31B-it
   version: "0.18.0"
   tt_metal_commit: "c49bb76"
-  # tenstorrent/vllm#448 token-chunked prefill (pin until merge to dev).
-  vllm_commit: "2593865"
+  vllm_commit: "6b4a3a7"
   impl: tt_transformers
   # Dev specs omit tt_metal_commit/vllm_commit (base ModelSpecTemplate rejects
   # them; only prod specs carry commits). The image is supplied at runtime via
@@ -1130,16 +1129,10 @@ templates:
         GEMMA4_CCL_TOPOLOGY: "linear"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
         GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
-        # Do not set GEMMA4_GEN_PREFILL_CHUNK — metal resolve picks 2048 @ ≥128k bounded.
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
-        GEMMA4_DEMO_SINGLE_CHUNK: "0"
         GEMMA4_CHUNKED_PREFILL_TRACE: "1"
-        GEMMA4_TRACE_PREFILL_SEQ_LENS: "128"
-        TT_LEAN_DECODE_WARMUP: "1"
-        DISABLE_METAL_OP_TIMEOUT: "1"
       override_tt_config:
         fabric_config: FABRIC_1D
-        # B=32 decode-trace: warmup ~270MB; live B=32 ~362MB; isl=1k B=28 ~420MB.
         trace_region_size: 512000000
         # On-device decode sampling is required on the TP mesh so token ids
         # >= 65536 are reachable (host sampling only sees device 0's vocab shard).
@@ -1177,11 +1170,7 @@ templates:
         GEMMA4_PAGE_BLOCK_SIZE: "64"
         GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
-        GEMMA4_DEMO_SINGLE_CHUNK: "0"
         GEMMA4_CHUNKED_PREFILL_TRACE: "1"
-        GEMMA4_TRACE_PREFILL_SEQ_LENS: "128"
-        TT_LEAN_DECODE_WARMUP: "1"
-        DISABLE_METAL_OP_TIMEOUT: "1"
       override_tt_config:
         fabric_config: FABRIC_1D
         trace_region_size: 512000000
@@ -1208,7 +1197,7 @@ templates:
     - google/gemma-4-12B-it
   version: "0.18.0"
   tt_metal_commit: "c49bb76"
-  vllm_commit: "2593865"
+  vllm_commit: "6b4a3a7"
   impl: tt_transformers
   inference_engine: VLLM
   device_model_specs:
@@ -1223,11 +1212,7 @@ templates:
         GEMMA4_PAGE_BLOCK_SIZE: "64"
         GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
-        GEMMA4_DEMO_SINGLE_CHUNK: "0"
         GEMMA4_CHUNKED_PREFILL_TRACE: "1"
-        GEMMA4_TRACE_PREFILL_SEQ_LENS: "128"
-        TT_LEAN_DECODE_WARMUP: "1"
-        DISABLE_METAL_OP_TIMEOUT: "1"
       override_tt_config:
         fabric_config: FABRIC_1D
         trace_region_size: 512000000
@@ -1250,11 +1235,7 @@ templates:
         GEMMA4_PAGE_BLOCK_SIZE: "64"
         GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
-        GEMMA4_DEMO_SINGLE_CHUNK: "0"
         GEMMA4_CHUNKED_PREFILL_TRACE: "1"
-        GEMMA4_TRACE_PREFILL_SEQ_LENS: "128"
-        TT_LEAN_DECODE_WARMUP: "1"
-        DISABLE_METAL_OP_TIMEOUT: "1"
       override_tt_config:
         fabric_config: FABRIC_1D
         trace_region_size: 512000000
@@ -1279,7 +1260,7 @@ templates:
     - google/gemma-4-26B-A4B-it
   version: "0.18.0"
   tt_metal_commit: "c49bb76"
-  vllm_commit: "2593865"
+  vllm_commit: "6b4a3a7"
   impl: tt_transformers
   inference_engine: VLLM
   device_model_specs:
@@ -1293,12 +1274,8 @@ templates:
         GEMMA4_PAGE_BLOCK_SIZE: "64"
         GEMMA4_MAX_TOKENS_ALL_USERS: "131072"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
-        GEMMA4_DEMO_SINGLE_CHUNK: "0"
         # Off: traced multi-chunk sp1 alone needs ~1.08GB on 26B.
         GEMMA4_CHUNKED_PREFILL_TRACE: "0"
-        GEMMA4_TRACE_PREFILL_SEQ_LENS: "128"
-        TT_LEAN_DECODE_WARMUP: "1"
-        DISABLE_METAL_OP_TIMEOUT: "1"
       override_tt_config:
         fabric_config: FABRIC_1D
         # Nightly 300MB + max_num_seqs=1; B=32 lean decode needs ~1.2GB.
@@ -1321,11 +1298,7 @@ templates:
         GEMMA4_PAGE_BLOCK_SIZE: "64"
         GEMMA4_MAX_TOKENS_ALL_USERS: "131072"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
-        GEMMA4_DEMO_SINGLE_CHUNK: "0"
         GEMMA4_CHUNKED_PREFILL_TRACE: "0"
-        GEMMA4_TRACE_PREFILL_SEQ_LENS: "128"
-        TT_LEAN_DECODE_WARMUP: "1"
-        DISABLE_METAL_OP_TIMEOUT: "1"
       override_tt_config:
         fabric_config: FABRIC_1D
         trace_region_size: 1200000000
