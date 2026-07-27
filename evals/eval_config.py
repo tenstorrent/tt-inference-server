@@ -4858,6 +4858,28 @@ _eval_config_list = [
                 model_kwargs={
                     "max_length": 8192,
                 },
+                # NOTE: do NOT copy the gemma-4-31B-it sampling gen_kwargs
+                # (do_sample/temperature/top_k/top_p -- the Qwen3.6 recommendation)
+                # here. DiffusionGemma's TT generator DISCARDS the per-request
+                # SamplingParams outright: tt-metal
+                # models/experimental/diffusion_gemma/tt/generator_vllm.py deletes
+                # them in both the prefill (:623) and decode (:727) entry points.
+                # What actually sets the sampling behaviour is an internal
+                # per-denoise-step linear temperature schedule feeding a
+                # per-canvas-position Gumbel-max draw: t_max 0.8 -> t_min 0.4 over
+                # DG_VLLM_MAX_DENOISE_STEPS=48 steps (config.py temperature_start /
+                # temperature_end, formula in denoise_loop.py:temperature_at_step).
+                # top_k/top_p have no implementation at all on this path
+                # (tt/sampling_params.py sets top_k_top_p_supported=False).
+                # EvalTask.seed (class default 42) is ignored too -- the served
+                # session seed comes from the model spec ("seed": "9472").
+                # Passing the inert knobs anyway is not harmless: the report and
+                # any triage read from it would claim this eval samples at
+                # temperature 1.0, and if request-param plumbing is ever wired up
+                # (tt/sampling_params.py:canvas_sample_from_params exists for that
+                # purpose but has no production caller today) a leftover 1.0 would
+                # silently override the checkpoint's 0.8 -> 0.4 schedule and move
+                # the score with no config change in sight.
                 gen_kwargs={
                     # lm-eval local-chat-completions streaming parser KeyErrors on
                     # 'message'; non-streamed is required.
@@ -4867,12 +4889,6 @@ _eval_config_list = [
                     # blocks fit with the longest current prompt under max_length=8192.
                     "max_gen_toks": 4096,
                     "until": [],
-                    "do_sample": "true",
-                    # The vLLM plugin maps TTSamplingParams (temperature/top_k/top_p)
-                    # onto the on-device canvas Gumbel-max draw.
-                    "temperature": 1.0,
-                    "top_k": 20,
-                    "top_p": 0.95,
                 },
                 # Lightweight: 5-sample smoke; CI_NIGHTLY 0.05 (~10) mirrors gemma-4.
                 limit_samples_map={
