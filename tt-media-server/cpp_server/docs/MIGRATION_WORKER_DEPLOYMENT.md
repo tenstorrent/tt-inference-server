@@ -17,7 +17,7 @@ export KAFKA_BROKERS="${KAFKA_ADVERTISED_HOST}:9092"
 
 uv venv
 source .venv/bin/activate
-uv pip install -r scripts/migration_cli_requirements.txt
+uv pip install -r migration_cli_requirements.txt
 
 # Create topics
 python migration_cli.py setup
@@ -60,6 +60,8 @@ export DECODE_HOSTS=bh-glx-110-d03u02,bh-glx-110-d03u08,bh-glx-110-d03u14,bh-glx
 ```
 
 To stop the migration workers tap `Ctrl+C`. This will also delete the remote docker containers.
+
+Attention: Prefill and decode table paths must be accessible by all the migration workers. For exabox deployments, this requires storing them on the /data partition.
 
 # Troubleshooting
 
