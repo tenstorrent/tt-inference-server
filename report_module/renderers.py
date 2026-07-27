@@ -283,6 +283,16 @@ def _is_subtable_value(value: Any) -> bool:
     return False
 
 
+def _footnote_for(block: Block) -> str | None:
+    targets = block.targets if isinstance(block.targets, Mapping) else {}
+    tool = targets.get("tool")
+    if tool:
+        footnote = FOOTNOTES.get(str(tool))
+        if footnote:
+            return footnote
+    return FOOTNOTES.get(block.kind)
+
+
 def render_generic_table(block: Block, metadata: Mapping[str, Any]) -> str:
     """Render a block as a heading plus one or more markdown tables.
 
@@ -300,7 +310,7 @@ def render_generic_table(block: Block, metadata: Mapping[str, Any]) -> str:
     heading = _heading(
         block.kind, model, device, block.title or "", block.task_type or ""
     )
-    footnote = FOOTNOTES.get(block.kind)
+    footnote = _footnote_for(block)
     hidden = _hidden_columns(block.kind)
 
     if len(records) > 1:

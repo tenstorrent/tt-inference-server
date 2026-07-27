@@ -32,6 +32,7 @@ class LLMRunConfig:
     osl: int
     max_concurrency: int
     num_prompts: int
+    targets: dict = field(default_factory=dict, compare=False)
 
 
 @dataclass(frozen=True)
