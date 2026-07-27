@@ -798,42 +798,41 @@ unsigned sessionAllocationMaxRetries() {
 }
 
 bool dynamoEndpointEnabled() {
-  return envBool("DYNAMO_ENDPOINT_ENABLED", defaults::DYNAMO_ENDPOINT_ENABLED);
+  return envBool("DYN_ENDPOINT_ENABLED", defaults::DYN_ENDPOINT_ENABLED);
 }
 
 bool dynamoRoutingEnabled() {
-  return envBool("DYNAMO_ROUTING", defaults::DYNAMO_ROUTING);
+  return envBool("DYN_ROUTING", defaults::DYN_ROUTING);
 }
 
 std::string dynamoBindHost() {
-  return envString("DYNAMO_BIND_HOST", defaults::DYNAMO_BIND_HOST);
+  return envString("DYN_BIND_HOST", defaults::DYN_BIND_HOST);
 }
 
 uint16_t dynamoBindPort() {
-  const unsigned long port =
-      envUlong("DYNAMO_BIND_PORT", defaults::DYNAMO_BIND_PORT);
+  const unsigned long port = envUlong("DYN_BIND_PORT", defaults::DYN_BIND_PORT);
   if (port > 65535) {
     TT_LOG_WARN(
-        "[Config] DYNAMO_BIND_PORT={} is out of range [0, 65535], using "
+        "[Config] DYN_BIND_PORT={} is out of range [0, 65535], using "
         "default={}",
-        port, defaults::DYNAMO_BIND_PORT);
-    return defaults::DYNAMO_BIND_PORT;
+        port, defaults::DYN_BIND_PORT);
+    return defaults::DYN_BIND_PORT;
   }
   return static_cast<uint16_t>(port);
 }
 
 std::string dynamoEtcdEndpoints() {
-  // Prefer DYNAMO_ETCD_ENDPOINTS (cpp_server-specific). Fall back to
+  // Prefer DYN_ETCD_ENDPOINTS (cpp_server-specific). Fall back to
   // ETCD_ENDPOINTS — Dynamo's Rust runtime reads the same name, so a single
   // export propagates to both processes when start_dynamo.sh wires them
   // together.
-  if (const char* v = std::getenv("DYNAMO_ETCD_ENDPOINTS"); v && *v) {
+  if (const char* v = std::getenv("DYN_ETCD_ENDPOINTS"); v && *v) {
     return v;
   }
   if (const char* v = std::getenv("ETCD_ENDPOINTS"); v && *v) {
     return v;
   }
-  return defaults::DYNAMO_ETCD_ENDPOINTS;
+  return defaults::DYN_ETCD_ENDPOINTS;
 }
 
 std::string specDecodeMode() {
@@ -854,34 +853,33 @@ size_t mtpLevel() {
 }
 
 int64_t dynamoEtcdLeaseTtlSecs() {
-  const char* v = std::getenv("DYNAMO_ETCD_LEASE_TTL_SECS");
-  if (!v || !*v) return defaults::DYNAMO_ETCD_LEASE_TTL_SECS;
+  const char* v = std::getenv("DYN_ETCD_LEASE_TTL_SECS");
+  if (!v || !*v) return defaults::DYN_ETCD_LEASE_TTL_SECS;
   try {
     return std::stoll(v);
   } catch (const std::exception&) {
-    return defaults::DYNAMO_ETCD_LEASE_TTL_SECS;
+    return defaults::DYN_ETCD_LEASE_TTL_SECS;
   }
 }
 
 std::string dynamoNamespace() {
-  return envString("DYNAMO_NAMESPACE", defaults::DYNAMO_NAMESPACE);
+  return envString("DYN_NAMESPACE", defaults::DYN_NAMESPACE);
 }
 
 std::string dynamoComponent() {
-  return envString("DYNAMO_COMPONENT", defaults::DYNAMO_COMPONENT);
+  return envString("DYN_COMPONENT", defaults::DYN_COMPONENT);
 }
 
 std::string dynamoEndpointName() {
-  return envString("DYNAMO_ENDPOINT_NAME", defaults::DYNAMO_ENDPOINT_NAME);
+  return envString("DYN_ENDPOINT_NAME", defaults::DYN_ENDPOINT_NAME);
 }
 
 std::string dynamoDiscoveryBackend() {
-  return envString("DYNAMO_DISCOVERY_BACKEND",
-                   defaults::DYNAMO_DISCOVERY_BACKEND);
+  return envString("DYN_DISCOVERY_BACKEND", defaults::DYN_DISCOVERY_BACKEND);
 }
 
 std::string dynamoKubeApiServer() {
-  if (const char* v = std::getenv("DYNAMO_KUBE_API_SERVER"); v && *v) {
+  if (const char* v = std::getenv("DYN_KUBE_API_SERVER"); v && *v) {
     return v;
   }
   const char* host = std::getenv("KUBERNETES_SERVICE_HOST");
@@ -895,12 +893,11 @@ std::string dynamoKubeApiServer() {
 }
 
 std::string dynamoKubeTokenPath() {
-  return envString("DYNAMO_KUBE_TOKEN_PATH", defaults::DYNAMO_KUBE_TOKEN_PATH);
+  return envString("DYN_KUBE_TOKEN_PATH", defaults::DYN_KUBE_TOKEN_PATH);
 }
 
 bool dynamoKubeValidateCert() {
-  return envBool("DYNAMO_KUBE_VALIDATE_CERT",
-                 defaults::DYNAMO_KUBE_VALIDATE_CERT);
+  return envBool("DYN_KUBE_VALIDATE_CERT", defaults::DYN_KUBE_VALIDATE_CERT);
 }
 
 std::string dynamoPodName() { return envString("POD_NAME", ""); }
@@ -911,7 +908,7 @@ std::string dynamoPodNamespace() {
   if (const char* v = std::getenv("POD_NAMESPACE"); v && *v) {
     return v;
   }
-  std::ifstream f(defaults::DYNAMO_KUBE_NAMESPACE_PATH);
+  std::ifstream f(defaults::DYN_KUBE_NAMESPACE_PATH);
   if (f) {
     std::string ns;
     std::getline(f, ns);

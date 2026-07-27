@@ -58,7 +58,7 @@ class DisaggregationService {
       std::function<void(const tt::sockets::PrefillResultMessage&)> callback);
 
   /**
-   * Prefill-first path for Dynamo (DYNAMO_ROUTING=1): discover decode via
+   * Prefill-first path for Dynamo (DYN_ROUTING=1): discover decode via
    * etcd, reserve a decode slot over ZMQ, run one prefill token, and return a
    * PrefillResultMessage for disaggregated_params.
    */
@@ -67,7 +67,7 @@ class DisaggregationService {
       std::function<void(const tt::sockets::PrefillResultMessage&)> callback);
 
   /** Prefill-first path: etcd discovery + ZMQ slot reservation, then one
-   * prefill token. Requires DYNAMO_ROUTING=1. */
+   * prefill token. Requires DYN_ROUTING=1. */
   void handlePrefillFirstStreamingRequest(
       LLMRequest& request, const std::vector<uint64_t>& registrationHashes,
       const StreamCallback& callback);

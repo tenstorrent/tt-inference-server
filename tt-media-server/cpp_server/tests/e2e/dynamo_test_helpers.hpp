@@ -59,9 +59,9 @@ struct DynamoConfig {
 
   static DynamoConfig fromEnv() {
     DynamoConfig cfg;
-    if (const char* h = std::getenv("DYNAMO_HOST")) cfg.host = h;
-    if (const char* p = std::getenv("DYNAMO_PORT")) cfg.port = std::stoi(p);
-    if (const char* m = std::getenv("DYNAMO_MODEL")) cfg.model = m;
+    if (const char* h = std::getenv("DYN_HOST")) cfg.host = h;
+    if (const char* p = std::getenv("DYN_PORT")) cfg.port = std::stoi(p);
+    if (const char* m = std::getenv("DYN_MODEL")) cfg.model = m;
     return cfg;
   }
 };

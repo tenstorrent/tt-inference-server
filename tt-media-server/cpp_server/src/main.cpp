@@ -366,7 +366,7 @@ int main(int argc, char* argv[]) {
             tt::config::ModelService::LLM));
     if (!llmService) {
       TT_LOG_ERROR(
-          "[Main] DYNAMO_ENDPOINT_ENABLED=1 but LLM service is not "
+          "[Main] DYN_ENDPOINT_ENABLED=1 but LLM service is not "
           "registered; skipping Dynamo worker server.");
     } else {
       auto pipeline = std::make_shared<tt::services::LLMPipeline>(
@@ -388,7 +388,7 @@ int main(int argc, char* argv[]) {
         opts.backend = tt::dynamo::DiscoveryBackend::ETCD;
       } else {
         TT_LOG_ERROR(
-            "[Main] Unknown DYNAMO_DISCOVERY_BACKEND='{}'; expected 'etcd' or "
+            "[Main] Unknown DYN_DISCOVERY_BACKEND='{}'; expected 'etcd' or "
             "'kubernetes'. Falling back to 'etcd'.",
             discoveryBackend);
         opts.backend = tt::dynamo::DiscoveryBackend::ETCD;
@@ -398,7 +398,7 @@ int main(int argc, char* argv[]) {
       opts.etcd_lease_ttl_secs = tt::config::dynamoEtcdLeaseTtlSecs();
       // Model Deployment Card capabilities + Dynamo-native routing (shared by
       // both discovery backends).
-      if (const char* v = std::getenv("DYNAMO_MODEL_TYPE"); v && *v) {
+      if (const char* v = std::getenv("DYN_MODEL_TYPE"); v && *v) {
         opts.model_type = v;
       } else if (tt::config::dynamoRoutingEnabled() &&
                  tt::config::llmMode() == tt::config::LLMMode::PREFILL_ONLY) {
@@ -406,10 +406,10 @@ int main(int argc, char* argv[]) {
         // Prefill capability while still setting worker_type=prefill.
         opts.model_type = "Prefill";
       }
-      if (const char* v = std::getenv("DYNAMO_MODEL_INPUT"); v && *v) {
+      if (const char* v = std::getenv("DYN_MODEL_INPUT"); v && *v) {
         opts.model_input = v;
       }
-      if (const char* v = std::getenv("DYNAMO_WORKER_TYPE"); v && *v) {
+      if (const char* v = std::getenv("DYN_WORKER_TYPE"); v && *v) {
         opts.worker_type = v;
       } else if (tt::config::dynamoRoutingEnabled()) {
         switch (tt::config::llmMode()) {

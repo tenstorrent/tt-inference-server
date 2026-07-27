@@ -5,9 +5,9 @@
 //
 // This test connects to an external Dynamo frontend server. Set environment
 // variables to configure:
-//   DYNAMO_HOST (default: 127.0.0.1)
-//   DYNAMO_PORT (default: 8080)
-//   DYNAMO_MODEL (default: tt-cpp-server)
+//   DYN_HOST (default: 127.0.0.1)
+//   DYN_PORT (default: 8080)
+//   DYN_MODEL (default: tt-cpp-server)
 //
 // The test expects Dynamo to be running. Start it with:
 //   cd dynamo_frontend && ./deploy.sh --local-build
@@ -66,7 +66,7 @@ struct PrefixCacheTestConfig {
     PrefixCacheTestConfig cfg;
     cfg.dynamo = DynamoConfig::fromEnv();
     cfg.dynamo.model = "deepseek-ai/DeepSeek-R1-0528";
-    if (const char* m = std::getenv("DYNAMO_MODEL")) cfg.dynamo.model = m;
+    if (const char* m = std::getenv("DYN_MODEL")) cfg.dynamo.model = m;
     if (const char* fb = std::getenv("KV_CACHE_FIRST_BLOCK_SIZE"))
       cfg.firstBlockSize = std::stoul(fb);
     if (const char* bs = std::getenv("KV_CACHE_BLOCK_SIZE"))

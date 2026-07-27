@@ -335,60 +335,60 @@ size_t memoryQueueCapacity();
 // ---------------------------------------------------------------------------
 
 /** Whether the Dynamo TCP `generate` endpoint should bind on startup. From
- * DYNAMO_ENDPOINT_ENABLED. Default: defaults::DYNAMO_ENDPOINT_ENABLED. */
+ * DYN_ENDPOINT_ENABLED. Default: defaults::DYN_ENDPOINT_ENABLED. */
 bool dynamoEndpointEnabled();
 
 /** Experimental: let Dynamo own disaggregated prefill routing instead of the
  * cpp_server socket/gateway path. Also enables prefill-first disaggregation
  * (etcd discovers decode peers; ZMQ reserves decode slots). From
- * DYNAMO_ROUTING. Default: defaults::DYNAMO_ROUTING. */
+ * DYN_ROUTING. Default: defaults::DYN_ROUTING. */
 bool dynamoRoutingEnabled();
 
-/** Bind host for the Dynamo listener. From DYNAMO_BIND_HOST. Default:
- * defaults::DYNAMO_BIND_HOST. */
+/** Bind host for the Dynamo listener. From DYN_BIND_HOST. Default:
+ * defaults::DYN_BIND_HOST. */
 std::string dynamoBindHost();
 
-/** Bind port for the Dynamo listener. From DYNAMO_BIND_PORT. Default:
- * defaults::DYNAMO_BIND_PORT (0 = OS-assigned). */
+/** Bind port for the Dynamo listener. From DYN_BIND_PORT. Default:
+ * defaults::DYN_BIND_PORT (0 = OS-assigned). */
 uint16_t dynamoBindPort();
 
-/** Etcd endpoint(s) the discovery client dials. From DYNAMO_ETCD_ENDPOINTS,
+/** Etcd endpoint(s) the discovery client dials. From DYN_ETCD_ENDPOINTS,
  * falling back to ETCD_ENDPOINTS (the env var Dynamo's own runtime reads).
- * Default: defaults::DYNAMO_ETCD_ENDPOINTS. */
+ * Default: defaults::DYN_ETCD_ENDPOINTS. */
 std::string dynamoEtcdEndpoints();
 
 /** Lease TTL (seconds) for etcd-backed discovery. From
- * DYNAMO_ETCD_LEASE_TTL_SECS. Default: defaults::DYNAMO_ETCD_LEASE_TTL_SECS. */
+ * DYN_ETCD_LEASE_TTL_SECS. Default: defaults::DYN_ETCD_LEASE_TTL_SECS. */
 int64_t dynamoEtcdLeaseTtlSecs();
 
-/** Discovery namespace key. From DYNAMO_NAMESPACE. Default:
- * defaults::DYNAMO_NAMESPACE. */
+/** Discovery namespace key. From DYN_NAMESPACE. Default:
+ * defaults::DYN_NAMESPACE. */
 std::string dynamoNamespace();
 
-/** Discovery component key. From DYNAMO_COMPONENT. Default:
- * defaults::DYNAMO_COMPONENT. */
+/** Discovery component key. From DYN_COMPONENT. Default:
+ * defaults::DYN_COMPONENT. */
 std::string dynamoComponent();
 
-/** Discovery endpoint key. From DYNAMO_ENDPOINT_NAME. Default:
- * defaults::DYNAMO_ENDPOINT_NAME. */
+/** Discovery endpoint key. From DYN_ENDPOINT_NAME. Default:
+ * defaults::DYN_ENDPOINT_NAME. */
 std::string dynamoEndpointName();
 
 /** Discovery backend selector: "etcd" (default) or "kubernetes". From
- * DYNAMO_DISCOVERY_BACKEND. Default: defaults::DYNAMO_DISCOVERY_BACKEND. */
+ * DYN_DISCOVERY_BACKEND. Default: defaults::DYN_DISCOVERY_BACKEND. */
 std::string dynamoDiscoveryBackend();
 
 /** Kubernetes API server base URL for the kubernetes discovery backend. From
- * DYNAMO_KUBE_API_SERVER, else derived from the in-cluster
+ * DYN_KUBE_API_SERVER, else derived from the in-cluster
  * KUBERNETES_SERVICE_HOST / KUBERNETES_SERVICE_PORT env vars, else
  * https://kubernetes.default.svc. */
 std::string dynamoKubeApiServer();
 
-/** Path to the ServiceAccount bearer token. From DYNAMO_KUBE_TOKEN_PATH.
- * Default: defaults::DYNAMO_KUBE_TOKEN_PATH. */
+/** Path to the ServiceAccount bearer token. From DYN_KUBE_TOKEN_PATH.
+ * Default: defaults::DYN_KUBE_TOKEN_PATH. */
 std::string dynamoKubeTokenPath();
 
 /** Whether to validate the API server TLS certificate. From
- * DYNAMO_KUBE_VALIDATE_CERT. Default: defaults::DYNAMO_KUBE_VALIDATE_CERT. */
+ * DYN_KUBE_VALIDATE_CERT. Default: defaults::DYN_KUBE_VALIDATE_CERT. */
 bool dynamoKubeValidateCert();
 
 /** Kubernetes namespace the worker's CR is created in. From POD_NAMESPACE, else
