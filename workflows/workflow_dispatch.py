@@ -35,6 +35,7 @@ _ENGINE_WORKFLOW_NAMES = {
     WorkflowType.RELEASE: "release",
     WorkflowType.AGENTIC: "agentic",
     WorkflowType.SERVING_BENCH: "serving_bench",
+    WorkflowType.PREFILL_DECODE: "prefill_decode",
 }
 
 _ENGINE_EVAL_WORKFLOWS = frozenset({WorkflowType.EVALS, WorkflowType.RELEASE})
@@ -141,14 +142,17 @@ def _is_llm_spec_test_run(wf, model_spec) -> bool:
 
 def can_dispatch_to_engine(model_spec, runtime_config) -> bool:
     wf = WorkflowType.from_string(runtime_config.workflow)
-    # Agentic evals, serving-bench benchmark suites, and the prefix-cache /
-    # spec-decode benchmarks are workflow-engine-only features with no v1 driver. They route
-    # to the workflow engine for ANY model, regardless of model_type.
+    # Agentic evals, serving-bench benchmark suites, the prefill/decode smoke
+    # suite, and the prefix-cache / spec-decode benchmarks are
+    # workflow-engine-only features with no v1 driver. They route to the workflow
+    # engine for ANY model, regardless of model_type. prefill_decode additionally
+    # owns its own stack.
     if (
         wf
         in (
             WorkflowType.AGENTIC,
             WorkflowType.SERVING_BENCH,
+            WorkflowType.PREFILL_DECODE,
             WorkflowType.STRESS_TESTS,
         )
         or _is_prefix_cache_run(wf, runtime_config)
@@ -263,6 +267,13 @@ def build_engine_commands(model_spec, runtime_config, json_fpath) -> list:
             "run_workflows.py is required for image-model workflows."
         )
     _warn_on_unsupported_args(runtime_config)
+    env = _engine_env()
+    # --served-model picks the model the prefill_decode mock stack serves,
+    # independent of the catalog --model. The smoke runner reads $MODEL (an
+    # explicit value wins over the --model-derived default), so forward it here.
+    served_model = getattr(runtime_config, "served_model", None)
+    if served_model:
+        env["MODEL"] = served_model
     return [
         VenvCommand(
             WorkflowVenvType.WORKFLOW_RUN_SCRIPT,
@@ -276,7 +287,7 @@ def build_engine_commands(model_spec, runtime_config, json_fpath) -> list:
                 wf,
             ),
             model_spec=model_spec,
-            env=_engine_env(),
+            env=env,
             label=engine_workflow,
             dependency_venvs=_engine_dependency_venv_types(
                 model_spec, wf, runtime_config

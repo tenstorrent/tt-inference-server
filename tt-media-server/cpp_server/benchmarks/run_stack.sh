@@ -2,10 +2,14 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 #
-# run_stack.sh — bring up the Dynamo frontend + cpp_server (mock_pipeline) for the
-# prefill/decode test suite, without any tt-shield image. Frontend runs from a
-# host ai-dynamo venv; etcd runs as the public quay image; workers run as the
-# locally-built mock_pipeline binary. See benchmarks/test_prefill_decode.py.
+# run_stack.sh — bring up the Dynamo frontend + cpp_server (mock_scheduler) for
+# the prefill/decode test suite, without any tt-shield image. Frontend runs from
+# a host ai-dynamo venv; etcd runs as the public quay image (or a local no-docker
+# etcd); workers run as the locally-built Blaze binary with the mock_scheduler
+# backend (real Blaze prefill and decode schedulers). The binary must be built
+# with --blaze; otherwise the mock_scheduler LLM runner factory isn't compiled
+# in and the worker aborts at startup with "No runner registered for the
+# requested service".
 #
 #   ./run_stack.sh up                      # direct cpp_server socket split
 #   DYNAMO_ROUTING=1 ./run_stack.sh up
@@ -23,6 +27,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CPP_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 REPO_DIR="$(cd "${CPP_DIR}/../.." && pwd)"
 BIN="${CPP_DIR}/build/tt_media_server_cpp"
+
+LOG_PREFIX="run_stack"
+source "${REPO_DIR}/scripts/lib_dynamo_stack.sh"
 DYN_VENV="${DYN_VENV:-${REPO_DIR}/dynamo-mock-backend/.venv}"
 
 export DOCKER_API_VERSION="${DOCKER_API_VERSION:-1.43}"
@@ -42,9 +49,6 @@ PIDFILE="/tmp/tt_stack.pids"
 FRONTEND_LOG="/tmp/tt_frontend.log"
 DECODE_LOG="/tmp/tt_decode.log"
 PREFILL_LOG="/tmp/tt_prefill.log"
-
-log() { printf '[run_stack] %s\n' "$*"; }
-die() { printf '[run_stack] %s\n' "$*" >&2; exit 1; }
 
 teardown() {
     log "tearing down"
@@ -83,19 +87,56 @@ teardown() {
     log "down"
 }
 
+# No-docker etcd: run the upstream etcd binary directly on 127.0.0.1:2379.
+# Auto-selected when the docker daemon is unreachable (e.g. inside an
+# unprivileged container) or when ETCD_LOCAL=1 is set. Mirrors the CI
+# no-docker etcd setup (etcd-io release binary + local single-node cluster).
+ETCD_LOCAL_DATA="${ETCD_LOCAL_DATA:-/tmp/tt_etcd_data}"
+ETCD_LOCAL_LOG="${ETCD_LOCAL_LOG:-/tmp/tt_etcd.log}"
+
+docker_available() {
+    command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1
+}
+
+ensure_etcd_local() {
+    ETCD_ENDPOINTS="http://127.0.0.1:2379"
+    if curl -fsS "${ETCD_ENDPOINTS}/health" >/dev/null 2>&1; then
+        log "reusing local etcd at ${ETCD_ENDPOINTS}"
+        return 0
+    fi
+    command -v etcd >/dev/null 2>&1 || die "etcd binary not found on PATH; install the etcd-io release binary (see CI) or start the docker daemon"
+    log "starting local etcd (no docker) at ${ETCD_ENDPOINTS}"
+    rm -rf "${ETCD_LOCAL_DATA}"
+    setsid nohup etcd \
+        --data-dir "${ETCD_LOCAL_DATA}" \
+        --advertise-client-urls http://127.0.0.1:2379 \
+        --listen-client-urls http://127.0.0.1:2379 \
+        --listen-peer-urls http://127.0.0.1:2380 \
+        --initial-advertise-peer-urls http://127.0.0.1:2380 \
+        --initial-cluster 'default=http://127.0.0.1:2380' \
+        > "${ETCD_LOCAL_LOG}" 2>&1 < /dev/null &
+    echo $! >> "${PIDFILE}"
+    for _ in $(seq 1 30); do
+        curl -fsS "${ETCD_ENDPOINTS}/health" >/dev/null 2>&1 && { log "etcd healthy at ${ETCD_ENDPOINTS}"; return 0; }
+        sleep 1
+    done
+    tail -n 50 "${ETCD_LOCAL_LOG}" >&2 2>/dev/null || true
+    die "local etcd never became healthy"
+}
+
 ensure_etcd() {
+    if [[ "${ETCD_LOCAL:-0}" == "1" ]] || ! docker_available; then
+        ensure_etcd_local
+        return 0
+    fi
     if ! docker ps --format '{{.Names}}' | grep -qx "${ETCD_NAME}"; then
         log "starting etcd"
         docker rm -f "${ETCD_NAME}" >/dev/null 2>&1 || true
-        docker run -d --name "${ETCD_NAME}" -p 2379:2379 quay.io/coreos/etcd:v3.5.13 \
-            /usr/local/bin/etcd --name dyn-etcd \
-                --advertise-client-urls http://0.0.0.0:2379 \
-                --listen-client-urls http://0.0.0.0:2379 >/dev/null
-        sleep 3
+        start_etcd "${ETCD_NAME}"
     fi
+    wait_etcd_healthy "${ETCD_NAME}"
     ETCD_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${ETCD_NAME}")
     [[ -n "${ETCD_IP}" ]] || die "could not resolve etcd container IP"
-    docker exec "${ETCD_NAME}" etcdctl endpoint health >/dev/null 2>&1 || die "etcd unhealthy"
     ETCD_ENDPOINTS="http://${ETCD_IP}:2379"
     log "etcd at ${ETCD_ENDPOINTS}"
 }
@@ -151,11 +192,11 @@ start_frontend() {
 ensure_binary() {
     local rebuild=0
     if [[ ! -x "${BIN}" ]]; then
-        log "no binary; building with --blaze for mock_pipeline"
+        log "no binary; building with --blaze for mock_scheduler"
         rebuild=1
     elif [[ ! -f "${CPP_DIR}/build/CMakeCache.txt" ]] || \
          ! grep -q '^ENABLE_BLAZE:BOOL=ON$' "${CPP_DIR}/build/CMakeCache.txt"; then
-        log "existing binary was not built with --blaze; rebuilding for mock_pipeline"
+        log "existing binary was not built with --blaze; rebuilding for mock_scheduler"
         rebuild=1
     else
         local src
@@ -273,14 +314,14 @@ up() {
         start_worker "${DECODE_LOG}" "${SERVER_PORT}" \
             $(worker_dynamo_env "${DYNAMO_ROUTING_NAMESPACE}" decode decode Chat) \
             $(worker_ipc_env dynamo_decode) \
-            LLM_MODE=decode LLM_DEVICE_BACKEND=mock_pipeline \
+            LLM_MODE=decode LLM_DEVICE_BACKEND=mock_scheduler \
             SOCKET_HOST=0.0.0.0 SOCKET_PORT="${SOCKET_PORT}" \
             USE_PREFILL_GATEWAY=0 DYNAMO_ROUTING=1
         wait_worker_healthy "decode" "${SERVER_PORT}" "${DECODE_LOG}"
         start_worker "${PREFILL_LOG}" "${PREFILL_PORT}" \
             $(worker_dynamo_env "${DYNAMO_ROUTING_NAMESPACE}" prefill prefill Prefill) \
             $(worker_ipc_env dynamo_prefill) \
-            LLM_MODE=prefill LLM_DEVICE_BACKEND=mock_pipeline \
+            LLM_MODE=prefill LLM_DEVICE_BACKEND=mock_scheduler \
             SOCKET_HOST=127.0.0.1 SOCKET_PORT="${SOCKET_PORT}" \
             USE_PREFILL_GATEWAY=0 DYNAMO_ROUTING=1 \
             DYNAMO_MODEL_INPUT=Tokens
@@ -292,12 +333,12 @@ up() {
         start_worker "${DECODE_LOG}" "${SERVER_PORT}" \
             $(worker_dynamo_env) \
             $(worker_ipc_env direct_decode) \
-            LLM_MODE=decode LLM_DEVICE_BACKEND=mock_pipeline \
+            LLM_MODE=decode LLM_DEVICE_BACKEND=mock_scheduler \
             SOCKET_HOST=0.0.0.0 SOCKET_PORT="${SOCKET_PORT}" \
             MAX_TOKENS_TO_PREFILL_ON_DECODE="${MAX_TOKENS_TO_PREFILL_ON_DECODE}"
         start_worker "${PREFILL_LOG}" "${PREFILL_PORT}" \
             $(worker_ipc_env direct_prefill) \
-            LLM_MODE=prefill LLM_DEVICE_BACKEND=mock_pipeline \
+            LLM_MODE=prefill LLM_DEVICE_BACKEND=mock_scheduler \
             SOCKET_HOST=127.0.0.1 SOCKET_PORT="${SOCKET_PORT}"
         wait_worker_healthy "decode" "${SERVER_PORT}" "${DECODE_LOG}"
         wait_worker_healthy "prefill" "${PREFILL_PORT}" "${PREFILL_LOG}"
