@@ -234,7 +234,8 @@ void DynamoRequestHandler::handle(const GenerateRequest& dynReq,
             500);
         return;
       }
-      submitDecode(decodeReq, nullptr);
+      submitDecode(decodeReq, pipeline->sessionManager(),
+                   prefillResult->sessionId);
       return;
     }
   }

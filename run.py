@@ -39,9 +39,7 @@ from workflows.multihost_orchestrator import (
 from workflows.run_docker_server import (
     format_docker_command,
     generate_docker_run_command,
-    run_docker_server,
 )
-from workflows.run_local_server import run_local_server
 from workflows.runtime_config import RuntimeConfig
 from workflows.setup_host import setup_host
 from workflows.utils import (
@@ -52,7 +50,7 @@ from workflows.utils import (
     load_dotenv,
     write_dotenv,
 )
-from workflows.v2_bridge import can_route_to_v2, run_v2_workflows
+from workflows.workflow_dispatch import build_engine_commands, can_dispatch_to_engine
 from workflows.validate_setup import run_multihost_validation_subprocess, validate_setup
 from workflows.workflow_types import (
     DeviceTypes,
@@ -190,7 +188,7 @@ def parse_arguments():
             "Resolve the model spec from the dev catalog "
             "(workflows/model_specs/dev/) and forward it into the Docker "
             "container, overriding its prebuilt prod catalog. Also bind-mounts "
-            "host source dirs (benchmarking/, evals/, utils/, tests/, plus "
+            "host source dirs (reference_config/, utils/, tests/, plus "
             "vllm-tt-metal/src or tt-media-server/) so live host edits are "
             "picked up. Has no effect when --runtime-model-spec-json is given."
         ),
@@ -361,13 +359,6 @@ def parse_arguments():
         "Default release images use UID 1000. "
         "Override only when using a custom image built with a different UID.",
     )
-    parser.add_argument(
-        "--server-tests",
-        type=str,
-        default=os.getenv("SERVER_TESTS", "false"),
-        help="Run server tests using server_tests/run.py (true/false). Default is false.",
-    )
-
     # SPEC_TESTS workflow arguments (server tests filtering)
     spec_tests_group = parser.add_argument_group(
         "SPEC_TESTS workflow",
@@ -424,29 +415,29 @@ def parse_arguments():
 
     # Serving-bench shell benchmark suites
     serving_bench_group = parser.add_argument_group(
-        "serving_bench workflow (v2)",
+        "serving_bench workflow",
         "Arguments for --workflow serving_bench (shell benchmark suites against a "
-        "running server, routed to v2)",
+        "running server, routed to the workflow engine)",
     )
     serving_bench_group.add_argument(
         "--serving-bench-suites",
         type=str,
         default=None,
         help="Comma-separated serving-bench suites to run (default: all suites under "
-        "tt-inference-server-v2/test_module/serving_bench, e.g. agentic_bench, "
+        "test_module/serving_bench, e.g. agentic_bench, "
         "benchmark). Suite knobs (DURATION, TARGET_CONCURRENCY, ...) are read from "
         "the environment; --limit-samples-mode selects a knob preset.",
     )
 
     prefix_cache_group = parser.add_argument_group(
-        "Prefix-cache benchmark (v2)",
-        "Arguments for --workflow benchmarks --prefix-cache (routed to v2)",
+        "Prefix-cache benchmark",
+        "Arguments for --workflow benchmarks --prefix-cache (routed to the workflow engine)",
     )
     prefix_cache_group.add_argument(
         "--prefix-cache",
         action="store_true",
-        help="Switch --workflow benchmarks to the v2 AIPerf prefix-caching scenario sweep. "
-        "Routes the run through the v2 engine. Requires --workflow benchmarks.",
+        help="Switch --workflow benchmarks to the AIPerf prefix-caching scenario sweep. "
+        "Routes the run through the workflow engine. Requires --workflow benchmarks.",
     )
     prefix_cache_group.add_argument(
         "--prefix-cache-preset",
@@ -522,16 +513,16 @@ def parse_arguments():
 
     # Speculative-decoding benchmark
     spec_decode_group = parser.add_argument_group(
-        "Speculative-decoding benchmark (v2)",
-        "Arguments for --workflow benchmarks --spec-decode (routed to v2)",
+        "Speculative-decoding benchmark",
+        "Arguments for --workflow benchmarks --spec-decode (routed to the workflow engine)",
     )
     spec_decode_group.add_argument(
         "--spec-decode",
         action="store_true",
-        help="Switch --workflow benchmarks to the v2 AIPerf speculative-decoding sweep over "
+        help="Switch --workflow benchmarks to the AIPerf speculative-decoding sweep over "
         "SPEED-Bench. Scrapes the vLLM vllm:spec_decode_* counters per run for acceptance "
         "rate / mean accepted length. The server's speculative_config is out of scope and "
-        "must be set by whoever launched it. Routes the run through the v2 engine. "
+        "must be set by whoever launched it. Routes the run through the workflow engine. "
         "Requires --workflow benchmarks.",
     )
     spec_decode_group.add_argument(
@@ -546,7 +537,7 @@ def parse_arguments():
         type=int,
         default=None,
         help="Short chat-completion warmup requests sent before the spec-decode sweep "
-        "(v2 default: 4; 0 disables).",
+        "(default: 4; 0 disables).",
     )
 
     args = parser.parse_args()
@@ -844,6 +835,11 @@ def main():
 
     setup_run_logger(logger=logger, run_id=run_id, run_log_path=run_log_path)
 
+    wf_logger = logging.getLogger("workflow_module")
+    wf_logger.handlers = logger.handlers
+    wf_logger.setLevel(logger.level)
+    wf_logger.propagate = False
+
     # Log CLI arguments and runtime info
     version = Path("VERSION").read_text().strip()
     logger.info(f"TT-Inference version: {version}")
@@ -879,7 +875,18 @@ def main():
             local_server=runtime_config.local_server,
         )
 
-    # step 4: optionally run inference server
+    # step 4: optionally run inference server. Server bring-up runs as a
+    # ServerCommand through the WorkflowRunner — the same runner that drives
+    # workflows — so one runner owns "bring up the server, then run workflows"
+    # (see docs/unified_runner_architecture.md).
+    from workflow_module import (
+        ServerCommand,
+        ServerLaunchSpec,
+        ServerMode,
+        WorkflowRunner,
+    )
+
+    server_launch = None
     if runtime_config.docker_server:
         docker_json_fpath = None
         if runtime_config.dev_mode:
@@ -929,45 +936,57 @@ def main():
                     f"Docker run command:\n\n{format_docker_command(docker_command)}\n"
                 )
             return 0
-        run_docker_server(model_spec, runtime_config, setup_config, docker_json_fpath)
+        server_launch = ServerLaunchSpec(
+            mode=ServerMode.DOCKER,
+            model_spec=model_spec,
+            runtime_config=runtime_config,
+            setup_config=setup_config,
+            json_fpath=docker_json_fpath,
+        )
     elif runtime_config.local_server:
         logger.info("Running inference server on localhost ...")
-        run_local_server(model_spec, runtime_config, json_fpath, setup_config)
+        server_launch = ServerLaunchSpec(
+            mode=ServerMode.LOCAL,
+            model_spec=model_spec,
+            runtime_config=runtime_config,
+            setup_config=setup_config,
+            json_fpath=json_fpath,
+        )
 
-    main_return_code = 0
+    commands = []
+    if server_launch is not None:
+        commands.append(ServerCommand(server_launch))
 
-    # step 5: run workflows
-    skip_workflows = {WorkflowType.SERVER}
-    if WorkflowType.from_string(runtime_config.workflow) not in skip_workflows:
-        if can_route_to_v2(model_spec, runtime_config):
-            logger.info(
-                "Model %s (model_type=%s) routes through v2 engine.",
-                model_spec.model_name,
-                model_spec.model_type.name,
-            )
-            workflow_results = run_v2_workflows(model_spec, runtime_config, json_fpath)
-        else:
+    if WorkflowType.from_string(runtime_config.workflow) != WorkflowType.SERVER:
+        if not can_dispatch_to_engine(model_spec, runtime_config):
             raise ValueError(
                 f"No workflow driver for --workflow {runtime_config.workflow} on "
                 f"{model_spec.model_name} ({model_spec.model_type.name}); all "
-                "supported workflows route to the v2 engine."
+                "supported workflows route to the workflow engine."
             )
-        if all(result.return_code == 0 for result in workflow_results):
-            logger.info("Completed run.py.")
-        else:
-            failed_workflows = [
-                f"{result.workflow_name} ({result.return_code})"
-                for result in workflow_results
-                if result.return_code != 0
-            ]
-            logger.error(
-                f"run.py failed workflows: {failed_workflows}. "
-                "See logs above for details."
-            )
-            main_return_code = 1
-    else:
         logger.info(
-            f"Completed {runtime_config.workflow} workflow, skipping workflow run."
+            "Model %s (model_type=%s) routes through the workflow engine.",
+            model_spec.model_name,
+            model_spec.model_type.name,
+        )
+        commands.extend(build_engine_commands(model_spec, runtime_config, json_fpath))
+
+    if not commands:
+        # --workflow server without --docker-server/--local-server: host setup
+        # only, nothing for the runner to execute.
+        logger.info(
+            "No server bring-up and no workflow commands for --workflow %s; "
+            "nothing to run.",
+            runtime_config.workflow,
+        )
+        main_return_code = 0
+    else:
+        main_return_code = WorkflowRunner(commands).run()
+    if main_return_code == 0:
+        logger.info("Completed run.py.")
+    else:
+        logger.error(
+            "run.py failed (rc=%d). See logs above for details.", main_return_code
         )
 
     logger.info(

@@ -439,8 +439,7 @@ def generate_docker_run_command(
 
         # fmt: off
         docker_command += [
-            "--mount", f"type=bind,src={repo_root_path}/benchmarking,dst={user_home_path}/app/benchmarking",
-            "--mount", f"type=bind,src={repo_root_path}/evals,dst={user_home_path}/app/evals",
+            "--mount", f"type=bind,src={repo_root_path}/reference_config,dst={user_home_path}/app/reference_config",
             "--mount", f"type=bind,src={repo_root_path}/utils,dst={user_home_path}/app/utils",
             "--mount", f"type=bind,src={repo_root_path}/tests,dst={user_home_path}/app/tests",
         ]

@@ -82,6 +82,7 @@ def generate_default_docker_link(
 def read_performance_reference_json() -> Dict[DeviceTypes, List[BenchmarkTaskParams]]:
     default_filepath = (
         get_repo_root_path()
+        / "reference_config"
         / "benchmarking"
         / "benchmark_targets"
         / "model_performance_reference.json"
@@ -299,6 +300,13 @@ training_lora_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-inference-server",
     code_path="tt-media-server/tt_model_runners/forge_training_runners/training_lora_runner.py",
 )
+# Same impl as qwen36_blackhole; separate impl_id so the batch=8 spec is selectable via --impl.
+qwen36_blackhole_b8_impl = ImplSpec(
+    impl_id="qwen36_blackhole_b8",
+    impl_name="qwen36-blackhole-b8",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/blackhole/qwen36",
+)
 
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "tt_transformers": tt_transformers_impl,
@@ -313,6 +321,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "sdxl_forge": sdxl_forge_impl,
     "qwen36_blackhole": qwen36_blackhole_impl,
     "training_lora": training_lora_impl,
+    "qwen36_blackhole_b8": qwen36_blackhole_b8_impl,
 }
 
 

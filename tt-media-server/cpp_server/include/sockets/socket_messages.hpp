@@ -125,6 +125,10 @@ struct PrefillResultMessage {
   // Unique 64-bit ID correlating this prefill result with the migration
   // (KV transfer) that produced it. Generated on the prefill server.
   uint64_t migrationId = 0;
+  // Decode-side session identifier for the reserved KV slot. Echoed from
+  // SlotReservationResponseMessage so decode can release the reservation
+  // when the request finishes.
+  std::string sessionId;
 
   explicit PrefillResultMessage(uint32_t taskId) : taskId(taskId) {}
 
@@ -139,7 +143,8 @@ struct PrefillResultMessage {
     bool hasTopK = topK.has_value();
     int topKVal = topK.value_or(0);
     ar(taskId, generatedText, tokenIds, rt, sid, error, hasTemp, tempVal,
-       hasTopP, topPVal, hasTopK, topKVal, fastMode, cachedTokens, migrationId);
+       hasTopP, topPVal, hasTopK, topKVal, fastMode, cachedTokens, migrationId,
+       sessionId);
   }
 
   template <class Archive>
@@ -159,8 +164,9 @@ struct PrefillResultMessage {
     bool fastMode;
     int cachedTokens;
     uint64_t migrationId;
+    std::string sessionId;
     ar(tid, genText, tids, rt, sid, err, hasTemp, tempVal, hasTopP, topPVal,
-       hasTopK, topKVal, fastMode, cachedTokens, migrationId);
+       hasTopK, topKVal, fastMode, cachedTokens, migrationId, sessionId);
     PrefillResultMessage msg(tid);
     msg.generatedText = std::move(genText);
     msg.tokenIds = std::move(tids);
@@ -175,6 +181,7 @@ struct PrefillResultMessage {
     msg.fastMode = fastMode;
     msg.cachedTokens = cachedTokens;
     msg.migrationId = migrationId;
+    msg.sessionId = std::move(sessionId);
     return msg;
   }
 };
@@ -311,6 +318,7 @@ struct SlotReservationResponseMessage
   uint32_t taskId = 0;
   bool hasSlot = false;
   uint32_t slotId = tt::domain::INVALID_SLOT_ID;
+  std::string sessionId;
   int decodePositionId = 0;
   int decodeSkipTokens = 0;
   bool continuation = false;
@@ -320,13 +328,13 @@ struct SlotReservationResponseMessage
 
   template <class F>
   void fields(F&& f) {
-    f(taskId, hasSlot, slotId, decodePositionId, decodeSkipTokens, continuation,
-      accumulatedThinkTokens, error, errorText);
+    f(taskId, hasSlot, slotId, sessionId, decodePositionId, decodeSkipTokens,
+      continuation, accumulatedThinkTokens, error, errorText);
   }
   template <class F>
   void fields(F&& f) const {
-    f(taskId, hasSlot, slotId, decodePositionId, decodeSkipTokens, continuation,
-      accumulatedThinkTokens, error, errorText);
+    f(taskId, hasSlot, slotId, sessionId, decodePositionId, decodeSkipTokens,
+      continuation, accumulatedThinkTokens, error, errorText);
   }
 };
 
