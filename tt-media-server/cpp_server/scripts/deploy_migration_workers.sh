@@ -273,14 +273,11 @@ validateArgs() {
   [[ "${DECODE_TABLE}" == /* ]] || die "--decode-table must be an absolute remote path"
   PREFILL_DEVICE_MAP="${PREFILL_DEVICE_MAP:-${DEVICE_MAP}}"
   DECODE_DEVICE_MAP="${DECODE_DEVICE_MAP:-${DEVICE_MAP}}"
-  # Device maps are OPTIONAL: unset => discovery-only e2e (no transfer). When set
-  # it's a real transfer run, so each map file must exist.
+  # Device maps are OPTIONAL: unset => discovery-only e2e (no transfer). Paths
+  # refer to worker hosts and are validated there when worker slots are created.
+  # The deploy host does not need access to them.
   # Default: mount and pass the map file directly. A nonzero port opts into
   # socket handoff.
-  [[ -z "${PREFILL_DEVICE_MAP}" || -f "${PREFILL_DEVICE_MAP}" ]] || \
-    die "prefill device map file not found: ${PREFILL_DEVICE_MAP}"
-  [[ -z "${DECODE_DEVICE_MAP}" || -f "${DECODE_DEVICE_MAP}" ]] || \
-    die "decode device map file not found: ${DECODE_DEVICE_MAP}"
   if [[ -n "${PREFILL_DEVICE_MAP}" || -n "${DECODE_DEVICE_MAP}" ]]; then
     if [[ -z "${ENGINE_HANDOFF_PORT}" ]]; then
       ENGINE_HANDOFF_PORT=0
@@ -706,11 +703,16 @@ waitForContainerStart() {
 # the named remote container is running.
 launchWorkerSlot() {
   local s="$1" role="${WK_ROLE[$s]}" index="${WK_INDEX[$s]}" host="${WK_HOST[$s]}"
-  local log="${WK_LOG[$s]}" cmd
+  local log="${WK_LOG[$s]}" archivedLog cmd
   cmd="$(workerCmd "${s}")"
   clearRpcMeta "${WK_TAG[$s]}"
   sweepWorkerOnHost "${host}" "${WK_TAG[$s]}" "${WK_DOCKER[$s]}" >/dev/null || \
     die "could not clear stale container for ${WK_TAG[$s]} on ${host}"
+  if [[ -e "${log}" ]]; then
+    archivedLog="${log%.log}.$(date -u +%Y%m%dT%H%M%S.%N).log"
+    mv -- "${log}" "${archivedLog}" || die "could not archive worker log: ${log}"
+    echo "[deploy] archived previous ${role}-${index} log at ${archivedLog}"
+  fi
   : >"${log}"
   echo "[deploy] launching ${role}-${index} on ${host} (container=${WK_CONTAINER[$s]})"
   ssh "${SSH_OPTS[@]}" "${host}" "${cmd}" >"${log}" 2>&1 &
