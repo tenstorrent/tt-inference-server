@@ -4,6 +4,7 @@
 #pragma once
 
 #include <chrono>
+#include <cstddef>
 #include <condition_variable>
 #include <cstdint>
 #include <functional>
@@ -157,7 +158,7 @@ class RemoteKVManagerAdapter
  private:
   // Aggregation state for ONE scheduler-facing unit of work — a
   // start_burst()..finish_burst() lifecycle. Owns the set of per-layer Kafka
-  // migration_ids that must all terminate before poll() fires the group's
+  // Kafka request IDs that must all terminate before poll() fires the group's
   // single MigrationComplete callback.
   //
   // `closed` gates completion emission: false until finish_burst() flips it,
@@ -170,6 +171,8 @@ class RemoteKVManagerAdapter
   struct MigrationGroup {
     MigrationToken token;
     std::unordered_set<uint64_t> pendingKafkaIds;
+    std::size_t totalKafkaRequests{0};
+    std::chrono::steady_clock::time_point startedAt;
     bool closed{false};
     bool failed{false};
     bool failedReported{false};
@@ -183,7 +186,7 @@ class RemoteKVManagerAdapter
   // Group state keyed by the burst uuid (caller-supplied MigrationToken
   // returned by start_burst / finish_burst); poll() aggregates into these.
   std::unordered_map<MigrationToken, MigrationGroup> groups_;
-  // Reverse index: Kafka migration_id -> owning group's token. Extended on
+  // Reverse index: Kafka request ID -> owning group's token. Extended on
   // every enqueue_migration_in_burst(); trimmed as per-layer acks land in
   // poll().
   std::unordered_map<uint64_t, MigrationToken> kafkaToGroup_;
