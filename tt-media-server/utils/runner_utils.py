@@ -13,11 +13,14 @@ from utils.torch_utils import set_torch_thread_limits
 
 _BH_DEVICE_MESH_DESCRIPTORS = {
     "p150": "p150_mesh_graph_descriptor.textproto",
-    "p150x4": "p150x4_mesh_graph_descriptor.textproto",
-    "p150x8": "p150x8_mesh_graph_descriptor.textproto",
+    "p150x4": "p150_x4_mesh_graph_descriptor.textproto",
+    "p150x8": "p150_x8_mesh_graph_descriptor.textproto",
     "p300": "p150_mesh_graph_descriptor.textproto",
     "p300x2": "p150_mesh_graph_descriptor.textproto",
     "p100": "p100_mesh_graph_descriptor.textproto",
+    # DP=32 on the Blackhole Galaxy: each worker sees a single p150 chip via
+    # TT_VISIBLE_DEVICES, so the single-chip p150 descriptor matches per worker.
+    "bh-galaxy": "p150_mesh_graph_descriptor.textproto",
 }
 
 

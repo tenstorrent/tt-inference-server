@@ -7,6 +7,7 @@ from typing import Optional
 from config.constants import AUDIO_RESPONSE_FORMATS
 from domain.text_to_speech_request import TextToSpeechRequest
 from domain.voice_encode_request import VoiceEncodeRequest
+from domain.voice_list_request import VoiceListRequest
 from fastapi import (
     APIRouter,
     Depends,
@@ -91,12 +92,19 @@ async def parse_voice_encode_request(
     request: Request,
     file: Optional[UploadFile] = File(None),
     voice_id: Optional[str] = Form(None),
+    language: Optional[str] = Form(None),
+    description: Optional[str] = Form(None),
 ) -> VoiceEncodeRequest:
     content_type = request.headers.get("content-type", "").lower()
 
     if file is not None:
         file_content = await file.read()
-        return VoiceEncodeRequest(reference_audio=file_content, voice_id=voice_id)
+        return VoiceEncodeRequest(
+            reference_audio=file_content,
+            voice_id=voice_id,
+            language=language,
+            description=description,
+        )
     if "application/json" in content_type:
         json_body = await request.json()
         return VoiceEncodeRequest(**json_body)
@@ -128,6 +136,32 @@ async def register_voice(
     """
     try:
         result = await service.process_request(voice_encode_request)
+        return get_dict_response(result)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/voices")
+async def list_voices(
+    service: BaseService = Depends(service_resolver),
+    api_key: str = Security(get_api_key),
+):
+    """
+    List all registered voice-clone voices with their metadata.
+
+    Returns:
+        JSON body with a ``voices`` array, one entry per cached voice, each
+        with ``voice_id``, ``language``, ``description`` and ``num_codes``.
+        Voices registered before language/description support naturally report
+        ``language``/``description`` as null.
+
+    Raises:
+        HTTPException: If listing the voices fails.
+    """
+    try:
+        result = await service.process_request(VoiceListRequest())
         return get_dict_response(result)
     except HTTPException:
         raise

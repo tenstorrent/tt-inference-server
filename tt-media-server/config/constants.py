@@ -990,6 +990,20 @@ ModelConfigs = {
         "max_batch_size": 1,
         "request_processing_timeout_seconds": 600,
     },
+    # DP=32 fleet: 32 independent single-chip (1,1) workers across the full
+    # Blackhole Galaxy box (32x P150). Each worker owns ONE chip and hosts its
+    # own complete SpeechLM+decoder(+encoder) -- no tensor parallelism / CCL.
+    # The flat 32-entry device_ids string makes the scheduler split into 32
+    # single-chip workers (worker_count = number of "),(" groups). is_galaxy is
+    # False so the Blackhole (p150) single-chip mesh descriptor is applied per
+    # worker rather than the Wormhole-galaxy 7,7 grid + n150 descriptor.
+    (ModelRunners.TT_INWORLD_TTS, DeviceTypes.BLACKHOLE_GALAXY): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 600,
+    },
     (ModelRunners.TT_WHISPER, DeviceTypes.N300): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,

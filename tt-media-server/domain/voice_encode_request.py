@@ -15,3 +15,5 @@ class VoiceEncodeRequest(BaseRequest):
     voice_id: Optional[str] = (
         None  # Caller-supplied voice ID to register under; a new one is generated if omitted
     )
+    language: Optional[str] = None  # Optional BCP-47 language tag for the voice
+    description: Optional[str] = None  # Optional human-readable description of the voice

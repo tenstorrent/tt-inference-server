@@ -17,9 +17,12 @@ from domain.text_to_speech_request import TextToSpeechRequest
 from domain.text_to_speech_response import TextToSpeechResponse
 from domain.voice_encode_request import VoiceEncodeRequest
 from domain.voice_encode_response import VoiceEncodeResponse
+from domain.voice_list_request import VoiceListRequest
+from domain.voice_list_response import VoiceInfo, VoiceListResponse
 from models.demos.inworld_tts import tt_modeling
 from models.demos.inworld_tts.tt.decoder_tts2 import TtDecoder
 from models.demos.inworld_tts.tt.speechlm_ttnn import TtSpeechLmConfig, TtTransformersSpeechLM
+from models.perf.benchmarking_utils import BenchmarkProfiler
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
 from utils.decorators import log_execution_time
@@ -49,9 +52,16 @@ def _load_wav_from_bytes(data: bytes, target_sample_rate: int) -> torch.Tensor:
 
 
 class TTInworldTTSRunner(BaseMetalDeviceRunner):
-    """TP=8 Inworld TTS-2 runner: SpeechLM (VQ-code generation) + replicated/traced
-    audio decoder + replicated/traced audio encoder (voice cloning), sharing one
-    ``(1, 8)`` mesh device -- mirrors ``models/demos/inworld_tts/main_tp8.py``.
+    """Inworld TTS-2 runner: SpeechLM (VQ-code generation) + traced audio decoder
+    + traced audio encoder (voice cloning) sharing one mesh device.
+
+    Mesh-shape-agnostic: works both as a single tensor-parallel (1, 8) mesh
+    (DeviceTypes.P150X8 -- mirrors ``models/demos/inworld_tts/main_tp8.py``) and
+    as one of N independent single-chip (1, 1) data-parallel workers
+    (DeviceTypes.BLACKHOLE_GALAXY, 32-way DP -- mirrors
+    ``models/demos/inworld_tts/main.py``). The SpeechLM/decoder/encoder TTNN
+    ops shard/all-reduce across whatever chips the mesh actually has and degrade
+    to a no-op on a 1-chip mesh (see speechlm_ttnn.py ``is_multi_device`` guards).
     """
 
     def __init__(self, device_id: str):
@@ -67,6 +77,17 @@ class TTInworldTTSRunner(BaseMetalDeviceRunner):
 
     def _configure_fabric(self, updated_device_params):
         try:
+            # Single-chip (1,1) DP workers have no inter-chip CCL, so the 1D
+            # fabric is unnecessary (and only makes sense for the multi-chip TP
+            # mesh). Mirror main.py's proven single-chip path, which never sets
+            # a fabric config. Only the multi-chip (TP) mesh gets FABRIC_1D.
+            if tuple(self.settings.device_mesh_shape) == (1, 1):
+                updated_device_params.pop("fabric_config", None)
+                self.logger.info(
+                    f"Device {self.device_id}: single-chip (1,1) mesh -- "
+                    "skipping FABRIC_1D (no inter-chip CCL needed)."
+                )
+                return None
             fabric_config = updated_device_params.pop(
                 "fabric_config", ttnn.FabricConfig.FABRIC_1D
             )
@@ -130,14 +151,32 @@ class TTInworldTTSRunner(BaseMetalDeviceRunner):
             if self.ttnn_device is None:
                 raise ValueError("Device not initialized. Call set_device() first.")
 
+            # Force host-side (torch) sampling for this long-lived, multi-request
+            # server. The on-device stochastic sampler's hardware PRNG free-runs
+            # across generations and CANNOT be reset deterministically between
+            # requests via re-seeding (verified: identical logits + identical
+            # pushed seed -> different sampled tokens on the 2nd+ request), so
+            # device sampling only produces correct output for the FIRST
+            # generation in a process. host sampling re-seeds torch per request
+            # (see ``_synthesize_with_perf``) and is fully deterministic and
+            # reproducible, so every HTTP request behaves like a fresh
+            # single-shot run. main_tp8.py (one generation per process) is
+            # unaffected and keeps the faster on-device sampling path.
+            os.environ.setdefault("INWORLD_TTS_FORCE_HOST_SAMPLING", "1")
+
             speechlm_path = os.environ.get("INWORLD_TTS_SPEECHLM_PATH")
             decoder_path = os.environ.get("INWORLD_TTS_DECODER_PATH")
             encoder_path = os.environ.get("INWORLD_TTS_ENCODER_PATH")
 
             def _build_pipeline():
-                # 1. SpeechLM (TP=8, traced, paged attention).
+                # 1. SpeechLM (traced, paged attention). Tensor-parallel across
+                #    the mesh when >1 chip, plain single-chip when the mesh is
+                #    (1, 1) (DP fleet worker).
+                num_chips = self.ttnn_device.get_num_devices()
                 self.logger.info(
-                    f"Device {self.device_id}: Loading TTNN SpeechLM (TP=8) from {speechlm_path}..."
+                    f"Device {self.device_id}: Loading TTNN SpeechLM "
+                    f"(mesh={tuple(self.settings.device_mesh_shape)}, "
+                    f"num_chips={num_chips}) from {speechlm_path}..."
                 )
                 self._speechlm = TtTransformersSpeechLM(
                     mesh_device=self.ttnn_device,
@@ -224,14 +263,90 @@ class TTInworldTTSRunner(BaseMetalDeviceRunner):
 
         voice_id = request.voice_id or uuid.uuid4().hex
         speech_ids = self._audio_encoder.encode(voice_id, wav)
-        self._voice_cache.register_voice(voice_id, speech_ids)
+        self._voice_cache.register_voice(
+            voice_id,
+            speech_ids,
+            language=request.language,
+            description=request.description,
+        )
 
-        return VoiceEncodeResponse(voice_id=voice_id, num_codes=len(speech_ids))
+        return VoiceEncodeResponse(
+            voice_id=voice_id,
+            num_codes=len(speech_ids),
+            language=request.language,
+            description=request.description,
+        )
+
+    def _list_voices(self, request: VoiceListRequest) -> VoiceListResponse:
+        # DP-fleet coherence: refresh from the shared on-disk pickle so this
+        # worker reports voices registered by any other worker (see
+        # VoiceCloneCacheManager.reload_from_disk / get_voice for the rationale).
+        self._voice_cache.reload_from_disk()
+        voices = [
+            VoiceInfo(**info)
+            for info in self._voice_cache.list_voices_with_metadata()
+        ]
+        return VoiceListResponse(voices=voices)
+
+    def _log_perf_summary(self, profiler, speech_ids, prompt_len, decode_calls, decode_elapsed_ms):
+        """Log a one-line per-request timing breakdown from the profiler that
+        ``synthesize_tp8`` populated, mirroring ``main_tp8.py``'s CLI perf
+        summary (lines ~261-306). Best-effort: any missing key is reported as
+        NaN rather than failing the request.
+        """
+
+        def _dur_ms(key):
+            try:
+                if profiler.contains_step(key):
+                    return profiler.get_duration(key) * 1000.0
+            except Exception:
+                pass
+            return float("nan")
+
+        reset_ms = _dur_ms("reset_state")
+        ttft_ms = _dur_ms("inference_prefill")
+
+        # Steady-state decode: calls 1..decode_calls-1 (call 0 is the
+        # trace-compile call, excluded), matching main_tp8.py.
+        num_steady = max(0, (decode_calls or 0) - 1)
+        total_decode_ms = 0.0
+        for i in range(1, decode_calls or 0):
+            d = _dur_ms(f"inference_decode_time_{i}")
+            if d == d:  # not NaN
+                total_decode_ms += d
+        if num_steady > 0 and total_decode_ms > 0:
+            ms_per_token = total_decode_ms / num_steady
+            tok_s = num_steady / (total_decode_ms / 1000.0)
+        else:
+            ms_per_token = float("nan")
+            tok_s = float("nan")
+
+        num_codes = len(speech_ids) if speech_ids else 0
+        self.logger.info(
+            f"Device {self.device_id}: [tts-perf] reset_state={reset_ms:.1f}ms "
+            f"TTFT/prefill={ttft_ms:.1f}ms "
+            f"decode={total_decode_ms:.1f}ms over {num_steady} steady-state tokens "
+            f"({ms_per_token:.2f} ms/token, {tok_s:.2f} tok/s) "
+            f"audio_decode={decode_elapsed_ms:.1f}ms "
+            f"| {num_codes} VQ codes, real_prompt_len={prompt_len}"
+        )
 
     def _synthesize(self, request: TextToSpeechRequest) -> TextToSpeechResponse:
         speech_ids_prompt = None
         if request.voice_id:
             speech_ids_prompt = self._voice_cache.get_voice(request.voice_id)
+
+        # Per-request perf instrumentation. ``synthesize_tp8`` already computes
+        # a full timing breakdown internally (via ``BenchmarkProfiler`` in
+        # ``_synthesize_with_perf`` plus the ``decode_elapsed_ms`` audio-decoder
+        # timing) but the server previously discarded all of it, leaving
+        # everything inside the outer ``[run]`` wrapper a black box. Pass an
+        # explicit profiler in and log a one-line summary mirroring
+        # ``main_tp8.py``'s CLI perf print (reset_state / TTFT / steady-state
+        # decode ms/token + tok/s / audio-decode ms) so per-stage cost is
+        # visible in the server log for every request. Purely additive -- no
+        # change to synthesis behavior.
+        profiler = BenchmarkProfiler()
 
         wav, _speech_ids, _prompt_len, _decode_calls, _decode_elapsed_ms = tt_modeling.synthesize_tp8(
             self._speechlm,
@@ -239,7 +354,10 @@ class TTInworldTTSRunner(BaseMetalDeviceRunner):
             self._audio_decoder,
             request.text,
             speech_ids_prompt=speech_ids_prompt,
+            profiler=profiler,
         )
+
+        self._log_perf_summary(profiler, _speech_ids, _prompt_len, _decode_calls, _decode_elapsed_ms)
 
         # Base64/WAV-encoding matches speecht5_runner.py's own approach exactly.
         audio_buffer = io.BytesIO()
@@ -279,6 +397,8 @@ class TTInworldTTSRunner(BaseMetalDeviceRunner):
         try:
             if isinstance(request, VoiceEncodeRequest):
                 return await asyncio.to_thread(self._encode_voice, request)
+            if isinstance(request, VoiceListRequest):
+                return await asyncio.to_thread(self._list_voices, request)
             if isinstance(request, TextToSpeechRequest):
                 return await asyncio.to_thread(self._synthesize, request)
             raise ValueError(
