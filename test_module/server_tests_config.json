@@ -644,6 +644,21 @@
                 "mock_mode": false
             }
         },
+        "WebSocketSTTLiveTest": {
+            "module": "test_module.load_param_tests.websocket_stt_live_test",
+            "markers": [
+                "param",
+                "e2e",
+                "slow"
+            ],
+            "test_config": {
+                "test_timeout": 1800,
+                "retry_attempts": 1,
+                "retry_delay": 10,
+                "break_on_failure": false,
+                "mock_mode": false
+            }
+        },
         "AudioTranscriptionLoadDp2Chunk5Test": {
             "module": "test_module.load_param_tests.audio_transcription_load_dp2_chunk5_test",
             "markers": [

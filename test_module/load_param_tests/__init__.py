@@ -61,6 +61,10 @@ from .video_generation_param_test import (
     VideoGenerationParamTest,
     run_video_generation_param,
 )
+from .websocket_stt_live_test import (
+    WebSocketSTTLiveTest,
+    run_websocket_stt_live,
+)
 
 
 __all__ = [
@@ -88,6 +92,7 @@ __all__ = [
     "VideoGenerationI2VTest",
     "VideoGenerationLoadTest",
     "VideoGenerationParamTest",
+    "WebSocketSTTLiveTest",
     "run_audio_transcription_load",
     "run_audio_transcription_load_dp2_chunk30",
     "run_audio_transcription_load_dp2_chunk5",
@@ -107,4 +112,5 @@ __all__ = [
     "run_video_generation_i2v_param",
     "run_video_generation_load",
     "run_video_generation_param",
+    "run_websocket_stt_live",
 ]
