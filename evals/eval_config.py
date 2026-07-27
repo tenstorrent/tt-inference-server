@@ -4863,7 +4863,8 @@ _eval_config_list = [
                 # here. DiffusionGemma's TT generator DISCARDS the per-request
                 # SamplingParams outright: tt-metal
                 # models/experimental/diffusion_gemma/tt/generator_vllm.py deletes
-                # them in both the prefill (:623) and decode (:727) entry points.
+                # them in both prefill_forward and decode_forward (cited by function,
+                # not line: a 2026-07-27 change shifted these by ~30 lines).
                 # What actually sets the sampling behaviour is an internal
                 # per-denoise-step linear temperature schedule feeding a
                 # per-canvas-position Gumbel-max draw: t_max 0.8 -> t_min 0.4 over
@@ -4871,8 +4872,12 @@ _eval_config_list = [
                 # temperature_end, formula in denoise_loop.py:temperature_at_step).
                 # top_k/top_p have no implementation at all on this path
                 # (tt/sampling_params.py sets top_k_top_p_supported=False).
-                # EvalTask.seed (class default 42) is ignored too -- the served
-                # session seed comes from the model spec ("seed": "9472").
+                # EvalTask.seed (class default 42) is ignored too, though not for
+                # the reason it looks like: the spec's "seed": "9472" is a vLLM CLI
+                # arg (model_spec.py default_vllm_args) that seeds vLLM's own RNG and
+                # never reaches this model. The DG canvas/Gumbel seed is a HARDCODED 0
+                # in generator_vllm._make_session(seed: int = 0), and both call sites
+                # take the default -- so no configuration currently reaches it at all.
                 # Passing the inert knobs anyway is not harmless: the report and
                 # any triage read from it would claim this eval samples at
                 # temperature 1.0, and if request-param plumbing is ever wired up
