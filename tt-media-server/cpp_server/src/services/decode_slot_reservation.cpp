@@ -86,8 +86,6 @@ void resolveDecodeDestinationSlot(
         return;
       }
 
-      tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(promptTokens,
-                                                                 0u);
       TT_LOG_INFO(
           "{} taskId={} response-id MISS prevId={} → allocating new session",
           K_LOG_PREFIX, input.taskId, *input.previousResponseId);
@@ -144,10 +142,12 @@ void resolveDecodeDestinationSlot(
   uint32_t copyMatchedTokens =
       copyPlan.has_value() ? copyPlan->matchedTokens : 0;
 
-  if (!useResponseId && !blockInfos.empty()) {
-    tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(
-        promptTokens, copyMatchedTokens);
-  }
+  // Unconditional, matching the prefill path in DisaggregationService: every
+  // request that reaches the new-session path counts toward the denominator,
+  // including 0-matched-token misses. A slot copy still reuses
+  // copyMatchedTokens of KV cache, so credit those as hits.
+  tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(promptTokens,
+                                                             copyMatchedTokens);
 
   sessionManager.createSession(
       [&sessionManager, blockInfos, slotToCopyFrom, copyMatchedTokens,
