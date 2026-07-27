@@ -1117,7 +1117,7 @@ ModelConfigs = {
         "device_mesh_shape": (8, 4),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
-        # Dims env-driven via dev/cnn.yaml env_vars (see gemma entry above); this
+        # Dims env-driven via dev/llm.yaml env_vars (see gemma entry above); this
         # entry only carries the TP mesh topology.
         "max_batch_size": 1,
         "queue_for_multiprocessing": QueueType.FasterFifo.value,

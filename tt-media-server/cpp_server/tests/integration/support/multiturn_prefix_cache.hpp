@@ -77,7 +77,8 @@ inline void verifyMultiTurnPrefixGrowth(
     if (turn == 0) {
       // First turn: fresh allocation, nothing to match.
       EXPECT_FALSE(seq->isContinuation()) << "turn 0 must allocate a session";
-      EXPECT_FALSE(seq->getKVPositionId().has_value()) << "turn 0";
+      ASSERT_TRUE(seq->getKVPositionId().has_value()) << "turn 0";
+      EXPECT_EQ(*seq->getKVPositionId(), 0u) << "turn 0 first free KV index";
     } else {
       ASSERT_TRUE(seq->isContinuation())
           << "turn " << turn << " must hit the prefix cache (no reset/reject)";
