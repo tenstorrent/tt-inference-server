@@ -52,6 +52,14 @@ def setup_runner_environment(
     _RUNNERS_REQUIRING_MESH_DESCRIPTOR = {
         ModelRunners.TT_WHISPER.value,
         ModelRunners.TT_SPEECHT5_TTS.value,
+        # Forge (tt-xla) inits the device via torch_xla.device(), which aborts on a
+        # Blackhole CUSTOM cluster unless TT_MESH_GRAPH_DESC_PATH is set (see #4784).
+        ModelRunners.VLLMForge.value,
+        ModelRunners.VLLMForge_LLAMA_70B.value,
+        ModelRunners.VLLMForge_GEMMA4_31B.value,
+        ModelRunners.VLLMForge_QWEN_32B.value,
+        ModelRunners.VLLMForge_MISTRAL_SMALL_31_24B.value,
+        ModelRunners.VLLMForge_QWEN_EMBEDDING.value,
     }
     if settings.model_runner in _RUNNERS_REQUIRING_MESH_DESCRIPTOR:
         if settings.is_galaxy:

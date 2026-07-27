@@ -204,6 +204,26 @@ class TestSetupRunnerEnvironment:
 
                             mock_galaxy.assert_not_called()
 
+    def test_calls_blackhole_setup_for_forge_runner(self):
+        """Forge runner on a Blackhole device must get the mesh descriptor (#4784)."""
+        with patch.dict(os.environ, {"TT_METAL_HOME": "/opt/tt-metal"}, clear=True):
+            with patch("utils.runner_utils.set_torch_thread_limits"):
+                with patch("utils.runner_utils.get_telemetry_client"):
+                    with patch(
+                        "utils.runner_utils._setup_blackhole_mesh_config"
+                    ) as mock_bh:
+                        mock_settings_forge = Mock()
+                        mock_settings_forge.enable_telemetry = False
+                        mock_settings_forge.is_galaxy = False
+                        mock_settings_forge.device = "p300x2"
+                        mock_settings_forge.model_runner = "vllm_forge"
+                        mock_settings_forge.default_throttle_level = None
+
+                        with patch("utils.runner_utils.settings", mock_settings_forge):
+                            setup_runner_environment("0")
+
+                            mock_bh.assert_called_once_with("/opt/tt-metal")
+
     def test_custom_cpu_threads(self):
         """Test custom cpu_threads parameter"""
         with patch.dict(os.environ, {}, clear=True):
