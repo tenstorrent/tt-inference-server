@@ -352,6 +352,22 @@ templates:
         # one-step early halt are intrinsic to this path.
         DG_UPFRONT_CAPTURE: "1"
         DG_DENOISE_REVEAL_PMAX: "8192"
+        # HF's sliding layers retain only the last sliding_window-1 = 1023 committed
+        # tokens, and 25 of DiffusionGemma's 30 layers are sliding; without this the
+        # denoise path attends keys HF has evicted, and the excess grows every block.
+        # Default flipped ON in tt-metal on 2026-07-27 (#51080) after a GPQA-Diamond
+        # decision-agreement gate: over the 64 questions that collapsed under the
+        # previous config it repaired 52 and regressed 1 of 67 already-clean ones,
+        # taking TT from 58/131 correct to 86/131 against the CUDA reference's 97/131,
+        # and blocks that halt from 72% to 99% (~1.5x throughput, since a block that
+        # cannot settle burns all 48 denoise steps anyway). Pinned rather than
+        # inherited because it binds above a 1023-token committed prefix -- i.e. on
+        # essentially every multi-block request at max_context 8192 -- so an older
+        # pinned tt_metal_commit would otherwise serve the pre-fix geometry silently.
+        # Set "0" to restore the maskless path.
+        # Evidence: models/experimental/diffusion_gemma/doc/decision_fidelity/
+        #   device_gumbel_restored.md sections 10, 17, 19.
+        DG_DENOISE_SLIDING_WINDOW: "1"
         # Up-front capture intentionally rejects unseen prefill shapes after
         # activation, so this must cover every 32-aligned prefill length the
         # server can see. The 198-sample gpqa_diamond_cot_zeroshot task with
