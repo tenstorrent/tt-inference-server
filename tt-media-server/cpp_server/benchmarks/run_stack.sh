@@ -211,6 +211,8 @@ ensure_binary() {
             "${CPP_DIR}/src/dynamo/prefill_result_mapping.cpp" \
             "${CPP_DIR}/src/services/disaggregation_service.cpp" \
             "${CPP_DIR}/src/services/llm_pipeline.cpp" \
+            "${CPP_DIR}/src/services/decode_slot_reservation.cpp" \
+            "${CPP_DIR}/src/metrics/metrics.cpp" \
             "${CPP_DIR}/src/utils/service_factory.cpp" \
             "${CPP_DIR}/src/main.cpp" \
             "${CPP_DIR}/include/dynamo/worker_server.hpp" \
@@ -222,7 +224,9 @@ ensure_binary() {
             "${CPP_DIR}/include/dynamo/llm_mapping.hpp" \
             "${CPP_DIR}/include/dynamo/prefill_result_mapping.hpp" \
             "${CPP_DIR}/include/services/disaggregation_service.hpp" \
-            "${CPP_DIR}/include/services/llm_pipeline.hpp"; do
+            "${CPP_DIR}/include/services/llm_pipeline.hpp" \
+            "${CPP_DIR}/include/services/decode_slot_reservation.hpp" \
+            "${CPP_DIR}/include/metrics/metrics.hpp"; do
             if [[ "${src}" -nt "${BIN}" ]]; then
                 log "source newer than binary: ${src#$CPP_DIR/}"
                 rebuild=1

@@ -82,6 +82,55 @@ class TestComputeSlaChecks:
         checks = _compute_sla_checks(metrics)
         assert checks["sla_pass"] is False
 
+    def test_aggregated_run_has_no_role_checks(self):
+        # No prefill/decode data -> no role checks, overall unchanged.
+        checks = _compute_sla_checks(_passing_metrics())
+        assert "sla_hit_rate_prefill_pass" not in checks
+        assert "sla_hit_rate_decode_pass" not in checks
+        assert checks["sla_pass"] is True
+
+    def test_disagg_both_roles_pass(self):
+        metrics = _passing_metrics()
+        metrics["prefix_cache_hit_rate_prefill"] = SLA_HIT_RATE_MIN + 0.02
+        metrics["prefix_cache_hit_rate_decode"] = SLA_HIT_RATE_MIN + 0.03
+        checks = _compute_sla_checks(metrics)
+        assert checks["sla_hit_rate_prefill_pass"] is True
+        assert checks["sla_hit_rate_decode_pass"] is True
+        assert checks["sla_pass"] is True
+
+    def test_disagg_prefill_informational_does_not_gate(self):
+        # Decode gates; prefill is informational. A failing prefill is still
+        # reported (False) but must NOT sink the overall verdict when decode
+        # (the gating role) passes. Prefill structurally handles misses.
+        metrics = _passing_metrics()
+        metrics["prefix_cache_hit_rate_prefill"] = SLA_HIT_RATE_MIN - 0.50
+        metrics["prefix_cache_hit_rate_decode"] = SLA_HIT_RATE_MIN + 0.05
+        checks = _compute_sla_checks(metrics)
+        assert checks["sla_hit_rate_prefill_pass"] is False  # reported
+        assert checks["sla_hit_rate_decode_pass"] is True
+        assert checks["sla_pass"] is True  # decode gates, prefill ignored
+
+    def test_disagg_decode_below_target_fails_overall(self):
+        # Decode is the gating role: if it misses, overall fails regardless of
+        # prefill (and regardless of the blended combined rate).
+        metrics = _passing_metrics()
+        metrics["prefix_cache_hit_rate_prefill"] = SLA_HIT_RATE_MIN + 0.05
+        metrics["prefix_cache_hit_rate_decode"] = SLA_HIT_RATE_MIN - 0.10
+        checks = _compute_sla_checks(metrics)
+        assert checks["sla_hit_rate_decode_pass"] is False
+        assert checks["sla_pass"] is False
+
+    def test_disagg_decode_supersedes_blended_combined(self):
+        # Combined blend would PASS (weighted avg high) but decode itself is
+        # below target -> overall must FAIL on decode, not be rescued by the
+        # blended combined rate.
+        metrics = _passing_metrics()
+        metrics["prefix_cache_hit_rate"] = SLA_HIT_RATE_MIN + 0.05  # blend passes
+        metrics["prefix_cache_hit_rate_decode"] = SLA_HIT_RATE_MIN - 0.10  # fails
+        checks = _compute_sla_checks(metrics)
+        assert checks["sla_hit_rate_pass"] is True  # combined still reported
+        assert checks["sla_pass"] is False  # but decode gates
+
 
 def _load_generator():
     path = _TRACE_DIR / "generate_customer_mooncake.py"
