@@ -368,19 +368,41 @@ templates:
         # Evidence: models/experimental/diffusion_gemma/doc/decision_fidelity/
         #   device_gumbel_restored.md sections 10, 17, 19.
         DG_DENOISE_SLIDING_WINDOW: "1"
+        # The two largest remaining perf levers, both default OFF in tt-metal pending this gate.
+        # DG_MOE_CONCAT (-29.9%): concat-experts MoE. At the shipped capacity == canvas == 256 the
+        # token-gather path adds ~+89% MACs over an expert MAC count already equal to dense, and the
+        # gathered [1,E,C,H] is ~94% zero rows; the fold is exact by linearity of the down
+        # projection (device PCC 0.9999218). Costs 7.8 GiB of duplicated gate/up weights, which is
+        # why trace_region_size drops to 6 GiB below -- the two compete for the same DRAM.
+        # DG_NORM_FULLCANVAS (-17.9%): one full-canvas rms_norm instead of ~1700 chunked ones per
+        # step; also cuts commit from 2.04 s to 0.37 s per block. Together ~1.9x.
+        # Both change committed tokens, so they cannot be gated by bit-identity against a baseline
+        # our own #48291 record calls degenerate -- they are gated on absolute GPQA against the CUDA
+        # reference (70.71% / 70.20% flexible-extract, thinking, two reps). First partial read
+        # 2026-07-28: 47/61 = 77.05% over the questions served before an unrelated engine crash, vs
+        # 68.03% for the reference restricted to those same 61 -- no regression, and this run is the
+        # full-198 confirmation. Set either to "0" to drop back to the shipped default.
+        DG_MOE_CONCAT: "1"
+        DG_NORM_FULLCANVAS: "1"
         # Up-front capture intentionally rejects unseen prefill shapes after
         # activation, so this must cover every 32-aligned prefill length the
         # server can see. The 198-sample gpqa_diamond_cot_zeroshot task with
         # server-side enable_thinking=true occupies 128..832 plus a single
         # 2432 outlier; the range is listed contiguously (and 2432 is paired
         # with 2464) so a few tokens of prompt-template drift cannot push a
-        # doc into an unwarmed bucket and kill the engine.
-        DG_UPFRONT_PREFILL_WARMUP_LENS: "128,160,192,224,256,288,320,352,384,416,448,480,512,544,576,608,640,672,704,736,768,800,832,864,896,2432,2464"
+        # doc into an unwarmed bucket and kill the engine. 32/64/96 are here for everything that
+        # is NOT an eval prompt: a curl smoke test, a readiness ping, a hand-typed question. On
+        # 2026-07-28 a 21-token "Reply with exactly: OK" probe (padding to 32) sent to a live server
+        # raised out of prefill_forward -- fatal to the vLLM EngineCore -- and emptied the 135
+        # requests still queued behind it, 56 minutes into a 198-question run. tt-metal 680114b3c2a
+        # makes an unwarmed length cost one request instead of the server, and always warms 32;
+        # these three entries make it cost nothing at all.
+        DG_UPFRONT_PREFILL_WARMUP_LENS: "32,64,96,128,160,192,224,256,288,320,352,384,416,448,480,512,544,576,608,640,672,704,736,768,800,832,864,896,2432,2464"
         # The real trace-region knob is override_tt_config.trace_region_size
         # below (worker.py -> open_mesh_device); the env DG_TRACE_REGION_SIZE is
         # metrics/validation mirror and does NOT carve the region. Up-front
         # validation nevertheless requires it to match the real positive region.
-        DG_TRACE_REGION_SIZE: "12884901888"
+        DG_TRACE_REGION_SIZE: "6442450944"
       override_tt_config:
         # On-device canvas sampling (Gumbel-max -> entropy-budget accept -> renoise
         # over all 256 positions, no host readback).
@@ -391,13 +413,16 @@ templates:
         # Capture/replay the full denoise loop (MoE forward + chunked-Gumbel
         # terminal), once up front rather than once per request.
         trace_mode: all
-        # Sized for the chunked-Gumbel 48-step single-step trace command stream at
-        # msl=8192: pool = 31.87 - 12 = 19.87 GiB/chip vs ~15.2 GiB peak -> ~4.5 GiB
-        # free. Ceiling is 13 GiB (13958643712). Do NOT carry this region to high
-        # context (msl=262144 KV alone is ~15 GiB) -- that regime needs the hybrid
-        # eager-terminal controller and/or bf8 weights. PCC-neutral (allocator-only;
-        # never enters an op/seed/command stream). Confirm on QB2 before relying on it.
-        trace_region_size: 12884901888  # 12 GiB
+        # 6 GiB, NOT the 12 GiB that sized this for the chunked-Gumbel terminal: DG_MOE_CONCAT
+        # duplicates 7.8 GiB of gate/up weights and the trace region is carved out of the same
+        # per-chip DRAM, so the two cannot both be generous. At 12 GiB the pool is 31.87 - 12 =
+        # 19.87 GiB/chip against a ~15.2 GiB peak, and concat pushes that peak past the pool. At
+        # 6 GiB the pool is 25.87 GiB and the measured steady state on QB2 is ~2.5 GiB free with all
+        # 48 traces captured -- tight, but reproduced across two full runs. Raising this back to
+        # 12 GiB REQUIRES turning DG_MOE_CONCAT off. Do NOT carry either value to high context
+        # (msl=262144 KV alone is ~15 GiB) -- that regime needs the hybrid eager-terminal controller
+        # and/or bf8 weights. PCC-neutral (allocator-only; never enters an op/seed/command stream).
+        trace_region_size: 6442450944  # 6 GiB
       vllm_args:
         # REQUIRED. Without it vLLM honors the model's generation_config.json
         # max_new_tokens=256, capping EVERY request to one 256-token canvas block, so

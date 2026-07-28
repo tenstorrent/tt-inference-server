@@ -11,7 +11,12 @@ def test_diffusiongemma_gpqa_has_full_thinking_output_budget():
 
     assert task.use_chat_api is True
     assert task.model_kwargs["max_length"] == 8192
-    assert task.gen_kwargs["max_gen_toks"] == 4096
+    # Every whole canvas that fits beside the longest whitelisted prompt:
+    # (8192 - 2432) // 256 * 256 == 5632, i.e. 22 blocks. Matches the hardware runs this eval is
+    # compared against; a smaller budget truncates CoT before the answer and moves the score for
+    # reasons unrelated to whatever is under test.
+    assert task.gen_kwargs["max_gen_toks"] == 5632
+    assert task.gen_kwargs["max_gen_toks"] == (task.model_kwargs["max_length"] - 2432) // 256 * 256
     assert task.gen_kwargs["stream"] == "false"
     # CoT task exposes strict-match / flexible-extract filter keys (not "none").
     assert task.score.score_func_kwargs["result_keys"] == ["exact_match,flexible-extract"]

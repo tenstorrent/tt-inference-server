@@ -4890,9 +4890,15 @@ _eval_config_list = [
                     # 'message'; non-streamed is required.
                     "stream": "false",
                     # Thinking plus the final answer needs more than the previous
-                    # 1024/2048-token budgets on hard GPQA prompts. Sixteen canvas
-                    # blocks fit with the longest current prompt under max_length=8192.
-                    "max_gen_toks": 4096,
+                    # 1024/2048-token budgets on hard GPQA prompts. This is every whole
+                    # canvas that fits beside the longest whitelisted prompt:
+                    # (8192 - 2432) // 256 * 256 = 5632, i.e. 22 blocks rather than 16.
+                    # It matches the hardware runs this eval is being compared against
+                    # (run_upfront_gpqa.sh derives the same number from MAX_MODEL_LEN),
+                    # because a CoT chain truncated before its conclusion cannot emit an
+                    # extractable answer -- a budget difference shows up as a score
+                    # difference that has nothing to do with the flags under test.
+                    "max_gen_toks": 5632,
                     "until": [],
                 },
                 # Lightweight: 5-sample smoke; CI_NIGHTLY 0.05 (~10) mirrors gemma-4.

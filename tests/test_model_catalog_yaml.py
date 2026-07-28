@@ -284,7 +284,17 @@ def test_diffusiongemma_dev_spec_enables_upfront_early_halt_and_thinking():
     assert env["DG_UPFRONT_CAPTURE"] == "1"
     assert env["DG_DENOISE_REVEAL_PMAX"] == "8192"
     assert env["DG_VLLM_GUMBEL_MODE"] == "device"
-    assert env["DG_TRACE_REGION_SIZE"] == "12884901888"
+    # 6 GiB, not 12: DG_MOE_CONCAT duplicates 7.8 GiB of gate/up weights out of the same per-chip
+    # DRAM the trace region is carved from, so the two cannot both be generous. Raising this back
+    # requires turning concat off.
+    assert env["DG_TRACE_REGION_SIZE"] == "6442450944"
+    # The env var is only a mirror -- it does not carve the region -- but up-front validation
+    # refuses to start when it disagrees with the real knob, so they must move together.
+    assert int(env["DG_TRACE_REGION_SIZE"]) == spec.device_model_spec.override_tt_config["trace_region_size"]
+    # The two perf levers under absolute-GPQA gate. Pinned because they change committed tokens:
+    # inheriting the tt-metal default would silently serve a different arm than the one measured.
+    assert env["DG_MOE_CONCAT"] == "1"
+    assert env["DG_NORM_FULLCANVAS"] == "1"
     for removed in (
         "DG_VLLM_TRACE",
         "DG_DENOISE_REVEAL_MASK",
@@ -300,3 +310,8 @@ def test_diffusiongemma_dev_spec_enables_upfront_early_halt_and_thinking():
     # unwarmed shape.
     assert set(range(128, 896 + 32, 32)).issubset(warmup_lens)
     assert {2432, 2464}.issubset(warmup_lens)
+    # The low end is for everything that is NOT an eval prompt. A 21-token curl smoke test pads to
+    # 32, and on 2026-07-28 that emptied 135 queued requests 56 minutes into a run: the rejection
+    # raised out of prefill_forward, which is fatal to the vLLM EngineCore. tt-metal 680114b3c2a
+    # makes that cost one request rather than the server; these entries make it cost nothing.
+    assert {32, 64, 96}.issubset(warmup_lens)
