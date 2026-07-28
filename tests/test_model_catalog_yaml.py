@@ -287,10 +287,10 @@ def test_diffusiongemma_dev_spec_enables_upfront_early_halt_and_thinking():
     assert env["DG_DENOISE_REVEAL_PMAX"] == "16384"
     assert int(env["DG_DENOISE_REVEAL_PMAX"]) == spec.device_model_spec.max_context
     assert env["DG_VLLM_GUMBEL_MODE"] == "device"
-    # 6 GiB, not 12: DG_MOE_CONCAT duplicates 7.8 GiB of gate/up weights out of the same per-chip
-    # DRAM the trace region is carved from, so the two cannot both be generous. Raising this back
-    # requires turning concat off.
-    assert env["DG_TRACE_REGION_SIZE"] == "6442450944"
+    # 5.5 GiB, not 6 and not 12: at 6 GiB this configuration OOMed on request 8 of 198 by 29,696
+    # bytes of CONTIGUOUS space (free was 2.02x the request), i.e. fragmentation. Verified at
+    # 5.5 GiB on QB2. Raising it back to 12 requires turning DG_MOE_CONCAT off.
+    assert env["DG_TRACE_REGION_SIZE"] == "5905580032"
     # The env var is only a mirror -- it does not carve the region -- but up-front validation
     # refuses to start when it disagrees with the real knob, so they must move together.
     assert int(env["DG_TRACE_REGION_SIZE"]) == spec.device_model_spec.override_tt_config["trace_region_size"]
