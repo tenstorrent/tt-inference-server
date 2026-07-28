@@ -6,17 +6,17 @@
 // Two processes (a prefill "sender" and a decode "receiver") drive a full
 // table-addressed migration over a real TCP control channel + real Mooncake:
 //
-//   prefill device DRAM --read(UMD)--> staging
-//       --Mooncake one-sided WRITE(mirror_offset)--> decode mirror segment
-//       --drain(UMD)--> decode device DRAM
+//   prefill device DRAM --read(DRISC)--> staging
+//       --Mooncake one-sided WRITE(free bounce section)--> decode bounce buffer
+//       --drain(DRISC)--> decode device DRAM
 //
-//   control channel (TCP):  BeginMigration -> MirrorReady -> [WRITEs]
+//   control channel (TCP):  BeginMigration -> BounceReady
+//                           -> per window: WindowReady -> WindowAck
 //                           -> DoneMarker -> Ack
 //
-// Unlike transport_migration_e2e (the dummy single-tensor PoC), this exercises
-// the real address layer: KvCacheMirror / RemoteRegion built from a KV table,
-// device-group fan-out, per-(device,channel) physical offsets, and the
-// KvMigration{Sender,Receiver} orchestrators.
+// This exercises the real address layer: per-window bounce-section descriptors
+// built from a KV table, device-group fan-out, per-(device,channel) physical
+// addresses, and the KvMigration{Sender,Receiver} orchestrators.
 //
 // Modes:
 //   --mode host    : a host-backed device store stands in for device DRAM.
@@ -79,20 +79,23 @@
 #include <vector>
 
 #include "sockets/i_socket_transport.hpp"
+#include "transport/double_pinned_buffer.hpp"
+#include "transport/drisc_device_io.hpp"
 #include "transport/host_dram_storage_backend.hpp"
 #include "transport/i_device_io.hpp"
 #include "transport/in_memory_kv_table.hpp"
+#include "transport/kv_bounce_buffer.hpp"
 #include "transport/kv_chunk_address_table_adapter.hpp"
 #include "transport/kv_control_channel.hpp"
 #include "transport/kv_migration_endpoints.hpp"
 #include "transport/kv_migration_multi_host_sender.hpp"
 #include "transport/kv_migration_orchestrator.hpp"
+#include "transport/kv_staging_pool.hpp"
 #include "transport/kv_table_adapter.hpp"
 #include "transport/kv_table_view.hpp"
 #include "transport/mooncake_kv_receiver.hpp"
 #include "transport/mooncake_kv_sender.hpp"
 #include "transport/mooncake_transfer_engine.hpp"
-#include "transport/multi_device_umd.hpp"
 #include "transport/transfer_types.hpp"
 
 // Kafka-trigger mode: drive the migration through the same components as the
@@ -183,7 +186,12 @@ class TcpControl : public tt::sockets::ISocketTransport {
 
   void start() override {}
   void stop() override {}
-  bool isConnected() const override { return conn >= 0; }
+  // Flips false once a read sees the peer close (::read == 0), so the
+  // ISocketTransport default tryReceiveMessage reports CLOSED and a run() loop
+  // (used by the bounce receiver, whose message count is variable) returns
+  // promptly instead of spinning to the socket timeout. A read *timeout*
+  // (::read < 0) does NOT mark closed — the peer may just be slow.
+  bool isConnected() const override { return conn >= 0 && !peer_closed; }
   std::string getStatus() const override { return "tcp-control"; }
 
   bool sendRawData(std::span<const uint8_t> data) override {
@@ -228,7 +236,11 @@ class TcpControl : public tt::sockets::ISocketTransport {
     std::size_t off = 0;
     while (off < n) {
       const ssize_t r = ::read(conn, b + off, n - off);
-      if (r <= 0) return false;  // 0 = peer closed, <0 = error/timeout (EAGAIN)
+      if (r == 0) {  // peer closed the connection
+        peer_closed = true;
+        return false;
+      }
+      if (r < 0) return false;  // error / timeout (EAGAIN)
       off += static_cast<std::size_t>(r);
     }
     return true;
@@ -237,27 +249,39 @@ class TcpControl : public tt::sockets::ISocketTransport {
   int timeout_sec = 0;
   int listen = -1;
   int conn = -1;
+  bool peer_closed = false;
 };
 
 // --- Host-backed device store (host mode) ----------------------------------
+// Byte-addressed, modelling a contiguous DRAM address space per device: a read
+// of [n, n+size) assembles consecutive bytes regardless of the granularity they
+// were written at. This matters because the bounce buffer sender merges
+// source-contiguous chunks into one large device read, and the
+// bounce receiver drains one merged write per slot — a store keyed by exact
+// (device, noc) would miss those (a 256 B read finding only a 64 B chunk).
 class HostDeviceIo : public IDeviceIo {
  public:
   bool read(LocalDeviceId d, NocAddr n, std::size_t size, void* host) override {
-    const auto it = store.find({d, n});
-    if (it == store.end() || it->second.size() < size) return false;
-    std::memcpy(host, it->second.data(), size);
+    const auto di = store.find(d);
+    if (di == store.end()) return false;
+    auto* out = static_cast<uint8_t*>(host);
+    for (std::size_t i = 0; i < size; ++i) {
+      const auto bi = di->second.find(n + i);
+      if (bi == di->second.end()) return false;  // gap -> fault, like real DRAM
+      out[i] = bi->second;
+    }
     return true;
   }
   bool write(LocalDeviceId d, NocAddr n, const void* host,
              std::size_t size) override {
-    auto& v = store[{d, n}];
+    auto& m = store[d];
     const auto* p = static_cast<const uint8_t*>(host);
-    v.assign(p, p + size);
+    for (std::size_t i = 0; i < size; ++i) m[n + i] = p[i];
     return true;
   }
 
  private:
-  std::map<std::pair<LocalDeviceId, NocAddr>, std::vector<uint8_t>> store;
+  std::map<LocalDeviceId, std::map<NocAddr, uint8_t>> store;
 };
 
 // --- Options ---------------------------------------------------------------
@@ -269,13 +293,24 @@ struct Peer {
 };
 
 struct Options {
-  std::string role;               // sender | receiver
-  std::string mode = "host";      // host | device
+  std::string role;           // sender | receiver
+  std::string mode = "host";  // host | device
+  std::string transport =
+      "bounce";                  // RDMA-over-host bounce buffer (the only path)
+  std::string protocol = "tcp";  // Mooncake transport: tcp | rdma (needs a NIC)
   std::string table = "builtin";  // builtin | builtin2 | <protobuf path>
   std::string decode_table;       // sender, real-table mode: decode .pb path
   std::string control_host = "127.0.0.1";
   uint16_t control_port = 18650;
   std::string mooncake_name;  // this proc's Mooncake host:port
+  // Mooncake segment metadata: "P2PHANDSHAKE" (default) means the sender opens
+  // the receiver's segment by directly connecting to the ip:port it advertised
+  // in BounceReady; a real metadata-service URI (e.g.
+  // http://HOST:PORT/metadata, etcd://…) registers/resolves segments through
+  // that service instead. The TCP control channel is still a direct
+  // --control-host/--peer-control dial either way — this only changes Mooncake
+  // data-plane segment discovery.
+  std::string metadata = "P2PHANDSHAKE";
   std::string prefill_host = "prefill";
   std::string decode_host = "decode";
   uint32_t slot = 5;  // symmetric shorthand: sets both src_slot and dst_slot
@@ -288,6 +323,11 @@ struct Options {
   uint32_t dst_pos_begin = UINT32_MAX, dst_pos_end = UINT32_MAX;
   uint64_t uuid = 0x5151;
   int timeout_sec = 60;
+  // Bounce transport geometry (receiver side). 0 => defaultBounceGeometry(). A
+  // tiny bounce buffer (e.g. 1 slot) forces the multi-window credit handshake
+  // over the wire.
+  uint32_t bounce_section_count = 0;
+  uint64_t bounce_section_size = 0;
   // Seed a deterministic dummy blob at the source and byte-verify the
   // destination even in real-table mode (a mechanism test with NO model loaded:
   // the table's addresses are used as scratch). Always on for builtin.
@@ -316,7 +356,21 @@ void usage() {
          "--mooncake-name HOST:PORT\n"
          "  --control-host H (sender; default 127.0.0.1)  --control-port P "
          "(default 18650)\n"
+         "  --metadata URI       (Mooncake segment metadata; default "
+         "P2PHANDSHAKE = direct peer connect. A service URI e.g. "
+         "http://HOST:PORT/metadata resolves segments via that service; the "
+         "control channel stays a direct dial)\n"
          "  --mode host|device   --table builtin|builtin2|<protobuf-path>\n"
+         "  --transport bounce   (RDMA-over-host bounce buffer; the only "
+         "path)\n"
+         "  --bounce-sections N --bounce-section-size B   (bounce receiver "
+         "geometry; 0 = "
+         "default)\n"
+         "  (device mode uses DRISC NOC-DMA; needs MIGRATION_DRISC_SERVICE_ELF "
+         "+ HW)\n"
+         "  --protocol tcp|rdma   (Mooncake transport; rdma needs an RDMA NIC "
+         "+ "
+         "an RDMA-enabled Mooncake build)\n"
          "  --prefill-host NAME  --decode-host NAME\n"
          "  --peer-control HOST=ip:port  (sender, repeatable) fan out to N "
          "decode hosts\n"
@@ -353,10 +407,15 @@ bool parseArgs(int argc, char** argv, Options& o) {
     };
     if (a == "--role" && nextStr(o.role)) continue;
     if (a == "--mode" && nextStr(o.mode)) continue;
+    if (a == "--transport" && nextStr(o.transport)) continue;
+    if (a == "--protocol" && nextStr(o.protocol)) continue;
+    if (a == "--bounce-sections" && nextU(o.bounce_section_count)) continue;
+    if (a == "--bounce-section-size" && nextU(o.bounce_section_size)) continue;
     if (a == "--table" && nextStr(o.table)) continue;
     if (a == "--decode-table" && nextStr(o.decode_table)) continue;
     if (a == "--control-host" && nextStr(o.control_host)) continue;
     if (a == "--mooncake-name" && nextStr(o.mooncake_name)) continue;
+    if (a == "--metadata" && nextStr(o.metadata)) continue;
     if (a == "--prefill-host" && nextStr(o.prefill_host)) continue;
     if (a == "--decode-host" && nextStr(o.decode_host)) continue;
     if (a == "--control-port" && nextU(o.control_port)) continue;
@@ -410,6 +469,15 @@ bool parseArgs(int argc, char** argv, Options& o) {
     return false;
   }
   return true;
+}
+
+// Bounce geometry from the options, falling back to the env/default for unset
+// (0) fields. Only the receiver uses it; the sender learns it over the wire.
+BounceGeometry bounceGeoOf(const Options& o) {
+  const BounceGeometry def = defaultBounceGeometry();
+  return BounceGeometry{
+      o.bounce_section_count ? o.bounce_section_count : def.section_count,
+      o.bounce_section_size ? o.bounce_section_size : def.section_size};
 }
 
 MigrationRequest requestOf(const Options& o) {
@@ -572,26 +640,27 @@ std::shared_ptr<InMemoryKvTable> builtinDecodeSplit() {
   return t;
 }
 
-// Build a real device-I/O over the devices touched by `plan`. The UMD chip id
-// comes from the device map when present, else the placeholder (the
-// FabricNode chip id in the LocalDeviceId low 16 bits) — which is correct only
-// where the host's local UMD indexing matches the table's chip ids.
-std::unique_ptr<MultiDeviceUmd> makeUmd(
+// Build a DRISC NOC-DMA device I/O over the devices touched by `plan` (the
+// IDeviceIo). Each addDevice opens the coexistence UMD handle and launches a
+// per-chip DRISC service kernel (needs MIGRATION_DRISC_SERVICE_ELF + HW); on
+// failure it logs and read/write report failure for that device. Chip id from
+// the device map, else the placeholder (FabricNode chip in the low 16 bits).
+std::unique_ptr<DriscDeviceIo> makeDrisc(
     const HostKvPlan& plan,
     const std::unordered_map<LocalDeviceId, int>& devmap) {
-  auto umd = std::make_unique<MultiDeviceUmd>();
+  auto io = std::make_unique<DriscDeviceIo>();
   for (const auto& chunk : plan.chunks) {
     for (const auto& t : chunk.targets) {
-      if (!umd->hasDevice(t.device)) {
+      if (!io->hasDevice(t.device)) {
         const auto it = devmap.find(t.device);
         const int chip = (it != devmap.end())
                              ? it->second
                              : static_cast<int>(t.device & 0xFFFFu);
-        umd->addDevice(t.device, std::make_shared<UmdDeviceAccess>(chip));
+        io->addDevice(t.device, chip);
       }
     }
   }
-  return umd;
+  return io;
 }
 
 #ifdef TT_E2E_WITH_KAFKA
@@ -701,7 +770,6 @@ int runSender(const Options& o) {
 
   // Device or host I/O for the prefill side.
   HostDeviceIo hostIo;
-  std::unique_ptr<MultiDeviceUmd> umd;
   const HostKvPlan srcPlan =
       buildHostPlan(*prefill, prefillHost, req.srcSlice());
   if (srcPlan.empty()) {
@@ -709,9 +777,27 @@ int runSender(const Options& o) {
               << prefillHost << "'\n";
     return 1;
   }
-  if (o.mode == "device") umd = makeUmd(srcPlan, loadDeviceMap(o.device_map));
-  IDeviceIo& dev = (o.mode == "device") ? static_cast<IDeviceIo&>(*umd)
-                                        : static_cast<IDeviceIo&>(hostIo);
+  // Device backend: DRISC NOC-DMA. addDevice launches the per-chip service
+  // kernel here — the composition-root DRISC init. host mode uses the store.
+  std::unique_ptr<DriscDeviceIo> drisc;
+  const bool useDrisc = (o.mode == "device");
+  if (useDrisc) {
+    drisc = makeDrisc(srcPlan, loadDeviceMap(o.device_map));
+  }
+  IDeviceIo& dev = useDrisc ? static_cast<IDeviceIo&>(*drisc)
+                            : static_cast<IDeviceIo&>(hostIo);
+
+  // On DRISC, staging is double-pinned: the same buffer the engine ibv_reg_mr's
+  // is also NOC-mapped, so device reads DMA straight into staging.
+  // deviceMap is the DRISC registrar (null otherwise); the pool is built after
+  // the engine is up, below.
+  DeviceMapFn deviceMap;
+  if (useDrisc) {
+    DriscDeviceIo* d = drisc.get();
+    deviceMap = [d](void* va, std::size_t bytes) {
+      d->registerHostRegion(va, bytes);
+    };
+  }
 
   // Seed the source with the deterministic pattern so the receiver can verify.
   // Always for builtin(2); for a real table only under --seed-verify (a
@@ -732,11 +818,24 @@ int runSender(const Options& o) {
       std::make_shared<HostDramStorageBackend>());
   EngineConfig cfg;
   cfg.local_server_name = o.mooncake_name;
-  cfg.protocol = TransportProtocol::TCP;
+  cfg.metadata_uri = o.metadata;
+  // C1: TCP by default; RDMA when requested (needs an RDMA NIC + an
+  // RDMA-enabled Mooncake build). The bounce data plane is transport-agnostic —
+  // under RDMA the double-pinned staging/bounce buffer become the ibv_reg_mr'd
+  // MRs, and the per-window WRITE batch is one-sided RDMA instead of TCP.
+  cfg.protocol =
+      (o.protocol == "rdma") ? TransportProtocol::RDMA : TransportProtocol::TCP;
   if (!engine->init(cfg)) {
     std::cerr << "[sender] Mooncake engine init failed\n";
     return 1;
   }
+
+  // Double-pinned staging when on DRISC (else null -> the sender self-builds a
+  // plain engine-only pool). Shared across the sender(s) below.
+  std::shared_ptr<KvStagingPool> staging =
+      deviceMap ? std::make_shared<KvStagingPool>(engine, defaultStagingBytes(),
+                                                  deviceMap)
+                : nullptr;
 
   const uint64_t bytes = planLogicalBytes(srcPlan);  // logical KV volume moved.
   bool ok = false;
@@ -760,7 +859,8 @@ int runSender(const Options& o) {
       std::cerr << "[sender] warning: not all decode peers got a transport\n";
     }
     KvMigrationMultiHostSender multiHost(engine, dev, prefill, decode,
-                                         prefillHost, connector.channels());
+                                         prefillHost, connector.channels(),
+                                         deviceMap);
     std::cout << "[sender] fan-out to " << multiHost.hostCount()
               << " decode host(s), trigger=" << o.trigger << "\n";
     const auto t0 = std::chrono::steady_clock::now();
@@ -786,12 +886,21 @@ int runSender(const Options& o) {
       return 1;
     }
     KvControlChannel channel(control);
-    MooncakeKvSender sender(engine, dev, prefill, decode, prefillHost,
-                            decodeHost);
-    KvMigrationSender orch(channel, sender);
     const auto t0 = std::chrono::steady_clock::now();
+    MooncakeKvSender sender(engine, dev, prefill, decode, prefillHost,
+                            decodeHost, staging);
+    KvMigrationSender orch(channel, sender);
     ok = orch.migrate(o.uuid, req);
     migNs = nsSince(t0);
+  }
+
+  // Metal coexistence: release the low-IOVA reservations now that the
+  // DRISC transfer is done. In production (unified worker + live engine) this
+  // happens before signaling READY so a later model takes pcie_base.
+  if (useDrisc && drisc) {
+    std::cout << "[sender] releasing " << drisc->numIovaReservations()
+              << " IOVA reservation(s)\n";
+    drisc->releaseIovaReservations();
   }
 
   std::cout << "[sender] migrate -> " << (ok ? "OK" : "FAIL") << "\n";
@@ -830,19 +939,34 @@ int runReceiver(const Options& o) {
     return 1;
   }
 
-  // Device or host I/O for the decode side.
+  // Device or host I/O for the decode side. DRISC (NOC-DMA) launches its
+  // per-chip service kernel in makeDrisc; host mode uses the store.
   HostDeviceIo hostIo;
-  std::unique_ptr<MultiDeviceUmd> umd;
-  if (o.mode == "device") umd = makeUmd(plan, loadDeviceMap(o.device_map));
-  IDeviceIo& dev = (o.mode == "device") ? static_cast<IDeviceIo&>(*umd)
-                                        : static_cast<IDeviceIo&>(hostIo);
+  std::unique_ptr<DriscDeviceIo> drisc;
+  const bool useDrisc = (o.mode == "device");
+  if (useDrisc) {
+    drisc = makeDrisc(plan, loadDeviceMap(o.device_map));
+  }
+  IDeviceIo& dev = useDrisc ? static_cast<IDeviceIo&>(*drisc)
+                            : static_cast<IDeviceIo&>(hostIo);
+  // DRISC device registrar for the double-pinned bounce buffer (null
+  // otherwise).
+  DeviceMapFn deviceMap;
+  if (useDrisc) {
+    DriscDeviceIo* d = drisc.get();
+    deviceMap = [d](void* va, std::size_t bytes) {
+      d->registerHostRegion(va, bytes);
+    };
+  }
 
   // Mooncake engine; its advertised segment name is the sender's WRITE target.
   auto engine = std::make_shared<MooncakeTransferEngine>(
       std::make_shared<HostDramStorageBackend>());
   EngineConfig cfg;
   cfg.local_server_name = o.mooncake_name;
-  cfg.protocol = TransportProtocol::TCP;
+  cfg.metadata_uri = o.metadata;
+  cfg.protocol =
+      (o.protocol == "rdma") ? TransportProtocol::RDMA : TransportProtocol::TCP;
   if (!engine->init(cfg)) {
     std::cerr << "[receiver] Mooncake engine init failed\n";
     return 1;
@@ -859,20 +983,32 @@ int runReceiver(const Options& o) {
   }
   KvControlChannel channel(control);
 
-  MooncakeKvReceiver receiver(engine, dev, decode, decodeHost, segmentName);
-  KvMigrationReceiver orch(channel, receiver);
-
-  // Serve exactly the two control messages of one migration.
   const auto serveStart = std::chrono::steady_clock::now();
-  if (!orch.serveOne()) {  // BeginMigration -> prepareMirror + MirrorReady
-    std::cerr << "[receiver] control closed before BeginMigration\n";
-    return 1;
-  }
-  if (!orch.serveOne()) {  // DoneMarker -> drain + Ack
-    std::cerr << "[receiver] control closed before DoneMarker\n";
-    return 1;
+  {
+    // The bounce receiver holds no table; it drains slots straight from the
+    // window descriptors. Message count is variable (one WindowReady per
+    // window), so serve until the sender finishes and closes (run() returns on
+    // the peer-close the DoneMarker/Ack is followed by).
+    MooncakeKvReceiver bounceReceiver(engine, dev, segmentName, bounceGeoOf(o),
+                                      deviceMap);
+    if (!bounceReceiver.registered()) {
+      std::cerr << "[receiver] bounce buffer registration failed\n";
+      return 1;
+    }
+    KvMigrationReceiver orch(channel, bounceReceiver);
+    std::cout << "[receiver] bounce transport (" << bounceGeoOf(o).section_count
+              << " sections x " << bounceGeoOf(o).section_size << " B)\n";
+    orch.run();
   }
   const uint64_t serveNs = nsSince(serveStart);
+
+  // Metal coexistence: release the low-IOVA reservations after the
+  // drain (see the sender side / production timing note).
+  if (useDrisc && drisc) {
+    std::cout << "[receiver] releasing " << drisc->numIovaReservations()
+              << " IOVA reservation(s)\n";
+    drisc->releaseIovaReservations();
+  }
 
   // Boundary timing + plan-derived volume (no data-plane instrumentation).
   const uint64_t bytes = planWireBytes(plan);  // includes replica fan-out.
@@ -957,6 +1093,8 @@ pid_t forkSelfAsSender(const Options& o,
                                         "sender",
                                         "--mode",
                                         "host",
+                                        "--transport",
+                                        o.transport,
                                         "--table",
                                         "builtin",
                                         "--mooncake-name",
@@ -1033,16 +1171,13 @@ bool serveReceiverHostBuiltin(const Options& o, HostDeviceIo& dev,
   }
   KvControlChannel channel(control);
 
-  MooncakeKvReceiver receiver(engine, dev, decode, decodeHost, segmentName);
-  KvMigrationReceiver orch(channel, receiver);
-  if (!orch.serveOne()) {  // BeginMigration -> prepareMirror + MirrorReady
-    err = "control closed before BeginMigration";
+  MooncakeKvReceiver bounceReceiver(engine, dev, segmentName, bounceGeoOf(o));
+  if (!bounceReceiver.registered()) {
+    err = "bounce buffer registration failed";
     return false;
   }
-  if (!orch.serveOne()) {  // DoneMarker -> drain + Ack
-    err = "control closed before DoneMarker";
-    return false;
-  }
+  KvMigrationReceiver orch(channel, bounceReceiver);
+  orch.run();  // serves Begin/Window*/Done until the sender closes post-Ack
   return true;
 }
 
@@ -1095,22 +1230,29 @@ void runHostBuiltinMigration(Options o, uint16_t controlPort,
   EXPECT_EQ(0, WEXITSTATUS(status)) << "sender process reported failure";
 }
 
-// Symmetric whole-range migration (src coords == dst coords).
-TEST(TransportKvMigrationE2E, HostBuiltinRoundTrip) {
-  Options o;  // defaults: slot 5, layers 0..2, pos 0..128 on both sides
-  runHostBuiltinMigration(o, 18650, "127.0.0.1:17777", "127.0.0.1:17778");
+// RDMA-over-host bounce buffer, whole slot, over a real Mooncake TCP transfer.
+// A 1-slot / 64 B bounce buffer forces the multi-window credit handshake (8
+// windows) over the wire, not just one batch — the streaming path end to end,
+// no hardware.
+TEST(TransportKvMigrationE2E, HostBuiltinRoundTripBounce) {
+  Options o;
+  o.transport = "bounce";
+  o.bounce_section_count = 1;
+  o.bounce_section_size = K_CHUNK;  // one chunk per slot -> many windows
+  runHostBuiltinMigration(o, 18654, "127.0.0.1:17785", "127.0.0.1:17786");
 }
 
-// Position shift: read src positions [0,64) and land them at dst positions
-// [64,128) (same slot). Distinct source/destination device addresses, paired by
-// ordinal — the bytes seeded at src 0/32 must verify at dst 64/96.
-TEST(TransportKvMigrationE2E, HostBuiltinPositionShift) {
+// Bounce path with a position shift and a bounce buffer large enough to merge
+// each layer's contiguous chunks into a single slot (one window) — guards
+// asymmetric addressing + merged drains over the real transport.
+TEST(TransportKvMigrationE2E, HostBuiltinPositionShiftBounce) {
   Options o;
+  o.transport = "bounce";
   o.src_pos_begin = 0;
-  o.src_pos_end = 64;  // src chunks at positions 0, 32
+  o.src_pos_end = 64;
   o.dst_pos_begin = 64;
-  o.dst_pos_end = 128;  // dst chunks at positions 64, 96
-  runHostBuiltinMigration(o, 18652, "127.0.0.1:17781", "127.0.0.1:17782");
+  o.dst_pos_end = 128;
+  runHostBuiltinMigration(o, 18656, "127.0.0.1:17787", "127.0.0.1:17788");
 }
 
 int main(int argc, char** argv) {

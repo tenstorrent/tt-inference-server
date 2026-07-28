@@ -1,17 +1,21 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!-- SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc. -->
 
-# `tt::transport` — Mooncake KV-cache migration
+# `tt::transport` — Mooncake KV-cache migration (RDMA-over-host)
 
 Move a slot's KV cache from a **prefill** node's device DRAM to a **decode**
 node's device DRAM over the [Mooncake Transfer Engine](https://github.com/kvcache-ai/Mooncake),
 addressed by a real `KvChunkAddressTable`. The sender computes the **full
-destination addressing**; the receiver only drains a host **mirror** to device.
+destination addressing** and streams the slot through a small, double-pinned
+host **bounce buffer** on the decode side; the receiver drains each window from
+the bounce buffer to device DRAM.
 
-The decode host registers **one** mirror segment over its *full* table at init,
-so its offsets are stable for the receiver's lifetime — every migration (even
-concurrent ones to disjoint chunks) writes into that single segment at the same
-offsets the sender derives from the exchanged table.
+> The sender fills the bounce buffer **a window at a time** (windowed +
+> credit-based, pipelined so device reads overlap in-flight network WRITEs). The
+> buffer is **double-pinned** — the *same* host buffer is both `ibv_reg_mr`'d for
+> the NIC and NOC-mapped for DRISC device DMA. Placement is by **explicit
+> per-window descriptors** the sender sends over the control channel, so the
+> receiver holds **no table**. Device I/O is **DRISC NOC-DMA** (`DriscDeviceIo`).
 
 Origin/PoC rationale (the storage/transport split, `#3890`): see
 [`mooncake/poc-transfer-engine/`](../../../../mooncake/poc-transfer-engine/).
@@ -19,69 +23,71 @@ Origin/PoC rationale (the storage/transport split, `#3890`): see
 ## Module stack
 
 ```
- multi-host       KvMigrationMultiHostSender (n→m fan-out)        kv_migration_multi_host_sender.*
- orchestration   KvMigrationSender / KvMigrationReceiver         kv_migration_orchestrator.*
- control plane    KvControlChannel  / KvControlMessage           over ISocketTransport (TCP; tri-state recv: DATA / NO_DATA=retry / CLOSED)
- data plane       MooncakeKvSender  / MooncakeKvReceiver         mooncake_kv_{sender,receiver}.*
- addressing       IKvTable → allHostLocations → KvCacheLayout (full table, once)
-                            → KvCacheMirror (receiver) ≡ sender dst layout
-                          → buildHostPlan (per-request subset: reads/writes/drain)
- device I/O       IDeviceIo → MultiDeviceUmd → UmdDeviceAccess   (UMD, USE_METAL_CPP_LIB)
- transport        ITransferEngine → MooncakeTransferEngine       (mooncake, TT_TRANSPORT_WITH_MOONCAKE)
+ multi-host       KvMigrationMultiHostSender (n→m fan-out)      kv_migration_multi_host_sender.*
+ orchestration    KvMigrationSender / KvMigrationReceiver   kv_migration_orchestrator.*
+ control plane    KvControlChannel / KvControlMessage               over ISocketTransport (TCP/RDMA; BounceReady · WindowReady · WindowAck)
+ data plane       MooncakeKvSender / MooncakeKvReceiver     mooncake_kv_{sender,receiver}.*
+ bounce buffer      KvBounceBuffer + BounceSectionAllocator                  kv_bounce_buffer.* (double-pinned: DoublePinnedBuffer + KvStagingPool)
+ addressing       IKvTable → buildHostPlan (per-request subset) → per-window slot descriptors
+ device I/O       IDeviceIo → DriscDeviceIo (NOC-DMA)                (coexistence UMD open, USE_METAL_CPP_LIB)
+ transport        ITransferEngine → MooncakeTransferEngine          (mooncake, TT_TRANSPORT_WITH_MOONCAKE; TCP or RDMA)
 ```
 
 ## Component & dataflow
 
 ```
             ┌──────────────── control plane (TCP) — KvControlChannel ────────────────-┐
- KvMigration│  TableExchange · BeginMigration · MirrorReady · DoneMarker · Ack        │KvMigration
-   Sender  ─┤                                                                         ├─ Receiver
+ KvMigration│  TableExchange · BeginMigration · BounceReady · WindowReady · WindowAck  │KvMigration
+   Sender  ─┤                                            · DoneMarker · Ack            ├─ Receiver
  (migrate)  └─────────────────────────────────────────────────────────────────────────┘ (serveOne/run)
      │ drives                                                                       drives │
      ▼                                                                                     ▼
- MooncakeKvSender.transferSlot()                                   MooncakeKvReceiver.prepareMirror()/drain()
+ MooncakeKvSender.transferSlot()                                   MooncakeKvReceiver.drainWindow()
      │                                                                                     │
      │  addressing (host-only, no tt-metal/Mooncake dep):                                  │
-     │   IKvTable ─allHostLocations(host)─► KvCacheLayout  (full table, built once at init) │
+     │   IKvTable ─buildHostPlan(host, request)─► per-window bounce-section descriptors    │
      │     ├ InMemoryKvTable           (tests / reduced config)                            │
      │     └ KvChunkAddressTableAdapter → real KvChunkAddressTable (.pb)                   │
-     │   sender dst layout ≡ receiver KvCacheMirror; buildHostPlan = per-request subset    │
-     ▼ read (src table)                                                  drain ▼ (dst table)
- IDeviceIo (MultiDeviceUmd→UmdDeviceAccess)                                IDeviceIo
-     │                          one-sided WRITE(mirror_offset)                   ▲
-     └─► MooncakeTransferEngine ═══════════ Mooncake TCP/RDMA ═══════════► mirror segment
+     │   sender owns ALL addressing (dst device + noc_addr per descriptor)                 │
+     ▼ read (src table)                                       drain ▼ (per-window descrs)
+ IDeviceIo (DriscDeviceIo, NOC-DMA)                                       IDeviceIo
+     │            one-sided WRITE(free section) ─► WindowReady ─► drain ─► WindowAck ▲
+     └─► MooncakeTransferEngine ═══════ Mooncake TCP/RDMA ═══════► bounce buffer (small segment)
 ```
 
-## Physical mirror (the addressing idea)
+## Addressing & the bounce buffer
 
-At init the decode host registers **one** Mooncake segment that is a **1:1 byte
-image** of its *full* KV region, packed per `(device, channel)` by
-`allHostLocations → KvCacheLayout`. The sender writes each chunk to the offset it
-computes from the **decode** table — identical to what the receiver computes —
-then the receiver drains only the touched chunks to device. Because the segment
-and its offsets are fixed for the receiver's lifetime, a migration only records
-*which* chunks it will drain (`prepareMirror`); it never re-registers, so
-back-to-back or concurrent migrations to disjoint chunks all share the one
-segment safely.
+The decode host registers **one** small Mooncake segment — the **bounce buffer**
+(`BounceGeometry`: `section_count` fixed-size sections, tens of MiB by default),
+double-pinned so the same host buffer is `ibv_reg_mr`'d for the NIC and
+NOC-mapped for DRISC device DMA. It is **not** a picture of the KV region and
+holds **no table**: a migration streams through it a window at a time.
+
+The **sender** owns all addressing. From the **decode** table it computes, per
+window, a set of `BounceSectionDescriptor`s — each names a free section it filled
+and the destination `DrainTarget`s (device + `noc_addr`) that section's bytes
+belong to. It one-sided-WRITEs the bytes into free sections, sends `WindowReady`
+with those descriptors, and the receiver `drainWindow`s each section straight to
+the device address(es) it is told, then returns the sections as credits
+(`WindowAck`). The receiver only bounds-checks each section against the buffer.
 
 ```
- decode device DRAM (per device, per channel)     host mirror buffer = ONE Mooncake segment
-   (devA, ch0)  local..   ┌──────────────────►   [ (devA,ch0) | (devA,ch1) | (devB,ch3) | … ]
-   (devA, ch1)  local..   │   offset = seg_base[dev,ch] + (local_addr − dev_base[dev,ch])
-   (devB, ch3)  local..   │   → sender computes the SAME offset from the dst table
-                          │   → also knows dst NocAddr ⇒ device→device RDMA = drop the mirror
+ free sections fill ─► WindowReady{descriptors} ─► receiver drains ─► WindowAck{credits freed}
+   descriptor = { section_offset, size, targets:[ {device, noc_addr}, … ] }
+   sender knows the dst NocAddr directly ⇒ device→device RDMA = write straight to the device
 ```
 
-Fan-out: a chunk's device group has N replicas (real table: 2) → the sender
-issues N WRITEs, the receiver drains all N. A whole slot spans many devices
-(and, on the real decoder table, many hosts → one segment/mirror per host).
+Fan-out: a chunk's device group has N replicas (real table: 2) → a descriptor
+lists N `targets`, and `drainWindow` writes the section to all N. A whole slot
+spans many devices (and, on the real decoder table, many hosts → one bounce
+buffer + receiver per host).
 
 ## Multi-host fan-out (n→m)
 
 A whole-slot migration spans several **decode hosts** (layers on different
 meshes, replicas in different device groups), each its own receiver process with
-its own segment + mirror + control channel. `KvMigrationMultiHostSender` drives
-that n→m spread by separating two concerns:
+its own bounce buffer + segment + control channel. `KvMigrationMultiHostSender`
+drives that n→m spread by separating two concerns:
 
 - **Routing** — *which* hosts a request touches — is computed from the shared
   decode table via `hostsForRequest(decodeTable, request.dstSlice())`, so it is
@@ -92,7 +98,9 @@ that n→m spread by separating two concerns:
 
 It builds one per-host `MooncakeKvSender` up front (each host's destination
 addressing is whole-table-stable, so it is reused across migrations) and reuses
-`KvMigrationSender` for each host's `Begin → MirrorReady → Done → Ack` sequence.
+`KvMigrationSender` for each host's `Begin → BounceReady → [WindowReady/WindowAck]*
+→ Done → Ack` sequence. The per-host senders share one double-pinned staging
+pool (the fan-out is serial).
 Hosts are driven in deterministic sorted order. A host that is involved but
 missing from the channel map, or whose per-host migration fails, fails the whole
 call — but the remaining hosts are still attempted so the failure report is
@@ -114,6 +122,7 @@ sequenceDiagram
 
     Note over SND,RCV: INIT — tables in hand (builtin or KvChunkAddressTableAdapter::fromProtobuf)
     RCV->>ENG: init localServerName() → segment name
+    RCV->>RCV: allocate bounce buffer (BounceGeometry) → registerLocalMemory(bounce) — once
     SND->>ENG: init
     SND->>CC: connect (TCP control)
     RCV->>CC: accept
@@ -121,36 +130,29 @@ sequenceDiagram
         SND->>RCV: TableExchange(prefill blob)
         RCV->>SND: TableExchange(decode blob) → build decode IKvTable
     end
-    RCV->>RCV: allHostLocations → KvCacheMirror(FULL table)
-    RCV->>ENG: registerLocalMemory(mirror) — once, for the receiver's lifetime
-    SND->>SND: allHostLocations(decode) → dst KvCacheLayout (offsets match RCV)
+    SND->>SND: buildHostPlan(decode, request) → dst device + noc_addr per chunk
 
     Note over SND,RCV: MIGRATE one slot (KvMigrationSender::migrate)
     SND->>CC: BeginMigration{uuid, slot, layer/pos}
-    CC->>RCV: deliver
-    RCV->>RCV: buildHostPlan(request) → record uuid's chunks (no re-register)
-    RCV->>SND: MirrorReady{uuid, segment_name}
+    CC->>RCV: deliver (reset uuid drain state)
+    RCV->>SND: BounceReady{uuid, segment_name, geometry}
 
-    Note over SND,DST: DATA PLANE (transferSlot): openSegment + dst layout + source map
-    loop each chunk (layer, pos)
-        SND->>SRC: IDeviceIo.read(src device, src noc_addr) → staging
-        loop each dst replica (fan-out)
-            SND->>ENG: submitAndWait(WRITE, staging, segment, dst_layout.offset_of)
-            ENG-->>RCV: bytes land in mirror[off..]
+    Note over SND,DST: DATA PLANE (transferSlot): openSegment + windowed, credit-based
+    loop each window (bounded by free sections / credits)
+        SND->>SRC: IDeviceIo.read(src device, src noc_addr) → free bounce section
+        SND->>ENG: submitAndWait(WRITE, section, segment)
+        ENG-->>RCV: bytes land in bounce[section_offset..]
+        SND->>CC: WindowReady{descriptors: (section_offset, size, targets[])}
+        loop each descriptor × each dst replica (fan-out)
+            RCV->>DST: IDeviceIo.write(dst device, dst noc_addr, bounce+section_offset)
         end
+        RCV->>SND: WindowAck{credits freed} → sections reusable
     end
 
     SND->>CC: DoneMarker{uuid}
-    CC->>RCV: deliver
-
-    Note over RCV,DST: DRAIN (selective — only this uuid's chunks)
-    loop each migrated chunk target
-        RCV->>DST: IDeviceIo.write(dst device, dst noc_addr, mirror+off)
-    end
-    RCV->>RCV: forget uuid (segment stays registered)
-    RCV->>SND: Ack{uuid} → migrate() returns OK
+    RCV->>SND: Ack{uuid, all windows drained ok} → migrate() returns OK
     Note over RCV,DST: builtin mode: read back & byte-verify vs (layer,pos) pattern
-    Note over RCV,ENG: ~MooncakeKvReceiver → unregisterLocalMemory(mirror)
+    Note over RCV,ENG: ~MooncakeKvReceiver → unregisterLocalMemory(bounce)
 ```
 
 ## Integration: the Kafka migration worker
@@ -182,7 +184,7 @@ process, `--role prefill|decode`. The transport-lib pieces it composes:
   `& 0xFFFF` placeholder collides across meshes and is refused once a non-empty
   map is in play. At open, `buildDeviceIo` resolves each entry's ASIC
   `umd_chip_id` to the local visible-device index via a one-time enumeration
-  (`enumerateUmdDevicesByUniqueId`); an id matching no visible chip is a clean
+  (`enumerateDevicesByUniqueId`); an id matching no visible chip is a clean
   fail (nothing opened), and a KV location whose NoC channel exceeds the opened
   chip's DRAM-channel count is rejected as a table/device-map mismatch. Until
   the model runner pushes the map itself:
@@ -206,38 +208,35 @@ migration worker — `mooncake_kv_migration_worker` does this (see **Integration
 above and the run guide `tests/e2e/TRANSPORT_KV_MIGRATION_E2E.md` §13) — must
 uphold all of the following (most are not enforced in code):
 
-1. **Build both sides from byte-identical decode tables.** The sender's decode
-   table and the receiver's local table must be the *same* table (exchange it via
-   `exchangeTables` / `TableExchange`). Offsets are computed independently on each
-   side from `allHostLocations → KvCacheLayout`; parity holds only if the inputs
-   match. Mismatched tables silently misalign the mirror.
+1. **The decode `.pb` must describe the decode host's real device layout.** The
+   sender addresses every write from the decode table (obtained via
+   `exchangeTables` / `TableExchange`); the receiver holds no table and drains to
+   the device coordinates the sender puts in each descriptor. A decode table that
+   doesn't match the decode devices silently sends bytes to the wrong address.
 
 2. **Never consume a slot until `migrate()` returns `true`.** A `false` return
    means the slot is **not** migrated — the decode device may hold a partial mix
    of new and stale KV. Gate decode on success: only let the decode engine read a
    slot's KV after its migration succeeded (e.g. a per-slot ready/generation flag
-   you flip on success). `drain()` is **not** atomic across chunks, so partial
-   state is observable on the device; the only safe "all-or-nothing" is at *your*
-   visibility boundary, not in `drain()`.
+   you flip on success). `drainWindow()` is **not** atomic across a window's
+   targets, so partial state is observable on the device; the only safe
+   "all-or-nothing" is at *your* visibility boundary, not in the drain.
 
-3. **Recover by retrying the same request — there is no rollback.** On failure
-   the bytes remain in the persistent mirror and the receiver keeps the uuid's
-   plan, so a re-sent `DoneMarker` (or a re-run `migrate()` of the *same* request)
-   re-drives the drain with no re-transfer (idempotent forward recovery). Nothing
-   restores the decode device's prior contents — "untouch on failure" is not
-   possible because prior KV is never saved.
+3. **Recover by re-running the same request — there is no rollback.** The bounce
+   buffer is transient (windows are overwritten as credits free), so there is no
+   persistent buffer to re-drain: on failure, re-run `migrate()` for the *same*
+   request and it re-transfers the windows from source. Nothing restores the
+   decode device's prior contents — "untouch on failure" is not possible because
+   prior KV is never saved.
 
-4. **uuids: unique per migration; don't reuse while pending.** A successful drain
-   frees the uuid; a failed drain keeps it retryable. `prepareMirror` rejects a
-   duplicate uuid, so a fresh `BeginMigration` must use a new uuid (retry a failed
-   *drain* via `DoneMarker`, not a new `Begin`). Failed-and-never-retried uuids
-   linger in the receiver's pending map — bound your retries / clean up.
+4. **uuids: unique per migration.** A `BeginMigration` resets that uuid's drain
+   state on the receiver, so a retry is a fresh `Begin` (which re-transfers).
+   Don't reuse a uuid for a *different* request while one is in flight.
 
-5. **Serialize migrations that touch the same chunk.** Concurrent migrations to
-   **disjoint** chunks are safe — they share the one registered mirror at stable,
-   non-overlapping offsets. Two in-flight migrations writing the **same**
-   `(device, noc_addr)` race on that mirror region; the caller must serialize
-   those (it is a logical conflict regardless).
+5. **Serialize migrations that touch the same chunk.** The module drives one
+   migration at a time per receiver (contract 9). Two migrations that write the
+   **same** `(device, noc_addr)` are a logical conflict regardless of ordering;
+   the caller must serialize those.
 
 6. **Ensure prefill/decode model (chunk size) compatibility.** The sender checks
    `decode.size_bytes == prefill.size_bytes` *per chunk at transfer time* and
@@ -245,10 +244,11 @@ uphold all of the following (most are not enforced in code):
    check. The caller is responsible for only pairing tables that describe the same
    model/dtype/layout.
 
-7. **Budget host memory for the full-table mirror.** The receiver registers one
-   host buffer that mirrors its **entire** local KV region at construction (not
-   per request). Host DRAM cost ≈ the full decode-side KV image for this host;
-   ensure headroom before constructing the receiver.
+7. **Host memory is a small fixed bounce buffer.** The receiver registers one
+   `BounceGeometry`-sized host buffer at construction (`section_count *
+   section_size`, tens of MiB by default) — independent of the KV region size.
+   The window/credit handshake bounds in-flight bytes to that buffer, so a
+   whole-slot migration streams through it regardless of slot size.
 
 8. **Close the control connection on give-up.** `run()` (the long-lived decode
    server) waits indefinitely for the next request and exits **only when the
@@ -261,8 +261,8 @@ uphold all of the following (most are not enforced in code):
    a dead connection open expecting the receiver to notice on its own.
 
 9. **Drive one migration at a time per `migrate()` call.** The control sequence is
-   `Begin → MirrorReady → Done → Ack`; `migrate()` runs it synchronously and owns
-   no threads. Concurrency, fault/retry policy, and ULFM-style fault tolerance
+   `Begin → BounceReady → [WindowReady/WindowAck]* → Done → Ack`; `migrate()` runs
+   it synchronously and owns no threads. Concurrency, fault/retry policy, and ULFM-style fault tolerance
    (matching the existing MPI/DCN worker) are the caller's responsibility — this
    module implements none of them.
 
@@ -285,22 +285,14 @@ uphold all of the following (most are not enforced in code):
 Deliberately deferred — correct as-is, but worth revisiting when the path is
 wired to a real workload (and measured against one).
 
-### Duplication: two multi-device DRAM-I/O layers
+### `IDeviceIo` collapses the FabricNode identity
 
-`MultiDeviceUmd` / `IDeviceIo` (here) and `MultiDeviceReader` / `MultiDeviceWriter`
-(`tt-llm-engine/disaggregation/migration/`) both dispatch device-DRAM read/write
-across a device map — two parallel implementations of the same job. Differences:
-the existing layer keys I/O by `FabricNodeId` (the cross-node identity) with
-async/completion support; `MultiDeviceUmd` keys by the collapsed `LocalDeviceId`
-(`encodeDevice` = `mesh<<16 | chip`) and fuses read+write.
-
-- **Cost:** any change to device-access semantics (TLB handling, fd exhaustion,
-  async drain, error mapping) must land in two places, and the `LocalDeviceId`
-  collapse discards the `FabricNodeId` identity the existing layer carries.
-- **Follow-up:** converge on one layer when this path integrates with the
-  migration worker (the README's own integration goal). Either adopt
-  `MultiDeviceReader/Writer` behind `IDeviceIo`, or promote `IDeviceIo` as the
-  shared interface — but not both long-term.
+`DriscDeviceIo` is the single `IDeviceIo`, built on the disaggregation DRISC
+path (`DriscSocketLink`, which constructs the `MultiDevice{Reader,Writer}` TUs).
+`IDeviceIo` keys I/O by the collapsed `LocalDeviceId` (`encodeDevice` =
+`mesh<<16 | chip`), which discards the `FabricNodeId` identity the disaggregation
+layer carries — a thin adapter over that layer, worth revisiting if a caller
+needs the full node identity.
 
 ### Perf: fan-out WRITEs are issued serially (blocking, one-per-batch)
 
@@ -341,13 +333,12 @@ retry-the-whole-request applies). The `Begin→…→Done→Ack` ordering is una
 | addressing | `kv_table_view.hpp` | `IKvTable`, `FabricNode`, `KvTableConfig`, `ChunkLoc`, `encodeDevice` |
 | | `in_memory_kv_table.hpp` | hand-built table (tests + reduced config) |
 | | `kv_chunk_address_table_adapter.*` | `IKvTable` over the real `KvChunkAddressTable` (protobuf, guarded) |
-| | `kv_table_adapter.*` | `buildHostPlan` (per-request subset) + `allHostLocations` (full table, for the init-time mirror/layout); host-filter + device-group fan-out |
+| | `kv_table_adapter.*` | `buildHostPlan` (per-request subset) + `allHostLocations` (full table, to enumerate the host's local devices to open); host-filter + device-group fan-out |
 | | `kv_cache_layout.*` | physical `(device,channel)` regions + `offset_of` |
-| | `kv_cache_mirror.*` / `remote_region.*` | receiver mirror buffer / sender's dst view — share `KvCacheLayout` |
-| device I/O | `i_device_io.hpp`, `multi_device_umd.*`, `umd_device_access.*` | per-`(device,NocAddr)` DRAM I/O via UMD |
+| device I/O | `i_device_io.hpp`, `drisc_device_io.*` | per-`(device,NocAddr)` DRAM I/O via DRISC NOC-DMA |
 | transport | `i_transfer_engine.hpp`, `mooncake_transfer_engine.*` | Mooncake engine wrapper (pimpl) |
 | control | `kv_control_message.*`, `kv_control_channel.*` | wire messages + framed channel over an `ISocketTransport` (TCP; tri-state recv: DATA / NO_DATA=retry / CLOSED) |
-| data plane | `mooncake_kv_sender.*`, `mooncake_kv_receiver.*` | read→WRITE(fan-out) / register full mirror once at init + per-uuid selective drain |
+| data plane | `mooncake_kv_sender.*`, `mooncake_kv_receiver.*` | read→WRITE into free bounce sections (fan-out) / register bounce buffer once + per-window drain |
 | orchestration | `kv_migration_orchestrator.*` | `migrate()` / `serveOne()`+`run()` over the control channel |
 | multi-host | `kv_migration_multi_host_sender.*` | sender-side n→m fan-out: route via `hostsForRequest`, one per-host sender + orchestrator per decode host |
 | integration | `mooncake_migration_executor.*` | `IMigrationExecutor` driving `KvMigrationMultiHostSender` — the Kafka worker's trigger→data-plane bridge |
@@ -363,7 +354,7 @@ Every real backend sits behind a guard with a no-op fallback, so `transport_lib`
 
 | Guard | Enables | Flag |
 |-------|---------|------|
-| `USE_METAL_CPP_LIB` | real UMD device-DRAM I/O | `--blaze` |
+| `USE_METAL_CPP_LIB` | real DRISC NOC-DMA device-DRAM I/O | `--blaze` |
 | `TT_TRANSPORT_WITH_MOONCAKE` | real Mooncake transport | `--mooncake` (implies `--blaze`) |
 | `TT_TRANSPORT_WITH_KV_TABLE` | real `KvChunkAddressTable` adapter (protobuf) | `-DENABLE_KV_TABLE=ON` (needs `migration_lib`) |
 
@@ -371,12 +362,13 @@ Every real backend sits behind a guard with a no-op fallback, so `transport_lib`
 
 ```bash
 ./build.sh                  # both guards OFF — everything builds (no-op fallbacks)
-./build.sh --blaze          # real UMD device-DRAM
+./build.sh --blaze          # real DRISC NOC-DMA device-DRAM (needs MIGRATION_DRISC_SERVICE_ELF at run time)
 ./build.sh --mooncake       # real Mooncake transport → builds the e2e harnesses
 
 cd build && ctest --output-on-failure          # unit tests (any config)
-#   kv_cache_addressing_test · kv_table_adapter_test · kv_control_channel_test
-#   mooncake_kv_migration_test · kv_migration_orchestrator_test  (all host-only)
+#   kv_table_adapter_test · kv_control_channel_test · kv_bounce_buffer_test
+#   mooncake_kv_migration_test · kv_migration_orchestrator_test
+#   drisc_device_io_test · double_pinned_buffer_test  (all host-only)
 #   TransportKvMigrationE2E  (host+builtin real-Mooncake round trip; --mooncake build)
 
 # Real KV migration, host + builtin table, no hardware (orchestration + addressing
@@ -385,26 +377,31 @@ cd build && ctest --output-on-failure          # unit tests (any config)
 ./build/transport_kv_migration_e2e
 # Hardware / real-table paths can't run in one gtest process, so they stay on the
 # two-process shell harness (--role sender|receiver):
-MODE=device  tests/e2e/scripts/run_transport_kv_migration_e2e.sh      # real device DRAM (--blaze + HW)
+MODE=device  tests/e2e/scripts/run_transport_kv_migration_e2e.sh      # real device DRAM via DRISC (--blaze + HW + MIGRATION_DRISC_SERVICE_ELF)
 TABLE=prefill_kv_table.pb DECODE_TABLE=decoder_kv_table.pb \
              tests/e2e/scripts/run_transport_kv_migration_e2e.sh      # real table (-DENABLE_KV_TABLE=ON)
+
+# Mooncake wire defaults to TCP; PROTOCOL=rdma switches per-window WRITEs to
+# one-sided RDMA (needs an RNIC — cross-host only). Both e2e scripts take it.
+# See tests/e2e/TRANSPORT_KV_MIGRATION_E2E.md §2 / §7.8.
+PROTOCOL=rdma tests/e2e/scripts/run_transport_kv_migration_e2e.sh
 ```
 
 ## Status
 
 | Layer | Validation |
 |-------|-----------|
-| addressing (full-table layout/offset, mirror↔sender parity, adapter, host plan) | unit-tested (any build) |
+| addressing (per-window bounce-section descriptors, sender-owned dst addressing, adapter, host plan) | unit-tested (any build) |
 | control codec + channel + table exchange | unit-tested (loopback) |
-| data plane sender→wire→receiver→device (fan-out, multi-channel, one mirror registered once, concurrent disjoint migrations) | unit-tested (fakes) |
-| orchestration (Begin/MirrorReady/Done/Ack) over a threaded channel | unit-tested |
+| data plane sender→wire→receiver→device (fan-out, multi-channel, bounce buffer registered once, windowed credit-based drain) | unit-tested (fakes) |
+| orchestration (Begin/BounceReady/[WindowReady/WindowAck]*/Done/Ack) over a threaded channel | unit-tested |
 | multi-host n→m fan-out (routing via `hostsForRequest`, per-host orchestration, partial-failure reporting) | unit-tested (fakes) |
 | real Mooncake TCP, host store (full round trip, fan-out) | ctest `TransportKvMigrationE2E` (`--mooncake` build, no HW) |
-| real UMD device DRAM / real `.pb` table / multi-host scale-out | **validated across 2 galaxies** — byte-verified (shell harness + `mooncake_kv_migration_worker`, `--blaze`/HW/`ENABLE_KV_TABLE`) |
+| real DRISC device DRAM / real `.pb` table / multi-host scale-out | **not yet HW-validated** — the DRISC device path needs a byte-verified 2-galaxy run (shell harness + `mooncake_kv_migration_worker`, `--blaze`/HW/`ENABLE_KV_TABLE`) |
 
-The sender computing both `mirror_offset` **and** the dst `NocAddr` is what makes
-device→device RDMA a localized swap: drop the mirror, WRITE straight to the
-device address — no change to addressing or orchestration.
+The sender already knows the dst `NocAddr` for every descriptor, so
+device→device RDMA is a localized change: WRITE straight to the device address
+instead of the bounce buffer — no change to addressing or orchestration.
 
 
 ## Worker discovery via the Mooncake Metadata Service (#4209)
@@ -485,7 +482,7 @@ both sides exchange tables over control `TABLE_EXCHANGE` (prefill dials;
 decode listens and replies):
 
 ```
-decode:  load decode.pb → register mirror → control server
+decode:  load decode.pb → register bounce buffer → control server
        → on TABLE_EXCHANGE: store prefill.pb, reply with decode.pb
 prefill: load prefill.pb → resolvePeers → openChannels → awaitConnected
        → TABLE_EXCHANGE with one decode (send prefill.pb, recv decode.pb)
@@ -502,10 +499,11 @@ finish at bring-up.
 | Step | Status |
 |------|--------|
 | Interfaces + host-DRAM round-trip + worker staging (`transport_test`, any build) | impl |
-| Device-DRAM backend single-galaxy round-trip (UMD, `--blaze`) | impl |
+| Device-DRAM round-trip via DRISC NOC-DMA (`--blaze` + HW + `MIGRATION_DRISC_SERVICE_ELF`) | impl — **not yet HW-validated** |
 | Mooncake transport loopback TCP (host backend, `--mooncake`) | impl |
-| Two-galaxy acceptance, both backends enabled | **validated** — byte-verified 1→1 across 2 galaxies (real `.pb`, device DRAM, Mooncake TCP) |
-| Unified worker `mooncake_kv_migration_worker` (Kafka→migration→ack), 2 galaxies | **validated** — real Kafka trigger, byte-verified via `kv_seed_verify` (run guide §13) |
+| Two-galaxy acceptance — addressing + orchestration + Mooncake TCP (host store) | **validated** — byte-verified 1→1 across 2 galaxies |
+| Two-galaxy acceptance — real device DRAM on HW (DRISC) | **pending** — needs a byte-verified 2-galaxy run on the DRISC device path |
+| Unified worker `mooncake_kv_migration_worker` (Kafka→migration→ack) orchestration, 2 galaxies | **validated** — real Kafka trigger, byte-verified via `kv_seed_verify` (run guide §13); the device I/O underneath needs the DRISC HW run above |
 | Metadata-service worker discovery, two hosts, host RAM (#4209, `migration_worker_discovery`) | **validated** (two hosts, 1 MiB tensor, byte-verified MATCH) |
 | Productionized discovery worker (#4294, `bringup_mooncake_worker`) | **validated locally** (single host, MPI `-np 20` = 4 prefill + 16 decode, all `CONNECTED`→`READY`; run manually, not yet wired into CI) |
 

@@ -3,99 +3,83 @@
 
 #pragma once
 
-#include <cstdint>
 #include <memory>
-#include <mutex>
-#include <optional>
 #include <string>
-#include <unordered_map>
+#include <vector>
 
+#include "transport/double_pinned_buffer.hpp"
 #include "transport/i_device_io.hpp"
 #include "transport/i_transfer_engine.hpp"
-#include "transport/kv_cache_mirror.hpp"
-#include "transport/kv_table_adapter.hpp"
-#include "transport/kv_table_view.hpp"
+#include "transport/kv_bounce_buffer.hpp"
+#include "transport/kv_control_message.hpp"
 
 namespace tt::transport {
 
 /**
- * @brief Decode-host (receiver) side of a KV migration.
+ * @brief Decode-host (receiver) side of an RDMA-over-host KV migration.
  *
- * Drives the receiver half of the data plane. At construction it builds
- * one physical mirror over its *full* local table and registers it as the
- * single Mooncake segment the sender writes into — offsets are stable for the
- * receiver's lifetime, so concurrent migrations to disjoint chunks share the
- * one segment safely. For each migration it records which chunks that uuid will
- * touch (prepareMirror) and, once told the writes are done, selectively drains
- * only those chunks back to device DRAM via UMD (drain). It never computes a
- * remote address; the sender owns all addressing.
- *
- * One MooncakeKvReceiver serves one decode host and is shared across every
- * prefill control session on that host — prepareMirror/drain are mutex-guarded
- * for the pending-uuid map. Concurrent RDMA WRITEs into the shared mirror_ are
- * safe only when migrations touch disjoint address ranges (table-driven slot /
- * layer routing must not overlap). Overlapping concurrent migrations are an
- * unstated invariant violation — do not rely on pendingMutex_ to serialize
- * mirror bytes.
+ * At construction it allocates a small bounce buffer (BounceGeometry) and
+ * registers it as the single Mooncake
+ * segment the sender writes into — tens of MiB, not the whole KV region, so
+ * `ibv_reg_mr` pins almost nothing. It holds NO table: every window's
+ * descriptors carry the destination device coordinates, so the sender still
+ * owns all addressing and the receiver just copies each drained section to the
+ * device address it is told (drainWindow), bounds-checking the section against
+ * the bounce buffer. Draining happens window by window as WindowReady messages
+ * arrive, so the receiver device-write overlaps the sender's next-window
+ * network transfer.
  */
 class MooncakeKvReceiver {
  public:
-  /// @param advertised_segment_name the name the sender opens (this engine's
-  ///        server name under P2PHANDSHAKE); returned by prepareMirror.
-  /// Builds and registers the full-table mirror once; check registered() to see
-  /// whether the segment is live.
+  /// @param advertisedSegmentName the name the sender opens (this engine's
+  ///        server name under P2PHANDSHAKE); returned in BounceReady.
+  /// @param deviceMap when set (DRISC path), the bounce buffer is NOC-mapped
+  /// after engine
+  ///        registration so the drain DMAs straight from the bounce buffer to
+  ///        device DRAM — the SAME buffer the engine ibv_reg_mr's. Null =>
+  ///        host/MMIO mode (engine registration only).
+  /// Allocates + registers the bounce buffer once; check registered() for
+  /// liveness.
   MooncakeKvReceiver(std::shared_ptr<ITransferEngine> engine, IDeviceIo& device,
-                     std::shared_ptr<const IKvTable> localTable,
-                     std::string host, std::string advertisedSegmentName);
+                     std::string advertisedSegmentName,
+                     BounceGeometry geometry = defaultBounceGeometry(),
+                     DeviceMapFn deviceMap = {});
 
-  /// Unregisters the mirror segment.
+  /// Unregisters the bounce-buffer segment.
   ~MooncakeKvReceiver();
 
   MooncakeKvReceiver(const MooncakeKvReceiver&) = delete;
   MooncakeKvReceiver& operator=(const MooncakeKvReceiver&) = delete;
 
-  /// Whether the full-table mirror was registered at construction (false if the
-  /// local table held no chunks for this host or registration failed).
+  /// Whether the bounce buffer was registered at construction.
   bool registered() const { return registered_; }
 
+  /// The segment name the sender opens.
+  const std::string& segmentName() const { return advertised_segment_name_; }
+
+  /// Geometry advertised to the sender in BounceReady.
+  BounceGeometry geometry() const { return buffer_.geometry(); }
+
   /**
-   * @brief Record the chunks `slice` (the destination coordinates) will drain
-   *        for `uuid` and advertise the (already-registered) segment. Does not
-   *        allocate or register.
-   * @return the segment name for the sender to open, or std::nullopt on failure
-   *         (mirror not registered, duplicate uuid, or no local chunk in
-   * range).
+   * @brief Drain one window: copy each descriptor's section bytes to every
+   * device target it lists (replica fan-out on this host).
+   *
+   * Not atomic across targets: on false the device may hold a partial mix, so
+   * the caller must not consider the migration complete. A descriptor whose
+   * section escapes the bounce buffer is rejected (returns false for that
+   * window) — the one essential guard against an out-of-bounds sender
+   * descriptor.
+   * @return true iff every target of every descriptor wrote successfully.
    */
-  std::optional<std::string> prepareMirror(const KvSlice& slice, uint64_t uuid);
-
-  /// Selectively drain the prepared migration's chunks mirror -> device.
-  ///
-  /// Retryable forward recovery: the bytes live in the persistent mirror, so a
-  /// failed drain (false) KEEPS the uuid's plan and can be re-driven by a
-  /// re-sent DoneMarker with no re-transfer; a successful drain (true) forgets
-  /// the uuid. The shared mirror segment stays registered for the receiver's
-  /// lifetime. drain() is NOT atomic across chunks: on false the decode device
-  /// may hold a partial mix of new and stale KV, so the slot must not be
-  /// consumed until a drain succeeds (see README "Contract for a higher-layer
-  /// caller").
-  /// @return true if every chunk drained; false leaves the migration retryable.
-  bool drain(uint64_t uuid);
-
-  /// Number of migrations with a prepared (not yet drained) mirror.
-  std::size_t pendingCount() const;
+  bool drainWindow(const std::vector<BounceSectionDescriptor>& window);
 
  private:
   std::shared_ptr<ITransferEngine> engine_;
   IDeviceIo& device_;
-  std::shared_ptr<const IKvTable> local_table_;
-  std::string host_;
   std::string advertised_segment_name_;
-  KvCacheMirror
-      mirror_;  ///< Full-table image, registered once at construction.
+  KvBounceBuffer buffer_;
+  DeviceMapFn device_map_;
   bool registered_ = false;
-  mutable std::mutex pendingMutex_;
-  std::unordered_map<uint64_t, HostKvPlan>
-      pending_;  ///< uuid -> chunks to drain.
 };
 
 }  // namespace tt::transport
