@@ -708,6 +708,148 @@ jobs:
           fi
 
 
+  cpp-server-prefill-decode-smoke:
+    name: C++ Server Prefill/Decode Smoke Tests
+    # Brings the disaggregated MOCK stack up (Dynamo frontend + decode/prefill
+    # cpp_server workers on the mock_scheduler backend + a local etcd) via
+    # test_module/llm_tests/smoke_tests/run_tests.sh -> run_stack.sh, runs the
+    # 8-test pytest suite, then tears down the stack.
+    runs-on: tt-ubuntu-2204-large-stable
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      no_proxy: "localhost,127.0.0.1,::1"
+      CI_CCACHE: "1"
+      CCACHE_DIR: ${{ github.workspace }}/tt-media-server/.cache/ccache
+      # run_stack.sh serves tokenizers/$MODEL and the suite POSTs {"model": $MODEL}.
+      # Kimi-K2.6 is the suite's, run_stack.sh's, and the README's own default.
+      # Its tiktoken bundle (tiktoken.model + chat_template.jinja +
+      # tokenizer_config.json + a kimi_k25 config.json) is pre-fetched by
+      # cpp_server/build.sh and is curated specifically for the Dynamo frontend's
+      # PromptFormatter (see fetch_tokenizers.sh) — the frontend loads tiktoken
+      # models via this bundle, so no tokenizer.json is required.
+      MODEL: moonshotai/Kimi-K2.6
+      # No-docker etcd: run_stack.sh's ensure_etcd_local uses the etcd binary on
+      # PATH instead of the quay image.
+      ETCD_LOCAL: "1"
+      # Keep the suite's result log in a stable, uploadable location.
+      RESULT_LOG: /tmp/tt_test_results.log
+    defaults:
+      run:
+        working-directory: tt-media-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          token: ${{ secrets.TT_LLM_ENGINE }}
+
+      - name: Set up C++ CI dependencies
+        uses: ./.github/actions/setup-cpp-ci
+        with:
+          token: ${{ secrets.TT_LLM_ENGINE }}
+          ccache-key-suffix: server
+
+      - name: Build C++ server
+        # --blaze is required: the mock_scheduler LLM runner factory is compiled
+        # in only under ENABLE_BLAZE (model_service_registration.cpp). Without it
+        # no LLM runner is registered and the worker aborts at startup with
+        # "No runner registered for the requested service" (ipc_runner_factory.cpp)
+        run: |
+          cd cpp_server
+          ./build.sh --blaze
+          cd ..
+
+      - name: Install etcd from upstream release
+        working-directory: .
+        run: |
+          ETCD_VER=v3.5.13
+          curl -fsSL \
+            "https://github.com/etcd-io/etcd/releases/download/${ETCD_VER}/etcd-${ETCD_VER}-linux-amd64.tar.gz" \
+            -o /tmp/etcd.tar.gz
+          mkdir -p /tmp/etcd "$HOME/.local/bin"
+          tar xzf /tmp/etcd.tar.gz -C /tmp/etcd --strip-components=1
+          # No sudo on the self-hosted runner: install into a user-writable dir
+          # and prepend it to PATH so run_stack.sh's `etcd` lookup resolves it.
+          install -m 0755 /tmp/etcd/etcd    "$HOME/.local/bin/etcd"
+          install -m 0755 /tmp/etcd/etcdctl "$HOME/.local/bin/etcdctl"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/etcd" --version
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+
+      - name: Create dynamo venv with ai-dynamo + pytest
+        run: |
+          mkdir -p "$HOME/.venvs"
+          # ai-dynamo provides dynamo.frontend (run_stack.sh's DYN_VENV). pytest
+          # runs the suite; datasets powers the real-chat tests (07 falls back to
+          # synthetic filler, 08 skips, if it's unavailable). No vllm bench client
+          # here — the suite drives the frontend over urllib directly.
+          bash cpp_server/scripts/ci/install_bench_client.sh \
+            --venv "$HOME/.venvs/dynamo" \
+            --python ${{ env.PYTHON_VERSION }} \
+            --no-default-packages \
+            --package ai-dynamo \
+            --package uvloop \
+            --package pytest \
+            --package datasets
+
+      - name: Run prefill/decode smoke suite
+        run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh \
+            --port 8080 --port 8001 --port 8002 --port 9000 --port 2379 --port 2380 \
+            --label "prefill/decode smoke"
+          # DYN_VENV -> the ai-dynamo venv run_stack.sh launches the frontend from;
+          # PYTEST   -> that venv's pytest (has datasets). run_tests.sh forwards
+          # trailing args to pytest, so --junitxml lands the JUnit report.
+          export DYN_VENV="$HOME/.venvs/dynamo"
+          export PYTEST="$DYN_VENV/bin/pytest"
+          bash "${GITHUB_WORKSPACE}/test_module/llm_tests/smoke_tests/run_tests.sh" \
+            --junitxml="${GITHUB_WORKSPACE}/tt-media-server/prefill_decode_junit.xml"
+
+      - name: Tear down stack
+        if: always()
+        run: |
+          # run_tests.sh already runs `run_stack.sh down` on the happy path; this
+          # is belt + suspenders for a cancelled/timed-out run so nothing leaks
+          # onto the persistent runner.
+          bash "${GITHUB_WORKSPACE}/tt-media-server/cpp_server/benchmarks/run_stack.sh" down || true
+          pkill -f 'tt_media_server_cpp' 2>/dev/null || true
+          pkill -f '-m dynamo.frontend' 2>/dev/null || true
+          pkill -f 'etcd' 2>/dev/null || true
+          bash cpp_server/scripts/ci/wait_for_port_free.sh \
+            --port 8080 --port 8001 --port 8002 --port 9000 --port 2379 --port 2380 \
+            --label "prefill/decode smoke"
+
+      - name: Show stack logs
+        if: always()
+        run: |
+          for LOG in /tmp/tt_frontend.log /tmp/tt_decode.log /tmp/tt_prefill.log /tmp/tt_etcd.log; do
+            echo "=== $LOG ==="
+            [ -f "$LOG" ] && cat "$LOG" || echo "(not found)"
+            echo ""
+          done
+
+      - name: Upload smoke test logs
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: cpp-server-prefill-decode-smoke-logs
+          path: |
+            /tmp/tt_frontend.log
+            /tmp/tt_decode.log
+            /tmp/tt_prefill.log
+            /tmp/tt_etcd.log
+            /tmp/tt_test_results.log
+            tt-media-server/prefill_decode_junit.xml
+          retention-days: 7
+          if-no-files-found: warn
+
   dynamo-frontend-integration:
     needs: cpp-build
     name: C++ Server + Dynamo Frontend Integration
