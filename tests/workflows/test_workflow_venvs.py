@@ -104,10 +104,15 @@ def test_reasoning_log_patch_adds_aligned_sample_field():
 def test_patch_installer_updates_both_modules_idempotently(tmp_path):
     site_packages = tmp_path / "lib/python3.10/site-packages/lm_eval"
     api_models = site_packages / "models/api_models.py"
+    completions = site_packages / "models/openai_completions.py"
     tracker = site_packages / "loggers/evaluation_tracker.py"
     api_models.parent.mkdir(parents=True)
     tracker.parent.mkdir(parents=True)
     api_models.write_text("# api models\n")
+    completions.write_text(
+        "        except Exception as e:\n"
+        '                eval_logger.warning(f"Could not parse generations: {e}")\n'
+    )
     tracker.write_text("# evaluation tracker\n")
     venv_config = SimpleNamespace(venv_path=tmp_path)
 
@@ -116,3 +121,4 @@ def test_patch_installer_updates_both_modules_idempotently(tmp_path):
 
     assert api_models.read_text().count(_LM_EVAL_CHAT_STREAM_SENTINEL) == 1
     assert tracker.read_text().count(_LM_EVAL_REASONING_LOG_SENTINEL) == 1
+    assert completions.read_text().count("raw API response: {out!r}") == 1

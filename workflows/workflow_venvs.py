@@ -430,6 +430,14 @@ _LM_EVAL_CHAT_STREAM_SENTINEL = (
 _LM_EVAL_REASONING_LOG_SENTINEL = (
     "# === TT patch: preserve chat reasoning in sample logs ==="
 )
+_LM_EVAL_PARSE_ERROR_LOG_OLD = (
+    '                eval_logger.warning(f"Could not parse generations: {e}")\n'
+)
+_LM_EVAL_PARSE_ERROR_LOG_NEW = (
+    "                eval_logger.warning(\n"
+    '                    f"Could not parse generations: {e}; raw API response: {out!r}"\n'
+    "                )\n"
+)
 
 # Monkeypatch appended to the END of lm_eval/models/api_models.py (after
 # TemplateAPI is defined). Stock _consume_sse_stream only handled text-completion
@@ -659,6 +667,41 @@ EvaluationTracker.save_results_samples = _tt_save_results_samples
 """
 
 
+def _patch_lm_eval_parse_error_logging(api_models_path: Path) -> None:
+    """Include the malformed API response in generation-parser warnings."""
+    completions_path = api_models_path.with_name("openai_completions.py")
+    if not completions_path.is_file():
+        logger.warning(
+            "Could not locate %s; malformed generation responses will not be logged.",
+            completions_path,
+        )
+        return
+
+    completions_text = completions_path.read_text()
+    if _LM_EVAL_PARSE_ERROR_LOG_NEW in completions_text:
+        logger.info("generation parse-error logging already present in %s", completions_path)
+        return
+
+    occurrences = completions_text.count(_LM_EVAL_PARSE_ERROR_LOG_OLD)
+    if occurrences != 1:
+        logger.warning(
+            "Expected one generation parse warning in %s, found %d; raw response "
+            "logging was not applied.",
+            completions_path,
+            occurrences,
+        )
+        return
+
+    completions_path.write_text(
+        completions_text.replace(
+            _LM_EVAL_PARSE_ERROR_LOG_OLD,
+            _LM_EVAL_PARSE_ERROR_LOG_NEW,
+            1,
+        )
+    )
+    logger.info("applied generation parse-error logging to %s", completions_path)
+
+
 def patch_evals_common_chat_streaming(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",
@@ -691,6 +734,8 @@ def patch_evals_common_chat_streaming(
     else:
         api_models_path.write_text(api_models_text + _LM_EVAL_CHAT_STREAM_PATCH)
         logger.info(f"applied chat-streaming patch to {api_models_path}")
+
+    _patch_lm_eval_parse_error_logging(api_models_path)
 
     tracker_path = api_models_path.parents[1] / "loggers" / "evaluation_tracker.py"
     if not tracker_path.is_file():
