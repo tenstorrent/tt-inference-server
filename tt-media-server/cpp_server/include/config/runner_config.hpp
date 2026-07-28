@@ -20,7 +20,7 @@ struct RunnerConfigBase {
   ModelRunnerType runner_type = ModelRunnerType::MOCK;
 };
 
-/** Shared fields for media runners (image, audio, video). Mirrors the
+/** Shared fields for media runners (image, TTS). Mirrors the
  *  device/weight knobs from tt-media-server's `config/settings.py`. */
 struct MediaRunnerConfigBase : RunnerConfigBase {
   size_t worker_id = 0;
@@ -89,10 +89,46 @@ struct EmbeddingConfig : RunnerConfigBase {};
 struct ImageConfig : MediaRunnerConfigBase {
   ImageConfig() { runner_type = ModelRunnerType::TT_SDXL_GENERATE; }
 
-  size_t image_width = 1024;
-  size_t image_height = 1024;
+  size_t imageWidth = 1024;
+  size_t imageHeight = 1024;
 };
 
-using RunnerConfig = std::variant<BlazeConfig, EmbeddingConfig, ImageConfig>;
+struct TtsConfig : RunnerConfigBase {
+  TtsConfig() { runner_type = ModelRunnerType::TT_TTS; }
+
+  // Scheduler batching.
+  size_t maxBatchSize = defaults::TTS_MAX_BATCH_SIZE;
+
+  // Scheduler lifecycle and capacity.
+  size_t maxUsers = defaults::PM_MAX_USERS;
+  unsigned connectTimeoutMs = defaults::PM_CONNECT_TIMEOUT_MS;
+  unsigned outputHangTimeoutMs = defaults::OUTPUT_HANG_TIMEOUT_MS;
+
+  // Parent/worker IPC queue capacities.
+  size_t taskQueueCapacity = defaults::MAX_QUEUE_SIZE;
+  size_t audioQueueCapacity = defaults::TTS_AUDIO_QUEUE_CAPACITY;
+  size_t cancelQueueCapacity = defaults::CANCEL_QUEUE_CAPACITY;
+
+  // Chunk contract shared by the API, runner, and scheduler.
+  uint32_t chunkTokens = defaults::TTS_CHUNK_TOKENS;
+  uint32_t firstChunkTokens = defaults::TTS_FIRST_CHUNK_TOKENS;
+
+  // Audio format contract for the TTS voice encoder and decoder.
+  uint32_t voiceSampleRateHz = defaults::TTS_VOICE_SAMPLE_RATE_HZ;
+  uint16_t voiceChannels = defaults::TTS_VOICE_CHANNELS;
+  uint32_t audioSampleRateHz = defaults::TTS_AUDIO_SAMPLE_RATE_HZ;
+  uint16_t audioChannels = defaults::TTS_AUDIO_CHANNELS;
+
+  // Socket descriptor prefixes written by the model launcher into /dev/shm.
+  std::string encoderSocketDescriptorPrefix =
+      defaults::TTS_ENCODER_SOCKET_DESCRIPTOR_PREFIX;
+  std::string speechlmSocketDescriptorPrefix =
+      defaults::TTS_SPEECHLM_SOCKET_DESCRIPTOR_PREFIX;
+  std::string decoderSocketDescriptorPrefix =
+      defaults::TTS_DECODER_SOCKET_DESCRIPTOR_PREFIX;
+};
+
+using RunnerConfig =
+    std::variant<BlazeConfig, EmbeddingConfig, ImageConfig, TtsConfig>;
 
 }  // namespace tt::config

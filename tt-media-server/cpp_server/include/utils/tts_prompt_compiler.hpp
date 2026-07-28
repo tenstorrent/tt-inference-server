@@ -1,0 +1,101 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+
+#pragma once
+
+#include <algorithm>
+#include <cctype>
+#include <optional>
+#include <sstream>
+#include <stdexcept>
+#include <string>
+#include <vector>
+
+#include "utils/tokenizers/tokenizer.hpp"
+
+namespace tt::utils::tts_prompt_compiler {
+
+// TTS-2 prompt format:
+//   TVD / description-only:
+//     <|voice_prompt_start|>{description}<|voice_prompt_end|>
+//     <|bot|>{text}<|speech_start|>
+//   Voice-clone continuation:
+//     <|audio_prompt_start|><|s_12|><|s_34|>...<|audio_prompt_end|>
+//     <|voice_prompt_start|>{description}<|voice_prompt_end|>
+//     <|bot|>{text}<|speech_start|>
+//
+// The final string is tokenized by the active tokenizer; speech IDs are encoded
+// as literal tokenizer tokens like <|s_123|>, not inserted as raw token IDs.
+inline constexpr const char* SPEECH_TOKEN_PATTERN_PREFIX = "<|s_";
+inline constexpr const char* SPEECH_TOKEN_PATTERN_SUFFIX = "|>";
+inline constexpr const char* SPEECH_START_TOKEN = "<|speech_start|>";
+inline constexpr const char* AUDIO_PROMPT_START_TOKEN =
+    "<|audio_prompt_start|>";
+inline constexpr const char* AUDIO_PROMPT_END_TOKEN = "<|audio_prompt_end|>";
+inline constexpr const char* VOICE_PROMPT_START_TOKEN =
+    "<|voice_prompt_start|>";
+inline constexpr const char* VOICE_PROMPT_END_TOKEN = "<|voice_prompt_end|>";
+inline constexpr const char* BOT_TOKEN = "<|bot|>";
+
+inline std::string trim(std::string value) {
+  auto isNotSpace = [](unsigned char ch) { return std::isspace(ch) == 0; };
+  value.erase(value.begin(),
+              std::find_if(value.begin(), value.end(), isNotSpace));
+  value.erase(std::find_if(value.rbegin(), value.rend(), isNotSpace).base(),
+              value.end());
+  return value;
+}
+
+inline void appendSpeechTokens(std::ostringstream& prompt,
+                               const std::vector<uint32_t>& speechIds) {
+  for (uint32_t speechId : speechIds) {
+    prompt << SPEECH_TOKEN_PATTERN_PREFIX << speechId
+           << SPEECH_TOKEN_PATTERN_SUFFIX;
+  }
+}
+
+inline void validatePromptInputs(
+    const std::string& text, const std::optional<std::string>& description) {
+  const std::string trimmedText = trim(text);
+  if (trimmedText.empty()) {
+    throw std::invalid_argument("TTS text must not be empty");
+  }
+  if (description.has_value()) {
+    const std::string trimmedDescription = trim(*description);
+    if (trimmedDescription.empty()) {
+      throw std::invalid_argument(
+          "TTS voice description must not be empty when provided");
+    }
+  }
+}
+
+inline std::string compilePromptString(
+    const std::string& text, const std::optional<std::string>& description,
+    const std::vector<uint32_t>& promptSpeechIds = {}) {
+  validatePromptInputs(text, description);
+
+  std::ostringstream prompt;
+  if (!promptSpeechIds.empty()) {
+    prompt << AUDIO_PROMPT_START_TOKEN;
+    appendSpeechTokens(prompt, promptSpeechIds);
+    prompt << AUDIO_PROMPT_END_TOKEN;
+  }
+
+  if (description.has_value()) {
+    const std::string trimmedDescription = trim(*description);
+    prompt << VOICE_PROMPT_START_TOKEN << trimmedDescription
+           << VOICE_PROMPT_END_TOKEN;
+  }
+
+  prompt << BOT_TOKEN << trim(text) << SPEECH_START_TOKEN;
+  return prompt.str();
+}
+
+inline std::vector<uint32_t> compilePromptTokens(
+    const std::string& text, const std::optional<std::string>& description,
+    const std::vector<uint32_t>& promptSpeechIds = {}) {
+  return tt::utils::tokenizers::activeTokenizer().encode(
+      compilePromptString(text, description, promptSpeechIds));
+}
+
+}  // namespace tt::utils::tts_prompt_compiler

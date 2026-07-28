@@ -177,6 +177,8 @@ bool isLlmService() { return modelService() == ModelService::LLM; }
 
 bool isImageService() { return modelService() == ModelService::IMAGE; }
 
+bool isTtsService() { return modelService() == ModelService::TTS; }
+
 std::string runnerType() { return toString(modelService()); }
 
 size_t numWorkers() { return deviceIdsParsed().size(); }
@@ -517,9 +519,65 @@ ImageConfig imageEngineConfig() {
     readMediaRunnerConfig(cfg);
 
     if (auto wh = parseResolution(envString("SDXL_IMAGE_RESOLUTION", ""))) {
-      cfg.image_width = wh->first;
-      cfg.image_height = wh->second;
+      cfg.imageWidth = wh->first;
+      cfg.imageHeight = wh->second;
     }
+    return cfg;
+  }();
+  return cached;
+}
+
+TtsConfig ttsEngineConfig() {
+  static const TtsConfig cached = [] {
+    TtsConfig cfg;
+    const std::string runner = envStringLower("MODEL_RUNNER_TYPE", "tt_tts");
+    if (runner == "tt_tts" || runner == "tt-tts") {
+      cfg.runner_type = ModelRunnerType::TT_TTS;
+    } else {
+      throw std::runtime_error(
+          "[Config] Unknown TTS MODEL_RUNNER_TYPE='" + runner +
+          "'; expected one of: tt_tts, tt-tts");
+    }
+
+    cfg.maxBatchSize = static_cast<size_t>(
+        envUlong("TTS_MAX_BATCH_SIZE", defaults::TTS_MAX_BATCH_SIZE));
+    cfg.maxUsers =
+        static_cast<size_t>(envUlong("TTS_MAX_USERS", defaults::PM_MAX_USERS));
+    cfg.connectTimeoutMs = static_cast<unsigned>(envUlong(
+        "TTS_CONNECT_TIMEOUT_MS", defaults::PM_CONNECT_TIMEOUT_MS));
+    cfg.outputHangTimeoutMs = static_cast<unsigned>(envUlong(
+        "TTS_OUTPUT_HANG_TIMEOUT_MS", defaults::OUTPUT_HANG_TIMEOUT_MS));
+
+    cfg.taskQueueCapacity = static_cast<size_t>(
+        envUlong("TTS_TASK_QUEUE_CAPACITY", defaults::MAX_QUEUE_SIZE));
+    cfg.audioQueueCapacity = static_cast<size_t>(envUlong(
+        "TTS_AUDIO_QUEUE_CAPACITY", defaults::TTS_AUDIO_QUEUE_CAPACITY));
+    cfg.cancelQueueCapacity = static_cast<size_t>(
+        envUlong("TTS_CANCEL_QUEUE_CAPACITY", defaults::CANCEL_QUEUE_CAPACITY));
+
+    cfg.chunkTokens = static_cast<uint32_t>(
+        envUlong("TTS_CHUNK_TOKENS", defaults::TTS_CHUNK_TOKENS));
+    cfg.firstChunkTokens = static_cast<uint32_t>(
+        envUlong("TTS_FIRST_CHUNK_TOKENS", defaults::TTS_FIRST_CHUNK_TOKENS));
+    cfg.voiceSampleRateHz = static_cast<uint32_t>(envUlong(
+        "TTS_VOICE_SAMPLE_RATE_HZ", defaults::TTS_VOICE_SAMPLE_RATE_HZ));
+    cfg.voiceChannels = static_cast<uint16_t>(
+        envUlong("TTS_VOICE_CHANNELS", defaults::TTS_VOICE_CHANNELS));
+    cfg.audioSampleRateHz = static_cast<uint32_t>(envUlong(
+        "TTS_AUDIO_SAMPLE_RATE_HZ", defaults::TTS_AUDIO_SAMPLE_RATE_HZ));
+    cfg.audioChannels = static_cast<uint16_t>(
+        envUlong("TTS_AUDIO_CHANNELS", defaults::TTS_AUDIO_CHANNELS));
+
+    cfg.encoderSocketDescriptorPrefix = envString(
+        "TTS_ENCODER_SOCKET_DESCRIPTOR_PREFIX",
+        defaults::TTS_ENCODER_SOCKET_DESCRIPTOR_PREFIX);
+    cfg.speechlmSocketDescriptorPrefix = envString(
+        "TTS_SPEECHLM_SOCKET_DESCRIPTOR_PREFIX",
+        defaults::TTS_SPEECHLM_SOCKET_DESCRIPTOR_PREFIX);
+    cfg.decoderSocketDescriptorPrefix = envString(
+        "TTS_DECODER_SOCKET_DESCRIPTOR_PREFIX",
+        defaults::TTS_DECODER_SOCKET_DESCRIPTOR_PREFIX);
+
     return cfg;
   }();
   return cached;
@@ -531,6 +589,10 @@ RunnerConfig workerRunnerConfig(size_t workerIndex) {
       auto cfg = imageEngineConfig();
       cfg.worker_id = workerIndex;
       cfg.visible_devices = visibleDevicesForWorker(workerIndex);
+      return cfg;
+    }
+    case ModelService::TTS: {
+      auto cfg = ttsEngineConfig();
       return cfg;
     }
     case ModelService::EMBEDDING:

@@ -18,6 +18,7 @@ enum class ModelService {
   LLM,
   EMBEDDING,
   IMAGE,
+  TTS,
 };
 
 /** String value for env MODEL_SERVICE. */
@@ -27,6 +28,8 @@ inline std::string toString(ModelService s) {
       return "embedding";
     case ModelService::IMAGE:
       return "image";
+    case ModelService::TTS:
+      return "tts";
     case ModelService::LLM:
     default:
       return "llm";
@@ -37,6 +40,7 @@ inline std::string toString(ModelService s) {
 inline ModelService modelServiceFromString(const std::string& v) {
   if (v == "embedding") return ModelService::EMBEDDING;
   if (v == "image") return ModelService::IMAGE;
+  if (v == "tts") return ModelService::TTS;
   return ModelService::LLM;
 }
 
@@ -88,6 +92,7 @@ enum class ModelRunnerType {
   TT_SDXL_GENERATE,
   TT_SDXL_IMAGE_TO_IMAGE,
   TT_SDXL_EDIT,
+  TT_TTS,
 };
 
 enum class Model {
@@ -144,6 +149,8 @@ inline std::string toString(ModelRunnerType m) {
       return "tt_sdxl_image_to_image";
     case ModelRunnerType::TT_SDXL_EDIT:
       return "tt_sdxl_edit";
+    case ModelRunnerType::TT_TTS:
+      return "tt_tts";
   }
   return "unknown";
 }
@@ -157,6 +164,8 @@ inline std::string toClientRunnerName(ModelRunnerType m) {
       return "tt-sdxl-image-to-image";
     case ModelRunnerType::TT_SDXL_EDIT:
       return "tt-sdxl-edit";
+    case ModelRunnerType::TT_TTS:
+      return "tt-tts";
     case ModelRunnerType::MOCK:
     case ModelRunnerType::MOCK_PIPELINE:
     case ModelRunnerType::MOCK_SCHEDULER:

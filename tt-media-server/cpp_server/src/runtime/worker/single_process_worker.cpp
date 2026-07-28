@@ -101,9 +101,36 @@ void SingleProcessWorker::start() {
 
   {
     ZoneScopedN("Worker::init");
-    runner_ = tt::utils::ipc_runner_factory::createIpcRunner(
-        tt::config::modelService(), cfg.runner_config, cfg.result_queue.get(),
-        cfg.task_queue.get(), cfg.cancel_queue.get());
+    if (tt::config::isTtsService()) {
+      auto* taskQueue =
+          std::get_if<std::shared_ptr<tt::ipc::tts::TtsTaskQueue>>(
+              &cfg.task_queue);
+      auto* audioQueue =
+          std::get_if<std::shared_ptr<tt::ipc::tts::TtsAudioChunkQueue>>(
+              &cfg.result_queue);
+      if (!taskQueue || !audioQueue || !*taskQueue || !*audioQueue ||
+          !cfg.cancel_queue) {
+        throw std::runtime_error(
+            "TTS worker requires TTS task/audio queues and a cancel queue");
+      }
+      runner_ = tt::utils::ipc_runner_factory::createTtsIpcRunner(
+          cfg.runner_config, taskQueue->get(), audioQueue->get(),
+          cfg.cancel_queue.get());
+    } else {
+      auto* taskQueue =
+          std::get_if<std::shared_ptr<tt::ipc::ITaskQueue>>(&cfg.task_queue);
+      auto* resultQueue =
+          std::get_if<std::shared_ptr<tt::ipc::IResultQueue>>(
+              &cfg.result_queue);
+      if (!taskQueue || !resultQueue || !*taskQueue || !*resultQueue ||
+          !cfg.cancel_queue) {
+        throw std::runtime_error(
+            "LLM worker requires LLM task/result queues and a cancel queue");
+      }
+      runner_ = tt::utils::ipc_runner_factory::createIpcRunner(
+          tt::config::modelService(), cfg.runner_config, resultQueue->get(),
+          taskQueue->get(), cfg.cancel_queue.get());
+    }
   }
   TT_LOG_INFO(
       "[SingleProcessWorker] Worker {} starting runner (warmup may take a "

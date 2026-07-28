@@ -21,6 +21,7 @@
 #include "ipc/boost/boost_result_queue.hpp"
 #include "ipc/boost/boost_task_queue.hpp"
 #include "ipc/boost/boost_warmup_signal_queue.hpp"
+#include "ipc/tts_ipc.hpp"
 #include "utils/logger.hpp"
 
 namespace {
@@ -54,6 +55,27 @@ namespace {
 }  // namespace
 
 namespace tt::worker {
+
+namespace {
+
+void configureLlmQueues(WorkerConfig& cfg, int workerId) {
+  cfg.task_queue = std::make_shared<tt::ipc::boost::TaskQueue>(
+      tt::config::ttTaskQueueName());
+  cfg.result_queue = std::make_shared<tt::ipc::boost::ResultQueue>(
+      std::string(tt::config::ttResultQueueName()) + std::to_string(workerId));
+  cfg.cancel_queue = std::make_shared<tt::ipc::boost::CancelQueue>(
+      std::string(tt::config::ttCancelQueueName()) + std::to_string(workerId));
+}
+
+void configureTtsQueues(WorkerConfig& cfg, int workerId) {
+  tt::ipc::tts::TtsQueueNames names;
+  cfg.task_queue =
+      std::make_shared<tt::ipc::tts::TtsTaskQueue>(names.taskQueue);
+  cfg.result_queue = std::make_shared<tt::ipc::tts::TtsAudioChunkQueue>(
+      names.audioQueuePrefix + std::to_string(workerId));
+  cfg.cancel_queue = std::make_shared<tt::ipc::boost::CancelQueue>(
+      names.cancelQueuePrefix + std::to_string(workerId));
+}
 
 WorkerManager::WorkerManager(size_t numWorkers) : workerCount{numWorkers} {
   if (workerCount < 1) {
@@ -168,15 +190,10 @@ WorkerConfig WorkerManager::makeWorkerConfig(int workerId) {
   cfg.env_vars["TT_WORKER_ID"] = std::to_string(workerId);
   cfg.env_vars["TT_VISIBLE_DEVICES"] =
       tt::config::visibleDevicesForWorker(workerId);
-  if (!tt::config::isImageService()) {
-    cfg.task_queue = std::make_shared<tt::ipc::boost::TaskQueue>(
-        tt::config::ttTaskQueueName());
-    cfg.result_queue = std::make_shared<tt::ipc::boost::ResultQueue>(
-        std::string(tt::config::ttResultQueueName()) +
-        std::to_string(workerId));
-    cfg.cancel_queue = std::make_shared<tt::ipc::boost::CancelQueue>(
-        std::string(tt::config::ttCancelQueueName()) +
-        std::to_string(workerId));
+  if (tt::config::isTtsService()) {
+    configureTtsQueues(cfg, workerId);
+  } else if (!tt::config::isImageService()) {
+    configureLlmQueues(cfg, workerId);
   }
   cfg.worker_id = workerId;
   cfg.runner_config =
@@ -276,15 +293,10 @@ WorkerConfig makeWorkerConfigForProcess(int workerId) {
   cfg.env_vars["TT_WORKER_ID"] = std::to_string(workerId);
   cfg.env_vars["TT_VISIBLE_DEVICES"] =
       tt::config::visibleDevicesForWorker(workerId);
-  if (!tt::config::isImageService()) {
-    cfg.task_queue = std::make_shared<tt::ipc::boost::TaskQueue>(
-        tt::config::ttTaskQueueName());
-    cfg.result_queue = std::make_shared<tt::ipc::boost::ResultQueue>(
-        std::string(tt::config::ttResultQueueName()) +
-        std::to_string(workerId));
-    cfg.cancel_queue = std::make_shared<tt::ipc::boost::CancelQueue>(
-        std::string(tt::config::ttCancelQueueName()) +
-        std::to_string(workerId));
+  if (tt::config::isTtsService()) {
+    configureTtsQueues(cfg, workerId);
+  } else if (!tt::config::isImageService()) {
+    configureLlmQueues(cfg, workerId);
   }
   cfg.worker_id = workerId;
   cfg.runner_config =
