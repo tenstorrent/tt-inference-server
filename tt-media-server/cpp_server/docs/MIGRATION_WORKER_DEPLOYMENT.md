@@ -11,8 +11,6 @@ REPO_ROOT=$PWD
 
 cd $REPO_ROOT/tt-media-server/cpp_server/scripts
 
-export KAFKA_ADVERTISED_HOST=$(hostname)
-export KAFKA_BROKERS="${KAFKA_ADVERTISED_HOST}:9092"
 ./dev-kafka.sh up
 
 uv venv
@@ -20,10 +18,10 @@ source .venv/bin/activate
 uv pip install -r migration_cli_requirements.txt
 
 # Create topics
-python migration_cli.py setup
+python migration_cli.py --brokers "$(hostname):9092" setup
 
 # Check if they are created
-python migration_cli.py status
+python migration_cli.py --brokers "$(hostname):9092" status
 
 # Start metadata server
 cd $REPO_ROOT/tt-media-server/cpp_server/scripts/metadata_server
