@@ -63,36 +63,17 @@ To stop the migration workers tap `Ctrl+C`. This will also delete the remote doc
 
 Attention: Prefill and decode table paths must be accessible by all the migration workers. For exabox deployments, this requires storing them on the /data partition.
 
-# Troubleshooting
-
-```bash
-ERROR: bh-glx-110-d01u02: cannot access Docker API; add the SSH user to the docker group or configure passwordless sudo for docker
-```
-
-This happens when deploy_migration_workers.sh tries to ssh to the host it's running on. 
-Just `ssh $(hostname)` then `exit` for quick fix.
-Fix is on the way.
-
----
-
-```bash
-[deploy] loading config /data/dmadic/inf2/tt-media-server/cpp_server/scripts/migration_deploy.conf
-ERROR: decode device map file not found: /tmp/device-map.txt
-```
-
-Deployment script requires the decode device map file to be present on the host it's running on. This expectation is not correct and fix is on the way in PR https://github.com/tenstorrent/tt-inference-server/pull/4767/changes.
-
-Quick fix creating an empty file `touch /tmp/device-map.txt`.
-
-
 # Building the migration worker image
 
 ```bash
 cd $REPO_ROOT/tt-media-server/cpp_server/scripts
-./build_migration_worker_image.sh --image tt-migration-worker:dev3 ghcr.io/tenstorrent/tt-shield/tt-migration-worker:23072026-225800
 
+# Just build the image
+./build_migration_worker_image.sh
+
+# Or build and push the image
 # This token requires package:write permission
 docker login ghcr.io -u <GH_USERNAME>
-docker push ghcr.io/tenstorrent/tt-shield/tt-migration-worker:23072026-225800
+./build_migration_worker_image.sh --push
 ```
 
