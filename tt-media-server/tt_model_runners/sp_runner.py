@@ -106,6 +106,8 @@ class SPRunner(BaseDeviceRunner):
         # to _pending and the same lock guards both maps so cleanup is atomic.
         self._pending_image_paths: dict[str, str] = {}
         self._pending_lock = threading.Lock()
+        # Serialises every write into the input ring; see _write_request_locked.
+        self._input_write_lock = threading.Lock()
 
         self._drainer: threading.Thread | None = None
         self._drainer_lock = threading.Lock()
@@ -275,7 +277,7 @@ class SPRunner(BaseDeviceRunner):
 
         try:
             deadline = time.monotonic() + timeout_s
-            wrote = self._input_shm.write_request(
+            wrote = self._write_request_locked(
                 self._build_canary_request(task_id), timeout_s
             )
             if not wrote:
@@ -460,7 +462,7 @@ class SPRunner(BaseDeviceRunner):
             # Short timeout: if write blocks, ring is degenerately full and
             # we'd rather fail fast and let the orchestrator restart us than
             # silently hang the worker for an hour.
-            wrote = await asyncio.to_thread(self._input_shm.write_request, ping, 5.0)
+            wrote = await asyncio.to_thread(self._write_request_locked, ping, 5.0)
             if not wrote:
                 self.logger.error(
                     f"{self._log_id} warmup: write_request timed out "
@@ -594,7 +596,7 @@ class SPRunner(BaseDeviceRunner):
             self._pending[task_id] = fut
 
         try:
-            self._input_shm.write_request(
+            self._write_request_locked(
                 self._build_video_req(request, task_id, image_path)
             )
         except Exception:
@@ -769,6 +771,22 @@ class SPRunner(BaseDeviceRunner):
                 pass
             raise
         return final_path
+
+    def _write_request_locked(
+        self, request: VideoRequest, timeout_s: float | None = None
+    ) -> bool:
+        """Serialise writes into the single-writer input ring.
+
+        ``VideoShm.write_request`` claims a slot by reading ``widx``, filling it,
+        then bumping ``widx``, with no internal locking — the ring assumes one
+        writer per side. Two concurrent writers would claim the same slot, clobber
+        each other's payload and advance ``widx`` only once, silently dropping a
+        request and desyncing the ring. Canary probes run off the worker thread
+        (and the dynamic-batch worker probes from an executor thread), so a probe
+        write can overlap a real submit; this lock restores the invariant.
+        """
+        with self._input_write_lock:
+            return self._input_shm.write_request(request, timeout_s)
 
     @staticmethod
     def _try_unlink(path: str) -> None:

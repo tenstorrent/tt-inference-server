@@ -298,7 +298,7 @@ class TestI2VRunSideFileLifecycle:
         # unlinks it) — proves both file existence and content in one pass.
         captured: dict = {}
 
-        def capture_payload(req):
+        def capture_payload(req, timeout_s=None):
             captured["image_path"] = req.image_path
             with open(req.image_path) as f:
                 captured["payload"] = json.load(f)
@@ -335,7 +335,7 @@ class TestI2VRunSideFileLifecycle:
 
         captured_path: dict = {}
 
-        def capture_path_at_write(req):
+        def capture_path_at_write(req, timeout_s=None):
             captured_path["path"] = req.image_path
             assert os.path.exists(req.image_path)
 
@@ -363,7 +363,7 @@ class TestI2VRunSideFileLifecycle:
 
         captured_path: dict = {}
 
-        def capture_path_at_write(req):
+        def capture_path_at_write(req, timeout_s=None):
             captured_path["path"] = req.image_path
 
         mock_input.write_request.side_effect = capture_path_at_write
@@ -395,7 +395,7 @@ class TestI2VRunSideFileLifecycle:
 
         captured: dict = {}
 
-        def capture_image_path(req):
+        def capture_image_path(req, timeout_s=None):
             captured["image_path"] = req.image_path
 
         mock_input.write_request.side_effect = capture_image_path
@@ -433,7 +433,7 @@ class TestI2VRunSideFileLifecycle:
 
         captured: dict = {}
 
-        def capture(req):
+        def capture(req, timeout_s=None):
             captured["req"] = req
             captured["existed_at_write"] = os.path.exists(req.image_path)
 
