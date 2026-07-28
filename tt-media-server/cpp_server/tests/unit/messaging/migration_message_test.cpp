@@ -16,10 +16,6 @@ namespace {
 
 using tt::services::MigrationStatus;
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 Json::Value parseJson(const std::string& payload) {
   Json::Value root;
   Json::CharReaderBuilder builder;
@@ -33,7 +29,8 @@ Json::Value parseJson(const std::string& payload) {
 
 MigrationRequestMessage makeRequest() {
   return MigrationRequestMessage{
-      .migration_id = 42,
+      .kafka_request_id = 42,
+      .migration_id = 1001,
       .src_slot = 1,
       .dst_slot = 2,
       .layer_begin = 0,
@@ -46,12 +43,9 @@ MigrationRequestMessage makeRequest() {
 }
 
 MigrationResponseMessage makeResponse(MigrationStatus status) {
-  return MigrationResponseMessage{.migration_id = 99, .status = status};
+  return MigrationResponseMessage{
+      .kafka_request_id = 99, .migration_id = 1001, .status = status};
 }
-
-// ---------------------------------------------------------------------------
-// MigrationRequestMessage
-// ---------------------------------------------------------------------------
 
 TEST(MigrationRequestMessageWire, RoundTripPreservesAllFields) {
   const auto in = makeRequest();
@@ -60,6 +54,7 @@ TEST(MigrationRequestMessageWire, RoundTripPreservesAllFields) {
   const auto out = parseMigrationRequest(wire);
   ASSERT_TRUE(out.has_value()) << "parseMigrationRequest rejected: " << wire;
 
+  EXPECT_EQ(out->kafka_request_id, in.kafka_request_id);
   EXPECT_EQ(out->migration_id, in.migration_id);
   EXPECT_EQ(out->src_slot, in.src_slot);
   EXPECT_EQ(out->dst_slot, in.dst_slot);
@@ -72,13 +67,11 @@ TEST(MigrationRequestMessageWire, RoundTripPreservesAllFields) {
 }
 
 TEST(MigrationRequestMessageWire, SerializeEmitsAllExpectedFields) {
-  // The wire shape is part of the contract with the Python frontend / consumer
-  // tooling — guard it explicitly so a careless field rename can't silently
-  // ship.
   const auto wire = serialize(makeRequest());
   const auto root = parseJson(wire);
 
   ASSERT_TRUE(root.isObject());
+  EXPECT_TRUE(root.isMember("kafka_request_id"));
   EXPECT_TRUE(root.isMember("migration_id"));
   EXPECT_TRUE(root.isMember("src_slot"));
   EXPECT_TRUE(root.isMember("dst_slot"));
@@ -88,18 +81,25 @@ TEST(MigrationRequestMessageWire, SerializeEmitsAllExpectedFields) {
   EXPECT_TRUE(root.isMember("src_position_end"));
   EXPECT_TRUE(root.isMember("dst_position_begin"));
   EXPECT_TRUE(root.isMember("dst_position_end"));
+  EXPECT_FALSE(root.isMember("migration_id"));
+  EXPECT_EQ(root.size(), 10u);
+}
+
+TEST(MigrationRequestMessageWire, OmitsMigrationIdWhenUnset) {
+  MigrationRequestMessage in = makeRequest();
+  in.migration_id = std::nullopt;
+  const auto root = parseJson(serialize(in));
+  EXPECT_FALSE(root.isMember("migration_id"));
   EXPECT_EQ(root.size(), 9u);
 }
 
-TEST(MigrationRequestMessageWire, HandlesMaxUint64MigrationId) {
-  // migration_id is uint64_t and the JSON encoder must not silently truncate
-  // it to a signed int (a regression we'd never spot in normal-size tests).
+TEST(MigrationRequestMessageWire, HandlesMaxUint64KafkaRequestId) {
   MigrationRequestMessage in = makeRequest();
-  in.migration_id = std::numeric_limits<uint64_t>::max();
+  in.kafka_request_id = std::numeric_limits<uint64_t>::max();
 
   const auto out = parseMigrationRequest(serialize(in));
   ASSERT_TRUE(out.has_value());
-  EXPECT_EQ(out->migration_id, std::numeric_limits<uint64_t>::max());
+  EXPECT_EQ(out->kafka_request_id, std::numeric_limits<uint64_t>::max());
 }
 
 TEST(MigrationRequestMessageWire, HandlesMaxUint32Slots) {
@@ -126,6 +126,49 @@ TEST(MigrationRequestMessageWire, HandlesMaxUint32Slots) {
   EXPECT_EQ(out->dst_position_end, kMax);
 }
 
+TEST(MigrationRequestMessageParse, AcceptsLegacyMigrationIdAsKafkaRequestId) {
+  // Old producers only emitted migration_id, and it was the per-request id.
+  Json::Value root;
+  root["migration_id"] = 77;
+  root["src_slot"] = 2;
+  root["dst_slot"] = 3;
+  root["layer_begin"] = 0;
+  root["layer_end"] = 32;
+  root["src_position_begin"] = 100;
+  root["src_position_end"] = 200;
+  root["dst_position_begin"] = 100;
+  root["dst_position_end"] = 200;
+
+  Json::StreamWriterBuilder w;
+  w["indentation"] = "";
+  const auto out = parseMigrationRequest(Json::writeString(w, root));
+  ASSERT_TRUE(out.has_value());
+  EXPECT_EQ(out->kafka_request_id, 77u);
+  EXPECT_FALSE(out->migration_id.has_value());
+}
+
+TEST(MigrationRequestMessageParse, DualFieldsKeepMigrationIdAsParent) {
+  Json::Value root;
+  root["kafka_request_id"] = 42;
+  root["migration_id"] = 1001;
+  root["src_slot"] = 2;
+  root["dst_slot"] = 3;
+  root["layer_begin"] = 0;
+  root["layer_end"] = 32;
+  root["src_position_begin"] = 100;
+  root["src_position_end"] = 200;
+  root["dst_position_begin"] = 100;
+  root["dst_position_end"] = 200;
+
+  Json::StreamWriterBuilder w;
+  w["indentation"] = "";
+  const auto out = parseMigrationRequest(Json::writeString(w, root));
+  ASSERT_TRUE(out.has_value());
+  EXPECT_EQ(out->kafka_request_id, 42u);
+  ASSERT_TRUE(out->migration_id.has_value());
+  EXPECT_EQ(*out->migration_id, 1001u);
+}
+
 TEST(MigrationRequestMessageParse, RejectsMalformedJson) {
   EXPECT_FALSE(parseMigrationRequest("not json at all").has_value());
   EXPECT_FALSE(parseMigrationRequest("").has_value());
@@ -133,13 +176,12 @@ TEST(MigrationRequestMessageParse, RejectsMalformedJson) {
 }
 
 TEST(MigrationRequestMessageParse, RejectsMissingRequiredField) {
-  // Every required field, dropped one at a time.
   for (const char* dropped :
-       {"migration_id", "src_slot", "dst_slot", "layer_begin", "layer_end",
+       {"kafka_request_id", "src_slot", "dst_slot", "layer_begin", "layer_end",
         "src_position_begin", "src_position_end", "dst_position_begin",
         "dst_position_end"}) {
     Json::Value root;
-    root["migration_id"] = 1;
+    root["kafka_request_id"] = 1;
     root["src_slot"] = 2;
     root["dst_slot"] = 3;
     root["layer_begin"] = 0;
@@ -159,9 +201,8 @@ TEST(MigrationRequestMessageParse, RejectsMissingRequiredField) {
 }
 
 TEST(MigrationRequestMessageParse, RejectsNonIntegralField) {
-  // Strings where numbers are required must be rejected, not coerced.
   Json::Value root;
-  root["migration_id"] = "not-a-number";
+  root["kafka_request_id"] = "not-a-number";
   root["src_slot"] = 2;
   root["dst_slot"] = 3;
   root["layer_begin"] = 0;
@@ -176,10 +217,6 @@ TEST(MigrationRequestMessageParse, RejectsNonIntegralField) {
   EXPECT_FALSE(parseMigrationRequest(Json::writeString(w, root)).has_value());
 }
 
-// ---------------------------------------------------------------------------
-// MigrationResponseMessage
-// ---------------------------------------------------------------------------
-
 class MigrationResponseStatusWire
     : public ::testing::TestWithParam<MigrationStatus> {};
 
@@ -188,6 +225,7 @@ TEST_P(MigrationResponseStatusWire, RoundTripPreservesStatus) {
   const auto out = parseMigrationResponse(serialize(in));
 
   ASSERT_TRUE(out.has_value());
+  EXPECT_EQ(out->kafka_request_id, in.kafka_request_id);
   EXPECT_EQ(out->migration_id, in.migration_id);
   EXPECT_EQ(out->status, in.status);
 }
@@ -203,26 +241,24 @@ TEST(MigrationResponseMessageWire, SerializeEmitsExpectedFields) {
   const auto root = parseJson(wire);
 
   ASSERT_TRUE(root.isObject());
+  ASSERT_TRUE(root.isMember("kafka_request_id"));
   ASSERT_TRUE(root.isMember("migration_id"));
   ASSERT_TRUE(root.isMember("status"));
-  // status is the human-readable enum name on the wire, not its numeric value.
   ASSERT_TRUE(root["status"].isString());
   EXPECT_EQ(root["status"].asString(), "SUCCESSFUL");
-  EXPECT_EQ(root.size(), 2u);
+  EXPECT_EQ(root.size(), 3u);
 }
 
-TEST(MigrationResponseMessageWire, HandlesMaxUint64MigrationId) {
+TEST(MigrationResponseMessageWire, HandlesMaxUint64KafkaRequestId) {
   MigrationResponseMessage in = makeResponse(MigrationStatus::SUCCESSFUL);
-  in.migration_id = std::numeric_limits<uint64_t>::max();
+  in.kafka_request_id = std::numeric_limits<uint64_t>::max();
 
   const auto out = parseMigrationResponse(serialize(in));
   ASSERT_TRUE(out.has_value());
-  EXPECT_EQ(out->migration_id, std::numeric_limits<uint64_t>::max());
+  EXPECT_EQ(out->kafka_request_id, std::numeric_limits<uint64_t>::max());
 }
 
 TEST(MigrationResponseMessageWire, StatusUsesEnumNameOnTheWire) {
-  // Cross-language consumers (Python) read this field as a string; if the C++
-  // side ever switches to numeric encoding it'll break them silently.
   const auto inProgressWire =
       parseJson(serialize(makeResponse(MigrationStatus::IN_PROGRESS)));
   EXPECT_EQ(inProgressWire["status"].asString(), "IN_PROGRESS");
@@ -238,28 +274,32 @@ TEST(MigrationResponseMessageParse, RejectsMalformedJson) {
 }
 
 TEST(MigrationResponseMessageParse, RejectsMissingFields) {
-  // missing status
-  EXPECT_FALSE(parseMigrationResponse(R"({"migration_id": 1})").has_value());
-  // missing migration_id
+  EXPECT_FALSE(
+      parseMigrationResponse(R"({"kafka_request_id": 1})").has_value());
   EXPECT_FALSE(
       parseMigrationResponse(R"({"status": "SUCCESSFUL"})").has_value());
 }
 
+TEST(MigrationResponseMessageParse, AcceptsLegacyMigrationIdKey) {
+  const auto out = parseMigrationResponse(
+      R"({"migration_id": 55, "status": "SUCCESSFUL"})");
+  ASSERT_TRUE(out.has_value());
+  EXPECT_EQ(out->kafka_request_id, 55u);
+  EXPECT_FALSE(out->migration_id.has_value());
+}
+
 TEST(MigrationResponseMessageParse, RejectsWrongFieldTypes) {
-  // migration_id must be integral.
-  EXPECT_FALSE(
-      parseMigrationResponse(R"({"migration_id": "1", "status": "SUCCESSFUL"})")
-          .has_value());
-  // status must be a string.
-  EXPECT_FALSE(parseMigrationResponse(R"({"migration_id": 1, "status": 0})")
+  EXPECT_FALSE(parseMigrationResponse(
+                   R"({"kafka_request_id": "1", "status": "SUCCESSFUL"})")
                    .has_value());
+  EXPECT_FALSE(
+      parseMigrationResponse(R"({"kafka_request_id": 1, "status": 0})")
+          .has_value());
 }
 
 TEST(MigrationResponseMessageParse, RejectsUnknownStatusString) {
-  // A status value that doesn't map to any MigrationStatus enumerator must be
-  // rejected; silently degrading to UNKNOWN would mask a real protocol drift.
   EXPECT_FALSE(parseMigrationResponse(
-                   R"({"migration_id": 1, "status": "MAYBE_SUCCESSFUL"})")
+                   R"({"kafka_request_id": 1, "status": "MAYBE_SUCCESSFUL"})")
                    .has_value());
 }
 
