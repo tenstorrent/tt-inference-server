@@ -309,6 +309,7 @@ class TTFluxKontextRunner(TTDiTRunner):
 
     def __init__(self, device_id: str):
         super().__init__(device_id)
+        self.image_manager = ImageManager("img")
 
     @staticmethod
     def _active_lora():
@@ -358,11 +359,13 @@ class TTFluxKontextRunner(TTDiTRunner):
         }
 
     def _decode_image(self, image_b64: str, width: int, height: int) -> Image.Image:
-        # strip an optional data-URL prefix (e.g. "data:image/png;base64,")
-        if "," in image_b64 and image_b64.strip().startswith("data:"):
-            image_b64 = image_b64.split(",", 1)[1]
-        raw = base64.b64decode(image_b64)
-        return Image.open(io.BytesIO(raw)).convert("RGB").resize((width, height))
+        # Reuse the shared decoder: it strips an optional data-URL prefix AND
+        # restores base64 padding that HTTP/JSON transport may have trimmed
+        # (a bare b64decode raises "Invalid base64-encoded string" on those),
+        # then converts to RGB and resizes.
+        return self.image_manager.base64_to_pil_image(
+            image_b64, target_size=(width, height), target_mode="RGB"
+        )
 
     def run(self, requests: list[ImageGenerateRequest]):
         request = requests[0]

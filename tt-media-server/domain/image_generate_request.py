@@ -9,7 +9,7 @@ from domain.base_request import BaseRequest
 from pydantic import Field, PrivateAttr, field_validator
 
 # Flux models support fewer inference steps than other image models
-_FLUX_RUNNERS = {"tt-flux.1-dev", "tt-flux.1-schnell"}
+_FLUX_RUNNERS = {"tt-flux.1-dev", "tt-flux.1-schnell", "tt-flux.1-kontext-dev"}
 _FLUX_MIN_INFERENCE_STEPS = 4
 _DEFAULT_MIN_INFERENCE_STEPS = 12
 _SKIP_STEP_VALIDATION_RUNNERS = {"tt-z-image-turbo"}
