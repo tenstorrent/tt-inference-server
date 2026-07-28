@@ -125,11 +125,12 @@ class MooncakeKvSender {
 
   /**
    * @brief Transfer one slot's chunks into the decode mirror segment.
+   * @param kafkaRequestId per-layer Kafka request identifier.
    * @param request      what to migrate (slot, layer/position ranges).
    * @param segment_name the receiver's advertised segment (from MirrorReady).
    * @return true if every chunk read + wrote successfully.
    */
-  bool transferSlot(const MigrationRequest& request,
+  bool transferSlot(uint64_t kafkaRequestId, const MigrationRequest& request,
                     const std::string& segmentName);
 
  private:
