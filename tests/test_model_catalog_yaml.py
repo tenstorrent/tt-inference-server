@@ -274,7 +274,7 @@ def test_diffusiongemma_dev_spec_enables_upfront_early_halt_and_thinking():
         spec.device_model_spec.vllm_args["reasoning-parser"] == "diffusion_gemma"
     )
     assert spec.metadata["reasoning_parser_name"] == "diffusion_gemma"
-    assert spec.device_model_spec.max_context == 8192
+    assert spec.device_model_spec.max_context == 16384
     assert spec.device_model_spec.override_tt_config["enable_model_warmup"] is True
     # The model warms its own prefill shapes; the generic background trace
     # capture would probe unwhitelisted lengths and kill the engine.
@@ -282,7 +282,10 @@ def test_diffusiongemma_dev_spec_enables_upfront_early_halt_and_thinking():
 
     env = spec.device_model_spec.env_vars
     assert env["DG_UPFRONT_CAPTURE"] == "1"
-    assert env["DG_DENOISE_REVEAL_PMAX"] == "8192"
+    # Must equal max_context: the committed prefix reaches 16256 at 54 blocks, and a shorter
+    # reveal span silently stops later blocks from seeing their prefix.
+    assert env["DG_DENOISE_REVEAL_PMAX"] == "16384"
+    assert int(env["DG_DENOISE_REVEAL_PMAX"]) == spec.device_model_spec.max_context
     assert env["DG_VLLM_GUMBEL_MODE"] == "device"
     # 6 GiB, not 12: DG_MOE_CONCAT duplicates 7.8 GiB of gate/up weights out of the same per-chip
     # DRAM the trace region is carved from, so the two cannot both be generous. Raising this back

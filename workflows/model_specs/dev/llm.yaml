@@ -325,8 +325,13 @@ templates:
       # trace was subsequently enabled here with a 12 GiB trace_region_size (see
       # override_tt_config) -- PCC-neutral, pending QB2 fit confirmation. 256K
       # multi-block generation is not yet validated here.
-      # Keep 8192 so CI reproduces the validated context; raise once 256K is proven.
-      max_context: 8192  # 8 * 1024 (validated); native contract is 262144
+      # Raised 8192 -> 16384 to remove a generation-budget confound, not for capacity: at 8192
+      # the eval's max_gen_toks is (8192 - 2432) // 256 * 256 = 5632, i.e. 22 canvas blocks, and on
+      # the 07-28 run 20 of the 31 answer-free responses had emitted ALL 22 and were cut off before
+      # writing an answer. The A100 reference runs with ~127k tokens of budget (~496 blocks), so a
+      # TT number at 8192 was being compared against a reference with 22x the room to finish -- the
+      # gap that produced was read as a fidelity regression. 16384 gives 54 blocks.
+      max_context: 16384  # 16 * 1024; native contract is 262144
       default_impl: true
       # Env below is the VALIDATED production config (2026-07-17: served a GPQA-Diamond
       # question to a full multi-block answer "The answer is (C)" = correct).
@@ -351,7 +356,13 @@ templates:
         # and reuse its persistent adapter across requests. Reveal masking and
         # one-step early halt are intrinsic to this path.
         DG_UPFRONT_CAPTURE: "1"
-        DG_DENOISE_REVEAL_PMAX: "8192"
+        # MUST track max_context. The committed prefix grows 256 tokens per block, so 54 blocks
+        # plus the longest 2432-token prompt reaches 16256; a reveal span of 8192 would leave later
+        # blocks unable to see the prefix they are supposed to condition on -- silently, since
+        # nothing errors. This is also the expensive knob: the persistent reveal mask and the
+        # per-step prefix read both scale with it, so raising it competes with DG_MOE_CONCAT's
+        # 7.8 GiB for the same DRAM (measured free at 8192 with concat on: 2.47 GiB).
+        DG_DENOISE_REVEAL_PMAX: "16384"
         # HF's sliding layers retain only the last sliding_window-1 = 1023 committed
         # tokens, and 25 of DiffusionGemma's 30 layers are sliding; without this the
         # denoise path attends keys HF has evicted, and the excess grows every block.
@@ -362,7 +373,7 @@ templates:
         # and blocks that halt from 72% to 99% (~1.5x throughput, since a block that
         # cannot settle burns all 48 denoise steps anyway). Pinned rather than
         # inherited because it binds above a 1023-token committed prefix -- i.e. on
-        # essentially every multi-block request at max_context 8192 -- so an older
+        # essentially every multi-block request at max_context 16384 -- so an older
         # pinned tt_metal_commit would otherwise serve the pre-fix geometry silently.
         # Set "0" to restore the maskless path.
         # Evidence: models/experimental/diffusion_gemma/doc/decision_fidelity/
@@ -429,7 +440,7 @@ templates:
         # reasoning is truncated before the final answer (GPQA scored 0%). 'vllm' lets
         # max_tokens drive multi-block decode -> answers complete. Validated 2026-07-17.
         generation-config: vllm
-        max-num-batched-tokens: 8192
+        max-num-batched-tokens: 16384
         # DiffusionGemma uses the Gemma-family channel tokens. Enable the
         # checkpoint's built-in reasoning mode for clients that do not supply
         # chat_template_kwargs, and expose the thought channel separately from

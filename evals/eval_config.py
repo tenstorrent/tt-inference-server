@@ -4856,7 +4856,7 @@ _eval_config_list = [
                 # GPQA prompts are small; cap client max_length modestly so a smoke
                 # run does not need the full 256K KV pool stood up.
                 model_kwargs={
-                    "max_length": 8192,
+                    "max_length": 16384,
                 },
                 # NOTE: do NOT copy the gemma-4-31B-it sampling gen_kwargs
                 # (do_sample/temperature/top_k/top_p -- the Qwen3.6 recommendation)
@@ -4889,16 +4889,15 @@ _eval_config_list = [
                     # lm-eval local-chat-completions streaming parser KeyErrors on
                     # 'message'; non-streamed is required.
                     "stream": "false",
-                    # Thinking plus the final answer needs more than the previous
-                    # 1024/2048-token budgets on hard GPQA prompts. This is every whole
-                    # canvas that fits beside the longest whitelisted prompt:
-                    # (8192 - 2432) // 256 * 256 = 5632, i.e. 22 blocks rather than 16.
-                    # It matches the hardware runs this eval is being compared against
-                    # (run_upfront_gpqa.sh derives the same number from MAX_MODEL_LEN),
-                    # because a CoT chain truncated before its conclusion cannot emit an
-                    # extractable answer -- a budget difference shows up as a score
-                    # difference that has nothing to do with the flags under test.
-                    "max_gen_toks": 5632,
+                    # Every whole canvas that fits beside the longest whitelisted prompt:
+                    # (16384 - 2432) // 256 * 256 = 13824, i.e. 54 blocks. This is the number that
+                    # matters most to the score right now: at the previous 5632 (22 blocks), 20 of
+                    # 31 answer-free responses on the 07-28 run had emitted all 22 blocks and were
+                    # cut off before writing an answer, while the A100 reference had ~496 blocks of
+                    # room. A CoT chain truncated before its conclusion cannot emit an extractable
+                    # answer, and lm_eval scores that 0 -- so a budget difference reads as a quality
+                    # difference. Keep this derived from max_length above.
+                    "max_gen_toks": 13824,
                     "until": [],
                 },
                 # Lightweight: 5-sample smoke; CI_NIGHTLY 0.05 (~10) mirrors gemma-4.
