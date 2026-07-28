@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+import gc
 import os
 import time
 
@@ -14,6 +15,7 @@ from PIL import Image
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.decorators import log_execution_time
 from utils.logger import log_exception_chain
+from utils.lora_utils import prepare_prompt_with_lora, resolve_lora_path
 
 
 class SDXLForgeRunner(BaseDeviceRunner):
@@ -39,6 +41,16 @@ class SDXLForgeRunner(BaseDeviceRunner):
         self.tokenizer = None
         self.tokenizer_2 = None
         self.scheduler = None
+
+        # LoRA state. On the Forge path the adapter is fused into the UNet
+        # *before* compile, so a change means rebuild + recompile. Tracked here
+        # so repeated same-adapter requests stay a no-op.
+        self._current_lora_path: str | None = None
+        self._current_lora_scale: float | None = None
+
+        # Set in _load_pipeline; needed to rebuild the UNet on a LoRA change.
+        self._model_id: str | None = None
+        self._variant: str | None = None
 
         env_resolution = os.getenv("TTXLA_SDXL_RESOLUTION")
         if env_resolution is not None:
@@ -127,7 +139,6 @@ class SDXLForgeRunner(BaseDeviceRunner):
         from diffusers import (
             AutoencoderKL,
             EulerDiscreteScheduler,
-            UNet2DConditionModel,
         )
         from transformers import (
             CLIPTextModel,
@@ -182,13 +193,12 @@ class SDXLForgeRunner(BaseDeviceRunner):
             self.vae.compile(backend="tt")
             self.vae = self.vae.to(self.device)
 
+        # Stash for _build_unet, which reruns this on a LoRA change.
+        self._model_id = model_id
+        self._variant = variant
+
         # UNet — bfloat16, compiled for TT
-        self.unet = UNet2DConditionModel.from_pretrained(
-            model_id, subfolder="unet", variant=variant, torch_dtype=torch.bfloat16
-        )
-        if not runs_on_cpu:
-            self.unet.compile(backend="tt")
-        self.unet = self.unet.to(self.device)
+        self.unet = self._build_unet()
 
         # Text encoders — on device as bf16 when full_on_device; otherwise CPU fp16.
         te_dtype = torch.bfloat16 if full_on_device else torch.float16
@@ -220,6 +230,93 @@ class SDXLForgeRunner(BaseDeviceRunner):
         # and isn't compile-friendly. Per-step latents are moved CPU-ward inside _generate.
         self.scheduler = EulerDiscreteScheduler.from_pretrained(
             model_id, subfolder="scheduler"
+        )
+
+    def _build_unet(
+        self, lora_path: str | None = None, lora_scale: float | None = None
+    ):
+        """Load the UNet, optionally bake in a LoRA adapter, then compile for TT.
+
+        The adapter is *fused* into the base weights and the adapter modules are
+        then dropped, so the compiled graph is identical in shape to the
+        non-LoRA graph. That matters on the Forge path: leaving PEFT wrapper
+        layers in place would change the graph the compiler sees.
+        """
+        from diffusers import UNet2DConditionModel
+
+        runs_on_cpu = os.getenv("RUNS_ON_CPU", "false").lower() == "true"
+
+        unet = UNet2DConditionModel.from_pretrained(
+            self._model_id,
+            subfolder="unet",
+            variant=self._variant,
+            torch_dtype=torch.bfloat16,
+        )
+
+        if lora_path is not None:
+            local_path = resolve_lora_path(lora_path)
+            scale = 1.0 if lora_scale is None else lora_scale
+            self.logger.info(
+                f"Device {self.device_id}: Fusing LoRA adapter {lora_path} "
+                f"(scale={scale}) into UNet before compile"
+            )
+            # prefix="unet" — diffusers defaults to "transformer", which finds
+            # no matching keys in an SDXL UNet adapter and silently no-ops.
+            unet.load_lora_adapter(local_path, prefix="unet")
+            unet.fuse_lora(lora_scale=scale)
+            # Weights are merged now; drop the adapter so the graph stays static.
+            unet.unload_lora()
+
+        if not runs_on_cpu:
+            unet.compile(backend="tt")
+        return unet.to(self.device)
+
+    def _ensure_lora_state(self, request: ImageGenerateRequest) -> None:
+        """Rebuild + recompile the UNet when the requested LoRA differs.
+
+        Mirrors BaseSDXLRunner._ensure_lora_state, but the Forge path cannot
+        swap weights on a compiled graph, so a change costs a full recompile
+        (minutes, not milliseconds). No-op when path and scale already match.
+        """
+        requested_path = request.lora_path
+        requested_scale = request.lora_scale
+
+        needs_change = requested_path != self._current_lora_path or (
+            requested_path is not None and requested_scale != self._current_lora_scale
+        )
+        if not needs_change:
+            return
+
+        self.logger.info(
+            f"Device {self.device_id}: LoRA change "
+            f"{self._current_lora_path!r}(scale={self._current_lora_scale}) -> "
+            f"{requested_path!r}(scale={requested_scale}); recompiling UNet"
+        )
+
+        # Drop the old UNet first — holding two on device risks DRAM OOM,
+        # which the N150 is already close to on this path.
+        self.unet = None
+        gc.collect()
+        # Without this the next compile reuses the cached graph and the new
+        # weights never reach the device — the silent no-op this method fixes.
+        # Mirrors LoraSingleChipRunner._discard_compiled_model.
+        torch._dynamo.reset()
+
+        try:
+            self.unet = self._build_unet(requested_path, requested_scale)
+        except Exception as e:
+            # Leave no half-applied state: the next request must rebuild.
+            self._current_lora_path = None
+            self._current_lora_scale = None
+            raise RuntimeError(
+                f"Failed to apply LoRA adapter '{requested_path}': {e}"
+            ) from e
+
+        self._current_lora_path = requested_path
+        # scale is only meaningful alongside a path; keep the pair consistent so
+        # the no-op check above can't be confused by a stale scale.
+        self._current_lora_scale = (
+            requested_scale if requested_path is not None else None
         )
 
     def _warmup_inference_pass(self):
@@ -418,7 +515,11 @@ class SDXLForgeRunner(BaseDeviceRunner):
         # We process one request at a time (batch_size=1)
         request = requests[0]
 
-        prompt = request.prompt
+        # Must run before _generate: on this path the adapter is baked into the
+        # UNet, so it has to be in place before the graph executes.
+        self._ensure_lora_state(request)
+
+        prompt = prepare_prompt_with_lora(request.prompt, request.lora_path)
         negative_prompt = request.negative_prompt or ""
         cfg_scale = request.guidance_scale
         num_inference_steps = request.num_inference_steps
