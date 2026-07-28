@@ -45,6 +45,7 @@ from test_module._test_common.target_check import (
     get_performance_targets,
     summary_from_tiered,
 )
+from utils.model_naming import slugify_model_id
 
 logger = logging.getLogger(__name__)
 
@@ -176,10 +177,6 @@ def _latest_generated_at(schemas: Sequence[ReportSchema]) -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
-def _slug(text: str) -> str:
-    return text.replace("/", "__").replace("\\", "__").replace(" ", "_")
-
-
 def _compact_timestamp(text: str) -> str:
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
         try:
@@ -202,7 +199,7 @@ def build_summary_schema(schemas: Sequence[ReportSchema]) -> Optional[ReportSche
     # everywhere. report_id slugifies the "/" so the filename stays safe.
     model_repo = first.model
     report_id = (
-        f"summary_{_slug(model_repo)}_{_slug(first.device)}"
+        f"summary_{slugify_model_id(model_repo)}_{slugify_model_id(first.device)}"
         f"_{_compact_timestamp(generated_at)}"
     )
     metadata = {

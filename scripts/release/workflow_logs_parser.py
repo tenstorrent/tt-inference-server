@@ -55,12 +55,18 @@ def load_model_spec_json(model_specs_dir: Path) -> Tuple[Optional[dict], Optiona
     return data, model_id
 
 
-def load_report_data_json(reports_root: Path, model_id: str) -> Optional[dict]:
+def load_report_data_json(
+    reports_root: Path, model_id: str, model_repo: Optional[str] = None
+) -> Optional[dict]:
     """Load report_data JSON from reports_output directory.
+
+    Identifies the report by matching against ``metadata.model_id`` or
+    ``metadata.model_repo``.
 
     Args:
         reports_root: Path to reports_output directory
         model_id: Model identifier to find specific report
+        model_repo: Full HF repo id, matched against ``metadata.model_repo``
 
     Returns:
         Report data dict or None if not found
@@ -69,29 +75,50 @@ def load_report_data_json(reports_root: Path, model_id: str) -> Optional[dict]:
         logger.debug(f"Reports root does not exist: {reports_root}")
         return None
 
+    unidentified: list[Tuple[Path, dict]] = []
+
     # Workflow subdirectory can vary (release, benchmarks, evals)
-    for workflow_dir in reports_root.iterdir():
+    for workflow_dir in sorted(reports_root.iterdir()):
         if not workflow_dir.is_dir():
             continue
         data_dir = workflow_dir / "data"
         if not data_dir.is_dir():
             continue
 
-        # Try model-specific report first
-        report_file = latest_json_by_mtime(data_dir, f"report_data_{model_id}_*.json")
-        if not report_file:
-            # Fallback: any report_data_*.json
-            report_file = latest_json_by_mtime(data_dir, "report_data_*.json")
-
-        if report_file:
+        candidates = sorted(
+            data_dir.glob("report_data_*.json"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        for report_file in candidates:
             try:
-                logger.info(f"Reading report data JSON: {report_file}")
-                return json.loads(report_file.read_text())
+                data = json.loads(report_file.read_text())
             except Exception as e:
                 logger.warning(
                     f"Failed to parse report data JSON from {report_file}: {e}"
                 )
                 continue
+            meta = data.get("metadata") or {}
+            # Both sides must be truthy: with no spec to compare against, a
+            # missing id would otherwise match a report that is equally
+            # id-less, bypassing the explicit fallback below.
+            if (model_repo and meta.get("model_repo") == model_repo) or (
+                model_id and meta.get("model_id") == model_id
+            ):
+                logger.info(f"Reading report data JSON: {report_file}")
+                return data
+            if not meta.get("model_repo") and not meta.get("model_id"):
+                unidentified.append((report_file, data))
+
+    # Older reports predate the injected identity fields; fall back to the most
+    # recent one only when nothing in the tree claims an identity at all.
+    if unidentified:
+        report_file, data = unidentified[0]
+        logger.warning(
+            f"No report matched model_id={model_id!r} / model_repo={model_repo!r}; "
+            f"falling back to unidentified report {report_file}"
+        )
+        return data
 
     logger.debug(f"No report data found for model_id: {model_id}")
     return None
@@ -277,7 +304,9 @@ def parse_workflow_logs_dir(
 
     # Load report data
     reports_root = workflow_logs_dir / "reports_output"
-    report_data_json = load_report_data_json(reports_root, model_id)
+    report_data_json = load_report_data_json(
+        reports_root, model_id, (model_spec_json or {}).get("hf_model_repo")
+    )
     if not report_data_json:
         logger.warning(f"Could not find report data in {workflow_logs_dir}")
         return None

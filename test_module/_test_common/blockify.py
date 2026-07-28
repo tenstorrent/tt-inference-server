@@ -21,6 +21,8 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING, Any, Dict
 
+from utils.model_naming import slugify_name_parts
+
 if TYPE_CHECKING:
     from ..context import MediaContext
 
@@ -57,15 +59,10 @@ def sweep_envelope(ctx: "MediaContext") -> Dict[str, Any]:
 def block_id(ctx: "MediaContext") -> str:
     """Stable ``model_device`` slug for the Block id and report filenames.
 
-    Mirrors :func:`report_module.schema._slugify_block_id` so Block ids
-    produced here line up with ones synthesized by ``ReportSchema``.
+    Uses the same canonical escape as ``ReportSchema``, so Block ids produced
+    here line up with ones it synthesizes -- see :mod:`utils.model_naming`.
     """
-    model = ctx.model_spec.model_name
-    device = ctx.device.name
-    parts = [p for p in (model, device) if p]
-    if not parts:
-        return ""
-    return "_".join(parts).replace("/", "__").replace("\\", "__").replace(" ", "_")
+    return slugify_name_parts(ctx.model_spec.model_name, ctx.device.name)
 
 
 __all__ = ["block_id", "sweep_envelope"]

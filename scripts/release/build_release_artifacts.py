@@ -87,9 +87,18 @@ from pathlib import Path
 # Make the repo root importable so we can reuse the canonical DeviceTypes enum
 # (scripts/release/ -> repo root is three parents up).
 from _bootstrap import REPO_ROOT  # noqa: E402  (sets sys.path for imports below)
+from utils.model_naming import (  # noqa: E402
+    device_from_ci_job_name,
+    split_workflow_logs_artifact_name,
+    workflow_logs_artifact_prefix,
+)
 from workflows.workflow_types import DeviceTypes  # noqa: E402
 
-ARTIFACT_PREFIX = "workflow_logs_release_"
+# The CI workflow whose log bundles this script collects. Every name it parses
+# is built by tt-shield from the model id in models-ci-config.json; the grammar
+# and the escaping of that id are shared via utils.model_naming so the two
+# repos cannot drift apart.
+WORKFLOW = "release"
 DEFAULT_REPO = "tenstorrent/tt-shield"
 DEFAULT_CI_CONFIG = REPO_ROOT / ".github" / "workflows" / "models-ci-config.json"
 
@@ -175,28 +184,23 @@ def list_jobs(repo: str, run_id: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 # runner / device resolution
 # ---------------------------------------------------------------------------
-def runner_of(artifact_name: str, model: str) -> str:
+def runner_of(artifact_name: str, model: str) -> str | None:
     """workflow_logs_release_<model>_<runner>_<suffix>  ->  <runner>.
 
-    Assumes a single-token suffix (e.g. ``default``). `model` is matched
-    exactly, so models that share a prefix (foo vs foo-turbo) are unambiguous
-    because of the underscore boundary after the model name.
+    ``None`` if the name is not this model's bundle. Assumes a single-token
+    suffix (e.g. ``default``); see ``utils.model_naming`` for the grammar.
     """
-    rest = artifact_name[len(ARTIFACT_PREFIX) + len(model) + 1 :]  # "<runner>_<suffix>"
-    return rest.rsplit("_", 1)[0]
+    parts = split_workflow_logs_artifact_name(artifact_name, WORKFLOW, model)
+    return parts[0] if parts else None
 
 
 def device_from_jobs(jobs: list[dict], model: str, runner: str) -> str | None:
     """Find the device a (model, runner) pair ran on, from the job name
     pattern ``run-release-<model>-<runner>-<device>``."""
-    marker = f"run-release-{model}-{runner}-"
     for job in jobs:
-        leaf = job.get("name", "").split("/")[-1].strip()
-        idx = leaf.find(marker)
-        if idx != -1:
-            tail = leaf[idx + len(marker) :].strip()
-            if tail:
-                return tail.split()[0]  # device token has no spaces
+        device = device_from_ci_job_name(job.get("name", ""), WORKFLOW, model, runner)
+        if device:
+            return device
     return None
 
 
@@ -254,20 +258,27 @@ def resolve_model(
     cache: dict[int, Path],
 ) -> dict[str, dict]:
     """Return {device: artifact} for the requested devices of one model."""
-    candidates = [
-        a for a in artifacts if a["name"].startswith(f"{ARTIFACT_PREFIX}{model}_")
-    ]
+    # A bundle counts as this model's if its name parses against *any* token a
+    # producer may have used for the id, not only the canonical escape -- so a
+    # run whose producer predates this contract still resolves. See
+    # utils.model_naming.model_name_variants.
+    runner_by_name = {
+        a["name"]: runner_of(a["name"], model)
+        for a in artifacts
+        if runner_of(a["name"], model)
+    }
+    candidates = [a for a in artifacts if a["name"] in runner_by_name]
     if not candidates:
+        name_prefix = workflow_logs_artifact_prefix(WORKFLOW, model)
         sys.exit(
-            f"ERROR: no '{ARTIFACT_PREFIX}{model}_*' artifacts found for model '{model}'.\n"
+            f"ERROR: no '{name_prefix}*' artifacts found for model '{model}'.\n"
             f"       Check the model name and that the run produced its bundle."
         )
 
     # Primary: map each candidate's runner -> device via the run's job names.
     by_device: dict[str, dict] = {}
     for a in candidates:
-        runner = runner_of(a["name"], model)
-        dev = device_from_jobs(jobs, model, runner)
+        dev = device_from_jobs(jobs, model, runner_by_name[a["name"]])
         if dev and dev not in by_device:
             by_device[dev] = a
 
@@ -286,7 +297,7 @@ def resolve_model(
     for d in devices:
         if d not in by_device:
             found = ", ".join(sorted(by_device)) or "none"
-            runners = ", ".join(runner_of(a["name"], model) for a in candidates)
+            runners = ", ".join(runner_by_name[a["name"]] for a in candidates)
             sys.exit(
                 f"ERROR: could not find an artifact for model '{model}' device '{d}'.\n"
                 f"       Devices resolved for this model: {found}.\n"
@@ -488,7 +499,11 @@ def main() -> None:
                         sys.exit(f"ERROR: {msg}")
                     print(f"  WARNING: {msg}")
 
-                inner_name = f"{ARTIFACT_PREFIX}{model}_{device}.zip"
+                # Produced name, so always the canonical escape -- this is a
+                # path inside the release zip, and a raw '/' would nest it.
+                inner_name = (
+                    f"{workflow_logs_artifact_prefix(WORKFLOW, model)}{device}.zip"
+                )
                 staged_path = tmp_dir / inner_name
                 staged_path.write_bytes(src.read_bytes())
                 staged[inner_name] = staged_path

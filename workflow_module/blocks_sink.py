@@ -19,6 +19,7 @@ import logging
 from typing import Any, List, Mapping, Optional, Sequence
 
 from report_module.schema import Block, ReportSchema
+from utils.model_naming import slugify_model_id
 
 logger = logging.getLogger(__name__)
 
@@ -118,11 +119,7 @@ def get_default_accumulator() -> BlockAccumulator:
 
 
 def _synthesize_report_id(model_name: str, meta: Mapping[str, Any]) -> str:
-    base = (
-        model_name.replace("/", "__").replace("\\", "__").replace(" ", "_")
-        if model_name
-        else "report"
-    )
+    base = slugify_model_id(model_name) if model_name else "report"
     ts = str(meta.get("generated_at") or "").replace(" ", "_").replace(":", "")
     return f"{base}_{ts}" if ts else base
 

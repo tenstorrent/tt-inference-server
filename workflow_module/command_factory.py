@@ -17,6 +17,7 @@ from workflows.model_spec import ModelSpec, get_runtime_model_spec
 from workflows.runtime_config import RuntimeConfig
 from workflows.workflow_types import DeviceTypes, InferenceEngine
 
+from utils.model_naming import slugify_model_id
 from utils.url_helpers import is_remote_server, resolve_deploy_url
 
 from test_module import MediaContext
@@ -88,13 +89,18 @@ def _workflow_command(
     )
 
 
+def _output_leaf(args: argparse.Namespace) -> str:
+    """Directory name for this run's output."""
+    return f"{slugify_model_id(args.model)}_{args.device}_{args.workflow}"
+
+
 def _build_repeated_commands(
     args: argparse.Namespace,
     metadata: OrchestratorMetadata,
     repeat: int,
 ) -> List[Command]:
     """N per-run workflows into ``run_NN/`` subfolders + a final summary."""
-    leaf = f"{args.model}_{args.device}_{args.workflow}"
+    leaf = _output_leaf(args)
     container = Path(args.output_dir) / leaf
     commands: List[Command] = []
     for run_index in range(1, repeat + 1):
@@ -151,7 +157,7 @@ def _build_context(
     runtime_config = _load_runtime_config(args.runtime_model_spec_json)
 
     if output_path is None:
-        output_path = args.output_dir / f"{args.model}_{args.device}_{args.workflow}"
+        output_path = args.output_dir / _output_leaf(args)
     output_path = Path(output_path)
     output_path.mkdir(parents=True, exist_ok=True)
 

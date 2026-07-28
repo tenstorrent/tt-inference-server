@@ -23,6 +23,7 @@ from workflow_logs_parser import parse_workflow_logs_dir
 
 import _bootstrap  # noqa: F401,E402  (sets sys.path for imports below)
 from workflows.model_spec import MODEL_SPECS
+from utils.model_naming import unslugify_model_id
 
 # Configure logging
 logging.basicConfig(
@@ -848,9 +849,11 @@ def match_jobs_to_workflow_logs(
         return None
 
     workflow_type = workflow_parts[0]
-    model_name = workflow_parts[1].replace(
-        "_", "-"
-    )  # Convert underscores back to hyphens
+    # Undo the canonical "/" escape first so an org prefix is recovered exactly
+    # ("Qwen__Qwen3-32B" -> "Qwen/Qwen3-32B"); only then apply the legacy
+    # underscore-to-hyphen guess to whatever remains, so names that were never
+    # escaped keep matching as before.
+    model_name = unslugify_model_id(workflow_parts[1]).replace("_", "-")
 
     logger.debug(
         f"Parsed workflow_logs dir: workflow_type={workflow_type}, model_name={model_name}, hardware_name={hardware_name}"

@@ -12,6 +12,7 @@ from typing import Any, Dict, Mapping, Optional, Union
 
 from reference_config.evals.eval_config import accept_eval_score, resolve_eval_reference
 from report_module.schema import Block
+from utils.model_naming import slugify_name_parts
 from workflows.workflow_types import ReportCheckTypes
 
 from .base import LLMResultParser
@@ -59,7 +60,7 @@ class AgenticEvalParser(LLMResultParser):
             kind=self.kind,
             task_type="llm",
             title=f"LLM Eval — {self.task_name}",
-            id=_block_id(self.task_name, device),
+            id=slugify_name_parts(self.task_name, device),
             targets=targets,
             data=_build_evals_data(
                 task_name=self.task_name,
@@ -77,7 +78,7 @@ class AgenticEvalParser(LLMResultParser):
             kind=self.kind,
             task_type="llm",
             title=f"LLM Eval — {self.task_name}",
-            id=_block_id(self.task_name, device),
+            id=slugify_name_parts(self.task_name, device),
             targets=targets,
             data=_build_evals_data(
                 task_name=self.task_name,
@@ -317,8 +318,3 @@ def _count_harbor_resolved_trials(eval_stats: Mapping[str, Any]) -> Optional[int
         n_resolved += len(trial_names)
         has_reward_counts = True
     return n_resolved if has_reward_counts else None
-
-
-def _block_id(task_name: str, device: str) -> str:
-    parts = [p for p in (task_name, device) if p]
-    return "_".join(parts).replace("/", "__").replace("\\", "__").replace(" ", "_")

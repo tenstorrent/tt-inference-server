@@ -16,6 +16,11 @@ import uuid
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from utils.model_naming import (  # noqa: F401
+    slugify_model_id,
+    unslugify_model_id,
+)
+
 logger = logging.getLogger(__name__)
 
 # SDXL num prompts limits

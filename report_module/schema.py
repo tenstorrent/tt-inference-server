@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Union
 
+from utils.model_naming import slugify_model_id, slugify_name_parts
+
 
 @dataclass(frozen=True)
 class Block:
@@ -151,7 +153,7 @@ def _group_records_to_blocks(records: Sequence[Mapping[str, Any]]) -> List[Block
     blocks: List[Block] = []
     for kind, model, device in order:
         rows = groups[(kind, model, device)]
-        block_id = _slugify_block_id(model, device)
+        block_id = slugify_name_parts(model, device)
         blocks.append(
             Block(
                 kind=kind,
@@ -162,21 +164,10 @@ def _group_records_to_blocks(records: Sequence[Mapping[str, Any]]) -> List[Block
     return blocks
 
 
-def _slugify_for_filename(text: str) -> str:
-    return text.replace("/", "__").replace("\\", "__").replace(" ", "_")
-
-
-def _slugify_block_id(model: str, device: str) -> str:
-    parts = [p for p in (model, device) if p]
-    if not parts:
-        return ""
-    return _slugify_for_filename("_".join(parts))
-
-
 def _synthesize_report_id(model_name: str, first_record: Mapping[str, Any]) -> str:
     ts_text = _record_timestamp_text(first_record) or datetime.utcnow().isoformat()
     ts_compact = _compact_timestamp(ts_text)
-    base = _slugify_for_filename(model_name) if model_name else "report"
+    base = slugify_model_id(model_name) if model_name else "report"
     return f"{base}_{ts_compact}"
 
 
