@@ -1497,3 +1497,35 @@ templates:
       remote_api_model: MiniMaxAI/MiniMax-M3
       reasoning_parser_name: minimax_m3
       tool_call_parser_name: minimax_m3
+
+- weights:
+    - Qwen/Qwen3.5-27B
+  impl: qwen36_blackhole
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+  device_model_specs:
+    - device: P150X4
+      max_concurrency: 1
+      max_context: 262144
+      default_impl: true
+      env_vars:
+        TT_QWEN35_TEXT_VER: qwen36_blackhole
+        HF_MODEL: Qwen/Qwen3.5-27B
+        MESH_DEVICE: "P150x4"
+      vllm_args:
+        async_scheduling: true
+        enable_auto_tool_choice: true
+        reasoning_parser: qwen3
+        tool_call_parser: qwen3_coder
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 268435456
+        l1_small_size: 24576
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  metadata:
+    Qwen/Qwen3.5-27B:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: qwen3_coder
