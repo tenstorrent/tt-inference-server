@@ -15,6 +15,7 @@ import importlib.util
 import io
 import json
 import pathlib
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -86,15 +87,41 @@ def test_edit_request_allows_no_mask():
     assert ImageEditRequest(prompt="p", image=_B64, mask=_B64).mask == _B64
 
 
+def test_edit_request_requires_mask_for_sdxl_edit(monkeypatch):
+    # Per-runner validation: a mask-required runner (tt-sdxl-edit) rejects a
+    # missing mask at validation (clean 422) instead of failing later in the
+    # runner's mask preprocessing.
+    import domain.image_edit_request as edit_mod
+    from pydantic import ValidationError
+
+    monkeypatch.setattr(
+        edit_mod, "get_settings", lambda: SimpleNamespace(model_runner="tt-sdxl-edit")
+    )
+    with pytest.raises(ValidationError):
+        ImageEditRequest(prompt="p", image=_B64)  # no mask -> rejected
+    # a mask satisfies the requirement
+    assert ImageEditRequest(prompt="p", image=_B64, mask=_B64).mask == _B64
+
+
+def test_edit_request_allows_no_mask_for_kontext(monkeypatch):
+    # Kontext (instruction-only edit) still accepts a missing mask.
+    import domain.image_edit_request as edit_mod
+
+    monkeypatch.setattr(
+        edit_mod,
+        "get_settings",
+        lambda: SimpleNamespace(model_runner="tt-flux.1-kontext-dev"),
+    )
+    assert ImageEditRequest(prompt="p", image=_B64).mask is None
+
+
 def test_generate_returns_images(mock_service):
     # Kontext text->image goes through the shared /generations handler.
     req = ImageGenerateRequest.model_construct(
         prompt="a red car", num_inference_steps=28, width=1024, height=1024
     )
     code, body = _json(
-        asyncio.run(
-            image_mod.generate_image(req, service=mock_service, api_key="k")
-        )
+        asyncio.run(image_mod.generate_image(req, service=mock_service, api_key="k"))
     )
     assert code == 200 and body["images"] == [_B64]
 
