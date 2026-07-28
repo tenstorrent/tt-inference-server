@@ -201,14 +201,10 @@ class ShutdownResponse(BaseModel):
 async def shutdown(request: Request):
     """Gracefully stop this (co-located) vLLM server.
 
-    The co-located trainer runs in the SAME single mpirun world as this server
-    and calls this after its final weight push. Without it the server -- a
-    long-running process with no self-exit -- keeps the mpirun world alive, so
-    the launcher hangs until ``scancel``/walltime and leaks device-holding
-    children. We send ``SIGTERM`` to this (APIServer) process AFTER the response
-    is flushed; vLLM's signal handler then tears down the EngineCore + workers
-    cleanly. Fired from a short-delay background thread so the caller still gets
-    its ``200``.
+    The co-located trainer shares this mpirun world and calls this after its
+    final weight push; without a self-exit the launcher would hang until
+    walltime. SIGTERM is sent from a short-delay background thread (after the
+    response flushes) so vLLM's signal handler tears down cleanly.
     """
     delay_s = 0.5
 
@@ -228,27 +224,22 @@ async def shutdown(request: Request):
 def install() -> None:
     """Mount the weight-update router on the vLLM OpenAI API server FastAPI app.
 
-    Must be called before the OpenAI API server module is run. Idempotent.
+    Must be called before the server module runs. Idempotent.
 
-    Implementation note -- why we hook ``fastapi.FastAPI.__init__`` rather than
-    vLLM's ``build_app``:
-
-    ``run_vllm_api_server.py`` launches the server via
-    ``runpy.run_module("vllm.entrypoints.openai.api_server", run_name="__main__")``,
-    which RE-EXECUTES that module's source in a brand-new ``__main__`` namespace.
-    A monkeypatch of ``api_server.build_app`` on the already-imported module
-    object is therefore shadowed by the freshly-redefined ``build_app`` and is
-    never consulted -- the server mounts only its stock routes and every
-    ``/v1/internal/weights/*`` call 404s. (At launch, ``runpy`` even warns:
-    "'vllm.entrypoints.openai.api_server' found in sys.modules ... prior to
-    execution ...; this may result in unpredictable behaviour".)
-
-    ``fastapi`` is imported once and is NOT re-executed by ``runpy``, so a hook
-    on ``FastAPI.__init__`` survives the re-exec. Every FastAPI app built in
-    this process (in practice just the vLLM server app) gets the router mounted
-    immediately after construction; the API-key auth middleware vLLM adds later
-    is app-level (Starlette) and so still covers these routes.
+    We hook ``fastapi.FastAPI.__init__`` rather than vLLM's ``build_app``:
+    ``runpy.run_module(..., run_name="__main__")`` re-executes the api_server
+    module, so a ``build_app`` monkeypatch is shadowed by the redefinition and
+    never runs. ``fastapi`` is not re-executed, so an ``__init__`` hook survives
+    and mounts the router on the server app (auth middleware is app-level and
+    still covers these routes).
     """
+    # Defense-in-depth: these routes are strictly for the co-located RL trainer.
+    # Even a stray/future call to install() must be inert off the RL path so the
+    # process-wide fastapi.FastAPI.__init__ monkeypatch never happens (and the
+    # internal weight-update / shutdown routes never mount) on a normal server.
+    if os.getenv("TT_COLOCATED_INFERENCE") != "1":
+        return
+
     import fastapi
 
     if getattr(fastapi.FastAPI.__init__, "_tt_weight_update_patched", False):

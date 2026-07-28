@@ -15,6 +15,41 @@ logger = init_logger("vllm.tt_vllm_plugin.worker.tt_worker")
 VLLM_USE_V1 = os.environ.get("VLLM_USE_V1", "1") == "1"
 
 
+def get_inprocess_data_parallel(vllm_config: VllmConfig) -> int:
+    """Return the requested in-process submesh-DP degree (>=1).
+
+    Resolves ``override_tt_config["tt_data_parallel"]`` first, then the
+    ``TT_DATA_PARALLEL`` env var. Defaults to 1 (disabled).
+    """
+    override = getattr(vllm_config.model_config, "override_tt_config", None) or {}
+    raw = override.get("tt_data_parallel")
+    if raw is None:
+        raw = os.environ.get("TT_DATA_PARALLEL")
+    try:
+        n = int(raw) if raw is not None else 1
+    except (TypeError, ValueError):
+        n = 1
+    return max(n, 1)
+
+
+def effective_data_parallel(vllm_config: VllmConfig) -> int:
+    """Number of on-device submesh replicas the model owns.
+
+    Drives submesh creation, KV-cache sizing and per-replica batch width for
+    both vLLM process DP and in-process submesh DP. Exactly one may be > 1.
+    """
+    process_dp = vllm_config.parallel_config.data_parallel_size
+    inprocess_dp = get_inprocess_data_parallel(vllm_config)
+    if inprocess_dp > 1:
+        assert process_dp == 1, (
+            "tt_data_parallel (in-process submesh DP) is incompatible with vLLM "
+            f"process data_parallel_size={process_dp}; set --data-parallel-size 1 "
+            "when using override_tt_config['tt_data_parallel'] > 1."
+        )
+        return inprocess_dp
+    return process_dp
+
+
 def get_num_available_blocks_tt(vllm_config: VllmConfig) -> int:
     """
     Used to set the number of available blocks for the TT KV cache as we
@@ -28,7 +63,8 @@ def get_num_available_blocks_tt(vllm_config: VllmConfig) -> int:
     cache_config = vllm_config.cache_config
 
     if VLLM_USE_V1:
-        data_parallel = vllm_config.parallel_config.data_parallel_size
+        # Number of on-device replicas (process DP or in-process submesh DP).
+        data_parallel = effective_data_parallel(vllm_config)
     else:
         data_parallel = 1
         if (
@@ -288,26 +324,18 @@ def get_mesh_grid(dp_rank=0):
         "N150x4": (1, 4),
         "P150x4": (1, 4),
         "T3K": (1, 8),
-        # P150x8 (8-chip BH LoudBox / 8-chip Galaxy carve) must be a 1x8 row
-        # submesh. tt-transformers shards the model with cluster_shape == the
-        # mesh shape: cluster_shape[1] is the TP/heads axis (n_heads %
-        # cluster_shape[1] == 0) and cluster_shape[0] is the K/dim axis, which
-        # MUST be 1 for a single-tray TP=8 config. A (2,4) shape splits the
-        # wqkv dim/K axis by 2 and crashes in TensorSpec ("Shard height 2048
-        # must match physical height 1024 for width sharded"). The physical
-        # tray being 2x4 is reconciled by opening it as a logical 1x8 line.
+        # P150x8 must be 1x8: tt-transformers uses cluster_shape[0] as the K/dim
+        # axis (must be 1 for single-tray TP=8) and cluster_shape[1] as the
+        # TP/heads axis. A (2,4) shape splits the wqkv K axis and crashes in
+        # TensorSpec; the physical 2x4 tray is opened as a logical 1x8 line.
         "P150x8": (1, 8),
         "TG": (8, 4),
         "BH-Galaxy": (8, 4),
     }
 
-    # The device count is only needed to (a) derive an implicit grid when
-    # MESH_DEVICE is unset, or (b) upper-bound the requested grid. Querying it
-    # eagerly is fragile under a co-located shared distributed context (custom
-    # MGD): the global ttnn.get_device_ids() touches the control plane before
-    # this rank's submesh is opened and can throw. So query lazily, and skip the
-    # bound check entirely when co-located (open_mesh_device validates the shape
-    # against the bound submesh).
+    # Query device count lazily: ttnn.get_device_ids() touches the control plane
+    # and can throw under a co-located shared distributed context before this
+    # rank's submesh is open. Only needed to derive/bound the grid.
     _num_devices_cache = {}
 
     def _num_devices_available():

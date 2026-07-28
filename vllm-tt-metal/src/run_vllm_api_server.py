@@ -487,15 +487,11 @@ def set_metal_timeout_env_vars():
         logger.info("Metal op timeout disabled via DISABLE_METAL_OP_TIMEOUT=1")
         return
 
-    # The op-timeout is a hang-detection watchdog sized for a single generation
-    # step. In the colocated GRPO setup the vLLM worker also services device-socket
-    # weight updates: recv_state() blocks in a single ttnn.synchronize_device() while
-    # it rendezvous with the trainer over the cross-mesh fabric to stream the full
-    # (multi-GB) state dict. That legitimately takes several seconds (theta_0 alone
-    # measured ~2.5s) and gets slower once the trainer starts issuing DDP all-reduce
-    # traffic on the same fabric, so the default 5s watchdog fires mid-transfer and
-    # marks the device "unrecoverable". Honor an explicit override and give the
-    # colocated path a much larger budget.
+    # The op-timeout watchdog is sized for a single generation step, but the
+    # colocated worker also services device-socket weight updates: recv_state()
+    # blocks in ttnn.synchronize_device() for several seconds while it streams
+    # the full state dict, so the default 5s watchdog fires mid-transfer. Give
+    # the colocated path a much larger budget (or an explicit override).
     override = os.getenv("TT_METAL_OP_TIMEOUT_SECONDS")
     if override:
         timeout_seconds = override
@@ -741,20 +737,12 @@ def set_vllm_sys_argv(args, remaining_sys_argv, default_vllm_args):
 
 
 def inject_tt_data_parallel(default_vllm_args):
-    """Route the co-located RL launcher's ``TT_DATA_PARALLEL`` env var into
-    ``additional_config['tt']['tt_data_parallel']`` so the in-process submesh-DP
-    degree survives to the EngineCore.
+    """Route ``TT_DATA_PARALLEL`` into ``additional_config['tt']['tt_data_parallel']``.
 
-    The launcher sets ``TT_DATA_PARALLEL=N`` inline in the launch command (next to
-    ``MESH_DEVICE``). Recent vLLM spawns the EngineCore with a curated environment
-    that does NOT forward arbitrary env vars, so by the time the TT plugin's
-    ``get_inprocess_data_parallel()`` runs in the worker, ``TT_DATA_PARALLEL`` is
-    gone and DP silently falls back to 1 (a single submesh spanning the whole tray,
-    which then fails ModelArgs' batch cap -- "Batch size 256 not supported").
-    ``additional_config`` is part of ``vllm_config`` and IS reliably serialized to
-    the EngineCore, and the plugin already resolves it before the env var, so
-    threading the value through here makes in-process submesh DP actually engage.
-    Only fires when TT_DATA_PARALLEL>1, so every other mode is unchanged.
+    vLLM spawns the EngineCore with a curated env that drops arbitrary env vars,
+    so ``TT_DATA_PARALLEL`` would not survive to the worker (DP silently falls
+    back to 1). ``additional_config`` is serialized to the EngineCore reliably.
+    Only fires when TT_DATA_PARALLEL>1, so other modes are unchanged.
     """
     raw = os.environ.get("TT_DATA_PARALLEL")
     if raw is None:
@@ -781,15 +769,10 @@ def inject_tt_data_parallel(default_vllm_args):
 
 
 def inject_tt_weight_bridge_dir(default_vllm_args):
-    """Route the co-located RL launcher's ``TT_WEIGHT_BRIDGE_DIR`` env var into
-    ``additional_config['tt']['tt_weight_bridge_dir']`` so the receiver worker
-    can locate tt-metal's ``inference_bridge.py`` even though recent vLLM spawns
-    the EngineCore with a curated environment that drops arbitrary env vars
-    (same failure mode addressed by ``inject_tt_data_parallel`` for
-    ``TT_DATA_PARALLEL``). Only fires when the launcher set the env var (the
-    co-located device-socket weight-bridge path), so all other modes are
-    unchanged; the worker also has env-independent fallbacks (TT_METAL_HOME and
-    a ttnn-derived path), so this is belt-and-suspenders.
+    """Route ``TT_WEIGHT_BRIDGE_DIR`` into ``additional_config['tt']['tt_weight_bridge_dir']``
+    so the receiver can locate ``inference_bridge.py`` (same curated-env issue as
+    ``inject_tt_data_parallel``). Belt-and-suspenders: the worker also has
+    env-independent fallbacks. Only fires when the env var is set.
     """
     bridge_dir = os.environ.get("TT_WEIGHT_BRIDGE_DIR")
     if not bridge_dir:
@@ -860,12 +843,18 @@ def main():
         disable_trace_capture=args.disable_trace_capture,
     )
 
-    try:
-        from weight_update_api import install as install_weight_update_routes
+    # The internal weight-update / control-plane routes (/v1/internal/weights/*,
+    # /v1/internal/shutdown) exist ONLY for the co-located RL trainer and must
+    # never mount on a normal (non-colocated) inference server -- they would
+    # expose a self-shutdown endpoint and a device-socket rendezvous that hangs.
+    # Gate the install strictly on the co-located signal.
+    if os.getenv("TT_COLOCATED_INFERENCE") == "1":
+        try:
+            from weight_update_api import install as install_weight_update_routes
 
-        install_weight_update_routes()
-    except Exception as exc:  # noqa: BLE001 - never block server startup on this
-        logger.warning("Could not install weight-update routes: %s", exc)
+            install_weight_update_routes()
+        except Exception as exc:  # noqa: BLE001 - never block server startup on this
+            logger.warning("Could not install weight-update routes: %s", exc)
 
     # Step 6: Launch vLLM server
     # runpy uses the same process and environment so the registered models are available

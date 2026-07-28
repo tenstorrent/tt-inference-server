@@ -28,6 +28,10 @@ from tt_vllm_plugin.worker.tt_model_runner import (
     TTSamplingParams,
     sample_tokens,
 )
+from tt_vllm_plugin.worker.tt_worker import (
+    effective_data_parallel,
+    get_inprocess_data_parallel,
+)
 
 from vllm.tasks import GenerationTask, PoolingTask, SupportedTask
 from vllm.model_executor.models.interfaces_base import (
@@ -91,6 +95,32 @@ class TTModelRunner:
         # the scheduler output.
         self.requests: dict[str, CachedRequestState] = {}
 
+        # ---- In-process (submesh) data-parallel ------------------------------
+        # When enabled (override_tt_config["tt_data_parallel"] > 1), a single
+        # EngineCore process owns all N submesh replicas and one scheduler; each
+        # step's batch is fanned out across the replicas here in the runner.
+        # Every other mode leaves _tt_dp == 1 and takes the unchanged code path.
+        self._tt_dp = get_inprocess_data_parallel(vllm_config)
+        if self._tt_dp > 1:
+            assert self.parallel_config.data_parallel_size == 1, (
+                "in-process submesh DP requires vLLM data_parallel_size == 1"
+            )
+            assert self.scheduler_config.max_num_seqs % self._tt_dp == 0, (
+                f"max_num_seqs ({self.scheduler_config.max_num_seqs}) must be a "
+                f"multiple of tt_data_parallel ({self._tt_dp}) so each submesh "
+                "replica gets an equal per-replica batch width."
+            )
+            # Stable request -> submesh replica pinning. Assigned once when a
+            # request first appears and held for its lifetime so its paged KV
+            # (written on replica m during prefill) is always read back on the
+            # same replica, independent of vLLM slot condensation.
+            self._req_to_mesh: dict[str, int] = {}
+        # Per-replica batch width. Equal to max_num_seqs when in-process DP is
+        # off, so decode padding / stride references below are byte-identical
+        # for the single-device and vLLM process-DP paths.
+        self._per_mesh_max_seqs = self.scheduler_config.max_num_seqs // self._tt_dp
+        self._decode_batch_width = self._per_mesh_max_seqs
+
     def load_model(self) -> None:
         logger.info("Loading TT model...")
         loader = TTModelLoader(self.load_config)
@@ -151,7 +181,9 @@ class TTModelRunner:
         # min(number of devices, number of KV heads).
         # TODO: move this into model.allocate_kv_cache.
         model_config = self.model_config
-        data_parallel = self.parallel_config.data_parallel_size
+        # Effective replica count so per-submesh device count / KV shape is
+        # correct for both process DP and in-process submesh DP.
+        data_parallel = effective_data_parallel(self.vllm_config)
         num_devices = self.device_config.num_devices // data_parallel
         total_kv_heads = kv_cache_spec.num_kv_heads
         num_kv_heads = total_kv_heads // min(num_devices, total_kv_heads)
@@ -596,7 +628,7 @@ class TTModelRunner:
         """
 
         if model_input is None:
-            max_batch = int(self.scheduler_config.max_num_seqs)
+            max_batch = int(self._decode_batch_width)
             tokens = torch.zeros((max_batch, 1), dtype=torch.int32)
             positions = torch.full((max_batch,), -1, dtype=torch.int32)
             block_tables = torch.zeros(
@@ -697,7 +729,7 @@ class TTModelRunner:
             assert max_blocks_decode_batch is not None, (
                 "max_blocks_decode_batch must be provided for decode"
             )
-            B = int(self.scheduler_config.max_num_seqs)
+            B = int(self._decode_batch_width)
             W = max_blocks_decode_batch
             for int_inputs, float_inputs in zip(
                 inputs["int_inputs"], inputs["float_inputs"]
@@ -816,6 +848,10 @@ class TTModelRunner:
         """Execution path for non-DP case.
         Execute the model with the given scheduler output."""
 
+        # In-process submesh DP: one scheduler, N on-device replicas fed here.
+        if self._tt_dp > 1:
+            return self._execute_model_inprocess_dp(scheduler_output)
+
         # Update cached state and prepare model inputs
         model_input = self.build_model_input(scheduler_output)
         if model_input is None:
@@ -825,6 +861,194 @@ class TTModelRunner:
         sampled_token_ids = self.execute_with_model_input(model_input)[0]
         output = self.generate_runner_output(sampled_token_ids)
         return output
+
+    def _execute_model_inprocess_dp(
+        self, scheduler_output: "SchedulerOutput"
+    ) -> ModelRunnerOutput:
+        # 1. Drop replica pins for finished requests (frees their per-replica
+        #    capacity for future admissions).
+        for req_id in scheduler_output.finished_req_ids:
+            self._req_to_mesh.pop(req_id, None)
+
+        # 2. Standard single-batch state update (unchanged vLLM bookkeeping).
+        self._update_states(scheduler_output)
+        if not scheduler_output.total_num_scheduled_tokens:
+            return EMPTY_MODEL_RUNNER_OUTPUT
+
+        input_batch = self.input_batch
+        num_reqs = input_batch.num_reqs
+        if num_reqs == 0:
+            return EMPTY_MODEL_RUNNER_OUTPUT
+
+        # 3. Group active slots by replica, classifying each as prefill or
+        #    decode. Each request is pinned to the least-loaded replica on first
+        #    sight (by req_id, stable across slot condensation) so its paged KV
+        #    is always read back on the replica it was written to.
+        scheduled_new_req_ids = {
+            req.req_id for req in scheduler_output.scheduled_new_reqs
+        }
+        prefill_idx_per_mesh: list[list[int]] = [[] for _ in range(self._tt_dp)]
+        decode_idx_per_mesh: list[list[int]] = [[] for _ in range(self._tt_dp)]
+        active_load = [0] * self._tt_dp
+        for req_idx in range(num_reqs):
+            req_id = input_batch.req_ids[req_idx]
+            mesh = self._req_to_mesh.get(req_id)
+            if mesh is None:
+                mesh = min(range(self._tt_dp), key=lambda m: active_load[m])
+                self._req_to_mesh[req_id] = mesh
+            active_load[mesh] += 1
+            assert active_load[mesh] <= self._per_mesh_max_seqs, (
+                f"replica {mesh} has {active_load[mesh]} active requests "
+                f"(> per-replica width {self._per_mesh_max_seqs}); concurrency "
+                "exceeded N*width or preemption skewed the pinning."
+            )
+            num_scheduled = scheduler_output.num_scheduled_tokens[req_id]
+            num_computed = input_batch.num_computed_tokens_cpu[req_idx]
+            is_full_hit = (
+                req_id in scheduled_new_req_ids
+                and num_scheduled == 1
+                and num_computed >= input_batch.num_prompt_tokens[req_idx] - 1
+            )
+            is_prefill = (req_id in scheduled_new_req_ids) and not is_full_hit
+            if is_prefill:
+                prefill_idx_per_mesh[mesh].append(req_idx)
+            else:
+                decode_idx_per_mesh[mesh].append(req_idx)
+
+        # Full page-table for the active batch, sliced to the constant width
+        # used everywhere else (required for ttnn tracing).
+        block_tables_full = input_batch.block_table[0].get_cpu_tensor()[
+            :num_reqs, : self.max_num_blocks_per_req
+        ]
+
+        combined = torch.zeros((num_reqs, 1), dtype=torch.int32)
+
+        # 4a. PREFILL pass (replica-parallel over meshes with prefill work).
+        if any(prefill_idx_per_mesh):
+            prefill_inputs = [
+                self._build_mesh_prefill_input(
+                    input_batch, block_tables_full, idxs
+                )
+                for idxs in prefill_idx_per_mesh
+            ]
+            merged = self.concat_dp_model_inputs(
+                prefill_inputs, is_decode=False, max_blocks_decode_batch=None
+            )
+            sampled_per_mesh = self.execute_with_model_input(merged)
+            for mesh, idxs in enumerate(prefill_idx_per_mesh):
+                sampled = sampled_per_mesh[mesh]
+                for local_j, req_idx in enumerate(idxs):
+                    combined[req_idx] = sampled[local_j]
+
+        # 4b. DECODE pass (replica-parallel over meshes with decode work).
+        if any(decode_idx_per_mesh):
+            max_blocks = self.max_num_blocks_per_req
+            int_inputs = []
+            float_inputs = []
+            for idxs in decode_idx_per_mesh:
+                mi = self._build_mesh_decode_input(
+                    input_batch, block_tables_full, idxs
+                )
+                gathered = self.build_dp_decode_gather_input(mi, max_blocks)
+                int_inputs.append(gathered["int_inputs"])
+                float_inputs.append(gathered["float_inputs"])
+            gather = {
+                "int_inputs": torch.stack(int_inputs),
+                "float_inputs": torch.stack(float_inputs),
+            }
+            merged = self.concat_dp_model_inputs(
+                gather, is_decode=True, max_blocks_decode_batch=max_blocks
+            )
+            sampled_per_mesh = self.execute_with_model_input(merged)
+            for mesh, idxs in enumerate(decode_idx_per_mesh):
+                sampled = sampled_per_mesh[mesh]
+                for local_j, req_idx in enumerate(idxs):
+                    combined[req_idx] = sampled[local_j]
+
+        # 5. Standard single-batch output emission (unchanged).
+        return self.generate_runner_output(combined)
+
+    def _mesh_sampling_params(self, input_batch, idxs: list[int]) -> TTSamplingParams:
+        """Uniform sampling params for a replica's slots (first slot's values;
+        execute_with_model_input asserts equality across active replicas)."""
+        i0 = idxs[0]
+        return TTSamplingParams(
+            temperature=input_batch.sampling.temperature_cpu[i0],
+            top_k=input_batch.sampling.top_k_cpu[i0],
+            top_p=input_batch.sampling.top_p_cpu[i0],
+        )
+
+    def _build_mesh_prefill_input(
+        self, input_batch, block_tables_full: torch.Tensor, idxs: list[int]
+    ) -> Optional[TTModelInput]:
+        """Pure-prefill TTModelInput for the given replica slots (variable width,
+        packed contiguously). Mirrors the pure-prefill branch of
+        _prepare_model_inputs. Returns None if the replica has no prefill."""
+        if not idxs:
+            return None
+        idx_t = torch.tensor(idxs, dtype=torch.long)
+        max_prompt_tokens = int(max(input_batch.num_prompt_tokens[i] for i in idxs))
+        input_tokens = input_batch.token_ids_cpu_tensor[idx_t, :max_prompt_tokens]
+        prompt_lens = input_batch.num_prompt_tokens[idxs]
+        block_tables = block_tables_full[idx_t]
+        return TTModelInput(
+            input_tokens=input_tokens,
+            input_positions=0,
+            prompt_lens=prompt_lens,
+            seq_groups=None,
+            block_tables=block_tables,
+            unpadded_batch_size=len(idxs),
+            perform_device_sampling=None,
+            tt_sampling_params=self._mesh_sampling_params(input_batch, idxs),
+            compat_sampling_used=False,
+            sampling_metadata=None,
+            multi_modal_kwargs={},
+            cross_block_tables=None,
+        )
+
+    def _build_mesh_decode_input(
+        self, input_batch, block_tables_full: torch.Tensor, idxs: list[int]
+    ) -> Optional[TTModelInput]:
+        """Pure-decode TTModelInput for the given replica slots, padded to the
+        per-replica width. Mirrors the pure-decode branch of
+        _prepare_model_inputs. Returns None if the replica has no decode."""
+        if not idxs:
+            return None
+        idx_t = torch.tensor(idxs, dtype=torch.long)
+        positions = input_batch.num_tokens[idxs] - 1
+        positions_t = torch.from_numpy(positions).to(torch.int32)
+        input_tokens = input_batch.token_ids_cpu_tensor[idx_t, positions_t].view(-1, 1)
+        block_tables = block_tables_full[idx_t]
+
+        # Pad to the fixed per-replica width (TT models require a fixed batch).
+        pad = self._per_mesh_max_seqs - len(idxs)
+        if pad > 0:
+            input_tokens = torch.cat(
+                [input_tokens, torch.zeros(pad, 1, dtype=torch.int32)]
+            )
+            positions_t = torch.cat(
+                [positions_t, torch.ones(pad, dtype=torch.int32) * -1]
+            )
+            block_tables = torch.cat(
+                [
+                    block_tables,
+                    torch.zeros(pad, block_tables.shape[1], dtype=block_tables.dtype),
+                ]
+            )
+        return TTModelInput(
+            input_tokens=input_tokens,
+            input_positions=positions_t,
+            prompt_lens=None,
+            seq_groups=None,
+            block_tables=block_tables,
+            unpadded_batch_size=len(idxs),
+            perform_device_sampling=None,
+            tt_sampling_params=self._mesh_sampling_params(input_batch, idxs),
+            compat_sampling_used=False,
+            sampling_metadata=None,
+            multi_modal_kwargs={},
+            cross_block_tables=None,
+        )
 
     def execute_with_model_input(
         self,
@@ -891,7 +1115,7 @@ class TTModelRunner:
             # Handle empty_slots for DP if needed
             if len(batch_size_per_dp) > 1:
                 # Calculate empty_slots for prefill requests only
-                stride = int(self.scheduler_config.max_num_seqs)
+                stride = int(self._decode_batch_width)
                 empty_slots = []
                 # For mixed batches, we need to map prefill indices to global indices
                 # This is complex with DP, so we'll pass all slots for now
@@ -919,7 +1143,7 @@ class TTModelRunner:
 
             # Pad decode batch to max_num_reqs if needed (TT models require fixed batch size)
             # TODO: Remove once TT models can support arbitrary batch sizes.
-            max_num_reqs = self.scheduler_config.max_num_seqs
+            max_num_reqs = self._decode_batch_width
             if num_decode < max_num_reqs:
                 batch_pad = max_num_reqs - num_decode
                 # Pad tokens with zeros (shape should be [batch_pad, 1] to match decode_tokens)
@@ -1074,7 +1298,7 @@ class TTModelRunner:
                 if len(batch_size_per_dp) > 1:
                     # TODO: the model should only require DP ranks, but passing
                     # "global" user ids instead for backwards compatibility.
-                    stride = int(self.scheduler_config.max_num_seqs)
+                    stride = int(self._decode_batch_width)
                     empty_slots = []
                     for dp_rank, sz in enumerate(batch_size_per_dp):
                         for i in range(int(sz)):
@@ -1115,28 +1339,29 @@ class TTModelRunner:
                 tt_out = tt_out[0]
 
             sampled_token_ids_per_dp: list[torch.Tensor] = []
-            start = 0
+            # Decode ranks occupy fixed-width segments (rank r -> rows
+            # [r*width, ...)) so address them positionally, robust to empty
+            # ranks (sz==0). Prefill rows are packed contiguously.
+            prefill_start = 0
             for dp_rank, sz in enumerate(batch_size_per_dp):
                 if sz <= 0:
                     sampled_token_ids_per_dp.append(torch.tensor([], dtype=torch.int32))
                     continue
+                if is_decode:
+                    seg_start = dp_rank * self._decode_batch_width
+                else:
+                    seg_start = prefill_start
+                    prefill_start += sz
                 if not self.sample_on_device_mode or (
                     self.sample_on_device_mode == "decode_only" and not is_decode
                 ):
-                    logits = tt_out[start : start + sz, -1, :]
+                    logits = tt_out[seg_start : seg_start + sz, -1, :]
                     next_token_ids = sample_tokens(
                         logits, sampling_params_per_dp[dp_rank]
                     )
                 else:
-                    next_token_ids = tt_out[start : start + sz]
+                    next_token_ids = tt_out[seg_start : seg_start + sz]
                 sampled_token_ids_per_dp.append(next_token_ids.view(sz, 1))
-
-                if is_decode:
-                    # Fixed stride segments per DP rank for decode
-                    start += self.scheduler_config.max_num_seqs
-                else:
-                    # Prefill packed contiguously
-                    start += sz
 
             return sampled_token_ids_per_dp
 

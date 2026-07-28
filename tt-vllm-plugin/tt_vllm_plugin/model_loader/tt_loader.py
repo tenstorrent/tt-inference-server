@@ -12,6 +12,11 @@ from vllm.logger import init_logger
 from vllm.model_executor.model_loader.base_loader import BaseModelLoader
 from vllm.model_executor.model_loader.utils import get_model_architecture
 
+from tt_vllm_plugin.worker.tt_worker import (
+    effective_data_parallel,
+    get_inprocess_data_parallel,
+)
+
 logger = init_logger("vllm.tt_vllm_plugin.model_loader.tt_loader")
 
 
@@ -72,8 +77,16 @@ class TTModelLoader(BaseModelLoader):
             ], f"""Invalid optimizations configuration `{optimizations}`, 
             allowed values are 'performance' or 'accuracy'"""
 
-        data_parallel = vllm_config.parallel_config.data_parallel_size
-        max_batch_size = scheduler_config.max_num_seqs * data_parallel
+        # On-device submesh replicas (vLLM process DP or in-process submesh DP).
+        data_parallel = effective_data_parallel(vllm_config)
+
+        # Total on-device batch = replicas * per-replica width. For process DP
+        # max_num_seqs is per-replica (multiply); for in-process DP the single
+        # scheduler's max_num_seqs is already the global total.
+        if get_inprocess_data_parallel(vllm_config) > 1:
+            max_batch_size = scheduler_config.max_num_seqs
+        else:
+            max_batch_size = scheduler_config.max_num_seqs * data_parallel
 
         # Build kwargs for initialize_vllm_model
         # Only pass vllm_config if the method accepts it (needed for pooling models like BGE)

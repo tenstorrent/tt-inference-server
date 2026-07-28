@@ -224,30 +224,14 @@ class TTWorker(WorkerBase):
 
     @staticmethod
     def _import_weight_bridge(config_bridge_dir: Optional[str] = None):
-        """Import tt-metal's ``WeightBridge`` module.
+        """Import tt-metal's ``WeightBridge`` from the examples tree by file path.
 
-        The bridge ships inside the tt-metal examples tree
-        (``tt-train/sources/examples/grpo/utils/inference_bridge.py``; older
-        checkouts kept it under ``grpo_speedup/utils`` and/or named it
-        ``weight_bridge.py`` before the bridge + Ttt server/client were
-        consolidated into ``inference_bridge.py``) rather than an installed
-        package. We load it by file path (``spec_from_file_location`` with a
-        unique module name) so importing it standalone never collides with the
-        server's own ``utils`` package. The ``WeightBridge`` class name is
-        stable across the rename, so only the module/file name is probed; the
-        sender (tt-training-service ``rl/weight_publisher.py``) probes the same
-        names so both ends speak the same wire protocol.
-
-        Resolution order (env-independent on purpose: recent vLLM spawns the
-        EngineCore with a curated environment that drops arbitrary env vars, so
-        ``TT_WEIGHT_BRIDGE_DIR`` may not survive to this worker):
-          1. Already on ``sys.path`` (bare import).
-          2. ``config_bridge_dir`` -- threaded via ``additional_config`` /
-             ``override_tt_config['tt_weight_bridge_dir']`` (reliable channel).
-          3. ``TT_WEIGHT_BRIDGE_DIR`` env var (if it did survive).
-          4. ``TT_METAL_HOME`` + ``tt-train/sources/examples/{grpo,grpo_speedup}/utils``.
-          5. Derived from the imported ``ttnn`` package location (works even
-             when no relevant env var reached this process).
+        Loaded via ``spec_from_file_location`` (not an installed package) so it
+        can't collide with the server's own ``utils`` package. Resolution order
+        is env-independent because vLLM spawns the EngineCore with a curated env
+        that may drop ``TT_WEIGHT_BRIDGE_DIR``: bare import, ``config_bridge_dir``
+        (via additional_config), ``TT_WEIGHT_BRIDGE_DIR``, ``TT_METAL_HOME``, then
+        a ttnn-derived path. Must match the module the trainer/sender imports.
         """
         # Module / file names to try, newest first (``weight_bridge`` kept as a
         # fallback for older tt-metal checkouts).
@@ -373,6 +357,18 @@ class TTWorker(WorkerBase):
         Returns:
             dict with ``rank``, ``updated`` (bool), and ``version``.
         """
+        # Defense-in-depth: runtime weight update is a co-located RL-only path.
+        # On a normal (non-colocated) server there is no trainer peer, so the
+        # device-socket rendezvous in _get_weight_bridge().connect() would block
+        # forever. Fast-fail cleanly instead of hanging. (The route is not even
+        # mounted off the RL path; this guards a stray/ever-reachable call.)
+        if os.getenv("TT_COLOCATED_INFERENCE") != "1":
+            raise RuntimeError(
+                "Runtime weight update is only available on a co-located RL "
+                "inference server (TT_COLOCATED_INFERENCE=1); refusing to run "
+                "the device-socket weight bridge on a non-colocated server."
+            )
+
         rank = self.vllm_config.parallel_config.data_parallel_rank
 
         if not self._owns_model():
@@ -389,19 +385,11 @@ class TTWorker(WorkerBase):
                 "(tt-metal PR #45734)."
             )
 
-        # Quiesce the device and drop any captured decode trace before the
-        # transfer. recv_state() allocates the full received state dict as fresh
-        # device buffers; a decode trace (captured lazily on the first real
-        # decode -- never during warmup) reserves a device DRAM region +
-        # worker-core/L1 resources, and allocating the receive buffers into that
-        # contended state wedges the on-device CCL recv (unrecoverable device
-        # timeout in ttnn.synchronize_device inside recv_state). The theta_0
-        # update, before any decode trace exists, transfers fine; every
-        # post-rollout update hung. Releasing the decode trace here restores the
-        # clean pre-decode device state; tt-transformers re-captures it lazily on
-        # the next generation using the freshly-updated (in-place, same-address)
-        # weights. Guarded on hasattr so an older tt-metal Generator (no
-        # release_decode_traces) still imports.
+        # Drop any captured decode trace before the transfer: recv_state()
+        # allocates the full state dict as fresh device buffers, and doing that
+        # while a decode trace holds DRAM/L1 wedges the on-device CCL recv
+        # (device timeout). tt-transformers re-captures the trace lazily on the
+        # next generation. Guarded on hasattr for older Generators.
         ttnn.synchronize_device(self.mesh_device)
         if hasattr(model, "release_decode_traces"):
             model.release_decode_traces()
@@ -416,14 +404,9 @@ class TTWorker(WorkerBase):
         hf_dict = bridge.recv_state()
 
         # 2. Apply in place (preserves device buffer addresses / traces).
-        #    An EMPTY dict is the co-located plumbing-test payload
-        #    (SIM_PAYLOAD=empty): the trainer streams a zero-entry manifest to
-        #    exercise the full connect/transfer/barrier/HTTP round-trip without a
-        #    real Contract-B weight set. ``Transformer.update_weights`` is strict
-        #    (it raises KeyError on the first missing HF key), so short-circuit to
-        #    a no-op here rather than handing it the empty dict. The version is
-        #    still bumped and the barrier still runs, so the round-trip the
-        #    trainer observes is identical to a real update.
+        #    An empty dict is the plumbing-test payload (SIM_PAYLOAD=empty):
+        #    update_weights is strict (KeyError on missing keys), so no-op it
+        #    while still bumping the version + running the barrier.
         if hf_dict:
             model.update_weights(hf_dict, hf_rope=hf_rope)
             applied = True
@@ -448,10 +431,8 @@ class TTWorker(WorkerBase):
             self._weights_version,
             applied,
         )
-        # ``updated`` reports control-plane success (the version was recorded and
-        # the bridge round-trip completed), which the HTTP endpoint uses to
-        # confirm a worker handled the request; ``weights_applied`` distinguishes
-        # a real in-place apply from the empty-payload plumbing no-op.
+        # ``updated``: control-plane success; ``weights_applied``: real apply vs
+        # empty-payload plumbing no-op.
         return {
             "rank": rank,
             "updated": True,
@@ -461,6 +442,13 @@ class TTWorker(WorkerBase):
 
     def get_weights_version(self) -> int:
         """Return the current on-device weights/policy version."""
+        # Co-located RL-only control plane (see update_weights); fast-fail off
+        # the RL path so this is inert on a normal server.
+        if os.getenv("TT_COLOCATED_INFERENCE") != "1":
+            raise RuntimeError(
+                "Weights versioning is only available on a co-located RL "
+                "inference server (TT_COLOCATED_INFERENCE=1)."
+            )
         return self._weights_version
 
     def get_kv_cache_spec(self) -> dict[str, KVCacheSpec]:
