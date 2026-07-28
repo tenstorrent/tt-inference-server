@@ -215,6 +215,9 @@ class EvalTask:
             EvalLimitMode.SMOKE_TEST: 0.01,
         }
     )
+    # Let this task's scorer execute model-generated code on the eval host.
+    # Off by default: the host is the CI runner, not containerized.
+    allow_code_execution: bool = False
     agentic_eval_config: Optional[TerminalBenchEvalConfig] = None
     swebench_eval_config: Optional[SWEbenchEvalConfig] = None
 
@@ -2537,6 +2540,7 @@ _eval_config_list = [
                 task_name="humaneval_instruct",
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 use_chat_api=True,
+                allow_code_execution=True,
                 score=EvalTaskScore(
                     published_score=88.41,
                     published_score_ref="https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503",
