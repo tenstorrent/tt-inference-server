@@ -2220,7 +2220,7 @@ _eval_config_list = [
             # context and only run once MAX_MODEL_LENGTH is raised.
             EvalTask(
                 task_name="mbpp_instruct",
-                min_context_required=8192,  # skip at small first-light ctx (else overflows -> fails/hangs the release; #context)
+                min_context_required=4096,  # skip at small first-light ctx (else overflows -> fails/hangs the release; #context)
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 score=EvalTaskScore(
                     published_score=78.20,

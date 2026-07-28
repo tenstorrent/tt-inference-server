@@ -50,6 +50,12 @@ class VLLMForgeQwen32BRunner(BaseDeviceRunner):
         optimization_level = int(os.getenv("OPTIMIZATION_LEVEL", "0"))
         cpu_sampling = os.getenv("CPU_SAMPLING", "false").lower() == "true"
         enable_trace = os.getenv("ENABLE_TRACE", "true").lower() == "true"
+        # Chunked prefill (tt-xla forge plugin): prefill_chunk_size alone turns it
+        # on; min_num_seqs<max_num_seqs enables b1-prefill; prefill_batch_threshold
+        # MUST be < max_num_seqs or every step serializes. Only passed when set.
+        prefill_chunk_size = os.getenv("PREFILL_CHUNK_SIZE")
+        min_num_seqs = os.getenv("MIN_NUM_SEQS")
+        prefill_batch_threshold = os.getenv("PREFILL_BATCH_THRESHOLD")
         # Mesh-aware: the SAME runner serves P300X2 (mesh (1,4), pure 1D TP) and
         # the BH Galaxy (mesh (8,4), DP+TP). When the DP replica dim
         # (device_mesh_shape[0]) > 1 we switch on the 2D DP+TP path (mirrors
@@ -75,12 +81,18 @@ class VLLMForgeQwen32BRunner(BaseDeviceRunner):
             additional_config["enable_data_parallel"] = True
             additional_config["shard_weights_on_batch_axis"] = False
             additional_config["mesh_shape"] = mesh_shape
+        if prefill_chunk_size:
+            additional_config["prefill_chunk_size"] = int(prefill_chunk_size)
+        if min_num_seqs:
+            additional_config["min_num_seqs"] = int(min_num_seqs)
+        if prefill_batch_threshold:
+            additional_config["prefill_batch_threshold"] = int(prefill_batch_threshold)
         engine_args = AsyncEngineArgs(
             model=self.settings.vllm.model,
             max_model_len=self.settings.vllm.max_model_length,
             max_num_batched_tokens=self.settings.vllm.max_num_batched_tokens,
             max_num_seqs=self.settings.vllm.max_num_seqs,
-            enable_chunked_prefill=False,
+            enable_chunked_prefill=False,  # forge drives chunking via prefill_chunk_size; keep False
             gpu_memory_utilization=self.settings.vllm.gpu_memory_utilization,
             additional_config=additional_config,
         )
@@ -139,7 +151,7 @@ class VLLMForgeQwen32BRunner(BaseDeviceRunner):
 
         chunks = []
         strip_eos = TextUtils.strip_eos
-        sampling_params = build_sampling_params(request)
+        sampling_params = build_sampling_params(request, force_greedy=True)
 
         async for request_output in self.llm_engine.generate(
             self._build_vllm_input(request), sampling_params, request._task_id
@@ -183,7 +195,7 @@ class VLLMForgeQwen32BRunner(BaseDeviceRunner):
             f"Device {self.device_id}: Starting Qwen3-32B non-streaming generation"
         )
 
-        sampling_params = build_sampling_params(request)
+        sampling_params = build_sampling_params(request, force_greedy=True)
 
         generated_text = []
         async for request_output in self.llm_engine.generate(
