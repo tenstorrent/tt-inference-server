@@ -255,6 +255,12 @@ deepseek_r1_galaxy_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/deepseek_v3",
 )
+deepseek_v4_flash_impl = ImplSpec(
+    impl_id="deepseek_v4_flash",
+    impl_name="deepseek-v4-flash",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/experimental/deepseek_v4_flash",
+)
 whisper_impl = ImplSpec(
     impl_id="whisper",
     impl_name="whisper",
@@ -300,6 +306,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "qwen3_32b_galaxy": qwen3_32b_galaxy_impl,
     "gpt_oss": gpt_oss_impl,
     "deepseek_r1_galaxy": deepseek_r1_galaxy_impl,
+    "deepseek_v4_flash": deepseek_v4_flash_impl,
     "whisper": whisper_impl,
     "speecht5_tts": speecht5_impl,
     "forge_vllm_plugin": forge_vllm_plugin_impl,

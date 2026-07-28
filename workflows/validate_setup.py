@@ -504,9 +504,20 @@ def validate_local_server_paths(args):
     required_paths = [
         ("python venv interpreter", venv_python),
         ("tt-metal build/lib", build_lib_dir),
-        ("vLLM source dir", vllm_dir),
         ("local server entrypoint", entrypoint_path),
     ]
+    # A vLLM source tree is optional. The plugin's canonical install
+    # (vllm-tt-plugin/docs/install-vllm-tt.sh) pip-installs vLLM into the tt-metal
+    # venv and leaves no checkout, so only an explicitly requested path has to
+    # exist; _validate_local_vllm_installation proves the package is importable
+    # either way.
+    if getattr(args, "vllm_dir", None):
+        required_paths.append(("vLLM source dir", vllm_dir))
+    elif not vllm_dir.exists():
+        logger.info(
+            f"No vLLM source tree at {vllm_dir}; using the vllm package installed "
+            f"in {python_env_dir}"
+        )
     for label, path in required_paths:
         if not path.exists():
             raise ValueError(f"⛔ Missing required {label}: {path}")
