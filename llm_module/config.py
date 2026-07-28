@@ -52,8 +52,11 @@ class ServerConnection:
     # by AIPerf via ``--server-metrics``, independent of the load target
     # in ``base_url``. Used by the prefix-cache benchmark to read the
     # worker-side ``tt_prefix_cache_*`` counters in a Dynamo deployment
-    # where the frontend (load target) does not aggregate them. A tuple
-    # keeps this frozen dataclass hashable.
+    # where the frontend (load target) does not aggregate them. Each entry
+    # is a URL, ``host:port``, or ``host:port/metrics``, optionally prefixed
+    # with a disaggregation role (``prefill=`` / ``decode=``) so the driver
+    # reports each cache's hit rate separately instead of blending them. A
+    # tuple keeps this frozen dataclass hashable.
     prefix_cache_metrics_urls: Tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
