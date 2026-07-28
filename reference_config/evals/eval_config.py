@@ -5016,15 +5016,9 @@ _eval_config_list = [
             ),
         ],
     ),
-    # Janus-Pro-7B multimodal understanding. Two tasks per the add_support_for_new_model
-    # guide's coverage recommendation ("Minimum: at least 2 tasks per model"). Both are
-    # drawn from the paper's own understanding suite (arXiv:2501.17811 Table 3, which
-    # reports Janus-Pro-7B on GQA/POPE/MME/SEED/MMB/MM-Vet/MMMU) and restricted to what
-    # lmms-eval (EVALS_VISION venv) exposes as ready-to-run tasks today: MMBench-EN dev
-    # (mmbench_en_dev) + MMMU val (mmmu_val). MMBench is the headline number the paper
-    # leads with (79.2); MMMU adds a harder, exam-style discipline-coverage signal so the
-    # suite isn't single-benchmark. Other Table 3 benchmarks (POPE/MME/SEED/GQA/MM-Vet)
-    # were skipped only to keep the first bring-up minimal, not for any technical reason.
+    # Janus-Pro-7B multimodal understanding uses MMBench-EN dev because it has a
+    # reproducible community lmms-eval reference. MMMU val is disabled until a
+    # comparable community, CPU, or GPU reference run is available.
     # NOTE: mmbench_en_dev extracts the chosen option letter with lmms-eval's
     #   rule-based matcher first (can_infer_option/can_infer_text); the GPT
     #   answer-extraction is only a fallback for predictions that don't parse.
@@ -5039,7 +5033,6 @@ _eval_config_list = [
     #   published_score keeps the paper figure for reference only. Since we run the
     #   same lmms-eval mmbench_en_dev task, mmbench_en_dev's gpu_reference_score uses
     #   that reproducible community number (65.81) as the reference/sanity anchor.
-    #   mmmu_val has no comparable community number yet, so it stays None (no gate).
     EvalConfig(
         hf_model_repo="deepseek-community/Janus-Pro-7B",
         tasks=[
@@ -5084,44 +5077,42 @@ _eval_config_list = [
                     "max_new_tokens": "512",
                 },
             ),
-            EvalTask(
-                eval_class="openai_compatible",
-                task_name="mmmu_val",
-                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
-                apply_chat_template=False,
-                use_chat_api=True,
-                score=EvalTaskScore(
-                    # Source: Janus-Pro paper (arXiv:2501.17811), Table 3 "Multimodal
-                    # Understanding", MMMU column for Janus-Pro-7B = 41.0 (val split; the
-                    # same MMMU val that lmms-eval's mmmu_val runs). It is a paper figure
-                    # only, not independently reproduced here, hence gpu_reference_score
-                    # stays None (no PASS/FAIL gate) until a CPU/GPU reference run exists.
-                    published_score=41.0,
-                    published_score_ref="https://arxiv.org/abs/2501.17811",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD: measure CPU/GPU reference run",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "mmmu_acc,none",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                model_kwargs={
-                    "num_concurrent": 32,
-                    "max_retries": 1,
-                    "tokenized_requests": "False",
-                    "add_bos_token": "True",
-                    "timeout": "9999",
-                    "eos_string": "<｜end▁of▁sentence｜>",
-                },
-                gen_kwargs={
-                    "stop": "<｜end▁of▁sentence｜>",
-                    "stream": "False",
-                    "max_new_tokens": "512",
-                },
-            ),
+            # TODO: mmmu_val is disabled because its 41.0 reference is paper-only
+            # and cannot be reproduced with a matching community, CPU, or GPU run.
+            # Re-enable this task once a comparable reference is available.
+            # EvalTask(
+            #     eval_class="openai_compatible",
+            #     task_name="mmmu_val",
+            #     workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+            #     apply_chat_template=False,
+            #     use_chat_api=True,
+            #     score=EvalTaskScore(
+            #         published_score=41.0,
+            #         published_score_ref="https://arxiv.org/abs/2501.17811",
+            #         gpu_reference_score=None,
+            #         gpu_reference_score_ref="TBD: measure CPU/GPU reference run",
+            #         score_func=score_task_single_key,
+            #         score_func_kwargs={
+            #             "result_keys": [
+            #                 "mmmu_acc,none",
+            #             ],
+            #             "unit": "percent",
+            #         },
+            #     ),
+            #     model_kwargs={
+            #         "num_concurrent": 32,
+            #         "max_retries": 1,
+            #         "tokenized_requests": "False",
+            #         "add_bos_token": "True",
+            #         "timeout": "9999",
+            #         "eos_string": "<｜end▁of▁sentence｜>",
+            #     },
+            #     gen_kwargs={
+            #         "stop": "<｜end▁of▁sentence｜>",
+            #         "stream": "False",
+            #         "max_new_tokens": "512",
+            #     },
+            # ),
         ],
     ),
 ]
