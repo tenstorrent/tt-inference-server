@@ -97,7 +97,8 @@ def _read_response_side_effect(*responses):
 
     The output drainer polls ``read_response`` in a loop. A static
     ``return_value`` would be delivered repeatedly; after the future is
-    resolved, SPRunner treats the duplicate as stale and unlinks ``file_path``.
+    resolved, SPRunner treats the duplicate as already-handled and leaves
+    ``file_path`` in place (no unlink).
     """
     pending = list(responses)
 
@@ -308,6 +309,48 @@ class TestSPRunnerFileCleanup:
         runner.set_device()
         assert runner.run([MockVideoGenerateRequest(task_id="tid")]) == [file_path]
 
+        assert os.path.exists(file_path)
+
+    @patch("tt_model_runners.sp_runner.VideoShm")
+    def test_duplicate_response_does_not_unlink_mp4(self, MockVideoShm):
+        """A second delivery for the same task must not delete the served mp4."""
+        mock_input, mock_output = _install_shm_factory(MockVideoShm)
+
+        file_path = _touch_mp4_file()
+        ok = VideoResponse("tid", VideoStatus.SUCCESS, file_path, "")
+        mock_output.read_response.side_effect = _read_response_side_effect(ok, ok)
+
+        runner = SPRunner("dev0")
+        runner.set_device()
+        assert runner.run([MockVideoGenerateRequest(task_id="tid")]) == [file_path]
+        assert os.path.exists(file_path)
+
+    @patch("tt_model_runners.sp_runner.VideoShm")
+    def test_orphan_response_does_not_unlink_mp4(self, MockVideoShm):
+        """Late response after await_result popped _pending must leave the file."""
+        import time
+
+        mock_input, mock_output = _install_shm_factory(MockVideoShm)
+        file_path = _touch_mp4_file()
+        ok = VideoResponse("tid", VideoStatus.SUCCESS, file_path, "")
+        late = VideoResponse("tid", VideoStatus.SUCCESS, file_path, "")
+        pending = [ok]
+
+        def _read(timeout_s=None):
+            if pending:
+                return pending.pop(0)
+            return None
+
+        mock_output.read_response.side_effect = _read
+
+        runner = SPRunner("dev0")
+        runner.set_device()
+        assert runner.run([MockVideoGenerateRequest(task_id="tid")]) == [file_path]
+
+        # Inject a late orphan after the pending future is gone; wait one
+        # drainer poll cycle (_DRAINER_READ_TIMEOUT_S is 1.0s).
+        pending.append(late)
+        time.sleep(1.2)
         assert os.path.exists(file_path)
 
     @patch("tt_model_runners.sp_runner.VideoShm")
