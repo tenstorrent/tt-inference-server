@@ -384,6 +384,7 @@ class ModelType(IntEnum):
     TEXT_TO_SPEECH = auto()
     VIDEO = auto()
     VLM = auto()  # Vision-Language Models (text+image-to-text)
+    TRAINING = auto()
 
     @property
     def display_name(self) -> str:
@@ -396,6 +397,7 @@ class ModelType(IntEnum):
             ModelType.TEXT_TO_SPEECH: "Text-to-Speech",
             ModelType.VIDEO: "Video",
             ModelType.VLM: "Vision-Language Model",
+            ModelType.TRAINING: "Training",
         }
         return display_names[self]
 
@@ -410,6 +412,7 @@ class ModelType(IntEnum):
             ModelType.EMBEDDING: "Embedding",
             ModelType.TEXT_TO_SPEECH: "TTS",
             ModelType.VIDEO: "Video",
+            ModelType.TRAINING: "Training",
         }
         return short_names[self]
 
@@ -424,5 +427,6 @@ class ModelType(IntEnum):
             ModelType.EMBEDDING: "embedding",
             ModelType.TEXT_TO_SPEECH: "tts",
             ModelType.VIDEO: "video",
+            ModelType.TRAINING: "training",
         }
         return task_types[self]

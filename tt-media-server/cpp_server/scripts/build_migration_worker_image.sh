@@ -12,10 +12,10 @@ readonly DOCKERFILE="${MEDIA_ROOT}/Dockerfile.migration-worker"
 readonly ENGINE_SHA="$(git -C "${REPO_ROOT}" ls-tree HEAD \
   tt-media-server/cpp_server/tt-llm-engine | awk '{print $3}')"
 readonly DEFAULT_ENGINE_IMAGE="ghcr.io/tenstorrent/tt-llm-engine/blaze:${ENGINE_SHA}"
+readonly DEFAULT_IMAGE="ghcr.io/tenstorrent/tt-shield/tt-migration-worker:$(date +%d%m%Y-%H%M%S)"
 
 ENGINE_IMAGE="${TT_LLM_ENGINE_IMAGE:-${DEFAULT_ENGINE_IMAGE}}"
-IMAGE="${MIGRATION_WORKER_IMAGE:-tt-migration-worker:dev}"
-IMAGE_WAS_SET="${MIGRATION_WORKER_IMAGE:+1}"
+IMAGE="${MIGRATION_WORKER_IMAGE:-${DEFAULT_IMAGE}}"
 PUSH=0
 
 usage() {
@@ -42,7 +42,6 @@ while [[ $# -gt 0 ]]; do
       ;;
     --image)
       IMAGE="$2"
-      IMAGE_WAS_SET=1
       shift 2
       ;;
     --push)
@@ -65,10 +64,6 @@ done
   echo "ERROR: could not resolve the tt-llm-engine dependency image" >&2
   exit 2
 }
-if [[ "${PUSH}" -eq 1 && -z "${IMAGE_WAS_SET}" ]]; then
-  echo "ERROR: --push requires --image or MIGRATION_WORKER_IMAGE" >&2
-  exit 2
-fi
 command -v docker >/dev/null 2>&1 || {
   echo "ERROR: docker is not installed" >&2
   exit 1

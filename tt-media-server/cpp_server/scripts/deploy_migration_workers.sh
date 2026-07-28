@@ -9,8 +9,9 @@
 #   1. Connects to the Mooncake HTTP discovery service from --discovery-server.
 #   2. Launches one migration-worker Docker container per host over SSH. One
 #      worker runs on each --prefill-host and each --decode-host. Each worker's
-#      logical tag (prefill-<i> / decode-<i>, or --{prefill,decode}-tags) is used
-#      as its --name, --host, and --peer key.
+#      logical tag is used as its --name, --host, and --peer key. Prefill tags
+#      are used verbatim; decode hostnames are converted to tt-blaze's stable
+#      host-<crc32> table tags.
 #   3. Workers find each other through the discovery service (register-then-
 #      resolve) — a prefill resolves each decode tag to its routable host via the
 #      metadata service and dials its control channel. No MPI/collectives.
@@ -73,16 +74,18 @@ IMAGE_PULL_PARALLELISM="${IMAGE_PULL_PARALLELISM:-4}"
 # The KV tables the real worker migrates (see migration_deploy.conf). Required.
 PREFILL_TABLE="${PREFILL_TABLE:-}"
 DECODE_TABLE="${DECODE_TABLE:-}"
-# OPTIONAL directory of per-host FabricNode->UMD chip maps
-# (<DEVICE_MAP_DIR>/<tag>.devmap). Unset => discovery-only e2e.
-DEVICE_MAP_DIR="${DEVICE_MAP_DIR:-}"
-# When DEVICE_MAP_DIR is set, deploy pushes each map over localhost
-# (engine_handoff_sender → --engine-handoff-port) after the worker starts with
-# its .pb file. 0 disables the socket path and passes --device-map as a file.
+# OPTIONAL FabricNode->UMD chip maps. DEVICE_MAP is a backward-compatible
+# fallback for either role-specific map.
+DEVICE_MAP="${DEVICE_MAP:-}"
+PREFILL_DEVICE_MAP="${PREFILL_DEVICE_MAP:-}"
+DECODE_DEVICE_MAP="${DECODE_DEVICE_MAP:-}"
+# A nonzero ENGINE_HANDOFF_PORT pushes the map over localhost after startup.
+# The default 0 mounts the map and passes it directly to the worker.
 ENGINE_HANDOFF_PORT="${ENGINE_HANDOFF_PORT:-}"
 HANDOFF_SENDER_BIN="${HANDOFF_SENDER_BIN:-}"
-# Optional table host tags (fabric_node_host), aligned with the host CSVs.
-# Empty => default to logical prefill-<i> / decode-<i>.
+# Optional table tag inputs (fabric_node_host), aligned with the host CSVs.
+# Prefill values are used verbatim. Decode values are hostnames hashed to the
+# table's host-<crc32> convention; empty => hash the corresponding decode host.
 PREFILL_TAGS="${PREFILL_TAGS:-}"
 DECODE_TAGS="${DECODE_TAGS:-}"
 # Optional alternate config file (else DEFAULT_CONFIG next to this script).
@@ -135,14 +138,17 @@ fabric_node_host, not on the CLI):
   --config FILE            config to source first (default ${DEFAULT_CONFIG})
   --prefill-table PATH     prefill source table (.pb)
   --decode-table PATH      cluster decode table (.pb), shared by all decodes
-  --device-map-dir DIR     OPTIONAL dir of per-host <tag>.devmap files ('mesh
-                           chip umd' per line). With --engine-handoff-port
-                           (default 18700 when this dir is set), deploy pushes
-                           each map over localhost after the worker loads its
-                           .pb; set --engine-handoff-port 0 for legacy
-                           --device-map file mode. Omit dir for discovery-only
-  --prefill-tags CSV       table host tags per prefill host (default prefill-<i>)
-  --decode-tags CSV        table host tags per decode host (default decode-<i>)
+  --prefill-device-map PATH
+                           OPTIONAL map file used by every prefill worker
+  --decode-device-map PATH OPTIONAL map file used by every decode worker
+  --device-map PATH        OPTIONAL shared fallback for either role-specific
+                           map. Maps contain 'mesh chip umd' per line and are
+                           mounted directly by default. Omit all maps for
+                           discovery-only
+  --prefill-tags CSV       table host tags per prefill host, used verbatim
+                           (default prefill-<i>)
+  --decode-tags CSV        owning hostnames per decode host, converted to
+                           host-<crc32> tags (default: --decode-hosts values)
 
 Options:
   --image IMAGE            migration-worker Docker image (default ${WORKER_IMAGE})
@@ -155,8 +161,7 @@ Options:
                            concurrent remote image pulls (default ${IMAGE_PULL_PARALLELISM})
   --build-dir PATH         retained for engine handoff compatibility
   --handoff-sender PATH    engine_handoff_sender (default <build-dir>/engine_handoff_sender)
-  --engine-handoff-port N  DeviceMap socket port (default 18700 if
-                           --device-map-dir set; 0 = file --device-map)
+  --engine-handoff-port N  DeviceMap socket port (default 0 = direct file)
   --host-dram-bytes N      per-worker pool, page-aligned (default 4 GiB)
   --discovery-timeout-sec S  peer discovery timeout (default ${DISCOVERY_TIMEOUT_SEC})
   --kafka-brokers HOST:PORT  existing broker prefill workers use (default ${KAFKA_BROKERS})
@@ -211,7 +216,9 @@ parseArgs() {
       --config) CONFIG_FILE="$2"; shift 2 ;;
       --prefill-table) PREFILL_TABLE="$2"; shift 2 ;;
       --decode-table) DECODE_TABLE="$2"; shift 2 ;;
-      --device-map-dir) DEVICE_MAP_DIR="$2"; shift 2 ;;
+      --device-map) DEVICE_MAP="$2"; shift 2 ;;
+      --prefill-device-map) PREFILL_DEVICE_MAP="$2"; shift 2 ;;
+      --decode-device-map) DECODE_DEVICE_MAP="$2"; shift 2 ;;
       --prefill-tags) PREFILL_TAGS="$2"; shift 2 ;;
       --decode-tags) DECODE_TAGS="$2"; shift 2 ;;
       --handoff-sender) HANDOFF_SENDER_BIN="$2"; shift 2 ;;
@@ -264,15 +271,16 @@ validateArgs() {
   [[ -n "${DECODE_TABLE}" ]] || die "--decode-table (or DECODE_TABLE in config) is required"
   [[ "${PREFILL_TABLE}" == /* ]] || die "--prefill-table must be an absolute remote path"
   [[ "${DECODE_TABLE}" == /* ]] || die "--decode-table must be an absolute remote path"
-  # Device maps are OPTIONAL: unset => discovery-only e2e (no transfer). When set
-  # it's a real transfer run, so the dir must exist and every worker's own
-  # <tag>.devmap is checked in addWorkerSlot (fail-fast before any launch).
-  # Default: push maps over localhost (ENGINE_HANDOFF_PORT=18700). Set to 0 for
-  # legacy --device-map file mode.
-  if [[ -n "${DEVICE_MAP_DIR}" ]]; then
-    [[ -d "${DEVICE_MAP_DIR}" ]] || die "device map dir not found: ${DEVICE_MAP_DIR}"
+  PREFILL_DEVICE_MAP="${PREFILL_DEVICE_MAP:-${DEVICE_MAP}}"
+  DECODE_DEVICE_MAP="${DECODE_DEVICE_MAP:-${DEVICE_MAP}}"
+  # Device maps are OPTIONAL: unset => discovery-only e2e (no transfer). Paths
+  # refer to worker hosts and are validated there when worker slots are created.
+  # The deploy host does not need access to them.
+  # Default: mount and pass the map file directly. A nonzero port opts into
+  # socket handoff.
+  if [[ -n "${PREFILL_DEVICE_MAP}" || -n "${DECODE_DEVICE_MAP}" ]]; then
     if [[ -z "${ENGINE_HANDOFF_PORT}" ]]; then
-      ENGINE_HANDOFF_PORT=18700
+      ENGINE_HANDOFF_PORT=0
     fi
     if [[ "${ENGINE_HANDOFF_PORT}" != "0" ]]; then
       [[ -x "${HANDOFF_SENDER_BIN}" || -f "${HANDOFF_SENDER_BIN}" ]] || \
@@ -287,6 +295,17 @@ validateArgs() {
 
 # CSV -> count of non-empty fields.
 countHosts() { awk -F',' '{n=0; for(i=1;i<=NF;i++) if($i!="") n++; print n}' <<<"$1"; }
+
+decodeTagForHost() {
+  python3 - "$1" <<'PY'
+import sys
+import zlib
+
+# tt-blaze gathers this value through signed int32 storage before formatting it.
+host_tag = zlib.crc32(sys.argv[1].encode()) & 0x7FFFFFFF
+sys.stdout.write(f"host-{host_tag:08x}")
+PY
+}
 
 META_URI=""
 # Per-worker tracking. Parallel arrays, one entry per worker: role, role-local
@@ -377,9 +396,7 @@ clearRpcMeta() {
 }
 
 # Register one worker slot (role, role-local index, host, tag) in the arrays.
-# When DEVICE_MAP_DIR is set, resolves this worker's host-specific map to
-# <DEVICE_MAP_DIR>/<tag>.devmap and fails fast if it's missing (a wrong/absent
-# map opens the wrong chip). Empty when unset => discovery-only, no transfer.
+# Each worker uses the map selected for its role. Empty => no device transfer.
 # Peer CSV for a worker, role-agnostic: an explicit WORKER_PEERS[<tag>] override
 # always wins; otherwise the role default — a prefill peers with every decode
 # (DECODE_TAG_LIST) for control TABLE_EXCHANGE + migrate; a decode peers with
@@ -500,9 +517,10 @@ ${dockerCommand} --config \"\$config\" pull ${quotedImage}"
 
 addWorkerSlot() {
   local role="$1" host="$3" tag="$4" devmap="" table bindIp dockerCommand
-  if [[ -n "${DEVICE_MAP_DIR}" ]]; then
-    devmap="${DEVICE_MAP_DIR}/${tag}.devmap"
-    [[ -f "${devmap}" ]] || die "device map not found for tag '${tag}': ${devmap}"
+  if [[ "${role}" == "prefill" ]]; then
+    devmap="${PREFILL_DEVICE_MAP}"
+  else
+    devmap="${DECODE_DEVICE_MAP}"
   fi
   table="${DECODE_TABLE}"
   [[ "${role}" == "prefill" ]] && table="${PREFILL_TABLE}"
@@ -521,18 +539,21 @@ addWorkerSlot() {
 }
 
 # Map worker i of each role onto host i of that role's CSV (one worker per host)
-# and resolve its table tag: the i'th entry of --{prefill,decode}-tags, or the
-# logical default {prefill,decode}-<i> when none is given.
+# and resolve its table tag. Prefill tags remain verbatim. Each decode tag input
+# is the owning hostname and is converted to tt-blaze's host-<crc32> table tag.
 initWorkerSlots() {
-  local -a prefill_hosts decode_hosts prefill_tags decode_tags
+  local -a prefill_hosts decode_hosts prefill_tags decode_tags resolved_decode_tags
   IFS=',' read -ra prefill_hosts <<<"${PREFILL_HOSTS}"
   IFS=',' read -ra decode_hosts <<<"${DECODE_HOSTS}"
   IFS=',' read -ra prefill_tags <<<"${PREFILL_TAGS}"
   IFS=',' read -ra decode_tags <<<"${DECODE_TAGS}"
-  local i tag
+  local i tag decodeHost
   # Decodes first so DECODE_TAG_LIST is complete before any prefill reads it.
   for (( i = 0; i < NUM_DECODE; i++ )); do
-    tag="${decode_tags[$i]:-decode-${i}}"
+    decodeHost="${decode_tags[$i]:-${decode_hosts[$i]}}"
+    tag="$(decodeTagForHost "${decodeHost}")" || \
+      die "failed to hash decode tag hostname: ${decodeHost}"
+    resolved_decode_tags+=("${tag}")
     DECODE_TAG_LIST="${DECODE_TAG_LIST:+${DECODE_TAG_LIST},}${tag}"
   done
   for (( i = 0; i < NUM_PREFILL; i++ )); do
@@ -540,7 +561,7 @@ initWorkerSlots() {
     addWorkerSlot "prefill" "${i}" "${prefill_hosts[$i]}" "${tag}"
   done
   for (( i = 0; i < NUM_DECODE; i++ )); do
-    tag="${decode_tags[$i]:-decode-${i}}"
+    tag="${resolved_decode_tags[$i]}"
     addWorkerSlot "decode" "${i}" "${decode_hosts[$i]}" "${tag}"
   done
 }
@@ -605,6 +626,12 @@ workerCmd() {
     -e "TT_LOG_LEVEL=${TT_LOG_LEVEL}"
     -v "${table}:${table}:ro"
   )
+  if [[ "${MIGRATION_MODE}" == "device" ]]; then
+    cmd+=(
+      --device=/dev/tenstorrent
+      --mount source=/dev/hugepages-1G,target=/dev/hugepages-1G,type=bind
+    )
+  fi
   if [[ "${role}" == "prefill" ]]; then
     cmd+=(-e "PREFILL_TABLE=${PREFILL_TABLE}")
   else
@@ -620,7 +647,7 @@ workerCmd() {
   printf '%q ' "${cmd[@]}"
 }
 
-# Push <tag>.devmap to the worker on 127.0.0.1:ENGINE_HANDOFF_PORT (same box).
+# Push the selected map to the worker on 127.0.0.1:ENGINE_HANDOFF_PORT.
 # Retries until the worker is listening after loading its .pb.
 pushDeviceMapSlot() {
   local s="$1" host="${WK_HOST[$s]}" devmap="${WK_DEVMAP[$s]}"
@@ -676,11 +703,16 @@ waitForContainerStart() {
 # the named remote container is running.
 launchWorkerSlot() {
   local s="$1" role="${WK_ROLE[$s]}" index="${WK_INDEX[$s]}" host="${WK_HOST[$s]}"
-  local log="${WK_LOG[$s]}" cmd
+  local log="${WK_LOG[$s]}" archivedLog cmd
   cmd="$(workerCmd "${s}")"
   clearRpcMeta "${WK_TAG[$s]}"
   sweepWorkerOnHost "${host}" "${WK_TAG[$s]}" "${WK_DOCKER[$s]}" >/dev/null || \
     die "could not clear stale container for ${WK_TAG[$s]} on ${host}"
+  if [[ -e "${log}" ]]; then
+    archivedLog="${log%.log}.$(date -u +%Y%m%dT%H%M%S.%N).log"
+    mv -- "${log}" "${archivedLog}" || die "could not archive worker log: ${log}"
+    echo "[deploy] archived previous ${role}-${index} log at ${archivedLog}"
+  fi
   : >"${log}"
   echo "[deploy] launching ${role}-${index} on ${host} (container=${WK_CONTAINER[$s]})"
   ssh "${SSH_OPTS[@]}" "${host}" "${cmd}" >"${log}" 2>&1 &
@@ -835,15 +867,16 @@ main() {
 
   echo "[deploy] prefill hosts=${NUM_PREFILL} decode hosts=${NUM_DECODE} kafka=${KAFKA_BROKERS}"
   echo "[deploy] image=${WORKER_IMAGE} mode=${MIGRATION_MODE}"
-  echo "[deploy] tables: prefill=${PREFILL_TABLE} decode=${DECODE_TABLE}${DEVICE_MAP_DIR:+ device-map-dir=${DEVICE_MAP_DIR}}"
+  echo "[deploy] tables: prefill=${PREFILL_TABLE} decode=${DECODE_TABLE}"
+  echo "[deploy] device maps: prefill=${PREFILL_DEVICE_MAP:-none} decode=${DECODE_DEVICE_MAP:-none}"
   if [[ "${MIGRATION_MODE}" == "dry-run" ]]; then
     echo "[deploy] dry-run mode: discovery, table exchange, health, and Kafka enabled; device I/O disabled"
-  elif [[ -z "${DEVICE_MAP_DIR}" ]]; then
-    echo "[deploy] no device-map-dir: discovery-only (workers register + are discoverable, but cannot move KV)"
+  elif [[ -z "${PREFILL_DEVICE_MAP}" && -z "${DECODE_DEVICE_MAP}" ]]; then
+    echo "[deploy] no device maps: discovery-only (workers register + are discoverable, but cannot move KV)"
   elif [[ "${ENGINE_HANDOFF_PORT}" != "0" ]]; then
     echo "[deploy] DeviceMap via socket handoff port=${ENGINE_HANDOFF_PORT} sender=${HANDOFF_SENDER_BIN}"
   else
-    echo "[deploy] DeviceMap via --device-map file (ENGINE_HANDOFF_PORT=0)"
+    echo "[deploy] DeviceMaps via role-specific files (ENGINE_HANDOFF_PORT=0)"
   fi
 
   verifyDiscoveryService || exit 1
