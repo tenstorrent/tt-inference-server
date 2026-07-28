@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "config/settings.hpp"
+#include "domain/prefix_cache/block_matcher.hpp"
 #include "metrics/metrics.hpp"
 #include "services/disaggregation_service.hpp"
 #include "services/llm_service.hpp"
@@ -116,9 +117,11 @@ void LLMPipeline::resolveSession(
       *tokens, std::move(opts), loop,
       // onResolved callback
       [req, onResolved, mgr = sessionManager_](SlotAcquireResult result) {
-        // Track metrics
+        const uint32_t promptTokens =
+            domain::prefix_cache::BlockMatcher::blocksToTokens(
+                result.blocks.size());
         tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(
-            !result.isNewSession);
+            promptTokens, result.isNewSession ? 0u : result.matchedTokens);
 
         TT_LOG_INFO(
             "[LLMPipeline] Slot acquired taskId={} sessionId={} slotId={} "
