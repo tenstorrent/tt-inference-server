@@ -67,31 +67,42 @@ class VLLMForgeDevstral123BRunner(BaseDeviceRunner):
         optimization_level = int(os.getenv("OPTIMIZATION_LEVEL", "0"))
         cpu_sampling = os.getenv("CPU_SAMPLING", "true").lower() == "true"
         enable_trace = os.getenv("ENABLE_TRACE", "true").lower() == "true"
+        prefill_chunk_size = os.getenv("PREFILL_CHUNK_SIZE")
+        min_num_seqs = os.getenv("MIN_NUM_SEQS")
+        prefill_batch_threshold = os.getenv("PREFILL_BATCH_THRESHOLD")
         mesh_shape = list(self.settings.device_mesh_shape)  # (DP, TP) -> [4, 8]
+        additional_config = {
+            "enable_const_eval": True,
+            # 32 is the validated value across every tt-xla Devstral source
+            # (examples/.../Devstral-2-123B-Instruct-2512/service.sh, the
+            # benchmark _tp_config default, and the DP+TP generation test).
+            # NOT settings.vllm.min_context_length, whose default is 128.
+            "min_context_len": 32,
+            "enable_tensor_parallel": True,
+            "enable_data_parallel": True,
+            "shard_weights_on_batch_axis": False,
+            "use_2d_mesh": True,
+            "mesh_shape": mesh_shape,
+            "experimental_weight_dtype": "bfp_bf8",
+            "cpu_sampling": cpu_sampling,
+            "optimization_level": optimization_level,
+            "enable_trace": enable_trace,
+        }
+        if prefill_chunk_size:
+            additional_config["prefill_chunk_size"] = int(prefill_chunk_size)
+        if min_num_seqs:
+            additional_config["min_num_seqs"] = int(min_num_seqs)
+        if prefill_batch_threshold:
+            additional_config["prefill_batch_threshold"] = int(prefill_batch_threshold)
         engine_args = AsyncEngineArgs(
             model=self.settings.vllm.model,
             max_model_len=self.settings.vllm.max_model_length,
             max_num_batched_tokens=self.settings.vllm.max_num_batched_tokens,
             max_num_seqs=self.settings.vllm.max_num_seqs,
+            # forge drives chunking via prefill_chunk_size; keep False
             enable_chunked_prefill=False,
             gpu_memory_utilization=self.settings.vllm.gpu_memory_utilization,
-            additional_config={
-                "enable_const_eval": True,
-                # 32 is the validated value across every tt-xla Devstral source
-                # (examples/.../Devstral-2-123B-Instruct-2512/service.sh, the
-                # benchmark _tp_config default, and the DP+TP generation test).
-                # NOT settings.vllm.min_context_length, whose default is 128.
-                "min_context_len": 32,
-                "enable_tensor_parallel": True,
-                "enable_data_parallel": True,
-                "shard_weights_on_batch_axis": False,
-                "use_2d_mesh": True,
-                "mesh_shape": mesh_shape,
-                "experimental_weight_dtype": "bfp_bf8",
-                "cpu_sampling": cpu_sampling,
-                "optimization_level": optimization_level,
-                "enable_trace": enable_trace,
-            },
+            additional_config=additional_config,
         )
         self.logger.info(
             f"Device {self.device_id}: additional_config={engine_args.additional_config}"
@@ -150,7 +161,7 @@ class VLLMForgeDevstral123BRunner(BaseDeviceRunner):
 
         chunks = []
         strip_eos = TextUtils.strip_eos
-        sampling_params = build_sampling_params(request)
+        sampling_params = build_sampling_params(request, force_greedy=True)
 
         async for request_output in self.llm_engine.generate(
             self._build_vllm_input(request), sampling_params, request._task_id
@@ -194,7 +205,7 @@ class VLLMForgeDevstral123BRunner(BaseDeviceRunner):
             f"Device {self.device_id}: Starting Devstral-2-123B non-streaming generation"
         )
 
-        sampling_params = build_sampling_params(request)
+        sampling_params = build_sampling_params(request, force_greedy=True)
 
         generated_text = []
         async for request_output in self.llm_engine.generate(

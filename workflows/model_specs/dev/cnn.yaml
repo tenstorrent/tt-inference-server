@@ -224,27 +224,30 @@ templates:
   status: EXPERIMENTAL
   device_model_specs:
     - device: BLACKHOLE_GALAXY
-      # max_concurrency = served aggregate batch = 128 (dp-batch128: 4 DP replicas
-      # x 32 seqs/replica). max_context = 128 is the ONLY context tt-xla actually
-      # validated for this model: the devstral-123b-galaxy-tp benchmark runs at the
-      # TT_BENCHMARK_MAX_MODEL_LEN default (128) with NO override, and the DP+TP
-      # generation test uses max_model_len=128. This is deliberately the safe
-      # first-light value -- b128 x 4096 was never proven and is a prime DRAM-OOM
-      # candidate at trace capture (max_num_batched_tokens = ctx*b = 524288, large
-      # KV at GMU 0.3). TODO(tune): raise max_context/MAX_MODEL_LENGTH toward model
-      # max for real serving/evals, adjusting GPU_MEMORY_UTILIZATION together; an
-      # OOM when raising it is a fit problem to tune, NOT a wiring regression.
-      max_concurrency: 128
-      max_context: 128
+      # batch-16 / ctx-1024 with forge chunked prefill and greedy decoding.
+      # max_concurrency = served aggregate batch = 16 (MAX_NUM_SEQS). max_context =
+      # 1024 (MAX_MODEL_LENGTH). Chunked prefill is driven by the forge plugin via
+      # PREFILL_CHUNK_SIZE in additional_config (enable_chunked_prefill stays False
+      # in the runner); MIN_NUM_SEQS / PREFILL_BATCH_THRESHOLD tune the chunked
+      # prefill batching. GPU_MEMORY_UTILIZATION=0.15 sizes the KV cache for this
+      # batch/ctx. Decoding is forced greedy (temperature 0) in the runner, and
+      # CPU_SAMPLING is false. TODO(tune): raise max_context/MAX_MODEL_LENGTH toward
+      # model max for real serving/evals, adjusting GPU_MEMORY_UTILIZATION together;
+      # an OOM when raising it is a fit problem to tune, NOT a wiring regression.
+      max_concurrency: 16
+      max_context: 1024
       default_impl: true
       eval_max_retries: 1
       env_vars:
-        MAX_MODEL_LENGTH: "128"         # validated first-light value; raise for real evals (see above)
-        MAX_NUM_SEQS: "128"
-        GPU_MEMORY_UTILIZATION: "0.3"   # tt-xla benchmark value (gen-test used 0.1); TODO(tune)
+        MAX_MODEL_LENGTH: "1024"
+        MAX_NUM_SEQS: "16"
+        GPU_MEMORY_UTILIZATION: "0.15"
         OPTIMIZATION_LEVEL: "0"
         ENABLE_TRACE: "true"
-        CPU_SAMPLING: "true"            # REQUIRED on the 2D DP+TP mesh (tt-inference-server#4440)
+        CPU_SAMPLING: "false"
+        PREFILL_CHUNK_SIZE: "1024"
+        MIN_NUM_SEQS: "1"
+        PREFILL_BATCH_THRESHOLD: "4"
         # BH Galaxy runtime: TT_RUNTIME_USING_BH_GALAXY selects the galaxy fabric.
         # The tt-xla standalone run sets only this (no explicit descriptor pin).
         TT_RUNTIME_USING_BH_GALAXY: "1"

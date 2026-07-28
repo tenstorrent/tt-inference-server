@@ -9,7 +9,7 @@ from vllm.sampling_params import RequestOutputKind
 
 
 def build_sampling_params(
-    request: CompletionRequest, defaults: dict = None
+    request: CompletionRequest, defaults: dict = None, force_greedy: bool = False
 ) -> SamplingParams:
     """
     Build SamplingParams from request, applying defaults for unspecified values.
@@ -20,6 +20,8 @@ def build_sampling_params(
 
     Args:
         defaults: Optional dict to override _DEFAULT_SAMPLING_PARAMS.
+        force_greedy: When True, force temperature=0.0 (greedy decoding),
+            overriding any request/default temperature.
     """
     if defaults is None:
         defaults = _DEFAULT_SAMPLING_PARAMS
@@ -78,6 +80,8 @@ def build_sampling_params(
 
     # Validate parameter combinations
     # When temperature is 0, sampling is deterministic (greedy decoding)
+    if force_greedy:
+        temperature = 0.0
     if temperature == 0.0:
         top_p = 1.0
         top_k = 0
