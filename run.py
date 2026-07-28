@@ -55,6 +55,7 @@ from workflows.validate_setup import run_multihost_validation_subprocess, valida
 from workflows.workflow_types import (
     DeviceTypes,
     InferenceEngine,
+    ModelType,
     WorkflowType,
 )
 
@@ -76,6 +77,18 @@ def parse_device_ids(value):
         )
 
 
+def _placeholder_llm(device):
+    llms = [s for s in MODEL_SPECS.values() if s.model_type == ModelType.LLM]
+    if not llms:
+        return None
+    if device:
+        want = device.lower()
+        match = next((s for s in llms if s.device_type.name.lower() == want), None)
+        return (match.model_name, device) if match else None
+    spec = llms[0]
+    return spec.model_name, spec.device_type.name.lower()
+
+
 def parse_arguments():
     valid_workflows = {w.name.lower() for w in WorkflowType}
     valid_devices = {device.name.lower() for device in DeviceTypes}
@@ -94,7 +107,13 @@ def parse_arguments():
         formatter_class=argparse.RawTextHelpFormatter,
     )
     parser.add_argument(
-        "--model", required=True, choices=valid_models, help="Model to run"
+        "--model",
+        required=False,
+        default=None,
+        choices=valid_models,
+        help="Model to run. Required for every workflow except prefill_decode, "
+        "which serves a mock stack chosen by --served-model and only needs a "
+        "placeholder spec (auto-picked when --model is omitted).",
     )
     parser.add_argument(
         "--workflow",
@@ -429,6 +448,23 @@ def parse_arguments():
         "the environment; --limit-samples-mode selects a knob preset.",
     )
 
+    # Prefill/decode smoke suite
+    prefill_decode_group = parser.add_argument_group(
+        "prefill_decode workflow",
+        "Arguments for --workflow prefill_decode (brings up the disaggregated mock "
+        "stack and runs the smoke suite)",
+    )
+    prefill_decode_group.add_argument(
+        "--served-model",
+        type=str,
+        default=None,
+        help="HF repo id the prefill_decode mock stack should serve, e.g. "
+        "moonshotai/Kimi-K2.6. Must have a tokenizer dir under "
+        "tt-media-server/cpp_server/tokenizers/. Overrides the model derived from "
+        "--model; lets you serve a model with no catalog entry. Defaults to the "
+        "--model's HF repo, then run_stack.sh's built-in default.",
+    )
+
     prefix_cache_group = parser.add_argument_group(
         "Prefix-cache benchmark",
         "Arguments for --workflow benchmarks --prefix-cache (routed to the workflow engine)",
@@ -564,6 +600,28 @@ def parse_arguments():
     args.engine = (
         InferenceEngine.from_string(args.engine).value if args.engine else None
     )
+    # --model and --device are optional only for prefill_decode (the mock stack
+    # serves --served-model, not the catalog model). Inject a placeholder spec
+    # so the rest of run.py resolves normally.
+    if args.model is None:
+        if args.workflow != "prefill_decode":
+            parser.error(
+                "the following arguments are required: --model "
+                "(optional only for --workflow prefill_decode)."
+            )
+        if not args.served_model:
+            parser.error(
+                "--workflow prefill_decode without --model requires --served-model "
+                "(the HF repo the mock stack should serve); --model alone is only a "
+                "placeholder spec."
+            )
+        placeholder = _placeholder_llm(args.device)
+        if placeholder is None:
+            parser.error(
+                "could not auto-pick a placeholder --model for "
+                f"--device {args.device!r}; pass --model explicitly."
+            )
+        args.model, args.device = placeholder
     if not args.device:
         args.device = infer_default_device(args.model, args.engine)
     args.tt_device = args.device
@@ -599,6 +657,12 @@ def parse_arguments():
             f"(got --workflow {args.workflow})."
         )
 
+    if args.served_model and args.workflow != "prefill_decode":
+        parser.error(
+            "--served-model requires --workflow prefill_decode "
+            f"(got --workflow {args.workflow})."
+        )
+
     # Dev specs don't pin a docker image (they're built/published out of band),
     # so dev-mode has no image to run in a container — require an explicit one.
     if args.dev_mode and args.docker_server and not args.override_docker_image:
@@ -631,6 +695,7 @@ def handle_secrets(runtime_config):
         WorkflowType.STRESS_TESTS,
         WorkflowType.SPEC_TESTS,
         WorkflowType.SERVING_BENCH,
+        WorkflowType.PREFILL_DECODE,
     }
     # --docker-server requires the HF_TOKEN env var to be available
     huggingface_required = (
@@ -695,7 +760,15 @@ def format_cli_args_summary(runtime_config):
         "=" * 60,
         "",
         "Model Options:",
-        f"  model:                      {runtime_config.model}",
+        f"  model:                      {runtime_config.model}"
+        + (
+            "  (placeholder spec; stack serves --served-model)"
+            if runtime_config.served_model
+            else ""
+        ),
+        f"  served_model:               {runtime_config.served_model}"
+        if runtime_config.served_model
+        else None,
         f"  device:                     {runtime_config.device}",
         f"  impl:                       {runtime_config.impl}",
         f"  engine:                     {runtime_config.engine}",
@@ -733,7 +806,7 @@ def format_cli_args_summary(runtime_config):
 
     lines.append("=" * 60)
 
-    return "\n".join(lines)
+    return "\n".join(line for line in lines if line is not None)
 
 
 def populate_model_spec_cli_args(model_spec, runtime_config):
