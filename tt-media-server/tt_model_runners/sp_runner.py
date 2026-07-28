@@ -537,16 +537,27 @@ class SPRunner(BaseDeviceRunner):
                 # from a prior session get flushed on recovery. Log those at debug
                 # so recovery doesn't drown the logs; a real UUID orphan is unusual
                 # and stays at warning.
+                #
+                # Do NOT unlink file_path here. A late/orphan video response can
+                # still name an mp4 the API is about to serve;
                 is_control = (
                     resp.task_id in CANARY_TASK_IDS or resp.task_id == SP_WARMUP_TASK_ID
                 )
                 log = self.logger.debug if is_control else self.logger.warning
-                log(f"[SP] orphan response task_id={resp.task_id!r}; unlinking")
-                self._try_unlink(resp.file_path)
+                log(
+                    f"[SP] orphan response task_id={resp.task_id!r} "
+                    f"file_path={resp.file_path!r}; leaving file in place"
+                )
                 continue
 
             if fut.done():
-                self._try_unlink(resp.file_path)
+                # Duplicate delivery after the future was already resolved.
+                # Same no-unlink rule as the orphan branch above.
+                self.logger.warning(
+                    f"[SP] duplicate response for already-handled "
+                    f"task_id={resp.task_id!r} file_path={resp.file_path!r}; "
+                    f"leaving file in place"
+                )
                 continue
 
             fut.set_result(resp)
