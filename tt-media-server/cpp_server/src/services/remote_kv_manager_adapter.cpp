@@ -29,15 +29,14 @@ RemoteKVManagerAdapter::BurstId RemoteKVManagerAdapter::start_burst(
         "[RemoteKVManagerAdapter] start_burst() called after shutdown()");
   }
 
-  auto [it, inserted] =
-      groups_.emplace(uuid, MigrationGroup{.token = uuid,
-                                           .pendingKafkaIds = {},
-                                           .totalKafkaRequests = 0,
-                                           .startedAt =
-                                               std::chrono::steady_clock::now(),
-                                           .closed = false,
-                                           .failed = false,
-                                           .failedReported = false});
+  auto [it, inserted] = groups_.emplace(
+      uuid, MigrationGroup{.token = uuid,
+                           .pendingKafkaIds = {},
+                           .totalKafkaRequests = 0,
+                           .startedAt = std::chrono::steady_clock::now(),
+                           .closed = false,
+                           .failed = false,
+                           .failedReported = false});
   if (!inserted) {
     // Duplicate uuid in flight — tt-llm-engine treats this as MigrationFailed
     // {DuplicateId}; we throw so callers crash loudly at the source of the bug

@@ -193,9 +193,8 @@ bool MooncakeKvReceiver::drain(uint64_t kafkaRequestId) {
     std::lock_guard<std::mutex> lock(pendingMutex_);
     pending_.erase(kafkaRequestId);
   }
-  TT_LOG_INFO(
-      "[MooncakeKvReceiver] drain(kafka_request_id={}) -> {}", kafkaRequestId,
-      ok ? "OK" : "PARTIAL (retryable)");
+  TT_LOG_INFO("[MooncakeKvReceiver] drain(kafka_request_id={}) -> {}",
+              kafkaRequestId, ok ? "OK" : "PARTIAL (retryable)");
   return ok;
 }
 

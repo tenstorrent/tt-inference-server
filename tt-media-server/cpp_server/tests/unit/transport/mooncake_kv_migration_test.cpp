@@ -246,9 +246,8 @@ TEST(MooncakeKvMigration, DrainFailureKeepsPlanAndRetrySucceeds) {
   const uint64_t uuid = 0xCAFE;
   const auto seg = receiver.prepareMirror(wholeSlot5().dstSlice(), uuid);
   ASSERT_TRUE(seg.has_value());
-  ASSERT_TRUE(
-      sender.transferSlot(uuid, wholeSlot5(),
-                          *seg));  // bytes now in the mirror
+  ASSERT_TRUE(sender.transferSlot(uuid, wholeSlot5(),
+                                  *seg));  // bytes now in the mirror
 
   // First drain fails on every device write; the plan is KEPT for retry.
   EXPECT_FALSE(receiver.drain(uuid));
@@ -280,9 +279,8 @@ TEST(MooncakeKvMigration, SenderFailsWithoutMirror) {
       buildTable("D", {2, 0}, {2, 1}, {2, 2}, {2, 3}, 0x8000, 0, 0x9000, 1));
   FakeDeviceIo dev;
   MooncakeKvSender sender(senderEngine, dev, prefill, decode, "P", "D");
-  EXPECT_FALSE(
-      sender.transferSlot(0x9000, wholeSlot5(),
-                          "D"));  // no segment registered
+  EXPECT_FALSE(sender.transferSlot(0x9000, wholeSlot5(),
+                                   "D"));  // no segment registered
 }
 
 // A request with a gap is rejected wholesale: prepareMirror must not migrate
