@@ -10,15 +10,25 @@
 namespace tt::transport {
 
 MooncakeMigrationExecutor::MooncakeMigrationExecutor(
-    KvMigrationMultiHostSender& sender)
+    KvMigrationMultiHostSender& sender, std::size_t numThreads)
     : MooncakeMigrationExecutor(
           [&sender](uint64_t uuid, const MigrationRequest& request) {
             return sender.migrate(uuid, request);
-          }) {}
+          },
+          numThreads) {}
 
-MooncakeMigrationExecutor::MooncakeMigrationExecutor(MigrateFn migrate)
+MooncakeMigrationExecutor::MooncakeMigrationExecutor(MigrateFn migrate,
+                                                     std::size_t numThreads)
     : migrate_(std::move(migrate)) {
-  worker_ = std::thread([this] { workerLoop(); });
+  const std::size_t n = (numThreads == 0) ? 1 : numThreads;
+  workers_.reserve(n);
+  for (std::size_t i = 0; i < n; ++i) {
+    workers_.emplace_back([this] { workerLoop(); });
+  }
+  if (n > 1) {
+    TT_LOG_INFO("[MooncakeMigrationExecutor] started with {} worker threads",
+                n);
+  }
 }
 
 MooncakeMigrationExecutor::~MooncakeMigrationExecutor() {
@@ -26,17 +36,15 @@ MooncakeMigrationExecutor::~MooncakeMigrationExecutor() {
   {
     std::lock_guard<std::mutex> lock(mutex_);
     stopping_ = true;
-    // Drop queued-but-not-started jobs without firing onDone: the callbacks
-    // capture the owning worker, which is tearing down. The scheduler observes
-    // these as timeouts (the safe degraded path). The in-flight job, if any,
-    // still completes and acks below — its captured state outlives this dtor.
     dropped = queue_.size();
     std::queue<Job> empty;
     queue_.swap(empty);
   }
   cv_.notify_all();
-  if (worker_.joinable()) {
-    worker_.join();
+  for (auto& t : workers_) {
+    if (t.joinable()) {
+      t.join();
+    }
   }
   if (dropped > 0) {
     TT_LOG_WARN(
