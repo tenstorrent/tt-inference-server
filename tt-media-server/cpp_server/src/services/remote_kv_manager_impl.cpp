@@ -141,18 +141,16 @@ uint64_t RemoteKVManagerImpl::migrate(const MigrationRequest& request) {
         "[RemoteKVManagerImpl] producer.send failed for kafka_request_id={} "
         "migration_id={}: {}",
         id,
-        request.migration_id.has_value()
-            ? std::to_string(*request.migration_id)
-            : "none",
+        request.migration_id.has_value() ? std::to_string(*request.migration_id)
+                                         : "none",
         err);
   } else {
     TT_LOG_DEBUG(
         "[RemoteKVManagerImpl] published kafka_request_id={} "
         "migration_id={}",
         id,
-        request.migration_id.has_value()
-            ? std::to_string(*request.migration_id)
-            : "none");
+        request.migration_id.has_value() ? std::to_string(*request.migration_id)
+                                         : "none");
   }
 
   return id;

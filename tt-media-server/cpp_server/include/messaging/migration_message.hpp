@@ -28,8 +28,8 @@ struct MigrationRequestMessage {
   std::optional<uint64_t> migration_id;  // Parent burst id when known.
   uint32_t src_slot;                     // Prefill (source) slot.
   uint32_t dst_slot;                     // Decode (destination) slot.
-  uint32_t layer_begin;   // First layer, inclusive (shared by src and dst).
-  uint32_t layer_end;     // One past the last layer, exclusive.
+  uint32_t layer_begin;  // First layer, inclusive (shared by src and dst).
+  uint32_t layer_end;    // One past the last layer, exclusive.
   uint32_t src_position_begin;  // Src token position start, inclusive.
   uint32_t src_position_end;    // Src token position end, exclusive.
   uint32_t dst_position_begin;  // Dst token position start, inclusive.

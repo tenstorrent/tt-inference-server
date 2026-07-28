@@ -117,20 +117,19 @@ void KvMigrationWorker::consumerLoop() {
     // this thread (synchronous Stub) or on an executor-owned thread.
     // Transport job uuid stays the per-request kafkaRequestId so parallel
     // layers of the same burst do not collide on the control channel.
-    executor->execute(
-        kafkaRequestId, apiReq,
-        [this, kafkaRequestId, migrationId](
-            tt::services::MigrationStatus status) {
-          publishAck(kafkaRequestId, migrationId, status);
-        });
+    executor->execute(kafkaRequestId, apiReq,
+                      [this, kafkaRequestId,
+                       migrationId](tt::services::MigrationStatus status) {
+                        publishAck(kafkaRequestId, migrationId, status);
+                      });
   }
 
   TT_LOG_INFO("[KvMigrationWorker] consumer loop exited");
 }
 
-void KvMigrationWorker::publishAck(
-    uint64_t kafkaRequestId, std::optional<uint64_t> migrationId,
-    tt::services::MigrationStatus status) {
+void KvMigrationWorker::publishAck(uint64_t kafkaRequestId,
+                                   std::optional<uint64_t> migrationId,
+                                   tt::services::MigrationStatus status) {
   const tt::messaging::MigrationResponseMessage ackMsg{
       .kafka_request_id = kafkaRequestId,
       .migration_id = migrationId,
@@ -161,8 +160,7 @@ void KvMigrationWorker::publishAck(
         "[KvMigrationWorker] ackProducer.send failed for kafka_request_id={} "
         "migration_id={}: {}",
         kafkaRequestId,
-        migrationId.has_value() ? std::to_string(*migrationId) : "none",
-        err);
+        migrationId.has_value() ? std::to_string(*migrationId) : "none", err);
   } else {
     TT_LOG_DEBUG(
         "[KvMigrationWorker] published ack kafka_request_id={} "

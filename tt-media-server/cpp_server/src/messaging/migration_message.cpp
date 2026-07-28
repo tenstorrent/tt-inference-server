@@ -144,10 +144,9 @@ std::optional<MigrationRequestMessage> parseMigrationRequest(
     return std::nullopt;
   }
 
-  for (const char* field :
-       {"src_slot", "dst_slot", "layer_begin", "layer_end",
-        "src_position_begin", "src_position_end", "dst_position_begin",
-        "dst_position_end"}) {
+  for (const char* field : {"src_slot", "dst_slot", "layer_begin", "layer_end",
+                            "src_position_begin", "src_position_end",
+                            "dst_position_begin", "dst_position_end"}) {
     if (!root.isMember(field) || !root[field].isIntegral()) {
       TT_LOG_ERROR("[migration_message] Request missing/non-integral: {}",
                    field);

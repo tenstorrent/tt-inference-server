@@ -281,8 +281,8 @@ TEST(MigrationResponseMessageParse, RejectsMissingFields) {
 }
 
 TEST(MigrationResponseMessageParse, AcceptsLegacyMigrationIdKey) {
-  const auto out = parseMigrationResponse(
-      R"({"migration_id": 55, "status": "SUCCESSFUL"})");
+  const auto out =
+      parseMigrationResponse(R"({"migration_id": 55, "status": "SUCCESSFUL"})");
   ASSERT_TRUE(out.has_value());
   EXPECT_EQ(out->kafka_request_id, 55u);
   EXPECT_FALSE(out->migration_id.has_value());
@@ -292,9 +292,8 @@ TEST(MigrationResponseMessageParse, RejectsWrongFieldTypes) {
   EXPECT_FALSE(parseMigrationResponse(
                    R"({"kafka_request_id": "1", "status": "SUCCESSFUL"})")
                    .has_value());
-  EXPECT_FALSE(
-      parseMigrationResponse(R"({"kafka_request_id": 1, "status": 0})")
-          .has_value());
+  EXPECT_FALSE(parseMigrationResponse(R"({"kafka_request_id": 1, "status": 0})")
+                   .has_value());
 }
 
 TEST(MigrationResponseMessageParse, RejectsUnknownStatusString) {
