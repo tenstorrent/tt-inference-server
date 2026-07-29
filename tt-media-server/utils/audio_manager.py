@@ -68,14 +68,12 @@ class AudioVenvWorker:
         self,
         logger: TTLogger,
         model_name: Optional[str] = None,
-        hf_token: Optional[str] = None,
         python_executable: str = AUDIO_VENV_PYTHON,
         script_path: Path = DIARIZE_SCRIPT,
         popen_factory=None,
     ):
         self._logger = logger
         self._model_name = model_name
-        self._hf_token = hf_token
         self._python = python_executable
         self._script = script_path
         # Injectable for tests (fake Popen). Default is subprocess.Popen.
@@ -110,15 +108,13 @@ class AudioVenvWorker:
         cmd: List[str] = [self._python, str(self._script), "--serve"]
         if self._model_name:
             cmd.extend(["--model-name", self._model_name])
-        if self._hf_token:
-            cmd.extend(["--hf-token", self._hf_token])
 
         try:
             self._proc = self._popen_factory(
                 cmd,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
                 text=True,
                 bufsize=1,  # line-buffered
             )
@@ -390,8 +386,12 @@ class AudioManager:
             else:
                 diarization_segments = self._apply_diarization(audio_array)
 
-                # Step 4: Filter diarization segments using VAD results (if VAD was successful)
-                if vad_speech_segments is not None and len(vad_speech_segments) > 0:
+                if not diarization_segments:
+                    self._logger.warning(
+                        "Diarization returned no segments - falling back to VAD-only mode"
+                    )
+                    enable_diarization = False
+                elif vad_speech_segments is not None and len(vad_speech_segments) > 0:
                     filtered_segments = self._filter_diarization_with_vad(
                         diarization_segments, vad_speech_segments
                     )
@@ -510,8 +510,10 @@ class AudioManager:
         """Spawn the persistent audio venv worker.
 
         Called once from :meth:`__init__` when audio preprocessing is
-        enabled. Blocks until the worker signals ready (models fully
-        loaded) so the first real request doesn't pay the cold-start cost.
+        enabled. Blocks until the worker process signals ready (interpreter
+        up and serving). Model weights load lazily on first use; the
+        CpuWorkloadHandler warmup task exercises both VAD and diarization so
+        pyannote/silero are hot before user traffic.
 
         On failure we degrade gracefully: leave ``_diarization_model`` and
         ``_vad_model`` as ``None`` so downstream code falls back to
@@ -529,7 +531,6 @@ class AudioManager:
             worker = AudioVenvWorker(
                 logger=self._logger,
                 model_name=self._diarization_model_name,
-                hf_token=os.getenv("HF_TOKEN"),
             )
             worker.start()
         except Exception as e:

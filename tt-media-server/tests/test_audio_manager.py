@@ -230,12 +230,11 @@ def worker_env(tmp_path):
         factory.cleanup()
 
 
-def _make_worker(env, *, model_name="pyannote/test", hf_token="secret"):
+def _make_worker(env, *, model_name="pyannote/test"):
     logger, factory, python_path, script_path = env
     return AudioVenvWorker(
         logger=logger,
         model_name=model_name,
-        hf_token=hf_token,
         python_executable=python_path,
         script_path=script_path,
         popen_factory=factory,
@@ -265,7 +264,7 @@ def test_start_spawns_with_expected_command_and_reads_ready(worker_env):
     cmd = factory.commands[0]
     assert cmd[:3] == [python_path, str(script_path), "--serve"]
     assert "--model-name" in cmd and "pyannote/test" in cmd
-    assert "--hf-token" in cmd and "secret" in cmd
+    assert "--hf-token" not in cmd
     assert worker.is_running() is True
 
 
@@ -305,7 +304,6 @@ def test_start_omits_model_flags_when_not_configured(worker_env):
     worker = AudioVenvWorker(
         logger=logger,
         model_name=None,
-        hf_token=None,
         python_executable=python_path,
         script_path=script_path,
         popen_factory=factory,
@@ -572,3 +570,25 @@ def test_close_is_a_noop_when_worker_never_started(worker_env):
     worker.close()
     _, factory, *_ = worker_env
     assert factory.spawned == []
+
+
+@patch("utils.audio_manager.settings", new=DummySettings())
+def test_apply_diarization_with_vad_falls_back_to_vad_when_diarization_empty():
+    """Empty diarization output must not collapse to one full-audio segment."""
+    manager = AudioManager()
+    manager._diarization_model = True
+    manager._vad_model = True
+
+    vadSegments = [{"start": 0.0, "end": 1.0}, {"start": 2.0, "end": 3.0}]
+    manager._apply_vad = lambda _audio: vadSegments
+    manager._apply_diarization = lambda _audio: []
+
+    audioArray = np.zeros(16000 * 4, dtype=np.float32)
+    with patch.object(manager._logger, "warning") as mockWarning:
+        chunks = manager.apply_diarization_with_vad(audioArray, enable_diarization=True)
+
+    assert len(chunks) >= 1
+    assert all(chunk["speaker"] == "SPEAKER_00" for chunk in chunks)
+    mockWarning.assert_any_call(
+        "Diarization returned no segments - falling back to VAD-only mode"
+    )
