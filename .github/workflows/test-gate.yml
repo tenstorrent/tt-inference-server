@@ -683,11 +683,9 @@ jobs:
     permissions:
       contents: read
     env:
-      # The broker advertises listener as kafka:9092, so the test binary
-      # (running on the runner host, not inside tt_net) redirects to
-      # 'kafka' after its initial connect. /etc/hosts maps kafka ->
-      # 127.0.0.1; keep any injected HTTP proxy out of the loop for it.
-      no_proxy: "localhost,127.0.0.1,::1,kafka"
+      no_proxy: "localhost,127.0.0.1,::1"
+      KAFKA_ADVERTISED_HOST: "127.0.0.1"
+      KAFKA_PUBLISH_ADDRESS: "127.0.0.1"
       CI_CCACHE: "1"
       CCACHE_DIR: ${{ github.workspace }}/tt-media-server/.cache/ccache
     defaults:
@@ -726,21 +724,11 @@ jobs:
           ./build.sh --blaze --kafka
 
       - name: Start dev Kafka broker
-        # KAFKA_PUBLISH_PORT publishes 9092 to the host so the test binary,
-        # which runs on the runner (not inside tt_net), can dial the broker.
-        env:
-          KAFKA_PUBLISH_PORT: "1"
         run: bash cpp_server/scripts/dev-kafka.sh up
-
-      - name: Make 'kafka' resolvable on the runner
-        # advertised.listeners=kafka:9092 means the broker's metadata
-        # response redirects clients to that DNS name after their initial
-        # localhost:9092 connect. Point it at loopback.
-        run: echo "127.0.0.1 kafka" | sudo tee -a /etc/hosts
 
       - name: Run remote_kv_manager_e2e_test
         env:
-          KAFKA_BROKERS: "kafka:9092"
+          KAFKA_BROKERS: "127.0.0.1:9092"
         run: ./cpp_server/build/remote_kv_manager_e2e_test
 
       - name: Show Kafka broker logs on failure

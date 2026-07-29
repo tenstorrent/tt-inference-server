@@ -336,6 +336,12 @@ qwen36_blackhole_vlm_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/blackhole/qwen36",
 )
+training_lora_impl = ImplSpec(
+    impl_id="training_lora",
+    impl_name="training-lora",
+    repo_url="https://github.com/tenstorrent/tt-inference-server",
+    code_path="tt-media-server/tt_model_runners/forge_training_runners/training_lora_runner.py",
+)
 
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "tt_transformers": tt_transformers_impl,
@@ -351,6 +357,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "qwen36_blackhole": qwen36_blackhole_impl,
     "qwen36_blackhole_b8": qwen36_blackhole_b8_impl,
     "qwen36_blackhole_vlm": qwen36_blackhole_vlm_impl,
+    "training_lora": training_lora_impl,
 }
 
 
@@ -1224,6 +1231,7 @@ _CATALOG_FILES = (
     "audio_tts.yaml",
     "embedding.yaml",
     "cnn.yaml",
+    "training.yaml",
 )
 
 spec_templates: List["ModelSpecTemplate"] = [

@@ -92,7 +92,7 @@ TEST(MooncakeKvMigration, WholeSlotRoundTripWithFanout) {
   EXPECT_EQ(*seg, "D");
   EXPECT_EQ(receiver.pendingCount(), 1u);
 
-  ASSERT_TRUE(sender.transferSlot(wholeSlot5(), *seg));
+  ASSERT_TRUE(sender.transferSlot(uuid, wholeSlot5(), *seg));
   ASSERT_TRUE(receiver.drain(uuid));
   EXPECT_EQ(receiver.pendingCount(), 0u);
 
@@ -187,8 +187,8 @@ TEST(MooncakeKvMigration, ConcurrentDisjointMigrationsShareOneMirror) {
   ASSERT_TRUE(segHi.has_value());
   EXPECT_EQ(receiver.pendingCount(), 2u);
 
-  ASSERT_TRUE(sender.transferSlot(lo, *segLo));
-  ASSERT_TRUE(sender.transferSlot(hi, *segHi));
+  ASSERT_TRUE(sender.transferSlot(0xA, lo, *segLo));
+  ASSERT_TRUE(sender.transferSlot(0xB, hi, *segHi));
   ASSERT_TRUE(receiver.drain(0xA));
   ASSERT_TRUE(receiver.drain(0xB));
   EXPECT_EQ(receiver.pendingCount(), 0u);
@@ -246,8 +246,8 @@ TEST(MooncakeKvMigration, DrainFailureKeepsPlanAndRetrySucceeds) {
   const uint64_t uuid = 0xCAFE;
   const auto seg = receiver.prepareMirror(wholeSlot5().dstSlice(), uuid);
   ASSERT_TRUE(seg.has_value());
-  ASSERT_TRUE(
-      sender.transferSlot(wholeSlot5(), *seg));  // bytes now in the mirror
+  ASSERT_TRUE(sender.transferSlot(uuid, wholeSlot5(),
+                                  *seg));  // bytes now in the mirror
 
   // First drain fails on every device write; the plan is KEPT for retry.
   EXPECT_FALSE(receiver.drain(uuid));
@@ -279,8 +279,8 @@ TEST(MooncakeKvMigration, SenderFailsWithoutMirror) {
       buildTable("D", {2, 0}, {2, 1}, {2, 2}, {2, 3}, 0x8000, 0, 0x9000, 1));
   FakeDeviceIo dev;
   MooncakeKvSender sender(senderEngine, dev, prefill, decode, "P", "D");
-  EXPECT_FALSE(
-      sender.transferSlot(wholeSlot5(), "D"));  // no segment registered
+  EXPECT_FALSE(sender.transferSlot(0x9000, wholeSlot5(),
+                                   "D"));  // no segment registered
 }
 
 // A request with a gap is rejected wholesale: prepareMirror must not migrate
@@ -348,7 +348,7 @@ TEST(MooncakeKvMigration, PositionShiftRoundTrip) {
   const uint64_t uuid = 0x5417;
   const auto seg = receiver.prepareMirror(req.dstSlice(), uuid);
   ASSERT_TRUE(seg.has_value());
-  ASSERT_TRUE(sender.transferSlot(req, *seg));
+  ASSERT_TRUE(sender.transferSlot(uuid, req, *seg));
   ASSERT_TRUE(receiver.drain(uuid));
 
   // dst chunk ordinal k holds src chunk ordinal k: dst pos 64<-src 0,
@@ -405,7 +405,7 @@ TEST(MooncakeKvMigration, CrossSlotMigration) {
   const uint64_t uuid = 0x3505;
   const auto seg = receiver.prepareMirror(req.dstSlice(), uuid);
   ASSERT_TRUE(seg.has_value());
-  ASSERT_TRUE(sender.transferSlot(req, *seg));
+  ASSERT_TRUE(sender.transferSlot(uuid, req, *seg));
   ASSERT_TRUE(receiver.drain(uuid));
 
   for (uint32_t p = 0; p < 128; p += 32) {
@@ -437,7 +437,8 @@ TEST(MooncakeKvMigration, SenderRejectsChunkCountMismatch) {
   const MigrationRequest bad = asymmetricReq(5, 5, 0, 2, 0, 64, 0, 32);
   const auto seg = receiver.prepareMirror(bad.dstSlice(), 0x9001);
   ASSERT_TRUE(seg.has_value());  // dst slice alone is satisfiable...
-  EXPECT_FALSE(sender.transferSlot(bad, *seg));  // ...but the pairing is not.
+  EXPECT_FALSE(sender.transferSlot(0x9001, bad,
+                                   *seg));  // ...but the pairing is not.
 }
 
 // Draining an unknown migration is a clean failure.

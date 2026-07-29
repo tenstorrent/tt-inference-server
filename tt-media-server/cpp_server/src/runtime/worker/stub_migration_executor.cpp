@@ -14,8 +14,8 @@ StubMigrationExecutor::StubMigrationExecutor(
 void StubMigrationExecutor::execute(uint64_t migrationId,
                                     const tt::services::MigrationRequest& req,
                                     DoneCallback onDone) {
-  TT_LOG_DEBUG(
-      "[StubMigrationExecutor] migration_id={} src_slot={} dst_slot={} "
+  TT_LOG_INFO(
+      "[DryRunMigrationExecutor] migration_id={} src_slot={} dst_slot={} "
       "layers=[{}..{}) src_pos=[{}..{}) dst_pos=[{}..{}) -> {}",
       migrationId, req.src_slot, req.dst_slot, req.layer_begin, req.layer_end,
       req.src_position_begin, req.src_position_end, req.dst_position_begin,

@@ -180,7 +180,12 @@ process, `--role prefill|decode`. The transport-lib pieces it composes:
   socket resolve rejects an empty handoff (no silent placeholder push). Device
   map is **required** when a host's table spans multiple meshes — the
   `& 0xFFFF` placeholder collides across meshes and is refused once a non-empty
-  map is in play. Until the model runner pushes the map itself:
+  map is in play. At open, `buildDeviceIo` resolves each entry's ASIC
+  `umd_chip_id` to the local visible-device index via a one-time enumeration
+  (`enumerateUmdDevicesByUniqueId`); an id matching no visible chip is a clean
+  fail (nothing opened), and a KV location whose NoC channel exceeds the opened
+  chip's DRAM-channel count is rejected as a table/device-map mismatch. Until
+  the model runner pushes the map itself:
 
   ```bash
   mooncake_kv_migration_worker ... --table /tmp/local.pb --engine-handoff-port 18700

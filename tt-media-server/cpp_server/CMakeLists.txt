@@ -1638,7 +1638,7 @@ if(KAFKA_ENABLED)
     # (transport_lib) with the Kafka request/ack loop (kv_migration_worker).
     # Gated on `transfer_engine` since the Mooncake transport is what makes
     # the bring-up meaningful; without it the binary would have nothing to
-    # publish/discover and would only exercise the stub executor path.
+    # publish/discover and would only exercise dry-run request logging.
     if(TARGET transfer_engine)
         # Unified Kafka->migration worker: one --role prefill|decode binary that
         # drives the real data plane on a Kafka trigger. Compiles

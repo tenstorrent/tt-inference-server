@@ -50,6 +50,21 @@
         },
         {
             "models": [
+                "mistral_small_24b"
+            ],
+            "devices": [
+                "blackhole_galaxy"
+            ],
+            "test_cases": [
+                {
+                    "template": "VLLMParamConformanceTest",
+                    "enabled": true,
+                    "description": "vLLM chat/completions parameter conformance"
+                }
+            ]
+        },
+        {
+            "models": [
                 "qwen3_32b"
             ],
             "devices": [
