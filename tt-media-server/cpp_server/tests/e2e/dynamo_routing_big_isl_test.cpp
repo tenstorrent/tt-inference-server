@@ -47,9 +47,18 @@ constexpr int K_BIG_ISL_WORD_COUNT = 2000;
 constexpr int K_LOG_ASSERTION_TIMEOUT_SEC = 30;
 constexpr int K_LOG_POLL_INTERVAL_MS = 500;
 
-std::string readFile(const std::string& path) {
-  std::ifstream in(path);
+// Byte length of path, or 0 if unreadable. Used to ignore log lines written
+// before the request under test (skipping warmup).
+std::streamoff fileSize(const std::string& path) {
+  std::ifstream in(path, std::ios::binary | std::ios::ate);
+  if (!in) return 0;
+  return in.tellg();
+}
+
+std::string readFileFrom(const std::string& path, std::streamoff offset) {
+  std::ifstream in(path, std::ios::binary);
   if (!in) return {};
+  in.seekg(offset);
   std::ostringstream ss;
   ss << in.rdbuf();
   return ss.str();
@@ -168,6 +177,9 @@ std::string DynamoRoutingBigIslTest::decodeLog;
 // ---------------------------------------------------------------------------
 
 TEST_F(DynamoRoutingBigIslTest, BigIsl_RoutesPrefillThenDecode) {
+  const std::streamoff prefillLogBase = fileSize(prefillLog);
+  const std::streamoff decodeLogBase = fileSize(decodeLog);
+
   const std::string prompt =
       tt::test::generatePromptWithApproxTokens(K_BIG_ISL_WORD_COUNT);
 
@@ -188,7 +200,8 @@ TEST_F(DynamoRoutingBigIslTest, BigIsl_RoutesPrefillThenDecode) {
   std::optional<uint32_t> taskId;
   ASSERT_TRUE(waitFor(
       [&] {
-        taskId = findPrefillFirstTaskId(readFile(prefillLog));
+        taskId =
+            findPrefillFirstTaskId(readFileFrom(prefillLog, prefillLogBase));
         return taskId.has_value();
       },
       K_LOG_ASSERTION_TIMEOUT_SEC, K_LOG_POLL_INTERVAL_MS))
@@ -200,7 +213,10 @@ TEST_F(DynamoRoutingBigIslTest, BigIsl_RoutesPrefillThenDecode) {
 
   // Confirm decode is receiving the slot reservation request.
   ASSERT_TRUE(waitFor(
-      [&] { return findSlotReservationRequest(readFile(decodeLog), *taskId); },
+      [&] {
+        return findSlotReservationRequest(
+            readFileFrom(decodeLog, decodeLogBase), *taskId);
+      },
       K_LOG_ASSERTION_TIMEOUT_SEC, K_LOG_POLL_INTERVAL_MS))
       << "decode worker never logged 'Slot reservation request taskId="
       << *taskId
@@ -213,7 +229,8 @@ TEST_F(DynamoRoutingBigIslTest, BigIsl_RoutesPrefillThenDecode) {
   std::optional<SlotReservationGrantedLog> granted;
   ASSERT_TRUE(waitFor(
       [&] {
-        granted = findSlotReservationGranted(readFile(prefillLog), *taskId);
+        granted = findSlotReservationGranted(
+            readFileFrom(prefillLog, prefillLogBase), *taskId);
         return granted.has_value();
       },
       K_LOG_ASSERTION_TIMEOUT_SEC, K_LOG_POLL_INTERVAL_MS))
@@ -235,7 +252,8 @@ TEST_F(DynamoRoutingBigIslTest, BigIsl_RoutesPrefillThenDecode) {
   std::optional<DecodeSessionReleaseLog> release;
   ASSERT_TRUE(waitFor(
       [&] {
-        release = findDecodeSessionReleased(readFile(decodeLog));
+        release =
+            findDecodeSessionReleased(readFileFrom(decodeLog, decodeLogBase));
         return release.has_value();
       },
       K_LOG_ASSERTION_TIMEOUT_SEC, K_LOG_POLL_INTERVAL_MS))
