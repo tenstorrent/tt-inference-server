@@ -387,7 +387,11 @@ and the UMD local index equals the table's chip id.
 **not** need a device map. If it byte-mismatches while host mode passes, supply
 one: a file with `mesh chip umd_chip_id` per line, via `DEVICE_MAP=<file>` (or
 `--device-map`). Resolving `umd_chip_id` (ASIC unique id) is a
-CreateDevice-capable step; get it from the engine/tooling for your cluster.
+CreateDevice-capable step; get it from the engine/tooling for your cluster. At
+open, the worker enumerates the visible chips once and maps each `umd_chip_id`
+to its local device index; a value that is a plain local index (not the ASIC
+unique id) or names a chip not visible on the host fails to open rather than
+silently addressing the wrong chip.
 
 **Discovery is NOT required** — the static `--peer-control` list is the control
 endpoint interface; discovery is only its production replacement.
@@ -574,11 +578,15 @@ python3 scripts/migration_cli.py produce --migration-id 702 \
 The worker's `--device-map` uses the same `mesh chip umd_chip_id` file as §9. It
 is **required on the decode side when that host's table spans multiple meshes**:
 the placeholder `chip = chip_id` aliases meshes onto the same physical chips, so
-a multi-layer migration silently overwrites itself — and the worker has no
-self-check to catch it (only `kv_seed_verify` would). Prefill is typically
-single-mesh → no map. Pass the **same** map to the decode worker and to
-`kv_seed_verify --mode verify`. Build it by listing the host's `(mesh, chip)`
-nodes from the table and assigning each a distinct local UMD chip.
+a multi-layer migration silently overwrites itself. The worker's channel-range
+self-check catches a table/device-map mismatch only when a KV location's NoC
+channel exceeds the opened chip's DRAM-channel count; it does **not** catch mesh
+aliasing (only `kv_seed_verify` would). Prefill is typically single-mesh → no
+map. Pass the **same** map to the decode worker and to `kv_seed_verify --mode
+verify`. Build it by listing the host's `(mesh, chip)` nodes from the table and
+giving each its chip's 64-bit ASIC `umd_chip_id` (the same value as §9 /
+`print_local_device_map`), which the worker resolves to the local UMD device
+index at open — do **not** hand-assign a small local index.
 
 ### 13.6 Worker CLI reference
 

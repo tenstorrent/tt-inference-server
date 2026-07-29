@@ -74,11 +74,12 @@ std::size_t MooncakeKvReceiver::pendingCount() const {
 }
 
 std::optional<std::string> MooncakeKvReceiver::prepareMirror(
-    const KvSlice& slice, uint64_t uuid) {
+    const KvSlice& slice, uint64_t kafkaRequestId) {
   if (!registered_) {
     TT_LOG_ERROR(
-        "[MooncakeKvReceiver] prepareMirror(uuid={}): mirror not registered",
-        uuid);
+        "[MooncakeKvReceiver] prepareMirror(kafka_request_id={}): mirror not "
+        "registered",
+        kafkaRequestId);
     return std::nullopt;
   }
 
@@ -87,20 +88,21 @@ std::optional<std::string> MooncakeKvReceiver::prepareMirror(
   // and ACK success, leaving stale KV at the gaps on decode.
   if (const auto missing = firstUnresolvedChunk(*local_table_, slice)) {
     TT_LOG_ERROR(
-        "[MooncakeKvReceiver] prepareMirror(uuid={}): requested chunk "
-        "(slot={}, layer={}, pos={}) absent from table; rejecting whole "
+        "[MooncakeKvReceiver] prepareMirror(kafka_request_id={}): requested "
+        "chunk (slot={}, layer={}, pos={}) absent from table; rejecting whole "
         "request (layers=[{},{}), pos=[{},{}))",
-        uuid, slice.slot, missing->layer, missing->position, slice.layer_begin,
-        slice.layer_end, slice.position_begin, slice.position_end);
+        kafkaRequestId, slice.slot, missing->layer, missing->position,
+        slice.layer_begin, slice.layer_end, slice.position_begin,
+        slice.position_end);
     return std::nullopt;
   }
 
   HostKvPlan plan = buildHostPlan(*local_table_, host_, slice);
   if (plan.empty()) {
     TT_LOG_ERROR(
-        "[MooncakeKvReceiver] prepareMirror(uuid={}): no local chunks for "
-        "request (slot={}, layers=[{},{}), pos=[{},{}))",
-        uuid, slice.slot, slice.layer_begin, slice.layer_end,
+        "[MooncakeKvReceiver] prepareMirror(kafka_request_id={}): no local "
+        "chunks for request (slot={}, layers=[{},{}), pos=[{},{}))",
+        kafkaRequestId, slice.slot, slice.layer_begin, slice.layer_end,
         slice.position_begin, slice.position_end);
     return std::nullopt;
   }
@@ -111,9 +113,9 @@ std::optional<std::string> MooncakeKvReceiver::prepareMirror(
   for (const KvChunkLocation& loc : plan.locations) {
     if (!mirror_.offsetOf(loc.device, loc.noc_addr)) {
       TT_LOG_ERROR(
-          "[MooncakeKvReceiver] prepareMirror(uuid={}): chunk device={:#x} "
-          "noc={:#x} outside registered mirror",
-          uuid, loc.device, loc.noc_addr);
+          "[MooncakeKvReceiver] prepareMirror(kafka_request_id={}): chunk "
+          "device={:#x} noc={:#x} outside registered mirror",
+          kafkaRequestId, loc.device, loc.noc_addr);
       return std::nullopt;
     }
   }
@@ -121,31 +123,33 @@ std::optional<std::string> MooncakeKvReceiver::prepareMirror(
   const std::size_t n = plan.chunks.size();
   {
     std::lock_guard<std::mutex> lock(pendingMutex_);
-    // Reject a duplicate uuid: emplace below would not overwrite, so the stale
-    // Pending would linger and the second drain would be lost.
-    if (pending_.find(uuid) != pending_.end()) {
+    // Reject a duplicate request: emplace below would not overwrite, so the
+    // stale Pending would linger and the second drain would be lost.
+    if (pending_.find(kafkaRequestId) != pending_.end()) {
       TT_LOG_ERROR(
-          "[MooncakeKvReceiver] prepareMirror(uuid={}): already prepared",
-          uuid);
+          "[MooncakeKvReceiver] prepareMirror(kafka_request_id={}): already "
+          "prepared",
+          kafkaRequestId);
       return std::nullopt;
     }
-    pending_.emplace(uuid, std::move(plan));
+    pending_.emplace(kafkaRequestId, std::move(plan));
   }
   TT_LOG_INFO(
-      "[MooncakeKvReceiver] prepareMirror(uuid={}) ready: {} chunks, "
-      "segment={}",
-      uuid, n, advertised_segment_name_);
+      "[MooncakeKvReceiver] prepareMirror(kafka_request_id={}) ready: {} "
+      "chunks, segment={}",
+      kafkaRequestId, n, advertised_segment_name_);
   return advertised_segment_name_;
 }
 
-bool MooncakeKvReceiver::drain(uint64_t uuid) {
+bool MooncakeKvReceiver::drain(uint64_t kafkaRequestId) {
   HostKvPlan plan;
   {
     std::lock_guard<std::mutex> lock(pendingMutex_);
-    const auto it = pending_.find(uuid);
+    const auto it = pending_.find(kafkaRequestId);
     if (it == pending_.end()) {
-      TT_LOG_ERROR("[MooncakeKvReceiver] drain(uuid={}): no prepared mirror",
-                   uuid);
+      TT_LOG_ERROR(
+          "[MooncakeKvReceiver] drain(kafka_request_id={}): no prepared mirror",
+          kafkaRequestId);
       return false;
     }
     plan = it->second;
@@ -160,9 +164,9 @@ bool MooncakeKvReceiver::drain(uint64_t uuid) {
       const auto offset = mirror_.offsetOf(target.device, target.noc_addr);
       if (!offset) {
         TT_LOG_ERROR(
-            "[MooncakeKvReceiver] drain(uuid={}): no mirror offset for "
-            "device={:#x} noc={:#x}",
-            uuid, target.device, target.noc_addr);
+            "[MooncakeKvReceiver] drain(kafka_request_id={}): no mirror offset "
+            "for device={:#x} noc={:#x}",
+            kafkaRequestId, target.device, target.noc_addr);
         ok = false;
         continue;
       }
@@ -170,15 +174,15 @@ bool MooncakeKvReceiver::drain(uint64_t uuid) {
       if (!device_.write(target.device, target.noc_addr, src,
                          target.size_bytes)) {
         TT_LOG_ERROR(
-            "[MooncakeKvReceiver] drain(uuid={}): device write failed "
-            "device={:#x} noc={:#x}",
-            uuid, target.device, target.noc_addr);
+            "[MooncakeKvReceiver] drain(kafka_request_id={}): device write "
+            "failed device={:#x} noc={:#x}",
+            kafkaRequestId, target.device, target.noc_addr);
         ok = false;
       }
     }
   }
 
-  // On success, forget the uuid. On failure, KEEP the per-uuid plan: the sender
+  // On success, forget the request. On failure, KEEP its plan: the sender
   // already WROTE the bytes into the persistent mirror, so a re-sent DoneMarker
   // can re-drive the same drain with no re-transfer (forward recovery). The
   // shared mirror segment stays registered either way. drain() is NOT atomic
@@ -187,10 +191,10 @@ bool MooncakeKvReceiver::drain(uint64_t uuid) {
   // succeeds (see README "Contract for a higher-layer caller").
   if (ok) {
     std::lock_guard<std::mutex> lock(pendingMutex_);
-    pending_.erase(uuid);
+    pending_.erase(kafkaRequestId);
   }
-  TT_LOG_INFO("[MooncakeKvReceiver] drain(uuid={}) -> {}", uuid,
-              ok ? "OK" : "PARTIAL (retryable)");
+  TT_LOG_INFO("[MooncakeKvReceiver] drain(kafka_request_id={}) -> {}",
+              kafkaRequestId, ok ? "OK" : "PARTIAL (retryable)");
   return ok;
 }
 

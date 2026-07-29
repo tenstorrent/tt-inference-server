@@ -457,7 +457,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Queries: returning-user requests (multiple 'user' messages) checked against the prefix cache. Hits: subset that reused an existing KV cache.",
+      "description": "Queries: total prompt tokens (block-aligned) that entered the prefix-cache lookup. Hits: the subset of those tokens served from an existing session's KV cache. Per-token, matching vLLM's vllm:prefix_cache_{queries,hits}_total.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -631,6 +631,123 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
+      "description": "Per-second rate of prompt tokens entering the prefix-cache lookup (Query tokens/s) and the subset reused from an existing KV cache (Hit tokens/s), averaged over 5m.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never"
+          },
+          "unit": "cps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 14
+      },
+      "id": 413,
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "rate(tt_prefix_cache_queries_total{role=\"decode\"}[5m])",
+          "legendFormat": "Query tokens/s"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "rate(tt_prefix_cache_hits_total{role=\"decode\"}[5m])",
+          "legendFormat": "Hit tokens/s"
+        }
+      ],
+      "title": "Prefix Cache Throughput",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Per-token prefix-cache hit rate: rate(tt_prefix_cache_hits_total[5m]) / rate(tt_prefix_cache_queries_total[5m]). This is the DECODE role, which gates the overall prefix-cache SLA (>=90%); prefill is informational. Shows gaps when there is no prefix-cache traffic.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never"
+          },
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 90
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 14
+      },
+      "id": 414,
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "100 * rate(tt_prefix_cache_hits_total{role=\"decode\"}[5m]) / rate(tt_prefix_cache_queries_total{role=\"decode\"}[5m])",
+          "legendFormat": "Hit Rate"
+        }
+      ],
+      "title": "Prefix Cache Hit Rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "description": "Committed KV-cache blocks occupied by each slot (logical prefix-cache view: 1 key block + remaining blocks, full blocks only). Refreshed when a session's prefix is registered at turn end; the series is removed when the slot is deallocated. Each line is one slot.",
       "fieldConfig": {
         "defaults": {
@@ -653,7 +770,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 14
+        "y": 22
       },
       "id": 411,
       "options": {
@@ -700,7 +817,7 @@
         "h": 12,
         "w": 24,
         "x": 0,
-        "y": 22
+        "y": 30
       },
       "id": 412,
       "options": {
@@ -2874,5 +2991,5 @@
   "timezone": "browser",
   "title": "TT Inference Server \u2014 Decode (disaggregated)",
   "uid": "tt-inference-server-decode",
-  "version": 3
+  "version": 4
 }

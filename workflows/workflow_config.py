@@ -56,19 +56,18 @@ class WorkflowConfig:
 
 WORKFLOW_BENCHMARKS_CONFIG = WorkflowConfig(
     workflow_type=WorkflowType.BENCHMARKS,
-    run_script_path=get_repo_root_path() / "tt-inference-server-v2" / "run.py",
+    run_script_path=get_repo_root_path() / "run_workflows.py",
     workflow_run_script_venv_type=WorkflowVenvType.BENCHMARKS_RUN_SCRIPT,
 )
 
 WORKFLOW_EVALS_CONFIG = WorkflowConfig(
     workflow_type=WorkflowType.EVALS,
-    run_script_path=get_repo_root_path() / "tt-inference-server-v2" / "run.py",
+    run_script_path=get_repo_root_path() / "run_workflows.py",
     workflow_run_script_venv_type=WorkflowVenvType.EVALS_RUN_SCRIPT,
 )
 WORKFLOW_STRESS_TESTS_CONFIG = WorkflowConfig(
     workflow_type=WorkflowType.STRESS_TESTS,
     run_script_path=get_repo_root_path()
-    / "tt-inference-server-v2"
     / "test_module"
     / "stress_tests"
     / "run_stress_tests.py",
@@ -76,7 +75,7 @@ WORKFLOW_STRESS_TESTS_CONFIG = WorkflowConfig(
 )
 WORKFLOW_SPEC_TESTS_CONFIG = WorkflowConfig(
     workflow_type=WorkflowType.SPEC_TESTS,
-    run_script_path=get_repo_root_path() / "tt-inference-server-v2" / "run.py",
+    run_script_path=get_repo_root_path() / "run_workflows.py",
     workflow_run_script_venv_type=WorkflowVenvType.TESTS_RUN_SCRIPT,
 )
 WORKFLOW_SERVER_CONFIG = WorkflowConfig(

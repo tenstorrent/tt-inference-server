@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+#
+# Dependencies for the PREFIX_CACHE workflow venv (Python 3.11).
+# Used by direct invocations of run_workflows.py when
+# --prefix-cache is set.
+#
+# The prefix-cache sweep is aiperf-driven, so it shares the exact aiperf +
+# v2-base dependency set with the standard `--tools aiperf` benchmark. That
+# set is the single source of truth in llm-aiperf.txt; we include it here
+# and add any prefix-cache-only deps below (none today). Keeping it as an
+# include means changes to the prefix-cache list never silently alter the
+# standalone aiperf benchmark venv, and vice versa.
+
+-r llm-aiperf.txt

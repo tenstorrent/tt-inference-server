@@ -39,7 +39,7 @@ def _import_benchmark_config(monkeypatch):
     # as True (including "0"), so we must *unset* the env var.
     monkeypatch.delenv("ONLY_BENCHMARK_TARGETS", raising=False)
 
-    module_name = "benchmarking.benchmark_config"
+    module_name = "reference_config.benchmarking.benchmark_config"
     if module_name in sys.modules:
         return importlib.reload(sys.modules[module_name])
     return importlib.import_module(module_name)

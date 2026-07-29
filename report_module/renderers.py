@@ -1,0 +1,405 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+
+
+from __future__ import annotations
+
+import logging
+import re
+from typing import Any, Callable, Dict, List, Mapping, Sequence
+
+from report_module.display import (
+    DISPLAY_NAMES,
+    FOOTNOTES,
+    decimal_places,
+    display_name,
+    target_checks_header,
+)
+from report_module.formatting import format_value
+from report_module.markdown_table import build_markdown_table
+from report_module.schema import Block
+from report_module.status import glyph_for_label
+
+logger = logging.getLogger(__name__)
+
+RendererFn = Callable[[Block, Mapping[str, Any]], str]
+
+HIDDEN_COLUMNS = frozenset(
+    {
+        "kind",
+        "model",
+        "device",
+        "timestamp",
+        "test_name",
+        "description",
+        "elapsed_seconds",
+        "logs",
+    }
+)
+
+GENERIC_KINDS: tuple[str, ...] = (
+    "spec_tests",
+    "stress_tests",
+)
+
+# Per-kind columns hidden on top of HIDDEN_COLUMNS. For test blocks the
+# pass/fail wrapper fields duplicate the 🧪 Test Results summary table, so we
+# drop them here and let the block table carry only the metrics.
+_KIND_EXTRA_HIDDEN: Dict[str, frozenset] = {
+    kind: frozenset({"status", "success", "attempts"}) for kind in GENERIC_KINDS
+}
+
+
+def _hidden_columns(kind: str) -> frozenset:
+    return HIDDEN_COLUMNS | _KIND_EXTRA_HIDDEN.get(kind, frozenset())
+
+
+EVALS_KIND = "evals"
+
+BENCHMARKS_KIND = "benchmarks"
+
+EVALS_METHODOLOGY_NOTE = (
+    "Note: The ratio to published scores defines if eval ran roughly correctly, "
+    "as the exact methodology of the model publisher cannot always be reproduced. "
+    "For this reason the accuracy check is based first on being equivalent to the "
+    "GPU reference within a +/- tolerance. If a value GPU reference is not "
+    "available, the accuracy check is based on the direct ratio to the published "
+    "score."
+)
+
+BENCHMARK_TIER_NOTE = (
+    "Note: The Target Check column reflects only the strictest `target` tier. "
+    "The Target Checks table grades three tiers — functional, complete, and "
+    "target — from most to least lenient. Acceptance criteria pass a benchmark "
+    "when any single tier meets all of its checks."
+)
+
+_REGISTRY: Dict[str, RendererFn] = {}
+
+
+def register(kind: str) -> Callable[[RendererFn], RendererFn]:
+    """Decorator used by renderer functions to self-register at import time."""
+
+    def decorator(fn: RendererFn) -> RendererFn:
+        if kind in _REGISTRY:
+            raise ValueError(f"Renderer for kind '{kind}' is already registered")
+        _REGISTRY[kind] = fn
+        return fn
+
+    return decorator
+
+
+def get_renderer(kind: str) -> RendererFn:
+    """Return the renderer for ``kind``, falling back to a generic table."""
+    return _REGISTRY.get(kind, render_generic_table)
+
+
+def registered_kinds() -> tuple[str, ...]:
+    return tuple(sorted(_REGISTRY))
+
+
+def _extract_records(block: Block) -> List[Dict[str, Any]]:
+    data = block.data
+    if isinstance(data, Sequence) and not isinstance(data, (str, bytes)):
+        candidate: Sequence[Any] = data
+    elif isinstance(data, Mapping):
+        raw = data.get("records")
+        if isinstance(raw, Sequence) and not isinstance(raw, (str, bytes)):
+            candidate = raw
+        elif data and all(isinstance(v, Mapping) for v in data.values()):
+            # dict-of-dicts: surface the outer key as a "name" column so
+            # callers can pass shapes like {"metric_a": {...}, "metric_b": {...}}
+            # without flattening.
+            return [{"name": str(k), **dict(v)} for k, v in data.items()]
+        else:
+            # Flat dict: render as a single pivoted record.
+            return [dict(data)]
+    else:
+        return []
+
+    rows: List[Dict[str, Any]] = []
+    for item in candidate:
+        if isinstance(item, Mapping):
+            rows.append(dict(item))
+    return rows
+
+
+def _resolve_model_device(
+    block: Block, metadata: Mapping[str, Any], records: Sequence[Mapping[str, Any]]
+) -> tuple[str, str]:
+    data = block.data if isinstance(block.data, Mapping) else {}
+    targets = block.targets if isinstance(block.targets, Mapping) else {}
+    model = str(
+        data.get("model") or targets.get("model") or metadata.get("model_name") or ""
+    )
+    device = str(
+        data.get("device") or targets.get("device") or metadata.get("device") or ""
+    )
+    if (not model or not device) and records:
+        first = records[0]
+        if not model:
+            model = str(first.get("model") or "")
+        if not device:
+            device = str(first.get("device") or "")
+    return model, device
+
+
+def _heading(
+    kind: str,
+    model: str,
+    device: str,
+    title_override: str = "",
+    task_type: str = "",
+) -> str:
+    if title_override:
+        label = title_override
+    elif task_type and kind:
+        label = (
+            f"{task_type.replace('_', ' ').title()} {kind.replace('_', ' ').title()}"
+        )
+    else:
+        label = kind.replace("_", " ").title()
+    suffix_bits = [bit for bit in (model, device) if bit]
+    if not suffix_bits:
+        return f"### {label}"
+    return f"### {label} for {' on '.join(suffix_bits)}"
+
+
+def _ordered_display_columns(
+    records: Sequence[Mapping[str, Any]], hidden: frozenset = HIDDEN_COLUMNS
+) -> List[str]:
+    seen: Dict[str, None] = {}
+    for record in records:
+        for key in record.keys():
+            if key in hidden or key in seen:
+                continue
+            seen[key] = None
+    columns = list(seen.keys())
+    return [col for col in columns if not _column_is_empty(col, records)]
+
+
+def _column_is_empty(column: str, records: Sequence[Mapping[str, Any]]) -> bool:
+    for record in records:
+        if column not in record:
+            continue
+        value = record[column]
+        if value is None:
+            continue
+        if isinstance(value, (list, tuple, dict, set)) and not value:
+            continue
+        if isinstance(value, str) and not value:
+            continue
+        return False
+    return True
+
+
+PIVOT_FIELD_HEADER = "**field**"
+PIVOT_VALUE_HEADER = "**value**"
+
+_CHECK_COLUMN_SUFFIX = "_check"
+_CHECK_INT_TO_LABEL: Dict[int, str] = {1: "NA", 2: "PASS", 3: "FAIL"}
+
+
+def _format_cell(column: str, value: Any) -> str:
+    if (
+        column.endswith(_CHECK_COLUMN_SUFFIX)
+        and isinstance(value, int)
+        and not isinstance(value, bool)
+        and value in _CHECK_INT_TO_LABEL
+    ):
+        label = _CHECK_INT_TO_LABEL[value]
+        emoji = glyph_for_label(label)
+        return f"{emoji} {label}" if emoji else label
+    if column == "status" and isinstance(value, str) and value:
+        label = value.upper()
+        emoji = glyph_for_label(value)
+        return f"{emoji} {label}" if emoji else label
+    places = decimal_places(column)
+    if places is not None and isinstance(value, float) and value == value:
+        return f"{value:.{places}f}"
+    return format_value(value)
+
+
+def _pivot_single_record(
+    record: Mapping[str, Any], columns: Sequence[str]
+) -> List[Dict[str, str]]:
+    """Transpose a single record into a two-column field/value table.
+
+    Dict keys double as column headers, so they're bolded markdown here
+    to make the header row stand out.
+    """
+    return [
+        {
+            PIVOT_FIELD_HEADER: display_name(col),
+            PIVOT_VALUE_HEADER: _format_cell(col, record.get(col)),
+        }
+        for col in columns
+    ]
+
+
+def _build_table(
+    records: Sequence[Mapping[str, Any]],
+    header_fn: Callable[[str], str] = display_name,
+    hidden: frozenset = HIDDEN_COLUMNS,
+) -> str:
+    columns = _ordered_display_columns(records, hidden)
+    if not columns:
+        return ""
+    display_rows = [
+        {header_fn(col): _format_cell(col, record.get(col)) for col in columns}
+        for record in records
+    ]
+    return build_markdown_table(display_rows)
+
+
+_TARGET_CHECKS_KEY = "target_checks"
+
+_SNAKE_CASE = re.compile(r"^[a-z0-9_]+$")
+
+
+def _humanize_key(key: str) -> str:
+    """Turn ``"summary_stats"`` into ``"Summary Stats"`` while leaving
+    already-formatted keys (``"TTFT vs. Context"``) untouched.
+
+    Prefers an explicit :mod:`display` mapping when one exists"""
+    if key in DISPLAY_NAMES:
+        return display_name(key)
+    if _SNAKE_CASE.match(key):
+        return key.replace("_", " ").title()
+    return key
+
+
+def _is_subtable_value(value: Any) -> bool:
+    """Whether a field value should render as its own sub-table.
+
+    Mappings (flat or dict-of-dicts) and lists of dicts qualify;
+    scalars and lists of primitives stay inline in the parent row.
+    """
+    if isinstance(value, Mapping):
+        return bool(value)
+    if isinstance(value, (list, tuple)) and value:
+        return any(isinstance(item, Mapping) for item in value)
+    return False
+
+
+def render_generic_table(block: Block, metadata: Mapping[str, Any]) -> str:
+    """Render a block as a heading plus one or more markdown tables.
+
+    - Multi-record blocks render as a single multi-row table (the
+      existing behavior for grouped records like several ``evals``).
+    - Single-record blocks split the record's fields: scalar fields
+      collapse into the main pivot table; fields whose value is a dict
+      or list-of-dicts become their own H4 sub-table, in insertion order.
+    """
+    records = _extract_records(block)
+    if not records:
+        return ""
+
+    model, device = _resolve_model_device(block, metadata, records)
+    heading = _heading(
+        block.kind, model, device, block.title or "", block.task_type or ""
+    )
+    footnote = FOOTNOTES.get(block.kind)
+    hidden = _hidden_columns(block.kind)
+
+    if len(records) > 1:
+        table = _build_table(records, hidden=hidden)
+        if not table:
+            return ""
+        parts = [heading, table]
+        if footnote:
+            parts.append(footnote)
+        return "\n\n".join(parts)
+
+    record = records[0]
+    scalar_fields: Dict[str, Any] = {}
+    nested_fields: List[tuple[str, Any]] = []
+    for key, value in record.items():
+        if key in hidden:
+            continue
+        if _is_subtable_value(value):
+            nested_fields.append((key, value))
+        else:
+            scalar_fields[key] = value
+
+    parts: List[str] = [heading]
+    if scalar_fields:
+        scalar_table = _build_table([scalar_fields], hidden=hidden)
+        if scalar_table:
+            parts.append(scalar_table)
+
+    for key, value in nested_fields:
+        sub_records = _extract_records(Block(kind=key, data=value))
+        if not sub_records:
+            continue
+        header_fn = target_checks_header if key == _TARGET_CHECKS_KEY else display_name
+        sub_table = _build_table(sub_records, header_fn=header_fn)
+        if not sub_table:
+            continue
+        parts.append(f"#### {_humanize_key(key)}\n\n{sub_table}")
+
+    if len(parts) <= 1:
+        return ""
+    if footnote:
+        parts.append(footnote)
+    return "\n\n".join(parts)
+
+
+@register(EVALS_KIND)
+def render_evals(block: Block, metadata: Mapping[str, Any]) -> str:
+    """Render eval results as one table followed by the methodology note."""
+    records = _extract_records(block)
+    if not records:
+        return ""
+    model, device = _resolve_model_device(block, metadata, records)
+    heading = _heading(
+        block.kind, model, device, block.title or "", block.task_type or ""
+    )
+    table = _build_table(records)
+    if not table:
+        return ""
+    return f"{heading}\n\n{table}\n\n{EVALS_METHODOLOGY_NOTE}"
+
+
+def _has_target_checks(block: Block) -> bool:
+    """Whether the block carries a tiered ``target_checks`` mapping.
+
+    Handles both shapes: top-level (audio sweep, run summaries) and nested
+    one level under a section dict (image/video/cnn/etc. "Benchmarks").
+    """
+    data = block.data
+    if not isinstance(data, Mapping):
+        return False
+    if isinstance(data.get(_TARGET_CHECKS_KEY), Mapping):
+        return True
+    return any(
+        isinstance(value, Mapping)
+        and isinstance(value.get(_TARGET_CHECKS_KEY), Mapping)
+        for value in data.values()
+    )
+
+
+@register(BENCHMARKS_KIND)
+def render_benchmarks(block: Block, metadata: Mapping[str, Any]) -> str:
+    """Render a benchmark block, appending the tier note when tiered
+    ``target_checks`` are present (LLM benchmarks without tiers get none)."""
+    table = render_generic_table(block, metadata)
+    if not table:
+        return ""
+    if _has_target_checks(block):
+        return f"{table}\n\n{BENCHMARK_TIER_NOTE}"
+    return table
+
+
+for _kind in GENERIC_KINDS:
+    register(_kind)(render_generic_table)
+
+
+# Side-effect import: register the AIPerf prefix-cache renderer so any
+# report_module consumer picks it up without importing the submodule
+# explicitly. Placed after GENERIC_KINDS so all decorators from this file
+# run first. The spec-decode renderer now lives in ``llm_module.parsers``
+# and self-registers when that package is imported.
+from report_module import prefix_cache_renderer as _prefix_cache_renderer  # noqa: E402,F401
+from report_module import prefill_decode_renderer as _prefill_decode_renderer  # noqa: E402,F401

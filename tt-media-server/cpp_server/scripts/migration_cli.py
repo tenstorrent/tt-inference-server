@@ -25,7 +25,7 @@ Examples:
 
 Configuration:
     --brokers <host:port>     Override the bootstrap address
-    KAFKA_BROKERS             Same, via env (default: kafka:9092)
+    KAFKA_BROKERS             Same, via env (default: 10.32.89.65:9092)
 """
 
 from __future__ import annotations
@@ -49,7 +49,7 @@ from confluent_kafka import (
 from confluent_kafka.admin import AdminClient, NewTopic
 
 
-DEFAULT_BROKERS = os.environ.get("KAFKA_BROKERS", "kafka:9092")
+DEFAULT_BROKERS = os.environ.get("KAFKA_BROKERS", "10.32.89.65:9092")
 REQUEST_TOPIC = "kv-migration-requests"
 ACK_TOPIC = "kv-migration-acks"
 DEFAULT_GROUP = "migration-workers"
