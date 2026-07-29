@@ -395,8 +395,7 @@ templates:
     # device_model_spec targets bare p150x4 hosts (--tt-device p150x4). The custom
     # p300_x2 descriptor lays TP collectives over the wrong fabric links and corrupts
     # decode logits (see Gemma4 note); omitting TT_MESH_GRAPH_DESC_PATH selects the
-    # default p150_x4 descriptor from MESH_DEVICE, which is correct. on-device sampling
-    # is omitted to stay compatible with the pinned tt-metal c49bb76 (qwen36 lacks it).
+    # default p150_x4 descriptor from MESH_DEVICE, which is correct.
     - device: P150X4
       max_concurrency: 1
       max_context: 262144
