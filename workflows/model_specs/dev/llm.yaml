@@ -391,11 +391,9 @@ templates:
         trace_region_size: 268435456
         l1_small_size: 24576
         sample_on_device_mode: decode_only
-    # QB2's 4 Blackhole chips (4x p150a) also run as a P150x4 (1,4) mesh. This
-    # device_model_spec targets bare p150x4 hosts (--tt-device p150x4). The custom
-    # p300_x2 descriptor lays TP collectives over the wrong fabric links and corrupts
-    # decode logits (see Gemma4 note); omitting TT_MESH_GRAPH_DESC_PATH selects the
-    # default p150_x4 descriptor from MESH_DEVICE, which is correct.
+    # Same as Gemma4 note, QB2's 4 Blackhole chips (4x p150a) also
+    # run as a P150x4 (1,4) mesh.
+    # https://github.com/tenstorrent/tt-inference-server/blob/edb99fae3113f7ce10ba51b6ea310ede173b4b93/workflows/model_specs/dev/llm.yaml#L174-L177
     - device: P150X4
       max_concurrency: 1
       max_context: 262144
