@@ -1781,7 +1781,7 @@ templates:
 
 - weights:
     - Qwen/Qwen3.5-27B
-  impl: qwen36_blackhole
+  impl: qwen36_blackhole  # the same model structure as 3.6
   inference_engine: VLLM
   model_type: LLM
   supported_modalities:

@@ -327,7 +327,7 @@ templates:
 # that differ from that text spec are vision-mode.
 - weights:
     - Qwen/Qwen3.5-27B
-  impl: qwen36_blackhole_vlm  # distinct impl_id so the vision spec gets its own model_id
+  impl: qwen36_blackhole_vlm  # the same model structure as 3.6
   inference_engine: VLLM
   model_type: VLM
   device_model_specs:
