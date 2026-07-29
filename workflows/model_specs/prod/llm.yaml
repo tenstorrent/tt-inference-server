@@ -1138,6 +1138,8 @@ templates:
         # >= 65536 are reachable (host sampling only sees device 0's vocab shard).
         sample_on_device_mode: decode_only
       vllm_args:
+        # Overlap host schedule with device decode (metal supports_async_decode; #51186).
+        async_scheduling: true
         # Sampling params (temp=1.0 / top_k=64 / top_p=0.95) load from the
         # model's HF generation_config.json; evals override per-request. No
         # override_generation_config here -- it would just restate the HF default.
@@ -1176,6 +1178,8 @@ templates:
         trace_region_size: 512000000
         sample_on_device_mode: decode_only
       vllm_args:
+        # Overlap host schedule with device decode (metal supports_async_decode; #51186).
+        async_scheduling: true
         enable-auto-tool-choice: true
         tool-call-parser: gemma4
         default-chat-template-kwargs: '{"enable_thinking": true}'
@@ -1218,6 +1222,8 @@ templates:
         trace_region_size: 512000000
         sample_on_device_mode: decode_only
       vllm_args:
+        # Overlap host schedule with device decode (metal supports_async_decode; #51186).
+        async_scheduling: true
         enable-auto-tool-choice: true
         tool-call-parser: gemma4
         default-chat-template-kwargs: '{"enable_thinking": true}'
@@ -1241,6 +1247,8 @@ templates:
         trace_region_size: 512000000
         sample_on_device_mode: decode_only
       vllm_args:
+        # Overlap host schedule with device decode (metal supports_async_decode; #51186).
+        async_scheduling: true
         enable-auto-tool-choice: true
         tool-call-parser: gemma4
         default-chat-template-kwargs: '{"enable_thinking": true}'
@@ -1282,6 +1290,8 @@ templates:
         trace_region_size: 1200000000
         sample_on_device_mode: decode_only
       vllm_args:
+        # Overlap host schedule with device decode (metal supports_async_decode; #51186).
+        async_scheduling: true
         enable-auto-tool-choice: true
         tool-call-parser: gemma4
         default-chat-template-kwargs: '{"enable_thinking": true}'
@@ -1304,6 +1314,8 @@ templates:
         trace_region_size: 1200000000
         sample_on_device_mode: decode_only
       vllm_args:
+        # Overlap host schedule with device decode (metal supports_async_decode; #51186).
+        async_scheduling: true
         enable-auto-tool-choice: true
         tool-call-parser: gemma4
         default-chat-template-kwargs: '{"enable_thinking": true}'
