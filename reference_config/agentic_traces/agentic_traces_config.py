@@ -89,6 +89,23 @@ class AgenticTracesRunSpec:
     tokenizer_trust_remote_code: Optional[bool] = None
     use_server_token_count: bool = True
     gpu_telemetry: bool = False
+    # SwarmOne (``swo-bench replay``) knobs. Ignored by the InferenceX/AIPerf
+    # driver, so they can stay at their defaults on ``inferencex_agentx`` specs.
+    # ``task`` selects a single task from a multi-task swo-bench scenario (its
+    # ``-t``); ``None`` replays every task. ``resident`` is swo-bench's ``-r``
+    # (distinct conversations kept active); ``None`` defaults to ``concurrency``.
+    # ``cache_mode`` / ``history_mode`` / ``max_tokens`` / ``max_tokens_mode``
+    # mirror the swo-bench defaults documented in SWO_BENCH_REPORT.md.
+    task: Optional[str] = None
+    resident: Optional[int] = None
+    cache_mode: str = "realistic"
+    history_mode: str = "faithful"
+    max_tokens: int = 4096
+    max_tokens_mode: str = "flat"
+    # Modes this run participates in. ``None`` means every mode (the InferenceX
+    # default). SwarmOne uses it to give FULL and CI different task/concurrency
+    # shapes without a shared mode-settings override leaking across sources.
+    modes: Optional[Tuple[AgenticTracesMode, ...]] = None
     # AIPERF_* process env. These are read by AIPerf itself, not passed as
     # flags: the two timeouts cover dataset download plus per-service profile
     # configuration for the ~400-trace Weka datasets, the WEKA_LIVE toggle
@@ -127,10 +144,47 @@ class AgenticTracesRunSpec:
                 f"{self.trajectory_start_min_ratio} max="
                 f"{self.trajectory_start_max_ratio}"
             )
+        if self.resident is not None and self.resident < 1:
+            raise ValueError(
+                f"AgenticTracesRunSpec.resident must be >= 1 when set, "
+                f"got {self.resident}"
+            )
+        if self.max_tokens < 1:
+            raise ValueError(
+                f"AgenticTracesRunSpec.max_tokens must be >= 1, got {self.max_tokens}"
+            )
+        valid_cache_modes = {"realistic", "allcold", "allwarm"}
+        if self.cache_mode not in valid_cache_modes:
+            raise ValueError(
+                f"AgenticTracesRunSpec.cache_mode must be one of "
+                f"{sorted(valid_cache_modes)}, got {self.cache_mode!r}"
+            )
+        valid_history_modes = {"live", "recorded", "faithful"}
+        if self.history_mode not in valid_history_modes:
+            raise ValueError(
+                f"AgenticTracesRunSpec.history_mode must be one of "
+                f"{sorted(valid_history_modes)}, got {self.history_mode!r}"
+            )
+        valid_max_tokens_modes = {"flat", "recorded-completion"}
+        if self.max_tokens_mode not in valid_max_tokens_modes:
+            raise ValueError(
+                f"AgenticTracesRunSpec.max_tokens_mode must be one of "
+                f"{sorted(valid_max_tokens_modes)}, got {self.max_tokens_mode!r}"
+            )
 
     @property
     def label(self) -> str:
-        """Short identifier used for artifact dirs and report rows."""
+        """Short identifier used for artifact dirs and report rows.
+
+        SwarmOne specs key on scenario (+ optional task) rather than the
+        InferenceX ``public_dataset``, which they leave unset.
+        """
+        if self.trace_source is TraceSource.SWARMONE:
+            parts = [self.trace_source.value, self.scenario]
+            if self.task:
+                parts.append(self.task)
+            parts.append(f"c{self.concurrency}")
+            return "_".join(parts)
         return f"{self.trace_source.value}_{self.public_dataset}_c{self.concurrency}"
 
     @property
@@ -237,10 +291,16 @@ class AgenticTracesConfig:
     def __post_init__(self) -> None:
         if not self.model_id.strip():
             raise ValueError("AgenticTracesConfig.model_id must not be empty")
-        if not self.inferencex_git_ref.strip():
+        # The InferenceX pin is only meaningful when an InferenceX run is
+        # configured; a swarmone-only config leaves it empty and never clones
+        # the repo (see setup_agentic_traces).
+        needs_inferencex_ref = any(
+            run.trace_source is TraceSource.INFERENCEX_AGENTX for run in self.runs
+        )
+        if needs_inferencex_ref and not self.inferencex_git_ref.strip():
             raise ValueError(
                 f"AgenticTracesConfig.inferencex_git_ref must not be empty "
-                f"for model_id={self.model_id!r}"
+                f"for model_id={self.model_id!r} (it has inferencex_agentx runs)"
             )
         if not self.runs:
             raise ValueError(
@@ -309,6 +369,28 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
                 trace_source=TraceSource.INFERENCEX_AGENTX,
                 public_dataset="semianalysis_cc_traces_weka_062126_256k",
                 concurrency=64,
+            ),
+            # SwarmOne swo-bench replay of the recorded Kimi Claude-Code
+            # SWE-bench sessions. FULL replays all three tasks (sympy-bugfix,
+            # httpx-coverage, monorepo-refactor) at concurrency 8; CI replays
+            # only the short sympy-bugfix task at concurrency 1. The scenario id
+            # is the swo-bench catalog name (see `swo-bench list-scenarios`),
+            # not the InferenceX ``public_dataset``. Both shapes match the
+            # hand-validated runs in SWO_BENCH_REPORT.md.
+            AgenticTracesRunSpec(
+                trace_source=TraceSource.SWARMONE,
+                scenario="claude-code-swe-bench-python-kimi-k2.7-code",
+                public_dataset="",
+                concurrency=8,
+                modes=(AgenticTracesMode.FULL,),
+            ),
+            AgenticTracesRunSpec(
+                trace_source=TraceSource.SWARMONE,
+                scenario="claude-code-swe-bench-python-kimi-k2.7-code",
+                public_dataset="",
+                task="sympy-bugfix",
+                concurrency=1,
+                modes=(AgenticTracesMode.CI,),
             ),
         ),
     ),

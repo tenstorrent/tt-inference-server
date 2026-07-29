@@ -26,10 +26,21 @@ from reference_config.agentic_traces.agentic_traces_config import (
 )
 from workflows.workflow_types import AgenticTracesMode
 
-# Trace sources with a working client. SWARMONE is a registered config value
-# with no harness yet, so it fails loudly at plan time instead of producing an
-# empty (silently passing) sweep.
-SUPPORTED_TRACE_SOURCES: Tuple[TraceSource, ...] = (TraceSource.INFERENCEX_AGENTX,)
+# Trace sources with a working client. Both the InferenceX AIPerf fork and the
+# SwarmOne ``swo-bench`` replay engine are wired; any source added to the config
+# schema without a driver would still fail loudly at plan time (see build_runs).
+SUPPORTED_TRACE_SOURCES: Tuple[TraceSource, ...] = (
+    TraceSource.INFERENCEX_AGENTX,
+    TraceSource.SWARMONE,
+)
+
+# swo-bench replays real recorded sessions rather than profiling for a fixed
+# wall-clock window, so its runtime is driven by the scenario's request count,
+# not ``benchmark_duration``. These bound the per-run subprocess timeout for
+# SwarmOne runs (the FULL SWE-bench-python scenario is ~700 requests across
+# three tasks); the InferenceX estimate stays duration + grace.
+SWARMONE_FULL_TIMEOUT_SECONDS = 8 * 3600
+SWARMONE_CI_TIMEOUT_SECONDS = 3600
 
 
 @dataclass(frozen=True)
@@ -58,6 +69,14 @@ class AgenticTracesRun:
     use_server_token_count: bool
     gpu_telemetry: bool
     mode: AgenticTracesMode
+    # SwarmOne swo-bench knobs. Unused by the InferenceX/AIPerf driver, so they
+    # carry harmless defaults on ``inferencex_agentx`` runs.
+    task: Optional[str] = None
+    resident: Optional[int] = None
+    cache_mode: str = "realistic"
+    history_mode: str = "faithful"
+    max_tokens: int = 4096
+    max_tokens_mode: str = "flat"
     env: Dict[str, str] = field(default_factory=dict)
     # Free-form provenance echoed into the result payload for the report.
     metadata: Dict[str, Any] = field(default_factory=dict)
@@ -111,6 +130,12 @@ def build_runs(
     settings = config.settings_for_mode(mode)
     specs = tuple(run_specs) if run_specs is not None else config.runs
 
+    # A spec with an explicit ``modes`` tuple only runs in those modes; ``None``
+    # participates in every mode (the InferenceX default). This lets SwarmOne
+    # give FULL and CI different task/concurrency shapes without a shared mode
+    # setting leaking across trace sources.
+    specs = tuple(spec for spec in specs if spec.modes is None or mode in spec.modes)
+
     unsupported = sorted(
         {
             spec.trace_source.value
@@ -160,6 +185,12 @@ def build_runs(
                 use_server_token_count=spec.use_server_token_count,
                 gpu_telemetry=spec.gpu_telemetry,
                 mode=mode,
+                task=spec.task,
+                resident=spec.resident,
+                cache_mode=spec.cache_mode,
+                history_mode=spec.history_mode,
+                max_tokens=spec.max_tokens,
+                max_tokens_mode=spec.max_tokens_mode,
                 env=dict(spec.env),
                 metadata={
                     "model_id": getattr(model_spec, "model_id", ""),
@@ -177,15 +208,41 @@ def summarize_runs(runs: Sequence[AgenticTracesRun]) -> str:
         return "[agentic-traces] No runs planned."
     lines = [f"[agentic-traces] Planned {len(runs)} run(s):"]
     for run in runs:
-        lines.append(
-            f"  - {run.label}: source={run.trace_source.value} "
-            f"scenario={run.scenario} dataset={run.public_dataset} "
-            f"concurrency={run.concurrency} duration={run.benchmark_duration}s "
-            f"warmup={run.warmup_requests_per_lane}req/lane "
-            f"entries={run.num_dataset_entries} "
-            f"max_context={run.max_context_length}"
-        )
+        if run.trace_source is TraceSource.SWARMONE:
+            lines.append(
+                f"  - {run.label}: source=swarmone "
+                f"scenario={run.scenario} task={run.task or 'ALL'} "
+                f"concurrency={run.concurrency} "
+                f"resident={run.resident or run.concurrency} "
+                f"cache={run.cache_mode} history={run.history_mode} "
+                f"max_tokens={run.max_tokens} "
+                f"max_context={run.max_context_length}"
+            )
+        else:
+            lines.append(
+                f"  - {run.label}: source={run.trace_source.value} "
+                f"scenario={run.scenario} dataset={run.public_dataset} "
+                f"concurrency={run.concurrency} duration={run.benchmark_duration}s "
+                f"warmup={run.warmup_requests_per_lane}req/lane "
+                f"entries={run.num_dataset_entries} "
+                f"max_context={run.max_context_length}"
+            )
     return "\n".join(lines)
+
+
+def estimated_run_seconds(run: AgenticTracesRun) -> int:
+    """Per-run runtime estimate used to size the subprocess timeout.
+
+    InferenceX profiles for a fixed window, so its estimate is the profiling
+    duration plus warmup and grace. SwarmOne replays a recorded scenario whose
+    length is request-count-driven rather than wall-clock-bounded, so it uses a
+    generous mode-based ceiling instead.
+    """
+    if run.trace_source is TraceSource.SWARMONE:
+        if run.mode is AgenticTracesMode.CI:
+            return SWARMONE_CI_TIMEOUT_SECONDS
+        return SWARMONE_FULL_TIMEOUT_SECONDS
+    return run.benchmark_duration + run.warmup_grace_period
 
 
 def total_planned_seconds(runs: Sequence[AgenticTracesRun]) -> int:
@@ -205,8 +262,11 @@ def total_planned_seconds(runs: Sequence[AgenticTracesRun]) -> int:
 
 __all__ = [
     "SUPPORTED_TRACE_SOURCES",
+    "SWARMONE_CI_TIMEOUT_SECONDS",
+    "SWARMONE_FULL_TIMEOUT_SECONDS",
     "AgenticTracesRun",
     "build_runs",
+    "estimated_run_seconds",
     "summarize_runs",
     "total_planned_seconds",
 ]

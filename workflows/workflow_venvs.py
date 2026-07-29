@@ -252,6 +252,7 @@ def setup_agentic_traces(
     silently benchmark a client it was not pinned to.
     """
     from reference_config.agentic_traces.agentic_traces_config import (
+        TraceSource,
         get_agentic_traces_config,
     )
 
@@ -264,6 +265,19 @@ def setup_agentic_traces(
             getattr(model_spec, "model_id", "<unknown>"),
         )
         return False
+
+    # The InferenceX AIPerf fork is only needed for inferencex_agentx runs. A
+    # config whose runs are all SwarmOne relies solely on the swo-bench package
+    # installed from agentic-traces.txt, so skip the multi-minute clone/install.
+    if not any(
+        run.trace_source is TraceSource.INFERENCEX_AGENTX for run in config.runs
+    ):
+        logger.info(
+            "No InferenceX runs configured for model_id=%s; skipping InferenceX "
+            "checkout (SwarmOne swo-bench is installed from agentic-traces.txt).",
+            getattr(model_spec, "model_id", "<unknown>"),
+        )
+        return True
 
     git_ref = config.inferencex_git_ref
     repo_dir = venv_config.venv_path / "InferenceX"

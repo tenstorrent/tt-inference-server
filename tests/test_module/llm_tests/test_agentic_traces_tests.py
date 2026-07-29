@@ -8,7 +8,8 @@ The driver is stubbed throughout: what is under test is the sweep loop's
 bookkeeping. The failure paths matter most, because each one is a way a broken
 run could otherwise be reported as a clean pass:
 
-* a model with no config, or an unimplemented trace source, must not run,
+* a model with no config, or an unknown trace-source name, must not run,
+* each run is dispatched to the driver for its trace source,
 * a failed run must record a non-zero code even if a sibling run succeeded,
 * the per-run subprocess timeout must exceed the planned wall-clock window.
 """
@@ -61,12 +62,40 @@ def _ok_payload(label: str = "run") -> dict:
 
 
 def _driver_returning(*outcomes):
-    """Patch the driver class so each run() call returns the next outcome."""
+    """Patch the AIPerf driver so each run() call returns the next outcome.
+
+    Also stubs the swo-bench driver with a driver that raises if called, so an
+    inferencex-narrowed sweep that accidentally dispatched a swarmone run would
+    fail loudly rather than silently shell out.
+    """
     driver = MagicMock()
     driver.run.side_effect = list(outcomes)
-    return patch.object(
-        agentic_traces_tests, "AIPerfAgenticTracesDriver", return_value=driver
-    ), driver
+    swo_driver = MagicMock()
+    swo_driver.run.side_effect = AssertionError(
+        "swo-bench driver called in an inferencex-only sweep"
+    )
+    patcher = patch.multiple(
+        agentic_traces_tests,
+        AIPerfAgenticTracesDriver=MagicMock(return_value=driver),
+        SwoBenchAgenticTracesDriver=MagicMock(return_value=swo_driver),
+    )
+    return patcher, driver
+
+
+def _swo_driver_returning(*outcomes):
+    """Patch the swo-bench driver; stub the AIPerf driver to fail if called."""
+    swo_driver = MagicMock()
+    swo_driver.run.side_effect = list(outcomes)
+    aiperf_driver = MagicMock()
+    aiperf_driver.run.side_effect = AssertionError(
+        "AIPerf driver called in a swarmone-only sweep"
+    )
+    patcher = patch.multiple(
+        agentic_traces_tests,
+        AIPerfAgenticTracesDriver=MagicMock(return_value=aiperf_driver),
+        SwoBenchAgenticTracesDriver=MagicMock(return_value=swo_driver),
+    )
+    return patcher, swo_driver
 
 
 class TestPlanningFailures:
@@ -74,17 +103,6 @@ class TestPlanningFailures:
         patcher, driver = _driver_returning()
         with patcher:
             result = run_agentic_traces(_ctx(model_id="id_nope", tmp_path=tmp_path))
-
-        assert result.return_codes == [1]
-        assert result.blocks == []
-        driver.run.assert_not_called()
-
-    def test_unimplemented_trace_source_does_not_run(self, tmp_path):
-        patcher, driver = _driver_returning()
-        with patcher:
-            result = run_agentic_traces(
-                _ctx(tmp_path=tmp_path), trace_sources="swarmone"
-            )
 
         assert result.return_codes == [1]
         assert result.blocks == []
@@ -121,7 +139,10 @@ class TestSweepLoop:
         patcher, driver = _driver_returning(outcome)
         with patcher:
             result = run_agentic_traces(
-                _ctx(tmp_path=tmp_path), mode="ci", inter_run_sleep_s=0
+                _ctx(tmp_path=tmp_path),
+                mode="ci",
+                trace_sources="inferencex_agentx",
+                inter_run_sleep_s=0,
             )
 
         assert result.return_codes == [0]
@@ -136,7 +157,10 @@ class TestSweepLoop:
         patcher, _ = _driver_returning(outcome)
         with patcher:
             result = run_agentic_traces(
-                _ctx(tmp_path=tmp_path), mode="ci", inter_run_sleep_s=0
+                _ctx(tmp_path=tmp_path),
+                mode="ci",
+                trace_sources="inferencex_agentx",
+                inter_run_sleep_s=0,
             )
 
         assert result.return_codes == [124]
@@ -149,7 +173,12 @@ class TestSweepLoop:
         )
         patcher, driver = _driver_returning(outcome)
         with patcher:
-            run_agentic_traces(_ctx(tmp_path=tmp_path), mode="ci", inter_run_sleep_s=0)
+            run_agentic_traces(
+                _ctx(tmp_path=tmp_path),
+                mode="ci",
+                trace_sources="inferencex_agentx",
+                inter_run_sleep_s=0,
+            )
 
         run, _server, context = driver.run.call_args[0]
         planned = run.benchmark_duration + run.warmup_grace_period
@@ -164,6 +193,7 @@ class TestSweepLoop:
             run_agentic_traces(
                 _ctx(tmp_path=tmp_path),
                 mode="ci",
+                trace_sources="inferencex_agentx",
                 git_ref_override="cafebabe",
                 inter_run_sleep_s=0,
             )
@@ -180,6 +210,7 @@ class TestSweepLoop:
             run_agentic_traces(
                 _ctx(tmp_path=tmp_path),
                 mode="ci",
+                trace_sources="inferencex_agentx",
                 auth_token="tok123",
                 inter_run_sleep_s=0,
             )
@@ -188,12 +219,79 @@ class TestSweepLoop:
         assert server.auth_token == "tok123"
         assert server.url_with_port == "http://localhost:8000"
 
+
+class TestTraceSourceDispatch:
+    def test_swarmone_dispatches_to_the_swo_driver(self, tmp_path):
+        outcome = AgenticTracesDriverResult(
+            return_code=0, payload=_ok_payload(), raw_path=None
+        )
+        patcher, swo_driver = _swo_driver_returning(outcome)
+        with patcher:
+            result = run_agentic_traces(
+                _ctx(tmp_path=tmp_path),
+                mode="ci",
+                trace_sources="swarmone",
+                inter_run_sleep_s=0,
+            )
+
+        assert result.return_codes == [0]
+        assert [b.kind for b in result.blocks] == ["agentic_traces"]
+        swo_driver.run.assert_called_once()
+        run = swo_driver.run.call_args[0][0]
+        assert run.trace_source.value == "swarmone"
+
+    def test_default_sweep_runs_both_sources(self, tmp_path):
+        aiperf_driver = MagicMock()
+        aiperf_driver.run.return_value = AgenticTracesDriverResult(
+            return_code=0, payload=_ok_payload("aiperf"), raw_path=None
+        )
+        swo_driver = MagicMock()
+        swo_driver.run.return_value = AgenticTracesDriverResult(
+            return_code=0, payload=_ok_payload("swo"), raw_path=None
+        )
+        with patch.multiple(
+            agentic_traces_tests,
+            AIPerfAgenticTracesDriver=MagicMock(return_value=aiperf_driver),
+            SwoBenchAgenticTracesDriver=MagicMock(return_value=swo_driver),
+        ):
+            result = run_agentic_traces(
+                _ctx(tmp_path=tmp_path), mode="ci", inter_run_sleep_s=0
+            )
+
+        assert result.return_codes == [0, 0]
+        aiperf_driver.run.assert_called_once()
+        swo_driver.run.assert_called_once()
+
+    def test_swo_driver_gets_a_generous_timeout(self, tmp_path):
+        outcome = AgenticTracesDriverResult(
+            return_code=0, payload=_ok_payload(), raw_path=None
+        )
+        patcher, swo_driver = _swo_driver_returning(outcome)
+        with patcher:
+            run_agentic_traces(
+                _ctx(tmp_path=tmp_path),
+                mode="ci",
+                trace_sources="swarmone",
+                inter_run_sleep_s=0,
+            )
+
+        _run, _server, context = swo_driver.run.call_args[0]
+        # SwarmOne CI timeout floor is 1h plus headroom.
+        assert context.per_run_timeout_s >= 3600
+
     def test_artifacts_land_under_the_output_path(self, tmp_path):
         outcome = AgenticTracesDriverResult(
             return_code=0, payload=_ok_payload(), raw_path=None
         )
         patcher, _ = _driver_returning(outcome)
         with patcher:
-            run_agentic_traces(_ctx(tmp_path=tmp_path), mode="ci", inter_run_sleep_s=0)
+            run_agentic_traces(
+                _ctx(tmp_path=tmp_path),
+                mode="ci",
+                trace_sources="inferencex_agentx",
+                inter_run_sleep_s=0,
+            )
 
-        assert (tmp_path / "agentic_traces" / "aiperf_artifacts").is_dir()
+        # The orchestrator creates the output root; the (mocked) driver would
+        # create its own per-run artifact subtree.
+        assert (tmp_path / "agentic_traces").is_dir()
