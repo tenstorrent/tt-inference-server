@@ -285,17 +285,13 @@ templates:
     - text
     - image
 
+# Vision (VLM) profile of the P150X4 text spec in dev/llm.yaml. Only the fields
+# that differ from that text spec are commented below (with the reason).
 - weights:
     - Qwen/Qwen3.6-27B
-  # VLM (vision) variant of Qwen3.6-27B on p150x4 (4x p150a, QB2 AE), selectable via
-  # --impl qwen36-blackhole-vlm. Dev spec omits tt_metal_commit/vllm_commit (base
-  # template rejects pins); the image is supplied at runtime via --override-docker-image
-  # (build a tt-metal commit that includes the qwen3.6 vision tower, e.g. 045f7704 =
-  # tenstorrent/tt-metal#49531 vision + #48861; the release pin c49bb76 predates vision
-  # and reports image=0). vLLM 6b4a3a7 already ships Qwen3VLMultiModalProcessor.
-  impl: qwen36_blackhole_vlm
+  impl: qwen36_blackhole_vlm     # vs text qwen36_blackhole: distinct impl_id so the vision spec gets its own model_id on the same (model, P150X4)
   inference_engine: VLLM
-  model_type: VLM
+  model_type: VLM                # vs text LLM: routes to the multimodal (vision) serving path
   device_model_specs:
     - device: P150X4
       max_concurrency: 1
@@ -310,15 +306,15 @@ templates:
         enable_auto_tool_choice: true
         reasoning_parser: qwen3
         tool_call_parser: qwen3_coder
-        limit-mm-per-prompt: '{"image": 1, "video": 1}'
-        mm-processor-cache-gb: 0
+        limit-mm-per-prompt: '{"image": 1, "video": 1}'   # vision-only: cap 1 image + 1 video per request (text spec has no mm inputs)
+        mm-processor-cache-gb: 0                            # vision-only: disable the multimodal preprocessor cache (no host RAM reserved)
       override_tt_config:
         fabric_config: FABRIC_1D
         l1_small_size: 24576
-        trace_region_size: 402653184
+        trace_region_size: 402653184                        # vs text 268435456: 384MB (not 256MB) to fit the extra vision-tower trace
   status: EXPERIMENTAL
   has_builtin_warmup: true
-  supported_modalities:
+  supported_modalities:                                     # vs text [text]: vision adds image + video
     - text
     - image
     - video
@@ -327,16 +323,13 @@ templates:
       reasoning_parser_name: qwen3
       tool_call_parser_name: qwen3_coder
 
+# Vision (VLM) profile of the Qwen3.5-27B P150X4 text spec in dev/llm.yaml. Only the
+# fields that differ from that text spec are commented below (with the reason).
 - weights:
     - Qwen/Qwen3.5-27B
-  # VLM (vision) variant of Qwen3.5-27B on p150x4 (4x p150a, QB2 AE), selectable via
-  # --impl qwen36-blackhole-vlm. Shares the qwen36 vision code path with Qwen3.6-27B
-  # (same Qwen3_5ForConditionalGeneration arch, 333 model.visual.* weights, vision_config).
-  # Dev spec omits tt_metal_commit/vllm_commit; image supplied at runtime via
-  # --override-docker-image (tt-metal 045f7704 vision tower + vLLM 6b4a3a7).
-  impl: qwen36_blackhole_vlm
+  impl: qwen36_blackhole_vlm     # vs text qwen36_blackhole: distinct impl_id so the vision spec gets its own model_id on the same (model, P150X4)
   inference_engine: VLLM
-  model_type: VLM
+  model_type: VLM                # vs text LLM: routes to the multimodal (vision) serving path
   device_model_specs:
     - device: P150X4
       max_concurrency: 1
@@ -351,15 +344,15 @@ templates:
         enable_auto_tool_choice: true
         reasoning_parser: qwen3
         tool_call_parser: qwen3_coder
-        limit-mm-per-prompt: '{"image": 1, "video": 1}'
-        mm-processor-cache-gb: 0
+        limit-mm-per-prompt: '{"image": 1, "video": 1}'   # vision-only: cap 1 image + 1 video per request (text spec has no mm inputs)
+        mm-processor-cache-gb: 0                            # vision-only: disable the multimodal preprocessor cache (no host RAM reserved)
       override_tt_config:
         fabric_config: FABRIC_1D
         l1_small_size: 24576
-        trace_region_size: 402653184
+        trace_region_size: 402653184                        # vs text 268435456: 384MB (not 256MB) to fit the extra vision-tower trace
   status: EXPERIMENTAL
   has_builtin_warmup: true
-  supported_modalities:
+  supported_modalities:                                     # vs text [text]: vision adds image + video
     - text
     - image
     - video
