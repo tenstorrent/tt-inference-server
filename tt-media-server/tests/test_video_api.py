@@ -13,11 +13,14 @@ from domain.video_i2v_generate_request import (
     ImagePromptEntry,
     VideoI2VGenerateRequest,
 )
+from fastapi import HTTPException
 from open_ai_api.video import (
+    _is_i2v_only_deployment,
     cancel_video_job,
     download_video_content,
     get_jobs_metadata,
     get_video_metadata,
+    reject_text_to_video_on_i2v_deployment,
     submit_generate_video_i2v_request,
     submit_generate_video_request,
 )
@@ -41,6 +44,68 @@ def _tiny_png_base64() -> str:
     a generated image would end up as an empty bytes buffer.
     """
     return _TINY_PNG_BASE64
+
+
+class TestRejectTextToVideoOnI2VDeployment:
+    """``POST /generations`` must not reach the worker on an I2V-only deploy."""
+
+    @patch("open_ai_api.video._is_i2v_only_deployment", return_value=True)
+    def test_i2v_deployment_rejects_text_only(self, _mock_i2v):
+        with pytest.raises(HTTPException) as exc_info:
+            reject_text_to_video_on_i2v_deployment()
+
+        assert exc_info.value.status_code == 422
+
+    @patch("open_ai_api.video._is_i2v_only_deployment", return_value=True)
+    def test_rejection_points_at_the_i2v_endpoint(self, _mock_i2v):
+        with pytest.raises(HTTPException) as exc_info:
+            reject_text_to_video_on_i2v_deployment()
+
+        assert "/generations/i2v" in exc_info.value.detail
+
+    @patch("open_ai_api.video._is_i2v_only_deployment", return_value=False)
+    def test_t2v_deployment_allows_text_only(self, _mock_i2v):
+        assert reject_text_to_video_on_i2v_deployment() is None
+
+
+class TestIsI2VOnlyDeployment:
+    """Deployment detection: runner first, MODEL only as a fallback."""
+
+    @patch("config.settings.settings.model_runner", "tt-wan2.2-i2v")
+    def test_i2v_runner_is_detected(self):
+        assert _is_i2v_only_deployment() is True
+
+    @patch("config.settings.settings.model_runner", "tt-wan2.2")
+    def test_t2v_runner_is_not_i2v(self):
+        with patch.dict(os.environ, {}, clear=True):
+            assert _is_i2v_only_deployment() is False
+
+    @patch("config.settings.settings.model_runner", "tt-wan2.2")
+    def test_t2v_runner_ignores_a_contradictory_model_env(self):
+        """The runner is 1:1 with its model, so a stale MODEL must not win."""
+        with patch.dict(os.environ, {"MODEL": "Wan2.2-I2V-A14B-Diffusers"}):
+            assert _is_i2v_only_deployment() is False
+
+    @patch("config.settings.settings.model_runner", "not-a-runner")
+    def test_unknown_runner_is_not_i2v(self):
+        with patch.dict(os.environ, {"MODEL": "Wan2.2-I2V-A14B-Diffusers"}):
+            assert _is_i2v_only_deployment() is False
+
+    @patch("config.settings.settings.model_runner", "sp_runner")
+    def test_proxy_runner_falls_back_to_model_env(self):
+        """SP_RUNNER serves either T2V or I2V, so MODEL disambiguates it."""
+        with patch.dict(os.environ, {"MODEL": "Wan2.2-I2V-A14B-Diffusers"}):
+            assert _is_i2v_only_deployment() is True
+
+    @patch("config.settings.settings.model_runner", "sp_runner")
+    def test_proxy_runner_with_t2v_model_is_not_i2v(self):
+        with patch.dict(os.environ, {"MODEL": "Wan2.2-T2V-A14B-Diffusers"}):
+            assert _is_i2v_only_deployment() is False
+
+    @patch("config.settings.settings.model_runner", "sp_runner")
+    def test_unknown_model_env_is_not_i2v(self):
+        with patch.dict(os.environ, {"MODEL": "not-a-model"}):
+            assert _is_i2v_only_deployment() is False
 
 
 class TestSubmitGenerateVideoRequest:

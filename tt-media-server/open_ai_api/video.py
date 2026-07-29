@@ -8,7 +8,13 @@ import tempfile
 import time as _time
 from typing import Annotated, Optional
 
-from config.constants import JobTypes
+from config.constants import (
+    I2V_MODEL_NAMES,
+    I2V_MODEL_RUNNERS,
+    JobTypes,
+    ModelNames,
+    ModelRunners,
+)
 from config.settings import settings
 from domain.video_generate_request import VideoGenerateRequest
 from domain.video_i2v_generate_request import (
@@ -125,6 +131,54 @@ _I2V_EXAMPLES = {
 }
 
 
+def _is_i2v_only_deployment() -> bool:
+    """True when this process serves I2V weights (image conditioning required)."""
+    try:
+        runner = ModelRunners(settings.model_runner)
+    except ValueError:
+        return False
+
+    if runner in I2V_MODEL_RUNNERS:
+        return True
+
+    # Every video runner except SP_RUNNER maps 1:1 to its model, so the check
+    # above is already conclusive for them and MODEL must not override it —
+    # a stale env var should never make a T2V deployment reject text prompts.
+    # SP_RUNNER proxies to a multihost peer and serves either T2V or I2V, so it
+    # is the one case where MODEL carries information the runner does not.
+    if runner is not ModelRunners.SP_RUNNER:
+        return False
+
+    model_env = os.getenv("MODEL")
+    if not model_env:
+        return False
+    try:
+        return ModelNames(model_env) in I2V_MODEL_NAMES
+    except ValueError:
+        return False
+
+
+def reject_text_to_video_on_i2v_deployment() -> None:
+    """Stop text-only generation at the API on an I2V-only deployment.
+
+    Without this the request reaches the worker, where the runner trips over
+    the missing ``image_prompts`` and surfaces as a 500 — a misleading status
+    for a request the deployment was never meant to serve, and one that counts
+    against worker error accounting.
+    """
+    if not _is_i2v_only_deployment():
+        return
+
+    raise HTTPException(
+        status_code=422,
+        detail=(
+            "This deployment requires image conditioning. Use POST "
+            "/generations/i2v with at least one image_prompts entry, or POST "
+            "/generations/i2v/upload to send the image as a file."
+        ),
+    )
+
+
 async def _submit_video_request(
     request: VideoGenerateRequest,
     service: BaseJobService,
@@ -186,7 +240,10 @@ async def _submit_video_request(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/generations")
+@router.post(
+    "/generations",
+    dependencies=[Depends(reject_text_to_video_on_i2v_deployment)],
+)
 async def submit_generate_video_request(
     request: Annotated[VideoGenerateRequest, Body(openapi_examples=_T2V_EXAMPLES)],
     service: BaseJobService = Depends(service_resolver),
@@ -194,6 +251,9 @@ async def submit_generate_video_request(
 ):
     """
     Create a new text-to-video generation job.
+
+    Rejected with 422 on I2V-only deployments, which cannot serve text-only
+    requests.
 
     Returns:
         JSONResponse: Video job object with job ID and initial metadata (async mode)
