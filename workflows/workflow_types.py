@@ -14,6 +14,7 @@ class WorkflowType(IntEnum):
     RELEASE = auto()
     SPEC_TESTS = auto()
     AGENTIC = auto()
+    AGENTIC_TRACES = auto()
     SERVING_BENCH = auto()
     PREFILL_DECODE = auto()
 
@@ -35,6 +36,7 @@ class WorkflowVenvType(IntEnum):
     REPORTS_RUN_SCRIPT = auto()
     WORKFLOW_RUN_SCRIPT = auto()
     PREFIX_CACHE = auto()
+    AGENTIC_TRACES = auto()
     LLM_VLLM = auto()
     LLM_GUIDELLM = auto()
     LLM_AIPERF = auto()
@@ -339,6 +341,35 @@ class EvalLimitMode(IntEnum):
             return cls[name.upper().replace("-", "_")]
         except KeyError:
             raise ValueError(f"Invalid EvalLimitMode: {name}")
+
+
+class AgenticTracesMode(IntEnum):
+    """Duration profile for the ``agentic_traces`` workflow.
+
+    Deliberately separate from :class:`EvalLimitMode`: agentic trace replay is
+    bounded by wall-clock profiling time rather than a dataset sample count, and
+    the InferenceX scenario enforces its own duration floor (see
+    ``AGENTIC_TRACES_MIN_PROFILE_SECONDS``), so the eval limit modes do not
+    translate.
+
+    ``FULL`` is the reference run used for reportable numbers; ``CI`` is the
+    shortest run the scenario still permits.
+    """
+
+    FULL = auto()
+    CI = auto()
+
+    @classmethod
+    def from_string(cls, name: str):
+        if name is None:
+            return None
+        try:
+            return cls[name.upper().replace("-", "_")]
+        except KeyError:
+            raise ValueError(f"Invalid AgenticTracesMode: {name}")
+
+    def to_string(self) -> str:
+        return self.name.lower()
 
 
 class VersionMode(IntEnum):

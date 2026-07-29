@@ -465,6 +465,46 @@ def parse_arguments():
         "--model's HF repo, then run_stack.sh's built-in default.",
     )
 
+    agentic_traces_group = parser.add_argument_group(
+        "Agentic-traces benchmark",
+        "Arguments for --workflow agentic_traces (routed to the workflow engine)",
+    )
+    agentic_traces_group.add_argument(
+        "--agentic-traces-mode",
+        type=str,
+        choices=["full", "ci"],
+        default="full",
+        help="Duration profile for --workflow agentic_traces (default: full). 'full' is "
+        "the reference run used for reportable numbers; 'ci' is the shortest run the "
+        "InferenceX scenario permits (900s of profiling). Per-mode durations come from "
+        "the model's entry in reference_config/agentic_traces/.",
+    )
+    agentic_traces_group.add_argument(
+        "--agentic-traces-sources",
+        type=str,
+        default=None,
+        help="Comma-separated trace sources to run (inferencex_agentx, swarmone). When "
+        "unset, runs every source configured for the model. swarmone has no client "
+        "integration yet and fails fast if selected.",
+    )
+    agentic_traces_group.add_argument(
+        "--agentic-traces-duration",
+        type=int,
+        default=None,
+        metavar="SECONDS",
+        help="Override the mode's profiling duration. The InferenceX scenario rejects "
+        "anything below 900s.",
+    )
+    agentic_traces_group.add_argument(
+        "--agentic-traces-git-ref",
+        type=str,
+        default=None,
+        metavar="REF",
+        help="Override the InferenceX revision cloned into the AGENTIC_TRACES venv. "
+        "Defaults to the ref pinned for the ModelSpec; results are only comparable "
+        "across runs on the same ref.",
+    )
+
     prefix_cache_group = parser.add_argument_group(
         "Prefix-cache benchmark",
         "Arguments for --workflow benchmarks --prefix-cache (routed to the workflow engine)",
@@ -663,6 +703,32 @@ def parse_arguments():
             f"(got --workflow {args.workflow})."
         )
 
+    agentic_traces_overrides = (
+        args.agentic_traces_sources,
+        args.agentic_traces_duration,
+        args.agentic_traces_git_ref,
+    )
+    if (
+        any(f is not None for f in agentic_traces_overrides)
+        and args.workflow != "agentic_traces"
+    ):
+        parser.error(
+            "--agentic-traces-* flags require --workflow agentic_traces "
+            f"(got --workflow {args.workflow})."
+        )
+
+    if args.agentic_traces_duration is not None:
+        from reference_config.agentic_traces.agentic_traces_config import (
+            AGENTIC_TRACES_MIN_PROFILE_SECONDS,
+        )
+
+        if args.agentic_traces_duration < AGENTIC_TRACES_MIN_PROFILE_SECONDS:
+            parser.error(
+                "--agentic-traces-duration must be at least "
+                f"{AGENTIC_TRACES_MIN_PROFILE_SECONDS}s (the InferenceX "
+                f"scenario's floor), got {args.agentic_traces_duration}s."
+            )
+
     # Dev specs don't pin a docker image (they're built/published out of band),
     # so dev-mode has no image to run in a container — require an explicit one.
     if args.dev_mode and args.docker_server and not args.override_docker_image:
@@ -689,6 +755,9 @@ def handle_secrets(runtime_config):
     # HF_TOKEN is optional for client-side scripts workflows. These run
     # against an inference server (local, docker, or external via
     # --server-url) and don't need to load HF weights/tokenizers themselves.
+    # AGENTIC_TRACES is deliberately absent despite being client-side: its
+    # SemiAnalysis Weka trace datasets are gated on the Hub, so the client
+    # itself needs a token to fetch them.
     client_side_workflows = {
         WorkflowType.BENCHMARKS,
         WorkflowType.EVALS,

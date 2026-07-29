@@ -29,6 +29,7 @@ from .commands import (
     WorkflowCommand,
 )
 from .execution import (
+    AgenticTracesOptions,
     LLMBenchOptions,
     LLMEvalOptions,
     OrchestratorMetadata,
@@ -215,6 +216,7 @@ def _build_orchestrator_metadata(args: argparse.Namespace) -> OrchestratorMetada
         serving_bench=_build_serving_bench_options(args),
         llm_bench=_build_llm_bench_options(args),
         llm_eval=_build_llm_eval_options(args),
+        agentic_traces=_build_agentic_traces_options(args),
     )
 
 
@@ -270,6 +272,29 @@ def _build_llm_eval_options(args: argparse.Namespace) -> Optional[LLMEvalOptions
     if getattr(args, "workflow", None) not in _LLM_EVAL_WORKFLOWS:
         return None
     return LLMEvalOptions(
+        auth_token=_resolve_auth_token(args),
+    )
+
+
+def _build_agentic_traces_options(
+    args: argparse.Namespace,
+) -> Optional[AgenticTracesOptions]:
+    """Translate the ``--agentic-traces-*`` CLI flags into options.
+
+    Returns ``None`` for every other workflow. ``venv_python`` stays ``None``:
+    a standalone agentic-traces run is already inside the AGENTIC_TRACES venv
+    (``launchers/run_agentic_traces.py`` re-execs there), so the driver's
+    ``sys.executable`` fallback is the interpreter that owns the InferenceX
+    AIPerf fork. It would only need pinning if this workflow ever ran as an
+    in-process child of ``release``, which executes in WORKFLOW_RUN_SCRIPT.
+    """
+    if getattr(args, "workflow", None) != "agentic_traces":
+        return None
+    return AgenticTracesOptions(
+        mode=getattr(args, "agentic_traces_mode", None) or "full",
+        trace_sources=getattr(args, "agentic_traces_sources", None),
+        duration_override=getattr(args, "agentic_traces_duration", None),
+        git_ref_override=getattr(args, "agentic_traces_git_ref", None),
         auth_token=_resolve_auth_token(args),
     )
 

@@ -21,6 +21,7 @@ from test_module.task_types import MediaTaskType
 from workflows.workflow_types import ModelType
 
 from .execution import (
+    AgenticTracesOptions,
     LLMBenchOptions,
     PrefixCacheOptions,
     SpecDecodeOptions,
@@ -35,9 +36,56 @@ _PREFIX_CACHE_TASK_LABEL = "prefix_cache"
 _LLM_BENCH_TASK_LABEL = "llm_benchmark"
 _LLM_EVAL_TASK_LABEL = "llm_eval"
 _SPEC_DECODE_TASK_LABEL = "spec_decode"
+_AGENTIC_TRACES_TASK_LABEL = "agentic_traces"
 
 
 _LLM_LIKE_TYPES = frozenset({ModelType.LLM, ModelType.VLM})
+
+
+def _run_sweep_task(logger, label: str, run_sweep) -> TaskOutcome:
+    """Run an LLM sweep callable and map its ``RunnerResult`` to a TaskOutcome.
+
+    ``run_sweep`` returns a :class:`llm_module.runner.RunnerResult`. A non-zero
+    return code on *any* sweep point (``result.ok`` is False) fails the task even
+    when some Blocks were produced — a partial sweep failure must not report
+    success.
+
+    Shared by every workflow that drives an ``llm_module`` sweep instead of the
+    media-task dispatcher (benchmarks and its prefix-cache / spec-decode
+    variants, and agentic traces).
+    """
+    started = time.time()
+    try:
+        result = run_sweep()
+    except Exception as e:
+        elapsed = time.time() - started
+        logger.exception("❌ task=%s raised after %.1fs: %s", label, elapsed, e)
+        return TaskOutcome(label, 1, elapsed, None)
+
+    elapsed = time.time() - started
+    if not result.blocks:
+        logger.error("❌ task=%s produced no blocks (%.1fs)", label, elapsed)
+        return TaskOutcome(label, 1, elapsed, None)
+
+    block_kind = result.blocks[0].kind
+    if not result.ok:
+        logger.error(
+            "❌ task=%s partial failure: %d block(s) but return_codes=%s (%.1fs)",
+            label,
+            len(result.blocks),
+            result.return_codes,
+            elapsed,
+        )
+        return TaskOutcome(label, 1, elapsed, block_kind)
+
+    logger.info(
+        "✅ task=%s blocks=%d kind=%s (%.1fs)",
+        label,
+        len(result.blocks),
+        block_kind,
+        elapsed,
+    )
+    return TaskOutcome(label, 0, elapsed, block_kind)
 
 
 def _has_agentic_tasks(ctx) -> bool:
@@ -142,6 +190,49 @@ class AgenticWorkflow(WorkflowExecution):
             elapsed,
         )
         return [TaskOutcome("evaluation", 0, elapsed, blocks[0].kind)]
+
+
+class AgenticTracesWorkflow(WorkflowExecution):
+    """Agentic trace replay (InferenceX Agentic Trace, SwarmOne).
+
+    A benchmark, not an eval: it replays recorded multi-turn coding traces
+    against the server and reports serving latency/throughput under that shape.
+    Bypasses the media-task dispatcher because the client is the AIPerf fork
+    from the pinned InferenceX checkout rather than a media runner, and its
+    parameters come from the per-ModelSpec config in
+    ``reference_config/agentic_traces`` rather than an ISL/OSL sweep table.
+    Emits one Block(kind="agentic_traces") per run.
+    """
+
+    name = "agentic_traces"
+    task_types = ()
+
+    def run_tasks(self) -> List[TaskOutcome]:
+        from test_module.llm_tests.agentic_traces_tests import run_agentic_traces
+
+        opts = self.orchestrator_metadata.agentic_traces or AgenticTracesOptions()
+        self.logger.info(
+            "→ task=%s mode=%s sources=%s",
+            _AGENTIC_TRACES_TASK_LABEL,
+            opts.mode,
+            opts.trace_sources or "all configured",
+        )
+        venv_python = Path(opts.venv_python) if opts.venv_python else None
+        return [
+            _run_sweep_task(
+                self.logger,
+                _AGENTIC_TRACES_TASK_LABEL,
+                lambda: run_agentic_traces(
+                    self.ctx,
+                    mode=opts.mode,
+                    trace_sources=opts.trace_sources,
+                    duration_override=opts.duration_override,
+                    git_ref_override=opts.git_ref_override,
+                    auth_token=opts.auth_token,
+                    venv_python=venv_python,
+                ),
+            )
+        ]
 
 
 class ServingBenchWorkflow(WorkflowExecution):
@@ -336,47 +427,8 @@ class BenchmarksWorkflow(WorkflowExecution):
         )
 
     def _run_bench_task(self, label: str, run_sweep) -> TaskOutcome:
-        """Run an LLM sweep callable and map its ``RunnerResult`` to a TaskOutcome.
-
-        ``run_sweep`` returns a :class:`llm_module.runner.RunnerResult`. A
-        non-zero return code on *any* sweep point (``result.ok`` is False)
-        fails the task even when some Blocks were produced — a partial sweep
-        failure must not report success.
-        """
-        started = time.time()
-        try:
-            result = run_sweep()
-        except Exception as e:
-            elapsed = time.time() - started
-            self.logger.exception(
-                "❌ task=%s raised after %.1fs: %s", label, elapsed, e
-            )
-            return TaskOutcome(label, 1, elapsed, None)
-
-        elapsed = time.time() - started
-        if not result.blocks:
-            self.logger.error("❌ task=%s produced no blocks (%.1fs)", label, elapsed)
-            return TaskOutcome(label, 1, elapsed, None)
-
-        block_kind = result.blocks[0].kind
-        if not result.ok:
-            self.logger.error(
-                "❌ task=%s partial failure: %d block(s) but return_codes=%s (%.1fs)",
-                label,
-                len(result.blocks),
-                result.return_codes,
-                elapsed,
-            )
-            return TaskOutcome(label, 1, elapsed, block_kind)
-
-        self.logger.info(
-            "✅ task=%s blocks=%d kind=%s (%.1fs)",
-            label,
-            len(result.blocks),
-            block_kind,
-            elapsed,
-        )
-        return TaskOutcome(label, 0, elapsed, block_kind)
+        """Run an LLM sweep callable and map its ``RunnerResult`` to a TaskOutcome."""
+        return _run_sweep_task(self.logger, label, run_sweep)
 
     def _run_spec_decode_task(self, opts: SpecDecodeOptions) -> TaskOutcome:
         """Drive one spec-decode phase in place of media benchmarks.
@@ -542,6 +594,7 @@ class ReleaseWorkflow(WorkflowExecution):
 WORKFLOW_REGISTRY: Dict[str, Type[WorkflowExecution]] = {
     EvalsWorkflow.name: EvalsWorkflow,
     AgenticWorkflow.name: AgenticWorkflow,
+    AgenticTracesWorkflow.name: AgenticTracesWorkflow,
     BenchmarksWorkflow.name: BenchmarksWorkflow,
     ServingBenchWorkflow.name: ServingBenchWorkflow,
     PrefillDecodeWorkflow.name: PrefillDecodeWorkflow,
@@ -559,6 +612,7 @@ def get_workflow_class(name: str) -> Type[WorkflowExecution]:
 
 
 __all__ = [
+    "AgenticTracesWorkflow",
     "AgenticWorkflow",
     "BenchmarksWorkflow",
     "EvalsWorkflow",

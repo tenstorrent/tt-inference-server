@@ -34,6 +34,7 @@ _ENGINE_WORKFLOW_NAMES = {
     WorkflowType.STRESS_TESTS: "stress_tests",
     WorkflowType.RELEASE: "release",
     WorkflowType.AGENTIC: "agentic",
+    WorkflowType.AGENTIC_TRACES: "agentic_traces",
     WorkflowType.SERVING_BENCH: "serving_bench",
     WorkflowType.PREFILL_DECODE: "prefill_decode",
 }
@@ -142,15 +143,16 @@ def _is_llm_spec_test_run(wf, model_spec) -> bool:
 
 def can_dispatch_to_engine(model_spec, runtime_config) -> bool:
     wf = WorkflowType.from_string(runtime_config.workflow)
-    # Agentic evals, serving-bench benchmark suites, the prefill/decode smoke
-    # suite, and the prefix-cache / spec-decode benchmarks are
-    # workflow-engine-only features with no v1 driver. They route to the workflow
-    # engine for ANY model, regardless of model_type. prefill_decode additionally
-    # owns its own stack.
+    # Agentic evals, agentic trace replay, serving-bench benchmark suites, the
+    # prefill/decode smoke suite, and the prefix-cache / spec-decode benchmarks
+    # are workflow-engine-only features with no v1 driver. They route to the
+    # workflow engine for ANY model, regardless of model_type. prefill_decode
+    # additionally owns its own stack.
     if (
         wf
         in (
             WorkflowType.AGENTIC,
+            WorkflowType.AGENTIC_TRACES,
             WorkflowType.SERVING_BENCH,
             WorkflowType.PREFILL_DECODE,
             WorkflowType.STRESS_TESTS,
@@ -209,6 +211,17 @@ def build_engine_commands(model_spec, runtime_config, json_fpath) -> list:
             VenvCommand(
                 None,
                 _build_agentic_cmd(
+                    repo_root, model_spec, runtime_config, json_fpath, output_dir
+                ),
+                env=_engine_env(),
+                label=engine_workflow,
+            )
+        ]
+    if wf == WorkflowType.AGENTIC_TRACES:
+        return [
+            VenvCommand(
+                None,
+                _build_agentic_traces_cmd(
                     repo_root, model_spec, runtime_config, json_fpath, output_dir
                 ),
                 env=_engine_env(),
@@ -475,6 +488,37 @@ def _build_agentic_cmd(repo_root, model_spec, runtime_config, json_fpath, output
     launcher = _resolve_launcher(repo_root, "run_agentic.py", "agentic")
     cmd = _base_engine_argv(
         launcher, model_spec, runtime_config, json_fpath, output_dir, "agentic"
+    )
+    _forward_jwt(cmd, runtime_config)
+    return cmd
+
+
+def _build_agentic_traces_cmd(
+    repo_root, model_spec, runtime_config, json_fpath, output_dir
+):
+    launcher = _resolve_launcher(repo_root, "run_agentic_traces.py", "agentic-traces")
+    cmd = _base_engine_argv(
+        launcher, model_spec, runtime_config, json_fpath, output_dir, "agentic_traces"
+    )
+    _extend_if_set(
+        cmd,
+        "--agentic-traces-mode",
+        getattr(runtime_config, "agentic_traces_mode", None),
+    )
+    _extend_if_set(
+        cmd,
+        "--agentic-traces-sources",
+        getattr(runtime_config, "agentic_traces_sources", None),
+    )
+    _extend_if_set(
+        cmd,
+        "--agentic-traces-duration",
+        getattr(runtime_config, "agentic_traces_duration", None),
+    )
+    _extend_if_set(
+        cmd,
+        "--agentic-traces-git-ref",
+        getattr(runtime_config, "agentic_traces_git_ref", None),
     )
     _forward_jwt(cmd, runtime_config)
     return cmd

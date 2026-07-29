@@ -314,6 +314,49 @@ class TestModelSpecCliArgsCompatibility:
         else:
             assert args.vllm_override_args == test_value
 
+    def test_agentic_traces_mode_defaults_to_full(self, base_args):
+        with patch("sys.argv", ["run.py"] + base_args):
+            args = parse_arguments()
+        assert args.agentic_traces_mode == "full"
+        assert args.agentic_traces_sources is None
+        assert args.agentic_traces_duration is None
+        assert args.agentic_traces_git_ref is None
+
+    @pytest.mark.parametrize(
+        "flag,value",
+        [
+            ("--agentic-traces-sources", "inferencex_agentx"),
+            ("--agentic-traces-duration", "1800"),
+            ("--agentic-traces-git-ref", "abc123"),
+        ],
+    )
+    def test_agentic_traces_overrides_require_their_workflow(
+        self, base_args, flag, value, capsys
+    ):
+        # base_args uses --workflow benchmarks
+        with patch("sys.argv", ["run.py"] + base_args + [flag, value]):
+            with pytest.raises(SystemExit):
+                parse_arguments()
+        assert "require --workflow agentic_traces" in capsys.readouterr().err
+
+    def test_agentic_traces_duration_below_the_scenario_floor_is_rejected(
+        self, base_args, capsys
+    ):
+        args = [a if a != "benchmarks" else "agentic_traces" for a in base_args]
+        with patch("sys.argv", ["run.py"] + args + ["--agentic-traces-duration", "60"]):
+            with pytest.raises(SystemExit):
+                parse_arguments()
+        assert "must be at least 900s" in capsys.readouterr().err
+
+    def test_agentic_traces_duration_at_the_floor_is_accepted(self, base_args):
+        args = [a if a != "benchmarks" else "agentic_traces" for a in base_args]
+        with patch(
+            "sys.argv",
+            ["run.py"] + args + ["--agentic-traces-duration", "900"],
+        ):
+            parsed = parse_arguments()
+        assert parsed.agentic_traces_duration == 900
+
     def test_optional_args_and_defaults(self, base_args):
         """Test optional arguments and default values."""
         # Test with all optional args

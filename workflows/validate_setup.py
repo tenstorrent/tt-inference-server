@@ -114,6 +114,20 @@ def validate_runtime_args(model_spec, runtime_config):
         if os.getenv("OVERRIDE_BENCHMARKS"):
             logger.warning("OVERRIDE_BENCHMARKS is active, using override benchmarks")
         get_benchmark_config(model_spec)
+    if workflow_type == WorkflowType.AGENTIC_TRACES:
+        # Fail here rather than after the multi-minute InferenceX clone + install
+        # that the AGENTIC_TRACES venv setup performs.
+        from reference_config.agentic_traces.agentic_traces_config import (
+            get_agentic_traces_config,
+        )
+
+        assert get_agentic_traces_config(model_spec) is not None, (
+            f"Model:={model_spec.model_name} (model_id={model_spec.model_id}) has "
+            "no AGENTIC_TRACES_CONFIGS entry. Add one to "
+            "reference_config/agentic_traces/agentic_traces_config.py, including "
+            "the InferenceX git ref to pin."
+        )
+
     if workflow_type == WorkflowType.STRESS_TESTS:
         pass  # Model support already validated via MODEL_SPECS check
 

@@ -89,6 +89,14 @@ class RuntimeConfig:
     spec_decode_preset: str = "full"
     spec_decode_warmup_requests: Optional[int] = None
 
+    # Agentic-traces benchmark. The benchmark parameters themselves live in
+    # reference_config/agentic_traces (per ModelSpec); these are only the
+    # mode selection and ad-hoc overrides.
+    agentic_traces_mode: str = "full"
+    agentic_traces_sources: Optional[str] = None
+    agentic_traces_duration: Optional[int] = None
+    agentic_traces_git_ref: Optional[str] = None
+
     # Device configuration
     device_id: Optional[List[int]] = None
 
@@ -178,6 +186,10 @@ class RuntimeConfig:
             spec_decode_warmup_requests=getattr(
                 args, "spec_decode_warmup_requests", None
             ),
+            agentic_traces_mode=getattr(args, "agentic_traces_mode", None) or "full",
+            agentic_traces_sources=getattr(args, "agentic_traces_sources", None),
+            agentic_traces_duration=getattr(args, "agentic_traces_duration", None),
+            agentic_traces_git_ref=getattr(args, "agentic_traces_git_ref", None),
             device_id=args.device_id,
             host_volume=args.host_volume,
             host_hf_cache=args.host_hf_cache,
