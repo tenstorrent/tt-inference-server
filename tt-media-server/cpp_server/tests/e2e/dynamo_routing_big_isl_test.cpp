@@ -16,7 +16,7 @@
 //  3. decode received and handled the slot reservation request
 //  4. prefill received slot reservation response
 //  5. decode was hit afterwards and produced tokens
-//  6. decode released the proper session
+//  6. decode released the same sessionId prefill logged on grant
 
 #include <gtest/gtest.h>
 
@@ -73,15 +73,23 @@ bool findSlotReservationRequest(const std::string& log, uint32_t taskId) {
          log.find(match + "\n") != std::string::npos;
 }
 
-std::optional<uint32_t> findSlotReservationGranted(const std::string& log,
-                                                   uint32_t taskId) {
+struct SlotReservationGrantedLog {
+  uint32_t slotId = 0;
+  std::string sessionId;
+};
+
+std::optional<SlotReservationGrantedLog> findSlotReservationGranted(
+    const std::string& log, uint32_t taskId) {
   const std::string pattern =
       R"(\[DisaggregationService\] Slot reservation granted taskId=)" +
-      std::to_string(taskId) + R"( slotId=(\d+))";
+      std::to_string(taskId) + R"( slotId=(\d+) sessionId='([^']*)')";
   const std::regex re(pattern);
   std::smatch m;
   if (!std::regex_search(log, m, re)) return std::nullopt;
-  return static_cast<uint32_t>(std::stoul(m[1].str()));
+  SlotReservationGrantedLog out;
+  out.slotId = static_cast<uint32_t>(std::stoul(m[1].str()));
+  out.sessionId = m[2].str();
+  return out;
 }
 
 struct DecodeSessionReleaseLog {
@@ -201,23 +209,29 @@ TEST_F(DynamoRoutingBigIslTest, BigIsl_RoutesPrefillThenDecode) {
   std::cout << "[test] decode saw slot reservation request for taskId="
             << *taskId << std::endl;
 
-  // Prefill was granted a valid slot.
-  std::optional<uint32_t> slotId;
+  // Prefill was granted a valid slot (and logged the reserved sessionId).
+  std::optional<SlotReservationGrantedLog> granted;
   ASSERT_TRUE(waitFor(
       [&] {
-        slotId = findSlotReservationGranted(readFile(prefillLog), *taskId);
-        return slotId.has_value();
+        granted = findSlotReservationGranted(readFile(prefillLog), *taskId);
+        return granted.has_value();
       },
       K_LOG_ASSERTION_TIMEOUT_SEC, K_LOG_POLL_INTERVAL_MS))
       << "prefill worker never logged 'Slot reservation granted taskId="
       << *taskId
-      << " slotId=…' — slot reservation was not granted (log=" << prefillLog
-      << ")";
-  EXPECT_NE(*slotId, K_INVALID_SLOT_ID)
+      << " slotId=… sessionId=…' — slot reservation was not granted (log="
+      << prefillLog << ")";
+  EXPECT_NE(granted->slotId, K_INVALID_SLOT_ID)
       << "slot reservation was granted but with INVALID_SLOT_ID for taskId="
       << *taskId;
+  EXPECT_FALSE(granted->sessionId.empty())
+      << "slot reservation was granted but sessionId was empty for taskId="
+      << *taskId;
+  std::cout << "[test] prefill slot reservation granted: slotId="
+            << granted->slotId << " sessionId=" << granted->sessionId
+            << std::endl;
 
-  // Confirm decode is releasing the session after the final chunk.
+  // Confirm decode is releasing the same sessionId prefill logged.
   std::optional<DecodeSessionReleaseLog> release;
   ASSERT_TRUE(waitFor(
       [&] {
@@ -229,8 +243,8 @@ TEST_F(DynamoRoutingBigIslTest, BigIsl_RoutesPrefillThenDecode) {
          "session …' — the session was not released after the final chunk "
          "(log="
       << decodeLog << ")";
-  EXPECT_FALSE(release->sessionId.empty())
-      << "decode released a session but the logged sessionId was empty "
+  EXPECT_EQ(release->sessionId, granted->sessionId)
+      << "decode released a different session than the one prefill logged "
          "(decodeTaskId="
       << release->decodeTaskId << ")";
   std::cout << "[test] decode released session: decodeTaskId="
@@ -238,9 +252,9 @@ TEST_F(DynamoRoutingBigIslTest, BigIsl_RoutesPrefillThenDecode) {
             << std::endl;
 
   std::cout << "[test] PASS: DYNAMO_ROUTING=1 big-ISL routed prefill→decode "
-            << "(prefillTaskId=" << *taskId << " slotId=" << *slotId
+            << "(prefillTaskId=" << *taskId << " slotId=" << granted->slotId
             << " completion_tokens=" << resp.usage.completionTokens
-            << " released_session_id=" << release->sessionId
+            << " sessionId=" << release->sessionId
             << " decodeTaskId=" << release->decodeTaskId << ")" << std::endl;
 }
 
