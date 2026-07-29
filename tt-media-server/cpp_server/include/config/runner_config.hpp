@@ -62,6 +62,12 @@ struct BlazeConfig : RunnerConfigBase {
   uint32_t migrationDecodeEndpointId = defaults::MIGRATION_DECODE_ENDPOINT_ID;
   std::string specDecodeMode = defaults::SPEC_DECODE_MODE;
   size_t mtpLevel = defaults::MTP_LEVEL;
+  // DFlash block width. The drafter denoises a FIXED-width block of
+  // (anchor + blockSize-1 proposals), so this sets max_spec_tokens = blockSize - 1.
+  // MUST equal the launcher's block_size (blaze's BlockDiffusionRouterStage, 8 today):
+  // it sizes the router op's per-slot hidden-state storage rows and bounds the lane_id
+  // the host may address, so a mismatch reads the wrong row silently rather than erroring.
+  size_t dflashBlockSize = defaults::DFLASH_BLOCK_SIZE;
   uint32_t blazeNumberOfPipelineStages =
       defaults::BLAZE_NUMBER_OF_PIPELINE_STAGES;
 

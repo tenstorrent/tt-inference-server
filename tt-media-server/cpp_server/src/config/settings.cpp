@@ -399,6 +399,7 @@ BlazeConfig blazeConfig() {
     cfg.migrationDecodeEndpointId = migrationDecodeEndpointId();
     cfg.specDecodeMode = specDecodeMode();
     cfg.mtpLevel = mtpLevel();
+    cfg.dflashBlockSize = dflashBlockSize();
     cfg.blazeNumberOfPipelineStages = blazeNumberOfPipelineStages();
 
     // Pipeline / channel config
@@ -849,6 +850,17 @@ size_t mtpLevel() {
   auto val = static_cast<size_t>(envUlong("MTP_LEVEL", defaults::MTP_LEVEL));
   if (val > 4) {
     throw std::runtime_error("MTP_LEVEL must be <= 4");
+  }
+  return val;
+}
+
+size_t dflashBlockSize() {
+  auto val =
+      static_cast<size_t>(envUlong("DFLASH_BLOCK_SIZE", defaults::DFLASH_BLOCK_SIZE));
+  // >= 2 because a block is anchor + at least one proposal (blaze's HostFSM asserts the
+  // same); <= 8 because max_spec_tokens = val - 1 must fit DFLASH_MAX_SPEC_TOKENS = 7.
+  if (val < 2 || val > 8) {
+    throw std::runtime_error("DFLASH_BLOCK_SIZE must be in [2, 8]");
   }
   return val;
 }

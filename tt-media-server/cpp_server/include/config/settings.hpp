@@ -292,6 +292,10 @@ std::string specDecodeMode();
 /** MTP level from MTP_LEVEL. Default: defaults::MTP_LEVEL. */
 size_t mtpLevel();
 
+/** DFlash block width from DFLASH_BLOCK_SIZE. Default: defaults::DFLASH_BLOCK_SIZE.
+ * Must equal the launcher's block_size; yields max_spec_tokens = value - 1. */
+size_t dflashBlockSize();
+
 /** Media payload task queue name from TT_MEDIA_TASK_QUEUE. */
 std::string ttMediaTaskQueueName();
 

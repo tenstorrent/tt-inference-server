@@ -69,8 +69,12 @@ constexpr unsigned KV_MIGRATION_DRAIN_POLL_MS = 100;
 
 constexpr unsigned SESSION_ALLOCATION_MAX_RETRIES = 15;
 
+// "none" | "mtp" | "dflash"
 constexpr const char* SPEC_DECODE_MODE = "none";
 constexpr size_t MTP_LEVEL = 1;
+// Matches blaze's BlockDiffusionRouterStage(block_size=8) and the engine's
+// DFLASH_MAX_SPEC_TOKENS = 7 (== block_size - 1). Change both sides together.
+constexpr size_t DFLASH_BLOCK_SIZE = 8;
 
 // Number of pipeline stages of the Blaze Decode model.
 constexpr uint32_t BLAZE_NUMBER_OF_PIPELINE_STAGES = 64;

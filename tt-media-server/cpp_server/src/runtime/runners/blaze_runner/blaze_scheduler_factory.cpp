@@ -113,6 +113,25 @@ std::unique_ptr<IDecodeScheduler> makeDecodeScheduler(
   if (config.specDecodeMode == "mtp") {
     managerParams.spec_decode_mode = ds::SpecDecodeMode::MTP;
     managerParams.max_spec_tokens = static_cast<uint32_t>(config.mtpLevel);
+  } else if (config.specDecodeMode == "dflash") {
+    // DFlash verifies a fixed-width block of (anchor + proposals), so the proposal
+    // count is block_size - 1 and MUST match the launcher's block_size. Launch blaze
+    // with --spec-decode-mode dflash to get the matching device topology.
+    managerParams.spec_decode_mode = ds::SpecDecodeMode::DFLASH;
+    managerParams.max_spec_tokens =
+        static_cast<uint32_t>(config.dflashBlockSize) - 1U;
+    TT_LOG_INFO(
+        "makeDecodeScheduler: DFlash spec decode enabled (block_size={}, "
+        "max_spec_tokens={}). This must equal the blaze launcher's block_size. Note "
+        "requests only speculate when fast_mode is set (USE_FAST_MODE=1 forces it "
+        "for every request).",
+        config.dflashBlockSize, managerParams.max_spec_tokens);
+  } else if (config.specDecodeMode != "none") {
+    // Previously an unknown value silently ran non-speculative decode against a
+    // launcher built for speculation, which looks like a correctness bug, not a config
+    // one. Fail at construction instead.
+    throw std::runtime_error("Unknown SPEC_DECODE_MODE '" + config.specDecodeMode +
+                             "' (expected none | mtp | dflash)");
   }
   auto scheduler = std::make_unique<RealDecodeScheduler>(
       std::make_unique<ds::DecodeScheduler>(
