@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <thread>
 
 #include "messaging/i_kafka_consumer.hpp"
@@ -57,7 +58,8 @@ class KvMigrationWorker {
 
  private:
   void consumerLoop();
-  void publishAck(uint64_t migrationId, tt::services::MigrationStatus status);
+  void publishAck(uint64_t kafkaRequestId, std::optional<uint64_t> migrationId,
+                  tt::services::MigrationStatus status);
 
   std::unique_ptr<tt::messaging::IKafkaConsumer> requestConsumer;
   std::unique_ptr<tt::messaging::IKafkaProducer> ackProducer;
