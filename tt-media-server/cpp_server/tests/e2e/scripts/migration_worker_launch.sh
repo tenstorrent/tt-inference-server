@@ -20,6 +20,25 @@
 # These must be the same string for discovery + routing to line up, so the
 # deploy pins them to a single tag per worker.
 #
+# WORKER_HOST_TAG — TESTING-ONLY ESCAPE HATCH. Do not use in production.
+#   Decouples --host (table tag) from --name (discovery key) for the one case
+#   where a single .pb has to serve BOTH sides of a migration: tt-llm-engine's
+#   make_test_table emits one synthetic "host-0" fabric_node_host, so a 1-1
+#   perf harness that reuses that table on prefill AND decode cannot also share
+#   it as the discovery name — the two workers would collide on
+#   mooncake/rpc_meta/host-0 and the second TransferEngine::init would fail with
+#   "Duplicate rpc_meta key not allowed". Set WORKER_HOST_TAG to the table's tag
+#   and leave WORKER_TAG as this worker's unique name. Defaults to WORKER_TAG,
+#   so every existing deploy is byte-identical.
+#
+#   Only a PREFILL may use it. A DECODE's WORKER_TAG must still equal its table
+#   tag: the prefill routes by the decode TABLE's host tag (hostsForRequest on
+#   the exchanged decode .pb) and looks that string up in a channel map keyed by
+#   --peer, i.e. by the decode's --name. Split them on a decode and the stack
+#   still discovers, exchanges tables and reports /readyz ok — then every
+#   migration fails with "no control channel for decode host '<tag>'". Enforced
+#   below rather than left to fail at the first Kafka request.
+#
 # Peers (PEERS): CSV of peer tags for THIS worker, role-agnostic — the deploy
 #   fills it (default: prefill → every decode for control TABLE_EXCHANGE +
 #   migrate; decode → none) and this launcher just forwards it. The worker
@@ -37,7 +56,8 @@
 #   CONTROL_PORT (KV control port a decode binds + publishes to metadata;
 #   defaults to the worker's own default when unset), DEVICE_MAP (legacy file
 #   fallback), ENGINE_HANDOFF_PORT (listen for DeviceMap over localhost; preferred
-#   when deploy pushes via engine_handoff_sender). Omit both for discovery-only.
+#   when deploy pushes via engine_handoff_sender). Omit both for discovery-only,
+#   WORKER_HOST_TAG (testing only; see above).
 set -euo pipefail
 
 die() { echo "ERROR: $*" >&2; exit 2; }
@@ -47,6 +67,21 @@ die() { echo "ERROR: $*" >&2; exit 2; }
 : "${METADATA:?METADATA required}"
 : "${WORKER_TAG:?WORKER_TAG required}"
 : "${HEALTH_PORT:?HEALTH_PORT required}"
+
+# --host defaults to --name (the production contract). A different value is the
+# testing-only split documented in the header.
+WORKER_HOST_TAG="${WORKER_HOST_TAG:-${WORKER_TAG}}"
+if [[ "${WORKER_HOST_TAG}" != "${WORKER_TAG}" ]]; then
+  [[ "${WORKER_ROLE}" == "prefill" ]] || \
+    die "WORKER_HOST_TAG ('${WORKER_HOST_TAG}') may only differ from WORKER_TAG \
+('${WORKER_TAG}') on a prefill. A decode's name IS its routing key: the prefill \
+resolves peers by name but routes by the decode table's host tag, so a split \
+decode passes discovery and /readyz and then fails every migration with 'no \
+control channel for decode host ${WORKER_HOST_TAG}'. Give the decode \
+WORKER_TAG=${WORKER_HOST_TAG} instead."
+  echo "[launch] TESTING-ONLY: --name '${WORKER_TAG}' != --host \
+'${WORKER_HOST_TAG}' (synthetic single-tag table; not a production topology)" >&2
+fi
 
 # Cross-host deployment: advertise the IP peers can reach us on, never a
 # loopback. Only unset/"auto" is resolved here; a concrete value (e.g. a local
@@ -97,7 +132,7 @@ case "${WORKER_ROLE}" in
     # migrate). Prefill initiates; decode does not. No Kafka.
     exec "${WORKER_BIN}" \
       --role "${WORKER_ROLE}" \
-      --metadata "${METADATA}" --name "${WORKER_TAG}" --host "${WORKER_TAG}" \
+      --metadata "${METADATA}" --name "${WORKER_TAG}" --host "${WORKER_HOST_TAG}" \
       --table "${DECODE_TABLE}" \
       ${peer_args[@]+"${peer_args[@]}"} \
       ${peer_control_args[@]+"${peer_control_args[@]}"} \
@@ -116,7 +151,7 @@ case "${WORKER_ROLE}" in
     export KAFKA_GROUP_ID="${KAFKA_GROUP_ID:-migration-workers-prefill-${WORKER_TAG}}"
     exec "${WORKER_BIN}" \
       --role "${WORKER_ROLE}" \
-      --metadata "${METADATA}" --name "${WORKER_TAG}" --host "${WORKER_TAG}" \
+      --metadata "${METADATA}" --name "${WORKER_TAG}" --host "${WORKER_HOST_TAG}" \
       --prefill-table "${PREFILL_TABLE}" \
       ${decode_table_args[@]+"${decode_table_args[@]}"} \
       "${peer_args[@]}" \

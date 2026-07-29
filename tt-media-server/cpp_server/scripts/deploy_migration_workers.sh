@@ -11,7 +11,8 @@
 #      worker runs on each --prefill-host and each --decode-host. Each worker's
 #      logical tag is used as its --name, --host, and --peer key. Prefill tags
 #      are used verbatim; decode hostnames are converted to tt-blaze's stable
-#      host-<crc32> table tags.
+#      host-<crc32> table tags. (Both are overridable for synthetic test tables
+#      only — see SYNTHETIC TEST TABLES below.)
 #   3. Workers find each other through the discovery service (register-then-
 #      resolve) — a prefill resolves each decode tag to its routable host via the
 #      metadata service and dials its control channel. No MPI/collectives.
@@ -48,6 +49,40 @@
 #     --prefill-hosts  bh-glx-c01u02,bh-glx-c01u03 \
 #     --decode-hosts   bh-glx-c01u08,bh-glx-c02u02,bh-glx-c03u02,bh-glx-c04u02 \
 #     --health-port 9109
+#
+# ---------------------------------------------------------------------------
+# SYNTHETIC TEST TABLES — TESTING-ONLY ESCAPE HATCHES. NOT FOR PRODUCTION.
+# ---------------------------------------------------------------------------
+# Everything above assumes engine-exported tables, where each worker's tag is
+# both its discovery name and its table's fabric_node_host. A 1-1 throughput
+# harness built on tt-llm-engine's make_test_table cannot satisfy that: the
+# generated .pb carries ONE synthetic tag ("host-0") that has to describe both
+# ends, but the two workers need DISTINCT names or they collide on
+# mooncake/rpc_meta/host-0 and the second TransferEngine::init dies with
+# "Duplicate rpc_meta key not allowed".
+#
+# Two knobs exist purely to bridge that gap. Both default off; leave them off
+# for any real deploy.
+#
+#   DECODE_TAGS_VERBATIM=1        use --decode-tags values as table tags AS-IS,
+#                                 skipping the host-<crc32> hash (a synthetic
+#                                 tag is not a hashed hostname).
+#   WORKER_HOST_TAGS[<tag>]=...   per-worker --host override, decoupling the
+#                                 table tag from the discovery name (--name
+#                                 stays the worker's tag). PREFILL ONLY.
+#
+# Only the prefill's name may float. A decode's name IS its routing key — the
+# prefill resolves peers by name but routes by the decode TABLE's host tag, so a
+# split decode discovers fine, exchanges tables, reports /readyz ok, and then
+# fails every migration with "no control channel for decode host '<tag>'".
+# Enforced in assertTestOnlyOverrides and again in migration_worker_launch.sh.
+#
+# 1-1 perf run against one make_test_table .pb (both tables point at it):
+#   DECODE_TAGS_VERBATIM=1
+#   DECODE_TAGS="host-0"                 # decode: --name host-0  --host host-0
+#   WORKER_HOST_TAGS[prefill-0]="host-0" # prefill: --name prefill-0 --host host-0
+# then --prefill-hosts <bh-glx-A> --decode-hosts <bh-glx-B>. Device maps stay
+# per-machine: ASIC unique_ids are per-chip serials, so each galaxy needs its own.
 
 set -uo pipefail
 
@@ -89,6 +124,9 @@ HANDOFF_SENDER_BIN="${HANDOFF_SENDER_BIN:-}"
 # table's host-<crc32> convention; empty => hash the corresponding decode host.
 PREFILL_TAGS="${PREFILL_TAGS:-}"
 DECODE_TAGS="${DECODE_TAGS:-}"
+# TESTING-ONLY (see SYNTHETIC TEST TABLES above). 1 => --decode-tags values are
+# used verbatim as table tags instead of being hashed to host-<crc32>.
+DECODE_TAGS_VERBATIM="${DECODE_TAGS_VERBATIM:-0}"
 # Optional alternate config file (else DEFAULT_CONFIG next to this script).
 CONFIG_FILE="${CONFIG_FILE:-}"
 # HTTP health port every worker exposes (/healthz /readyz /metrics). One worker
@@ -164,6 +202,11 @@ fabric_node_host, not on the CLI):
                            (default prefill-<i>)
   --decode-tags CSV        owning hostnames per decode host, converted to
                            host-<crc32> tags (default: --decode-hosts values)
+  --decode-tags-verbatim   TESTING ONLY: use --decode-tags as table tags as-is,
+                           no host-<crc32> hash. For synthetic make_test_table
+                           .pb files only; never for an engine-exported table.
+                           See SYNTHETIC TEST TABLES at the top of this script
+                           (pairs with WORKER_HOST_TAGS[<tag>] in the config)
 
 Options:
   --image IMAGE            migration-worker Docker image (default ${WORKER_IMAGE})
@@ -236,6 +279,7 @@ parseArgs() {
       --decode-device-map) DECODE_DEVICE_MAP="$2"; shift 2 ;;
       --prefill-tags) PREFILL_TAGS="$2"; shift 2 ;;
       --decode-tags) DECODE_TAGS="$2"; shift 2 ;;
+      --decode-tags-verbatim) DECODE_TAGS_VERBATIM=1; shift ;;
       --handoff-sender) HANDOFF_SENDER_BIN="$2"; shift 2 ;;
       --engine-handoff-port) ENGINE_HANDOFF_PORT="$2"; shift 2 ;;
       --health-port) HEALTH_PORT="$2"; shift 2 ;;
@@ -266,6 +310,8 @@ validateArgs() {
     die "--migration-mode must be device|dry-run"
   [[ "${IMAGE_PULL_PARALLELISM}" =~ ^[1-9][0-9]*$ ]] || \
     die "--image-pull-parallelism must be a positive integer"
+  [[ "${DECODE_TAGS_VERBATIM}" == "0" || "${DECODE_TAGS_VERBATIM}" == "1" ]] || \
+    die "DECODE_TAGS_VERBATIM must be 0|1, got: ${DECODE_TAGS_VERBATIM}"
   if [[ -n "${GHCR_TOKEN_FILE}" ]]; then
     [[ -r "${GHCR_TOKEN_FILE}" ]] || die "GHCR token file is unreadable: ${GHCR_TOKEN_FILE}"
     local tokenMode
@@ -312,6 +358,13 @@ validateArgs() {
 countHosts() { awk -F',' '{n=0; for(i=1;i<=NF;i++) if($i!="") n++; print n}' <<<"$1"; }
 
 decodeTagForHost() {
+  # TESTING-ONLY bypass: a synthetic table's fabric_node_host (e.g. "host-0" from
+  # make_test_table) is not a hashed hostname, so hashing it would invent a tag
+  # that appears in no table and every migration would fail to route.
+  if [[ "${DECODE_TAGS_VERBATIM}" == "1" ]]; then
+    printf '%s' "$1"
+    return 0
+  fi
   python3 - "$1" <<'PY'
 import sys
 import zlib
@@ -329,6 +382,9 @@ META_URI=""
 declare -a WK_ROLE=() WK_INDEX=() WK_HOST=() WK_TAG=() WK_DEVMAP=()
 declare -a WK_BIND_IP=() WK_CONTAINER=() WK_DOCKER=()
 declare -a WK_PORT=() WK_PID=() WK_FAILS=() WK_LOG=()
+# Table host tag (--host) per worker. Equals WK_TAG in every production deploy;
+# differs only under the testing-only WORKER_HOST_TAGS override.
+declare -a WK_HOST_TAG=()
 # Resolved peer CSV per worker (WK_PEERS[s]) — the generic, role-agnostic peer
 # list this worker is launched with. See peersForWorker() for how it's derived.
 declare -a WK_PEERS=()
@@ -341,6 +397,11 @@ DECODE_TAG_LIST=""
 # elements from the config file with plain assignment (no `declare`, which would
 # be local to the sourcing function), e.g.  WORKER_PEERS[decode-0]="prefill-0".
 declare -A WORKER_PEERS=()
+# TESTING-ONLY per-worker --host override, keyed by worker tag (which remains
+# --name): WORKER_HOST_TAGS[prefill-0]="host-0". Set from the config file with
+# plain assignment, like WORKER_PEERS. Leave empty for any production deploy —
+# see SYNTHETIC TEST TABLES at the top. Prefill only (assertTestOnlyOverrides).
+declare -A WORKER_HOST_TAGS=()
 
 probeMetadata() {
   python3 - "$1" <<'PY' 2>/dev/null
@@ -475,6 +536,57 @@ WORKER_PEERS so each decode has a single prefill owner \
   done
 }
 
+# Table host tag for a worker: its own tag, unless the testing-only
+# WORKER_HOST_TAGS override names a different fabric_node_host.
+hostTagForWorker() {
+  local tag="$1"
+  printf '%s' "${WORKER_HOST_TAGS[$tag]:-${tag}}"
+}
+
+# Gate the two testing-only escape hatches: announce them loudly (a stray knob in
+# a production config must not pass silently) and reject a split decode, whose
+# only symptom would otherwise be every migration failing after a clean bring-up.
+assertTestOnlyOverrides() {
+  local s tag hostTag unknown=""
+  if (( ${#WORKER_HOST_TAGS[@]} > 0 )) || [[ "${DECODE_TAGS_VERBATIM}" == "1" ]]; then
+    echo "[deploy] ================ TESTING-ONLY CONFIGURATION ================" >&2
+    [[ "${DECODE_TAGS_VERBATIM}" == "1" ]] && \
+      echo "[deploy]   DECODE_TAGS_VERBATIM=1: decode table tags used as-is (no host-<crc32>)" >&2
+    for tag in "${!WORKER_HOST_TAGS[@]}"; do
+      echo "[deploy]   WORKER_HOST_TAGS[${tag}]='${WORKER_HOST_TAGS[$tag]}': --name '${tag}' != --host" >&2
+    done
+    echo "[deploy]   Valid only for a synthetic single-tag table (make_test_table)." >&2
+    echo "[deploy]   An engine-exported table must NOT be deployed this way." >&2
+    echo "[deploy] ===========================================================" >&2
+  fi
+
+  for (( s = 0; s < ${#WK_TAG[@]}; s++ )); do
+    tag="${WK_TAG[$s]}"
+    hostTag="${WK_HOST_TAG[$s]}"
+    [[ "${tag}" == "${hostTag}" ]] && continue
+    [[ "${WK_ROLE[$s]}" == "prefill" ]] || \
+      die "WORKER_HOST_TAGS[${tag}]='${hostTag}' splits a DECODE's name from its \
+table tag. A decode's name IS its routing key: the prefill resolves peers by name \
+but routes by the decode table's host tag, so this deploy would come up healthy \
+and then fail every migration with \"no control channel for decode host \
+'${hostTag}'\". Name the decode '${hostTag}' instead (DECODE_TAGS with \
+DECODE_TAGS_VERBATIM=1)."
+  done
+
+  # A typo'd key is silently ignored by hostTagForWorker, which would send the
+  # worker out with an unintended --host. Name the offenders instead.
+  for tag in "${!WORKER_HOST_TAGS[@]}"; do
+    local found=0
+    for (( s = 0; s < ${#WK_TAG[@]}; s++ )); do
+      [[ "${WK_TAG[$s]}" == "${tag}" ]] && { found=1; break; }
+    done
+    (( found )) || unknown="${unknown:+${unknown}, }${tag}"
+  done
+  [[ -z "${unknown}" ]] || \
+    die "WORKER_HOST_TAGS names unknown worker tag(s): ${unknown}. Keys must be \
+worker tags (prefill: --prefill-tags or prefill-<i>; decode: the resolved table tag)."
+}
+
 containerNameForTag() {
   local name="${1//[^a-zA-Z0-9_.-]/-}"
   printf 'tt-migration-worker-%s' "${name}"
@@ -582,6 +694,7 @@ addWorkerSlot() {
   bindIp="$(resolveBindIp "${host}")"
   echo "[deploy] ${host}: docker='${dockerCommand}' MC_TCP_BIND_ADDRESS=${bindIp}"
   WK_ROLE+=("$1"); WK_INDEX+=("$2"); WK_HOST+=("$3"); WK_TAG+=("$4"); WK_DEVMAP+=("${devmap}")
+  WK_HOST_TAG+=("$(hostTagForWorker "$4")")
   WK_BIND_IP+=("${bindIp}"); WK_CONTAINER+=("$(containerNameForTag "${tag}")"); WK_DOCKER+=("${dockerCommand}")
   WK_PEERS+=("$(peersForWorker "$1" "$4")")
   WK_PORT+=("${HEALTH_PORT}"); WK_PID+=(""); WK_FAILS+=(0)
@@ -590,7 +703,8 @@ addWorkerSlot() {
 
 # Map worker i of each role onto host i of that role's CSV (one worker per host)
 # and resolve its table tag. Prefill tags remain verbatim. Each decode tag input
-# is the owning hostname and is converted to tt-blaze's host-<crc32> table tag.
+# is the owning hostname and is converted to tt-blaze's host-<crc32> table tag
+# (unless the testing-only DECODE_TAGS_VERBATIM=1 keeps it as-is).
 initWorkerSlots() {
   local -a prefill_hosts decode_hosts prefill_tags decode_tags resolved_decode_tags
   IFS=',' read -ra prefill_hosts <<<"${PREFILL_HOSTS}"
@@ -650,7 +764,7 @@ ensureAllWorkerImages() {
 # session so worker logs are captured locally and the launcher PID remains a
 # useful teardown handle.
 workerCmd() {
-  local s="$1" role="${WK_ROLE[$s]}" tag="${WK_TAG[$s]}"
+  local s="$1" role="${WK_ROLE[$s]}" tag="${WK_TAG[$s]}" hostTag="${WK_HOST_TAG[$s]}"
   local devmap="${WK_DEVMAP[$s]}" peers="${WK_PEERS[$s]}"
   local bindIp="${WK_BIND_IP[$s]}" container="${WK_CONTAINER[$s]}" table
   local -a cmd dockerCommand
@@ -666,6 +780,7 @@ workerCmd() {
     -e "WORKER_ROLE=${role}"
     -e "WORKER_BIN=${WORKER_BIN}"
     -e "WORKER_TAG=${tag}"
+    -e "WORKER_HOST_TAG=${hostTag}"
     -e "METADATA=${META_URI}"
     -e "PEERS=${peers}"
     -e "HEALTH_PORT=${HEALTH_PORT}"
@@ -931,6 +1046,7 @@ main() {
 
   verifyDiscoveryService || exit 1
   initWorkerSlots
+  assertTestOnlyOverrides
   assertExclusiveDecodePeers
   ensureAllWorkerImages
 
