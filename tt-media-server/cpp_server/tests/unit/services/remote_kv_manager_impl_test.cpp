@@ -138,7 +138,7 @@ MigrationRequest makeRequest(uint32_t src = 1, uint32_t dst = 2) {
 
 std::string makeAck(uint64_t id, MigrationStatus status) {
   return serialize(MigrationResponseMessage{
-      .migration_id = id,
+      .kafka_request_id = id,
       .status = status,
   });
 }
@@ -195,7 +195,8 @@ TEST(RemoteKVManagerImplTest, MigratePublishesRequestPayload) {
   ASSERT_EQ(producer->payloadCount(), 1u);
   auto parsed = parseMigrationRequest(producer->getPayloads().front());
   ASSERT_TRUE(parsed.has_value());
-  EXPECT_EQ(parsed->migration_id, id);
+  EXPECT_EQ(parsed->kafka_request_id, id);
+  EXPECT_FALSE(parsed->migration_id.has_value());
   EXPECT_EQ(parsed->src_slot, request.src_slot);
   EXPECT_EQ(parsed->dst_slot, request.dst_slot);
   EXPECT_EQ(parsed->layer_begin, request.layer_begin);
@@ -204,6 +205,23 @@ TEST(RemoteKVManagerImplTest, MigratePublishesRequestPayload) {
   EXPECT_EQ(parsed->src_position_end, request.src_position_end);
   EXPECT_EQ(parsed->dst_position_begin, request.dst_position_begin);
   EXPECT_EQ(parsed->dst_position_end, request.dst_position_end);
+}
+
+TEST(RemoteKVManagerImplTest, MigratePublishesMigrationIdWhenSet) {
+  auto producerOwned = std::make_unique<FakeProducer>();
+  auto* producer = producerOwned.get();
+  auto consumer = std::make_unique<FakeConsumer>();
+  auto mgr = makeManager(std::move(producerOwned), std::move(consumer));
+
+  auto request = makeRequest();
+  request.migration_id = 424242u;
+  const uint64_t id = mgr->migrate(request);
+
+  auto parsed = parseMigrationRequest(producer->getPayloads().front());
+  ASSERT_TRUE(parsed.has_value());
+  EXPECT_EQ(parsed->kafka_request_id, id);
+  ASSERT_TRUE(parsed->migration_id.has_value());
+  EXPECT_EQ(*parsed->migration_id, 424242u);
 }
 
 TEST(RemoteKVManagerImplTest, MultipleMigratesGetDistinctIds) {

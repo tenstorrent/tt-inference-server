@@ -621,15 +621,18 @@ bool driveViaKafka(KvMigrationMultiHostSender& multiHost,
 
   KafkaProducer reqProducer(
       KafkaProducerConfig{o.kafka_brokers, o.kafka_request_topic});
-  const MigrationRequestMessage m{o.uuid,
-                                  req.src_slot,
-                                  req.dst_slot,
-                                  req.layer_begin,
-                                  req.layer_end,
-                                  req.src_position_begin,
-                                  req.src_position_end,
-                                  req.dst_position_begin,
-                                  req.dst_position_end};
+  const MigrationRequestMessage m{
+      .kafka_request_id = o.uuid,
+      .migration_id = o.uuid,
+      .src_slot = req.src_slot,
+      .dst_slot = req.dst_slot,
+      .layer_begin = req.layer_begin,
+      .layer_end = req.layer_end,
+      .src_position_begin = req.src_position_begin,
+      .src_position_end = req.src_position_end,
+      .dst_position_begin = req.dst_position_begin,
+      .dst_position_end = req.dst_position_end,
+  };
   std::string err;
   if (!reqProducer.send(serialize(m), &err)) {
     std::cerr << "[sender] kafka produce failed: " << err << "\n";
@@ -646,7 +649,7 @@ bool driveViaKafka(KvMigrationMultiHostSender& multiHost,
     auto raw = ackConsumer.receive(200);
     if (!raw) continue;
     auto ack = parseMigrationResponse(*raw);
-    if (ack && ack->migration_id == o.uuid) {
+    if (ack && ack->kafka_request_id == o.uuid) {
       ok = ack->status == tt::services::MigrationStatus::SUCCESSFUL;
       std::cout << "[sender] ack uuid=" << o.uuid
                 << " status=" << static_cast<int>(ack->status) << "\n";
