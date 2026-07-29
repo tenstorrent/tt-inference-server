@@ -9,7 +9,7 @@ templates:
     - google/gemma-1.1-2b-it
   version: "0.19.0"
   tt_metal_commit: "REPLACE_ME"
-  docker_image: "REPLACE_ME"
+  docker_image: "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:9e98962797a2db9ba207d224b197ba6947284687_edb99fa_90425922654"
   impl: training_lora
   model_type: TRAINING
   inference_engine: FORGE
@@ -35,7 +35,7 @@ templates:
     - meta-llama/Llama-3.1-8B
   version: "0.19.0"
   tt_metal_commit: "REPLACE_ME"
-  docker_image: "REPLACE_ME"
+  docker_image: "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:9e98962797a2db9ba207d224b197ba6947284687_edb99fa_90425922654"
   impl: training_lora
   model_type: TRAINING
   inference_engine: FORGE
