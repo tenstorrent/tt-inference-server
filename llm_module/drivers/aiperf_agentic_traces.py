@@ -314,6 +314,15 @@ def parse_aiperf_output(artifact_dir: Path) -> Dict[str, Any]:
         "p95_e2el_ms": e2el.get("p95", 0),
         "p99_e2el_ms": e2el.get("p99", 0),
         "mean_ttst_ms": _stat("time_to_second_token"),
+        # Distinct from TTFT on a reasoning model: TTFT is the first token of any
+        # kind, this is the first token the user actually sees, so the gap is
+        # time spent emitting reasoning tokens.
+        "mean_ttfot_ms": _stat("time_to_first_output_token"),
+        # Coordinated-omission-aware latency. Tracks request_latency at low
+        # concurrency and diverges from it once requests queue.
+        "mean_effective_latency_ms": _stat("effective_latency"),
+        "median_effective_latency_ms": _stat("effective_latency", "p50"),
+        "p99_effective_latency_ms": _stat("effective_latency", "p99"),
         # Throughput. output_token_throughput_per_user is decode speed while a
         # request is streaming; e2e_output_token_throughput divides by the whole
         # request wall-clock, so it is the honest user-visible speed for a
@@ -325,6 +334,23 @@ def parse_aiperf_output(artifact_dir: Path) -> Dict[str, Any]:
         "input_token_throughput": _stat("input_token_throughput"),
         "total_token_throughput": _stat("total_token_throughput"),
         "request_throughput": _stat("request_throughput"),
+        # Prefill/decode split, which is the main serving insight for
+        # long-context agentic replay. "effective" averages over the whole run
+        # including idle time; "active" only counts windows where that phase was
+        # working, so active/effective is the duty cycle (~3x apart in practice).
+        "effective_prefill_throughput": _stat("effective_prefill_throughput"),
+        "active_prefill_throughput": _stat("active_prefill_throughput"),
+        "effective_decode_throughput": _stat("effective_decode_throughput"),
+        "active_decode_throughput": _stat("active_decode_throughput"),
+        # Whether the requested load was actually applied. Trace replay honours
+        # recorded think time, so this sits below --concurrency by design, but a
+        # large shortfall means the run did not exercise the intended load.
+        "effective_concurrency": _stat("effective_concurrency"),
+        "effective_prefill_concurrency": _stat("effective_prefill_concurrency"),
+        "effective_decode_concurrency": _stat("effective_decode_concurrency"),
+        # KV pressure against --max-context-length.
+        "mean_tokens_in_flight": _stat("tokens_in_flight"),
+        "max_tokens_in_flight": _stat("tokens_in_flight", "max"),
         # Counts. `completed` keeps the sibling AIPerf drivers' meaning
         # (successful requests); `completed_with_errors` is the fork's
         # "Completed Requests (Success + Error)".
@@ -344,9 +370,32 @@ def parse_aiperf_output(artifact_dir: Path) -> Dict[str, Any]:
         # the direct read-out of whether --max-context-length was set right.
         "context_overflow_count": _int("context_overflow_count"),
         "osl_mismatch_count": _int("osl_mismatch_count"),
+        "osl_mismatch_diff_pct": _stat("osl_mismatch_diff_pct"),
         "theoretical_prefix_cache_hit_pct": _stat("theoretical_prefix_cache_hit"),
         "was_cancelled": bool(summary.get("was_cancelled", False)),
+        # Replay fidelity: a dropped credit is a request the load generator could
+        # not dispatch on the trace's schedule, so the timing was not honoured.
+        # `count` is the number of samples, i.e. the number of drops.
+        "credit_drop_count": _int("credit_drop_latency", "count"),
+        "mean_credit_to_start_latency_ms": _stat("credit_to_start_latency"),
+        # Connection churn, which is what surfaces as ServerDisconnectedError.
+        "connection_reuse_rate": _stat("http_req_connection_reused"),
+        "mean_http_req_waiting_ms": _stat("http_req_waiting"),
     }
+
+    # Error-adjusted percentiles: these blocks carry no `avg`, only percentiles,
+    # so they read as 0 if fetched like the others. They are absent entirely when
+    # a run had no errors.
+    for tag, prefix in (
+        ("adj_time_to_first_token", "adj_ttft"),
+        ("adj_request_latency", "adj_e2el"),
+        ("adj_inter_token_latency", "adj_tpot"),
+    ):
+        block = _block(tag)
+        for stat in ("p50", "p90", "p99"):
+            value = block.get(stat)
+            if isinstance(value, (int, float)):
+                metrics[f"{stat}_{prefix}_ms"] = value
 
     # The fork's own verdict on whether this run counts as a valid submission:
     # folds static scenario-lock violations, a >1% context-overflow rate, and
@@ -367,16 +416,37 @@ def parse_aiperf_output(artifact_dir: Path) -> Dict[str, Any]:
 
     branch_stats = summary.get("branch_stats")
     if isinstance(branch_stats, Mapping) and branch_stats:
-        # Subagent fan-out is the whole point of the agentic traces; errored or
-        # truncated children mean the replay did not run as recorded.
-        metrics["branch_children_spawned"] = branch_stats.get("children_spawned", 0)
-        metrics["branch_children_completed"] = branch_stats.get("children_completed", 0)
-        metrics["branch_children_errored"] = branch_stats.get("children_errored", 0)
-        metrics["branch_children_truncated"] = branch_stats.get("children_truncated", 0)
+        # Subagent fan-out is the whole point of the agentic traces; errored,
+        # truncated, or delayed children mean the replay did not run as recorded.
+        for stat in (
+            "children_spawned",
+            "children_completed",
+            "children_errored",
+            "children_truncated",
+            "children_delayed",
+            "parents_suspended",
+            "parents_resumed",
+            "parents_failed_due_to_child_error",
+            "joins_suppressed",
+        ):
+            metrics[f"branch_{stat}"] = branch_stats.get(stat, 0)
 
     errors = summary.get("error_summary")
     if isinstance(errors, list) and errors:
         metrics["error_summary"] = _summarize_errors(errors)
+
+    # Client provenance alongside the pinned git ref: the ref identifies the
+    # source, these identify the actual run.
+    for key, tag in (
+        ("aiperf_version", "aiperf_version"),
+        ("aiperf_schema_version", "schema_version"),
+        ("benchmark_id", "benchmark_id"),
+        ("run_started_at", "start_time"),
+        ("run_ended_at", "end_time"),
+    ):
+        value = summary.get(tag)
+        if value:
+            metrics[key] = value
 
     return metrics
 

@@ -9,11 +9,11 @@ Consumes the combined payload from
 emits one :class:`report_module.schema.Block` per run, all sharing kind
 ``agentic_traces`` so the report generator collapses them into one section.
 
-No dedicated renderer is registered: the payload is a flat record, which is what
-the generic renderer expects. No acceptance criteria are wired either, but the
-scenario's own ``submission_valid`` verdict is surfaced as ``submission_status``
--- the driver already fails runs it rejects, so this is the audit trail rather
-than the gate.
+The record stays flat; :mod:`report_module.agentic_traces_renderer` splits it
+into metric, health, and configuration tables at render time. No acceptance
+criteria are wired, but the scenario's own ``submission_valid`` verdict is
+surfaced as ``submission_status`` -- the driver already fails runs it rejects, so
+this is the audit trail rather than the gate.
 """
 
 from __future__ import annotations

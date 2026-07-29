@@ -493,13 +493,30 @@ def _summary_export(**overrides):
         "benchmark_duration": {"unit": "sec", "avg": 3605.47},
         "context_overflow_count": {"unit": "requests", "avg": 0.0},
         "osl_mismatch_count": {"unit": "requests", "avg": 0.0},
+        "osl_mismatch_diff_pct": _latency_block(unit="%", avg=0.0),
         "theoretical_prefix_cache_hit": {"unit": "%", "avg": 95.74},
         "was_cancelled": False,
+        "time_to_first_output_token": _latency_block(avg=9660.41),
+        "effective_latency": _latency_block(avg=14592.3, p50=10019.1, p99=58101.4),
+        "adj_time_to_first_token": {"unit": "ms", "p50": 5012.3, "p90": 11987.6},
+        "adj_request_latency": {"unit": "ms", "p50": 11004.7, "p99": 61122.8},
+        "effective_prefill_throughput": {"unit": "tokens/sec", "avg": 7878.22},
+        "active_prefill_throughput": {"unit": "tokens/sec", "avg": 14882.3},
+        "effective_decode_throughput": {"unit": "tokens/sec", "avg": 57.19},
+        "active_decode_throughput": {"unit": "tokens/sec", "avg": 67.86},
+        "effective_concurrency": {"unit": "requests", "avg": 7.42},
+        "tokens_in_flight": _latency_block(unit="tokens", avg=173742.75, max=243462.0),
+        "credit_drop_latency": _latency_block(avg=5.17, count=2),
+        "credit_to_start_latency": _latency_block(avg=3.78),
+        "http_req_connection_reused": _latency_block(unit="ratio", avg=0.923),
         "branch_stats": {
             "children_spawned": 12,
             "children_completed": 9,
             "children_errored": 1,
             "children_truncated": 2,
+            "children_delayed": 3,
+            "parents_failed_due_to_child_error": 1,
+            "joins_suppressed": 2,
         },
         "error_summary": [
             {
@@ -567,11 +584,46 @@ class TestOutputParsing:
         assert metrics["dataset_num_entries"] == 393
         assert metrics["theoretical_prefix_cache_hit_pct"] == 95.74
 
+    def test_reads_the_prefill_decode_split_and_applied_load(self, tmp_path):
+        """active/effective is the duty cycle, so both halves have to be kept."""
+        metrics = parse_aiperf_output(_write_summary(tmp_path))
+        assert metrics["effective_prefill_throughput"] == 7878.22
+        assert metrics["active_prefill_throughput"] == 14882.3
+        assert metrics["effective_decode_throughput"] == 57.19
+        assert metrics["active_decode_throughput"] == 67.86
+        assert metrics["effective_concurrency"] == 7.42
+        assert metrics["mean_tokens_in_flight"] == 173742.75
+        assert metrics["max_tokens_in_flight"] == 243462.0
+
+    def test_reads_replay_fidelity_signals(self, tmp_path):
+        metrics = parse_aiperf_output(_write_summary(tmp_path))
+        assert metrics["mean_ttfot_ms"] == 9660.41
+        assert metrics["mean_effective_latency_ms"] == 14592.3
+        # `count` is the number of dropped credits, not a mean.
+        assert metrics["credit_drop_count"] == 2
+        assert metrics["connection_reuse_rate"] == 0.923
+        assert metrics["osl_mismatch_diff_pct"] == 0.0
+
+    def test_error_adjusted_percentiles_skip_the_absent_average(self, tmp_path):
+        """These blocks carry no ``avg``, so fetching one like the rest reads 0."""
+        metrics = parse_aiperf_output(_write_summary(tmp_path))
+        assert metrics["p50_adj_ttft_ms"] == 5012.3
+        assert metrics["p90_adj_ttft_ms"] == 11987.6
+        assert metrics["p50_adj_e2el_ms"] == 11004.7
+        assert "p90_adj_e2el_ms" not in metrics
+
+    def test_carries_client_provenance(self, tmp_path):
+        metrics = parse_aiperf_output(_write_summary(tmp_path))
+        assert metrics["aiperf_version"] == "0.8.0"
+
     def test_surfaces_branch_stats_and_ranks_errors(self, tmp_path):
         metrics = parse_aiperf_output(_write_summary(tmp_path))
         assert metrics["branch_children_spawned"] == 12
         assert metrics["branch_children_errored"] == 1
         assert metrics["branch_children_truncated"] == 2
+        assert metrics["branch_children_delayed"] == 3
+        assert metrics["branch_parents_failed_due_to_child_error"] == 1
+        assert metrics["branch_joins_suppressed"] == 2
         assert metrics["error_summary"] == [
             {"type": "ServerDisconnectedError", "count": 34},
             {"type": "InvalidInferenceResultError", "count": 1},

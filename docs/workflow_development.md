@@ -196,8 +196,12 @@ Renderer-agnostic schema and a registry-based renderer.
   (`benchmarks`, `evals`, `spec_tests`, `stress_tests`) and every unregistered
   kind both go through the same `render_generic_table`, which follows the
   rules in [`tests/report_module/SCHEMA_GUIDE.md`](tests/report_module/SCHEMA_GUIDE.md).
-  Per-kind renderers can be added via the `@register(kind)` decorator when a
-  shape genuinely doesn't fit the generic table; we haven't needed one yet.
+  Per-kind renderers are added via the `@register(kind)` decorator when a shape
+  doesn't fit the generic table: `aiperf_prefix_cache`, `prefill_decode`,
+  `aiperf_spec_decode`, and `agentic_traces` each have one. Reach for a renderer
+  when a record mixes concerns (metrics plus config echo) or carries more columns
+  than fit on a screen, since the generic table shows every key at equal weight
+  and falls back to raw key names as headers.
 - `acceptance_criteria.py` walks the schema and produces a categorized
   pass/fail summary. Routing is by `Block.kind` alone — no substring matching.
   Per-kind rules:
@@ -523,6 +527,18 @@ selecting it can never look like a clean empty sweep.
 
 ### Reported metrics and what invalidates a run
 
+Each run emits one flat `Block(kind="agentic_traces")` record, which
+[`report_module/agentic_traces_renderer.py`](../report_module/agentic_traces_renderer.py)
+splits into four tables: *Per-run Latency*, *Per-run Throughput & Load*, *Run
+Health & Validity*, and *Run Configuration*. The split exists because the record
+mixes measurements with the config echo and provenance, and the generic renderer
+weighs every key equally — it produced one very wide table that led with eleven
+config columns and the artifact path. Two rules keep the width down: the config
+table is transposed (one row per field, one column per run) because its values
+are long and identical across runs, and columns the client emitted nothing for
+are dropped rather than filled with N/A, which is how the error-adjusted
+percentiles stay out of a clean run's report.
+
 Metrics come from the fork's `profile_export_aiperf.json`, where every tag is a
 block of `{unit, avg, p1..p99, min, max, std, count, sum}`. Two of its count tags
 are easy to confuse: `request_count` is successful requests only (the sample size
@@ -541,6 +557,22 @@ is decode speed while a request streams, whereas
 `e2e_output_token_throughput_per_user` divides by whole-request wall clock and is
 the honest user-visible speed for a long-prefill agentic turn — the two differ by
 roughly 3x in practice.
+
+Several of the fork's tags come in pairs that only mean something together, and
+all halves are kept for that reason. `effective_*` throughput averages over the
+whole run while `active_*` counts only the windows where that phase was working,
+so their ratio is the phase's duty cycle. `effective_concurrency` is the load
+actually in flight, which trace replay holds below the requested concurrency by
+honoring recorded think time — a large shortfall means the intended load was
+never applied. `effective_latency` is the coordinated-omission-corrected
+end-to-end latency, and the `adj_*` blocks are percentiles with failed requests
+folded in, so a run that got fast by erroring out cannot look good; both are
+absent when nothing queued or nothing failed. `credit_drop_latency.count` is the
+number of requests the load generator could not dispatch on schedule, i.e. a
+count and not a mean, and `http_req_connection_reused` below 1.0 is the
+connection churn that surfaces as `ServerDisconnectedError`. `warmup_metrics` is
+deliberately not reported: cache priming errors out by design, so surfacing it
+next to the measured numbers reads as a failure that is not one.
 
 No acceptance criteria are wired: there is no agreed pass/fail threshold for
 trace replay yet, so a bespoke check would only ever report NA. Instead the
@@ -700,6 +732,7 @@ Policy: new benchmarks and runners should be authored as engine modules
 │   ├── schema.py                   # Block, ReportSchema
 │   ├── generator.py                # ReportGenerator + spec-test summary
 │   ├── renderers.py                # kind → renderer registry
+│   ├── agentic_traces_renderer.py  # agentic_traces: latency/throughput/health/config tables
 │   ├── acceptance_criteria.py      # per-category pass/fail rules
 │   ├── markdown_table.py           # table helpers
 │   ├── formatting.py               # value coercion
