@@ -207,6 +207,36 @@ def test_missing_metrics_yield_none_not_keyerror():
         assert data["mean_ttft_ms"] is None
 
 
+@pytest.mark.parametrize(
+    "parser,raw,tool",
+    [
+        (AIPerfParser(), AIPERF_RAW, "aiperf"),
+        (GenAIPerfParser(), GENAI_RAW, "genai_perf"),
+        (VLLMBenchParser(), VLLM_RAW, "vllm"),
+    ],
+)
+def test_perf_blocks_use_the_canonical_benchmarks_kind(parser, raw, tool):
+    """Acceptance criteria and the summary aggregator route on ``kind``.
+
+    A tool-named kind makes the block invisible to both: the Benchmarks
+    category reports "no blocks present" and the run passes ungraded.
+    """
+    block = parser.parse(raw, device="N150")
+
+    assert block.kind == "benchmarks"
+    # tool identity survives the shared kind, for footnotes and provenance
+    assert block.targets["tool"] == tool
+    assert block.title and block.title.endswith("Benchmark")
+    assert "tool" not in block.data
+
+
+def test_sweep_points_of_one_tool_share_a_title():
+    """Identical titles let the generator collapse the sweep into one table."""
+    first = VLLMBenchParser().parse(VLLM_RAW, device="N150")
+    second = VLLMBenchParser().parse({**VLLM_RAW, "max_concurrency": 32}, device="N150")
+    assert first.title == second.title == "vLLM Benchmark"
+
+
 def test_canonical_keys_have_display_names():
     # The flat keys must resolve to the shared, human display headers.
     assert display_name("mean_ttft_ms") == "TTFT (ms)"

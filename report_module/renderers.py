@@ -19,7 +19,7 @@ from report_module.display import (
 from report_module.formatting import format_value
 from report_module.markdown_table import build_markdown_table
 from report_module.schema import Block
-from report_module.status import glyph_for_label
+from report_module.status import TestStatus, glyph_for_label
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +73,11 @@ BENCHMARK_TIER_NOTE = (
     "The Target Checks table grades three tiers — functional, complete, and "
     "target — from most to least lenient. Acceptance criteria pass a benchmark "
     "when any single tier meets all of its checks."
+)
+
+UNGRADED_SWEEP_NOTE = (
+    "Note: No perf targets are configured for these sweep points, so these "
+    "rows are reported for information only and are not graded."
 )
 
 _REGISTRY: Dict[str, RendererFn] = {}
@@ -200,6 +205,30 @@ PIVOT_VALUE_HEADER = "**value**"
 _CHECK_COLUMN_SUFFIX = "_check"
 _CHECK_INT_TO_LABEL: Dict[int, str] = {1: "NA", 2: "PASS", 3: "FAIL"}
 
+# Columns that carry a grading verdict rather than a measurement.
+_GRADING_COLUMNS: tuple[str, ...] = ("status", "target_check")
+
+
+def _is_na_cell(column: str, value: Any) -> bool:
+    if column.endswith(_CHECK_COLUMN_SUFFIX):
+        return _CHECK_INT_TO_LABEL.get(value) == "NA"
+    return TestStatus.from_value(value) is TestStatus.NA
+
+
+def _ungraded_columns(records: Sequence[Mapping[str, Any]]) -> frozenset:
+    """Grading columns to drop because not one row in the table is graded."""
+    present = frozenset(
+        column for column in _GRADING_COLUMNS if not _column_is_empty(column, records)
+    )
+    if not present:
+        return frozenset()
+    for record in records:
+        for column in present:
+            value = record.get(column)
+            if value is not None and not _is_na_cell(column, value):
+                return frozenset()
+    return present
+
 
 def _format_cell(column: str, value: Any) -> str:
     if (
@@ -283,7 +312,19 @@ def _is_subtable_value(value: Any) -> bool:
     return False
 
 
-def render_generic_table(block: Block, metadata: Mapping[str, Any]) -> str:
+def _footnote_for(block: Block) -> str | None:
+    targets = block.targets if isinstance(block.targets, Mapping) else {}
+    tool = targets.get("tool")
+    if tool:
+        footnote = FOOTNOTES.get(str(tool))
+        if footnote:
+            return footnote
+    return FOOTNOTES.get(block.kind)
+
+
+def render_generic_table(
+    block: Block, metadata: Mapping[str, Any], extra_hidden: frozenset = frozenset()
+) -> str:
     """Render a block as a heading plus one or more markdown tables.
 
     - Multi-record blocks render as a single multi-row table (the
@@ -291,6 +332,9 @@ def render_generic_table(block: Block, metadata: Mapping[str, Any]) -> str:
     - Single-record blocks split the record's fields: scalar fields
       collapse into the main pivot table; fields whose value is a dict
       or list-of-dicts become their own H4 sub-table, in insertion order.
+
+    ``extra_hidden`` drops columns on top of the per-kind hidden set, for
+    callers that decide per-block what is worth showing.
     """
     records = _extract_records(block)
     if not records:
@@ -300,8 +344,8 @@ def render_generic_table(block: Block, metadata: Mapping[str, Any]) -> str:
     heading = _heading(
         block.kind, model, device, block.title or "", block.task_type or ""
     )
-    footnote = FOOTNOTES.get(block.kind)
-    hidden = _hidden_columns(block.kind)
+    footnote = _footnote_for(block)
+    hidden = _hidden_columns(block.kind) | extra_hidden
 
     if len(records) > 1:
         table = _build_table(records, hidden=hidden)
@@ -382,14 +426,24 @@ def _has_target_checks(block: Block) -> bool:
 
 @register(BENCHMARKS_KIND)
 def render_benchmarks(block: Block, metadata: Mapping[str, Any]) -> str:
-    """Render a benchmark block, appending the tier note when tiered
-    ``target_checks`` are present (LLM benchmarks without tiers get none)."""
-    table = render_generic_table(block, metadata)
+    """Render a benchmark block plus whichever notes apply.
+
+    The tier note is appended when tiered ``target_checks`` are present (LLM
+    benchmarks without tiers get none). A sweep whose every row is ungraded
+    drops its all-NA grading columns and explains why instead: the block data
+    keeps ``status="na"`` either way, since that is what stops acceptance from
+    reading "no targets configured" as "benchmarks passed".
+    """
+    ungraded = _ungraded_columns(_extract_records(block))
+    table = render_generic_table(block, metadata, extra_hidden=ungraded)
     if not table:
         return ""
+    notes = []
     if _has_target_checks(block):
-        return f"{table}\n\n{BENCHMARK_TIER_NOTE}"
-    return table
+        notes.append(BENCHMARK_TIER_NOTE)
+    if ungraded:
+        notes.append(UNGRADED_SWEEP_NOTE)
+    return "\n\n".join([table, *notes])
 
 
 for _kind in GENERIC_KINDS:
