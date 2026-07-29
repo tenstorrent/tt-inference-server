@@ -24,6 +24,9 @@ CHUNK_SIZE_BYTES=19584
 DRAM_BASE="0x100000"
 DEVICES_PER_RANK=32
 GROUP_RANK=0
+# Baked into every fabric_node_host entry in the generated table (defaults to
+# this machine's hostname). Deploy's --prefill-tags / --decode-tags must match.
+HOST_TAG="$(hostname)"
 BUILD_DIR=""
 MIG_DIR="${MIG_DIR:-${DEFAULT_MIG}}"
 SKIP_BUILD=0
@@ -45,7 +48,10 @@ Options:
   --chunk-size-bytes N     BFP8 chunk size (default: ${CHUNK_SIZE_BYTES})
   --dram-base HEX|DEC      first chunk offset (default: ${DRAM_BASE})
   --devices-per-rank N     chips owned by the single host (default: ${DEVICES_PER_RANK})
-  --group-rank N           make_test_table --groups value / host-<N> (default: ${GROUP_RANK})
+  --group-rank N           make_test_table --groups value (default: ${GROUP_RANK}); with
+                           --devices-per-rank, controls the chip-id math (chip=rank*D+stripe)
+  --host-tag NAME          fabric_node_host baked into the table (default: \$(hostname), i.e.
+                           ${HOST_TAG}). Must match the deploy's --*-tags for this role
   --build-dir DIR          cmake build dir (default: <migration>/build-test-artifacts)
   --mig-dir DIR            path to disaggregation/migration (default: ${DEFAULT_MIG})
   --skip-build             reuse existing make_test_table / print_local_device_map
@@ -92,6 +98,7 @@ parse_args() {
       --dram-base) DRAM_BASE="$2"; shift 2 ;;
       --devices-per-rank) DEVICES_PER_RANK="$2"; shift 2 ;;
       --group-rank) GROUP_RANK="$2"; shift 2 ;;
+      --host-tag) HOST_TAG="$2"; shift 2 ;;
       --build-dir) BUILD_DIR="$2"; shift 2 ;;
       --mig-dir) MIG_DIR="$2"; shift 2 ;;
       --skip-build) SKIP_BUILD=1; shift ;;
@@ -117,6 +124,7 @@ validate_shape() {
   is_positive_int "${CHUNK_SIZE_BYTES}" || die "--chunk-size-bytes must be a positive integer"
   is_positive_int "${DEVICES_PER_RANK}" || die "--devices-per-rank must be a positive integer"
   is_nonneg_int "${GROUP_RANK}" || die "--group-rank must be a non-negative integer"
+  [[ -n "${HOST_TAG}" ]] || die "--host-tag must not be empty"
 
   if (( MAX_SEQ_LEN % CHUNK_N_TOKENS != 0 )); then
     die "--max-seq-len (${MAX_SEQ_LEN}) must be divisible by --chunk-n-tokens (${CHUNK_N_TOKENS})"
@@ -285,7 +293,7 @@ validate_device_map() {
 }
 
 generate_table() {
-  echo "[artifacts] generating KV table (${LAYERS} layers, ${SLOTS} slots, ${MAX_SEQ_LEN} positions)"
+  echo "[artifacts] generating KV table (${LAYERS} layers, ${SLOTS} slots, ${MAX_SEQ_LEN} positions, host_tag=${HOST_TAG})"
   "${MAKE_TEST_TABLE}" \
     --output "${TABLE_PATH}" \
     --layers "${LAYERS}" \
@@ -296,6 +304,7 @@ generate_table() {
     --groups "${GROUP_RANK}" \
     --devices-per-rank "${DEVICES_PER_RANK}" \
     --dram-base "${DRAM_BASE}" \
+    --host-tag "${HOST_TAG}" \
     >/dev/null \
     || fail_collect "make_test_table failed"
 
@@ -310,7 +319,7 @@ print_summary() {
   table=${TABLE_PATH}
   device_map=${DEVICE_MAP_PATH}
   topology=1 mesh / ${DEVICE_COUNT} chips (validated)
-  table_host=host-${GROUP_RANK}
+  table_host=${HOST_TAG}
   layers=${LAYERS} slots=${SLOTS} max_seq_len=${MAX_SEQ_LEN}
   chunk_n_tokens=${CHUNK_N_TOKENS} chunk_size_bytes=${CHUNK_SIZE_BYTES}
   chunks_per_layer=${CHUNKS_PER_LAYER} total_chunks=${TOTAL_CHUNKS}

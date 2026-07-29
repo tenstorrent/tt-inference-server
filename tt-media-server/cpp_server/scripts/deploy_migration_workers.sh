@@ -9,9 +9,9 @@
 #   1. Connects to the Mooncake HTTP discovery service from --discovery-server.
 #   2. Launches one migration-worker Docker container per host over SSH. One
 #      worker runs on each --prefill-host and each --decode-host. Each worker's
-#      logical tag is used as its --name, --host, and --peer key. Prefill tags
-#      are used verbatim; decode hostnames are converted to tt-blaze's stable
-#      host-<crc32> table tags.
+#      logical tag is used as its --name, --host, and --peer key. Both prefill
+#      and decode tags are used verbatim (must match fabric_node_host values in
+#      the decode table).
 #   3. Workers find each other through the discovery service (register-then-
 #      resolve) — a prefill resolves each decode tag to its routable host via the
 #      metadata service and dials its control channel. No MPI/collectives.
@@ -84,8 +84,8 @@ DECODE_DEVICE_MAP="${DECODE_DEVICE_MAP:-}"
 ENGINE_HANDOFF_PORT="${ENGINE_HANDOFF_PORT:-}"
 HANDOFF_SENDER_BIN="${HANDOFF_SENDER_BIN:-}"
 # Optional table tag inputs (fabric_node_host), aligned with the host CSVs.
-# Prefill values are used verbatim. Decode values are hostnames hashed to the
-# table's host-<crc32> convention; empty => hash the corresponding decode host.
+# Both prefill and decode values are used verbatim; empty decode entries default
+# to the corresponding --decode-hosts value.
 PREFILL_TAGS="${PREFILL_TAGS:-}"
 DECODE_TAGS="${DECODE_TAGS:-}"
 # Optional alternate config file (else DEFAULT_CONFIG next to this script).
@@ -147,8 +147,8 @@ fabric_node_host, not on the CLI):
                            discovery-only
   --prefill-tags CSV       table host tags per prefill host, used verbatim
                            (default prefill-<i>)
-  --decode-tags CSV        owning hostnames per decode host, converted to
-                           host-<crc32> tags (default: --decode-hosts values)
+  --decode-tags CSV        table host tags per decode host, used verbatim
+                           (default: --decode-hosts values)
 
 Options:
   --image IMAGE            migration-worker Docker image (default ${WORKER_IMAGE})
@@ -295,17 +295,6 @@ validateArgs() {
 
 # CSV -> count of non-empty fields.
 countHosts() { awk -F',' '{n=0; for(i=1;i<=NF;i++) if($i!="") n++; print n}' <<<"$1"; }
-
-decodeTagForHost() {
-  python3 - "$1" <<'PY'
-import sys
-import zlib
-
-# tt-blaze gathers this value through signed int32 storage before formatting it.
-host_tag = zlib.crc32(sys.argv[1].encode()) & 0x7FFFFFFF
-sys.stdout.write(f"host-{host_tag:08x}")
-PY
-}
 
 META_URI=""
 # Per-worker tracking. Parallel arrays, one entry per worker: role, role-local
@@ -539,20 +528,18 @@ addWorkerSlot() {
 }
 
 # Map worker i of each role onto host i of that role's CSV (one worker per host)
-# and resolve its table tag. Prefill tags remain verbatim. Each decode tag input
-# is the owning hostname and is converted to tt-blaze's host-<crc32> table tag.
+# and resolve its table tag. Both prefill and decode tags are used verbatim;
+# decode tags default to the corresponding --decode-hosts entry when omitted.
 initWorkerSlots() {
   local -a prefill_hosts decode_hosts prefill_tags decode_tags resolved_decode_tags
   IFS=',' read -ra prefill_hosts <<<"${PREFILL_HOSTS}"
   IFS=',' read -ra decode_hosts <<<"${DECODE_HOSTS}"
   IFS=',' read -ra prefill_tags <<<"${PREFILL_TAGS}"
   IFS=',' read -ra decode_tags <<<"${DECODE_TAGS}"
-  local i tag decodeHost
+  local i tag
   # Decodes first so DECODE_TAG_LIST is complete before any prefill reads it.
   for (( i = 0; i < NUM_DECODE; i++ )); do
-    decodeHost="${decode_tags[$i]:-${decode_hosts[$i]}}"
-    tag="$(decodeTagForHost "${decodeHost}")" || \
-      die "failed to hash decode tag hostname: ${decodeHost}"
+    tag="${decode_tags[$i]:-${decode_hosts[$i]}}"
     resolved_decode_tags+=("${tag}")
     DECODE_TAG_LIST="${DECODE_TAG_LIST:+${DECODE_TAG_LIST},}${tag}"
   done
