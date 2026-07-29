@@ -235,7 +235,16 @@ generate_device_map() {
     fail_collect "print_local_device_map failed"
   fi
   mv -f "${tmp}" "${RAW_MAP_PATH}"
-  cp -f "${RAW_MAP_PATH}" "${DEVICE_MAP_PATH}"
+
+  # print_local_device_map emits its "<mesh> <chip> <umd>" tuples on stdout, but
+  # MetalContext init loguru + UMD status lines land there too ("2026-... | info | ..."
+  # header/footer). Keep only strict tuple lines in the consumed device_map.txt so
+  # the worker's send_device_map parser (and our validator) don't trip on log noise.
+  local tuple_re='^[[:space:]]*[0-9]+[[:space:]]+[0-9]+[[:space:]]+[0-9]+[[:space:]]*$'
+  if ! grep -E "${tuple_re}" "${RAW_MAP_PATH}" >"${DEVICE_MAP_PATH}"; then
+    rm -f "${DEVICE_MAP_PATH}"
+    fail_collect "print_local_device_map produced no '<mesh> <chip> <umd>' tuple lines (see ${RAW_MAP_PATH})"
+  fi
 }
 
 validate_device_map() {
