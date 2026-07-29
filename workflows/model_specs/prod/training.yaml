@@ -1,0 +1,5 @@
+# Model spec catalog: Training templates.
+# Do not edit manually. This file is updated through the automated release process.
+# Schema: workflows/model_spec.py (ModelSpecTemplate, DeviceModelSpec).
+# Training specs are currently dev-only (EXPERIMENTAL); no prod entries yet.
+templates: []

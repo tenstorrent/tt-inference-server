@@ -17,11 +17,12 @@ from .base import metric_stat_int as _stat_int
 
 
 class GenAIPerfParser(LLMResultParser):
-    kind = "genai_perf"
+    tool = "genai_perf"
+    tool_label = "GenAI-Perf"
 
     def parse(self, raw: Mapping[str, Any], *, device: str = "") -> Block:
         record: Dict[str, Any] = {
-            "kind": self.kind,
+            "tool": self.tool,
             "model": _model_name(raw),
             "device": device,
             "timestamp": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),

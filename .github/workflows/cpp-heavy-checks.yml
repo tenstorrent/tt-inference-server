@@ -13,6 +13,12 @@ on:
     - cron: '0 11 * * *'   # ~12:00 CET / 13:00 CEST  (noon)
     - cron: '0 23 * * *'   # ~00:00 CET / 01:00 CEST  (night)
   workflow_dispatch:
+    inputs:
+      run_dynamo_routing_tests:
+        description: 'Run the DYNAMO_ROUTING=1 E2E tests'
+        type: boolean
+        default: false
+
 
 concurrency:
   group: cpp-heavy-${{ github.ref }}
@@ -708,6 +714,148 @@ jobs:
           fi
 
 
+  cpp-server-prefill-decode-smoke:
+    name: C++ Server Prefill/Decode Smoke Tests
+    # Brings the disaggregated MOCK stack up (Dynamo frontend + decode/prefill
+    # cpp_server workers on the mock_scheduler backend + a local etcd) via
+    # test_module/llm_tests/smoke_tests/run_tests.sh -> run_stack.sh, runs the
+    # 8-test pytest suite, then tears down the stack.
+    runs-on: tt-ubuntu-2204-large-stable
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      no_proxy: "localhost,127.0.0.1,::1"
+      CI_CCACHE: "1"
+      CCACHE_DIR: ${{ github.workspace }}/tt-media-server/.cache/ccache
+      # run_stack.sh serves tokenizers/$MODEL and the suite POSTs {"model": $MODEL}.
+      # Kimi-K2.6 is the suite's, run_stack.sh's, and the README's own default.
+      # Its tiktoken bundle (tiktoken.model + chat_template.jinja +
+      # tokenizer_config.json + a kimi_k25 config.json) is pre-fetched by
+      # cpp_server/build.sh and is curated specifically for the Dynamo frontend's
+      # PromptFormatter (see fetch_tokenizers.sh) — the frontend loads tiktoken
+      # models via this bundle, so no tokenizer.json is required.
+      MODEL: moonshotai/Kimi-K2.6
+      # No-docker etcd: run_stack.sh's ensure_etcd_local uses the etcd binary on
+      # PATH instead of the quay image.
+      ETCD_LOCAL: "1"
+      # Keep the suite's result log in a stable, uploadable location.
+      RESULT_LOG: /tmp/tt_test_results.log
+    defaults:
+      run:
+        working-directory: tt-media-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          token: ${{ secrets.TT_LLM_ENGINE }}
+
+      - name: Set up C++ CI dependencies
+        uses: ./.github/actions/setup-cpp-ci
+        with:
+          token: ${{ secrets.TT_LLM_ENGINE }}
+          ccache-key-suffix: server
+
+      - name: Build C++ server
+        # --blaze is required: the mock_scheduler LLM runner factory is compiled
+        # in only under ENABLE_BLAZE (model_service_registration.cpp). Without it
+        # no LLM runner is registered and the worker aborts at startup with
+        # "No runner registered for the requested service" (ipc_runner_factory.cpp)
+        run: |
+          cd cpp_server
+          ./build.sh --blaze
+          cd ..
+
+      - name: Install etcd from upstream release
+        working-directory: .
+        run: |
+          ETCD_VER=v3.5.13
+          curl -fsSL \
+            "https://github.com/etcd-io/etcd/releases/download/${ETCD_VER}/etcd-${ETCD_VER}-linux-amd64.tar.gz" \
+            -o /tmp/etcd.tar.gz
+          mkdir -p /tmp/etcd "$HOME/.local/bin"
+          tar xzf /tmp/etcd.tar.gz -C /tmp/etcd --strip-components=1
+          # No sudo on the self-hosted runner: install into a user-writable dir
+          # and prepend it to PATH so run_stack.sh's `etcd` lookup resolves it.
+          install -m 0755 /tmp/etcd/etcd    "$HOME/.local/bin/etcd"
+          install -m 0755 /tmp/etcd/etcdctl "$HOME/.local/bin/etcdctl"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/etcd" --version
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+
+      - name: Create dynamo venv with ai-dynamo + pytest
+        run: |
+          mkdir -p "$HOME/.venvs"
+          # ai-dynamo provides dynamo.frontend (run_stack.sh's DYN_VENV). pytest
+          # runs the suite; datasets powers the real-chat tests (07 falls back to
+          # synthetic filler, 08 skips, if it's unavailable). No vllm bench client
+          # here — the suite drives the frontend over urllib directly.
+          bash cpp_server/scripts/ci/install_bench_client.sh \
+            --venv "$HOME/.venvs/dynamo" \
+            --python ${{ env.PYTHON_VERSION }} \
+            --no-default-packages \
+            --package ai-dynamo \
+            --package uvloop \
+            --package pytest \
+            --package datasets
+
+      - name: Run prefill/decode smoke suite
+        run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh \
+            --port 8080 --port 8001 --port 8002 --port 9000 --port 2379 --port 2380 \
+            --label "prefill/decode smoke"
+          # DYN_VENV -> the ai-dynamo venv run_stack.sh launches the frontend from;
+          # PYTEST   -> that venv's pytest (has datasets). run_tests.sh forwards
+          # trailing args to pytest, so --junitxml lands the JUnit report.
+          export DYN_VENV="$HOME/.venvs/dynamo"
+          export PYTEST="$DYN_VENV/bin/pytest"
+          bash "${GITHUB_WORKSPACE}/test_module/llm_tests/smoke_tests/run_tests.sh" \
+            --junitxml="${GITHUB_WORKSPACE}/tt-media-server/prefill_decode_junit.xml"
+
+      - name: Tear down stack
+        if: always()
+        run: |
+          # run_tests.sh already runs `run_stack.sh down` on the happy path; this
+          # is belt + suspenders for a cancelled/timed-out run so nothing leaks
+          # onto the persistent runner.
+          bash "${GITHUB_WORKSPACE}/tt-media-server/cpp_server/benchmarks/run_stack.sh" down || true
+          pkill -f 'tt_media_server_cpp' 2>/dev/null || true
+          pkill -f '-m dynamo.frontend' 2>/dev/null || true
+          pkill -f 'etcd' 2>/dev/null || true
+          bash cpp_server/scripts/ci/wait_for_port_free.sh \
+            --port 8080 --port 8001 --port 8002 --port 9000 --port 2379 --port 2380 \
+            --label "prefill/decode smoke"
+
+      - name: Show stack logs
+        if: always()
+        run: |
+          for LOG in /tmp/tt_frontend.log /tmp/tt_decode.log /tmp/tt_prefill.log /tmp/tt_etcd.log; do
+            echo "=== $LOG ==="
+            [ -f "$LOG" ] && cat "$LOG" || echo "(not found)"
+            echo ""
+          done
+
+      - name: Upload smoke test logs
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: cpp-server-prefill-decode-smoke-logs
+          path: |
+            /tmp/tt_frontend.log
+            /tmp/tt_decode.log
+            /tmp/tt_prefill.log
+            /tmp/tt_etcd.log
+            /tmp/tt_test_results.log
+            tt-media-server/prefill_decode_junit.xml
+          retention-days: 7
+          if-no-files-found: warn
+
   dynamo-frontend-integration:
     needs: cpp-build
     name: C++ Server + Dynamo Frontend Integration
@@ -1236,6 +1384,255 @@ jobs:
             tt-media-server/etcd.log
             tt-media-server/frontend.log
             tt-media-server/backend.log
+          retention-days: 1
+          if-no-files-found: warn
+
+  dynamo-routing-e2e:
+    if: ${{ inputs.run_dynamo_routing_tests }}
+    needs: cpp-build
+    name: DYNAMO_ROUTING=1 E2E
+    # ubuntu-latest matches cpp-build's runner image so the downloaded artifact
+    # links against the same glibc / libstdc++ / libpython at runtime. Mirrors
+    # dynamo-frontend-integration and dynamo-prefix-cache-e2e.
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      PYTHONPATH: ${{ github.workspace }}/tt-media-server
+      no_proxy: "localhost,127.0.0.1,::1"
+      # Shared discovery/plane config across the Dynamo frontend and both
+      # cpp_server workers. Namespace=dynamo mirrors benchmarks/run_stack.sh,
+      # which is the reference DYNAMO_ROUTING=1 deployment.
+      DYN_DISCOVERY_BACKEND: etcd
+      ETCD_ENDPOINTS: http://127.0.0.1:2379
+      DYN_REQUEST_PLANE: tcp
+      DYN_EVENT_PLANE: zmq
+      DYNAMO_DISCOVERY_BACKEND: etcd
+      DYNAMO_ETCD_ENDPOINTS: http://127.0.0.1:2379
+      DYNAMO_NAMESPACE: dynamo
+      DYNAMO_ENDPOINT_NAME: generate
+      DYNAMO_ENDPOINT_ENABLED: "1"
+      LLM_DEVICE_BACKEND: mock_pipeline
+      MODEL_NAME: deepseek-ai/DeepSeek-R1-0528
+    defaults:
+      run:
+        working-directory: tt-media-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Download C++ build
+        uses: actions/download-artifact@v7
+        with:
+          name: cpp-server-build
+          path: tt-media-server/cpp_server
+
+      - name: Set up C++ build artifact
+        run: bash cpp_server/scripts/ci/setup_cpp_artifact.sh
+
+      - name: Install etcd from upstream release
+        working-directory: .
+        run: |
+          ETCD_VER=v3.5.13
+          curl -fsSL \
+            "https://github.com/etcd-io/etcd/releases/download/${ETCD_VER}/etcd-${ETCD_VER}-linux-amd64.tar.gz" \
+            -o /tmp/etcd.tar.gz
+          mkdir -p /tmp/etcd
+          tar xzf /tmp/etcd.tar.gz -C /tmp/etcd --strip-components=1
+          sudo install -m 0755 /tmp/etcd/etcd    /usr/local/bin/etcd
+          sudo install -m 0755 /tmp/etcd/etcdctl /usr/local/bin/etcdctl
+
+      - name: Start etcd
+        run: |
+          pkill -f '/usr/local/bin/etcd' 2>/dev/null || true
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 2379 --port 2380 --label "etcd"
+          rm -rf /tmp/etcd-data
+          etcd \
+            --data-dir /tmp/etcd-data \
+            --advertise-client-urls=http://127.0.0.1:2379 \
+            --listen-client-urls=http://127.0.0.1:2379 \
+            --listen-peer-urls=http://127.0.0.1:2380 \
+            --initial-advertise-peer-urls=http://127.0.0.1:2380 \
+            --initial-cluster='default=http://127.0.0.1:2380' \
+            > etcd.log 2>&1 &
+          echo $! > etcd.pid
+          bash cpp_server/scripts/ci/wait_for_command.sh \
+            --command 'etcdctl --endpoints=http://127.0.0.1:2379 endpoint health' \
+            --pid-file etcd.pid \
+            --failure-log etcd.log \
+            --label "etcd"
+
+      - name: Assert tokenizer + config bundle from cpp-build artifact
+        run: |
+          MODEL_DIR="cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528"
+          for f in config.json tokenizer.json tokenizer_config.json; do
+            [ -f "${MODEL_DIR}/${f}" ] || {
+              echo "::error::Missing ${MODEL_DIR}/${f} in cpp-build artifact."
+              exit 1
+            }
+          done
+
+      # Startup order: decode first (listens on the inter-server socket),
+      # then prefill (dials it), then the Dynamo frontend. Each worker gets its
+      # own TT_* IPC queue namespace so the mock_pipeline backends don't share
+      # shared-memory segments.
+      - name: Start decode worker (LLM_MODE=decode DYNAMO_ROUTING=1, port 8001)
+        run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8001 --port 9500 --label "Dynamo-routing decode"
+          cd cpp_server/build
+          NS=dyn_route_decode
+          LLM_MODE=decode \
+          DYNAMO_ROUTING=1 \
+          DYNAMO_COMPONENT=decode \
+          DYNAMO_WORKER_TYPE=decode \
+          DYNAMO_MODEL_TYPE=Chat \
+          USE_PREFILL_GATEWAY=0 \
+          SOCKET_HOST=0.0.0.0 SOCKET_PORT=9500 \
+          MAX_TOKENS_TO_PREFILL_ON_DECODE=0 \
+          TT_LOG_LEVEL=debug \
+          TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
+          TT_TASK_QUEUE=tt_tasks_$NS \
+          TT_RESULT_QUEUE=tt_results_$NS \
+          TT_CANCEL_QUEUE=tt_cancels_$NS \
+          TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_$NS \
+          TT_MEMORY_RESULT_QUEUE=tt_mem_results_$NS \
+          TT_WORKER_METRICS_SHM=/tt_worker_metrics_$NS \
+            ./tt_media_server_cpp -p 8001 -t 4 > ../../decode.log 2>&1 &
+          echo $! > ../../decode.pid
+          cd ../..
+          bash cpp_server/scripts/ci/wait_for_liveness.sh \
+            --port 8001 \
+            --timeout 120 \
+            --interval 2 \
+            --pid-file decode.pid \
+            --label "Dynamo-routing decode"
+
+      - name: Start prefill worker (LLM_MODE=prefill DYNAMO_ROUTING=1, port 8002)
+        run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8002 --label "Dynamo-routing prefill"
+          cd cpp_server/build
+          NS=dyn_route_prefill
+          LLM_MODE=prefill \
+          DYNAMO_ROUTING=1 \
+          DYNAMO_COMPONENT=prefill \
+          DYNAMO_WORKER_TYPE=prefill \
+          DYNAMO_MODEL_TYPE=Prefill \
+          DYNAMO_MODEL_INPUT=Tokens \
+          USE_PREFILL_GATEWAY=0 \
+          SOCKET_HOST=127.0.0.1 SOCKET_PORT=9500 \
+          PREFILL_SERVER_ID=dyn-routing-prefill \
+          TT_LOG_LEVEL=debug \
+          TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_$NS \
+          TT_TASK_QUEUE=tt_tasks_$NS \
+          TT_RESULT_QUEUE=tt_results_$NS \
+          TT_CANCEL_QUEUE=tt_cancels_$NS \
+          TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_$NS \
+          TT_MEMORY_RESULT_QUEUE=tt_mem_results_$NS \
+          TT_WORKER_METRICS_SHM=/tt_worker_metrics_$NS \
+            ./tt_media_server_cpp -p 8002 -t 4 > ../../prefill.log 2>&1 &
+          echo $! > ../../prefill.pid
+          cd ../..
+          bash cpp_server/scripts/ci/wait_for_liveness.sh \
+            --port 8002 \
+            --timeout 120 \
+            --interval 2 \
+            --pid-file prefill.pid \
+            --label "Dynamo-routing prefill"
+
+      - name: Verify both worker types registered in etcd
+        # Prefill registers under dynamo/prefill/generate, decode under
+        # dynamo/decode/generate (DYNAMO_COMPONENT differs per worker).
+        run: |
+          for path in dynamo/decode/generate dynamo/prefill/generate; do
+            bash cpp_server/scripts/ci/wait_for_command.sh \
+              --command "etcdctl --endpoints=http://127.0.0.1:2379 get --prefix --keys-only 'v1/instances/${path}/' | grep -q 'v1/instances/${path}/'" \
+              --timeout 60 \
+              --interval 2 \
+              --label "etcd registration ${path}"
+          done
+          echo "--- etcd instance keys ---"
+          etcdctl --endpoints=http://127.0.0.1:2379 \
+            get --prefix --keys-only "v1/instances/dynamo/"
+
+      - name: Set up uv for Dynamo
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+
+      - name: Create dynamo venv with ai-dynamo
+        run: |
+          mkdir -p "$HOME/.venvs"
+          bash cpp_server/scripts/ci/install_bench_client.sh \
+            --venv "$HOME/.venvs/dynamo" \
+            --python ${{ env.PYTHON_VERSION }} \
+            --package ai-dynamo \
+            --package uvloop
+
+      - name: Start Dynamo frontend (port 8000)
+        env:
+          DYN_TOKENIZER: 'fastokens'
+        run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --label "Dynamo frontend"
+          MODEL_PATH="${GITHUB_WORKSPACE}/tt-media-server/cpp_server/tokenizers/deepseek-ai/DeepSeek-R1-0528"
+          "$HOME/.venvs/dynamo/bin/python3" -m dynamo.frontend \
+              --http-port 8000 \
+              --router-mode kv \
+              --model-name "${MODEL_NAME}" \
+              --model-path "${MODEL_PATH}" \
+              > frontend.log 2>&1 &
+          echo $! > frontend.pid
+          bash cpp_server/scripts/ci/wait_for_command.sh \
+            --command 'curl -sf "http://127.0.0.1:8000/v1/models" 2>/dev/null | grep -q "\"data\""' \
+            --timeout 120 \
+            --interval 2 \
+            --pid-file frontend.pid \
+            --failure-log frontend.log \
+            --label "Dynamo frontend"
+
+      - name: Run DYNAMO_ROUTING=1 big-ISL E2E test
+        env:
+          DYNAMO_HOST: '127.0.0.1'
+          DYNAMO_PORT: '8000'
+          DYNAMO_MODEL: 'deepseek-ai/DeepSeek-R1-0528'
+          PREFILL_LOG: ${{ github.workspace }}/tt-media-server/prefill.log
+          DECODE_LOG: ${{ github.workspace }}/tt-media-server/decode.log
+        run: |
+          cd cpp_server/build
+          ./dynamo_routing_big_isl_test
+
+      - name: Stop Dynamo frontend, cpp_server workers, and etcd
+        if: always()
+        run: |
+          for pidfile in frontend.pid decode.pid prefill.pid etcd.pid; do
+            [ -f "$pidfile" ] && kill "$(cat "$pidfile")" 2>/dev/null || true
+          done
+          pkill -f 'dynamo.frontend' 2>/dev/null || true
+          pkill -f 'tt_media_server_cpp' 2>/dev/null || true
+          pkill -f '/usr/local/bin/etcd' 2>/dev/null || true
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 2379 --port 2380 --port 8000 --port 8001 --port 8002 --port 9500 --label "Dynamo-routing E2E"
+
+      - name: Show server logs
+        if: always()
+        run: |
+          for LOG in etcd.log frontend.log decode.log prefill.log; do
+            echo "=== $LOG ==="
+            [ -f "$LOG" ] && cat "$LOG" || echo "(not found)"
+            echo ""
+          done
+
+      - name: Upload server logs
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: dynamo-routing-e2e-logs
+          path: |
+            tt-media-server/etcd.log
+            tt-media-server/frontend.log
+            tt-media-server/decode.log
+            tt-media-server/prefill.log
           retention-days: 1
           if-no-files-found: warn
 
