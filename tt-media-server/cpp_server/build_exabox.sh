@@ -40,6 +40,7 @@ SANITIZE_THREAD="OFF"
 SANITIZE_ADDRESS="OFF"
 ENABLE_TRACY="OFF"
 ENABLE_BLAZE="OFF"
+ENABLE_BLAZE_MIGRATION="OFF"
 CLANG_TIDY="OFF"
 TOOLCHAIN_PATH_ARG=""
 CXX_COMPILER_PATH=""
@@ -55,6 +56,11 @@ while [[ $# -gt 0 ]]; do
         --asan)          SANITIZE_ADDRESS="ON"; BUILD_TYPE="Debug"; shift ;;
         --tracy)         ENABLE_TRACY="ON"; shift ;;
         --blaze)         ENABLE_BLAZE="ON"; shift ;;
+        --blaze-with-migration)
+            ENABLE_BLAZE="ON"
+            ENABLE_BLAZE_MIGRATION="ON"
+            shift
+            ;;
         --clang-tidy)    CLANG_TIDY="ON"; shift ;;
         --kafka)         KAFKA_ENABLED="ON"; shift ;;
         --mooncake)      ENABLE_MOONCAKE="ON"; shift ;;
@@ -71,7 +77,8 @@ while [[ $# -gt 0 ]]; do
             echo "  --tsan               ThreadSanitizer"
             echo "  --asan               AddressSanitizer"
             echo "  --tracy              Tracy profiling"
-            echo "  --blaze              tt-blaze pipeline_manager support"
+            echo "  --blaze              tt-llm-engine / mock_pipeline support"
+            echo "  --blaze-with-migration  Same as --blaze plus real shmem migration"
             echo "  --clang-tidy         Run clang-tidy during build"
             echo "  --kafka              Kafka support (needs librdkafka-dev)"
             echo "  --mooncake           Build with the Mooncake Transfer Engine transport (third_party/Mooncake; RDMA always on)"
@@ -278,6 +285,7 @@ echo "  Build type:    ${BUILD_TYPE}"
 echo "  Local prefix:  ${LOCAL_PREFIX}"
 echo "  Rust:          $(command -v cargo) ($(cargo --version 2>/dev/null || echo '?'))"
 echo "  Blaze:         ${ENABLE_BLAZE}"
+echo "  Blaze migration: ${ENABLE_BLAZE_MIGRATION}"
 echo "  Kafka:         ${KAFKA_ENABLED}"
 echo "=============================================="
 
@@ -372,6 +380,7 @@ CMAKE_ARGS=(
     -DSANITIZE_ADDRESS="${SANITIZE_ADDRESS}"
     -DENABLE_TRACY="${ENABLE_TRACY}"
     -DENABLE_BLAZE="${ENABLE_BLAZE}"
+    -DENABLE_BLAZE_MIGRATION="${ENABLE_BLAZE_MIGRATION}"
     -DCLANG_TIDY="${CLANG_TIDY}"
     -DKAFKA_ENABLED="${KAFKA_ENABLED}"
     -DENABLE_MOONCAKE="${ENABLE_MOONCAKE}"

@@ -52,6 +52,7 @@ class ZmqSocketTransport : public ISocketTransport,
   std::string getStatus() const override;
 
   bool sendRawData(std::span<const uint8_t> data) override;
+  bool sendRawData(std::vector<uint8_t>&& data) override;
   std::vector<uint8_t> receiveRawData() override;
 
   void setConnectionLostCallback(std::function<void()> callback) override;
@@ -79,8 +80,8 @@ class ZmqSocketTransport : public ISocketTransport,
 
   // Transport-specific send/receive halves. Only ioThread calls these methods;
   // no other thread touches socket.
-  bool sendAsRouter(const std::vector<uint8_t>& data);
-  bool sendAsDealer(const std::vector<uint8_t>& data);
+  bool sendAsRouter(std::vector<uint8_t>&& data);
+  bool sendAsDealer(std::vector<uint8_t>&& data);
   std::vector<uint8_t> receiveAsRouter();
   std::vector<uint8_t> receiveAsDealer();
 

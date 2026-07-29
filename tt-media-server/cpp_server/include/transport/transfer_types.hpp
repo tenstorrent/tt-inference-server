@@ -20,8 +20,8 @@ namespace tt::transport {
 using NocAddr = uint64_t;
 
 /// Packs a DRAM channel and channel-local byte offset into a NocAddr.
-constexpr NocAddr makeNocAddr(uint32_t channel, uint32_t local_addr) {
-  return (static_cast<NocAddr>(channel) << 32) | local_addr;
+constexpr NocAddr makeNocAddr(uint32_t channel, uint32_t localAddr) {
+  return (static_cast<NocAddr>(channel) << 32) | localAddr;
 }
 
 /// Extracts the DRAM channel from a NocAddr.
@@ -43,7 +43,7 @@ constexpr uint32_t nocLocalAddr(NocAddr addr) {
 using SegmentHandle = int64_t;
 
 /// Default for an invalid / not-yet-opened segment.
-inline constexpr SegmentHandle kInvalidSegment =
+inline constexpr SegmentHandle K_INVALID_SEGMENT =
     std::numeric_limits<SegmentHandle>::min();
 
 /**
@@ -52,8 +52,8 @@ inline constexpr SegmentHandle kInvalidSegment =
  * Mirrors Mooncake's `TransferRequest::OpCode`.
  */
 enum class TransferOp : uint8_t {
-  Read,   ///< Pull bytes from the remote segment into the local buffer.
-  Write,  ///< Push bytes from the local buffer into the remote segment.
+  READ,   ///< Pull bytes from the remote segment into the local buffer.
+  WRITE,  ///< Push bytes from the local buffer into the remote segment.
 };
 
 /**
@@ -64,9 +64,9 @@ enum class TransferOp : uint8_t {
  * ITransferEngine::registerLocalMemory.
  */
 struct TransferRequest {
-  TransferOp op = TransferOp::Write;
+  TransferOp op = TransferOp::WRITE;
   void* local_addr = nullptr;
-  SegmentHandle target = kInvalidSegment;
+  SegmentHandle target = K_INVALID_SEGMENT;
   /// Byte offset *into* the remote segment; the engine resolves it against the
   /// segment's registered base address.
   uint64_t target_offset = 0;
@@ -75,15 +75,28 @@ struct TransferRequest {
 
 /// Lifecycle state of a submitted transfer. Mirrors Mooncake's status enum.
 enum class TransferState : uint8_t {
-  Pending,
-  Completed,
-  Failed,
+  PENDING,
+  COMPLETED,
+  FAILED,
 };
 
 /// Result of a submitted transfer.
 struct TransferStatus {
-  TransferState state = TransferState::Pending;
+  TransferState state = TransferState::PENDING;
   std::size_t transferred_bytes = 0;
+};
+
+/**
+ * @brief Opaque handle to a batch submitted asynchronously via
+ *        ITransferEngine::submitBatch, awaited with ITransferEngine::waitBatch.
+ *
+ * `value` is engine-private (the Mooncake BatchID) and meaningless to callers.
+ * A default-constructed handle is invalid — it means submitBatch failed before
+ * dispatch, and waitBatch on it reports FAILED.
+ */
+struct TransferHandle {
+  uint64_t value = 0;  ///< engine-private; do not interpret.
+  bool valid = false;  ///< false if the batch was never dispatched.
 };
 
 /**
@@ -94,14 +107,14 @@ struct TransferStatus {
  * Selects which IStorageBackend stages bytes to/from a registered host buffer.
  */
 enum class StorageMedium : uint8_t {
-  HostDram,    ///< Plain host memory.
-  DeviceDram,  ///< TT device DRAM, accessed via the UMD (the custom backend).
+  HOST_DRAM,    ///< Plain host memory.
+  DEVICE_DRAM,  ///< TT device DRAM, accessed via the UMD (the custom backend).
 };
 
 /// Underlying wire protocol the transport mechanism uses to move bytes.
 enum class TransportProtocol : uint8_t {
-  Tcp,   ///< Stock TCP transport. Default for the PoC.
-  Rdma,  ///< RDMA transport. Requires libibverbs + an active NIC.
+  TCP,   ///< Stock TCP transport. Default for the PoC.
+  RDMA,  ///< RDMA transport. Requires libibverbs + an active NIC.
 };
 
 /**
@@ -116,7 +129,7 @@ enum class TransportProtocol : uint8_t {
 struct EngineConfig {
   std::string metadata_uri = "P2PHANDSHAKE";
   std::string local_server_name;
-  TransportProtocol protocol = TransportProtocol::Tcp;
+  TransportProtocol protocol = TransportProtocol::TCP;
 };
 
 }  // namespace tt::transport

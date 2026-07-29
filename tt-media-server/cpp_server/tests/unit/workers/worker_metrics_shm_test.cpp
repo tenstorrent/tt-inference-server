@@ -27,10 +27,10 @@ TEST(WorkerMetricsShmTest, CreateOpenReadbackRoundtrip) {
   ASSERT_NE(reader, nullptr);
 
   owner->setPid(0, 12345);
-  owner->setLayout(0, tt::worker::MetricsLayout::SP_PIPELINE_RUNNER);
+  owner->setLayout(0, tt::worker::MetricsLayout::BLAZE_RUNNER);
   owner->storeScratch(0, 0, 42);
   EXPECT_EQ(reader->loadScratch(0, 0), 42u);
-  EXPECT_EQ(reader->layout(0), tt::worker::MetricsLayout::SP_PIPELINE_RUNNER);
+  EXPECT_EQ(reader->layout(0), tt::worker::MetricsLayout::BLAZE_RUNNER);
 
   EXPECT_EQ(owner->fetchAddScratch(0, 1, 5), 0u);
   EXPECT_EQ(reader->loadScratch(0, 1), 5u);

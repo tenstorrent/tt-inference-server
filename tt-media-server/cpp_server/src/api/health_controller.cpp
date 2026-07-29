@@ -51,7 +51,11 @@ void HealthController::health(
   bool socketHealthy = true;
   if (socket_) {
     response["socket_status"] = socket_->getStatus();
-    socketHealthy = socket_->isConnected();
+    // Under Dynamo routing, ZMQ is only for slot reservation and may connect
+    // after this process is already serving Dynamo traffic. Treat an enabled
+    // socket as healthy rather than requiring a live peer.
+    socketHealthy = tt::config::dynamoRoutingEnabled() ? socket_->isEnabled()
+                                                       : socket_->isConnected();
   }
 
   if (hasReadyWorkers && hasAliveWorkers && socketHealthy) {

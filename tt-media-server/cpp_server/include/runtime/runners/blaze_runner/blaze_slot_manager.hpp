@@ -54,6 +54,7 @@ class SlotManager {
     slot.specAcceptsAtStart = 0;
     slot.specRejectsAtStart = 0;
     slot.tokensGenerated = 0;
+    slot.currentPosition = 0;
     slot.pendingAckRequestId.reset();
     slot.deferredEvict.reset();
     slot.deferredContinue.reset();

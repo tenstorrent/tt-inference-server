@@ -13,11 +13,13 @@ SANITIZE_THREAD="OFF"
 SANITIZE_ADDRESS="OFF"
 ENABLE_TRACY="OFF"
 ENABLE_BLAZE="OFF"
+ENABLE_BLAZE_MIGRATION="OFF"
 CLANG_TIDY="OFF"
 TOOLCHAIN_PATH_ARG=""
 CXX_COMPILER_PATH=""
 KAFKA_ENABLED="OFF"
 ENABLE_MOONCAKE="OFF"
+ENABLE_KV_TABLE="OFF"
 FRESH_CONFIGURE="OFF"
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -44,6 +46,11 @@ while [[ $# -gt 0 ]]; do
             ENABLE_BLAZE="ON"
             shift
             ;;
+        --blaze-with-migration)
+            ENABLE_BLAZE="ON"
+            ENABLE_BLAZE_MIGRATION="ON"
+            shift
+            ;;
         --clang-tidy)
             CLANG_TIDY="ON"
             shift
@@ -54,6 +61,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --mooncake)
             ENABLE_MOONCAKE="ON"
+            shift
+            ;;
+        --kv-table)
+            ENABLE_KV_TABLE="ON"
             shift
             ;;
         --fresh)
@@ -76,10 +87,12 @@ while [[ $# -gt 0 ]]; do
             echo "  --tsan               Build with ThreadSanitizer for data-race detection"
             echo "  --asan               Build with AddressSanitizer + LeakSanitizer for memory/leak detection"
             echo "  --tracy              Build with Tracy profiling instrumentation"
-            echo "  --blaze              Build with tt-blaze pipeline_manager support"
+            echo "  --blaze              Build with tt-llm-engine / mock_pipeline support"
+            echo "  --blaze-with-migration  Same as --blaze plus real shmem migration (pipeline_manager)"
             echo "  --clang-tidy          Run clang-tidy during build (lint = build, same as tt-metal)"
             echo "  --kafka              Enable Kafka (CMake KAFKA_ENABLED=ON; needs librdkafka-dev)"
             echo "  --mooncake           Build with the Mooncake Transfer Engine transport (third_party/Mooncake; RDMA always on)"
+            echo "  --kv-table           Build the real KvChunkAddressTable adapter (needs TT_METAL_HOME; ENABLE_KV_TABLE=ON)"
             echo "  --fresh              Wipe CMake cache and reconfigure from scratch"
             echo "  --toolchain-path P   Use CMake toolchain file (overrides TT_METAL_HOME toolchain)"
             echo "  --cxx-compiler-path P  Set C++ compiler (overrides toolchain)"
@@ -106,8 +119,11 @@ echo "  ThreadSanitizer: ${SANITIZE_THREAD}"
 echo "  AddressSanitizer: ${SANITIZE_ADDRESS}"
 echo "  Tracy: ${ENABLE_TRACY}"
 echo "  Blaze: ${ENABLE_BLAZE}"
+echo "  Blaze migration: ${ENABLE_BLAZE_MIGRATION}"
 echo "  Clang-Tidy: ${CLANG_TIDY}"
 echo "  Kafka (KAFKA_ENABLED): ${KAFKA_ENABLED}"
+echo "  Mooncake transport: ${ENABLE_MOONCAKE}"
+echo "  Real KV table (ENABLE_KV_TABLE): ${ENABLE_KV_TABLE}"
 echo "  Fresh configure: ${FRESH_CONFIGURE}"
 echo "=============================================="
 
@@ -232,9 +248,11 @@ CMAKE_ARGS=(
     -DSANITIZE_ADDRESS="${SANITIZE_ADDRESS}"
     -DENABLE_TRACY="${ENABLE_TRACY}"
     -DENABLE_BLAZE="${ENABLE_BLAZE}"
+    -DENABLE_BLAZE_MIGRATION="${ENABLE_BLAZE_MIGRATION}"
     -DCLANG_TIDY="${CLANG_TIDY}"
     -DKAFKA_ENABLED="${KAFKA_ENABLED}"
     -DENABLE_MOONCAKE="${ENABLE_MOONCAKE}"
+    -DENABLE_KV_TABLE="${ENABLE_KV_TABLE}"
 )
 [ -n "${TT_METAL_HOME}" ] && CMAKE_ARGS+=(-DTT_METAL_HOME="${TT_METAL_HOME}")
 [ -n "${FETCHCONTENT_BASE_DIR:-}" ] && CMAKE_ARGS+=(-DFETCHCONTENT_BASE_DIR="${FETCHCONTENT_BASE_DIR}")

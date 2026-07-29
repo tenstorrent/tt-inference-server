@@ -83,7 +83,6 @@ class ZeroOverheadLogger {
 
   static Level level;
   static std::shared_ptr<spdlog::logger> logger;
-  static bool initialized;
 };
 
 // Template implementation

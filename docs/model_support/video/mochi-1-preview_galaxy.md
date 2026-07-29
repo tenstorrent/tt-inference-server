@@ -8,7 +8,6 @@
 
 `mochi-1-preview` is also supported on hardware:
 
-- [BH Galaxy](mochi-1-preview_blackhole_galaxy.md)
 - [BH LoudBox](mochi-1-preview_p150x8.md)
 - [BH 4xP150](mochi-1-preview_p150x4.md)
 - [BH QuietBox 2](mochi-1-preview_p300x2.md)

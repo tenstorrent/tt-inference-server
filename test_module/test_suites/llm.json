@@ -1,0 +1,86 @@
+{
+    "_description": "Test suites for LLM model category",
+    "_category": "LLM",
+    "test_matrices": [
+        {
+            "models": [
+                "qwen3_32b",
+                "llama_3_1_8b",
+                "llama_70b_family",
+                "gpt_oss_20b"
+            ],
+            "devices": [
+                "n150",
+                "n300",
+                "t3k",
+                "galaxy",
+                "galaxy_t3k",
+                "gpu",
+                "p100",
+                "p150",
+                "p150x4",
+                "p150x8",
+                "p300",
+                "p300x2"
+            ],
+            "test_cases": [
+                {
+                    "template": "VLLMParamConformanceTest",
+                    "enabled": true,
+                    "description": "vLLM chat/completions parameter conformance"
+                }
+            ]
+        },
+        {
+            "models": [
+                "gpt_oss_20b"
+            ],
+            "devices": [
+                "t3k",
+                "galaxy",
+                "galaxy_t3k"
+            ],
+            "test_cases": [
+                {
+                    "template": "VLLMResponsesParamConformanceTest",
+                    "enabled": true,
+                    "description": "vLLM responses parameter conformance"
+                }
+            ]
+        },
+        {
+            "models": [
+                "mistral_small_24b"
+            ],
+            "devices": [
+                "blackhole_galaxy"
+            ],
+            "test_cases": [
+                {
+                    "template": "VLLMParamConformanceTest",
+                    "enabled": true,
+                    "description": "vLLM chat/completions parameter conformance"
+                }
+            ]
+        },
+        {
+            "models": [
+                "qwen3_32b"
+            ],
+            "devices": [
+                "galaxy",
+                "t3k",
+                "galaxy_t3k",
+                "p150x8",
+                "p300x2"
+            ],
+            "test_cases": [
+                {
+                    "template": "VLLMQwen3StreamingParamConformanceTest",
+                    "enabled": true,
+                    "description": "Qwen3-32B streaming reasoning/tool-call regressions"
+                }
+            ]
+        }
+    ]
+}

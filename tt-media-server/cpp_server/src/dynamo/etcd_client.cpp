@@ -17,6 +17,8 @@
 #include <sstream>
 #include <string>
 
+#include "utils/net.hpp"
+
 namespace tt::dynamo {
 
 namespace {
@@ -60,54 +62,52 @@ std::string base64Encode(const std::string& in) {
   return out;
 }
 
-// ---------------------------------------------------------------------------
-// URL parsing: accept "http://host:port" optionally with trailing "/" and
-// optionally a comma-separated list (we keep the first endpoint).
-// ---------------------------------------------------------------------------
+int base64Value(char c) {
+  if (c >= 'A' && c <= 'Z') return c - 'A';
+  if (c >= 'a' && c <= 'z') return c - 'a' + 26;
+  if (c >= '0' && c <= '9') return c - '0' + 52;
+  if (c == '+') return 62;
+  if (c == '/') return 63;
+  return -1;
+}
 
-struct ParsedUrl {
-  std::string host;
-  int port;
-};
-
-ParsedUrl parseEtcdUrl(const std::string& urlList) {
-  std::string url = urlList;
-  if (auto comma = url.find(','); comma != std::string::npos) {
-    url = url.substr(0, comma);
-  }
-  // strip leading whitespace
-  while (!url.empty() &&
-         std::isspace(static_cast<unsigned char>(url.front()))) {
-    url.erase(url.begin());
-  }
-  if (url.rfind("https://", 0) == 0) {
-    throw EtcdError(
-        "EtcdClient: HTTPS endpoints are not supported (use a TLS-terminating "
-        "sidecar)");
-  }
-  if (url.rfind("http://", 0) == 0) {
-    url.erase(0, 7);
-  }
-  if (auto slash = url.find('/'); slash != std::string::npos) {
-    url.resize(slash);
-  }
-  ParsedUrl out;
-  if (auto colon = url.find(':'); colon != std::string::npos) {
-    out.host = url.substr(0, colon);
-    try {
-      out.port = std::stoi(url.substr(colon + 1));
-    } catch (...) {
-      throw EtcdError("EtcdClient: invalid port in endpoint '" + urlList + "'");
+std::string base64Decode(const std::string& in) {
+  std::string out;
+  out.reserve(in.size() * 3 / 4);
+  int val = 0;
+  int valBits = -8;
+  for (char c : in) {
+    if (c == '=' || c == '\n' || c == '\r') continue;
+    const int d = base64Value(c);
+    if (d < 0) continue;
+    val = (val << 6) + d;
+    valBits += 6;
+    if (valBits >= 0) {
+      out.push_back(static_cast<char>((val >> valBits) & 0xFF));
+      valBits -= 8;
     }
-  } else {
-    out.host = url;
-    out.port = 2379;
-  }
-  if (out.host.empty()) {
-    throw EtcdError("EtcdClient: empty host in endpoint '" + urlList + "'");
   }
   return out;
 }
+
+/// etcd range_end for a prefix: last byte incremented (with carry).
+std::string prefixRangeEnd(const std::string& prefix) {
+  std::string end = prefix;
+  while (!end.empty()) {
+    auto& last = reinterpret_cast<unsigned char&>(end.back());
+    if (last < 0xFF) {
+      ++last;
+      return end;
+    }
+    end.pop_back();
+  }
+  return std::string(1, '\0');
+}
+
+// ---------------------------------------------------------------------------
+// URL parsing for etcd endpoints lives in include/utils/net.hpp (parseUrl) so
+// the DynamoWorkerServer advertise-host detection can share it.
+// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // Tiny blocking HTTP/1.1 client. Connect with a deadline (so etcd-not-running
@@ -424,7 +424,16 @@ std::string serialize(const Json::Value& v) {
 
 EtcdClient::EtcdClient(const std::string& endpoint, int timeoutMs)
     : timeout_ms_(timeoutMs) {
-  auto parsed = parseEtcdUrl(endpoint);
+  // parseUrl is a generic utility that throws std::runtime_error; translate at
+  // the EtcdClient boundary so every failure of this client (parse or
+  // transport) surfaces as EtcdError to callers, per the client's contract.
+  tt::utils::net::ParsedUrl parsed;
+  try {
+    parsed = tt::utils::net::parseUrl(endpoint);
+  } catch (const std::exception& e) {
+    throw EtcdError(std::string("EtcdClient: invalid endpoint '") + endpoint +
+                    "': " + e.what());
+  }
   host_ = parsed.host;
   port_ = parsed.port;
 }
@@ -466,6 +475,40 @@ void EtcdClient::put(const std::string& key, const std::string& value,
   body["value"] = base64Encode(value);
   if (leaseId != 0) body["lease"] = static_cast<Json::Int64>(leaseId);
   httpPostJson(host_, port_, "/v3/kv/put", serialize(body), timeout_ms_);
+}
+
+std::optional<std::string> EtcdClient::get(const std::string& key) {
+  Json::Value body(Json::objectValue);
+  body["key"] = base64Encode(key);
+  auto resp = parseJson(
+      httpPostJson(host_, port_, "/v3/kv/range", serialize(body), timeout_ms_));
+  if (!resp.isMember("kvs") || !resp["kvs"].isArray() || resp["kvs"].empty()) {
+    return std::nullopt;
+  }
+  const auto& kv = resp["kvs"][0];
+  if (!kv.isMember("value")) return std::nullopt;
+  return base64Decode(kv["value"].asString());
+}
+
+std::vector<std::pair<std::string, std::string>> EtcdClient::getPrefix(
+    const std::string& prefix) {
+  Json::Value body(Json::objectValue);
+  body["key"] = base64Encode(prefix);
+  body["range_end"] = base64Encode(prefixRangeEnd(prefix));
+  auto resp = parseJson(
+      httpPostJson(host_, port_, "/v3/kv/range", serialize(body), timeout_ms_));
+  std::vector<std::pair<std::string, std::string>> out;
+  if (!resp.isMember("kvs") || !resp["kvs"].isArray()) {
+    return out;
+  }
+  out.reserve(resp["kvs"].size());
+  for (const auto& kv : resp["kvs"]) {
+    if (!kv.isMember("key")) continue;
+    out.emplace_back(base64Decode(kv["key"].asString()),
+                     kv.isMember("value") ? base64Decode(kv["value"].asString())
+                                          : std::string{});
+  }
+  return out;
 }
 
 void EtcdClient::deleteRange(const std::string& key) {

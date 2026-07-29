@@ -92,7 +92,7 @@ class LLMService : public BaseStreamingService<LLMRequest, LLMStreamChunk> {
   std::shared_ptr<tt::ipc::ITaskQueue> taskQueue;
   std::unique_ptr<tt::worker::WorkerManager> workerManager;
   std::unique_ptr<tt::ipc::QueueManager> queueManager;
-  std::unordered_set<int64_t> stopTokenSet;
+  std::unordered_set<uint32_t> stopTokenSet;
 };
 
 }  // namespace tt::services

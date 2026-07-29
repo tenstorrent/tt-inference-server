@@ -19,7 +19,8 @@ void InfoController::info(
       std::string{tt::config::kInferenceServerVersion};
   response["tt_inference_server"]["commit"] =
       std::string{tt::config::kInferenceServerCommit};
-  response["tt_blaze"]["commit"] = std::string{tt::config::kTtBlazeCommit};
+  response["tt_llm_engine"]["commit"] =
+      std::string{tt::config::kTtLlmEngineCommit};
   response["tt_metal"]["commit"] = std::string{tt::config::kTtMetalCommit};
 
   callback(drogon::HttpResponse::newHttpJsonResponse(response));

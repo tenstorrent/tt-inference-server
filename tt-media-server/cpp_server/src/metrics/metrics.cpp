@@ -81,9 +81,10 @@ ServerMetrics::ServerMetrics() {
       &prometheus::BuildCounter()
            .Name("tt_prefix_cache_queries_total")
            .Help(
-               "Number of requests that attempted a prefix-cache lookup "
-               "(i.e. had a prior [assistant, user] turn pair). Denominator "
-               "for the prefix cache hit rate: "
+               "Total prompt tokens that entered the prefix-cache lookup "
+               "path (block-aligned), across every request. Denominator for "
+               "the per-token prefix cache hit rate (matches vLLM's "
+               "vllm:prefix_cache_queries_total): "
                "rate(tt_prefix_cache_hits_total[5m]) / "
                "rate(tt_prefix_cache_queries_total[5m]).")
            .Register(*registry_)
@@ -93,9 +94,10 @@ ServerMetrics::ServerMetrics() {
       &prometheus::BuildCounter()
            .Name("tt_prefix_cache_hits_total")
            .Help(
-               "Number of prefix-cache lookups that found an existing "
-               "session and reused its KV cache (continuation path, delta "
-               "prompt only).")
+               "Total prompt tokens served from an existing session's KV "
+               "cache (the reused prefix), across every request. Numerator "
+               "for the per-token prefix cache hit rate (matches vLLM's "
+               "vllm:prefix_cache_hits_total).")
            .Register(*registry_)
            .Add(modelLabel);
 
@@ -269,9 +271,10 @@ void ServerMetrics::onHttpResponse(const std::string& method, int statusCode) {
       .Increment();
 }
 
-void ServerMetrics::onPrefixCacheLookup(bool hit) {
-  prefix_cache_queries_total_->Increment();
-  if (hit) prefix_cache_hits_total_->Increment();
+void ServerMetrics::onPrefixCacheLookup(uint32_t promptTokens,
+                                        uint32_t matchedTokens) {
+  if (promptTokens > 0) prefix_cache_queries_total_->Increment(promptTokens);
+  if (matchedTokens > 0) prefix_cache_hits_total_->Increment(matchedTokens);
 }
 
 // -----------------------------------------------------------------------------

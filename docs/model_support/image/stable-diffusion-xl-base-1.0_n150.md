@@ -16,7 +16,6 @@ To use non-default weights, replace `stable-diffusion-xl-base-1.0` in commands b
 `stable-diffusion-xl-base-1.0` is also supported on hardware:
 
 - [WH Galaxy](stable-diffusion-xl-base-1.0_galaxy.md)
-- [BH Galaxy](stable-diffusion-xl-base-1.0_blackhole_galaxy.md)
 - [WH LoudBox/QuietBox](stable-diffusion-xl-base-1.0_t3k.md)
 - [N300](stable-diffusion-xl-base-1.0_n300.md)
 

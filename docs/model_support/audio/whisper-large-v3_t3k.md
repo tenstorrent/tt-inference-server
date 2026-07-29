@@ -16,7 +16,6 @@ To use non-default weights, replace `whisper-large-v3` in commands below.
 `whisper-large-v3` is also supported on hardware:
 
 - [WH Galaxy](whisper-large-v3_galaxy.md)
-- [BH Galaxy](whisper-large-v3_blackhole_galaxy.md)
 - [BH QuietBox 2](whisper-large-v3_p300x2.md)
 - [P150](whisper-large-v3_p150.md)
 - [N150](whisper-large-v3_n150.md)
@@ -42,6 +41,6 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Weights | [openai/whisper-large-v3](https://huggingface.co/openai/whisper-large-v3), [distil-whisper/distil-large-v3](https://huggingface.co/distil-whisper/distil-large-v3) |
 | Model Status | 🟢 Complete |
 | Max Batch Size | 4 |
-| Implementation Code | [whisper](https://github.com/tenstorrent/tt-metal/tree/bac8b34/models/demos/whisper) |
-| tt-metal Commit | `bac8b34` |
-| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.11.1-bac8b34` |
+| Implementation Code | [whisper](https://github.com/tenstorrent/tt-metal/tree/8c48a10/models/demos/whisper) |
+| tt-metal Commit | `8c48a10` |
+| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.17.0-8c48a10` |

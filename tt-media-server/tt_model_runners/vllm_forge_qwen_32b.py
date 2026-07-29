@@ -39,11 +39,12 @@ class VLLMForgeQwen32BRunner(BaseDeviceRunner):
         #                         lever on gemma: greedy ~4.8 -> ~9.2 tok/s).
         #   CPU_SAMPLING=false    on-device sampling (TTConfig's own default;
         #                         the old hardcoded True was the deviation).
-        #   OPTIMIZATION_LEVEL=0  REQUIRED: opt>=1 aborts in tt-mlir
-        #                         MemoryLayoutPropagation on the 1.x wheel
-        #                         (tt-xla#4990); TTConfig also rejects
-        #                         enable_trace + opt>=1 + cpu_sampling=False, so
-        #                         the trace defaults are only valid at opt 0.
+        #   OPTIMIZATION_LEVEL=0  REQUIRED on the current (1.3.0) wheel: opt>=1
+        #                         aborts in tt-mlir OpModel worker-grid validation
+        #                         on Blackhole P300 (device {10,13} vs system-desc
+        #                         {10,11}; tt-xla#5204 / tt-mlir#8767). Fixed by
+        #                         tt-mlir#8769, which postdates this wheel -- flip
+        #                         to opt=1 once the forge wheel includes it.
         # NOTE: these defaults were validated on gemma-4-31b, not yet on
         # Qwen3-32B -- flip via env if a Qwen-specific issue appears.
         optimization_level = int(os.getenv("OPTIMIZATION_LEVEL", "0"))
