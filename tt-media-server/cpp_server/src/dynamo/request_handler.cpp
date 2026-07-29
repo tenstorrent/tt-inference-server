@@ -382,12 +382,9 @@ void DynamoRequestHandler::handle(const GenerateRequest& dynReq,
             }
           }
 
-          // Release in-flight (clears cancelFn) before finalize: onNoHashes may
-          // closeSession, and that must not fire cancel/abort on a completed
-          // turn.
           if (isFinal && sessionPtr) {
-            sessionPtr->release();
             sessionPtr->finalizeAndRegisterHashes();
+            sessionPtr->release();
           }
 
           TokenChunk out = tokenChunkFromStreamChunk(chunk, isFinal);

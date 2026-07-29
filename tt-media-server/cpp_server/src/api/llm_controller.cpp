@@ -236,11 +236,10 @@ LLMController::makeStreamingCallback(std::shared_ptr<ResponseWriter> writer,
       session->addGeneratedToken(static_cast<int>(*chunk.choices[0].token_id));
     }
 
-    // Release in-flight (clears cancelFn) before finalize: onNoHashes may
-    // closeSession, and that must not fire cancel/abort on a completed turn.
+    // Finalize session before isDone check (register partial progress on abort)
     if (isFinal && session) {
-      session->release();
       session->finalizeAndRegisterHashes();
+      session->release();
     }
 
     if (writer->isDone()) return;
