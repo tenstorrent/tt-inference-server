@@ -156,14 +156,14 @@ inline MockKafkaWorker::RequestParser migrationParser() {
   return [](const std::string& raw) -> std::optional<uint64_t> {
     auto parsed = tt::messaging::parseMigrationRequest(raw);
     if (!parsed.has_value()) return std::nullopt;
-    return parsed->migration_id;
+    return parsed->kafka_request_id;
   };
 }
 
 inline MockKafkaWorker::ResponseBuilder migrationResponder() {
   return [](uint64_t id, const MockKafkaWorker::Behavior& b) {
     return tt::messaging::serialize(tt::messaging::MigrationResponseMessage{
-        .migration_id = id, .status = b.replyStatus});
+        .kafka_request_id = id, .status = b.replyStatus});
   };
 }
 

@@ -47,7 +47,7 @@ RemoteKVManagerAdapter::BurstId RemoteKVManagerAdapter::start_burst(
         " (a burst with this uuid is already in flight)");
   }
 
-  TT_LOG_DEBUG("[RemoteKVManagerAdapter] start_burst: migration_uuid={}", uuid);
+  TT_LOG_DEBUG("[RemoteKVManagerAdapter] start_burst: migration_id={}", uuid);
   return uuid;
 }
 
@@ -100,20 +100,21 @@ void RemoteKVManagerAdapter::enqueue_migration_in_burst(
         .src_position_end = posEndExclusive,
         .dst_position_begin = posStart,
         .dst_position_end = posEndExclusive,
+        .migration_id = burst,
     };
     const uint64_t kafkaRequestId = kvManager_->migrate(request);
     group.pendingKafkaIds.insert(kafkaRequestId);
     ++group.totalKafkaRequests;
     kafkaToGroup_.emplace(kafkaRequestId, burst);
     TT_LOG_DEBUG(
-        "[RemoteKVManagerAdapter] migration_uuid={} kafka_request_id={} "
+        "[RemoteKVManagerAdapter] migration_id={} kafka_request_id={} "
         "slot {}->{}, layers [{},{}), pos [{},{})",
         burst, kafkaRequestId, srcSlot, dstSlot, layer, layer + 1, posStart,
         posEndExclusive);
   }
 
   TT_LOG_DEBUG(
-      "[RemoteKVManagerAdapter] enqueue_migration_in_burst: migration_uuid={}, "
+      "[RemoteKVManagerAdapter] enqueue_migration_in_burst: migration_id={}, "
       "slot {}->{}, layers [{},{}) fanned out ({} pending Kafka req(s) total), "
       "pos [{},{})",
       burst, srcSlot, dstSlot, layerStart, layerEndExclusive,
@@ -145,7 +146,7 @@ RemoteKVManagerAdapter::MigrationToken RemoteKVManagerAdapter::finish_burst(
   group.closed = true;
 
   TT_LOG_DEBUG(
-      "[RemoteKVManagerAdapter] finish_burst: migration_uuid={}, {} Kafka "
+      "[RemoteKVManagerAdapter] finish_burst: migration_id={}, {} Kafka "
       "req(s) still pending; poll() will fire terminal event once drained",
       burst, group.pendingKafkaIds.size());
   return burst;
@@ -171,7 +172,7 @@ int RemoteKVManagerAdapter::poll() {
     const auto latency = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now() - group.startedAt);
     TT_LOG_INFO(
-        "[RemoteKVManagerAdapter] migration_uuid={} kafka_requests={} "
+        "[RemoteKVManagerAdapter] migration_id={} kafka_requests={} "
         "total_migration_latency_ms={} status={}",
         group.token, group.totalKafkaRequests, latency.count(),
         group.failed ? "FAILED" : "SUCCESSFUL");
