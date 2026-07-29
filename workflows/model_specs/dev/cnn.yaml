@@ -144,15 +144,11 @@ templates:
         PREFILL_BATCH_THRESHOLD: "16"  # route <=16 pending prefills to b1, serially
 
 - weights:
-    # gemma-4-31b-it Forge LLM (tensor-parallel) on p300x2/QB2. Lowercase
-    # basename matches tt-media-server ModelNames.GEMMA_4_31B_IT. batch-16 / 4K
+    # gemma-4-31B-it Forge LLM (tensor-parallel) on p300x2/QB2. batch-16 / 4K
     # is the best fitting balance (~76 tok/s aggregate). Dims are env-driven here
     # (constants.py only carries the TP mesh topology), mirroring the single-chip
     # forge LLMs above.
-    - google/gemma-4-31b-it
-  # Real HF id for download; weights basename stays lowercase so model_name
-  # stays distinct from the tt-transformers gemma-4-31B-it Model Readiness path.
-  hf_weights_repo: google/gemma-4-31B-it
+    - google/gemma-4-31B-it
   impl: forge_vllm_plugin
   min_disk_gb: 80
   min_ram_gb: 32
@@ -164,14 +160,17 @@ templates:
     - device: P300X2
       max_concurrency: 16
       max_context: 4096
-      # Sole impl of model_name gemma-4-31b-it (lowercase) on P300X2, so it is
-      # its own default. The tt_transformers/vLLM Model Readiness spec (llm.yaml)
-      # is a DISTINCT group -- model_name gemma-4-31B-it (capital B), engine VLLM
-      # -- so assert_single_default_impl groups them separately and there is no
-      # "multiple defaults" collision. Without default_impl=true, resolving
-      # `--model gemma-4-31b-it --device p300x2` (no --impl/--engine, as CI does)
-      # fails with "does not have a default impl".
-      default_impl: true
+      # MUST stay false: the tt_transformers/VLLM Model Readiness spec for this
+      # same model+device (llm.yaml) is the default. tt-shield's
+      # .github/scripts/determine_server_type.py matches model_name
+      # case-insensitively and does NOT filter by engine, so two default_impl
+      # specs here make its impl="default" path fail with "Multiple default
+      # impls" (that is what breaks manual dispatch for Qwen3-32B today).
+      # Nothing is lost: CI passes `--engine forge` (tt-shield
+      # generate_ci_matrix.py emits it per implementation), and
+      # get_runtime_model_spec falls back to candidate_specs[0] whenever
+      # --engine/--impl is given, so this spec still resolves.
+      default_impl: false
       eval_max_retries: 1
       env_vars:
         MAX_MODEL_LENGTH: "4096"
@@ -201,7 +200,13 @@ templates:
     - device: P300X2
       max_concurrency: 16
       max_context: 4096
-      default_impl: true
+      # MUST stay false, same reason as the gemma-4-31B-it forge spec above: the
+      # tt_transformers/VLLM spec for Qwen3-32B on P300X2 (llm.yaml) is the
+      # default, and tt-shield's determine_server_type.py ignores engine when
+      # resolving, so two defaults here make its impl="default" path fail with
+      # "Multiple default impls". CI passes `--engine forge`, so this spec is
+      # still reachable.
+      default_impl: false
       eval_max_retries: 1
       env_vars:
         MAX_MODEL_LENGTH: "4096"

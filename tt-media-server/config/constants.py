@@ -92,7 +92,7 @@ class ModelNames(Enum):
     QWEN_3_32B = "Qwen3-32B"
     SPEECHT5_TTS = "speecht5_tts"
     GEMMA_1_1_2B_IT = "gemma-1.1-2b-it"
-    GEMMA_4_31B_IT = "gemma-4-31b-it"
+    GEMMA_4_31B_IT = "gemma-4-31B-it"
     FALCON3_7B_INSTRUCT = "Falcon3-7B-Instruct"
     YOLOX_NANO = "yolox_nano"
     Z_IMAGE_TURBO = "Z-Image-Turbo"
