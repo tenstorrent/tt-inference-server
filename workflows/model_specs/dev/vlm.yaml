@@ -285,13 +285,13 @@ templates:
     - text
     - image
 
-# Vision (VLM) profile of the P150X4 text spec in dev/llm.yaml. Only the fields
-# that differ from that text spec are commented below (with the reason).
+# Vision (VLM) profile of the Qwen3.6-27B text spec in dev/llm.yaml. Only the fields
+# that differ from that text spec are vision-mode.
 - weights:
     - Qwen/Qwen3.6-27B
-  impl: qwen36_blackhole_vlm     # vs text qwen36_blackhole: distinct impl_id so the vision spec gets its own model_id on the same (model, P150X4)
+  impl: qwen36_blackhole_vlm  # distinct impl_id so the vision spec gets its own model_id
   inference_engine: VLLM
-  model_type: VLM                # vs text LLM: routes to the multimodal (vision) serving path
+  model_type: VLM
   device_model_specs:
     - device: P150X4
       max_concurrency: 1
@@ -306,15 +306,15 @@ templates:
         enable_auto_tool_choice: true
         reasoning_parser: qwen3
         tool_call_parser: qwen3_coder
-        limit-mm-per-prompt: '{"image": 1, "video": 1}'   # vision-only: cap 1 image + 1 video per request (text spec has no mm inputs)
-        mm-processor-cache-gb: 0                            # vision-only: disable the multimodal preprocessor cache (no host RAM reserved)
+        limit-mm-per-prompt: '{"image": 1, "video": 1}'
+        mm-processor-cache-gb: 0
       override_tt_config:
         fabric_config: FABRIC_1D
         l1_small_size: 24576
-        trace_region_size: 402653184                        # vs text 268435456: 384MB (not 256MB) to fit the extra vision-tower trace
+        trace_region_size: 402653184  # Extend text-only's 256MB to fit the extra vision-tower trace
   status: EXPERIMENTAL
   has_builtin_warmup: true
-  supported_modalities:                                     # vs text [text]: vision adds image + video
+  supported_modalities:
     - text
     - image
     - video
@@ -323,13 +323,13 @@ templates:
       reasoning_parser_name: qwen3
       tool_call_parser_name: qwen3_coder
 
-# Vision (VLM) profile of the Qwen3.5-27B P150X4 text spec in dev/llm.yaml. Only the
-# fields that differ from that text spec are commented below (with the reason).
+# Vision (VLM) profile of the Qwen3.6-27B text spec in dev/llm.yaml. Only the fields
+# that differ from that text spec are vision-mode.
 - weights:
     - Qwen/Qwen3.5-27B
-  impl: qwen36_blackhole_vlm     # vs text qwen36_blackhole: distinct impl_id so the vision spec gets its own model_id on the same (model, P150X4)
+  impl: qwen36_blackhole_vlm  # distinct impl_id so the vision spec gets its own model_id
   inference_engine: VLLM
-  model_type: VLM                # vs text LLM: routes to the multimodal (vision) serving path
+  model_type: VLM
   device_model_specs:
     - device: P150X4
       max_concurrency: 1
@@ -344,15 +344,15 @@ templates:
         enable_auto_tool_choice: true
         reasoning_parser: qwen3
         tool_call_parser: qwen3_coder
-        limit-mm-per-prompt: '{"image": 1, "video": 1}'   # vision-only: cap 1 image + 1 video per request (text spec has no mm inputs)
-        mm-processor-cache-gb: 0                            # vision-only: disable the multimodal preprocessor cache (no host RAM reserved)
+        limit-mm-per-prompt: '{"image": 1, "video": 1}'
+        mm-processor-cache-gb: 0
       override_tt_config:
         fabric_config: FABRIC_1D
         l1_small_size: 24576
-        trace_region_size: 402653184                        # vs text 268435456: 384MB (not 256MB) to fit the extra vision-tower trace
+        trace_region_size: 402653184  # Extend text-only's 256MB to fit the extra vision-tower trace
   status: EXPERIMENTAL
   has_builtin_warmup: true
-  supported_modalities:                                     # vs text [text]: vision adds image + video
+  supported_modalities:
     - text
     - image
     - video
