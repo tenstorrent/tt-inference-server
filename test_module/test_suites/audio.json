@@ -62,6 +62,11 @@
                     "template": "AudioTranscriptionParamTest",
                     "enabled": true,
                     "description": "Test audio transcription params"
+                },
+                {
+                    "template": "WebSocketSTTLiveTest",
+                    "enabled": true,
+                    "description": "WebSocket STT streaming: connect, send 6s PCM, verify transcript"
                 }
             ]
         },
@@ -143,6 +148,11 @@
                     "template": "AudioTranscriptionParamTest",
                     "enabled": true,
                     "description": "Test audio transcription params"
+                },
+                {
+                    "template": "WebSocketSTTLiveTest",
+                    "enabled": true,
+                    "description": "WebSocket STT streaming: connect, send 6s PCM, verify transcript"
                 }
             ]
         },
@@ -204,6 +214,11 @@
                     "template": "AudioTranscriptionParamTest",
                     "enabled": true,
                     "description": "Test audio transcription params"
+                },
+                {
+                    "template": "WebSocketSTTLiveTest",
+                    "enabled": true,
+                    "description": "WebSocket STT streaming: connect, send 6s PCM, verify transcript"
                 }
             ]
         }
@@ -239,6 +254,11 @@
                     "template": "AudioTranscriptionParamTest",
                     "enabled": true,
                     "description": "Test audio transcription params"
+                },
+                {
+                    "template": "WebSocketSTTLiveTest",
+                    "enabled": true,
+                    "description": "WebSocket STT streaming: connect, send 6s PCM, verify transcript"
                 },
                 {
                     "template": "DeviceStabilityTest",
@@ -277,6 +297,11 @@
                     "template": "AudioTranscriptionParamTest",
                     "enabled": true,
                     "description": "Test audio transcription params"
+                },
+                {
+                    "template": "WebSocketSTTLiveTest",
+                    "enabled": true,
+                    "description": "WebSocket STT streaming: connect, send 6s PCM, verify transcript"
                 },
                 {
                     "template": "DeviceStabilityTest",

@@ -6,6 +6,8 @@ python_functions = ["test_*"]
 # Don't search parent directories for configuration
 norecursedirs = ["*"]
 asyncio_mode = "auto"
+addopts = "-m 'not live_server'"
 markers = [
     "performance: marks tests as performance tests (requires running server)",
+    "live_server: marks tests that require a live inference server with Whisper loaded",
 ]

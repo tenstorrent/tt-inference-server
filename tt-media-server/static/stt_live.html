@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Whisper Live STT</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; color: #111; }
+  h1 { margin-bottom: 8px; }
+  .subtitle { color: #666; margin-top: 0; }
+  button { font-size: 16px; padding: 10px 20px; border-radius: 6px; border: 1px solid #ccc; background: #f7f7f7; cursor: pointer; margin-right: 8px; }
+  button.recording { background: #c0392b; color: white; border-color: #a0291c; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  #transcript { margin-top: 20px; padding: 16px; border: 1px solid #ddd; border-radius: 6px; min-height: 120px; line-height: 1.5; }
+  .partial { color: #666; font-style: italic; }
+  .final { color: #111; }
+  .status { margin-top: 12px; font-size: 13px; color: #888; }
+  .latency { color: #2980b9; }
+</style>
+</head>
+<body>
+<h1>Whisper Live STT</h1>
+<p class="subtitle">Streams microphone audio to <code>/ws/stt-live</code> and re-transcribes every 2 seconds.</p>
+
+<button id="startBtn">Start mic</button>
+<button id="stopBtn" disabled>Stop</button>
+
+<div id="transcript"></div>
+<div class="status" id="status">Idle.</div>
+
+<script>
+const SAMPLE_RATE = 16000;
+const CHUNK_INTERVAL_MS = 2000;
+
+let audioCtx = null;
+let mediaStream = null;
+let sourceNode = null;
+let scriptNode = null;
+let floatChunks = [];
+let inputSampleRate = 0;
+let ws = null;
+let timer = null;
+let isRecording = false;
+let isTranscribing = false;
+
+const startBtn = document.getElementById('startBtn');
+const stopBtn = document.getElementById('stopBtn');
+const transcriptEl = document.getElementById('transcript');
+const statusEl = document.getElementById('status');
+
+function setStatus(msg) { statusEl.textContent = msg; }
+
+function float32ToPCM16(float32Array) {
+  const pcm16 = new Int16Array(float32Array.length);
+  for (let i = 0; i < float32Array.length; i++) {
+    const s = Math.max(-1, Math.min(1, float32Array[i]));
+    pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+  }
+  return pcm16;
+}
+
+async function resampleTo16k(float32, inputRate) {
+  if (inputRate === SAMPLE_RATE) return float32;
+  const outLen = Math.ceil(float32.length * SAMPLE_RATE / inputRate);
+  const offline = new OfflineAudioContext(1, outLen, SAMPLE_RATE);
+  const buf = offline.createBuffer(1, float32.length, inputRate);
+  buf.getChannelData(0).set(float32);
+  const src = offline.createBufferSource();
+  src.buffer = buf;
+  src.connect(offline.destination);
+  src.start(0);
+  const rendered = await offline.startRendering();
+  return rendered.getChannelData(0);
+}
+
+function concatFloat32(chunks) {
+  let total = 0;
+  for (const c of chunks) total += c.length;
+  const out = new Float32Array(total);
+  let offset = 0;
+  for (const c of chunks) { out.set(c, offset); offset += c.length; }
+  return out;
+}
+
+async function sendAccumulated(isFinal) {
+  if (isTranscribing) return;
+  if (floatChunks.length === 0) return;
+  isTranscribing = true;
+  try {
+    const combined = concatFloat32(floatChunks);
+    const resampled = await resampleTo16k(combined, inputSampleRate);
+    const pcm16 = float32ToPCM16(resampled);
+    ws.send(pcm16.buffer);
+    ws.send(JSON.stringify({ action: isFinal ? 'final' : 'transcribe' }));
+  } catch (e) {
+    console.error('send error', e);
+    isTranscribing = false;
+  }
+}
+
+function handleMessage(ev) {
+  let data;
+  try { data = JSON.parse(ev.data); } catch { return; }
+  isTranscribing = false;
+  if (data.type === 'transcript') {
+    const cls = data.is_final ? 'final' : 'partial';
+    transcriptEl.innerHTML = `<span class="${cls}">${escapeHtml(data.text || '[silence]')}</span>`;
+    setStatus(`${(data.duration || 0).toFixed(1)}s audio — inference <span class="latency">${(data.time_ms || 0).toFixed(0)}ms</span>`);
+  } else if (data.type === 'error') {
+    setStatus(`Error: ${data.message}`);
+  } else if (data.type === 'status') {
+    setStatus(data.message);
+  }
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+}
+
+async function start() {
+  mediaStream = await navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 },
+  });
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  inputSampleRate = audioCtx.sampleRate;
+  sourceNode = audioCtx.createMediaStreamSource(mediaStream);
+  scriptNode = audioCtx.createScriptProcessor(4096, 1, 1);
+  scriptNode.onaudioprocess = (e) => {
+    if (!isRecording) return;
+    floatChunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+  };
+  sourceNode.connect(scriptNode);
+  scriptNode.connect(audioCtx.destination);
+
+  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(`${protocol}//${location.host}/ws/stt-live`);
+  ws.binaryType = 'arraybuffer';
+  ws.onmessage = handleMessage;
+  ws.onopen = () => { setStatus('Recording.'); };
+  ws.onerror = (e) => { setStatus('WebSocket error'); console.error(e); };
+  ws.onclose = (ev) => {
+    setStatus(`WebSocket closed (${ev.code}${ev.reason ? ': ' + ev.reason : ''})`);
+    cleanup();
+  };
+
+  isRecording = true;
+  isTranscribing = false;
+  floatChunks = [];
+  timer = setInterval(() => sendAccumulated(false), CHUNK_INTERVAL_MS);
+
+  startBtn.disabled = true;
+  startBtn.classList.add('recording');
+  stopBtn.disabled = false;
+}
+
+async function stop() {
+  if (!isRecording) return;
+  isRecording = false;
+  if (timer) { clearInterval(timer); timer = null; }
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    try { await sendAccumulated(true); } catch {}
+  }
+  setTimeout(() => { if (ws && ws.readyState <= 1) ws.close(); }, 500);
+}
+
+function cleanup() {
+  try { if (timer) clearInterval(timer); } catch {}
+  timer = null;
+  isRecording = false;
+  try { if (scriptNode) scriptNode.disconnect(); } catch {}
+  try { if (sourceNode) sourceNode.disconnect(); } catch {}
+  try { if (audioCtx) audioCtx.close(); } catch {}
+  try { if (mediaStream) mediaStream.getTracks().forEach(t => t.stop()); } catch {}
+  audioCtx = mediaStream = sourceNode = scriptNode = null;
+  startBtn.disabled = false;
+  startBtn.classList.remove('recording');
+  stopBtn.disabled = true;
+}
+
+startBtn.addEventListener('click', () => { start().catch(e => { setStatus('Start failed: ' + e.message); cleanup(); }); });
+stopBtn.addEventListener('click', () => { stop(); });
+</script>
+</body>
+</html>
