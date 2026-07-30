@@ -206,6 +206,14 @@ std::string kafkaMigrationAckTopic();
  * defaults::KAFKA_GROUP_ID. */
 std::string kafkaGroupId();
 
+/** Request-topic partition count from KAFKA_MIGRATION_NUM_PARTITIONS. Default:
+ * defaults::KAFKA_MIGRATION_NUM_PARTITIONS. */
+uint32_t kafkaMigrationNumPartitions();
+
+/** Layers owned by one partition from KAFKA_MIGRATION_LAYERS_PER_PARTITION.
+ * Default: defaults::KAFKA_MIGRATION_LAYERS_PER_PARTITION (0 = routing off). */
+uint32_t kafkaMigrationLayersPerPartition();
+
 /** Max retries for session slot allocation from
  * SESSION_ALLOCATION_MAX_RETRIES. Default:
  * defaults::SESSION_ALLOCATION_MAX_RETRIES. */
