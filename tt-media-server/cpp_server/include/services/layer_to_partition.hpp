@@ -13,9 +13,10 @@ namespace tt::services {
  * (#4795). Inference publishes to partition f(layer); each prefill worker
  * assigns exactly one partition. One source of truth for both sides.
  *
- * Mapping: partition = layerId / layersPerPartition, clamped to
- * [0, numPartitions). A disabled or out-of-range result is -1, matching
- * RemoteKVManagerImpl (negative => do not force a partition).
+ * Mapping: partition = layerId / layersPerPartition. Returns -1 when the
+ * policy is disabled or the layer maps outside [0, numPartitions). When a
+ * mapper is installed on RemoteKVManagerImpl, -1 fails the publish (no
+ * silent broker fallback).
  */
 struct LayerPartitionPolicy {
   // Contiguous layer block owned by one Kafka partition. 0 disables routing.
@@ -36,6 +37,24 @@ inline uint32_t deriveLayersPerPartition(uint32_t numLayers,
     return 0;
   }
   return (numLayers + numPartitions - 1) / numPartitions;
+}
+
+/**
+ * Build a policy from raw config. When layersPerPartition is 0 and
+ * numPartitions > 1, derive the block size from modelNumLayers so operators
+ * can set only KAFKA_MIGRATION_NUM_PARTITIONS.
+ */
+inline LayerPartitionPolicy resolveLayerPartitionPolicy(
+    uint32_t numPartitions, uint32_t layersPerPartition,
+    uint32_t modelNumLayers = 0) {
+  LayerPartitionPolicy policy{.layersPerPartition = layersPerPartition,
+                              .numPartitions = numPartitions};
+  if (policy.layersPerPartition == 0 && policy.numPartitions > 1 &&
+      modelNumLayers > 0) {
+    policy.layersPerPartition =
+        deriveLayersPerPartition(modelNumLayers, policy.numPartitions);
+  }
+  return policy;
 }
 
 /**

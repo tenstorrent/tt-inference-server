@@ -78,5 +78,26 @@ TEST(MakeLayerToPartition, CallableMatchesDirectMapping) {
   }
 }
 
+TEST(ResolveLayerPartitionPolicy, DerivesBlockSizeWhenOnlyNumPartitionsSet) {
+  const auto policy = resolveLayerPartitionPolicy(
+      /*numPartitions=*/4, /*layersPerPartition=*/0, /*modelNumLayers=*/61);
+  EXPECT_TRUE(isLayerPartitionPolicyEnabled(policy));
+  EXPECT_EQ(policy.numPartitions, 4u);
+  EXPECT_EQ(policy.layersPerPartition, 16u);
+  EXPECT_EQ(layerToPartition(/*layerId=*/20, policy), 1);
+}
+
+TEST(ResolveLayerPartitionPolicy, KeepsExplicitLayersPerPartition) {
+  const auto policy = resolveLayerPartitionPolicy(
+      /*numPartitions=*/4, /*layersPerPartition=*/8, /*modelNumLayers=*/61);
+  EXPECT_EQ(policy.layersPerPartition, 8u);
+}
+
+TEST(ResolveLayerPartitionPolicy, SinglePartitionStaysDisabledWithoutBlock) {
+  const auto policy = resolveLayerPartitionPolicy(
+      /*numPartitions=*/1, /*layersPerPartition=*/0, /*modelNumLayers=*/61);
+  EXPECT_FALSE(isLayerPartitionPolicyEnabled(policy));
+}
+
 }  // namespace
 }  // namespace tt::services
