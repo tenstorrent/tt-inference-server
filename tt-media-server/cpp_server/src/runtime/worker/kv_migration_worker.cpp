@@ -14,11 +14,13 @@ namespace tt::worker {
 KvMigrationWorker::KvMigrationWorker(
     std::unique_ptr<tt::messaging::IKafkaConsumer> requestConsumer,
     std::unique_ptr<tt::messaging::IKafkaProducer> ackProducer,
-    std::unique_ptr<IMigrationExecutor> executor, int pollTimeoutMs)
+    std::unique_ptr<IMigrationExecutor> executor, int pollTimeoutMs,
+    std::optional<int32_t> ackPartition)
     : requestConsumer(std::move(requestConsumer)),
       ackProducer(std::move(ackProducer)),
       executor(std::move(executor)),
-      pollTimeoutMs(pollTimeoutMs) {
+      pollTimeoutMs(pollTimeoutMs),
+      ackPartition(ackPartition) {
   if (!this->requestConsumer) {
     TT_LOG_ERROR(
         "[KvMigrationWorker] null requestConsumer; start() will spin idle");
@@ -152,7 +154,9 @@ void KvMigrationWorker::publishAck(uint64_t kafkaRequestId,
     // KafkaProducer::send is thread-safe at the librdkafka layer, but we
     // also want to serialize against any future producer-state mutation.
     std::lock_guard<std::mutex> lock(ackMutex);
-    sent = ackProducer->send(payload, &err);
+    sent = ackPartition.has_value()
+               ? ackProducer->send(payload, *ackPartition, &err)
+               : ackProducer->send(payload, &err);
   }
 
   if (!sent) {

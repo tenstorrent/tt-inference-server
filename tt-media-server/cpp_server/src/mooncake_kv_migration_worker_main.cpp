@@ -52,6 +52,7 @@
 #include "messaging/kafka_producer.hpp"
 #include "runtime/worker/kv_migration_worker.hpp"
 #include "runtime/worker/stub_migration_executor.hpp"
+#include "services/kafka_partition_pin.hpp"
 #include "sockets/tcp_socket_transport.hpp"
 #include "transport/device_map.hpp"  // DeviceMap (FabricNode -> UMD chip)
 #include "transport/engine_table_resolve.hpp"
@@ -154,6 +155,12 @@ struct WorkerConfig {
   // runs and the e2e stay port-free unless a port is explicitly requested.
   uint16_t health_port = 0;
   std::string health_host = "0.0.0.0";
+
+  // Prefill exclusive Kafka ownership (#4795). When set, the request consumer
+  // uses rd_kafka_assign(partition) and acks are produced to the same
+  // partition. Unset => subscribe/rebalance (legacy broadcast with per-worker
+  // group ids). CLI --kafka-partition wins over env KAFKA_PARTITION.
+  std::optional<int32_t> kafkaPartition;
 };
 
 void usage() {
@@ -183,7 +190,10 @@ void usage() {
          "0.0.0.0)\n"
          "  Kafka (prefill) via env: KAFKA_BROKERS, "
          "KAFKA_MIGRATION_REQUEST_TOPIC, KAFKA_MIGRATION_ACK_TOPIC, "
-         "KAFKA_GROUP_ID\n"
+         "KAFKA_GROUP_ID, KAFKA_PARTITION\n"
+         "  prefill: [--kafka-partition N]  pin request consumer to partition "
+         "N via assign (no rebalance; exclusive N-prefill ownership). Env "
+         "KAFKA_PARTITION is the fallback when the flag is omitted.\n"
          "  worker mode via env: KV_MIGRATION_MODE=device|dry-run "
          "(default device; dry-run keeps discovery, table exchange, health, "
          "and Kafka but does not open devices or move KV data)\n";
@@ -327,8 +337,28 @@ bool parseConfig(int argc, char** argv, WorkerConfig& cfg) {
       continue;
     }
     if (a == "--health-host" && next(cfg.health_host)) continue;
+    if (a == "--kafka-partition" && next(v)) {
+      const auto pin = tt::services::parseKafkaPartitionPin(v);
+      if (!pin.has_value()) {
+        std::cerr << "--kafka-partition must be an integer >= 0, got: " << v
+                  << "\n";
+        return false;
+      }
+      cfg.kafkaPartition = pin;
+      continue;
+    }
     std::cerr << "unknown/incomplete arg: " << a << "\n";
     return false;
+  }
+
+  if (!cfg.kafkaPartition.has_value()) {
+    const std::string envPin = envOr("KAFKA_PARTITION", "");
+    if (tt::services::isInvalidKafkaPartitionPin(envPin)) {
+      std::cerr << "KAFKA_PARTITION must be an integer >= 0, got: " << envPin
+                << "\n";
+      return false;
+    }
+    cfg.kafkaPartition = tt::services::parseKafkaPartitionPin(envPin);
   }
 
   if (cfg.metadata_uri.empty() || cfg.name.empty() || cfg.host.empty()) {
@@ -869,18 +899,24 @@ int runPrefill(const WorkerConfig& cfg) {
   const std::string ackTopic =
       envOr("KAFKA_MIGRATION_ACK_TOPIC",
             tt::config::defaults::KAFKA_MIGRATION_ACK_TOPIC);
-  const std::string group =
-      envOr("KAFKA_GROUP_ID", tt::config::defaults::KAFKA_GROUP_ID);
+  const bool hasPartitionPin = cfg.kafkaPartition.has_value();
+  const std::string defaultGroup = tt::services::defaultPrefillKafkaGroupId(
+      cfg.name, hasPartitionPin, tt::config::defaults::KAFKA_GROUP_ID);
+  const std::string group = envOr("KAFKA_GROUP_ID", defaultGroup.c_str());
 
   auto consumer = std::make_unique<tt::messaging::KafkaConsumer>(
-      tt::messaging::KafkaConsumerConfig{
-          .brokers = brokers, .topic = reqTopic, .group_id = group});
+      tt::messaging::KafkaConsumerConfig{.brokers = brokers,
+                                         .topic = reqTopic,
+                                         .group_id = group,
+                                         .partition = cfg.kafkaPartition});
   auto producer = std::make_unique<tt::messaging::KafkaProducer>(
       tt::messaging::KafkaProducerConfig{.brokers = brokers,
                                          .topic = ackTopic});
 
   tt::worker::KvMigrationWorker worker(std::move(consumer), std::move(producer),
-                                       std::move(executor));
+                                       std::move(executor),
+                                       /*pollTimeoutMs=*/100,
+                                       cfg.kafkaPartition);
 
   // Full mesh is up: Ready. Prefill /readyz stays latched (a peer outage must
   // not remove this worker from service — that peer's own probe handles it).
@@ -891,12 +927,23 @@ int runPrefill(const WorkerConfig& cfg) {
   // Same-host restarts can still heal sticky TCP without a metadata change;
   // the UP path still force-refreshes the data-plane segment.
   health.setLifecycle(WorkerLifecycle::Ready);
-  TT_LOG_INFO(
-      "[worker] prefill '{}' READY: {}/{} decode channels connected, "
-      "mode={} brokers={} req={} ack={}",
-      cfg.name, connector.connectedCount(), connector.channelCount(),
-      cfg.migrationMode == MigrationMode::DRY_RUN ? "dry-run" : "device",
-      brokers, reqTopic, ackTopic);
+  if (hasPartitionPin) {
+    TT_LOG_INFO(
+        "[worker] prefill '{}' READY: {}/{} decode channels connected, "
+        "mode={} brokers={} req={} ack={} group={} kafka_partition={} "
+        "(assign, exclusive ownership)",
+        cfg.name, connector.connectedCount(), connector.channelCount(),
+        cfg.migrationMode == MigrationMode::DRY_RUN ? "dry-run" : "device",
+        brokers, reqTopic, ackTopic, group, *cfg.kafkaPartition);
+  } else {
+    TT_LOG_INFO(
+        "[worker] prefill '{}' READY: {}/{} decode channels connected, "
+        "mode={} brokers={} req={} ack={} group={} "
+        "(subscribe, legacy broadcast)",
+        cfg.name, connector.connectedCount(), connector.channelCount(),
+        cfg.migrationMode == MigrationMode::DRY_RUN ? "dry-run" : "device",
+        brokers, reqTopic, ackTopic, group);
+  }
   worker.start();
 
   std::vector<std::string> peerNames;

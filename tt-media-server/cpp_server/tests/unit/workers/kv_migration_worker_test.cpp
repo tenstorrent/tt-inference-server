@@ -48,11 +48,12 @@ class FakeProducer : public IKafkaProducer {
     return send(payload, /*partition=*/-1, errorMessage);
   }
 
-  bool send(std::string_view payload, int32_t /*partition*/,
+  bool send(std::string_view payload, int32_t partition,
             std::string* errorMessage) override {
     {
       std::lock_guard<std::mutex> lock(mtx);
       payloads.emplace_back(payload);
+      partitions.push_back(partition);
     }
     if (!shouldSucceed.load(std::memory_order_relaxed)) {
       if (errorMessage) {
@@ -72,6 +73,11 @@ class FakeProducer : public IKafkaProducer {
     return payloads;
   }
 
+  std::vector<int32_t> getPartitions() const {
+    std::lock_guard<std::mutex> lock(mtx);
+    return partitions;
+  }
+
   size_t payloadCount() const {
     std::lock_guard<std::mutex> lock(mtx);
     return payloads.size();
@@ -84,6 +90,7 @@ class FakeProducer : public IKafkaProducer {
  private:
   mutable std::mutex mtx;
   std::vector<std::string> payloads;
+  std::vector<int32_t> partitions;
   std::atomic<bool> shouldSucceed{true};
 };
 
@@ -238,7 +245,7 @@ struct Harness {
   std::unique_ptr<KvMigrationWorker> worker;
 };
 
-Harness makeHarness() {
+Harness makeHarness(std::optional<int32_t> ackPartition = std::nullopt) {
   auto consumer = std::make_unique<FakeConsumer>();
   auto producer = std::make_unique<FakeProducer>();
   auto executor = std::make_unique<MockMigrationExecutor>();
@@ -247,7 +254,7 @@ Harness makeHarness() {
   auto* executorPtr = executor.get();
   auto worker = std::make_unique<KvMigrationWorker>(
       std::move(consumer), std::move(producer), std::move(executor),
-      /*pollTimeoutMs=*/5);
+      /*pollTimeoutMs=*/5, ackPartition);
   return Harness{consumerPtr, producerPtr, executorPtr, std::move(worker)};
 }
 
@@ -287,6 +294,20 @@ TEST(KvMigrationWorkerTest, AckPublishedWithExecutorStatus) {
   ASSERT_TRUE(ack.has_value());
   EXPECT_EQ(ack->kafka_request_id, 200u);
   EXPECT_EQ(ack->status, MigrationStatus::SUCCESSFUL);
+  ASSERT_EQ(h.producer->getPartitions().size(), 1u);
+  EXPECT_EQ(h.producer->getPartitions().front(), -1);
+}
+
+TEST(KvMigrationWorkerTest, AckPartitionPinRoutesAckToSamePartition) {
+  constexpr int32_t kAckPartition = 2;
+  auto h = makeHarness(kAckPartition);
+  h.worker->start();
+
+  h.consumer->push(serializeReq(/*id=*/201, makeApiRequest()));
+
+  ASSERT_TRUE(waitFor([&] { return h.producer->payloadCount() == 1; }));
+  ASSERT_EQ(h.producer->getPartitions().size(), 1u);
+  EXPECT_EQ(h.producer->getPartitions().front(), kAckPartition);
 }
 
 TEST(KvMigrationWorkerTest, ExecutorFailedStatusPropagatesToAck) {
