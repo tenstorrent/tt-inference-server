@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 from enum import Enum, IntEnum, auto
-from typing import List
+from typing import List, Optional
 
 
 class WorkflowType(IntEnum):
@@ -323,6 +323,30 @@ class ModelStatusTypes(IntEnum):
             ModelStatusTypes.TOP_PERF: ["functional", "complete", "target"],
         }
         return tier_map[self]
+
+    @property
+    def evals_enforced(self) -> bool:
+        """Whether eval accuracy failures block acceptance at this status.
+
+        Reuses required_target_tiers' signal (empty only for EXPERIMENTAL) so
+        a model still in bring-up isn't blocked on eval accuracy either.
+        """
+        return bool(self.required_target_tiers)
+
+    @classmethod
+    def resolve(cls, name: Optional[str]) -> Optional["ModelStatusTypes"]:
+        """Best-effort ``name`` -> member lookup, or ``None`` if missing/unrecognized.
+
+        Unlike :meth:`EvalLimitMode.from_string`, this never raises: callers
+        use a missing/garbled status as a signal to fall back to the
+        strictest (fully-enforced) behavior rather than crash.
+        """
+        if not name:
+            return None
+        try:
+            return cls[name]
+        except KeyError:
+            return None
 
 
 class EvalLimitMode(IntEnum):
