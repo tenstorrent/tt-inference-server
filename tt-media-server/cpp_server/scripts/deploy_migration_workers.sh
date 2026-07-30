@@ -332,6 +332,9 @@ declare -a WK_PORT=() WK_PID=() WK_FAILS=() WK_LOG=()
 # Resolved peer CSV per worker (WK_PEERS[s]) — the generic, role-agnostic peer
 # list this worker is launched with. See peersForWorker() for how it's derived.
 declare -a WK_PEERS=()
+# Prefill Kafka request-partition pin (WK_KAFKA_PARTITION[s]). Prefill i owns
+# partition i via rd_kafka_assign; decode slots leave this empty.
+declare -a WK_KAFKA_PARTITION=()
 # CSV of every decode's tag, in order — the default peer set for a prefill (fan-
 # out is table-driven and may touch any decode; also used for TABLE_EXCHANGE).
 DECODE_TAG_LIST=""
@@ -340,6 +343,8 @@ DECODE_TAG_LIST=""
 # ANY worker (any role) an explicit peer set, overriding the role default. Set
 # elements from the config file with plain assignment (no `declare`, which would
 # be local to the sourcing function), e.g.  WORKER_PEERS[decode-0]="prefill-0".
+# With NUM_PREFILL>1, unset prefill entries are auto-filled round-robin so each
+# decode has a single prefill owner (see autoAssignExclusiveWorkerPeers).
 declare -A WORKER_PEERS=()
 
 probeMetadata() {
@@ -434,13 +439,10 @@ clearRpcMeta() {
 # nothing (pure receiver). Prefill reads a complete DECODE_TAG_LIST because
 # initWorkerSlots builds it before adding any prefill slot.
 #
-# IMPORTANT: decode control now multi-accepts (N prefills can TCP to one decode),
-# but each prefill still uses a distinct Kafka group (broadcast). Every prefill
-# would then attempt the same migration UUID against a shared decode — unsafe
-# until Kafka ownership is exclusive. Default all-to-all is therefore only safe
-# with NUM_PREFILL=1. With multiple prefills, set WORKER_PEERS so each decode
-# appears in at most one prefill's peer list (assertExclusiveDecodePeers), or
-# keep a single prefill.
+# Kafka ownership is exclusive via KAFKA_PARTITION=index (rd_kafka_assign).
+# Decode-peer exclusivity is still required: two prefills must not drive the
+# same decode data plane. With NUM_PREFILL>1, autoAssignExclusiveWorkerPeers
+# round-robins unset WORKER_PEERS before slots are built.
 peersForWorker() {
   local role="$1" tag="$2"
   if [[ -n "${WORKER_PEERS[$tag]:-}" ]]; then
@@ -450,11 +452,35 @@ peersForWorker() {
   fi
 }
 
-# Fail fast when two prefills would share the same decode peer. Control TCP
-# multi-accept allows N sessions, but Kafka broadcast means every prefill
-# consumes/acks the same migration UUID — shared decode peers stay unsafe until
-# there is an explicit single Kafka owner. See migration_worker_rank_launch.sh
-# for a round-robin WORKER_PEERS pattern.
+# For NUM_PREFILL>1, fill any unset WORKER_PEERS[prefill-tag] with round-robin
+# decode ownership (decode j -> prefill j % NUM_PREFILL). Explicit config wins
+# for tags that are already set; assertExclusiveDecodePeers still fails loud
+# on conflicts.
+autoAssignExclusiveWorkerPeers() {
+  (( NUM_PREFILL > 1 )) || return 0
+  local -a decodeTags=() prefillTags=()
+  local i j tag peerCsv
+  IFS=',' read -ra decodeTags <<<"${DECODE_TAG_LIST}"
+  IFS=',' read -ra prefillTags <<<"${PREFILL_TAGS}"
+  for (( i = 0; i < NUM_PREFILL; i++ )); do
+    tag="${prefillTags[$i]:-prefill-${i}}"
+    [[ -z "${WORKER_PEERS[$tag]:-}" ]] || continue
+    peerCsv=""
+    for (( j = 0; j < ${#decodeTags[@]}; j++ )); do
+      if (( j % NUM_PREFILL == i )); then
+        peerCsv="${peerCsv:+${peerCsv},}${decodeTags[$j]}"
+      fi
+    done
+    [[ -n "${peerCsv}" ]] || \
+      die "auto WORKER_PEERS[${tag}] empty (NUM_DECODE=${NUM_DECODE} NUM_PREFILL=${NUM_PREFILL})"
+    WORKER_PEERS[$tag]="${peerCsv}"
+    echo "[deploy] auto WORKER_PEERS[${tag}]=${peerCsv} (round-robin exclusive)"
+  done
+}
+
+# Fail fast when two prefills would share the same decode peer. Kafka request
+# ownership is exclusive per partition, but the data plane still needs a single
+# prefill owner per decode.
 assertExclusiveDecodePeers() {
   declare -A decodeOwner=()
   local s peers peer
@@ -465,14 +491,28 @@ assertExclusiveDecodePeers() {
       [[ -n "${peer}" ]] || continue
       if [[ -n "${decodeOwner[$peer]:-}" ]]; then
         die "decode peer '${peer}' assigned to both '${decodeOwner[$peer]}' and '${WK_TAG[$s]}'. \
-Each prefill has its own Kafka group (broadcast), so two prefills cannot safely \
-share a decode even though control TCP multi-accepts. Use one prefill, or set \
-WORKER_PEERS so each decode has a single prefill owner \
-(see migration_worker_rank_launch.sh round-robin)."
+Each decode must have a single prefill owner for the migration data plane. \
+Set WORKER_PEERS explicitly, or rely on auto round-robin for NUM_PREFILL>1."
       fi
       decodeOwner[$peer]="${WK_TAG[$s]}"
     done
   done
+}
+
+# Create/expand kv-migration-requests + kv-migration-acks to >= NUM_PREFILL
+# partitions so each prefill can pin KAFKA_PARTITION=index.
+ensureKafkaTopics() {
+  local partitions="$1"
+  local cli="${SCRIPT_DIR}/migration_cli.py"
+  [[ -f "${cli}" ]] || die "migration_cli.py not found at ${cli}"
+  echo "[deploy] ensuring Kafka topics have >= ${partitions} partitions (brokers=${KAFKA_BROKERS})"
+  if (( DRY_RUN )); then
+    echo "[dry-run] python3 ${cli} --brokers ${KAFKA_BROKERS} ensure-partitions --partitions ${partitions}"
+    return 0
+  fi
+  python3 "${cli}" --brokers "${KAFKA_BROKERS}" ensure-partitions \
+    --partitions "${partitions}" \
+    || die "failed to ensure migration Kafka topics have >= ${partitions} partitions"
 }
 
 containerNameForTag() {
@@ -584,6 +624,11 @@ addWorkerSlot() {
   WK_ROLE+=("$1"); WK_INDEX+=("$2"); WK_HOST+=("$3"); WK_TAG+=("$4"); WK_DEVMAP+=("${devmap}")
   WK_BIND_IP+=("${bindIp}"); WK_CONTAINER+=("$(containerNameForTag "${tag}")"); WK_DOCKER+=("${dockerCommand}")
   WK_PEERS+=("$(peersForWorker "$1" "$4")")
+  if [[ "${role}" == "prefill" ]]; then
+    WK_KAFKA_PARTITION+=("$2")
+  else
+    WK_KAFKA_PARTITION+=("")
+  fi
   WK_PORT+=("${HEALTH_PORT}"); WK_PID+=(""); WK_FAILS+=(0)
   WK_LOG+=("/tmp/tt_mc_deploy_$1-$2.log")
 }
@@ -606,6 +651,7 @@ initWorkerSlots() {
     resolved_decode_tags+=("${tag}")
     DECODE_TAG_LIST="${DECODE_TAG_LIST:+${DECODE_TAG_LIST},}${tag}"
   done
+  autoAssignExclusiveWorkerPeers
   for (( i = 0; i < NUM_PREFILL; i++ )); do
     tag="${prefill_tags[$i]:-prefill-${i}}"
     addWorkerSlot "prefill" "${i}" "${prefill_hosts[$i]}" "${tag}"
@@ -652,6 +698,7 @@ ensureAllWorkerImages() {
 workerCmd() {
   local s="$1" role="${WK_ROLE[$s]}" tag="${WK_TAG[$s]}"
   local devmap="${WK_DEVMAP[$s]}" peers="${WK_PEERS[$s]}"
+  local kafkaPartition="${WK_KAFKA_PARTITION[$s]}"
   local bindIp="${WK_BIND_IP[$s]}" container="${WK_CONTAINER[$s]}" table
   local -a cmd dockerCommand
   read -r -a dockerCommand <<<"${WK_DOCKER[$s]}"
@@ -684,6 +731,9 @@ workerCmd() {
   fi
   if [[ "${role}" == "prefill" ]]; then
     cmd+=(-e "PREFILL_TABLE=${PREFILL_TABLE}")
+    # Exclusive ownership (#4795): pin request consumer to this prefill's
+    # partition; launcher switches to the shared group when KAFKA_PARTITION is set.
+    [[ -n "${kafkaPartition}" ]] && cmd+=(-e "KAFKA_PARTITION=${kafkaPartition}")
   else
     cmd+=(-e "DECODE_TABLE=${DECODE_TABLE}")
   fi
@@ -919,6 +969,7 @@ main() {
   echo "[deploy] image=${WORKER_IMAGE} mode=${MIGRATION_MODE}"
   echo "[deploy] tables: prefill=${PREFILL_TABLE} decode=${DECODE_TABLE}"
   echo "[deploy] device maps: prefill=${PREFILL_DEVICE_MAP:-none} decode=${DECODE_DEVICE_MAP:-none}"
+  echo "[deploy] kafka exclusive ownership: prefill i -> KAFKA_PARTITION=i (topics >= ${NUM_PREFILL} partitions)"
   if [[ "${MIGRATION_MODE}" == "dry-run" ]]; then
     echo "[deploy] dry-run mode: discovery, table exchange, health, and Kafka enabled; device I/O disabled"
   elif [[ -z "${PREFILL_DEVICE_MAP}" && -z "${DECODE_DEVICE_MAP}" ]]; then
@@ -930,6 +981,7 @@ main() {
   fi
 
   verifyDiscoveryService || exit 1
+  ensureKafkaTopics "${NUM_PREFILL}"
   initWorkerSlots
   assertExclusiveDecodePeers
   ensureAllWorkerImages

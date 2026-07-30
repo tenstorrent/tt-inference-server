@@ -8,14 +8,16 @@ code uses -- so behavior parity with the production messaging layer is
 maintained.
 
 Subcommands:
-    setup           Create the app topics (kv-migration-requests, kv-migration-acks)
-    produce         Publish one or many migration request messages
-    tail            Stream messages from acks (default) or requests
-    reset-offsets   Move a consumer group's committed offsets to earliest/latest
-    status          Show broker/topic snapshot
+    setup              Create the app topics (kv-migration-requests, kv-migration-acks)
+    ensure-partitions  Create/expand app topics to >= N partitions (N-prefill deploy)
+    produce            Publish one or many migration request messages
+    tail               Stream messages from acks (default) or requests
+    reset-offsets      Move a consumer group's committed offsets to earliest/latest
+    status             Show broker/topic snapshot
 
 Examples:
     python migration_cli.py setup
+    python migration_cli.py ensure-partitions --partitions 4
     python migration_cli.py produce --src-slot 0 --dst-slot 1 --layer-end 1 --src-pos-end 32 --dst-pos-end 32
     python migration_cli.py produce --count 100 --rate 50 --random
     python migration_cli.py tail acks
@@ -46,7 +48,7 @@ from confluent_kafka import (
     Producer,
     TopicPartition,
 )
-from confluent_kafka.admin import AdminClient, NewTopic
+from confluent_kafka.admin import AdminClient, NewPartitions, NewTopic
 
 
 DEFAULT_BROKERS = os.environ.get("KAFKA_BROKERS", "10.32.89.65:9092")
@@ -134,6 +136,96 @@ def cmd_setup(args: argparse.Namespace) -> None:
                 print(f"failed to create {name}: {err}", file=sys.stderr)
                 rc = 1
     sys.exit(rc)
+
+
+def _topic_partition_count(md: Any, topic: str) -> int | None:
+    """Return partition count, or None when the topic is missing/errored."""
+    if topic not in md.topics:
+        return None
+    topic_md = md.topics[topic]
+    if topic_md.error is not None:
+        return None
+    return len(topic_md.partitions)
+
+
+def cmd_ensure_partitions(args: argparse.Namespace) -> None:
+    """Create app topics (or expand them) so each has >= --partitions.
+
+    Used by deploy_migration_workers for N-prefill exclusive ownership (#4795):
+    request + ack topics must both have at least one partition per prefill.
+    Kafka can increase partition counts but not decrease them.
+    """
+    if args.partitions < 1:
+        raise SystemExit("--partitions must be >= 1")
+
+    admin = AdminClient({"bootstrap.servers": args.brokers})
+    _wait_for_broker(admin)
+    md = admin.list_topics(timeout=5)
+    to_create: list[NewTopic] = []
+    to_expand: dict[str, int] = {}
+
+    for topic in APP_TOPICS:
+        current = _topic_partition_count(md, topic)
+        if current is None:
+            to_create.append(
+                NewTopic(
+                    topic,
+                    num_partitions=args.partitions,
+                    replication_factor=args.replication_factor,
+                )
+            )
+            continue
+        if current < args.partitions:
+            to_expand[topic] = args.partitions
+        else:
+            print(f"ok: {topic} partitions={current} (>= {args.partitions})")
+
+    rc = 0
+    if to_create:
+        futures = admin.create_topics(to_create, request_timeout=10)
+        for name, fut in futures.items():
+            try:
+                fut.result()
+                print(f"created topic: {name} partitions={args.partitions}")
+            except KafkaException as exc:
+                err = exc.args[0]
+                if err.code() == KafkaError.TOPIC_ALREADY_EXISTS:
+                    # Race with another creator — re-check via expand path.
+                    to_expand[name] = args.partitions
+                    print(f"topic already exists: {name} (will verify partitions)")
+                else:
+                    print(f"failed to create {name}: {err}", file=sys.stderr)
+                    rc = 1
+
+    if to_expand:
+        new_parts = [
+            NewPartitions(topic, new_total_count=count)
+            for topic, count in to_expand.items()
+        ]
+        futures = admin.create_partitions(new_parts, request_timeout=10)
+        for name, fut in futures.items():
+            try:
+                fut.result()
+                print(f"expanded topic: {name} partitions={to_expand[name]}")
+            except KafkaException as exc:
+                err = exc.args[0]
+                print(f"failed to expand {name}: {err}", file=sys.stderr)
+                rc = 1
+
+    if rc != 0:
+        sys.exit(rc)
+
+    # Final fail-closed check — never let deploy proceed under-provisioned.
+    md = admin.list_topics(timeout=5)
+    for topic in APP_TOPICS:
+        current = _topic_partition_count(md, topic)
+        if current is None or current < args.partitions:
+            print(
+                f"ERROR: {topic} has partitions={current!r}, need >= {args.partitions}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        print(f"ensured: {topic} partitions={current}")
 
 
 def cmd_produce(args: argparse.Namespace) -> None:
@@ -352,6 +444,19 @@ def build_parser() -> argparse.ArgumentParser:
     p_setup.add_argument("--partitions", type=int, default=1)
     p_setup.add_argument("--replication-factor", type=int, default=1)
     p_setup.set_defaults(func=cmd_setup)
+
+    p_ensure = sub.add_parser(
+        "ensure-partitions",
+        help="Create/expand app topics so each has >= N partitions",
+    )
+    p_ensure.add_argument(
+        "--partitions",
+        type=int,
+        required=True,
+        help="minimum partition count for request + ack topics",
+    )
+    p_ensure.add_argument("--replication-factor", type=int, default=1)
+    p_ensure.set_defaults(func=cmd_ensure_partitions)
 
     p_prod = sub.add_parser("produce", help="Produce migration request messages")
     _add_produce_args(p_prod)
