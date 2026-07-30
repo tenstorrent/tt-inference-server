@@ -86,5 +86,59 @@ def test_vlm_configs_never_leak_non_text_params(spec):
     assert cfg_keys.isdisjoint(non_text_only)
 
 
+def _specs_with_text_targets():
+    """One LLM spec per model that defines tiered targets for a text config."""
+    seen = {}
+    for spec in MODEL_SPECS.values():
+        params = [
+            p
+            for task in get_benchmark_config(spec).tasks
+            for p in task.param_map.get(spec.device_type, [])
+            if p.task_type == "text" and p.targets
+        ]
+        if params:
+            seen.setdefault(spec.model_name, (spec, params))
+    return list(seen.values())[:5]
+
+
+@pytest.mark.parametrize(
+    "spec,targeted", _specs_with_text_targets(), ids=lambda v: getattr(v, "id", "")
+)
+def test_perf_reference_targets_reach_the_sweep_point(spec, targeted):
+    """Targets ride along on the config so the runner can grade the run.
+
+    They live on the spec's ``perf_reference`` params only; dropping them
+    here is what left LLM benchmark blocks with no ``target_checks``.
+    """
+    configs = get_llm_configs(spec, spec.device_type)
+    graded = {
+        (c.isl, c.osl, c.max_concurrency): c.targets for c in configs if c.targets
+    }
+
+    for params in targeted:
+        shape = (params.isl, params.osl, params.max_concurrency)
+        assert shape in graded, f"targets lost for {shape}"
+        assert graded[shape] == params.targets
+
+
+def test_sweep_points_without_a_perf_reference_carry_no_targets():
+    """Only configs the spec actually defines targets for are graded."""
+    spec, targeted = _specs_with_text_targets()[0]
+    shapes_with_targets = {(p.isl, p.osl, p.max_concurrency) for p in targeted}
+
+    for config in get_llm_configs(spec, spec.device_type):
+        shape = (config.isl, config.osl, config.max_concurrency)
+        assert bool(config.targets) == (shape in shapes_with_targets)
+
+
+def test_configs_stay_hashable_with_targets_attached():
+    """``targets`` is compare=False; sweep-point identity is the numbers."""
+    spec, _ = _specs_with_text_targets()[0]
+    configs = get_llm_configs(spec, spec.device_type)
+    assert len({hash(c) for c in configs}) == len(
+        {(c.isl, c.osl, c.max_concurrency, c.num_prompts) for c in configs}
+    )
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))

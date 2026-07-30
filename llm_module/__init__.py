@@ -28,6 +28,7 @@ from .server_control import (
     ServerController,
 )
 from .spec_decode import SpecDecodeRun, build_runs as build_spec_decode_runs
+from .target_checks import apply_target_checks, build_target_checks
 
 __all__ = [
     "LLMRunConfig",
@@ -55,6 +56,8 @@ __all__ = [
     "make_agentic_driver",
     "LLMPerformanceRunner",
     "RunnerResult",
+    "apply_target_checks",
+    "build_target_checks",
     "ServerController",
     "HttpServerController",
     "RemoteOpenAIController",

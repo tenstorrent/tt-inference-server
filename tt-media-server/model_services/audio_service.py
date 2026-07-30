@@ -44,7 +44,7 @@ class AudioService(BaseService):
 
         from static.data.audio import DUMMY_WAV_BASE64
 
-        warmup_task_data = (DUMMY_WAV_BASE64, True)
+        warmup_task_data = (DUMMY_WAV_BASE64, True, True)
         self._cpu_workload_handler = CpuWorkloadHandler(
             name="AudioPreprocessing",
             worker_count=self.scheduler.get_worker_count(),

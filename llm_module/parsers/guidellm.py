@@ -58,7 +58,13 @@ SLO = {
 
 
 class GuideLLMParser(LLMResultParser):
+    # Deliberately NOT the canonical ``benchmarks`` kind, unlike the
+    # other perf parsers: a GuideLLM block is a nested scenario report, so there is
+    # no perf_reference entry to grade it against and the acceptance
+    # Benchmarks category would only ever see it as ungradable.
     kind = "guidellm"
+    tool = "guidellm"
+    tool_label = "GuideLLM"
 
     def parse(self, raw: Mapping[str, Any], *, device: str = "") -> Block:
         md = raw.get("metadata") or {}

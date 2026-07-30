@@ -51,26 +51,41 @@ def get_llm_configs(
             f"for model_id={model_spec.model_id!r}. Configured devices: {available}."
         )
 
+    text_params = [
+        params
+        for task in benchmark_config.tasks
+        for params in task.param_map.get(device, [])
+        if params.isl is not None
+        and params.osl is not None
+        and params.task_type == "text"
+    ]
+
+    targets_by_shape = {
+        (params.isl, params.osl, params.max_concurrency): params.targets
+        for params in text_params
+        if params.targets
+    }
+
     configs: List[LLMRunConfig] = []
     seen = set()
-    for task in benchmark_config.tasks:
-        for params in task.param_map.get(device, []):
-            if params.isl is None or params.osl is None:
-                continue
-            if params.task_type != "text":
-                continue
-            key = (params.isl, params.osl, params.max_concurrency, params.num_prompts)
-            if key in seen:
-                continue
-            seen.add(key)
-            configs.append(
-                LLMRunConfig(
-                    isl=params.isl,
-                    osl=params.osl,
-                    max_concurrency=params.max_concurrency,
-                    num_prompts=params.num_prompts,
-                )
+    for params in text_params:
+        key = (params.isl, params.osl, params.max_concurrency, params.num_prompts)
+        if key in seen:
+            continue
+        seen.add(key)
+        configs.append(
+            LLMRunConfig(
+                isl=params.isl,
+                osl=params.osl,
+                max_concurrency=params.max_concurrency,
+                num_prompts=params.num_prompts,
+                targets=dict(
+                    targets_by_shape.get(
+                        (params.isl, params.osl, params.max_concurrency), {}
+                    )
+                ),
             )
+        )
 
     if not configs:
         logger.warning(

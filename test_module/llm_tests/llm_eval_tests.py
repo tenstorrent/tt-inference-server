@@ -337,6 +337,15 @@ def _run_eval_task(ctx: MediaContext, task, auth_token: str) -> int:
     if auth_token:
         # lm-eval local-completions reads the bearer token from OPENAI_API_KEY.
         env["OPENAI_API_KEY"] = auth_token
+    if getattr(task, "allow_code_execution", False):
+        # HF evaluate's code_eval metric refuses to run without this. Scoped to
+        # this subprocess only -- never os.environ, the image, or the workflow
+        # env -- so it cannot leak to another task in the same run.
+        env["HF_ALLOW_CODE_EVAL"] = "1"
+        logger.warning(
+            "task=%s runs model-generated code on this host (allow_code_execution).",
+            task.task_name,
+        )
     logger.info("Running eval task=%s", task.task_name)
     return run_command(command=cmd, logger=logger, env=env)
 

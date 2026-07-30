@@ -12,16 +12,22 @@ from typing import Any, Dict, Mapping, Optional
 from report_module.schema import Block
 from utils.model_naming import slugify_name_parts
 
+BENCHMARKS_KIND = "benchmarks"
+
 
 class LLMResultParser(ABC):
     """Adapt one LLM perf tool's raw JSON output into a report Block.
 
-    Each concrete parser owns a single ``kind`` and knows the schema of
-    that tool's result file. Drivers must not call parsers themselves;
-    the runner orchestrates ``driver.run() -> parser.parse()``.
+    Each concrete parser knows the schema of one tool's result file and
+    names that tool in ``tool`` / ``tool_label``; ``kind`` stays the
+    canonical report kind so the block is routed like every other
+    benchmark. Drivers must not call parsers themselves; the runner
+    orchestrates ``driver.run() -> parser.parse()``.
     """
 
-    kind: str
+    kind: str = BENCHMARKS_KIND
+    tool: str = ""
+    tool_label: str = ""
 
     @abstractmethod
     def parse(self, raw: Mapping[str, Any], *, device: str = "") -> Block:
@@ -33,15 +39,16 @@ class LLMResultParser(ABC):
         """Wrap a flat report record in the canonical Block shape.
 
         ``data`` carries the report sections only — never a duplicate of
-        the envelope fields (``kind``/``model``/``device``/``timestamp``).
-        Per-block envelope fields move to ``Block.targets`` so the
-        runner can build report-level metadata without hunting them out
-        of section data, while the renderer pulls model/device from the
-        schema's metadata via its existing fallback in
-        :func:`report_module.renderers._resolve_model_device`.
+        the envelope fields (``kind``/``tool``/``model``/``device``/
+        ``timestamp``). Per-block envelope fields move to
+        ``Block.targets`` so the runner can build report-level metadata
+        without hunting them out of section data, while the renderer
+        pulls model/device from the schema's metadata via its existing
+        fallback in :func:`report_module.renderers._resolve_model_device`.
 
         ``title`` sets the section heading the generic renderer emits;
-        leave it ``None`` to fall back to the kind-derived heading.
+        leave it ``None`` to fall back to the tool-derived heading (or,
+        for parsers with no ``tool``, to the kind-derived one).
         """
         model = str(record.get("model", ""))
         device = str(record.get("device", ""))
@@ -50,9 +57,11 @@ class LLMResultParser(ABC):
         section_data = {
             k: v
             for k, v in record.items()
-            if k not in ("kind", "model", "device", "timestamp")
+            if k not in ("kind", "tool", "model", "device", "timestamp")
         }
         targets: Dict[str, Any] = {}
+        if self.tool:
+            targets["tool"] = self.tool
         if model:
             targets["model"] = model
         if device:
@@ -62,10 +71,18 @@ class LLMResultParser(ABC):
         return Block(
             kind=self.kind,
             id=block_id or None,
-            title=title,
+            title=title or self._default_title(record),
             data=section_data,
             targets=targets,
         )
+
+    def _default_title(self, record: Mapping[str, Any]) -> Optional[str]:
+        """Heading for a benchmark block, naming the tool that ran it."""
+        del record  # title depends on the tool only
+        if not self.tool:
+            return None
+        label = self.tool_label or self.tool.replace("_", " ").title()
+        return f"{label} Benchmark"
 
 
 def round_metric(value: Any, digits: int) -> Any:
