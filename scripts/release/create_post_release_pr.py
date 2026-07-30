@@ -51,6 +51,7 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT))
+from utils.model_naming import ci_job_matches_device  # noqa: E402
 from workflows.workflow_types import DeviceTypes, InferenceEngine  # noqa: E402
 
 DEFAULT_CI_CONFIG = REPO_ROOT / ".github" / "workflows" / "models-ci-config.json"
@@ -240,14 +241,17 @@ def fetch_run_jobs(repo: str, run_id: str, token: str) -> list[dict] | None:
 def ci_job_url(
     jobs, repo: str, run_id: str, model_name: str, device: DeviceTypes
 ) -> str | None:
-    """URL of the run-release-<model>-<runner>-<device> job for this combo."""
+    """URL of the run-release-<model>-<runner>-<device> job for this combo.
+
+    ``model_name`` is the identity; the job name carries the escaped token, so
+    the comparison goes through ``ci_job_matches_device``.
+    """
     if not jobs:
         return None
-    token = device.name.lower()  # device token used in tt-shield job names
-    prefix = f"run-release-{model_name}-"
     for job in jobs:
-        leaf = job.get("name", "").split("/")[-1].strip()
-        if leaf.startswith(prefix) and leaf.endswith(f"-{token}"):
+        if ci_job_matches_device(
+            job.get("name", ""), "release", model_name, device.name
+        ):
             return f"https://github.com/{repo}/actions/runs/{run_id}/job/{job['id']}"
     return None
 

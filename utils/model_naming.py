@@ -70,6 +70,7 @@ __all__ = [
     "split_workflow_logs_artifact_name",
     "ci_job_name",
     "device_from_ci_job_name",
+    "ci_job_matches_device",
 ]
 
 #: Escape sequence standing in for the HF org separator inside a name token.
@@ -272,6 +273,37 @@ def device_from_ci_job_name(
         # name description can leave behind ("..., P150)").
         return tail.split()[0].strip(",)")
     return None
+
+
+def ci_job_matches_device(
+    job_name: str, workflow: str, model_id: str, device: str
+) -> bool:
+    """True if ``job_name`` is the job for this ``(model, device)`` pair.
+
+    :func:`device_from_ci_job_name` run backwards, for a caller that knows the
+    device but not the runner label -- ``models-ci-config.json`` records the
+    device and leaves the runner to tt-shield. Anchoring on both ends of the
+    label leaves it unconstrained (``bh-qb-ge``); the device compares
+    case-insensitively since callers hold a ``DeviceTypes`` name.
+
+    >>> ci_job_matches_device(
+    ...     "run-tests / run-release-meta-llama__Llama-3.3-70B-Instruct-bh-qb-ge-p300x2",
+    ...     "release", "meta-llama/Llama-3.3-70B-Instruct", "P300X2")
+    True
+    """
+    if not job_name or not device:
+        return False
+    # The leading "-" rejects a label-less name and "x2" vs "p300x2".
+    suffix = f"-{device}".lower()
+    for token in model_name_variants(model_id):
+        marker = f"run-{workflow}-{token}-"
+        idx = job_name.find(marker)
+        if idx == -1:
+            continue
+        tail = job_name[idx + len(marker) :].strip().rstrip(",)")
+        if tail.lower().endswith(suffix):
+            return True
+    return False
 
 
 # ---------------------------------------------------------------------------

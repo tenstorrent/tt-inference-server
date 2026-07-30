@@ -48,6 +48,7 @@ unslugify_model_id("Qwen__Qwen3-32B")  # "Qwen/Qwen3-32B"
 | `split_workflow_logs_artifact_name(name, workflow, model_id)` | → `(runner, suffix)` or `None` |
 | `ci_job_name(workflow, model_id, runner_label, runner_type)` | `run-<workflow>-<model>-<label>-<type>` |
 | `device_from_ci_job_name(name, workflow, model_id, runner_label)` | → device or `None` |
+| `ci_job_matches_device(name, workflow, model_id, device)` | the same match run the other way, for a caller that knows the device but not the runner label |
 
 ### From shell
 
@@ -94,6 +95,12 @@ splitting a job name on `/`. The GitHub jobs API returns
 `"caller job / run-release-…"`, but an unescaped model id also contains `/`, so
 splitting eats the org prefix along with the caller prefix and loses the device.
 `device_from_ci_job_name` searches for the marker instead.
+
+A second one: in `workflow_logs_<workflow>_<model>_<runner_label>_<impl>`, the
+field that pairs with a job name is the **runner label** — the fourth of five —
+not the trailing impl. `rsplit("_", 1)` picks up `default` and looks like it
+worked. Use `split_workflow_logs_artifact_name`, which takes the model id
+because the grammar is not self-delimiting.
 
 ## tt-shield side (not yet applied)
 

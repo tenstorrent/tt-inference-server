@@ -19,6 +19,7 @@ import pytest
 
 from utils.model_naming import (
     MODEL_ID_SEP,
+    ci_job_matches_device,
     ci_job_name,
     device_from_ci_job_name,
     is_artifact_name_safe,
@@ -235,6 +236,64 @@ class TestCiJobName:
             )
             is None
         )
+
+
+class TestCiJobMatchesDevice:
+    """Matching with the device known and the runner label not."""
+
+    def test_matches_canonical_job_name(self):
+        name = ci_job_name("release", "Qwen/Qwen3-32B", "p150", "P150")
+        assert ci_job_matches_device(name, "release", "Qwen/Qwen3-32B", "P150")
+
+    def test_runner_label_containing_hyphens(self):
+        # The real shape from tt-shield run 6035.
+        name = (
+            "run-tests / run-release-meta-llama__Llama-3.3-70B-Instruct-bh-qb-ge-p300x2"
+        )
+        assert ci_job_matches_device(
+            name, "release", "meta-llama/Llama-3.3-70B-Instruct", "P300X2"
+        )
+
+    def test_device_comparison_is_case_insensitive(self):
+        name = "run-release-Qwen__Qwen3-32B-p150-p150"
+        assert ci_job_matches_device(name, "release", "Qwen/Qwen3-32B", "P150")
+        assert ci_job_matches_device(name, "release", "Qwen/Qwen3-32B", "p150")
+
+    def test_tolerates_producers_that_predate_the_contract(self):
+        for token in ("Qwen/Qwen3-32B", "Qwen_Qwen3-32B", "Qwen3-32B"):
+            name = f"run-tests / run-release-{token}-p150-p150"
+            assert ci_job_matches_device(name, "release", "Qwen/Qwen3-32B", "P150"), (
+                token
+            )
+
+    def test_a_missing_runner_label_is_not_a_match(self):
+        assert not ci_job_matches_device(
+            "run-release-Qwen__Qwen3-32B-p150", "release", "Qwen/Qwen3-32B", "p150"
+        )
+
+    def test_device_must_be_a_whole_trailing_token(self):
+        name = "run-release-Qwen__Qwen3-32B-p150-p300x2"
+        assert not ci_job_matches_device(name, "release", "Qwen/Qwen3-32B", "x2")
+
+    def test_wrong_model_device_or_workflow_returns_false(self):
+        name = "run-release-Qwen__Qwen3-32B-p150-P150"
+        assert not ci_job_matches_device(name, "release", "org/other", "P150")
+        assert not ci_job_matches_device(name, "release", "Qwen/Qwen3-32B", "N300")
+        assert not ci_job_matches_device(name, "benchmarks", "Qwen/Qwen3-32B", "P150")
+        assert not ci_job_matches_device("", "release", "Qwen/Qwen3-32B", "P150")
+        assert not ci_job_matches_device(name, "release", "Qwen/Qwen3-32B", "")
+
+    def test_trailing_punctuation_is_trimmed(self):
+        name = "run-tests (run-release-Qwen__Qwen3-32B-p150-P150)"
+        assert ci_job_matches_device(name, "release", "Qwen/Qwen3-32B", "P150")
+
+    def test_agrees_with_device_from_ci_job_name_on_every_model(self):
+        # The two directions must not disagree.
+        for model_id in MODEL_IDS:
+            name = ci_job_name("release", model_id, "some-runner", "P300X2")
+            device = device_from_ci_job_name(name, "release", model_id, "some-runner")
+            assert device == "P300X2"
+            assert ci_job_matches_device(name, "release", model_id, device)
 
 
 class TestStandaloneUsability:
