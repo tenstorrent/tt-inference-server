@@ -1593,7 +1593,8 @@ templates:
   model_type: LLM
   inference_engine: FORGE
   uses_tensor_model_cache: false
-  status: EXPERIMENTAL
+  status: FUNCTIONAL  # DEMO ONLY: temporarily raised from EXPERIMENTAL to prove
+  # acceptance re-blocks on ifeval once evals are enforced. Do not merge.
   device_model_specs:
     - device: P150
       max_concurrency: 32
