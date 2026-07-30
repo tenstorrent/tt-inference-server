@@ -175,7 +175,9 @@ def _run_single_iteration(
             pending[mid]["ack_ts"] = time.monotonic()
             outstanding.discard(mid)
             if args.verbose:
-                print(f"<- ACK SUCCESSFUL migration_id={mid} layer={pending[mid]['layer']}")
+                print(
+                    f"<- ACK SUCCESSFUL migration_id={mid} layer={pending[mid]['layer']}"
+                )
         elif status == "FAILED":
             pending[mid]["ack_ts"] = time.monotonic()
             outstanding.discard(mid)
@@ -236,7 +238,9 @@ def run_benchmark(args: argparse.Namespace) -> int:
     if args.warmup > 0:
         print(f"warmup iterations (excluded from stats): {args.warmup}")
 
-    base_id_seed = args.migration_id if args.migration_id is not None else time.time_ns()
+    base_id_seed = (
+        args.migration_id if args.migration_id is not None else time.time_ns()
+    )
     # Reserve a distinct migration_id range per iteration.
     id_stride = max(len(layers), 1)
 
@@ -251,11 +255,12 @@ def run_benchmark(args: argparse.Namespace) -> int:
     for i in range(total_runs):
         is_warmup = i < args.warmup
         base_id = base_id_seed + i * id_stride
-        label = f"warmup {i + 1}/{args.warmup}" if is_warmup else \
-                f"iter {i - args.warmup + 1}/{args.iterations}"
-        result = _run_single_iteration(
-            args, layers, src_pos_end, dst_pos_end, base_id
+        label = (
+            f"warmup {i + 1}/{args.warmup}"
+            if is_warmup
+            else f"iter {i - args.warmup + 1}/{args.iterations}"
         )
+        result = _run_single_iteration(args, layers, src_pos_end, dst_pos_end, base_id)
         if result["timed_out"]:
             print(
                 f"[{label}] timed out after {args.timeout}s waiting for ACK(s): "
@@ -287,7 +292,9 @@ def run_benchmark(args: argparse.Namespace) -> int:
     median_wall = statistics.median(total_walls)
     print()
     print("=== migration benchmark results ===")
-    print(f"layers migrated : {len(layers)} (range [{args.layer_begin},{args.layer_end}))")
+    print(
+        f"layers migrated : {len(layers)} (range [{args.layer_begin},{args.layer_end}))"
+    )
     print(f"positions/layer : {src_pos_end - args.src_pos_begin}")
     print(f"iterations      : {args.iterations} (warmup: {args.warmup})")
     print("total wall time per iteration (first produce -> last SUCCESSFUL ACK):")
@@ -297,8 +304,10 @@ def run_benchmark(args: argparse.Namespace) -> int:
     print(f"  median = {median_wall:.4f}s")
     if len(total_walls) > 1:
         stdev_wall = statistics.stdev(total_walls)
-        print(f"  stdev  = {stdev_wall:.4f}s"
-              f"  ({(stdev_wall / mean_wall * 100.0):.1f}% of mean)")
+        print(
+            f"  stdev  = {stdev_wall:.4f}s"
+            f"  ({(stdev_wall / mean_wall * 100.0):.1f}% of mean)"
+        )
     print(f"produce phase mean : {statistics.fmean(produce_times):.4f}s")
     print(f"ack phase mean     : {statistics.fmean(ack_times_list):.4f}s")
     print(f"per-request latency across all iterations (n={len(all_latencies)}):")
@@ -318,13 +327,19 @@ def run_benchmark(args: argparse.Namespace) -> int:
         linear_from_mean = mean_wall * scale
         linear_from_median = median_wall * scale
         print()
-        print(f"extrapolation to {target_layers} layers (assumes same slot pair, "
-              f"same positions/layer, and")
+        print(
+            f"extrapolation to {target_layers} layers (assumes same slot pair, "
+            f"same positions/layer, and"
+        )
         print("  that migration time scales linearly with the number of layers):")
-        print(f"  from mean total wall   : {linear_from_mean:.4f}s"
-              f"  (= {mean_wall:.4f}s * {target_layers}/{len(layers)})")
-        print(f"  from median total wall : {linear_from_median:.4f}s"
-              f"  (= {median_wall:.4f}s * {target_layers}/{len(layers)})")
+        print(
+            f"  from mean total wall   : {linear_from_mean:.4f}s"
+            f"  (= {mean_wall:.4f}s * {target_layers}/{len(layers)})"
+        )
+        print(
+            f"  from median total wall : {linear_from_median:.4f}s"
+            f"  (= {median_wall:.4f}s * {target_layers}/{len(layers)})"
+        )
         if len(total_walls) > 1:
             lo = min(total_walls) * scale
             hi = max(total_walls) * scale
