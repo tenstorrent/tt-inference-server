@@ -26,6 +26,7 @@ class SupportedModels(Enum):
     WAN_2_2_I2V_ANISORA = "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
     WAN_2_2_I2V_DISTILL = "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
     WAN_2_2_I2V_LORA = "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
+    WAN_2_2_I2V_LIGHTNING = "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
     DISTIL_WHISPER_LARGE_V3 = "distil-whisper/distil-large-v3"
     OPENAI_WHISPER_LARGE_V3 = "openai/whisper-large-v3"
     PYANNOTE_SPEAKER_DIARIZATION = "pyannote/speaker-diarization-3.0"
@@ -70,6 +71,7 @@ class ModelNames(Enum):
     WAN_2_2_I2V_ANISORA = "Wan2.2-I2V-AniSora-V3.2"
     WAN_2_2_I2V_DISTILL = "Wan2.2-I2V-Distill-LightX2V"
     WAN_2_2_I2V_LORA = "Wan2.2-I2V-LoRA"
+    WAN_2_2_I2V_LIGHTNING = "Wan2.2-I2V-Lightning"
     DISTIL_WHISPER_LARGE_V3 = "distil-large-v3"
     OPENAI_WHISPER_LARGE_V3 = "whisper-large-v3"
     MICROSOFT_RESNET_50 = "resnet-50"
@@ -118,6 +120,7 @@ class ModelRunners(Enum):
     TT_WAN_2_2_I2V_ANISORA = "tt-wan2.2-i2v-anisora"
     TT_WAN_2_2_I2V_DISTILL = "tt-wan2.2-i2v-distill"
     TT_WAN_2_2_I2V_LORA = "tt-wan2.2-i2v-lora"
+    TT_WAN_2_2_I2V_LIGHTNING = "tt-wan2.2-i2v-lightning"
     TT_WHISPER = "tt-whisper"
     VLLMForge = "vllm_forge"
     TT_YOLOV4 = "tt-yolov4"
@@ -211,6 +214,7 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_WAN_2_2_I2V_ANISORA,
         ModelRunners.TT_WAN_2_2_I2V_DISTILL,
         ModelRunners.TT_WAN_2_2_I2V_LORA,
+        ModelRunners.TT_WAN_2_2_I2V_LIGHTNING,
         ModelRunners.SP_RUNNER,
     },
     ModelServices.TRAINING: {
@@ -232,6 +236,7 @@ I2V_MODEL_RUNNERS = frozenset(
         ModelRunners.TT_WAN_2_2_I2V_ANISORA,
         ModelRunners.TT_WAN_2_2_I2V_DISTILL,
         ModelRunners.TT_WAN_2_2_I2V_LORA,
+        ModelRunners.TT_WAN_2_2_I2V_LIGHTNING,
     }
 )
 # SP_RUNNER proxies to a multihost peer and serves either T2V or I2V weights,
@@ -243,6 +248,7 @@ I2V_MODEL_NAMES = frozenset(
         ModelNames.WAN_2_2_I2V_ANISORA,
         ModelNames.WAN_2_2_I2V_DISTILL,
         ModelNames.WAN_2_2_I2V_LORA,
+        ModelNames.WAN_2_2_I2V_LIGHTNING,
     }
 )
 
@@ -264,11 +270,13 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_WAN_2_2_I2V_ANISORA: {ModelNames.WAN_2_2_I2V_ANISORA},
     ModelRunners.TT_WAN_2_2_I2V_DISTILL: {ModelNames.WAN_2_2_I2V_DISTILL},
     ModelRunners.TT_WAN_2_2_I2V_LORA: {ModelNames.WAN_2_2_I2V_LORA},
+    ModelRunners.TT_WAN_2_2_I2V_LIGHTNING: {ModelNames.WAN_2_2_I2V_LIGHTNING},
     ModelRunners.SP_RUNNER: {
         ModelNames.WAN_2_2,
         ModelNames.WAN_2_2_T2V_PRODIA,
         ModelNames.WAN_2_2_I2V,
         ModelNames.WAN_2_2_I2V_PRODIA,
+        ModelNames.WAN_2_2_I2V_LIGHTNING,
         ModelNames.MOCHI_1,
     },
     ModelRunners.TT_WHISPER: {
@@ -948,6 +956,13 @@ ModelConfigs = {
         "request_processing_timeout_seconds": 5000,
     },
     (ModelRunners.TT_WAN_2_2_I2V_LORA, DeviceTypes.BLACKHOLE_GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_WAN_2_2_I2V_LIGHTNING, DeviceTypes.BLACKHOLE_GALAXY): {
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
