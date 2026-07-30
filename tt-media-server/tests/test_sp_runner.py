@@ -15,8 +15,9 @@ I2V path depends on:
   - the JSON layout of the side-file matches what ``video_runner._run_inference_loop``
     expects (``{"image", "frame_pos"}`` per entry),
   - ``image_path`` on the SHM ``VideoRequest`` points to that exact file,
-  - the file is ALWAYS unlinked when ``run()`` returns (success OR error),
-    so a busy server does not leak hundreds of MB per failed request on tmpfs.
+  - the file is unlinked after a peer response (success OR error), or on
+    orphan/duplicate drain / ``close_device`` after timeout — never on bare
+    timeout, so a late peer read cannot race into ``side-file unreadable``.
 
 T2V backward-compat (no ``image_prompts`` on the upstream request) is also
 asserted: no side-file is created and ``image_path`` stays empty so the
@@ -28,6 +29,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import time
 from typing import List, Optional
 from unittest.mock import MagicMock, patch
 
@@ -351,10 +353,14 @@ class TestI2VRunSideFileLifecycle:
         assert not os.path.exists(captured_path["path"])
 
     @patch("tt_model_runners.sp_runner.VideoShm")
-    def test_timeout_path_still_unlinks_side_file(self, MockVideoShm, tmp_video_dir):
-        """``read_response`` returning None → TimeoutError. The side-file
-        must STILL be unlinked, otherwise a slow runner peer leaks 810 MB
-        per stuck request."""
+    def test_timeout_path_keeps_side_file_for_peer(self, MockVideoShm, tmp_video_dir):
+        """Timeout must NOT unlink the I2V side-file.
+
+        The peer may still be about to open it (or the request is still
+        sitting in the input ring). Unlinking here races into
+        ``side-file unreadable`` ERROR orphans → HTTP 500. The path stays
+        parked until an orphan response or ``close_device``.
+        """
         mock_input, mock_output = _install_shm_factory(MockVideoShm)
         mock_output.read_response.return_value = None
 
@@ -369,13 +375,78 @@ class TestI2VRunSideFileLifecycle:
         mock_input.write_request.side_effect = capture_path_at_write
 
         runner = SPRunner("dev0")
+        # Tiny timeout so the test finishes quickly; default is 300s.
+        runner.settings.video_request_timeout_seconds = 0.05
         runner.set_device()
 
         with pytest.raises(TimeoutError, match="REQUEST_TIMEOUT"):
             runner.run([request])
 
         assert captured_path["path"]
+        assert os.path.exists(captured_path["path"]), (
+            "side-file must survive timeout so a late peer read still works"
+        )
+        # Shutdown is the leak backstop when no orphan response ever arrives.
+        runner.close_device()
         assert not os.path.exists(captured_path["path"])
+
+    @patch("tt_model_runners.sp_runner.VideoShm")
+    def test_orphan_response_after_timeout_unlinks_side_file(
+        self, MockVideoShm, tmp_video_dir
+    ):
+        """Late peer response after timeout must clean up the deferred side-file.
+
+        Replays the soak failure mode: await times out → side-file kept →
+        peer eventually responds (orphan) → side-file unlinked.
+        """
+        mock_input, mock_output = _install_shm_factory(MockVideoShm)
+        mock_output.read_response.return_value = None
+
+        prompts = [_ImagePromptStub(image="b64", frame_pos=0)]
+        request = _MockI2VRequest(image_prompts=prompts)
+        task_id = request._task_id
+
+        captured_path: dict = {}
+
+        def capture_path_at_write(req, timeout_s=None):
+            captured_path["path"] = req.image_path
+
+        mock_input.write_request.side_effect = capture_path_at_write
+
+        runner = SPRunner("dev0")
+        runner.settings.video_request_timeout_seconds = 0.05
+        runner.set_device()
+
+        with pytest.raises(TimeoutError, match="REQUEST_TIMEOUT"):
+            runner.run([request])
+
+        side_path = captured_path["path"]
+        assert side_path and os.path.exists(side_path)
+        with runner._pending_lock:
+            assert task_id not in runner._pending
+            assert task_id in runner._pending_image_paths
+
+        # Late peer response: drainer sees no future → orphan branch unlinks
+        # the deferred I2V side-file (must not unlink the video file_path).
+        orphan = VideoResponse(
+            task_id,
+            VideoStatus.ERROR,
+            "",
+            f"I2V conditioning side-file unreadable: {side_path!r}",
+        )
+        mock_output.read_response.return_value = orphan
+
+        deadline = time.monotonic() + 2.0
+        while os.path.exists(side_path) and time.monotonic() < deadline:
+            time.sleep(0.05)
+
+        assert not os.path.exists(side_path), (
+            "orphan drainer path must unlink the deferred I2V side-file"
+        )
+        with runner._pending_lock:
+            assert task_id not in runner._pending_image_paths
+
+        runner.close_device()
 
     @patch("tt_model_runners.sp_runner.VideoShm")
     def test_t2v_request_does_not_create_side_file(self, MockVideoShm, tmp_video_dir):
