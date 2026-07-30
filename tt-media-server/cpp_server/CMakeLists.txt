@@ -1162,6 +1162,15 @@ target_include_directories(session_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+# Header-only layer -> Kafka partition ownership policy (#4795). No Kafka link.
+add_executable(layer_to_partition_test
+    tests/unit/services/layer_to_partition_test.cpp
+)
+target_link_libraries(layer_to_partition_test PRIVATE GTest::gtest_main)
+target_include_directories(layer_to_partition_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 add_executable(prefix_cache_router_test
     tests/unit/services/prefix_cache_router_test.cpp
     src/domain/session.cpp
@@ -1441,6 +1450,7 @@ gtest_discover_tests(structured_output_test)
 gtest_discover_tests(worker_metrics_shm_test)
 gtest_discover_tests(concurrent_map_test)
 gtest_discover_tests(session_test)
+gtest_discover_tests(layer_to_partition_test)
 gtest_discover_tests(prefix_cache_router_test)
 gtest_discover_tests(session_manager_test)
 gtest_discover_tests(worker_manager_test)

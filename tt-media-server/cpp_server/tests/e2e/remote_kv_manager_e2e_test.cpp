@@ -30,6 +30,7 @@
 #include "messaging/kafka_producer.hpp"
 #include "messaging/utils/kafka_utils.hpp"
 #include "mock_kafka_worker.hpp"
+#include "services/layer_to_partition.hpp"
 #include "services/remote_kv_manager.hpp"
 #include "services/remote_kv_manager_impl.hpp"
 #include "utils/logger.hpp"
@@ -308,9 +309,10 @@ constexpr uint32_t K_PARTITIONED_TARGET_LAYER = 20;
 constexpr int32_t K_PARTITIONED_EXPECTED_OWNER = 1;
 
 RemoteKVManagerImpl::LayerToPartition partitionedLayerOwner() {
-  return [](uint32_t layerId) -> int32_t {
-    return static_cast<int32_t>(layerId / K_PARTITIONED_LAYERS_PER_WORKER);
-  };
+  return makeLayerToPartition(LayerPartitionPolicy{
+      .layersPerPartition = K_PARTITIONED_LAYERS_PER_WORKER,
+      .numPartitions = static_cast<uint32_t>(K_PARTITIONED_NUM_WORKERS),
+  });
 }
 
 TEST_F(RemoteKVManagerE2ETest, MigrateRoutesRequestToOwnerPartition) {
