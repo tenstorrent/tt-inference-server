@@ -77,6 +77,8 @@ void configureTtsQueues(WorkerConfig& cfg, int workerId) {
       names.cancelQueuePrefix + std::to_string(workerId));
 }
 
+}  // namespace
+
 WorkerManager::WorkerManager(size_t numWorkers) : workerCount{numWorkers} {
   if (workerCount < 1) {
     throw std::invalid_argument(

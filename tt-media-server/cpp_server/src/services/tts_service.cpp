@@ -29,8 +29,8 @@ TtsService::TtsService(config::TtsConfig config,
   TT_LOG_INFO(
       "[TtsService] Initialized worker-backed TTS service "
       "(runner={}, capacity={}, output_rate={}Hz, channels={}, workers={})",
-      config::toString(ttsConfig.runner_type), capacityLimit(),
-      ttsConfig.audioSampleRateHz, ttsConfig.audioChannels,
+      runnerInUse(), capacityLimit(), ttsConfig.audioSampleRateHz,
+      ttsConfig.audioChannels,
       this->queueManager->audioQueues.size());
 }
 
@@ -104,7 +104,14 @@ SystemStatus TtsService::getSystemStatus() const {
 }
 
 std::string TtsService::runnerInUse() const {
-  return config::toClientRunnerName(ttsConfig.runner_type);
+  switch (ttsConfig.runner_type) {
+    case config::ModelRunnerType::TT_TTS:
+      return "tt_tts";
+    case config::ModelRunnerType::MOCK_SCHEDULER:
+      return "mock_tts";
+    default:
+      return config::toClientRunnerName(ttsConfig.runner_type);
+  }
 }
 
 uint32_t TtsService::outputSampleRateHz() const {

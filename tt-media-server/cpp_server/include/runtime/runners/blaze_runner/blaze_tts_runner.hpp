@@ -23,7 +23,7 @@ namespace tt::runners::blaze {
 class BlazeTtsRunner : public IRunner {
  public:
   BlazeTtsRunner(config::TtsConfig config,
-                 std::unique_ptr<tts_scheduler::ITtsScheduler> scheduler,
+                 std::unique_ptr<tts_scheduler::ITtsScheduler> ttsScheduler,
                  ipc::tts::TtsTaskQueue* taskQueue,
                  ipc::tts::TtsAudioChunkQueue* audioQueue,
                  ipc::ICancelQueue* cancelQueue);

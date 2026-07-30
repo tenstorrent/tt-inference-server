@@ -30,13 +30,12 @@ sched::GenerationParams toSchedulerGeneration(
 
 }  // namespace
 
-BlazeTtsRunner::BlazeTtsRunner(config::TtsConfig config,
-                               std::unique_ptr<sched::ITtsScheduler> scheduler,
-                               ipc::tts::TtsTaskQueue* taskQueue,
-                               ipc::tts::TtsAudioChunkQueue* audioQueue,
-                               ipc::ICancelQueue* cancelQueue)
+BlazeTtsRunner::BlazeTtsRunner(
+    config::TtsConfig config, std::unique_ptr<sched::ITtsScheduler> ttsScheduler,
+    ipc::tts::TtsTaskQueue* taskQueue,
+    ipc::tts::TtsAudioChunkQueue* audioQueue, ipc::ICancelQueue* cancelQueue)
     : config(std::move(config)),
-      scheduler(std::move(scheduler)),
+      scheduler(std::move(ttsScheduler)),
       taskQueue(taskQueue),
       audioQueue(audioQueue),
       cancelQueue(cancelQueue),
@@ -58,7 +57,7 @@ BlazeTtsRunner::BlazeTtsRunner(config::TtsConfig config,
   for (uint32_t i = 0; i < slots.size(); ++i) {
     slots[i].slotId = i;
   }
-  scheduler->start();
+  this->scheduler->start();
   lastOutputTime = std::chrono::steady_clock::now();
 }
 
@@ -126,7 +125,8 @@ void BlazeTtsRunner::drainTokenOutputs() {
 void BlazeTtsRunner::drainAudioOutputs() {
   sched::AudioOutput output;
   size_t drained = 0;
-  while (drained < config.audioQueueCapacity && scheduler->tryPopAudio(output)) {
+  while (drained < config.audioQueueCapacity &&
+         scheduler->tryPopAudio(output)) {
     handleAudioOutput(output);
     ++drained;
   }
@@ -282,6 +282,8 @@ void BlazeTtsRunner::handleSchedulerResponse(
     case sched::RequestType::SUBMIT:
       handleSubmitAck(response);
       break;
+    case sched::RequestType::CONTINUE:
+      break;
     case sched::RequestType::STOP:
       handleStopAck(response);
       break;
@@ -340,8 +342,7 @@ void BlazeTtsRunner::handleAllocateAck(
   }
 }
 
-void BlazeTtsRunner::handleSubmitAck(
-    const sched::SchedulerResponse& response) {
+void BlazeTtsRunner::handleSubmitAck(const sched::SchedulerResponse& response) {
   if (response.errorCode == 0) {
     return;
   }
@@ -373,9 +374,10 @@ void BlazeTtsRunner::handleTokenOutput(const sched::TokenOutput& output) {
   if (shouldDropOutput(output.slotId, "token")) {
     return;
   }
-  TT_LOG_TRACE("[BlazeTtsRunner] Drained speech token taskId={} slotId={} "
-               "tokenId={} final={}",
-               output.taskId, output.slotId, output.tokenId, output.final);
+  TT_LOG_TRACE(
+      "[BlazeTtsRunner] Drained speech token taskId={} slotId={} "
+      "tokenId={} final={}",
+      output.taskId, output.slotId, output.tokenId, output.final);
   if (output.final) {
     if (auto* slot = findSlot(output.slotId)) {
       slot->completionPending = scheduler->isComplete(output.slotId);
@@ -416,8 +418,7 @@ void BlazeTtsRunner::sendFinish(uint32_t taskId,
 
 void BlazeTtsRunner::maybeFinalizeCompletedSlot(uint32_t slotId) {
   auto* slot = findSlot(slotId);
-  if (!slot || !slot->completionPending ||
-      slot->state != SlotState::RUNNING) {
+  if (!slot || !slot->completionPending || slot->state != SlotState::RUNNING) {
     return;
   }
   if (!scheduler->isComplete(slotId) ||
@@ -457,9 +458,10 @@ void BlazeTtsRunner::requestStop(uint32_t slotId) {
       deferredStopSlots.end()) {
     deferredStopSlots.push_back(slotId);
   }
-  TT_LOG_WARN("[BlazeTtsRunner] Scheduler queue full; deferring STOP for "
-              "slotId={}",
-              slotId);
+  TT_LOG_WARN(
+      "[BlazeTtsRunner] Scheduler queue full; deferring STOP for "
+      "slotId={}",
+      slotId);
 }
 
 void BlazeTtsRunner::requestEvict(uint32_t slotId) {
@@ -520,9 +522,10 @@ bool BlazeTtsRunner::shouldDropOutput(uint32_t slotId,
     return true;
   }
   if (slot.state != SlotState::RUNNING) {
-    TT_LOG_ERROR("[BlazeTtsRunner] Unexpected {} output for slotId={} in "
-                 "non-running state",
-                 outputType, slotId);
+    TT_LOG_ERROR(
+        "[BlazeTtsRunner] Unexpected {} output for slotId={} in "
+        "non-running state",
+        outputType, slotId);
     return true;
   }
   return false;

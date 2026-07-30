@@ -12,9 +12,9 @@
 #include "config/settings.hpp"
 #include "config/types.hpp"
 #include "ipc/media_payload_ipc.hpp"
-#include "runtime/runners/embedding_runner.hpp"
 #include "runtime/runners/blaze_runner/blaze_tts_runner.hpp"
 #include "runtime/runners/blaze_runner/blaze_tts_scheduler_factory.hpp"
+#include "runtime/runners/embedding_runner.hpp"
 #include "runtime/runners/image_ipc_runner.hpp"
 #include "runtime/runners/runner_registry.hpp"
 #include "runtime/runners/sdxl/sdxl_edit_runner.hpp"
@@ -46,9 +46,8 @@ void registerLLM() {
         return std::make_shared<LLMService>();
       });
 
-  auto& runners = utils::RunnerRegistry::instance();
-
 #ifdef ENABLE_BLAZE
+  auto& runners = utils::RunnerRegistry::instance();
   auto blazeFactory =
       [](const config::RunnerConfig& cfg, ipc::IResultQueue* resultQueue,
          ipc::ITaskQueue* taskQueue,
@@ -206,12 +205,23 @@ void registerTts() {
       [](const config::RunnerConfig& runnerCfg,
          ipc::tts::TtsTaskQueue* taskQueue,
          ipc::tts::TtsAudioChunkQueue* audioQueue,
-         ipc::ICancelQueue* cancelQueue)
-          -> std::unique_ptr<runners::IRunner> {
+         ipc::ICancelQueue* cancelQueue) -> std::unique_ptr<runners::IRunner> {
         TT_LOG_INFO("[RunnerRegistry] Creating Blaze TTS IPC runner");
         auto ttsCfg = std::get<config::TtsConfig>(runnerCfg);
         return std::make_unique<runners::blaze::BlazeTtsRunner>(
             ttsCfg, runners::blaze::makeTtsScheduler(ttsCfg), taskQueue,
+            audioQueue, cancelQueue);
+      });
+  runners.registerTtsIpcRunner(
+      config::ModelService::TTS, config::ModelRunnerType::MOCK_SCHEDULER,
+      [](const config::RunnerConfig& runnerCfg,
+         ipc::tts::TtsTaskQueue* taskQueue,
+         ipc::tts::TtsAudioChunkQueue* audioQueue,
+         ipc::ICancelQueue* cancelQueue) -> std::unique_ptr<runners::IRunner> {
+        TT_LOG_INFO("[RunnerRegistry] Creating mock TTS IPC runner");
+        auto ttsCfg = std::get<config::TtsConfig>(runnerCfg);
+        return std::make_unique<runners::blaze::BlazeTtsRunner>(
+            ttsCfg, runners::blaze::makeMockTtsScheduler(ttsCfg), taskQueue,
             audioQueue, cancelQueue);
       });
 

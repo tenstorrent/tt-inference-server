@@ -65,6 +65,7 @@ std::string resolveBlazeSocketDescriptorPrefix() {
     case ModelType::DEEPSEEK_V4_PRO:
       return "deepseek";
   }
+  throw std::runtime_error("Unsupported model type for Blaze socket prefix");
 }
 
 uint32_t resolveBlazeNumberOfPipelineStages() {
@@ -531,12 +532,14 @@ TtsConfig ttsEngineConfig() {
   static const TtsConfig cached = [] {
     TtsConfig cfg;
     const std::string runner = envStringLower("MODEL_RUNNER_TYPE", "tt_tts");
-    if (runner == "tt_tts" || runner == "tt-tts") {
+    if (runner == "tt_tts") {
       cfg.runner_type = ModelRunnerType::TT_TTS;
+    } else if (runner == "mock_tts") {
+      cfg.runner_type = ModelRunnerType::MOCK_SCHEDULER;
     } else {
       throw std::runtime_error(
           "[Config] Unknown TTS MODEL_RUNNER_TYPE='" + runner +
-          "'; expected one of: tt_tts, tt-tts");
+          "'; expected one of: tt_tts, mock_tts");
     }
 
     cfg.maxBatchSize = static_cast<size_t>(

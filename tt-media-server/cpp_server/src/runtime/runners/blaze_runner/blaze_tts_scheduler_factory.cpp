@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstring>
 #include <iterator>
 #include <memory>
 #include <stdexcept>
@@ -45,6 +46,169 @@
 namespace tt::runners::blaze {
 
 namespace {
+
+uint16_t floatToBf16(float value) {
+  uint32_t bits = 0;
+  std::memcpy(&bits, &value, sizeof(bits));
+  return static_cast<uint16_t>(bits >> 16);
+}
+
+class MockTtsScheduler final : public tts_scheduler::ITtsScheduler {
+ public:
+  MockTtsScheduler(uint32_t audioSampleRateHz, uint16_t audioChannels,
+                   size_t maxUsers)
+      : audioSampleRateHz(audioSampleRateHz),
+        audioChannels(audioChannels),
+        slotBusy(std::max<size_t>(maxUsers, 1), false) {}
+
+  void start() override {}
+  void stop() override {}
+
+  bool pushRequest(const tts_scheduler::SchedulerRequest& request) override {
+    tts_scheduler::SchedulerResponse response;
+    response.type = request.type;
+    response.requestId = request.requestId;
+    response.taskId = request.taskId;
+    response.slotId = request.slotId;
+
+    switch (request.type) {
+      case tts_scheduler::RequestType::ALLOCATE:
+        response.slotId = allocateSlot();
+        if (response.slotId == tts_scheduler::INVALID_SLOT) {
+          response.errorCode = -1;
+          response.error = "Mock TTS scheduler has no free slots";
+        }
+        break;
+      case tts_scheduler::RequestType::STOP:
+      case tts_scheduler::RequestType::EVICT:
+        releaseSlot(request.slotId);
+        break;
+      case tts_scheduler::RequestType::CONTINUE:
+      case tts_scheduler::RequestType::SUBMIT:
+        break;
+    }
+
+    responses.push_back(std::move(response));
+    return true;
+  }
+
+  bool submit(const tts_scheduler::TtsSubmit& request) override {
+    tts_scheduler::SchedulerResponse response;
+    response.type = tts_scheduler::RequestType::SUBMIT;
+    response.requestId = request.requestId;
+    response.taskId = request.taskId;
+    response.slotId = request.slotId;
+    if (!isValidSlot(request.slotId) || !slotBusy[request.slotId]) {
+      response.errorCode = -1;
+      response.error = "Mock TTS scheduler received SUBMIT for an invalid slot";
+      responses.push_back(std::move(response));
+      return true;
+    }
+
+    responses.push_back(std::move(response));
+    enqueueAudio(request);
+    return true;
+  }
+
+  bool tryPopResponse(tts_scheduler::SchedulerResponse& response) override {
+    if (responses.empty()) {
+      return false;
+    }
+    response = std::move(responses.front());
+    responses.erase(responses.begin());
+    return true;
+  }
+
+  bool tryPopToken(tts_scheduler::TokenOutput& /*output*/) override {
+    return false;
+  }
+
+  bool tryPopAudio(tts_scheduler::AudioOutput& output) override {
+    if (audio.empty()) {
+      return false;
+    }
+    output = std::move(audio.front());
+    audio.erase(audio.begin());
+    return true;
+  }
+
+  bool enqueueVoiceEncode(tts_scheduler::VoiceEncodeRequest request) override {
+    tts_scheduler::VoiceEncodeResult result;
+    result.requestId = request.requestId;
+    result.status = tts_scheduler::VoiceEncodeStatus::Completed;
+    result.speechIds = {12, 34, 56};
+    voiceResults.push_back(std::move(result));
+    return true;
+  }
+
+  bool tryPopVoiceEncodeResult(
+      tts_scheduler::VoiceEncodeResult& result) override {
+    if (voiceResults.empty()) {
+      return false;
+    }
+    result = std::move(voiceResults.front());
+    voiceResults.erase(voiceResults.begin());
+    return true;
+  }
+
+  bool isComplete(uint32_t slotId) const override {
+    return isValidSlot(slotId) && !slotBusy[slotId];
+  }
+
+  uint32_t getInFlightCount(uint32_t slotId) const override {
+    return isValidSlot(slotId) && slotBusy[slotId] ? 1 : 0;
+  }
+
+ private:
+  bool isValidSlot(uint32_t slotId) const { return slotId < slotBusy.size(); }
+
+  uint32_t allocateSlot() {
+    for (size_t slotId = 0; slotId < slotBusy.size(); ++slotId) {
+      if (!slotBusy[slotId]) {
+        slotBusy[slotId] = true;
+        return static_cast<uint32_t>(slotId);
+      }
+    }
+    return tts_scheduler::INVALID_SLOT;
+  }
+
+  void releaseSlot(uint32_t slotId) {
+    if (!isValidSlot(slotId)) {
+      return;
+    }
+    slotBusy[slotId] = false;
+  }
+
+  void enqueueAudio(const tts_scheduler::TtsSubmit& request) {
+    constexpr size_t kSamplesPerChunk = 960;  // 20 ms at 48 kHz.
+    constexpr size_t kChunkCount = 3;
+    for (size_t chunkIndex = 0; chunkIndex < kChunkCount; ++chunkIndex) {
+      tts_scheduler::AudioOutput output;
+      output.requestId = request.requestId;
+      output.taskId = request.taskId;
+      output.slotId = request.slotId;
+      output.chunkIndex = static_cast<uint32_t>(chunkIndex);
+      output.sampleRateHz = audioSampleRateHz;
+      output.channels = audioChannels;
+      output.final = chunkIndex == kChunkCount - 1;
+      output.finishReason = tt::domain::tts::TtsFinishReason::Completed;
+      output.samplesBf16.reserve(kSamplesPerChunk);
+      for (size_t sampleIndex = 0; sampleIndex < kSamplesPerChunk;
+           ++sampleIndex) {
+        const bool high = ((sampleIndex / 80) + chunkIndex) % 2 == 0;
+        output.samplesBf16.push_back(floatToBf16(high ? 0.10f : -0.10f));
+      }
+      audio.push_back(std::move(output));
+    }
+  }
+
+  uint32_t audioSampleRateHz = 0;
+  uint16_t audioChannels = 0;
+  std::vector<bool> slotBusy;
+  std::vector<tts_scheduler::SchedulerResponse> responses;
+  std::vector<tts_scheduler::AudioOutput> audio;
+  std::vector<tts_scheduler::VoiceEncodeResult> voiceResults;
+};
 
 #if defined(TT_MEDIA_SERVER_HAS_REAL_TTS_SCHEDULER)
 namespace engine_tts = tt_llm_engine::scheduler::tts;
@@ -313,90 +477,34 @@ std::unique_ptr<tts_scheduler::ITtsScheduler> makeRealTtsScheduler(
 
 #endif
 
-class UnavailableTtsScheduler final : public tts_scheduler::ITtsScheduler {
- public:
-  void start() override {}
-  void stop() override {}
-
-  bool pushRequest(const tts_scheduler::SchedulerRequest& request) override {
-    tts_scheduler::SchedulerResponse response;
-    response.type = request.type;
-    response.requestId = request.requestId;
-    response.taskId = request.taskId;
-    response.slotId = request.slotId;
-    if (request.type == tts_scheduler::RequestType::ALLOCATE) {
-      response.slotId = tts_scheduler::INVALID_SLOT;
-      response.errorCode = -1;
-      response.error = "TTS scheduler is not linked into this build";
-    }
-    responses.push_back(std::move(response));
-    return true;
-  }
-
-  bool submit(const tts_scheduler::TtsSubmit& request) override {
-    tts_scheduler::SchedulerResponse response;
-    response.type = tts_scheduler::RequestType::SUBMIT;
-    response.requestId = request.requestId;
-    response.taskId = request.taskId;
-    response.slotId = request.slotId;
-    response.errorCode = -1;
-    response.error = "TTS scheduler is not linked into this build";
-    responses.push_back(std::move(response));
-    return true;
-  }
-
-  bool tryPopResponse(tts_scheduler::SchedulerResponse& response) override {
-    if (responses.empty()) {
-      return false;
-    }
-    response = std::move(responses.front());
-    responses.erase(responses.begin());
-    return true;
-  }
-
-  bool tryPopToken(tts_scheduler::TokenOutput& /*output*/) override {
-    return false;
-  }
-
-  bool tryPopAudio(tts_scheduler::AudioOutput& /*output*/) override {
-    return false;
-  }
-
-  bool enqueueVoiceEncode(
-      tts_scheduler::VoiceEncodeRequest /*request*/) override {
-    return false;
-  }
-
-  bool tryPopVoiceEncodeResult(
-      tts_scheduler::VoiceEncodeResult& /*result*/) override {
-    return false;
-  }
-
-  bool isComplete(uint32_t /*slotId*/) const override { return false; }
-
-  uint32_t getInFlightCount(uint32_t /*slotId*/) const override { return 0; }
-
- private:
-  std::vector<tts_scheduler::SchedulerResponse> responses;
-};
-
 }  // namespace
 
 std::unique_ptr<tts_scheduler::ITtsScheduler> makeTtsScheduler(
     const tt::config::TtsConfig& config) {
+  (void)config;
 #if defined(TT_MEDIA_SERVER_HAS_TTS_SOCKET_PIPELINES)
   return makeRealTtsScheduler(config);
 #elif defined(TT_MEDIA_SERVER_HAS_REAL_TTS_SCHEDULER)
   TT_LOG_WARN(
       "makeTtsScheduler: TtsScheduler headers are available, but "
-      "socket-capable TtLlmEngine::Full is not linked; using "
-      "UnavailableTtsScheduler");
+      "socket-capable TtLlmEngine::Full is not linked");
+  throw std::runtime_error(
+      "TTS scheduler is not linked with socket-capable TtLlmEngine::Full");
 #else
   TT_LOG_WARN(
       "makeTtsScheduler: tt-llm-engine TtsScheduler headers are not available; "
-      "using UnavailableTtsScheduler");
+      "cannot create real TT_TTS scheduler");
+  throw std::runtime_error(
+      "tt-llm-engine TtsScheduler headers are not available; cannot create "
+      "real TT_TTS scheduler");
 #endif
-  return std::make_unique<UnavailableTtsScheduler>();
+}
+
+std::unique_ptr<tts_scheduler::ITtsScheduler> makeMockTtsScheduler(
+    const tt::config::TtsConfig& config) {
+  TT_LOG_INFO("makeMockTtsScheduler: constructing mock TTS scheduler");
+  return std::make_unique<MockTtsScheduler>(
+      config.audioSampleRateHz, config.audioChannels, config.maxUsers);
 }
 
 }  // namespace tt::runners::blaze
