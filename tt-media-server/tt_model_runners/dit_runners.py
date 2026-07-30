@@ -21,6 +21,7 @@ from config.settings import get_settings
 from domain.image_generate_request import ImageGenerateRequest
 from domain.video_generate_request import VideoGenerateRequest
 from domain.video_i2v_generate_request import ImagePromptEntry, VideoI2VGenerateRequest
+from huggingface_hub import hf_hub_download
 from models.common.utility_functions import is_blackhole
 from models.tt_dit.pipelines.flux1.pipeline_flux1 import Flux1Pipeline
 from models.tt_dit.pipelines.mochi.pipeline_mochi import MochiPipeline
@@ -56,6 +57,7 @@ dit_runner_log_map = {
     ModelRunners.TT_WAN_2_2_I2V_ANISORA.value: "Wan22-I2V-AniSora",
     ModelRunners.TT_WAN_2_2_I2V_DISTILL.value: "Wan22-I2V-Distill",
     ModelRunners.TT_WAN_2_2_I2V_LORA.value: "Wan22-I2V-LoRA",
+    ModelRunners.TT_WAN_2_2_I2V_LIGHTNING.value: "Wan22-I2V-Lightning",
     ModelRunners.TT_QWEN_IMAGE.value: "Qwen-Image",
     ModelRunners.TT_QWEN_IMAGE_2512.value: "Qwen-Image-2512",
     ModelRunners.SP_RUNNER.value: "SP-Runner",
@@ -86,18 +88,22 @@ class TTDiTRunner(BaseMetalDeviceRunner):
             reliability_mode = updated_device_params.pop(
                 "reliability_mode", ttnn.FabricReliabilityMode.STRICT_INIT
             )
-            fabric_router_config = updated_device_params.pop(
-                "fabric_router_config", ttnn.FabricRouterConfig()
-            )
-            ttnn.set_fabric_config(
+            # Omit rather than pass a default-constructed FabricRouterConfig: an explicit
+            # config caps max_packet_payload_size_bytes, which corrupts multi-host
+            # all-gather packetization on 4x32.
+            fabric_router_config = updated_device_params.pop("fabric_router_config", None)
+            base_args = (
                 fabric_config,
                 reliability_mode,
                 None,
                 fabric_tensix_config,
                 ttnn.FabricUDMMode.DISABLED,
                 ttnn.FabricManagerMode.DEFAULT,
-                fabric_router_config,
             )
+            if fabric_router_config is not None:
+                ttnn.set_fabric_config(*base_args, fabric_router_config)
+            else:
+                ttnn.set_fabric_config(*base_args)
             return fabric_config
         except Exception as e:
             log_exception_chain(
@@ -393,6 +399,10 @@ WAN22_ANISORA_GUIDANCE_SCALE = 3.5
 # the validated good-quality / low-latency point (~9.3s traced). The client's
 # num_inference_steps is ignored, same as the distill runner.
 WAN22_ANISORA_NUM_STEPS = 8
+
+WAN22_LIGHTNING_NUM_STEPS = 4
+WAN22_LIGHTNING_BOUNDARY_RATIO = 0.875
+WAN22_LIGHTNING_FLOW_SHIFT = 5.0
 
 
 def _wan22_needs_ring_fabric(mesh_shape: tuple) -> bool:
@@ -1033,3 +1043,89 @@ class TTWan22I2VLoRARunner(TTDiTRunner):
 
     def _build_warmup_video_request(self) -> VideoI2VGenerateRequest:
         return _wan22_i2v_warmup_request("A golden retriever running on a sandy beach")
+
+
+class TTWan22I2VLightningRunner(TTDiTRunner):
+    """Wan2.2 I2V with lightx2v/Wan2.2-Lightning distilled LoRA weights."""
+
+    requires_image_conditioning = True
+
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
+        self.resolution = wan22_target_resolution(self.settings.device_mesh_shape)
+        self.image_manager = ImageManager()
+
+    def create_pipeline(self):
+        try:
+            from models.tt_dit.experimental.pipelines.pipeline_wan_lora import (
+                WanPipelineI2VLora,
+            )
+
+            lora_high = os.environ.get("LORA_HIGH_PATH") or hf_hub_download(
+                repo_id="lightx2v/Wan2.2-Lightning",
+                filename="Wan2.2-I2V-A14B-4steps-lora-rank64-Seko-V1/high_noise_model.safetensors",
+            )
+            lora_low = os.environ.get("LORA_LOW_PATH") or hf_hub_download(
+                repo_id="lightx2v/Wan2.2-Lightning",
+                filename="Wan2.2-I2V-A14B-4steps-lora-rank64-Seko-V1/low_noise_model.safetensors",
+            )
+            self.logger.info(
+                f"Device {self.device_id}: Lightning adapters "
+                f"high={lora_high}, low={lora_low}"
+            )
+
+            return WanPipelineI2VLora.create_pipeline(
+                mesh_device=self.ttnn_device,
+                height=self.resolution.height,
+                width=self.resolution.width,
+                num_frames=WAN22_NUM_FRAMES,
+                boundary_ratio=WAN22_LIGHTNING_BOUNDARY_RATIO,
+                flow_shift=WAN22_LIGHTNING_FLOW_SHIFT,
+                lora_high=lora_high,
+                lora_low=lora_low,
+            )
+        except Exception as e:
+            log_exception_chain(
+                self.logger, self.device_id, "Lightning I2V pipeline creation failed", e
+            )
+            raise
+
+    def load_weights(self):
+        return False
+
+    def _build_image_prompt(self, request: VideoI2VGenerateRequest) -> list:
+        return [
+            ImagePrompt(
+                image=self.image_manager.base64_to_pil_image(entry.image),
+                frame_pos=entry.frame_pos,
+            )
+            for entry in request.image_prompts
+        ]
+
+    @log_execution_time(
+        f"{dit_runner_log_map.get(get_settings().model_runner, 'Lightning')} inference",
+        TelemetryEvent.MODEL_INFERENCE,
+        os.environ.get("TT_VISIBLE_DEVICES"),
+    )
+    def run(self, requests: list[VideoI2VGenerateRequest]):
+        self.logger.debug(f"Device {self.device_id}: Running Lightning inference")
+        request = requests[0]
+        seed = int(request.seed) if request.seed is not None else 0
+        pipeline_args = {
+            "prompts": [request.prompt],
+            "num_inference_steps": WAN22_LIGHTNING_NUM_STEPS,
+            "guidance_scale": 1.0,
+            "guidance_scale_2": 1.0,
+            "seed": seed,
+            "traced": True,
+            "image_prompt": self._build_image_prompt(request),
+        }
+        frames = self.pipeline(**pipeline_args)
+        self.logger.debug(f"Device {self.device_id}: Lightning inference completed")
+        return frames
+
+    def get_pipeline_device_params(self):
+        return _wan22_dit_device_params(self.settings.device_mesh_shape)
+
+    def _build_warmup_video_request(self) -> VideoI2VGenerateRequest:
+        return _wan22_i2v_warmup_request()
