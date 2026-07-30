@@ -21,7 +21,9 @@
 #include <gtest/gtest.h>
 #include <unistd.h>
 
+#include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <cstdlib>
 #include <memory>
 #include <string>
@@ -31,8 +33,11 @@
 
 #include "messaging/kafka_consumer.hpp"
 #include "messaging/kafka_producer.hpp"
+#include "messaging/utils/kafka_utils.hpp"
 #include "runtime/worker/kv_migration_worker.hpp"
+#include "runtime/worker/migration_executor.hpp"
 #include "runtime/worker/stub_migration_executor.hpp"
+#include "services/layer_to_partition.hpp"
 #include "services/remote_kv_manager.hpp"
 #include "services/remote_kv_manager_impl.hpp"
 
@@ -74,6 +79,28 @@ bool waitFor(Pred pred, std::chrono::milliseconds timeout) {
   return pred();
 }
 
+// Counts execute() calls so exclusive-ownership tests can prove non-owners
+// stay idle. Forwards to StubMigrationExecutor for the actual status.
+class CountingStubExecutor : public tt::worker::IMigrationExecutor {
+ public:
+  explicit CountingStubExecutor(
+      MigrationStatus stubResult = MigrationStatus::SUCCESSFUL)
+      : stub(stubResult) {}
+
+  void execute(uint64_t migrationId, const MigrationRequest& request,
+               DoneCallback onDone) override {
+    ++executeCount;
+    lastLayerBegin = request.layer_begin;
+    stub.execute(migrationId, request, std::move(onDone));
+  }
+
+  std::atomic<uint64_t> executeCount{0};
+  std::atomic<uint32_t> lastLayerBegin{0};
+
+ private:
+  tt::worker::StubMigrationExecutor stub;
+};
+
 class RemoteKVManagerKafkaTest : public ::testing::Test {
  protected:
   void SetUp() override {
@@ -91,7 +118,8 @@ class RemoteKVManagerKafkaTest : public ::testing::Test {
     workerGroup = "it-worker-" + suffix;
   }
 
-  std::unique_ptr<RemoteKVManagerImpl> makeManager() {
+  std::unique_ptr<RemoteKVManagerImpl> makeManager(
+      RemoteKVManagerImpl::LayerToPartition layerToPartition = nullptr) {
     auto producer = std::make_unique<tt::messaging::KafkaProducer>(
         tt::messaging::KafkaProducerConfig{
             .brokers = brokers,
@@ -105,7 +133,8 @@ class RemoteKVManagerKafkaTest : public ::testing::Test {
         });
     return std::make_unique<RemoteKVManagerImpl>(
         std::move(producer), std::move(consumer),
-        /*timeout=*/30s, /*sweepInterval=*/200ms, /*drainPollMs=*/50);
+        /*timeout=*/30s, /*sweepInterval=*/200ms, /*drainPollMs=*/50,
+        std::move(layerToPartition));
   }
 
   std::unique_ptr<tt::worker::KvMigrationWorker> makeWorker(
@@ -126,6 +155,48 @@ class RemoteKVManagerKafkaTest : public ::testing::Test {
     return std::make_unique<tt::worker::KvMigrationWorker>(
         std::move(consumer), std::move(producer), std::move(executor),
         /*pollTimeoutMs=*/50);
+  }
+
+  // N workers, shared group, each assign()-pinned to partition i (and ack
+  // affinity i). Requires request+ack topics with >= N partitions.
+  struct PinnedWorker {
+    std::unique_ptr<tt::worker::KvMigrationWorker> worker;
+    CountingStubExecutor* executor{nullptr};  // owned by worker
+  };
+
+  bool ensureTopicsWithPartitions(int32_t numPartitions) {
+    return tt::messaging::kafka_utils::createTopicWithPartitions(
+               brokers, requestTopic, numPartitions) &&
+           tt::messaging::kafka_utils::createTopicWithPartitions(
+               brokers, ackTopic, numPartitions);
+  }
+
+  std::vector<PinnedWorker> makePinnedWorkerPool(int32_t numWorkers) {
+    std::vector<PinnedWorker> pool;
+    pool.reserve(static_cast<std::size_t>(numWorkers));
+    for (int32_t i = 0; i < numWorkers; ++i) {
+      auto counting = std::make_unique<CountingStubExecutor>();
+      auto* countingPtr = counting.get();
+      auto consumer = std::make_unique<tt::messaging::KafkaConsumer>(
+          tt::messaging::KafkaConsumerConfig{
+              .brokers = brokers,
+              .topic = requestTopic,
+              .group_id = workerGroup,
+              .partition = i,
+          });
+      auto producer = std::make_unique<tt::messaging::KafkaProducer>(
+          tt::messaging::KafkaProducerConfig{
+              .brokers = brokers,
+              .topic = ackTopic,
+          });
+      auto worker = std::make_unique<tt::worker::KvMigrationWorker>(
+          std::move(consumer), std::move(producer), std::move(counting),
+          /*pollTimeoutMs=*/50, /*ackPartition=*/i);
+      worker->start();
+      pool.push_back(
+          PinnedWorker{.worker = std::move(worker), .executor = countingPtr});
+    }
+    return pool;
   }
 
   static MigrationRequest sampleRequest(uint32_t src = 1, uint32_t dst = 2) {
@@ -232,6 +303,56 @@ TEST_F(RemoteKVManagerKafkaTest, UnknownIdReturnsUnknown) {
   // No worker needed; we never publish anything for this id.
   EXPECT_EQ(manager->getMigrationStatus(/*never-issued=*/0xCAFEBABEDEADBEEFull),
             MigrationStatus::UNKNOWN);
+}
+
+// #4795: real KvMigrationWorker × N with assign() pins + layer→partition
+// publish. Only the owner partition executes; others stay idle; ack returns.
+TEST_F(RemoteKVManagerKafkaTest, ExclusivePartitionOwnershipRoutesToOwner) {
+  constexpr int32_t kNumWorkers = 4;
+  constexpr uint32_t kNumLayers = 64;
+  constexpr uint32_t kLayersPerPartition = kNumLayers / kNumWorkers;
+  constexpr uint32_t kTargetLayer = 20;  // -> partition 1
+  constexpr int32_t kExpectedOwner = 1;
+
+  ASSERT_TRUE(ensureTopicsWithPartitions(kNumWorkers))
+      << "failed to create req/ack topics with " << kNumWorkers
+      << " partitions on " << brokers;
+
+  auto layerToPartition = makeLayerToPartition(LayerPartitionPolicy{
+      .layersPerPartition = kLayersPerPartition,
+      .numPartitions = static_cast<uint32_t>(kNumWorkers),
+  });
+  ASSERT_EQ(layerToPartition(kTargetLayer), kExpectedOwner);
+
+  auto manager = makeManager(std::move(layerToPartition));
+  auto pool = makePinnedWorkerPool(kNumWorkers);
+  ASSERT_EQ(pool.size(), static_cast<std::size_t>(kNumWorkers));
+  std::this_thread::sleep_for(KAFKA_GROUP_JOIN_WARMUP);
+
+  auto req = sampleRequest();
+  req.layer_begin = kTargetLayer;
+  req.layer_end = kTargetLayer + 1;
+  const uint64_t id = manager->migrate(req);
+  ASSERT_NE(id, 0u);
+
+  ASSERT_TRUE(waitFor(
+      [&] {
+        return manager->getMigrationStatus(id) == MigrationStatus::SUCCESSFUL;
+      },
+      COMPLETION_TIMEOUT))
+      << "owner-routed migration did not reach SUCCESSFUL within "
+      << COMPLETION_TIMEOUT.count() << "ms";
+
+  EXPECT_EQ(pool[kExpectedOwner].executor->executeCount.load(), 1u)
+      << "owner worker " << kExpectedOwner << " did not execute";
+  EXPECT_EQ(pool[kExpectedOwner].executor->lastLayerBegin.load(), kTargetLayer);
+  for (int32_t i = 0; i < kNumWorkers; ++i) {
+    if (i == kExpectedOwner) continue;
+    EXPECT_EQ(pool[i].executor->executeCount.load(), 0u)
+        << "non-owner worker " << i << " executed a request it does not own";
+  }
+
+  for (auto& pinned : pool) pinned.worker->stop();
 }
 
 }  // namespace

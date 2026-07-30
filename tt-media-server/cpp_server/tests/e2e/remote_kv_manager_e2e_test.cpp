@@ -97,6 +97,13 @@ class RemoteKVManagerE2ETest : public ::testing::Test {
   }
 
   void SetUp() override {
+    // Opt-in so plain `ctest` without a broker stays green (same gate as
+    // remote_kv_manager_kafka_test). Broker address still overridable.
+    if (std::getenv("INTEGRATION_TESTS_ENABLED") == nullptr) {
+      GTEST_SKIP() << "Set INTEGRATION_TESTS_ENABLED=1 (and ensure a Kafka "
+                      "broker is reachable at KAFKA_BROKERS) to run.";
+    }
+
     brokers = envOr("KAFKA_BROKERS", "kafka:9092");
 
     const auto suffix = uniqueSuffix();

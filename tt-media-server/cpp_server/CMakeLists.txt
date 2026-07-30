@@ -1729,10 +1729,14 @@ if(KAFKA_ENABLED)
     target_include_directories(remote_kv_manager_kafka_test PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
+    # Opt-in via INTEGRATION_TESTS_ENABLED=1 (each TEST GTEST_SKIPs otherwise).
+    gtest_discover_tests(remote_kv_manager_kafka_test
+        PROPERTIES LABELS "kafka;integration"
+    )
 
     # E2E test: real RemoteKVManagerImpl driven against a scriptable
-    # MockMigrationWorker over a real Kafka broker (scripts/dev-kafka.sh up).
-    # Not registered with add_test() -- opt-in, run manually.
+    # MockKafkaWorker over a real Kafka broker (scripts/dev-kafka.sh up).
+    # Opt-in via INTEGRATION_TESTS_ENABLED=1 (each TEST GTEST_SKIPs otherwise).
     add_executable(remote_kv_manager_e2e_test
         tests/e2e/remote_kv_manager_e2e_test.cpp
     )
@@ -1742,6 +1746,9 @@ if(KAFKA_ENABLED)
     )
     target_include_directories(remote_kv_manager_e2e_test PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    gtest_discover_tests(remote_kv_manager_e2e_test
+        PROPERTIES LABELS "kafka;e2e"
     )
 else()
     message(STATUS "Kafka support disabled (use -DKAFKA_ENABLED=ON to enable)")
