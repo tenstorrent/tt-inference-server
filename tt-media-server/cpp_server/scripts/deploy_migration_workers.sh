@@ -38,7 +38,8 @@
 # (point at it with --kafka-brokers, default kafka:9092).
 #
 # Requirements:
-#   * passwordless ssh from this host to every worker host
+#   * passwordless ssh from this host to every *remote* worker host (hosts that
+#     match this machine's hostname/FQDN/loopback run locally — no SSH loopback)
 #   * Docker and the KV .pb tables at the configured paths on every worker host
 #   * curl on this host for health/readiness and discovery probes
 #
@@ -118,7 +119,21 @@ RESTART_AFTER=3
 # ssh hardening: fail fast on an unreachable host (never hang a prompt) and drop
 # a silently-dead session within ~60s so a truly gone worker is detected. An
 # array (not a string) so the flags word-split safely without relying on IFS.
-SSH_OPTS=(-o ConnectTimeout=5 -o BatchMode=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
+# accept-new: TOFU first contact under BatchMode (no interactive yes/no); still
+# rejects a *changed* key. Needed when a worker host is this machine itself —
+# operators rarely `ssh $(hostname)`, so own hostname is often missing from
+# known_hosts and BatchMode would otherwise die with "Host key verification failed".
+SSH_OPTS=(
+  -o ConnectTimeout=5
+  -o BatchMode=yes
+  -o StrictHostKeyChecking=accept-new
+  -o ServerAliveInterval=15
+  -o ServerAliveCountMax=4
+)
+# Cached once for isLocalHost — avoid SSH loopback to this deploy box.
+LOCAL_HOST_SHORT="$(hostname -s 2>/dev/null || hostname)"
+LOCAL_HOST_FULL="$(hostname 2>/dev/null || true)"
+LOCAL_HOST_FQDN="$(hostname -f 2>/dev/null || true)"
 # A restart escalates SIGTERM -> (grace) -> SIGKILL and only relaunches once the
 # health port is confirmed free, so a squatting worker can never wedge recovery.
 SWEEP_GRACE_SEC=5
@@ -392,11 +407,27 @@ echo "SWEEP_OK: ${container} removed; ${port} free on \$(hostname -s)"
 EOF
 }
 
+# True when host names this machine (short, FQDN, or loopback). Deploy often
+# runs on a worker node; those slots must not SSH to themselves.
+isLocalHost() {
+  local host="$1"
+  case "${host}" in
+    localhost|127.0.0.1|::1) return 0 ;;
+  esac
+  [[ "${host}" == "${LOCAL_HOST_SHORT}" || "${host}" == "${LOCAL_HOST_FULL}" ]] && return 0
+  [[ -n "${LOCAL_HOST_FQDN}" && "${host}" == "${LOCAL_HOST_FQDN}" ]] && return 0
+  return 1
+}
+
 # Remove the migration worker container and block until its health port is free.
 sweepWorkerOnHost() {
   local host="$1" name="$2" dockerCommand="$3" script
   script="$(sweepScript "${HEALTH_PORT}" "${SWEEP_GRACE_SEC}" "${name}" "${dockerCommand}")"
-  ssh "${SSH_OPTS[@]}" "${host}" bash -s <<<"${script}"
+  if isLocalHost "${host}"; then
+    bash -s <<<"${script}"
+  else
+    ssh "${SSH_OPTS[@]}" "${host}" bash -s <<<"${script}"
+  fi
 }
 
 # A worker that died without deregistering leaves mooncake/rpc_meta/<name> (and
@@ -468,15 +499,30 @@ containerNameForTag() {
 resolveBindIp() {
   local host="$1" ip command
   command="hostname -I 2>/dev/null | tr ' ' '\\n' | awk '/^10\\./ {print; exit}'"
-  ip="$(ssh "${SSH_OPTS[@]}" "${host}" "${command}")"
+  ip="$(runOnHost "${host}" "${command}")"
   [[ "${ip}" =~ ^10(\.[0-9]{1,3}){3}$ ]] || \
     die "no 10.* bind address found on ${host}; inspect with: ssh ${host} hostname -I"
   printf '%s' "${ip}"
 }
 
+# Run a command string on host. Local hosts skip SSH (avoids known_hosts /
+# BatchMode failures when deploy runs on a node listed in --*-hosts).
 runOnHost() {
   local host="$1" command="$2"
-  ssh "${SSH_OPTS[@]}" "${host}" "${command}"
+  if isLocalHost "${host}"; then
+    bash -c "${command}"
+  else
+    ssh "${SSH_OPTS[@]}" "${host}" "${command}"
+  fi
+}
+
+# Probe SSH before blaming Docker. Local hosts are always "reachable".
+assertHostReachable() {
+  local host="$1"
+  isLocalHost "${host}" && return 0
+  ssh "${SSH_OPTS[@]}" "${host}" true >/dev/null 2>&1 && return 0
+  die "${host}: SSH failed under BatchMode (not a Docker issue). Check passwordless keys \
+and known_hosts; first-time trust uses StrictHostKeyChecking=accept-new. Try: ssh ${host}"
 }
 
 resolveDockerCommand() {
@@ -525,7 +571,7 @@ printf '%s' \"\$token\" | ${dockerCommand} --config \"\$config\" login ghcr.io \
 --username ${quotedUser} --password-stdin >/dev/null; \
 ${dockerCommand} --config \"\$config\" pull ${quotedImage}"
   printf '%s\n' "${GHCR_TOKEN_VALUE}" |
-    ssh "${SSH_OPTS[@]}" "${host}" "${command}" || {
+    runOnHost "${host}" "${command}" || {
       echo "ERROR: ${host}: authenticated pull failed for ${WORKER_IMAGE}" >&2
       return 1
     }
@@ -540,8 +586,12 @@ addWorkerSlot() {
   fi
   table="${DECODE_TABLE}"
   [[ "${role}" == "prefill" ]] && table="${PREFILL_TABLE}"
+  assertHostReachable "${host}"
   if ! dockerCommand="$(resolveDockerCommand "${host}")"; then
     die "${host}: cannot access Docker API; add the SSH user to the docker group or configure passwordless sudo for docker"
+  fi
+  if isLocalHost "${host}"; then
+    echo "[deploy] ${host}: local host — running without SSH"
   fi
   validateWorkerHost "${host}" "${table}"
   [[ -z "${devmap}" ]] || validateWorkerHost "${host}" "${devmap}"
@@ -687,7 +737,7 @@ pushDeviceMapSlot() {
       echo "[dry-run] push DeviceMap ${tag} on ${host}: ${sendCmd}"
       return 0
     fi
-    if ssh "${SSH_OPTS[@]}" "${host}" "${sendCmd}" >/dev/null 2>&1; then
+    if runOnHost "${host}" "${sendCmd}" >/dev/null 2>&1; then
       echo "[deploy] DeviceMap pushed to ${tag} on ${host} (port ${ENGINE_HANDOFF_PORT})"
       return 0
     fi
@@ -742,7 +792,7 @@ launchWorkerSlot() {
   fi
   : >"${log}"
   echo "[deploy] launching ${role}-${index} on ${host} (container=${WK_CONTAINER[$s]})"
-  ssh "${SSH_OPTS[@]}" "${host}" "${cmd}" >"${log}" 2>&1 &
+  runOnHost "${host}" "${cmd}" >"${log}" 2>&1 &
   WK_PID[$s]=$!
   WK_FAILS[$s]=0
   waitForContainerStart "${s}" || return 1

@@ -1383,7 +1383,7 @@ templates:
   device_model_specs:
     - device: SUPER_CLUSTER
       max_concurrency: 64
-      max_context: 262144  # 256 * 1024; 
+      max_context: 262144  # 256 * 1024;
       default_impl: true
   status: EXPERIMENTAL
   env_vars:
@@ -1408,7 +1408,7 @@ templates:
   device_model_specs:
     - device: SUPER_CLUSTER
       max_concurrency: 64
-      max_context: 204800  # 200 * 1024; 
+      max_context: 204800  # 200 * 1024;
       default_impl: true
   status: EXPERIMENTAL
   env_vars:
@@ -1444,7 +1444,7 @@ templates:
   device_model_specs:
     - device: SUPER_CLUSTER
       max_concurrency: 64
-      max_context: 262144  # 256 * 1024; 
+      max_context: 262144  # 256 * 1024;
       default_impl: true
   status: EXPERIMENTAL
   env_vars:
@@ -1465,7 +1465,7 @@ templates:
   device_model_specs:
     - device: SUPER_CLUSTER
       max_concurrency: 64
-      max_context: 1048576  # 1024 * 1024; 
+      max_context: 1048576  # 1024 * 1024;
       default_impl: true
   status: EXPERIMENTAL
   env_vars:
@@ -1713,6 +1713,13 @@ templates:
       max_context: 8192
       default_impl: true
       eval_max_retries: 1
+      known_issues:
+        - workflow_type: EVALS
+          task_name: gpqa_diamond_cot_zeroshot
+          reason: "35.86% vs published 45.96% (ratio 0.78, needs >=43.66%), cot_zeroshot methodology differs from the publisher's. Not a regression signal until gpu_reference_score is populated."
+        - workflow_type: EVALS
+          task_name: humaneval_instruct
+          reason: "79.27% vs published 88.41% (ratio 0.90, needs >=83.99%). Not a regression signal until gpu_reference_score is populated."
       env_vars:
         MAX_MODEL_LENGTH: "8192"
         MAX_NUM_SEQS: "32"
