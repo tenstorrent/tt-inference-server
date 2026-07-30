@@ -527,8 +527,20 @@ wall-clock profiling time rather than a dataset sample count.
 
 | Mode | Profiling | Cache warmup | Trace pool |
 | --- | --- | --- | --- |
-| `full` | 3600s | 600s | 393 entries |
-| `ci` | 900s | 120s | 32 entries |
+| `full` | 3600s | 14 req/lane | 393 entries |
+| `ci` | 900s | 3 req/lane | 32 entries |
+
+Cache warmup is sized by request count, not wall-clock. The harness offers both
+`--agentic-cache-warmup-duration` and `--warmup-requests-per-lane` and rejects
+passing both; this workflow uses the latter because a faster server gets through
+more warmup requests in a fixed time window, priming the KV cache to a different
+depth on every run and making `measured_prefix_cache_hit_pct` incomparable across
+configs. Being per-lane, the budget is also independent of `concurrency`. The
+consequence is that warmup has no wall-clock cap, so `total_planned_seconds`
+treats `warmup_grace_period` as the allowance for it and the per-run subprocess
+timeout is the backstop. The `full` value reproduces the depth of the run
+validated by hand under the old duration knob (109 warmup requests over 8 lanes);
+re-measure it if the corpus or the server's warmup latency shifts.
 
 `full` is the reference run for reportable numbers; `ci` is the shortest run the
 scenario permits. `inferencex-agentx-mvp` sets

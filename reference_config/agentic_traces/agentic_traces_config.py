@@ -144,10 +144,17 @@ class AgenticTracesModeSettings:
 
     ``concurrency`` overrides the run spec's value when set, so a CI run can
     also shrink the load, not just the duration.
+
+    ``warmup_requests_per_lane`` sizes the cache-pressure warmup by request
+    count rather than wall-clock. It is deliberately not a duration: a faster
+    server gets through more warmup requests in a fixed time window, so a
+    time-bounded warmup primes the KV cache to a different depth on every run
+    and makes ``measured_prefix_cache_hit_pct`` incomparable across configs.
+    Being per-lane, it is also independent of ``concurrency``.
     """
 
     benchmark_duration: int
-    agentic_cache_warmup_duration: int
+    warmup_requests_per_lane: int
     warmup_grace_period: int
     num_dataset_entries: int
     concurrency: Optional[int] = None
@@ -155,7 +162,7 @@ class AgenticTracesModeSettings:
     def __post_init__(self) -> None:
         for name in (
             "benchmark_duration",
-            "agentic_cache_warmup_duration",
+            "warmup_requests_per_lane",
             "warmup_grace_period",
             "num_dataset_entries",
         ):
@@ -169,6 +176,11 @@ class AgenticTracesModeSettings:
                 "AgenticTracesModeSettings.num_dataset_entries must be >= 1, "
                 f"got {self.num_dataset_entries}"
             )
+        if self.warmup_requests_per_lane < 1:
+            raise ValueError(
+                "AgenticTracesModeSettings.warmup_requests_per_lane must be >= 1, "
+                f"got {self.warmup_requests_per_lane}"
+            )
         if self.concurrency is not None and self.concurrency < 1:
             raise ValueError(
                 "AgenticTracesModeSettings.concurrency must be >= 1 when set, "
@@ -177,19 +189,24 @@ class AgenticTracesModeSettings:
 
 
 # Reference full-length run: the shape validated by hand before this workflow
-# existed (1h profiling, 10min cache warmup, all 393 eligible traces).
+# existed (1h profiling, all 393 eligible traces).
+#
+# 14 requests/lane reproduces the warmup depth of that validated run, which
+# used the superseded 600s time-bounded warmup: it issued 109 warmup wire
+# requests across 8 lanes (13.6/lane) in 583.7s. Re-measure and re-pin this if
+# the trace corpus or the server's warmup latency changes materially.
 FULL_MODE_SETTINGS = AgenticTracesModeSettings(
     benchmark_duration=3600,
-    agentic_cache_warmup_duration=600,
+    warmup_requests_per_lane=14,
     warmup_grace_period=1800,
     num_dataset_entries=393,
 )
 
-# Shortest run the scenario permits. Cache warmup and the trace pool shrink
-# proportionally so a CI run is dominated by profiling rather than warmup.
+# Shortest run the scenario permits. Warmup and the trace pool shrink so a CI
+# run is dominated by profiling; 3/lane keeps the old 1:5 CI:FULL warmup ratio.
 CI_MODE_SETTINGS = AgenticTracesModeSettings(
     benchmark_duration=AGENTIC_TRACES_MIN_PROFILE_SECONDS,
-    agentic_cache_warmup_duration=120,
+    warmup_requests_per_lane=3,
     warmup_grace_period=600,
     num_dataset_entries=32,
 )
@@ -279,14 +296,19 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
     # deletes its agent/* and PR branches, so a sha taken from one stops
     # resolving ("reference is not a tree") once that branch is gone, and the
     # server then refuses it outright as "not our ref".
+    #
+    # Pinned to the InferenceX commit that bumps the vendored aiperf submodule
+    # to be758d621, the first revision carrying
+    # ``--warmup-requests-per-lane``. Do not lower this pin without also
+    # restoring a time-bounded warmup: the flag does not exist earlier.
     AgenticTracesConfig(
         model_id="id_tt-transformers_Kimi-K2.7-Code_super_cluster",
-        inferencex_git_ref="e2dcfa91c86936cc011e3be0668eb3b1ca17288f",
+        inferencex_git_ref="ddeb02eb9c5c89f44e2e4950e741b499d0b8190a",
         runs=(
             AgenticTracesRunSpec(
                 trace_source=TraceSource.INFERENCEX_AGENTX,
                 public_dataset="semianalysis_cc_traces_weka_062126_256k",
-                concurrency=2,
+                concurrency=64,
             ),
         ),
     ),

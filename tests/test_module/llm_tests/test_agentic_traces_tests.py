@@ -152,11 +152,7 @@ class TestSweepLoop:
             run_agentic_traces(_ctx(tmp_path=tmp_path), mode="ci", inter_run_sleep_s=0)
 
         run, _server, context = driver.run.call_args[0]
-        planned = (
-            run.benchmark_duration
-            + run.agentic_cache_warmup_duration
-            + run.warmup_grace_period
-        )
+        planned = run.benchmark_duration + run.warmup_grace_period
         assert context.per_run_timeout_s > planned
 
     def test_git_ref_override_flows_into_the_run(self, tmp_path):

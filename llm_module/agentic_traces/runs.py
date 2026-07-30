@@ -45,7 +45,7 @@ class AgenticTracesRun:
     streaming: bool
     concurrency: int
     benchmark_duration: int
-    agentic_cache_warmup_duration: int
+    warmup_requests_per_lane: int
     warmup_grace_period: int
     num_dataset_entries: int
     random_seed: int
@@ -145,7 +145,7 @@ def build_runs(
                 streaming=spec.streaming,
                 concurrency=concurrency,
                 benchmark_duration=benchmark_duration,
-                agentic_cache_warmup_duration=settings.agentic_cache_warmup_duration,
+                warmup_requests_per_lane=settings.warmup_requests_per_lane,
                 warmup_grace_period=settings.warmup_grace_period,
                 num_dataset_entries=settings.num_dataset_entries,
                 random_seed=spec.random_seed,
@@ -181,7 +181,7 @@ def summarize_runs(runs: Sequence[AgenticTracesRun]) -> str:
             f"  - {run.label}: source={run.trace_source.value} "
             f"scenario={run.scenario} dataset={run.public_dataset} "
             f"concurrency={run.concurrency} duration={run.benchmark_duration}s "
-            f"cache_warmup={run.agentic_cache_warmup_duration}s "
+            f"warmup={run.warmup_requests_per_lane}req/lane "
             f"entries={run.num_dataset_entries} "
             f"max_context={run.max_context_length}"
         )
@@ -189,17 +189,18 @@ def summarize_runs(runs: Sequence[AgenticTracesRun]) -> str:
 
 
 def total_planned_seconds(runs: Sequence[AgenticTracesRun]) -> int:
-    """Sum of every run's warmup + profiling window.
+    """Sum of every run's profiling window plus its warmup allowance.
 
     Used to size the per-run subprocess timeout: the default 2h driver timeout
     is shorter than a single full-length agentic run plus its warmup.
+
+    A request-bounded warmup has no wall-clock cap -- ``warmup_requests_per_lane``
+    requests take as long as the server needs -- so this is an allowance, not a
+    bound. ``warmup_grace_period`` supplies it: at 1800s it is roughly 3x the
+    583.7s the validated run spent warming up, and the subprocess timeout is the
+    backstop if a degraded server exceeds even that.
     """
-    return sum(
-        run.benchmark_duration
-        + run.agentic_cache_warmup_duration
-        + run.warmup_grace_period
-        for run in runs
-    )
+    return sum(run.benchmark_duration + run.warmup_grace_period for run in runs)
 
 
 __all__ = [

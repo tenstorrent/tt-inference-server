@@ -31,7 +31,7 @@ def _record(**overrides):
         "public_dataset": "semianalysis_cc_traces_weka_062126_256k",
         "concurrency": 1,
         "benchmark_duration": 900,
-        "agentic_cache_warmup_duration": 120,
+        "warmup_requests_per_lane": 3,
         "warmup_grace_period": 600,
         "max_context_length": 262144,
         "random_seed": 42,

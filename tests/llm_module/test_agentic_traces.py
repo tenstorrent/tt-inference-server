@@ -42,7 +42,7 @@ from reference_config.agentic_traces.agentic_traces_config import (
 from workflows.workflow_types import AgenticTracesMode
 
 KIMI_MODEL_ID = "id_tt-transformers_Kimi-K2.7-Code_super_cluster"
-KIMI_PINNED_REF = "e2dcfa91c86936cc011e3be0668eb3b1ca17288f"
+KIMI_PINNED_REF = "ddeb02eb9c5c89f44e2e4950e741b499d0b8190a"
 
 
 class _FakeDeviceModelSpec:
@@ -107,13 +107,13 @@ class TestMinDurationFloor:
                 mode_settings={
                     AgenticTracesMode.FULL: AgenticTracesModeSettings(
                         benchmark_duration=3600,
-                        agentic_cache_warmup_duration=600,
+                        warmup_requests_per_lane=14,
                         warmup_grace_period=1800,
                         num_dataset_entries=393,
                     ),
                     AgenticTracesMode.CI: AgenticTracesModeSettings(
                         benchmark_duration=300,
-                        agentic_cache_warmup_duration=60,
+                        warmup_requests_per_lane=3,
                         warmup_grace_period=120,
                         num_dataset_entries=8,
                     ),
@@ -134,13 +134,13 @@ class TestMinDurationFloor:
             mode_settings={
                 AgenticTracesMode.FULL: AgenticTracesModeSettings(
                     benchmark_duration=600,
-                    agentic_cache_warmup_duration=60,
+                    warmup_requests_per_lane=3,
                     warmup_grace_period=120,
                     num_dataset_entries=8,
                 ),
                 AgenticTracesMode.CI: AgenticTracesModeSettings(
                     benchmark_duration=120,
-                    agentic_cache_warmup_duration=30,
+                    warmup_requests_per_lane=2,
                     warmup_grace_period=60,
                     num_dataset_entries=4,
                 ),
@@ -156,7 +156,7 @@ class TestMinDurationFloor:
                 mode_settings={
                     AgenticTracesMode.FULL: AgenticTracesModeSettings(
                         benchmark_duration=3600,
-                        agentic_cache_warmup_duration=600,
+                        warmup_requests_per_lane=14,
                         warmup_grace_period=1800,
                         num_dataset_entries=393,
                     )
@@ -173,7 +173,7 @@ class TestModeResolution:
         config = AGENTIC_TRACES_CONFIGS[KIMI_MODEL_ID]
         run = build_runs(config, _FakeModelSpec(), mode=AgenticTracesMode.FULL)[0]
         assert run.benchmark_duration == 3600
-        assert run.agentic_cache_warmup_duration == 600
+        assert run.warmup_requests_per_lane == 14
         assert run.num_dataset_entries == 393
         assert run.mode is AgenticTracesMode.FULL
 
@@ -182,7 +182,7 @@ class TestModeResolution:
         full = build_runs(config, _FakeModelSpec(), mode=AgenticTracesMode.FULL)[0]
         ci = build_runs(config, _FakeModelSpec(), mode=AgenticTracesMode.CI)[0]
         assert ci.benchmark_duration < full.benchmark_duration
-        assert ci.agentic_cache_warmup_duration < full.agentic_cache_warmup_duration
+        assert ci.warmup_requests_per_lane < full.warmup_requests_per_lane
         assert ci.num_dataset_entries < full.num_dataset_entries
 
     def test_mode_is_part_of_the_run_label(self):
@@ -208,13 +208,13 @@ class TestModeResolution:
             mode_settings={
                 AgenticTracesMode.FULL: AgenticTracesModeSettings(
                     benchmark_duration=3600,
-                    agentic_cache_warmup_duration=600,
+                    warmup_requests_per_lane=14,
                     warmup_grace_period=1800,
                     num_dataset_entries=393,
                 ),
                 AgenticTracesMode.CI: AgenticTracesModeSettings(
                     benchmark_duration=900,
-                    agentic_cache_warmup_duration=120,
+                    warmup_requests_per_lane=3,
                     warmup_grace_period=600,
                     num_dataset_entries=32,
                     concurrency=2,
@@ -379,16 +379,21 @@ class TestAiperfCommand:
             "--no-gpu-telemetry",
             "--tokenizer-trust-remote-code",
             "--max-context-length",
-            "--agentic-cache-warmup-duration",
+            "--warmup-requests-per-lane",
             "--warmup-grace-period",
         ):
             assert flag in cmd, f"{flag} missing from {cmd}"
+
+    def test_the_superseded_duration_warmup_flag_is_not_emitted(self):
+        """It is mutually exclusive with --warmup-requests-per-lane."""
+        assert "--agentic-cache-warmup-duration" not in self._cmd()
 
     def test_durations_match_the_selected_mode(self):
         cmd = self._cmd()
         assert cmd[cmd.index("--benchmark-duration") + 1] == str(
             AGENTIC_TRACES_MIN_PROFILE_SECONDS
         )
+        assert cmd[cmd.index("--warmup-requests-per-lane") + 1] == "3"
 
     def test_bare_host_gets_a_scheme(self):
         cmd = self._cmd(url="localhost:8000")
@@ -445,14 +450,12 @@ class TestPlanSummary:
     def test_summary_handles_no_runs(self):
         assert "No runs planned" in summarize_runs([])
 
-    def test_total_planned_seconds_sums_warmup_and_profiling(self):
+    def test_total_planned_seconds_sums_profiling_and_warmup_allowance(self):
+        """A request-bounded warmup has no duration, so grace is the allowance."""
         config = AGENTIC_TRACES_CONFIGS[KIMI_MODEL_ID]
         runs = build_runs(config, _FakeModelSpec(), mode=AgenticTracesMode.CI)
         assert total_planned_seconds(runs) == sum(
-            r.benchmark_duration
-            + r.agentic_cache_warmup_duration
-            + r.warmup_grace_period
-            for r in runs
+            r.benchmark_duration + r.warmup_grace_period for r in runs
         )
 
 

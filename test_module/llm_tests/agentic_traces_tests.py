@@ -192,9 +192,10 @@ def run_agentic_traces(
     context = DriverContext(
         output_dir=output_root,
         device=device_label,
+        # The request-bounded warmup has no wall-clock cap, so warmup_grace_period
+        # is the allowance for it rather than a guarantee; the timeout backstops.
         per_run_timeout_s=float(
             max(run.benchmark_duration for run in runs)
-            + max(run.agentic_cache_warmup_duration for run in runs)
             + max(run.warmup_grace_period for run in runs)
             + _TIMEOUT_HEADROOM_SECONDS
         ),

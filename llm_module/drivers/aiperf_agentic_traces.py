@@ -233,8 +233,11 @@ def build_aiperf_cmd(
         str(run.trajectory_start_min_ratio),
         "--trajectory-start-max-ratio",
         str(run.trajectory_start_max_ratio),
-        "--agentic-cache-warmup-duration",
-        str(run.agentic_cache_warmup_duration),
+        # Request-bounded cache-pressure warmup, mutually exclusive with the
+        # older --agentic-cache-warmup-duration. These are additional to the
+        # mandatory snapshot primers, and stay excluded from request metrics.
+        "--warmup-requests-per-lane",
+        str(run.warmup_requests_per_lane),
         "--warmup-grace-period",
         str(run.warmup_grace_period),
         "--num-dataset-entries",
@@ -649,7 +652,7 @@ def _build_payload(
         "concurrency": run.concurrency,
         "max_concurrency": run.concurrency,
         "benchmark_duration": run.benchmark_duration,
-        "agentic_cache_warmup_duration": run.agentic_cache_warmup_duration,
+        "warmup_requests_per_lane": run.warmup_requests_per_lane,
         "warmup_grace_period": run.warmup_grace_period,
         "num_dataset_entries": run.num_dataset_entries,
         "slice_duration": run.slice_duration,
@@ -687,14 +690,14 @@ def _save_payload(
 def _log_run_header(run: AgenticTracesRun) -> None:
     logger.info(
         "[agentic-traces] %s: source=%s scenario=%s dataset=%s concurrency=%d "
-        "duration=%ds cache_warmup=%ds entries=%d max_context=%d",
+        "duration=%ds warmup=%dreq/lane entries=%d max_context=%d",
         run.label,
         run.trace_source.value,
         run.scenario,
         run.public_dataset,
         run.concurrency,
         run.benchmark_duration,
-        run.agentic_cache_warmup_duration,
+        run.warmup_requests_per_lane,
         run.num_dataset_entries,
         run.max_context_length,
     )
