@@ -30,8 +30,8 @@
 #include <tt_llm_engine/scheduler/tts/tts_scheduler.hpp>
 #endif
 
-#if defined(TT_MEDIA_SERVER_HAS_REAL_TTS_SCHEDULER) &&          \
-    defined(TT_MEDIA_SERVER_TTS_FULL_PIPELINES) &&              \
+#if defined(TT_MEDIA_SERVER_HAS_REAL_TTS_SCHEDULER) && \
+    defined(TT_MEDIA_SERVER_TTS_FULL_PIPELINES) &&     \
     __has_include(<tt_llm_engine/pipeline/decoder_socket_pipeline.hpp>) && \
     __has_include(<tt_llm_engine/pipeline/encoder_socket_pipeline.hpp>) && \
     __has_include(<tt_llm_engine/pipeline/socket_pipeline.hpp>) &&         \
@@ -384,8 +384,7 @@ class RealTtsScheduler final : public tts_scheduler::ITtsScheduler {
     return true;
   }
 
-  bool enqueueVoiceEncode(
-      tts_scheduler::VoiceEncodeRequest request) override {
+  bool enqueueVoiceEncode(tts_scheduler::VoiceEncodeRequest request) override {
     engine_tts::VoiceEncodeRequest engineRequest;
     engineRequest.requestId = request.requestId;
     engineRequest.wavPcm = std::move(request.wavPcm);

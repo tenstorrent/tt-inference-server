@@ -537,17 +537,16 @@ TtsConfig ttsEngineConfig() {
     } else if (runner == "mock_tts") {
       cfg.runner_type = ModelRunnerType::MOCK_SCHEDULER;
     } else {
-      throw std::runtime_error(
-          "[Config] Unknown TTS MODEL_RUNNER_TYPE='" + runner +
-          "'; expected one of: tt_tts, mock_tts");
+      throw std::runtime_error("[Config] Unknown TTS MODEL_RUNNER_TYPE='" +
+                               runner + "'; expected one of: tt_tts, mock_tts");
     }
 
     cfg.maxBatchSize = static_cast<size_t>(
         envUlong("TTS_MAX_BATCH_SIZE", defaults::TTS_MAX_BATCH_SIZE));
     cfg.maxUsers =
         static_cast<size_t>(envUlong("TTS_MAX_USERS", defaults::PM_MAX_USERS));
-    cfg.connectTimeoutMs = static_cast<unsigned>(envUlong(
-        "TTS_CONNECT_TIMEOUT_MS", defaults::PM_CONNECT_TIMEOUT_MS));
+    cfg.connectTimeoutMs = static_cast<unsigned>(
+        envUlong("TTS_CONNECT_TIMEOUT_MS", defaults::PM_CONNECT_TIMEOUT_MS));
     cfg.outputHangTimeoutMs = static_cast<unsigned>(envUlong(
         "TTS_OUTPUT_HANG_TIMEOUT_MS", defaults::OUTPUT_HANG_TIMEOUT_MS));
 
@@ -571,15 +570,15 @@ TtsConfig ttsEngineConfig() {
     cfg.audioChannels = static_cast<uint16_t>(
         envUlong("TTS_AUDIO_CHANNELS", defaults::TTS_AUDIO_CHANNELS));
 
-    cfg.encoderSocketDescriptorPrefix = envString(
-        "TTS_ENCODER_SOCKET_DESCRIPTOR_PREFIX",
-        defaults::TTS_ENCODER_SOCKET_DESCRIPTOR_PREFIX);
-    cfg.speechlmSocketDescriptorPrefix = envString(
-        "TTS_SPEECHLM_SOCKET_DESCRIPTOR_PREFIX",
-        defaults::TTS_SPEECHLM_SOCKET_DESCRIPTOR_PREFIX);
-    cfg.decoderSocketDescriptorPrefix = envString(
-        "TTS_DECODER_SOCKET_DESCRIPTOR_PREFIX",
-        defaults::TTS_DECODER_SOCKET_DESCRIPTOR_PREFIX);
+    cfg.encoderSocketDescriptorPrefix =
+        envString("TTS_ENCODER_SOCKET_DESCRIPTOR_PREFIX",
+                  defaults::TTS_ENCODER_SOCKET_DESCRIPTOR_PREFIX);
+    cfg.speechlmSocketDescriptorPrefix =
+        envString("TTS_SPEECHLM_SOCKET_DESCRIPTOR_PREFIX",
+                  defaults::TTS_SPEECHLM_SOCKET_DESCRIPTOR_PREFIX);
+    cfg.decoderSocketDescriptorPrefix =
+        envString("TTS_DECODER_SOCKET_DESCRIPTOR_PREFIX",
+                  defaults::TTS_DECODER_SOCKET_DESCRIPTOR_PREFIX);
 
     return cfg;
   }();

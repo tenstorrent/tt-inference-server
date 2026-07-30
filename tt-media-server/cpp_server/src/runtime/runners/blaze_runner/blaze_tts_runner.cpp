@@ -31,9 +31,10 @@ sched::GenerationParams toSchedulerGeneration(
 }  // namespace
 
 BlazeTtsRunner::BlazeTtsRunner(
-    config::TtsConfig config, std::unique_ptr<sched::ITtsScheduler> ttsScheduler,
-    ipc::tts::TtsTaskQueue* taskQueue,
-    ipc::tts::TtsAudioChunkQueue* audioQueue, ipc::ICancelQueue* cancelQueue)
+    config::TtsConfig config,
+    std::unique_ptr<sched::ITtsScheduler> ttsScheduler,
+    ipc::tts::TtsTaskQueue* taskQueue, ipc::tts::TtsAudioChunkQueue* audioQueue,
+    ipc::ICancelQueue* cancelQueue)
     : config(std::move(config)),
       scheduler(std::move(ttsScheduler)),
       taskQueue(taskQueue),

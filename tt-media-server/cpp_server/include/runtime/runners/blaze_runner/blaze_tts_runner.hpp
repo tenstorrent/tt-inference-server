@@ -15,8 +15,8 @@
 #include "config/runner_config.hpp"
 #include "ipc/interface/cancel_queue.hpp"
 #include "ipc/tts_ipc.hpp"
-#include "runtime/runners/ipc_runner.hpp"
 #include "runtime/runners/blaze_runner/tts_scheduler_interface.hpp"
+#include "runtime/runners/ipc_runner.hpp"
 
 namespace tt::runners::blaze {
 
@@ -63,8 +63,7 @@ class BlazeTtsRunner : public IRunner {
 
   void handleTask(ipc::tts::TtsIpcTask task);
   void handleControl(uint32_t taskId);
-  void handleVoiceEncodeResult(
-      const tts_scheduler::VoiceEncodeResult& result);
+  void handleVoiceEncodeResult(const tts_scheduler::VoiceEncodeResult& result);
   void handleSchedulerResponse(
       const tts_scheduler::SchedulerResponse& response);
   void handleTokenOutput(const tts_scheduler::TokenOutput& output);

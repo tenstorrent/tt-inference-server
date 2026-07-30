@@ -49,8 +49,7 @@ std::vector<int16_t> downmixToMono(const std::vector<int16_t>& samples,
 }
 
 std::vector<int16_t> resampleLinear(const std::vector<int16_t>& mono,
-                                    uint32_t sourceRate,
-                                    uint32_t targetRate) {
+                                    uint32_t sourceRate, uint32_t targetRate) {
   if (sourceRate == 0 || targetRate == 0) {
     throw std::invalid_argument("voice sample rate must be > 0");
   }
@@ -92,8 +91,8 @@ tt::domain::tts::TtsTask TtsRequestPreprocessor::process(
       tt::utils::tokenizers::staticInfo().stopTokenIds;
 
   if (request.voiceSample.has_value()) {
-    tt::utils::tts_prompt_compiler::validatePromptInputs(
-        request.text, request.description);
+    tt::utils::tts_prompt_compiler::validatePromptInputs(request.text,
+                                                         request.description);
     auto normalized = normalizeVoiceSample(*request.voiceSample);
     task.voiceWavPcm = std::move(normalized.wavPcm);
   } else {
@@ -111,8 +110,8 @@ tt::domain::tts::VoiceSample TtsRequestPreprocessor::normalizeVoiceSample(
   }
 
   auto mono = downmixToMono(sample.wavPcm, sample.channels);
-  auto normalized = resampleLinear(mono, sample.sampleRateHz,
-                                   config.voiceSampleRateHz);
+  auto normalized =
+      resampleLinear(mono, sample.sampleRateHz, config.voiceSampleRateHz);
 
   tt::domain::tts::VoiceSample out;
   out.wavPcm = std::move(normalized);

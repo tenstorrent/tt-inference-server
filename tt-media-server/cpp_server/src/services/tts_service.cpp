@@ -30,8 +30,7 @@ TtsService::TtsService(config::TtsConfig config,
       "[TtsService] Initialized worker-backed TTS service "
       "(runner={}, capacity={}, output_rate={}Hz, channels={}, workers={})",
       runnerInUse(), capacityLimit(), ttsConfig.audioSampleRateHz,
-      ttsConfig.audioChannels,
-      this->queueManager->audioQueues.size());
+      ttsConfig.audioChannels, this->queueManager->audioQueues.size());
 }
 
 TtsService::~TtsService() { stop(); }

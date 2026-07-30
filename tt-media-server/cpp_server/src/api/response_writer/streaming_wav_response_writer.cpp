@@ -74,9 +74,10 @@ void StreamingWavResponseWriter::abort() {
   if (done.exchange(true)) {
     return;
   }
-  TT_LOG_INFO("[StreamingWavResponseWriter] Aborting TTS stream for task {}; "
-              "notifying service",
-              params.task_id);
+  TT_LOG_INFO(
+      "[StreamingWavResponseWriter] Aborting TTS stream for task {}; "
+      "notifying service",
+      params.task_id);
   if (params.onCancelRequest) {
     params.onCancelRequest(params.task_id);
   }

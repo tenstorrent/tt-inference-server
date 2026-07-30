@@ -55,8 +55,7 @@ void RunnerRegistry::registerTtsIpcRunner(config::ModelService service,
 
 std::unique_ptr<runners::IRunner> RunnerRegistry::createTtsIpc(
     config::ModelService service, config::ModelRunnerType type,
-    const config::RunnerConfig& config,
-    ipc::tts::TtsTaskQueue* taskQueue,
+    const config::RunnerConfig& config, ipc::tts::TtsTaskQueue* taskQueue,
     ipc::tts::TtsAudioChunkQueue* audioQueue,
     ipc::ICancelQueue* cancelQueue) const {
   auto exact = tts_ipc_factories_.find({service, type});

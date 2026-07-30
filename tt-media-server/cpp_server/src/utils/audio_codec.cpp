@@ -61,8 +61,7 @@ bool hasTag(std::string_view bytes, size_t offset, std::string_view tag) {
 
 std::string makeStreamingPcm16WavHeader(uint32_t sampleRateHz,
                                         uint16_t channels) {
-  const uint32_t byteRate =
-      sampleRateHz * channels * PCM_BITS_PER_SAMPLE / 8;
+  const uint32_t byteRate = sampleRateHz * channels * PCM_BITS_PER_SAMPLE / 8;
   const uint16_t blockAlign = channels * PCM_BITS_PER_SAMPLE / 8;
 
   std::string out(44, '\0');

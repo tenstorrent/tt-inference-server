@@ -119,9 +119,8 @@ void SingleProcessWorker::start() {
     } else {
       auto* taskQueue =
           std::get_if<std::shared_ptr<tt::ipc::ITaskQueue>>(&cfg.task_queue);
-      auto* resultQueue =
-          std::get_if<std::shared_ptr<tt::ipc::IResultQueue>>(
-              &cfg.result_queue);
+      auto* resultQueue = std::get_if<std::shared_ptr<tt::ipc::IResultQueue>>(
+          &cfg.result_queue);
       if (!taskQueue || !resultQueue || !*taskQueue || !*resultQueue ||
           !cfg.cancel_queue) {
         throw std::runtime_error(

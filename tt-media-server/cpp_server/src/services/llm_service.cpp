@@ -203,9 +203,8 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
     TT_LOG_WARN("[Consumer-{}] No token buffer, exiting", workerIdx);
     return;
   }
-  auto* resultQueuePtr =
-      std::get_if<std::shared_ptr<tt::ipc::IResultQueue>>(
-          &worker->cfg.result_queue);
+  auto* resultQueuePtr = std::get_if<std::shared_ptr<tt::ipc::IResultQueue>>(
+      &worker->cfg.result_queue);
   if (!resultQueuePtr || !*resultQueuePtr) {
     TT_LOG_WARN("[Consumer-{}] No token buffer, exiting", workerIdx);
     return;

@@ -26,7 +26,6 @@ std::unique_ptr<runners::IRunner> createIpcRunner(
 /** Worker-process entry point for TTS IPC runners. */
 std::unique_ptr<runners::IRunner> createTtsIpcRunner(
     const config::RunnerConfig& config, ipc::tts::TtsTaskQueue* taskQueue,
-    ipc::tts::TtsAudioChunkQueue* audioQueue,
-    ipc::ICancelQueue* cancelQueue);
+    ipc::tts::TtsAudioChunkQueue* audioQueue, ipc::ICancelQueue* cancelQueue);
 
 }  // namespace tt::utils::ipc_runner_factory
