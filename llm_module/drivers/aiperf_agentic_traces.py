@@ -25,11 +25,17 @@ import sys
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from ..agentic_traces import AgenticTracesRun
 from ..config import DriverContext, ServerConnection
 from ._subprocess import load_json, run_command, safe_filename_part
+from .aiperf_prefix_cache import (
+    PREFIX_CACHE_HITS_METRIC_ALIASES,
+    PREFIX_CACHE_QUERIES_METRIC_ALIASES,
+    _normalize_metrics_url,
+    _split_role_and_url,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +100,15 @@ class AIPerfAgenticTracesDriver:
             shutil.rmtree(artifact_dir)
         artifact_dir.mkdir(parents=True, exist_ok=True)
 
+        # Entries may carry a prefill=/decode= role prefix for the prefix-cache
+        # driver's benefit; agentic traces reports one blended rate, so the role
+        # is stripped and only the URL is used.
+        metrics_urls = tuple(
+            _normalize_metrics_url(_split_role_and_url(spec)[1])
+            for spec in server.prefix_cache_metrics_urls
+            if spec and spec.strip()
+        )
+
         cmd = build_aiperf_cmd(
             run=trace_run,
             venv_python=self.venv_python,
@@ -102,6 +117,7 @@ class AIPerfAgenticTracesDriver:
             url=server.url_with_port,
             artifact_dir=artifact_dir,
             auth_token=server.auth_token,
+            metrics_urls=metrics_urls,
         )
         _log_run_header(trace_run)
 
@@ -125,7 +141,7 @@ class AIPerfAgenticTracesDriver:
                 return_code=rc, payload=None, raw_path=None
             )
 
-        metrics = parse_aiperf_output(artifact_dir)
+        metrics = parse_aiperf_output(artifact_dir, metrics_urls=metrics_urls)
         if not metrics:
             logger.error(
                 "[agentic-traces] No metrics parsed from %s; skipping result save.",
@@ -171,6 +187,7 @@ def build_aiperf_cmd(
     url: str,
     artifact_dir: Path,
     auth_token: str = "",
+    metrics_urls: Sequence[str] = (),
 ) -> List[str]:
     """Construct the ``aiperf profile`` CLI for one agentic-trace run.
 
@@ -179,6 +196,10 @@ def build_aiperf_cmd(
     ``ignore_eos``, forbids input truncation, and configures first-turn cache
     busting. The flags here select the dataset, the load shape, and the
     durations.
+
+    ``--server-metrics`` is additive, not a replacement: AIPerf always scrapes
+    ``<url>/metrics`` from the load target and appends ``metrics_urls``, so
+    passing them cannot turn the default scrape off.
     """
     if not url.startswith("http"):
         url = f"http://{url}"
@@ -230,6 +251,12 @@ def build_aiperf_cmd(
         "--public-dataset",
         run.public_dataset,
     ]
+    # Consumes multiple values after one flag, matching AIPerf's
+    # ``consume_multiple`` parameter style.
+    normalized_metrics_urls = [u for u in metrics_urls if u]
+    if normalized_metrics_urls:
+        cmd.append("--server-metrics")
+        cmd.extend(normalized_metrics_urls)
     if run.streaming:
         cmd.append("--streaming")
     if run.use_server_token_count:
@@ -244,7 +271,9 @@ def build_aiperf_cmd(
     return cmd
 
 
-def parse_aiperf_output(artifact_dir: Path) -> Dict[str, Any]:
+def parse_aiperf_output(
+    artifact_dir: Path, metrics_urls: Sequence[str] = ()
+) -> Dict[str, Any]:
     """Parse the fork's summary export from ``profile_export_aiperf.json``.
 
     Every metric in that file is a block of ``{unit, avg, p1..p99, min, max,
@@ -448,6 +477,109 @@ def parse_aiperf_output(artifact_dir: Path) -> Dict[str, Any]:
         if value:
             metrics[key] = value
 
+    metrics.update(_parse_prefix_cache_metrics(artifact_dir, metrics_urls))
+
+    return metrics
+
+
+def _parse_prefix_cache_metrics(
+    artifact_dir: Path, metrics_urls: Sequence[str] = ()
+) -> Dict[str, Any]:
+    """Measure the engine's prefix-cache hit rate from its own counters.
+
+    The measured companion to ``theoretical_prefix_cache_hit_pct``: how much of
+    the reuse inherent to the traces the cache actually caught.
+
+    ``server_metrics_export.json`` is scoped to the profiling phase and
+    pre-aggregates each counter's in-window delta into ``stats.total``, so the
+    cache-priming warmup (which by design hits far less often) is excluded
+    without any delta arithmetic here.
+
+    When ``metrics_urls`` are given, only series from those endpoints count:
+    AIPerf keeps scraping the load target too, and a frontend that also exports
+    these counters would otherwise be summed with its workers and double-count
+    every prompt.
+
+    Returns ``{}`` when the counters are absent, so the report drops the column
+    rather than publishing a misleading 0%.
+    """
+    candidates: List[Path] = [artifact_dir / "server_metrics_export.json"]
+    candidates.extend(sorted(artifact_dir.rglob("*server_metrics_export.json")))
+    export_path = next((p for p in candidates if p.exists()), None)
+    if export_path is None:
+        logger.debug(
+            "No server_metrics_export.json under %s; measured prefix-cache hit "
+            "rate unavailable.",
+            artifact_dir,
+        )
+        return {}
+
+    export = load_json(export_path) or {}
+    series_by_metric = export.get("metrics")
+    if not isinstance(series_by_metric, Mapping):
+        return {}
+
+    wanted = {_normalize_metrics_url(u) for u in metrics_urls if u}
+
+    def _wanted(series: Mapping[str, Any]) -> bool:
+        if not wanted:
+            return True
+        endpoint = series.get("endpoint_url")
+        return isinstance(endpoint, str) and _normalize_metrics_url(endpoint) in wanted
+
+    def _counter_total(aliases: Sequence[str]) -> Optional[float]:
+        """Sum one counter across every in-scope endpoint and label set.
+
+        Summing across endpoints before dividing keeps a multi-worker
+        deployment's rate token-weighted rather than averaging per-worker
+        rates, which would over-weight an idle worker.
+        """
+        for alias in aliases:
+            metric = series_by_metric.get(alias)
+            if not isinstance(metric, Mapping):
+                continue
+            values = [
+                s["stats"]["total"]
+                for s in metric.get("series") or []
+                if isinstance(s, Mapping)
+                and isinstance(s.get("stats"), Mapping)
+                and isinstance(s["stats"].get("total"), (int, float))
+                and _wanted(s)
+            ]
+            if values:
+                return float(sum(values))
+        return None
+
+    hits = _counter_total(PREFIX_CACHE_HITS_METRIC_ALIASES)
+    queries = _counter_total(PREFIX_CACHE_QUERIES_METRIC_ALIASES)
+    if hits is None or queries is None:
+        logger.warning(
+            "Prefix-cache counters (tt_prefix_cache_* / vllm:prefix_cache_*) not "
+            "found in %s%s; the measured hit rate is omitted. Reachable endpoints "
+            "were %s -- point --agentic-traces-metrics-url at a worker that "
+            "exports them.",
+            export_path,
+            f" for the requested endpoint(s) {sorted(wanted)}" if wanted else "",
+            (export.get("summary") or {}).get("endpoints_successful") or "none",
+        )
+        return {}
+    if queries <= 0:
+        return {}
+
+    metrics: Dict[str, Any] = {
+        "measured_prefix_cache_hit_pct": 100.0 * hits / queries,
+        "prefix_cache_hits_measured": hits,
+        "prefix_cache_queries_measured": queries,
+    }
+    # The endpoints the rate was actually computed from, which is narrower than
+    # everything AIPerf reached whenever explicit URLs scoped the sum.
+    counted = (
+        sorted(wanted)
+        if wanted
+        else (export.get("summary") or {}).get("endpoints_successful")
+    )
+    if isinstance(counted, list) and counted:
+        metrics["prefix_cache_metrics_endpoints"] = [str(e) for e in counted]
     return metrics
 
 
@@ -590,10 +722,15 @@ def _log_run_summary(run: AgenticTracesRun, metrics: Mapping[str, Any]) -> None:
     )
     logger.info(
         "[agentic-traces]   output tok/s/user streaming/e2e = %.1f/%.1f; "
-        "total tok/s = %.1f; prefix-cache hit = %.1f%%",
+        "total tok/s = %.1f",
         float(metrics.get("output_token_throughput_per_user", 0) or 0),
         float(metrics.get("e2e_output_token_throughput_per_user", 0) or 0),
         float(metrics.get("total_token_throughput", 0) or 0),
+    )
+    measured_cache = metrics.get("measured_prefix_cache_hit_pct")
+    logger.info(
+        "[agentic-traces]   prefix-cache hit measured/theoretical = %s/%.1f%%",
+        f"{float(measured_cache):.1f}%" if measured_cache is not None else "n/a",
         float(metrics.get("theoretical_prefix_cache_hit_pct", 0) or 0),
     )
 

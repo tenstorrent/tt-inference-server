@@ -467,14 +467,24 @@ def parse_arguments():
 
     agentic_traces_group = parser.add_argument_group(
         "Agentic-traces benchmark",
-        "Arguments for --workflow agentic_traces (routed to the workflow engine)",
+        "Arguments for --workflow agentic_traces, and --workflow release "
+        "--agentic-traces (routed to the workflow engine)",
+    )
+    agentic_traces_group.add_argument(
+        "--agentic-traces",
+        action="store_true",
+        help="Add the agentic trace replay to --workflow release, as a child alongside "
+        "evals/benchmarks/spec_tests, so its Blocks land in the same release report. "
+        "Opt-in because a full-mode run adds roughly an hour of profiling per "
+        "configured run on top of the rest of the release. Requires --workflow release; "
+        "use --workflow agentic_traces to run it on its own.",
     )
     agentic_traces_group.add_argument(
         "--agentic-traces-mode",
         type=str,
         choices=["full", "ci"],
         default="full",
-        help="Duration profile for --workflow agentic_traces (default: full). 'full' is "
+        help="Duration profile for the agentic-traces runs (default: full). 'full' is "
         "the reference run used for reportable numbers; 'ci' is the shortest run the "
         "InferenceX scenario permits (900s of profiling). Per-mode durations come from "
         "the model's entry in reference_config/agentic_traces/.",
@@ -503,6 +513,18 @@ def parse_arguments():
         help="Override the InferenceX revision cloned into the AGENTIC_TRACES venv. "
         "Defaults to the ref pinned for the ModelSpec; results are only comparable "
         "across runs on the same ref.",
+    )
+    agentic_traces_group.add_argument(
+        "--agentic-traces-metrics-url",
+        type=str,
+        action="append",
+        default=None,
+        metavar="URL",
+        help="Extra Prometheus /metrics endpoint holding the prefix-cache counters, "
+        "for a deployment whose load target does not expose them (e.g. the "
+        "cpp_server worker(s) behind a Dynamo frontend). AIPerf scrapes the load "
+        "target regardless. Accepts a URL, host:port, or host:port/metrics; "
+        "repeatable.",
     )
 
     prefix_cache_group = parser.add_argument_group(
@@ -703,17 +725,24 @@ def parse_arguments():
             f"(got --workflow {args.workflow})."
         )
 
+    if args.agentic_traces and args.workflow != "release":
+        parser.error(
+            "--agentic-traces adds the trace replay to a release run and requires "
+            "--workflow release; run it on its own with --workflow agentic_traces "
+            f"(got --workflow {args.workflow})."
+        )
+
+    runs_agentic_traces = args.workflow == "agentic_traces" or args.agentic_traces
     agentic_traces_overrides = (
         args.agentic_traces_sources,
         args.agentic_traces_duration,
         args.agentic_traces_git_ref,
+        args.agentic_traces_metrics_url,
     )
-    if (
-        any(f is not None for f in agentic_traces_overrides)
-        and args.workflow != "agentic_traces"
-    ):
+    if any(f is not None for f in agentic_traces_overrides) and not runs_agentic_traces:
         parser.error(
-            "--agentic-traces-* flags require --workflow agentic_traces "
+            "--agentic-traces-* flags require --workflow agentic_traces or "
+            "--workflow release --agentic-traces "
             f"(got --workflow {args.workflow})."
         )
 

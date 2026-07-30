@@ -25,7 +25,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Sequence
 
 from llm_module import ServerConnection
 from llm_module.agentic_traces import (
@@ -67,6 +67,7 @@ def run_agentic_traces(
     trace_sources: Optional[str] = None,
     duration_override: Optional[int] = None,
     git_ref_override: Optional[str] = None,
+    metrics_urls: Sequence[str] = (),
     auth_token: str = "",
     venv_python: Optional[Path] = None,
     server_controller: Optional[ServerController] = None,
@@ -89,6 +90,10 @@ def run_agentic_traces(
     duration_override / git_ref_override:
         Ad-hoc overrides for the mode's ``benchmark_duration`` and the config's
         pinned InferenceX revision.
+    metrics_urls:
+        Extra Prometheus ``/metrics`` endpoints holding the prefix-cache
+        counters, for a deployment whose load target does not expose them.
+        AIPerf scrapes the load target's own ``/metrics`` either way.
     auth_token:
         Bearer token sent to the inference server. Empty disables auth.
     venv_python:
@@ -182,6 +187,7 @@ def run_agentic_traces(
         tokenizer_trust_remote_code=any(
             run.tokenizer_trust_remote_code for run in runs
         ),
+        prefix_cache_metrics_urls=tuple(metrics_urls or ()),
     )
     context = DriverContext(
         output_dir=output_root,

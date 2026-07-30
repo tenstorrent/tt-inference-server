@@ -381,6 +381,7 @@ def _engine_run_argv(
         if wf == WorkflowType.RELEASE:
             _forward_prefix_cache(argv, runtime_config)
             _forward_spec_decode(argv, runtime_config)
+            _forward_agentic_traces(argv, runtime_config)
     else:
         sdxl_n = getattr(runtime_config, "sdxl_num_prompts", None)
         if sdxl_n not in (None, "", "0"):
@@ -455,6 +456,46 @@ def _forward_prefix_cache(cmd, runtime_config) -> None:
         _extend_if_set(cmd, "--prefix-cache-metrics-url", metrics_url)
 
 
+def _forward_agentic_traces(cmd, runtime_config) -> None:
+    """Forward the release opt-in so the engine builds an agentic-traces child."""
+    if not getattr(runtime_config, "agentic_traces", False):
+        return
+    cmd.append("--agentic-traces")
+    _extend_if_set(
+        cmd,
+        "--agentic-traces-mode",
+        getattr(runtime_config, "agentic_traces_mode", None),
+    )
+    _extend_if_set(
+        cmd,
+        "--agentic-traces-sources",
+        getattr(runtime_config, "agentic_traces_sources", None),
+    )
+    _extend_if_set(
+        cmd,
+        "--agentic-traces-duration",
+        getattr(runtime_config, "agentic_traces_duration", None),
+    )
+    _extend_if_set(
+        cmd,
+        "--agentic-traces-git-ref",
+        getattr(runtime_config, "agentic_traces_git_ref", None),
+    )
+    _forward_agentic_traces_metrics_urls(cmd, runtime_config)
+
+
+def _forward_agentic_traces_metrics_urls(cmd, runtime_config) -> None:
+    """Emit one ``--agentic-traces-metrics-url`` per configured endpoint.
+
+    The flag is ``action="append"`` (a list), so stringifying the whole list
+    would forward a bogus ``"['http://...']"`` URL and leave the measured
+    hit-rate column empty.
+    """
+    urls = getattr(runtime_config, "agentic_traces_metrics_url", None) or []
+    for metrics_url in urls:
+        _extend_if_set(cmd, "--agentic-traces-metrics-url", metrics_url)
+
+
 def _forward_spec_decode(cmd, runtime_config) -> None:
     if not getattr(runtime_config, "spec_decode", False):
         return
@@ -520,6 +561,7 @@ def _build_agentic_traces_cmd(
         "--agentic-traces-git-ref",
         getattr(runtime_config, "agentic_traces_git_ref", None),
     )
+    _forward_agentic_traces_metrics_urls(cmd, runtime_config)
     _forward_jwt(cmd, runtime_config)
     return cmd
 
@@ -681,6 +723,11 @@ def _engine_dependency_venv_types(
             venv_types.append(WorkflowVenvType.PREFIX_CACHE)
         if getattr(runtime_config, "spec_decode", False):
             venv_types.append(WorkflowVenvType.SPEC_DECODE)
+        # Same for the agentic-traces release child: its client is the AIPerf
+        # fork inside the InferenceX checkout, and that clone + install is what
+        # the AGENTIC_TRACES venv setup performs.
+        if getattr(runtime_config, "agentic_traces", False):
+            venv_types.append(WorkflowVenvType.AGENTIC_TRACES)
         # The agentic release child resolves harbor/sweagent from the
         # EVALS_AGENTIC venv, so it must exist before the engine subprocess runs.
         if _llm_release_includes_agentic(model_spec):

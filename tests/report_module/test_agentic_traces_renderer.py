@@ -75,6 +75,7 @@ def _record(**overrides):
         "context_overflow_count": 0,
         "osl_mismatch_count": 0,
         "osl_mismatch_diff_pct": 0.0,
+        "measured_prefix_cache_hit_pct": 95.2617,
         "theoretical_prefix_cache_hit_pct": 95.13,
         "credit_drop_count": 2,
         "connection_reuse_rate": 0.9230,
@@ -246,6 +247,28 @@ class TestValidity:
         )
         assert "34xServerDisconnectedError" in out
         assert "9.43" in out
+
+
+class TestPrefixCacheColumns:
+    def test_measured_and_theoretical_hit_rates_sit_side_by_side(self):
+        """The comparison is the point: measured is what the engine caught of
+        the reuse the traces offered."""
+        health = _render(_record()).split("#### Run Health")[1]
+        assert "Cache Hit %" in health
+        assert "Theo. Cache Hit %" in health
+        assert health.index("| Cache Hit %") < health.index("| Theo. Cache Hit %")
+
+    def test_hit_rates_keep_two_decimals(self):
+        out = _render(_record())
+        assert "95.26" in out
+        assert "95.13" in out
+
+    def test_a_server_without_counters_drops_only_the_measured_column(self):
+        record = _record()
+        record.pop("measured_prefix_cache_hit_pct")
+        health = _render(record).split("#### Run Health")[1]
+        assert "| Cache Hit %" not in health
+        assert "Theo. Cache Hit %" in health
 
 
 class TestMultipleRuns:

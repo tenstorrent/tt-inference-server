@@ -91,6 +91,7 @@ HEALTH_COLUMNS: List[Tuple[str, str]] = [
     ("context_overflow_count", "Ctx Overflow"),
     ("osl_mismatch_count", "OSL Mismatch"),
     ("osl_mismatch_diff_pct", "OSL Diff %"),
+    ("measured_prefix_cache_hit_pct", "Cache Hit %"),
     ("theoretical_prefix_cache_hit_pct", "Theo. Cache Hit %"),
     ("credit_drop_count", "Credit Drops"),
     ("connection_reuse_rate", "Conn Reuse"),
@@ -137,6 +138,12 @@ _THROUGHPUT_KEYS = frozenset(
         "active_prefill_throughput",
         "effective_decode_throughput",
         "active_decode_throughput",
+    }
+)
+_CACHE_HIT_KEYS = frozenset(
+    {
+        "measured_prefix_cache_hit_pct",
+        "theoretical_prefix_cache_hit_pct",
     }
 )
 _INT_KEYS = frozenset(
@@ -205,7 +212,7 @@ def _format_value(key: str, value: Any) -> str:
         return f"{value:.3f}"
     if key in ("error_rate_pct", "osl_mismatch_diff_pct"):
         return f"{value:.2f}"
-    if key in _THROUGHPUT_KEYS or key == "theoretical_prefix_cache_hit_pct":
+    if key in _THROUGHPUT_KEYS or key in _CACHE_HIT_KEYS:
         return f"{value:,.2f}"
     if isinstance(value, float):
         return f"{value:,.1f}"
@@ -403,8 +410,12 @@ def render_agentic_traces(block: Block, metadata: Mapping[str, Any]) -> str:
         "> - **OSL Mismatch / OSL Diff %**: responses whose length did not "
         "match the trace's recorded output, and by how much. Non-zero means the "
         "replayed conversation diverged from what was recorded.\n"
-        "> - **Theo. Cache Hit %**: prefix reuse inherent to the traces "
-        "(upper bound), not a measurement of the serving engine's cache.\n"
+        "> - **Cache Hit %**: measured from the serving engine's own counters "
+        "over the profiling window, so the cache-priming warmup is excluded. "
+        "**Theo. Cache Hit %** is the reuse inherent to the traces, i.e. the "
+        "upper bound the engine was offered. A measured rate well below it means "
+        "the cache was evicting reuse the workload had available. Omitted when "
+        "the server exposes no such counters.\n"
         "> - **Credit Drops**: requests the load generator could not dispatch "
         "on the trace's schedule. Non-zero means the recorded timing was not "
         "reproduced, usually because the server was saturated.\n"

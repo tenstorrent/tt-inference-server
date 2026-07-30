@@ -135,6 +135,9 @@ class AgenticTracesOptions:
     # Ad-hoc overrides, for debugging a config without editing it.
     duration_override: Optional[int] = None
     git_ref_override: Optional[str] = None
+    # Extra Prometheus /metrics endpoints holding the prefix-cache counters,
+    # when the load target does not expose them. Tuple to stay hashable.
+    metrics_urls: Tuple[str, ...] = ()
     auth_token: str = ""
     venv_python: Optional[str] = None
 

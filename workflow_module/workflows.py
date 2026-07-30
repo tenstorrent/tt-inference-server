@@ -228,6 +228,7 @@ class AgenticTracesWorkflow(WorkflowExecution):
                     trace_sources=opts.trace_sources,
                     duration_override=opts.duration_override,
                     git_ref_override=opts.git_ref_override,
+                    metrics_urls=opts.metrics_urls,
                     auth_token=opts.auth_token,
                     venv_python=venv_python,
                 ),
@@ -578,17 +579,26 @@ class ReleaseWorkflow(WorkflowExecution):
         return child.run_tasks()
 
     def _llm_children(self) -> Sequence[str]:
-        """LLM release children, appending ``agentic`` when the model has
-        EVALS_AGENTIC tasks configured.
+        """LLM release children, appending the optional ones this run enabled.
 
-        Agentic now runs in-process as a release child (its harness binaries
-        are resolved from the EVALS_AGENTIC venv explicitly), so its Blocks
-        land in the single release report. Models without agentic tasks skip
-        it to avoid a no-op failure.
+        ``agentic`` runs in-process as a release child (its harness binaries are
+        resolved from the EVALS_AGENTIC venv explicitly), so its Blocks land in
+        the single release report. Models without agentic tasks skip it to avoid
+        a no-op failure.
+
+        ``agentic_traces`` is opt-in via ``--agentic-traces`` rather than implied
+        by having a config, because a full-mode replay adds roughly an hour of
+        profiling per configured run. Its options carry the AGENTIC_TRACES
+        interpreter, since a release child does not re-exec into that venv.
+        It runs last: it is the longest child, so a failure in the cheaper ones
+        surfaces without waiting for it.
         """
+        children = tuple(self.llm_children)
         if _has_agentic_tasks(self.ctx):
-            return tuple(self.llm_children) + ("agentic",)
-        return self.llm_children
+            children += ("agentic",)
+        if self.orchestrator_metadata.agentic_traces is not None:
+            children += ("agentic_traces",)
+        return children
 
 
 WORKFLOW_REGISTRY: Dict[str, Type[WorkflowExecution]] = {

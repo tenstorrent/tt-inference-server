@@ -416,6 +416,23 @@ class TestAiperfCommand:
         )
         assert "--no-gpu-telemetry" not in cmd
 
+    def test_no_server_metrics_flag_without_explicit_urls(self):
+        """AIPerf already derives <url>/metrics; the flag is only for extras."""
+        assert "--server-metrics" not in self._cmd()
+
+    def test_extra_metrics_endpoints_are_passed_after_one_flag(self):
+        cmd = self._cmd(
+            metrics_urls=(
+                "http://worker-a:9000/metrics",
+                "http://worker-b:9000/metrics",
+            )
+        )
+        idx = cmd.index("--server-metrics")
+        assert cmd[idx + 1 : idx + 3] == [
+            "http://worker-a:9000/metrics",
+            "http://worker-b:9000/metrics",
+        ]
+
 
 class TestPlanSummary:
     def test_summary_names_every_run(self):
@@ -644,6 +661,170 @@ class TestOutputParsing:
         assert "error_summary" not in metrics
         assert "branch_children_spawned" not in metrics
         assert metrics["completed"] == 10
+
+
+def _server_metrics_export(**overrides):
+    """The fork's aggregated scrape: phase-scoped, with in-window deltas."""
+    export = {
+        "schema_version": "1.1",
+        "summary": {
+            "endpoints_configured": ["http://127.0.0.1:8000/metrics"],
+            "endpoints_successful": ["http://127.0.0.1:8000/metrics"],
+        },
+        "metrics_phase": "profiling",
+        "metrics": {
+            "vllm:prefix_cache_hits": {
+                "type": "counter",
+                "series": [
+                    {
+                        "endpoint_url": "http://127.0.0.1:8000/metrics",
+                        "stats": {"total": 4544928.0},
+                    }
+                ],
+            },
+            "vllm:prefix_cache_queries": {
+                "type": "counter",
+                "series": [
+                    {
+                        "endpoint_url": "http://127.0.0.1:8000/metrics",
+                        "stats": {"total": 4771106.0},
+                    }
+                ],
+            },
+        },
+        # Warmup primes the cache and so hits far less; including it would drag
+        # the reported rate down.
+        "warmup_metrics": {
+            "vllm:prefix_cache_hits": {"series": [{"stats": {"total": 1875040.0}}]},
+            "vllm:prefix_cache_queries": {"series": [{"stats": {"total": 2206963.0}}]},
+        },
+    }
+    export.update(overrides)
+    return export
+
+
+def _write_server_metrics(tmp_path, **kwargs):
+    (tmp_path / "server_metrics_export.json").write_text(
+        json.dumps(_server_metrics_export(**kwargs))
+    )
+    return tmp_path
+
+
+class TestPrefixCacheMeasurement:
+    def test_reads_the_engines_measured_hit_rate(self, tmp_path):
+        _write_server_metrics(tmp_path)
+        metrics = parse_aiperf_output(_write_summary(tmp_path))
+        assert metrics["measured_prefix_cache_hit_pct"] == pytest.approx(
+            95.26, abs=1e-2
+        )
+        assert metrics["prefix_cache_hits_measured"] == 4544928.0
+        assert metrics["prefix_cache_queries_measured"] == 4771106.0
+
+    def test_warmup_traffic_is_excluded(self, tmp_path):
+        """``metrics`` is the profiling phase; ``warmup_metrics`` must not count."""
+        _write_server_metrics(tmp_path)
+        metrics = parse_aiperf_output(_write_summary(tmp_path))
+        combined_rate = 100 * (4544928 + 1875040) / (4771106 + 2206963)
+        assert metrics["measured_prefix_cache_hit_pct"] != pytest.approx(
+            combined_rate, abs=1e-2
+        )
+
+    def test_sums_across_workers_before_dividing(self, tmp_path):
+        """A token-weighted rate, so an idle worker cannot skew it."""
+        _write_server_metrics(
+            tmp_path,
+            metrics={
+                "vllm:prefix_cache_hits": {
+                    "series": [
+                        {"stats": {"total": 900.0}},
+                        {"stats": {"total": 0.0}},
+                    ]
+                },
+                "vllm:prefix_cache_queries": {
+                    "series": [
+                        {"stats": {"total": 1000.0}},
+                        {"stats": {"total": 100.0}},
+                    ]
+                },
+            },
+        )
+        metrics = parse_aiperf_output(_write_summary(tmp_path))
+        assert metrics["measured_prefix_cache_hit_pct"] == pytest.approx(
+            81.81, abs=1e-2
+        )
+
+    def test_absent_scrape_omits_the_metric_rather_than_reporting_zero(self, tmp_path):
+        metrics = parse_aiperf_output(_write_summary(tmp_path))
+        assert "measured_prefix_cache_hit_pct" not in metrics
+        # The theoretical bound comes from the summary and stays regardless.
+        assert metrics["theoretical_prefix_cache_hit_pct"] == 95.74
+
+    def test_a_server_without_cache_counters_omits_the_metric(self, tmp_path):
+        _write_server_metrics(
+            tmp_path, metrics={"vllm:num_requests_running": {"series": []}}
+        )
+        metrics = parse_aiperf_output(_write_summary(tmp_path))
+        assert "measured_prefix_cache_hit_pct" not in metrics
+
+    def test_explicit_endpoints_exclude_the_load_target(self, tmp_path):
+        """AIPerf keeps scraping the load target; a frontend that also exports
+        the counters would double-count every prompt if it were summed in."""
+        _write_server_metrics(
+            tmp_path,
+            metrics={
+                "vllm:prefix_cache_hits": {
+                    "series": [
+                        {
+                            "endpoint_url": "http://frontend:8000/metrics",
+                            "stats": {"total": 500.0},
+                        },
+                        {
+                            "endpoint_url": "http://worker-a:9000/metrics",
+                            "stats": {"total": 900.0},
+                        },
+                    ]
+                },
+                "vllm:prefix_cache_queries": {
+                    "series": [
+                        {
+                            "endpoint_url": "http://frontend:8000/metrics",
+                            "stats": {"total": 1000.0},
+                        },
+                        {
+                            "endpoint_url": "http://worker-a:9000/metrics",
+                            "stats": {"total": 1000.0},
+                        },
+                    ]
+                },
+            },
+        )
+        metrics = parse_aiperf_output(
+            _write_summary(tmp_path), metrics_urls=("http://worker-a:9000/metrics",)
+        )
+        assert metrics["measured_prefix_cache_hit_pct"] == pytest.approx(90.0)
+        assert metrics["prefix_cache_queries_measured"] == 1000.0
+        assert metrics["prefix_cache_metrics_endpoints"] == [
+            "http://worker-a:9000/metrics"
+        ]
+
+    def test_unmatched_endpoint_omits_the_metric(self, tmp_path):
+        """A typo'd worker URL must not silently fall back to the load target."""
+        _write_server_metrics(tmp_path)
+        metrics = parse_aiperf_output(
+            _write_summary(tmp_path), metrics_urls=("http://typo:9999/metrics",)
+        )
+        assert "measured_prefix_cache_hit_pct" not in metrics
+
+    def test_zero_queries_does_not_divide_by_zero(self, tmp_path):
+        _write_server_metrics(
+            tmp_path,
+            metrics={
+                "vllm:prefix_cache_hits": {"series": [{"stats": {"total": 0.0}}]},
+                "vllm:prefix_cache_queries": {"series": [{"stats": {"total": 0.0}}]},
+            },
+        )
+        metrics = parse_aiperf_output(_write_summary(tmp_path))
+        assert "measured_prefix_cache_hit_pct" not in metrics
 
 
 class TestResultValidity:

@@ -362,14 +362,25 @@ def parse_args() -> argparse.Namespace:
     # ad-hoc overrides, and are wired through CommandFactory ->
     # OrchestratorMetadata.agentic_traces. Standalone runs launch through
     # run_agentic_traces.py so the AGENTIC_TRACES venv (with InferenceX checked
-    # out at the pinned ref) exists before the client is needed.
+    # out at the pinned ref) exists before the client is needed; release pins
+    # that venv explicitly for its in-process agentic-traces child.
+    parser.add_argument(
+        "--agentic-traces",
+        action="store_true",
+        help=(
+            "Add the agentic trace replay to the release workflow as a child "
+            "alongside evals/benchmarks/spec_tests. Requires --workflow "
+            "release; --workflow agentic_traces runs it on its own and needs "
+            "no flag."
+        ),
+    )
     parser.add_argument(
         "--agentic-traces-mode",
         type=str,
         choices=["full", "ci"],
         default="full",
         help=(
-            "Duration profile for --workflow agentic_traces (default: full). "
+            "Duration profile for the agentic-traces runs (default: full). "
             "'full' is the reference run used for reportable numbers; 'ci' is "
             "the shortest run the InferenceX scenario permits (900s of "
             "profiling). The per-mode durations come from the model's config "
@@ -406,6 +417,18 @@ def parse_args() -> argparse.Namespace:
             "Override the InferenceX revision cloned into the AGENTIC_TRACES "
             "venv. Defaults to the ref pinned for the ModelSpec; results are "
             "only comparable across runs on the same ref."
+        ),
+    )
+    parser.add_argument(
+        "--agentic-traces-metrics-url",
+        type=str,
+        action="append",
+        default=None,
+        metavar="URL",
+        help=(
+            "Extra Prometheus /metrics endpoint holding the prefix-cache "
+            "counters, for a deployment whose load target does not expose them. "
+            "Accepts a URL, host:port, or host:port/metrics; repeatable."
         ),
     )
 
@@ -448,16 +471,24 @@ def parse_args() -> argparse.Namespace:
             "--serving-bench-suites requires --workflow serving_bench "
             f"(got --workflow {args.workflow})."
         )
+    if args.agentic_traces and args.workflow != "release":
+        parser.error(
+            "--agentic-traces adds the trace replay to a release run and "
+            "requires --workflow release; run it on its own with --workflow "
+            f"agentic_traces (got --workflow {args.workflow})."
+        )
     agentic_traces_flags = (
         args.agentic_traces_sources,
         args.agentic_traces_duration,
         args.agentic_traces_git_ref,
+        args.agentic_traces_metrics_url,
     )
-    if any(f is not None for f in agentic_traces_flags) and (
-        args.workflow != "agentic_traces"
+    if any(f is not None for f in agentic_traces_flags) and not (
+        args.workflow == "agentic_traces" or args.agentic_traces
     ):
         parser.error(
-            "--agentic-traces-* flags require --workflow agentic_traces "
+            "--agentic-traces-* flags require --workflow agentic_traces or "
+            "--workflow release --agentic-traces "
             f"(got --workflow {args.workflow})."
         )
     if args.agentic_traces_duration is not None:

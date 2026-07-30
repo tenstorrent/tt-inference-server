@@ -281,21 +281,36 @@ def _build_agentic_traces_options(
 ) -> Optional[AgenticTracesOptions]:
     """Translate the ``--agentic-traces-*`` CLI flags into options.
 
-    Returns ``None`` for every other workflow. ``venv_python`` stays ``None``:
-    a standalone agentic-traces run is already inside the AGENTIC_TRACES venv
-    (``launchers/run_agentic_traces.py`` re-execs there), so the driver's
-    ``sys.executable`` fallback is the interpreter that owns the InferenceX
-    AIPerf fork. It would only need pinning if this workflow ever ran as an
-    in-process child of ``release``, which executes in WORKFLOW_RUN_SCRIPT.
+    Built for ``--workflow agentic_traces`` and for ``--workflow release
+    --agentic-traces``, whose release child runs the same sweep; ``None`` for
+    every other workflow, which is also what keeps ``ReleaseWorkflow`` from
+    adding the child.
+
+    ``venv_python`` is only pinned for the release path. A standalone run is
+    already inside the AGENTIC_TRACES venv (``launchers/run_agentic_traces.py``
+    re-execs there), so the driver's ``sys.executable`` fallback is the
+    interpreter that owns the InferenceX AIPerf fork; a release child instead
+    runs in WORKFLOW_RUN_SCRIPT and would otherwise invoke an ``aiperf`` that
+    isn't the fork.
     """
-    if getattr(args, "workflow", None) != "agentic_traces":
+    workflow = getattr(args, "workflow", None)
+    is_release_child = workflow == "release" and getattr(args, "agentic_traces", False)
+    if workflow != "agentic_traces" and not is_release_child:
         return None
+    from workflows.workflow_types import WorkflowVenvType
+
     return AgenticTracesOptions(
         mode=getattr(args, "agentic_traces_mode", None) or "full",
         trace_sources=getattr(args, "agentic_traces_sources", None),
         duration_override=getattr(args, "agentic_traces_duration", None),
         git_ref_override=getattr(args, "agentic_traces_git_ref", None),
+        metrics_urls=tuple(getattr(args, "agentic_traces_metrics_url", None) or ()),
         auth_token=_resolve_auth_token(args),
+        venv_python=(
+            _release_venv_python(args, WorkflowVenvType.AGENTIC_TRACES)
+            if is_release_child
+            else None
+        ),
     )
 
 

@@ -482,6 +482,25 @@ the pin forces a re-checkout and reinstall.
 `HF_TOKEN` is required even though the workflow is client-side: the Weka trace
 datasets are gated on the Hub.
 
+### As part of a release
+
+`--workflow release --agentic-traces` adds the replay as a release child
+alongside evals/benchmarks/spec_tests, so its Blocks land in the single release
+report. It runs last, being the longest child, and a model with no config entry
+is rejected by `validate_setup` before the evals rather than after them.
+
+It is opt-in rather than implied by having a config because full mode is roughly
+an hour of profiling per configured run on top of the rest of the release; pass
+`--agentic-traces-mode ci` for the 900s shape. The same
+`--agentic-traces-sources/-duration/-git-ref` overrides apply, and are rejected
+unless the run is either the standalone workflow or an opted-in release.
+
+Mechanically this mirrors `--prefix-cache`: the flag rides through
+`RuntimeConfig` into the engine argv, `_engine_dependency_venv_types` provisions
+`AGENTIC_TRACES` up front (the release child cannot clone InferenceX itself), and
+`CommandFactory` pins that venv's interpreter on the options, since a release
+child runs in `WORKFLOW_RUN_SCRIPT` where `aiperf` is not the fork.
+
 ### Configuration is per-ModelSpec
 
 Unlike the ISL/OSL sweep tables, parameters live in
@@ -550,8 +569,8 @@ average by a count, which would overcount when requests error out.
 Beyond latency and throughput, the payload carries the signals specific to trace
 replay: `context_overflow_count` (traces truncated against
 `--max-context-length`, which is the direct read-out of whether that value is set
-correctly), `theoretical_prefix_cache_hit_pct` (the reuse inherent to the traces),
-the `branch_stats` subagent fan-out counters, and a ranked `error_summary` so a
+correctly), both prefix-cache hit rates (see below), the `branch_stats` subagent
+fan-out counters, and a ranked `error_summary` so a
 run dominated by one failure mode is obvious. `output_token_throughput_per_user`
 is decode speed while a request streams, whereas
 `e2e_output_token_throughput_per_user` divides by whole-request wall clock and is
@@ -573,6 +592,32 @@ count and not a mean, and `http_req_connection_reused` below 1.0 is the
 connection churn that surfaces as `ServerDisconnectedError`. `warmup_metrics` is
 deliberately not reported: cache priming errors out by design, so surfacing it
 next to the measured numbers reads as a failure that is not one.
+
+Prefix cache is reported as two numbers side by side, because either alone is
+misleading. `theoretical_prefix_cache_hit_pct` is the reuse inherent to the
+traces — the upper bound the engine was offered, not a measurement of the server.
+`measured_prefix_cache_hit_pct` comes from the engine's own counters, so the gap
+between them is how much offered reuse the cache actually caught. Collecting it
+needs no flag: AIPerf scrapes `<url>/metrics` by default and writes
+`server_metrics_export.json`, already scoped to the profiling phase with each
+counter's in-window delta pre-aggregated into `stats.total` — which is also why
+the cache-priming warmup does not drag the number down. Hits and queries are
+summed across endpoints before dividing, keeping a multi-worker rate
+token-weighted. When the counters are absent the field is omitted and the report
+drops the column, rather than publishing a 0% that reads like a broken cache.
+
+That is the expected outcome when the load target does not expose the counters —
+a Dynamo frontend does not aggregate its workers'. Point the scrape at the
+worker(s) with `--agentic-traces-metrics-url` (repeatable; accepts a URL,
+`host:port`, or `host:port/metrics`), which forwards to AIPerf's
+`--server-metrics`. That flag is additive: AIPerf always scrapes the load target
+too, so it cannot switch the default off, and an endpoint that 404s just drops
+out of `endpoints_successful`. Because of that, the parser narrows the sum to the
+requested endpoints whenever the flag is used, matching on each series'
+`endpoint_url` — otherwise a frontend that also exports these counters would be
+summed with its workers and double-count every prompt. A typo'd URL therefore
+matches nothing and reports no hit rate, which is intended: a wrong number here
+is worse than a missing one.
 
 No acceptance criteria are wired: there is no agreed pass/fail threshold for
 trace replay yet, so a bespoke check would only ever report NA. Instead the
@@ -693,6 +738,7 @@ To author a new test class:
 | Prefix-caching benchmark | `--workflow benchmarks --prefix-cache`; validated against reference GPU vLLM |
 | Speculative-decoding benchmark | `--workflow benchmarks --spec-decode`; needs a spec-enabled (reference GPU) vLLM |
 | Agentic evals | `--workflow agentic` via `run_agentic.py`; Terminal-Bench + SWE-bench against an external OpenAI-compatible server |
+| Agentic-traces benchmark | `--workflow agentic_traces` via `run_agentic_traces.py`, or `--workflow release --agentic-traces`; InferenceX trace replay against an external OpenAI-compatible server |
 | CNN / audio / TTS / video / embedding runners | Routed by `model_type`; any correctness gaps tracked as bugs |
 | Spec tests | Consolidated under `spec_tests` |
 | New workflows on the horizon | Structured-outputs bench |

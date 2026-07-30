@@ -114,9 +114,12 @@ def validate_runtime_args(model_spec, runtime_config):
         if os.getenv("OVERRIDE_BENCHMARKS"):
             logger.warning("OVERRIDE_BENCHMARKS is active, using override benchmarks")
         get_benchmark_config(model_spec)
-    if workflow_type == WorkflowType.AGENTIC_TRACES:
+    if workflow_type == WorkflowType.AGENTIC_TRACES or (
+        workflow_type == WorkflowType.RELEASE and getattr(args, "agentic_traces", False)
+    ):
         # Fail here rather than after the multi-minute InferenceX clone + install
-        # that the AGENTIC_TRACES venv setup performs.
+        # that the AGENTIC_TRACES venv setup performs -- and, for a release run,
+        # rather than after the evals and benchmarks that precede the child.
         from reference_config.agentic_traces.agentic_traces_config import (
             get_agentic_traces_config,
         )
