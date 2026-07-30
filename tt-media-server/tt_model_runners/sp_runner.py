@@ -540,26 +540,29 @@ class SPRunner(BaseDeviceRunner):
                 # so recovery doesn't drown the logs; a real UUID orphan is unusual
                 # and stays at warning.
                 #
-                # Do NOT unlink file_path here. A late/orphan video response can
-                # still name an mp4 the API is about to serve;
+                # Do NOT unlink the video file_path here. A late/orphan video
+                # response can still name an mp4 the API is about to serve.
                 is_control = (
                     resp.task_id in CANARY_TASK_IDS or resp.task_id == SP_WARMUP_TASK_ID
                 )
                 log = self.logger.debug if is_control else self.logger.warning
                 log(
                     f"[SP] orphan response task_id={resp.task_id!r} "
-                    f"file_path={resp.file_path!r}; leaving file in place"
+                    f"file_path={resp.file_path!r}; leaving video file in place"
                 )
+                self._pop_and_unlink_image_path(resp.task_id)
                 continue
 
             if fut.done():
                 # Duplicate delivery after the future was already resolved.
-                # Same no-unlink rule as the orphan branch above.
+                # Same no-unlink rule for the video path; side-file may still
+                # be deferred from a timeout that raced this duplicate.
                 self.logger.warning(
                     f"[SP] duplicate response for already-handled "
                     f"task_id={resp.task_id!r} file_path={resp.file_path!r}; "
-                    f"leaving file in place"
+                    f"leaving video file in place"
                 )
+                self._pop_and_unlink_image_path(resp.task_id)
                 continue
 
             fut.set_result(resp)
@@ -578,9 +581,10 @@ class SPRunner(BaseDeviceRunner):
           * On any failure before the SHM write completes, the side-file is
             unlinked here and ``_pending_image_paths`` is left untouched.
           * Once the SHM write succeeds, the side-file path is parked under
-            ``_pending_image_paths[task_id]`` and ownership transfers to
-            :meth:`_run_async`'s ``finally`` (or to ``close_device`` on
-            shutdown).
+            ``_pending_image_paths[task_id]``. Ownership then transfers to
+            :meth:`_run_async` (unlink after peer response), the drainer's
+            orphan/duplicate path (late response after timeout), or
+            ``close_device`` on shutdown — never unlinked on bare timeout.
         """
         task_id = request._task_id
         image_path = self._write_image_side_file(request, task_id)
@@ -638,7 +642,8 @@ class SPRunner(BaseDeviceRunner):
             with self._pending_lock:
                 self._pending.pop(task_id, None)
             # If the response arrives after this, the drainer will see no
-            # entry in _pending and treat it as an orphan (unlink + warn).
+            # entry in _pending and treat it as an orphan. The I2V side-file
+            # is intentionally NOT unlinked here — see ``_run_async``.
             raise TimeoutError(
                 f"REQUEST_TIMEOUT: response exceeded {timeout_s}s for task {task_id}"
             )
@@ -673,17 +678,27 @@ class SPRunner(BaseDeviceRunner):
         input ring stays primed across batch boundaries. The drainer thread
         demultiplexes responses by ``task_id``, so the N concurrent calls do
         not need to share completion order.
+
+        I2V side-file cleanup:
+          * After a peer response (success or ERROR): unlink immediately —
+            the peer has already opened/failed the side-file.
+          * On timeout / cancel: keep the side-file parked in
+            ``_pending_image_paths``. The peer may still be about to read it;
+            unlinking here races into ``side-file unreadable`` ERROR orphans
+            that surface as HTTP 500s. Cleanup then happens when the late
+            orphan/duplicate response arrives, or on ``close_device``.
         """
         request = requests[0]
         task_id = self.submit(request)
+        keepSideFile = False
         try:
             mp4_path = await self.await_result(task_id)
+        except (TimeoutError, asyncio.CancelledError):
+            keepSideFile = True
+            raise
         finally:
-            # Reliable I2V side-file cleanup on every exit (success, error,
-            # timeout, asyncio.CancelledError). The runner peer has finished
-            # with the file by the time the response (or error / timeout)
-            # surfaces, so unlinking here is always safe.
-            self._pop_and_unlink_image_path(task_id)
+            if not keepSideFile:
+                self._pop_and_unlink_image_path(task_id)
         # List so device_worker's responses[i] matches one path per request.
         return [mp4_path]
 
@@ -701,8 +716,10 @@ class SPRunner(BaseDeviceRunner):
     def _pop_and_unlink_image_path(self, task_id: str) -> None:
         """Remove and unlink the I2V side-file for ``task_id`` (if any).
 
-        Idempotent: callable from success / error / timeout / shutdown paths
-        without coordinating who "owns" the cleanup.
+        Idempotent: callable from success / peer-ERROR / orphan / shutdown
+        paths without coordinating who "owns" the cleanup. Must NOT be
+        called on the timeout/cancel path before the peer has responded —
+        that races the peer into a missing side-file.
         """
         with self._pending_lock:
             path = self._pending_image_paths.pop(task_id, "")
