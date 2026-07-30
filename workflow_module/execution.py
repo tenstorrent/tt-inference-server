@@ -317,8 +317,9 @@ class WorkflowExecution(ABC):
     def apply_acceptance_criteria(
         self, schema: ReportSchema, task_outcomes: Sequence[TaskOutcome]
     ) -> Tuple[bool, dict]:
+        model_status = self._model_status()
         accepted, blockers, categories = acceptance_criteria_check(
-            schema, known_issues=self._known_issues()
+            schema, known_issues=self._known_issues(), model_status=model_status
         )
         crash_blockers = task_failure_blockers(
             (o.task_type, o.exit_code, o.block_kind is not None) for o in task_outcomes
@@ -327,9 +328,7 @@ class WorkflowExecution(ABC):
             blockers = {**blockers, **crash_blockers}
             accepted = False
         schema.metadata.update(
-            build_acceptance_export(
-                accepted, blockers, categories, self._model_status()
-            )
+            build_acceptance_export(accepted, blockers, categories, model_status)
         )
         self.logger.info(
             "Acceptance: %s (%d blocker(s))",

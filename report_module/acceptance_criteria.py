@@ -7,6 +7,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
+from workflows.workflow_types import ModelStatusTypes
+
 from .schema import Block, ReportSchema
 from .status import TestStatus, glyph_for_label
 
@@ -23,6 +25,30 @@ FAIL_CHECK_INT = 3
 STATUS_PASS = "PASS"
 STATUS_FAIL = "FAIL"
 STATUS_NA = "NA"
+
+
+def _enforced_benchmark_tiers(model_status: Optional[str]) -> Tuple[str, ...]:
+    """Benchmark target tiers whose failures block acceptance for this model status.
+
+    Falls back to enforcing every tier when the status is missing or
+    unrecognized, so an absent/garbled status can never accidentally loosen
+    acceptance.
+    """
+    status = ModelStatusTypes.resolve(model_status)
+    if status is None:
+        return TARGET_LEVELS
+    return tuple(status.required_target_tiers)
+
+
+def _evals_enforced(model_status: Optional[str]) -> bool:
+    """Whether eval accuracy failures block acceptance for this model status."""
+    status = ModelStatusTypes.resolve(model_status)
+    return True if status is None else status.evals_enforced
+
+
+def _informational_suffix(model_status: Optional[str]) -> str:
+    """Message suffix for a check masked to informational-only by tier."""
+    return f"(informational: model status={model_status or 'unknown'})"
 
 
 def _status_badge(status: str) -> str:
@@ -73,10 +99,11 @@ class CategoryResult:
 def acceptance_criteria_check(
     schema: ReportSchema,
     known_issues: Optional[Iterable[Any]] = None,
+    model_status: Optional[str] = None,
 ) -> Tuple[bool, Dict[str, str], List[CategoryResult]]:
     categories = [
-        _check_benchmarks(schema),
-        _check_evals(schema, known_issues),
+        _check_benchmarks(schema, model_status),
+        _check_evals(schema, known_issues, model_status),
         _check_spec_tests(schema),
     ]
     blockers: Dict[str, str] = {}
@@ -234,12 +261,17 @@ def _detail(category: CategoryResult) -> str:
     return ", ".join(parts)
 
 
-def _check_benchmarks(schema: ReportSchema) -> CategoryResult:
+def _check_benchmarks(
+    schema: ReportSchema, model_status: Optional[str] = None
+) -> CategoryResult:
     benchmark_blocks = [b for b in schema.sections if b.kind == KIND_BENCHMARKS]
     if not benchmark_blocks:
         return CategoryResult(CATEGORY_BENCHMARKS, STATUS_NA, 0, 0)
 
+    enforced_tiers = _enforced_benchmark_tiers(model_status)
+
     blockers: Dict[str, str] = {}
+    waived: Dict[str, str] = {}
     failed = 0
     skipped = 0
     na = 0
@@ -260,6 +292,7 @@ def _check_benchmarks(schema: ReportSchema) -> CategoryResult:
             continue
 
         block_blockers: Dict[str, str] = {}
+        block_informational: Dict[str, str] = {}
         target_checks = _resolve_nested(block.data, "target_checks")
         if not isinstance(target_checks, Mapping):
             block_blockers[f"{block_key}.target_checks"] = (
@@ -283,11 +316,14 @@ def _check_benchmarks(schema: ReportSchema) -> CategoryResult:
                     any_check_seen = True
                     if not _passes_check(check_value):
                         metric = check_name[: -len(CHECK_SUFFIX)]
-                        block_blockers[f"{block_key}.{lvl}.{check_name}"] = (
-                            _format_benchmark_failure(
-                                lvl, check_name, metric, level_checks
-                            )
+                        failure = _format_benchmark_failure(
+                            lvl, check_name, metric, level_checks
                         )
+                        key = f"{block_key}.{lvl}.{check_name}"
+                        if lvl in enforced_tiers:
+                            block_blockers[key] = failure
+                        else:
+                            block_informational[key] = failure
             if not any_check_seen:
                 block_blockers[f"{block_key}.target_checks"] = (
                     "No *_check fields found across any tier."
@@ -296,6 +332,12 @@ def _check_benchmarks(schema: ReportSchema) -> CategoryResult:
         if block_blockers:
             failed += 1
             blockers.update(block_blockers)
+        if block_informational:
+            waived[block_key] = (
+                f"{len(block_informational)} tier check(s) failed but are "
+                f"informational-only {_informational_suffix(model_status)}: "
+                + "; ".join(block_informational.values())
+            )
 
     non_pass = failed + skipped + na
     if failed:
@@ -312,17 +354,20 @@ def _check_benchmarks(schema: ReportSchema) -> CategoryResult:
         na=na,
         skipped=skipped,
         blockers=blockers,
+        waived=waived,
     )
 
 
 def _check_evals(
     schema: ReportSchema,
     known_issues: Optional[Iterable[Any]] = None,
+    model_status: Optional[str] = None,
 ) -> CategoryResult:
     eval_blocks = [b for b in schema.sections if b.kind == KIND_EVALS]
     if not eval_blocks:
         return CategoryResult(CATEGORY_EVALS, STATUS_NA, 0, 0)
 
+    evals_enforced = _evals_enforced(model_status)
     blockers: Dict[str, str] = {}
     waived: Dict[str, str] = {}
     failed = 0
@@ -339,11 +384,17 @@ def _check_evals(
         explicit = _explicit_status(block)
         if explicit is not None:
             if explicit.is_blocking:
-                blockers[block_key] = (
+                explicit_message = (
                     f"{block.title or block.kind} reported status={explicit.value} "
                     f"(attempts={data.get('attempts', '?')})"
                 )
-                failed += 1
+                if evals_enforced:
+                    blockers[block_key] = explicit_message
+                    failed += 1
+                else:
+                    waived[block_key] = (
+                        f"{explicit_message} {_informational_suffix(model_status)}"
+                    )
             elif explicit is TestStatus.SKIP:
                 skipped += 1
             elif explicit is TestStatus.NA:
@@ -379,6 +430,11 @@ def _check_evals(
         if reason is not None:
             waived[block_key] = f"{message} (waived: {reason})"
             continue
+
+        if not evals_enforced:
+            waived[block_key] = f"{message} {_informational_suffix(model_status)}"
+            continue
+
         blockers[block_key] = message
         failed += 1
 
