@@ -338,6 +338,7 @@ class Settings(BaseSettings):
             ModelRunners.TT_WAN_2_2_I2V_ANISORA.value,
             ModelRunners.TT_WAN_2_2_I2V_DISTILL.value,
             ModelRunners.TT_WAN_2_2_I2V_LORA.value,
+            ModelRunners.TT_WAN_2_2_I2V_LIGHTNING.value,
         ]:
             self.default_throttle_level = None
 
