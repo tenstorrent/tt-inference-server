@@ -61,6 +61,10 @@ constexpr const char* KAFKA_OFFLOAD_TOPIC_NAME = "session-offload";
 constexpr const char* KAFKA_GROUP_ID = "migration-workers";
 constexpr const char* KAFKA_MIGRATION_REQUEST_TOPIC = "kv-migration-requests";
 constexpr const char* KAFKA_MIGRATION_ACK_TOPIC = "kv-migration-acks";
+// N-prefill Kafka ownership (#4795). layersPerPartition=0 keeps the legacy
+// broker partitioner until an explicit policy is configured.
+constexpr uint32_t KAFKA_MIGRATION_NUM_PARTITIONS = 1;
+constexpr uint32_t KAFKA_MIGRATION_LAYERS_PER_PARTITION = 0;
 
 // Mooncake KV Migration configuration.
 constexpr unsigned KV_MIGRATION_TIMEOUT_MS = 60000;
