@@ -61,6 +61,47 @@ To stop the migration workers tap `Ctrl+C`. This will also delete the remote doc
 
 Attention: Prefill and decode table paths must be accessible by all the migration workers. For exabox deployments, this requires storing them on the /data partition.
 
+## N-prefill exclusive ownership (#4795)
+
+With multiple prefills, deploy pins `KAFKA_PARTITION=i` on prefill `i`, expands
+request+ack topics to `>= N` partitions, and auto round-robins `WORKER_PEERS`
+so each decode has a single prefill owner.
+
+Dry-run topology preview (no containers started):
+
+```bash
+NUM_PREFILL=2 NUM_DECODE=4 ./dry_run_n_prefill_deploy.sh
+```
+
+Exabox dry-run (no model; discovery + Kafka + stub migrate):
+
+```bash
+./deploy_migration_workers.sh \
+  --discovery-server "$(hostname):8080" \
+  --prefill-hosts "$PREFILL_HOSTS" \
+  --decode-hosts "$DECODE_HOSTS" \
+  --prefill-table /data/.../prefill.pb \
+  --decode-table /data/.../decode.pb \
+  --kafka-brokers "$(hostname):9092" \
+  --migration-mode dry-run \
+  --image ghcr.io/tenstorrent/tt-shield/tt-migration-worker:<tag>
+```
+
+Local process-level ownership proof (lab + CLI produce + owner-only assert):
+
+```bash
+# Kafka must be up; PREFILL_TABLE must exist
+PREFILL_TABLE=/path/to.pb \
+  bash tests/e2e/scripts/run_n_prefill_ownership_e2e.sh
+```
+
+Opt-in Kafka ctests (broker required):
+
+```bash
+INTEGRATION_TESTS_ENABLED=1 KAFKA_BROKERS=localhost:9092 \
+  ctest --test-dir build -L kafka --output-on-failure
+```
+
 # Building the migration worker image
 
 ```bash

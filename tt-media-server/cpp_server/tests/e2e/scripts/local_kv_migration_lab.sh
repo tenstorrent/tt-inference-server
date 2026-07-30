@@ -20,13 +20,17 @@
 #   HEALTH_PORT_BASE (19100), CONTROL_PORT_BASE (18650), META_PORT (18082),
 #   STATE_DIR (/tmp/tt_mc_kv_lab), MC_TCP_BIND_ADDRESS (127.0.0.1),
 #   KAFKA_BROKERS (localhost:9092 — rdkafka tolerates a missing broker for READY),
+#   KV_MIGRATION_MODE (dry-run|device, default dry-run for local lab),
+#   ENSURE_KAFKA_PARTITIONS (1=ensure request+ack >= NUM_PREFILL, default 1),
 #   WORKER_PEERS_<tag>  e.g. WORKER_PEERS_prefill_0=decode-1
 #     (bash assoc arrays can't be exported; use underscore form, tag '-' -> '_')
+#     With NUM_PREFILL>1, unset prefill peers auto round-robin (decode j % N).
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CPP_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 readonly META_SERVER="${SCRIPT_DIR}/../../integration/run_mooncake_metadata_server.sh"
+readonly MIGRATION_CLI="${CPP_ROOT}/scripts/migration_cli.py"
 readonly STATE_DIR="${STATE_DIR:-/tmp/tt_mc_kv_lab}"
 readonly BIND="127.0.0.1"
 
@@ -41,6 +45,8 @@ CONTROL_PORT_BASE="${CONTROL_PORT_BASE:-18650}"
 META_PORT="${META_PORT:-18082}"
 MC_TCP_BIND_ADDRESS="${MC_TCP_BIND_ADDRESS:-${BIND}}"
 KAFKA_BROKERS="${KAFKA_BROKERS:-localhost:9092}"
+KV_MIGRATION_MODE="${KV_MIGRATION_MODE:-dry-run}"
+ENSURE_KAFKA_PARTITIONS="${ENSURE_KAFKA_PARTITIONS:-1}"
 READY_WAIT_SEC="${READY_WAIT_SEC:-90}"
 
 die() { echo "ERROR: $*" >&2; exit 2; }
@@ -69,7 +75,8 @@ allNames() {
   for (( i = 0; i < NUM_DECODE; i++ )); do echo "decode-${i}"; done
 }
 
-# Default peers: prefill → every decode; decode → none.
+# Default peers: prefill → every decode (N=1); with NUM_PREFILL>1, round-robin
+# exclusive ownership (decode j -> prefill j % N). Decode → none.
 # Override via WORKER_PEERS_<tag_with_underscores>, e.g. WORKER_PEERS_prefill_0=decode-1
 peersFor() {
   # Split locals: with set -u, `local a="$1" b="${a...}"` sees a as unset.
@@ -85,13 +92,31 @@ peersFor() {
     printf '%s' "${override}"
     return
   fi
-  if [[ "${role}" == "prefill" ]]; then
-    local i csv=""
+  if [[ "${role}" != "prefill" ]]; then
+    return
+  fi
+  local i csv="" prefillIdx="${workerName#prefill-}"
+  if (( NUM_PREFILL > 1 )); then
+    for (( i = 0; i < NUM_DECODE; i++ )); do
+      if (( i % NUM_PREFILL == prefillIdx )); then
+        csv="${csv:+${csv},}decode-${i}"
+      fi
+    done
+  else
     for (( i = 0; i < NUM_DECODE; i++ )); do
       csv="${csv:+${csv},}decode-${i}"
     done
-    printf '%s' "${csv}"
   fi
+  printf '%s' "${csv}"
+}
+
+ensureKafkaTopics() {
+  (( ENSURE_KAFKA_PARTITIONS )) || return 0
+  [[ -f "${MIGRATION_CLI}" ]] || die "migration_cli.py missing: ${MIGRATION_CLI}"
+  echo "[lab] ensuring Kafka topics >= ${NUM_PREFILL} partitions (brokers=${KAFKA_BROKERS})"
+  python3 "${MIGRATION_CLI}" --brokers "${KAFKA_BROKERS}" ensure-partitions \
+    --partitions "${NUM_PREFILL}" \
+    || die "failed to ensure migration topics have >= ${NUM_PREFILL} partitions"
 }
 
 saveConfig() {
@@ -108,6 +133,8 @@ CONTROL_PORT_BASE=${CONTROL_PORT_BASE}
 META_PORT=${META_PORT}
 MC_TCP_BIND_ADDRESS=${MC_TCP_BIND_ADDRESS}
 KAFKA_BROKERS=${KAFKA_BROKERS}
+KV_MIGRATION_MODE=${KV_MIGRATION_MODE}
+ENSURE_KAFKA_PARTITIONS=${ENSURE_KAFKA_PARTITIONS}
 EOF
 }
 loadConfig() { [[ -f "${STATE_DIR}/config" ]] && source "${STATE_DIR}/config"; }
@@ -150,11 +177,21 @@ launchOne() {
     done
   fi
 
-  echo "[lab] ${workerName} peers='${peers}' health=${health} control=${control}"
-  MC_TCP_BIND_ADDRESS="${MC_TCP_BIND_ADDRESS}" \
-  KAFKA_BROKERS="${KAFKA_BROKERS}" \
-  KAFKA_GROUP_ID="migration-workers-prefill-${workerName}" \
-    "${WORKER_BIN}" "${args[@]}" >"${log}" 2>&1 &
+  local -a kafkaEnv=(
+    "MC_TCP_BIND_ADDRESS=${MC_TCP_BIND_ADDRESS}"
+    "KAFKA_BROKERS=${KAFKA_BROKERS}"
+    "KV_MIGRATION_MODE=${KV_MIGRATION_MODE}"
+  )
+  if [[ "${role}" == "prefill" ]]; then
+    local pin="${workerName#prefill-}"
+    # Exclusive N-prefill ownership (#4795): assign(pin) + shared group.
+    kafkaEnv+=("KAFKA_PARTITION=${pin}" "KAFKA_GROUP_ID=migration-workers")
+    args+=(--kafka-partition "${pin}")
+    echo "[lab] ${workerName} peers='${peers}' health=${health} control=${control} kafka_partition=${pin}"
+  else
+    echo "[lab] ${workerName} peers='${peers}' health=${health} control=${control}"
+  fi
+  env "${kafkaEnv[@]}" "${WORKER_BIN}" "${args[@]}" >"${log}" 2>&1 &
   echo $! >"${STATE_DIR}/${workerName}.pid"
 }
 
@@ -200,9 +237,12 @@ cmdUp() {
   if [[ -f "${STATE_DIR}/metadata.pid" ]] && kill -0 "$(cat "${STATE_DIR}/metadata.pid")" 2>/dev/null; then
     die "lab already up (${STATE_DIR}); run '$0 down' first"
   fi
+  [[ "${KV_MIGRATION_MODE}" == "device" || "${KV_MIGRATION_MODE}" == "dry-run" ]] || \
+    die "KV_MIGRATION_MODE must be device|dry-run (got '${KV_MIGRATION_MODE}')"
   mkdir -p "${STATE_DIR}"
   saveConfig
-  echo "[lab] metadata on ${BIND}:${META_PORT}"
+  ensureKafkaTopics
+  echo "[lab] metadata on ${BIND}:${META_PORT} mode=${KV_MIGRATION_MODE}"
   HTTP_PORT="${META_PORT}" BIND_HOST="${BIND}" \
   PYTHON="${PYTHON:-$(command -v python3)}" \
     bash "${META_SERVER}" >"${STATE_DIR}/metadata.log" 2>&1 &
@@ -242,7 +282,7 @@ cmdVerify() {
   for n in $(allNames); do
     log="${STATE_DIR}/${n}.log"
     echo "== ${n} =="
-    grep -E "READY:|TABLE_EXCHANGE|got decode table via control|published control|discovered peer|CONNECTED|control channel|awaitConnected|failed" \
+    grep -E "READY:|kafka_partition|TABLE_EXCHANGE|got decode table via control|published control|discovered peer|CONNECTED|control channel|awaitConnected|DryRunMigrationExecutor|KvMigrationWorker|failed" \
       "${log}" 2>/dev/null | tail -40 || echo "(no matches / missing log)"
   done
 }

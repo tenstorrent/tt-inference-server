@@ -19,6 +19,7 @@ Examples:
     python migration_cli.py setup
     python migration_cli.py ensure-partitions --partitions 4
     python migration_cli.py produce --src-slot 0 --dst-slot 1 --layer-end 1 --src-pos-end 32 --dst-pos-end 32
+    python migration_cli.py produce --partition 1 --layer-begin 20 --layer-end 21
     python migration_cli.py produce --count 100 --rate 50 --random
     python migration_cli.py tail acks
     python migration_cli.py tail requests --from-beginning --max 10
@@ -228,6 +229,33 @@ def cmd_ensure_partitions(args: argparse.Namespace) -> None:
         print(f"ensured: {topic} partitions={current}")
 
 
+def _resolve_produce_partition(
+    args: argparse.Namespace, payload: dict[str, Any]
+) -> int | None:
+    """Explicit --partition wins; else layer→partition when --num-partitions set."""
+    if args.partition is not None:
+        return args.partition
+    if args.num_partitions is None:
+        return None
+    if args.num_partitions < 1:
+        raise SystemExit("--num-partitions must be >= 1")
+    layers_per_partition = (
+        args.layers_per_partition
+        if args.layers_per_partition is not None
+        else (args.num_layers + args.num_partitions - 1) // args.num_partitions
+    )
+    if layers_per_partition < 1:
+        raise SystemExit("layers-per-partition derived as 0; check --num-layers")
+    layer_begin = int(payload["layer_begin"])
+    partition = layer_begin // layers_per_partition
+    if partition < 0 or partition >= args.num_partitions:
+        raise SystemExit(
+            f"layer_begin={layer_begin} maps to partition={partition}, "
+            f"outside [0, {args.num_partitions})"
+        )
+    return partition
+
+
 def cmd_produce(args: argparse.Namespace) -> None:
     producer = Producer(
         {
@@ -250,14 +278,19 @@ def cmd_produce(args: argparse.Namespace) -> None:
     interval = (1.0 / args.rate) if args.rate > 0 else 0.0
     for i in range(args.count):
         payload = _build_request(args, i)
-        producer.produce(
-            args.topic,
-            json.dumps(payload).encode(),
-            on_delivery=_on_delivery,
-        )
+        partition = _resolve_produce_partition(args, payload)
+        produce_kwargs: dict[str, Any] = {
+            "topic": args.topic,
+            "value": json.dumps(payload).encode(),
+            "on_delivery": _on_delivery,
+        }
+        if partition is not None:
+            produce_kwargs["partition"] = partition
+        producer.produce(**produce_kwargs)
         producer.poll(0)
         if args.verbose or args.count <= 5:
-            print(f"-> {args.topic}: {json.dumps(payload)}")
+            part_label = f"p{partition}" if partition is not None else "p?"
+            print(f"-> {args.topic}[{part_label}]: {json.dumps(payload)}")
         if interval and i + 1 < args.count:
             time.sleep(interval)
 
@@ -423,6 +456,32 @@ def _add_produce_args(p: argparse.ArgumentParser) -> None:
     )
     p.add_argument(
         "--dst-pos-end", type=int, default=16, help="dst token pos end, exclusive"
+    )
+    p.add_argument(
+        "--partition",
+        type=int,
+        default=None,
+        help="pin produce to this request-topic partition (N-prefill ownership)",
+    )
+    p.add_argument(
+        "--num-partitions",
+        type=int,
+        default=None,
+        help="when set (and --partition unset), route by layer_begin // "
+        "layers_per_partition across this many partitions",
+    )
+    p.add_argument(
+        "--num-layers",
+        type=int,
+        default=64,
+        help="model layer count used to derive layers_per_partition "
+        "(with --num-partitions)",
+    )
+    p.add_argument(
+        "--layers-per-partition",
+        type=int,
+        default=None,
+        help="override derived ceil(num_layers / num_partitions)",
     )
     p.add_argument("-v", "--verbose", action="store_true")
 
