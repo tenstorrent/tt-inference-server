@@ -3,8 +3,10 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 import asyncio
 import concurrent.futures
+import json
 import os
 import shutil
+import time
 from multiprocessing import Manager, get_context
 
 from model_services.base_job_service import BaseJobService
@@ -20,6 +22,12 @@ from domain.adapter_merge_request import AdapterMergeRequest
 from domain.training_request import TrainingRequest
 from typing import Optional
 from utils.adapter_merge_utils import merge_adapter
+
+# Sidecar metadata file written into each merged-model directory once the merge
+# fully completes. Its presence marks the checkpoint as ready to serve and
+# records its provenance (base model + source training job/checkpoint) so merged
+# checkpoints can be listed independently of the (GC-able) job records.
+MERGE_INFO_FILE_NAME = "merge_info.json"
 
 
 class TrainingService(BaseJobService):
@@ -111,8 +119,9 @@ class TrainingService(BaseJobService):
 
         The merge runs on CPU and does not touch the accelerator; it is tracked
         through the shared job manager like any other job. The merged checkpoint
-        is written to ``merged_models/<task_id>`` and its path is available via
-        the job's ``result_path``.
+        is written under ``CACHE_ROOT`` (the persistent volume) at
+        ``<CACHE_ROOT>/merged_models/<task_id>`` so it survives outside the
+        container; its path is available via the job's ``result_path``.
         """
         adapter_path = self.get_checkpoint_download_path(
             request.source_job_id, request.checkpoint_id, org_id=org_id
@@ -123,7 +132,9 @@ class TrainingService(BaseJobService):
                 f"'{request.source_job_id}'"
             )
 
-        output_dir = os.path.join(TRAINING_STORE_MERGED_MODELS_DIR, request._task_id)
+        # Root under CACHE_ROOT (the persistent, host-mountable volume) so the
+        # merged model is visible outside the container.
+        output_dir = os.path.join(self._merged_models_root(), request._task_id)
         request._adapter_path = adapter_path
         request._output_model_path = output_dir
 
@@ -172,7 +183,30 @@ class TrainingService(BaseJobService):
             except Exception:
                 shutil.rmtree(request._output_model_path, ignore_errors=True)
                 raise
+            # Written last, in the parent, so its presence marks the checkpoint
+            # fully complete and records provenance for `list_merged_checkpoints`.
+            self._write_merge_info(request, output_dir)
             self.logger.info(
                 f"Completed adapter merge for job {request._task_id}: {output_dir}"
             )
             return output_dir
+
+    def _merged_models_root(self) -> str:
+        """Directory holding all merged checkpoints, under the persistent volume.
+
+        Falls back to a relative path when CACHE_ROOT is unset (local/dev runs).
+        """
+        cache_root = os.getenv("CACHE_ROOT", ".")
+        return os.path.join(cache_root, TRAINING_STORE_MERGED_MODELS_DIR)
+
+    def _write_merge_info(self, request: AdapterMergeRequest, output_dir: str) -> None:
+        info = {
+            "merge_id": request._task_id,
+            "model": self._base_model_name,
+            "source_job_id": request.source_job_id,
+            "checkpoint_id": request.checkpoint_id,
+            "created_at": time.time(),
+        }
+        info_path = os.path.join(output_dir, MERGE_INFO_FILE_NAME)
+        with open(info_path, "w") as f:
+            json.dump(info, f)
