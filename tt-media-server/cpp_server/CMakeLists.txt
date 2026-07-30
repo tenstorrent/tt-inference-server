@@ -1116,6 +1116,9 @@ target_include_directories(lockfree_queue_test PRIVATE
 add_executable(tokenizer_test tests/unit/model/tokenizer_test.cpp)
 target_link_libraries(tokenizer_test PRIVATE llm_runner_lib GTest::gtest_main)
 
+add_executable(tts_prompt_compiler_test tests/unit/model/tts_prompt_compiler_test.cpp)
+target_link_libraries(tts_prompt_compiler_test PRIVATE llm_runner_lib GTest::gtest_main)
+
 add_executable(conversation_hasher_test tests/unit/model/conversation_hasher_test.cpp)
 target_link_libraries(conversation_hasher_test PRIVATE llm_runner_lib GTest::gtest_main)
 
@@ -1476,6 +1479,7 @@ endif()
 gtest_discover_tests(sequence_test)
 gtest_discover_tests(lockfree_queue_test)
 gtest_discover_tests(tokenizer_test)
+gtest_discover_tests(tts_prompt_compiler_test)
 gtest_discover_tests(conversation_hasher_test)
 gtest_discover_tests(cancel_queue_test)
 gtest_discover_tests(structured_output_test)
