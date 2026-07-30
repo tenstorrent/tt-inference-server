@@ -4,17 +4,17 @@
 tt-forge==1.4.0.dev20260718001745
 
 tabulate
-timm # input preprocessing
-flax # input preprocessing
-pytorchcv # for vovnet
+# timm # input preprocessing
+# flax # input preprocessing
+# pytorchcv # for vovnet
 tabulate
 
-diffusers==0.37.1
+# diffusers==0.37.1
 transformers
 
 datasets # model training
 peft # model training
 
-# yolox requirements
-thop
-pycocotools>=2.0.2
+# # yolox requirements
+# thop
+# pycocotools>=2.0.2

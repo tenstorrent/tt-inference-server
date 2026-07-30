@@ -62,7 +62,7 @@ class TestGemmaTrainingServiceCreateJob:
             service = TrainingService()
             await service.create_job(JobTypes.TRAINING, mock_request)
 
-            assert mock_request._output_model_path == "model_store/unique_task_123"
+            assert mock_request._output_model_path == "adapters/unique_task_123"
 
 
 class TestLlamaTrainingServiceCreateJob:
@@ -93,7 +93,7 @@ class TestLlamaTrainingServiceCreateJob:
             service = TrainingService()
             await service.create_job(JobTypes.TRAINING, mock_request)
 
-            assert mock_request._output_model_path == "model_store/llama_task_456"
+            assert mock_request._output_model_path == "adapters/llama_task_456"
 
     @pytest.mark.asyncio
     async def test_create_job_sets_device_type_from_settings(
@@ -138,7 +138,7 @@ class TestLlamaTrainingServiceCreateJob:
             assert kwargs["cancel_event"] is not None
             assert kwargs["job_metrics"] is not None
             assert kwargs["job_logs"] is not None
-            assert kwargs["result_path"] == "model_store/llama_task_456"
+            assert kwargs["result_path"] == "adapters/llama_task_456"
 
 
 class TestGemmaTrainingServiceGetJobMetrics:
