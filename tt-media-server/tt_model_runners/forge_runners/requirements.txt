@@ -12,7 +12,7 @@ tabulate
 diffusers==0.37.1
 transformers
 
-mistral-common>=1.0.0 # mistral's tokenizer
+mistral-common[image]==1.11.7 # mistral's tokenizer
 
 datasets # model training
 peft # model training
