@@ -25,7 +25,7 @@ import sys
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from ..agentic_traces import AgenticTracesRun
 from ..config import DriverContext, ServerConnection
@@ -38,6 +38,12 @@ from .aiperf_prefix_cache import (
 )
 
 logger = logging.getLogger(__name__)
+
+# vLLM partitions the prompt tokens it scheduled by where they came from, one
+# series per ``source`` label: ``local_cache_hit`` is the GPU prefix cache,
+# ``external_kv_transfer`` a KV-offload tier, ``local_compute`` the rest.
+PROMPT_TOKENS_BY_SOURCE_ALIASES: Tuple[str, ...] = ("vllm:prompt_tokens_by_source",)
+_CACHE_HIT_TOKEN_SOURCE = "local_cache_hit"
 
 
 @dataclass(frozen=True)
@@ -493,6 +499,11 @@ def _parse_prefix_cache_metrics(
     The measured companion to ``theoretical_prefix_cache_hit_pct``: how much of
     the reuse inherent to the traces the cache actually caught.
 
+    Read from the engine's token-source partition where it exposes one, falling
+    back to its prefix-cache hit/query counters -- the order InferenceX's own
+    aggregation uses, and for the same reason: the pair's denominator inflates
+    under load. See the comments at each branch.
+
     ``server_metrics_export.json`` is scoped to the profiling phase and
     pre-aggregates each counter's in-window delta into ``stats.total``, so the
     cache-priming warmup (which by design hits far less often) is excluded
@@ -553,6 +564,60 @@ def _parse_prefix_cache_metrics(
                 return float(sum(values))
         return None
 
+    def _counter_total_by_label(aliases: Sequence[str], label: str) -> Dict[str, float]:
+        """Sum one counter per distinct value of ``label``, across endpoints."""
+        totals: Dict[str, float] = {}
+        for alias in aliases:
+            metric = series_by_metric.get(alias)
+            if not isinstance(metric, Mapping):
+                continue
+            for s in metric.get("series") or []:
+                if not isinstance(s, Mapping) or not _wanted(s):
+                    continue
+                stats = s.get("stats")
+                labels = s.get("labels")
+                if not isinstance(stats, Mapping) or not isinstance(labels, Mapping):
+                    continue
+                value = stats.get("total")
+                key = labels.get(label)
+                if isinstance(value, (int, float)) and isinstance(key, str):
+                    totals[key] = totals.get(key, 0.0) + float(value)
+            if totals:
+                return totals
+        return totals
+
+    def _with_endpoints(metrics: Dict[str, Any]) -> Dict[str, Any]:
+        # The endpoints the rate was actually computed from, which is narrower
+        # than everything AIPerf reached whenever explicit URLs scoped the sum.
+        counted = (
+            sorted(wanted)
+            if wanted
+            else (export.get("summary") or {}).get("endpoints_successful")
+        )
+        if isinstance(counted, list) and counted:
+            metrics["prefix_cache_metrics_endpoints"] = [str(e) for e in counted]
+        return metrics
+
+    # Preferred, and what InferenceX's own aggregation reports
+    # (``utils/agentic/aggregation/backends/vllm.py``): the engine partitions the
+    # prompt tokens it scheduled by origin, so the cache's share is a share of a
+    # whole and cannot exceed 100%. The hits/queries pair below is its fallback,
+    # and is only equivalent while nothing queues -- a queued request is
+    # re-queried on every scheduling attempt, which inflated the denominator to
+    # 10.8x the tokens actually prefilled on a concurrency-8 replay and reported
+    # 8.9% for a cache serving 41.1%.
+    by_source = _counter_total_by_label(PROMPT_TOKENS_BY_SOURCE_ALIASES, "source")
+    prefilled_tokens = sum(by_source.values())
+    if prefilled_tokens > 0:
+        cached = by_source.get(_CACHE_HIT_TOKEN_SOURCE, 0.0)
+        return _with_endpoints(
+            {
+                "measured_prefix_cache_hit_pct": 100.0 * cached / prefilled_tokens,
+                "prefix_cache_hit_tokens_measured": cached,
+                "prefix_cache_prompt_tokens_measured": prefilled_tokens,
+            }
+        )
+
     hits = _counter_total(PREFIX_CACHE_HITS_METRIC_ALIASES)
     queries = _counter_total(PREFIX_CACHE_QUERIES_METRIC_ALIASES)
     if hits is None or queries is None:
@@ -569,21 +634,16 @@ def _parse_prefix_cache_metrics(
     if queries <= 0:
         return {}
 
-    metrics: Dict[str, Any] = {
-        "measured_prefix_cache_hit_pct": 100.0 * hits / queries,
-        "prefix_cache_hits_measured": hits,
-        "prefix_cache_queries_measured": queries,
-    }
-    # The endpoints the rate was actually computed from, which is narrower than
-    # everything AIPerf reached whenever explicit URLs scoped the sum.
-    counted = (
-        sorted(wanted)
-        if wanted
-        else (export.get("summary") or {}).get("endpoints_successful")
+    # Hits and queries are latched from independent series, so a lagging query
+    # scrape can read hits > queries; cap it as InferenceX does rather than
+    # publish an impossible rate.
+    return _with_endpoints(
+        {
+            "measured_prefix_cache_hit_pct": 100.0 * min(hits, queries) / queries,
+            "prefix_cache_hits_measured": hits,
+            "prefix_cache_queries_measured": queries,
+        }
     )
-    if isinstance(counted, list) and counted:
-        metrics["prefix_cache_metrics_endpoints"] = [str(e) for e in counted]
-    return metrics
 
 
 def _summarize_errors(error_summary: List[Any]) -> List[Dict[str, Any]]:
