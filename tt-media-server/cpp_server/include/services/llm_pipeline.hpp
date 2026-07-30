@@ -39,7 +39,7 @@ namespace tt::services {
  * disaggregated prefill path.
  *
  * Both `LLMController` (HTTP /v1/chat/completions) and
- * `tt::dynamo::DynamoEndpoint` (TCP `generate`) drive the same pipeline so
+ * `tt::dynamo::DynamoWorkerServer` (TCP `generate`) drive the same pipeline so
  * Dynamo requests benefit from the same session/prefix-cache reuse and
  * disaggregation routing as HTTP traffic.
  *
@@ -126,6 +126,14 @@ class LLMPipeline {
    */
   void dispatchGeneration(
       tt::domain::llm::LLMRequest& request, SessionInfo sessionInfo,
+      const std::function<void(const tt::domain::llm::LLMStreamChunk&, bool)>&
+          cb) const;
+
+  /// Submit a request that already resolved routing/session state outside the
+  /// normal pipeline flow, such as a Dynamo-routed decode request carrying a
+  /// prefill result.
+  void submitResolvedStreamingRequest(
+      tt::domain::llm::LLMRequest& request,
       const std::function<void(const tt::domain::llm::LLMStreamChunk&, bool)>&
           cb) const;
 

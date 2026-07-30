@@ -25,7 +25,7 @@ The worker resolves behavior from `MODEL` (HF id) → `ModelType`
 (`settings.cpp::modelType`), which selects the tokenizer dir, the tokenizer impl
 (default `DeepseekTokenizer`), and the **static token info** (eos/stop/think ids).
 The Dynamo frontend, separately, reads the **MDC** the worker publishes in
-`discovery.cpp` to learn the tokenizer files, the `generation_config.json`, and
+`src/dynamo/discovery.cpp` to learn the tokenizer files, the `generation_config.json`, and
 which **reasoning/tool-call parsers** to apply. Both halves must agree.
 
 The recurring failure mode: the model loads but a table wasn't updated — falls

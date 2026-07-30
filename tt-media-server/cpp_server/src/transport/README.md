@@ -169,13 +169,29 @@ process, `--role prefill|decode`. The transport-lib pieces it composes:
   `KvMigrationReceiver::run()` behind a server transport. `run()` waits
   indefinitely between requests (an idle receive is retried) and exits only when
   the connection closes.
-- **Tables & device map** — `loadKvTableFile` (`kv_table_provisioning.*`) loads
-  each side's `.pb`; chip resolution uses an optional `--device-map`
-  (`device_map.hpp`) — **required** when a decode host's table spans multiple
-  meshes, or the placeholder `chip = chip_id` aliases meshes onto the same
-  physical chips and a multi-layer migration silently corrupts. In production the
-  table + device map arrive from the engine via `engine_table_handoff.*`; the
-  file paths are a bring-up stand-in.
+- **Tables & device map** — `resolveEngineTables` (`engine_table_resolve.*`)
+  always loads the KV `.pb` from disk (`--prefill-table` / `--table`; production
+  path is typically the engine export under `/tmp`). The FabricNode→UMD
+  DeviceMap is separate: prefer `--engine-handoff-port N` (worker listens;
+  co-located engine or `engine_handoff_sender` / deploy pushes the map only),
+  else `--device-map` file (`device_map_io.*`, `mesh chip umd` lines). The raw
+  `.pb` blob is kept for peer `TABLE_EXCHANGE`. Transfer path is fail-closed:
+  `engine_handoff_sender` exits non-zero on a missing/unreadable/empty map, and
+  socket resolve rejects an empty handoff (no silent placeholder push). Device
+  map is **required** when a host's table spans multiple meshes — the
+  `& 0xFFFF` placeholder collides across meshes and is refused once a non-empty
+  map is in play. At open, `buildDeviceIo` resolves each entry's ASIC
+  `umd_chip_id` to the local visible-device index via a one-time enumeration
+  (`enumerateUmdDevicesByUniqueId`); an id matching no visible chip is a clean
+  fail (nothing opened), and a KV location whose NoC channel exceeds the opened
+  chip's DRAM-channel count is rejected as a table/device-map mismatch. Until
+  the model runner pushes the map itself:
+
+  ```bash
+  mooncake_kv_migration_worker ... --table /tmp/local.pb --engine-handoff-port 18700
+  print_local_device_map | engine_handoff_sender --host 127.0.0.1 --port 18700 \
+    --device-map-stdin
+  ```
 
 The worker does **no** byte-verify of its own (it moves real KV). To validate the
 data plane end-to-end without a model, bracket a migration with the standalone
@@ -260,9 +276,9 @@ uphold all of the following (most are not enforced in code):
     notably `ZmqSocketTransport` (recv returns empty whenever its queue is
     momentarily empty) — is **not** compatible: the channel can't tell an idle gap
     from a real close, so it would abort a healthy migration on the first gap (or
-    never notice a genuine close). Do not select the ZMQ backend
-    (`SOCKET_TRANSPORT=zmq`) for the migration control path. (ZMQ is unrelated to
-    Mooncake, which carries the bulk bytes over its own TCP/RDMA transport.)
+    never notice a genuine close). Use a blocking TCP-style transport for the
+    migration control path. (ZMQ is unrelated to Mooncake, which carries the bulk
+    bytes over its own TCP/RDMA transport.)
 
 ## Known optimizations & follow-ups
 
@@ -337,7 +353,7 @@ retry-the-whole-request applies). The `Begin→…→Done→Ack` ordering is una
 | integration | `mooncake_migration_executor.*` | `IMigrationExecutor` driving `KvMigrationMultiHostSender` — the Kafka worker's trigger→data-plane bridge |
 | | `kv_migration_endpoints.*` | prefill control-channel connector + decode receiver-server (injected socket transport) |
 | | `kv_table_provisioning.*` | `loadKvTableFile` (+ optional table-blob exchange over the control channel) |
-| | `device_map.hpp`, `engine_table_handoff.*` | `FabricNode→UMD chip` map + engine→worker `{table, device map}` handoff contract |
+| | `device_map.hpp`, `device_map_io.*`, `engine_table_handoff.*`, `engine_table_resolve.*` | `FabricNode→UMD chip` map + file `.pb` resolve + socket DeviceMap handoff |
 | PoC (#3890) | `i_storage_backend.hpp`, `*_storage_backend.*`, `mooncake_migration_worker.*` | original dummy-tensor storage/transport split |
 
 ## Build guards

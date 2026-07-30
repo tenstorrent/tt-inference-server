@@ -904,7 +904,7 @@ class MultiHostOrchestrator:
             return
 
         # For server/reports workflows, containers should keep running after exit
-        skip_cleanup_workflows = {WorkflowType.SERVER, WorkflowType.REPORTS}
+        skip_cleanup_workflows = {WorkflowType.SERVER}
         if (
             WorkflowType.from_string(self.runtime_config.workflow)
             in skip_cleanup_workflows

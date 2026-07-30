@@ -125,6 +125,10 @@ struct PrefillResultMessage {
   // Unique 64-bit ID correlating this prefill result with the migration
   // (KV transfer) that produced it. Generated on the prefill server.
   uint64_t migrationId = 0;
+  // Decode-side session identifier for the reserved KV slot. Echoed from
+  // SlotReservationResponseMessage so decode can release the reservation
+  // when the request finishes.
+  std::string sessionId;
 
   explicit PrefillResultMessage(uint32_t taskId) : taskId(taskId) {}
 
@@ -139,7 +143,8 @@ struct PrefillResultMessage {
     bool hasTopK = topK.has_value();
     int topKVal = topK.value_or(0);
     ar(taskId, generatedText, tokenIds, rt, sid, error, hasTemp, tempVal,
-       hasTopP, topPVal, hasTopK, topKVal, fastMode, cachedTokens, migrationId);
+       hasTopP, topPVal, hasTopK, topKVal, fastMode, cachedTokens, migrationId,
+       sessionId);
   }
 
   template <class Archive>
@@ -159,8 +164,9 @@ struct PrefillResultMessage {
     bool fastMode;
     int cachedTokens;
     uint64_t migrationId;
+    std::string sessionId;
     ar(tid, genText, tids, rt, sid, err, hasTemp, tempVal, hasTopP, topPVal,
-       hasTopK, topKVal, fastMode, cachedTokens, migrationId);
+       hasTopK, topKVal, fastMode, cachedTokens, migrationId, sessionId);
     PrefillResultMessage msg(tid);
     msg.generatedText = std::move(genText);
     msg.tokenIds = std::move(tids);
@@ -175,6 +181,7 @@ struct PrefillResultMessage {
     msg.fastMode = fastMode;
     msg.cachedTokens = cachedTokens;
     msg.migrationId = migrationId;
+    msg.sessionId = std::move(sessionId);
     return msg;
   }
 };
@@ -281,6 +288,56 @@ struct PrefillCacheBlocksAddedMessage
   }
 };
 
+/**
+ * Prefill -> decode: reserve a decode KV slot before running prefill-first
+ * disaggregation. Transport is InterServerService (ZMQ); peer selection may
+ * still use etcd discovery under DYNAMO_ROUTING.
+ */
+struct SlotReservationRequestMessage
+    : SerializableMessage<SlotReservationRequestMessage> {
+  uint32_t taskId = 0;
+  std::string prefillServerId;
+  std::vector<uint64_t> registrationHashes;
+  bool hasPreviousResponseId = false;
+  std::string previousResponseId;
+
+  template <class F>
+  void fields(F&& f) {
+    f(taskId, prefillServerId, registrationHashes, hasPreviousResponseId,
+      previousResponseId);
+  }
+  template <class F>
+  void fields(F&& f) const {
+    f(taskId, prefillServerId, registrationHashes, hasPreviousResponseId,
+      previousResponseId);
+  }
+};
+
+struct SlotReservationResponseMessage
+    : SerializableMessage<SlotReservationResponseMessage> {
+  uint32_t taskId = 0;
+  bool hasSlot = false;
+  uint32_t slotId = tt::domain::INVALID_SLOT_ID;
+  std::string sessionId;
+  int decodePositionId = 0;
+  int decodeSkipTokens = 0;
+  bool continuation = false;
+  int accumulatedThinkTokens = 0;
+  bool error = false;
+  std::string errorText;
+
+  template <class F>
+  void fields(F&& f) {
+    f(taskId, hasSlot, slotId, sessionId, decodePositionId, decodeSkipTokens,
+      continuation, accumulatedThinkTokens, error, errorText);
+  }
+  template <class F>
+  void fields(F&& f) const {
+    f(taskId, hasSlot, slotId, sessionId, decodePositionId, decodeSkipTokens,
+      continuation, accumulatedThinkTokens, error, errorText);
+  }
+};
+
 namespace tags {
 constexpr std::string_view PREFILL_REQUEST = "prefill_request";
 constexpr std::string_view PREFILL_RESULT = "prefill_result";
@@ -288,6 +345,10 @@ constexpr std::string_view PREFILL_REGISTRATION = "prefill_registration";
 constexpr std::string_view PREFILL_CACHE_BLOCKS_ADDED = "prefill_cache_added";
 constexpr std::string_view REGISTRATION_PROBE = "registration_probe";
 constexpr std::string_view CANCEL_PREFILL = "cancel_prefill";
+constexpr std::string_view SLOT_RESERVATION_REQUEST =
+    "slot_reservation_request";
+constexpr std::string_view SLOT_RESERVATION_RESPONSE =
+    "slot_reservation_response";
 constexpr std::string_view PREFILL_HEALTH_REQUEST = "prefill_health_request";
 constexpr std::string_view PREFILL_HEALTH_STATUS = "prefill_health_status";
 }  // namespace tags

@@ -82,6 +82,7 @@ class RuntimeConfig:
     prefix_cache_metrics_url: Optional[List[str]] = None
     jwt_secret: Optional[str] = None
     serving_bench_suites: Optional[str] = None
+    served_model: Optional[str] = None
 
     # Speculative-decoding benchmark
     spec_decode: bool = False
@@ -171,6 +172,7 @@ class RuntimeConfig:
             prefix_cache_metrics_url=getattr(args, "prefix_cache_metrics_url", None),
             jwt_secret=getattr(args, "jwt_secret", None),
             serving_bench_suites=getattr(args, "serving_bench_suites", None),
+            served_model=getattr(args, "served_model", None),
             spec_decode=getattr(args, "spec_decode", False),
             spec_decode_preset=getattr(args, "spec_decode_preset", "full"),
             spec_decode_warmup_requests=getattr(

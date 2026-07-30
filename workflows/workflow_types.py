@@ -10,13 +10,12 @@ class WorkflowType(IntEnum):
     BENCHMARKS = auto()
     EVALS = auto()
     STRESS_TESTS = auto()
-    TESTS = auto()
-    REPORTS = auto()
     SERVER = auto()
     RELEASE = auto()
     SPEC_TESTS = auto()
     AGENTIC = auto()
     SERVING_BENCH = auto()
+    PREFILL_DECODE = auto()
 
     @classmethod
     def from_string(cls, name: str):
@@ -34,12 +33,12 @@ class WorkflowVenvType(IntEnum):
     TESTS_RUN_SCRIPT = auto()
     BENCHMARKS_RUN_SCRIPT = auto()
     REPORTS_RUN_SCRIPT = auto()
-    V2_RUN_SCRIPT = auto()
-    V2_PREFIX_CACHE = auto()
-    V2_LLM_VLLM = auto()
-    V2_LLM_GUIDELLM = auto()
-    V2_LLM_AIPERF = auto()
-    V2_SPEC_DECODE = auto()
+    WORKFLOW_RUN_SCRIPT = auto()
+    PREFIX_CACHE = auto()
+    LLM_VLLM = auto()
+    LLM_GUIDELLM = auto()
+    LLM_AIPERF = auto()
+    SPEC_DECODE = auto()
     EVALS_COMMON = auto()
     EVALS_META = auto()
     EVALS_VISION = auto()
@@ -385,6 +384,7 @@ class ModelType(IntEnum):
     TEXT_TO_SPEECH = auto()
     VIDEO = auto()
     VLM = auto()  # Vision-Language Models (text+image-to-text)
+    TRAINING = auto()
 
     @property
     def display_name(self) -> str:
@@ -397,6 +397,7 @@ class ModelType(IntEnum):
             ModelType.TEXT_TO_SPEECH: "Text-to-Speech",
             ModelType.VIDEO: "Video",
             ModelType.VLM: "Vision-Language Model",
+            ModelType.TRAINING: "Training",
         }
         return display_names[self]
 
@@ -411,6 +412,7 @@ class ModelType(IntEnum):
             ModelType.EMBEDDING: "Embedding",
             ModelType.TEXT_TO_SPEECH: "TTS",
             ModelType.VIDEO: "Video",
+            ModelType.TRAINING: "Training",
         }
         return short_names[self]
 
@@ -425,5 +427,6 @@ class ModelType(IntEnum):
             ModelType.EMBEDDING: "embedding",
             ModelType.TEXT_TO_SPEECH: "tts",
             ModelType.VIDEO: "video",
+            ModelType.TRAINING: "training",
         }
         return task_types[self]

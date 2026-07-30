@@ -41,9 +41,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import DefaultDict, Dict, List, Optional, Tuple
 
-# Add project root to Python path for imports
-project_root = Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(project_root))
+import _bootstrap  # noqa: F401,E402  (sets sys.path for imports below)
 from workflows.model_spec import MODEL_SPECS
 
 # Configure logging

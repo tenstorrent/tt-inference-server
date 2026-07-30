@@ -59,7 +59,6 @@ void configureEnv() {
   setenv("PREFIX_CACHE_HIT_THRESHOLD", "0", 1);
 
   // Socket config: prefill connects as DEALER to our mock ROUTER (direct mode)
-  setenv("SOCKET_TRANSPORT", "zmq", 1);
   setenv("SOCKET_HOST", "127.0.0.1", 1);
   setenv("SOCKET_PORT", std::to_string(MOCK_DECODE_PORT).c_str(), 1);
   setenv("USE_PREFILL_GATEWAY", "0", 1);
@@ -367,6 +366,11 @@ TEST_F(PrefillIntegrationTest, PrefillRequest_TriggersSessionAllocation) {
   auto seq = server->taskQueue().receive();
   ASSERT_NE(seq, nullptr);
   EXPECT_GT(seq->getNumPromptTokens(), 0u);
+
+  ASSERT_TRUE(seq->getKVPositionId().has_value())
+      << "new prefill session must set kv_position_id (first free KV index)";
+  EXPECT_EQ(*seq->getKVPositionId(), 0u)
+      << "new prefill session first free KV index must be 0";
 
   // Verify decode_position_id propagated to the Sequence.
   EXPECT_EQ(seq->getDecodePositionId(), 5)

@@ -51,7 +51,7 @@ void printUsage(const char* prog) {
       << "Usage: " << prog
       << " --decode-port=<PORT> --prefill-bind=<HOST>:<PORT>\n"
       << "       " << prog << " --decode-port=<PORT> --prefill=<HOST>:<PORT> "
-      << "[--prefill=<HOST>:<PORT> ...]  # SOCKET_TRANSPORT=tcp\n\n"
+      << "[--prefill=<HOST>:<PORT> ...]\n\n"
       << "  --decode-port=PORT   Port the gateway listens on for decode.\n"
       << "  --prefill=HOST:PORT  ZMQ prefill server to connect to "
          "(repeatable).\n"

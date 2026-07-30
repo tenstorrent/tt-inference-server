@@ -13,12 +13,14 @@
 #include <vector>
 
 #include "config/settings.hpp"
+#include "domain/prefix_cache/block_matcher.hpp"
 #include "metrics/metrics.hpp"
 #include "services/disaggregation_service.hpp"
 #include "services/llm_service.hpp"
 #include "services/session_manager.hpp"
 #include "services/session_resolution.hpp"
 #include "sockets/inter_server_service.hpp"
+#include "utils/conversation_hasher.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::services {
@@ -82,6 +84,17 @@ void LLMPipeline::resolveSession(
       req->task_id, req->model.value_or("default"), req->stream,
       req->messages.size(), promptKind, tokens ? tokens->size() : 0);
 
+  if (tt::config::llmMode() == tt::config::LLMMode::PREFILL_ONLY &&
+      tt::config::dynamoRoutingEnabled()) {
+    SessionInfo info;
+    if (tokens) {
+      info.registrationHashes =
+          tt::utils::computePrefixCachingInfoFromTokens(*tokens).hashes();
+    }
+    onResolved(info);
+    return;
+  }
+
   if (!sessionManager_) {
     TT_LOG_WARN("[LLMPipeline] SessionManager not available");
     loop->runInLoop([onResolved]() { onResolved(SessionInfo{}); });
@@ -104,9 +117,11 @@ void LLMPipeline::resolveSession(
       *tokens, std::move(opts), loop,
       // onResolved callback
       [req, onResolved, mgr = sessionManager_](SlotAcquireResult result) {
-        // Track metrics
+        const uint32_t promptTokens =
+            domain::prefix_cache::BlockMatcher::blocksToTokens(
+                result.blocks.size());
         tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(
-            !result.isNewSession);
+            promptTokens, result.isNewSession ? 0u : result.matchedTokens);
 
         TT_LOG_INFO(
             "[LLMPipeline] Slot acquired taskId={} sessionId={} slotId={} "
@@ -124,6 +139,8 @@ void LLMPipeline::resolveSession(
               result.matchedTokens + result.accumulatedThinkTokens;
           req->accumulated_think_tokens =
               static_cast<int>(result.accumulatedThinkTokens);
+        } else {
+          req->kv_position_id = 0;
         }
 
         // Capture full prompt before delta trim; finalizeAndRegisterHashes
@@ -269,9 +286,9 @@ void LLMPipeline::dispatchGeneration(
           request.sessionId.value_or("none"));
       // WARNING - TEMP CHANGE - PREFILL WILL OVERRIDE THINKING TOKENS
       uint32_t matchedTokens =
-          *request.kv_position_id -
+          request.kv_position_id.value_or(0) -
           static_cast<uint32_t>(request.accumulated_think_tokens);
-      *request.kv_position_id = matchedTokens;
+      request.kv_position_id = matchedTokens;
       if (sessionManager_ && request.session) {
         sessionManager_->clearSessionBlockThinkTokens(
             request.session->getSessionId());
@@ -283,8 +300,31 @@ void LLMPipeline::dispatchGeneration(
     return;
   }
 
+  if (mode == tt::config::LLMMode::PREFILL_ONLY) {
+    if (!tt::config::dynamoRoutingEnabled()) {
+      throw std::runtime_error(
+          "LLM Mode must be regular or decode only for chat completions");
+    }
+    if (!disaggregationService_) {
+      throw std::runtime_error(
+          "[LLMPipeline] Prefill-first disaggregation requires "
+          "DisaggregationService");
+    }
+    request.max_tokens = 1;
+    disaggregationService_->handlePrefillFirstStreamingRequest(
+        request, sessionInfo.registrationHashes, cb);
+    return;
+  }
+
   throw std::runtime_error(
       "LLM Mode must be regular or decode only for chat completions");
+}
+
+void LLMPipeline::submitResolvedStreamingRequest(
+    tt::domain::llm::LLMRequest& request,
+    const std::function<void(const tt::domain::llm::LLMStreamChunk&, bool)>& cb)
+    const {
+  service_->submitStreamingRequest(request, cb);
 }
 
 void LLMPipeline::abortRequest(uint32_t taskId) const {
@@ -296,6 +336,15 @@ void LLMPipeline::abortRequest(uint32_t taskId) const {
 
 bool LLMPipeline::willPrefillOnDecode(
     const tt::domain::llm::LLMRequest& request, size_t deltaTokens) const {
+  const size_t threshold = tt::config::maxTokensToPrefillOnDecode();
+  if (tt::config::dynamoRoutingEnabled()) {
+    TT_LOG_INFO(
+        "[LLMPipeline] DYNAMO_ROUTING=1 taskId={} deltaTokens={} "
+        "accepting Dynamo decode route; local prefill will run on decode",
+        request.task_id, deltaTokens);
+    return true;
+  }
+
   const bool socketReady = socketService_ && socketService_->isConnected();
   if (!socketReady) {
     TT_LOG_WARN(
@@ -313,7 +362,7 @@ bool LLMPipeline::willPrefillOnDecode(
     return !forceDisagg;
   }
 
-  return deltaTokens < tt::config::maxTokensToPrefillOnDecode();
+  return deltaTokens < threshold;
 }
 
 bool LLMPipeline::shouldDoPrefillOnDecode(

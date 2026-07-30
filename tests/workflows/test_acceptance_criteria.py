@@ -220,7 +220,7 @@ def test_known_issue_masks_parameter_support_blocker(report_data):
 
     known_issues = [
         KnownIssue(
-            workflow_type=WorkflowType.TESTS,
+            workflow_type=WorkflowType.SPEC_TESTS,
             reason="GH#2200 - temperature param support broken",
             task_name="test_temperature",
         ),
