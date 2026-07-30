@@ -24,9 +24,11 @@
 #include "tt_llm_engine/scheduler/migration_client_interface.hpp"
 #include "utils/logger.hpp"
 #ifdef KAFKA_ENABLED
+#include "config/settings.hpp"
 #include "messaging/kafka_consumer.hpp"
 #include "messaging/kafka_producer.hpp"
 #include "services/composite_migration_client.hpp"
+#include "services/layer_to_partition.hpp"
 #include "services/remote_kv_manager_adapter.hpp"
 #include "services/remote_kv_manager_impl.hpp"
 #endif
@@ -375,6 +377,44 @@ makeShmemOrMockMigrationClient(const tt::config::BlazeConfig& config) {
 // makeMigrationClientInterface below) instead of silently downgrading to
 // the shmem-only path.
 #ifdef KAFKA_ENABLED
+inline tt::services::LayerPartitionPolicy configuredLayerPartitionPolicy() {
+  return tt::services::resolveLayerPartitionPolicy(
+      tt::config::kafkaMigrationNumPartitions(),
+      tt::config::kafkaMigrationLayersPerPartition(),
+      tt::config::modelNumLayers());
+}
+
+inline tt::services::RemoteKVManagerImpl::LayerToPartition
+configuredLayerToPartition(
+    const tt::services::LayerPartitionPolicy& policy) {
+  if (!tt::services::isLayerPartitionPolicyEnabled(policy)) {
+    return nullptr;
+  }
+  return tt::services::makeLayerToPartition(policy);
+}
+
+inline void logPrefillKafkaMigrationClient(
+    const tt::services::LayerPartitionPolicy& policy) {
+  if (tt::services::isLayerPartitionPolicyEnabled(policy)) {
+    TT_LOG_INFO(
+        "makePrefillKafkaMigrationClient: CompositeMigrationClient wired "
+        "(brokers={}, request_topic={}, ack_topic={}, group_id={}, "
+        "layers_per_partition={}, num_partitions={}); burst = "
+        "RemoteKVManagerAdapter, loopback per runner_type",
+        tt::config::kafkaBrokers(), tt::config::kafkaMigrationRequestTopic(),
+        tt::config::kafkaMigrationAckTopic(), tt::config::kafkaGroupId(),
+        policy.layersPerPartition, policy.numPartitions);
+    return;
+  }
+  TT_LOG_INFO(
+      "makePrefillKafkaMigrationClient: CompositeMigrationClient wired "
+      "(brokers={}, request_topic={}, ack_topic={}, group_id={}, "
+      "layer_partition_policy=disabled); burst = RemoteKVManagerAdapter, "
+      "loopback per runner_type",
+      tt::config::kafkaBrokers(), tt::config::kafkaMigrationRequestTopic(),
+      tt::config::kafkaMigrationAckTopic(), tt::config::kafkaGroupId());
+}
+
 inline std::unique_ptr<sch::MigrationClientInterface>
 makePrefillKafkaMigrationClient(const tt::config::BlazeConfig& config) {
   auto requestProducer = std::make_unique<tt::messaging::KafkaProducer>(
@@ -382,33 +422,27 @@ makePrefillKafkaMigrationClient(const tt::config::BlazeConfig& config) {
           .brokers = tt::config::kafkaBrokers(),
           .topic = tt::config::kafkaMigrationRequestTopic(),
       });
+  // Shared with the worker's request-topic subscription: group.id is scoped
+  // per topic, so worker (request) and client (ack) do not fight over
+  // partitions. Multiple PrefillSchedulers must use distinct KAFKA_GROUP_ID
+  // values or ack partitions split and starve some bursts.
   auto ackConsumer = std::make_unique<tt::messaging::KafkaConsumer>(
       tt::messaging::KafkaConsumerConfig{
           .brokers = tt::config::kafkaBrokers(),
           .topic = tt::config::kafkaMigrationAckTopic(),
-          // Shared with the worker's request-topic subscription: group.id is
-          // scoped per topic, so worker (request topic) and client (ack topic)
-          // do not fight over partitions. If multiple PrefillScheduler
-          // processes need to consume acks independently, they must set
-          // KAFKA_GROUP_ID to distinct values at deploy time — sharing a
-          // group here would split ack partitions across processes and
-          // silently starve some bursts of their completion event.
           .group_id = tt::config::kafkaGroupId(),
       });
+  const auto partitionPolicy = configuredLayerPartitionPolicy();
   auto kvManager = std::make_unique<tt::services::RemoteKVManagerImpl>(
       std::move(requestProducer), std::move(ackConsumer),
       std::chrono::milliseconds(tt::config::kvMigrationTimeoutMs()),
       std::chrono::milliseconds(tt::config::kvMigrationSweepIntervalMs()),
-      static_cast<int>(tt::config::kvMigrationDrainPollMs()));
+      static_cast<int>(tt::config::kvMigrationDrainPollMs()),
+      configuredLayerToPartition(partitionPolicy));
   auto burst = std::make_unique<tt::services::RemoteKVManagerAdapter>(
       std::move(kvManager));
   auto loopback = makeShmemOrMockMigrationClient(config);
-  TT_LOG_INFO(
-      "makePrefillKafkaMigrationClient: CompositeMigrationClient wired "
-      "(brokers={}, request_topic={}, ack_topic={}, group_id={}); burst = "
-      "RemoteKVManagerAdapter, loopback per runner_type",
-      tt::config::kafkaBrokers(), tt::config::kafkaMigrationRequestTopic(),
-      tt::config::kafkaMigrationAckTopic(), tt::config::kafkaGroupId());
+  logPrefillKafkaMigrationClient(partitionPolicy);
   return std::make_unique<tt::services::CompositeMigrationClient>(
       std::move(burst), std::move(loopback));
 }
