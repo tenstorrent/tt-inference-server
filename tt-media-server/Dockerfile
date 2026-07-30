@@ -2,13 +2,21 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+# LOCAL/UNCOMMITTED OVERRIDE (do not commit): global ARG so the base image
+# ref can be swapped in both FROM lines below (builder + runtime, same image).
+# Default is the real published image; only override when that registry pull
+# isn't available (e.g. no valid GHCR credential on this box) and a local
+# from-source build of the same base (see dockerfile/Dockerfile "dev" target
+# in the tt-metal repo) has been tagged separately for this purpose.
+ARG TT_METAL_BASE_IMAGE=ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-dev-amd64:latest
+
 # ==============================================================================
 # BUILDER STAGE - build tt-metal and inference server
 # ==============================================================================
 # Note: Dependencies installed in this stage are NOT included in the final image.
 # Only the built artifacts and files are copied to the runtime stage.
 # Runtime dependencies must be installed separately in the runtime stage.
-FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-dev-amd64:latest AS builder
+FROM ${TT_METAL_BASE_IMAGE} AS builder
 
 # Build stage
 LABEL maintainer="Igor Djuric <idjuric@tenstorrent.com>"
@@ -18,6 +26,15 @@ LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inferenc
 ARG DEBIAN_FRONTEND=noninteractive
 # default commit sha, override with --build-arg TT_METAL_COMMIT_SHA_OR_TAG=<sha>
 ARG TT_METAL_COMMIT_SHA_OR_TAG=915d9e67ad572b97fbaf5339bd3e518db6dc05e3
+# LOCAL/UNCOMMITTED OVERRIDE (do not commit): default points at the public
+# canonical repo, which is correct for released commits. This build is
+# pinned to 109bf4dcb8, a same-day inworld_tts fix that only exists on the
+# developer's own fork (https://github.com/ssinghalTT/tt-metal, `origin`,
+# 0 commits ahead/behind its main) -- confirmed via a live `git fetch` against
+# the public repo returning "not our ref". Override via --build-arg
+# TT_METAL_REPO_URL=<fork-url> for this one-off validation build; revert
+# before this commit lands upstream and any real release build runs.
+ARG TT_METAL_REPO_URL=https://github.com/tenstorrent-metal/tt-metal.git
 
 # make build commit SHA available in the image for reference and debugging
 ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG}
@@ -87,7 +104,7 @@ RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.26.4/cmake-
 ENV UV_HTTP_RETRIES=10
 
 # build tt-metal
-RUN git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
+RUN git clone --depth 1 ${TT_METAL_REPO_URL} ${TT_METAL_HOME} \
     && cd ${TT_METAL_HOME} \
     && git fetch --depth 1 origin ${TT_METAL_COMMIT_SHA_OR_TAG} \
     && git checkout ${TT_METAL_COMMIT_SHA_OR_TAG} \
@@ -205,7 +222,7 @@ RUN rm -rf ${HOME_DIR}/.rustup \
 # ==============================================================================
 # This is the final image that will be used. Only the built artifacts from the builder stage
 # are copied here. Any runtime dependencies needed by the application must be installed in this stage.
-FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-dev-amd64:latest AS runtime
+FROM ${TT_METAL_BASE_IMAGE} AS runtime
 
 LABEL maintainer="Igor Djuric <idjuric@tenstorrent.com>"
 LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server

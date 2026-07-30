@@ -6,6 +6,7 @@ import asyncio
 import base64
 import io
 import os
+import threading
 import uuid
 from pathlib import Path
 
@@ -14,7 +15,11 @@ import torch
 import torchaudio
 import ttnn
 from domain.text_to_speech_request import TextToSpeechRequest
-from domain.text_to_speech_response import TextToSpeechResponse
+from domain.text_to_speech_response import (
+    TextToSpeechChunkOutput,
+    TextToSpeechChunkResult,
+    TextToSpeechResponse,
+)
 from domain.voice_encode_request import VoiceEncodeRequest
 from domain.voice_encode_response import VoiceEncodeResponse
 from domain.voice_list_request import VoiceListRequest
@@ -33,6 +38,23 @@ from utils.voice_clone_cache import VoiceCloneCacheManager
 CODEC_SAMPLE_RATE = 16000
 DECODER_SAMPLE_RATE = 48000
 CODEC_TOKENS_PER_SEC = 50
+
+# Matches tt_model_runners/vllm_runner.py's streaming-chunk type strings --
+# device_worker.py/base_service.py dispatch on these literal values regardless
+# of model domain (LLM text vs. TTS audio).
+CHUNK_TYPE = "streaming_chunk"
+FINAL_TYPE = "final_result"
+
+# Streaming audio-decoder chunk size in codec tokens (~0.64s of audio at
+# CODEC_TOKENS_PER_SEC=50). User-confirmed: matches the main tt-metal repo's
+# CLI scripts (main_tp8.py/main_tp4.py/main_tp1.py), which default to T=32
+# for lower per-chunk/TTFC latency, accepting the same known tradeoff T=64
+# was originally chosen to avoid -- T=32 < the decoder backbone's
+# sliding_window=40, so independently-decoded chunks lose real cross-chunk
+# context at every boundary (small audible seam). See
+# tt_modeling.create_streaming_decoder's docstring for the full tradeoff
+# writeup and the session that confirmed it.
+STREAMING_CHUNK_SIZE = 32
 
 
 def _load_wav_from_bytes(data: bytes, target_sample_rate: int) -> torch.Tensor:
@@ -73,7 +95,19 @@ class TTInworldTTSRunner(BaseMetalDeviceRunner):
         self._voice_cache = None
 
     def get_pipeline_device_params(self):
-        return {"l1_small_size": 16384, "trace_region_size": 200_000_000}
+        # trace_region_size: large enough to fit all three coexisting traces
+        # (SpeechLM decode + the T=32 streaming decoder + the main
+        # DECODER_MAX_T=1024 decoder), but NOT larger than needed --
+        # confirmed on real hardware (an earlier session) that an oversized
+        # trace region measurably degrades PREFILL and DECODE throughput even
+        # though nothing else changed: 200MB gave TTFT=110ms/decode=91ms per
+        # token (vs the ~65ms/~40ms baseline), while 100MB fully recovered
+        # baseline perf and fit all three traces without OOM -- AT THE OLD
+        # DECODER_MAX_T=480/STREAMING_CHUNK_SIZE=64 sizes. Re-verify this
+        # value on real hardware after the DECODER_MAX_T=1024 bump (roughly
+        # 2x the old main-decoder trace) -- 100MB may no longer be sufficient
+        # or optimal.
+        return {"l1_small_size": 16384, "trace_region_size": 100_000_000}
 
     def _configure_fabric(self, updated_device_params):
         try:
@@ -164,6 +198,39 @@ class TTInworldTTSRunner(BaseMetalDeviceRunner):
             # unaffected and keeps the faster on-device sampling path.
             os.environ.setdefault("INWORLD_TTS_FORCE_HOST_SAMPLING", "1")
 
+            # Host sampling (above) does real per-token CPU work (top-p
+            # filtering, repetition penalty -- both torch ops over the
+            # ~16k-vocab logits tensor). This device-worker subprocess is
+            # forked from the main FastAPI process, which by the time it
+            # forks has already called torch.set_num_threads(1) via
+            # model_services/cpu_workload_handler.py's
+            # setup_cpu_threading_limits("2") (deliberately conservative --
+            # it sizes ITS OWN worker pool for the full DP=32 fleet sharing
+            # one host). fork() means this subprocess inherits that
+            # process-wide torch thread-count setting even though it has
+            # nothing to do with CpuWorkloadHandler -- confirmed on real
+            # hardware via py-spy (~92% of decode wall-time was in
+            # single-threaded sample_top_p/_apply_repetition_penalty, not
+            # device compute) and via a direct fix/re-measure (decode
+            # dropped from ~91ms/token back to the ~40ms/token baseline once
+            # threads were restored). Re-derive and set an explicit,
+            # worker-count-aware thread count here so it's correct at any DP
+            # scale: plenty of headroom for a single-worker deployment,
+            # matching CpuWorkloadHandler's own "2 threads per worker"
+            # convention at DP=32 to avoid reintroducing oversubscription.
+            # torch.set_num_threads() (intra-op) is safe to call repeatedly,
+            # unlike set_num_interop_threads() (would raise if already
+            # locked by the parent's pre-fork call) -- the sampling ops here
+            # only use intra-op parallelism, so that's all that's needed.
+            num_dp_workers = max(1, len(self.settings.device_ids.replace(" ", "").split("),(")))
+            num_torch_threads = max(1, (os.cpu_count() or 1) // num_dp_workers)
+            if torch.get_num_threads() != num_torch_threads:
+                torch.set_num_threads(num_torch_threads)
+            self.logger.info(
+                f"Device {self.device_id}: set torch.num_threads={num_torch_threads} "
+                f"({os.cpu_count()} CPUs / {num_dp_workers} DP workers)"
+            )
+
             speechlm_path = os.environ.get("INWORLD_TTS_SPEECHLM_PATH")
             decoder_path = os.environ.get("INWORLD_TTS_DECODER_PATH")
             encoder_path = os.environ.get("INWORLD_TTS_ENCODER_PATH")
@@ -191,7 +258,24 @@ class TTInworldTTSRunner(BaseMetalDeviceRunner):
                 self.logger.info(f"Device {self.device_id}: Loading tokenizer...")
                 self._tokenizer = tt_modeling.get_tokenizer(speechlm_path)
 
-                # 3. Decoder: constructed BEFORE SpeechLM's warmup (below) and
+                # 3. Streaming (T=STREAMING_CHUNK_SIZE) decoder trace, created
+                #    FIRST -- before the main DECODER_MAX_T decoder below. Verified
+                #    (an earlier session's
+                #    scratchpad/diag_two_decoders.py): capturing a SMALLER-T
+                #    TtDecoder trace AFTER a LARGER-T one already exists on the
+                #    same device silently corrupts the second-captured decoder's
+                #    fsq_dequantize output with actual inf values. This ordering
+                #    requirement is independent of (and in addition to) the
+                #    decoder-before-SpeechLM-warmup ordering documented below.
+                self.logger.info(
+                    f"Device {self.device_id}: Creating streaming (T={STREAMING_CHUNK_SIZE}) "
+                    "decoder FIRST..."
+                )
+                streaming_decoder = tt_modeling.create_streaming_decoder(
+                    decoder_path, self.ttnn_device, chunk_size=STREAMING_CHUNK_SIZE
+                )
+
+                # 4. Decoder: constructed BEFORE SpeechLM's warmup (below) and
                 #    BEFORE the encoder. This ordering -- decoder, then SpeechLM
                 #    warmup, then encoder -- mirrors main_tp8.py's own construction
                 #    order, which was determined empirically (see its comments) to
@@ -215,19 +299,69 @@ class TTInworldTTSRunner(BaseMetalDeviceRunner):
                     token_rate=CODEC_TOKENS_PER_SEC,
                     use_trace=True,
                 )
+                self._audio_decoder.attach_streaming(
+                    streaming_decoder, chunk_size=STREAMING_CHUNK_SIZE
+                )
 
-                # 4. Warmup SpeechLM (untimed, forces prefill + decode trace capture).
+                # 5. Warmup SpeechLM (untimed, forces prefill + decode trace capture),
+                #    then a real end-to-end (discarded) warmup call through the full
+                #    pipeline -- SpeechLM's own trace and the audio decoder's trace
+                #    have each been warmed in isolation by this point, but never yet
+                #    run back-to-back in the same request. Confirmed on real hardware
+                #    that skipping this leaks a one-time compile cost into the first
+                #    real request whenever a new trace-shape combination (e.g.
+                #    DECODER_MAX_T/STREAMING_CHUNK_SIZE) is exercised for the first
+                #    time on a given machine -- see warmup_full_pipeline's docstring.
                 tt_modeling.warmup_speechlm(self._speechlm, self._tokenizer)
+                tt_modeling.warmup_full_pipeline(
+                    self._speechlm, self._tokenizer, self._audio_decoder
+                )
 
-                # 5. Encoder (for voice cloning via POST /v1/audio/voices).
+                # 6. Encoder (for voice cloning via POST /v1/audio/voices).
+                #
+                # use_trace=False (eager path -- see CachingAudioEncoder's own
+                # docstring, this fallback already existed for exactly this
+                # situation): a captured trace's L1 buffers stay permanently
+                # reserved for the trace's whole lifetime, and this device now
+                # also holds SpeechLM's decode trace plus TWO TtDecoder traces
+                # (streaming T=STREAMING_CHUNK_SIZE + main DECODER_MAX_T, added
+                # in an earlier session for Stage 1 streaming support --
+                # DECODER_MAX_T since bumped 480->1024, STREAMING_CHUNK_SIZE
+                # since changed 64->32, net L1 impact not re-verified against
+                # this specific encoder-eager-mode constraint). Verified on real hardware
+                # (Stage 1h) that adding the streaming decoder's persistent L1
+                # footprint on top of the pre-existing two traces pushes the
+                # encoder's own traced conv/convtranspose capture over the L1
+                # budget (TT_THROW: static CBs clash with an L1 buffer on core
+                # range [0-0 - 11-7]) -- confirmed via a controlled A/B
+                # (warmup succeeds without the streaming decoder, fails with
+                # it). Voice-clone registration (POST /v1/audio/voices) is a
+                # rare, non-realtime operation (once per registered voice, not
+                # per-TTS-request), so the plan was to trade its trace-capture
+                # speed for a slower-but-correct eager path.
+                #
+                # ** KNOWN REGRESSION, NOT YET FIXED **: the eager path itself
+                # then hit a SEPARATE, previously-unexercised device bug on
+                # real reference audio (TT_FATAL in ttnn.layer_norm: "Sharded
+                # layernorm does not support non-rectangular core grids" --
+                # the eager path's core-grid selection, likely _pick_grid/
+                # _block_shard in tt/mlp.py, picks a bad grid for this input
+                # shape). Voice-cloning (POST /v1/audio/voices) is therefore
+                # currently BROKEN on this runner -- confirmed via a live
+                # request against Ashley_en.wav (Stage 1h, 2026-07-30). Kept
+                # as use_trace=False anyway per explicit user decision: ship
+                # streaming now, accept broken voice-cloning as a follow-up
+                # (see BRINGUP_LOG.md Session 13). Do not assume this path
+                # works without re-verifying.
                 self.logger.info(
-                    f"Device {self.device_id}: Creating TTNN encoder from {encoder_path}..."
+                    f"Device {self.device_id}: Creating TTNN encoder from {encoder_path} "
+                    "(eager, use_trace=False -- see comment above)..."
                 )
                 self._audio_encoder = tt_modeling.CachingAudioEncoder(
-                    encoder_path, device=self.ttnn_device, use_trace=True
+                    encoder_path, device=self.ttnn_device, use_trace=False
                 )
 
-                # 6. Voice-clone VQ-code registration cache.
+                # 7. Voice-clone VQ-code registration cache.
                 self._voice_cache = VoiceCloneCacheManager()
 
             await asyncio.to_thread(_build_pipeline)
@@ -249,6 +383,12 @@ class TTInworldTTSRunner(BaseMetalDeviceRunner):
             except Exception as e:
                 self.logger.warning(
                     f"Device {self.device_id}: Failed to release decoder trace: {e}"
+                )
+            try:
+                self._audio_decoder.release_streaming()
+            except Exception as e:
+                self.logger.warning(
+                    f"Device {self.device_id}: Failed to release streaming decoder trace: {e}"
                 )
         return super().close_device()
 
@@ -331,6 +471,18 @@ class TTInworldTTSRunner(BaseMetalDeviceRunner):
             f"| {num_codes} VQ codes, real_prompt_len={prompt_len}"
         )
 
+    @staticmethod
+    def _wav_base64(wav: torch.Tensor, sample_rate: int) -> tuple[str, float]:
+        """Encode a mono float waveform tensor as a base64 WAV, matching
+        speecht5_runner.py's approach. Returns (base64_str, duration_seconds).
+        """
+        audio_buffer = io.BytesIO()
+        samples = wav.squeeze().detach().cpu().numpy()
+        sf.write(audio_buffer, samples, sample_rate, format="WAV")
+        audio_base64 = base64.b64encode(audio_buffer.getvalue()).decode("utf-8")
+        duration = samples.shape[-1] / sample_rate
+        return audio_base64, duration
+
     def _synthesize(self, request: TextToSpeechRequest) -> TextToSpeechResponse:
         speech_ids_prompt = None
         if request.voice_id:
@@ -359,16 +511,7 @@ class TTInworldTTSRunner(BaseMetalDeviceRunner):
 
         self._log_perf_summary(profiler, _speech_ids, _prompt_len, _decode_calls, _decode_elapsed_ms)
 
-        # Base64/WAV-encoding matches speecht5_runner.py's own approach exactly.
-        audio_buffer = io.BytesIO()
-        sf.write(
-            audio_buffer,
-            wav.squeeze().detach().cpu().numpy(),
-            DECODER_SAMPLE_RATE,
-            format="WAV",
-        )
-        audio_base64 = base64.b64encode(audio_buffer.getvalue()).decode("utf-8")
-        duration = wav.shape[-1] / DECODER_SAMPLE_RATE
+        audio_base64, duration = self._wav_base64(wav, DECODER_SAMPLE_RATE)
 
         return TextToSpeechResponse(
             audio=audio_base64,
@@ -376,6 +519,126 @@ class TTInworldTTSRunner(BaseMetalDeviceRunner):
             sample_rate=DECODER_SAMPLE_RATE,
             format="wav",
             speaker_id=request.voice_id,
+        )
+
+    def _log_streaming_perf_summary(self, profiler, chunk_index, done_state):
+        """Streaming counterpart of ``_log_perf_summary``: same TTFT/decode
+        ms-per-token breakdown, plus per-chunk audio-decode latency (each
+        chunk's ``decode_chunk`` call is timed separately -- see
+        ``synthesize_tp8_streaming``'s ``audio_decode_chunk`` profiler steps
+        in tt_modeling.py) instead of one aggregate audio-decode number for
+        the whole utterance.
+        """
+
+        def _dur_ms(key):
+            try:
+                if profiler.contains_step(key):
+                    return profiler.get_duration(key) * 1000.0
+            except Exception:
+                pass
+            return float("nan")
+
+        reset_ms = _dur_ms("reset_state")
+        ttft_ms = _dur_ms("inference_prefill")
+
+        decode_calls = (done_state or {}).get("decode_calls") or 0
+        num_steady = max(0, decode_calls - 1)
+        total_decode_ms = 0.0
+        for i in range(1, decode_calls):
+            d = _dur_ms(f"inference_decode_time_{i}")
+            if d == d:  # not NaN
+                total_decode_ms += d
+        if num_steady > 0 and total_decode_ms > 0:
+            ms_per_token = total_decode_ms / num_steady
+            tok_s = num_steady / (total_decode_ms / 1000.0)
+        else:
+            ms_per_token = float("nan")
+            tok_s = float("nan")
+
+        chunk_ms = []
+        for i in range(chunk_index):
+            if profiler.contains_step("audio_decode_chunk", iteration=i):
+                chunk_ms.append(profiler.get_duration("audio_decode_chunk", iteration=i) * 1000.0)
+        avg_chunk_ms = sum(chunk_ms) / len(chunk_ms) if chunk_ms else float("nan")
+        chunk_ms_str = ", ".join(f"{m:.1f}" for m in chunk_ms)
+
+        self.logger.info(
+            f"Device {self.device_id}: [tts-perf-streaming] reset_state={reset_ms:.1f}ms "
+            f"TTFT/prefill={ttft_ms:.1f}ms "
+            f"decode={total_decode_ms:.1f}ms over {num_steady} steady-state tokens "
+            f"({ms_per_token:.2f} ms/token, {tok_s:.2f} tok/s) "
+            f"| {chunk_index} audio chunks (64 tokens each, last may be shorter), "
+            f"avg_chunk_audio_decode={avg_chunk_ms:.1f}ms, per_chunk_ms=[{chunk_ms_str}] "
+            f"| converged={(done_state or {}).get('converged')}, "
+            f"real_prompt_len={(done_state or {}).get('prompt_len')}"
+        )
+
+    async def _generate_streaming_tts(self, request: TextToSpeechRequest):
+        """Streaming counterpart of ``_synthesize``: yields one
+        ``TextToSpeechChunkOutput`` per progressively-decoded audio chunk,
+        then a terminal empty-audio ``FINAL_TYPE`` marker -- mirrors
+        ``vllm_runner.py``'s ``_generate_streaming`` shape (device_worker.py's
+        streaming dispatch and base_service.py's process_streaming key off
+        the same ``type``/``data`` envelope regardless of model domain).
+
+        Runs synchronously (blocking device calls, no thread hop): the
+        streaming dispatch in device_workers/device_worker.py already drains
+        this generator via a dedicated ``loop.run_until_complete(...)`` call
+        that handles one streaming request at a time, so there is no
+        concurrent event-loop work to protect during the (blocking) device
+        calls -- matching ``_synthesize``'s single blocking call, just
+        incremental instead of all-at-once.
+        """
+        speech_ids_prompt = None
+        if request.voice_id:
+            speech_ids_prompt = self._voice_cache.get_voice(request.voice_id)
+
+        profiler = BenchmarkProfiler()
+        chunk_index = 0
+        total_samples = 0
+        done_state = None
+
+        for kind, payload in tt_modeling.synthesize_tp8_streaming(
+            self._speechlm,
+            self._tokenizer,
+            self._audio_decoder,
+            request.text,
+            speech_ids_prompt=speech_ids_prompt,
+            profiler=profiler,
+        ):
+            if kind == "chunk":
+                audio_base64, chunk_duration = self._wav_base64(payload, DECODER_SAMPLE_RATE)
+                total_samples += payload.reshape(-1).shape[0]
+                yield TextToSpeechChunkOutput(
+                    type=CHUNK_TYPE,
+                    data=TextToSpeechChunkResult(
+                        audio_base64=audio_base64,
+                        chunk_index=chunk_index,
+                        is_final=False,
+                        sample_rate=DECODER_SAMPLE_RATE,
+                        format="wav",
+                        duration=chunk_duration,
+                        speaker_id=request.voice_id,
+                    ),
+                )
+                chunk_index += 1
+            else:
+                done_state = payload
+
+        total_duration = total_samples / DECODER_SAMPLE_RATE
+        self._log_streaming_perf_summary(profiler, chunk_index, done_state)
+
+        yield TextToSpeechChunkOutput(
+            type=FINAL_TYPE,
+            data=TextToSpeechChunkResult(
+                audio_base64="",
+                chunk_index=chunk_index,
+                is_final=True,
+                sample_rate=DECODER_SAMPLE_RATE,
+                format="wav",
+                duration=total_duration,
+                speaker_id=request.voice_id,
+            ),
         )
 
     async def _run_async(self, requests: list):
@@ -400,6 +663,8 @@ class TTInworldTTSRunner(BaseMetalDeviceRunner):
             if isinstance(request, VoiceListRequest):
                 return await asyncio.to_thread(self._list_voices, request)
             if isinstance(request, TextToSpeechRequest):
+                if getattr(request, "stream", False):
+                    return self._generate_streaming_tts(request)
                 return await asyncio.to_thread(self._synthesize, request)
             raise ValueError(
                 f"Unsupported request type for Inworld TTS runner: {type(request).__name__}"

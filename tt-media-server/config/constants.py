@@ -299,6 +299,15 @@ class DeviceTypes(Enum):
     P150X8 = "p150x8"  # BH LoudBox - 8x P150 (2,4 mesh)
     P300X2 = "p300x2"  # BH QuietBox GE - 2x P300 cards (2,2 mesh)
     BLACKHOLE_GALAXY = "bh-galaxy"
+    # 4-chip TP carve-out of a real Blackhole Galaxy chassis (distinct from
+    # P150X4's standalone-4-cards product). Deliberately NOT a key in
+    # _BH_DEVICE_MESH_DESCRIPTORS (utils/runner_utils.py) -- the standalone
+    # p150x4 mesh graph descriptor's assumed board wiring does not match a
+    # real chassis's backplane topology (confirmed via direct ttnn probe:
+    # TopologyMapper TT_FATAL, any 4-chip group, same box); leaving no
+    # descriptor set lets ttnn's auto-discovery build the mesh correctly,
+    # the one verified-working path on this hardware.
+    P150X4_GALAXY = "p150x4-galaxy"
 
 
 class QueueType(Enum):
@@ -987,6 +996,17 @@ ModelConfigs = {
         "device_mesh_shape": (1, 8),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_8_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 600,
+    },
+    # TP=4 on a real Blackhole Galaxy chassis carve-out -- see
+    # DeviceTypes.P150X4_GALAXY's docstring for why this uses a dedicated
+    # DeviceTypes value instead of the standard P150X4 (standalone-cards)
+    # entry other runners use.
+    (ModelRunners.TT_INWORLD_TTS, DeviceTypes.P150X4_GALAXY): {
+        "device_mesh_shape": (1, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
         "max_batch_size": 1,
         "request_processing_timeout_seconds": 600,
     },

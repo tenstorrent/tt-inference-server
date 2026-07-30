@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+import json
 from typing import Optional
 
 from config.constants import AUDIO_RESPONSE_FORMATS
@@ -19,6 +20,7 @@ from fastapi import (
     Security,
     UploadFile,
 )
+from fastapi.responses import StreamingResponse
 from model_services.base_service import BaseService
 from resolver.service_resolver import service_resolver
 from security.api_key_checker import get_api_key
@@ -36,26 +38,47 @@ async def handle_tts_request(tts_request, service):
     """
     Runner returns base64; post_process converts to requested format.
     Here we return result.output_bytes (WAV/MP3/OGG) or JSON with base64.
+
+    Supports streaming (Inworld TTS runner only, currently) based on the
+    ``stream`` field on ``tts_request``, mirroring audio.py's
+    ``handle_audio_request`` NDJSON pattern for the STT endpoints -- each
+    line is one base64-WAV-carrying chunk (or the final metadata-only
+    marker), letting a client start playback before the whole utterance
+    finishes generating instead of waiting for one complete response.
+    Streaming chunks are always WAV -- response_format's MP3/OGG
+    post-processing only applies to the non-streaming path.
     """
     try:
-        result = await service.process_request(tts_request)
-        fmt = tts_request.response_format.lower()
-        if fmt in AUDIO_RESPONSE_FORMATS:
-            content = getattr(result, "output_bytes", None)
-            if not content:
-                raise HTTPException(
-                    status_code=500,
-                    detail="Binary audio not available in response",
+        if not getattr(tts_request, "stream", False):
+            result = await service.process_request(tts_request)
+            fmt = tts_request.response_format.lower()
+            if fmt in AUDIO_RESPONSE_FORMATS:
+                content = getattr(result, "output_bytes", None)
+                if not content:
+                    raise HTTPException(
+                        status_code=500,
+                        detail="Binary audio not available in response",
+                    )
+                media_type = TTS_MEDIA_TYPES.get(result.format, "audio/wav")
+                suggested_name = f"speech.{result.format}"
+                headers = {"Content-Disposition": f"attachment; filename={suggested_name}"}
+                return Response(
+                    content=content,
+                    media_type=media_type,
+                    headers=headers,
                 )
-            media_type = TTS_MEDIA_TYPES.get(result.format, "audio/wav")
-            suggested_name = f"speech.{result.format}"
-            headers = {"Content-Disposition": f"attachment; filename={suggested_name}"}
-            return Response(
-                content=content,
-                media_type=media_type,
-                headers=headers,
-            )
-        return get_dict_response(result)
+            return get_dict_response(result)
+
+        try:
+            service.scheduler.check_is_model_ready()
+        except Exception:
+            raise HTTPException(status_code=405, detail="Model is not ready")
+
+        async def result_stream():
+            async for partial in service.process_streaming_request(tts_request):
+                yield json.dumps(get_dict_response(partial)) + "\n"
+
+        return StreamingResponse(result_stream(), media_type="application/x-ndjson")
     except HTTPException:
         raise
     except Exception as e:

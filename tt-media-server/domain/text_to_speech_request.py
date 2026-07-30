@@ -47,6 +47,12 @@ class TextToSpeechRequest(BaseRequest):
     # Response format: wav (default), mp3, ogg, json, or verbose_json
     response_format: str = "wav"
 
+    # Streaming (Inworld TTS runner only, currently): stream audio chunks
+    # progressively as they're decoded instead of waiting for the whole
+    # utterance and returning one complete response, mirroring
+    # ChatCompletionRequest.stream's convention.
+    stream: bool | None = False
+
     @field_validator("response_format", mode="before")
     @classmethod
     def validate_response_format(cls, v):

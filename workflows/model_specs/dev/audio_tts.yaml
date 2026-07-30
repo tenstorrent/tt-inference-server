@@ -131,3 +131,28 @@ templates:
       env_vars:
         TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_mesh_graph_descriptor.textproto"
   status: EXPERIMENTAL
+
+# NOTE: no `tt_metal_commit` field here on purpose -- dev catalogue templates
+# (ModelSpecTemplate) do not support release pins; only prod/ (ProdModelSpecTemplate)
+# does. This entry is for catalogue/docs completeness only and does not make
+# scripts/build_docker_images.py buildable for this model: that script's
+# list_image_combinations() drops every spec with vllm_commit=None, which is
+# every MEDIA-engine spec (see whisper/speecht5_tts above -- neither sets
+# vllm_commit either). MEDIA images are built directly from tt-media-server/Dockerfile.
+- weights:
+    - inworld-tts-2
+  impl: inworld_tts
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: TEXT_TO_SPEECH
+  inference_engine: MEDIA
+  env_vars:
+    INWORLD_TTS_SPEECHLM_PATH: "/home/tt-admin/ssinghal/tts-models/tts-2/checkpoints/speechlm"
+    INWORLD_TTS_DECODER_PATH: "/home/tt-admin/ssinghal/tts-models/tts-2/checkpoints/decoder/decoder.pt"
+    INWORLD_TTS_ENCODER_PATH: "/home/tt-admin/ssinghal/tts-models/tts-2/checkpoints/encoder/model.pt"
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 32
+      max_context: 65536  # 64 * 1024 -- not meaningful for TTS, set for schema consistency with other MEDIA specs
+      default_impl: true
+  status: EXPERIMENTAL

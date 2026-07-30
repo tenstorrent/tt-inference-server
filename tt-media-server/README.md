@@ -210,6 +210,66 @@ For example, to run flux.1-dev on t3k
 2. Set device special env variable e.g ```export DEVICE=t3k```.
 3. Run the server ```uvicorn main:app --lifespan on --port 8000```.
 
+## Inworld TTS-2 setup
+
+Inworld TTS-2 supports two modes: TVD (no reference audio) and voice cloning (register a reference clip, then synthesize in that voice). It's implemented as a DP (data-parallel) runner — one full model instance per chip, so `DEVICE_IDS` controls how many parallel workers come up (DP=32 on a full Galaxy uses all 32 chips, one request per idle worker).
+
+### Standard Inworld TTS-2 setup (DP=N on a Galaxy)
+
+```bash
+export TT_METAL_HOME=/path/to/tt-metal
+export PYTHONPATH=/path/to/tt-metal
+export NO_AUTH=1                # or set API_KEY and send Authorization: Bearer <key>
+export MODEL=inworld-tts-2
+export MODEL_RUNNER=tt-inworld-tts
+export DEVICE=bh-galaxy
+export SERVICE_PORT=8080        # defaults to 8000 if unset
+export INWORLD_TTS_SPEECHLM_PATH=/path/to/tts-2/checkpoints/speechlm
+export INWORLD_TTS_DECODER_PATH=/path/to/tts-2/checkpoints/decoder/decoder.pt
+export INWORLD_TTS_ENCODER_PATH=/path/to/tts-2/checkpoints/encoder/model.pt
+
+source "${TT_METAL_HOME}/python_env/bin/activate"
+source run_uvicorn.sh   # or: nohup bash run_uvicorn.sh --skip-venv > server.log 2>&1 &
+```
+
+`DEVICE=bh-galaxy` (combined with `MODEL=inworld-tts-2`) resolves via `ModelConfigs` to a DP=32 device layout (all 32 chips, one worker each). To run fewer workers, override `DEVICE_IDS` directly instead, e.g. `export DEVICE_IDS="(0),(1),(2),(3)"` for DP=4.
+
+Startup takes several minutes (each of the 32 workers loads SpeechLM + decoder + encoder checkpoints independently) — poll until ready:
+
+```bash
+until curl -s -m 3 "http://localhost:${SERVICE_PORT:-8000}/v1/models" | grep -q inworld; do sleep 15; done
+echo "ready"
+```
+
+Recovering a wedged device before restarting: `tt-smi -glx_reset` (galaxy-wide reset; confirm no other process holds a chip first with `fuser /dev/tenstorrent/*`).
+
+### TP=4 / TP=8 (tensor-parallel, single worker) on a Galaxy chassis
+
+Besides the DP fleet above, Inworld TTS-2 also runs tensor-parallel across a
+single mesh spanning several chips of the same chassis (one worker, one
+model instance split across N chips, rather than N independent instances):
+
+```bash
+# TP=8 (mesh (1,8), chips 0-7):
+export DEVICE=p150x8
+
+# TP=4 (mesh (1,4), a 4-chip carve-out of the chassis):
+export DEVICE=p150x4-galaxy
+```
+
+`DEVICE=p150x4-galaxy` is a **dedicated `DeviceTypes` value, distinct from
+the standard `p150x4`** (which is for standalone 4x P150 add-in-card boxes,
+a different physical product). On a real Blackhole Galaxy chassis, the
+standard `p150x4` mesh graph descriptor's assumed board wiring does not
+match the chassis's real backplane topology and makes 4-chip mesh
+construction fail (`TopologyMapper` `TT_FATAL`, confirmed via direct `ttnn`
+probe, any 4-chip group on this hardware) -- `p150x4-galaxy` deliberately
+carries no entry in `_BH_DEVICE_MESH_DESCRIPTORS`
+(`utils/runner_utils.py`), so no `TT_MESH_GRAPH_DESC_PATH` gets set and
+`ttnn`'s auto-discovery builds the mesh correctly instead. `DEVICE=p150x8`
+needs no such workaround -- its descriptor was independently verified to
+open an 8-chip mesh correctly on this same chassis.
+
 ## VLLM with TT Plugin Setup
 
 The server supports running large language models using VLLM with the Tenstorrent plugin.
@@ -585,6 +645,69 @@ curl -X POST 'http://127.0.0.1:8000/v1/audio/speech' \
 ```json
 {"text": "Hello world", "response_format": "verbose_json"}
 ```
+
+# Inworld TTS-2 (voice cloning) test call
+
+Available when `MODEL_RUNNER=tt-inworld-tts`. Uses the same `/v1/audio/speech` endpoint as the generic TTS API above, plus two voice-management endpoints. **The request field is `text`, not `input`** — a request body using `input` gets rejected with HTTP 422.
+
+If `NO_AUTH=1` is set, omit the `Authorization` header entirely; otherwise include `-H 'Authorization: Bearer your-secret-key'` on every call below.
+
+## TVD (no reference voice)
+
+```bash
+curl -X POST 'http://127.0.0.1:8000/v1/audio/speech' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "inworld-tts-2",
+    "text": "Hello, this is a test of the text to speech system.",
+    "response_format": "wav"
+  }' \
+  -o output.wav
+```
+
+## Register a reference voice
+
+Multipart file upload; `voice_id` is caller-chosen (used later as the `voice_id` in a speech request). `language` and `description` are optional metadata.
+
+```bash
+curl -X POST 'http://127.0.0.1:8000/v1/audio/voices' \
+  -F "file=@/path/to/reference.wav" \
+  -F "voice_id=ashley" \
+  -F "language=en-US" \
+  -F "description=Female voice (en-US)"
+```
+
+Response:
+```json
+{"voice_id": "ashley", "num_codes": 225, "language": "en-US", "description": "Female voice (en-US)"}
+```
+
+## Synthesize with a registered voice (voice cloning)
+
+```bash
+curl -X POST 'http://127.0.0.1:8000/v1/audio/speech' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "inworld-tts-2",
+    "text": "Hello, this is a test of the text to speech system.",
+    "voice_id": "ashley",
+    "response_format": "wav"
+  }' \
+  -o output_cloned.wav
+```
+
+## List registered voices
+
+```bash
+curl 'http://127.0.0.1:8000/v1/audio/voices'
+```
+
+Response:
+```json
+{"voices": [{"voice_id": "ashley", "language": "en-US", "description": "Female voice (en-US)", "num_codes": 225}]}
+```
+
+Voices registered before `language`/`description` support was added report those fields as `null` rather than erroring.
 
 # Image search test call
 

@@ -326,6 +326,17 @@ class Settings(BaseSettings):
             ModelRunners.TT_WAN_2_2_I2V_ANISORA.value,
             ModelRunners.TT_WAN_2_2_I2V_DISTILL.value,
             ModelRunners.TT_WAN_2_2_I2V_LORA.value,
+            # Inworld TTS was never added here, so it ran with the default
+            # throttle level ("5") applied unconditionally -- confirmed via
+            # direct real-hardware A/B (isolated single TP=4 worker, no
+            # concurrent load) that this alone accounted for the bulk of a
+            # persistent decode-speed gap vs. the main tt-metal repo's CLI
+            # scripts (which never set TT_MM_THROTTLE_PERF at all): 33.3ms/
+            # token throttled vs 19.94ms/token with throttling disabled --
+            # internal-formula RTF went from ~0.59x to ~0.98x, matching the
+            # CLI's range. No "Throttle matmul perf to max X%" log line
+            # appears once exempted, confirming the mechanism.
+            ModelRunners.TT_INWORLD_TTS.value,
         ]:
             self.default_throttle_level = None
 

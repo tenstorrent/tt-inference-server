@@ -72,7 +72,7 @@ class TextToSpeechService(BaseService):
 
     @log_execution_time("TTS post-processing")
     async def post_process(
-        self, result: TextToSpeechResponse, input_request: TextToSpeechRequest
+        self, result: TextToSpeechResponse, input_request: Optional[TextToSpeechRequest] = None
     ) -> TextToSpeechResponse:
         """
         Convert result.audio (base64 WAV from runner) to requested format.
@@ -80,8 +80,11 @@ class TextToSpeechService(BaseService):
 
         ``input_request`` may be a request type with no ``response_format``
         (e.g. ``VoiceEncodeRequest`` -- POST /v1/audio/voices shares this
-        service/post_process with POST /v1/audio/speech), in which case this
-        is a no-op passthrough.
+        service/post_process with POST /v1/audio/speech), or ``None``
+        (``process_streaming_request``'s streaming path calls
+        ``post_process(result)`` with no request -- streaming chunks are
+        always WAV, so this is a no-op passthrough there too), in which case
+        this is a no-op passthrough.
         """
         fmt = (getattr(input_request, "response_format", None) or "").lower()
         if fmt not in AUDIO_RESPONSE_FORMATS:
@@ -124,3 +127,19 @@ class TextToSpeechService(BaseService):
         self.logger.info("Shutting down TTS postprocessing workers")
         self._cpu_workload_handler.stop_workers()
         return super().stop_workers()
+
+    # Streaming (Inworld TTS runner only, currently): mirrors llm_service.py's
+    # overrides exactly, just keyed on ``audio_base64`` (truthy for real audio
+    # chunks, "" on the terminal marker) instead of ``text``. The terminal
+    # marker is therefore never yielded to the HTTP layer -- the client sees
+    # the stream simply end, same as vllm_runner.py's empty-text final chunk.
+    # response_format-based MP3/OGG post-processing (post_process, above) does
+    # not apply in streaming mode: streaming chunks are always WAV.
+    def handle_streaming_chunk(self, chunk):
+        chunk = chunk["data"]
+        if chunk and chunk.audio_base64:
+            return chunk
+        return None
+
+    def handle_final_result(self, result):
+        return self.handle_streaming_chunk(result)
