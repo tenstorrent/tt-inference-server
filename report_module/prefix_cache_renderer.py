@@ -111,6 +111,39 @@ UPLIFT_COLUMNS: List[Tuple[str, str]] = [
 ]
 
 
+ROLE_HIT_RATE_COLUMNS: List[Tuple[str, str]] = [
+    ("prefix_cache_hit_rate_prefill_pct", "Prefill Hit %"),
+    ("prefix_cache_hit_rate_decode_pct", "Decode Hit %"),
+]
+
+DECODE_SLA_COLUMN: Tuple[str, str, str, str] = (
+    "prefix_cache_hit_rate_decode_pct",
+    "sla_hit_rate_decode_pass",
+    "Decode Hit % (>=90)",
+    "90%",
+)
+PREFILL_INFO_HEADER = "Prefill Hit % (info)"
+
+
+def _has_role_hit_rates(rows: Sequence[Mapping[str, Any]]) -> bool:
+    """True when any row carries a prefill/decode hit rate (disaggregation)."""
+    keys = ("prefix_cache_hit_rate_prefill_pct", "prefix_cache_hit_rate_decode_pct")
+    return any(isinstance(row.get(k), (int, float)) for row in rows for k in keys)
+
+
+def _insert_after(
+    columns: Sequence[Tuple[str, str]],
+    after_key: str,
+    extra: Sequence[Tuple[str, str]],
+) -> List[Tuple[str, str]]:
+    result: List[Tuple[str, str]] = []
+    for col in columns:
+        result.append(col)
+        if col[0] == after_key:
+            result.extend(extra)
+    return result
+
+
 def _format_number(col: str, value: Any) -> str:
     if value is None or value == "":
         return NA
@@ -118,7 +151,11 @@ def _format_number(col: str, value: Any) -> str:
         return str(value)
     if not isinstance(value, (int, float)):
         return str(value)
-    if col == "prefix_cache_hit_rate_pct":
+    if col in (
+        "prefix_cache_hit_rate_pct",
+        "prefix_cache_hit_rate_prefill_pct",
+        "prefix_cache_hit_rate_decode_pct",
+    ):
         return f"{value:.1f}"
     if col in ("request_throughput", "goodput"):
         return f"{value:.3f}"
@@ -256,20 +293,38 @@ def _build_sla_rows(rows: Sequence[Mapping[str, Any]]) -> List[Dict[str, str]]:
     customer preset) are included; baseline control rows are excluded
     because the customer KPIs describe the cached workload.
     """
+    # Disaggregated sweeps: DECODE gates (replacing the blended combined
+    # hit-rate column), and PREFILL is appended informational-only. Aggregated
+    # sweeps keep the single combined hit-rate column unchanged.
+    role_mode = _has_role_hit_rates(rows)
+    if role_mode:
+        sla_columns = [
+            DECODE_SLA_COLUMN if col[1] == "sla_hit_rate_pass" else col
+            for col in SLA_COLUMNS
+        ]
+    else:
+        sla_columns = list(SLA_COLUMNS)
+
     sla_rows: List[Dict[str, str]] = []
     for row in rows:
         if row.get("scenario") == "baseline":
             continue
-        if all(row.get(pass_key) is None for _, pass_key, _, _ in SLA_COLUMNS):
+        if all(row.get(pass_key) is None for _, pass_key, _, _ in sla_columns):
             continue
         out: Dict[str, str] = {
             "Scenario": str(row.get("scenario") or NA),
             "Label": str(row.get("label") or NA),
             "Concur": str(row.get("concurrency") or NA),
         }
-        for measured_key, pass_key, header, _target in SLA_COLUMNS:
+        for measured_key, pass_key, header, _target in sla_columns:
             out[header] = _sla_cell(
                 row.get(measured_key), row.get(pass_key), measured_key
+            )
+        if role_mode:
+            # Informational only: percentage, no PASS/FAIL verdict.
+            out[PREFILL_INFO_HEADER] = _format_number(
+                "prefix_cache_hit_rate_prefill_pct",
+                row.get("prefix_cache_hit_rate_prefill_pct"),
             )
         out["Overall"] = _verdict(row.get("sla_pass"))
         sla_rows.append(out)
@@ -301,6 +356,16 @@ def render_aiperf_prefix_cache(block: Block, metadata: Mapping[str, Any]) -> str
     rows = _sort_rows([dict(r) for r in records])
     model, device = _resolve_model_device(block, metadata, rows)
 
+    has_role_hit_rates = _has_role_hit_rates(rows)
+    role_metric_def = (
+        "> - **Prefill Hit % / Decode Hit %** (disaggregated deployments "
+        "only): the same ratio computed per role. Prefill and decode are "
+        "independent caches, so each is reported on its own denominator "
+        "rather than blended into one rate.\n"
+        if has_role_hit_rates
+        else ""
+    )
+
     synthetic_rows = [r for r in rows if r.get("scenario") != "mooncake_trace"]
     trace_rows = [r for r in rows if r.get("scenario") == "mooncake_trace"]
 
@@ -322,8 +387,13 @@ def render_aiperf_prefix_cache(block: Block, metadata: Mapping[str, Any]) -> str
     )
 
     if synthetic_rows:
+        synth_columns = DISPLAY_COLUMNS
+        if _has_role_hit_rates(synthetic_rows):
+            synth_columns = _insert_after(
+                DISPLAY_COLUMNS, "prefix_cache_hit_rate_pct", ROLE_HIT_RATE_COLUMNS
+            )
         synth_table = build_markdown_table(
-            [_row_to_display(r, DISPLAY_COLUMNS) for r in synthetic_rows]
+            [_row_to_display(r, synth_columns) for r in synthetic_rows]
         )
         if synth_table:
             parts.append(
@@ -331,8 +401,15 @@ def render_aiperf_prefix_cache(block: Block, metadata: Mapping[str, Any]) -> str
             )
 
     if trace_rows:
+        trace_columns = TRACE_DISPLAY_COLUMNS
+        if _has_role_hit_rates(trace_rows):
+            trace_columns = _insert_after(
+                TRACE_DISPLAY_COLUMNS,
+                "prefix_cache_hit_rate_pct",
+                ROLE_HIT_RATE_COLUMNS,
+            )
         trace_table = build_markdown_table(
-            [_row_to_display(r, TRACE_DISPLAY_COLUMNS) for r in trace_rows]
+            [_row_to_display(r, trace_columns) for r in trace_rows]
         )
         if trace_table:
             parts.append(
@@ -356,10 +433,15 @@ def render_aiperf_prefix_cache(block: Block, metadata: Mapping[str, Any]) -> str
                 "#### SLA Compliance vs Customer Targets\n\n"
                 "Per-run PASS/FAIL against the customer KPIs: TTFT P50 < 4s, "
                 "P90 < 10s, P99 < 35s; output speed >= 45 tokens/s/user; "
-                "KV-cache hit rate >= 90%. **Overall** is PASS only when every "
-                "target is met, FAIL if any is missed, and N/A when a metric "
-                "was not captured (e.g. hit-rate when the worker `/metrics` "
-                "endpoint is unreachable). Goodput SLO enforcement is applied "
+                "KV-cache hit rate >= 90%. For disaggregated deployments "
+                "**decode** gates the hit-rate SLA; **prefill** is shown "
+                "informational-only (no PASS/FAIL) because it structurally "
+                "handles cache misses (a prompt already cached on decode is "
+                "prefilled locally and never offloaded), so its hit-rate is "
+                "expected to be lower. **Overall** is PASS only when every "
+                "gating target is met, FAIL if any is missed, and N/A when a "
+                "metric was not captured (e.g. hit-rate when the worker "
+                "`/metrics` endpoint is unreachable). Goodput SLO enforcement is applied "
                 "in-run via AIPerf `--goodput` (the **Goodput (req/s)** column "
                 "above is the throughput of requests meeting every SLO).\n\n"
                 f"{sla_table}"
@@ -386,6 +468,7 @@ def render_aiperf_prefix_cache(block: Block, metadata: Mapping[str, Any]) -> str
         "> - **Cache Hit %**: `(hits_delta / queries_delta) * 100` from the "
         "serving engine's prefix-cache counters across the benchmark "
         "window.\n"
+        f"{role_metric_def}"
         "> - **TTFT / TPOT / ITL / E2EL P50/P90/P95/P99**: AIPerf percentiles "
         "from `profile_export_aiperf.json`.\n"
         "> - **Output Tok/s/User**: AIPerf `output_token_throughput_per_user` "

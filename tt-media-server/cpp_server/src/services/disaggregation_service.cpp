@@ -10,7 +10,9 @@
 #include "config/settings.hpp"
 #include "domain/llm/llm_request.hpp"
 #include "domain/llm/llm_response.hpp"
+#include "domain/prefix_cache/block_matcher.hpp"
 #include "dynamo/etcd_client.hpp"
+#include "metrics/metrics.hpp"
 #include "runtime/worker/worker_manager.hpp"
 #include "services/decode_slot_reservation.hpp"
 #include "services/disaggregation_contract_mapping.hpp"
@@ -666,8 +668,8 @@ void DisaggregationService::applySlotReservationAndLaunch(
 
   TT_LOG_INFO(
       "[DisaggregationService] Slot reservation granted taskId={} slotId={} "
-      "decodePositionId={} continuation={} decodeInstance={}",
-      result.taskId, result.slotId, result.decodePositionId,
+      "sessionId='{}' decodePositionId={} continuation={} decodeInstance={}",
+      result.taskId, result.slotId, result.sessionId, result.decodePositionId,
       result.continuation, pending.decodeInstanceId);
 
   PrefillWorkContext work = std::move(pending.work);
@@ -688,19 +690,27 @@ void DisaggregationService::applySlotReservationAndLaunch(
   const bool fastMode = work.request->fast_mode;
   const auto slotId = work.request->slotId;
   const std::string decodeSessionId = result.sessionId;
+  const auto request = work.request;
+  auto resultCallbackShared =
+      resultCallback.has_value()
+          ? std::make_shared<
+                std::function<void(const tt::sockets::PrefillResultMessage&)>>(
+                std::move(*resultCallback))
+          : std::shared_ptr<std::function<void(
+                const tt::sockets::PrefillResultMessage&)>>{};
 
   resolvePrefillSession(
-      work.request, registrationHashes,
-      [this, work = std::move(work), streamCallback,
-       resultCallback = std::move(resultCallback), taskId, fullPromptTokenIds,
-       temperature, topP, topK, fastMode, slotId, decodeSessionId]() mutable {
+      request, registrationHashes,
+      [this, work = std::move(work), streamCallback, resultCallbackShared,
+       taskId, fullPromptTokenIds, temperature, topP, topK, fastMode, slotId,
+       decodeSessionId]() mutable {
         const auto requestPtr = work.request;
         launchPrefillWork(
             std::move(work),
-            [streamCallback, resultCallback, taskId, fullPromptTokenIds,
+            [streamCallback, resultCallbackShared, taskId, fullPromptTokenIds,
              temperature, topP, topK, fastMode, slotId, decodeSessionId,
              requestPtr](const LLMStreamChunk& response, bool isFinal) {
-              if (resultCallback.has_value()) {
+              if (resultCallbackShared && *resultCallbackShared) {
                 if (!isFinal && !response.choices.empty() &&
                     response.choices.back().finish_reason.has_value() &&
                     isErrorFinishReason(
@@ -744,7 +754,7 @@ void DisaggregationService::applySlotReservationAndLaunch(
                   prefillResult.migrationId =
                       requestPtr->migrationId.value_or(0);
                 }
-                (*resultCallback)(prefillResult);
+                (*resultCallbackShared)(prefillResult);
                 return;
               }
               if (streamCallback) {
@@ -752,17 +762,16 @@ void DisaggregationService::applySlotReservationAndLaunch(
               }
             });
       },
-      [taskId, streamCallback,
-       resultCallback = std::move(resultCallback)](std::string_view error) {
+      [taskId, streamCallback, resultCallbackShared](std::string_view error) {
         TT_LOG_WARN(
             "[DisaggregationService] Prefill session resolution failed after "
             "slot reservation taskId={}: {}",
             taskId, error);
-        if (resultCallback.has_value()) {
+        if (resultCallbackShared && *resultCallbackShared) {
           auto result = tt::sockets::PrefillResultMessage(taskId);
           result.error = true;
           result.generatedText = std::string(error);
-          (*resultCallback)(result);
+          (*resultCallbackShared)(result);
         } else if (streamCallback) {
           streamCallback(makeErrorChunk(taskId, std::string(error)),
                          /*isFinal=*/true);
@@ -787,6 +796,8 @@ void DisaggregationService::resolvePrefillSession(
   // Convert hashes to BlockHashInfo for session manager calls.
   // Think token counts are 0 since prefill server doesn't track them.
   auto blockInfos = utils::hashesToBlockInfos(routingHashes);
+  const uint32_t promptTokens =
+      domain::prefix_cache::BlockMatcher::blocksToTokens(blockInfos.size());
 
   auto acquired = sessionManager->tryAcquireByPrefixHash(blockInfos, nullptr);
 
@@ -796,6 +807,8 @@ void DisaggregationService::resolvePrefillSession(
         "sessionId={} slotId={} matchedTokens={}",
         request->task_id, acquired->sessionId, acquired->slotId,
         acquired->numberOfMatchedTokens);
+    tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(
+        promptTokens, acquired->numberOfMatchedTokens);
     request->prefillSlotId = acquired->slotId;
     // Record the acquired session so the prefill completion can release its
     // in-flight hold (see clearInFlight below).
@@ -835,6 +848,12 @@ void DisaggregationService::resolvePrefillSession(
         "hashes={}, creating new session",
         request->task_id, routingHashes.size());
 
+    // A slot copy still reuses copyMatchedTokens of KV cache, so credit those
+    // as hits (0 when no copy happened) rather than always reporting a full
+    // miss
+    tt::metrics::ServerMetrics::instance().onPrefixCacheLookup(
+        promptTokens, copyMatchedTokens);
+
     sessionManager->createSession(
         [this, request, infos = std::move(blockInfos), sm = sessionManager,
          slotToCopyFrom, copyMatchedTokens, onResolved = std::move(onResolved)](
@@ -865,6 +884,8 @@ void DisaggregationService::resolvePrefillSession(
                 {.skipUnlessRegularMode = false,
                  .setKvPositionId = false,
                  .logPrefix = "[DisaggregationService]"});
+          } else {
+            request->kv_position_id = 0;
           }
           onResolved();
         },

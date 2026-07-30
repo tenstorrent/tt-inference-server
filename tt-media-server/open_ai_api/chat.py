@@ -26,15 +26,30 @@ logger = TTLogger()
 def _get_tokenizer():
     model_name = settings.model_weights_path
     logger.info(f"Loading tokenizer for chat template: {model_name}")
-    return AutoTokenizer.from_pretrained(model_name)
+    kwargs = (
+        {"tokenizer_type": settings.tokenizer_type} if settings.tokenizer_type else {}
+    )
+    return AutoTokenizer.from_pretrained(model_name, **kwargs)
 
 
+# Chat templates render in one of two modes depending on the last message:
+#   - Last turn is user/system (the usual case): append a generation prompt
+#     so the model begins a NEW assistant turn. This is add_generation_prompt=True.
+#   - Last turn is already an assistant message: the caller has opened the
+#     assistant turn itself and wants the model to CONTINUE that text, not
+#     start another one ("assistant prefill"), e.g. eval humaneval_instruct primes
+#     with "Here is the completed function: ```...```" and expects the model to finish it.
+#     This needs continue_final_message=True, which renders that final message WITHOUT
+#     a trailing EOS so generation resumes from its last token.
+# The two modes are mutually exclusive.
 def _apply_chat_template(messages: list[dict]) -> str:
     tokenizer = _get_tokenizer()
+    continue_final = bool(messages) and messages[-1].get("role") == "assistant"
     return tokenizer.apply_chat_template(
         messages,
         tokenize=False,
-        add_generation_prompt=True,
+        add_generation_prompt=not continue_final,
+        continue_final_message=continue_final,
         **settings.chat_template_kwargs,
     )
 
