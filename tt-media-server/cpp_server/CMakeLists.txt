@@ -1603,18 +1603,6 @@ if(KAFKA_ENABLED)
         message(STATUS "remote_kv_adapter: DISABLED (requires ENABLE_BLAZE=ON)")
     endif()
 
-    # Migration worker library (for consumer instances)
-    add_library(migration_worker
-        src/runtime/worker/migration_worker.cpp
-    )
-    target_include_directories(migration_worker PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-    )
-    target_link_libraries(migration_worker PUBLIC
-        messaging
-        spdlog::spdlog
-        JsonCpp::JsonCpp
-    )
     # Unit test for migration_message JSON (de)serialization.
     add_executable(migration_message_test
         tests/unit/messaging/migration_message_test.cpp

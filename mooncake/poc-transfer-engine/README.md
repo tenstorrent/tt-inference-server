@@ -141,7 +141,6 @@ STORAGE=device SRC_DEVICE_ID=0 DST_DEVICE_ID=1 \
 
 # #4209 worker discovery via the Mooncake Metadata Service (host RAM only, two hosts):
 tests/integration/run_mooncake_metadata_server.sh                 # start the metadata service
-tests/integration/run_migration_worker_discovery.sh               # single-host smoke (auto-starts service)
 ```
 
 Build guards: `USE_METAL_CPP_LIB` (real UMD I/O, via `--blaze`) and

@@ -19,8 +19,8 @@
 #      across the decode hosts; decode workers are passive control-servers.
 #   5. Layer ownership lives INSIDE the decode table (.pb): each chunk's
 #      fabric_node_host names the decode that owns it. --prefill-table /
-#      --decode-table (or the config) supply the tables; --layer-start/--layer-end
-#      are no longer used here.
+#      --decode-table supply the tables; --layer-start/--layer-end are no longer
+#      used here.
 #   6. A watchdog then polls every worker's /healthz (HTTP is the health signal).
 #      After N consecutive misses it relaunches ONLY that worker in place. The
 #      launch PID is only a kill handle for processes this script started — it
@@ -42,19 +42,16 @@
 #   * Docker and the KV .pb tables at the configured paths on every worker host
 #   * curl on this host for health/readiness and discovery probes
 #
-# Example — 2 prefill hosts + 4 decode hosts (tables + tags from the config):
+# Example — 2 prefill hosts + 4 decode hosts:
 #   ./scripts/deploy_migration_workers.sh \
 #     --discovery-server 10.32.89.65:8080 \
 #     --prefill-hosts  bh-glx-c01u02,bh-glx-c01u03 \
 #     --decode-hosts   bh-glx-c01u08,bh-glx-c02u02,bh-glx-c03u02,bh-glx-c04u02 \
+#     --prefill-table  /data/${USER}/tables/prefill_kv_chunk_table.pb \
+#     --decode-table   /data/${USER}/tables/decoder_kv_table.pb \
 #     --health-port 9109
 
 set -uo pipefail
-
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# Sourced (if present) before flag parsing, so --flags still override it. Holds
-# the table-coupled settings (table paths, host tags, device map).
-readonly DEFAULT_CONFIG="${SCRIPT_DIR}/migration_deploy.conf"
 
 # --- defaults (override via flags) ---
 DISCOVERY_SERVER="${DISCOVERY_SERVER:-}"
@@ -72,7 +69,7 @@ GHCR_TOKEN_FILE="${GHCR_TOKEN_FILE:-}"
 GHCR_TOKEN_VALUE="${GHCR_TOKEN:-}"
 unset GHCR_TOKEN
 IMAGE_PULL_PARALLELISM="${IMAGE_PULL_PARALLELISM:-4}"
-# The KV tables the real worker migrates (see migration_deploy.conf). Required.
+# The KV tables the real worker migrates. Required.
 PREFILL_TABLE="${PREFILL_TABLE:-}"
 DECODE_TABLE="${DECODE_TABLE:-}"
 # OPTIONAL FabricNode->UMD chip maps. DEVICE_MAP is a backward-compatible
@@ -89,7 +86,7 @@ HANDOFF_SENDER_BIN="${HANDOFF_SENDER_BIN:-}"
 # table's host-<crc32> convention; empty => hash the corresponding decode host.
 PREFILL_TAGS="${PREFILL_TAGS:-}"
 DECODE_TAGS="${DECODE_TAGS:-}"
-# Optional alternate config file (else DEFAULT_CONFIG next to this script).
+# Optional config file sourced before flag parsing.
 CONFIG_FILE="${CONFIG_FILE:-}"
 # HTTP health port every worker exposes (/healthz /readyz /metrics). One worker
 # per host, so they all share it. REQUIRED — the watchdog probes it.
@@ -98,10 +95,9 @@ HEALTH_PORT=0
 # the metadata service (kv_control/<tag> -> host:CONTROL_PORT). One worker per
 # host, so all decodes share it; prefill discovers each peer's host:port from
 # metadata (this value is only the fallback for a peer that hasn't published).
-# Set in migration_deploy.conf or override with --control-port.
+# Set through the environment, an explicit config, or --control-port.
 CONTROL_PORT="${CONTROL_PORT:-18650}"
-# Mirrors bringup_mooncake_worker's K_DEFAULT_HOST_DRAM_BYTES (4 GiB). Kept in
-# sync by hand; the worker also clamps/validates this against physical RAM.
+# Compatibility default for the historical per-worker host DRAM pool option.
 HOST_DRAM_BYTES=$((4 * 1024 * 1024 * 1024))
 DISCOVERY_TIMEOUT_SEC=60
 KAFKA_BROKERS="kafka:9092"
@@ -147,10 +143,11 @@ Required:
   --control-port PORT      KV control port a decode binds + publishes to
                            metadata (default ${CONTROL_PORT}); shared fleet-wide
 
-Tables (required; from config or these flags). The real worker migrates KV
+Tables (required; from the environment, an explicit config, or these flags).
+The real worker migrates KV
 described by these .pb tables (layer ownership lives INSIDE the decode table's
 fabric_node_host, not on the CLI):
-  --config FILE            config to source first (default ${DEFAULT_CONFIG})
+  --config FILE            config to source before parsing flags
   --prefill-table PATH     prefill source table (.pb)
   --decode-table PATH      cluster decode table (.pb), shared by all decodes
   --prefill-device-map PATH
@@ -194,22 +191,20 @@ EOF
 
 die() { echo "ERROR: $*" >&2; exit 2; }
 
-# Source the config file BEFORE the full flag parse (so --flags override it).
-# --config is honoured via an early scan; CONFIG_FILE env is a second override.
+# Source an explicitly requested config BEFORE the full flag parse, so flags
+# override it. --config is honoured via an early scan; CONFIG_FILE is the env
+# equivalent.
 loadConfig() {
-  local cfg="${DEFAULT_CONFIG}" prev="" a
-  [[ -n "${CONFIG_FILE}" ]] && cfg="${CONFIG_FILE}"
+  local cfg="${CONFIG_FILE}" prev="" a
   for a in "$@"; do
     [[ "${prev}" == "--config" ]] && cfg="${a}"
     prev="${a}"
   done
-  if [[ -f "${cfg}" ]]; then
-    echo "[deploy] loading config ${cfg}"
-    # shellcheck disable=SC1090
-    source "${cfg}"
-  elif [[ "${cfg}" != "${DEFAULT_CONFIG}" ]]; then
-    die "config file not found: ${cfg}"
-  fi
+  [[ -z "${cfg}" ]] && return 0
+  [[ -f "${cfg}" ]] || die "config file not found: ${cfg}"
+  echo "[deploy] loading config ${cfg}"
+  # shellcheck disable=SC1090
+  source "${cfg}"
 }
 
 parseArgs() {
@@ -453,8 +448,8 @@ peersForWorker() {
 # Fail fast when two prefills would share the same decode peer. Control TCP
 # multi-accept allows N sessions, but Kafka broadcast means every prefill
 # consumes/acks the same migration UUID — shared decode peers stay unsafe until
-# there is an explicit single Kafka owner. See migration_worker_rank_launch.sh
-# for a round-robin WORKER_PEERS pattern.
+# there is an explicit single Kafka owner. Partition WORKER_PEERS so every
+# decode appears in only one prefill's list.
 assertExclusiveDecodePeers() {
   declare -A decodeOwner=()
   local s peers peer
@@ -467,8 +462,7 @@ assertExclusiveDecodePeers() {
         die "decode peer '${peer}' assigned to both '${decodeOwner[$peer]}' and '${WK_TAG[$s]}'. \
 Each prefill has its own Kafka group (broadcast), so two prefills cannot safely \
 share a decode even though control TCP multi-accepts. Use one prefill, or set \
-WORKER_PEERS so each decode has a single prefill owner \
-(see migration_worker_rank_launch.sh round-robin)."
+WORKER_PEERS so each decode has a single prefill owner."
       fi
       decodeOwner[$peer]="${WK_TAG[$s]}"
     done

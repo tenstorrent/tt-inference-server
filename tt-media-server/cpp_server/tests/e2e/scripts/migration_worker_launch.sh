@@ -2,10 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 #
-# Per-worker launcher for mooncake_kv_migration_worker (the REAL KV data-plane
-# worker that supersedes bringup_mooncake_worker). deploy_migration_workers.sh
-# sets the env below and runs exactly one of these per host, so a relaunch
-# reproduces the worker identically.
+# Per-worker launcher for the mooncake_kv_migration_worker KV data-plane worker.
+# deploy_migration_workers.sh sets the env below and runs exactly one of these
+# per host, so a relaunch reproduces the worker identically.
 #
 # It only translates the deploy's env into the worker's flags — all topology
 # (how many prefill/decode, which physical host) is decided by the deploy. We

@@ -13,9 +13,7 @@
 //                    KvMigrationReceiverServer, answering the migration control
 //                    protocol (prepareMirror / drain) for inbound migrations.
 //
-// This supersedes bringup_mooncake_worker (Kafka loop that only logged) and
-// tt_kv_migration_consumer (StubMigrationExecutor): it is the first binary that
-// actually moves KV on a Kafka trigger.
+// This is the production worker that moves KV on a Kafka trigger.
 //
 // Table source: each worker loads its KV .pb from disk (--prefill-table /
 // --table; production path is typically under /tmp from the engine export).
