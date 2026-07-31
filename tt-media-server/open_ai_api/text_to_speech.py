@@ -39,26 +39,37 @@ TTS_MEDIA_TYPES = {
 _VOICE_NOT_FOUND_MARKER = "not found. Available voices:"
 _TEXT_TOO_LONG_MARKER = "exceeding the fixed ISL="
 
-# Inworld TTS-2 only: a known, pre-existing bug (unrelated to any one
-# session's changes -- confirmed via git-stash revert-and-reproduce, see
-# models/demos/inworld_tts/FINAL_RUN.md) permanently corrupts a worker's
-# subsequent NON-streaming output to near-silence once that worker has
-# served any streaming request. Until that's root-caused, reject
-# non-streaming requests outright instead of silently returning corrupted
-# audio. Gated by an env var (default: disabled) so it's a one-line revert
-# once the underlying bug is fixed -- not a hardcoded permanent behavior
-# change.
-_INWORLD_NON_STREAMING_DISABLED_MSG = (
-    "Non-streaming text-to-speech requests are disabled on this deployment: a known bug "
-    "permanently corrupts a worker's subsequent non-streaming output once it has served "
-    "any streaming request. Set \"stream\": true and use the NDJSON streaming response instead."
+# Inworld TTS-2 only: non-streaming requests are not supported on this
+# deployment. A caller that omits "stream" entirely (e.g. most OpenAI-SDK-
+# shaped clients, which default to non-streaming) gets defaulted to
+# streaming rather than erroring; a caller that explicitly passes
+# "stream": false gets a clear rejection instead of a response. Gated by an
+# env var (default: enabled) so it's a one-line revert if this deployment's
+# constraints change.
+_INWORLD_NON_STREAMING_UNSUPPORTED_MSG = (
+    "Non-streaming text-to-speech requests are not supported on this deployment. "
+    "Set \"stream\": true and use the NDJSON streaming response instead."
 )
 
 
-def _non_streaming_disabled_for_inworld_tts() -> bool:
+def _inworld_tts_streaming_only() -> bool:
     return settings.model_runner == ModelRunners.TT_INWORLD_TTS.value and os.getenv(
-        "INWORLD_TTS_DISABLE_NON_STREAMING", "1"
+        "INWORLD_TTS_STREAMING_ONLY", "1"
     ) != "0"
+
+
+def _apply_inworld_stream_default(tts_request) -> None:
+    """If ``stream`` was omitted from the request body entirely (most
+    OpenAI-SDK-shaped clients never set it), default it to True instead of
+    inheriting the field's normal ``False`` default -- this deployment
+    doesn't support non-streaming. A caller that explicitly passed
+    ``"stream": false`` is left alone and hits the rejection in
+    ``handle_tts_request`` instead of being silently overridden.
+    """
+    if not _inworld_tts_streaming_only():
+        return
+    if "stream" not in tts_request.model_fields_set:
+        tts_request.stream = True
 
 
 async def resolve_voice(tts_request, service) -> None:
@@ -111,8 +122,8 @@ async def handle_tts_request(tts_request, service):
     """
     try:
         if not getattr(tts_request, "stream", False):
-            if _non_streaming_disabled_for_inworld_tts():
-                raise HTTPException(status_code=400, detail=_INWORLD_NON_STREAMING_DISABLED_MSG)
+            if _inworld_tts_streaming_only():
+                raise HTTPException(status_code=400, detail=_INWORLD_NON_STREAMING_UNSUPPORTED_MSG)
             result = await service.process_request(tts_request)
             fmt = tts_request.response_format.lower()
             if fmt in AUDIO_RESPONSE_FORMATS:
@@ -187,6 +198,7 @@ async def text_to_speech(
         HTTPException: If text-to-speech fails or binary format requested but
         output not available (e.g. ffmpeg missing for mp3/ogg).
     """
+    _apply_inworld_stream_default(tts_request)
     await resolve_voice(tts_request, service)
     return await handle_tts_request(tts_request, service)
 
