@@ -918,9 +918,11 @@ The TT Inference Server can be configured using environment variables or by modi
 
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
+| `MODEL` | `None` | Which model to serve, as a [`ModelNames`](config/constants.py) value (e.g. `Wan2.2-I2V-Lightning`). Unique per model variant, and the primary knob: together with `DEVICE` it selects the runner and the per-model config |
 | `MODEL_RUNNER` | [`ModelRunners.TT_SDXL_TRACE.value`](config/constants.py ) | Specifies which model runner implementation to use for inference |
 | `MODEL_SERVICE` | `None` | Specifies which model service implementation to use for inference. If not set, the default service for the selected model runner will be used |
-| `MODEL_WEIGHTS_PATH` | `""` | Path to the main model weights. Used if `HF_HOME` is not set. |
+| `SERVED_MODEL_NAME` | derived from `MODEL` for video | The model id reported by `/v1/models` and recorded on jobs. Set it to label any deployment explicitly. When unset it defaults to `MODEL` for video services — Wan2.2 variants share one HF repo, so the weights path cannot tell Prodia from Lightning from plain I2V — and to `vllm.model` for LLM. Other services report `MODEL_WEIGHTS_PATH` as before |
+| `MODEL_WEIGHTS_PATH` | `""` | Path to the main model weights. Used if `HF_HOME` is not set. Note it is overwritten by the per-model default when `MODEL` and `DEVICE` resolve to a known config — use `MODEL_WEIGHTS_DIR` to point at local weights, and `SERVED_MODEL_NAME` for display names |
 | `PREPROCESSING_MODEL_WEIGHTS_PATH` | `""` | Path to preprocessing model weights (e.g., for audio preprocessing). Used if `HF_HOME` is not set. |
 | `TRAINING_MODEL` | `None` | HuggingFace model ID used by the fine-tuning catalog when `MODEL_SERVICE=training` |
 | `CHAT_TEMPLATE_KWARGS` | `{}` | Extra kwargs passed to `tokenizer.apply_chat_template` for chat completions (e.g. Qwen3 thinking mode flags) |

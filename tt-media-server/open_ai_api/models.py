@@ -38,10 +38,10 @@ def list_models():
     List current model. OpenAI-compatible endpoint.
     See: https://platform.openai.com/docs/api-reference/models/list
     """
-    if settings.model_service == "llm":
-        model_id = settings.vllm.model
-    else:
-        model_id = settings.model_weights_path
+    # served_model_name is set only where the weights path cannot identify the
+    # deployment (video, whose variants share one HF repo) or where it is already
+    # the wrong thing (LLM). Everything else keeps reporting the weights path.
+    model_id = settings.served_model_name or settings.model_weights_path
     if not model_id:
         return {"object": "list", "data": []}
 
@@ -52,6 +52,8 @@ def list_models():
         "owned_by": V1_MODEL_OWNED_BY,
     }
 
+    # Image deployments report the runner slug (tt-flux.1-dev, ...) rather than the
+    # served name: it is already unique per variant and clients pair it with "schema".
     if settings.model_service == ModelServices.IMAGE.value:
         model_entry["id"] = settings.model_runner
         model_entry["schema"] = _resolve_image_request_model().model_json_schema()

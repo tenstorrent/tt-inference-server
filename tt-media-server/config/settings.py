@@ -22,6 +22,7 @@ from config.constants import (
     SupportedModels,
 )
 from config.vllm_settings import VLLMSettings
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from utils.device_manager import DeviceManager
 from utils.logger import TTLogger
@@ -44,10 +45,17 @@ class Settings(BaseSettings):
     use_greedy_based_allocation: bool = True
 
     # Model settings
+    # The MODEL env var, as a ModelNames value. Unique per model variant, unlike
+    # model_weights_path (every Wan2.2 I2V variant shares one HF repo).
+    model_name: Optional[str] = Field(default=None, validation_alias="MODEL")
     model_runner: str = ModelRunners.TT_SDXL_TRACE.value
     model_service: Optional[str] = (
         None  # model_service can be deduced from model_runner using MODEL_SERVICE_RUNNER_MAP
     )
+    # Public identity reported by /v1/models and recorded on jobs. Resolved from
+    # model_name at startup; set SERVED_MODEL_NAME to label a deployment explicitly.
+    served_model_name: str = ""
+    # Where weights are loaded from (HF repo id or a local directory) — not an identity.
     model_weights_path: str = ""
     training_model: Optional[str] = None
     chat_template_kwargs: dict = {}  # extra kwargs passed to apply_chat_template
@@ -144,7 +152,9 @@ class Settings(BaseSettings):
     # Currently only supported in LoraSingleChipRunner
     lora_adapter: Optional[str] = None
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env", extra="ignore", populate_by_name=True
+    )
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -156,7 +166,7 @@ class Settings(BaseSettings):
                 f"must be one of {SDXL_VALID_IMAGE_RESOLUTIONS}"
             )
 
-        model_to_run = os.getenv("MODEL")
+        model_to_run = self.model_name
         logger.info(
             f"Settings init: MODEL={model_to_run!r}, DEVICE={self.device!r}, "
             f"model_runner(default)={self.model_runner!r}, "
@@ -191,22 +201,34 @@ class Settings(BaseSettings):
                 )
 
         # set model weights path using model name
-        if self.model_weights_path is None or self.model_weights_path == "":
-            # Convert string to enum first
-            model_runner_enum = ModelRunners(self.model_runner)
+        if not self.model_weights_path:
+            # Prefer the model we were actually told to run; only guess from the
+            # runner when MODEL is unset. Runners like SP_RUNNER map to several
+            # models, so guessing can pick T2V weights for an I2V deployment.
+            model_name_enum = None
+            if self.model_name:
+                try:
+                    model_name_enum = ModelNames(self.model_name)
+                except ValueError:
+                    logger.warning(
+                        f"MODEL={self.model_name!r} is not a known ModelNames value"
+                    )
+            if model_name_enum is None:
+                candidates = INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP.get(
+                    ModelRunners(self.model_runner)
+                )
+                # Ordered map: first entry is the runner's canonical model.
+                model_name_enum = candidates[0] if candidates else None
 
-            # Use dictionary key access
-            model_names_set = INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP.get(
-                model_runner_enum
-            )
+            if model_name_enum is not None:
+                supported_model = getattr(SupportedModels, model_name_enum.name, None)
+                if supported_model:
+                    self.model_weights_path = supported_model.value
 
-            if model_names_set:
-                # Get first model name from the set
-                model_name = list(model_names_set)[0]
-                if model_name:
-                    supported_model = getattr(SupportedModels, model_name.name, None)
-                    if supported_model:
-                        self.model_weights_path = supported_model.value
+        # Resolve the public identity before MODEL_WEIGHTS_DIR can replace
+        # model_weights_path with a mount point (which is not a model name).
+        if not self.served_model_name:
+            self.served_model_name = self._resolve_served_model_name()
 
         # Honor a pre-mounted weights dir (e.g. --host-hf-cache / --host-weights-dir
         # bind mount), the same way the vLLM server does, so the media runner loads
@@ -232,6 +254,8 @@ class Settings(BaseSettings):
             f"device_ids={self.device_ids!r}, "
             f"is_galaxy={self.is_galaxy}, "
             f"device_mesh_shape={self.device_mesh_shape}, "
+            f"model_name={self.model_name!r}, "
+            f"served_model_name={self.served_model_name!r}, "
             f"model_weights_path={self.model_weights_path!r}, "
             f"max_batch_size={self.max_batch_size}"
         )
@@ -387,6 +411,11 @@ class Settings(BaseSettings):
         if matching_config:
             self.model_runner = model_runner_enum.value
 
+            # NB: this overwrites any MODEL_WEIGHTS_PATH from the environment. Left
+            # as-is deliberately: deployments in the wild pass a display name here
+            # (that is what SERVED_MODEL_NAME and MODEL are for now), and honoring
+            # such a value would feed a non-path to snapshot_download. Use
+            # MODEL_WEIGHTS_DIR, applied later, to point at local weights.
             supported_model = getattr(SupportedModels, model_name_enum.name, None)
             if supported_model:
                 self.model_weights_path = supported_model.value
@@ -410,6 +439,28 @@ class Settings(BaseSettings):
             for r in MODEL_SERVICE_RUNNER_MAP[ModelServices.LLM]
         ):
             self.vllm.model = SupportedModels[model_name_enum.name].value
+
+    def _resolve_served_model_name(self) -> str:
+        """Public identity for /v1/models and job records, or "" to use the weights path.
+
+        Video is the case the weights path cannot describe: every Wan2.2 I2V
+        variant points at Wan-AI/Wan2.2-I2V-A14B-Diffusers, and those
+        SupportedModels members are Enum *aliases* of one another, so Prodia,
+        Lightning and plain I2V would all report the same id. ModelNames is unique
+        per variant and is exactly what MODEL carries.
+
+        Other services already have a working id and are deliberately left alone:
+        LLM reports vllm.model, image reports the runner slug (see
+        open_ai_api/models.py), and the rest report the weights path. Setting
+        SERVED_MODEL_NAME overrides this for any service.
+        """
+        # Gate on the service: vllm.model has a default for every deployment, so
+        # an ungated check would mislabel non-LLM servers.
+        if self.model_service == ModelServices.LLM.value and self.vllm.model:
+            return self.vllm.model
+        if self.model_service == ModelServices.VIDEO.value and self.model_name:
+            return self.model_name
+        return ""
 
 
 settings = Settings()

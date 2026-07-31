@@ -69,6 +69,7 @@ def mock_settings():
     settings.model_runner = "vllm"
     settings.request_processing_timeout_seconds = 30
     settings.model_weights_path = "/tmp/model"
+    settings.served_model_name = "test-model"
     return settings
 
 
@@ -727,6 +728,9 @@ class TestJobManagement:
         assert call_kwargs["job_type"] == mock_job_type
         assert call_kwargs["request"] == mock_request
         assert call_kwargs["org_id"] is None
+        # Jobs record the served identity, not the weights path — variants that
+        # share one HF repo must still be distinguishable in job history.
+        assert call_kwargs["model"] == "test-model"
         assert result == {"job_id": "job_1", "status": "created"}
 
     @pytest.mark.asyncio
