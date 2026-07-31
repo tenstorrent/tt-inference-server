@@ -168,19 +168,24 @@ if(NOT xgrammar_POPULATED)
     target_compile_options(xgrammar PRIVATE -Wno-deprecated-declarations -fno-lto)
 endif()
 
-# Import fmt from tt-metal for spdlog
+# Import fmt from tt-metal when available. KV-table-only builds can use the
+# system package because they need tt-metal headers but not a built tt-metal.
+set(USE_EXTERNAL_FMT OFF)
 if(TT_METAL_HOME AND EXISTS "${TT_METAL_HOME}/build_Release/lib/cmake/fmt")
     set(fmt_DIR "${TT_METAL_HOME}/build_Release/lib/cmake/fmt")
+endif()
+if(fmt_DIR OR ENABLE_KV_TABLE)
     find_package(fmt QUIET)
-    if(fmt_FOUND)
+    if(fmt_FOUND AND fmt_DIR)
         message(STATUS "Found fmt from tt-metal: ${fmt_VERSION}")
-        set(USE_EXTERNAL_FMT ON)
-    else()
-        message(STATUS "fmt directory found but package not available, using spdlog's bundled fmt")
-        set(USE_EXTERNAL_FMT OFF)
+    elseif(fmt_FOUND)
+        message(STATUS "Found system fmt for KV table build: ${fmt_VERSION}")
     endif()
-else()
-    set(USE_EXTERNAL_FMT OFF)
+    if(fmt_FOUND)
+        set(USE_EXTERNAL_FMT ON)
+    endif()
+endif()
+if(NOT USE_EXTERNAL_FMT)
     message(STATUS "Using spdlog's bundled fmt library")
 endif()
 
@@ -750,15 +755,13 @@ if(ENABLE_KV_TABLE)
             "tt-llm-engine/tt-metal) so tt_metal/api is on the include path.")
     endif()
     # tt-metal's spdlog headers (pulled in transitively by the table headers)
-    # require external fmt; a BUILT tt-metal provides both that fmt and the
-    # protobuf runtime this path links. With external fmt, spdlog::spdlog carries
-    # SPDLOG_FMT_EXTERNAL PUBLIC, so the adapter TU in transport_lib compiles
-    # against the same fmt without any extra per-target define.
+    # require external fmt. It may come from a built tt-metal or the system.
+    # spdlog::spdlog carries SPDLOG_FMT_EXTERNAL PUBLIC, so the adapter TU in
+    # transport_lib compiles against the same fmt without a per-target define.
     if(NOT USE_EXTERNAL_FMT)
         message(FATAL_ERROR
-            "ENABLE_KV_TABLE=ON requires a BUILT tt-metal that provides fmt "
-            "(USE_EXTERNAL_FMT). Build tt-metal so "
-            "${TT_METAL_HOME}/build_Release/lib/cmake/fmt exists.")
+            "ENABLE_KV_TABLE=ON requires an external fmt package. Install "
+            "libfmt-dev or provide a built tt-metal under TT_METAL_HOME.")
     endif()
 
     # Protobuf: prefer tt-metal's vendored build (matches the .proto's runtime),

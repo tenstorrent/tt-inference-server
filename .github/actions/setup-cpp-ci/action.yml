@@ -20,6 +20,10 @@ inputs:
       exists" and was discarded, leaving every build cold.
     required: false
     default: shared
+  install-dependencies:
+    description: Whether to run cpp_server/install_dependencies.sh.
+    required: false
+    default: "true"
 
 runs:
   using: composite
@@ -60,6 +64,7 @@ runs:
           cpp-ccache-${{ inputs.ccache-key-suffix }}-${{ runner.os }}-${{ runner.arch }}-
 
     - name: Install C++ build dependencies
+      if: ${{ inputs.install-dependencies == 'true' }}
       shell: bash
       working-directory: tt-media-server
       run: cpp_server/install_dependencies.sh

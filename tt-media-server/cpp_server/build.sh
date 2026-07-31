@@ -21,6 +21,7 @@ KAFKA_ENABLED="OFF"
 ENABLE_MOONCAKE="OFF"
 ENABLE_KV_TABLE="OFF"
 FRESH_CONFIGURE="OFF"
+MIGRATION_WORKER_ONLY="OFF"
 while [[ $# -gt 0 ]]; do
     case $1 in
         --debug)
@@ -67,6 +68,13 @@ while [[ $# -gt 0 ]]; do
             ENABLE_KV_TABLE="ON"
             shift
             ;;
+        --migration-worker)
+            MIGRATION_WORKER_ONLY="ON"
+            ENABLE_MOONCAKE="ON"
+            ENABLE_KV_TABLE="ON"
+            KAFKA_ENABLED="ON"
+            shift
+            ;;
         --fresh)
             FRESH_CONFIGURE="ON"
             shift
@@ -93,6 +101,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --kafka              Enable Kafka (CMake KAFKA_ENABLED=ON; needs librdkafka-dev)"
             echo "  --mooncake           Build with the Mooncake Transfer Engine transport (third_party/Mooncake; RDMA always on)"
             echo "  --kv-table           Build the real KvChunkAddressTable adapter (needs TT_METAL_HOME; ENABLE_KV_TABLE=ON)"
+            echo "  --migration-worker   Enable Mooncake, KV table, and Kafka; build only mooncake_kv_migration_worker"
             echo "  --fresh              Wipe CMake cache and reconfigure from scratch"
             echo "  --toolchain-path P   Use CMake toolchain file (overrides TT_METAL_HOME toolchain)"
             echo "  --cxx-compiler-path P  Set C++ compiler (overrides toolchain)"
@@ -124,6 +133,7 @@ echo "  Clang-Tidy: ${CLANG_TIDY}"
 echo "  Kafka (KAFKA_ENABLED): ${KAFKA_ENABLED}"
 echo "  Mooncake transport: ${ENABLE_MOONCAKE}"
 echo "  Real KV table (ENABLE_KV_TABLE): ${ENABLE_KV_TABLE}"
+echo "  Migration worker only: ${MIGRATION_WORKER_ONLY}"
 echo "  Fresh configure: ${FRESH_CONFIGURE}"
 echo "=============================================="
 
@@ -193,8 +203,10 @@ fi
 # dynamo_frontend/Dockerfile.frontend (which bakes the identical assets into
 # the frontend image). Edit the model list / download logic there, not here.
 # ---------------------------------------------------------------------------
-echo ""
-"${SCRIPT_DIR}/scripts/fetch_tokenizers.sh" "${SCRIPT_DIR}/tokenizers"
+if [ "${MIGRATION_WORKER_ONLY}" = "OFF" ]; then
+    echo ""
+    "${SCRIPT_DIR}/scripts/fetch_tokenizers.sh" "${SCRIPT_DIR}/tokenizers"
+fi
 
 # TT_METAL_HOME: enables Metal C++ API includes and intellisense
 # TT-metal headers use the reflect library which requires Clang (fails with GCC).
@@ -293,16 +305,28 @@ fi
 echo ""
 echo "Building..."
 NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1)
-cmake --build "${BUILD_DIR}" -j"${NPROC}"
+if [ "${MIGRATION_WORKER_ONLY}" = "ON" ]; then
+    cmake --build "${BUILD_DIR}" --target mooncake_kv_migration_worker -j"${NPROC}"
+else
+    cmake --build "${BUILD_DIR}" -j"${NPROC}"
+fi
 
 echo ""
 echo "=============================================="
 echo "  Build complete!"
-echo "  Binary: ${BUILD_DIR}/tt_media_server_cpp"
+if [ "${MIGRATION_WORKER_ONLY}" = "ON" ]; then
+    echo "  Binary: ${BUILD_DIR}/mooncake_kv_migration_worker"
+else
+    echo "  Binary: ${BUILD_DIR}/tt_media_server_cpp"
+fi
 echo "=============================================="
 echo ""
-echo "Run with: ./build/tt_media_server_cpp [options]"
-echo "  -h, --host HOST     Listen host (default: 0.0.0.0)"
-echo "  -p, --port PORT     Listen port (default: 8000)"
-echo "  -t, --threads N     Number of IO threads"
+if [ "${MIGRATION_WORKER_ONLY}" = "ON" ]; then
+    echo "Run with: ./build/mooncake_kv_migration_worker --help"
+else
+    echo "Run with: ./build/tt_media_server_cpp [options]"
+    echo "  -h, --host HOST     Listen host (default: 0.0.0.0)"
+    echo "  -p, --port PORT     Listen port (default: 8000)"
+    echo "  -t, --threads N     Number of IO threads"
+fi
 echo ""

@@ -2,16 +2,21 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 # cpp_server deps: apt + Drogon, plus build tooling unless --runtime is used.
-# Optional: ./install_dependencies.sh --kafka for librdkafka when using -DKAFKA_ENABLED=ON.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 INSTALL_KAFKA=0
+INSTALL_MIGRATION_WORKER=0
 RUNTIME_ONLY=0
 while [[ $# -gt 0 ]]; do
     case $1 in
         --kafka)
+            INSTALL_KAFKA=1
+            shift
+            ;;
+        --migration-worker)
+            INSTALL_MIGRATION_WORKER=1
             INSTALL_KAFKA=1
             shift
             ;;
@@ -20,9 +25,13 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         -h|--help)
-            echo "Usage: $0 [--kafka] [--runtime]"
+            echo "Usage: $0 [--kafka] [--migration-worker] [--runtime]"
             echo "  --kafka              Also install librdkafka-dev (C + C++ client for CMake KAFKA_ENABLED=ON)"
+            echo "  --migration-worker   Install Kafka, KV-table, Mooncake, and yalantinglibs build dependencies"
             echo "  --runtime            Install runtime deps only; skip LLVM/Rust build tooling"
+            echo ""
+            echo "Environment:"
+            echo "  YALANTINGLIBS_SOURCE Override the yalantinglibs source directory"
             exit 0
             ;;
         *)
@@ -31,6 +40,19 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+if [ "${INSTALL_MIGRATION_WORKER}" = 1 ] && [ "${RUNTIME_ONLY}" = 1 ]; then
+    echo "Error: --migration-worker is a build dependency mode and cannot be combined with --runtime." >&2
+    exit 1
+fi
+YALANTING_SOURCE=""
+if [ "${INSTALL_MIGRATION_WORKER}" = 1 ]; then
+    YALANTING_SOURCE="${YALANTINGLIBS_SOURCE:-${SCRIPT_DIR}/third_party/Mooncake/extern/yalantinglibs}"
+    if [ ! -f "${YALANTING_SOURCE}/CMakeLists.txt" ]; then
+        echo "Error: yalantinglibs source not found at ${YALANTING_SOURCE}" >&2
+        exit 1
+    fi
+fi
 
 [ -n "${TT_METAL_HOME:-}" ] && export TT_METAL_RUNTIME_ROOT="${TT_METAL_HOME}"
 
@@ -51,6 +73,23 @@ elif ! drogon_found 2>/dev/null; then
     # install the build tools needed to compile Drogon rather than failing later.
     APT_PKGS+=(build-essential cmake g++ pkg-config curl git)
 fi
+if [ "${INSTALL_MIGRATION_WORKER}" = 1 ]; then
+    # KvChunkAddressTable protobuf generation; fmt 11.1.4 is handled below to
+    # match tt-metal rather than using Jammy's incompatible fmt 8 package.
+    APT_PKGS+=(libprotobuf-dev protobuf-compiler)
+
+    # Mooncake control plane: TCP/HTTP metadata, config, flags, and logging.
+    APT_PKGS+=(
+        libasio-dev libcurl4-openssl-dev libgflags-dev libgoogle-glog-dev
+        libunwind-dev libyaml-cpp-dev
+    )
+
+    # Mooncake data plane: RDMA transport and NUMA-aware memory placement.
+    APT_PKGS+=(libibverbs-dev libnuma-dev)
+
+    # Ninja is the generator used by the tt-metal Clang toolchain and yalantinglibs.
+    APT_PKGS+=(ninja-build)
+fi
 if [ "${INSTALL_KAFKA}" = 1 ]; then
     # librdkafka-dev depends on librdkafka1 + librdkafka++1 on Ubuntu/Debian,
     # but list them explicitly so minimal base images that prune transitive
@@ -63,6 +102,13 @@ if [ "${INSTALL_KAFKA}" = 1 ]; then
         APT_PKGS+=(librdkafka-dev librdkafka1 librdkafka++1)
         echo "Kafka deps: will install librdkafka-dev + runtime libs (for KAFKA_ENABLED=ON builds)"
     fi
+fi
+
+# The tt-metal builder image ships LLVM libc++/libunwind headers, while Ubuntu's
+# glog package requires GNU libunwind-dev. The worker uses the libstdc++ toolchain,
+# so replace the conflicting libc++ development headers before dependency solve.
+if [ "${INSTALL_MIGRATION_WORKER}" = 1 ] && dpkg-query -W libunwind-20-dev >/dev/null 2>&1; then
+    $SUDO apt-get remove -y libunwind-20-dev
 fi
 
 $SUDO apt-get update -qq
@@ -109,9 +155,24 @@ if [ "${RUNTIME_ONLY}" = 0 ] && \
     cmake --version | head -n1
 fi
 
-if [ "${RUNTIME_ONLY}" = 0 ] && { ! command -v clang-format-20 >/dev/null 2>&1 || ! command -v clang-tidy-20 >/dev/null 2>&1; }; then
+NEED_CLANG_TOOLS=0
+if [ "${RUNTIME_ONLY}" = 0 ] && \
+   { ! command -v clang-format-20 >/dev/null 2>&1 || \
+     ! command -v clang-tidy-20 >/dev/null 2>&1; }; then
+    NEED_CLANG_TOOLS=1
+fi
+NEED_CLANG_COMPILER=0
+if [ "${INSTALL_MIGRATION_WORKER}" = 1 ] && ! command -v clang++-20 >/dev/null 2>&1; then
+    NEED_CLANG_COMPILER=1
+fi
+if [ "${NEED_CLANG_TOOLS}" = 1 ] || [ "${NEED_CLANG_COMPILER}" = 1 ]; then
     install_llvm_apt_repo
-    $SUDO apt-get install -y --no-install-recommends clang-format-20 clang-tidy-20
+    LLVM_PKGS=()
+    # Formatting and static analysis are required by the regular C++ CI jobs.
+    [ "${NEED_CLANG_TOOLS}" = 1 ] && LLVM_PKGS+=(clang-format-20 clang-tidy-20)
+    # The migration worker includes tt-metal reflect headers, which require Clang.
+    [ "${NEED_CLANG_COMPILER}" = 1 ] && LLVM_PKGS+=(clang-20)
+    $SUDO apt-get install -y --no-install-recommends "${LLVM_PKGS[@]}"
 fi
 $SUDO rm -rf /var/lib/apt/lists/*
 
@@ -144,4 +205,39 @@ if ! drogon_found; then
     $SUDO make install
     [ "$(uname -s)" = "Linux" ] && $SUDO ldconfig
     cd "${SCRIPT_DIR}" && rm -rf "${DROGON_TMP}"
+fi
+
+if [ "${INSTALL_MIGRATION_WORKER}" = 1 ]; then
+    FMT_VERSION="11.1.4"
+    FMT_CONFIG="${TT_METAL_HOME:-}/build_Release/lib/cmake/fmt/fmt-config.cmake"
+    if [ ! -f "${FMT_CONFIG}" ] && \
+       ! pkg-config --atleast-version="${FMT_VERSION}" fmt 2>/dev/null; then
+        # Local source builds lack tt-metal's prebuilt fmt package. Install the
+        # same version so spdlog, tt-metal headers, and yalantinglibs share one ABI.
+        FMT_SOURCE="/tmp/fmt-source"
+        FMT_BUILD="/tmp/fmt-build"
+        rm -rf "${FMT_SOURCE}" "${FMT_BUILD}"
+        git clone --depth 1 --branch "${FMT_VERSION}" \
+            https://github.com/fmtlib/fmt.git "${FMT_SOURCE}"
+        cmake -S "${FMT_SOURCE}" -B "${FMT_BUILD}" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DFMT_DOC=OFF \
+            -DFMT_TEST=OFF
+        cmake --build "${FMT_BUILD}"
+        $SUDO cmake --install "${FMT_BUILD}"
+        rm -rf "${FMT_SOURCE}" "${FMT_BUILD}"
+    fi
+
+    # Mooncake's transfer_engine target requires yalantinglibs as an installed
+    # CMake package; tests and examples are unrelated to the worker.
+    YALANTING_BUILD="/tmp/yalantinglibs-build"
+    rm -rf "${YALANTING_BUILD}"
+    cmake -S "${YALANTING_SOURCE}" -B "${YALANTING_BUILD}" -G Ninja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DBUILD_BENCHMARK=OFF \
+        -DBUILD_EXAMPLES=OFF \
+        -DBUILD_UNIT_TESTS=OFF
+    cmake --build "${YALANTING_BUILD}"
+    $SUDO cmake --install "${YALANTING_BUILD}"
+    rm -rf "${YALANTING_BUILD}"
 fi

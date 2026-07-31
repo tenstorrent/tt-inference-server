@@ -485,11 +485,12 @@ correctness is checked by bracketing the migration with `kv_seed_verify`.
 ### 13.1 Build (both galaxies)
 
 ```bash
-./install_dependencies.sh --kafka          # librdkafka for KAFKA_ENABLED (both boxes)
+./install_dependencies.sh --migration-worker
 export TT_METAL_HOME="$PWD/tt-llm-engine/tt-metal"
-./build.sh --blaze --mooncake --kv-table --kafka
+./build.sh --migration-worker
 ```
-Produces `build/mooncake_kv_migration_worker` and `build/kv_seed_verify`.
+Produces `build/mooncake_kv_migration_worker`. Build `kv_seed_verify` separately
+with `cmake --build build --target kv_seed_verify`.
 
 ### 13.2 What `kv_seed_verify` does (and why)
 

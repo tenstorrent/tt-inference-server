@@ -27,6 +27,7 @@ jobs:
     outputs:
       should-test: ${{ steps.filter.outputs.code }}
       cpp-server: ${{ steps.filter.outputs.cpp_server }}
+      migration-worker: ${{ steps.filter.outputs.migration_worker }}
       prefill-gateway: ${{ steps.filter.outputs.prefill_gateway }}
       media-server-deps: ${{ steps.filter.outputs.media_server_deps }}
       charts: ${{ steps.filter.outputs.charts }}
@@ -47,6 +48,8 @@ jobs:
               # C++ CI build/cache infra: changes here must re-run the C++ jobs
               # that depend on it (otherwise infra-only PRs silently skip them).
               - '.github/actions/setup-cpp-ci/**'
+            migration_worker:
+              - 'tt-media-server/Dockerfile.migration-worker'
             prefill_gateway:
               - 'tt-media-server/prefill_gateway/**'
             media_server_deps:
@@ -739,6 +742,180 @@ jobs:
         if: always()
         run: bash cpp_server/scripts/dev-kafka.sh down
 
+  migration-worker-dry-run-smoke:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
+    name: Migration Worker Dry-Run Smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      CI_CCACHE: "1"
+      CCACHE_DIR: ${{ github.workspace }}/tt-media-server/.cache/ccache
+      TT_METAL_HOME: ${{ github.workspace }}/tt-media-server/cpp_server/tt-llm-engine/tt-metal
+    defaults:
+      run:
+        working-directory: tt-media-server
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          token: ${{ secrets.TT_LLM_ENGINE }}
+
+      - name: Set up C++ CI dependencies
+        uses: ./.github/actions/setup-cpp-ci
+        with:
+          token: ${{ secrets.TT_LLM_ENGINE }}
+          ccache-key-suffix: migration-worker
+          install-dependencies: "false"
+
+      - name: Initialize migration worker submodules
+        env:
+          TT_LLM_ENGINE_TOKEN: ${{ secrets.TT_LLM_ENGINE }}
+        run: |
+          git -C cpp_server/tt-llm-engine \
+            -c "url.https://x-access-token:${TT_LLM_ENGINE_TOKEN}@github.com/.insteadOf=https://github.com/" \
+            submodule update --init --recursive --depth 1 tt-metal
+          git -c "url.https://github.com/.insteadOf=git@github.com:" \
+            submodule update --init --recursive --depth 1 cpp_server/third_party/Mooncake
+
+      - name: Install migration worker dependencies
+        run: cpp_server/install_dependencies.sh --migration-worker
+
+      - name: Build migration worker
+        run: |
+          cd cpp_server
+          ./build.sh --migration-worker
+
+      - name: Start local decode worker in dry-run mode
+        run: |
+          fixture="/tmp/kv_chunk_address_table_host.pb"
+          git -C cpp_server/tt-llm-engine show \
+            HEAD:tests/tensors/kv_chunk_address_table_host.pb > "${fixture}"
+          test -s "${fixture}"
+          KV_MIGRATION_MODE=dry-run MC_TCP_BIND_ADDRESS=127.0.0.1 \
+            ./cpp_server/build/mooncake_kv_migration_worker \
+              --role decode \
+              --metadata P2PHANDSHAKE \
+              --name 127.0.0.1:19777 \
+              --host ci-decode \
+              --table "${fixture}" \
+              --control-port 19650 \
+              --health-port 19109 \
+              > /tmp/migration-worker.log 2>&1 &
+          echo "$!" > /tmp/migration-worker.pid
+
+          for attempt in {1..60}; do
+            if curl --fail --silent http://127.0.0.1:19109/readyz > /tmp/migration-worker-ready.json \
+                && grep -q "READY: mode=dry-run" /tmp/migration-worker.log; then
+              cat /tmp/migration-worker-ready.json
+              exit 0
+            fi
+            if ! kill -0 "$(cat /tmp/migration-worker.pid)" 2>/dev/null; then
+              echo "::error::Migration worker exited during startup attempt ${attempt}"
+              break
+            fi
+            sleep 1
+          done
+          cat /tmp/migration-worker.log
+          exit 1
+
+      - name: Show migration worker logs
+        if: always()
+        run: cat /tmp/migration-worker.log 2>/dev/null || true
+
+      - name: Stop migration worker
+        if: always()
+        run: |
+          if [[ -s /tmp/migration-worker.pid ]]; then
+            kill -TERM "$(cat /tmp/migration-worker.pid)" 2>/dev/null || true
+          fi
+
+  migration-worker-docker-smoke:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.cpp-server == 'true' || needs.detect-changes.outputs.migration-worker == 'true' }}
+    name: Migration Worker Docker Smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: read
+    defaults:
+      run:
+        working-directory: tt-media-server
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          token: ${{ secrets.TT_LLM_ENGINE }}
+
+      - name: Initialize migration worker submodules
+        env:
+          TT_LLM_ENGINE_TOKEN: ${{ secrets.TT_LLM_ENGINE }}
+        run: |
+          git -c "url.https://x-access-token:${TT_LLM_ENGINE_TOKEN}@github.com/.insteadOf=https://github.com/" \
+            submodule update --init cpp_server/tt-llm-engine
+          git -c "url.https://github.com/.insteadOf=git@github.com:" \
+            submodule update --init --recursive --depth 1 cpp_server/third_party/Mooncake
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Build local migration worker image
+        env:
+          MIGRATION_WORKER_IMAGE: tt-migration-worker:ci
+        run: cpp_server/scripts/build_migration_worker_image.sh
+
+      - name: Start image in dry-run mode
+        run: |
+          fixture="/tmp/kv_chunk_address_table_host.pb"
+          git -C cpp_server/tt-llm-engine show \
+            HEAD:tests/tensors/kv_chunk_address_table_host.pb > "${fixture}"
+          test -s "${fixture}"
+          table_b64="$(base64 --wrap=0 "${fixture}")"
+          docker run --detach --name migration-worker-docker-smoke \
+            --env WORKER_ROLE=decode \
+            --env WORKER_TAG=127.0.0.1:19778 \
+            --env METADATA=P2PHANDSHAKE \
+            --env HEALTH_PORT=19209 \
+            --env CONTROL_PORT=19651 \
+            --env DECODE_TABLE=/tmp/kv_table.pb \
+            --env KV_TABLE_B64="${table_b64}" \
+            --env KV_MIGRATION_MODE=dry-run \
+            --env MC_TCP_BIND_ADDRESS=127.0.0.1 \
+            --entrypoint /bin/bash \
+            tt-migration-worker:ci \
+            -lc 'printf "%s" "${KV_TABLE_B64}" | base64 --decode > "${DECODE_TABLE}"; exec /usr/local/bin/migration_worker_launch.sh'
+
+          for attempt in {1..60}; do
+            if docker exec migration-worker-docker-smoke \
+                curl --fail --silent http://127.0.0.1:19209/readyz > /tmp/migration-worker-docker-ready.json \
+                && docker logs migration-worker-docker-smoke 2>&1 | grep -q "READY: mode=dry-run"; then
+              cat /tmp/migration-worker-docker-ready.json
+              exit 0
+            fi
+            if [[ "$(docker inspect --format '{{.State.Running}}' migration-worker-docker-smoke)" != "true" ]]; then
+              echo "::error::Migration worker container exited during startup attempt ${attempt}"
+              break
+            fi
+            sleep 1
+          done
+          docker logs migration-worker-docker-smoke
+          exit 1
+
+      - name: Show migration worker container logs
+        if: always()
+        run: docker logs migration-worker-docker-smoke 2>&1 || true
+
+      - name: Stop migration worker container
+        if: always()
+        run: docker rm --force migration-worker-docker-smoke 2>/dev/null || true
+
   prefill-gateway-build:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' || needs.detect-changes.outputs.prefill-gateway == 'true' }}
@@ -1157,6 +1334,8 @@ jobs:
       - cpp-format-check
       - cpp-build
       - remote-kv-manager-kafka-e2e
+      - migration-worker-dry-run-smoke
+      - migration-worker-docker-smoke
       - prefill-gateway-format-check
       - prefill-gateway-build
       - helm-chart-validate
@@ -1168,6 +1347,7 @@ jobs:
           EVENT_NAME="${{ github.event_name }}"
           SHOULD_TEST="${{ needs.detect-changes.outputs.should-test }}"
           CPP_SERVER="${{ needs.detect-changes.outputs.cpp-server }}"
+          MIGRATION_WORKER="${{ needs.detect-changes.outputs.migration-worker }}"
           PREFILL_GATEWAY="${{ needs.detect-changes.outputs.prefill-gateway }}"
           MEDIA_SERVER_DEPS="${{ needs.detect-changes.outputs.media-server-deps }}"
           CHARTS="${{ needs.detect-changes.outputs.charts }}"
@@ -1199,9 +1379,16 @@ jobs:
                   echo "job condition evaluated false"
                 fi
                 ;;
-              cpp-format-check|cpp-build|remote-kv-manager-kafka-e2e)
+              cpp-format-check|cpp-build|remote-kv-manager-kafka-e2e|migration-worker-dry-run-smoke)
                 if [[ "$CPP_SERVER" != "true" ]]; then
                   echo "cpp_server paths did not change"
+                else
+                  echo "job condition evaluated false"
+                fi
+                ;;
+              migration-worker-docker-smoke)
+                if [[ "$CPP_SERVER" != "true" && "$MIGRATION_WORKER" != "true" ]]; then
+                  echo "migration worker source or Dockerfile did not change"
                 else
                   echo "job condition evaluated false"
                 fi
@@ -1248,6 +1435,8 @@ jobs:
             cpp-format-check
             cpp-build
             remote-kv-manager-kafka-e2e
+            migration-worker-dry-run-smoke
+            migration-worker-docker-smoke
             prefill-gateway-format-check
             prefill-gateway-build
             helm-chart-validate
@@ -1265,6 +1454,8 @@ jobs:
             [cpp-format-check]="${{ needs.cpp-format-check.result }}"
             [cpp-build]="${{ needs.cpp-build.result }}"
             [remote-kv-manager-kafka-e2e]="${{ needs.remote-kv-manager-kafka-e2e.result }}"
+            [migration-worker-dry-run-smoke]="${{ needs.migration-worker-dry-run-smoke.result }}"
+            [migration-worker-docker-smoke]="${{ needs.migration-worker-docker-smoke.result }}"
             [prefill-gateway-format-check]="${{ needs.prefill-gateway-format-check.result }}"
             [prefill-gateway-build]="${{ needs.prefill-gateway-build.result }}"
             [helm-chart-validate]="${{ needs.helm-chart-validate.result }}"

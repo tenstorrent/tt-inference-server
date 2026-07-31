@@ -18,41 +18,10 @@ COPY --from=engine /opt/tt-llm-engine /opt/tt-llm-engine
 COPY --from=engine /opt/tt-llm-engine-src /opt/tt-llm-engine-src
 
 COPY tt-media-server/cpp_server/install_dependencies.sh /tmp/install_dependencies.sh
-RUN /tmp/install_dependencies.sh --kafka \
-    && apt-get update -qq \
-    && apt-get install -y --no-install-recommends \
-        libasio-dev \
-        libcurl4-openssl-dev \
-        libgflags-dev \
-        libgoogle-glog-dev \
-        libgrpc++-dev \
-        libgrpc-dev \
-        libhiredis-dev \
-        libibverbs-dev \
-        libjemalloc-dev \
-        libmsgpack-dev \
-        libnuma-dev \
-        libprotobuf-dev \
-        libunwind-dev \
-        liburing-dev \
-        libxxhash-dev \
-        libyaml-cpp-dev \
-        libzstd-dev \
-        ninja-build \
-        patchelf \
-        protobuf-compiler \
-        protobuf-compiler-grpc \
-    && rm -rf /var/lib/apt/lists/*
-
 COPY tt-media-server/cpp_server/third_party/Mooncake/extern/yalantinglibs /tmp/yalantinglibs
-RUN cmake -S /tmp/yalantinglibs -B /tmp/yalantinglibs-build -G Ninja \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DBUILD_BENCHMARK=OFF \
-        -DBUILD_EXAMPLES=OFF \
-        -DBUILD_UNIT_TESTS=OFF \
-    && cmake --build /tmp/yalantinglibs-build \
-    && cmake --install /tmp/yalantinglibs-build \
-    && rm -rf /tmp/yalantinglibs /tmp/yalantinglibs-build
+RUN YALANTINGLIBS_SOURCE=/tmp/yalantinglibs \
+    /tmp/install_dependencies.sh --migration-worker \
+    && rm -rf /tmp/yalantinglibs
 
 WORKDIR /src/cpp_server
 COPY tt-media-server/cpp_server /src/cpp_server
