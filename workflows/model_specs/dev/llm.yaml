@@ -373,7 +373,7 @@ templates:
     - text
   device_model_specs:
     - device: P300X2
-      max_concurrency: 64
+      max_concurrency: 32
       max_context: 262144
       max_tokens_all_users_override: 525312
       default_impl: true
