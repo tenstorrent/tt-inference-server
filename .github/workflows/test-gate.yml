@@ -864,8 +864,8 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.TT_LLM_ENGINE }}
+          username: vcankovicTT
+          password: ${{ secrets.TMP_VCANKOVIC_SHIELD_CRANE_PAT }}
 
       - name: Build local migration worker image
         env:

@@ -764,6 +764,16 @@ if(ENABLE_KV_TABLE)
             "libfmt-dev or provide a built tt-metal under TT_METAL_HOME.")
     endif()
 
+    FetchContent_Declare(
+        tt_logger
+        GIT_REPOSITORY https://github.com/tenstorrent/tt-logger.git
+        GIT_TAG        v1.1.8
+        GIT_SHALLOW    TRUE
+    )
+    set(TT_LOGGER_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+    set(TT_LOGGER_INSTALL OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(tt_logger)
+
     # Protobuf: prefer tt-metal's vendored build (matches the .proto's runtime),
     # fall back to the system package. protobuf_generate_cpp uses the matching
     # protoc, so generation + link stay self-consistent either way.
@@ -819,7 +829,8 @@ if(ENABLE_KV_TABLE)
     # on kv_table_lib's own sources and does not leak onto transport_lib's other
     # TUs (which use cpp_server's spdlog). fmt::fmt provides the symbols.
     target_compile_definitions(kv_table_lib PRIVATE SPDLOG_FMT_EXTERNAL)
-    target_link_libraries(kv_table_lib PUBLIC protobuf::libprotobuf fmt::fmt)
+    target_link_libraries(kv_table_lib PUBLIC
+        protobuf::libprotobuf fmt::fmt tt-logger::tt-logger)
     # tt-metal headers trip -Wall/-Wpedantic (deprecated tt::stl, etc.); these are
     # third-party sources, so silence rather than gate cpp_server's warnings on them.
     target_compile_options(kv_table_lib PRIVATE -w)
