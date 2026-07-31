@@ -408,7 +408,23 @@ templates:
         # requests still queued behind it, 56 minutes into a 198-question run. tt-metal 680114b3c2a
         # makes an unwarmed length cost one request instead of the server, and always warms 32;
         # these three entries make it cost nothing at all.
-        DG_UPFRONT_PREFILL_WARMUP_LENS: "32,64,96,128,160,192,224,256,288,320,352,384,416,448,480,512,544,576,608,640,672,704,736,768,800,832,864,896,2432,2464"
+        #
+        # The 1024..8224 tail exists for `--workflow benchmarks`, not for evals. Expanding this
+        # spec through benchmarking/benchmark_config.get_benchmark_config gives six
+        # `vllm bench serve` points at concurrency 1 -- isl/osl 128/128, 128/1024, 1024/128,
+        # 2048/128, 4096/128, 8192/128, i.e. the BENCHMARK_ISL_OSL_PAIRS entries satisfying
+        # isl + osl <= max_context -- for 26 requests total. The driver sends
+        # `--extra-body {"truncate_prompt_tokens": "<isl>"}`, so the served prompt is truncated to
+        # exactly isl and the aligned prefill length is isl itself (each isl is already a
+        # 32-multiple). Without these entries four of the six rows, 14 of the 26 requests, take the
+        # up-front-capture rejection: they return empty but still carry a plausible throughput
+        # number, because `vllm bench serve` reads its token counts from the SSE usage block rather
+        # than from the text it received.
+        # isl+32 is paired with each length for the same reason 2432 is paired with 2464: should
+        # the (deprecated) truncate_prompt_tokens path stop applying, the length becomes
+        # (isl - num_special) + chat-template overhead, which rounds up to isl + 32. The margin
+        # costs one warmup prefill each; not having it costs the run.
+        DG_UPFRONT_PREFILL_WARMUP_LENS: "32,64,96,128,160,192,224,256,288,320,352,384,416,448,480,512,544,576,608,640,672,704,736,768,800,832,864,896,1024,1056,2048,2080,2432,2464,4096,4128,8192,8224"
         # The real trace-region knob is override_tt_config.trace_region_size
         # below (worker.py -> open_mesh_device); the env DG_TRACE_REGION_SIZE is
         # metrics/validation mirror and does NOT carve the region. Up-front

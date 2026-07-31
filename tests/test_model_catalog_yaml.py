@@ -318,3 +318,23 @@ def test_diffusiongemma_dev_spec_enables_upfront_early_halt_and_thinking():
     # raised out of prefill_forward, which is fatal to the vLLM EngineCore. tt-metal 680114b3c2a
     # makes that cost one request rather than the server; these entries make it cost nothing.
     assert {32, 64, 96}.issubset(warmup_lens)
+    # `--workflow benchmarks` drives the same server with the ISLs from
+    # BENCHMARK_ISL_OSL_PAIRS, truncated to exactly isl by the driver's
+    # truncate_prompt_tokens extra-body. An unwarmed ISL does not fail loudly: the
+    # request returns empty while `vllm bench serve` still reports a throughput
+    # number taken from the SSE usage block. Derive the requirement from the sweep
+    # so a max_context change cannot silently uncover a row.
+    from benchmarking.benchmark_config import BENCHMARK_ISL_OSL_PAIRS
+
+    max_context = spec.device_model_spec.max_context
+    benchmark_isls = {
+        isl for isl, osl in BENCHMARK_ISL_OSL_PAIRS if isl + osl <= max_context
+    }
+    missing = sorted(isl for isl in benchmark_isls if isl not in warmup_lens)
+    assert not missing, (
+        f"benchmark ISLs {missing} are not in DG_UPFRONT_PREFILL_WARMUP_LENS; "
+        "those sweep rows would return empty responses with a plausible tput"
+    )
+    # Margin for the case where the deprecated truncate_prompt_tokens path stops
+    # applying and the templated prompt rounds up to the next tile.
+    assert all(isl + 32 in warmup_lens for isl in benchmark_isls)
