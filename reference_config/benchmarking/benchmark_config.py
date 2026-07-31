@@ -100,6 +100,22 @@ BENCHMARK_ISL_OSL_PAIRS = [
     (65536, 128),
     (131072, 128),
 ]
+# Additional high-ISL sweep points appended only for remote SUPER_CLUSTER
+# endpoints, whose token budget is context*concurrency (see
+# DeviceModelSpec._infer_data) so concurrency does not collapse at high ISL.
+# They extend the sweep toward ~250K ISL while staying below the 256K cap, and
+# are still filtered per model by ``isl + osl <= max_context`` at build time
+# (e.g. reachable by Kimi's 256K context, skipped for a 128K-context model).
+SUPER_CLUSTER_EXTRA_ISL_OSL_PAIRS = [
+    (196608, 128),  # 192K
+    (245760, 128),  # 240K
+]
+# Remote SUPER_CLUSTER endpoints serve high-ISL sweep points at full
+# concurrency, but get_num_prompts scales prompts as a small multiple of
+# concurrency, so long-sequence points issue too few requests (e.g. 1x = 64)
+# to characterize steady-state throughput. Floor the prompt count so each
+# SUPER_CLUSTER sweep point sends at least this many requests.
+SUPER_CLUSTER_MIN_NUM_PROMPTS = 256
 SMOKE_TEST_BENCHMARK_PAIR = (16, 4)
 
 
@@ -138,6 +154,7 @@ def _expand_text_sweep_params(
     max_context: int,
     max_tokens_all_users: int,
     model_max_concurrency: int,
+    min_num_prompts: int = 0,
 ) -> List[BenchmarkTaskParams]:
     if isl + osl > max_context:
         return []
@@ -154,7 +171,12 @@ def _expand_text_sweep_params(
             isl=isl,
             osl=osl,
             max_concurrency=concurrency,
-            num_prompts=get_num_prompts(isl, osl, concurrency),
+            num_prompts=get_num_prompts(
+                isl,
+                osl,
+                concurrency,
+                min_num_prompts=min_num_prompts if concurrency > 1 else 0,
+            ),
         )
         for concurrency in concurrencies
     ]
@@ -207,25 +229,24 @@ def _expand_image_sweep_params(
     ]
 
 
-def get_num_prompts(input_len, output_len, max_concurrency):
+def get_num_prompts(input_len, output_len, max_concurrency, *, min_num_prompts=0):
     # Large sequences (slowest) -> fewest prompts
     if output_len > 1024 or input_len > 16384:
-        return 1 * max_concurrency
-
-    if input_len > 4096:
-        return 2 * max_concurrency
-
+        base = 1 * max_concurrency
+    elif input_len > 4096:
+        base = 2 * max_concurrency
     # Medium sequences
-    if (output_len > 128 and output_len <= 1024) or (
+    elif (output_len > 128 and output_len <= 1024) or (
         input_len > 128 and input_len <= 4096
     ):
-        return 4 * max_concurrency
-
+        base = 4 * max_concurrency
     # Small sequences (fastest) -> most prompts
-    if output_len <= 128:
-        return 8 * max_concurrency
+    elif output_len <= 128:
+        base = 8 * max_concurrency
+    else:
+        raise ValueError(f"Invalid output_len: {output_len}")
 
-    raise ValueError(f"Invalid output_len: {output_len}")
+    return max(base, min_num_prompts)
 
 
 def calculate_vision_tokens(
@@ -392,6 +413,7 @@ def expand_concurrency_sweep_params(
     model_name: str,
     candidate_concurrencies: List[int],
     ensure_allowed_max: bool = True,
+    min_num_prompts: int = 0,
 ) -> List[BenchmarkTaskParams]:
     """
     Expand params_list to include candidate concurrencies (e.g. powers-of-2),
@@ -441,7 +463,12 @@ def expand_concurrency_sweep_params(
         for concurrency in concurrencies:
             new_data = dict(base_data)
             new_data["max_concurrency"] = int(concurrency)
-            new_data["num_prompts"] = get_num_prompts(isl, osl, int(concurrency))
+            new_data["num_prompts"] = get_num_prompts(
+                isl,
+                osl,
+                int(concurrency),
+                min_num_prompts=min_num_prompts if concurrency > 1 else 0,
+            )
 
             new_params = BenchmarkTaskParams(**new_data)
             key = _benchmark_param_dedupe_key(new_params)
@@ -458,6 +485,7 @@ def cap_benchmark_params(
     max_tokens_all_users: int,
     model_max_concurrency: int,
     model_name: str = None,
+    min_num_prompts: int = 0,
 ) -> BenchmarkTaskParams:
     """
     Cap max_concurrency based on context limits (including vision tokens for VLM models)
@@ -502,7 +530,10 @@ def cap_benchmark_params(
     # If concurrency was capped, recalculate num_prompts
     if capped_max_concurrency < params.max_concurrency:
         recalculated_num_prompts = get_num_prompts(
-            params.isl, params.osl, capped_max_concurrency
+            params.isl,
+            params.osl,
+            capped_max_concurrency,
+            min_num_prompts=min_num_prompts,
         )
 
         # Create new params with capped values
@@ -539,6 +570,15 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
     max_context = model_spec.device_model_spec.max_context
     max_tokens_all_users = model_spec.device_model_spec.max_tokens_all_users
     perf_reference = model_spec.device_model_spec.perf_reference
+
+    # SUPER_CLUSTER remote endpoints extend the sweep toward ~250K ISL; other
+    # devices use the standard pairs. Per-model ``isl + osl <= max_context``
+    # filtering still applies below.
+    text_isl_osl_pairs = list(BENCHMARK_ISL_OSL_PAIRS)
+    sweep_min_num_prompts = 0
+    if device == DeviceTypes.SUPER_CLUSTER:
+        text_isl_osl_pairs += SUPER_CLUSTER_EXTRA_ISL_OSL_PAIRS
+        sweep_min_num_prompts = SUPER_CLUSTER_MIN_NUM_PROMPTS
 
     vllm_benchmark_venv = select_vllm_benchmark_venv(model_spec)
 
@@ -606,7 +646,7 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
                 param_map={
                     device: [
                         expanded_params
-                        for isl, osl in BENCHMARK_ISL_OSL_PAIRS
+                        for isl, osl in text_isl_osl_pairs
                         if isl + osl <= max_context
                         for expanded_params in _expand_text_sweep_params(
                             isl=isl,
@@ -614,6 +654,7 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
                             max_context=max_context,
                             max_tokens_all_users=max_tokens_all_users,
                             model_max_concurrency=model_max_concurrency,
+                            min_num_prompts=sweep_min_num_prompts,
                         )
                     ]
                     + (
