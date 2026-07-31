@@ -75,7 +75,7 @@ numDecode=$(awk -F',' '{print NF}' <<<"${DECODE_HOSTS}")
 echo "[dry-run-n-prefill] topology: ${numPrefill} prefill × ${numDecode} decode"
 echo "[dry-run-n-prefill] kafka exclusive: prefill i -> KAFKA_PARTITION=i"
 echo "[dry-run-n-prefill] topics: ensure-partitions >= ${numPrefill}"
-echo "[dry-run-n-prefill] peers: auto round-robin when NUM_PREFILL>1"
+echo "[dry-run-n-prefill] peers: auto contiguous blocks when NUM_PREFILL>1"
 echo "[dry-run-n-prefill] discovery=${DISCOVERY_SERVER} kafka=${KAFKA_BROKERS}"
 
 cmd=(

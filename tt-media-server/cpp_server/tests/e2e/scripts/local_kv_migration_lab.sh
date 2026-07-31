@@ -24,7 +24,8 @@
 #   ENSURE_KAFKA_PARTITIONS (1=ensure request+ack >= NUM_PREFILL, default 1),
 #   WORKER_PEERS_<tag>  e.g. WORKER_PEERS_prefill_0=decode-1
 #     (bash assoc arrays can't be exported; use underscore form, tag '-' -> '_')
-#     With NUM_PREFILL>1, unset prefill peers auto round-robin (decode j % N).
+#     With NUM_PREFILL>1, unset prefill peers auto contiguous blocks
+#     (prefill i -> decode[i*M/N .. (i+1)*M/N)).
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -75,9 +76,9 @@ allNames() {
   for (( i = 0; i < NUM_DECODE; i++ )); do echo "decode-${i}"; done
 }
 
-# Default peers: prefill → every decode (N=1); with NUM_PREFILL>1, round-robin
-# exclusive ownership (decode j -> prefill j % N). Decode → none.
-# Override via WORKER_PEERS_<tag_with_underscores>, e.g. WORKER_PEERS_prefill_0=decode-1
+# Default peers: prefill → every decode (N=1); with NUM_PREFILL>1, contiguous
+# exclusive blocks (prefill 0 -> decode 0..M/N, prefill 1 -> next block, ...).
+# Decode → none. Override via WORKER_PEERS_<tag_with_underscores>.
 peersFor() {
   # Split locals: with set -u, `local a="$1" b="${a...}"` sees a as unset.
   local workerName="$1"
@@ -97,10 +98,18 @@ peersFor() {
   fi
   local i csv="" prefillIdx="${workerName#prefill-}"
   if (( NUM_PREFILL > 1 )); then
-    for (( i = 0; i < NUM_DECODE; i++ )); do
-      if (( i % NUM_PREFILL == prefillIdx )); then
-        csv="${csv:+${csv},}decode-${i}"
-      fi
+    local base=$(( NUM_DECODE / NUM_PREFILL ))
+    local rem=$(( NUM_DECODE % NUM_PREFILL ))
+    local start=0 k count
+    for (( k = 0; k < prefillIdx; k++ )); do
+      count=$(( base ))
+      (( k < rem )) && count=$(( count + 1 ))
+      start=$(( start + count ))
+    done
+    count=$(( base ))
+    (( prefillIdx < rem )) && count=$(( count + 1 ))
+    for (( i = start; i < start + count; i++ )); do
+      csv="${csv:+${csv},}decode-${i}"
     done
   else
     for (( i = 0; i < NUM_DECODE; i++ )); do

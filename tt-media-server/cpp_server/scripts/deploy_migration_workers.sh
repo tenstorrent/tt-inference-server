@@ -343,8 +343,9 @@ DECODE_TAG_LIST=""
 # ANY worker (any role) an explicit peer set, overriding the role default. Set
 # elements from the config file with plain assignment (no `declare`, which would
 # be local to the sourcing function), e.g.  WORKER_PEERS[decode-0]="prefill-0".
-# With NUM_PREFILL>1, unset prefill entries are auto-filled round-robin so each
-# decode has a single prefill owner (see autoAssignExclusiveWorkerPeers).
+# With NUM_PREFILL>1, unset prefill entries are auto-filled as contiguous
+# exclusive blocks so each decode has a single prefill owner
+# (see autoAssignExclusiveWorkerPeers).
 declare -A WORKER_PEERS=()
 
 probeMetadata() {
@@ -442,7 +443,7 @@ clearRpcMeta() {
 # Kafka ownership is exclusive via KAFKA_PARTITION=index (rd_kafka_assign).
 # Decode-peer exclusivity is still required: two prefills must not drive the
 # same decode data plane. With NUM_PREFILL>1, autoAssignExclusiveWorkerPeers
-# round-robins unset WORKER_PEERS before slots are built.
+# fills unset WORKER_PEERS as contiguous blocks before slots are built.
 peersForWorker() {
   local role="$1" tag="$2"
   if [[ -n "${WORKER_PEERS[$tag]:-}" ]]; then
@@ -452,29 +453,36 @@ peersForWorker() {
   fi
 }
 
-# For NUM_PREFILL>1, fill any unset WORKER_PEERS[prefill-tag] with round-robin
-# decode ownership (decode j -> prefill j % NUM_PREFILL). Explicit config wins
-# for tags that are already set; assertExclusiveDecodePeers still fails loud
-# on conflicts.
+# For NUM_PREFILL>1, fill any unset WORKER_PEERS[prefill-tag] with a contiguous
+# exclusive decode block. Example N=4 M=16:
+#   prefill-0 -> decode[0..4)   prefill-1 -> decode[4..8)
+#   prefill-2 -> decode[8..12)  prefill-3 -> decode[12..16)
+# Remainder decodes (M % N != 0) go to the first prefills (+1 each).
+# Explicit config wins; assertExclusiveDecodePeers still fails loud on conflicts.
 autoAssignExclusiveWorkerPeers() {
   (( NUM_PREFILL > 1 )) || return 0
   local -a decodeTags=() prefillTags=()
   local i j tag peerCsv
+  local base=$(( NUM_DECODE / NUM_PREFILL ))
+  local rem=$(( NUM_DECODE % NUM_PREFILL ))
+  local start=0 count=0
   IFS=',' read -ra decodeTags <<<"${DECODE_TAG_LIST}"
   IFS=',' read -ra prefillTags <<<"${PREFILL_TAGS}"
   for (( i = 0; i < NUM_PREFILL; i++ )); do
     tag="${prefillTags[$i]:-prefill-${i}}"
-    [[ -z "${WORKER_PEERS[$tag]:-}" ]] || continue
-    peerCsv=""
-    for (( j = 0; j < ${#decodeTags[@]}; j++ )); do
-      if (( j % NUM_PREFILL == i )); then
+    count=$(( base ))
+    (( i < rem )) && count=$(( count + 1 ))
+    if [[ -z "${WORKER_PEERS[$tag]:-}" ]]; then
+      peerCsv=""
+      for (( j = start; j < start + count; j++ )); do
         peerCsv="${peerCsv:+${peerCsv},}${decodeTags[$j]}"
-      fi
-    done
-    [[ -n "${peerCsv}" ]] || \
-      die "auto WORKER_PEERS[${tag}] empty (NUM_DECODE=${NUM_DECODE} NUM_PREFILL=${NUM_PREFILL})"
-    WORKER_PEERS[$tag]="${peerCsv}"
-    echo "[deploy] auto WORKER_PEERS[${tag}]=${peerCsv} (round-robin exclusive)"
+      done
+      [[ -n "${peerCsv}" ]] || \
+        die "auto WORKER_PEERS[${tag}] empty (NUM_DECODE=${NUM_DECODE} NUM_PREFILL=${NUM_PREFILL})"
+      WORKER_PEERS[$tag]="${peerCsv}"
+      echo "[deploy] auto WORKER_PEERS[${tag}]=${peerCsv} (contiguous exclusive block)"
+    fi
+    start=$(( start + count ))
   done
 }
 
@@ -492,7 +500,7 @@ assertExclusiveDecodePeers() {
       if [[ -n "${decodeOwner[$peer]:-}" ]]; then
         die "decode peer '${peer}' assigned to both '${decodeOwner[$peer]}' and '${WK_TAG[$s]}'. \
 Each decode must have a single prefill owner for the migration data plane. \
-Set WORKER_PEERS explicitly, or rely on auto round-robin for NUM_PREFILL>1."
+Set WORKER_PEERS explicitly, or rely on auto contiguous blocks for NUM_PREFILL>1."
       fi
       decodeOwner[$peer]="${WK_TAG[$s]}"
     done

@@ -64,8 +64,9 @@ Attention: Prefill and decode table paths must be accessible by all the migratio
 ## N-prefill exclusive ownership (#4795)
 
 With multiple prefills, deploy pins `KAFKA_PARTITION=i` on prefill `i`, expands
-request+ack topics to `>= N` partitions, and auto round-robins `WORKER_PEERS`
-so each decode has a single prefill owner.
+request+ack topics to `>= N` partitions, and auto-assigns `WORKER_PEERS` as
+contiguous exclusive blocks (e.g. N=4 M=16 → P0:0-3, P1:4-7, …) so each
+decode has a single prefill owner.
 
 Dry-run topology preview (no containers started):
 
