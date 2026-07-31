@@ -350,7 +350,9 @@ def _run_eval_task(ctx: MediaContext, task, auth_token: str) -> int:
         # reasoning_content trace in the per-sample logs. Scoped to this
         # subprocess only so it never leaks to another task in the same run.
         env["LM_EVAL_PRESERVE_REASONING"] = "1"
-        logger.info("task=%s will preserve reasoning_content in sample logs.", task.task_name)
+        logger.info(
+            "task=%s will preserve reasoning_content in sample logs.", task.task_name
+        )
     logger.info("Running eval task=%s", task.task_name)
     return run_command(command=cmd, logger=logger, env=env)
 

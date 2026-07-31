@@ -322,9 +322,7 @@ def test_super_cluster_sweep_enforces_min_num_prompts(monkeypatch):
     config = benchmark_config.get_benchmark_config(runtime_spec)
 
     sweep_params = config.tasks[1].param_map[DeviceTypes.SUPER_CLUSTER]
-    text_params = [
-        p for p in sweep_params if getattr(p, "task_type", "text") == "text"
-    ]
+    text_params = [p for p in sweep_params if getattr(p, "task_type", "text") == "text"]
     assert text_params
 
     floor = benchmark_config.SUPER_CLUSTER_MIN_NUM_PROMPTS
@@ -361,9 +359,7 @@ def test_non_super_cluster_sweep_has_no_min_num_prompts_floor(monkeypatch):
     config = benchmark_config.get_benchmark_config(MODEL_SPECS[model_id])
 
     sweep_params = config.tasks[1].param_map[DeviceTypes.N150]
-    text_params = [
-        p for p in sweep_params if getattr(p, "task_type", "text") == "text"
-    ]
+    text_params = [p for p in sweep_params if getattr(p, "task_type", "text") == "text"]
     assert text_params
 
     # num_prompts must match the unfloored helper for a non-SUPER_CLUSTER device.
