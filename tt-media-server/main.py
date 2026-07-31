@@ -13,11 +13,17 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
 from open_ai_api import api_router
 
 from open_ai_api.deprecation import DeprecatedPathMiddleware
+from open_ai_api.text_to_speech import (
+    openai_style_http_exception_handler,
+    openai_style_validation_exception_handler,
+)
 from resolver.service_resolver import service_resolver
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from telemetry.prometheus_metrics import PrometheusMetrics
 from utils.job_manager import get_job_manager
 
@@ -49,6 +55,12 @@ prometheus_metrics.setup_metrics()
 
 app.include_router(api_router)
 app.add_middleware(DeprecatedPathMiddleware, sunset_date="2026-06-30")
+
+# OpenAI-SDK-compatible {"error": {...}} envelope, scoped to the TTS speech/
+# voices endpoints only (see each handler's docstring) -- every other
+# endpoint keeps FastAPI's default {"detail": ...} shape unchanged.
+app.add_exception_handler(RequestValidationError, openai_style_validation_exception_handler)
+app.add_exception_handler(StarletteHTTPException, openai_style_http_exception_handler)
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="static"), name="static")

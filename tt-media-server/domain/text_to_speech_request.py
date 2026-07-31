@@ -77,6 +77,17 @@ class TextToSpeechRequest(BaseRequest):
     # voice_id's own matching/error behavior in any way.
     voice: Optional[str] = None
 
+    @field_validator("voice", mode="before")
+    @classmethod
+    def unwrap_voice_object(cls, v):
+        # OpenAI's custom-voice object form: voice: {"id": "Ashley"} (as
+        # opposed to the plain-string form, voice: "Ashley"). Extract "id"
+        # and fall through the normal string field from there; a dict with
+        # no "id" key resolves to None, same as if "voice" were absent.
+        if isinstance(v, dict):
+            return v.get("id")
+        return v
+
     # Response format: wav (default), mp3, ogg, json, or verbose_json
     response_format: str = "wav"
 

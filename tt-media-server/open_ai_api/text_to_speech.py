@@ -22,10 +22,18 @@ from fastapi import (
     Security,
     UploadFile,
 )
-from fastapi.responses import StreamingResponse
+from fastapi.exception_handlers import (
+    http_exception_handler as _default_http_exception_handler,
+)
+from fastapi.exception_handlers import (
+    request_validation_exception_handler as _default_validation_exception_handler,
+)
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse, StreamingResponse
 from model_services.base_service import BaseService
 from resolver.service_resolver import service_resolver
 from security.api_key_checker import get_api_key
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 router = APIRouter()
 
@@ -34,6 +42,49 @@ TTS_MEDIA_TYPES = {
     "mp3": "audio/mpeg",
     "ogg": "audio/ogg",
 }
+
+# Paths these error-envelope handlers apply to -- registered globally on the
+# app (exception handlers can't be scoped to a router), but this server is
+# shared across many model runners whose clients already expect FastAPI's
+# default {"detail": ...} shape. Restricting by exact path keeps every other
+# endpoint's error format unchanged; anything else falls through to
+# FastAPI's own default handler.
+_TTS_ENVELOPE_PATHS = {"/v1/audio/speech", "/audio/speech", "/v1/audio/voices", "/audio/voices"}
+
+
+def _openai_error_body(message: str, status_code: int) -> dict:
+    return {
+        "error": {
+            "message": message,
+            "type": "invalid_request_error" if status_code < 500 else "server_error",
+            "code": str(status_code),
+        }
+    }
+
+
+async def openai_style_validation_exception_handler(request: Request, exc: RequestValidationError):
+    """OpenAI-SDK-compatible error envelope for the TTS endpoints' 422s.
+
+    FastAPI's default shape ({"detail": [...]}) is what every other model
+    runner's clients already expect -- only rewrap for the TTS paths, and
+    only take the first validation error's message (OpenAI's own error
+    envelope carries a single error, not a list).
+    """
+    if request.url.path not in _TTS_ENVELOPE_PATHS:
+        return await _default_validation_exception_handler(request, exc)
+    errors = exc.errors()
+    message = errors[0]["msg"] if errors else "Invalid request"
+    return JSONResponse(status_code=422, content=_openai_error_body(message, 422))
+
+
+async def openai_style_http_exception_handler(request: Request, exc: StarletteHTTPException):
+    """Same rewrap as above, for the HTTPExceptions raised in handle_tts_request
+    (400/405/422/500) -- everything else keeps FastAPI's default {"detail": ...}.
+    """
+    if request.url.path not in _TTS_ENVELOPE_PATHS:
+        return await _default_http_exception_handler(request, exc)
+    detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+    return JSONResponse(status_code=exc.status_code, content=_openai_error_body(detail, exc.status_code))
 
 
 _VOICE_NOT_FOUND_MARKER = "not found. Available voices:"
