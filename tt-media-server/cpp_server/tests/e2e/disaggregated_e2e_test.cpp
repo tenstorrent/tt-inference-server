@@ -44,7 +44,7 @@
 #include "services/llm_service.hpp"
 #include "services/service_container.hpp"
 #include "sockets/inter_server_service.hpp"
-#include "support/chat_completion_stream.hpp"
+#include "support/approx_token_prompt.hpp"
 #include "support/dynamo_test_fixture.hpp"
 #include "support/http_response.hpp"
 #include "support/test_worker_main.hpp"
@@ -337,26 +337,6 @@ class PrefillTestServer {
   std::atomic<bool> stopAutoResponder{false};
 };
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-// Generate a prompt with approximately the target number of tokens.
-// Uses simple repeated words to get predictable token counts.
-// "hello " is typically 1 token, so we use word count ≈ target tokens.
-// "Approx" due to chat template overhead tokens.
-std::string generatePromptWithApproxTokens(size_t targetTokens) {
-  std::string msg;
-  // Use simple words that are single tokens
-  const std::vector<std::string> words = {"hello", "world", "test", "data",
-                                          "check"};
-  msg.reserve(targetTokens * 7);
-  for (size_t i = 0; i < targetTokens; ++i) {
-    msg += words[i % words.size()] + " ";
-  }
-  return msg;
-}
-
 }  // namespace
 
 // ---------------------------------------------------------------------------
@@ -495,7 +475,7 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
   prefillServer->setMemoryAutoRespond(false);
 
   // Generate a large prompt (~1100 tokens) that should be forwarded to prefill.
-  std::string largePrompt = generatePromptWithApproxTokens(1096);
+  std::string largePrompt = tt::test::generatePromptWithApproxTokens(1096);
 
   TT_LOG_INFO(
       "[Test] Sending large prompt via Dynamo frontend (expecting forward to "
@@ -623,7 +603,7 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
   // response. Part 2 used followUpMessage ("What about this?"), but Part 3 uses
   // bigFollowUp directly. This ensures Part 3's delta is large (~1200 tokens),
   // not just a small addition to Part 2's cached conversation.
-  std::string bigFollowUp = generatePromptWithApproxTokens(1196);
+  std::string bigFollowUp = tt::test::generatePromptWithApproxTokens(1196);
 
   auto bigDeltaFuture = asyncRequest(
       chatRequest()
@@ -772,7 +752,8 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
   // caches.
   TT_LOG_INFO("[Test] Sending second big delta to verify prefix cache update");
 
-  std::string secondBigFollowUp = generatePromptWithApproxTokens(1196);
+  std::string secondBigFollowUp =
+      tt::test::generatePromptWithApproxTokens(1196);
 
   auto secondBigDeltaFuture =
       asyncRequest(chatRequest()

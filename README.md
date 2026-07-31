@@ -55,11 +55,11 @@ See:
 
 ## Benchmarking
 
-For more details see [benchmarking/README.md](benchmarking/README.md)
+For more details see [reference_config/benchmarking/README.md](reference_config/benchmarking/README.md)
 
 ## Evals
 
-For more details see [evals/README.md](evals/README.md)
+For more details see [reference_config/evals/README.md](reference_config/evals/README.md)
 
 ## Development
 

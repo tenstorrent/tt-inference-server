@@ -58,6 +58,9 @@ Json::Value prefillResultToJson(
   out["fast_mode"] = message.fastMode;
   out["cached_tokens"] = message.cachedTokens;
   out["migration_id"] = Json::UInt64(message.migrationId);
+  if (!message.sessionId.empty()) {
+    out["session_id"] = message.sessionId;
+  }
   return out;
 }
 
@@ -117,6 +120,7 @@ std::optional<tt::sockets::PrefillResultMessage> prefillResultFromJson(
   if (ttResult->isMember("migration_id")) {
     result.migrationId = (*ttResult)["migration_id"].asUInt64();
   }
+  result.sessionId = ttResult->get("session_id", "").asString();
   return message;
 }
 

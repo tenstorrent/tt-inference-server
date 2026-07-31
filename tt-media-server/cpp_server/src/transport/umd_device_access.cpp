@@ -63,6 +63,47 @@ UmdDeviceAccess::UmdDeviceAccess(UmdDeviceAccess&&) noexcept = default;
 UmdDeviceAccess& UmdDeviceAccess::operator=(UmdDeviceAccess&&) noexcept =
     default;
 
+uint32_t UmdDeviceAccess::numDramChannels() const {
+  return impl_->device == nullptr ? 0u : impl_->device->num_dram_channels();
+}
+
+// Enumerate every visible UMD chip once: open by 0-based index, read its ASIC
+// unique_id, and record unique_id -> index. This is the same eager enumeration
+// the disaggregation worker does in open_all_devices; here we keep only the
+// (unique_id -> index) map so buildDeviceIo can translate a device-map
+// unique_id into the index UmdDevice::open() expects. The opened handles are
+// dropped at loop end — the shared per-process Cluster stays alive, so
+// re-opening the chosen chips later is cheap.
+std::unordered_map<uint64_t, int> enumerateUmdDevicesByUniqueId() {
+  std::unordered_map<uint64_t, int> byUniqueId;
+  const int count = dis::UmdDevice::count();
+  for (int i = 0; i < count; ++i) {
+    try {
+      auto dev = dis::UmdDevice::open(i);
+      if (dev == nullptr) {
+        TT_LOG_WARN("[UmdDeviceAccess] enumerate: open({}) returned null", i);
+        continue;
+      }
+      const uint64_t uid = dev->unique_id();
+      const auto [it, inserted] = byUniqueId.emplace(uid, i);
+      if (!inserted) {
+        TT_LOG_WARN(
+            "[UmdDeviceAccess] enumerate: duplicate unique_id {} at indices {} "
+            "and {}; keeping {}",
+            uid, it->second, i, it->second);
+      }
+    } catch (const std::exception& e) {
+      TT_LOG_WARN("[UmdDeviceAccess] enumerate: open({}) failed: {}", i,
+                  e.what());
+    }
+  }
+  TT_LOG_INFO(
+      "[UmdDeviceAccess] enumerated {} of {} visible device(s) by "
+      "unique_id",
+      byUniqueId.size(), count);
+  return byUniqueId;
+}
+
 bool UmdDeviceAccess::read(NocAddr addr, std::size_t size, void* hostBuffer) {
   if (impl_->device == nullptr) {
     TT_LOG_WARN("[UmdDeviceAccess] read on closed/unopened deviceId={}",
@@ -158,6 +199,17 @@ UmdDeviceAccess::UmdDeviceAccess(UmdDeviceAccess&&) noexcept = default;
 
 UmdDeviceAccess& UmdDeviceAccess::operator=(UmdDeviceAccess&&) noexcept =
     default;
+
+uint32_t UmdDeviceAccess::numDramChannels() const { return 0u; }
+
+// No devices without tt-metal: return an empty map so a non-empty DeviceMap
+// resolves to a clean miss (and buildDeviceIo fails without opening anything).
+std::unordered_map<uint64_t, int> enumerateUmdDevicesByUniqueId() {
+  TT_LOG_WARN(
+      "[UmdDeviceAccess] enumerate by unique_id unavailable (built without "
+      "tt-metal); returning empty map");
+  return {};
+}
 
 bool UmdDeviceAccess::read(NocAddr addr, std::size_t size,
                            void* /*hostBuffer*/) {

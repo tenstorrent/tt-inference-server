@@ -57,7 +57,8 @@ bool KvMigrationSender::migrate(uint64_t uuid,
 
   if (!channel_.send(beginMessage(uuid, request.dstSlice()))) {
     TT_LOG_ERROR(
-        "[KvMigrationSender] migrate(uuid={}): send BeginMigration failed",
+        "[KvMigrationSender] migrate(kafka_request_id={}): send "
+        "BeginMigration failed",
         uuid);
     return false;
   }
@@ -66,14 +67,14 @@ bool KvMigrationSender::migrate(uint64_t uuid,
   switch (channel_.receiveMessage(ready)) {
     case KvControlChannel::ReceiveOutcome::TimedOut:
       TT_LOG_ERROR(
-          "[KvMigrationSender] migrate(uuid={}): timed out waiting for "
-          "MirrorReady ({} ms)",
+          "[KvMigrationSender] migrate(kafka_request_id={}): timed out waiting "
+          "for MirrorReady ({} ms)",
           uuid, channel_.receiveTimeout().count());
       return false;
     case KvControlChannel::ReceiveOutcome::Closed:
       TT_LOG_ERROR(
-          "[KvMigrationSender] migrate(uuid={}): control channel closed while "
-          "waiting for MirrorReady",
+          "[KvMigrationSender] migrate(kafka_request_id={}): control channel "
+          "closed while waiting for MirrorReady",
           uuid);
       return false;
     case KvControlChannel::ReceiveOutcome::Message:
@@ -81,22 +82,23 @@ bool KvMigrationSender::migrate(uint64_t uuid,
   }
   if (ready.type != KvControlType::MIRROR_READY || ready.uuid != uuid) {
     TT_LOG_ERROR(
-        "[KvMigrationSender] migrate(uuid={}): expected MirrorReady, got "
-        "type={} uuid={}",
+        "[KvMigrationSender] migrate(kafka_request_id={}): expected "
+        "MirrorReady, got type={} kafka_request_id={}",
         uuid, static_cast<int>(ready.type), ready.uuid);
     return false;
   }
   if (!ready.ok || ready.segment_name.empty()) {
     TT_LOG_ERROR(
-        "[KvMigrationSender] migrate(uuid={}): receiver failed to prepare "
-        "mirror (ok={}, segment empty={})",
+        "[KvMigrationSender] migrate(kafka_request_id={}): receiver failed to "
+        "prepare mirror (ok={}, segment empty={})",
         uuid, ready.ok, ready.segment_name.empty());
     return false;
   }
 
-  if (!sender_.transferSlot(request, ready.segment_name)) {
-    TT_LOG_ERROR("[KvMigrationSender] migrate(uuid={}): transferSlot failed",
-                 uuid);
+  if (!sender_.transferSlot(uuid, request, ready.segment_name)) {
+    TT_LOG_ERROR(
+        "[KvMigrationSender] migrate(kafka_request_id={}): transferSlot failed",
+        uuid);
     return false;
   }
 
@@ -104,8 +106,10 @@ bool KvMigrationSender::migrate(uint64_t uuid,
   done.type = KvControlType::DONE_MARKER;
   done.uuid = uuid;
   if (!channel_.send(done)) {
-    TT_LOG_ERROR("[KvMigrationSender] migrate(uuid={}): send DoneMarker failed",
-                 uuid);
+    TT_LOG_ERROR(
+        "[KvMigrationSender] migrate(kafka_request_id={}): send DoneMarker "
+        "failed",
+        uuid);
     return false;
   }
 
@@ -113,14 +117,14 @@ bool KvMigrationSender::migrate(uint64_t uuid,
   switch (channel_.receiveMessage(ack)) {
     case KvControlChannel::ReceiveOutcome::TimedOut:
       TT_LOG_ERROR(
-          "[KvMigrationSender] migrate(uuid={}): timed out waiting for Ack "
-          "({} ms)",
+          "[KvMigrationSender] migrate(kafka_request_id={}): timed out waiting "
+          "for Ack ({} ms)",
           uuid, channel_.receiveTimeout().count());
       return false;
     case KvControlChannel::ReceiveOutcome::Closed:
       TT_LOG_ERROR(
-          "[KvMigrationSender] migrate(uuid={}): control channel closed while "
-          "waiting for Ack",
+          "[KvMigrationSender] migrate(kafka_request_id={}): control channel "
+          "closed while waiting for Ack",
           uuid);
       return false;
     case KvControlChannel::ReceiveOutcome::Message:
@@ -128,18 +132,20 @@ bool KvMigrationSender::migrate(uint64_t uuid,
   }
   if (ack.type != KvControlType::ACK || ack.uuid != uuid) {
     TT_LOG_ERROR(
-        "[KvMigrationSender] migrate(uuid={}): expected Ack, got type={} "
-        "uuid={}",
+        "[KvMigrationSender] migrate(kafka_request_id={}): expected Ack, got "
+        "type={} kafka_request_id={}",
         uuid, static_cast<int>(ack.type), ack.uuid);
     return false;
   }
   if (!ack.ok) {
     TT_LOG_ERROR(
-        "[KvMigrationSender] migrate(uuid={}): receiver reported drain failure",
+        "[KvMigrationSender] migrate(kafka_request_id={}): receiver reported "
+        "drain failure",
         uuid);
     return false;
   }
-  TT_LOG_INFO("[KvMigrationSender] migrate(uuid={}) complete", uuid);
+  TT_LOG_INFO("[KvMigrationSender] migrate(kafka_request_id={}) complete",
+              uuid);
   return true;
 }
 
@@ -147,6 +153,11 @@ bool KvMigrationSender::migrate(uint64_t uuid,
 
 KvMigrationReceiver::KvMigrationReceiver(
     KvControlChannel& channel, MooncakeKvReceiver& receiver,
+    std::shared_ptr<const std::vector<uint8_t>> localTableBlob)
+    : KvMigrationReceiver(channel, &receiver, std::move(localTableBlob)) {}
+
+KvMigrationReceiver::KvMigrationReceiver(
+    KvControlChannel& channel, MooncakeKvReceiver* receiver,
     std::shared_ptr<const std::vector<uint8_t>> localTableBlob)
     : channel_(channel),
       receiver_(receiver),
@@ -217,7 +228,15 @@ bool KvMigrationReceiver::handle(const KvControlMessage& in) {
     case KvControlType::TABLE_EXCHANGE:
       return handleTableExchange(*msg);
     case KvControlType::BEGIN_MIGRATION: {
-      const auto segment = receiver_.prepareMirror(sliceOf(*msg), msg->uuid);
+      if (receiver_ == nullptr) {
+        TT_LOG_WARN(
+            "[KvMigrationReceiver] dry-run migration_id={} received; no "
+            "device or mirror is available",
+            msg->uuid);
+      }
+      const auto segment = receiver_ != nullptr ? receiver_->prepareMirror(
+                                                      sliceOf(*msg), msg->uuid)
+                                                : std::nullopt;
       KvControlMessage ready;
       ready.type = KvControlType::MIRROR_READY;
       ready.uuid = msg->uuid;
@@ -231,9 +250,10 @@ bool KvMigrationReceiver::handle(const KvControlMessage& in) {
       break;
     }
     case KvControlType::DONE_MARKER: {
-      const bool ok = receiver_.drain(msg->uuid);
+      const bool ok = receiver_ != nullptr && receiver_->drain(msg->uuid);
       if (!ok) {
-        TT_LOG_ERROR("[KvMigrationReceiver] drain(uuid={}) failed", msg->uuid);
+        TT_LOG_ERROR("[KvMigrationReceiver] drain(uuid={}) failed{}", msg->uuid,
+                     receiver_ == nullptr ? " (dry-run mode)" : "");
       }
       // The Ack carries the drain status so the sender does not treat a failed
       // (partial/corrupt) drain as a successful migration.

@@ -443,7 +443,7 @@ TransferHandle MooncakeTransferEngine::submitBatch(
   const auto ms = [](auto a, auto b) {
     return std::chrono::duration_cast<std::chrono::milliseconds>(b - a).count();
   };
-  TT_LOG_INFO(
+  TT_LOG_DEBUG(
       "[MooncakeTransferEngine] submitBatch: {} entries | resolveLoop={}ms | "
       "allocateBatchID+submitTransfer={}ms",
       entries.size(), ms(tResolve0, tResolve1), ms(tResolve1, tSubmit1));

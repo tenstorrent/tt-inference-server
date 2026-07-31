@@ -82,6 +82,7 @@ def generate_default_docker_link(
 def read_performance_reference_json() -> Dict[DeviceTypes, List[BenchmarkTaskParams]]:
     default_filepath = (
         get_repo_root_path()
+        / "reference_config"
         / "benchmarking"
         / "benchmark_targets"
         / "model_performance_reference.json"
@@ -293,6 +294,19 @@ qwen36_blackhole_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/blackhole/qwen36",
 )
+training_lora_impl = ImplSpec(
+    impl_id="training_lora",
+    impl_name="training-lora",
+    repo_url="https://github.com/tenstorrent/tt-inference-server",
+    code_path="tt-media-server/tt_model_runners/forge_training_runners/training_lora_runner.py",
+)
+# Same impl as qwen36_blackhole; separate impl_id so the batch=8 spec is selectable via --impl.
+qwen36_blackhole_b8_impl = ImplSpec(
+    impl_id="qwen36_blackhole_b8",
+    impl_name="qwen36-blackhole-b8",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/blackhole/qwen36",
+)
 
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "tt_transformers": tt_transformers_impl,
@@ -306,6 +320,8 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "tt_vllm_plugin": tt_vllm_plugin_impl,
     "sdxl_forge": sdxl_forge_impl,
     "qwen36_blackhole": qwen36_blackhole_impl,
+    "training_lora": training_lora_impl,
+    "qwen36_blackhole_b8": qwen36_blackhole_b8_impl,
 }
 
 
@@ -353,6 +369,8 @@ class DeviceModelSpec:
     device: DeviceTypes
     max_concurrency: int
     max_context: int
+    # Explicit device KV-pool token budget for benchmark concurrency; set only when the pool is decoupled from max_context*max_num_seqs (does NOT affect max_context). None => derived from max_context.
+    max_tokens_all_users_override: Optional[int] = None
     perf_targets_map: Dict[str, float] = field(default_factory=dict)
     default_impl: bool = False
     perf_reference: List[BenchmarkTaskParams] = field(default_factory=list)
@@ -389,6 +407,9 @@ class DeviceModelSpec:
             # DP engines without needing to know about DP rank.
             max_concurrency = max_concurrency // data_parallel_size
             max_tokens_all_users = max_tokens_all_users * data_parallel_size
+        # An explicit override is the true total device pool: used verbatim (no data_parallel scaling).
+        if self.max_tokens_all_users_override is not None:
+            max_tokens_all_users = self.max_tokens_all_users_override
         object.__setattr__(self, "max_tokens_all_users", max_tokens_all_users)
         # TODO: we should get max_num_batched_tokens from DeviceModelSpec in the future
         default_vllm_args = {
@@ -999,6 +1020,7 @@ class ModelSpecTemplate:
                     device=device_model_spec.device,
                     max_concurrency=device_model_spec.max_concurrency,
                     max_context=device_model_spec.max_context,
+                    max_tokens_all_users_override=device_model_spec.max_tokens_all_users_override,
                     perf_targets_map=device_model_spec.perf_targets_map,
                     default_impl=device_model_spec.default_impl,
                     perf_reference=perf_reference,
@@ -1173,6 +1195,7 @@ _CATALOG_FILES = (
     "audio_tts.yaml",
     "embedding.yaml",
     "cnn.yaml",
+    "training.yaml",
 )
 
 spec_templates: List["ModelSpecTemplate"] = [

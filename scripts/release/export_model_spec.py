@@ -31,10 +31,9 @@ Usage:
 
 import argparse
 import os
-import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+import _bootstrap  # noqa: F401,E402  (sets sys.path for imports below)
 
 VALID_ENVS = ("prod", "dev")
 

@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+#
+# Audio processing dependencies for whisperx/pyannote diarization.
+# Installed in a separate venv (audio_venv) to avoid torch version conflicts
+# with vLLM 0.18.1 which requires torch>=2.10.
+#
+# Main venv: torch 2.10 + vLLM 0.18.1
+# Audio venv: torch 2.7.x + whisperx + pyannote
+
+whisperx==3.4.3
+torch==2.7.1+cpu
+torchaudio==2.7.1+cpu
+silero_vad
+
+--extra-index-url https://download.pytorch.org/whl/cpu

@@ -21,9 +21,7 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 
 from workflow_logs_parser import parse_workflow_logs_dir
 
-# Add project root to Python path to allow imports from workflows
-project_root = Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(project_root))
+import _bootstrap  # noqa: F401,E402  (sets sys.path for imports below)
 from workflows.model_spec import MODEL_SPECS
 
 # Configure logging

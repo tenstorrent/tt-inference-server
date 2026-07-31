@@ -16,6 +16,9 @@ concurrency:
   group: spdx-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: write
+
 jobs:
   run-spdx-header-script:
     runs-on: ubuntu-latest

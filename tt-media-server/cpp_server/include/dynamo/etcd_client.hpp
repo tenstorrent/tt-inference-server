@@ -22,8 +22,11 @@
  */
 
 #include <cstdint>
+#include <optional>
 #include <stdexcept>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace tt::dynamo {
 
@@ -57,6 +60,14 @@ class EtcdClient {
   /// Put a single key-value pair, optionally attached to a lease (0 = none).
   void put(const std::string& key, const std::string& value,
            int64_t lease_id = 0);
+
+  /// Get a single key. Returns nullopt when the key is absent.
+  std::optional<std::string> get(const std::string& key);
+
+  /// List all keys under `prefix` (etcd prefix range). Returns (key, value)
+  /// pairs with keys/values already base64-decoded.
+  std::vector<std::pair<std::string, std::string>> getPrefix(
+      const std::string& prefix);
 
   /// Delete a single key (range_end is left unset).
   void deleteRange(const std::string& key);
