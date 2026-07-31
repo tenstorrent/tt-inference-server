@@ -3,9 +3,11 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import json
+import os
 from typing import Optional
 
-from config.constants import AUDIO_RESPONSE_FORMATS
+from config.constants import AUDIO_RESPONSE_FORMATS, ModelRunners
+from config.settings import settings
 from domain.text_to_speech_request import TextToSpeechRequest
 from domain.voice_encode_request import VoiceEncodeRequest
 from domain.voice_list_request import VoiceListRequest
@@ -35,6 +37,28 @@ TTS_MEDIA_TYPES = {
 
 
 _VOICE_NOT_FOUND_MARKER = "not found. Available voices:"
+_TEXT_TOO_LONG_MARKER = "exceeding the fixed ISL="
+
+# Inworld TTS-2 only: a known, pre-existing bug (unrelated to any one
+# session's changes -- confirmed via git-stash revert-and-reproduce, see
+# models/demos/inworld_tts/FINAL_RUN.md) permanently corrupts a worker's
+# subsequent NON-streaming output to near-silence once that worker has
+# served any streaming request. Until that's root-caused, reject
+# non-streaming requests outright instead of silently returning corrupted
+# audio. Gated by an env var (default: disabled) so it's a one-line revert
+# once the underlying bug is fixed -- not a hardcoded permanent behavior
+# change.
+_INWORLD_NON_STREAMING_DISABLED_MSG = (
+    "Non-streaming text-to-speech requests are disabled on this deployment: a known bug "
+    "permanently corrupts a worker's subsequent non-streaming output once it has served "
+    "any streaming request. Set \"stream\": true and use the NDJSON streaming response instead."
+)
+
+
+def _non_streaming_disabled_for_inworld_tts() -> bool:
+    return settings.model_runner == ModelRunners.TT_INWORLD_TTS.value and os.getenv(
+        "INWORLD_TTS_DISABLE_NON_STREAMING", "1"
+    ) != "0"
 
 
 async def resolve_voice(tts_request, service) -> None:
@@ -87,6 +111,8 @@ async def handle_tts_request(tts_request, service):
     """
     try:
         if not getattr(tts_request, "stream", False):
+            if _non_streaming_disabled_for_inworld_tts():
+                raise HTTPException(status_code=400, detail=_INWORLD_NON_STREAMING_DISABLED_MSG)
             result = await service.process_request(tts_request)
             fmt = tts_request.response_format.lower()
             if fmt in AUDIO_RESPONSE_FORMATS:
@@ -129,6 +155,12 @@ async def handle_tts_request(tts_request, service):
         # StreamingResponse, where the status code can no longer change.)
         if _VOICE_NOT_FOUND_MARKER in str(e):
             raise HTTPException(status_code=400, detail=str(e))
+        # Input text too long for the fixed prefill length (tokenizer-exact
+        # check, raised host-side in tt_modeling._prefill_with_perf before any
+        # device call -- already fast, just needs the right status code): a
+        # client input error, not a server failure.
+        if _TEXT_TOO_LONG_MARKER in str(e):
+            raise HTTPException(status_code=422, detail=str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
 
