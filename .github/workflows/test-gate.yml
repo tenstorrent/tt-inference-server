@@ -776,6 +776,7 @@ jobs:
         run: |
           git -C cpp_server/tt-llm-engine \
             -c "url.https://x-access-token:${TT_LLM_ENGINE_TOKEN}@github.com/.insteadOf=https://github.com/" \
+            -c "url.https://github.com/.insteadOf=git@github.com:" \
             submodule update --init --recursive --depth 1 tt-metal
           git -c "url.https://github.com/.insteadOf=git@github.com:" \
             submodule update --init --recursive --depth 1 cpp_server/third_party/Mooncake
@@ -864,7 +865,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ github.token }}
+          password: ${{ secrets.TT_LLM_ENGINE }}
 
       - name: Build local migration worker image
         env:
