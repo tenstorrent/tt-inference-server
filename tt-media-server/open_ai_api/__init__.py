@@ -16,6 +16,7 @@ from open_ai_api import (
     embedding,
     fine_tuning,
     image,
+    inworld_voice_stream,
     llm,
     models,
     text_to_speech,
@@ -58,6 +59,13 @@ SERVICE_ROUTER_MAP: dict[str, list[ServiceRoute]] = {
     ModelServices.TEXT_TO_SPEECH.value: [
         ServiceRoute(
             text_to_speech.router, "/v1/audio", "/audio", ["Text to speech processing"]
+        ),
+        # Inworld-native streaming contract (see
+        # domain/inworld_voice_stream_request.py) -- a distinct path, not a
+        # v1/legacy pair of the OpenAI-compatible routes above, so no
+        # legacy_prefix.
+        ServiceRoute(
+            inworld_voice_stream.router, "/tts/v1", None, ["Inworld-native TTS streaming"]
         ),
     ],
     ModelServices.VIDEO.value: [

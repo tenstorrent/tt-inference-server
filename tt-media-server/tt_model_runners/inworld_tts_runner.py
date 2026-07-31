@@ -513,6 +513,7 @@ class TTInworldTTSRunner(BaseMetalDeviceRunner):
             self._audio_decoder,
             request.text,
             speech_ids_prompt=speech_ids_prompt,
+            temperature=getattr(request, "temperature", 1.0),
             profiler=profiler,
         )
 
@@ -611,6 +612,7 @@ class TTInworldTTSRunner(BaseMetalDeviceRunner):
             self._audio_decoder,
             request.text,
             speech_ids_prompt=speech_ids_prompt,
+            temperature=getattr(request, "temperature", 1.0),
             profiler=profiler,
         ):
             if kind == "chunk":

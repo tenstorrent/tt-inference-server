@@ -5,9 +5,17 @@
 from typing import Optional, Union
 
 import numpy as np
-from config.constants import TTS_RESPONSE_FORMATS
+from config.constants import ModelRunners, TTS_RESPONSE_FORMATS
+from config.settings import settings
 from domain.base_request import BaseRequest
 from pydantic import PrivateAttr, field_validator, model_validator
+
+# "pcm" (headerless raw 16-bit PCM) is only ever produced by the inworld-tts
+# runner's raw-bytes streaming path (open_ai_api/text_to_speech.py's
+# _stream_openai_compatible_audio_bytes) -- not added to the shared
+# TTS_RESPONSE_FORMATS set since other runners' post_process/tts_worker_function
+# have no code path for it.
+_INWORLD_ONLY_EXTRA_FORMATS = frozenset({"pcm"})
 
 # Default max text length (runner handles chunking internally)
 DEFAULT_MAX_TTS_TEXT_LENGTH = 20000
@@ -97,14 +105,28 @@ class TextToSpeechRequest(BaseRequest):
     # ChatCompletionRequest.stream's convention.
     stream: bool | None = False
 
+    # Sampling temperature (Inworld TTS runner only, currently): wired
+    # through to synthesize_tp8/synthesize_tp8_streaming's own temperature
+    # param (default 1.0 there too, so omitting this is a no-op for every
+    # existing caller).
+    temperature: float = 1.0
+
+    @field_validator("temperature")
+    @classmethod
+    def validate_temperature(cls, v):
+        if not (0 < v <= 2):
+            raise ValueError("temperature must be in range (0, 2]")
+        return v
+
     @field_validator("response_format", mode="before")
     @classmethod
     def validate_response_format(cls, v):
         normalized = str(v).strip().lower() if v is not None else "wav"
-        if normalized not in TTS_RESPONSE_FORMATS:
-            raise ValueError(
-                f"response_format must be one of {sorted(TTS_RESPONSE_FORMATS)}"
-            )
+        allowed = TTS_RESPONSE_FORMATS
+        if settings.model_runner == ModelRunners.TT_INWORLD_TTS.value:
+            allowed = allowed | _INWORLD_ONLY_EXTRA_FORMATS
+        if normalized not in allowed:
+            raise ValueError(f"response_format must be one of {sorted(allowed)}")
         return normalized
 
     # Private fields for internal processing

@@ -79,3 +79,39 @@ def encode_wav_to(wav_bytes: bytes, output_format: str) -> bytes:
     else:
         raise ValueError(f"Unsupported output format: {output_format}")
     return run_ffmpeg_stdin_stdout(wav_bytes, args)
+
+
+def encode_wav_bytes(
+    wav_bytes: bytes,
+    output_format: str,
+    sample_rate: int = None,
+    bit_rate: int = None,
+) -> bytes:
+    """
+    One-shot WAV -> {wav, mp3, ogg, pcm} conversion, optionally resampling.
+    Used for independently-encoding EACH streaming chunk (as opposed to
+    encode_wav_to's one-shot whole-file conversion, or
+    streaming_audio_encoder's continuous multi-chunk pipe) -- see
+    open_ai_api/inworld_voice_stream.py.
+
+    "pcm" means headerless raw 16-bit PCM (Inworld's LINEAR16/PCM encodings),
+    as opposed to "wav" which keeps the WAV container.
+    """
+    if output_format == "wav" and not sample_rate:
+        return wav_bytes
+    if output_format == "mp3":
+        out_args = ["-f", "mp3"]
+        if bit_rate:
+            out_args += ["-b:a", str(bit_rate)]
+    elif output_format == "ogg":
+        out_args = ["-acodec", "libvorbis", "-f", "ogg"]
+    elif output_format == "wav":
+        out_args = ["-f", "wav"]
+    elif output_format == "pcm":
+        out_args = ["-f", "s16le"]
+    else:
+        raise ValueError(f"Unsupported output format: {output_format}")
+    if sample_rate:
+        out_args += ["-ar", str(sample_rate)]
+    args = ["-i", "pipe:0"] + out_args + ["-y", "pipe:1"]
+    return run_ffmpeg_stdin_stdout(wav_bytes, args)
