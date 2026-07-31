@@ -10,7 +10,7 @@
 #
 # Examples:
 #   ./dry_run_n_prefill_deploy.sh
-#   ./dry_run_n_prefill_deploy.sh --prefill-hosts h1,h2 --decode-hosts d1,d2,d3,d4
+#   ./dry_run_n_prefill_deploy.sh --prefill-hosts h1,h2,h3,h4 --decode-hosts d0,...,d15
 #   ./dry_run_n_prefill_deploy.sh --execute --prefill-hosts "$(hostname)" ...
 #
 set -euo pipefail
@@ -18,8 +18,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEPLOY="${SCRIPT_DIR}/deploy_migration_workers.sh"
 
-NUM_PREFILL_HINT="${NUM_PREFILL:-2}"
-NUM_DECODE_HINT="${NUM_DECODE:-4}"
+NUM_PREFILL_HINT="${NUM_PREFILL:-4}"
+NUM_DECODE_HINT="${NUM_DECODE:-16}"
+NUM_LAYERS_HINT="${NUM_LAYERS:-61}"
 PREFILL_HOSTS="${PREFILL_HOSTS:-}"
 DECODE_HOSTS="${DECODE_HOSTS:-}"
 DISCOVERY_SERVER="${DISCOVERY_SERVER:-$(hostname):8080}"
@@ -36,7 +37,7 @@ usage: $0 [--execute] [--prefill-hosts CSV] [--decode-hosts CSV]
           [--discovery-server HOST:PORT] [--kafka-brokers HOST:PORT]
           [--prefill-table PATH] [--decode-table PATH]
 
-Env defaults: NUM_PREFILL=${NUM_PREFILL_HINT} NUM_DECODE=${NUM_DECODE_HINT}
+Env defaults: NUM_PREFILL=${NUM_PREFILL_HINT} NUM_DECODE=${NUM_DECODE_HINT} NUM_LAYERS=${NUM_LAYERS_HINT}
 When --prefill-hosts / --decode-hosts are omitted, synthesizes placeholder
 CSV lists sized from NUM_PREFILL / NUM_DECODE for --dry-run inspection only.
 EOF
@@ -72,7 +73,9 @@ fi
 numPrefill=$(awk -F',' '{print NF}' <<<"${PREFILL_HOSTS}")
 numDecode=$(awk -F',' '{print NF}' <<<"${DECODE_HOSTS}")
 
+layersPerPartition=$(( (NUM_LAYERS_HINT + numPrefill - 1) / numPrefill ))
 echo "[dry-run-n-prefill] topology: ${numPrefill} prefill × ${numDecode} decode"
+echo "[dry-run-n-prefill] layers=${NUM_LAYERS_HINT} → layers_per_partition=${layersPerPartition}"
 echo "[dry-run-n-prefill] kafka exclusive: prefill i -> KAFKA_PARTITION=i"
 echo "[dry-run-n-prefill] topics: ensure-partitions >= ${numPrefill}"
 echo "[dry-run-n-prefill] peers: auto contiguous blocks when NUM_PREFILL>1"

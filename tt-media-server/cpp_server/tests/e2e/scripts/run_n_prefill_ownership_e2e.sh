@@ -16,7 +16,7 @@
 #
 # Usage:
 #   PREFILL_TABLE=/path/to.pb bash run_n_prefill_ownership_e2e.sh
-#   NUM_PREFILL=2 NUM_DECODE=4 LAYER=20 bash run_n_prefill_ownership_e2e.sh
+#   NUM_PREFILL=4 NUM_DECODE=16 NUM_LAYERS=61 LAYER=20 bash run_n_prefill_ownership_e2e.sh
 #
 set -euo pipefail
 
@@ -25,10 +25,11 @@ CPP_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 LAB="${SCRIPT_DIR}/local_kv_migration_lab.sh"
 CLI="${CPP_ROOT}/scripts/migration_cli.py"
 
-NUM_PREFILL="${NUM_PREFILL:-2}"
-NUM_DECODE="${NUM_DECODE:-2}"
-NUM_LAYERS="${NUM_LAYERS:-64}"
-# Default target layer maps to partition 1 when N=2 (layers_per_partition=32).
+NUM_PREFILL="${NUM_PREFILL:-4}"
+NUM_DECODE="${NUM_DECODE:-16}"
+NUM_LAYERS="${NUM_LAYERS:-61}"
+# Default target layer maps to partition 1 for N=4, 61 layers
+# (layers_per_partition = ceil(61/4) = 16 → 20/16 = 1).
 LAYER="${LAYER:-20}"
 KAFKA_BROKERS="${KAFKA_BROKERS:-localhost:9092}"
 ACK_WAIT_SEC="${ACK_WAIT_SEC:-30}"

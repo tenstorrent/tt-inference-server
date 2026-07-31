@@ -71,7 +71,7 @@ decode has a single prefill owner.
 Dry-run topology preview (no containers started):
 
 ```bash
-NUM_PREFILL=2 NUM_DECODE=4 ./dry_run_n_prefill_deploy.sh
+NUM_PREFILL=4 NUM_DECODE=16 NUM_LAYERS=61 ./dry_run_n_prefill_deploy.sh
 ```
 
 Exabox dry-run (no model; discovery + Kafka + stub migrate):
