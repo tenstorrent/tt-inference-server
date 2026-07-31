@@ -34,6 +34,43 @@ TTS_MEDIA_TYPES = {
 }
 
 
+_VOICE_NOT_FOUND_MARKER = "not found. Available voices:"
+
+
+async def resolve_voice(tts_request, service) -> None:
+    """Resolve the OpenAI SDK-compatible ``voice`` field against the
+    registered voice list, in favor of ``voice_id`` -- does not alter
+    ``voice_id``'s own matching/error behavior in any way.
+
+    - ``voice_id`` present: wins outright, ``voice`` is ignored entirely
+      (Console always sends a default ``voice`` like "alloy" alongside a
+      real ``voice_id``; the explicit ID must take precedence).
+    - Only ``voice`` present: matched case-insensitively against registered
+      voice_ids. A match sets ``tts_request.voice_id`` so the rest of the
+      pipeline (which only ever looks at ``voice_id``) needs no changes.
+    - ``voice`` present but unmatched (e.g. an OpenAI default like "alloy"):
+      silently ignored -- falls through to the default (TVD) voice, never
+      an error, so existing OpenAI-SDK-shaped callers never break.
+    """
+    if tts_request.voice_id:
+        return
+    voice = getattr(tts_request, "voice", None)
+    if not voice:
+        return
+    try:
+        voice_list_result = await service.process_request(VoiceListRequest())
+        registered = voice_list_result.to_dict().get("voices", [])
+    except Exception:
+        return  # Be permissive: listing failure just means no match found.
+    match = next(
+        (v["voice_id"] for v in registered if v.get("voice_id", "").lower() == voice.lower()),
+        None,
+    )
+    if match:
+        tts_request.voice_id = match
+    # else: no match -- leave voice_id unset, default voice, no error.
+
+
 async def handle_tts_request(tts_request, service):
     """
     Runner returns base64; post_process converts to requested format.
@@ -82,6 +119,16 @@ async def handle_tts_request(tts_request, service):
     except HTTPException:
         raise
     except Exception as e:
+        # An unknown voice_id is a client input error, not a server failure --
+        # give it a 400 instead of a 500. The runner's own voice_id matching/
+        # error message is unchanged; this only translates the status code by
+        # recognizing that message's marker text, since the underlying
+        # exception type doesn't survive the worker-process IPC boundary.
+        # (Non-streaming path only: a streaming request's voice_id is only
+        # looked up once generation is underway, inside an already-returned
+        # StreamingResponse, where the status code can no longer change.)
+        if _VOICE_NOT_FOUND_MARKER in str(e):
+            raise HTTPException(status_code=400, detail=str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -108,6 +155,7 @@ async def text_to_speech(
         HTTPException: If text-to-speech fails or binary format requested but
         output not available (e.g. ffmpeg missing for mp3/ogg).
     """
+    await resolve_voice(tts_request, service)
     return await handle_tts_request(tts_request, service)
 
 

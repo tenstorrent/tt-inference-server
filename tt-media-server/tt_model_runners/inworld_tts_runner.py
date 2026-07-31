@@ -107,7 +107,14 @@ class TTInworldTTSRunner(BaseMetalDeviceRunner):
         # value on real hardware after the DECODER_MAX_T=1024 bump (roughly
         # 2x the old main-decoder trace) -- 100MB may no longer be sufficient
         # or optimal.
-        return {"l1_small_size": 16384, "trace_region_size": 100_000_000}
+        #
+        # num_command_queues=2: enables the streaming decoder's per-chunk
+        # input write to dispatch on a SEPARATE command queue (cq1) from the
+        # trace replay (cq0), overlapping the next chunk's write with the
+        # current chunk's replay -- see TtAudioDecoder.attach_streaming's
+        # write_cq_id docstring and TtDecoder.execute_trace's docstring for
+        # the validated (not assumed) 2-command-queue pattern this follows.
+        return {"l1_small_size": 16384, "trace_region_size": 100_000_000, "num_command_queues": 2}
 
     def _configure_fabric(self, updated_device_params):
         try:
