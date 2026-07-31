@@ -146,6 +146,13 @@ async def _stream_openai_compatible_audio_bytes(tts_request, service):
     (contrast with /tts/v1/voice:stream's NDJSON-with-base64 contract,
     open_ai_api/inworld_voice_stream.py).
     """
+    # device_workers/device_worker.py's dispatch checks request.stream
+    # directly (independent of which service method the API layer calls)
+    # to decide streaming vs non-streaming on the worker/runner side -- this
+    # must be True or the request silently runs through the dangerous
+    # non-streaming decoder despite calling process_streaming_request below.
+    tts_request.stream = True
+
     fmt = (tts_request.response_format or "mp3").lower()
     if fmt not in _STREAMING_MEDIA_TYPE_BY_FORMAT:
         raise HTTPException(
