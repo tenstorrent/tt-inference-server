@@ -148,8 +148,27 @@ async def handle_tts_request(tts_request, service):
         except Exception:
             raise HTTPException(status_code=405, detail="Model is not ready")
 
+        # Prime the FIRST chunk here, before constructing the StreamingResponse
+        # below -- Starlette commits the response status as soon as
+        # StreamingResponse starts (before the generator produces anything),
+        # so an exception raised inside the generator (e.g. input too long --
+        # see _TEXT_TOO_LONG_MARKER below) can no longer change the status
+        # code once that object exists: it would silently surface as 200 with
+        # an empty body. Prefill/tokenization failures (the cases this guards
+        # against) happen before any decode step, so priming costs nothing
+        # extra on the failure path; on success it costs one chunk's worth of
+        # generation added to time-to-first-byte, in exchange for a real
+        # status code instead of a silent empty response.
+        stream_iter = service.process_streaming_request(tts_request)
+        try:
+            first_chunk = await stream_iter.__anext__()
+        except StopAsyncIteration:
+            first_chunk = None
+
         async def result_stream():
-            async for partial in service.process_streaming_request(tts_request):
+            if first_chunk is not None:
+                yield json.dumps(get_dict_response(first_chunk)) + "\n"
+            async for partial in stream_iter:
                 yield json.dumps(get_dict_response(partial)) + "\n"
 
         return StreamingResponse(result_stream(), media_type="application/x-ndjson")
@@ -161,15 +180,15 @@ async def handle_tts_request(tts_request, service):
         # error message is unchanged; this only translates the status code by
         # recognizing that message's marker text, since the underlying
         # exception type doesn't survive the worker-process IPC boundary.
-        # (Non-streaming path only: a streaming request's voice_id is only
-        # looked up once generation is underway, inside an already-returned
-        # StreamingResponse, where the status code can no longer change.)
+        # Covers the streaming path too now that the first chunk is primed
+        # above, before any response object is created.
         if _VOICE_NOT_FOUND_MARKER in str(e):
             raise HTTPException(status_code=400, detail=str(e))
         # Input text too long for the fixed prefill length (tokenizer-exact
         # check, raised host-side in tt_modeling._prefill_with_perf before any
         # device call -- already fast, just needs the right status code): a
-        # client input error, not a server failure.
+        # client input error, not a server failure. Covers the streaming path
+        # too, same reason as above.
         if _TEXT_TOO_LONG_MARKER in str(e):
             raise HTTPException(status_code=422, detail=str(e))
         raise HTTPException(status_code=500, detail=str(e))
