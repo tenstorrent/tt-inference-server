@@ -60,5 +60,46 @@ def test_local_server_uses_host_port_and_truncation():
     assert cmd[cmd.index("--port") + 1] == "8000"
     assert "--base-url" not in cmd
     assert '"truncate_prompt_tokens": "128"' in cmd[cmd.index("--extra-body") + 1]
+    assert "--trust-remote-code" not in cmd
     header_values = cmd[cmd.index("--header") + 1 :]
     assert header_values == ["Accept-Encoding=identity"]
+
+
+def test_local_server_trusts_remote_code_when_spec_opts_in():
+    # `vllm bench serve` encodes the random-dataset prompts client-side, so a
+    # custom-tokenizer model (DiffusionGemma) needs the flag on the local path
+    # too, not only on the remote-console path.
+    server = ServerConnection(
+        base_url="http://127.0.0.1",
+        service_port=8000,
+        model="google/diffusiongemma-26B-A4B-it",
+        is_remote=False,
+        tokenizer_trust_remote_code=True,
+    )
+    cmd, _ = build_vllm_bench_serve_argv(
+        vllm_binary="/venv/bin/vllm",
+        config=_config(),
+        server=server,
+        result_filename=_result_path(),
+    )
+
+    assert cmd.count("--trust-remote-code") == 1
+    assert cmd[cmd.index("--host") + 1] == "127.0.0.1"
+
+
+def test_remote_server_passes_trust_remote_code_once():
+    server = ServerConnection(
+        base_url="https://console.tenstorrent.com:443",
+        service_port=443,
+        model="google/diffusiongemma-26B-A4B-it",
+        is_remote=True,
+        tokenizer_trust_remote_code=True,
+    )
+    cmd, _ = build_vllm_bench_serve_argv(
+        vllm_binary="vllm",
+        config=_config(),
+        server=server,
+        result_filename=_result_path(),
+    )
+
+    assert cmd.count("--trust-remote-code") == 1

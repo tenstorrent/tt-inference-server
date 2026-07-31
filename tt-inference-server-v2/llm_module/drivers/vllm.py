@@ -82,10 +82,21 @@ def build_vllm_bench_serve_argv(
         str(result_filename),
     ]
 
-    if uses_remote_base_url(server.url_with_port, server.is_remote):
+    # ``vllm bench serve`` loads the tokenizer itself -- the random/sonnet
+    # datasets are token-length-driven, so prompts are encoded client-side. A
+    # model whose HF repo ships custom tokenizer code (e.g.
+    # google/diffusiongemma-26B-A4B-it, whose spec metadata sets
+    # tokenizer_trust_remote_code) then cannot be loaded without this flag, and
+    # the failure is an AutoTokenizer raise before the first request, i.e. the
+    # whole sweep. The flag was previously tied to the remote-console branch, so
+    # a local server benchmarking such a model never received it.
+    is_remote_base_url = uses_remote_base_url(server.url_with_port, server.is_remote)
+    if server.tokenizer_trust_remote_code or is_remote_base_url:
+        cmd.append("--trust-remote-code")
+
+    if is_remote_base_url:
         cmd.extend(["--base-url", server.url_with_port])
         cmd.extend(["--ready-check-timeout-sec", "0"])
-        cmd.extend(["--trust-remote-code"])
         if auth_token:
             headers.append(f"Authorization=Bearer {auth_token}")
     else:
