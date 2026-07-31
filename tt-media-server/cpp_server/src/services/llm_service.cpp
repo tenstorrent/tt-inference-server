@@ -387,22 +387,29 @@ void LLMService::produceStream(
 
 void LLMService::abortRequest(uint32_t taskId) {
   // Atomically remove the stream callback and decrement pendingTasks.
+  // If the callback is already gone the request finished (final token delivered
+  // or a prior abort won the race). Treat this as a no-op so late disconnect /
+  // closeSession cancel paths do not log, cancel, or record finish_reason=abort
+  // on top of the real completion metrics.
   auto entry = streamCallbacks.take(taskId);
-  if (entry.has_value()) {
-    pendingTasks.fetch_sub(1);
-    tt::metrics::ServerMetrics::instance().setQueueDepth(
-        static_cast<double>(pendingTasks.load()));
+  if (!entry.has_value()) {
+    TT_LOG_DEBUG(
+        "[LLMService] abortRequest for task {} ignored (already finished)",
+        taskId);
+    return;
   }
+
+  pendingTasks.fetch_sub(1);
+  tt::metrics::ServerMetrics::instance().setQueueDepth(
+      static_cast<double>(pendingTasks.load()));
 
   tt::metrics::ServerMetrics::instance().onRequestCompleted(taskId, "abort");
 
   // Invoke the detached callback with isFinal=true. For streaming requests the
   // controller sets done=true BEFORE calling abortRequest, so the callback's
   // done->load() check returns immediately — no SSE data is sent.
-  if (entry.has_value()) {
-    auto abortChunk = makeAbortChunk(taskId);
-    entry->callback(abortChunk, /*isFinal=*/true);
-  }
+  auto abortChunk = makeAbortChunk(taskId);
+  entry->callback(abortChunk, /*isFinal=*/true);
 
   for (auto& cq : queueManager->cancelQueues) {
     cq->push(taskId);

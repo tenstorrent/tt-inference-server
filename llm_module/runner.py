@@ -9,7 +9,9 @@ Mirrors v1 ``benchmarking/run_benchmarks.py`` orchestration:
 1. ``server.wait_for_healthy()`` — block until the inference server is up.
 2. ``server.capture_traces(unique (isl,osl) pairs)`` — warm trace cache.
 3. For each ``LLMRunConfig`` in the sweep: health-check, sleep 2 s,
-   ``driver.run()``, ``driver.parse(raw)`` → ``Block``.
+   ``driver.run()``, ``driver.parse(raw)`` → ``Block``, then grade the
+   Block against the sweep point's perf targets
+   (:func:`llm_module.target_checks.apply_target_checks`).
 
 Returns the list of Blocks plus any nonzero driver exit codes the
 caller should surface.
@@ -29,6 +31,7 @@ from report_module.schema import Block
 from .config import DriverContext, LLMRunConfig, ServerConnection
 from .drivers.base import LLMDriver
 from .server_control import ServerController
+from .target_checks import apply_target_checks
 
 logger = logging.getLogger(__name__)
 
@@ -149,6 +152,7 @@ class LLMPerformanceRunner:
                 continue
 
             block = self.driver.parse(outcome.raw, device=context.device)
+            block = apply_target_checks(block, cfg)
             result.blocks.append(block)
 
         return result

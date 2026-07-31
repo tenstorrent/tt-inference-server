@@ -280,3 +280,26 @@ class TestGenerate:
         assert "✅ PASS" in md
         # No metrics -> no per-block table heading.
         assert "### Bare" not in md
+
+    def test_perf_tool_footnote_survives_the_shared_benchmarks_kind(
+        self, tmp_path: Path
+    ):
+        """LLM perf blocks share ``kind="benchmarks"``; the tool on
+        ``Block.targets`` is what selects the methodology footnote."""
+        block = Block(
+            kind="benchmarks",
+            title="vLLM Benchmark",
+            targets={"tool": "vllm"},
+            data={"mean_ttft_ms": 350.3, "tps_decode_throughput": 13.9},
+        )
+        md = ReportGenerator().generate(_schema(block), tmp_path).markdown
+        assert "report the mean value across the benchmark run" in md
+
+    def test_benchmark_block_without_a_tool_has_no_perf_footnote(self, tmp_path: Path):
+        block = Block(
+            kind="benchmarks",
+            title="Image Benchmark",
+            data={"Benchmarks": {"ttft_ms": 350.3}},
+        )
+        md = ReportGenerator().generate(_schema(block), tmp_path).markdown
+        assert "report the mean value across the benchmark run" not in md
