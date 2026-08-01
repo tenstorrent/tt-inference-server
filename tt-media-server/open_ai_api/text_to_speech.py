@@ -225,6 +225,17 @@ async def _stream_openai_compatible_audio_bytes(tts_request, service):
     return StreamingResponse(body(), media_type=media_type)
 
 
+# Real OpenAI TTS voice names -- a caller using the OpenAI SDK's basic
+# audio.speech.create(voice=..., ...) without ever setting our custom
+# voice_id field always sends one of these, whether or not they intend to
+# select a specific voice. These alone still silently fall through to the
+# default (TVD) voice rather than erroring, so genuine OpenAI-SDK-shaped
+# callers don't break. Anything else unmatched (a typo, a name that isn't
+# a registered voice and isn't one of these) is treated the same as an
+# unknown voice_id: a real client input error, not silently ignored.
+_OPENAI_DEFAULT_VOICE_NAMES = frozenset({"alloy", "echo", "fable", "onyx", "nova", "shimmer"})
+
+
 async def resolve_voice(tts_request, service) -> None:
     """Resolve the OpenAI SDK-compatible ``voice`` field against the
     registered voice list, in favor of ``voice_id`` -- does not alter
@@ -236,9 +247,17 @@ async def resolve_voice(tts_request, service) -> None:
     - Only ``voice`` present: matched case-insensitively against registered
       voice_ids. A match sets ``tts_request.voice_id`` so the rest of the
       pipeline (which only ever looks at ``voice_id``) needs no changes.
-    - ``voice`` present but unmatched (e.g. an OpenAI default like "alloy"):
-      silently ignored -- falls through to the default (TVD) voice, never
-      an error, so existing OpenAI-SDK-shaped callers never break.
+    - ``voice`` present but unmatched and one of OpenAI's own default voice
+      names (see ``_OPENAI_DEFAULT_VOICE_NAMES``): silently ignored --
+      falls through to the default (TVD) voice, never an error, so genuine
+      OpenAI-SDK-shaped callers who never touch voice_id don't break.
+    - ``voice`` present, unmatched, and NOT one of those defaults (e.g. a
+      typo or a nonexistent voice name): a real client input error -- 400,
+      same message format as an unknown voice_id.
+
+    Raises:
+        HTTPException: 400, if ``voice`` is set, doesn't match a registered
+            voice, and isn't one of OpenAI's own default voice names.
     """
     if tts_request.voice_id:
         return
@@ -256,7 +275,14 @@ async def resolve_voice(tts_request, service) -> None:
     )
     if match:
         tts_request.voice_id = match
-    # else: no match -- leave voice_id unset, default voice, no error.
+        return
+    if voice.lower() in _OPENAI_DEFAULT_VOICE_NAMES:
+        return  # OpenAI's own default -- fall through to TVD, no error.
+    available = [v.get("voice_id", "") for v in registered]
+    raise HTTPException(
+        status_code=400,
+        detail=f"Voice '{voice}' not found. Available voices: {available[:10]}...({len(available)} total)",
+    )
 
 
 async def handle_tts_request(tts_request, service):
