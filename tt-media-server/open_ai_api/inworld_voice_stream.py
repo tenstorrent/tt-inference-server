@@ -27,6 +27,10 @@ router = APIRouter()
 
 _VOICE_NOT_FOUND_MARKER = "not found. Available voices:"
 _TEXT_TOO_LONG_MARKER = "exceeding the fixed ISL="
+# Distinct from _TEXT_TOO_LONG_MARKER above (the hard PREFILL_ISL=1024
+# ceiling): this is tt_modeling.MAX_TEXT_TOKENS=250, a tighter practical
+# limit for reliable full-length synthesis -- see that constant's comment.
+_TEXT_EXCEEDS_RECOMMENDED_LENGTH_MARKER = "exceeding the recommended maximum of"
 
 # DECODER_SAMPLE_RATE in tt_model_runners/inworld_tts_runner.py -- the native
 # rate every chunk arrives at before any requested resample.
@@ -95,7 +99,7 @@ async def voice_stream(
         detail = str(e)
         if _VOICE_NOT_FOUND_MARKER in detail:
             raise HTTPException(status_code=400, detail=_error_response_body(detail, 400))
-        if _TEXT_TOO_LONG_MARKER in detail:
+        if _TEXT_TOO_LONG_MARKER in detail or _TEXT_EXCEEDS_RECOMMENDED_LENGTH_MARKER in detail:
             raise HTTPException(status_code=422, detail=_error_response_body(detail, 422))
         raise HTTPException(status_code=500, detail=_error_response_body(detail, 500))
 

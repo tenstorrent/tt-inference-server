@@ -107,6 +107,10 @@ async def openai_style_http_exception_handler(request: Request, exc: StarletteHT
 
 _VOICE_NOT_FOUND_MARKER = "not found. Available voices:"
 _TEXT_TOO_LONG_MARKER = "exceeding the fixed ISL="
+# Distinct from _TEXT_TOO_LONG_MARKER above (the hard PREFILL_ISL=1024
+# ceiling): this is tt_modeling.MAX_TEXT_TOKENS=250, a tighter practical
+# limit for reliable full-length synthesis -- see that constant's comment.
+_TEXT_EXCEEDS_RECOMMENDED_LENGTH_MARKER = "exceeding the recommended maximum of"
 
 # response_format values /v1/audio/speech's raw-bytes streaming path can
 # actually produce for the inworld-tts runner, and their Content-Type.
@@ -180,7 +184,7 @@ async def _stream_openai_compatible_audio_bytes(tts_request, service):
         detail = str(e)
         if _VOICE_NOT_FOUND_MARKER in detail:
             raise HTTPException(status_code=400, detail=detail)
-        if _TEXT_TOO_LONG_MARKER in detail:
+        if _TEXT_TOO_LONG_MARKER in detail or _TEXT_EXCEEDS_RECOMMENDED_LENGTH_MARKER in detail:
             raise HTTPException(status_code=422, detail=detail)
         raise HTTPException(status_code=500, detail=detail)
 
@@ -346,7 +350,7 @@ async def handle_tts_request(tts_request, service):
         # device call -- already fast, just needs the right status code): a
         # client input error, not a server failure. Covers the streaming path
         # too, same reason as above.
-        if _TEXT_TOO_LONG_MARKER in str(e):
+        if _TEXT_TOO_LONG_MARKER in str(e) or _TEXT_EXCEEDS_RECOMMENDED_LENGTH_MARKER in str(e):
             raise HTTPException(status_code=422, detail=str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
