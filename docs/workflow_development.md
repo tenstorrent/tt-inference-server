@@ -196,8 +196,12 @@ Renderer-agnostic schema and a registry-based renderer.
   (`benchmarks`, `evals`, `spec_tests`, `stress_tests`) and every unregistered
   kind both go through the same `render_generic_table`, which follows the
   rules in [`tests/report_module/SCHEMA_GUIDE.md`](tests/report_module/SCHEMA_GUIDE.md).
-  Per-kind renderers can be added via the `@register(kind)` decorator when a
-  shape genuinely doesn't fit the generic table; we haven't needed one yet.
+  Per-kind renderers are added via the `@register(kind)` decorator when a shape
+  doesn't fit the generic table: `aiperf_prefix_cache`, `prefill_decode`,
+  `aiperf_spec_decode`, and `agentic_traces` each have one. Reach for a renderer
+  when a record mixes concerns (metrics plus config echo) or carries more columns
+  than fit on a screen, since the generic table shows every key at equal weight
+  and falls back to raw key names as headers.
 - `acceptance_criteria.py` walks the schema and produces a categorized
   pass/fail summary. Routing is by `Block.kind` alone — no substring matching.
   Per-kind rules:
@@ -442,6 +446,202 @@ environment variables (`OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_API_BASE`),
 then runs each configured agentic task through the LLM driver/parser
 adapters.
 
+## Agentic-traces benchmark
+
+Replay recorded multi-turn agentic coding traces against an already-up
+OpenAI-compatible server and report serving latency/throughput under that shape.
+The workflow is `agentic_traces`. It is a benchmark, not an eval: it bypasses the
+media-task dispatcher and emits `Block(kind="agentic_traces")`, one per run.
+
+The client is the AIPerf fork vendored in
+[InferenceX](https://github.com/SemiAnalysisAI/InferenceX), which owns the
+`inferencex-agentx-mvp` scenario and the SemiAnalysis Weka trace dataset loaders.
+The `AGENTIC_TRACES` venv clones that repo at the revision pinned for the
+ModelSpec and installs `utils/aiperf` editable, so a reported number is tied to
+the client that produced it. Use the thin launcher `run_agentic_traces.py`:
+
+```bash
+MODEL_SPECS_ENV=dev python launchers/run_agentic_traces.py \
+    --model Kimi-K2.7-Code \
+    --workflow agentic_traces \
+    --device super_cluster \
+    --agentic-traces-mode ci \
+    --service-port 8000 \
+    --runtime-model-spec-json /tmp/kimi_agentic_traces.json
+```
+
+`run_agentic_traces.py` resolves the ModelSpec first (preferring the runtime spec
+JSON, since `model_id` selects the pinned ref), calls
+`VENV_CONFIGS[WorkflowVenvType.AGENTIC_TRACES].setup(model_spec=...)` (declared
+in [`workflows/workflow_venvs.py`](../workflows/workflow_venvs.py), requirements
+in [`requirements/agentic-traces.txt`](../requirements/agentic-traces.txt)), then
+`os.execv`s into `.workflow_venvs/.venv_agentic_traces/bin/python`. The clone is
+stamped with its ref, so re-running with the same pin skips setup and changing
+the pin forces a re-checkout and reinstall.
+
+`HF_TOKEN` is required even though the workflow is client-side: the Weka trace
+datasets are gated on the Hub.
+
+### As part of a release
+
+`--workflow release --agentic-traces` adds the replay as a release child
+alongside evals/benchmarks/spec_tests, so its Blocks land in the single release
+report. It runs last, being the longest child, and a model with no config entry
+is rejected by `validate_setup` before the evals rather than after them.
+
+It is opt-in rather than implied by having a config because full mode is roughly
+an hour of profiling per configured run on top of the rest of the release; pass
+`--agentic-traces-mode ci` for the 900s shape. The same
+`--agentic-traces-sources/-duration/-git-ref` overrides apply, and are rejected
+unless the run is either the standalone workflow or an opted-in release.
+
+Mechanically this mirrors `--prefix-cache`: the flag rides through
+`RuntimeConfig` into the engine argv, `_engine_dependency_venv_types` provisions
+`AGENTIC_TRACES` up front (the release child cannot clone InferenceX itself), and
+`CommandFactory` pins that venv's interpreter on the options, since a release
+child runs in `WORKFLOW_RUN_SCRIPT` where `aiperf` is not the fork.
+
+### Configuration is per-ModelSpec
+
+Unlike the ISL/OSL sweep tables, parameters live in
+[`reference_config/agentic_traces/agentic_traces_config.py`](../reference_config/agentic_traces/agentic_traces_config.py),
+keyed by `ModelSpec.model_id` (not `hf_model_repo`): trace replay is sensitive to
+the served context window and to the impl/device the weights run on, so two specs
+for the same weights can need different datasets, concurrency, or a different
+pinned revision. A model with no entry is rejected up front by
+[`workflows/validate_setup.py`](../workflows/validate_setup.py), before the
+multi-minute clone.
+
+Each entry holds an `inferencex_git_ref`, one or more `AgenticTracesRunSpec`s (the
+scenario, dataset, load shape), and per-mode `AgenticTracesModeSettings`.
+`max_context_length` and `tokenizer_trust_remote_code` default to `None`, meaning
+"derive from the ModelSpec" (`device_model_spec.max_context` and
+`metadata.tokenizer_trust_remote_code`), so they cannot drift from the catalog.
+
+### Modes: `full` vs `ci`
+
+`--agentic-traces-mode` selects an `AgenticTracesMode` (see
+[`workflows/workflow_types.py`](../workflows/workflow_types.py)). This is
+deliberately a separate enum from `EvalLimitMode`: trace replay is bounded by
+wall-clock profiling time rather than a dataset sample count.
+
+| Mode | Profiling | Cache warmup | Trace pool |
+| --- | --- | --- | --- |
+| `full` | 3600s | 14 req/lane | 393 entries |
+| `ci` | 900s | 3 req/lane | 32 entries |
+
+Cache warmup is sized by request count, not wall-clock. The harness offers both
+`--agentic-cache-warmup-duration` and `--warmup-requests-per-lane` and rejects
+passing both; this workflow uses the latter because a faster server gets through
+more warmup requests in a fixed time window, priming the KV cache to a different
+depth on every run and making `measured_prefix_cache_hit_pct` incomparable across
+configs. Being per-lane, the budget is also independent of `concurrency`. The
+consequence is that warmup has no wall-clock cap, so `total_planned_seconds`
+treats `warmup_grace_period` as the allowance for it and the per-run subprocess
+timeout is the backstop. The `full` value reproduces the depth of the run
+validated by hand under the old duration knob (109 warmup requests over 8 lanes);
+re-measure it if the corpus or the server's warmup latency shifts.
+
+`full` is the reference run for reportable numbers; `ci` is the shortest run the
+scenario permits. `inferencex-agentx-mvp` sets
+`min_benchmark_duration_seconds=900`, so a config or a
+`--agentic-traces-duration` override below that floor is rejected at config
+construction and at argument parsing respectively, rather than 15 minutes into a
+doomed run.
+
+### Trace sources
+
+`TraceSource` is pluggable so configs and `--agentic-traces-sources` can name a
+harness. `inferencex_agentx` is implemented; `swarmone` is a recognized value with
+no client integration yet and raises `NotImplementedError` at plan time, so
+selecting it can never look like a clean empty sweep.
+
+### Reported metrics and what invalidates a run
+
+Each run emits one flat `Block(kind="agentic_traces")` record, which
+[`report_module/agentic_traces_renderer.py`](../report_module/agentic_traces_renderer.py)
+splits into four tables: *Per-run Latency*, *Per-run Throughput & Load*, *Run
+Health & Validity*, and *Run Configuration*. The split exists because the record
+mixes measurements with the config echo and provenance, and the generic renderer
+weighs every key equally — it produced one very wide table that led with eleven
+config columns and the artifact path. Two rules keep the width down: the config
+table is transposed (one row per field, one column per run) because its values
+are long and identical across runs, and columns the client emitted nothing for
+are dropped rather than filled with N/A, which is how the error-adjusted
+percentiles stay out of a clean run's report.
+
+Metrics come from the fork's `profile_export_aiperf.json`, where every tag is a
+block of `{unit, avg, p1..p99, min, max, std, count, sum}`. Two of its count tags
+are easy to confuse: `request_count` is successful requests only (the sample size
+behind every latency stat) while `completed_request_count` is success + error, so
+the payload reports them as `completed` and `completed_with_errors`. Token totals
+are read from the exact `total_isl`/`total_osl` tags rather than multiplying an
+average by a count, which would overcount when requests error out.
+
+Beyond latency and throughput, the payload carries the signals specific to trace
+replay: `context_overflow_count` (traces truncated against
+`--max-context-length`, which is the direct read-out of whether that value is set
+correctly), both prefix-cache hit rates (see below), the `branch_stats` subagent
+fan-out counters, and a ranked `error_summary` so a
+run dominated by one failure mode is obvious. `output_token_throughput_per_user`
+is decode speed while a request streams, whereas
+`e2e_output_token_throughput_per_user` divides by whole-request wall clock and is
+the honest user-visible speed for a long-prefill agentic turn — the two differ by
+roughly 3x in practice.
+
+Several of the fork's tags come in pairs that only mean something together, and
+all halves are kept for that reason. `effective_*` throughput averages over the
+whole run while `active_*` counts only the windows where that phase was working,
+so their ratio is the phase's duty cycle. `effective_concurrency` is the load
+actually in flight, which trace replay holds below the requested concurrency by
+honoring recorded think time — a large shortfall means the intended load was
+never applied. `effective_latency` is the coordinated-omission-corrected
+end-to-end latency, and the `adj_*` blocks are percentiles with failed requests
+folded in, so a run that got fast by erroring out cannot look good; both are
+absent when nothing queued or nothing failed. `credit_drop_latency.count` is the
+number of requests the load generator could not dispatch on schedule, i.e. a
+count and not a mean, and `http_req_connection_reused` below 1.0 is the
+connection churn that surfaces as `ServerDisconnectedError`. `warmup_metrics` is
+deliberately not reported: cache priming errors out by design, so surfacing it
+next to the measured numbers reads as a failure that is not one.
+
+Prefix cache is reported as two numbers side by side, because either alone is
+misleading. `theoretical_prefix_cache_hit_pct` is the reuse inherent to the
+traces — the upper bound the engine was offered, not a measurement of the server.
+`measured_prefix_cache_hit_pct` comes from the engine's own counters, so the gap
+between them is how much offered reuse the cache actually caught. Collecting it
+needs no flag: AIPerf scrapes `<url>/metrics` by default and writes
+`server_metrics_export.json`, already scoped to the profiling phase with each
+counter's in-window delta pre-aggregated into `stats.total` — which is also why
+the cache-priming warmup does not drag the number down. Hits and queries are
+summed across endpoints before dividing, keeping a multi-worker rate
+token-weighted. When the counters are absent the field is omitted and the report
+drops the column, rather than publishing a 0% that reads like a broken cache.
+
+That is the expected outcome when the load target does not expose the counters —
+a Dynamo frontend does not aggregate its workers'. Point the scrape at the
+worker(s) with `--agentic-traces-metrics-url` (repeatable; accepts a URL,
+`host:port`, or `host:port/metrics`), which forwards to AIPerf's
+`--server-metrics`. That flag is additive: AIPerf always scrapes the load target
+too, so it cannot switch the default off, and an endpoint that 404s just drops
+out of `endpoints_successful`. Because of that, the parser narrows the sum to the
+requested endpoints whenever the flag is used, matching on each series'
+`endpoint_url` — otherwise a frontend that also exports these counters would be
+summed with its workers and double-count every prompt. A typo'd URL therefore
+matches nothing and reports no hit rate, which is intended: a wrong number here
+is worse than a missing one.
+
+No acceptance criteria are wired: there is no agreed pass/fail threshold for
+trace replay yet, so a bespoke check would only ever report NA. Instead the
+scenario's own verdict is honored. The fork computes
+`metadata.submission_valid`, folding in static scenario-lock violations, a
+context-overflow rate above 1%, and early cancellation; the driver treats a false
+verdict as a failed run and the report surfaces it as `submission_status`. A run
+therefore fails when AIPerf fails, when it wrote no summary export, when the
+scenario marked it an invalid submission, when it was cancelled, when no request
+succeeded (AIPerf can exit 0 having failed every request, which would otherwise
+report as a row of zeros), or when a planned run is missing from the results.
+
 ## How run.py drives the workflow engine
 
 `run.py` builds one command list and drives it with a single `WorkflowRunner`:
@@ -550,6 +750,7 @@ To author a new test class:
 | Prefix-caching benchmark | `--workflow benchmarks --prefix-cache`; validated against reference GPU vLLM |
 | Speculative-decoding benchmark | `--workflow benchmarks --spec-decode`; needs a spec-enabled (reference GPU) vLLM |
 | Agentic evals | `--workflow agentic` via `run_agentic.py`; Terminal-Bench + SWE-bench against an external OpenAI-compatible server |
+| Agentic-traces benchmark | `--workflow agentic_traces` via `run_agentic_traces.py`, or `--workflow release --agentic-traces`; InferenceX trace replay against an external OpenAI-compatible server |
 | CNN / audio / TTS / video / embedding runners | Routed by `model_type`; any correctness gaps tracked as bugs |
 | Spec tests | Consolidated under `spec_tests` |
 | New workflows on the horizon | Structured-outputs bench |
@@ -564,7 +765,8 @@ Policy: new benchmarks and runners should be authored as engine modules
 ├── run_workflows.py                # CLI entry point (no import-time side effects)
 ├── launchers/
 │   ├── run_prefix_cache.py         # thin launcher: ensures PREFIX_CACHE venv, execs run_workflows.py
-│   └── run_agentic.py              # thin launcher: ensures EVALS_AGENTIC venv, execs run_workflows.py
+│   ├── run_agentic.py              # thin launcher: ensures EVALS_AGENTIC venv, execs run_workflows.py
+│   └── run_agentic_traces.py       # thin launcher: ensures AGENTIC_TRACES venv (InferenceX clone at pinned ref)
 ├── workflow_module/                # Workflow scaffolding + block accumulator
 │   ├── workflows.py                # Concrete workflows + WORKFLOW_REGISTRY
 │   ├── execution.py                # WorkflowExecution template + WorkflowResult
@@ -575,7 +777,7 @@ Policy: new benchmarks and runners should be authored as engine modules
 │   ├── _test_common/               # BaseTest, blockify, targets, target_check
 │   ├── benchmark_tests/            # cnn/image/audio/video/tts/embedding/llm
 │   ├── eval_tests/                 # cnn/image/audio/video/tts/embedding
-│   ├── llm_tests/                  # LLM performance, prefix-cache, and agentic tests
+│   ├── llm_tests/                  # LLM performance, prefix-cache, agentic-traces, and agentic tests
 │   ├── health_tests/               # DeviceLiveness, MediaServerLiveness
 │   ├── stability_tests/            # device stability checks
 │   ├── stress_tests/               # stress regimen (has its own runner)
@@ -588,6 +790,7 @@ Policy: new benchmarks and runners should be authored as engine modules
 │   ├── schema.py                   # Block, ReportSchema
 │   ├── generator.py                # ReportGenerator + spec-test summary
 │   ├── renderers.py                # kind → renderer registry
+│   ├── agentic_traces_renderer.py  # agentic_traces: latency/throughput/health/config tables
 │   ├── acceptance_criteria.py      # per-category pass/fail rules
 │   ├── markdown_table.py           # table helpers
 │   ├── formatting.py               # value coercion
@@ -598,9 +801,10 @@ Policy: new benchmarks and runners should be authored as engine modules
 │   ├── server_control.py           # ServerController (warmup, traces, health)
 │   ├── config.py                   # LLMRunConfig, ServerConnection, DriverContext
 │   ├── benchmark_configs.py        # get_llm_configs(model_spec, device)
-│   ├── drivers/                    # base, agentic, aiperf, aiperf_prefix_cache, genai_perf, guidellm, inferencex, vllm
+│   ├── drivers/                    # base, agentic, aiperf, aiperf_agentic_traces, aiperf_prefix_cache, genai_perf, guidellm, inferencex, vllm
 │   ├── parsers/                    # mirror of drivers/
 │   ├── agentic/                    # Terminal-Bench/SWE-bench harness wrappers
+│   ├── agentic_traces/             # Agentic trace-replay run expansion (config + mode → runs)
 │   └── prefix_cache/               # Scenario manifest + expander + CI mooncake trace
 ├── tests/                          # pytest tests for the modules above
 └── output/                         # generated reports land here

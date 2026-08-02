@@ -1,0 +1,46 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+#
+# Dependencies for the AGENTIC_TRACES venv (Python 3.12): the agentic
+# trace-replay benchmark driven by the AIPerf fork vendored in InferenceX.
+#
+# Deliberately does NOT list `aiperf`, and deliberately does NOT include
+# llm-aiperf.txt the way prefix-cache.txt does. The client for this workflow is
+# the fork installed editable from the pinned InferenceX checkout by
+# `setup_agentic_traces` in workflows/workflow_venvs.py; a PyPI `aiperf` here
+# would shadow it, and llm-aiperf.txt's torch==2.4.0+cpu pin is a constraint of
+# the released aiperf, not of the fork (which needs no torch at all).
+#
+# The InferenceX install runs as a second, unconstrained `uv pip install` pass:
+# the fork resolves its own pins (notably pillow ~=12.1, which conflicts with
+# the shared pillow==11.1 constraint below), so constraints.txt intentionally
+# applies only to the packages listed here. None of them pull pillow.
+#
+# Everything below is what the orchestrator itself needs -- the fork's own
+# requirements (transformers, datasets, numpy, pandas, ...) come from
+# InferenceX's utils/agentic-benchmark/requirements.txt and utils/aiperf.
+
+-c constraints.txt
+
+# Workflow-engine eager import: workflow_module -> test_module.context ->
+# health_tests uses aiohttp at module top.
+aiohttp
+
+# JWT minting for a JWT-protected inference server.
+pyjwt
+
+# HTTP clients used by the readiness probes and dataset download.
+requests
+urllib3
+
+# Weka trace datasets are pulled from the Hugging Face Hub. Floors match the
+# versions the InferenceX agentic scenario was validated against.
+datasets>=4.7.0
+huggingface_hub[cli]>=0.25.0
+
+# Required by models whose HF repo ships a custom tiktoken-based tokenizer
+# (e.g. moonshotai/Kimi-*). transformers loads tokenization_kimi.py via
+# trust_remote_code, which imports tiktoken (and blobfile to fetch the vocab).
+tiktoken
+blobfile

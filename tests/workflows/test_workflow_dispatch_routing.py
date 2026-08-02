@@ -42,6 +42,11 @@ def _rc(workflow="benchmarks", **kw):
         spec_decode=False,
         spec_decode_preset="full",
         spec_decode_warmup_requests=None,
+        agentic_traces_mode="full",
+        agentic_traces_sources=None,
+        agentic_traces_duration=None,
+        agentic_traces_git_ref=None,
+        agentic_traces_metrics_url=None,
         tools="aiperf",
         jwt_secret=None,
         device="t3k",
@@ -168,6 +173,30 @@ def test_release_provisions_prefix_cache_and_spec_decode_venvs(monkeypatch):
     assert WorkflowVenvType.LLM_VLLM in venvs
     assert WorkflowVenvType.PREFIX_CACHE in venvs
     assert WorkflowVenvType.SPEC_DECODE in venvs
+
+
+def test_release_provisions_agentic_traces_venv_only_when_opted_in(monkeypatch):
+    """That venv is an InferenceX clone + install, so it is not provisioned
+    speculatively — but the release child cannot create it either."""
+    from workflows.workflow_types import WorkflowVenvType
+
+    spec = _spec(ModelType.LLM)
+    monkeypatch.setattr(
+        workflow_dispatch, "_llm_eval_venv_types", lambda ms, rc=None: []
+    )
+    monkeypatch.setattr(
+        workflow_dispatch, "_llm_release_includes_agentic", lambda ms: False
+    )
+
+    opted_out = workflow_dispatch._engine_dependency_venv_types(
+        spec, WorkflowType.RELEASE, _rc(workflow="release")
+    )
+    opted_in = workflow_dispatch._engine_dependency_venv_types(
+        spec, WorkflowType.RELEASE, _rc(workflow="release", agentic_traces=True)
+    )
+
+    assert WorkflowVenvType.AGENTIC_TRACES not in opted_out
+    assert WorkflowVenvType.AGENTIC_TRACES in opted_in
 
 
 def test_evals_provisions_only_eval_venvs(monkeypatch):
@@ -362,6 +391,107 @@ def test_llm_benchmark_builds_launcher_command(monkeypatch, tmp_path):
     )
 
 
+def test_agentic_traces_routes_to_engine_for_any_model_type():
+    # Like agentic evals, agentic traces is engine-only: it has no v1 driver, so
+    # it must route regardless of model_type.
+    for model_type in (ModelType.LLM, ModelType.IMAGE):
+        spec, rc = _spec(model_type), _rc(workflow="agentic_traces")
+        assert workflow_dispatch.can_dispatch_to_engine(spec, rc) is True
+
+
+def test_agentic_traces_builds_its_own_launcher_command(monkeypatch, tmp_path):
+    spec = _spec(ModelType.LLM, name="Kimi-K2.7-Code")
+    rc = _rc(
+        workflow="agentic_traces",
+        agentic_traces_mode="ci",
+        agentic_traces_sources="inferencex_agentx",
+        agentic_traces_duration=1200,
+        agentic_traces_git_ref="9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0",
+        jwt_secret="sek",
+    )
+    monkeypatch.setattr(
+        workflow_dispatch, "get_default_workflow_root_log_dir", lambda: tmp_path
+    )
+
+    commands = workflow_dispatch.build_engine_commands(spec, rc, "/tmp/spec.json")
+
+    assert len(commands) == 1
+    argv = commands[0].argv
+    # venv_type is None: run_agentic_traces.py re-execs into AGENTIC_TRACES itself
+    # (it must resolve the ModelSpec first to know which ref to check out).
+    assert commands[0].venv_type is None
+    assert "run_agentic_traces.py" in argv[0]
+    assert argv[argv.index("--workflow") + 1] == "agentic_traces"
+    assert argv[argv.index("--agentic-traces-mode") + 1] == "ci"
+    assert argv[argv.index("--agentic-traces-sources") + 1] == "inferencex_agentx"
+    assert argv[argv.index("--agentic-traces-duration") + 1] == "1200"
+    assert (
+        argv[argv.index("--agentic-traces-git-ref") + 1]
+        == "9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0"
+    )
+    assert argv[argv.index("--jwt-secret") + 1] == "sek"
+
+
+def test_agentic_traces_omits_unset_overrides(monkeypatch, tmp_path):
+    spec, rc = _spec(ModelType.LLM), _rc(workflow="agentic_traces")
+    monkeypatch.setattr(
+        workflow_dispatch, "get_default_workflow_root_log_dir", lambda: tmp_path
+    )
+
+    argv = workflow_dispatch.build_engine_commands(spec, rc, "/tmp/spec.json")[0].argv
+
+    assert argv[argv.index("--agentic-traces-mode") + 1] == "full"
+    for flag in (
+        "--agentic-traces-sources",
+        "--agentic-traces-duration",
+        "--agentic-traces-git-ref",
+        "--agentic-traces-metrics-url",
+        "--jwt-secret",
+    ):
+        assert flag not in argv
+
+
+def test_agentic_traces_forwards_each_metrics_url_separately(monkeypatch, tmp_path):
+    """Stringifying the list would forward a bogus "['http://...']" URL."""
+    spec = _spec(ModelType.LLM, name="Kimi-K2.7-Code")
+    rc = _rc(
+        workflow="agentic_traces",
+        agentic_traces_metrics_url=["worker-a:9000", "worker-b:9000/metrics"],
+    )
+    monkeypatch.setattr(
+        workflow_dispatch, "get_default_workflow_root_log_dir", lambda: tmp_path
+    )
+
+    argv = workflow_dispatch.build_engine_commands(spec, rc, "/tmp/spec.json")[0].argv
+
+    forwarded = [
+        argv[i + 1]
+        for i, token in enumerate(argv)
+        if token == "--agentic-traces-metrics-url"
+    ]
+    assert forwarded == ["worker-a:9000", "worker-b:9000/metrics"]
+
+
+def test_release_child_forwards_the_metrics_urls(monkeypatch, tmp_path):
+    spec = _spec(ModelType.LLM, name="Kimi-K2.7-Code")
+    rc = _rc(
+        workflow="release",
+        agentic_traces=True,
+        agentic_traces_metrics_url=["worker-a:9000"],
+    )
+    monkeypatch.setattr(
+        workflow_dispatch, "get_default_workflow_root_log_dir", lambda: tmp_path
+    )
+    monkeypatch.setattr(
+        workflow_dispatch, "_llm_release_includes_agentic", lambda ms: False
+    )
+
+    argv = workflow_dispatch.build_engine_commands(spec, rc, "/tmp/spec.json")[0].argv
+
+    assert "--agentic-traces" in argv
+    assert argv[argv.index("--agentic-traces-metrics-url") + 1] == "worker-a:9000"
+
+
 def _patch_eval_configs(monkeypatch, *, agentic):
     from workflows.workflow_types import WorkflowVenvType
     import reference_config.evals.eval_config as eval_config
@@ -478,6 +608,46 @@ def test_release_forwards_prefix_cache_and_spec_decode_flags(monkeypatch, tmp_pa
     assert "--spec-decode" in argv
     assert argv[argv.index("--spec-decode-preset") + 1] == "ci"
     assert argv[argv.index("--spec-decode-warmup-requests") + 1] == "2"
+
+
+def test_release_forwards_agentic_traces_flags(monkeypatch, tmp_path):
+    spec = _spec(ModelType.LLM)
+    rc = _rc(
+        workflow="release",
+        agentic_traces=True,
+        agentic_traces_mode="ci",
+        agentic_traces_sources="inferencex_agentx",
+        agentic_traces_duration=900,
+        agentic_traces_git_ref="e2dcfa91c86936cc011e3be0668eb3b1ca17288f",
+    )
+    _patch_engine_dispatch(monkeypatch, tmp_path)
+
+    workflow_dispatch.dispatch_workflows(spec, rc, str(tmp_path / "spec.json"))
+
+    argv = _FakeRunner.captured[0].argv
+    assert "--agentic-traces" in argv
+    assert argv[argv.index("--agentic-traces-mode") + 1] == "ci"
+    assert argv[argv.index("--agentic-traces-sources") + 1] == "inferencex_agentx"
+    assert argv[argv.index("--agentic-traces-duration") + 1] == "900"
+    assert (
+        argv[argv.index("--agentic-traces-git-ref") + 1]
+        == "e2dcfa91c86936cc011e3be0668eb3b1ca17288f"
+    )
+
+
+def test_release_without_the_opt_in_forwards_nothing_agentic_traces(
+    monkeypatch, tmp_path
+):
+    """The mode flag defaults to "full", so it must not leak into every release."""
+    spec = _spec(ModelType.LLM)
+    _patch_engine_dispatch(monkeypatch, tmp_path)
+
+    workflow_dispatch.dispatch_workflows(
+        spec, _rc(workflow="release"), str(tmp_path / "spec.json")
+    )
+
+    argv = _FakeRunner.captured[0].argv
+    assert not any(a.startswith("--agentic-traces") for a in argv)
 
 
 if __name__ == "__main__":

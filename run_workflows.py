@@ -362,6 +362,82 @@ def parse_args() -> argparse.Namespace:
         ),
     )
 
+    # ----- Agentic-traces benchmark (--workflow agentic_traces) --------
+    # The benchmark parameters live in reference_config/agentic_traces, keyed by
+    # ModelSpec.model_id. These flags only select the duration profile and allow
+    # ad-hoc overrides, and are wired through CommandFactory ->
+    # OrchestratorMetadata.agentic_traces. Standalone runs launch through
+    # run_agentic_traces.py so the AGENTIC_TRACES venv (with InferenceX checked
+    # out at the pinned ref) exists before the client is needed; release pins
+    # that venv explicitly for its in-process agentic-traces child.
+    parser.add_argument(
+        "--agentic-traces",
+        action="store_true",
+        help=(
+            "Add the agentic trace replay to the release workflow as a child "
+            "alongside evals/benchmarks/spec_tests. Requires --workflow "
+            "release; --workflow agentic_traces runs it on its own and needs "
+            "no flag."
+        ),
+    )
+    parser.add_argument(
+        "--agentic-traces-mode",
+        type=str,
+        choices=["full", "ci"],
+        default="full",
+        help=(
+            "Duration profile for the agentic-traces runs (default: full). "
+            "'full' is the reference run used for reportable numbers; 'ci' is "
+            "the shortest run the InferenceX scenario permits (900s of "
+            "profiling). The per-mode durations come from the model's config "
+            "entry, not from this flag."
+        ),
+    )
+    parser.add_argument(
+        "--agentic-traces-sources",
+        type=str,
+        default=None,
+        help=(
+            "Comma-separated trace sources to run (inferencex_agentx, "
+            "swarmone). When unset, runs every source configured for the "
+            "model. swarmone is a recognized config value with no client "
+            "integration yet and fails fast if selected."
+        ),
+    )
+    parser.add_argument(
+        "--agentic-traces-duration",
+        type=int,
+        default=None,
+        metavar="SECONDS",
+        help=(
+            "Override the mode's profiling duration. The InferenceX scenario "
+            "rejects anything below 900s."
+        ),
+    )
+    parser.add_argument(
+        "--agentic-traces-git-ref",
+        type=str,
+        default=None,
+        metavar="REF",
+        help=(
+            "Override the InferenceX revision cloned into the AGENTIC_TRACES "
+            "venv. Defaults to the ref pinned for the ModelSpec; results are "
+            "only comparable across runs on the same ref."
+        ),
+    )
+    parser.add_argument(
+        "--agentic-traces-metrics-url",
+        type=str,
+        action="append",
+        default=None,
+        metavar="URL",
+        help=(
+            "Extra Prometheus /metrics endpoint holding the prefix-cache "
+            "counters, for a deployment whose load target does not expose them. "
+            "Accepts a URL, host:port, or host:port/metrics; repeatable."
+        ),
+    )
+
     # ----- Serving-bench suites (--workflow serving_bench) ------------
     parser.add_argument(
         "--serving-bench-suites",
@@ -401,6 +477,37 @@ def parse_args() -> argparse.Namespace:
             "--serving-bench-suites requires --workflow serving_bench "
             f"(got --workflow {args.workflow})."
         )
+    if args.agentic_traces and args.workflow != "release":
+        parser.error(
+            "--agentic-traces adds the trace replay to a release run and "
+            "requires --workflow release; run it on its own with --workflow "
+            f"agentic_traces (got --workflow {args.workflow})."
+        )
+    agentic_traces_flags = (
+        args.agentic_traces_sources,
+        args.agentic_traces_duration,
+        args.agentic_traces_git_ref,
+        args.agentic_traces_metrics_url,
+    )
+    if any(f is not None for f in agentic_traces_flags) and not (
+        args.workflow == "agentic_traces" or args.agentic_traces
+    ):
+        parser.error(
+            "--agentic-traces-* flags require --workflow agentic_traces or "
+            "--workflow release --agentic-traces "
+            f"(got --workflow {args.workflow})."
+        )
+    if args.agentic_traces_duration is not None:
+        from reference_config.agentic_traces.agentic_traces_config import (
+            AGENTIC_TRACES_MIN_PROFILE_SECONDS,
+        )
+
+        if args.agentic_traces_duration < AGENTIC_TRACES_MIN_PROFILE_SECONDS:
+            parser.error(
+                "--agentic-traces-duration must be at least "
+                f"{AGENTIC_TRACES_MIN_PROFILE_SECONDS}s (the InferenceX "
+                f"scenario's floor), got {args.agentic_traces_duration}s."
+            )
     if args.output_dir is None:
         args.output_dir = (
             _REPO_ROOT / "workflow_logs" / "reports_output" / args.workflow
