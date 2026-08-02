@@ -68,6 +68,14 @@ SLUG=$(python tt-inference-server/utils/model_naming.py slugify "$MODEL")
 artifact = workflow_logs_artifact_prefix("release", model) + device + ".zip"
 ```
 
+This applies to plain local filenames too, not just CI artifact names. An
+unescaped `/` in a path is not rejected the way GitHub rejects it — it silently
+becomes a directory component that nothing created, and the `open()` fails with
+`FileNotFoundError` naming a path that looks almost right. The escaping
+producers in this repo are `server_log_file_name` (server bring-up logs),
+`command_factory._output_leaf` (the run's output directory), `blocks_sink` /
+`report_module.schema` (report ids) and `summary_report` (summary ids).
+
 **Reading an identity back** — prefer *data* over *names*. A report carries its
 own identity in `metadata.model_repo` / `metadata.model_id`; read that rather
 than reversing a filename. Reverse a name only when the name is all you have

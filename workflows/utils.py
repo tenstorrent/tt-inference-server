@@ -153,6 +153,11 @@ def get_run_id(timestamp, model_id, workflow):
     return f"{timestamp}_{model_id}_{workflow}_{_short_uuid()}"
 
 
+def server_log_file_name(prefix, timestamp, model, device, workflow) -> str:
+    """``<prefix>_<timestamp>_<model>_<device>_<workflow>.log``, one path component."""
+    return f"{prefix}_{timestamp}_{slugify_model_id(model)}_{device}_{workflow}.log"
+
+
 def get_default_workflow_root_log_dir():
     # docker env uses CACHE_ROOT
     default_dir_name = "workflow_logs"
