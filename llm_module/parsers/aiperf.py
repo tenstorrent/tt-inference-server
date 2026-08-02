@@ -17,11 +17,12 @@ from .base import metric_stat_int as _stat_int
 
 
 class AIPerfParser(LLMResultParser):
-    kind = "aiperf"
+    tool = "aiperf"
+    tool_label = "AIPerf"
 
     def parse(self, raw: Mapping[str, Any], *, device: str = "") -> Block:
         record: Dict[str, Any] = {
-            "kind": self.kind,
+            "tool": self.tool,
             "model": _model_name(raw),
             "device": device,
             "timestamp": _timestamp(raw),

@@ -208,7 +208,8 @@ MigrationRequest makeApiRequest(uint32_t src = 1, uint32_t dst = 2) {
 
 std::string serializeReq(uint64_t id, const MigrationRequest& r) {
   return serialize(MigrationRequestMessage{
-      .migration_id = id,
+      .kafka_request_id = id,
+      .migration_id = r.migration_id,
       .src_slot = r.src_slot,
       .dst_slot = r.dst_slot,
       .layer_begin = r.layer_begin,
@@ -284,7 +285,7 @@ TEST(KvMigrationWorkerTest, AckPublishedWithExecutorStatus) {
   ASSERT_TRUE(waitFor([&] { return h.producer->payloadCount() == 1; }));
   auto ack = parseMigrationResponse(h.producer->getPayloads().front());
   ASSERT_TRUE(ack.has_value());
-  EXPECT_EQ(ack->migration_id, 200u);
+  EXPECT_EQ(ack->kafka_request_id, 200u);
   EXPECT_EQ(ack->status, MigrationStatus::SUCCESSFUL);
 }
 
@@ -298,7 +299,7 @@ TEST(KvMigrationWorkerTest, ExecutorFailedStatusPropagatesToAck) {
   ASSERT_TRUE(waitFor([&] { return h.producer->payloadCount() == 1; }));
   auto ack = parseMigrationResponse(h.producer->getPayloads().front());
   ASSERT_TRUE(ack.has_value());
-  EXPECT_EQ(ack->migration_id, 300u);
+  EXPECT_EQ(ack->kafka_request_id, 300u);
   EXPECT_EQ(ack->status, MigrationStatus::FAILED);
 }
 
@@ -332,7 +333,7 @@ TEST(KvMigrationWorkerTest, MultipleSequentialRequestsAllAcked) {
   for (const auto& payload : h.producer->getPayloads()) {
     auto ack = parseMigrationResponse(payload);
     ASSERT_TRUE(ack.has_value());
-    seen[ack->migration_id] = ack->status;
+    seen[ack->kafka_request_id] = ack->status;
   }
   EXPECT_EQ(seen[1], MigrationStatus::SUCCESSFUL);
   EXPECT_EQ(seen[2], MigrationStatus::FAILED);
@@ -349,7 +350,7 @@ TEST(KvMigrationWorkerTest, AsyncExecutorAckIsStillPublished) {
   ASSERT_TRUE(waitFor([&] { return h.producer->payloadCount() == 1; }));
   auto ack = parseMigrationResponse(h.producer->getPayloads().front());
   ASSERT_TRUE(ack.has_value());
-  EXPECT_EQ(ack->migration_id, 777u);
+  EXPECT_EQ(ack->kafka_request_id, 777u);
   EXPECT_EQ(ack->status, MigrationStatus::SUCCESSFUL);
 
   // Stop synchronously, before destroying the harness; otherwise an
@@ -388,7 +389,7 @@ TEST(KvMigrationWorkerTest, NoExecutorYieldsFailedAck) {
   ASSERT_TRUE(waitFor([&] { return producerPtr->payloadCount() == 1; }));
   auto ack = parseMigrationResponse(producerPtr->getPayloads().front());
   ASSERT_TRUE(ack.has_value());
-  EXPECT_EQ(ack->migration_id, 55u);
+  EXPECT_EQ(ack->kafka_request_id, 55u);
   EXPECT_EQ(ack->status, MigrationStatus::FAILED);
 }
 

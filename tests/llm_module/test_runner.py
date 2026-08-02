@@ -188,3 +188,38 @@ class TestRunnerResultOk:
         assert RunnerResult(return_codes=[]).ok is False
         assert RunnerResult(return_codes=[0, 1]).ok is False
         assert RunnerResult(return_codes=[0], parse_failures=[1]).ok is False
+
+
+class TestSweepPointGrading:
+    """The runner is where a Block meets the config that produced it, so it
+    is where perf targets get applied — the summary aggregator that used to
+    own target checks is never reached by the release workflow."""
+
+    @staticmethod
+    def _targeted_cfg():
+        from workflows.utils_report import PerformanceTarget
+
+        return LLMRunConfig(
+            isl=128,
+            osl=64,
+            max_concurrency=1,
+            num_prompts=8,
+            targets={"target": PerformanceTarget(ttft_ms=100.0)},
+        )
+
+    def test_graded_sweep_point_gets_target_checks(self):
+        driver = FakeDriver([_ok({"mean_ttft_ms": 50.0})])
+        result = _runner(driver, FakeController()).run(
+            [self._targeted_cfg()], _SERVER, _CTX
+        )
+
+        checks = result.blocks[0].data["target_checks"]
+        assert checks["target"]["ttft_ratio"] == 0.5
+        assert int(checks["target"]["ttft_check"]) == 2  # ReportCheckTypes.PASS
+
+    def test_ungraded_sweep_point_is_marked_na(self):
+        driver = FakeDriver([_ok({"mean_ttft_ms": 50.0})])
+        result = _runner(driver, FakeController()).run([_cfg()], _SERVER, _CTX)
+
+        assert result.blocks[0].data["status"] == "na"
+        assert "target_checks" not in result.blocks[0].data
