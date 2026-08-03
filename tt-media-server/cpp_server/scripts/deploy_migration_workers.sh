@@ -11,8 +11,7 @@
 #      worker runs on each --prefill-host and each --decode-host. Each worker's
 #      logical tag is used as its --name, --host, and --peer key. Prefill tags
 #      are used verbatim; decode hostnames are converted to tt-blaze's stable
-#      host-<crc32> table tags (opt out for testing with
-#      --non-hashed-decode-tags, which passes decode tags through verbatim).
+#      host-<crc32> table tags.
 #   3. Workers find each other through the discovery service (register-then-
 #      resolve) — a prefill resolves each decode tag to its routable host via the
 #      metadata service and dials its control channel. No MPI/collectives.
@@ -96,9 +95,6 @@ HANDOFF_SENDER_BIN="${HANDOFF_SENDER_BIN:-}"
 # Optional table tag inputs (fabric_node_host), aligned with the host CSVs.
 # Prefill values are used verbatim. Decode values are hostnames hashed to the
 # table's host-<crc32> convention; empty => hash the corresponding decode host.
-# NON_HASHED_DECODE_TAGS is the testing-only escape hatch: when set, these tags
-# are used verbatim (no crc32) and take the place of DECODE_TAGS. Mutually
-# exclusive with DECODE_TAGS.
 PREFILL_TAGS="${PREFILL_TAGS:-}"
 DECODE_TAGS="${DECODE_TAGS:-}"
 NON_HASHED_DECODE_TAGS="${NON_HASHED_DECODE_TAGS:-}"
@@ -166,21 +162,16 @@ fabric_node_host, not on the CLI):
   --config FILE            config to source first (default ${DEFAULT_CONFIG})
   --prefill-table PATH     prefill source table (.pb)
   --decode-table PATH      cluster decode table (.pb), shared by all decodes
-  --prefill-device-map PATH
-                           OPTIONAL map file used by every prefill worker
-  --decode-device-map PATH OPTIONAL map file used by every decode worker
-  --device-map PATH        OPTIONAL shared fallback for either role-specific
-                           map. Maps contain 'mesh chip umd' per line and are
-                           mounted directly by default. Omit all maps for
-                           discovery-only
+  --device-map-dir DIR     OPTIONAL dir of per-host <tag>.devmap files ('mesh
+                           chip umd' per line). With --engine-handoff-port
+                           (default 18700 when this dir is set), deploy pushes
+                           each map over localhost after the worker loads its
+                           .pb; set --engine-handoff-port 0 for legacy
+                           --device-map file mode. Omit dir for discovery-only
   --prefill-tags CSV       table host tags per prefill host, used verbatim
                            (default prefill-<i>)
   --decode-tags CSV        owning hostnames per decode host, converted to
                            host-<crc32> tags (default: --decode-hosts values)
-  --non-hashed-decode-tags CSV
-                           TESTING ONLY: table host tags per decode host, used
-                           verbatim (skip host-<crc32> hashing). Mutually
-                           exclusive with --decode-tags
 
 Options:
   --image IMAGE            migration-worker Docker image (default ${WORKER_IMAGE})
@@ -252,11 +243,7 @@ parseArgs() {
       --prefill-device-map) PREFILL_DEVICE_MAP="$2"; shift 2 ;;
       --decode-device-map) DECODE_DEVICE_MAP="$2"; shift 2 ;;
       --prefill-tags) PREFILL_TAGS="$2"; shift 2 ;;
-      # This branch uses decode tags verbatim (no hashing), so --decode-tags
-      # and --non-hashed-decode-tags mean the same thing here. Accept both so
-      # callers copied from either the main-branch or the transfer-engine-RDMA
-      # branch keep working.
-      --decode-tags|--non-hashed-decode-tags) DECODE_TAGS="$2"; shift 2 ;;
+      --decode-tags) DECODE_TAGS="$2"; shift 2 ;;
       --protocol) PROTOCOL="$2"; shift 2 ;;
       --rdma-nics) RDMA_NICS="$2"; shift 2 ;;
       --handoff-sender) HANDOFF_SENDER_BIN="$2"; shift 2 ;;
@@ -340,9 +327,6 @@ validateArgs() {
 # CSV -> count of non-empty fields.
 countHosts() { awk -F',' '{n=0; for(i=1;i<=NF;i++) if($i!="") n++; print n}' <<<"$1"; }
 
-# Hash a decode host to tt-blaze's stable host-<crc32> table tag. Kept in sync
-# with the make_test_table / decode-table producer so deploy tags match the
-# fabric_node_host values baked into the .pb.
 decodeTagForHost() {
   python3 - "$1" <<'PY'
 import sys
@@ -628,31 +612,20 @@ addWorkerSlot() {
 }
 
 # Map worker i of each role onto host i of that role's CSV (one worker per host)
-# and resolve its table tag. Prefill tags remain verbatim. Decode tags are
-# either:
-#   * hashed: each decode-tag input is the owning hostname and is converted to
-#     tt-blaze's host-<crc32> table tag (default; matches the fabric_node_host
-#     values baked into make_test_table's .pb output);
-#   * verbatim: --non-hashed-decode-tags supplies the fabric_node_host directly,
-#     bypassing the crc32 (testing-only escape hatch for pre-hashed tables).
+# and resolve its table tag. Prefill tags remain verbatim. Each decode tag input
+# is the owning hostname and is converted to tt-blaze's host-<crc32> table tag.
 initWorkerSlots() {
-  local -a prefill_hosts decode_hosts prefill_tags decode_tags
-  local -a non_hashed_decode_tags resolved_decode_tags
+  local -a prefill_hosts decode_hosts prefill_tags decode_tags resolved_decode_tags
   IFS=',' read -ra prefill_hosts <<<"${PREFILL_HOSTS}"
   IFS=',' read -ra decode_hosts <<<"${DECODE_HOSTS}"
   IFS=',' read -ra prefill_tags <<<"${PREFILL_TAGS}"
   IFS=',' read -ra decode_tags <<<"${DECODE_TAGS}"
-  IFS=',' read -ra non_hashed_decode_tags <<<"${NON_HASHED_DECODE_TAGS}"
   local i tag decodeHost
   # Decodes first so DECODE_TAG_LIST is complete before any prefill reads it.
   for (( i = 0; i < NUM_DECODE; i++ )); do
-    if [[ -n "${NON_HASHED_DECODE_TAGS}" ]]; then
-      tag="${non_hashed_decode_tags[$i]:-${decode_hosts[$i]}}"
-    else
-      decodeHost="${decode_tags[$i]:-${decode_hosts[$i]}}"
-      tag="$(decodeTagForHost "${decodeHost}")" || \
-        die "failed to hash decode tag hostname: ${decodeHost}"
-    fi
+    decodeHost="${decode_tags[$i]:-${decode_hosts[$i]}}"
+    tag="$(decodeTagForHost "${decodeHost}")" || \
+      die "failed to hash decode tag hostname: ${decodeHost}"
     resolved_decode_tags+=("${tag}")
     DECODE_TAG_LIST="${DECODE_TAG_LIST:+${DECODE_TAG_LIST},}${tag}"
   done
@@ -720,14 +693,26 @@ workerCmd() {
   # RdmaTransport aborts with "No available RNIC". Match tcp behaviour when
   # PROTOCOL is empty/tcp so the tcp path stays unchanged.
   # Tenstorrent hardware access: UMD (tt-metal driver) uses /dev/tenstorrent/*
-  # for PCIe control and /dev/hugepages-1G for the DMA-mapped host buffer. Skip
-  # in dry-run so the mock/discovery-only path can still run on hosts without
-  # chips or 1GiB hugepages configured.
+  # for PCIe control and needs a hugetlbfs mount for DMA-mapped host buffers.
+  # We bind-mount BOTH /dev/hugepages (2 MiB default hugetlbfs) and
+  # /dev/hugepages-1G (1 GiB) so UMD's SysmemManager can find a mount matching
+  # whichever hugepage size it requests. Mounting only /dev/hugepages-1G is not
+  # sufficient: UMD's find_hugepage_dir() walks /proc/mounts for a hugetlbfs
+  # entry at its requested page size, and when it can't find one it falls back
+  # to regular pages -- the exact "Sysmem (0x1000 bytes) using regular pages"
+  # warning that then causes DriscSocketLink to fail to reach RUNNING. Missing
+  # 2 MiB mount is silently ignored (skipped when /dev/hugepages is absent on
+  # the deploy host) so hosts without /dev/hugepages configured still work.
+  # Skip in dry-run so the mock/discovery-only path can still run on hosts
+  # without chips or hugepages configured.
   if [[ "${MIGRATION_MODE}" == "device" ]]; then
     cmd+=(
       --device=/dev/tenstorrent
       --mount "type=bind,source=/dev/hugepages-1G,target=/dev/hugepages-1G"
     )
+    if [[ -d /dev/hugepages ]]; then
+      cmd+=(-v "/dev/hugepages:/dev/hugepages")
+    fi
   fi
   if [[ "${PROTOCOL}" == "rdma" ]]; then
     cmd+=(
