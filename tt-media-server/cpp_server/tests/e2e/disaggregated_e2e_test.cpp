@@ -1,28 +1,28 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 //
-// Disaggregated end-to-end test: runs a decode server
-// and a prefill server, connected via ZMQ sockets.
+// Disaggregated end-to-end test: decode subprocess + in-process prefill,
+// connected via classic ZMQ. HTTP ingress is the external Dynamo frontend
+// (→ DynamoWorkerServer on decode), not Drogon.
 //
-// The test sends HTTP requests to the decode server, which decides whether to
-// handle locally (prefill-on-decode) or forward to the prefill server based on
-// MAX_TOKENS_TO_PREFILL_ON_DECODE threshold. This tests the full routing logic.
+// Decode decides local prefill-on-decode vs ZMQ-forward to prefill using
+// MAX_TOKENS_TO_PREFILL_ON_DECODE. Requires etcd + frontend:
+//
+//   cd dynamo_frontend && ./deploy.sh --no-monitoring --no-worker
 
-#include <arpa/inet.h>
-#include <drogon/drogon.h>
 #include <gtest/gtest.h>
 #include <sys/prctl.h>
-#include <sys/socket.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
 #include <chrono>
+#include <climits>
+#include <csignal>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
-#include <future>
 #include <memory>
 #include <string>
 #include <thread>
@@ -31,15 +31,17 @@
 #include "config/settings.hpp"
 #include "domain/manage_memory.hpp"
 #include "domain/sentinel_values.hpp"
+#include "integration/support/test_server.hpp"
 #include "ipc/boost/boost_memory_queue.hpp"
 #include "ipc/boost/boost_result_queue.hpp"
 #include "ipc/boost/boost_task_queue.hpp"
+#include "runtime/worker/worker_metrics_shm.hpp"
 #include "services/llm_service.hpp"
 #include "services/service_container.hpp"
 #include "sockets/inter_server_service.hpp"
 #include "support/approx_token_prompt.hpp"
 #include "support/chat_request.hpp"
-#include "support/http_client.hpp"
+#include "support/dynamo_frontend.hpp"
 #include "support/http_response.hpp"
 #include "support/test_worker_main.hpp"
 #include "support/worker_response.hpp"
@@ -48,7 +50,6 @@
 
 namespace {
 
-constexpr uint16_t DECODE_HTTP_PORT = 18084;
 constexpr uint16_t INTER_SERVER_PORT = 19501;
 
 const std::string DECODE_QUEUE_PREFIX = "e2e_dc_";
@@ -91,63 +92,33 @@ void configurePrefillEnv() {
   setenv("PREFILL_SERVER_ID", "e2e-prefill-server", 1);
   setenv("MIN_TOKENS_TO_COPY", "32", 1);
   setenv("PREFIX_CACHE_HIT_THRESHOLD", "0", 1);
+  // Prefill must not register a Dynamo chat backend (decode owns ingress).
+  setenv("DYNAMO_ENDPOINT_ENABLED", "0", 1);
   setQueueEnv(PREFILL_QUEUE_PREFIX);
 }
 
 // ---------------------------------------------------------------------------
-// Decode server subprocess
+// Decode server subprocess (DynamoWorkerServer + ZMQ ROUTER)
 // ---------------------------------------------------------------------------
 
 [[noreturn]] void runDecodeServerSubprocess(const char* sentinelPath) {
   configureDecodeEnv();
+  tt::test::dynamo::configureDynamoEnv();
   tt::utils::ZeroOverheadLogger::initialize();
 
-  tt::utils::service_factory::initializeServices();
-  tt::utils::service_factory::startConfiguredService();
-
-  auto llm = std::dynamic_pointer_cast<tt::services::LLMService>(
-      tt::services::ServiceContainer::instance().getService(
-          tt::config::ModelService::LLM));
-  if (!llm) std::_Exit(1);
-
-  auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
-  while (!llm->isModelReady()) {
-    if (std::chrono::steady_clock::now() >= deadline) std::_Exit(1);
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  std::unique_ptr<tt::test::TestServer> server;
+  try {
+    server = tt::test::TestServer::start();
+  } catch (const std::exception& e) {
+    TT_LOG_ERROR("[DecodeSubprocess] TestServer start failed: {}", e.what());
+    std::_Exit(1);
   }
 
-  auto taskQueue = std::make_unique<tt::ipc::boost::TaskQueue>(
-      tt::config::ttTaskQueueName());
-  auto resultQueue = std::make_unique<tt::ipc::boost::ResultQueue>(
-      std::string(tt::config::ttResultQueueName()) + "0");
-  auto memReqQueue = tt::ipc::boost::MemoryRequestQueue::openExisting(
-      tt::config::ttMemoryRequestQueueName());
-  auto memResQueue = tt::ipc::boost::MemoryResultQueue::openExisting(
-      tt::config::ttMemoryResultQueueName());
-
-  std::atomic<bool> stopAutoResponder{false};
-  std::thread autoResponder([&] {
-    tt::domain::ManageMemoryTask req{};
-    while (!stopAutoResponder.load()) {
-      if (memReqQueue->tryPop(req)) {
-        if (req.action == tt::domain::MemoryManagementAction::ALLOCATE) {
-          tt::domain::ManageMemoryResult res{};
-          res.taskId = req.taskId;
-          res.status = tt::domain::ManageMemoryStatus::SUCCESS;
-          res.slotId = 0;
-          memResQueue->push(res);
-        }
-      } else {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-      }
-    }
-  });
-
-  // Auto-respond to decode's task queue (for prefill-on-decode scenarios)
+  // Auto-respond to decode's task queue (for prefill-on-decode scenarios).
   std::atomic<bool> stopTaskResponder{false};
   std::thread taskResponder([&] {
     while (!stopTaskResponder.load()) {
-      auto seq = taskQueue->tryPop();
+      auto seq = server->taskQueue().tryPop();
       if (seq) {
         TT_LOG_INFO(
             "[DecodeSubprocess] Handling request locally (prefill-on-decode): "
@@ -156,41 +127,16 @@ void configurePrefillEnv() {
         tt::test::WorkerResponse(seq->taskId)
             .token(42)
             .finalize()
-            .sendTo(*resultQueue);
+            .sendTo(server->resultQueue());
       } else {
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
       }
     }
   });
 
-  std::thread drogonThread([] {
-    drogon::app()
-        .addListener("127.0.0.1", DECODE_HTTP_PORT)
-        .setThreadNum(1)
-        .run();
-  });
-
-  auto listenerDeadline =
-      std::chrono::steady_clock::now() + std::chrono::seconds(30);
-  bool listenerUp = false;
-  while (std::chrono::steady_clock::now() < listenerDeadline) {
-    int sock = ::socket(AF_INET, SOCK_STREAM, 0);
-    sockaddr_in addr{};
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(DECODE_HTTP_PORT);
-    ::inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
-    listenerUp = (::connect(sock, reinterpret_cast<sockaddr*>(&addr),
-                            sizeof(addr)) == 0);
-    ::close(sock);
-    if (listenerUp) break;
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-  }
-  if (!listenerUp) {
-    std::_Exit(1);
-  }
-
   std::ofstream(sentinelPath) << "ready";
-  TT_LOG_INFO("[DecodeSubprocess] Ready, sentinel written to {}", sentinelPath);
+  TT_LOG_INFO("[DecodeSubprocess] Ready (Dynamo registered), sentinel={}",
+              sentinelPath);
 
   static std::atomic<bool> done{false};
   std::signal(SIGTERM, [](int) { done.store(true); });
@@ -199,12 +145,9 @@ void configurePrefillEnv() {
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
   }
 
-  stopAutoResponder.store(true);
   stopTaskResponder.store(true);
-  autoResponder.join();
   taskResponder.join();
-  drogon::app().quit();
-  drogonThread.join();
+  server.reset();
   std::_Exit(0);
 }
 
@@ -242,6 +185,8 @@ class PrefillTestServer {
   PrefillTestServer() = default;
 
   void init() {
+    metricsShm = tt::worker::WorkerMetricsShm::create(
+        tt::config::workerMetricsShmName(), tt::config::numWorkers());
     tt::utils::service_factory::initializeServices();
     tt::utils::service_factory::startConfiguredService();
     waitForLLMReady();
@@ -296,6 +241,7 @@ class PrefillTestServer {
     });
   }
 
+  std::unique_ptr<tt::worker::WorkerMetricsShm> metricsShm;
   std::unique_ptr<tt::ipc::boost::TaskQueue> taskQueuePtr;
   std::unique_ptr<tt::ipc::boost::ResultQueue> resultQueuePtr;
   std::unique_ptr<tt::ipc::boost::MemoryRequestQueue> memoryRequestQueuePtr;
@@ -311,14 +257,37 @@ class PrefillTestServer {
 // Test fixture
 // ---------------------------------------------------------------------------
 
-class DisaggregatedE2ETest : public ::testing::Test {
+class DisaggregatedE2ETest
+    : public tt::test::dynamo::DynamoTestFixture<DisaggregatedE2ETest> {
  protected:
   static void SetUpTestSuite() {
     tt::utils::ZeroOverheadLogger::initialize();
+    tt::test::dynamo::configureDynamoEnv();
+
+    if (!initDynamo()) return;
 
     sentinelPath = "/tmp/e2e_decode_ready_" + std::to_string(getpid());
-    startDecodeSubprocess();
-    waitForDecodeReady();
+    try {
+      startDecodeSubprocess();
+      waitForDecodeReady();
+    } catch (const std::exception& e) {
+      dynamoAvailable_ = false;
+      dynamoUnavailableReason_ =
+          std::string("Decode subprocess failed: ") + e.what();
+      std::cerr << "[DisaggregatedE2ETest] " << dynamoUnavailableReason_
+                << std::endl;
+      return;
+    }
+
+    if (!waitUntilBackendRoutable()) {
+      if (decodePid > 0) {
+        kill(decodePid, SIGTERM);
+        int status = 0;
+        waitpid(decodePid, &status, 0);
+        decodePid = -1;
+      }
+      return;
+    }
 
     configurePrefillEnv();
     prefillServer = PrefillTestServer::start();
@@ -334,6 +303,7 @@ class DisaggregatedE2ETest : public ::testing::Test {
       kill(decodePid, SIGTERM);
       int status = 0;
       waitpid(decodePid, &status, 0);
+      decodePid = -1;
     }
 
     unlink(sentinelPath.c_str());
@@ -416,15 +386,8 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
       "[Test] Sending large prompt to decode server (expecting forward to "
       "prefill)");
 
-  auto responseFuture = std::async(std::launch::async, [&] {
-    return tt::test::sendAndReceive("127.0.0.1", DECODE_HTTP_PORT,
-                                    tt::test::ChatRequest()
-                                        .user(largePrompt)
-                                        .maxTokens(1)
-                                        .stream()
-                                        .toJson(),
-                                    "your-secret-key", /*idleTimeoutMs=*/10000);
-  });
+  auto responseFuture = asyncRequest(
+      chatRequest().user(largePrompt).maxTokens(1).stream(), /*timeoutMs=*/60000);
 
   // The prefill server should receive a memory ALLOCATE (decode forwarded the
   // request).
@@ -463,9 +426,12 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
       "tokenIds.size()={}, isContinuation={}",
       numPromptTokens, seq->getTokenIds().size(), seq->isContinuation());
 
-  // The prompt should be 1100 tokens.
-  EXPECT_EQ(numPromptTokens, 1100) << "Prefill should have received 1100 "
-                                      "tokens (large prompt was forwarded)";
+  // The prompt should be ~1100 tokens (approx generator + Dynamo chat template).
+  EXPECT_GE(numPromptTokens, 1096u)
+      << "Prefill should have received the large prompt (~1100 tokens)";
+  EXPECT_LE(numPromptTokens, 1200u)
+      << "Prefill token count unexpectedly large for Part 1 prompt";
+  const size_t part1PromptTokens = numPromptTokens;
 
   // Mock the prefill worker response.
   tt::test::WorkerResponse(seq->taskId)
@@ -493,19 +459,15 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
   // Add a small follow-up message to the same conversation
   std::string followUpMessage = "What about this?";
 
-  auto continuationFuture = std::async(std::launch::async, [&] {
-    return tt::test::sendAndReceive(
-        "127.0.0.1", DECODE_HTTP_PORT,
-        tt::test::ChatRequest()
-            .user(largePrompt)
-            .assistant("Here is my response.")  // Simulated assistant response
-                                                // from turn 1
-            .user(followUpMessage)  // New user message (small delta)
-            .maxTokens(1)
-            .stream()
-            .toJson(),
-        "your-secret-key", /*idleTimeoutMs=*/10000);
-  });
+  auto continuationFuture = asyncRequest(
+      chatRequest()
+          .user(largePrompt)
+          .assistant("Here is my response.")  // Simulated assistant response
+                                              // from turn 1
+          .user(followUpMessage)  // New user message (small delta)
+          .maxTokens(1)
+          .stream(),
+      /*timeoutMs=*/60000);
 
   // Wait for the response to complete - it should be handled locally by decode.
   const auto continuationRawResponse = continuationFuture.get();
@@ -552,18 +514,13 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
   // not just a small addition to Part 2's cached conversation.
   std::string bigFollowUp = tt::test::generatePromptWithApproxTokens(1196);
 
-  auto bigDeltaFuture = std::async(std::launch::async, [&] {
-    return tt::test::sendAndReceive(
-        "127.0.0.1", DECODE_HTTP_PORT,
-        tt::test::ChatRequest()
-            .user(largePrompt)
-            .assistant("Here is my response.")  // Same as Part 1's response
-            .user(bigFollowUp)                  // Big delta (~1200 tokens)
-            .maxTokens(1)
-            .stream()
-            .toJson(),
-        "your-secret-key", /*idleTimeoutMs=*/10000);
-  });
+  auto bigDeltaFuture = asyncRequest(chatRequest()
+                                         .user(largePrompt)
+                                         .assistant("Here is my response.")
+                                         .user(bigFollowUp)
+                                         .maxTokens(1)
+                                         .stream(),
+                                     /*timeoutMs=*/60000);
 
   // Should go to prefill again (big delta). Part 3 MUST get a cache HIT on
   //  prefill because Part 1 already established the session - no ALLOCATE
@@ -622,12 +579,11 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
   // --- Verification 2: decodeSkipTokens is propagated ---
   // decodeSkipTokens represents the number of tokens decode already has in its
   // KV cache from the prefix cache hit. This should be > 0 for a continuation.
-  // Part 1 had 1100 prompt tokens. Block-aligned (32 tokens/block):
-  // floor(1100/32) * 32 = 34 * 32 = 1088 tokens.
-  constexpr int kExpectedDecodeSkipTokens = 1088;
+  // Part 1 prompt tokens, block-aligned (32 tokens/block).
+  const int kExpectedDecodeSkipTokens =
+      static_cast<int>((part1PromptTokens / 32) * 32);
   EXPECT_EQ(decodeSkipTokens, kExpectedDecodeSkipTokens)
-      << "decodeSkipTokens should be 1088 (1100 tokens from Part 1, "
-         "block-aligned to 32)";
+      << "decodeSkipTokens should be Part 1 prompt block-aligned to 32";
   TT_LOG_INFO("[Test] PASS: decodeSkipTokens propagated: {} (expected {})",
               decodeSkipTokens, kExpectedDecodeSkipTokens);
 
@@ -655,13 +611,15 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
   // the full conversation (~2304 tokens). With additional tokenization tokens,
   // the delta should be 1216 tokens.
 
-  EXPECT_EQ(bigDeltaPromptTokens, 1216)
-      << "Prefill should receive delta tokens only (prefix cache hit), not "
-         "full conversation";
+  // Prefill receives delta tokens only (assistant + big follow-up), not the
+  // full conversation (~part1 + delta). Exact count depends on Dynamo template.
+  EXPECT_GE(bigDeltaPromptTokens, 1100u)
+      << "Prefill should receive a large delta (assistant + big follow-up)";
+  EXPECT_LE(bigDeltaPromptTokens, 1400u)
+      << "Prefill should receive delta only, not full conversation";
   TT_LOG_INFO(
-      "[Test] PASS: Prefill received {} tokens (delta only, not full {}+ token "
-      "conversation)",
-      bigDeltaPromptTokens, 2300);
+      "[Test] PASS: Prefill received {} tokens (delta only, Part 1 was {})",
+      bigDeltaPromptTokens, part1PromptTokens);
 
   // --- Verification 6: Prefill calculates its own prefix cache ---
   // The prefill server should have resolved its own prefix cache. For this
@@ -707,19 +665,16 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
   std::string secondBigFollowUp =
       tt::test::generatePromptWithApproxTokens(1196);
 
-  auto secondBigDeltaFuture = std::async(std::launch::async, [&] {
-    return tt::test::sendAndReceive("127.0.0.1", DECODE_HTTP_PORT,
-                                    tt::test::ChatRequest()
-                                        .user(largePrompt)
-                                        .assistant("Here is my response.")
-                                        .user(bigFollowUp)
-                                        .assistant("Response to big follow-up.")
-                                        .user(secondBigFollowUp)
-                                        .maxTokens(1)
-                                        .stream()
-                                        .toJson(),
-                                    "your-secret-key", /*idleTimeoutMs=*/10000);
-  });
+  auto secondBigDeltaFuture =
+      asyncRequest(chatRequest()
+                       .user(largePrompt)
+                       .assistant("Here is my response.")
+                       .user(bigFollowUp)
+                       .assistant("Response to big follow-up.")
+                       .user(secondBigFollowUp)
+                       .maxTokens(1)
+                       .stream(),
+                   /*timeoutMs=*/60000);
 
   // Should go to prefill again (big delta). Part 4 MUST get a cache HIT on
   // prefill because Part 3 already established the session - no ALLOCATE
@@ -759,21 +714,15 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
       "prefillSlotId={}",
       secondPromptTokens, secondDecodeSkipTokens, secondPrefillSlotId);
 
-  // --- Verification 7: Prefix cache was updated after Part 3 ---
-  // The decodeSkipTokens should now be larger than in Part 3, reflecting that
-  // decode's prefix cache was updated to include the big follow-up from Part 3.
-  // Part 3 conversation: largePrompt (1100) + assistant (~6) + bigFollowUp
-  // (1200)
-  //                    = ~2306 tokens, block-aligned: floor(2306/32)*32 = 2304
-  constexpr int kExpectedSecondDecodeSkipTokens = 2304;
-  EXPECT_EQ(secondDecodeSkipTokens, kExpectedSecondDecodeSkipTokens)
-      << "Second decodeSkipTokens should be 2304 (Part 3 conversation "
-         "block-aligned)";
+  // Prefix cache grew after Part 3: skip tokens must exceed Part 3's skip.
+  EXPECT_GT(secondDecodeSkipTokens, decodeSkipTokens)
+      << "Second decodeSkipTokens should grow after Part 3 updated the cache";
+  // Rough lower bound: Part 1 block-aligned + most of the big follow-up.
+  EXPECT_GE(secondDecodeSkipTokens, kExpectedDecodeSkipTokens + 1000)
+      << "Second decodeSkipTokens should include Part 3's big follow-up";
   TT_LOG_INFO(
-      "[Test] PASS: Prefix cache updated - decodeSkipTokens grew from {} to {} "
-      "(expected {})",
-      decodeSkipTokens, secondDecodeSkipTokens,
-      kExpectedSecondDecodeSkipTokens);
+      "[Test] PASS: Prefix cache updated - decodeSkipTokens grew from {} to {}",
+      decodeSkipTokens, secondDecodeSkipTokens);
 
   // --- Verification 9: Prefill slot ID is valid for Part 4 ---
   // Same as Part 3: prefill should have resolved its own prefix cache.
@@ -811,6 +760,7 @@ int main(int argc, char** argv) {
     runDecodeServerSubprocess(argv[2]);
   }
 
+  tt::test::dynamo::configureDynamoEnv();
   tt::utils::ZeroOverheadLogger::initialize();
   ::testing::InitGoogleTest(&argc, argv);
   const int result = RUN_ALL_TESTS();

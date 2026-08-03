@@ -569,6 +569,6 @@ if [[ "$WORKER_ENABLED" == "1" ]]; then
     docker logs -f "$WORKER_NAME"
 else
     log "etcd + frontend ready for integration tests (Ctrl+C to tear down)"
-    log "  cd tt-media-server/cpp_server/build && ctest -R MainIntegrationTest --output-on-failure"
+    log "  cd tt-media-server/cpp_server/build && ctest -R 'MainIntegrationTest|DisaggregatedE2ETest' --output-on-failure"
     docker logs -f "$FRONTEND_NAME"
 fi
