@@ -137,7 +137,8 @@ void MooncakeKvSender::refreshPeerSegment(const std::string& segmentName) {
   }
 }
 
-bool MooncakeKvSender::transferSlot(const MigrationRequest& request,
+bool MooncakeKvSender::transferSlot(uint64_t kafkaRequestId,
+                                    const MigrationRequest& request,
                                     const std::string& segmentName) {
   if (!engine_ || !prefill_table_ || !decode_table_) {
     TT_LOG_ERROR("[MooncakeKvSender] transferSlot: no engine/tables");
@@ -334,15 +335,17 @@ bool MooncakeKvSender::transferSlot(const MigrationRequest& request,
       dstAdj += d ? 1 : 0;
       bothAdj += (s && d) ? 1 : 0;
     }
-    TT_LOG_INFO(
-        "[MooncakeKvSender] contiguity: {} pairs | srcAdj={} dstAdj={} both={}",
-        planned.empty() ? 0 : planned.size() - 1, srcAdj, dstAdj, bothAdj);
+    TT_LOG_DEBUG(
+        "[MooncakeKvSender] kafka_request_id={} contiguity: {} pairs | "
+        "srcAdj={} dstAdj={} both={}",
+        kafkaRequestId, planned.empty() ? 0 : planned.size() - 1, srcAdj,
+        dstAdj, bothAdj);
     for (std::size_t i = 0; i < planned.size() && i < 6; ++i) {
       const PlannedChunk& p = planned[i];
-      TT_LOG_INFO(
-          "[MooncakeKvSender]   [{}] dev={:#x} noc={:#x} size={} dst0={:#x} "
-          "L{} pos={}",
-          i, p.src->device, p.src->noc_addr, p.size,
+      TT_LOG_DEBUG(
+          "[MooncakeKvSender] kafka_request_id={} [{}] dev={:#x} noc={:#x} "
+          "size={} dst0={:#x} L{} pos={}",
+          kafkaRequestId, i, p.src->device, p.src->noc_addr, p.size,
           p.dst_offsets.empty() ? 0 : p.dst_offsets[0], p.layer, p.position);
     }
   }
@@ -376,9 +379,10 @@ bool MooncakeKvSender::transferSlot(const MigrationRequest& request,
     }
     maxSegment = std::max(maxSegment, segments.back().size);
   }
-  TT_LOG_INFO(
-      "[MooncakeKvSender] merged {} chunks -> {} segments (max segment {}B)",
-      planned.size(), segments.size(), maxSegment);
+  TT_LOG_DEBUG(
+      "[MooncakeKvSender] kafka_request_id={} merged {} chunks -> {} segments "
+      "(max segment {}B)",
+      kafkaRequestId, planned.size(), segments.size(), maxSegment);
 
   // Double-buffered pipeline. The slot moves in windows; while one window's
   // batch runs on the engine's threads, the next window is staged from device
@@ -391,11 +395,11 @@ bool MooncakeKvSender::transferSlot(const MigrationRequest& request,
   const uint64_t windowCap = std::min(
       bufBytes,
       std::max<uint64_t>(maxSegment, (totalBytes + divisor - 1) / divisor));
-  TT_LOG_INFO(
-      "[MooncakeKvSender] staging: buf={}B divisor={} window={}B (~{} windows) "
-      "total={}B",
-      bufBytes, divisor, windowCap, (totalBytes + windowCap - 1) / windowCap,
-      totalBytes);
+  TT_LOG_DEBUG(
+      "[MooncakeKvSender] kafka_request_id={} staging: buf={}B divisor={} "
+      "window={}B (~{} windows) total={}B",
+      kafkaRequestId, bufBytes, divisor, windowCap,
+      (totalBytes + windowCap - 1) / windowCap, totalBytes);
 
   int buf = 0;                         // buffer we are currently filling
   uint64_t used = 0;                   // bytes used in buffer `buf`
@@ -502,13 +506,13 @@ bool MooncakeKvSender::transferSlot(const MigrationRequest& request,
                    : (static_cast<double>(bytes) / 1e6) /
                          (static_cast<double>(ns) / 1e9);
   };
-  TT_LOG_INFO(
-      "[MooncakeKvSender] split: read={}ms ({} ops, {}B, {:.1f} MB/s) | "
-      "waitBatch={}ms ({}B over {} batch(es), {:.1f} MB/s) | "
+  TT_LOG_DEBUG(
+      "[MooncakeKvSender] kafka_request_id={} split: read={}ms ({} ops, {}B, "
+      "{:.1f} MB/s) | waitBatch={}ms ({}B over {} batch(es), {:.1f} MB/s) | "
       "submit={}ms ({} writes enqueued)",
-      readNs / 1'000'000, readOps, readBytes, mbps(readBytes, readNs),
-      waitNs / 1'000'000, writeBytes, batchOps, mbps(writeBytes, waitNs),
-      submitNs / 1'000'000, writeOps);
+      kafkaRequestId, readNs / 1'000'000, readOps, readBytes,
+      mbps(readBytes, readNs), waitNs / 1'000'000, writeBytes, batchOps,
+      mbps(writeBytes, waitNs), submitNs / 1'000'000, writeOps);
 
   // Staging stays registered for the next migration — no per-slot unregister.
   // Re-resolve for the NEXT request only; this one still fails and acks FAILED.

@@ -7,9 +7,9 @@ import os
 import stat
 from pathlib import Path
 
-from benchmarking.benchmark_config import get_benchmark_config
-from workflows.v2_bridge import can_route_to_v2
-from evals.eval_config import EVAL_CONFIGS
+from reference_config.benchmarking.benchmark_config import get_benchmark_config
+from workflows.workflow_dispatch import can_dispatch_to_engine
+from reference_config.evals.eval_config import EVAL_CONFIGS
 from workflows.model_spec import MODEL_SPECS
 from workflows.utils import (
     MIN_SUPPORTED_IMAGE_VERSION,
@@ -91,9 +91,9 @@ def validate_runtime_args(model_spec, runtime_config):
 
     # The image-version contract only matters when run.py actually launches the
     # vLLM docker image. Client-side / external-server runs (no --docker-server)
-    # — including the v2-routed prefix-cache / spec-decode benchmarks that target
-    # an already-running server — never emit a docker command, so the pinned
-    # image version is irrelevant and must not gate them.
+    # — including the v2-routed prefill_decode / prefix-cache / spec-decode
+    # workflows that bring up or target their own server — never emit a docker
+    # command, so the pinned image version is irrelevant and must not gate them.
     if args.docker_server:
         _check_image_version_supported(model_spec)
 
@@ -109,11 +109,28 @@ def validate_runtime_args(model_spec, runtime_config):
         workflow_type == WorkflowType.BENCHMARKS
         and not getattr(args, "prefix_cache", False)
         and not getattr(args, "spec_decode", False)
-        and not can_route_to_v2(model_spec, runtime_config)
+        and not can_dispatch_to_engine(model_spec, runtime_config)
     ):
         if os.getenv("OVERRIDE_BENCHMARKS"):
             logger.warning("OVERRIDE_BENCHMARKS is active, using override benchmarks")
         get_benchmark_config(model_spec)
+    if workflow_type == WorkflowType.AGENTIC_TRACES or (
+        workflow_type == WorkflowType.RELEASE and getattr(args, "agentic_traces", False)
+    ):
+        # Fail here rather than after the multi-minute InferenceX clone + install
+        # that the AGENTIC_TRACES venv setup performs -- and, for a release run,
+        # rather than after the evals and benchmarks that precede the child.
+        from reference_config.agentic_traces.agentic_traces_config import (
+            get_agentic_traces_config,
+        )
+
+        assert get_agentic_traces_config(model_spec) is not None, (
+            f"Model:={model_spec.model_name} (model_id={model_spec.model_id}) has "
+            "no AGENTIC_TRACES_CONFIGS entry. Add one to "
+            "reference_config/agentic_traces/agentic_traces_config.py, including "
+            "the InferenceX git ref to pin."
+        )
+
     if workflow_type == WorkflowType.STRESS_TESTS:
         pass  # Model support already validated via MODEL_SPECS check
 
@@ -144,7 +161,7 @@ def validate_runtime_args(model_spec, runtime_config):
         assert model_spec.model_name in EVAL_CONFIGS, (
             f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
         )
-        if not can_route_to_v2(model_spec, runtime_config):
+        if not can_dispatch_to_engine(model_spec, runtime_config):
             get_benchmark_config(model_spec)
 
     if DeviceTypes.from_string(args.device) == DeviceTypes.GPU:
