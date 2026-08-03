@@ -44,6 +44,11 @@ generated_modules
 *.pt
 *.tti
 *.txt
+# Same reasoning as the prefix-cache assets above, and it has to sit AFTER *.txt because the last
+# matching pattern wins: the vendored benchmark prompt corpora are source, not artifacts. The sweep
+# reads them at runtime, and `*.txt` swallowing one silently produced a benchmarks job that
+# resolved, built for 50 minutes, and only then died on a missing path.
+!benchmarking/benchmark_targets/*.txt
 unzipped_tti/
 db.sqlite3
 **/generated/inspector/
