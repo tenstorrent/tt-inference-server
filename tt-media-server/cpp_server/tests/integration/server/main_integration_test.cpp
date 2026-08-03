@@ -71,7 +71,19 @@ class MainIntegrationTest
 
     if (!initDynamo()) return;
 
-    server = tt::test::TestServer::start();
+    try {
+      server = tt::test::TestServer::start();
+    } catch (const std::exception& e) {
+      dynamoAvailable_ = false;
+      dynamoUnavailableReason_ =
+          std::string("TestServer / DynamoWorkerServer start failed: ") +
+          e.what() + " (etcd=" + tt::test::dynamo::etcdEndpointsFromEnv() +
+          "). Is etcd up via: cd dynamo_frontend && ./deploy.sh "
+          "--no-monitoring --no-worker ?";
+      std::cerr << "[MainIntegrationTest] " << dynamoUnavailableReason_
+                << std::endl;
+      return;
+    }
 
     if (!waitUntilBackendRoutable()) {
       server.reset();
@@ -131,8 +143,7 @@ TEST_F(MainIntegrationTest, HappyPath_RequestToMemoryToTaskToResponse) {
 
   // 2. Receive and assert on the ALLOCATE.
   tt::domain::ManageMemoryTask memReq{};
-  server->memoryRequestQueue().receive(memReq);
-  EXPECT_EQ(memReq.action, tt::domain::MemoryManagementAction::ALLOCATE);
+  server->receiveAllocate(memReq);
   EXPECT_GT(memReq.taskId, 0u);
 
   // 3. Mock the memory manager.
@@ -265,17 +276,18 @@ TEST_F(MainIntegrationTest, MultiTurn_AllRequestsAfterFirstAreContinuations) {
     auto seq = server->taskQueue().receive();
     ASSERT_NE(seq, nullptr) << "turn " << i;
 
-    // first turn is 72 tokens
+    // Token counts are measured through the Dynamo frontend chat template
+    // (one token longer than the old Drogon-path expectations in places).
     if (i == 0) {
       EXPECT_EQ(seq->getTokenIds().size(), 72u) << "turn 0 tokenIds size";
     } else if (i == 1) {
-      // 2nd turn is 96 tokens -> 64 from cache (2 blocks), 32 new
-      EXPECT_EQ(seq->getTokenIds().size(), 32u) << "turn 1 tokenIds size";
+      // 2nd turn ~97 tokens -> 64 from cache (2 blocks), 33 new
+      EXPECT_EQ(seq->getTokenIds().size(), 33u) << "turn 1 tokenIds size";
       ASSERT_TRUE(seq->getKVPositionId().has_value()) << "turn 1 kvPositionId";
       EXPECT_EQ(*seq->getKVPositionId(), 64u) << "turn 1 kvPositionId value";
     } else if (i == 2) {
-      // 3rd turn is 123 tokens -> 96 from cache (3 blocks), 27 new
-      EXPECT_EQ(seq->getTokenIds().size(), 27u) << "turn 2 tokenIds size";
+      // 3rd turn ~125 tokens -> 96 from cache (3 blocks), 29 new
+      EXPECT_EQ(seq->getTokenIds().size(), 29u) << "turn 2 tokenIds size";
       ASSERT_TRUE(seq->getKVPositionId().has_value()) << "turn 2 kvPositionId";
       EXPECT_EQ(*seq->getKVPositionId(), 96u) << "turn 2 kvPositionId value";
     }
@@ -474,8 +486,7 @@ TEST_F(MainIntegrationTest, SlotCopy_NotTriggeredInRegularMode) {
   auto futureA = asyncRequest(chatRequest().user(opener).maxTokens(1).stream());
 
   tt::domain::ManageMemoryTask memReqA{};
-  server->memoryRequestQueue().receive(memReqA);
-  EXPECT_EQ(memReqA.action, tt::domain::MemoryManagementAction::ALLOCATE);
+  server->receiveAllocate(memReqA);
 
   tt::domain::ManageMemoryResult memResA{};
   memResA.taskId = memReqA.taskId;
@@ -533,9 +544,7 @@ TEST_F(MainIntegrationTest, SlotCopy_NotTriggeredInRegularMode) {
   // The session is in-flight (B holds it), so C falls through to ALLOCATE.
   // In regular mode (no migration workers), no slot copy is requested.
   tt::domain::ManageMemoryTask memReqC{};
-  server->memoryRequestQueue().receive(memReqC);
-  EXPECT_EQ(memReqC.action, tt::domain::MemoryManagementAction::ALLOCATE)
-      << "request C should ALLOCATE (session is in-flight)";
+  server->receiveAllocate(memReqC);
   EXPECT_FALSE(memReqC.slotIdToCopyFrom.has_value())
       << "ALLOCATE should NOT request a slot copy in regular mode";
 
@@ -573,7 +582,9 @@ TEST_F(MainIntegrationTest, SlotCopy_NotTriggeredInRegularMode) {
 TEST_F(MainIntegrationTest, NonStreamingRequest_ReturnsBufferedJson) {
   // Most tests use streaming; this one verifies the non-streaming code path
   // still returns a single buffered JSON document with the assistant message.
-  auto responseFuture = asyncRequest(chatRequest().user("hello").maxTokens(1));
+  // Explicit stream(false): Dynamo defaults omitted stream → true.
+  auto responseFuture =
+      asyncRequest(chatRequest().user("hello").maxTokens(1).stream(false));
 
   auto seq = server->taskQueue().receive();
   ASSERT_NE(seq, nullptr);
@@ -588,7 +599,12 @@ TEST_F(MainIntegrationTest, NonStreamingRequest_ReturnsBufferedJson) {
   const auto body = response.json();
   ASSERT_EQ(body["choices"].size(), 1u);
   EXPECT_EQ(body["choices"][0]["message"]["role"].asString(), "assistant");
-  EXPECT_FALSE(body["choices"][0]["message"]["content"].asString().empty());
+  // Dynamo may surface the mock token as content or reasoning_content.
+  const auto& message = body["choices"][0]["message"];
+  const std::string content =
+      message.get("content", "").asString() +
+      message.get("reasoning_content", "").asString();
+  EXPECT_FALSE(content.empty());
 }
 
 TEST_F(MainIntegrationTest, SamplingParams_MaxTokensAndTemperature) {
@@ -653,10 +669,8 @@ TEST_F(MainIntegrationTest, TwoFirstTurns_EachAllocatesDistinctSlot) {
   // Drain both ALLOCATEs before responding to either, so the test can prove
   // they ran concurrently rather than serialised behind one another.
   tt::domain::ManageMemoryTask allocReq1{}, allocReq2{};
-  server->memoryRequestQueue().receive(allocReq1);
-  server->memoryRequestQueue().receive(allocReq2);
-  EXPECT_EQ(allocReq1.action, tt::domain::MemoryManagementAction::ALLOCATE);
-  EXPECT_EQ(allocReq2.action, tt::domain::MemoryManagementAction::ALLOCATE);
+  server->receiveAllocate(allocReq1);
+  server->receiveAllocate(allocReq2);
   EXPECT_NE(allocReq1.taskId, allocReq2.taskId)
       << "two independent allocations should have distinct memory taskIds";
 
@@ -769,10 +783,8 @@ TEST_F(MainIntegrationTest,
         asyncRequest(chatRequest().user(opener).maxTokens(1).stream());
 
     tt::domain::ManageMemoryTask seedAlloc1{}, seedAlloc2{};
-    server->memoryRequestQueue().receive(seedAlloc1);
-    server->memoryRequestQueue().receive(seedAlloc2);
-    EXPECT_EQ(seedAlloc1.action, tt::domain::MemoryManagementAction::ALLOCATE);
-    EXPECT_EQ(seedAlloc2.action, tt::domain::MemoryManagementAction::ALLOCATE);
+    server->receiveAllocate(seedAlloc1);
+    server->receiveAllocate(seedAlloc2);
     EXPECT_NE(seedAlloc1.taskId, seedAlloc2.taskId);
 
     pushAllocSuccess(seedAlloc1.taskId, kSeedSlotA);

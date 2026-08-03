@@ -34,6 +34,7 @@
 #include "ipc/boost/boost_memory_queue.hpp"
 #include "ipc/boost/boost_result_queue.hpp"
 #include "ipc/boost/boost_task_queue.hpp"
+#include "runtime/worker/worker_metrics_shm.hpp"
 #include "services/llm_pipeline.hpp"
 #include "services/llm_service.hpp"
 #include "services/service_container.hpp"
@@ -83,7 +84,32 @@ class TestServer {
   // Toggle the background auto-responder. When ON (default), every ALLOCATE
   // request is auto-acked with SUCCESS+slotId=0; tests don't have to think
   // about memory. Turn OFF to assert on requests / inject custom responses.
-  void setMemoryAutoRespond(bool on) { autoRespond_.store(on); }
+  // Turning OFF also drains stale DEALLOCATE/MOVE left by prior session
+  // teardowns so the next receive() is not poisoned.
+  void setMemoryAutoRespond(bool on) {
+    autoRespond_.store(on);
+    if (!on) {
+      // Let the auto-responder observe the flag before we drain.
+      std::this_thread::sleep_for(std::chrono::milliseconds(20));
+      drainMemoryRequests();
+    }
+  }
+
+  void drainMemoryRequests() {
+    tt::domain::ManageMemoryTask stale{};
+    while (memoryRequestQueue_->tryPop(stale)) {
+    }
+  }
+
+  /// Blocking receive that skips DEALLOCATE/MOVE (session teardown noise).
+  void receiveAllocate(tt::domain::ManageMemoryTask& out) {
+    for (;;) {
+      memoryRequestQueue_->receive(out);
+      if (out.action == tt::domain::MemoryManagementAction::ALLOCATE) {
+        return;
+      }
+    }
+  }
 
   bool hasDynamoEndpoint() const { return dynamoWorkerServer_ != nullptr; }
 
@@ -100,6 +126,11 @@ class TestServer {
   //   4. start the memory auto-responder so most tests don't have to care
   //   5. start DynamoWorkerServer (requires DYNAMO_ENDPOINT_ENABLED=1)
   void init() {
+    // Mirror main.cpp: workers attach to this segment; without it they log
+    // critically and leave metrics disabled (harmless but noisy).
+    metricsShm_ = tt::worker::WorkerMetricsShm::create(
+        tt::config::workerMetricsShmName(), tt::config::numWorkers());
+
     tt::utils::service_factory::initializeServices();
     tt::utils::service_factory::startConfiguredService();
     waitForLLMReady();
@@ -194,6 +225,7 @@ class TestServer {
     dynamoWorkerServer_->start();
   }
 
+  std::unique_ptr<tt::worker::WorkerMetricsShm> metricsShm_;
   std::unique_ptr<tt::ipc::boost::TaskQueue> taskQueue_;
   std::unique_ptr<tt::ipc::boost::ResultQueue> resultQueue_;
   std::unique_ptr<tt::ipc::boost::MemoryRequestQueue> memoryRequestQueue_;

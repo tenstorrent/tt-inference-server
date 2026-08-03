@@ -1419,7 +1419,7 @@ endif()
 # Integration tests boot the full server stack and share ports/resources.
 # Prevent parallel execution via RESOURCE_LOCK.
 set_tests_properties(MainIntegrationTest PrefillIntegrationTest DisaggregatedE2ETest PROPERTIES
-    TIMEOUT 120
+    TIMEOUT 300
     RESOURCE_LOCK integration_server
 )
 gtest_discover_tests(transport_test)

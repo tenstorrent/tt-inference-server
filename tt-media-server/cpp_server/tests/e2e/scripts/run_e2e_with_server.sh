@@ -41,6 +41,9 @@ fi
 echo "Starting mock server on port $PORT..."
 export LLM_DEVICE_BACKEND=mock
 export MODEL_SERVICE=llm
+# Keep CancellationE2E on Drogon HTTP only. Job-level DYNAMO_ENDPOINT_ENABLED=1
+# (test-gate) would otherwise start DynamoWorkerServer and hang on teardown.
+export DYNAMO_ENDPOINT_ENABLED=0
 "$SERVER_BIN" -p "$PORT" -h 127.0.0.1 -t 4 > /dev/null 2>&1 &
 SERVER_PID=$!
 

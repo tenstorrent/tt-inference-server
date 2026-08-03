@@ -67,6 +67,43 @@ inline std::string detectDockerGateway() {
   return "127.0.0.1";
 }
 
+/// Local IPv4 the kernel would use as the source for an outbound route.
+/// Used as DYN_TCP_RPC_HOST so a host-networked Dynamo frontend can dial
+/// back into this process when it runs inside a bridge container (gateway
+/// IP is the host side of docker0 — advertising it points at the wrong
+/// netns).
+inline std::string detectPrimaryIpv4() {
+  int sock = ::socket(AF_INET, SOCK_DGRAM, 0);
+  if (sock < 0) return "127.0.0.1";
+
+  sockaddr_in dest{};
+  dest.sin_family = AF_INET;
+  dest.sin_port = htons(80);
+  if (::inet_pton(AF_INET, "8.8.8.8", &dest.sin_addr) != 1) {
+    ::close(sock);
+    return "127.0.0.1";
+  }
+  // UDP connect does not send packets; it only selects an egress interface.
+  if (::connect(sock, reinterpret_cast<sockaddr*>(&dest), sizeof(dest)) != 0) {
+    ::close(sock);
+    return "127.0.0.1";
+  }
+
+  sockaddr_in name{};
+  socklen_t len = sizeof(name);
+  if (::getsockname(sock, reinterpret_cast<sockaddr*>(&name), &len) != 0) {
+    ::close(sock);
+    return "127.0.0.1";
+  }
+  ::close(sock);
+
+  char buf[INET_ADDRSTRLEN] = {};
+  if (!::inet_ntop(AF_INET, &name.sin_addr, buf, sizeof(buf))) {
+    return "127.0.0.1";
+  }
+  return buf;
+}
+
 // ---------------------------------------------------------------------------
 // Dynamo configuration
 // ---------------------------------------------------------------------------
@@ -86,10 +123,21 @@ struct DynamoConfig {
   }
 };
 
+/// Host used for Dynamo frontend HTTP and (by default) etcd. Prefer an
+/// explicit DYNAMO_HOST; otherwise the docker bridge gateway so a test
+/// process inside a container can reach host-networked deploy.sh services.
+inline std::string dynamoHostFromEnv() {
+  if (const char* h = std::getenv("DYNAMO_HOST"); h && *h) return h;
+  return detectDockerGateway();
+}
+
 inline std::string etcdEndpointsFromEnv() {
   if (const char* v = std::getenv("DYNAMO_ETCD_ENDPOINTS"); v && *v) return v;
   if (const char* v = std::getenv("ETCD_ENDPOINTS"); v && *v) return v;
-  return "http://127.0.0.1:2379";
+  // deploy.sh --no-worker co-locates etcd with the frontend on host network.
+  // Defaulting to 127.0.0.1 breaks when the test runs in a sibling container
+  // (frontend is reachable via the bridge gateway, etcd must be too).
+  return "http://" + dynamoHostFromEnv() + ":2379";
 }
 
 /// Set env vars required for in-process DynamoWorkerServer registration.
@@ -104,15 +152,19 @@ inline void configureDynamoEnv() {
   setenv("DYNAMO_ENDPOINT_NAME", "generate", 0);
   setenv("DYNAMO_BIND_HOST", "0.0.0.0", 0);
 
+  // Outbound: reach host-networked frontend/etcd (bridge gateway from a
+  // container; 127.0.0.1 when CI sets DYNAMO_HOST explicitly).
+  const std::string host = dynamoHostFromEnv();
+  setenv("DYNAMO_HOST", host.c_str(), 0);
+
   const std::string etcd = etcdEndpointsFromEnv();
   setenv("DYNAMO_ETCD_ENDPOINTS", etcd.c_str(), 0);
   setenv("ETCD_ENDPOINTS", etcd.c_str(), 0);
 
-  // Advertise an address the Dynamo frontend container can dial back to.
-  // Prefer an explicit override; otherwise use the docker bridge gateway
-  // (host side of published ports) when not already set.
+  // Inbound: address the frontend uses to call us. Must be THIS process's
+  // routable IP (container eth0), not the docker gateway.
   if (!std::getenv("DYN_TCP_RPC_HOST")) {
-    setenv("DYN_TCP_RPC_HOST", detectDockerGateway().c_str(), 0);
+    setenv("DYN_TCP_RPC_HOST", detectPrimaryIpv4().c_str(), 0);
   }
 }
 
@@ -559,6 +611,12 @@ inline std::string generateUniqueTestId(const std::string& prefix) {
   auto millis =
       std::chrono::duration_cast<std::chrono::milliseconds>(epoch).count();
   return prefix + "-" + std::to_string(millis);
+}
+
+inline int64_t currentTimeMillis() {
+  auto now = std::chrono::system_clock::now();
+  auto epoch = now.time_since_epoch();
+  return std::chrono::duration_cast<std::chrono::milliseconds>(epoch).count();
 }
 
 // ---------------------------------------------------------------------------
