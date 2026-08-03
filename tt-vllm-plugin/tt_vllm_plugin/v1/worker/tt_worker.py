@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
-import importlib
 import importlib.util
 import os
 import sys
@@ -168,7 +167,7 @@ class TTWorker(WorkerBase):
     #
     # Transport: instead of reading a checkpoint from disk, the new weights
     # stream in over a tt-metal Multi-Mesh device socket via tt-metal's
-    # ``WeightBridge`` (tt-train/.../grpo_speedup/utils/weight_bridge.py,
+    # ``WeightBridge`` (tt-train/sources/examples/grpo/utils/inference_bridge.py,
     # introduced in tt-metal PR #45734). The training service
     # (tt-training-service) owns a *separate* mesh and is the bridge *sender*
     # (role="ttml"); this worker is the *receiver* (role="ttt").
@@ -204,73 +203,39 @@ class TTWorker(WorkerBase):
         runner = getattr(self, "model_runner", None)
         return runner is not None and getattr(runner, "model", None) is not None
 
-    @staticmethod
-    def _import_weight_bridge(config_bridge_dir: Optional[str] = None):
-        """Import tt-metal's ``WeightBridge`` from the examples tree by file path.
+    # Pinned location of tt-metal's weight bridge, set via TT_WEIGHT_BRIDGE_DIR
+    # so an in-flight tt-metal PR can be pointed at without a code change here.
+    _BRIDGE_FILENAME = "inference_bridge.py"
 
-        Loaded via ``spec_from_file_location`` (not an installed package) so it
-        can't collide with the server's own ``utils`` package. Resolution order
-        is env-independent because vLLM spawns the EngineCore with a curated env
-        that may drop ``TT_WEIGHT_BRIDGE_DIR``: bare import, ``config_bridge_dir``
-        (via additional_config), ``TT_WEIGHT_BRIDGE_DIR``, ``TT_METAL_HOME``, then
-        a ttnn-derived path. Must match the module the trainer/sender imports.
+    @classmethod
+    def _import_weight_bridge(cls):
+        """Import tt-metal's ``WeightBridge`` from ``inference_bridge.py``.
+
+        Loaded by file path via ``spec_from_file_location`` (not an installed
+        package) so it can't collide with the server's own ``utils`` package.
+        The directory is pinned by ``TT_WEIGHT_BRIDGE_DIR`` and must resolve to
+        the same module the trainer (sender) imports so both ends speak the
+        same wire protocol.
         """
-        # Module / file names to try, newest first (``weight_bridge`` kept as a
-        # fallback for older tt-metal checkouts).
-        mod_names = ("inference_bridge", "weight_bridge")
-        file_names = ("inference_bridge.py", "weight_bridge.py")
+        bridge_dir = os.getenv("TT_WEIGHT_BRIDGE_DIR")
+        if not bridge_dir:
+            raise ImportError(
+                "TT_WEIGHT_BRIDGE_DIR is not set: point it at the directory "
+                f"containing tt-metal's {cls._BRIDGE_FILENAME}."
+            )
 
-        for mod_name in mod_names:
-            try:
-                return importlib.import_module(mod_name)
-            except ImportError:
-                continue
+        path = Path(bridge_dir) / cls._BRIDGE_FILENAME
+        if not path.is_file():
+            raise ImportError(
+                f"tt-metal's WeightBridge not found at {path}: point "
+                f"TT_WEIGHT_BRIDGE_DIR at the directory containing {cls._BRIDGE_FILENAME}."
+            )
 
-        search_dirs: list = []
-
-        def _add_examples_root(examples_root: Path) -> None:
-            # The GRPO example (and its inference_bridge.py) currently lives
-            # under examples/grpo/utils; older checkouts kept it under
-            # grpo_speedup/utils. Search both, newest layout first.
-            search_dirs.append(examples_root / "grpo" / "utils")
-            search_dirs.append(examples_root / "grpo_speedup" / "utils")
-
-        if config_bridge_dir:
-            search_dirs.append(Path(config_bridge_dir))
-        env_dir = os.getenv("TT_WEIGHT_BRIDGE_DIR")
-        if env_dir:
-            search_dirs.append(Path(env_dir))
-        tt_metal_home = os.getenv("TT_METAL_HOME")
-        if tt_metal_home:
-            _add_examples_root(Path(tt_metal_home) / "tt-train" / "sources" / "examples")
-        # Env-independent fallback: locate the tt-metal checkout from the
-        # already-imported ttnn package ($TT_METAL/ttnn/ttnn/__init__.py).
-        with suppress(Exception):
-            ttnn_file = getattr(ttnn, "__file__", None)
-            if ttnn_file:
-                tt_metal_root = Path(ttnn_file).resolve().parents[2]
-                _add_examples_root(tt_metal_root / "tt-train" / "sources" / "examples")
-
-        seen: set = set()
-        for directory in search_dirs:
-            directory = directory.resolve()
-            if directory in seen:
-                continue
-            seen.add(directory)
-            for file_name in file_names:
-                path = directory / file_name
-                if path.is_file():
-                    spec = importlib.util.spec_from_file_location(path.stem, path)
-                    assert spec and spec.loader
-                    module = importlib.util.module_from_spec(spec)
-                    spec.loader.exec_module(module)
-                    return module
-
-        raise ImportError(
-            "Could not import tt-metal's WeightBridge (inference_bridge.py). Set "
-            "additional_config['tt']['tt_weight_bridge_dir'] (or "
-            "TT_WEIGHT_BRIDGE_DIR) to the directory that contains it."
-        )
+        spec = importlib.util.spec_from_file_location(path.stem, path)
+        assert spec and spec.loader
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
 
     def _get_weight_bridge(self, sender_rank: int):
         """Create (or reuse) the receiver-side ``WeightBridge`` (role='ttt').
@@ -283,11 +248,7 @@ class TTWorker(WorkerBase):
         if self._weight_bridge is not None and self._weight_bridge_peer == sender_rank:
             return self._weight_bridge
 
-        # Prefer the dir threaded through additional_config (survives the
-        # EngineCore's curated env, unlike TT_WEIGHT_BRIDGE_DIR).
-        override_tt_config = getattr(self.model_config, "override_tt_config", None) or {}
-        config_bridge_dir = override_tt_config.get("tt_weight_bridge_dir")
-        weight_bridge = self._import_weight_bridge(config_bridge_dir)
+        weight_bridge = self._import_weight_bridge()
 
         # The bridge requires an initialized ttnn distributed context.
         if not ttnn.distributed_context_is_initialized():
