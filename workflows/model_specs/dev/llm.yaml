@@ -226,6 +226,44 @@ templates:
       tool_call_parser_name: gemma4
 
 - weights:
+    - google/gemma-4-31B-it
+  impl: tt_transformers
+  # Dev specs omit tt_metal_commitrod gemma4 specs pin the build commits.
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 1
+      max_context: 49152  # 48 * 1024
+      default_impl: true
+      env_vars:
+        # QB2's 4 Blackhole chips are driven as a P150x4 (1,4) mesh — matches the
+        # passing vLLM nightly [BH-QB-2] Gemma4 entry. The custom p300_x2 descriptor
+        # laid the TP collectives over the wrong fabric links and corrupted decode
+        # logits; the default p150_x4 descriptor (selected from MESH_DEVICE) is correct.
+        MESH_DEVICE: "P150x4"
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+        # Size the hybrid-off all-user KV pool to fit QB2 DRAM. The container
+        # sizes the pool from Gemma4ForCausalLM.get_max_tokens_all_users, which
+        # honors this env override (value kept here, gated by device + model,
+        # rather than hardcoded in tt-metal).
+        GEMMA4_MAX_TOKENS_ALL_USERS: "49152"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 200000000
+        # On-device decode sampling is required on the TP mesh so token ids
+        # >= 65536 are reachable (host sampling only sees device 0's vocab shard).
+        sample_on_device_mode: decode_only
+      vllm_args:
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: gemma4
+  status: FUNCTIONAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+
+- weights:
     - google/gemma-4-12B-it
   impl: tt_transformers
   # Dev specs omit tt_metal_commit/vllm_commit (base ModelSpecTemplate rejects
@@ -295,6 +333,54 @@ templates:
       # tool parser ships in vllm-tt-plugin as of tenstorrent/vllm #431; activated
       # by enable-auto-tool-choice in vllm_args above.
       tool_call_parser_name: gemma4
+
+# DiffusionGemma 26B-A4B-it — discrete text-diffusion LLM (tt-metal#47452),
+# fine-tuned from google/gemma-4-26B-A4B, so the text backbone is the unmodified
+# gemma4 MoE (models/demos/gemma4); the net-new work is the block-autoregressive
+# multi-canvas generation procedure, which lives inside the tt-metal model's
+# prefill_forward/decode_forward (tt-metal#47466 — vLLM's GPU diffusion path,
+# model_states and DiffusionSampler do NOT run on the TT plugin path).
+#
+# Onboarded ahead of the serving path: tt-metal main currently carries only the
+# foundation layer (models/experimental/diffusion_gemma: torch reference, ttnn
+# sampling/self-conditioning, weight remap) and the TT plugin does not yet
+# register the DiffusionGemma arch, so runs need a tt-metal ref + vllm ref that
+# carry generator_vllm.py and the platform.py registration. Kept EXPERIMENTAL
+# until an e2e QB2 run passes.
+- weights:
+    - google/diffusiongemma-26B-A4B-it
+  impl: tt_transformers
+  # Dev specs omit tt_metal_commit/vllm_commit (base ModelSpecTemplate rejects
+  # them; only prod specs carry commits). The image is supplied at runtime via
+  # --override-docker-image.
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P300X2  # QB2 (2x P300, 4-chip TP mesh) -- the ONLY HW target of the Functional milestone
+      # Functional milestone is batch 1; batched canvas decode is tt-metal#47557.
+      max_concurrency: 1
+      # Ticket requirement: max context 256K (256 * 1024). tt-metal's
+      # test_qb2_memory_budget.py guards the 256K weights+KV budget on QB2 -- if
+      # the measured pool comes in below this, cap the KV pool with
+      # max_tokens_all_users_override rather than lowering max_context.
+      max_context: 262144  # 256 * 1024
+      default_impl: true
+      env_vars:
+        # QB2's 4 Blackhole chips are driven as a P150x4 (1,4) mesh -- matches the
+        # gemma4 QB2 entries above and the MESH_DEVICE the tt-metal
+        # diffusion_gemma device tests use (MESH_DEVICE=P150x4, -k 1x4).
+        MESH_DEVICE: "P150x4"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 200000000
+        # On-device sampling is an explicit ticket requirement, and on the TP mesh
+        # it is also what makes token ids >= 65536 reachable (host sampling only
+        # sees device 0's vocab shard). Note the diffusion sampler (Gumbel-max +
+        # entropy-budget acceptance) runs inside the model graph, so revisit this
+        # knob once generator_vllm.py lands.
+        sample_on_device_mode: decode_only
+  status: EXPERIMENTAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
 
 - weights:
     - Qwen/Qwen3-8B
