@@ -67,6 +67,7 @@ class CommandFactory:
 
     @staticmethod
     def _workflow_commands(args: argparse.Namespace) -> List[Command]:
+        _canonicalize_cli_model(args)
         metadata = _build_orchestrator_metadata(args)
         repeat = max(1, int(getattr(args, "repeat", 1) or 1))
         if repeat == 1:
@@ -140,6 +141,25 @@ def _load_model_spec_override(path: Optional[str]) -> Optional[ModelSpec]:
             e,
         )
         return None
+
+
+def _canonicalize_cli_model(args: argparse.Namespace) -> None:
+    """Rewrite bare ``--model`` to the catalog HF identity when resolvable.
+
+    Input dual-accept (basename or full repo id) stays for CLI compat; after
+    this point ``args.model`` is the identity used for eval lookup, output
+    dirs, and report metadata.
+    """
+    override = _load_model_spec_override(getattr(args, "runtime_model_spec_json", None))
+    if override is not None and override.hf_model_repo:
+        args.model = override.hf_model_repo
+        return
+    try:
+        model_spec, _, _ = get_runtime_model_spec(model=args.model, device=args.device)
+    except (ValueError, AssertionError, KeyError):
+        return
+    if model_spec.hf_model_repo:
+        args.model = model_spec.hf_model_repo
 
 
 def _build_context(

@@ -567,6 +567,37 @@ class TestOutputLeaf:
         leaf = cf._output_leaf(self._args("meta-llama/Llama-3.1-8B-Instruct"))
         assert (tmp_path / leaf).parent == tmp_path
 
+
+class TestCanonicalizeCliModel:
+    """Bare --model must become the HF identity before eval/output use."""
+
+    def test_bare_basename_becomes_hf_repo(self):
+        args = Namespace(
+            model="whisper-large-v3",
+            device="n150",
+            runtime_model_spec_json=None,
+        )
+        cf._canonicalize_cli_model(args)
+        assert args.model == "openai/whisper-large-v3"
+
+    def test_prefixed_identity_unchanged(self):
+        args = Namespace(
+            model="openai/whisper-large-v3",
+            device="n150",
+            runtime_model_spec_json=None,
+        )
+        cf._canonicalize_cli_model(args)
+        assert args.model == "openai/whisper-large-v3"
+
+    def test_true_bare_identity_unchanged(self):
+        args = Namespace(
+            model="resnet-50",
+            device="n150",
+            runtime_model_spec_json=None,
+        )
+        cf._canonicalize_cli_model(args)
+        assert args.model == "resnet-50"
+
     @pytest.mark.parametrize(
         "model", ["Qwen/Qwen3-32B", "microsoft/phi-1_5", "resnet-50"]
     )

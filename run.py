@@ -84,9 +84,9 @@ def _placeholder_llm(device):
     if device:
         want = device.lower()
         match = next((s for s in llms if s.device_type.name.lower() == want), None)
-        return (match.model_name, device) if match else None
+        return (match.hf_model_repo, device) if match else None
     spec = llms[0]
-    return spec.model_name, spec.device_type.name.lower()
+    return spec.hf_model_repo, spec.device_type.name.lower()
 
 
 def parse_arguments():
@@ -953,6 +953,10 @@ def resolve_runtime(args):
             f"{args.runtime_model_spec_json}"
         )
         model_spec = ModelSpec.from_json(args.runtime_model_spec_json)
+        # Canonicalize bare --model to the HF identity so RuntimeConfig /
+        # run_command / report metadata all carry the same spelling.
+        if model_spec.hf_model_repo:
+            args.model = model_spec.hf_model_repo
         runtime_config = RuntimeConfig.from_args(args)
     else:
         model_spec, resolved_impl, resolved_engine = get_runtime_model_spec(
@@ -961,6 +965,8 @@ def resolve_runtime(args):
             engine=args.engine,
             impl=args.impl,
         )
+        if model_spec.hf_model_repo:
+            args.model = model_spec.hf_model_repo
         runtime_config = RuntimeConfig.from_args(
             args, impl=resolved_impl, engine=resolved_engine
         )

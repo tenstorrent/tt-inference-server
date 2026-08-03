@@ -650,5 +650,40 @@ def test_release_without_the_opt_in_forwards_nothing_agentic_traces(
     assert not any(a.startswith("--agentic-traces") for a in argv)
 
 
+def test_argv_with_canonical_model_rewrites_bare_flag():
+    spec = _spec(
+        ModelType.AUDIO,
+        name="whisper-large-v3",
+        hf_model_repo="openai/whisper-large-v3",
+    )
+    argv = [
+        "run.py",
+        "--model",
+        "whisper-large-v3",
+        "--workflow",
+        "release",
+        "--device",
+        "p150",
+    ]
+    out = workflow_dispatch._argv_with_canonical_model(argv, spec)
+    assert out[out.index("--model") + 1] == "openai/whisper-large-v3"
+
+
+def test_engine_env_records_canonical_model_in_run_command(monkeypatch):
+    spec = _spec(
+        ModelType.AUDIO,
+        name="whisper-large-v3",
+        hf_model_repo="openai/whisper-large-v3",
+    )
+    monkeypatch.setattr(
+        workflow_dispatch.sys,
+        "argv",
+        ["run.py", "--model", "whisper-large-v3", "--workflow", "release"],
+    )
+    env = workflow_dispatch._engine_env(spec)
+    assert "--model openai/whisper-large-v3" in env["TT_RUN_COMMAND"]
+    assert "--model whisper-large-v3 " not in env["TT_RUN_COMMAND"] + " "
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))
