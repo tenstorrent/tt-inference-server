@@ -11,7 +11,8 @@
 #      worker runs on each --prefill-host and each --decode-host. Each worker's
 #      logical tag is used as its --name, --host, and --peer key. Prefill tags
 #      are used verbatim; decode hostnames are converted to tt-blaze's stable
-#      host-<crc32> table tags.
+#      host-<crc32> table tags (opt out for testing with
+#      --non-hashed-decode-tags, which passes decode tags through verbatim).
 #   3. Workers find each other through the discovery service (register-then-
 #      resolve) — a prefill resolves each decode tag to its routable host via the
 #      metadata service and dials its control channel. No MPI/collectives.
@@ -87,8 +88,12 @@ HANDOFF_SENDER_BIN="${HANDOFF_SENDER_BIN:-}"
 # Optional table tag inputs (fabric_node_host), aligned with the host CSVs.
 # Prefill values are used verbatim. Decode values are hostnames hashed to the
 # table's host-<crc32> convention; empty => hash the corresponding decode host.
+# NON_HASHED_DECODE_TAGS is the testing-only escape hatch: when set, these tags
+# are used verbatim (no crc32) and take the place of DECODE_TAGS. Mutually
+# exclusive with DECODE_TAGS.
 PREFILL_TAGS="${PREFILL_TAGS:-}"
 DECODE_TAGS="${DECODE_TAGS:-}"
+NON_HASHED_DECODE_TAGS="${NON_HASHED_DECODE_TAGS:-}"
 # Optional alternate config file (else DEFAULT_CONFIG next to this script).
 CONFIG_FILE="${CONFIG_FILE:-}"
 # HTTP health port every worker exposes (/healthz /readyz /metrics). One worker
@@ -164,6 +169,10 @@ fabric_node_host, not on the CLI):
                            (default prefill-<i>)
   --decode-tags CSV        owning hostnames per decode host, converted to
                            host-<crc32> tags (default: --decode-hosts values)
+  --non-hashed-decode-tags CSV
+                           TESTING ONLY: table host tags per decode host, used
+                           verbatim (skip host-<crc32> hashing). Mutually
+                           exclusive with --decode-tags
 
 Options:
   --image IMAGE            migration-worker Docker image (default ${WORKER_IMAGE})
@@ -236,6 +245,7 @@ parseArgs() {
       --decode-device-map) DECODE_DEVICE_MAP="$2"; shift 2 ;;
       --prefill-tags) PREFILL_TAGS="$2"; shift 2 ;;
       --decode-tags) DECODE_TAGS="$2"; shift 2 ;;
+      --non-hashed-decode-tags) NON_HASHED_DECODE_TAGS="$2"; shift 2 ;;
       --handoff-sender) HANDOFF_SENDER_BIN="$2"; shift 2 ;;
       --engine-handoff-port) ENGINE_HANDOFF_PORT="$2"; shift 2 ;;
       --health-port) HEALTH_PORT="$2"; shift 2 ;;
@@ -284,6 +294,9 @@ validateArgs() {
   [[ -z "${HANDOFF_SENDER_BIN}" ]] && HANDOFF_SENDER_BIN="${BUILD_DIR}/engine_handoff_sender"
   [[ -n "${PREFILL_TABLE}" ]] || die "--prefill-table (or PREFILL_TABLE in config) is required"
   [[ -n "${DECODE_TABLE}" ]] || die "--decode-table (or DECODE_TABLE in config) is required"
+  if [[ -n "${DECODE_TAGS}" && -n "${NON_HASHED_DECODE_TAGS}" ]]; then
+    die "--decode-tags and --non-hashed-decode-tags are mutually exclusive"
+  fi
   [[ "${PREFILL_TABLE}" == /* ]] || die "--prefill-table must be an absolute remote path"
   [[ "${DECODE_TABLE}" == /* ]] || die "--decode-table must be an absolute remote path"
   PREFILL_DEVICE_MAP="${PREFILL_DEVICE_MAP:-${DEVICE_MAP}}"
@@ -311,6 +324,9 @@ validateArgs() {
 # CSV -> count of non-empty fields.
 countHosts() { awk -F',' '{n=0; for(i=1;i<=NF;i++) if($i!="") n++; print n}' <<<"$1"; }
 
+# Hash a decode host to tt-blaze's stable host-<crc32> table tag. Kept in sync
+# with the make_test_table / decode-table producer so deploy tags match the
+# fabric_node_host values baked into the .pb.
 decodeTagForHost() {
   python3 - "$1" <<'PY'
 import sys
@@ -589,20 +605,31 @@ addWorkerSlot() {
 }
 
 # Map worker i of each role onto host i of that role's CSV (one worker per host)
-# and resolve its table tag. Prefill tags remain verbatim. Each decode tag input
-# is the owning hostname and is converted to tt-blaze's host-<crc32> table tag.
+# and resolve its table tag. Prefill tags remain verbatim. Decode tags are
+# either:
+#   * hashed: each decode-tag input is the owning hostname and is converted to
+#     tt-blaze's host-<crc32> table tag (default; matches the fabric_node_host
+#     values baked into make_test_table's .pb output);
+#   * verbatim: --non-hashed-decode-tags supplies the fabric_node_host directly,
+#     bypassing the crc32 (testing-only escape hatch for pre-hashed tables).
 initWorkerSlots() {
-  local -a prefill_hosts decode_hosts prefill_tags decode_tags resolved_decode_tags
+  local -a prefill_hosts decode_hosts prefill_tags decode_tags
+  local -a non_hashed_decode_tags resolved_decode_tags
   IFS=',' read -ra prefill_hosts <<<"${PREFILL_HOSTS}"
   IFS=',' read -ra decode_hosts <<<"${DECODE_HOSTS}"
   IFS=',' read -ra prefill_tags <<<"${PREFILL_TAGS}"
   IFS=',' read -ra decode_tags <<<"${DECODE_TAGS}"
+  IFS=',' read -ra non_hashed_decode_tags <<<"${NON_HASHED_DECODE_TAGS}"
   local i tag decodeHost
   # Decodes first so DECODE_TAG_LIST is complete before any prefill reads it.
   for (( i = 0; i < NUM_DECODE; i++ )); do
-    decodeHost="${decode_tags[$i]:-${decode_hosts[$i]}}"
-    tag="$(decodeTagForHost "${decodeHost}")" || \
-      die "failed to hash decode tag hostname: ${decodeHost}"
+    if [[ -n "${NON_HASHED_DECODE_TAGS}" ]]; then
+      tag="${non_hashed_decode_tags[$i]:-${decode_hosts[$i]}}"
+    else
+      decodeHost="${decode_tags[$i]:-${decode_hosts[$i]}}"
+      tag="$(decodeTagForHost "${decodeHost}")" || \
+        die "failed to hash decode tag hostname: ${decodeHost}"
+    fi
     resolved_decode_tags+=("${tag}")
     DECODE_TAG_LIST="${DECODE_TAG_LIST:+${DECODE_TAG_LIST},}${tag}"
   done

@@ -10,6 +10,9 @@ from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 
+from reference_config.agentic_traces.agentic_traces_config import (
+    AGENTIC_TRACES_CONFIGS,
+)
 from workflows.run_local_server import vllm_tt_plugin_source_path
 from workflows.runtime_config import RuntimeConfig
 from workflows.utils import check_path_permissions_for_uid
@@ -654,6 +657,82 @@ class TestLocalServerValidation:
             assert mock_validate_run_command.call_count == 2
 
         mock_runlocal_run_command.assert_called_once()
+
+
+class TestAgenticTracesRegistration:
+    """A model with no AGENTIC_TRACES_CONFIGS entry must be refused up front.
+
+    The agentic-traces venv setup clones and installs InferenceX, which takes
+    minutes, and a release child runs after the evals and benchmarks. Both would
+    be wasted before the missing config surfaced, so validation has to fail here
+    instead.
+    """
+
+    UNREGISTERED_ID = "id_tt-transformers_Llama-3.1-8B-Instruct_n150"
+
+    def _spec(self, model_id, model_name="Llama-3.1-8B-Instruct"):
+        spec = MagicMock()
+        spec.model_id = model_id
+        spec.model_name = model_name
+        spec.inference_engine = "vLLM"
+        return spec
+
+    def _runtime_config(self, workflow, **overrides):
+        config = RuntimeConfig(
+            model="Llama-3.1-8B-Instruct",
+            workflow=workflow,
+            device="n150",
+            **overrides,
+        )
+        return config
+
+    def _validate(self, spec, runtime_config):
+        with patch.dict("workflows.validate_setup.MODEL_SPECS", {spec.model_id: spec}):
+            validate_runtime_args(spec, runtime_config)
+
+    def test_unregistered_model_is_rejected(self):
+        spec = self._spec(self.UNREGISTERED_ID)
+        with pytest.raises(AssertionError, match="no AGENTIC_TRACES_CONFIGS entry"):
+            self._validate(spec, self._runtime_config("agentic_traces"))
+
+    def test_the_error_names_the_model_and_where_to_register_it(self):
+        """The message is the only guidance a new model's onboarder gets."""
+        spec = self._spec(self.UNREGISTERED_ID)
+        with pytest.raises(AssertionError) as exc:
+            self._validate(spec, self._runtime_config("agentic_traces"))
+        message = str(exc.value)
+        assert "Llama-3.1-8B-Instruct" in message
+        assert self.UNREGISTERED_ID in message
+        assert "reference_config/agentic_traces/agentic_traces_config.py" in message
+        # Registering without pinning a ref makes results incomparable.
+        assert "git ref" in message
+
+    def test_registered_model_passes(self):
+        """Guards against the assertion firing on an onboarded model."""
+        registered_id = next(iter(AGENTIC_TRACES_CONFIGS))
+        spec = self._spec(registered_id, model_name="Kimi-K2.7-Code")
+        config = RuntimeConfig(
+            model="Kimi-K2.7-Code", workflow="agentic_traces", device="super_cluster"
+        )
+        self._validate(spec, config)
+
+    def test_release_opted_into_agentic_traces_is_also_gated(self, monkeypatch):
+        """The release child runs the same sweep, so it needs the same entry."""
+        spec = self._spec(self.UNREGISTERED_ID)
+        config = self._runtime_config("release", agentic_traces=True)
+        with pytest.raises(AssertionError, match="no AGENTIC_TRACES_CONFIGS entry"):
+            self._validate(spec, config)
+
+    def test_plain_release_is_not_gated(self, monkeypatch):
+        """Without the opt-in there is no agentic-traces child to protect."""
+        spec = self._spec(self.UNREGISTERED_ID)
+        monkeypatch.setattr(
+            "workflows.validate_setup.EVAL_CONFIGS", {spec.model_name: object()}
+        )
+        monkeypatch.setattr(
+            "workflows.validate_setup.can_dispatch_to_engine", lambda *a, **k: True
+        )
+        self._validate(spec, self._runtime_config("release"))
 
 
 class TestCheckImageVersionSupported:
