@@ -20,6 +20,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from llm_module.agentic_traces import estimated_run_seconds
 from llm_module.drivers.aiperf_agentic_traces import AgenticTracesDriverResult
 from test_module.llm_tests import agentic_traces_tests
 from test_module.llm_tests.agentic_traces_tests import run_agentic_traces
@@ -299,6 +300,29 @@ class TestTraceSourceDispatch:
         _run, _server, context = swo_driver.run.call_args[0]
         # SwarmOne CI timeout floor is 1h plus headroom.
         assert context.per_run_timeout_s >= 3600
+
+    def test_each_run_gets_its_own_timeout(self, tmp_path):
+        """A sweep-wide maximum would hand SwarmOne's multi-hour allowance to
+        the InferenceX run, leaving a hung one parked on the cluster for it."""
+        patcher, aiperf_driver, swo_driver = self._both_drivers()
+        with patcher:
+            run_agentic_traces(
+                _ctx(tmp_path=tmp_path),
+                mode="ci",
+                trace_sources="inferencex_agentx,swarmone",
+                inter_run_sleep_s=0,
+            )
+
+        aiperf_run, _, aiperf_context = aiperf_driver.run.call_args[0]
+        swo_run, _, swo_context = swo_driver.run.call_args[0]
+        headroom = agentic_traces_tests._TIMEOUT_HEADROOM_SECONDS
+        assert aiperf_context.per_run_timeout_s == (
+            estimated_run_seconds(aiperf_run) + headroom
+        )
+        assert swo_context.per_run_timeout_s == (
+            estimated_run_seconds(swo_run) + headroom
+        )
+        assert aiperf_context.per_run_timeout_s < swo_context.per_run_timeout_s
 
     def test_artifacts_land_under_the_output_path(self, tmp_path):
         outcome = AgenticTracesDriverResult(
