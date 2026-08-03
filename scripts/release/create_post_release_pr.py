@@ -89,10 +89,6 @@ def iter_implementations(model_entry: dict):
         yield model_entry
 
 
-def model_name_from_weight(weight: str) -> str:
-    return Path(weight).name
-
-
 def collect_release_combos(
     ci_config: dict,
 ) -> list[tuple[str, InferenceEngine, DeviceTypes]]:
@@ -174,7 +170,7 @@ def _block_devices(block: dict) -> set:
 
 
 def _block_models(block: dict) -> set:
-    return {model_name_from_weight(w) for w in block.get("weights", []) or []}
+    return set(block.get("weights", []) or [])
 
 
 def find_block(blocks, model_name, engine, device) -> dict | None:
