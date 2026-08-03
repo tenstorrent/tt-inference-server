@@ -47,6 +47,7 @@ class BlazeTtsRunner : public IRunner {
     uint32_t slotId = tts_scheduler::INVALID_SLOT;
     uint32_t task_id = 0;
     bool completionPending = false;
+    bool audioLastReceived = false;
   };
 
   void run() override;

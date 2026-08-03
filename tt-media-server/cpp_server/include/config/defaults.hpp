@@ -173,7 +173,6 @@ constexpr unsigned MOCK_DECODE_TOKEN_ID = 12345;
 constexpr size_t TTS_MAX_BATCH_SIZE = 1;
 constexpr size_t TTS_AUDIO_QUEUE_CAPACITY = 1024;
 constexpr uint32_t TTS_CHUNK_TOKENS = 30;
-constexpr uint32_t TTS_FIRST_CHUNK_TOKENS = 30;
 constexpr uint32_t TTS_VOICE_SAMPLE_RATE_HZ = 16000;
 constexpr uint16_t TTS_VOICE_CHANNELS = 1;
 constexpr uint32_t TTS_AUDIO_SAMPLE_RATE_HZ = 48000;

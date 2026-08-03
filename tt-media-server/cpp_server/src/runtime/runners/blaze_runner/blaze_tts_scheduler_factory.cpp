@@ -119,8 +119,13 @@ class MockTtsScheduler final : public tts_scheduler::ITtsScheduler {
     return true;
   }
 
-  bool tryPopToken(tts_scheduler::TokenOutput& /*output*/) override {
-    return false;
+  bool tryPopToken(tts_scheduler::TokenOutput& output) override {
+    if (tokens.empty()) {
+      return false;
+    }
+    output = std::move(tokens.front());
+    tokens.erase(tokens.begin());
+    return true;
   }
 
   bool tryPopAudio(tts_scheduler::AudioOutput& output) override {
@@ -151,14 +156,6 @@ class MockTtsScheduler final : public tts_scheduler::ITtsScheduler {
     return true;
   }
 
-  bool isComplete(uint32_t slotId) const override {
-    return isValidSlot(slotId) && !slotBusy[slotId];
-  }
-
-  uint32_t getInFlightCount(uint32_t slotId) const override {
-    return isValidSlot(slotId) && slotBusy[slotId] ? 1 : 0;
-  }
-
  private:
   bool isValidSlot(uint32_t slotId) const { return slotId < slotBusy.size(); }
 
@@ -182,6 +179,14 @@ class MockTtsScheduler final : public tts_scheduler::ITtsScheduler {
   void enqueueAudio(const tts_scheduler::TtsSubmit& request) {
     constexpr size_t kSamplesPerChunk = 960;  // 20 ms at 48 kHz.
     constexpr size_t kChunkCount = 3;
+
+    tts_scheduler::TokenOutput terminalToken;
+    terminalToken.requestId = request.requestId;
+    terminalToken.taskId = request.taskId;
+    terminalToken.slotId = request.slotId;
+    terminalToken.final = true;
+    tokens.push_back(std::move(terminalToken));
+
     for (size_t chunkIndex = 0; chunkIndex < kChunkCount; ++chunkIndex) {
       tts_scheduler::AudioOutput output;
       output.requestId = request.requestId;
@@ -190,7 +195,7 @@ class MockTtsScheduler final : public tts_scheduler::ITtsScheduler {
       output.chunkIndex = static_cast<uint32_t>(chunkIndex);
       output.sampleRateHz = audioSampleRateHz;
       output.channels = audioChannels;
-      output.final = chunkIndex == kChunkCount - 1;
+      output.last = chunkIndex == kChunkCount - 1;
       output.finishReason = tt::domain::tts::TtsFinishReason::Completed;
       output.samplesBf16.reserve(kSamplesPerChunk);
       for (size_t sampleIndex = 0; sampleIndex < kSamplesPerChunk;
@@ -206,6 +211,7 @@ class MockTtsScheduler final : public tts_scheduler::ITtsScheduler {
   uint16_t audioChannels = 0;
   std::vector<bool> slotBusy;
   std::vector<tts_scheduler::SchedulerResponse> responses;
+  std::vector<tts_scheduler::TokenOutput> tokens;
   std::vector<tts_scheduler::AudioOutput> audio;
   std::vector<tts_scheduler::VoiceEncodeResult> voiceResults;
 };
@@ -270,6 +276,14 @@ tts_scheduler::VoiceEncodeStatus fromEngineVoiceStatus(
   return tts_scheduler::VoiceEncodeStatus::Error;
 }
 
+template <typename AudioOut>
+bool isLastAudioOutput(const AudioOut& audio) {
+  if constexpr (requires { audio.last; }) {
+    return audio.last;
+  }
+  return false;
+}
+
 engine_tts::TtsSchedulerParams makeEngineTtsParams(
     const tt::config::TtsConfig& config) {
   constexpr uint32_t CODEBOOK_SIZE = 65536;
@@ -288,7 +302,7 @@ engine_tts::TtsSchedulerParams makeEngineTtsParams(
   engine_tts::TtsSchedulerParams params;
   params.max_users = static_cast<uint32_t>(config.maxUsers);
   params.chunk_tokens = config.chunkTokens;
-  params.first_chunk_tokens = config.firstChunkTokens;
+  params.first_chunk_tokens = config.chunkTokens;
   params.max_batch_size = static_cast<uint32_t>(config.maxBatchSize);
   params.speech_end_token = tokenIdFor(vocab, "<|speech_end|>");
   params.speech_token_base = tokenIdFor(vocab, "<|s_0|>");
@@ -381,12 +395,13 @@ class RealTtsScheduler final : public tts_scheduler::ITtsScheduler {
     output.samplesBf16 = std::move(audio.samples_bf16);
     output.sampleRateHz = audioSampleRateHz;
     output.channels = audioChannels;
+    output.last = isLastAudioOutput(audio);
     return true;
   }
 
   bool enqueueVoiceEncode(tts_scheduler::VoiceEncodeRequest request) override {
     engine_tts::VoiceEncodeRequest engineRequest;
-    engineRequest.requestId = request.requestId;
+    engineRequest.requestId = static_cast<uint64_t>(request.requestId);
     engineRequest.wavPcm = std::move(request.wavPcm);
     return impl->enqueueVoiceEncode(std::move(engineRequest));
   }
@@ -397,18 +412,10 @@ class RealTtsScheduler final : public tts_scheduler::ITtsScheduler {
     if (!impl->tryPopVoiceEncodeResult(engineResult)) {
       return false;
     }
-    result.requestId = engineResult.requestId;
+    result.requestId = static_cast<uint32_t>(engineResult.requestId);
     result.speechIds = std::move(engineResult.speechIds);
     result.status = fromEngineVoiceStatus(engineResult.status);
     return true;
-  }
-
-  bool isComplete(uint32_t slotId) const override {
-    return impl->get_user_state(slotId) == engine_tts::UserState::COMPLETE;
-  }
-
-  uint32_t getInFlightCount(uint32_t slotId) const override {
-    return impl->get_in_flight_count(slotId);
   }
 
  private:

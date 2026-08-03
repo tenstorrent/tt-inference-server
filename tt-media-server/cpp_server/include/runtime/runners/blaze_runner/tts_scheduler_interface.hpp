@@ -67,7 +67,7 @@ struct AudioOutput {
   std::vector<uint16_t> samplesBf16;
   uint32_t sampleRateHz = 0;
   uint16_t channels = 0;
-  bool final = false;
+  bool last = false;
   domain::tts::TtsFinishReason finishReason =
       domain::tts::TtsFinishReason::Completed;
   std::string error;
@@ -102,8 +102,6 @@ class ITtsScheduler {
   virtual bool tryPopAudio(AudioOutput& output) = 0;
   virtual bool enqueueVoiceEncode(VoiceEncodeRequest request) = 0;
   virtual bool tryPopVoiceEncodeResult(VoiceEncodeResult& result) = 0;
-  virtual bool isComplete(uint32_t slotId) const = 0;
-  virtual uint32_t getInFlightCount(uint32_t slotId) const = 0;
 };
 
 }  // namespace tt::runners::blaze::tts_scheduler

@@ -329,6 +329,7 @@ void BlazeTtsRunner::handleAllocateAck(
   slot->slotId = response.slotId;
   slot->task_id = task.task_id;
   slot->completionPending = false;
+  slot->audioLastReceived = false;
 
   sched::TtsSubmit submit;
   submit.requestId = task.task_id;
@@ -381,7 +382,8 @@ void BlazeTtsRunner::handleTokenOutput(const sched::TokenOutput& output) {
       output.taskId, output.slotId, output.tokenId, output.final);
   if (output.final) {
     if (auto* slot = findSlot(output.slotId)) {
-      slot->completionPending = scheduler->isComplete(output.slotId);
+      slot->completionPending = true;
+      maybeFinalizeCompletedSlot(output.slotId);
     }
   }
 }
@@ -391,7 +393,8 @@ void BlazeTtsRunner::handleAudioOutput(const sched::AudioOutput& output) {
   if (shouldDropOutput(output.slotId, "audio")) {
     return;
   }
-  if (!output.final) {
+
+  if (!output.samplesBf16.empty()) {
     ipc::tts::TtsAudioChunkMessage message;
     message.task_id = output.taskId;
     message.chunkIndex = output.chunkIndex;
@@ -403,11 +406,14 @@ void BlazeTtsRunner::handleAudioOutput(const sched::AudioOutput& output) {
                    output.taskId);
       requestStop(output.slotId);
     }
-    return;
   }
 
-  sendFinish(output.taskId, output.finishReason, output.error);
-  requestEvict(output.slotId);
+  if (output.last) {
+    if (auto* slot = findSlot(output.slotId)) {
+      slot->audioLastReceived = true;
+      maybeFinalizeCompletedSlot(output.slotId);
+    }
+  }
 }
 
 void BlazeTtsRunner::sendFinish(uint32_t taskId,
@@ -419,15 +425,13 @@ void BlazeTtsRunner::sendFinish(uint32_t taskId,
 
 void BlazeTtsRunner::maybeFinalizeCompletedSlot(uint32_t slotId) {
   auto* slot = findSlot(slotId);
-  if (!slot || !slot->completionPending || slot->state != SlotState::RUNNING) {
-    return;
-  }
-  if (!scheduler->isComplete(slotId) ||
-      scheduler->getInFlightCount(slotId) != 0) {
+  if (!slot || !slot->completionPending || !slot->audioLastReceived ||
+      slot->state != SlotState::RUNNING) {
     return;
   }
 
   slot->completionPending = false;
+  slot->audioLastReceived = false;
   sendFinish(slot->task_id, domain::tts::TtsFinishReason::Completed);
   requestEvict(slotId);
 }
