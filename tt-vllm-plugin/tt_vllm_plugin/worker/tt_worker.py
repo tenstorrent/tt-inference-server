@@ -324,10 +324,6 @@ def get_mesh_grid(dp_rank=0):
         "N150x4": (1, 4),
         "P150x4": (1, 4),
         "T3K": (1, 8),
-        # P150x8 must be 1x8: tt-transformers uses cluster_shape[0] as the K/dim
-        # axis (must be 1 for single-tray TP=8) and cluster_shape[1] as the
-        # TP/heads axis. A (2,4) shape splits the wqkv K axis and crashes in
-        # TensorSpec; the physical 2x4 tray is opened as a logical 1x8 line.
         "P150x8": (1, 8),
         "TG": (8, 4),
     }

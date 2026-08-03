@@ -267,14 +267,9 @@ class TTWorker(WorkerBase):
                     return module
 
         raise ImportError(
-            "Could not import tt-metal's WeightBridge. Set TT_WEIGHT_BRIDGE_DIR "
-            "to the directory containing inference_bridge.py "
-            "(tt-train/sources/examples/grpo/utils; older checkouts kept it under "
-            "grpo_speedup/utils or named it weight_bridge.py), pass it via "
-            "additional_config['tt']['tt_weight_bridge_dir'], or ensure "
-            "TT_METAL_HOME points at a tt-metal checkout that contains it. This "
-            "MUST be the same module the trainer (sender) imports so both ends "
-            "speak the same wire protocol."
+            "Could not import tt-metal's WeightBridge (inference_bridge.py). Set "
+            "additional_config['tt']['tt_weight_bridge_dir'] (or "
+            "TT_WEIGHT_BRIDGE_DIR) to the directory that contains it."
         )
 
     def _get_weight_bridge(self, sender_rank: int):

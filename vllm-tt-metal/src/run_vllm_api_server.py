@@ -840,11 +840,10 @@ def main():
         disable_trace_capture=args.disable_trace_capture,
     )
 
-    # The internal weight-update / control-plane routes (/v1/internal/weights/*,
-    # /v1/internal/shutdown) exist ONLY for the co-located RL trainer and must
-    # never mount on a normal (non-colocated) inference server -- they would
-    # expose a self-shutdown endpoint and a device-socket rendezvous that hangs.
-    # Gate the install strictly on the co-located signal.
+    # The internal weight-update routes (/v1/internal/weights/*) exist ONLY for
+    # the co-located RL trainer and must never mount on a normal (non-colocated)
+    # inference server -- they would expose a device-socket rendezvous that
+    # hangs. Gate the install strictly on the co-located signal.
     if os.getenv("TT_COLOCATED_INFERENCE") == "1":
         try:
             from weight_update_api import install as install_weight_update_routes

@@ -29,9 +29,6 @@ from __future__ import annotations
 
 import logging
 import os
-import signal
-import threading
-import time
 from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Request
@@ -40,10 +37,6 @@ from pydantic import BaseModel, Field
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1/internal/weights", tags=["tt-weight-update"])
-
-# Separate router for non-weights control-plane endpoints (e.g. shutdown) that
-# live directly under /v1/internal rather than /v1/internal/weights.
-control_router = APIRouter(prefix="/v1/internal", tags=["tt-control"])
 
 
 class WeightUpdateRequest(BaseModel):
@@ -193,34 +186,6 @@ async def reset_prefix_cache(request: Request):
     return {"status": "ok"}
 
 
-class ShutdownResponse(BaseModel):
-    status: str
-
-
-@control_router.post("/shutdown", response_model=ShutdownResponse)
-async def shutdown(request: Request):
-    """Gracefully stop this (co-located) vLLM server.
-
-    The co-located trainer shares this mpirun world and calls this after its
-    final weight push; without a self-exit the launcher would hang until
-    walltime. SIGTERM is sent from a short-delay background thread (after the
-    response flushes) so vLLM's signal handler tears down cleanly.
-    """
-    delay_s = 0.5
-
-    def _terminate() -> None:
-        time.sleep(delay_s)
-        logger.info(
-            "Shutdown requested via /v1/internal/shutdown; sending SIGTERM to self (pid=%s)",
-            os.getpid(),
-        )
-        os.kill(os.getpid(), signal.SIGTERM)
-
-    threading.Thread(target=_terminate, daemon=True).start()
-    logger.info("Shutdown requested; server will stop in %.1fs", delay_s)
-    return ShutdownResponse(status="stopping")
-
-
 def install() -> None:
     """Mount the weight-update router on the vLLM OpenAI API server FastAPI app.
 
@@ -236,7 +201,7 @@ def install() -> None:
     # Defense-in-depth: these routes are strictly for the co-located RL trainer.
     # Even a stray/future call to install() must be inert off the RL path so the
     # process-wide fastapi.FastAPI.__init__ monkeypatch never happens (and the
-    # internal weight-update / shutdown routes never mount) on a normal server.
+    # internal weight-update routes never mount) on a normal server.
     if os.getenv("TT_COLOCATED_INFERENCE") != "1":
         return
 
@@ -245,22 +210,20 @@ def install() -> None:
     if getattr(fastapi.FastAPI.__init__, "_tt_weight_update_patched", False):
         return
 
-    original_init = fastapi.FastAPI.__init__
-
-    def __init___with_weight_update(self, *args, **kwargs):
-        original_init(self, *args, **kwargs)
+    # Capture the unpatched __init__ as a default arg so the wrapper can call it
+    # without an enclosing-scope reference.
+    def __init___with_weight_update(
+        self, *args, _original_init=fastapi.FastAPI.__init__, **kwargs
+    ):
+        _original_init(self, *args, **kwargs)
         # Guard against double-mounting (e.g. nested/sub-apps or a re-entrant
         # construction): only the first init per app installs the router.
         if getattr(self.state, "_tt_weight_update_mounted", False):
             return
         self.include_router(router)
-        self.include_router(control_router)
         self.state._tt_weight_update_mounted = True
         self.state.tt_weights_version = 0
-        logger.info(
-            "Mounted TT weight-update routes under /v1/internal/weights "
-            "and control routes under /v1/internal"
-        )
+        logger.info("Mounted TT weight-update routes under /v1/internal/weights")
 
     __init___with_weight_update._tt_weight_update_patched = True  # type: ignore[attr-defined]
     fastapi.FastAPI.__init__ = __init___with_weight_update
