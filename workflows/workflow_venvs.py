@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Optional, Tuple
@@ -180,15 +181,28 @@ def setup_evals_agentic(
         return False
 
     harbor_dir = venv_config.venv_path / "harbor"
-    harbor_tag = "v0.6.5"
+    harbor_repo = "https://github.com/ipastalTT/harbor.git"
+    harbor_commit = "5d4b686e434b39b582ee06bd0c851a4ed65912c3"
     if not harbor_dir.exists():
+        harbor_dir_arg = shlex.quote(str(harbor_dir))
         clone_return_code = run_command(
-            "git clone --depth 1 --branch "
-            f"{harbor_tag} https://github.com/harbor-framework/harbor.git {harbor_dir}",
+            f"git clone --filter=blob:none --no-checkout "
+            f"{shlex.quote(harbor_repo)} {harbor_dir_arg}",
             logger=logger,
         )
         if clone_return_code != 0:
             return False
+
+    harbor_dir_arg = shlex.quote(str(harbor_dir))
+    harbor_repo_arg = shlex.quote(harbor_repo)
+    checkout_return_code = run_command(
+        f"git -C {harbor_dir_arg} remote set-url origin {harbor_repo_arg} "
+        f"&& git -C {harbor_dir_arg} fetch --depth 1 origin {harbor_commit} "
+        f"&& git -C {harbor_dir_arg} checkout --detach FETCH_HEAD",
+        logger=logger,
+    )
+    if checkout_return_code != 0:
+        return False
 
     return_code = run_command(
         f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} "
