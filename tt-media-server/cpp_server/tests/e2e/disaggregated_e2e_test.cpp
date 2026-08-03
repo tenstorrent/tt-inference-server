@@ -386,8 +386,9 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
       "[Test] Sending large prompt to decode server (expecting forward to "
       "prefill)");
 
-  auto responseFuture = asyncRequest(
-      chatRequest().user(largePrompt).maxTokens(1).stream(), /*timeoutMs=*/60000);
+  auto responseFuture =
+      asyncRequest(chatRequest().user(largePrompt).maxTokens(1).stream(),
+                   /*timeoutMs=*/60000);
 
   // The prefill server should receive a memory ALLOCATE (decode forwarded the
   // request).
@@ -426,7 +427,8 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
       "tokenIds.size()={}, isContinuation={}",
       numPromptTokens, seq->getTokenIds().size(), seq->isContinuation());
 
-  // The prompt should be ~1100 tokens (approx generator + Dynamo chat template).
+  // The prompt should be ~1100 tokens (approx generator + Dynamo chat
+  // template).
   EXPECT_GE(numPromptTokens, 1096u)
       << "Prefill should have received the large prompt (~1100 tokens)";
   EXPECT_LE(numPromptTokens, 1200u)
@@ -464,7 +466,7 @@ TEST_F(DisaggregatedE2ETest, RoutingDecision_LargePromptGoesToPrefill) {
           .user(largePrompt)
           .assistant("Here is my response.")  // Simulated assistant response
                                               // from turn 1
-          .user(followUpMessage)  // New user message (small delta)
+          .user(followUpMessage)              // New user message (small delta)
           .maxTokens(1)
           .stream(),
       /*timeoutMs=*/60000);

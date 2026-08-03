@@ -16,6 +16,7 @@
 #pragma once
 
 #include <arpa/inet.h>
+#include <gtest/gtest.h>
 #include <json/json.h>
 #include <netdb.h>
 #include <sys/socket.h>
@@ -36,8 +37,6 @@
 #include <thread>
 #include <typeinfo>
 #include <vector>
-
-#include <gtest/gtest.h>
 
 #include "chat_request.hpp"
 #include "dynamo/etcd_client.hpp"
@@ -371,8 +370,7 @@ inline std::string sendHttpRequest(const std::string& host, uint16_t port,
 }
 
 inline std::string sendHttpGet(const std::string& host, uint16_t port,
-                               const std::string& path,
-                               int timeoutMs = 10000) {
+                               const std::string& path, int timeoutMs = 10000) {
   int sock = connectTcp(host, port);
 
   std::ostringstream oss;
@@ -550,8 +548,8 @@ inline bool waitForModelDiscovery(const DynamoConfig& cfg,
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(250));
   }
-  std::cerr << "[dynamo] timed out waiting for model " << cfg.model
-            << " at " << cfg.host << ":" << cfg.port << std::endl;
+  std::cerr << "[dynamo] timed out waiting for model " << cfg.model << " at "
+            << cfg.host << ":" << cfg.port << std::endl;
   return false;
 }
 

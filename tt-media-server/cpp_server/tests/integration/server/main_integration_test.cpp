@@ -601,9 +601,8 @@ TEST_F(MainIntegrationTest, NonStreamingRequest_ReturnsBufferedJson) {
   EXPECT_EQ(body["choices"][0]["message"]["role"].asString(), "assistant");
   // Dynamo may surface the mock token as content or reasoning_content.
   const auto& message = body["choices"][0]["message"];
-  const std::string content =
-      message.get("content", "").asString() +
-      message.get("reasoning_content", "").asString();
+  const std::string content = message.get("content", "").asString() +
+                              message.get("reasoning_content", "").asString();
   EXPECT_FALSE(content.empty());
 }
 
