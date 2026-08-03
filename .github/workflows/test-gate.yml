@@ -628,9 +628,8 @@ jobs:
       CI_CCACHE: "1"
       CCACHE_DIR: ${{ github.workspace }}/tt-media-server/.cache/ccache
       # Dynamo discovery env — shared by etcd, frontend, and in-process test
-      # backends (MainIntegrationTest / DisaggregatedE2E). Mirrors
-      # cpp_server/scripts/start_dynamo.sh. CancellationE2E forces
-      # DYNAMO_ENDPOINT_ENABLED=0 in its launcher script.
+      # backends (MainIntegrationTest / DisaggregatedE2E / CancellationE2E).
+      # Mirrors cpp_server/scripts/start_dynamo.sh.
       DYN_DISCOVERY_BACKEND: etcd
       ETCD_ENDPOINTS: http://127.0.0.1:2379
       DYN_REQUEST_PLANE: tcp

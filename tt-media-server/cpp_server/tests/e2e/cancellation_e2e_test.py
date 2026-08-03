@@ -4,13 +4,14 @@
 """
 End-to-end tests for request cancellation via client disconnect.
 
-These tests verify that the server correctly handles client disconnections
-during streaming and remains healthy afterwards.
+Chat traffic goes through the Dynamo frontend (/v1/chat/completions).
+Readiness / post-disconnect health use /v1/models (Dynamo has no /health).
 
 Usage:
-    python test_cancellation_e2e.py [--host HOST] [--port PORT]
+    python cancellation_e2e_test.py [--host HOST] [--port PORT] [--model MODEL]
 
-Requires a running server (use run_e2e_with_server.sh for automated setup).
+Requires etcd + Dynamo frontend + a registered mock worker
+(use run_e2e_with_server.sh, or test-gate's Dynamo bootstrap).
 """
 
 import argparse
@@ -21,6 +22,7 @@ import time
 import requests
 
 DEFAULT_API_KEY = "your-secret-key"
+DEFAULT_MODEL = os.environ.get("DYNAMO_MODEL", "deepseek-ai/DeepSeek-R1-0528")
 
 
 def _auth_headers() -> dict:
@@ -28,13 +30,13 @@ def _auth_headers() -> dict:
     return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
 
-def _wait_for_server(base_url: str, timeout: int = 30) -> bool:
-    """Wait for the server to become ready."""
+def _wait_for_frontend(base_url: str, model: str, timeout: int = 30) -> bool:
+    """Wait until Dynamo frontend lists the model."""
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
-            resp = requests.get(f"{base_url}/health", timeout=2)
-            if resp.status_code == 200:
+            resp = requests.get(f"{base_url}/v1/models", timeout=2)
+            if resp.status_code == 200 and model in resp.text:
                 return True
         except requests.ConnectionError:
             pass
@@ -42,20 +44,29 @@ def _wait_for_server(base_url: str, timeout: int = 30) -> bool:
     return False
 
 
-def _streaming_request(max_tokens: int = 50) -> dict:
-    """Build a streaming chat completion request payload."""
+def _frontend_healthy(base_url: str, model: str) -> bool:
+    try:
+        resp = requests.get(f"{base_url}/v1/models", timeout=5)
+        return resp.status_code == 200 and model in resp.text
+    except requests.RequestException:
+        return False
+
+
+def _streaming_request(model: str, max_tokens: int = 50) -> dict:
     return {
+        "model": model,
         "messages": [{"role": "user", "content": "Hello world"}],
         "max_tokens": max_tokens,
         "stream": True,
     }
 
 
-def _complete_streaming_request(base_url: str, max_tokens: int = 10) -> list[str]:
-    """Make a streaming request and collect all SSE chunks."""
+def _complete_streaming_request(
+    base_url: str, model: str, max_tokens: int = 10
+) -> list[str]:
     resp = requests.post(
         f"{base_url}/v1/chat/completions",
-        json=_streaming_request(max_tokens),
+        json=_streaming_request(model, max_tokens),
         headers=_auth_headers(),
         stream=True,
         timeout=30,
@@ -72,20 +83,19 @@ def _complete_streaming_request(base_url: str, max_tokens: int = 10) -> list[str
     return chunks
 
 
-def test_server_healthy_after_disconnect(base_url: str) -> bool:
-    """Disconnect mid-stream and verify the server stays healthy."""
+def test_server_healthy_after_disconnect(base_url: str, model: str) -> bool:
+    """Disconnect mid-stream and verify the frontend still lists the model."""
     print("\n=== Test: Server healthy after disconnect ===")
     try:
         resp = requests.post(
             f"{base_url}/v1/chat/completions",
-            json=_streaming_request(max_tokens=200),
+            json=_streaming_request(model, max_tokens=200),
             headers=_auth_headers(),
             stream=True,
             timeout=10,
         )
         resp.raise_for_status()
 
-        # Read a few chunks then close abruptly
         count = 0
         for line in resp.iter_lines(decode_unicode=True):
             if line and line.startswith("data: "):
@@ -94,27 +104,23 @@ def test_server_healthy_after_disconnect(base_url: str) -> bool:
                     break
         resp.close()
 
-        # Give the server a moment to process the disconnect
         time.sleep(0.5)
 
-        # Health check
-        health = requests.get(f"{base_url}/health", timeout=5)
-        ok = health.status_code == 200
-        print(f"  Disconnected after {count} chunks, health={health.status_code}")
+        ok = _frontend_healthy(base_url, model)
+        print(f"  Disconnected after {count} chunks, models_ok={ok}")
         return ok
     except Exception as e:
         print(f"  FAIL: {e}")
         return False
 
 
-def test_request_completes_after_disconnect(base_url: str) -> bool:
+def test_request_completes_after_disconnect(base_url: str, model: str) -> bool:
     """After a disconnect, a new request should complete normally."""
     print("\n=== Test: Request completes after disconnect ===")
     try:
-        # First: disconnect mid-stream
         resp = requests.post(
             f"{base_url}/v1/chat/completions",
-            json=_streaming_request(max_tokens=200),
+            json=_streaming_request(model, max_tokens=200),
             headers=_auth_headers(),
             stream=True,
             timeout=10,
@@ -126,8 +132,7 @@ def test_request_completes_after_disconnect(base_url: str) -> bool:
         resp.close()
         time.sleep(0.5)
 
-        # Second: complete a full request
-        chunks = _complete_streaming_request(base_url, max_tokens=5)
+        chunks = _complete_streaming_request(base_url, model, max_tokens=5)
         ok = len(chunks) > 0
         print(f"  Got {len(chunks)} chunks from follow-up request")
         return ok
@@ -136,20 +141,19 @@ def test_request_completes_after_disconnect(base_url: str) -> bool:
         return False
 
 
-def test_multiple_rapid_disconnects(base_url: str) -> bool:
+def test_multiple_rapid_disconnects(base_url: str, model: str) -> bool:
     """Multiple rapid disconnects should not degrade the server."""
     print("\n=== Test: Multiple rapid disconnects ===")
     try:
         for _ in range(5):
             resp = requests.post(
                 f"{base_url}/v1/chat/completions",
-                json=_streaming_request(max_tokens=200),
+                json=_streaming_request(model, max_tokens=200),
                 headers=_auth_headers(),
                 stream=True,
                 timeout=10,
             )
             resp.raise_for_status()
-            # Read 1 chunk and disconnect
             for line in resp.iter_lines(decode_unicode=True):
                 if line and line.startswith("data: "):
                     break
@@ -157,13 +161,10 @@ def test_multiple_rapid_disconnects(base_url: str) -> bool:
 
         time.sleep(1.0)
 
-        # Server should still be healthy
-        health = requests.get(f"{base_url}/health", timeout=5)
-        ok = health.status_code == 200
-        print(f"  5 rapid disconnects, health={health.status_code}")
+        ok = _frontend_healthy(base_url, model)
+        print(f"  5 rapid disconnects, models_ok={ok}")
 
-        # And a full request should work
-        chunks = _complete_streaming_request(base_url, max_tokens=5)
+        chunks = _complete_streaming_request(base_url, model, max_tokens=5)
         ok = ok and len(chunks) > 0
         print(f"  Follow-up request: {len(chunks)} chunks")
         return ok
@@ -172,19 +173,18 @@ def test_multiple_rapid_disconnects(base_url: str) -> bool:
         return False
 
 
-def test_disconnect_at_first_token(base_url: str) -> bool:
+def test_disconnect_at_first_token(base_url: str, model: str) -> bool:
     """Disconnect immediately after receiving the very first SSE event."""
     print("\n=== Test: Disconnect at first token ===")
     try:
         resp = requests.post(
             f"{base_url}/v1/chat/completions",
-            json=_streaming_request(max_tokens=200),
+            json=_streaming_request(model, max_tokens=200),
             headers=_auth_headers(),
             stream=True,
             timeout=10,
         )
         resp.raise_for_status()
-        # Close immediately after first data line
         for line in resp.iter_lines(decode_unicode=True):
             if line and line.startswith("data: "):
                 resp.close()
@@ -192,23 +192,21 @@ def test_disconnect_at_first_token(base_url: str) -> bool:
 
         time.sleep(0.5)
 
-        health = requests.get(f"{base_url}/health", timeout=5)
-        ok = health.status_code == 200
-        print(f"  Disconnected at first token, health={health.status_code}")
+        ok = _frontend_healthy(base_url, model)
+        print(f"  Disconnected at first token, models_ok={ok}")
         return ok
     except Exception as e:
         print(f"  FAIL: {e}")
         return False
 
 
-def test_concurrent_disconnect_and_new_request(base_url: str) -> bool:
+def test_concurrent_disconnect_and_new_request(base_url: str, model: str) -> bool:
     """Start a request, disconnect, and immediately start another."""
     print("\n=== Test: Concurrent disconnect and new request ===")
     try:
-        # Start streaming
         resp1 = requests.post(
             f"{base_url}/v1/chat/completions",
-            json=_streaming_request(max_tokens=200),
+            json=_streaming_request(model, max_tokens=200),
             headers=_auth_headers(),
             stream=True,
             timeout=10,
@@ -219,8 +217,7 @@ def test_concurrent_disconnect_and_new_request(base_url: str) -> bool:
                 break
         resp1.close()
 
-        # Immediately start a new request (no sleep)
-        chunks = _complete_streaming_request(base_url, max_tokens=5)
+        chunks = _complete_streaming_request(base_url, model, max_tokens=5)
         ok = len(chunks) > 0
         print(f"  Immediate follow-up: {len(chunks)} chunks")
         return ok
@@ -230,17 +227,28 @@ def test_concurrent_disconnect_and_new_request(base_url: str) -> bool:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Cancellation E2E tests")
-    parser.add_argument("--host", default="127.0.0.1", help="Server host")
-    parser.add_argument("--port", type=int, default=8000, help="Server port")
+    parser = argparse.ArgumentParser(description="Cancellation E2E tests (Dynamo)")
+    parser.add_argument(
+        "--host",
+        default=os.environ.get("DYNAMO_HOST", "127.0.0.1"),
+        help="Dynamo frontend host",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.environ.get("DYNAMO_PORT", "8080")),
+        help="Dynamo frontend port",
+    )
+    parser.add_argument("--model", default=DEFAULT_MODEL, help="Model id")
     args = parser.parse_args()
 
     base_url = f"http://{args.host}:{args.port}"
 
-    print(f"Running cancellation E2E tests against {base_url}")
+    print(f"Running cancellation E2E tests against Dynamo frontend {base_url}")
+    print(f"  model={args.model}")
 
-    if not _wait_for_server(base_url):
-        print("ERROR: Server not ready within timeout")
+    if not _wait_for_frontend(base_url, args.model):
+        print("ERROR: Dynamo frontend / model not ready within timeout")
         sys.exit(1)
 
     tests = [
@@ -254,7 +262,7 @@ def main():
     passed = 0
     failed = 0
     for test in tests:
-        if test(base_url):
+        if test(base_url, args.model):
             passed += 1
         else:
             failed += 1
