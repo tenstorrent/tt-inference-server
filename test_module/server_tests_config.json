@@ -429,7 +429,7 @@
         "mistral_small_24b": {
             "id_name": "mistral-small-3.1-24b",
             "weights": [
-                "Mistral-Small-3.1-24B-Instruct-2503"
+                "mistralai/Mistral-Small-3.1-24B-Instruct-2503"
             ],
             "category": "LLM",
             "compatible_devices": [
