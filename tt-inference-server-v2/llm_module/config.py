@@ -48,6 +48,14 @@ class ServerConnection:
     # repo (e.g. moonshotai/Kimi-* ships a custom tokenizer). Driven per
     # model from the spec metadata; off by default for safety.
     tokenizer_trust_remote_code: bool = False
+    # Prompt source for the perf sweep, driven per model from spec metadata. Empty means the
+    # default `random` dataset, which fabricates token ids. A block-diffusion model has to opt
+    # into real text: its canvas never settles on gibberish (measured on QB2: 48/48 denoise steps
+    # and a 4.3% halt rate on random ids versus K~15-18 and 100% on real text), so `random`
+    # understates its tok/s about 3x. `sonnet` is the option that keeps the (ISL, OSL) sweep
+    # points meaningful, because it assembles real English up to a requested input length.
+    benchmark_dataset_name: str = ""
+    benchmark_dataset_path: str = ""
     # Extra Prometheus ``/metrics`` endpoints (cpp_server workers) scraped
     # by AIPerf via ``--server-metrics``, independent of the load target
     # in ``base_url``. Used by the prefix-cache benchmark to read the

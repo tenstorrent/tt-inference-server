@@ -424,7 +424,16 @@ templates:
         # the (deprecated) truncate_prompt_tokens path stop applying, the length becomes
         # (isl - num_special) + chat-template overhead, which rounds up to isl + 32. The margin
         # costs one warmup prefill each; not having it costs the run.
-        DG_UPFRONT_PREFILL_WARMUP_LENS: "32,64,96,128,160,192,224,256,288,320,352,384,416,448,480,512,544,576,608,640,672,704,736,768,800,832,864,896,1024,1056,2048,2080,2432,2464,4096,4128,8192,8224"
+        #
+        # The bands BELOW 1024/2048/4096/8192 are for the sonnet prompt source (see
+        # metadata.benchmark_dataset_name). sonnet assembles real English one WHOLE LINE at a time,
+        # so it undershoots the requested input length, and truncate_prompt_tokens can only cut from
+        # above -- it cannot pad back up. Measured offline against this checkpoint's tokenizer:
+        # isl 2048 -> 2033/1972 templated tokens (aligning to 2048 and 1984), 4096 -> 4085/4054
+        # (4096 and 4064), 8192 -> 8188/8137 (8192 and 8160). Worst observed undershoot is two
+        # tiles, so three tiles of margin are listed; without them those rows return empty answers
+        # while still reporting a throughput taken from the usage block.
+        DG_UPFRONT_PREFILL_WARMUP_LENS: "32,64,96,128,160,192,224,256,288,320,352,384,416,448,480,512,544,576,608,640,672,704,736,768,800,832,864,896,928,960,992,1024,1056,1952,1984,2016,2048,2080,2432,2464,4000,4032,4064,4096,4128,8096,8128,8160,8192,8224"
         # The real trace-region knob is override_tt_config.trace_region_size
         # below (worker.py -> open_mesh_device); the env DG_TRACE_REGION_SIZE is
         # metrics/validation mirror and does NOT carve the region. Up-front
@@ -481,6 +490,19 @@ templates:
   metadata:
     google/diffusiongemma-26B-A4B-it:
       reasoning_parser_name: diffusion_gemma
+      # Benchmark on REAL TEXT, not the default fabricated-token `random` dataset. This is not a
+      # preference: DiffusionGemma denoises a 256-token canvas until it settles, and random token
+      # ids never let it settle. Measured on QB2 2026-07-31/08-01, same server, same sweep points:
+      # random ids give 48/48 denoise steps with a 4.3% halt rate and 26.4 tok/s per block, while
+      # real text gives K 15-18, halt 32/32, and 60-82 tok/s. `random` also turns on ignore_eos
+      # inside vllm bench serve, so nothing stops early either. Benchmarking this model on random
+      # ids therefore publishes a ~3x understatement that no real traffic can produce.
+      # sonnet keeps the six (ISL, OSL) points meaningful because it assembles real English up to a
+      # requested length; the file is Shakespeare's sonnets, vendored from vllm's benchmarks/ (the
+      # wheel does not ship it, only the source tree does). Its whole-line assembly undershoots the
+      # target, which is why DG_UPFRONT_PREFILL_WARMUP_LENS carries bands below each large ISL.
+      benchmark_dataset_name: sonnet
+      benchmark_dataset_path: benchmarking/benchmark_targets/sonnet.txt
       # transformers loads DiffusionGemmaForBlockDiffusion via remote code, and the
       # tokenizer is loaded with trust_remote_code=True (checkpoint.py:load_tokenizer).
       tokenizer_trust_remote_code: true

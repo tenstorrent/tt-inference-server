@@ -338,3 +338,15 @@ def test_diffusiongemma_dev_spec_enables_upfront_early_halt_and_thinking():
     # Margin for the case where the deprecated truncate_prompt_tokens path stops
     # applying and the templated prompt rounds up to the next tile.
     assert all(isl + 32 in warmup_lens for isl in benchmark_isls)
+    # This model benchmarks on real text (sonnet), which assembles whole lines and therefore
+    # UNDERSHOOTS the requested input length; truncate_prompt_tokens only cuts from above. Measured
+    # worst undershoot is two tiles, so require three below every ISL above the gap-free band.
+    assert spec.metadata.get("benchmark_dataset_name") == "sonnet"
+    for isl in sorted(benchmark_isls):
+        if isl <= 896:
+            continue  # inside the contiguous 32..896 band already asserted above
+        missing_below = [isl - 32 * k for k in (1, 2, 3) if isl - 32 * k not in warmup_lens]
+        assert not missing_below, (
+            f"sonnet undershoots isl {isl}; lengths {missing_below} are unwarmed, so those rows "
+            "would return empty answers with a plausible tput"
+        )
