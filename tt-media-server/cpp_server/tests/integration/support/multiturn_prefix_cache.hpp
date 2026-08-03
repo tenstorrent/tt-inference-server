@@ -28,7 +28,7 @@
 #include <vector>
 
 #include "../../support/chat_request.hpp"
-#include "../../support/http_client.hpp"
+#include "../../support/dynamo_frontend.hpp"
 #include "../../support/worker_response.hpp"
 #include "test_server.hpp"
 
@@ -60,15 +60,17 @@ inline void verifyMultiTurnPrefixGrowth(
   ASSERT_GE(userMessages.size(), 2u)
       << "need at least an opener plus one follow-up";
 
+  const auto dynamoConfig = dynamo::DynamoConfig::fromEnv();
   ChatRequest convo;
+  convo.model(dynamoConfig.model);
   uint32_t prevKvPos = 0;
   bool havePrev = false;
 
   for (size_t turn = 0; turn < userMessages.size(); ++turn) {
     convo.user(userMessages[turn]).maxTokens(1).stream();
     const std::string body = convo.toJson();
-    auto future = std::async(std::launch::async, [&server, body] {
-      return sendAndReceive(server.host(), server.port(), body);
+    auto future = std::async(std::launch::async, [dynamoConfig, body] {
+      return dynamo::sendDynamoRequest(dynamoConfig, body);
     });
 
     auto seq = server.taskQueue().receive();

@@ -1305,6 +1305,14 @@ set(INTEGRATION_TEST_COMMON_SOURCES
     src/services/disaggregation_service.cpp
     src/services/llm_pipeline.cpp
     src/dynamo/etcd_client.cpp
+    src/dynamo/discovery.cpp
+    src/dynamo/kube_client.cpp
+    src/dynamo/llm_mapping.cpp
+    src/dynamo/prefill_result_mapping.cpp
+    src/dynamo/request_handler.cpp
+    src/dynamo/transport_protocol.cpp
+    src/dynamo/transport_server.cpp
+    src/dynamo/worker_server.cpp
     src/sockets/inter_server_service.cpp
     src/sockets/socket_manager.cpp
     src/sockets/zmq_socket_transport.cpp
@@ -1322,6 +1330,7 @@ target_link_libraries(main_integration_test PRIVATE
     pybind11::embed
     stb_image_write
     xxhash_lib
+    blake3
     GTest::gtest_main)
 if(ZMQ_FOUND AND TARGET PkgConfig::ZMQ)
     target_link_libraries(main_integration_test PRIVATE PkgConfig::ZMQ)
@@ -1349,6 +1358,7 @@ target_link_libraries(prefill_integration_test PRIVATE
     pybind11::embed
     stb_image_write
     xxhash_lib
+    blake3
     GTest::gtest_main)
 if(ZMQ_FOUND AND TARGET PkgConfig::ZMQ)
     target_link_libraries(prefill_integration_test PRIVATE PkgConfig::ZMQ)
@@ -1376,6 +1386,7 @@ target_link_libraries(disaggregated_e2e_test PRIVATE
     pybind11::embed
     stb_image_write
     xxhash_lib
+    blake3
     GTest::gtest_main)
 if(ZMQ_FOUND AND TARGET PkgConfig::ZMQ)
     target_link_libraries(disaggregated_e2e_test PRIVATE PkgConfig::ZMQ)
@@ -1393,10 +1404,10 @@ target_include_directories(disaggregated_e2e_test PRIVATE
 
 include(GoogleTest)
 # main_integration_test boots the whole server stack (services, IPC queues,
-# Drogon listener, worker subprocess) once per process via SetUpTestSuite, and
-# tears it down via TearDownTestSuite. Registering each TEST_F as its own
+# DynamoWorkerServer, worker subprocess) once per process via SetUpTestSuite,
+# and tears it down via TearDownTestSuite. Registering each TEST_F as its own
 # ctest entry would invoke the binary once per test, paying that boot cost six
-# times AND exposing a racy teardown. Run all six tests in a single process.
+# times AND exposing a racy teardown. Run all tests in a single process.
 add_test(NAME MainIntegrationTest COMMAND main_integration_test)
 add_test(NAME PrefillIntegrationTest COMMAND prefill_integration_test)
 add_test(NAME DisaggregatedE2ETest COMMAND disaggregated_e2e_test)

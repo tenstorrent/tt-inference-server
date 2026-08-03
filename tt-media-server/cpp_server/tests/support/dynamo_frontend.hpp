@@ -87,6 +87,30 @@ inline std::string etcdEndpointsFromEnv() {
   return "http://127.0.0.1:2379";
 }
 
+/// Set env vars required for in-process DynamoWorkerServer registration.
+/// Safe to call multiple times; does not overwrite values already set by the
+/// caller / CI. Must run before TestServer::start() / settings are first read.
+inline void configureDynamoEnv() {
+  setenv("DYNAMO_ENDPOINT_ENABLED", "1", 0);
+  setenv("DYNAMO_DISCOVERY_BACKEND", "etcd", 0);
+  setenv("DYN_DISCOVERY_BACKEND", "etcd", 0);
+  setenv("DYNAMO_NAMESPACE", "default", 0);
+  setenv("DYNAMO_COMPONENT", "backend", 0);
+  setenv("DYNAMO_ENDPOINT_NAME", "generate", 0);
+  setenv("DYNAMO_BIND_HOST", "0.0.0.0", 0);
+
+  const std::string etcd = etcdEndpointsFromEnv();
+  setenv("DYNAMO_ETCD_ENDPOINTS", etcd.c_str(), 0);
+  setenv("ETCD_ENDPOINTS", etcd.c_str(), 0);
+
+  // Advertise an address the Dynamo frontend container can dial back to.
+  // Prefer an explicit override; otherwise use the docker bridge gateway
+  // (host side of published ports) when not already set.
+  if (!std::getenv("DYN_TCP_RPC_HOST")) {
+    setenv("DYN_TCP_RPC_HOST", detectDockerGateway().c_str(), 0);
+  }
+}
+
 /// Prefix under which DynamoWorkerServer publishes instance keys:
 ///   v1/instances/<namespace>/<component>/<endpoint>/
 inline std::string etcdInstancePrefixFromEnv() {
