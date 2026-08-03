@@ -40,6 +40,7 @@ jobs:
               main|master|develop) return 0 ;;
               release/*) return 0 ;;
               v[0-9]*.[0-9]*.[0-9]*) return 0 ;;
+              dev|dev/*) return 0 ;;
             esac
             return 1
           }
@@ -110,6 +111,8 @@ jobs:
           skipped_recent=0
           skipped_missing_date=0
           skipped_existing_comment=0
+          skipped_locked=0
+          failed_delete=0
 
           cutoff_epoch="$(date -u -d "${STALE_DAYS} days ago" +%s)"
 
@@ -199,9 +202,28 @@ jobs:
             else
               echo "Deleting (stale since ${commit_date}): ${branch}"
               encoded_branch="${branch//\//%2F}"
-              gh api --method DELETE \
-                "repos/${GITHUB_REPOSITORY}/git/refs/heads/${encoded_branch}"
-              deleted=$((deleted + 1))
+              set +e
+              delete_output="$(
+                gh api --method DELETE \
+                  "repos/${GITHUB_REPOSITORY}/git/refs/heads/${encoded_branch}" 2>&1
+              )"
+              delete_status=$?
+              set -e
+
+              if [[ "${delete_status}" -eq 0 ]]; then
+                deleted=$((deleted + 1))
+              elif [[ "${delete_output}" == *"HTTP 422"* ]] \
+                || [[ "${delete_output}" == *"Repository rule violations"* ]] \
+                || [[ "${delete_output}" == *"Cannot delete this branch"* ]] \
+                || [[ "${delete_output}" == *"Cannot change this locked branch"* ]]; then
+                echo "Skipping locked/rules-blocked branch (HTTP 422): ${branch}"
+                echo "${delete_output}"
+                skipped_locked=$((skipped_locked + 1))
+              else
+                echo "Failed to delete ${branch} (exit ${delete_status}); continuing"
+                echo "${delete_output}"
+                failed_delete=$((failed_delete + 1))
+              fi
             fi
           done < <(list_branches_with_dates)
 
@@ -215,3 +237,10 @@ jobs:
           echo "Skipped (recent): ${skipped_recent}"
           echo "Skipped (missing date): ${skipped_missing_date}"
           echo "Skipped (existing reminder comment): ${skipped_existing_comment}"
+          echo "Skipped (locked/rules HTTP 422): ${skipped_locked}"
+          echo "Failed deletes (non-422): ${failed_delete}"
+
+          if [[ "${failed_delete}" -gt 0 ]]; then
+            echo "One or more unexpected branch deletions failed" >&2
+            exit 1
+          fi
