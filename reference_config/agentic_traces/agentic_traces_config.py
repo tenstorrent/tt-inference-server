@@ -41,9 +41,8 @@ class TraceSource(Enum):
     """Where a run's agentic traces come from.
 
     ``INFERENCEX_AGENTX`` replays the SemiAnalysis Weka coding traces through
-    the AIPerf fork vendored in the InferenceX repo. ``SWARMONE`` is registered
-    so configs and CLI selection can name it, but building runs for it raises
-    ``NotImplementedError`` until its harness is integrated.
+    the AIPerf fork vendored in the InferenceX repo. ``SWARMONE`` replays
+    SwarmOne's recorded coding sessions through its ``swo-bench`` CLI.
     """
 
     INFERENCEX_AGENTX = "inferencex_agentx"
@@ -57,6 +56,13 @@ class TraceSource(Enum):
         except KeyError:
             valid = ", ".join(sorted(m.value for m in cls))
             raise ValueError(f"Invalid TraceSource: {name!r}. Valid: {valid}")
+
+
+# Sources that a sweep only runs when it names them explicitly via
+# ``--agentic-traces-sources``. SwarmOne's swo-bench needs a paid SwarmOne
+# license, so having it configured for a model must not make that license a
+# precondition for the model's plain ``--workflow agentic_traces`` run.
+OPT_IN_TRACE_SOURCES: Tuple[TraceSource, ...] = (TraceSource.SWARMONE,)
 
 
 @dataclass(frozen=True)
@@ -414,6 +420,26 @@ def get_agentic_traces_config(model_spec) -> Optional[AgenticTracesConfig]:
     return AGENTIC_TRACES_CONFIGS.get(model_id)
 
 
+def default_run_specs(
+    config: AgenticTracesConfig,
+) -> Tuple[AgenticTracesRunSpec, ...]:
+    """The runs a sweep gets when it does not name its sources explicitly.
+
+    Opt-in sources (see :data:`OPT_IN_TRACE_SOURCES`) are held back: merely
+    registering a SwarmOne run for a model must not turn a SwarmOne license
+    into a precondition for that model's plain ``--workflow agentic_traces``
+    run, which otherwise only needed the InferenceX client.
+
+    The exception is a config with *nothing but* opt-in runs -- there the
+    opt-in source is the only harness available, so withholding it would leave
+    an empty sweep. Such a run does require the license, unavoidably.
+    """
+    always_on = tuple(
+        run for run in config.runs if run.trace_source not in OPT_IN_TRACE_SOURCES
+    )
+    return always_on or config.runs
+
+
 def resolve_run_specs(
     config: AgenticTracesConfig,
     *,
@@ -423,21 +449,24 @@ def resolve_run_specs(
     """Apply CLI-level narrowing/overrides to a config.
 
     Returns the (possibly ref-overridden) config alongside the selected run
-    specs so the caller can pass both to the run builder.
+    specs so the caller can pass both to the run builder. With no explicit
+    ``trace_sources`` the selection comes from :func:`default_run_specs`, which
+    holds back opt-in sources.
     """
     effective = config
     if git_ref_override:
         effective = replace(config, inferencex_git_ref=git_ref_override)
-    runs = effective.runs
-    if trace_sources:
-        wanted = set(trace_sources)
-        runs = tuple(run for run in runs if run.trace_source in wanted)
-        if not runs:
-            raise ValueError(
-                f"No agentic-trace runs for model_id={config.model_id!r} match "
-                f"trace source(s) {sorted(s.value for s in wanted)}. "
-                f"Configured: {sorted(s.value for s in config.trace_sources())}"
-            )
+    if not trace_sources:
+        return effective, default_run_specs(effective)
+
+    wanted = set(trace_sources)
+    runs = tuple(run for run in effective.runs if run.trace_source in wanted)
+    if not runs:
+        raise ValueError(
+            f"No agentic-trace runs for model_id={config.model_id!r} match "
+            f"trace source(s) {sorted(s.value for s in wanted)}. "
+            f"Configured: {sorted(s.value for s in config.trace_sources())}"
+        )
     return effective, runs
 
 
@@ -450,7 +479,9 @@ __all__ = [
     "CI_MODE_SETTINGS",
     "DEFAULT_MODE_SETTINGS",
     "FULL_MODE_SETTINGS",
+    "OPT_IN_TRACE_SOURCES",
     "TraceSource",
+    "default_run_specs",
     "for_model_ids",
     "get_agentic_traces_config",
     "resolve_run_specs",

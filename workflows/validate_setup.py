@@ -137,6 +137,7 @@ def validate_runtime_args(model_spec, runtime_config):
         # rather than after the evals and benchmarks that precede the child.
         from reference_config.agentic_traces.agentic_traces_config import (
             TraceSource,
+            default_run_specs,
             get_agentic_traces_config,
         )
 
@@ -150,6 +151,9 @@ def validate_runtime_args(model_spec, runtime_config):
 
         # A SwarmOne run needs a swo-bench license; require it up front (like
         # HF_TOKEN) rather than failing minutes into the run inside the driver.
+        # Only when SwarmOne will actually run, though: it is an opt-in source,
+        # so a model that merely has a SwarmOne run configured still runs its
+        # plain sweep (InferenceX only) without a license.
         sources_arg = getattr(args, "agentic_traces_sources", None)
         if sources_arg:
             selected = {
@@ -157,18 +161,19 @@ def validate_runtime_args(model_spec, runtime_config):
                 for part in sources_arg.split(",")
                 if part.strip()
             }
-            swarmone_selected = TraceSource.SWARMONE.value in selected
+            swarmone_will_run = TraceSource.SWARMONE.value in selected
         else:
-            swarmone_selected = any(
+            swarmone_will_run = any(
                 run.trace_source is TraceSource.SWARMONE
-                for run in agentic_traces_config.runs
+                for run in default_run_specs(agentic_traces_config)
             )
-        if swarmone_selected and not _swarmone_license_available():
+        if swarmone_will_run and not _swarmone_license_available():
             raise ValueError(
-                "⛔ --workflow agentic_traces with the swarmone trace source "
-                "requires a SwarmOne license. Set the SWO_LICENSE_KEY environment "
-                "variable or write the key to ~/.swarmone/license.key. Request a "
-                "key from benb@swarmone.ai."
+                "⛔ The swarmone agentic-traces source requires a SwarmOne "
+                "license. Set the SWO_LICENSE_KEY environment variable or write "
+                "the key to ~/.swarmone/license.key. Request a key from "
+                "benb@swarmone.ai. To run without SwarmOne, drop "
+                "`--agentic-traces-sources swarmone`."
             )
 
     if workflow_type == WorkflowType.STRESS_TESTS:

@@ -556,9 +556,10 @@ harness; both implemented sources are listed in `SUPPORTED_TRACE_SOURCES`
 ([`llm_module/agentic_traces/runs.py`](../llm_module/agentic_traces/runs.py)).
 A source added to the config schema without a driver still fails loudly with
 `NotImplementedError` at plan time, so selecting it can never look like a clean
-empty sweep. When a run's model config lists several sources and
-`--agentic-traces-sources` is unset, every configured source runs; the orchestrator
-dispatches each run to the driver for its `trace_source`.
+empty sweep. When `--agentic-traces-sources` is unset, every configured source
+runs **except** those listed in `OPT_IN_TRACE_SOURCES`, which must be named
+explicitly (see `default_run_specs`); the orchestrator dispatches each run to the
+driver for its `trace_source`.
 
 - **`inferencex_agentx`** — the AIPerf fork vendored in InferenceX, driven by
   [`AIPerfAgenticTracesDriver`](../llm_module/drivers/aiperf_agentic_traces.py).
@@ -571,9 +572,12 @@ dispatches each run to the driver for its `trace_source`.
   InferenceX clone entirely. It replays recorded Claude-Code / Codex coding
   scenarios (`swo-bench list-scenarios`) turn-by-turn with growing history, and
   the replay plan is built server-side by the SwarmOne backend. A **SwarmOne
-  license** is required and checked up front in
-  [`workflows/validate_setup.py`](../workflows/validate_setup.py): set
-  `SWO_LICENSE_KEY` or write the key to `~/.swarmone/license.key`. The scenario's
+  license** is required (`SWO_LICENSE_KEY`, or the key written to
+  `~/.swarmone/license.key`), which is why `swarmone` is listed in
+  `OPT_IN_TRACE_SOURCES`: registering a SwarmOne run for a model leaves that
+  model's plain sweep untouched, and the license is only demanded — up front, in
+  [`workflows/validate_setup.py`](../workflows/validate_setup.py) — once
+  `--agentic-traces-sources swarmone` asks for it. The scenario's
   `--model-context-length` is always supplied from the ModelSpec (with context
   auto-resolution disabled) because the Tenstorrent Console `/v1/models` does not
   report the window.

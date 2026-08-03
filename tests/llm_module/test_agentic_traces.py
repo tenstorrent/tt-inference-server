@@ -1010,13 +1010,44 @@ class TestSwarmOneModeScoping:
         assert inferencex[0].concurrency == expected
         assert inferencex[0].concurrency != 1
 
-    def test_default_sweep_runs_both_sources(self):
+    def test_default_selection_holds_swarmone_back(self):
+        """swarmone is opt-in, so an unnarrowed sweep must not pull it in and
+        make a SwarmOne license a precondition for every Kimi run."""
         config = AGENTIC_TRACES_CONFIGS[KIMI_MODEL_ID]
+        _, specs = resolve_run_specs(config)
+        sources = {spec.trace_source for spec in specs}
+        assert sources == {TraceSource.INFERENCEX_AGENTX}
+
+    def test_explicitly_selecting_both_sources_runs_both(self):
+        config = AGENTIC_TRACES_CONFIGS[KIMI_MODEL_ID]
+        _, specs = resolve_run_specs(
+            config,
+            trace_sources=(TraceSource.INFERENCEX_AGENTX, TraceSource.SWARMONE),
+        )
         sources = {
             run.trace_source
-            for run in build_runs(config, _FakeModelSpec(), mode=AgenticTracesMode.FULL)
+            for run in build_runs(
+                config,
+                _FakeModelSpec(),
+                mode=AgenticTracesMode.FULL,
+                run_specs=specs,
+            )
         }
         assert sources == {TraceSource.INFERENCEX_AGENTX, TraceSource.SWARMONE}
+
+    def test_a_swarmone_only_config_still_runs_by_default(self):
+        """Holding back the only configured source would leave an empty sweep."""
+        config = AgenticTracesConfig(
+            model_id="id_test",
+            inferencex_git_ref=None,
+            runs=(
+                AgenticTracesRunSpec(
+                    trace_source=TraceSource.SWARMONE, scenario=SWO_SCENARIO
+                ),
+            ),
+        )
+        _, specs = resolve_run_specs(config)
+        assert [spec.trace_source for spec in specs] == [TraceSource.SWARMONE]
 
     def test_swarmone_timeout_estimate_is_generous(self):
         full = self._swo_runs(AgenticTracesMode.FULL)[0]

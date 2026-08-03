@@ -240,7 +240,7 @@ class TestTraceSourceDispatch:
         run = swo_driver.run.call_args[0][0]
         assert run.trace_source.value == "swarmone"
 
-    def test_default_sweep_runs_both_sources(self, tmp_path):
+    def _both_drivers(self):
         aiperf_driver = MagicMock()
         aiperf_driver.run.return_value = AgenticTracesDriverResult(
             return_code=0, payload=_ok_payload("aiperf"), raw_path=None
@@ -249,13 +249,34 @@ class TestTraceSourceDispatch:
         swo_driver.run.return_value = AgenticTracesDriverResult(
             return_code=0, payload=_ok_payload("swo"), raw_path=None
         )
-        with patch.multiple(
+        patcher = patch.multiple(
             agentic_traces_tests,
             AIPerfAgenticTracesDriver=MagicMock(return_value=aiperf_driver),
             SwoBenchAgenticTracesDriver=MagicMock(return_value=swo_driver),
-        ):
+        )
+        return patcher, aiperf_driver, swo_driver
+
+    def test_default_sweep_skips_the_opt_in_swarmone_source(self, tmp_path):
+        """Without --agentic-traces-sources the sweep must stay as it was
+        before SwarmOne was configured: InferenceX only, no license needed."""
+        patcher, aiperf_driver, swo_driver = self._both_drivers()
+        with patcher:
             result = run_agentic_traces(
                 _ctx(tmp_path=tmp_path), mode="ci", inter_run_sleep_s=0
+            )
+
+        assert result.return_codes == [0]
+        aiperf_driver.run.assert_called_once()
+        swo_driver.run.assert_not_called()
+
+    def test_naming_both_sources_runs_both(self, tmp_path):
+        patcher, aiperf_driver, swo_driver = self._both_drivers()
+        with patcher:
+            result = run_agentic_traces(
+                _ctx(tmp_path=tmp_path),
+                mode="ci",
+                trace_sources="inferencex_agentx,swarmone",
+                inter_run_sleep_s=0,
             )
 
         assert result.return_codes == [0, 0]
