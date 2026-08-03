@@ -193,16 +193,23 @@ def setup_evals_agentic(
         if clone_return_code != 0:
             return False
 
-    harbor_dir_arg = shlex.quote(str(harbor_dir))
-    harbor_repo_arg = shlex.quote(harbor_repo)
-    checkout_return_code = run_command(
-        f"git -C {harbor_dir_arg} remote set-url origin {harbor_repo_arg} "
-        f"&& git -C {harbor_dir_arg} fetch --depth 1 origin {harbor_commit} "
-        f"&& git -C {harbor_dir_arg} checkout --detach FETCH_HEAD",
-        logger=logger,
+    checkout_commands = (
+        ["git", "-C", str(harbor_dir), "remote", "set-url", "origin", harbor_repo],
+        [
+            "git",
+            "-C",
+            str(harbor_dir),
+            "fetch",
+            "--depth",
+            "1",
+            "origin",
+            harbor_commit,
+        ],
+        ["git", "-C", str(harbor_dir), "checkout", "--detach", "FETCH_HEAD"],
     )
-    if checkout_return_code != 0:
-        return False
+    for checkout_command in checkout_commands:
+        if run_command(checkout_command, logger=logger) != 0:
+            return False
 
     return_code = run_command(
         f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} "
