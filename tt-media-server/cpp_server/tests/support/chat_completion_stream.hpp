@@ -42,13 +42,18 @@ class ChatCompletionStream {
 
   bool endedWithDone() const { return endedWithDone_; }
 
-  // Every non-empty content delta in stream order.
+  // Every non-empty content / reasoning_content delta in stream order.
+  // Dynamo frontends may surface thinking tokens as reasoning_content.
   std::vector<std::string> contentDeltas() const {
     std::vector<std::string> out;
     for (const auto& c : chunks_) {
       const auto& delta = c["choices"][0]["delta"];
       if (delta.isMember("content") && !delta["content"].asString().empty()) {
         out.push_back(delta["content"].asString());
+      }
+      if (delta.isMember("reasoning_content") &&
+          !delta["reasoning_content"].asString().empty()) {
+        out.push_back(delta["reasoning_content"].asString());
       }
     }
     return out;

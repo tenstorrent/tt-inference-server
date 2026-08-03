@@ -27,14 +27,19 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <future>
 #include <iostream>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <typeinfo>
 #include <vector>
 
+#include <gtest/gtest.h>
+
+#include "chat_request.hpp"
 #include "dynamo/etcd_client.hpp"
 
 namespace tt::test::dynamo {
@@ -555,5 +560,113 @@ inline std::string generateUniqueTestId(const std::string& prefix) {
       std::chrono::duration_cast<std::chrono::milliseconds>(epoch).count();
   return prefix + "-" + std::to_string(millis);
 }
+
+// ---------------------------------------------------------------------------
+// DynamoTestFixture - shared suite setup for integration / disagg E2E
+// ---------------------------------------------------------------------------
+//
+// Usage:
+//   class MyTest : public DynamoTestFixture<MyTest> {
+//    protected:
+//     static void SetUpTestSuite() {
+//       if (!initDynamo()) return;
+//       // start in-process backend...
+//       if (!waitUntilBackendRoutable()) return;
+//     }
+//   };
+//
+// initDynamo() fails fast if the frontend TCP port is unreachable.
+// waitUntilBackendRoutable() is the two-phase check after the backend
+// registers: etcd key appears, then /v1/models lists the model.
+
+template <typename Derived>
+class DynamoTestFixture : public ::testing::Test {
+ protected:
+  /// Phase 0: frontend must already be up (deploy.sh --no-worker).
+  static bool initDynamo(int timeoutSec = 30) {
+    dynamoConfig_ = DynamoConfig::fromEnv();
+    if (!waitForDynamoFrontend(dynamoConfig_, timeoutSec)) {
+      dynamoAvailable_ = false;
+      dynamoUnavailableReason_ =
+          "Dynamo frontend not reachable at " + dynamoConfig_.host + ":" +
+          std::to_string(dynamoConfig_.port) +
+          ". Start with: cd dynamo_frontend && ./deploy.sh --no-monitoring "
+          "--no-worker";
+      std::cerr << "[" << testName() << "] " << dynamoUnavailableReason_
+                << std::endl;
+      return false;
+    }
+    dynamoAvailable_ = true;
+    std::cout << "[" << testName() << "] Dynamo frontend ready at "
+              << dynamoConfig_.host << ":" << dynamoConfig_.port << std::endl;
+    return true;
+  }
+
+  /// Phases 1–2: after in-process DynamoWorkerServer::start(), wait until the
+  /// frontend can route to it.
+  static bool waitUntilBackendRoutable(int timeoutSec = 30) {
+    if (!waitForEtcdBackendRegistration(timeoutSec)) {
+      dynamoAvailable_ = false;
+      dynamoUnavailableReason_ =
+          "No cpp_server backend registered in etcd under " +
+          etcdInstancePrefixFromEnv();
+      std::cerr << "[" << testName() << "] " << dynamoUnavailableReason_
+                << std::endl;
+      return false;
+    }
+    if (!waitForModelDiscovery(dynamoConfig_, timeoutSec)) {
+      dynamoAvailable_ = false;
+      dynamoUnavailableReason_ =
+          "Model " + dynamoConfig_.model +
+          " not visible in /v1/models after backend registration";
+      std::cerr << "[" << testName() << "] " << dynamoUnavailableReason_
+                << std::endl;
+      return false;
+    }
+    return true;
+  }
+
+  void SetUp() override {
+    if (!dynamoAvailable_) {
+      FAIL() << dynamoUnavailableReason_;
+    }
+  }
+
+  static std::future<std::string> asyncRequest(const std::string& body,
+                                               int timeoutMs = 60000) {
+    return std::async(std::launch::async, [body, timeoutMs] {
+      return sendDynamoRequest(dynamoConfig_, body, timeoutMs);
+    });
+  }
+
+  static std::future<std::string> asyncRequest(const tt::test::ChatRequest& req,
+                                               int timeoutMs = 60000) {
+    return asyncRequest(req.toJson(), timeoutMs);
+  }
+
+  static tt::test::ChatRequest chatRequest() {
+    return tt::test::ChatRequest().model(dynamoConfig_.model);
+  }
+
+  static const DynamoConfig& dynamoConfig() { return dynamoConfig_; }
+  static bool dynamoAvailable() { return dynamoAvailable_; }
+
+  static DynamoConfig dynamoConfig_;
+  static bool dynamoAvailable_;
+  static std::string dynamoUnavailableReason_;
+
+ private:
+  static const char* testName() { return typeid(Derived).name(); }
+};
+
+template <typename Derived>
+DynamoConfig DynamoTestFixture<Derived>::dynamoConfig_;
+
+template <typename Derived>
+bool DynamoTestFixture<Derived>::dynamoAvailable_ = false;
+
+template <typename Derived>
+std::string DynamoTestFixture<Derived>::dynamoUnavailableReason_ =
+    "Dynamo infrastructure not initialized";
 
 }  // namespace tt::test::dynamo

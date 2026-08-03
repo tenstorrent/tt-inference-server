@@ -10,9 +10,12 @@
 //
 //   cd dynamo_frontend && ./deploy.sh --no-monitoring --no-worker
 //
+// Suite setup fails fast if the frontend is unreachable, then waits for etcd
+// registration and /v1/models discovery after the in-process backend starts.
+//
 // Test infrastructure lives under tests/support/:
 //   - TestServer          : in-process stack + DynamoWorkerServer
-//   - dynamo_frontend.hpp : configureDynamoEnv / sendDynamoRequest
+//   - DynamoTestFixture   : frontend readiness + asyncRequest helpers
 //   - ChatRequest         : fluent /v1/chat/completions body builder
 //   - runWorkerSubprocess : --worker re-exec entry point
 
@@ -21,7 +24,6 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
-#include <future>
 #include <memory>
 #include <string>
 
@@ -61,31 +63,23 @@ void configureEnv() {
 
 }  // namespace
 
-class MainIntegrationTest : public ::testing::Test {
+class MainIntegrationTest
+    : public tt::test::dynamo::DynamoTestFixture<MainIntegrationTest> {
  protected:
   static void SetUpTestSuite() {
     tt::utils::ZeroOverheadLogger::initialize();
-    dynamoConfig = tt::test::dynamo::DynamoConfig::fromEnv();
+
+    if (!initDynamo()) return;
+
     server = tt::test::TestServer::start();
+
+    if (!waitUntilBackendRoutable()) {
+      server.reset();
+      return;
+    }
   }
+
   static void TearDownTestSuite() { server.reset(); }
-
-  // Fire request through Dynamo frontend. Returns future for the raw HTTP
-  // response. Step 3 will add etcd + /v1/models readiness before the suite
-  // runs; until then, a missing frontend fails the HTTP call.
-  static std::future<std::string> asyncRequest(const std::string& body) {
-    return std::async(std::launch::async, [body] {
-      return tt::test::dynamo::sendDynamoRequest(dynamoConfig, body);
-    });
-  }
-  static std::future<std::string> asyncRequest(
-      const tt::test::ChatRequest& req) {
-    return asyncRequest(req.toJson());
-  }
-
-  static tt::test::ChatRequest chatRequest() {
-    return tt::test::ChatRequest().model(dynamoConfig.model);
-  }
 
   // Mock the worker producing one output token + a clean final marker.
   // Tests that need a custom token stream use tt::test::WorkerResponse
@@ -96,11 +90,9 @@ class MainIntegrationTest : public ::testing::Test {
   }
 
   static std::unique_ptr<tt::test::TestServer> server;
-  static tt::test::dynamo::DynamoConfig dynamoConfig;
 };
 
 std::unique_ptr<tt::test::TestServer> MainIntegrationTest::server;
-tt::test::dynamo::DynamoConfig MainIntegrationTest::dynamoConfig;
 
 using tt::test::ChatRequest;
 
