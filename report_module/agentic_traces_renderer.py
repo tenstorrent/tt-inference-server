@@ -15,6 +15,13 @@ The config table is transposed (one row per field) because it is the same
 handful of values for every run and its values are long, so as columns they set
 the width of the whole report.
 
+Two harnesses share this kind -- the InferenceX AIPerf fork and SwarmOne's
+swo-bench -- and a sweep can mix them. The tables are common ground (a column no
+run emitted is dropped, so each source only pays width for its own metrics),
+while the surrounding prose is selected per source: describing swo-bench numbers
+as AIPerf's, or defining metrics the report does not contain, is worse than
+silence.
+
 Registered with :func:`report_module.renderers.register` at import time (see the
 bottom of this module).
 """
@@ -31,6 +38,11 @@ from report_module.schema import Block
 logger = logging.getLogger(__name__)
 
 NA = "N/A"
+
+# ``TraceSource`` values, duplicated rather than imported: report_module renders
+# whatever a Block carries and does not otherwise depend on reference_config.
+INFERENCEX_SOURCE = "inferencex_agentx"
+SWARMONE_SOURCE = "swarmone"
 
 # The run identity carried by every table so rows can be lined up across them.
 # The generated `label` is long and redundant with these three, so it is only
@@ -66,15 +78,25 @@ LATENCY_COLUMNS: List[Tuple[str, str]] = [
 
 THROUGHPUT_COLUMNS: List[Tuple[str, str]] = [
     ("output_token_throughput_per_user", "Out Tok/s/User"),
+    ("median_output_token_throughput_per_user", "Out Tok/s/User P50"),
     ("e2e_output_token_throughput_per_user", "E2E Tok/s/User"),
     ("output_token_throughput", "Output Tok/s"),
     ("total_token_throughput", "Total Tok/s"),
+    ("active_throughput_tok_per_s", "Total Tok/s (Active)"),
     ("request_throughput", "Req/s"),
     ("effective_prefill_throughput", "Prefill Tok/s"),
     ("active_prefill_throughput", "Prefill Tok/s (Active)"),
+    # swo-bench measures prefill per request against the prompt actually sent,
+    # so a cache hit shows up as a very high rate; it is not comparable to
+    # AIPerf's run-averaged effective_prefill_throughput above.
+    ("prefill_tok_per_sec_mean", "Prefill Tok/s/Req Avg"),
+    ("prefill_tok_per_sec_p50", "Prefill Tok/s/Req P50"),
+    ("prefill_tok_per_sec_p90", "Prefill Tok/s/Req P90"),
     ("effective_decode_throughput", "Decode Tok/s"),
     ("active_decode_throughput", "Decode Tok/s (Active)"),
     ("effective_concurrency", "Eff. Concur"),
+    ("concurrency_mean", "Concur Avg"),
+    ("concurrency_peak", "Concur Peak"),
     ("mean_tokens_in_flight", "Tok In Flight Avg"),
     ("max_tokens_in_flight", "Tok In Flight Max"),
     ("mean_isl", "ISL Mean"),
@@ -101,6 +123,9 @@ HEALTH_COLUMNS: List[Tuple[str, str]] = [
     ("branch_children_delayed", "Br. Delayed"),
     ("branch_parents_failed_due_to_child_error", "Br. Parent Failed"),
     ("branch_joins_suppressed", "Br. Joins Dropped"),
+    ("ready_starved_events", "Ready Starved"),
+    ("pace_idle_ms", "Pace Idle (ms)"),
+    ("tool_idle_ms", "Tool Idle (ms)"),
     ("measured_benchmark_duration", "Measured (s)"),
     ("error_summary", "Top Errors"),
 ]
@@ -109,12 +134,18 @@ HEALTH_COLUMNS: List[Tuple[str, str]] = [
 CONFIG_FIELDS: List[Tuple[str, str]] = [
     ("label", "Run"),
     ("scenario", "Scenario"),
+    ("task", "Task"),
     ("public_dataset", "Dataset"),
     ("dataset_hf_name", "Dataset Repo"),
     ("dataset_num_entries", "Trace Pool"),
     ("benchmark_duration", "Profiling Window (s)"),
     ("warmup_requests_per_lane", "Warmup (req/lane)"),
     ("warmup_grace_period", "Warmup Grace (s)"),
+    ("resident", "Resident Sessions"),
+    ("cache_mode", "Cache Mode"),
+    ("history_mode", "History Mode"),
+    ("max_tokens", "Max Tokens"),
+    ("max_tokens_mode", "Max Tokens Mode"),
     ("max_context_length", "Max Context"),
     ("failed_request_threshold", "Fail Threshold"),
     ("trajectory_start_min_ratio", "Trajectory Start Min"),
@@ -122,6 +153,8 @@ CONFIG_FIELDS: List[Tuple[str, str]] = [
     ("random_seed", "Random Seed"),
     ("inferencex_git_ref", "Client Ref"),
     ("aiperf_version", "AIPerf Version"),
+    ("swo_bench_version", "swo-bench Version"),
+    ("swo_session_id", "swo-bench Session"),
     ("benchmark_id", "Benchmark ID"),
     ("run_started_at", "Started"),
     ("run_ended_at", "Ended"),
@@ -132,10 +165,15 @@ _THROUGHPUT_KEYS = frozenset(
     {
         "output_token_throughput",
         "output_token_throughput_per_user",
+        "median_output_token_throughput_per_user",
         "e2e_output_token_throughput_per_user",
         "total_token_throughput",
+        "active_throughput_tok_per_s",
         "effective_prefill_throughput",
         "active_prefill_throughput",
+        "prefill_tok_per_sec_mean",
+        "prefill_tok_per_sec_p50",
+        "prefill_tok_per_sec_p90",
         "effective_decode_throughput",
         "active_decode_throughput",
     }
@@ -173,6 +211,12 @@ _INT_KEYS = frozenset(
         "total_output_tokens",
         "mean_tokens_in_flight",
         "max_tokens_in_flight",
+        "ready_starved_events",
+        "pace_idle_ms",
+        "tool_idle_ms",
+        "resident",
+        "max_tokens",
+        "concurrency_peak",
     }
 )
 
@@ -189,9 +233,102 @@ _RATIO_KEYS = frozenset(
         "failed_request_threshold",
         "slice_duration",
         "effective_concurrency",
+        "concurrency_mean",
         "connection_reuse_rate",
     }
 )
+
+
+# Metric definitions, grouped by the harness that produces the metric. Emitting
+# only the groups whose source is present keeps a swo-bench-only report from
+# defining AIPerf metrics it never measured (and crediting AIPerf for the ones
+# it did).
+SHARED_DEFINITIONS: List[str] = [
+    # TPOT is not here: only AIPerf reports a usable one, and naming it in a
+    # swo-bench report would define a column that report does not contain.
+    "**TTFT / E2EL**: time to first token and end-to-end request latency. "
+    "Long-context agentic prefill makes TTFT the headline metric, so its "
+    "spread is reported.",
+    "**Out Tok/s/User**: decode speed while a request is streaming, i.e. how "
+    "fast a single agent's turn produces text.",
+    "**Reqs OK / Errors / Error %**: successful requests (the sample size "
+    "behind every latency stat), failed ones, and the failure share.",
+    "**Measured (s)**: actual wall clock the run occupied.",
+]
+
+INFERENCEX_DEFINITIONS: List[str] = [
+    "**TPOT**: inter-token latency, i.e. the gap between streamed tokens once "
+    "generation is under way.",
+    "**TTFOT**: time to the first token the user actually sees. On a reasoning "
+    "model the gap to TTFT is time spent emitting reasoning tokens.",
+    "**CO-Adj E2EL**: latency corrected for coordinated omission, so it "
+    "includes the time a request spent waiting to be dispatched. It tracks "
+    "E2EL until requests start queueing.",
+    "**Err-Adj TTFT / E2EL**: percentiles with failed requests folded in, so a "
+    "run that got fast by erroring out cannot look good. Omitted when a run "
+    "had no errors.",
+    "**E2E Tok/s/User**: divides by whole-request wall clock rather than "
+    "streaming time, so it includes prefill and is the user-visible speed of "
+    "an agentic turn; expect it to be several times lower than "
+    "**Out Tok/s/User**.",
+    "**Prefill / Decode Tok/s**: the phase split of serving throughput, "
+    "averaged over the whole run. The **(Active)** variants only count the "
+    "windows where that phase was actually working, so the ratio between them "
+    "is the phase's duty cycle.",
+    "**Eff. Concur**: concurrency actually in flight. Trace replay honours the "
+    "recorded think time, so this sits below the requested **Concur** by "
+    "design; a large shortfall means the intended load was never applied.",
+    "**Tok In Flight**: KV footprint across in-flight requests. Compare the "
+    "max against **Max Context**.",
+    "**Ctx Overflow**: requests whose trace exceeded **Max Context**. Non-zero "
+    "means the replay was truncated and no longer matches what was recorded; "
+    "above 1% the scenario invalidates the submission.",
+    "**OSL Mismatch / OSL Diff %**: responses whose length did not match the "
+    "trace's recorded output, and by how much. Non-zero means the replayed "
+    "conversation diverged from what was recorded.",
+    "**Cache Hit %**: measured from the serving engine's own counters over the "
+    "profiling window, so the cache-priming warmup is excluded. **Theo. Cache "
+    "Hit %** is the reuse inherent to the traces, i.e. the upper bound the "
+    "engine was offered. A measured rate well below it means the cache was "
+    "evicting reuse the workload had available. Omitted when the server "
+    "exposes no such counters.",
+    "**Credit Drops**: requests the load generator could not dispatch on the "
+    "trace's schedule. Non-zero means the recorded timing was not reproduced, "
+    "usually because the server was saturated.",
+    "**Conn Reuse**: fraction of requests served on a reused connection. Below "
+    "1.0 means connections were being torn down, which is what shows up as "
+    "`ServerDisconnectedError`.",
+    "**Branches**: subagent trajectories spawned during replay. Any errored, "
+    "truncated, or delayed child, any parent failed by its child, or any "
+    "dropped join means the fan-out did not replay as recorded.",
+    "**Fail Threshold**: the error rate above which the scenario aborts the run.",
+    "**Measured (s)** should track **Profiling Window (s)**; a large shortfall "
+    "means the run ended early.",
+]
+
+SWARMONE_DEFINITIONS: List[str] = [
+    "**Prefill Tok/s/Req**: prefill rate for one request measured over the "
+    "whole prompt sent, so a prefix-cache hit reads as a very high rate. "
+    "Capturing that cache-served prefill is the point of the metric -- it is "
+    "what a fixed-ISL sweep cannot show -- but it is a per-request rate, not a "
+    "serving-capacity figure, so do not read it against the run-averaged "
+    "prefill columns.",
+    "**TPOT** is deliberately absent: swo-bench's inter-token figure is not a "
+    "usable latency (a live run reported 0.01 ms per token against a measured "
+    "38.9 tok/s), so **Out Tok/s/User** and **TTFT** are the latency signals "
+    "for these rows.",
+    "**Total Tok/s (Active)**, **Concur Avg / Peak**: throughput and "
+    "concurrency counted only while requests were in flight, which excludes "
+    "the replay's simulated tool time. Compare against the requested "
+    "**Concur** to see how much of it the recorded sessions actually asked "
+    "for.",
+    "**Ready Starved**: turns that were ready to dispatch but had no free "
+    "slot. Non-zero means **Resident Sessions** bounded the run rather than "
+    "the server.",
+    "**Pace / Tool Idle (ms)**: time the harness deliberately spent idle "
+    "reproducing the recorded think and tool-call time. It is inside "
+    "**Measured (s)** but is not server time.",
+]
 
 
 def _format_value(key: str, value: Any) -> str:
@@ -318,6 +455,82 @@ def _resolve_client_ref(rows: Sequence[Mapping[str, Any]]) -> Optional[str]:
     return None
 
 
+def _resolve_field(rows: Sequence[Mapping[str, Any]], key: str) -> Optional[str]:
+    for row in rows:
+        value = row.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
+def _tool_paragraphs(rows: Sequence[Mapping[str, Any]]) -> List[str]:
+    """Describe each harness that contributed a row.
+
+    A mixed sweep runs two unrelated clients over two unrelated trace sets, so
+    one blurb cannot honestly cover both -- and crediting AIPerf for a swo-bench
+    row would misattribute the numbers.
+    """
+    sources = {str(row.get("trace_source") or "") for row in rows}
+    paragraphs: List[str] = []
+
+    if INFERENCEX_SOURCE in sources:
+        client_ref = _resolve_client_ref(rows)
+        ref_note = f" pinned at `{client_ref}`" if client_ref else ""
+        paragraphs.append(
+            "**`inferencex_agentx` rows:** the AIPerf fork vendored in "
+            "[InferenceX](https://github.com/SemiAnalysisAI/InferenceX)"
+            f"{ref_note}, driving the `inferencex-agentx-mvp` scenario. Each run "
+            "replays recorded multi-turn agentic coding traces with their original "
+            "timing, including subagent fan-out, so the load shape is the trace's "
+            "rather than a synthetic ISL/OSL grid."
+        )
+
+    if SWARMONE_SOURCE in sources:
+        version = _resolve_field(rows, "swo_bench_version")
+        version_note = f" v{version}" if version else ""
+        paragraphs.append(
+            "**`swarmone` rows:** SwarmOne's "
+            "[`swo-bench`](https://swarmone.ai/docs/swo-bench)"
+            f"{version_note} replay engine. Each run replays recorded Claude-Code "
+            "/ Codex coding sessions turn by turn with growing history, so the "
+            "prompt is mostly a prefix-cache hit that grows through the session "
+            "-- the shape a fixed-ISL sweep cannot produce. The replay plan is "
+            "built server-side by the SwarmOne backend."
+        )
+
+    paragraphs.append(
+        "Numbers are only comparable across runs from the same source on the "
+        "same client revision and trace set."
+    )
+    return paragraphs
+
+
+def _submission_caption(rows: Sequence[Mapping[str, Any]]) -> str:
+    """Explain what the Submission verdict means for the sources present.
+
+    The two harnesses reach the verdict differently, and reporting one
+    explanation over both would overstate what swo-bench actually checks.
+    """
+    sources = {str(row.get("trace_source") or "") for row in rows}
+    sentences: List[str] = []
+    if INFERENCEX_SOURCE in sources:
+        sentences.append(
+            "For `inferencex_agentx` it is the scenario's own verdict, not "
+            "ours: it folds static scenario-lock violations, a context-overflow "
+            "rate above 1%, and early cancellation into one flag."
+        )
+    if SWARMONE_SOURCE in sources:
+        sentences.append(
+            "swo-bench publishes no such verdict, so for `swarmone` it is our "
+            "own completeness check (the run returned successful requests with "
+            "a plausible TTFT)."
+        )
+    sentences.append(
+        "An invalid run is failed by the driver and never reaches this table."
+    )
+    return " ".join(sentences)
+
+
 def render_agentic_traces(block: Block, metadata: Mapping[str, Any]) -> str:
     """Render every agentic-trace run into the report section."""
     records = _extract_records(block)
@@ -330,17 +543,8 @@ def render_agentic_traces(block: Block, metadata: Mapping[str, Any]) -> str:
     heading_suffix = f" for {suffix}" if suffix else ""
     parts: List[str] = [f"### Agentic Trace Replay{heading_suffix}"]
 
-    client_ref = _resolve_client_ref(rows)
-    ref_note = f" pinned at `{client_ref}`" if client_ref else ""
-    parts.append(
-        "**Benchmarking Tool:** the AIPerf fork vendored in "
-        "[InferenceX](https://github.com/SemiAnalysisAI/InferenceX)"
-        f"{ref_note}, driving the `inferencex-agentx-mvp` scenario. Each run "
-        "replays recorded multi-turn agentic coding traces with their original "
-        "timing, including subagent fan-out, so the load shape is the trace's "
-        "rather than a synthetic ISL/OSL grid. Numbers are only comparable "
-        "across runs on the same client revision and dataset."
-    )
+    parts.append("**Benchmarking Tools:**")
+    parts.extend(_tool_paragraphs(rows))
 
     latency = _table(rows, LATENCY_COLUMNS)
     if latency:
@@ -354,11 +558,7 @@ def render_agentic_traces(block: Block, metadata: Mapping[str, Any]) -> str:
     if health:
         parts.append(
             "#### Run Health & Validity\n\n"
-            "**Submission** is the scenario's own verdict, not ours: it folds "
-            "static scenario-lock violations, a context-overflow rate above "
-            "1%, and early cancellation into one flag. An invalid run is "
-            "failed by the driver and is not a reportable number.\n\n"
-            f"{health}"
+            f"**Submission** {_submission_caption(rows)}\n\n{health}"
         )
 
     config = _vertical_table(rows, CONFIG_FIELDS)
@@ -371,65 +571,21 @@ def render_agentic_traces(block: Block, metadata: Mapping[str, Any]) -> str:
             f"can be traced back to what produced it.\n\n{config}"
         )
 
-    parts.append(
-        "**Metric definitions:**\n"
-        "> - **TTFT / TPOT / E2EL**: AIPerf time-to-first-token, inter-token "
-        "latency, and end-to-end request latency from "
-        "`profile_export_aiperf.json`. Long-context agentic prefill makes TTFT "
-        "the headline metric, so its spread is reported.\n"
-        "> - **TTFOT**: time to the first token the user actually sees. On a "
-        "reasoning model the gap to TTFT is time spent emitting reasoning "
-        "tokens.\n"
-        "> - **CO-Adj E2EL**: latency corrected for coordinated omission, so it "
-        "includes the time a request spent waiting to be dispatched. It tracks "
-        "E2EL until requests start queueing.\n"
-        "> - **Err-Adj TTFT / E2EL**: percentiles with failed requests folded "
-        "in, so a run that got fast by erroring out cannot look good. Omitted "
-        "when a run had no errors.\n"
-        "> - **Out Tok/s/User**: decode speed while a request is streaming. "
-        "**E2E Tok/s/User** divides by whole-request wall clock instead, so it "
-        "includes prefill and is the user-visible speed of an agentic turn; "
-        "expect it to be several times lower.\n"
-        "> - **Prefill / Decode Tok/s**: the phase split of serving throughput, "
-        "averaged over the whole run. The **(Active)** variants only count the "
-        "windows where that phase was actually working, so the ratio between "
-        "them is the phase's duty cycle.\n"
-        "> - **Eff. Concur**: concurrency actually in flight. Trace replay "
-        "honours the recorded think time, so this sits below the requested "
-        "**Concur** by design; a large shortfall means the intended load was "
-        "never applied.\n"
-        "> - **Tok In Flight**: KV footprint across in-flight requests. Compare "
-        "the max against **Max Context**.\n"
-        "> - **Reqs OK / Errors**: successful requests (the sample size behind "
-        "every latency stat) versus failed ones. **Error %** is AIPerf's "
-        "`request_error_rate`; the run aborts if it exceeds **Fail "
-        "Threshold**.\n"
-        "> - **Ctx Overflow**: requests whose trace exceeded **Max Context**. "
-        "Non-zero means the replay was truncated and no longer matches what was "
-        "recorded; above 1% the scenario invalidates the submission.\n"
-        "> - **OSL Mismatch / OSL Diff %**: responses whose length did not "
-        "match the trace's recorded output, and by how much. Non-zero means the "
-        "replayed conversation diverged from what was recorded.\n"
-        "> - **Cache Hit %**: measured from the serving engine's own counters "
-        "over the profiling window, so the cache-priming warmup is excluded. "
-        "**Theo. Cache Hit %** is the reuse inherent to the traces, i.e. the "
-        "upper bound the engine was offered. A measured rate well below it means "
-        "the cache was evicting reuse the workload had available. Omitted when "
-        "the server exposes no such counters.\n"
-        "> - **Credit Drops**: requests the load generator could not dispatch "
-        "on the trace's schedule. Non-zero means the recorded timing was not "
-        "reproduced, usually because the server was saturated.\n"
-        "> - **Conn Reuse**: fraction of requests served on a reused "
-        "connection. Below 1.0 means connections were being torn down, which is "
-        "what shows up as `ServerDisconnectedError`.\n"
-        "> - **Branches**: subagent trajectories spawned during replay. Any "
-        "errored, truncated, or delayed child, any parent failed by its child, "
-        "or any dropped join means the fan-out did not replay as recorded.\n"
-        "> - **Measured (s)**: actual profiling wall clock, which should track "
-        "**Profiling Window (s)**; a large shortfall means the run ended early."
-    )
+    parts.append(_definitions_block(rows))
 
     return "\n\n".join(parts)
+
+
+def _definitions_block(rows: Sequence[Mapping[str, Any]]) -> str:
+    """Emit only the metric definitions the report's sources actually produced."""
+    sources = {str(row.get("trace_source") or "") for row in rows}
+    bullets = list(SHARED_DEFINITIONS)
+    if INFERENCEX_SOURCE in sources:
+        bullets.extend(INFERENCEX_DEFINITIONS)
+    if SWARMONE_SOURCE in sources:
+        bullets.extend(SWARMONE_DEFINITIONS)
+    body = "\n".join(f"> - {bullet}" for bullet in bullets)
+    return f"**Metric definitions:**\n{body}"
 
 
 # Register at import time so any code path that imports report_module picks the

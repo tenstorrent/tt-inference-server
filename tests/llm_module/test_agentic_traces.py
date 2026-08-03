@@ -37,7 +37,9 @@ from llm_module.drivers.aiperf_agentic_traces import (
 )
 from llm_module.drivers.swo_bench_agentic_traces import (
     build_swo_bench_cmd,
+    build_swo_bench_env,
     parse_swo_bench_output,
+    swo_bench_executable,
 )
 from llm_module.drivers.swo_bench_agentic_traces import (
     _invalid_result_reason as _swo_invalid_result_reason,
@@ -1106,6 +1108,15 @@ class TestSwarmOneConfigWithoutInferencex:
         assert runs[0].trace_source is TraceSource.SWARMONE
 
 
+@pytest.fixture
+def swo_venv(tmp_path):
+    """A venv bin layout holding the console script swo-bench installs."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "swo-bench").write_text("#!/bin/sh\n")
+    return bin_dir
+
+
 class TestSwoBenchCommand:
     def _run(self, mode=AgenticTracesMode.CI):
         config = AGENTIC_TRACES_CONFIGS[KIMI_MODEL_ID]
@@ -1115,10 +1126,10 @@ class TestSwoBenchCommand:
             if run.trace_source is TraceSource.SWARMONE
         ][0]
 
-    def _cmd(self, mode=AgenticTracesMode.CI, **kwargs):
+    def _cmd(self, swo_venv, mode=AgenticTracesMode.CI, **kwargs):
         defaults = dict(
             run=self._run(mode),
-            venv_python=Path("/venv/bin/python"),
+            venv_python=swo_venv / "python",
             model_name="moonshotai/Kimi-K2.7-Code",
             url="http://localhost:8000",
             results_path=Path("/tmp/artifacts/swo_bench_results.json"),
@@ -1126,33 +1137,36 @@ class TestSwoBenchCommand:
         defaults.update(kwargs)
         return build_swo_bench_cmd(**defaults)
 
-    def test_invokes_the_venv_swo_bench_module(self):
-        cmd = self._cmd()
-        assert cmd[:4] == ["/venv/bin/python", "-m", "swo_bench", "replay"]
+    def test_invokes_the_venv_console_script(self, swo_venv):
+        """swo_bench ships no ``__main__``, so ``python -m swo_bench`` aborts
+        with "cannot be directly executed" before reaching the endpoint."""
+        cmd = self._cmd(swo_venv)
+        assert cmd[:2] == [str(swo_venv / "swo-bench"), "replay"]
+        assert "-m" not in cmd
 
-    def test_carries_scenario_task_and_context(self):
-        cmd = self._cmd()
+    def test_carries_scenario_task_and_context(self, swo_venv):
+        cmd = self._cmd(swo_venv)
         assert cmd[cmd.index("--scenario") + 1] == SWO_SCENARIO
         assert cmd[cmd.index("--task") + 1] == "sympy-bugfix"
         assert cmd[cmd.index("--model-context-length") + 1] == "262144"
         assert "--no-resolve-model-context" in cmd
 
-    def test_endpoint_gets_v1_suffix(self):
-        cmd = self._cmd()
+    def test_endpoint_gets_v1_suffix(self, swo_venv):
+        cmd = self._cmd(swo_venv)
         assert cmd[cmd.index("--endpoint") + 1] == "http://localhost:8000/v1"
 
-    def test_bare_host_gets_scheme_and_v1(self):
-        cmd = self._cmd(url="localhost:8000")
+    def test_bare_host_gets_scheme_and_v1(self, swo_venv):
+        cmd = self._cmd(swo_venv, url="localhost:8000")
         assert cmd[cmd.index("--endpoint") + 1] == "http://localhost:8000/v1"
 
-    def test_concurrency_and_resident_default_together(self):
-        cmd = self._cmd(mode=AgenticTracesMode.CI)
+    def test_concurrency_and_resident_default_together(self, swo_venv):
+        cmd = self._cmd(swo_venv, mode=AgenticTracesMode.CI)
         assert cmd[cmd.index("--concurrent") + 1] == "1"
         # resident defaults to concurrency when unset in the spec.
         assert cmd[cmd.index("--resident") + 1] == "1"
 
-    def test_replay_knobs_and_output(self):
-        cmd = self._cmd()
+    def test_replay_knobs_and_output(self, swo_venv):
+        cmd = self._cmd(swo_venv)
         assert cmd[cmd.index("--cache-mode") + 1] == "realistic"
         assert cmd[cmd.index("--history-mode") + 1] == "faithful"
         assert cmd[cmd.index("--max-tokens") + 1] == "4096"
@@ -1162,21 +1176,55 @@ class TestSwoBenchCommand:
             "/tmp/artifacts/swo_bench_results.json"
         )
 
-    def test_full_mode_replays_all_tasks(self):
-        cmd = self._cmd(mode=AgenticTracesMode.FULL)
+    def test_full_mode_replays_all_tasks(self, swo_venv):
+        cmd = self._cmd(swo_venv, mode=AgenticTracesMode.FULL)
         assert "--task" not in cmd
         assert cmd[cmd.index("--concurrent") + 1] == "8"
 
-    def test_api_key_only_present_with_a_token(self):
-        assert "--api-key" not in self._cmd()
-        cmd = self._cmd(auth_token="tok123")
-        assert cmd[cmd.index("--api-key") + 1] == "tok123"
 
-    def test_license_never_appears_on_argv(self):
-        cmd = self._cmd(auth_token="tok123")
+class TestSwoBenchCredentials:
+    """Neither the licence nor the endpoint token may reach argv.
+
+    ``run_command`` logs the command it executes, so a credential passed as a
+    flag is written into every run log.
+    """
+
+    def test_no_credential_appears_on_argv(self, swo_venv):
+        cmd = TestSwoBenchCommand()._cmd(swo_venv)
         joined = " ".join(cmd)
-        assert "--license-key" not in joined
-        assert "SWO_LICENSE_KEY" not in joined
+        for leaked in ("--api-key", "--license-key", "SWO_LICENSE_KEY"):
+            assert leaked not in joined
+
+    def test_the_token_travels_by_environment(self):
+        assert build_swo_bench_env("tok123") == {"SWO_REPLAY_API_KEY": "tok123"}
+
+    def test_no_token_sets_no_variable(self):
+        """An unauthenticated endpoint must not get an empty bearer token."""
+        assert build_swo_bench_env("") == {}
+
+
+class TestSwoBenchExecutable:
+    def test_prefers_the_console_script_beside_the_interpreter(self, swo_venv):
+        assert swo_bench_executable(swo_venv / "python") == swo_venv / "swo-bench"
+
+    def test_falls_back_to_path(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            "llm_module.drivers.swo_bench_agentic_traces.shutil.which",
+            lambda name: "/usr/local/bin/swo-bench",
+        )
+        assert swo_bench_executable(tmp_path / "python") == Path(
+            "/usr/local/bin/swo-bench"
+        )
+
+    def test_a_missing_executable_names_where_it_comes_from(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.setattr(
+            "llm_module.drivers.swo_bench_agentic_traces.shutil.which",
+            lambda name: None,
+        )
+        with pytest.raises(RuntimeError, match="agentic-traces.txt"):
+            swo_bench_executable(tmp_path / "python")
 
 
 def _swo_results(**overrides):
@@ -1258,6 +1306,14 @@ class TestSwoBenchOutputParsing:
         assert metrics["output_token_throughput"] == 107.59
         assert metrics["prefill_tok_per_sec_p50"] == 276.16
         assert metrics["measured_benchmark_duration"] == 67.05
+
+    def test_inter_token_latency_is_not_published(self, tmp_path):
+        """swo-bench's itl_ms_p50 is not a usable TPOT: a live run reported
+        0.01 ms/token beside a measured 38.9 tok/s decode rate. Emitting it
+        would render a false 0.0 next to AIPerf's real TPOT."""
+        metrics = parse_swo_bench_output(_write_swo_results(tmp_path))
+        assert "mean_tpot_ms" not in metrics
+        assert "median_tpot_ms" not in metrics
 
     def test_counts_and_error_rate(self, tmp_path):
         metrics = parse_swo_bench_output(_write_swo_results(tmp_path))

@@ -15,10 +15,12 @@ Like the AIPerf agentic-traces driver, this is intentionally not an
 ``LLMRunConfig`` (isl / osl / concurrency / num_prompts), which cannot express a
 trace-replay run.
 
-The SwarmOne license key is never placed on the command line (it would leak into
-run logs). swo-bench resolves it from the ``SWO_LICENSE_KEY`` environment
-variable or ``~/.swarmone/license.key``; the process env is inherited by the
-subprocess, and ``run.py`` fails fast when neither is present for a swarmone run.
+No credential is ever placed on the command line: :func:`llm_module.drivers.
+_subprocess.run_command` logs the full argv, so both the SwarmOne license and
+the endpoint bearer token travel by environment instead. swo-bench resolves the
+license from ``SWO_LICENSE_KEY`` or ``~/.swarmone/license.key`` (``run.py`` fails
+fast when neither is present for a swarmone run) and the token from
+``SWO_REPLAY_API_KEY`` (see :func:`build_swo_bench_env`).
 """
 
 from __future__ import annotations
@@ -95,13 +97,14 @@ class SwoBenchAgenticTracesDriver:
             model_name=server.model or self.model_repo,
             url=server.url_with_port,
             results_path=results_path,
-            auth_token=server.auth_token,
         )
         _log_run_header(trace_run)
 
-        # swo-bench reads the license from SWO_LICENSE_KEY / ~/.swarmone; the
-        # sweep-level env (context.extra_env) is inherited, run-level env last.
+        # swo-bench reads the license from SWO_LICENSE_KEY / ~/.swarmone and the
+        # endpoint token from SWO_REPLAY_API_KEY, so neither reaches argv (which
+        # the subprocess runner logs). Sweep-level env first, run-level env last.
         env = dict(context.extra_env)
+        env.update(build_swo_bench_env(server.auth_token))
         env.update(trace_run.env)
 
         rc = run_command(cmd, env=env, timeout_s=context.per_run_timeout_s)
@@ -167,6 +170,39 @@ def _swo_endpoint(url: str) -> str:
     return url
 
 
+def swo_bench_executable(venv_python: Path) -> Path:
+    """Locate the ``swo-bench`` console script beside ``venv_python``.
+
+    Unlike aiperf, the swo_bench package ships no ``__main__``, so
+    ``python -m swo_bench`` fails outright. The console script is also the only
+    entry point that sets Click's ``auto_envvar_prefix``, which is what lets the
+    API key travel by environment instead of argv.
+    """
+    candidate = Path(venv_python).parent / "swo-bench"
+    if candidate.exists():
+        return candidate
+    found = shutil.which("swo-bench")
+    if found:
+        return Path(found)
+    raise RuntimeError(
+        f"swo-bench executable not found next to {venv_python} or on PATH. "
+        "It is installed into the AGENTIC_TRACES venv from "
+        "requirements/agentic-traces.txt."
+    )
+
+
+def build_swo_bench_env(auth_token: str) -> Dict[str, str]:
+    """Environment carrying the endpoint credential for ``swo-bench replay``.
+
+    The bearer token must not go on the command line: the subprocess runner logs
+    the full argv, so ``--api-key`` would print the caller's key into every run
+    log. ``swo-bench``'s CLI group sets ``auto_envvar_prefix="SWO"``, so Click
+    reads ``--api-key`` for the ``replay`` subcommand from this variable. The
+    license key travels the same way, via ``SWO_LICENSE_KEY``.
+    """
+    return {"SWO_REPLAY_API_KEY": auth_token} if auth_token else {}
+
+
 def build_swo_bench_cmd(
     *,
     run: AgenticTracesRun,
@@ -174,7 +210,6 @@ def build_swo_bench_cmd(
     model_name: str,
     url: str,
     results_path: Path,
-    auth_token: str = "",
 ) -> List[str]:
     """Construct the ``swo-bench replay`` CLI for one SwarmOne run.
 
@@ -184,12 +219,12 @@ def build_swo_bench_cmd(
     is always passed (and context auto-resolution disabled) because the
     Tenstorrent Console ``/v1/models`` does not report the window, which would
     otherwise abort the run (see SWO_BENCH_REPORT.md).
+
+    Credentials are deliberately absent; see :func:`build_swo_bench_env`.
     """
     resident = run.resident if run.resident is not None else run.concurrency
     cmd: List[str] = [
-        str(venv_python),
-        "-m",
-        "swo_bench",
+        str(swo_bench_executable(venv_python)),
         "replay",
         "--scenario",
         run.scenario,
@@ -222,8 +257,6 @@ def build_swo_bench_cmd(
             str(results_path),
         ]
     )
-    if auth_token:
-        cmd.extend(["--api-key", auth_token])
     return cmd
 
 
@@ -266,7 +299,6 @@ def parse_swo_bench_output(results_path: Path) -> Dict[str, Any]:
     latency = _block("latency_ms")
     decode = _block("decode_tok_per_sec")
     prefill = _block("prefill_tok_per_sec")
-    itl = _block("itl_ms_p50")
 
     successful = _int(agg.get("successful"))
     failed = _int(agg.get("failed"))
@@ -297,11 +329,12 @@ def parse_swo_bench_output(results_path: Path) -> Dict[str, Any]:
         "p99_e2el_ms": _num(latency.get("p99")),
         "min_e2el_ms": _num(latency.get("min")),
         "max_e2el_ms": _num(latency.get("max")),
-        # Inter-token latency reads implausibly low from swo-bench (a streaming
-        # measurement artifact per SWO_BENCH_REPORT.md); surfaced for parity but
-        # decode tok/s and TTFT are the reliable signals.
-        "mean_tpot_ms": _num(itl.get("mean")),
-        "median_tpot_ms": _num(itl.get("p50")),
+        # No TPOT: swo-bench's ``itl_ms_p50`` is not a usable inter-token
+        # latency. A live Qwen3-32B run reported a mean of 0.01 ms (~100k
+        # tok/s) while decode_tok_per_sec said 38.9 tok/s, so it measures
+        # something other than the gap between tokens. Publishing it would put
+        # a plausible-looking 0.0 next to AIPerf's real TPOT and invite the
+        # comparison; the raw value stays in the results JSON on disk.
         # Throughput. Per-user decode rate while streaming, plus the aggregate.
         "output_token_throughput_per_user": _num(decode.get("mean")),
         "median_output_token_throughput_per_user": _num(decode.get("p50")),
@@ -388,6 +421,11 @@ def _build_payload(
         "backend": "swo-bench",
         "task_type": "agentic_traces",
         "trace_source": run.trace_source.value,
+        # Only reached once ``_invalid_result_reason`` cleared the run, so the
+        # verdict is settled here. Recording it keeps the report's Submission
+        # column meaningful for swo-bench rows: swo-bench has no scenario-level
+        # verdict of its own, and an absent field renders as an alarming N/A.
+        "submission_valid": True,
         "label": run.label,
         "mode": run.mode.to_string(),
         "model_id": model_repo,
@@ -478,5 +516,7 @@ def _log_run_summary(run: AgenticTracesRun, metrics: Mapping[str, Any]) -> None:
 __all__ = [
     "SwoBenchAgenticTracesDriver",
     "build_swo_bench_cmd",
+    "build_swo_bench_env",
     "parse_swo_bench_output",
+    "swo_bench_executable",
 ]

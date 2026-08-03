@@ -11,8 +11,10 @@ kind with the InferenceX/AIPerf parser so the report generator collapses both
 harnesses' rows into a single section; the ``backend`` / ``trace_source`` fields
 distinguish them.
 
-No dedicated renderer is registered: the payload is a flat record, which is what
-the generic renderer expects.
+Sharing the kind also means sharing
+:mod:`report_module.agentic_traces_renderer`, which keys its per-source prose
+and its swo-bench columns off ``trace_source``. A field added here only reaches
+the report once it is listed in one of that module's column groups.
 """
 
 from __future__ import annotations
