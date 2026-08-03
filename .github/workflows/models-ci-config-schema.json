@@ -6,7 +6,7 @@
   "$defs": {
     "device_names": {
       "type": "string",
-      "enum": ["N150", "N300", "T3K", "GALAXY", "BH_GALAXY", "P100", "P150", "P150X4", "P150X8", "P300X2", "DUAL_GALAXY", "QUAD_GALAXY"]
+      "enum": ["N150", "N300", "T3K", "GALAXY", "BH_GALAXY", "P100", "P150", "P150X4", "P150X8", "P300", "P300X2", "DUAL_GALAXY", "QUAD_GALAXY"]
     },
     "device_arg_entry": {
       "type": "object",
@@ -56,6 +56,7 @@
             "P150":    { "$ref": "#/$defs/device_arg_entry" },
             "P150X4":  { "$ref": "#/$defs/device_arg_entry" },
             "P150X8":  { "$ref": "#/$defs/device_arg_entry" },
+            "P300":    { "$ref": "#/$defs/device_arg_entry" },
             "P300X2":  { "$ref": "#/$defs/device_arg_entry" },
             "DUAL_GALAXY":  { "$ref": "#/$defs/device_arg_entry" }
           },

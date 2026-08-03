@@ -314,6 +314,108 @@ class TestModelSpecCliArgsCompatibility:
         else:
             assert args.vllm_override_args == test_value
 
+    def test_agentic_traces_mode_defaults_to_full(self, base_args):
+        with patch("sys.argv", ["run.py"] + base_args):
+            args = parse_arguments()
+        assert args.agentic_traces is False
+        assert args.agentic_traces_mode == "full"
+        assert args.agentic_traces_sources is None
+        assert args.agentic_traces_duration is None
+        assert args.agentic_traces_git_ref is None
+        # Unset means AIPerf scrapes only the load target's own /metrics.
+        assert args.agentic_traces_metrics_url is None
+
+    def test_agentic_traces_metrics_url_is_repeatable(self, base_args):
+        args = [a if a != "benchmarks" else "agentic_traces" for a in base_args]
+        with patch(
+            "sys.argv",
+            ["run.py"]
+            + args
+            + [
+                "--agentic-traces-metrics-url",
+                "worker-a:9000",
+                "--agentic-traces-metrics-url",
+                "worker-b:9000/metrics",
+            ],
+        ):
+            parsed = parse_arguments()
+        assert parsed.agentic_traces_metrics_url == [
+            "worker-a:9000",
+            "worker-b:9000/metrics",
+        ]
+
+    def test_agentic_traces_opt_in_requires_release(self, base_args, capsys):
+        # base_args uses --workflow benchmarks
+        with patch("sys.argv", ["run.py"] + base_args + ["--agentic-traces"]):
+            with pytest.raises(SystemExit):
+                parse_arguments()
+        assert "requires --workflow release" in capsys.readouterr().err
+
+    def test_agentic_traces_opt_in_accepted_for_release(self, base_args):
+        args = [a if a != "benchmarks" else "release" for a in base_args]
+        with patch("sys.argv", ["run.py"] + args + ["--agentic-traces"]):
+            parsed = parse_arguments()
+        assert parsed.agentic_traces is True
+
+    def test_agentic_traces_overrides_allowed_on_an_opted_in_release(self, base_args):
+        """The release child runs the same sweep, so it takes the same overrides."""
+        args = [a if a != "benchmarks" else "release" for a in base_args]
+        with patch(
+            "sys.argv",
+            ["run.py"]
+            + args
+            + ["--agentic-traces", "--agentic-traces-sources", "inferencex_agentx"],
+        ):
+            parsed = parse_arguments()
+        assert parsed.agentic_traces_sources == "inferencex_agentx"
+
+    def test_agentic_traces_overrides_rejected_on_a_plain_release(
+        self, base_args, capsys
+    ):
+        args = [a if a != "benchmarks" else "release" for a in base_args]
+        with patch(
+            "sys.argv", ["run.py"] + args + ["--agentic-traces-sources", "swarmone"]
+        ):
+            with pytest.raises(SystemExit):
+                parse_arguments()
+        assert "--workflow release --agentic-traces" in capsys.readouterr().err
+
+    @pytest.mark.parametrize(
+        "flag,value",
+        [
+            ("--agentic-traces-sources", "inferencex_agentx"),
+            ("--agentic-traces-duration", "1800"),
+            ("--agentic-traces-git-ref", "abc123"),
+            ("--agentic-traces-metrics-url", "worker-a:9000"),
+        ],
+    )
+    def test_agentic_traces_overrides_require_their_workflow(
+        self, base_args, flag, value, capsys
+    ):
+        # base_args uses --workflow benchmarks
+        with patch("sys.argv", ["run.py"] + base_args + [flag, value]):
+            with pytest.raises(SystemExit):
+                parse_arguments()
+        assert "require --workflow agentic_traces" in capsys.readouterr().err
+
+    def test_agentic_traces_duration_below_the_scenario_floor_is_rejected(
+        self, base_args, capsys
+    ):
+        args = [a if a != "benchmarks" else "agentic_traces" for a in base_args]
+        with patch("sys.argv", ["run.py"] + args + ["--agentic-traces-duration", "60"]):
+            with pytest.raises(SystemExit):
+                parse_arguments()
+        assert "must be at least 900s" in capsys.readouterr().err
+
+    def test_agentic_traces_duration_at_the_floor_is_accepted(self, base_args):
+        args = [a if a != "benchmarks" else "agentic_traces" for a in base_args]
+        with patch(
+            "sys.argv",
+            ["run.py"] + args + ["--agentic-traces-duration", "900"],
+        ):
+            parsed = parse_arguments()
+        assert parsed.agentic_traces_duration == 900
+
     def test_optional_args_and_defaults(self, base_args):
         """Test optional arguments and default values."""
         # Test with all optional args
@@ -655,25 +757,26 @@ class TestRuntimeValidation:
         [
             ("benchmarks", True),
             ("evals", True),  # Mistral-7B-Instruct-v0.3 is in EVAL_CONFIGS
-            ("reports", True),
+            ("agentic", True),
             ("release", True),  # Mistral-7B-Instruct-v0.3 is in both configs
             ("stress_tests", True),
         ],
     )
-    def test_workflow_validation(
-        self, mock_model_spec, mock_runtime_config, workflow, should_pass
-    ):
+    def test_workflow_validation(self, mock_runtime_config, workflow, should_pass):
         """Test validation for different workflows."""
         mock_runtime_config.workflow = workflow
+        model_spec, _, _ = get_runtime_model_spec(
+            model="Mistral-7B-Instruct-v0.3", device="n150"
+        )
         with patch.dict(
             "workflows.validate_setup.MODEL_SPECS",
-            {mock_model_spec.model_id: mock_model_spec},
+            {model_spec.model_id: model_spec},
         ):
             if should_pass:
-                validate_runtime_args(mock_model_spec, mock_runtime_config)
+                validate_runtime_args(model_spec, mock_runtime_config)
             else:
                 with pytest.raises(AssertionError):
-                    validate_runtime_args(mock_model_spec, mock_runtime_config)
+                    validate_runtime_args(model_spec, mock_runtime_config)
 
     def test_server_workflow_validation(self, mock_model_spec, mock_runtime_config):
         """Test server workflow specific validation."""
@@ -711,6 +814,17 @@ class TestRuntimeValidation:
                 AssertionError, match="Cannot run --docker-server and --local-server"
             ):
                 validate_runtime_args(mock_model_spec, mock_runtime_config)
+
+    def test_external_runtime_model_spec_skips_catalog_membership(
+        self, mock_model_spec, mock_runtime_config
+    ):
+        """A supplied runtime spec is the source of truth for model/device support."""
+        mock_model_spec.model_id = "id_autoport_Mistral-7B-Instruct-v0.3_n150"
+        mock_runtime_config.workflow = "agentic"
+        mock_runtime_config.runtime_model_spec_json = "/tmp/custom-runtime-spec.json"
+
+        with patch.dict("workflows.validate_setup.MODEL_SPECS", {}):
+            validate_runtime_args(mock_model_spec, mock_runtime_config)
 
 
 class TestOverrideArgsIntegration:
@@ -1061,6 +1175,19 @@ class TestMediaServerDockerEnvVars:
         assert env_vars["MODEL_RUNNER_TYPE"] == "tt_sdxl_generate"
         assert env_vars["DEVICE_IDS"].replace(" ", "").count("(") > 1
 
+    def test_non_cpp_media_persists_hf_cache_on_cache_root(self):
+        """Whisper (uvicorn media server) must place HF_HOME on the cache_root
+        volume so weights survive container restarts."""
+        model_spec, _, _ = get_runtime_model_spec(
+            model="whisper-large-v3",
+            device="n150",
+        )
+
+        env_vars = get_media_server_docker_env_vars(model_spec)
+
+        assert env_vars.get("SERVER_MODE") != "cpp"
+        assert env_vars["HF_HOME"] == "/home/container_app_user/cache_root/huggingface"
+
 
 class TestSecretsHandling:
     """Tests for secrets handling functionality."""
@@ -1075,7 +1202,7 @@ class TestSecretsHandling:
             ("server", True, True, False, False, False),  # Interactive mode
             ("server", True, False, True, False, True),  # Server with docker + no-auth
             ("release", False, False, False, False, True),  # Non-client workflow
-            ("reports", False, False, False, False, True),  # Non-client workflow
+            ("agentic", False, False, False, False, True),  # Non-client workflow
         ],
     )
     def test_secrets_requirements(

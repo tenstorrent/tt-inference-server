@@ -145,6 +145,7 @@ def get_media_server_docker_env_vars(model_spec):
 
     env_vars = {
         "CACHE_ROOT": "/home/container_app_user/cache_root",  # TODO: remove this
+        "HF_HOME": "/home/container_app_user/cache_root/huggingface",  # Keep HF weight cache on the persistent cache_root volume
         "MODEL": model_spec.model_name,
         "DEVICE": model_spec.device_type.name.lower(),
     }
@@ -438,8 +439,7 @@ def generate_docker_run_command(
 
         # fmt: off
         docker_command += [
-            "--mount", f"type=bind,src={repo_root_path}/benchmarking,dst={user_home_path}/app/benchmarking",
-            "--mount", f"type=bind,src={repo_root_path}/evals,dst={user_home_path}/app/evals",
+            "--mount", f"type=bind,src={repo_root_path}/reference_config,dst={user_home_path}/app/reference_config",
             "--mount", f"type=bind,src={repo_root_path}/utils,dst={user_home_path}/app/utils",
             "--mount", f"type=bind,src={repo_root_path}/tests,dst={user_home_path}/app/tests",
         ]
@@ -451,6 +451,7 @@ def generate_docker_run_command(
                 ModelType.VIDEO,
                 ModelType.TEXT_TO_SPEECH,
                 ModelType.AUDIO,
+                ModelType.TRAINING,
             )
         ):
             docker_command += _media_server_dev_mounts(
@@ -541,7 +542,7 @@ def run_docker_command(
         logger.error(f"Docker logs are streamed to: {docker_log_file_path}")
         raise RuntimeError("Docker container failed to start.")
 
-    skip_workflows = {WorkflowType.SERVER, WorkflowType.REPORTS}
+    skip_workflows = {WorkflowType.SERVER}
     if WorkflowType.from_string(runtime_config.workflow) not in skip_workflows:
 
         def teardown_docker():
@@ -829,7 +830,7 @@ def run_multihost_with_monitoring(
     logger.info(f"Workers: {'  '.join(worker_status)}")
 
     # Handle workflow-specific behavior (similar to single-node run_docker_command)
-    skip_workflows = {WorkflowType.SERVER, WorkflowType.REPORTS}
+    skip_workflows = {WorkflowType.SERVER}
     if WorkflowType.from_string(runtime_config.workflow) not in skip_workflows:
         # For release/benchmarks/evals/tests: register cleanup and return immediately
 

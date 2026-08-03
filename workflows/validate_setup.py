@@ -7,9 +7,9 @@ import os
 import stat
 from pathlib import Path
 
-from benchmarking.benchmark_config import BENCHMARK_CONFIGS
-from evals.eval_config import EVAL_CONFIGS
-from server_tests.test_config import TEST_CONFIGS
+from reference_config.benchmarking.benchmark_config import get_benchmark_config
+from workflows.workflow_dispatch import can_dispatch_to_engine
+from reference_config.evals.eval_config import EVAL_CONFIGS
 from workflows.model_spec import MODEL_SPECS
 from workflows.utils import (
     MIN_SUPPORTED_IMAGE_VERSION,
@@ -31,6 +31,10 @@ from workflows.workflow_types import (
 from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger("run_log")
+
+
+def _uses_external_runtime_model_spec(runtime_config) -> bool:
+    return bool(runtime_config.runtime_model_spec_json)
 
 
 def _check_image_version_supported(model_spec):
@@ -78,17 +82,18 @@ def validate_runtime_args(model_spec, runtime_config):
 
     model_id = model_spec.model_id
 
-    # Check if the model_id exists in MODEL_SPECS (this validates device support)
-    if model_id not in MODEL_SPECS:
+    # Built-in catalog runs must resolve to MODEL_SPECS. Explicit
+    # --runtime-model-spec-json runs use that JSON as the source of truth.
+    if model_id not in MODEL_SPECS and not _uses_external_runtime_model_spec(args):
         raise ValueError(
             f"model:={runtime_config.model} does not support device:={runtime_config.device}"
         )
 
     # The image-version contract only matters when run.py actually launches the
     # vLLM docker image. Client-side / external-server runs (no --docker-server)
-    # — including the v2-routed prefix-cache / spec-decode benchmarks that target
-    # an already-running server — never emit a docker command, so the pinned
-    # image version is irrelevant and must not gate them.
+    # — including the v2-routed prefill_decode / prefix-cache / spec-decode
+    # workflows that bring up or target their own server — never emit a docker
+    # command, so the pinned image version is irrelevant and must not gate them.
     if args.docker_server:
         _check_image_version_supported(model_spec)
 
@@ -104,21 +109,31 @@ def validate_runtime_args(model_spec, runtime_config):
         workflow_type == WorkflowType.BENCHMARKS
         and not getattr(args, "prefix_cache", False)
         and not getattr(args, "spec_decode", False)
+        and not can_dispatch_to_engine(model_spec, runtime_config)
     ):
         if os.getenv("OVERRIDE_BENCHMARKS"):
             logger.warning("OVERRIDE_BENCHMARKS is active, using override benchmarks")
-        assert model_spec.model_id in BENCHMARK_CONFIGS, (
-            f"Model:={model_spec.model_name} not found in BENCHMARKS_CONFIGS"
+        get_benchmark_config(model_spec)
+    if workflow_type == WorkflowType.AGENTIC_TRACES or (
+        workflow_type == WorkflowType.RELEASE and getattr(args, "agentic_traces", False)
+    ):
+        # Fail here rather than after the multi-minute InferenceX clone + install
+        # that the AGENTIC_TRACES venv setup performs -- and, for a release run,
+        # rather than after the evals and benchmarks that precede the child.
+        from reference_config.agentic_traces.agentic_traces_config import (
+            get_agentic_traces_config,
         )
+
+        assert get_agentic_traces_config(model_spec) is not None, (
+            f"Model:={model_spec.model_name} (model_id={model_spec.model_id}) has "
+            "no AGENTIC_TRACES_CONFIGS entry. Add one to "
+            "reference_config/agentic_traces/agentic_traces_config.py, including "
+            "the InferenceX git ref to pin."
+        )
+
     if workflow_type == WorkflowType.STRESS_TESTS:
         pass  # Model support already validated via MODEL_SPECS check
 
-    if workflow_type == WorkflowType.TESTS:
-        assert model_spec.model_name in TEST_CONFIGS, (
-            f"Model:={model_spec.model_name} not found in TEST_CONFIGS"
-        )
-    if workflow_type == WorkflowType.REPORTS:
-        pass
     if workflow_type == WorkflowType.SERVER:
         if not (args.docker_server or args.local_server):
             raise ValueError(
@@ -141,16 +156,13 @@ def validate_runtime_args(model_spec, runtime_config):
                 )
 
     if workflow_type == WorkflowType.RELEASE:
-        # NOTE: fail fast for models without both defined evals and benchmarks
-        # today this will stop models defined in MODEL_SPECS
-        # but not in EVAL_CONFIGS or BENCHMARK_CONFIGS, e.g. non-instruct models
-        # a run_*.log fill will be made for the failed combination indicating this
+        # NOTE: fail fast for models without both defined evals and generated
+        # benchmark tasks. A run_*.log file will be made for failed combinations.
         assert model_spec.model_name in EVAL_CONFIGS, (
             f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
         )
-        assert model_spec.model_id in BENCHMARK_CONFIGS, (
-            f"Model:={model_spec.model_name} not found in BENCHMARKS_CONFIGS"
-        )
+        if not can_dispatch_to_engine(model_spec, runtime_config):
+            get_benchmark_config(model_spec)
 
     if DeviceTypes.from_string(args.device) == DeviceTypes.GPU:
         if args.docker_server or args.local_server:

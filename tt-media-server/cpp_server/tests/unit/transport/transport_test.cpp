@@ -11,7 +11,6 @@
 #include "transport/host_dram_storage_backend.hpp"
 #include "transport/i_storage_backend.hpp"
 #include "transport/i_transfer_engine.hpp"
-#include "transport/mooncake_migration_worker.hpp"
 #include "transport/mooncake_transfer_engine.hpp"
 #include "transport/transfer_types.hpp"
 #include "transport/umd_device_access.hpp"
@@ -32,11 +31,11 @@ TEST(TransferTypes, NocAddrRoundTrips) {
 TEST(StorageBackend, ReportMediumThroughInterface) {
   std::unique_ptr<IStorageBackend> host =
       std::make_unique<HostDramStorageBackend>();
-  EXPECT_EQ(host->medium(), StorageMedium::HostDram);
+  EXPECT_EQ(host->medium(), StorageMedium::HOST_DRAM);
 
   auto device = std::make_unique<DeviceDramStorageBackend>(
       std::make_shared<UmdDeviceAccess>(/*device_id=*/0));
-  EXPECT_EQ(device->medium(), StorageMedium::DeviceDram);
+  EXPECT_EQ(device->medium(), StorageMedium::DEVICE_DRAM);
 }
 
 // The host-DRAM backend stages bytes via memcpy: writeFrom then readInto a
@@ -97,7 +96,7 @@ TEST(MooncakeTransferEngine, ComposesStorageBackend) {
   std::unique_ptr<ITransferEngine> engine =
       std::make_unique<MooncakeTransferEngine>(storage);
   ASSERT_NE(engine, nullptr);
-  EXPECT_EQ(engine->storageMedium(), StorageMedium::DeviceDram);
+  EXPECT_EQ(engine->storageMedium(), StorageMedium::DEVICE_DRAM);
   EXPECT_EQ(engine->storage(), storage);
 }
 
@@ -107,16 +106,16 @@ TEST(MooncakeTransferEngine, ComposesStorageBackend) {
 // init() touches the network/metadata service, so that path is exercised by
 // the integration tests instead.
 TEST(MooncakeTransferEngine, MethodsReportFailureWithoutMooncake) {
-  MooncakeTransferEngine engine(std::make_shared<HostDramStorageBackend>());
+  MooncakeTransferEngine engine{std::make_shared<HostDramStorageBackend>()};
   EXPECT_FALSE(engine.init(EngineConfig{}));
 
   std::vector<uint8_t> buffer(64, 0);
   EXPECT_FALSE(engine.registerLocalMemory(buffer.data(), buffer.size()));
-  EXPECT_EQ(engine.openSegment("peer"), kInvalidSegment);
+  EXPECT_EQ(engine.openSegment("peer"), K_INVALID_SEGMENT);
 
-  TransferRequest request{TransferOp::Write, buffer.data(), kInvalidSegment, 0,
-                          buffer.size()};
-  EXPECT_EQ(engine.submitAndWait(request).state, TransferState::Failed);
+  TransferRequest request{TransferOp::WRITE, buffer.data(), K_INVALID_SEGMENT,
+                          0, buffer.size()};
+  EXPECT_EQ(engine.submitAndWait(request).state, TransferState::FAILED);
 }
 #endif  // TT_TRANSPORT_WITH_MOONCAKE
 
@@ -132,65 +131,6 @@ TEST(UmdDeviceAccess, MethodsReportNotImplemented) {
   EXPECT_FALSE(device.write(addr, buffer.data(), buffer.size()));
 }
 #endif  // USE_METAL_CPP_LIB
-
-// The migration worker's storage-staging steps (write on sender, verify on
-// receiver) work end-to-end against a host-DRAM backend standing in for device
-// DRAM — no live transport needed.
-TEST(MooncakeMigrationWorker, StorageStagingRoundTrips) {
-  auto storage = std::make_shared<HostDramStorageBackend>();
-  auto engine = std::make_shared<MooncakeTransferEngine>(storage);
-
-  // A host region acts as the "device DRAM" the worker stages to/from.
-  std::vector<uint8_t> deviceRegion(64, 0);
-  const auto addr = reinterpret_cast<uint64_t>(deviceRegion.data());
-
-  MigrationWorkerConfig senderCfg;
-  senderCfg.role = MigrationRole::Sender;
-  senderCfg.peer_segment_name = "receiver";
-  senderCfg.device_addr = addr;
-  senderCfg.tensor_bytes = deviceRegion.size();
-  MooncakeMigrationWorker sender(senderCfg, engine);
-
-  const std::vector<uint8_t> tensor(deviceRegion.size(), 0xAB);
-  EXPECT_TRUE(sender.writeTensorOnSender(tensor));
-  EXPECT_EQ(deviceRegion, tensor);  // tensor landed in "device DRAM"
-
-  MigrationWorkerConfig receiverCfg = senderCfg;
-  receiverCfg.role = MigrationRole::Receiver;
-  MooncakeMigrationWorker receiver(receiverCfg, engine);
-  EXPECT_TRUE(receiver.verifyTensorOnReceiver(tensor));
-
-  const std::vector<uint8_t> wrong(deviceRegion.size(), 0x00);
-  EXPECT_FALSE(receiver.verifyTensorOnReceiver(wrong));
-}
-
-// Role guards and the transport hop: a sender cannot verify, a receiver cannot
-// write/transfer, and transferToReceiver needs a live (init'd) engine — without
-// one it reports failure rather than crashing.
-TEST(MooncakeMigrationWorker, RoleGuardsAndTransportNeedsLiveEngine) {
-  auto storage = std::make_shared<HostDramStorageBackend>();
-  auto engine = std::make_shared<MooncakeTransferEngine>(storage);
-
-  std::vector<uint8_t> deviceRegion(64, 0);
-  MigrationWorkerConfig config;
-  config.role = MigrationRole::Sender;
-  config.peer_segment_name = "receiver";
-  config.device_addr = reinterpret_cast<uint64_t>(deviceRegion.data());
-  config.tensor_bytes = deviceRegion.size();
-
-  MooncakeMigrationWorker sender(config, engine);
-  const std::vector<uint8_t> tensor(config.tensor_bytes, 0xAB);
-  // Sender cannot run the receiver step.
-  EXPECT_FALSE(sender.verifyTensorOnReceiver(tensor));
-  // The transport hop has no init'd engine / peer segment here.
-  EXPECT_FALSE(sender.transferToReceiver());
-
-  config.role = MigrationRole::Receiver;
-  MooncakeMigrationWorker receiver(config, engine);
-  // Receiver cannot run the sender steps.
-  EXPECT_FALSE(receiver.writeTensorOnSender(tensor));
-  EXPECT_FALSE(receiver.transferToReceiver());
-}
 
 }  // namespace
 }  // namespace tt::transport

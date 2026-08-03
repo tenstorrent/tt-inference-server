@@ -36,7 +36,7 @@ struct alignas(8) Message {
   uint32_t taskId;
   uint32_t fastMode;
   uint32_t slotId;
-  uint64_t tokenIds[MaxTokenIds];
+  uint32_t tokenIds[MaxTokenIds];
 
   static constexpr size_t K_TOTAL_SIZE =
       tt::config::defaults::SHM_SLOTS * sizeof(Message);
@@ -54,7 +54,7 @@ struct ReadResult {
   uint32_t taskId;
   uint32_t maxTokens;
   bool fastMode = false;
-  std::vector<int64_t> tokenIds;
+  std::vector<uint32_t> tokenIds;
 };
 
 template <int MaxTokenIds>
@@ -109,7 +109,7 @@ class SlotRingBuffer {
     state = reinterpret_cast<SlotRingBufferState*>(memPointerState);
   }
 
-  void write(uint32_t taskId, const std::vector<int64_t>& tokenIds,
+  void write(uint32_t taskId, const std::vector<uint32_t>& tokenIds,
              uint32_t maxTokens, uint32_t slotId, bool fastMode = false) {
     if (static_cast<int>(tokenIds.size()) > MaxTokenIds) {
       throw std::runtime_error("SlotRingBuffer::write: token count " +
@@ -130,7 +130,7 @@ class SlotRingBuffer {
     slot.slotId = slotId;
     slot.numTokenIds = tokenIds.size();
     std::memcpy(slot.tokenIds, tokenIds.data(),
-                tokenIds.size() * sizeof(int64_t));
+                tokenIds.size() * sizeof(uint32_t));
 
     slot.switchState(FILLED);
     advanceWriterIndex();

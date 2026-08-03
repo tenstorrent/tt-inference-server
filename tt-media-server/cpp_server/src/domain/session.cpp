@@ -34,6 +34,9 @@ bool Session::markPrepared() {
 bool Session::clearInFlight() {
   if (state_ != SessionState::IN_FLIGHT) return false;
   state_ = SessionState::IDLE;
+  // committed_blocks_ is NOT reset here: the resident KV survives across turns
+  // on the same slot. It is set when the prefix becomes resident (prefill
+  // complete / finalizeAndRegisterHashes) and shrunk eagerly on a rewind.
   cancelFn_ = nullptr;
   deltaTokens_.clear();
   generatedTokens_.clear();
@@ -41,17 +44,19 @@ bool Session::clearInFlight() {
   parentHash_ = 0;
   parentThinkCount_ = 0;
   onComplete_ = nullptr;
+  onNoHashes_ = nullptr;
   inThinkingBlock_ = false;
   accumulatedThinkTokens_ = 0;
   return true;
 }
 
 void Session::initTokenAccumulator(
-    std::vector<int> deltaTokens,
+    std::vector<uint32_t> deltaTokens,
     std::vector<utils::BlockHashInfo> initialBlocks,
     std::function<void(const std::string&,
                        const std::vector<utils::BlockHashInfo>&)>
         onComplete,
+    std::function<void(const std::string&)> onNoHashes,
     uint32_t parentThinkCount) {
   deltaTokens_ = std::move(deltaTokens);
   initialBlocks_ = std::move(initialBlocks);
@@ -62,6 +67,7 @@ void Session::initTokenAccumulator(
   // the matched KV prefix on a HIT so the count accumulates across turns.
   parentThinkCount_ = parentThinkCount;
   onComplete_ = std::move(onComplete);
+  onNoHashes_ = std::move(onNoHashes);
   generatedTokens_.clear();
 
   // Initialize thinking token tracking
@@ -72,7 +78,7 @@ void Session::initTokenAccumulator(
   accumulatedThinkTokens_ = parentThinkCount_;
 }
 
-void Session::addGeneratedToken(int tokenId) {
+void Session::addGeneratedToken(uint32_t tokenId) {
   generatedTokens_.push_back(tokenId);
 
   // Track thinking state using the same marker rules as prefix hashing.
@@ -81,9 +87,9 @@ void Session::addGeneratedToken(int tokenId) {
       thinkEndTokenId_ != utils::tokenizers::kNoTokenId;
   if (!thinkingEnabled) return;
 
-  if (tokenId == static_cast<int>(thinkStartTokenId_)) {
+  if (tokenId == thinkStartTokenId_) {
     inThinkingBlock_ = true;
-  } else if (tokenId == static_cast<int>(thinkEndTokenId_)) {
+  } else if (tokenId == thinkEndTokenId_) {
     inThinkingBlock_ = false;
   } else if (inThinkingBlock_) {
     ++accumulatedThinkTokens_;  // Only content tokens, not markers
@@ -94,7 +100,7 @@ void Session::finalizeAndRegisterHashes() {
   if (!onComplete_) return;
 
   // Combine delta prompt + generated tokens
-  std::vector<int> allDeltaTokens = deltaTokens_;
+  std::vector<uint32_t> allDeltaTokens = deltaTokens_;
   allDeltaTokens.insert(allDeltaTokens.end(), generatedTokens_.begin(),
                         generatedTokens_.end());
 
@@ -109,7 +115,15 @@ void Session::finalizeAndRegisterHashes() {
     // Prepend initial blocks to form complete block list
     std::vector<utils::BlockHashInfo> allBlocks = initialBlocks_;
     allBlocks.insert(allBlocks.end(), newBlocks.begin(), newBlocks.end());
+    // The whole prompt delta + generated tokens have now been computed, so
+    // every block in allBlocks is resident and safe to copy from.
+    committed_blocks_ = static_cast<uint32_t>(allBlocks.size());
     onComplete_(session_id_, allBlocks);
+  } else if (onNoHashes_) {
+    // No new blocks produced (e.g. empty generation). The session's KV slot
+    // holds stale/garbage data and cannot be meaningfully reused via prefix
+    // lookup. Notify the caller so it can close/evict the session.
+    onNoHashes_(session_id_);
   }
 }
 

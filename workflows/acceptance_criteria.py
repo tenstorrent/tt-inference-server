@@ -289,8 +289,9 @@ def _server_tests_acceptance(server_tests: Any) -> Dict[str, str]:
     """Collect blockers from the server_tests / spec_tests workflow output.
 
     `output_data["server_tests"]` is a list of per-file report dicts produced
-    by `server_tests/run_spec_tests.py` (registered as WorkflowType.SPEC_TESTS).
-    Each dict carries `tests: [{test_name, success: bool, error, ...}]`. A
+    by the spec_tests workflow (WorkflowType.SPEC_TESTS), run through the v2
+    test engine. Each dict carries `tests: [{test_name, success: bool, error,
+    ...}]`. A
     test with `success` falsy (or non-bool) is considered failing.
     """
     acceptance_blockers: Dict[str, str] = {}
@@ -389,8 +390,8 @@ def _classify_blocker(
         return WorkflowType.EVALS, None
     if head == "parameter_support_tests":
         if len(parts) >= 2:
-            return WorkflowType.TESTS, parts[1]
-        return WorkflowType.TESTS, None
+            return WorkflowType.SPEC_TESTS, parts[1]
+        return WorkflowType.SPEC_TESTS, None
     if head == "server_tests":
         if len(parts) >= 2:
             return WorkflowType.SPEC_TESTS, parts[1]

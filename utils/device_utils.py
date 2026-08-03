@@ -22,6 +22,7 @@ DEVICE_TO_MESH_STR = {
     "DUAL_GALAXY": "(8,8)",
     "QUAD_GALAXY": "(8,16)",
     "GPU": "GPU",
+    "SUPER_CLUSTER": "Super-Cluster",
 }
 
 

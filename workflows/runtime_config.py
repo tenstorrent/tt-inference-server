@@ -57,6 +57,8 @@ class RuntimeConfig:
 
     # Workflow control
     tools: str = "vllm"
+    # AIPerf --goodput SLO string for the default LLM benchmark sweep.
+    goodput: Optional[str] = None
     disable_trace_capture: bool = False
     disable_metal_timeout: bool = False
     concurrency_sweeps: bool = False
@@ -76,13 +78,27 @@ class RuntimeConfig:
     prefix_cache_request_rate: Optional[float] = None
     prefix_cache_scenarios_json: Optional[str] = None
     prefix_cache_trace: Optional[str] = None
+    prefix_cache_goodput: Optional[str] = None
+    prefix_cache_metrics_url: Optional[List[str]] = None
     jwt_secret: Optional[str] = None
     serving_bench_suites: Optional[str] = None
+    served_model: Optional[str] = None
 
     # Speculative-decoding benchmark
     spec_decode: bool = False
     spec_decode_preset: str = "full"
     spec_decode_warmup_requests: Optional[int] = None
+
+    # Agentic-traces benchmark. The benchmark parameters themselves live in
+    # reference_config/agentic_traces (per ModelSpec); these are only the
+    # mode selection and ad-hoc overrides. ``agentic_traces`` is the release
+    # opt-in (--workflow agentic_traces needs no flag).
+    agentic_traces: bool = False
+    agentic_traces_mode: str = "full"
+    agentic_traces_sources: Optional[str] = None
+    agentic_traces_duration: Optional[int] = None
+    agentic_traces_git_ref: Optional[str] = None
+    agentic_traces_metrics_url: Optional[List[str]] = None
 
     # Device configuration
     device_id: Optional[List[int]] = None
@@ -143,6 +159,7 @@ class RuntimeConfig:
             vllm_override_args=args.vllm_override_args,
             runtime_model_spec_json=args.runtime_model_spec_json,
             tools=args.tools,
+            goodput=getattr(args, "goodput", None),
             disable_trace_capture=args.disable_trace_capture,
             disable_metal_timeout=args.disable_metal_timeout,
             concurrency_sweeps=args.concurrency_sweeps,
@@ -162,12 +179,23 @@ class RuntimeConfig:
                 args, "prefix_cache_scenarios_json", None
             ),
             prefix_cache_trace=getattr(args, "prefix_cache_trace", None),
+            prefix_cache_goodput=getattr(args, "prefix_cache_goodput", None),
+            prefix_cache_metrics_url=getattr(args, "prefix_cache_metrics_url", None),
             jwt_secret=getattr(args, "jwt_secret", None),
             serving_bench_suites=getattr(args, "serving_bench_suites", None),
+            served_model=getattr(args, "served_model", None),
             spec_decode=getattr(args, "spec_decode", False),
             spec_decode_preset=getattr(args, "spec_decode_preset", "full"),
             spec_decode_warmup_requests=getattr(
                 args, "spec_decode_warmup_requests", None
+            ),
+            agentic_traces=getattr(args, "agentic_traces", False),
+            agentic_traces_mode=getattr(args, "agentic_traces_mode", None) or "full",
+            agentic_traces_sources=getattr(args, "agentic_traces_sources", None),
+            agentic_traces_duration=getattr(args, "agentic_traces_duration", None),
+            agentic_traces_git_ref=getattr(args, "agentic_traces_git_ref", None),
+            agentic_traces_metrics_url=getattr(
+                args, "agentic_traces_metrics_url", None
             ),
             device_id=args.device_id,
             host_volume=args.host_volume,

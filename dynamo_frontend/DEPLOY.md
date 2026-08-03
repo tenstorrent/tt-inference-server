@@ -3,10 +3,11 @@
 `deploy.sh` brings up an etcd-backed Dynamo stack on the `dynamo-net` Docker
 network — **etcd** (discovery), **cpp_server** (worker), and
 **dynamo-frontend** (HTTP gateway) — plus **Prometheus** and **Grafana** from
-`tt-media-server/monitoring/`. With `--prefill-gateway`, it also starts a
-C++ **PrefillGateway**, a managed prefill cpp_server worker, and configures the
-Dynamo-registered cpp_server as decode so requests go through the gateway. It
-then tails the decode worker's logs. Ctrl+C tears the managed containers down.
+`tt-media-server/monitoring/`. Optional prefill modes are:
+`--prefill-direct`, `--prefill-gateway`, and `--dynamo-routing`. Here,
+`--dynamo-routing` means Dynamo selects decode/prefill workers. Gateway and Dynamo routing can start
+multiple managed prefill workers with `--prefill-workers`. It then tails the
+decode worker's logs. Ctrl+C tears the managed containers down.
 
 ## Quick start
 
@@ -23,7 +24,7 @@ worker instead of the image's, e.g. on a box without a Tenstorrent card — a
 build made without `TT_METAL_HOME` runs the mock backend):
 
 ```bash
-cd ../tt-media-server/cpp_server && ./build.sh        # produces build/tt_media_server_cpp
+cd ../tt-media-server/cpp_server && ./build.sh --blaze       # produces build/tt_media_server_cpp
 cd ../../dynamo_frontend
 PROMETHEUS_HOST_PORT=9091 GRAFANA_HOST_PORT=3001 \
   ./deploy.sh --deepseek --local-build --llm-device-backend mock_pipeline
@@ -49,23 +50,31 @@ worker image and runs that binary — no `--cpp-server-dir` and no image rebuild
 | `--llm-device-backend <name>` | `pipeline_manager`                   | `LLM_DEVICE_BACKEND` env on the worker                                          |
 | `--prefill-gateway`      | off                                       | Start PrefillGateway and route decode prefill requests through it               |
 | `--prefill-gateway-image <img>` | `tt-prefill-gateway:dev`          | PrefillGateway image; the default local image is built automatically if missing |
-| `--prefill-gateway-prefill <host:port>` | none                       | External TCP prefill endpoint; repeatable and implies TCP transport             |
 | `--prefill-gateway-prefill-bind <host:port>` | `0.0.0.0:7200`        | ZMQ prefill ROUTER bind endpoint                                                |
+| `--prefill-workers <count>` | `1`                                  | Managed prefill worker count for gateway and Dynamo routing                     |
+| `--prefill-direct`       | off                                       | Start one managed prefill worker connected directly to decode, without PrefillGateway |
+| `--dynamo-routing`       | off                                       | Experimental: register decode/prefill pools and leave routing decisions to Dynamo |
 | `--no-monitoring`        | off                                       | Skip Prometheus + Grafana                                                       |
 
 
 Fixed (not flags): network `dynamo-net`, container names `etcd` / `tt-cpp-worker`
 / `dynamo-frontend`, monitoring container names `dynamo-prometheus` /
 `dynamo-grafana` / `dynamo-process-exporter`, optional gateway container name
-`prefill-gateway`, optional managed prefill worker container name
-`tt-cpp-prefill-worker`, frontend host port `8080`,
+`prefill-gateway`, managed prefill worker name prefix `tt-cpp-prefill-worker`,
+frontend host port `8080`,
 `LLM_DEVICE_BACKEND=pipeline_manager`, `MODEL_NAME=tt-cpp-server`.
+`PREFILL_DIRECT_SOCKET_PORT` defaults to `9000` when `--prefill-direct` is used.
+`PREFILL_WORKER_COUNT` can set the same value as `--prefill-workers`.
+`DYNAMO_ROUTING_NAMESPACE` defaults to `dynamo` when
+`--dynamo-routing` is used, producing the documented Dynamo endpoints
+`dynamo.decode.generate` and `dynamo.prefill.generate`.
 
 `HF_TOKEN` (for gated models) and perf knobs (`ROUTER_MODE`, `DYN_TOKENIZER`,
 `RAYON_NUM_THREADS`, `DYN_RUNTIME_*`, `RUST_LOG`, `DYN_TX_TRACE`,
-`DYN_ENABLE_ANTHROPIC_API`) are read from the calling shell's environment if
-set. `ROUTER_MODE` defaults to `kv` in this deployment so Dynamo frontend
-timing metrics are emitted; override it if you need a different router.
+`DYN_ENABLE_ANTHROPIC_API`), and Dynamo conditional-disagg
+(`DYN_ROUTER_CONDITIONAL_*` variables) are read from the calling shell's
+environment if set. `ROUTER_MODE` defaults to `kv` in this deployment so Dynamo
+frontend timing metrics are emitted; override it if you need a different router.
 `LLM_DEVICE_BACKEND` is also read from the environment and can be overridden
 with `--llm-device-backend`.
 
@@ -81,7 +90,7 @@ Prometheus scrapes `prefill-gateway:9091`.
 
 ## What it does, step by step
 
-1. **Network** — creates `dynamo-net` if missing; all three containers join it
+1. **Network** — creates `dynamo-net` if missing; all containers join it
   and resolve each other by name.
 2. **etcd** — starts it (publishing `:2379`) and waits until
   `etcdctl endpoint health` passes.
@@ -95,20 +104,65 @@ Prometheus scrapes `prefill-gateway:9091`.
   `MODEL_PATH` points at the tokenizer tree **baked into the frontend image**
    (same `fetch_tokenizers.sh` the worker uses), so no tokenizer bind-mount is
    needed.
-5. **PrefillGateway (optional)** — with `--prefill-gateway`, starts the
+5. **Direct prefill/decode (optional)** — with `--prefill-direct`, starts the
+   Dynamo-registered worker as `LLM_MODE=decode` and starts one managed
+   `LLM_MODE=prefill` worker that connects directly to decode using the
+   cpp_server inter-server ZMQ transport. The decode worker keeps short prompts
+   local according to
+   `MAX_TOKENS_TO_PREFILL_ON_DECODE` (default `1000`) and offloads larger
+   prompt deltas to the managed prefill worker. Dynamo still receives requests
+   through the decode worker; it does not select among prefill workers in this
+   mode.
+6. **PrefillGateway (optional)** — with `--prefill-gateway`, starts the
    gateway on `dynamo-net`. The default ZMQ mode binds `0.0.0.0:7200` for
-   prefills and exposes metrics on container port `9091`; the script also
-   starts one managed `LLM_MODE=prefill` cpp_server worker that connects to
-   that bind endpoint. The Dynamo-registered worker runs as `LLM_MODE=decode`
-   with `USE_PREFILL_GATEWAY=1` and
-   `MAX_TOKENS_TO_PREFILL_ON_DECODE=0`, so decode requests route prefill work
-   through the gateway.
-6. **Monitoring** — starts Prometheus + Grafana, with Prometheus attached to
+   prefills and exposes metrics on container port `9091`; the script starts
+   `--prefill-workers` managed `LLM_MODE=prefill` workers that connect to that
+   bind endpoint. The Dynamo-registered worker runs as `LLM_MODE=decode` with
+   `USE_PREFILL_GATEWAY=1` and `MAX_TOKENS_TO_PREFILL_ON_DECODE=0`, so decode
+   requests route prefill work through the gateway.
+7. **Dynamo routing (experimental)** — with
+   `--dynamo-routing`, starts the worker as `LLM_MODE=decode` with
+   `DYNAMO_ROUTING=1` on `dynamo.decode.generate`, then starts
+   `--prefill-workers` managed `LLM_MODE=prefill` workers with
+   `DYNAMO_ENDPOINT_ENABLED=1`,
+   `DYNAMO_WORKER_TYPE=prefill`, `DYNAMO_MODEL_TYPE=Prefill`, and endpoint
+   `dynamo.prefill.generate`. `worker_type=prefill` carries the actual role;
+   `DYNAMO_MODEL_TYPE=Prefill` keeps the current released `ai-dynamo` frontend
+   compatible until `Tokens+Empty` is accepted for prefill workers. Dynamo's
+   integrated router owns the local-vs-remote prefill decision; when a
+   request reaches decode, cpp_server prefills locally instead of reapplying
+   `MAX_TOKENS_TO_PREFILL_ON_DECODE`. When Dynamo routes remotely, the prefill
+   worker returns `disaggregated_params.tt_prefill_result`, carrying the same
+   `PrefillResultMessage` contract the ZMQ path used.
+
+   To exercise Dynamo's upstream conditional-disaggregation policy from
+   `ai-dynamo/dynamo#11357`, use a frontend image built from a Dynamo revision
+   that includes that PR and pass the matching router env vars, for example:
+
+   ```bash
+   DYN_ROUTER_CONDITIONAL_DISAGG=1 \
+   DYN_ROUTER_CONDITIONAL_DISAGG_POLICY=isl_or_load \
+   DYN_ROUTER_CONDITIONAL_DISAGG_EFF_ISL_THRESHOLD=256 \
+   DYN_ROUTER_CONDITIONAL_DISAGG_EFF_ISL_RATIO_THRESHOLD=0.7 \
+   DYN_ROUTER_CONDITIONAL_DISAGG_PREFILL_BUSY_THRESHOLD=0.5 \
+     ./deploy.sh --deepseek --dynamo-routing --frontend-image <image-with-dynamo-conditional-disagg>
+   ```
+
+   `isl_or_load` preserves the effective-ISL bypass behavior and also lets
+   Dynamo bypass remote prefill when the selected prefill worker is busy. Set
+   `DYN_ROUTER_CONDITIONAL_DISAGG_DECODE_BUSY_THRESHOLD` as an optional
+   decode-side circuit breaker if decode-local bypass should be denied when the
+   chosen decode worker is busy.
+
+   The default frontend image currently installs the released `ai-dynamo`
+   version from `Dockerfile.frontend`; conditional-disagg variables are ignored
+   unless that image contains the upstream feature.
+8. **Monitoring** — starts Prometheus + Grafana, with Prometheus attached to
    `dynamo-net` and scraping the frontend's `/metrics`.
-7. **Logs** — `docker logs -f tt-cpp-worker`, blocking until you Ctrl+C.
-8. **Teardown** — `trap cleanup EXIT INT TERM` stops the monitoring compose
+9. **Logs** — `docker logs -f tt-cpp-worker`, blocking until you Ctrl+C.
+10. **Teardown** — `trap cleanup EXIT INT TERM` stops the monitoring compose
    stack and removes the Dynamo containers plus the optional PrefillGateway and
-   managed prefill worker (the `dynamo-net` network is left in place).
+   managed prefill workers (the `dynamo-net` network is left in place).
 
 ## Verify (from a second shell)
 
@@ -132,12 +186,55 @@ Use the `id` returned by `/v1/models` as the `model` (it's the HF id, e.g.
 `deepseek-ai/DeepSeek-R1-0528` or `moonshotai/Kimi-K2.6`). Add `"stream": true`
 with `curl -N` for streaming.
 
+For direct prefill/decode, start with:
+
+```bash
+MAX_TOKENS_TO_PREFILL_ON_DECODE=1000 ./deploy.sh --deepseek --prefill-direct
+```
+
+Small prompts should complete on the decode worker without a prefill offload
+log. Prompt deltas at or above `MAX_TOKENS_TO_PREFILL_ON_DECODE` should log an
+offload from the decode worker and a received prefill request in
+`tt-cpp-prefill-worker`.
+
+This mode does **not** mean Dynamo owns prefill worker selection. It removes
+PrefillGateway from the deployment topology while preserving direct
+decode-to-prefill communication in `cpp_server`.
+
+For Dynamo routing, start with:
+
+```bash
+./deploy.sh --deepseek --dynamo-routing
+```
+
+Dynamo should decide whether to prefill locally on decode or remotely through
+the prefill pool. The script should show both etcd registrations:
+`v1/instances/dynamo/decode/generate/...` and
+`v1/instances/dynamo/prefill/generate/...`. The matching MDC entries should
+show the decode worker with `worker_type="decode"` and the prefill worker with
+`worker_type="prefill"`, `needs=[["decode"]]`, `model_input="Tokens"`, and an
+explicit `model_type="Prefill"` value for compatibility with the released
+`ai-dynamo` discovery watcher. Decode does not advertise a prefill dependency,
+because it can serve decode-local prefill routes without a prefill pool.
+
+To run more Dynamo-routed prefill workers:
+
+```bash
+./deploy.sh --deepseek --dynamo-routing --prefill-workers 2
+```
+
 Inspect what the worker registered:
 
 ```bash
 docker exec etcd etcdctl get --prefix --keys-only v1/
-# v1/instances/default/backend/generate/<hex>
-# v1/mdc/default/backend/generate/<hex>
+# default mode:
+#   v1/instances/default/backend/generate/<hex>
+#   v1/mdc/default/backend/generate/<hex>
+# --dynamo-routing:
+#   v1/instances/dynamo/decode/generate/<hex>
+#   v1/instances/dynamo/prefill/generate/<hex>
+#   v1/mdc/dynamo/decode/generate/<hex>
+#   v1/mdc/dynamo/prefill/generate/<hex>
 ```
 
 If you enabled `--prefill-gateway`, verify that Prometheus sees it:

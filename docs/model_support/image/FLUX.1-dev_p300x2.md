@@ -11,6 +11,7 @@
 - [WH Galaxy](FLUX.1-dev_galaxy.md)
 - [BH LoudBox](FLUX.1-dev_p150x8.md)
 - [BH 4xP150](FLUX.1-dev_p150x4.md)
+- [BH P300](FLUX.1-dev_p300.md)
 - [WH LoudBox/QuietBox](FLUX.1-dev_t3k.md)
 
 ## Quickstart - Deploy FLUX.1-dev Inference Server on BH QuietBox 2
@@ -33,6 +34,6 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Weights | [black-forest-labs/FLUX.1-dev](https://huggingface.co/black-forest-labs/FLUX.1-dev) |
 | Model Status | 🟢 Complete |
 | Max Batch Size | 1 |
-| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/80180b9/models/tt_transformers) |
-| tt-metal Commit | `80180b9` |
-| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.14.0-80180b9` |
+| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/8c48a10/models/tt_transformers) |
+| tt-metal Commit | `8c48a10` |
+| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.17.0-8c48a10` |

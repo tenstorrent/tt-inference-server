@@ -39,7 +39,7 @@ TEST(LLMServiceProcessStreamingRequest, PushesSequenceToInjectedTaskQueue) {
   auto llmService = makeService(taskQueue);
 
   tt::domain::llm::LLMRequest request{/*taskId=*/7};
-  request.prompt = std::vector<int>{10, 20, 30};
+  request.prompt = std::vector<uint32_t>{10, 20, 30};
   request.skip_special_tokens = true;
 
   ASSERT_NO_THROW(llmService->submitStreamingRequest(
@@ -59,7 +59,7 @@ TEST(LLMServiceProcessStreamingRequest,
   auto taskQueue = std::make_shared<tt::ipc::in_memory::TaskQueue>();
   auto llmService = makeService(taskQueue);
   tt::domain::llm::LLMRequest request{/*taskId=*/7};
-  request.prompt = std::vector<int>{10, 20, 30};
+  request.prompt = std::vector<uint32_t>{10, 20, 30};
   request.skip_special_tokens = true;
 
   llmService->submitStreamingRequest(
@@ -79,8 +79,8 @@ TEST(LLMServiceProcessStreamingRequest,
   auto taskQueue = std::make_shared<tt::ipc::in_memory::TaskQueue>();
   auto llmService = makeService(taskQueue);
   tt::domain::llm::LLMRequest request{/*taskId=*/7};
-  auto thinkStartKimi26 = 163606;
-  request.prompt = std::vector<int>{10, 20, 30, thinkStartKimi26};
+  uint32_t thinkStartKimi26 = 163606;
+  request.prompt = std::vector<uint32_t>{10, 20, 30, thinkStartKimi26};
   request.skip_special_tokens = true;
 
   llmService->submitStreamingRequest(
@@ -100,10 +100,10 @@ TEST(LLMServiceProcessStreamingRequest,
   auto taskQueue = std::make_shared<tt::ipc::in_memory::TaskQueue>();
   auto llmService = makeService(taskQueue);
   tt::domain::llm::LLMRequest request{/*taskId=*/7};
-  auto thinkStartKimi26 = 163606;
-  auto thinkEndKimi26 = 163607;
+  uint32_t thinkStartKimi26 = 163606;
+  uint32_t thinkEndKimi26 = 163607;
   request.prompt =
-      std::vector<int>{10, 20, 30, thinkStartKimi26, thinkEndKimi26};
+      std::vector<uint32_t>{10, 20, 30, thinkStartKimi26, thinkEndKimi26};
   request.skip_special_tokens = true;
 
   llmService->submitStreamingRequest(
@@ -116,6 +116,25 @@ TEST(LLMServiceProcessStreamingRequest,
   EXPECT_EQ(pushed->taskId, 7u);
   EXPECT_EQ(pushed->getNumPromptTokens(), 5u);
   EXPECT_FALSE(pushed->getStartsInThinking());
+}
+
+TEST(LLMServiceProcessStreamingRequest, PropagatesMigrationStartPosition) {
+  auto taskQueue = std::make_shared<tt::ipc::in_memory::TaskQueue>();
+  auto llmService = makeService(taskQueue);
+  tt::domain::llm::LLMRequest request{/*taskId=*/7};
+  request.prompt = std::vector<uint32_t>{10, 20, 30};
+  request.skip_special_tokens = true;
+  request.migrationStartPosition = 64;
+
+  llmService->submitStreamingRequest(
+      request, [](const tt::domain::llm::LLMStreamChunk&, bool) {},
+      /*skipPreProcess=*/true);
+
+  ASSERT_FALSE(taskQueue->empty());
+  auto pushed = taskQueue->tryPop();
+  ASSERT_NE(pushed, nullptr);
+  ASSERT_TRUE(pushed->getMigrationStartPosition().has_value());
+  EXPECT_EQ(*pushed->getMigrationStartPosition(), 64u);
 }
 
 int main(int argc, char** argv) {

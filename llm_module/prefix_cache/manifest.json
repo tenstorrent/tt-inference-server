@@ -1,0 +1,194 @@
+{
+  "_comment": [
+    "Opinionated prefix-caching benchmark scenarios run by --tools aiperf --prefix-cache.",
+    "Each scenario produces multiple runs (cartesian product of concurrencies x arrivals x isl_profiles).",
+    "Presets:",
+    "  - ci            : tiny regression sweep.",
+    "  - full          : comprehensive serving-validation sweep.",
+    "  - highcache_50k : customer trillion-scale shape -- 50K shared (cacheable) prefix",
+    "                    + 5K new ISL + 500 OSL at concurrency 32. Steady-state KV-cache",
+    "                    hit-rate target ~90.9% = 50000/(50000+5000). Pairs shared_system",
+    "                    (100% reuse) with a matched zero-prefix baseline so the report",
+    "                    isolates the TTFT (P50/P90/P99) uplift from prefix caching.",
+    "Scenarios:",
+    "  - shared_system  : single shared system prompt (100% prefix reuse).",
+    "  - prefix_pool    : pool of N distinct prefixes; reuse_ratio = request_count / N.",
+    "  - multi_turn     : multi-turn conversations re-sending history (organic reuse).",
+    "  - mooncake_trace : trace-driven via AIPerf's --custom-dataset-type mooncake-trace.",
+    "                    Replays a JSONL trace with optional --synthesis-* multipliers",
+    "                    (https://github.com/ai-dynamo/aiperf/blob/main/docs/tutorials/prefix-synthesis.md).",
+    "  - baseline       : zero-prefix control matched to shared_system/prefix_pool grid.",
+    "Arrival patterns (aiperf 0.5.0 --arrival-pattern choices):",
+    "  - constant | poisson | gamma   (bursty traffic = gamma + smoothness<1)",
+    "Field reference:",
+    "  isl_profiles[*].isl_mean / isl_stddev   : synthetic-input-tokens-mean / -stddev",
+    "  osl_mean / osl_stddev                    : output-tokens-mean / -stddev",
+    "  concurrencies                            : list of concurrency values to sweep",
+    "  arrival_patterns[*].pattern              : constant | poisson | gamma",
+    "  arrival_patterns[*].smoothness           : gamma shape (<1.0 = bursty)",
+    "  request_count                            : total requests per run",
+    "  shared_system_prompt_length              : tokens (mutually exclusive with prefix pool)",
+    "  num_prefix_prompts / prefix_prompt_length: prefix pool size + per-prefix length",
+    "  conversation_*                           : multi-turn knobs",
+    "  mooncake_trace.traces                    : list of {name, path} JSONL traces",
+    "  mooncake_trace.synthesis_grid            : list of {name, speedup, prefix_len, prefix_root, prompt_len, max_isl, max_osl}",
+    "  mooncake_trace.fixed_schedule            : true => use trace timestamps verbatim",
+    "  mooncake_trace.block_size                : KV-cache block size for radix grouping"
+  ],
+  "presets": {
+    "ci": {
+      "request_count": 32,
+      "concurrencies": [1, 8],
+      "isl_profiles": [
+        {"name": "short", "isl_mean": 256, "isl_stddev": 64}
+      ],
+      "osl_mean": 128,
+      "osl_stddev": 0,
+      "scenarios": {
+        "shared_system": {
+          "shared_system_prompt_length": 512,
+          "arrival_patterns": [{"pattern": "constant"}]
+        },
+        "prefix_pool": {
+          "prefix_prompt_length": 512,
+          "reuse_ratios": [4],
+          "arrival_patterns": [{"pattern": "poisson"}]
+        },
+        "multi_turn": {
+          "conversation_num": 16,
+          "conversation_turn_mean": 4,
+          "conversation_turn_stddev": 1,
+          "conversation_turn_delay_mean_ms": 500,
+          "arrival_patterns": [{"pattern": "poisson"}]
+        },
+        "mooncake_trace": {
+          "request_count": 64,
+          "block_size": 512,
+          "fixed_schedule": false,
+          "traces": [
+            {"name": "ci_sample", "path": "sample_traces/ci_mooncake.jsonl"}
+          ],
+          "synthesis_grid": [
+            {"name": "baseline"},
+            {"name": "more_reuse", "prefix_len": 1.5, "prompt_len": 0.7}
+          ],
+          "arrival_patterns": [{"pattern": "poisson"}]
+        },
+        "baseline": {
+          "arrival_patterns": [{"pattern": "constant"}]
+        }
+      }
+    },
+    "full": {
+      "request_count": 256,
+      "concurrencies": [1, 8, 32],
+      "isl_profiles": [
+        {"name": "short", "isl_mean": 256, "isl_stddev": 64},
+        {"name": "long",  "isl_mean": 4096, "isl_stddev": 256}
+      ],
+      "osl_mean": 128,
+      "osl_stddev": 0,
+      "scenarios": {
+        "shared_system": {
+          "shared_system_prompt_lengths": [512, 4096],
+          "arrival_patterns": [
+            {"pattern": "constant"},
+            {"pattern": "poisson"}
+          ]
+        },
+        "prefix_pool": {
+          "prefix_prompt_lengths": [512, 4096],
+          "reuse_ratios": [2, 4, 16, 64],
+          "arrival_patterns": [
+            {"pattern": "constant"},
+            {"pattern": "poisson"},
+            {"pattern": "gamma", "smoothness": 0.5}
+          ]
+        },
+        "multi_turn": {
+          "conversation_num": 64,
+          "conversation_turn_mean": 6,
+          "conversation_turn_stddev": 2,
+          "conversation_turn_delay_mean_ms": 1500,
+          "arrival_patterns": [{"pattern": "poisson"}]
+        },
+        "mooncake_trace": {
+          "request_count": 256,
+          "block_size": 512,
+          "fixed_schedule": false,
+          "traces": [
+            {"name": "ci_sample", "path": "sample_traces/ci_mooncake.jsonl"}
+          ],
+          "synthesis_grid": [
+            {"name": "baseline"},
+            {"name": "more_reuse",      "prefix_len": 1.5, "prompt_len": 0.7},
+            {"name": "scaled_2x",       "speedup": 2.0},
+            {"name": "diverse_prefixes","prefix_root": 4},
+            {"name": "long_context",    "prefix_len": 2.0, "max_isl": 8192}
+          ],
+          "arrival_patterns": [
+            {"pattern": "poisson"},
+            {"pattern": "gamma", "smoothness": 0.5}
+          ]
+        },
+        "baseline": {
+          "arrival_patterns": [{"pattern": "constant"}]
+        }
+      }
+    },
+    "highcache_50k": {
+      "_comment": [
+        "Customer specific shape: 50K shared (cacheable) prefix +",
+        "5K new ISL + 500 OSL at concurrency 32 (one SC16 decode unit).",
+        "Two traffic generators model the same shape:",
+        "  - shared_system : synthetic; shared_system_prompt_length=50000 is sent",
+        "                    as an identical system message across every session",
+        "                    (100% prefix reuse). Exact + deterministic.",
+        "  - mooncake_trace: trace-driven (AIPerf prefix-synthesis Use Case 3/4);",
+        "                    replays customer_mooncake.jsonl whose 98-block (50K)",
+        "                    root is shared across all sessions. Realistic radix",
+        "                    reuse; scalable via --synthesis-* multipliers.",
+        "Either way the steady-state per-session KV-cache hit-rate is",
+        "50000/(50000+5000) = ~90.9% (>= the customer's 90% target).",
+        "isl_mean=5000 is the *new* per-request input; total ISL/request ~= 55000.",
+        "The matched zero-prefix baseline (same 5K ISL / 500 OSL / c32) isolates the",
+        "TTFT P50/P90/P99 uplift attributable to prefix caching.",
+        "request_count=256 (8 waves of 32) gives usable TTFT percentiles incl. a rough",
+        "P99; bump it for a tighter P99. Scrape the worker tt_prefix_cache_* counters",
+        "with --prefix-cache-metrics-url to populate the hit-rate column.",
+        "goodput enforces the customer SLAs per request: TTFT <= 4000ms (the P50",
+        "target as the per-request bar) AND output speed >= 45 tokens/s/user. The",
+        "P90<10s / P99<35s / hit>=90% targets are validated from the percentile",
+        "columns + the SLA Compliance table. Override with --prefix-cache-goodput."
+      ],
+      "request_count": 256,
+      "concurrencies": [32],
+      "goodput": "time_to_first_token:4000 output_token_throughput_per_user:45",
+      "isl_profiles": [
+        {"name": "new5k", "isl_mean": 5000, "isl_stddev": 0}
+      ],
+      "osl_mean": 500,
+      "osl_stddev": 0,
+      "scenarios": {
+        "shared_system": {
+          "shared_system_prompt_length": 50000,
+          "arrival_patterns": [{"pattern": "constant"}]
+        },
+        "mooncake_trace": {
+          "request_count": 256,
+          "block_size": 512,
+          "fixed_schedule": false,
+          "traces": [
+            {"name": "customer_50k", "path": "sample_traces/customer_mooncake.jsonl"}
+          ],
+          "synthesis_grid": [
+            {"name": "as_is"}
+          ]
+        },
+        "baseline": {
+          "arrival_patterns": [{"pattern": "constant"}]
+        }
+      }
+    }
+  }
+}

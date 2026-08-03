@@ -13,6 +13,7 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include "sockets/i_socket_transport.hpp"
@@ -141,7 +142,7 @@ bool SocketManager::sendObject(std::string_view messageType, const T& obj) {
 
   try {
     std::vector<uint8_t> data = wire::serializeMessage(messageType, obj);
-    return transport->sendRawData(data);
+    return transport->sendRawData(std::move(data));
   } catch (const std::exception& e) {
     TT_LOG_ERROR("[SocketManager] Serialization error: {}", e.what());
     return false;

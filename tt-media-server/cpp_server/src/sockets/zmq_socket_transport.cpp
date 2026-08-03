@@ -8,6 +8,7 @@
 #include <cstring>
 #include <memory>
 #include <utility>
+#include <vector>
 #include <zmq.hpp>
 
 #include "sockets/zmq_socket_options.hpp"
@@ -22,6 +23,21 @@ constexpr auto IO_IDLE_WAIT = std::chrono::milliseconds(1);
 std::string makeMonitorEndpoint(const void* self) {
   return "inproc://zmq-monitor-" +
          std::to_string(reinterpret_cast<uintptr_t>(self));
+}
+
+// Deallocator for zero-copy zmq::message_t: reclaims the heap-owned payload
+// buffer once zmq has finished transmitting it. `hint` is the vector pointer.
+void freeOwnedBuffer(void* /*data*/, void* hint) {
+  delete static_cast<std::vector<uint8_t>*>(hint);
+}
+
+// Wraps a byte buffer in a zero-copy zmq::message_t: zmq borrows the buffer in
+// place instead of copying it, and calls freeOwnedBuffer once it is done. The
+// deallocator runs whether the send succeeds or the message is dropped, so the
+// buffer is freed exactly once with no leak on EAGAIN.
+zmq::message_t makeOwnedMessage(std::vector<uint8_t>&& data) {
+  auto* owned = new std::vector<uint8_t>(std::move(data));
+  return zmq::message_t(owned->data(), owned->size(), freeOwnedBuffer, owned);
 }
 }  // namespace
 
@@ -250,10 +266,14 @@ std::string ZmqSocketTransport::getStatus() const {
 }
 
 bool ZmqSocketTransport::sendRawData(std::span<const uint8_t> data) {
+  return sendRawData(std::vector<uint8_t>(data.begin(), data.end()));
+}
+
+bool ZmqSocketTransport::sendRawData(std::vector<uint8_t>&& data) {
   if (!running || !ioActive) return false;
 
   auto request = std::make_shared<SendRequest>();
-  request->data.assign(data.begin(), data.end());
+  request->data = std::move(data);
   auto result = request->result.get_future();
 
   if (!sendQueue.pushIf(std::move(request),
@@ -280,8 +300,9 @@ bool ZmqSocketTransport::processPendingSends() {
 
     bool ok = false;
     try {
-      ok = running && (mode == Mode::SERVER ? sendAsRouter(request->data)
-                                            : sendAsDealer(request->data));
+      ok = running &&
+           (mode == Mode::SERVER ? sendAsRouter(std::move(request->data))
+                                 : sendAsDealer(std::move(request->data)));
     } catch (const zmq::error_t& e) {
       TT_LOG_ERROR("[ZmqSocketTransport] Send failed: {}", e.what());
     }
@@ -321,7 +342,7 @@ void ZmqSocketTransport::failPendingSends() {
   }
 }
 
-bool ZmqSocketTransport::sendAsRouter(const std::vector<uint8_t>& data) {
+bool ZmqSocketTransport::sendAsRouter(std::vector<uint8_t>&& data) {
   // ROUTER must prefix every outgoing message with the peer's identity.
   if (!routerPeerReady.load()) {
     TT_LOG_DEBUG(
@@ -331,13 +352,13 @@ bool ZmqSocketTransport::sendAsRouter(const std::vector<uint8_t>& data) {
   zmq::message_t idFrame(peerId.data(), peerId.size());
   socket->send(idFrame, zmq::send_flags::sndmore);
 
-  zmq::message_t msg(data.data(), data.size());
+  zmq::message_t msg = makeOwnedMessage(std::move(data));
   auto result = socket->send(msg, zmq::send_flags::dontwait);
   return result.has_value();
 }
 
-bool ZmqSocketTransport::sendAsDealer(const std::vector<uint8_t>& data) {
-  zmq::message_t msg(data.data(), data.size());
+bool ZmqSocketTransport::sendAsDealer(std::vector<uint8_t>&& data) {
+  zmq::message_t msg = makeOwnedMessage(std::move(data));
   auto result = socket->send(msg, zmq::send_flags::dontwait);
   return result.has_value();
 }

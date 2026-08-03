@@ -76,13 +76,17 @@ RUN /bin/bash -c "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
     && . ${CARGO_HOME}/env \
     && rustup update"
 
+# download.pytorch.org intermittently returns 503 during dependency installs;
+# raise uv's HTTP retry count (default 3) for every uv invocation in create_venv.sh.
+ENV UV_HTTP_RETRIES=10
+
 # Build tt-metal - clone with minimal history, build, and clean
 RUN /bin/bash -c "git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
     && cd ${TT_METAL_HOME} \
     && git checkout ${TT_METAL_COMMIT_SHA_OR_TAG} \
     && git submodule update --init --recursive \
     && bash ./build_metal.sh \
-    && CXX=clang++-17 CC=clang-17 bash ./create_venv.sh \
+    && ( for i in 1 2 3 4 5; do CXX=clang++-17 CC=clang-17 bash ./create_venv.sh && exit 0; echo 'create_venv.sh failed, retrying in 30s'; sleep 30; done; exit 1 ) \
     && source ${PYTHON_ENV_DIR}/bin/activate \
     && if [ -f 'models/demos/qwen25_vl/requirements.txt' ]; then uv pip install -r models/demos/qwen25_vl/requirements.txt; fi \
     && rm -rf ${TT_METAL_HOME}/.git"

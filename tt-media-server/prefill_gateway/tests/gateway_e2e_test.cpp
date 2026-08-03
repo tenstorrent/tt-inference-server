@@ -51,9 +51,8 @@ bool waitFor(Pred pred, std::chrono::milliseconds timeout = 2s) {
 
 uint64_t fakeMigrationId(uint32_t taskId) { return 1000ULL + taskId; }
 
-std::vector<int64_t> fakeTokenIds(uint32_t taskId) {
-  return {static_cast<int64_t>(taskId * 10 + 1),
-          static_cast<int64_t>(taskId * 10 + 2)};
+std::vector<uint32_t> fakeTokenIds(uint32_t taskId) {
+  return {taskId * 10 + 1, taskId * 10 + 2};
 }
 
 void populateFakePrefillResult(tt::sockets::PrefillResultMessage& result,

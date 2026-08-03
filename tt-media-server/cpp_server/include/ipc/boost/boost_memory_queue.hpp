@@ -50,11 +50,15 @@ class MemoryQueue {
    *  previous process that crashed without cleanup. Falls back to
    *  open_only + drain if removal is not possible (e.g. race with
    *  another process, container permission issues). */
-  MemoryQueue(const std::string& name, int capacity) : name_(name) {
+  MemoryQueue(const std::string& name, int capacity,
+              size_t maxMsgSize = MAX_MSG_SIZE)
+      : name_(name) {
+    if (maxMsgSize == 0) maxMsgSize = MAX_MSG_SIZE;
     bi_ipc::message_queue::remove(name.c_str());
     try {
       queue_ = std::make_unique<bi_ipc::message_queue>(
-          bi_ipc::create_only, name.c_str(), capacity, MAX_MSG_SIZE);
+          bi_ipc::create_only, name.c_str(), capacity, maxMsgSize);
+      max_msg_size_ = queue_->get_max_msg_size();
     } catch (const bi_ipc::interprocess_exception&) {
       TT_LOG_WARN(
           "[ipc::boost::MemoryQueue] '{}' still exists after remove, "
@@ -62,6 +66,7 @@ class MemoryQueue {
           name);
       queue_ = std::make_unique<bi_ipc::message_queue>(bi_ipc::open_only,
                                                        name.c_str());
+      max_msg_size_ = queue_->get_max_msg_size();
       drain();
     }
   }
@@ -171,13 +176,15 @@ class MemoryQueue {
   }
 
  private:
-  static std::vector<char>& sendBuffer() {
-    thread_local std::vector<char> buf(MAX_MSG_SIZE);
+  std::vector<char>& sendBuffer() const {
+    thread_local std::vector<char> buf;
+    if (buf.size() < max_msg_size_) buf.resize(max_msg_size_);
     return buf;
   }
 
-  static std::vector<char>& recvBuffer() {
-    thread_local std::vector<char> buf(MAX_MSG_SIZE);
+  std::vector<char>& recvBuffer() const {
+    thread_local std::vector<char> buf;
+    if (buf.size() < max_msg_size_) buf.resize(max_msg_size_);
     return buf;
   }
 
@@ -192,9 +199,11 @@ class MemoryQueue {
   explicit MemoryQueue(const std::string& name) : name_(name) {
     queue_ = std::make_unique<bi_ipc::message_queue>(bi_ipc::open_only,
                                                      name.c_str());
+    max_msg_size_ = queue_->get_max_msg_size();
   }
 
   std::string name_;
+  size_t max_msg_size_ = MAX_MSG_SIZE;
   std::unique_ptr<bi_ipc::message_queue> queue_;
 };
 

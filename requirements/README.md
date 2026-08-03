@@ -14,12 +14,11 @@ requirements/
 ```
 
 File names are kebab-case lowercase mirrors of the `WorkflowVenvType` enum
-member: `EVALS_VIDEO` → `evals-video.txt`, `BENCHMARKS_VLLM` →
+member: `EVALS_AUDIO` → `evals-audio.txt`, `BENCHMARKS_VLLM` →
 `benchmarks-vllm.txt`.
 
-`BENCHMARKS_VIDEO` and `BENCHMARKS_GENAI_PERF` deliberately have no file —
-they don't pip-install anything (the former is a no-op `setup_venv()`, the
-latter is Docker-only).
+`BENCHMARKS_GENAI_PERF` deliberately has no file — it doesn't pip-install
+anything (Docker-only).
 
 ## Authoring rules
 

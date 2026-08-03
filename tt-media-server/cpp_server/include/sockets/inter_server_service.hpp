@@ -44,6 +44,12 @@ class InterServerService {
   using PrefillCancelCallback =
       std::function<void(const CancelPrefillMessage& message)>;
 
+  using SlotReservationRequestCallback =
+      std::function<void(const SlotReservationRequestMessage& message)>;
+
+  using SlotReservationResponseCallback =
+      std::function<void(const SlotReservationResponseMessage& message)>;
+
   InterServerService();
   ~InterServerService();
 
@@ -84,7 +90,7 @@ class InterServerService {
    */
   bool sendPrefillRequest(uint32_t taskId,
                           const std::vector<uint64_t>& registrationHashes,
-                          const std::vector<int64_t>& tokenIds,
+                          const std::vector<uint32_t>& tokenIds,
                           std::optional<int> maxTokens = std::nullopt,
                           std::optional<uint32_t> slotId = std::nullopt,
                           const tt::domain::llm::SamplingParams& sampling = {},
@@ -105,6 +111,11 @@ class InterServerService {
 
   bool sendPrefillCacheBlocksAdded(const std::vector<uint64_t>& blockHashes);
 
+  bool sendSlotReservationRequest(const SlotReservationRequestMessage& message);
+
+  bool sendSlotReservationResponse(
+      const SlotReservationResponseMessage& message);
+
   /**
    * @brief Set callback for when prefill server receives a request
    * @param callback Function to call when prefill request is received
@@ -121,6 +132,10 @@ class InterServerService {
    * @param callback Function to call when prefill is complete
    */
   void onPrefillComplete(PrefillCompleteCallback callback);
+
+  void onSlotReservationRequest(SlotReservationRequestCallback callback);
+
+  void onSlotReservationResponse(SlotReservationResponseCallback callback);
 
   /**
    * @brief Set callback for connection lost events
@@ -162,6 +177,8 @@ class InterServerService {
   PrefillRequestedCallback prefillRequestedCallback;
   PrefillCancelCallback prefillCancelCallback;
   PrefillCompleteCallback prefillCompleteCallback;
+  SlotReservationRequestCallback slotReservationRequestCallback;
+  SlotReservationResponseCallback slotReservationResponseCallback;
   bool enabled = false;
   tt::config::LLMMode llmMode = tt::config::LLMMode::REGULAR;
   bool gatewayMode = false;
