@@ -171,7 +171,8 @@ if __name__ == "__main__":
         )
         schema = ReportSchema(
             metadata={
-                "model_name": model_spec.hf_model_repo,
+                "model_name": model_spec.model_name,
+                "model_repo": model_spec.hf_model_repo,
                 "device": device_str,
                 "generated_at": generated_at,
                 "report_id": report_id,

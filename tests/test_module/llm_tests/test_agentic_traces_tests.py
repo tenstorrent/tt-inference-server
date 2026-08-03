@@ -128,6 +128,9 @@ class TestSweepLoop:
         assert result.ok
         assert [b.kind for b in result.blocks] == ["agentic_traces"]
         assert len(get_default_accumulator().blocks) == 1
+        envelope = get_default_accumulator().envelope
+        assert envelope["model_name"] == "Kimi-K2.7-Code"
+        assert envelope["model_repo"] == "moonshotai/Kimi-K2.7-Code"
 
     def test_failed_run_records_its_code_and_emits_no_block(self, tmp_path):
         outcome = AgenticTracesDriverResult(

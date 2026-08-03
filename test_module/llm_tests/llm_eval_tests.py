@@ -24,7 +24,7 @@ from workflow_module import accept_blocks
 from workflows.utils import run_command
 from workflows.workflow_types import EvalLimitMode
 
-from .._test_common import ReportCheckTypes, TestStatus, block_id
+from .._test_common import ReportCheckTypes, TestStatus, block_id, report_model_fields
 from ..context import MediaContext
 
 logger = logging.getLogger(__name__)
@@ -445,7 +445,7 @@ def _accept(ctx: MediaContext, blocks: List[Block]) -> None:
     accept_blocks(
         blocks,
         envelope={
-            "model_name": ctx.model_spec.hf_model_repo,
+            **report_model_fields(ctx.model_spec),
             "device": _device_label(ctx),
             "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         },

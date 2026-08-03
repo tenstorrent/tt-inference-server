@@ -69,7 +69,15 @@ class ReportSchema:
 
     @property
     def model_name(self) -> str:
-        return str(self.metadata.get("model_name", ""))
+        """Display identity for markdown headers and titles.
+
+        Prefers full HF ``metadata.model_repo``; falls back to
+        ``metadata.model_name`` (bare basename on new reports, or the only
+        identity field on older artifacts).
+        """
+        return str(
+            self.metadata.get("model_repo") or self.metadata.get("model_name", "")
+        )
 
     @property
     def device(self) -> str:
@@ -107,13 +115,23 @@ class ReportSchema:
         meta = dict(metadata or {})
         if records:
             first = records[0]
-            meta.setdefault("model_name", str(first.get("model", "")))
+            identity = str(
+                meta.get("model_repo")
+                or meta.get("model_name")
+                or first.get("model")
+                or ""
+            )
+            if "model_name" not in meta:
+                meta["model_name"] = identity.rsplit("/", 1)[-1]
+            meta.setdefault("model_repo", identity)
             meta.setdefault("device", str(first.get("device", "")))
             meta.setdefault(
-                "report_id", _synthesize_report_id(meta["model_name"], first)
+                "report_id",
+                _synthesize_report_id(meta["model_repo"] or meta["model_name"], first),
             )
             meta.setdefault("generated_at", _first_valid_timestamp(records))
         else:
+            meta.setdefault("model_repo", "")
             meta.setdefault("model_name", "")
             meta.setdefault("device", "")
             meta.setdefault("report_id", _synthesize_report_id("", {}))

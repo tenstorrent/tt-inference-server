@@ -173,21 +173,26 @@ land independently of a tt-inference-server release.
 
 ## Where the prefix does and does not appear
 
-Two different identifiers are easy to confuse, and only one of them ever
-carries an org prefix.
+Two different identifiers are easy to confuse.
 
 | field | value | prefix? |
 |---|---|---|
-| `ModelSpec.hf_model_repo` → report `metadata.model_repo` | `Qwen/Qwen3-32B` | **yes** — this is the identity |
+| `ModelSpec.hf_model_repo` → report `metadata.model_repo` | `Qwen/Qwen3-32B` | **yes** — full identity; used in markdown headers / display |
+| report `metadata.model_name` | `Qwen3-32B` | **no** — same basename as `ModelSpec.model_name` |
 | `ModelSpec.model_id` → report `metadata.model_id` | `id_vllm_Qwen3-32B_p150` | **no, ever** |
 
-`model_id` is `f"id_{impl_name}_{model_name}_{device}"` and `model_name` is
-`Path(hf_model_repo).name` — the *basename*. So everything derived from
-`model_id` is prefix-free by construction and contains no `/`: the `MODEL_SPECS`
-key, `eval_<model_id>/` directories, `runtime_model_spec_*_<model_id>_*.json`,
-and the media `report_id`. That is a deliberate design, not a gap — but it means
-`hf_model_repo` is the only field to read when the org matters, and a reader
-must not treat `model_id` as an escaped repo id.
+`ModelSpec.model_name` is `Path(hf_model_repo).name` — the *basename*. That
+basename feeds `model_id` (`f"id_{impl_name}_{model_name}_{device}"`) and
+everything derived from it is prefix-free by construction and contains no `/`:
+the `MODEL_SPECS` key, `eval_<model_id>/` directories,
+`runtime_model_spec_*_<model_id>_*.json`, and media paths built from
+`model_id`.
+
+Report metadata keeps the same split: bare `model_name`, full `model_repo`.
+Markdown titles (`## Tenstorrent Model Release Summary: …`,
+`### Metadata: …`) prefer `model_repo` so the org prefix still shows in the
+rendered report. Older artifacts that only have `model_name` (possibly full
+HF) still render via that fallback.
 
 ## Known gaps
 

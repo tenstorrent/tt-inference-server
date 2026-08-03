@@ -125,11 +125,8 @@ def aggregate_benchmark_runs(
     order: List[tuple] = []
 
     for schema in schemas:
-        # Prefer the full HF repo id ("model_repo", e.g.
-        # "meta-llama/Llama-3.1-8B-Instruct"); it is the key used by
-        # model_performance_reference.json for the summary target check and is
-        # the model identity shown in the summary report. Fall back to the
-        # basename "model_name" only if the full repo is absent.
+        # Prefer the full HF repo id ("model_repo") for aggregation / targets.
+        # Fall back to "model_name" for older artifacts (may be bare or full).
         model = str(
             schema.metadata.get("model_repo") or schema.metadata.get("model_name", "")
         )

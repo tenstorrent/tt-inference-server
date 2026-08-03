@@ -40,7 +40,10 @@ logger = logging.getLogger(__name__)
 
 _SPEC_METADATA_FIELDS: Tuple[Tuple[str, str], ...] = (
     ("model_id", "model_id"),
+    # Full HF identity for display / lookups. Bare basename stays on
+    # metadata.model_name (same token as ModelSpec.model_name).
     ("model_repo", "hf_model_repo"),
+    ("model_name", "model_name"),
     ("inference_engine", "inference_engine"),
     ("tt_metal_commit", "tt_metal_commit"),
     ("vllm_commit", "vllm_commit"),

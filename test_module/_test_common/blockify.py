@@ -27,6 +27,18 @@ if TYPE_CHECKING:
     from ..context import MediaContext
 
 
+def report_model_fields(spec: Any) -> Dict[str, str]:
+    """Bare ``model_name`` + full ``model_repo`` for report envelopes.
+
+    ``model_name`` matches ``ModelSpec.model_name`` (basename / path token).
+    ``model_repo`` is the full HF id used for display and identity lookups.
+    Markdown headers prefer ``model_repo`` via ``ReportSchema.model_name``.
+    """
+    bare = getattr(spec, "model_name", "") or ""
+    repo = getattr(spec, "hf_model_repo", "") or bare
+    return {"model_name": bare, "model_repo": repo}
+
+
 def sweep_envelope(ctx: "MediaContext") -> Dict[str, Any]:
     """Sweep-level metadata recorded once for the whole report.
 
@@ -42,11 +54,7 @@ def sweep_envelope(ctx: "MediaContext") -> Dict[str, Any]:
     model_id = getattr(spec, "model_id", None)
     generated_at = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
     envelope: Dict[str, Any] = {
-        # Report identity is the full HF repo id (e.g.
-        # "meta-llama/Llama-3.1-8B-Instruct"). ModelSpec.model_name (basename)
-        # stays the path/volume token; report filenames slugify the "/".
-        "model_name": getattr(spec, "hf_model_repo", "")
-        or getattr(spec, "model_name", ""),
+        **report_model_fields(spec),
         "device": ctx.device.name,
         "generated_at": generated_at,
     }
@@ -65,4 +73,4 @@ def block_id(ctx: "MediaContext") -> str:
     return slugify_name_parts(ctx.model_spec.model_name, ctx.device.name)
 
 
-__all__ = ["block_id", "sweep_envelope"]
+__all__ = ["block_id", "report_model_fields", "sweep_envelope"]
