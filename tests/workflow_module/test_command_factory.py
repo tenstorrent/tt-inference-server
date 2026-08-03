@@ -567,6 +567,13 @@ class TestOutputLeaf:
         leaf = cf._output_leaf(self._args("meta-llama/Llama-3.1-8B-Instruct"))
         assert (tmp_path / leaf).parent == tmp_path
 
+    @pytest.mark.parametrize(
+        "model", ["Qwen/Qwen3-32B", "microsoft/phi-1_5", "resnet-50"]
+    )
+    def test_model_portion_recovers_the_repo_id(self, model):
+        leaf = cf._output_leaf(self._args(model))
+        assert unslugify_model_id(leaf[: -len("_p150_release")]) == model
+
 
 class TestCanonicalizeCliModel:
     """Bare --model must become the HF identity before eval/output use."""
@@ -597,10 +604,3 @@ class TestCanonicalizeCliModel:
         )
         cf._canonicalize_cli_model(args)
         assert args.model == "resnet-50"
-
-    @pytest.mark.parametrize(
-        "model", ["Qwen/Qwen3-32B", "microsoft/phi-1_5", "resnet-50"]
-    )
-    def test_model_portion_recovers_the_repo_id(self, model):
-        leaf = cf._output_leaf(self._args(model))
-        assert unslugify_model_id(leaf[: -len("_p150_release")]) == model
