@@ -560,9 +560,9 @@ TtsConfig ttsEngineConfig() {
     cfg.chunkTokens = static_cast<uint32_t>(
         envUlong("TTS_CHUNK_TOKENS", defaults::TTS_CHUNK_TOKENS));
     if (cfg.chunkTokens == 0 || cfg.chunkTokens > defaults::TTS_CHUNK_TOKENS) {
-      throw std::runtime_error(
-          "[Config] TTS_CHUNK_TOKENS must be in [1, " +
-          std::to_string(defaults::TTS_CHUNK_TOKENS) + "]");
+      throw std::runtime_error("[Config] TTS_CHUNK_TOKENS must be in [1, " +
+                               std::to_string(defaults::TTS_CHUNK_TOKENS) +
+                               "]");
     }
     cfg.voiceSampleRateHz = static_cast<uint32_t>(envUlong(
         "TTS_VOICE_SAMPLE_RATE_HZ", defaults::TTS_VOICE_SAMPLE_RATE_HZ));

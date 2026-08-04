@@ -21,9 +21,10 @@ TEST(TtsPromptCompilerTest, CompilesTextOnlyPrompt) {
 }
 
 TEST(TtsPromptCompilerTest, CompilesDescriptionPrompt) {
-  EXPECT_EQ(compiler::compilePromptString("hello", std::string("  calm voice ")),
-            "<|voice_prompt_start|>calm voice<|voice_prompt_end|>"
-            "<|bot|>hello<|speech_start|>");
+  EXPECT_EQ(
+      compiler::compilePromptString("hello", std::string("  calm voice ")),
+      "<|voice_prompt_start|>calm voice<|voice_prompt_end|>"
+      "<|bot|>hello<|speech_start|>");
 }
 
 TEST(TtsPromptCompilerTest, CompilesVoiceSamplePrompt) {
