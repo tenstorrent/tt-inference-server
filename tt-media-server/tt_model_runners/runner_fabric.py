@@ -136,6 +136,10 @@ AVAILABLE_RUNNERS = {
         "tt_model_runners.forge_training_runners.training_lora_runner",
         fromlist=["TrainingLoraRunner"],
     ).TrainingLoraRunner(wid),
+    ModelRunners.TRAINER_TRAINING_LORA: lambda wid: __import__(
+        "tt_model_runners.forge_training_runners.trainer_training_lora_runner",
+        fromlist=["TrainerTrainingLoraRunner"],
+    ).TrainerTrainingLoraRunner(wid),
     ModelRunners.MOCK: lambda wid: __import__(
         "tt_model_runners.mock_runner", fromlist=["MockRunner"]
     ).MockRunner(wid),
