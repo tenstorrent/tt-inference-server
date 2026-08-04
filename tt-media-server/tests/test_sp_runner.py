@@ -869,5 +869,131 @@ class TestSPRunnerWarmup:
         assert mock_output.read_response.call_count == 2
 
 
+class TestPeerErrorClassification:
+    """A 4xx from the peer is the client's fault, not the worker's (#4811).
+
+    The peer stringifies an ``HTTPException`` into ``error_message``, so an input
+    rejection arrives as ``"400: ..."``. Flattening that into a plain
+    ``RuntimeError`` (the old behaviour) lost the distinction, and the scheduler
+    then counted a bad conditioning image against the worker's health.
+    """
+
+    def _respond_with(self, MockVideoShm, error_message: str):
+        mock_input, mock_output = _install_shm_factory(MockVideoShm)
+        mock_output.read_response.return_value = VideoResponse(
+            "i2v-task-id-000000000000000000",
+            VideoStatus.ERROR,
+            "",
+            error_message,
+        )
+        runner = SPRunner("dev0")
+        runner.set_device()
+        return runner
+
+    @patch("tt_model_runners.sp_runner.VideoShm")
+    def test_peer_4xx_becomes_a_client_request_error(self, MockVideoShm, tmp_video_dir):
+        """Message copied verbatim from #4811's log."""
+        from domain.errors import ClientRequestError
+
+        runner = self._respond_with(
+            MockVideoShm,
+            "400: Could not decode image (804 bytes): cannot identify image "
+            "file <_io.BytesIO object at 0x78810f8022a0>",
+        )
+        request = _MockI2VRequest(
+            image_prompts=[_ImagePromptStub(image="b64", frame_pos=0)]
+        )
+
+        with pytest.raises(ClientRequestError) as exc_info:
+            runner.run([request])
+
+        assert exc_info.value.status_code == 400
+        assert "Could not decode image" in str(exc_info.value.detail)
+
+    @patch("tt_model_runners.sp_runner.VideoShm")
+    def test_peer_422_keeps_its_status(self, MockVideoShm, tmp_video_dir):
+        from domain.errors import ClientRequestError
+
+        runner = self._respond_with(MockVideoShm, "422: frame_pos out of range")
+        request = _MockI2VRequest(
+            image_prompts=[_ImagePromptStub(image="b64", frame_pos=0)]
+        )
+
+        with pytest.raises(ClientRequestError) as exc_info:
+            runner.run([request])
+
+        assert exc_info.value.status_code == 422
+
+    @patch("tt_model_runners.sp_runner.VideoShm")
+    def test_unprefixed_peer_error_stays_a_worker_fault(
+        self, MockVideoShm, tmp_video_dir
+    ):
+        """The control case: a real device failure must keep counting toward
+        worker health, so it must NOT come back as a ClientRequestError."""
+        from domain.errors import ClientRequestError
+
+        runner = self._respond_with(MockVideoShm, "ttnn: mesh unresponsive")
+        request = _MockI2VRequest(
+            image_prompts=[_ImagePromptStub(image="b64", frame_pos=0)]
+        )
+
+        with pytest.raises(RuntimeError) as exc_info:
+            runner.run([request])
+
+        assert not isinstance(exc_info.value, ClientRequestError)
+        assert "mesh unresponsive" in str(exc_info.value)
+
+    @patch("tt_model_runners.sp_runner.VideoShm")
+    def test_peer_5xx_stays_a_worker_fault(self, MockVideoShm, tmp_video_dir):
+        from domain.errors import ClientRequestError
+
+        runner = self._respond_with(MockVideoShm, "500: pipeline crashed")
+        request = _MockI2VRequest(
+            image_prompts=[_ImagePromptStub(image="b64", frame_pos=0)]
+        )
+
+        with pytest.raises(RuntimeError) as exc_info:
+            runner.run([request])
+
+        assert not isinstance(exc_info.value, ClientRequestError)
+
+    @patch("tt_model_runners.sp_runner.VideoShm")
+    def test_client_error_path_still_unlinks_the_side_file(
+        self, MockVideoShm, tmp_video_dir
+    ):
+        """The new error type must not skip the tmpfs cleanup that the old
+        ``RuntimeError`` path did — a bad-input retry loop would otherwise leak
+        ~810 MB per request."""
+        from domain.errors import ClientRequestError
+
+        mock_input, mock_output = _install_shm_factory(MockVideoShm)
+        mock_output.read_response.return_value = VideoResponse(
+            "i2v-task-id-000000000000000000",
+            VideoStatus.ERROR,
+            "",
+            "400: Could not decode image (804 bytes)",
+        )
+
+        captured_path: dict = {}
+
+        def capture_path_at_write(req, timeout_s=None):
+            captured_path["path"] = req.image_path
+            assert os.path.exists(req.image_path)
+
+        mock_input.write_request.side_effect = capture_path_at_write
+
+        runner = SPRunner("dev0")
+        runner.set_device()
+        request = _MockI2VRequest(
+            image_prompts=[_ImagePromptStub(image="b64", frame_pos=0)]
+        )
+
+        with pytest.raises(ClientRequestError):
+            runner.run([request])
+
+        assert captured_path["path"]
+        assert not os.path.exists(captured_path["path"])
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

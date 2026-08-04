@@ -7,8 +7,10 @@ from io import BytesIO
 
 import numpy as np
 import torch
+from domain.errors import ClientRequestError
 from fastapi import HTTPException, Path, UploadFile
 from PIL import Image
+from utils.base64_image import decode_base64_image
 
 
 class ImageManager:
@@ -104,19 +106,32 @@ class ImageManager:
 
         Returns:
             PIL Image object
+
+        Raises:
+            ClientRequestError: the payload is not a decodable image. This runs
+                inside the device worker (every I2V ``_build_image_prompt`` calls
+                it), where a bare ``binascii.Error``/``UnidentifiedImageError``
+                used to reach the scheduler as an unclassifiable string and count
+                against the worker's error budget — six bad requests then cost a
+                restart (#4811).
         """
-        if base64_string.startswith("data:"):
-            base64_string = base64_string.split(",")[1]
-        # Restore stripped padding so HTTP/JSON-trimmed strings decode cleanly.
-        base64_string += "=" * (-len(base64_string) % 4)
-        image_bytes = base64.b64decode(base64_string)
-        image = Image.open(BytesIO(image_bytes))
+        image_bytes = decode_base64_image(base64_string)
 
-        if image.mode != target_mode:
-            image = image.convert(target_mode)
+        try:
+            image = Image.open(BytesIO(image_bytes))
 
-        if target_size is not None:
-            image = image.resize(target_size, Image.Resampling.LANCZOS)
+            if image.mode != target_mode:
+                image = image.convert(target_mode)
+
+            if target_size is not None:
+                image = image.resize(target_size, Image.Resampling.LANCZOS)
+        except (OSError, ValueError) as e:
+            # Nothing here touches a device: open/convert/resize failures are
+            # always a property of the bytes the client sent (truncated file,
+            # unsupported subformat, corrupt stream).
+            raise ClientRequestError(
+                f"Could not decode image ({len(image_bytes)} bytes): {e}"
+            ) from e
 
         return image
 

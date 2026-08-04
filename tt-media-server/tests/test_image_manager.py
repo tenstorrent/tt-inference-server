@@ -120,6 +120,71 @@ class TestBase64ToPilImagePadding:
         assert image.size == (width, height)
 
 
+class TestBase64ToPilImageRejectsRogueInput:
+    """Decode failures are the client's fault and must say so (#4811).
+
+    This helper is the single choke point every I2V runner's
+    ``_build_image_prompt`` goes through, and it runs *inside the device worker*.
+    A bare ``binascii.Error`` / ``UnidentifiedImageError`` from here reached the
+    scheduler as an unclassifiable string, counted against ``error_count``, and
+    restarted the worker after six bad requests.
+    """
+
+    @pytest.mark.parametrize(
+        "payload,why",
+        [
+            ("!!!not-base64!!!", "not base64"),
+            ("data:image/png;base64,!!!!", "data URL wrapping non-base64"),
+            (base64.b64encode(b"x" * 804).decode("ascii"), "not an image"),
+            (base64.b64encode(b"%PDF-1.7 nope").decode("ascii"), "a PDF"),
+        ],
+    )
+    def test_rogue_payloads_raise_a_client_request_error(self, payload, why):
+        from domain.errors import ClientRequestError
+
+        with pytest.raises(ClientRequestError) as exc_info:
+            ImageManager().base64_to_pil_image(payload)
+
+        assert exc_info.value.status_code == 400
+
+    def test_truncated_but_correctly_headed_png_is_a_client_error(self):
+        """Passes a header sniff at the API boundary but still fails the real
+        decode — the layer that catches it is this one."""
+        from domain.errors import ClientRequestError
+
+        truncated = _png_bytes()[:20]
+
+        with pytest.raises(ClientRequestError):
+            ImageManager().base64_to_pil_image(
+                base64.b64encode(truncated).decode("ascii")
+            )
+
+    def test_the_error_message_is_prefixed_for_the_peer_wire_format(self):
+        """Rank 0 writes ``str(exc)`` into SHM, and ``SPRunner`` reads the status
+        back off that prefix. ``str()`` must therefore start with ``400: ``."""
+        from domain.errors import ClientRequestError
+
+        with pytest.raises(ClientRequestError) as exc_info:
+            ImageManager().base64_to_pil_image("!!!not-base64!!!")
+
+        assert str(exc_info.value).startswith("400: ")
+
+    def test_a_valid_image_still_decodes(self):
+        """Regression guard: classification must not swallow the happy path."""
+        encoded = base64.b64encode(_png_bytes()).decode("ascii")
+
+        assert ImageManager().base64_to_pil_image(encoded).size == (4, 4)
+
+    def test_line_wrapped_base64_still_decodes(self):
+        """MIME-style base64 (what ``base64`` CLI and some SDKs emit) is wrapped
+        at 76 columns. The old lenient ``b64decode`` ignored those newlines;
+        tightening to ``validate=True`` must not start rejecting them."""
+        wrapped = base64.encodebytes(_png_bytes(width=32, height=32)).decode("ascii")
+        assert "\n" in wrapped, "test setup: payload must be line-wrapped"
+
+        assert ImageManager().base64_to_pil_image(wrapped).size == (32, 32)
+
+
 class TestBase64ToPilImageResizeAndMode:
     """The padding fix must not regress the optional resize / mode-convert
     parameters that callers depend on for I2V conditioning preprocessing."""

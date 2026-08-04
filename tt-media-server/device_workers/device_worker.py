@@ -10,6 +10,7 @@ from typing import Any
 from config.constants import SHUTDOWN_SIGNAL, CanaryProbeRequest
 from config.settings import settings
 from device_workers.worker_utils import initialize_device_worker
+from domain.errors import classify_worker_error
 from utils.logger import TTLogger
 
 
@@ -98,8 +99,20 @@ async def _continuous_fan_out(
             task_id = req._task_id
             exc = task.exception()
             if exc is not None:
+                # ``classify_worker_error`` keeps a client-input rejection on the
+                # queue as a ClientRequestError instance instead of flattening it
+                # into this f-string. The scheduler keys off the type to decide
+                # whether the failure counts against worker health (#4811).
                 error_queue.put(
-                    (worker_id, task_id, f"Worker {worker_id} execution error: {exc}")
+                    (
+                        worker_id,
+                        task_id,
+                        classify_worker_error(
+                            worker_id,
+                            exc,
+                            prefix=f"Worker {worker_id} execution error: ",
+                        ),
+                    )
                 )
                 continue
             result = task.result()
@@ -315,8 +328,11 @@ def device_worker(
             timeout_timer.cancel()
             error_msg = f"Worker {worker_id} execution error: {str(e)}"
             logger.error(error_msg)
+            payload = classify_worker_error(
+                worker_id, e, prefix=f"Worker {worker_id} execution error: "
+            )
             for request in requests:
-                error_queue.put((worker_id, request._task_id, error_msg))
+                error_queue.put((worker_id, request._task_id, payload))
             continue
 
         logger.debug(

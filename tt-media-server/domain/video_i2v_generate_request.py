@@ -16,8 +16,10 @@ below) is the single source of truth in ``config.constants.WAN22_NUM_FRAMES``.
 from typing import List
 
 from config.constants import WAN22_NUM_FRAMES
+from domain.errors import ClientRequestError
 from domain.video_generate_request import VideoGenerateRequest
 from pydantic import BaseModel, Field, field_validator
+from utils.base64_image import validate_base64_image
 
 # The cap exists to bound HTTP body size, not to match
 # any pipeline constraint.
@@ -29,6 +31,30 @@ class ImagePromptEntry(BaseModel):
 
     image: str = Field(min_length=1, max_length=MAX_BASE64_IMAGE_LEN)
     frame_pos: int = Field(default=0, ge=0, lt=WAN22_NUM_FRAMES)
+
+    @field_validator("image")
+    @classmethod
+    def validate_image_is_decodable(cls, v: str) -> str:
+        """Reject a payload that is not a base64-encoded image.
+
+        Length alone used to be the only check here, so ``"!!!not-base64!!!"`` or
+        an arbitrary blob wrapped in ``data:image/png;base64,`` was accepted, sent
+        to the device, and only failed there — as a 500 to the client and an
+        increment on the worker's error count, six of which restart the worker
+        (#4811). ``validate_base64_image`` sniffs the header, so this stays cheap
+        enough to run on every request; anything that gets past it and fails the
+        real decode is caught in ``ImageManager`` and classified there.
+
+        Re-raised as ``ValueError`` so pydantic reports it like every other field
+        error on this schema and FastAPI answers 422 with the usual body. The
+        underlying ``ClientRequestError`` is the right type deeper in the stack
+        (it carries an HTTP status across the worker boundary) but here it would
+        bypass pydantic's error collection entirely.
+        """
+        try:
+            return validate_base64_image(v, what="image_prompts[].image")
+        except ClientRequestError as e:
+            raise ValueError(e.detail) from e
 
 
 class VideoI2VGenerateRequest(VideoGenerateRequest):

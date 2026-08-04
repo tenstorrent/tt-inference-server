@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+import base64
 import os
 import tempfile
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -22,6 +23,7 @@ from open_ai_api.video import (
     get_video_metadata,
     reject_text_to_video_on_i2v_deployment,
     submit_generate_video_i2v_request,
+    submit_generate_video_i2v_upload,
     submit_generate_video_request,
 )
 
@@ -614,6 +616,245 @@ class TestVideoI2VGenerateRequestValidation:
         assert request.negative_prompt == "blurry"
         assert request.num_inference_steps == 30
         assert request.seed == 42
+
+
+# Valid base64, 804 bytes of payload, not an image — the size and shape of the
+# conditioning image in #4811's reproduction curl.
+_NOT_AN_IMAGE_BASE64 = base64.b64encode(b"x" * 804).decode("ascii")
+
+
+class TestRogueImagePayloadsRejectedAtTheBoundary:
+    """Undecodable conditioning images must not reach the device (#4811).
+
+    PR #4817 stopped text-only requests on an I2V deployment, but a request that
+    *does* carry ``image_prompts`` was only checked for string length. Anything
+    that is not a decodable image then failed inside the worker, where it counted
+    against ``error_count`` and cost the worker a restart every 6 requests.
+    """
+
+    @pytest.mark.parametrize(
+        "payload,why",
+        [
+            ("!!!not-base64!!!", "not base64 at all"),
+            ("data:image/png;base64,!!!!", "data URL wrapping non-base64"),
+            (_NOT_AN_IMAGE_BASE64, "valid base64, bytes are not an image"),
+            (
+                f"data:image/png;base64,{_NOT_AN_IMAGE_BASE64}",
+                "png content type, non-image bytes (the issue's payload)",
+            ),
+            (base64.b64encode(b"%PDF-1.7 not an image").decode("ascii"), "a PDF"),
+        ],
+    )
+    def test_rogue_image_payloads_are_rejected(self, payload, why):
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            ImagePromptEntry(image=payload, frame_pos=0)
+
+    @pytest.mark.parametrize(
+        "header",
+        [
+            b"\x89PNG\r\n\x1a\n" + b"\x00" * 32,
+            b"\xff\xd8\xff\xe0" + b"\x00" * 32,  # JPEG
+            b"GIF89a" + b"\x00" * 32,
+            b"BM" + b"\x00" * 32,  # BMP
+            b"RIFF\x00\x00\x00\x00WEBP" + b"\x00" * 32,
+        ],
+    )
+    def test_real_image_headers_are_accepted(self, header):
+        """The boundary check is a header sniff, not a full decode: it must not
+        start 422-ing formats the pipeline can actually read."""
+        entry = ImagePromptEntry(
+            image=base64.b64encode(header).decode("ascii"), frame_pos=0
+        )
+        assert entry.frame_pos == 0
+
+    def test_a_real_png_is_still_accepted(self):
+        """Regression guard: the happy path must not move."""
+        entry = ImagePromptEntry(image=_tiny_png_base64(), frame_pos=0)
+        assert entry.image == _tiny_png_base64()
+
+    def test_padding_stripped_base64_is_still_accepted(self):
+        """HTTP/JSON transports strip ``=`` padding. The boundary check has to
+        restore it exactly like ``ImageManager.base64_to_pil_image`` does, or it
+        would reject images the runner can decode fine."""
+        entry = ImagePromptEntry(image=_tiny_png_base64().rstrip("="), frame_pos=0)
+        assert entry.image
+
+    def test_line_wrapped_base64_is_still_accepted(self):
+        """MIME-style wrapping at 76 columns is what the ``base64`` CLI produces.
+        The boundary must tolerate it, or a payload the runner decodes fine would
+        be rejected as malformed."""
+        b64 = _tiny_png_base64()
+        wrapped = "\n".join([b64[:40], b64[40:]])
+
+        entry = ImagePromptEntry(image=wrapped, frame_pos=0)
+        assert entry.image == wrapped
+
+    @pytest.mark.asyncio
+    async def test_rogue_request_never_reaches_the_service(self):
+        """The whole point: rejected during request parsing, so the scheduler and
+        the device worker never see it."""
+        from pydantic import ValidationError
+
+        mock_service = MagicMock()
+        mock_service.create_job = AsyncMock()
+
+        with pytest.raises(ValidationError):
+            VideoI2VGenerateRequest(
+                prompt="A serene mountain landscape with flowing water",
+                num_inference_steps=12,
+                seed=42,
+                image_prompts=[{"image": _NOT_AN_IMAGE_BASE64, "frame_pos": 0}],
+            )
+
+        mock_service.create_job.assert_not_called()
+
+
+class TestRogueSeedRejectedAtTheBoundary:
+    """``seed`` is packed as a signed 64-bit int in SHM (``ipc/video_shm.py``).
+
+    Out-of-range values used to be accepted by the API and then raise
+    ``struct.error`` inside the device worker — a different rogue-parameter
+    signature from the image case, with the same #4811 restart consequence.
+    """
+
+    @pytest.mark.parametrize("seed", [2**63, 2**64, -(2**63) - 1, 10**30])
+    def test_seed_outside_int64_is_rejected(self, seed):
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            VideoGenerateRequest(prompt="A cat", seed=seed)
+
+    @pytest.mark.parametrize("seed", [0, 42, 2**63 - 1, -(2**63), None])
+    def test_seed_inside_int64_is_accepted(self, seed):
+        assert VideoGenerateRequest(prompt="A cat", seed=seed).seed == seed
+
+    def test_the_rejected_range_is_exactly_what_shm_cannot_pack(self):
+        """Pins the bound to its reason: the boundary rejects precisely the
+        values that would have blown up in ``VideoShm.write_request``."""
+        import struct
+
+        with pytest.raises(struct.error):
+            struct.pack("<q", 2**63)
+
+        struct.pack("<q", 2**63 - 1)  # in range, must not raise
+
+
+class TestI2VUploadRogueBytes:
+    """``/generations/i2v/upload`` builds the DTO in code, so a validation error
+    there would surface as a 500 unless the endpoint translates it."""
+
+    @pytest.mark.asyncio
+    async def test_png_content_type_with_garbage_bytes_is_a_422(self):
+        upload = MagicMock()
+        upload.content_type = "image/png"
+        upload.read = AsyncMock(side_effect=[b"x" * 804, b""])
+
+        mock_service = MagicMock()
+        mock_service.create_job = AsyncMock()
+
+        with pytest.raises(HTTPException) as exc_info:
+            await submit_generate_video_i2v_upload(
+                prompt="A cat",
+                image=upload,
+                service=mock_service,
+                api_key="test_key",
+            )
+
+        assert exc_info.value.status_code == 422
+        mock_service.create_job.assert_not_called()
+
+
+class TestRogueRequestOverHttp:
+    """The status the client actually receives, through a real FastAPI app.
+
+    The DTO tests above pin validation; this pins the contract #4811 complained
+    about — a rogue body must come back 4xx, not ``500 Internal Server Error``,
+    and must not reach the service.
+    """
+
+    @pytest.fixture
+    def mock_service(self):
+        service = MagicMock()
+        service.scheduler = MagicMock()
+        service.scheduler.check_is_model_ready = MagicMock()
+        service.create_job = AsyncMock(
+            return_value={"id": "job_1", "object": "video", "status": "pending"}
+        )
+        return service
+
+    @pytest.fixture
+    def client(self, mock_service):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+        from open_ai_api.video import router as video_router
+        from resolver.service_resolver import service_resolver
+        from security.api_key_checker import get_api_key
+
+        app = FastAPI()
+        app.include_router(video_router, prefix="/v1/videos")
+        app.dependency_overrides[service_resolver] = lambda: mock_service
+        app.dependency_overrides[get_api_key] = lambda: "test-key"
+        return TestClient(app)
+
+    def test_the_issues_payload_gets_a_422(self, client, mock_service):
+        """Body copied from #4811's reproduction curl, with its 804-byte
+        non-image conditioning payload."""
+        response = client.post(
+            "/v1/videos/generations/i2v",
+            json={
+                "model": "Wan-AI/Wan2.2-I2V-A14B-Diffusers",
+                "prompt": "A serene mountain landscape with flowing water",
+                "num_inference_steps": 12,
+                "seed": 42,
+                "image_prompts": [
+                    {
+                        "image": f"data:image/png;base64,{_NOT_AN_IMAGE_BASE64}",
+                        "frame_pos": 0,
+                    }
+                ],
+            },
+        )
+
+        assert response.status_code == 422
+        assert "image" in response.text
+        mock_service.create_job.assert_not_called()
+
+    def test_out_of_range_seed_gets_a_422(self, client, mock_service):
+        response = client.post(
+            "/v1/videos/generations/i2v",
+            json={
+                "prompt": "A cat",
+                "seed": 2**63,
+                "image_prompts": [{"image": _tiny_png_base64(), "frame_pos": 0}],
+            },
+        )
+
+        assert response.status_code == 422
+        mock_service.create_job.assert_not_called()
+
+    @patch("open_ai_api.video.settings")
+    def test_a_valid_i2v_request_still_reaches_the_service(
+        self, mock_settings, client, mock_service
+    ):
+        """Regression guard: the boundary checks must not shut the door on real
+        traffic."""
+        mock_settings.use_async_video = True
+        mock_settings.model_runner = "tt-wan2.2-i2v"
+
+        response = client.post(
+            "/v1/videos/generations/i2v",
+            json={
+                "prompt": "A serene mountain landscape with flowing water",
+                "num_inference_steps": 12,
+                "seed": 42,
+                "image_prompts": [{"image": _tiny_png_base64(), "frame_pos": 0}],
+            },
+        )
+
+        assert response.status_code == 202
+        mock_service.create_job.assert_called_once()
 
 
 if __name__ == "__main__":

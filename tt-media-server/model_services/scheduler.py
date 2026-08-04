@@ -14,6 +14,7 @@ from device_workers.device_worker import device_worker
 from device_workers.device_worker_dynamic_batch import (
     device_worker as device_worker_dynamic_batch,
 )
+from domain.errors import ClientRequestError
 from fastapi import HTTPException
 from telemetry.multiprocess_setup import mark_worker_dead
 from utils.decorators import log_execution_time
@@ -225,6 +226,7 @@ class Scheduler:
             "restart_count": 0,
             "is_ready": False,
             "error_count": 0,
+            "client_error_count": 0,
             "queue_index": worker_index,  # ✅ Track which queue this worker uses
         }
 
@@ -264,8 +266,13 @@ class Scheduler:
         # Start new worker
         self._start_worker(worker_id, queue_index=existing_queue_index)
         self.worker_info[worker_id]["restart_count"] = restart_count
-        # pass the error count from old worker -1 to give it a chance to recover
-        self.worker_info[worker_id]["error_count"] = old_info.get("error_count", 1) - 1
+        # A fresh process starts with a clean error record. Carrying the old count
+        # forward (previously ``old - 1``) left a restarted worker sitting one
+        # error below the threshold, so a single later failure restarted it again
+        # — which is how one bad client could restart a worker indefinitely
+        # (#4811). ``restart_count`` still accumulates, so the give-up and
+        # deep-reset escalation in ``worker_health_monitor`` is unaffected.
+        self.worker_info[worker_id]["error_count"] = 0
 
     async def result_listener(self):
         """✅ Read from ALL worker queues in parallel using batch reads"""
@@ -339,11 +346,27 @@ class Scheduler:
                     self.listener_running = False
                     break
 
-                self.worker_info[worker_id]["error_count"] += 1
-
-                self.logger.warning(
-                    f"Worker {worker_id} error count is : {self.worker_info[worker_id]['error_count']}"
-                )
+                # A per-request failure means one of two very different things,
+                # and the worker's life depends on telling them apart. Device and
+                # runner faults count toward ``max_worker_restart_count``; a
+                # request the client got wrong does not — it is answered with a
+                # 4xx and forgotten. Counting both is what let six bad-input
+                # requests restart a healthy worker (#4811). The device worker
+                # marks the difference by putting a ``ClientRequestError``
+                # instance on the queue instead of a message string.
+                info = self.worker_info[worker_id]
+                if isinstance(error, ClientRequestError):
+                    info["client_error_count"] = info.get("client_error_count", 0) + 1
+                    self.logger.warning(
+                        f"Worker {worker_id} rejected a client request "
+                        f"({error.status_code}); not counted against worker health "
+                        f"(client_error_count={info['client_error_count']})"
+                    )
+                else:
+                    info["error_count"] += 1
+                    self.logger.warning(
+                        f"Worker {worker_id} error count is : {info['error_count']}"
+                    )
 
                 self.logger.error(f"Error in worker {result_key}: {error}")
 
@@ -365,7 +388,16 @@ class Scheduler:
                 queue = self.result_queues.get(task_id)
 
                 if queue:
-                    await queue.put(Exception(error))
+                    # ``ClientRequestError`` is an HTTPException, so forwarding it
+                    # unwrapped is what turns these into the 4xx the client should
+                    # have got all along — ``_submit_video_request`` re-raises
+                    # HTTPException untouched, while a bare ``Exception`` fell
+                    # through to its 500 branch.
+                    await queue.put(
+                        error
+                        if isinstance(error, ClientRequestError)
+                        else Exception(error)
+                    )
 
             except Exception as e:
                 self.logger.error(f"Error in error_listener: {e}")
@@ -659,6 +691,9 @@ class Scheduler:
                 "is_ready": info["is_ready"],
                 "restart_count": info["restart_count"],
                 "error_count": info["error_count"],
+                # Rejected client requests, tracked separately so they stay
+                # visible without counting toward restarts (#4811).
+                "client_error_count": info.get("client_error_count", 0),
                 "ready_time": info["ready_time"] if "ready_time" in info else None,
             }
         return serializable_worker_info

@@ -32,8 +32,10 @@ from fastapi import (
     Security,
     UploadFile,
 )
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import FileResponse, JSONResponse
 from model_services.base_job_service import BaseJobService
+from pydantic import ValidationError
 from resolver.service_resolver import service_resolver
 from security.api_key_checker import get_api_key
 from telemetry.telemetry_client import TelemetryEvent
@@ -311,13 +313,21 @@ async def submit_generate_video_i2v_upload(
     _validate_image_content_type(image)
     image_bytes = await _read_capped_upload(image)
     image_b64 = base64.b64encode(image_bytes).decode("ascii")
-    request = VideoI2VGenerateRequest(
-        prompt=prompt,
-        negative_prompt=negative_prompt,
-        num_inference_steps=num_inference_steps,
-        seed=seed,
-        image_prompts=[ImagePromptEntry(image=image_b64, frame_pos=frame_pos)],
-    )
+    try:
+        request = VideoI2VGenerateRequest(
+            prompt=prompt,
+            negative_prompt=negative_prompt,
+            num_inference_steps=num_inference_steps,
+            seed=seed,
+            image_prompts=[ImagePromptEntry(image=image_b64, frame_pos=frame_pos)],
+        )
+    except ValidationError as e:
+        # This endpoint builds the DTO itself instead of letting FastAPI parse a
+        # body, so a validation failure would escape as an unhandled exception
+        # (500) rather than the 422 the equivalent JSON request gets. A declared
+        # content_type is no guarantee of the bytes behind it: a .png full of
+        # garbage lands here.
+        raise HTTPException(status_code=422, detail=jsonable_encoder(e.errors()))
     return await _submit_video_request(request, service)
 
 

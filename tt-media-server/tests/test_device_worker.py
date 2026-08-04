@@ -78,7 +78,7 @@ mock_logger = Mock()
 sys.modules["utils.logger"] = Mock()
 sys.modules["utils.logger"].TTLogger.return_value = mock_logger
 
-from device_workers.device_worker import device_worker
+from device_workers.device_worker import _continuous_fan_out, device_worker
 
 for module_name, original_module in {
     "config.settings": _orig_config_settings,
@@ -574,6 +574,101 @@ class TestDeviceWorkerIntegration:
                     assert error_tuple[1] == "timeout_task"
                     break
         assert found_timeout_error, f"No timeout error found in calls: {calls}"
+
+
+class TestErrorPayloadClassification:
+    """What the worker puts on ``error_queue`` decides whether the scheduler
+    counts the failure against worker health (#4811).
+
+    A client-input rejection has to arrive at ``error_listener`` as a
+    ``ClientRequestError`` instance; flattening it into an f-string (the old
+    behaviour) threw away the only signal the scheduler could classify on.
+    """
+
+    @staticmethod
+    def _request(task_id="task_rogue"):
+        req = Mock()
+        req._task_id = task_id
+        return req
+
+    def _fan_out(self, runner, requests, error_queue):
+        task_queue = Mock()
+        task_queue.get_many = Mock(return_value=[])
+        asyncio.new_event_loop().run_until_complete(
+            _continuous_fan_out(
+                device_runner=runner,
+                initial_requests=requests,
+                worker_id="worker_0",
+                result_queue=Mock(),
+                error_queue=error_queue,
+                task_queue=task_queue,
+                max_inflight=len(requests),
+                logger=Mock(),
+            )
+        )
+
+    def test_client_error_is_forwarded_as_the_exception_instance(self):
+        from domain.errors import ClientRequestError
+
+        error_queue = Mock()
+        error_queue.put = Mock()
+        raised = ClientRequestError("Could not decode image (804 bytes)")
+
+        class _Runner:
+            supports_continuous_fan_out = True
+
+            async def _run_async(self, requests):
+                raise raised
+
+        self._fan_out(_Runner(), [self._request()], error_queue)
+
+        worker_id, task_id, payload = error_queue.put.call_args[0][0]
+        assert worker_id == "worker_0"
+        assert task_id == "task_rogue"
+        assert isinstance(payload, ClientRequestError)
+        assert payload.status_code == 400
+
+    def test_device_fault_is_still_forwarded_as_a_prefixed_string(self):
+        """Control case — the existing wire format for real faults is unchanged,
+        so the scheduler keeps counting them."""
+        from domain.errors import ClientRequestError
+
+        error_queue = Mock()
+        error_queue.put = Mock()
+
+        class _Runner:
+            supports_continuous_fan_out = True
+
+            async def _run_async(self, requests):
+                raise RuntimeError("ttnn: mesh unresponsive")
+
+        self._fan_out(_Runner(), [self._request("task_dead")], error_queue)
+
+        _worker_id, _task_id, payload = error_queue.put.call_args[0][0]
+        assert not isinstance(payload, ClientRequestError)
+        assert payload == "Worker worker_0 execution error: ttnn: mesh unresponsive"
+
+    def test_input_shape_error_from_shm_packing_is_classified(self):
+        """``seed`` outside int64 raises ``struct.error`` in
+        ``VideoShm.write_request``, inside the worker. It is the client's bug,
+        so it must not cost the worker its life."""
+        import struct
+
+        from domain.errors import ClientRequestError
+
+        error_queue = Mock()
+        error_queue.put = Mock()
+
+        class _Runner:
+            supports_continuous_fan_out = True
+
+            async def _run_async(self, requests):
+                raise struct.error("argument out of range")
+
+        self._fan_out(_Runner(), [self._request("task_seed")], error_queue)
+
+        _worker_id, _task_id, payload = error_queue.put.call_args[0][0]
+        assert isinstance(payload, ClientRequestError)
 
 
 @pytest.fixture(autouse=True)

@@ -60,6 +60,7 @@ from config.constants import (
     CANARY_TASK_IDS,
     ModelRunners,
 )
+from domain.errors import ClientRequestError
 from domain.video_generate_request import VideoGenerateRequest
 from domain.video_i2v_generate_request import (
     ImagePromptEntry,
@@ -73,6 +74,7 @@ from ipc.video_shm import (
     VideoStatus,
     cleanup_orphaned_video_files,
 )
+from pydantic import ValidationError
 from utils.logger import TTLogger
 
 _log = TTLogger("video_runner")
@@ -267,12 +269,23 @@ def video_request_to_generate_request(
     common = shm_names & gen_names
     base_kwargs = {name: getattr(req, name) for name in common}
 
-    if image_prompts:
-        return VideoI2VGenerateRequest(
-            **base_kwargs,
-            image_prompts=[ImagePromptEntry(**entry) for entry in image_prompts],
-        )
-    return VideoGenerateRequest(**base_kwargs)
+    try:
+        if image_prompts:
+            return VideoI2VGenerateRequest(
+                **base_kwargs,
+                image_prompts=[ImagePromptEntry(**entry) for entry in image_prompts],
+            )
+        return VideoGenerateRequest(**base_kwargs)
+    except ValidationError as e:
+        # Everything here came off the wire, so a schema failure is the client's
+        # bug. The caller writes ``str(exc)`` into the response SHM, and
+        # ``ClientRequestError`` renders as ``"400: ..."`` — the prefix
+        # ``SPRunner`` reads back to keep this off the worker's error budget
+        # (#4811). A bare ValidationError would arrive unprefixed and be counted
+        # as a device fault.
+        raise ClientRequestError(
+            f"Invalid request payload for task {req.task_id}: {e}"
+        ) from e
 
 
 def _write_response_to_shm(

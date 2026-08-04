@@ -28,6 +28,7 @@ from concurrent.futures import Future as CFuture
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 
 from config.constants import CANARY_DEEP_TASK_ID, CANARY_TASK_ID, CANARY_TASK_IDS
+from domain.errors import ClientRequestError, parse_peer_status
 from ipc.video_shm import (
     MAX_IMAGE_PATH_LEN,
     SP_WARMUP_TASK_ID,
@@ -653,6 +654,19 @@ class SPRunner(BaseDeviceRunner):
 
         if resp.status == VideoStatus.ERROR:
             self._try_unlink(resp.file_path)
+            # The peer stringifies its exception into ``error_message``, so an
+            # input rejection arrives as ``"400: ..."`` (Starlette's
+            # ``HTTPException.__str__``). Flattening every peer error into a
+            # RuntimeError lost that distinction, and the scheduler then counted a
+            # bad conditioning image against this worker's health — six such
+            # requests restarted it (#4811). 5xx and unprefixed messages stay
+            # RuntimeErrors so genuine device faults still count.
+            peer_status = parse_peer_status(resp.error_message)
+            if peer_status is not None:
+                raise ClientRequestError(
+                    f"Runner error for task {task_id}: {resp.error_message}",
+                    status_code=peer_status,
+                )
             raise RuntimeError(f"Runner error for task {task_id}: {resp.error_message}")
 
         mp4_path = resp.file_path

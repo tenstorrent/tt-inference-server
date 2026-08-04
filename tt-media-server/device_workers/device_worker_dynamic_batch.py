@@ -7,6 +7,7 @@ from multiprocessing import Queue
 
 from config.constants import SHUTDOWN_SIGNAL, CanaryProbeRequest
 from device_workers.worker_utils import initialize_device_worker
+from domain.errors import classify_worker_error
 from model_services.queues.memory_queue import SharedMemoryChunkQueue
 from model_services.queues.tt_queue import TTQueue
 from tt_model_runners.base_device_runner import BaseDeviceRunner
@@ -85,7 +86,9 @@ def device_worker(
             raise
         except Exception as e:
             logger.error(f"Streaming failed for task {request._task_id}: {e}")
-            error_queue.put((worker_id, request._task_id, str(e)))
+            error_queue.put(
+                (worker_id, request._task_id, classify_worker_error(worker_id, e))
+            )
 
     # Handle canary-monitor probe
     async def handle_canary(request):
@@ -114,7 +117,11 @@ def device_worker(
             raise
         except Exception as e:
             logger.error(f"Execution failed for task {request._task_id}: {e}")
-            error_queue.put((worker_id, request._task_id, str(e)))
+            # A client-input rejection stays a ClientRequestError instance so the
+            # scheduler can tell it apart from a device fault (#4811).
+            error_queue.put(
+                (worker_id, request._task_id, classify_worker_error(worker_id, e))
+            )
 
     async def cancel_listener():
         """Watch cancel_queue and cancel any matching in-flight asyncio task.

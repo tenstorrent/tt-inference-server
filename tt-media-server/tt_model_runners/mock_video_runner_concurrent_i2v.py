@@ -121,8 +121,14 @@ def validateI2VRequest(req) -> None:
             try:
                 imageManager.base64_to_pil_image(entry["image"])
             except Exception as e:
+                # ``400: `` prefix on purpose: the real multihost peer writes
+                # ``str(HTTPException(400, ...))`` into the response SHM, and
+                # ``SPRunner`` reads the status back off that prefix to keep a bad
+                # conditioning image off the worker's error budget (#4811). Without
+                # it the mock would drive a code path the production peer never
+                # takes.
                 raise ValueError(
-                    f"I2V mock: image_prompts[{idx}].image failed to decode: {e}"
+                    f"400: I2V mock: image_prompts[{idx}].image failed to decode: {e}"
                 ) from e
 
 
