@@ -42,10 +42,15 @@ def _measured(record: Mapping[str, Any]) -> Dict[str, Optional[float]]:
     if tput_user is None:
         tpot = _as_float(record.get("mean_tpot_ms"))
         tput_user = 1000.0 / tpot if tpot else None
+    tput = _as_float(record.get("tps_output_throughput"))
+    if tput is None:
+        # aiperf / genai-perf records still key output throughput as
+        # tps_decode_throughput; vLLM records use tps_output_throughput.
+        tput = _as_float(record.get("tps_decode_throughput"))
     return {
         "ttft": ttft,
         "tput_user": tput_user,
-        "tput": _as_float(record.get("tps_decode_throughput")),
+        "tput": tput,
     }
 
 
