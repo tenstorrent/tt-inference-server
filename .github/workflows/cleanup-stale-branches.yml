@@ -45,6 +45,12 @@ jobs:
             return 1
           }
 
+          # Only delete namespaced branches: name/branchname[/...]
+          # Single-segment names (no /) are treated as special and kept.
+          is_namespaced() {
+            [[ "$1" == */* ]]
+          }
+
           REPO_OWNER="${GITHUB_REPOSITORY%/*}"
           REPO_NAME="${GITHUB_REPOSITORY#*/}"
 
@@ -107,6 +113,7 @@ jobs:
           deleted=0
           reminded=0
           skipped_protected=0
+          skipped_non_namespaced=0
           skipped_active_pr=0
           skipped_recent=0
           skipped_missing_date=0
@@ -176,6 +183,12 @@ jobs:
               continue
             fi
 
+            if ! is_namespaced "${branch}"; then
+              echo "Skipping non-namespaced branch (no /): ${branch}"
+              skipped_non_namespaced=$((skipped_non_namespaced + 1))
+              continue
+            fi
+
             if [[ -z "${commit_date}" ]]; then
               echo "Skipping branch with missing commit date: ${branch}"
               skipped_missing_date=$((skipped_missing_date + 1))
@@ -233,6 +246,7 @@ jobs:
           echo "Deleted: ${deleted}"
           echo "Reminded (open/draft PR comment): ${reminded}"
           echo "Skipped (protected): ${skipped_protected}"
+          echo "Skipped (non-namespaced): ${skipped_non_namespaced}"
           echo "Skipped (open/draft PR): ${skipped_active_pr}"
           echo "Skipped (recent): ${skipped_recent}"
           echo "Skipped (missing date): ${skipped_missing_date}"

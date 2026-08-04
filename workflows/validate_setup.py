@@ -37,6 +37,21 @@ def _uses_external_runtime_model_spec(runtime_config) -> bool:
     return bool(runtime_config.runtime_model_spec_json)
 
 
+def _swarmone_license_available() -> bool:
+    """Whether a SwarmOne swo-bench license can be resolved.
+
+    Mirrors swo-bench's own resolution order (env var, then the config file);
+    the key itself is never read into run.py, only its presence is checked.
+    """
+    if os.environ.get("SWO_LICENSE_KEY"):
+        return True
+    key_file = Path.home() / ".swarmone" / "license.key"
+    try:
+        return key_file.is_file() and bool(key_file.read_text().strip())
+    except OSError:
+        return False
+
+
 def _check_image_version_supported(model_spec):
     """Refuse to run a pre-0.11 vLLM image with this run.py.
 
@@ -121,15 +136,45 @@ def validate_runtime_args(model_spec, runtime_config):
         # that the AGENTIC_TRACES venv setup performs -- and, for a release run,
         # rather than after the evals and benchmarks that precede the child.
         from reference_config.agentic_traces.agentic_traces_config import (
+            TraceSource,
+            default_run_specs,
             get_agentic_traces_config,
         )
 
-        assert get_agentic_traces_config(model_spec) is not None, (
+        agentic_traces_config = get_agentic_traces_config(model_spec)
+        assert agentic_traces_config is not None, (
             f"Model:={model_spec.model_name} (model_id={model_spec.model_id}) has "
             "no AGENTIC_TRACES_CONFIGS entry. Add one to "
             "reference_config/agentic_traces/agentic_traces_config.py, including "
             "the InferenceX git ref to pin."
         )
+
+        # A SwarmOne run needs a swo-bench license; require it up front (like
+        # HF_TOKEN) rather than failing minutes into the run inside the driver.
+        # Only when SwarmOne will actually run, though: it is an opt-in source,
+        # so a model that merely has a SwarmOne run configured still runs its
+        # plain sweep (InferenceX only) without a license.
+        sources_arg = getattr(args, "agentic_traces_sources", None)
+        if sources_arg:
+            selected = {
+                part.strip().lower().replace("-", "_")
+                for part in sources_arg.split(",")
+                if part.strip()
+            }
+            swarmone_will_run = TraceSource.SWARMONE.value in selected
+        else:
+            swarmone_will_run = any(
+                run.trace_source is TraceSource.SWARMONE
+                for run in default_run_specs(agentic_traces_config)
+            )
+        if swarmone_will_run and not _swarmone_license_available():
+            raise ValueError(
+                "⛔ The swarmone agentic-traces source requires a SwarmOne "
+                "license. Set the SWO_LICENSE_KEY environment variable or write "
+                "the key to ~/.swarmone/license.key. Request a key from "
+                "benb@swarmone.ai. To run without SwarmOne, drop "
+                "`--agentic-traces-sources swarmone`."
+            )
 
     if workflow_type == WorkflowType.STRESS_TESTS:
         pass  # Model support already validated via MODEL_SPECS check

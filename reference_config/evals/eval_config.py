@@ -197,6 +197,12 @@ class EvalTask:
     use_chat_api: bool = False
     apply_chat_template: bool = True
     log_samples: bool = True
+    # Opt-in: preserve the model's separate reasoning_content trace in the
+    # per-sample logs (requires the chat API + a server that returns reasoning
+    # as a distinct field). Off by default so reasoning never bloats logs or
+    # reaches scoring; the eval launcher gates lm-eval via
+    # LM_EVAL_PRESERVE_REASONING when this is True.
+    capture_reasoning: bool = False
     gen_kwargs: Dict[str, str] = field(default_factory=lambda: {"stream": "False"})
     model_kwargs: Dict[str, str] = field(default_factory=lambda: {})
     # Note: include_path is specified relative to the respective venv

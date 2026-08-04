@@ -110,9 +110,11 @@ std::unique_ptr<IDecodeScheduler> makeDecodeScheduler(
     migrationClientInterface->connect_to(config.migrationPrefillEndpointId,
                                          "CONNECTOR", "ds_pd");
   }
+  managerParams.max_spec_tokens = static_cast<uint32_t>(config.specLevel);
   if (config.specDecodeMode == "mtp") {
     managerParams.spec_decode_mode = ds::SpecDecodeMode::MTP;
-    managerParams.max_spec_tokens = static_cast<uint32_t>(config.mtpLevel);
+  } else if (config.specDecodeMode == "dflash") {
+    managerParams.spec_decode_mode = ds::SpecDecodeMode::DFLASH;
   }
   auto scheduler = std::make_unique<RealDecodeScheduler>(
       std::make_unique<ds::DecodeScheduler>(

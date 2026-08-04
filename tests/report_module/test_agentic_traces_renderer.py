@@ -100,6 +100,68 @@ def _record(**overrides):
     return record
 
 
+def _swo_record(**overrides):
+    """One run record shaped like the swo-bench driver payload.
+
+    The two harnesses share the ``agentic_traces`` kind and this renderer, but
+    overlap only partially: swo-bench has no scenario verdict, no branch or
+    cache counters, and contributes prefill/duty-cycle metrics of its own.
+    """
+    record = {
+        "kind": "agentic_traces",
+        "model": "moonshotai/Kimi-K2.7-Code",
+        "backend": "swo-bench",
+        "trace_source": "swarmone",
+        "label": "swarmone_claude-code-mixed_sympy-bugfix_c1_ci",
+        "mode": "ci",
+        "scenario": "claude-code-mixed",
+        "task": "sympy-bugfix",
+        "concurrency": 1,
+        "resident": 1,
+        "cache_mode": "warm",
+        "history_mode": "full",
+        "max_tokens": 4096,
+        "max_tokens_mode": "cap",
+        "max_context_length": 262144,
+        "artifact_dir": "/very/long/path/that/should/not/reach/the/report",
+        "submission_valid": True,
+        "mean_ttft_ms": 5321.4,
+        "median_ttft_ms": 4102.8,
+        "p90_ttft_ms": 11204.6,
+        "p99_ttft_ms": 19883.1,
+        "mean_e2el_ms": 18422.7,
+        "median_e2el_ms": 7712.2,
+        "p99_e2el_ms": 98211.5,
+        # No TPOT: the driver suppresses swo-bench's unusable inter-token figure.
+        "output_token_throughput_per_user": 96.3,
+        "median_output_token_throughput_per_user": 101.7,
+        "output_token_throughput": 38.2,
+        "total_token_throughput": 38.2,
+        "prefill_tok_per_sec_mean": 24518.9,
+        "prefill_tok_per_sec_p50": 21044.3,
+        "prefill_tok_per_sec_p90": 40122.7,
+        "active_throughput_tok_per_s": 88.6,
+        "concurrency_mean": 0.62,
+        "concurrency_peak": 1,
+        "ready_starved_events": 0,
+        "pace_idle_ms": 41200,
+        "tool_idle_ms": 18300,
+        "completed": 27,
+        "error_request_count": 0,
+        "error_rate_pct": 0.0,
+        "mean_isl": 88214.6,
+        "mean_osl": 812.4,
+        "total_input_tokens": 2381794,
+        "total_output_tokens": 21935,
+        "request_throughput": 0.031,
+        "measured_benchmark_duration": 871.2,
+        "swo_session_id": "3f1c9a20-77bd-4a0e-9d1e-2f5b6c8a1d44",
+        "swo_bench_version": "3.1.2",
+    }
+    record.update(overrides)
+    return record
+
+
 def _render(*records):
     block = Block(
         kind="agentic_traces",
@@ -279,3 +341,107 @@ class TestMultipleRuns:
         )
         latency_table = out.split("#### Per-run Throughput")[0]
         assert latency_table.index("| 8 ") < latency_table.index("| 32 ")
+
+
+class TestSwarmOneRows:
+    """swo-bench shares this renderer, so its metrics must reach the report and
+    its rows must not be described as AIPerf's."""
+
+    def test_swarmone_specific_metrics_reach_the_report(self):
+        out = _render(_swo_record())
+        for header in (
+            "Prefill Tok/s/Req Avg",
+            "Total Tok/s (Active)",
+            "Concur Peak",
+            "Ready Starved",
+            "Pace Idle (ms)",
+        ):
+            assert header in out, f"{header} missing from the report"
+
+    def test_swarmone_config_reaches_the_config_table(self):
+        config = _render(_swo_record()).split("#### Run Configuration")[1]
+        for label in ("Task", "Resident Sessions", "Cache Mode", "History Mode"):
+            assert label in config, f"{label} missing from the config table"
+        assert "sympy-bugfix" in config
+        assert "3.1.2" in config
+        assert "3f1c9a20-77bd-4a0e-9d1e-2f5b6c8a1d44" in config
+
+    def test_a_healthy_run_is_not_reported_as_unknown(self):
+        """The driver rejects an unusable run, so a row that reaches the report
+        is valid; it used to render N/A because the field went unset."""
+        health = _render(_swo_record()).split("#### Run Health")[1]
+        assert "✅ valid" in health
+        assert "| N/A" not in health.split("\n\n")[2]
+
+    def test_the_tool_blurb_credits_swo_bench_not_aiperf(self):
+        out = _render(_swo_record())
+        assert "swo-bench" in out
+        assert "AIPerf" not in out
+        assert "InferenceX" not in out
+
+    def test_aiperf_only_metrics_are_not_defined(self):
+        """Defining metrics the report does not contain is worse than silence."""
+        out = _render(_swo_record())
+        for absent in ("CO-Adj E2EL", "Credit Drops", "Theo. Cache Hit %", "TTFOT"):
+            assert absent not in out, f"{absent} defined for a swo-bench-only report"
+
+    def test_tpot_is_absent_and_its_absence_explained(self):
+        """swo-bench's inter-token figure is unusable, so the driver drops it;
+        the column must then disappear rather than render a false 0.0."""
+        out = _render(_swo_record())
+        assert "TPOT Avg" not in out
+        assert "**TPOT** is deliberately absent" in out
+
+    def test_no_definition_promises_a_tpot_column(self):
+        """The shared bullet used to read "TTFT / TPOT / E2EL", defining a
+        column this report does not have and contradicting the note below."""
+        out = _render(_swo_record())
+        assert "**TTFT / E2EL**" in out
+        assert "TTFT / TPOT / E2EL" not in out
+
+    def test_an_aiperf_report_carries_no_swarmone_definitions(self):
+        out = _render(_record())
+        assert "Ready Starved" not in out
+        assert "Prefill Tok/s/Req" not in out
+        assert "deliberately absent" not in out
+
+    def test_an_aiperf_report_still_defines_tpot(self):
+        """AIPerf does report a usable TPOT, so moving the definition out of the
+        shared group must not lose it."""
+        out = _render(_record())
+        assert "TPOT Avg" in out
+        assert "**TPOT**: inter-token latency" in out
+
+
+class TestMixedSweep:
+    """A default sweep can run both harnesses into one section."""
+
+    def test_both_tools_are_described(self):
+        out = _render(_record(), _swo_record())
+        assert "`inferencex_agentx` rows:" in out
+        assert "`swarmone` rows:" in out
+
+    def test_both_definition_sets_are_present(self):
+        out = _render(_record(), _swo_record())
+        assert "CO-Adj E2EL" in out
+        assert "Ready Starved" in out
+
+    def test_the_submission_caption_covers_both_verdicts(self):
+        out = _render(_record(), _swo_record())
+        caption = out.split("#### Run Health & Validity")[1].split("\n\n")[1]
+        assert "scenario's own verdict" in caption
+        assert "own completeness check" in caption
+
+    def test_each_source_keeps_its_own_columns(self):
+        """Columns are shared ground: a metric only one harness emits shows for
+        that row and N/A for the other, rather than being dropped."""
+        throughput = _render(_record(), _swo_record()).split("#### Per-run Throughput")[
+            1
+        ]
+        assert "Prefill Tok/s/Req Avg" in throughput
+        assert "Tok In Flight Avg" in throughput
+
+    def test_rows_sort_with_inferencex_first(self):
+        out = _render(_swo_record(), _record())
+        latency = out.split("#### Per-run Throughput")[0]
+        assert latency.index("| inferencex_agentx ") < latency.index("| swarmone ")
