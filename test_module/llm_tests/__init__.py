@@ -12,6 +12,7 @@ at every ``import test_module.llm_tests``.
 """
 
 _LAZY_FROM_AGENTIC_EVAL_TESTS = {"run_llm_agentic_eval"}
+_LAZY_FROM_AGENTIC_TRACES_TESTS = {"run_agentic_traces"}
 _LAZY_FROM_LLM_PERFORMANCE_TESTS = {"run_llm_performance"}
 _LAZY_FROM_LLM_BENCHMARK_TESTS = {"run_llm_bench"}
 _LAZY_FROM_PREFIX_CACHE_TESTS = {"run_prefix_cache"}
@@ -23,6 +24,10 @@ def __getattr__(name):
         from . import agentic_eval_tests
 
         return getattr(agentic_eval_tests, name)
+    if name in _LAZY_FROM_AGENTIC_TRACES_TESTS:
+        from . import agentic_traces_tests
+
+        return getattr(agentic_traces_tests, name)
     if name in _LAZY_FROM_LLM_PERFORMANCE_TESTS:
         from . import llm_performance_tests
 
@@ -44,6 +49,7 @@ def __getattr__(name):
 
 __all__ = [
     *sorted(_LAZY_FROM_AGENTIC_EVAL_TESTS),
+    *sorted(_LAZY_FROM_AGENTIC_TRACES_TESTS),
     *sorted(_LAZY_FROM_LLM_PERFORMANCE_TESTS),
     *sorted(_LAZY_FROM_LLM_BENCHMARK_TESTS),
     *sorted(_LAZY_FROM_PREFIX_CACHE_TESTS),

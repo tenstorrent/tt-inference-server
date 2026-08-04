@@ -457,3 +457,4 @@ for _kind in GENERIC_KINDS:
 # and self-registers when that package is imported.
 from report_module import prefix_cache_renderer as _prefix_cache_renderer  # noqa: E402,F401
 from report_module import prefill_decode_renderer as _prefill_decode_renderer  # noqa: E402,F401
+from report_module import agentic_traces_renderer as _agentic_traces_renderer  # noqa: E402,F401
