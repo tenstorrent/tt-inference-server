@@ -1359,7 +1359,7 @@ templates:
       reasoning_parser_name: kimi_k2
       tool_call_parser_name: kimi_k2
       # Kimi ships a custom tokenizer; AIPerf-driven sweeps (prefix-cache,
-      # spec-decode) must trust remote code to load it.
+      # spec-decode, agentic-traces) must trust remote code to load it.
       tokenizer_trust_remote_code: true
 
 # Remote-served model: evaluated against an external OpenAI-compatible
@@ -1420,7 +1420,7 @@ templates:
       reasoning_parser_name: kimi_k2
       tool_call_parser_name: kimi_k2
       # Kimi ships a custom tokenizer; AIPerf-driven sweeps (prefix-cache,
-      # spec-decode) must trust remote code to load it.
+      # spec-decode, agentic-traces) must trust remote code to load it.
       tokenizer_trust_remote_code: true
 
 - weights:

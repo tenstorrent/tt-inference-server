@@ -11,6 +11,7 @@ from types import SimpleNamespace
 
 from workflows.workflow_types import ModelType, WorkflowVenvType
 from workflow_module.execution import (
+    AgenticTracesOptions,
     LLMBenchOptions,
     OrchestratorMetadata,
     PrefixCacheOptions,
@@ -49,6 +50,7 @@ def _run_release(ctx, meta=None):
     bench_cls, bench_inst = _fake_child("benchmarks")
     spec_cls, spec_inst = _fake_child("spec_tests")
     agentic_cls, agentic_inst = _fake_child("agentic")
+    traces_cls, traces_inst = _fake_child("agentic_traces")
     acc = MagicMock()
     meta = meta or OrchestratorMetadata(server_mode="local")
     registry = {
@@ -56,6 +58,7 @@ def _run_release(ctx, meta=None):
         "benchmarks": bench_cls,
         "spec_tests": spec_cls,
         "agentic": agentic_cls,
+        "agentic_traces": traces_cls,
     }
     with patch.dict(
         "workflow_module.workflows.WORKFLOW_REGISTRY", registry, clear=False
@@ -69,6 +72,7 @@ def _run_release(ctx, meta=None):
             "benchmarks": bench_cls,
             "spec_tests": spec_cls,
             "agentic": agentic_cls,
+            "agentic_traces": traces_cls,
         },
         acc,
         meta,
@@ -111,6 +115,33 @@ class TestReleaseWorkflowChildSelection:
             "spec_tests",
             "agentic",
         ]
+
+    def test_agentic_traces_child_is_opt_in(self):
+        """Without --agentic-traces the options are None, so no child runs: a
+        full-mode replay is roughly an hour of profiling per configured run."""
+        _outcomes, classes, _acc, _meta = _run_release(_make_ctx(ModelType.LLM))
+        classes["agentic_traces"].assert_not_called()
+
+    def test_agentic_traces_runs_last_when_opted_in(self):
+        meta = OrchestratorMetadata(
+            server_mode="local",
+            agentic_traces=AgenticTracesOptions(mode="ci"),
+        )
+
+        outcomes, classes, acc, _meta = _run_release(_make_ctx(ModelType.LLM), meta)
+
+        classes["agentic_traces"].assert_called_once()
+        # Last, so a failure in the cheaper children surfaces without waiting.
+        assert [o.task_type for o in outcomes] == [
+            "evals",
+            "benchmarks",
+            "spec_tests",
+            "agentic_traces",
+        ]
+        # Shares the accumulator, so its Blocks land in the one release report.
+        kwargs = classes["agentic_traces"].call_args.kwargs
+        assert kwargs["accumulator"] is acc
+        assert kwargs["orchestrator_metadata"].agentic_traces is meta.agentic_traces
 
     def test_media_runs_full_suite(self):
         outcomes, classes, _acc, _meta = _run_release(_make_ctx(ModelType.IMAGE))

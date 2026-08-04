@@ -10,6 +10,10 @@ from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 
+from reference_config.agentic_traces.agentic_traces_config import (
+    AGENTIC_TRACES_CONFIGS,
+    TraceSource,
+)
 from workflows.run_local_server import vllm_tt_plugin_source_path
 from workflows.runtime_config import RuntimeConfig
 from workflows.utils import check_path_permissions_for_uid
@@ -654,6 +658,187 @@ class TestLocalServerValidation:
             assert mock_validate_run_command.call_count == 2
 
         mock_runlocal_run_command.assert_called_once()
+
+
+class TestAgenticTracesRegistration:
+    """A model with no AGENTIC_TRACES_CONFIGS entry must be refused up front.
+
+    The agentic-traces venv setup clones and installs InferenceX, which takes
+    minutes, and a release child runs after the evals and benchmarks. Both would
+    be wasted before the missing config surfaced, so validation has to fail here
+    instead.
+    """
+
+    UNREGISTERED_ID = "id_tt-transformers_Llama-3.1-8B-Instruct_n150"
+
+    def _spec(self, model_id, model_name="Llama-3.1-8B-Instruct"):
+        spec = MagicMock()
+        spec.model_id = model_id
+        spec.model_name = model_name
+        spec.inference_engine = "vLLM"
+        return spec
+
+    def _runtime_config(self, workflow, **overrides):
+        config = RuntimeConfig(
+            model="Llama-3.1-8B-Instruct",
+            workflow=workflow,
+            device="n150",
+            **overrides,
+        )
+        return config
+
+    def _validate(self, spec, runtime_config):
+        # No license, deliberately: these paths must not depend on one. The
+        # host running the suite may happen to have a key, so pin it to absent.
+        with patch.dict(
+            "workflows.validate_setup.MODEL_SPECS", {spec.model_id: spec}
+        ), patch(
+            "workflows.validate_setup._swarmone_license_available",
+            return_value=False,
+        ):
+            validate_runtime_args(spec, runtime_config)
+
+    def test_unregistered_model_is_rejected(self):
+        spec = self._spec(self.UNREGISTERED_ID)
+        with pytest.raises(AssertionError, match="no AGENTIC_TRACES_CONFIGS entry"):
+            self._validate(spec, self._runtime_config("agentic_traces"))
+
+    def test_the_error_names_the_model_and_where_to_register_it(self):
+        """The message is the only guidance a new model's onboarder gets."""
+        spec = self._spec(self.UNREGISTERED_ID)
+        with pytest.raises(AssertionError) as exc:
+            self._validate(spec, self._runtime_config("agentic_traces"))
+        message = str(exc.value)
+        assert "Llama-3.1-8B-Instruct" in message
+        assert self.UNREGISTERED_ID in message
+        assert "reference_config/agentic_traces/agentic_traces_config.py" in message
+        # Registering without pinning a ref makes results incomparable.
+        assert "git ref" in message
+
+    def test_registered_model_passes(self):
+        """Guards against the assertion firing on an onboarded model.
+
+        Runs without a SwarmOne license on purpose: the plain sweep must stay
+        usable for a model that merely has an opt-in SwarmOne run configured.
+        """
+        registered_id = next(iter(AGENTIC_TRACES_CONFIGS))
+        spec = self._spec(registered_id, model_name="Kimi-K2.7-Code")
+        config = RuntimeConfig(
+            model="Kimi-K2.7-Code", workflow="agentic_traces", device="super_cluster"
+        )
+        self._validate(spec, config)
+
+    def test_release_opted_into_agentic_traces_is_also_gated(self, monkeypatch):
+        """The release child runs the same sweep, so it needs the same entry."""
+        spec = self._spec(self.UNREGISTERED_ID)
+        config = self._runtime_config("release", agentic_traces=True)
+        with pytest.raises(AssertionError, match="no AGENTIC_TRACES_CONFIGS entry"):
+            self._validate(spec, config)
+
+    def test_plain_release_is_not_gated(self, monkeypatch):
+        """Without the opt-in there is no agentic-traces child to protect."""
+        spec = self._spec(self.UNREGISTERED_ID)
+        monkeypatch.setattr(
+            "workflows.validate_setup.EVAL_CONFIGS", {spec.model_name: object()}
+        )
+        monkeypatch.setattr(
+            "workflows.validate_setup.can_dispatch_to_engine", lambda *a, **k: True
+        )
+        self._validate(spec, self._runtime_config("release"))
+
+
+class TestSwarmOneLicenseGate:
+    """A swarmone run needs a swo-bench license, checked up front in run.py.
+
+    The check fires only when swarmone will actually run, so a multi-minute
+    venv build is never wasted on a sweep that will fail the moment the
+    swo-bench driver looks for its key -- while a plain sweep of a model that
+    merely *has* a swarmone run configured stays license-free, because swarmone
+    is opt-in.
+    """
+
+    def _spec(self):
+        registered_id = next(iter(AGENTIC_TRACES_CONFIGS))
+        spec = MagicMock()
+        spec.model_id = registered_id
+        spec.model_name = "Kimi-K2.7-Code"
+        spec.inference_engine = "vLLM"
+        return spec
+
+    def _config(self, **overrides):
+        return RuntimeConfig(
+            model="Kimi-K2.7-Code",
+            workflow="agentic_traces",
+            device="super_cluster",
+            **overrides,
+        )
+
+    def _validate(self, spec, config, *, license_available):
+        with patch.dict(
+            "workflows.validate_setup.MODEL_SPECS", {spec.model_id: spec}
+        ), patch(
+            "workflows.validate_setup._swarmone_license_available",
+            return_value=license_available,
+        ):
+            validate_runtime_args(spec, config)
+
+    def test_configured_but_unselected_swarmone_needs_no_license(self):
+        """The regression this gate once caused: Kimi gaining a swarmone run
+        made ``--workflow agentic_traces`` demand a license from everyone."""
+        spec = self._spec()
+        assert any(
+            run.trace_source is TraceSource.SWARMONE
+            for run in AGENTIC_TRACES_CONFIGS[spec.model_id].runs
+        ), "fixture no longer covers the mixed-source case this test guards"
+        self._validate(spec, self._config(), license_available=False)
+
+    def test_missing_license_is_rejected_when_swarmone_is_selected(self):
+        spec = self._spec()
+        with pytest.raises(ValueError, match="SwarmOne license"):
+            self._validate(
+                spec,
+                self._config(agentic_traces_sources="swarmone"),
+                license_available=False,
+            )
+
+    def test_the_error_says_how_to_proceed_without_swarmone(self):
+        """Someone who just wants the InferenceX sweep needs a way out."""
+        spec = self._spec()
+        with pytest.raises(ValueError) as exc:
+            self._validate(
+                spec,
+                self._config(agentic_traces_sources="swarmone"),
+                license_available=False,
+            )
+        message = str(exc.value)
+        assert "SWO_LICENSE_KEY" in message
+        assert "--agentic-traces-sources swarmone" in message
+
+    def test_present_license_allows_an_explicit_swarmone_sweep(self):
+        spec = self._spec()
+        self._validate(
+            spec,
+            self._config(agentic_traces_sources="swarmone"),
+            license_available=True,
+        )
+
+    def test_selecting_swarmone_alongside_inferencex_still_needs_a_license(self):
+        spec = self._spec()
+        with pytest.raises(ValueError, match="SwarmOne license"):
+            self._validate(
+                spec,
+                self._config(agentic_traces_sources="inferencex_agentx,swarmone"),
+                license_available=False,
+            )
+
+    def test_selecting_only_inferencex_skips_the_license_check(self):
+        """Narrowing away from swarmone means no license is needed."""
+        spec = self._spec()
+        self._validate(
+            spec,
+            self._config(agentic_traces_sources="inferencex_agentx"),
+            license_available=False,
+        )
 
 
 class TestCheckImageVersionSupported:
