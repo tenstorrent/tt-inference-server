@@ -768,8 +768,8 @@ def inject_tt_data_parallel(default_vllm_args):
 def inject_tt_weight_bridge_dir(default_vllm_args):
     """Route ``TT_WEIGHT_BRIDGE_DIR`` into ``additional_config['tt']['tt_weight_bridge_dir']``
     so the receiver can locate ``inference_bridge.py`` (same curated-env issue as
-    ``inject_tt_data_parallel``). Belt-and-suspenders: the worker also has
-    env-independent fallbacks. Only fires when the env var is set.
+    ``inject_tt_data_parallel``). The worker resolves this key first and falls
+    back to the ``TT_WEIGHT_BRIDGE_DIR`` env var. Only fires when the env var is set.
     """
     bridge_dir = os.environ.get("TT_WEIGHT_BRIDGE_DIR")
     if not bridge_dir:

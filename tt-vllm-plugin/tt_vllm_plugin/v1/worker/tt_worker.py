@@ -203,32 +203,37 @@ class TTWorker(WorkerBase):
         runner = getattr(self, "model_runner", None)
         return runner is not None and getattr(runner, "model", None) is not None
 
-    # Pinned location of tt-metal's weight bridge, set via TT_WEIGHT_BRIDGE_DIR
-    # so an in-flight tt-metal PR can be pointed at without a code change here.
+    # Pinned filename of tt-metal's weight bridge. The directory is pinned via
+    # additional_config / TT_WEIGHT_BRIDGE_DIR so an in-flight tt-metal PR can
+    # be pointed at without a code change here.
     _BRIDGE_FILENAME = "inference_bridge.py"
 
     @classmethod
-    def _import_weight_bridge(cls):
+    def _import_weight_bridge(cls, config_bridge_dir: Optional[str] = None):
         """Import tt-metal's ``WeightBridge`` from ``inference_bridge.py``.
 
         Loaded by file path via ``spec_from_file_location`` (not an installed
         package) so it can't collide with the server's own ``utils`` package.
-        The directory is pinned by ``TT_WEIGHT_BRIDGE_DIR`` and must resolve to
-        the same module the trainer (sender) imports so both ends speak the
-        same wire protocol.
+        The directory is resolved from ``config_bridge_dir``
+        (additional_config['tt']['tt_weight_bridge_dir'], which survives the
+        EngineCore's curated env) first, then the ``TT_WEIGHT_BRIDGE_DIR`` env
+        var. Must resolve to the same module the trainer (sender) imports so
+        both ends speak the same wire protocol.
         """
-        bridge_dir = os.getenv("TT_WEIGHT_BRIDGE_DIR")
+        bridge_dir = config_bridge_dir or os.getenv("TT_WEIGHT_BRIDGE_DIR")
         if not bridge_dir:
             raise ImportError(
-                "TT_WEIGHT_BRIDGE_DIR is not set: point it at the directory "
-                f"containing tt-metal's {cls._BRIDGE_FILENAME}."
+                "Weight-bridge directory not configured: set "
+                "additional_config['tt']['tt_weight_bridge_dir'] or "
+                f"TT_WEIGHT_BRIDGE_DIR to the directory containing {cls._BRIDGE_FILENAME}."
             )
 
         path = Path(bridge_dir) / cls._BRIDGE_FILENAME
         if not path.is_file():
             raise ImportError(
                 f"tt-metal's WeightBridge not found at {path}: point "
-                f"TT_WEIGHT_BRIDGE_DIR at the directory containing {cls._BRIDGE_FILENAME}."
+                "additional_config['tt']['tt_weight_bridge_dir'] (or "
+                f"TT_WEIGHT_BRIDGE_DIR) at the directory containing {cls._BRIDGE_FILENAME}."
             )
 
         spec = importlib.util.spec_from_file_location(path.stem, path)
@@ -248,7 +253,11 @@ class TTWorker(WorkerBase):
         if self._weight_bridge is not None and self._weight_bridge_peer == sender_rank:
             return self._weight_bridge
 
-        weight_bridge = self._import_weight_bridge()
+        # Prefer the dir threaded through additional_config (survives the
+        # EngineCore's curated env, unlike a bare TT_WEIGHT_BRIDGE_DIR).
+        override_tt_config = getattr(self.model_config, "override_tt_config", None) or {}
+        config_bridge_dir = override_tt_config.get("tt_weight_bridge_dir")
+        weight_bridge = self._import_weight_bridge(config_bridge_dir)
 
         # The bridge requires an initialized ttnn distributed context.
         if not ttnn.distributed_context_is_initialized():
@@ -273,7 +282,6 @@ class TTWorker(WorkerBase):
     def update_weights(
         self,
         sender_rank: int = 0,
-        version: Optional[int] = None,
         hf_rope: bool = False,
     ) -> dict:
         """In-place replace on-device weights received over a device socket.
@@ -286,8 +294,6 @@ class TTWorker(WorkerBase):
         Args:
             sender_rank: Distributed-context (MPI) rank of the training process
                 that sends the weights (the bridge's TTML_RANK, default 0).
-            version: Optional caller-assigned version to record. If omitted,
-                the worker's counter is simply incremented.
             hf_rope: Forwarded to ``update_weights``. ``False`` (default) means
                 Q/K rows are already in this model's RoPE convention (correct
                 for the ttml -> tt-transformers Llama transfer).
@@ -361,9 +367,8 @@ class TTWorker(WorkerBase):
         ttnn.synchronize_device(self.mesh_device)
         bridge.barrier()
 
-        self._weights_version = (
-            version if version is not None else self._weights_version + 1
-        )
+        # The worker owns the version counter (single source of truth).
+        self._weights_version += 1
         logger.info(
             "Weight update complete; weights_version=%s weights_applied=%s",
             self._weights_version,
