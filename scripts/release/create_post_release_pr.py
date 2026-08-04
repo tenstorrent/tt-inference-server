@@ -45,6 +45,7 @@ import sys
 import tempfile
 import urllib.error
 import urllib.request
+from collections.abc import Iterable
 from pathlib import Path
 
 import yaml
@@ -235,18 +236,29 @@ def fetch_run_jobs(repo: str, run_id: str, token: str) -> list[dict] | None:
 
 
 def ci_job_url(
-    jobs, repo: str, run_id: str, model_name: str, device: DeviceTypes
+    jobs,
+    repo: str,
+    run_id: str,
+    model_name: str,
+    device: DeviceTypes,
+    other_model_names: Iterable[str] = (),
 ) -> str | None:
     """URL of the run-release-<model>-<runner>-<device> job for this combo.
 
     ``model_name`` is the identity; the job name carries the escaped token, so
-    the comparison goes through ``ci_job_matches_device``.
+    the comparison goes through ``ci_job_matches_device``. The other models in
+    the release go with it: a job name cannot be attributed to one of two
+    prefix siblings on its own.
     """
     if not jobs:
         return None
     for job in jobs:
         if ci_job_matches_device(
-            job.get("name", ""), "release", model_name, device.name
+            job.get("name", ""),
+            "release",
+            model_name,
+            device.name,
+            other_model_names,
         ):
             return f"https://github.com/{repo}/actions/runs/{run_id}/job/{job['id']}"
     return None
@@ -258,6 +270,7 @@ def ci_job_url(
 def build_rows(new_blocks, old_blocks, combos, jobs, tt_shield_repo, run_id):
     rows = []
     seen: set = set()
+    all_model_names = {c[0] for c in combos}
     for model_name, engine, device in combos:
         new_b = find_block(new_blocks, model_name, engine, device)
         old_b = find_block(old_blocks, model_name, engine, device)
@@ -281,7 +294,9 @@ def build_rows(new_blocks, old_blocks, combos, jobs, tt_shield_repo, run_id):
                 "tt_after": (new_b or {}).get("tt_metal_commit"),
                 "status_before": (old_b or {}).get("status"),
                 "status_after": (new_b or {}).get("status"),
-                "ci_url": ci_job_url(jobs, tt_shield_repo, run_id, model_name, device)
+                "ci_url": ci_job_url(
+                    jobs, tt_shield_repo, run_id, model_name, device, all_model_names
+                )
                 if (jobs and run_id)
                 else None,
             }

@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 import _bootstrap  # noqa: F401,E402  (sets sys.path for imports below)
+from utils.model_naming import model_name_variants
 from workflows.utils import parse_commits_from_docker_image
 
 logger = logging.getLogger(__name__)
@@ -55,6 +56,29 @@ def load_model_spec_json(model_specs_dir: Path) -> Tuple[Optional[dict], Optiona
     return data, model_id
 
 
+def report_identity_matches(
+    meta: dict, model_id: Optional[str], model_repo: Optional[str]
+) -> bool:
+    """Whether ``meta`` identifies its report as this model's.
+
+    ``model_repo`` is compared through :func:`model_name_variants` because a
+    bundle produced before the identity migration records the bare model name
+    where the spec now holds the full HF repo id. ``model_id`` is a spec id,
+    not an identity, so it is compared exactly.
+    """
+    if model_id and meta.get("model_id") == model_id:
+        return True
+    claimed_repo = meta.get("model_repo")
+    if model_repo and claimed_repo:
+        return claimed_repo in model_name_variants(model_repo)
+    return False
+
+
+def _newest_first(reports: list[Tuple[Path, dict]]) -> list[Tuple[Path, dict]]:
+    """Order reports gathered across workflow subdirectories by mtime."""
+    return sorted(reports, key=lambda pair: pair[0].stat().st_mtime, reverse=True)
+
+
 def load_report_data_json(
     reports_root: Path, model_id: str, model_repo: Optional[str] = None
 ) -> Optional[dict]:
@@ -76,6 +100,7 @@ def load_report_data_json(
         return None
 
     unidentified: list[Tuple[Path, dict]] = []
+    mismatched: list[Tuple[Path, dict]] = []
 
     # Workflow subdirectory can vary (release, benchmarks, evals)
     for workflow_dir in sorted(reports_root.iterdir()):
@@ -101,22 +126,38 @@ def load_report_data_json(
             meta = data.get("metadata") or {}
             # Both sides must be truthy: with no spec to compare against, a
             # missing id would otherwise match a report that is equally
-            # id-less, bypassing the explicit fallback below.
-            if (model_repo and meta.get("model_repo") == model_repo) or (
-                model_id and meta.get("model_id") == model_id
-            ):
+            # id-less, bypassing the explicit fallbacks below.
+            if report_identity_matches(meta, model_id, model_repo):
                 logger.info(f"Reading report data JSON: {report_file}")
                 return data
             if not meta.get("model_repo") and not meta.get("model_id"):
                 unidentified.append((report_file, data))
+            else:
+                mismatched.append((report_file, data))
 
     # Older reports predate the injected identity fields; fall back to the most
     # recent one only when nothing in the tree claims an identity at all.
     if unidentified:
-        report_file, data = unidentified[0]
+        report_file, data = _newest_first(unidentified)[0]
         logger.warning(
             f"No report matched model_id={model_id!r} / model_repo={model_repo!r}; "
             f"falling back to unidentified report {report_file}"
+        )
+        return data
+
+    # Last resort: a report claiming an identity this matcher does not
+    # recognise. Returning None here would make the caller discard the whole
+    # bundle on a spelling mismatch, losing the model from the release with
+    # only a warning, so surface the report and make the mismatch loud instead.
+    if mismatched:
+        report_file, data = _newest_first(mismatched)[0]
+        claimed = data.get("metadata") or {}
+        logger.warning(
+            f"No report matched model_id={model_id!r} / model_repo={model_repo!r}; "
+            f"falling back to {report_file}, which claims "
+            f"model_repo={claimed.get('model_repo')!r} / "
+            f"model_id={claimed.get('model_id')!r}. The identities disagree -- "
+            f"check the bundle's spec against its report metadata."
         )
         return data
 

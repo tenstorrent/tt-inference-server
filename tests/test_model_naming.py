@@ -271,6 +271,58 @@ class TestCiJobMatchesDevice:
             "run-release-Qwen__Qwen3-32B-p150", "release", "Qwen/Qwen3-32B", "p150"
         )
 
+
+class TestCiJobPrefixSiblings:
+    """``-`` separates fields and also occurs inside model names, so a sibling's
+    job is only attributable once the other models in scope are known."""
+
+    SIBLING_JOB = "run-release-Qwen__Qwen3-32B-FP8-p150-P150"
+    OWN_JOB = "run-release-Qwen__Qwen3-32B-p150-P150"
+
+    def test_sibling_job_is_claimed_when_scope_is_unknown(self):
+        # Documents the residual ambiguity: with nothing to compare against,
+        # the shorter model still explains the name.
+        assert ci_job_matches_device(
+            self.SIBLING_JOB, "release", "Qwen/Qwen3-32B", "P150"
+        )
+
+    def test_sibling_job_is_left_to_the_sibling(self):
+        assert not ci_job_matches_device(
+            self.SIBLING_JOB,
+            "release",
+            "Qwen/Qwen3-32B",
+            "P150",
+            ["Qwen/Qwen3-32B-FP8"],
+        )
+
+    def test_sibling_still_claims_its_own_job(self):
+        assert ci_job_matches_device(
+            self.SIBLING_JOB,
+            "release",
+            "Qwen/Qwen3-32B-FP8",
+            "P150",
+            ["Qwen/Qwen3-32B"],
+        )
+
+    def test_own_job_survives_a_longer_sibling_in_scope(self):
+        assert ci_job_matches_device(
+            self.OWN_JOB, "release", "Qwen/Qwen3-32B", "P150", ["Qwen/Qwen3-32B-FP8"]
+        )
+
+    def test_self_in_scope_is_ignored(self):
+        assert ci_job_matches_device(
+            self.OWN_JOB, "release", "Qwen/Qwen3-32B", "P150", ["Qwen/Qwen3-32B"]
+        )
+
+    def test_unrelated_models_in_scope_do_not_interfere(self):
+        assert ci_job_matches_device(
+            self.OWN_JOB,
+            "release",
+            "Qwen/Qwen3-32B",
+            "P150",
+            ["meta-llama/Llama-3.1-8B-Instruct", "openai/whisper-large-v3"],
+        )
+
     def test_device_must_be_a_whole_trailing_token(self):
         name = "run-release-Qwen__Qwen3-32B-p150-p300x2"
         assert not ci_job_matches_device(name, "release", "Qwen/Qwen3-32B", "x2")

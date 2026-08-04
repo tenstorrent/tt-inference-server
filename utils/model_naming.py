@@ -55,7 +55,7 @@ when the name is all you have (an artifact listing, a directory scan).
 from __future__ import annotations
 
 import sys
-from typing import Optional, Tuple
+from typing import Iterable, Optional, Tuple
 
 __all__ = [
     "MODEL_ID_SEP",
@@ -275,8 +275,32 @@ def device_from_ci_job_name(
     return None
 
 
+def _longest_matching_token(
+    job_name: str, workflow: str, model_id: str, device_suffix: str
+) -> Optional[int]:
+    """Length of the longest model token that explains ``job_name``.
+
+    ``None`` when no spelling of ``model_id`` matches. The length is what makes
+    :func:`ci_job_matches_device` able to rank two models against one name.
+    """
+    best: Optional[int] = None
+    for token in model_name_variants(model_id):
+        marker = f"run-{workflow}-{token}-"
+        idx = job_name.find(marker)
+        if idx == -1:
+            continue
+        tail = job_name[idx + len(marker) :].strip().rstrip(",)")
+        if tail.lower().endswith(device_suffix) and (best is None or len(token) > best):
+            best = len(token)
+    return best
+
+
 def ci_job_matches_device(
-    job_name: str, workflow: str, model_id: str, device: str
+    job_name: str,
+    workflow: str,
+    model_id: str,
+    device: str,
+    other_model_ids: Iterable[str] = (),
 ) -> bool:
     """True if ``job_name`` is the job for this ``(model, device)`` pair.
 
@@ -286,24 +310,37 @@ def ci_job_matches_device(
     label leaves it unconstrained (``bh-qb-ge``); the device compares
     case-insensitively since callers hold a ``DeviceTypes`` name.
 
+    Unlike the artifact grammar, this one separates fields with ``-``, which is
+    also the commonest character *inside* a model name, so a prefix sibling's
+    job is not distinguishable from this model's by string shape alone:
+    ``Qwen/Qwen3-32B`` and ``Qwen/Qwen3-32B-FP8`` both explain
+    ``run-release-Qwen__Qwen3-32B-FP8-p150-P150``. Pass the other models in
+    scope as ``other_model_ids`` and the longer explanation wins, so the
+    sibling's job is left to the sibling.
+
     >>> ci_job_matches_device(
     ...     "run-tests / run-release-meta-llama__Llama-3.3-70B-Instruct-bh-qb-ge-p300x2",
     ...     "release", "meta-llama/Llama-3.3-70B-Instruct", "P300X2")
     True
+    >>> ci_job_matches_device(
+    ...     "run-release-Qwen__Qwen3-32B-FP8-p150-P150",
+    ...     "release", "Qwen/Qwen3-32B", "P150", ["Qwen/Qwen3-32B-FP8"])
+    False
     """
     if not job_name or not device:
         return False
     # The leading "-" rejects a label-less name and "x2" vs "p300x2".
     suffix = f"-{device}".lower()
-    for token in model_name_variants(model_id):
-        marker = f"run-{workflow}-{token}-"
-        idx = job_name.find(marker)
-        if idx == -1:
+    own = _longest_matching_token(job_name, workflow, model_id, suffix)
+    if own is None:
+        return False
+    for other in other_model_ids:
+        if other == model_id:
             continue
-        tail = job_name[idx + len(marker) :].strip().rstrip(",)")
-        if tail.lower().endswith(suffix):
-            return True
-    return False
+        rival = _longest_matching_token(job_name, workflow, other, suffix)
+        if rival is not None and rival > own:
+            return False
+    return True
 
 
 # ---------------------------------------------------------------------------
