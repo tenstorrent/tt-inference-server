@@ -279,7 +279,11 @@ def build_rows(new_blocks, old_blocks, combos, jobs, tt_shield_repo, run_id):
         # bundling several weights (e.g. whisper) yields a single row.
         ident_block = new_b or old_b
         weights = tuple((ident_block or {}).get("weights", []) or [])
-        dedup_key = (weights, engine, device)
+        dedup_key = (
+            ("block", weights, engine, device)
+            if ident_block
+            else ("model", model_name, engine, device)
+        )
         if dedup_key in seen:
             continue
         seen.add(dedup_key)

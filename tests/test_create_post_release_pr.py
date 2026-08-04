@@ -99,6 +99,33 @@ def test_build_rows_keeps_distinct_models_on_shared_engine_and_device():
     assert [r["tt_after"] for r in rows] == ["aaa1111", "bbb2222"]
 
 
+def test_build_rows_keeps_distinct_models_when_no_block_matches():
+    """The case the test above does not reach: `find_block` misses entirely.
+
+    Every blockless combo used to key on the same empty weights tuple, so all
+    but the first on a given (engine, device) were dropped -- silently, exit 0.
+    A stale weights spelling in prod, or a release cut before a spec landed, is
+    enough to trigger it.
+    """
+    combos = [
+        ("Qwen/Qwen3-32B", InferenceEngine.VLLM, DeviceTypes.GALAXY),
+        ("meta-llama/Llama-3.1-8B-Instruct", InferenceEngine.VLLM, DeviceTypes.GALAXY),
+        ("openai/gpt-oss-20b", InferenceEngine.VLLM, DeviceTypes.GALAXY),
+    ]
+    rows = build_rows([], [], combos, jobs=None, tt_shield_repo="", run_id=None)
+
+    assert [r["model_arch"] for r in rows] == [c[0] for c in combos]
+    # No block, so nothing is known about them -- but they must still be listed.
+    assert all(r["weights"] == [] for r in rows)
+
+
+def test_build_rows_still_dedups_blockless_repeats():
+    """The dedup itself must survive: a combo repeated verbatim is one row."""
+    combo = ("Qwen/Qwen3-32B", InferenceEngine.VLLM, DeviceTypes.GALAXY)
+    rows = build_rows([], [], [combo, combo], jobs=None, tt_shield_repo="", run_id=None)
+    assert len(rows) == 1
+
+
 def test_build_rows_dedups_a_block_bundling_several_weights():
     multi = {
         "impl": "tt-transformers",
