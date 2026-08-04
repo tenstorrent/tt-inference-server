@@ -418,6 +418,7 @@ templates:
       override_tt_config:
         fabric_config: FABRIC_1D
         trace_region_size: 268435456
+        l1_small_size: 24576
   status: EXPERIMENTAL
   has_builtin_warmup: true
   metadata:
