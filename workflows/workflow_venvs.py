@@ -182,7 +182,7 @@ def setup_evals_agentic(
 
     harbor_dir = venv_config.venv_path / "harbor"
     harbor_repo = "https://github.com/ipastalTT/harbor.git"
-    harbor_commit = "4c88448c0551e253e34110ef10f7dd64410a2cc1"
+    harbor_commit = "cbf638ca06ebccdfb9a3b9ccf386fc0ddae31e3e"
     if not harbor_dir.exists():
         harbor_dir_arg = shlex.quote(str(harbor_dir))
         clone_return_code = run_command(
