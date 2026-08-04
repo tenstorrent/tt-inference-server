@@ -67,10 +67,18 @@ def sweep_envelope(ctx: "MediaContext") -> Dict[str, Any]:
 def block_id(ctx: "MediaContext") -> str:
     """Stable ``model_device`` slug for the Block id and report filenames.
 
-    Uses the same canonical escape as ``ReportSchema``, so Block ids produced
-    here line up with ones it synthesizes -- see :mod:`utils.model_naming`.
+    Keyed on the **full HF repo id**, the data identity of a model per
+    ``docs/model_id_naming.md`` -- not the bare basename, which is reserved for
+    ``metadata.model_name``. That is what makes these ids line up with the ones
+    :func:`report_module.schema._group_records_to_blocks` synthesizes: it slugs
+    each record's ``model`` field, which
+    :func:`test_module.context.common_report_metadata` fills from
+    ``hf_model_repo``. Two spellings here would stop blocks describing the same
+    (model, device) from collapsing in
+    :func:`report_module.summary._block_identity`.
     """
-    return slugify_name_parts(ctx.model_spec.model_name, ctx.device.name)
+    model = report_model_fields(ctx.model_spec)["model_repo"]
+    return slugify_name_parts(model, ctx.device.name)
 
 
 __all__ = ["block_id", "report_model_fields", "sweep_envelope"]
