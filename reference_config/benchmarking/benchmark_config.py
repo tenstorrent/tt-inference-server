@@ -106,6 +106,8 @@ BENCHMARK_ISL_OSL_PAIRS = [
 # They extend the sweep toward ~250K ISL while staying below the 256K cap, and
 # are still filtered per model by ``isl + osl <= max_context`` at build time
 # (e.g. reachable by Kimi's 256K context, skipped for a 128K-context model).
+# NOTE: To support future models with larger context lengths, add near-max ISL-OSL
+# pairs here; they will be automatically filtered by the per-model context cap.
 SUPER_CLUSTER_EXTRA_ISL_OSL_PAIRS = [
     (196608, 128),  # 192K
     (245760, 128),  # 240K
