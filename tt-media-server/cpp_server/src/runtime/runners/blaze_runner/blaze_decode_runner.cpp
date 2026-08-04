@@ -11,7 +11,6 @@
 #include <string>
 #include <utility>
 
-#include "config/settings.hpp"
 #include "domain/manage_memory.hpp"
 #include "ipc/helpers/token_push.hpp"
 #include "runtime/runners/blaze_runner/blaze_slot_manager.hpp"
