@@ -90,12 +90,23 @@ void BlazeTtsRunner::run() {
 }
 
 void BlazeTtsRunner::step() {
+  drainPendingTerminalMessages();
+  if (!pendingTerminalMessages.empty()) {
+    drainSchedulerResponses();
+    drainControlMessages();
+    drainDeferredStops();
+    drainDeferredEvicts();
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    return;
+  }
+
   drainVoiceEncodeResults();
   drainSchedulerResponses();
   drainTokenOutputs();
   drainAudioOutputs();
   drainControlMessages();
   drainDeferredStops();
+  drainDeferredEvicts();
   drainTasks();
 
   if (std::chrono::steady_clock::now() - lastOutputTime > outputHangTimeout) {
@@ -104,6 +115,19 @@ void BlazeTtsRunner::step() {
     lastOutputTime = std::chrono::steady_clock::now();
   }
   std::this_thread::sleep_for(std::chrono::milliseconds(1));
+}
+
+void BlazeTtsRunner::drainPendingTerminalMessages() {
+  while (!pendingTerminalMessages.empty()) {
+    const auto& terminal = pendingTerminalMessages.front();
+    if (!audioQueue->push(terminal.message)) {
+      return;
+    }
+
+    auto delivered = std::move(pendingTerminalMessages.front());
+    pendingTerminalMessages.pop_front();
+    handleTerminalDelivered(delivered);
+  }
 }
 
 void BlazeTtsRunner::drainSchedulerResponses() {
@@ -165,6 +189,17 @@ void BlazeTtsRunner::drainDeferredStops() {
   deferredStopSlots.clear();
   for (uint32_t slotId : stops) {
     requestStop(slotId);
+  }
+}
+
+void BlazeTtsRunner::drainDeferredEvicts() {
+  if (deferredEvictSlots.empty()) {
+    return;
+  }
+  auto evicts = std::move(deferredEvictSlots);
+  deferredEvictSlots.clear();
+  for (uint32_t slotId : evicts) {
+    requestEvict(slotId);
   }
 }
 
@@ -342,8 +377,7 @@ void BlazeTtsRunner::handleAllocateAck(
   submit.generation = toSchedulerGeneration(task.generation);
   if (!scheduler->submit(submit)) {
     sendFinish(slot->task_id, domain::tts::TtsFinishReason::Error,
-               "TTS scheduler queue full during SUBMIT");
-    requestEvict(slot->slotId);
+               "TTS scheduler queue full during SUBMIT", slot->slotId);
   }
 }
 
@@ -361,14 +395,12 @@ void BlazeTtsRunner::handleSubmitAck(const sched::SchedulerResponse& response) {
     return;
   }
   sendFinish(response.taskId, domain::tts::TtsFinishReason::Error,
-             response.error);
-  requestEvict(response.slotId);
+             response.error, response.slotId);
 }
 
 void BlazeTtsRunner::handleStopAck(const sched::SchedulerResponse& response) {
   sendFinish(response.taskId, domain::tts::TtsFinishReason::Cancelled,
-             response.error);
-  requestEvict(response.slotId);
+             response.error, response.slotId);
 }
 
 void BlazeTtsRunner::handleEvictAck(const sched::SchedulerResponse& response) {
@@ -419,11 +451,43 @@ void BlazeTtsRunner::handleAudioOutput(const sched::AudioOutput& output) {
   }
 }
 
-void BlazeTtsRunner::sendFinish(uint32_t taskId,
+bool BlazeTtsRunner::sendFinish(uint32_t taskId,
                                 domain::tts::TtsFinishReason reason,
-                                std::string error) {
-  audioQueue->push(
-      ipc::tts::TtsAudioChunkMessage::finish(taskId, reason, std::move(error)));
+                                std::string error,
+                                std::optional<uint32_t> slotIdToEvict) {
+  PendingTerminalMessage terminal{
+      ipc::tts::TtsAudioChunkMessage::finish(taskId, reason, std::move(error)),
+      slotIdToEvict};
+
+  if (slotIdToEvict.has_value()) {
+    if (auto* slot = findSlot(*slotIdToEvict)) {
+      slot->state = SlotState::AWAITING_TERMINAL_DELIVERY;
+    }
+  }
+
+  if (!pendingTerminalMessages.empty()) {
+    pendingTerminalMessages.push_back(std::move(terminal));
+    return false;
+  }
+
+  if (audioQueue->push(terminal.message)) {
+    handleTerminalDelivered(terminal);
+    return true;
+  }
+
+  pendingTerminalMessages.push_back(std::move(terminal));
+  TT_LOG_WARN(
+      "[BlazeTtsRunner] Audio queue full; deferring terminal event for "
+      "taskId={}",
+      taskId);
+  return false;
+}
+
+void BlazeTtsRunner::handleTerminalDelivered(
+    const PendingTerminalMessage& terminal) {
+  if (terminal.slotIdToEvict.has_value()) {
+    requestEvict(*terminal.slotIdToEvict);
+  }
 }
 
 void BlazeTtsRunner::maybeFinalizeCompletedSlot(uint32_t slotId) {
@@ -435,8 +499,8 @@ void BlazeTtsRunner::maybeFinalizeCompletedSlot(uint32_t slotId) {
 
   slot->completionPending = false;
   slot->audioLastReceived = false;
-  sendFinish(slot->task_id, domain::tts::TtsFinishReason::Completed);
-  requestEvict(slotId);
+  sendFinish(slot->task_id, domain::tts::TtsFinishReason::Completed, {},
+             slotId);
 }
 
 void BlazeTtsRunner::requestStop(uint32_t slotId) {
@@ -485,7 +549,16 @@ void BlazeTtsRunner::requestEvict(uint32_t slotId) {
   request.slotId = slotId;
   if (scheduler->pushRequest(request)) {
     slot->state = SlotState::AWAITING_EVICT_ACK;
+    return;
   }
+  if (std::find(deferredEvictSlots.begin(), deferredEvictSlots.end(), slotId) ==
+      deferredEvictSlots.end()) {
+    deferredEvictSlots.push_back(slotId);
+  }
+  TT_LOG_WARN(
+      "[BlazeTtsRunner] Scheduler queue full; deferring EVICT for "
+      "slotId={}",
+      slotId);
 }
 
 void BlazeTtsRunner::cleanupSlot(uint32_t slotId) {
@@ -521,7 +594,8 @@ bool BlazeTtsRunner::shouldDropOutput(uint32_t slotId,
     return true;
   }
   const auto& slot = slots[slotId];
-  if (slot.state == SlotState::AWAITING_STOP_ACK ||
+  if (slot.state == SlotState::AWAITING_TERMINAL_DELIVERY ||
+      slot.state == SlotState::AWAITING_STOP_ACK ||
       slot.state == SlotState::AWAITING_EVICT_ACK) {
     TT_LOG_DEBUG(
         "[BlazeTtsRunner] Dropping {} output for slotId={} during serialized "

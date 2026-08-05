@@ -6,6 +6,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <deque>
 #include <memory>
 #include <optional>
 #include <string>
@@ -38,6 +39,7 @@ class BlazeTtsRunner : public IRunner {
     FREE,
     ALLOCATING,
     RUNNING,
+    AWAITING_TERMINAL_DELIVERY,
     AWAITING_STOP_ACK,
     AWAITING_EVICT_ACK,
   };
@@ -50,16 +52,23 @@ class BlazeTtsRunner : public IRunner {
     bool audioLastReceived = false;
   };
 
+  struct PendingTerminalMessage {
+    ipc::tts::TtsAudioChunkMessage message;
+    std::optional<uint32_t> slotIdToEvict;
+  };
+
   void run() override;
   void step();
   void shutdownScheduler();
 
+  void drainPendingTerminalMessages();
   void drainSchedulerResponses();
   void drainTokenOutputs();
   void drainAudioOutputs();
   void drainVoiceEncodeResults();
   void drainControlMessages();
   void drainDeferredStops();
+  void drainDeferredEvicts();
   void drainTasks();
 
   void handleTask(ipc::tts::TtsIpcTask task);
@@ -76,8 +85,10 @@ class BlazeTtsRunner : public IRunner {
   void handleEvictAck(const tts_scheduler::SchedulerResponse& response);
 
   void allocateTask(ipc::tts::TtsIpcTask task);
-  void sendFinish(uint32_t taskId, domain::tts::TtsFinishReason reason,
-                  std::string error = {});
+  bool sendFinish(uint32_t taskId, domain::tts::TtsFinishReason reason,
+                  std::string error = {},
+                  std::optional<uint32_t> slotIdToEvict = std::nullopt);
+  void handleTerminalDelivered(const PendingTerminalMessage& terminal);
   void maybeFinalizeCompletedSlot(uint32_t slotId);
   void requestStop(uint32_t slotId);
   void requestEvict(uint32_t slotId);
@@ -94,7 +105,9 @@ class BlazeTtsRunner : public IRunner {
   std::vector<SlotContext> slots;
   std::unordered_map<uint32_t, ipc::tts::TtsIpcTask> pendingVoiceEncodes;
   std::unordered_map<uint32_t, ipc::tts::TtsIpcTask> pendingAllocations;
+  std::deque<PendingTerminalMessage> pendingTerminalMessages;
   std::vector<uint32_t> deferredStopSlots;
+  std::vector<uint32_t> deferredEvictSlots;
   std::atomic<bool> stopped{false};
   std::chrono::steady_clock::time_point lastOutputTime;
   std::chrono::milliseconds outputHangTimeout;
