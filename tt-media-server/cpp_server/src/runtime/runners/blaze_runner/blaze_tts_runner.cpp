@@ -13,6 +13,7 @@
 #include "runtime/worker/single_process_worker_metrics.hpp"
 #include "utils/logger.hpp"
 #include "utils/tts_prompt_compiler.hpp"
+#include "utils/tts_tokenizer.hpp"
 
 namespace tt::runners::blaze {
 
@@ -263,8 +264,10 @@ void BlazeTtsRunner::handleVoiceEncodeResult(
   }
 
   try {
+    const auto& tokenizer =
+        tt::utils::tts_tokenizer::tokenizerForPath(config.tokenizerPath);
     task.promptTokens = tt::utils::tts_prompt_compiler::compilePromptTokens(
-        task.text, task.description, result.speechIds);
+        tokenizer, task.text, task.description, result.speechIds);
   } catch (const std::exception& e) {
     sendFinish(task.task_id, domain::tts::TtsFinishReason::Error, e.what());
     return;

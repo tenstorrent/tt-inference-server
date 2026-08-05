@@ -52,9 +52,11 @@ TEST(TtsPromptCompilerTest, TokenizesCompiledPromptString) {
   const std::vector<uint32_t> speechIds = {12, 34, 56};
   const std::string prompt =
       compiler::compilePromptString(text, description, speechIds);
+  const auto& tokenizer = tt::utils::tokenizers::activeTokenizer();
 
-  EXPECT_EQ(compiler::compilePromptTokens(text, description, speechIds),
-            tt::utils::tokenizers::activeTokenizer().encode(prompt));
+  EXPECT_EQ(
+      compiler::compilePromptTokens(tokenizer, text, description, speechIds),
+      tokenizer.encode(prompt));
 }
 
 }  // namespace

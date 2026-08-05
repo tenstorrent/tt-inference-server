@@ -24,8 +24,8 @@ namespace tt::utils::tts_prompt_compiler {
 //     <|voice_prompt_start|>{description}<|voice_prompt_end|>
 //     <|bot|>{text}<|speech_start|>
 //
-// The final string is tokenized by the active tokenizer; speech IDs are encoded
-// as literal tokenizer tokens like <|s_123|>, not inserted as raw token IDs.
+// The final string is tokenized by the TTS tokenizer; speech IDs are encoded as
+// literal tokenizer tokens like <|s_123|>, not inserted as raw token IDs.
 inline constexpr const char* SPEECH_TOKEN_PATTERN_PREFIX = "<|s_";
 inline constexpr const char* SPEECH_TOKEN_PATTERN_SUFFIX = "|>";
 inline constexpr const char* SPEECH_START_TOKEN = "<|speech_start|>";
@@ -92,9 +92,10 @@ inline std::string compilePromptString(
 }
 
 inline std::vector<uint32_t> compilePromptTokens(
-    const std::string& text, const std::optional<std::string>& description,
+    const tt::utils::tokenizers::Tokenizer& tokenizer, const std::string& text,
+    const std::optional<std::string>& description,
     const std::vector<uint32_t>& promptSpeechIds = {}) {
-  return tt::utils::tokenizers::activeTokenizer().encode(
+  return tokenizer.encode(
       compilePromptString(text, description, promptSpeechIds));
 }
 

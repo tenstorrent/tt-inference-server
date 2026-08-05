@@ -16,7 +16,7 @@
 
 #include "config/types.hpp"
 #include "utils/logger.hpp"
-#include "utils/tokenizers/tokenizer.hpp"
+#include "utils/tts_tokenizer.hpp"
 
 #if __has_include(<tt_llm_engine/scheduler/tts/tts_scheduler.hpp>) && \
     __has_include(<tt_llm_engine/pipeline/mock_pipeline.hpp>) &&        \
@@ -287,25 +287,18 @@ bool isLastAudioOutput(const AudioOut& audio) {
 engine_tts::TtsSchedulerParams makeEngineTtsParams(
     const tt::config::TtsConfig& config) {
   constexpr uint32_t CODEBOOK_SIZE = 65536;
-  auto tokenIdFor = [](const std::vector<std::string>& vocab,
-                       const std::string& token) -> uint32_t {
-    auto it = std::find(vocab.begin(), vocab.end(), token);
-    if (it == vocab.end()) {
-      throw std::runtime_error("TTS tokenizer is missing required token: " +
-                               token);
-    }
-    return static_cast<uint32_t>(std::distance(vocab.begin(), it));
-  };
-
-  const auto vocab = tt::utils::tokenizers::activeTokenizer().getEncodedVocab();
+  const auto& tokenizer =
+      tt::utils::tts_tokenizer::tokenizerForPath(config.tokenizerPath);
 
   engine_tts::TtsSchedulerParams params;
   params.max_users = static_cast<uint32_t>(config.maxUsers);
   params.chunk_tokens = config.chunkTokens;
   params.first_chunk_tokens = config.chunkTokens;
   params.max_batch_size = static_cast<uint32_t>(config.maxBatchSize);
-  params.speech_end_token = tokenIdFor(vocab, "<|speech_end|>");
-  params.speech_token_base = tokenIdFor(vocab, "<|s_0|>");
+  params.speech_end_token = tt::utils::tts_tokenizer::tokenIdFor(
+      tokenizer, tt::utils::tts_tokenizer::SPEECH_END_TOKEN);
+  params.speech_token_base = tt::utils::tts_tokenizer::tokenIdFor(
+      tokenizer, tt::utils::tts_tokenizer::SPEECH_TOKEN_BASE);
   params.speech_vocab_size = CODEBOOK_SIZE;
   return params;
 }

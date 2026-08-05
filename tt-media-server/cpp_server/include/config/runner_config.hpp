@@ -112,6 +112,9 @@ struct TtsConfig : RunnerConfigBase {
   // Chunk contract shared by the API, runner, and scheduler.
   uint32_t chunkTokens = defaults::TTS_CHUNK_TOKENS;
 
+  // Tokenizer for the SpeechLM backbone, including TTS audio/speech tokens.
+  std::string tokenizerPath;
+
   // Audio format contract for the TTS voice encoder and decoder.
   uint32_t voiceSampleRateHz = defaults::TTS_VOICE_SAMPLE_RATE_HZ;
   uint16_t voiceChannels = defaults::TTS_VOICE_CHANNELS;

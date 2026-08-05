@@ -9,8 +9,8 @@
 #include <stdexcept>
 #include <utility>
 
-#include "utils/tokenizers/tokenizer.hpp"
 #include "utils/tts_prompt_compiler.hpp"
+#include "utils/tts_tokenizer.hpp"
 
 namespace tt::services {
 
@@ -87,8 +87,6 @@ tt::domain::tts::TtsTask TtsRequestPreprocessor::process(
   task.task_id = request.task_id;
   task.text = request.text;
   task.description = request.description;
-  task.generation.stopTokenIds =
-      tt::utils::tokenizers::staticInfo().stopTokenIds;
 
   if (request.voiceSample.has_value()) {
     tt::utils::tts_prompt_compiler::validatePromptInputs(request.text,
@@ -96,8 +94,10 @@ tt::domain::tts::TtsTask TtsRequestPreprocessor::process(
     auto normalized = normalizeVoiceSample(*request.voiceSample);
     task.voiceWavPcm = std::move(normalized.wavPcm);
   } else {
+    const auto& tokenizer =
+        tt::utils::tts_tokenizer::tokenizerForPath(config.tokenizerPath);
     task.promptTokens = tt::utils::tts_prompt_compiler::compilePromptTokens(
-        request.text, request.description);
+        tokenizer, request.text, request.description);
   }
 
   return task;

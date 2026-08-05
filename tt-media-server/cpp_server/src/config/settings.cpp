@@ -564,6 +564,8 @@ TtsConfig ttsEngineConfig() {
                                std::to_string(defaults::TTS_CHUNK_TOKENS) +
                                "]");
     }
+    cfg.tokenizerPath = envString(
+        "TTS_TOKENIZER_PATH", tokenizerPath(ModelType::LLAMA_3_1_8B_INSTRUCT));
     cfg.voiceSampleRateHz = static_cast<uint32_t>(envUlong(
         "TTS_VOICE_SAMPLE_RATE_HZ", defaults::TTS_VOICE_SAMPLE_RATE_HZ));
     cfg.voiceChannels = static_cast<uint16_t>(
