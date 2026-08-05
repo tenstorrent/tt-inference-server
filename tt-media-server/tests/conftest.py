@@ -658,6 +658,57 @@ forge_runners_module.ForgeVitRunner = create_mock_runner_class("ForgeVitRunner")
 # The mocks are already in sys.modules, so imports will work correctly
 
 
+@pytest.fixture(autouse=True)
+def stop_sp_runner_drainers():
+    """Stop any ``SPRunner`` drainer thread a test leaves behind.
+
+    ``SPRunner.submit`` starts ``_drain_loop`` in a thread, and tests need it
+    running — it is what resolves the response future. Nothing stops it
+    afterwards: ``close_device`` is the only thing that sets ``_shutdown``, and
+    almost no test calls it. Against a ``MagicMock`` output SHM,
+    ``read_response`` returns instantly rather than blocking for its timeout, so
+    each abandoned drainer becomes a hot spin loop holding the GIL for the rest
+    of the session — roughly a full core each, measured.
+
+    Invisible on a developer box with cores to spare; brutal on a 2-vCPU CI
+    runner, where the leaked threads starve every test that runs afterwards. The
+    two SPRunner test modules were leaking 16 between them, which is most of why
+    the media suite took ~5.5 minutes; adding five more tests pushed it past 11
+    and the job was killed mid-run.
+
+    Kept here rather than in each module so a future SPRunner test cannot
+    reintroduce the cliff. The ``sys.modules`` guard makes it free for the
+    thousands of tests that never touch SPRunner: no import, no patch, no
+    teardown work. Runners are tracked by wrapping ``__init__`` because tests
+    construct them inline instead of taking them from a fixture.
+    """
+    module = sys.modules.get("tt_model_runners.sp_runner")
+    runner_cls = getattr(module, "SPRunner", None) if module else None
+    if runner_cls is None or isinstance(runner_cls, MagicMock):
+        yield
+        return
+
+    created = []
+    original_init = runner_cls.__init__
+
+    def tracking_init(self, *args, **kwargs):
+        created.append(self)
+        original_init(self, *args, **kwargs)
+
+    runner_cls.__init__ = tracking_init
+    try:
+        yield
+    finally:
+        runner_cls.__init__ = original_init
+
+    for runner in created:
+        runner._shutdown = True
+    for runner in created:
+        drainer = getattr(runner, "_drainer", None)
+        if drainer is not None:
+            drainer.join(timeout=5.0)
+
+
 def pytest_addoption(parser):
     parser.addoption(
         "--start-from",
