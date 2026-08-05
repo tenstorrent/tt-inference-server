@@ -54,6 +54,7 @@ export KV_CACHE_DTYPE=${KV_CACHE_DTYPE:-none}
 # `[ ] &&`) avoids tripping `set -e` when the var is absent.
 if [ -n "${MATH_FIDELITY:-}" ]; then export MATH_FIDELITY; fi
 if [ -n "${FP32_DEST_ACC_EN:-}" ]; then export FP32_DEST_ACC_EN; fi
+if [ -n "${MATH_APPROX_MODE:-}" ]; then export MATH_APPROX_MODE; fi
 
 export DEVICE_IDS=${DEVICE_IDS:-'(0)'}
 export VLLM_LOGGING_LEVEL=${VLLM_LOGGING_LEVEL:-INFO}

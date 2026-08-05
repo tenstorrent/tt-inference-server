@@ -77,6 +77,11 @@ class VLLMForgeRunner(BaseDeviceRunner):
         # (e.g. "hifi2" or "hifi4") to raise fidelity for accuracy. Only passed
         # when set, so other models keep the plugin default.
         math_fidelity = os.getenv("MATH_FIDELITY")
+        # Math approx mode for ttnn compute kernels. ttnn's per-op default is
+        # True, which selects approximate SFPU implementations (notably a
+        # reciprocal with reduced Newton refinement -- tt-metal #51927). Set
+        # "false" to trade throughput for accuracy. Only passed when set.
+        math_approx_mode = os.getenv("MATH_APPROX_MODE")
         # b1-prefill (tt-xla #5281): compile a small [min_num_seqs, n] prefill graph
         # alongside b32 and route <= prefill_batch_threshold pending prefills to it
         # (lower TTFT) while decode stays at max_num_seqs. Only passed when set.
@@ -102,6 +107,8 @@ class VLLMForgeRunner(BaseDeviceRunner):
             additional_config["fp32_dest_acc_en"] = fp32_dest_acc_en.lower() == "true"
         if math_fidelity:
             additional_config["math_fidelity"] = math_fidelity
+        if math_approx_mode is not None:
+            additional_config["math_approx_mode"] = math_approx_mode.lower() == "true"
         if min_num_seqs:
             additional_config["min_num_seqs"] = int(min_num_seqs)
         if prefill_batch_threshold:
