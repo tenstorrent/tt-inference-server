@@ -45,9 +45,7 @@ class ImagePromptEntry(BaseModel):
         try:
             image_bytes = base64.b64decode(raw, validate=True)
         except Exception as exc:
-            raise ValueError(
-                "image is not valid base64-encoded data"
-            ) from exc
+            raise ValueError("image is not valid base64-encoded data") from exc
         try:
             img = Image.open(BytesIO(image_bytes))
             img.load()
