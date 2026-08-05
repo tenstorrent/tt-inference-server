@@ -40,9 +40,6 @@ from ..context import MediaContext
 
 logger = logging.getLogger(__name__)
 
-# <repo>/tt-inference-server-v2/test_module/llm_tests/this_file.py -> <repo>
-REPO_ROOT = Path(__file__).resolve().parents[3]
-
 
 def run_llm_performance(
     ctx: MediaContext,
@@ -64,42 +61,12 @@ def run_llm_performance(
     exported as the bearer token); empty string disables auth.
     """
     server_base_url = ctx.server_url if ctx.remote_server else ctx.server_host
-    # Same opt-in as the prefix-cache / spec-decode paths: the perf drivers
-    # tokenize client-side, so a model whose HF repo ships a custom tokenizer
-    # (Kimi, DiffusionGemma) must declare tokenizer_trust_remote_code in its
-    # spec metadata rather than us executing Hub code for every model.
-    tokenizer_trust_remote_code = bool(
-        getattr(ctx.model_spec, "metadata", {}).get(
-            "tokenizer_trust_remote_code", False
-        )
-    )
-    # Real-text prompts, opt-in per model. See ServerConnection: the default `random` dataset
-    # fabricates token ids, which for a block-diffusion model measures a regime real traffic never
-    # produces. The path is resolved against the repo so it ships with the image.
-    metadata = getattr(ctx.model_spec, "metadata", {}) or {}
-    benchmark_dataset_name = str(metadata.get("benchmark_dataset_name", "") or "")
-    benchmark_dataset_path = str(metadata.get("benchmark_dataset_path", "") or "")
-    if benchmark_dataset_name and not benchmark_dataset_path:
-        raise ValueError(
-            f"model {ctx.model_spec.model_name!r} sets benchmark_dataset_name="
-            f"{benchmark_dataset_name!r} without benchmark_dataset_path"
-        )
-    if benchmark_dataset_path and not Path(benchmark_dataset_path).is_absolute():
-        benchmark_dataset_path = str((REPO_ROOT / benchmark_dataset_path).resolve())
-    if benchmark_dataset_path and not Path(benchmark_dataset_path).exists():
-        raise FileNotFoundError(
-            f"benchmark_dataset_path {benchmark_dataset_path!r} does not exist; the sweep would "
-            "fail on its first request after the server is already up"
-        )
     server = ServerConnection(
         base_url=server_base_url,
         service_port=ctx.server_port,
         model=ctx.model_spec.hf_model_repo,
         auth_token=auth_token,
         is_remote=ctx.remote_server,
-        tokenizer_trust_remote_code=tokenizer_trust_remote_code,
-        benchmark_dataset_name=benchmark_dataset_name,
-        benchmark_dataset_path=benchmark_dataset_path,
     )
     output_dir = Path(ctx.output_path) / output_subdir
     device_label = ctx.device.name if hasattr(ctx.device, "name") else str(ctx.device)

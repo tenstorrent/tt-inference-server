@@ -29,11 +29,6 @@ from .base import DriverResult, LLMDriver
 
 logger = logging.getLogger(__name__)
 
-# sonnet's shared-prefix budget. It is subtracted from --sonnet-input-len, and the dataset raises
-# when the remainder cannot hold the base prompt, so points shorter than this get no prefix.
-SONNET_PREFIX_LEN = 200
-SONNET_MIN_ISL_FOR_PREFIX = 512
-
 
 def _resolve_auth_token(server: ServerConnection) -> str:
     return (
@@ -69,10 +64,16 @@ def build_vllm_bench_serve_argv(
         "/v1/chat/completions",
         "--model",
         server.model,
+        "--dataset-name",
+        "random",
         "--max-concurrency",
         str(config.max_concurrency),
         "--num-prompts",
         str(config.num_prompts),
+        "--random-input-len",
+        str(config.isl),
+        "--random-output-len",
+        str(config.osl),
         "--percentile-metrics",
         "ttft,tpot,itl,e2el",
         "--save-result",
@@ -81,74 +82,10 @@ def build_vllm_bench_serve_argv(
         str(result_filename),
     ]
 
-    # Prompt source. The default is `random`, which fabricates token ids: fine for a model whose
-    # per-token cost does not depend on what the tokens say, and WRONG for a block-diffusion model
-    # like DiffusionGemma, whose canvas never settles on gibberish -- measured on QB2, random ids
-    # give 48/48 denoise steps and a 4.3% halt rate versus K~15-18 and 100% on real text, i.e. a
-    # ~3x understatement of tok/s that no real traffic ever produces. `random` also flips
-    # ignore_eos on inside vllm bench serve, so nothing can stop early either.
-    #
-    # A model opts into real text via spec metadata (benchmark_dataset_name/path). `sonnet` is the
-    # option that keeps this sweep comparable: it assembles real English from a text file to hit
-    # --sonnet-input-len, so the six (ISL, OSL) points keep their meaning. It ASSEMBLES WHOLE LINES,
-    # so it undershoots the target by up to ~1 line (measured: 8192 -> 8125 raw, aligning to 8160),
-    # and truncate_prompt_tokens can only cut from above -- the model's warmed prefill lengths must
-    # therefore cover a band BELOW each ISL or up-front capture rejects the request and returns an
-    # empty answer with a plausible-looking throughput attached.
-    if server.benchmark_dataset_name == "sonnet":
-        if not server.benchmark_dataset_path:
-            raise ValueError(
-                "benchmark_dataset_name=sonnet requires benchmark_dataset_path"
-            )
-        # prefix_len is a shared prefix taken out of the input budget; sonnet raises when it does
-        # not leave room, so short points get none.
-        prefix_len = 0 if config.isl < SONNET_MIN_ISL_FOR_PREFIX else SONNET_PREFIX_LEN
-        cmd.extend(
-            [
-                "--dataset-name",
-                "sonnet",
-                "--dataset-path",
-                str(server.benchmark_dataset_path),
-                "--sonnet-input-len",
-                str(config.isl),
-                "--sonnet-output-len",
-                str(config.osl),
-                "--sonnet-prefix-len",
-                str(prefix_len),
-            ]
-        )
-    elif server.benchmark_dataset_name:
-        raise ValueError(
-            f"unsupported benchmark_dataset_name {server.benchmark_dataset_name!r}; "
-            "supported: 'sonnet' (or empty for the default random dataset)"
-        )
-    else:
-        cmd.extend(
-            [
-                "--dataset-name",
-                "random",
-                "--random-input-len",
-                str(config.isl),
-                "--random-output-len",
-                str(config.osl),
-            ]
-        )
-
-    # ``vllm bench serve`` loads the tokenizer itself -- the random/sonnet
-    # datasets are token-length-driven, so prompts are encoded client-side. A
-    # model whose HF repo ships custom tokenizer code (e.g.
-    # google/diffusiongemma-26B-A4B-it, whose spec metadata sets
-    # tokenizer_trust_remote_code) then cannot be loaded without this flag, and
-    # the failure is an AutoTokenizer raise before the first request, i.e. the
-    # whole sweep. The flag was previously tied to the remote-console branch, so
-    # a local server benchmarking such a model never received it.
-    is_remote_base_url = uses_remote_base_url(server.url_with_port, server.is_remote)
-    if server.tokenizer_trust_remote_code or is_remote_base_url:
-        cmd.append("--trust-remote-code")
-
-    if is_remote_base_url:
+    if uses_remote_base_url(server.url_with_port, server.is_remote):
         cmd.extend(["--base-url", server.url_with_port])
         cmd.extend(["--ready-check-timeout-sec", "0"])
+        cmd.extend(["--trust-remote-code"])
         if auth_token:
             headers.append(f"Authorization=Bearer {auth_token}")
     else:

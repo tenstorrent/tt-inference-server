@@ -296,173 +296,46 @@ templates:
       # by enable-auto-tool-choice in vllm_args above.
       tool_call_parser_name: gemma4
 
-# DiffusionGemma 26B-A4B-it: discrete text-diffusion LLM (encoder-decoder,
-# block-autoregressive multi-canvas), fine-tuned from google/gemma-4-26B-A4B so
-# the text backbone is identical to Gemma-4 26B-A4B MoE. The tt-metal implementation
-# is tracked by tt-metal PR #52120 under models/experimental/diffusion_gemma; arch
-# DiffusionGemmaForBlockDiffusion, model_type=diffusion_gemma.
-# Readiness tracking: tt-inference-server#4669 / tt-metal#47452.
-# Precondition for serving: vLLM plugin registration for model_type=diffusion_gemma
-# (tt-metal#47488). The values below mirror the validated QB2 live-serving launch
-# command in models/experimental/diffusion_gemma/doc/vllm_integration/README.md.
-# On the TT path spec-decode and chunked prefill are unsupported and APC is
-# auto-disabled (model_capabilities: prefix_caching=False, sample_on_device=True;
-# tt-metal#47466). Text-only Functional milestone -- vision (SigLIP, #47467) is
-# Functional+ and not modeled here yet.
+# DiffusionGemma model implementation: tenstorrent/tt-metal#52120.
+# Block-granular vLLM support: tenstorrent/tt-metal#47488.
 - weights:
     - google/diffusiongemma-26B-A4B-it
   impl: diffusion_gemma
-  # Dev specs omit tt_metal_commit/vllm_commit (base ModelSpecTemplate rejects
-  # them; only prod specs carry commits). The image is supplied at runtime via
-  # --override-docker-image.
   inference_engine: VLLM
   device_model_specs:
-    - device: P300X2  # QB2 (2x P300 dual-Blackhole cards, 4-chip TP mesh) -- near-term target HW
-      max_concurrency: 1  # Functional milestone: batch 1 (--max-num-seqs 1)
-      # Served context. The model's native contract is 256K (canvas_length 256 *
-      # max_blocks 1024 == HF max_position_embeddings 262144). The correctness-
-      # validated serving config (2026-07-17, GPQA answered correctly) ran at 8192;
-      # trace was subsequently enabled here with a 12 GiB trace_region_size (see
-      # override_tt_config) -- PCC-neutral, pending QB2 fit confirmation. 256K
-      # multi-block generation is not yet validated here.
-      # Raised 8192 -> 16384 to remove a generation-budget confound, not for capacity: at 8192
-      # the eval's max_gen_toks is (8192 - 2432) // 256 * 256 = 5632, i.e. 22 canvas blocks, and on
-      # the 07-28 run 20 of the 31 answer-free responses had emitted ALL 22 and were cut off before
-      # writing an answer. The A100 reference runs with ~127k tokens of budget (~496 blocks), so a
-      # TT number at 8192 was being compared against a reference with 22x the room to finish -- the
-      # gap that produced was read as a fidelity regression. 16384 gives 54 blocks.
-      max_context: 16384  # 16 * 1024; native contract is 262144
+    - device: P300X2
+      max_concurrency: 1
+      max_context: 16384
       default_impl: true
-      # Env below is the VALIDATED production config (2026-07-17: served a GPQA-Diamond
-      # question to a full multi-block answer "The answer is (C)" = correct).
       env_vars:
-        # QB2's 4 Blackhole chips launch as a P150x4 (1,4) mesh label; TP=4 is
-        # derived from mesh_device.shape[1]. (Cards are p300, not p150 -- mesh label.)
         MESH_DEVICE: "P150x4"
-        # denoise blocks are ~tens of seconds; 900000 default RPC timeout is too tight.
         VLLM_RPC_TIMEOUT: "1800000"
-        # First-use compile/warmup collectives can legitimately exceed the generic
-        # five-second Metal op timeout; that timeout killed startup on QB2.
         DISABLE_METAL_OP_TIMEOUT: "1"
-        # On-device permuted-vocab Gumbel: keeps the RNG on device (outside the
-        # trace), dropping the old per-step host RNG and replicated PCIe DMA.
-        # It is the only materialized Gumbel source accepted by up-front capture;
-        # chunked/argmax require DG_UPFRONT_CAPTURE=0 and the host mode was removed.
         DG_VLLM_GUMBEL_MODE: "device"
-        DG_VLLM_MAX_DENOISE_STEPS: "48"
-        # Capture the sole denoise Metal trace profile once during model warmup
-        # and reuse its persistent adapter across requests. Reveal masking and
-        # one-step early halt are intrinsic to this path.
         DG_UPFRONT_CAPTURE: "1"
-        # Pin the model-owned hybrid paged cache rather than inheriting its
-        # default. Sliding layers retain a bounded circular window while the
-        # five full-attention layers retain the served context.
         DG_MODEL_OWNED_HYBRID_KV: "1"
-        # Preserve logical prompt length while compiling prefill at power-of-two
-        # execution buckets. All buckets through the served 16K limit are warmed
-        # below, so arbitrary admitted prompt lengths need no exact whitelist entry.
         DG_UPFRONT_COARSE_PREFILL_BUCKETS: "1"
-        # Safe fallback for a genuinely cold bucket: release the resident trace,
-        # compile with no trace active, then recapture. The complete bucket list
-        # below means normal eval/benchmark/server traffic should never rebuild.
-        DG_UPFRONT_LAZY_PREFILL_RECAPTURE: "1"
-        # MUST track max_context. The committed prefix grows 256 tokens per block, so 54 blocks
-        # plus the longest 2432-token prompt reaches 16256; a reveal span of 8192 would leave later
-        # blocks unable to see the prefix they are supposed to condition on -- silently, since
-        # nothing errors. This is also the expensive knob: the persistent reveal mask and the
-        # per-step prefix read both scale with it, so raising it competes with the
-        # always-on concat-experts weight bank for the same DRAM.
         DG_DENOISE_REVEAL_PMAX: "16384"
-        # HF's sliding layers retain only the last sliding_window-1 = 1023 committed
-        # tokens, and 25 of DiffusionGemma's 30 layers are sliding; without this the
-        # denoise path attends keys HF has evicted, and the excess grows every block.
-        # Default flipped ON in tt-metal on 2026-07-27 (#51080) after a GPQA-Diamond
-        # decision-agreement gate: over the 64 questions that collapsed under the
-        # previous config it repaired 52 and regressed 1 of 67 already-clean ones,
-        # taking TT from 58/131 correct to 86/131 against the CUDA reference's 97/131,
-        # and blocks that halt from 72% to 99% (~1.5x throughput, since a block that
-        # cannot settle burns all 48 denoise steps anyway). Pinned rather than
-        # inherited because it binds above a 1023-token committed prefix -- i.e. on
-        # essentially every multi-block request at max_context 16384 -- so an older
-        # pinned tt_metal_commit would otherwise serve the pre-fix geometry silently.
-        # Set "0" to restore the maskless path.
-        # Evidence: models/experimental/diffusion_gemma/doc/decision_fidelity/
-        #   device_gumbel_restored.md sections 10, 17, 19.
         DG_DENOISE_SLIDING_WINDOW: "1"
-        # Concat-experts MoE and full-canvas normalization are unconditional
-        # model paths now; their former DG_MOE_CONCAT, DG_SPARSE_MOE(_TUNED),
-        # and DG_NORM_FULLCANVAS selectors were deleted and must not be pinned.
-        #
-        # Compile every coarse prefill bucket admitted by max_context before the
-        # resident denoise trace is captured. The model also warms the one-tile
-        # (32-token) startup shape automatically.
         DG_UPFRONT_PREFILL_WARMUP_LENS: "128,256,512,1024,2048,4096,8192,16384"
-        # The real trace-region knob is override_tt_config.trace_region_size
-        # below (worker.py -> open_mesh_device); the env DG_TRACE_REGION_SIZE is
-        # metrics/validation mirror and does NOT carve the region. Up-front
-        # validation nevertheless requires it to match the real positive region.
         DG_TRACE_REGION_SIZE: "5905580032"
       override_tt_config:
-        # On-device canvas sampling (Gumbel-max -> entropy-budget accept -> renoise
-        # over all 256 positions, no host readback).
         sample_on_device_mode: all
-        # Required two-phase startup: compile all allowed prefill shapes first,
-        # then capture the persistent denoise trace before serving requests.
         enable_model_warmup: true
-        # Capture/replay the full denoise loop (MoE forward + chunked-Gumbel
-        # terminal), once up front rather than once per request.
         trace_mode: all
-        # 5.5 GiB. Not a round number and not tuning for its own sake: at 6 GiB this exact
-        # configuration (max_context 16384 + concat-experts MoE) died on request 8 of 198 in tt-shield run
-        # 30387840355 with TT_FATAL from bank_manager.cpp:462 -- and it died by 29,696 BYTES of
-        # CONTIGUOUS space. Per bank: size 3.229 GiB, 98.04% allocated, free 64.76 MiB (2.02x the
-        # 32.00 MiB request) but largest free block 31.97 MiB. So it was FRAGMENTATION, not capacity,
-        # and 0.5 GiB of extra headroom is enough to give the allocator a contiguous block.
-        # Verified on QB2 at 5.5 GiB (/home/zni/dg_runs/fit16k_trace55, 14 requests, 12 questions):
-        # 0 OOM, 0 engine deaths, all 48 traces captured, min free DRAM 2.551 GiB vs 2.01 at 6 GiB.
-        # NOT proven safe for the whole 198 -- that run reached 31 blocks and the allocation that
-        # failed at 6 GiB is triggered by a new SDPA shape, which grows with the committed prefix.
-        # Do not carry this reservation unchanged to a different context/model-memory
-        # profile. PCC-neutral (allocator-only; never enters an op/seed/command stream).
-        trace_region_size: 5905580032  # 5.5 GiB
+        trace_region_size: 5905580032
       vllm_args:
-        # REQUIRED. Without it vLLM honors the model's generation_config.json
-        # max_new_tokens=256, capping EVERY request to one 256-token canvas block, so
-        # reasoning is truncated before the final answer (GPQA scored 0%). 'vllm' lets
-        # max_tokens drive multi-block decode -> answers complete. Validated 2026-07-17.
         generation-config: vllm
         max-num-batched-tokens: 16384
-        # DiffusionGemma uses the Gemma-family channel tokens. Enable the
-        # checkpoint's built-in reasoning mode for clients that do not supply
-        # chat_template_kwargs, and expose the thought channel separately from
-        # the final answer through the plugin's DiffusionGemma parser alias.
         default-chat-template-kwargs: '{"enable_thinking": true}'
         reasoning-parser: diffusion_gemma
   status: EXPERIMENTAL
-  # The model's built-in two-phase warmup compiles every admitted coarse prefill
-  # bucket and captures the denoise trace before serving, so generic background
-  # trace capture is redundant.
   has_builtin_warmup: true
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
   metadata:
     google/diffusiongemma-26B-A4B-it:
       reasoning_parser_name: diffusion_gemma
-      # Benchmark on REAL TEXT, not the default fabricated-token `random` dataset. This is not a
-      # preference: DiffusionGemma denoises a 256-token canvas until it settles, and random token
-      # ids never let it settle. Measured on QB2 2026-07-31/08-01, same server, same sweep points:
-      # random ids give 48/48 denoise steps with a 4.3% halt rate and 26.4 tok/s per block, while
-      # real text gives K 15-18, halt 32/32, and 60-82 tok/s. `random` also turns on ignore_eos
-      # inside vllm bench serve, so nothing stops early either. Benchmarking this model on random
-      # ids therefore publishes a ~3x understatement that no real traffic can produce.
-      # sonnet keeps the six (ISL, OSL) points meaningful because it assembles real English up to a
-      # requested length; the file is Shakespeare's sonnets, vendored from vllm's benchmarks/ (the
-      # wheel does not ship it, only the source tree does). Coarse prefill buckets safely absorb its
-      # whole-line undershoot without exact warmup bands below each requested ISL.
-      benchmark_dataset_name: sonnet
-      benchmark_dataset_path: reference_config/benchmarking/benchmark_targets/sonnet.txt
-      # transformers loads DiffusionGemmaForBlockDiffusion via remote code, and the
-      # tokenizer is loaded with trust_remote_code=True (checkpoint.py:load_tokenizer).
       tokenizer_trust_remote_code: true
 
 - weights:
