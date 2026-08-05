@@ -81,6 +81,21 @@
                     "description": "Qwen3-32B streaming reasoning/tool-call regressions"
                 }
             ]
+        },
+        {
+            "models": [
+                "diffusiongemma_26b"
+            ],
+            "devices": [
+                "p300x2"
+            ],
+            "test_cases": [
+                {
+                    "template": "VLLMDiffusionGemmaParamConformanceTest",
+                    "enabled": true,
+                    "description": "DiffusionGemma block-serving and request-admission gates"
+                }
+            ]
         }
     ]
 }

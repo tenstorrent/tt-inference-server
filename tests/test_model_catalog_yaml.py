@@ -254,3 +254,48 @@ def test_catalog_yaml_loads_and_every_template_expands(env, yaml_name):
     for t in templates:
         specs = t.expand_to_specs()
         assert specs, f"{env}/{yaml_name}: template {t.weights} expanded to zero specs"
+
+
+def test_diffusiongemma_dev_spec_matches_validated_256k_contract():
+    templates = load_templates_from_yaml(MODEL_SPECS_DIR / "dev" / "llm.yaml")
+    template = next(
+        t for t in templates if t.weights == ["google/diffusiongemma-26B-A4B-it"]
+    )
+    spec = template.expand_to_specs()[0]
+    device_spec = spec.device_model_spec
+
+    assert device_spec.max_context == 262144
+    assert device_spec.max_concurrency == 1
+    assert device_spec.vllm_args["block_size"] == "64"
+    assert device_spec.vllm_args["max_model_len"] == "262144"
+    assert device_spec.vllm_args["max_num_batched_tokens"] == "262144"
+    assert device_spec.vllm_args["max_num_seqs"] == "1"
+    assert (
+        device_spec.vllm_args["default-chat-template-kwargs"]
+        == '{"enable_thinking": true}'
+    )
+    assert device_spec.vllm_args["reasoning-parser"] == "diffusion_gemma"
+    assert spec.metadata["reasoning_parser_name"] == "diffusion_gemma"
+    assert spec.metadata["output_block_size"] == 256
+    assert (
+        spec.metadata["max_effective_input_tokens"]
+        == device_spec.max_context - spec.metadata["output_block_size"]
+    )
+    assert spec.metadata["benchmark_dataset_name"] == "sonnet"
+    assert spec.metadata["benchmark_dataset_path"].endswith("sonnet.txt")
+    assert spec.has_builtin_warmup is True
+
+    env = device_spec.env_vars
+    assert env["DG_UPFRONT_CAPTURE"] == "1"
+    assert env["DG_MODEL_OWNED_HYBRID_KV"] == "1"
+    assert env["DG_UPFRONT_COARSE_PREFILL_BUCKETS"] == "1"
+    assert env["DG_UPFRONT_LAZY_PREFILL_RECAPTURE"] == "1"
+    assert env["DG_PREFILL_CHUNK_SIZE"] == "16384"
+    assert env["DG_DENOISE_REVEAL_PMAX"] == "262144"
+    assert env["DG_UPFRONT_PREFILL_WARMUP_LENS"] == "32,64,96"
+    assert env["DISABLE_METAL_OP_TIMEOUT"] == "1"
+    assert int(env["DG_TRACE_REGION_SIZE"]) == 3758096384
+    assert (
+        int(env["DG_TRACE_REGION_SIZE"])
+        == device_spec.override_tt_config["trace_region_size"]
+    )

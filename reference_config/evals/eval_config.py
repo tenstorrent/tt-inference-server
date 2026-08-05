@@ -5247,6 +5247,48 @@ _eval_config_list = [
             ),
         ],
     ),
+    EvalConfig(
+        hf_model_repo="google/diffusiongemma-26B-A4B-it",
+        tasks=[
+            EvalTask(
+                # Official DiffusionGemma protocol: GPQA-Diamond 0-shot CoT with
+                # flexible extraction of the final "(X)" answer. The server-side
+                # chat template and diffusion_gemma reasoning parser expose the
+                # final answer through message.content.
+                task_name="gpqa_diamond_cot_zeroshot",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,flexible-extract"],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                # GPQA prompts fit in a much smaller evaluation window than the
+                # model's 256K serving capacity. Keeping the eval budget at 16K
+                # avoids allocating context that the task cannot use.
+                model_kwargs={"max_length": 16384},
+                gen_kwargs={
+                    # local-chat-completions requires non-streamed responses.
+                    "stream": "false",
+                    # Leave room for the longest 2432-token GPQA prompt and emit
+                    # only whole 256-token diffusion canvases:
+                    # (16384 - 2432) // 256 * 256 = 13824.
+                    "max_gen_toks": 13824,
+                    "until": [],
+                },
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                },
+            ),
+        ],
+    ),
 ]
 
 

@@ -10,6 +10,16 @@
         }
       }
     },
+    "diffusiongemma-26B-A4B-it": {
+      "inference_engine": "vLLM",
+      "ci": {
+        "release": {
+          "devices": [
+            "P300X2"
+          ]
+        }
+      }
+    },
     "Falcon3-7B-Instruct": {
       "inference_engine": "FORGE",
       "ci": {

@@ -49,6 +49,13 @@ class ServerConnection:
     # repo (e.g. moonshotai/Kimi-* ships a custom tokenizer). Driven per
     # model from the spec metadata; off by default for safety.
     tokenizer_trust_remote_code: bool = False
+    # Optional real-text prompt source for model-specific benchmark semantics.
+    # Empty keeps the existing random-token dataset for autoregressive models.
+    benchmark_dataset_name: str = ""
+    benchmark_dataset_path: str = ""
+    # Models that commit more than one token per engine step use block-level
+    # latency/throughput as their primary benchmark semantics.
+    output_block_size: int = 1
     # Extra Prometheus ``/metrics`` endpoints (cpp_server workers) scraped
     # by AIPerf via ``--server-metrics``, in addition to the load target in
     # ``base_url``. Read by both the prefix-cache and agentic-traces
