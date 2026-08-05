@@ -31,7 +31,6 @@ from __future__ import annotations
 import asyncio
 import base64
 import binascii
-import pickle
 import struct
 import sys
 from multiprocessing import Queue
@@ -125,27 +124,45 @@ async def _run_one_monitor_pass(scheduler: Scheduler) -> Mock:
 class TestClientRequestErrorContract:
     """``ClientRequestError`` is the marker that survives the process hop."""
 
-    def test_survives_the_multiprocessing_queue(self):
-        """The error crosses an ``mp.Queue``, so it MUST pickle.
+    @pytest.mark.parametrize(
+        "error,expected_status",
+        [
+            (ClientRequestError("bad image", status_code=422), 422),
+            (ClientRequestError("bad image"), 400),  # default status
+        ],
+    )
+    def test_survives_the_multiprocessing_queue(self, error, expected_status):
+        """The error crosses an ``mp.Queue``, so it MUST serialise.
 
         Starlette's ``HTTPException`` does not call ``super().__init__``, so its
-        ``args`` are empty and a naive subclass raises ``TypeError`` on unpickle
-        — which would kill ``error_listener`` instead of reporting the error.
+        ``args`` are empty and a naive subclass fails to reconstruct — which would
+        kill ``error_listener`` instead of reporting the error. Asserted through a
+        real queue rather than by calling a serialiser directly, so the test
+        exercises the production transport.
         """
         queue: Queue = Queue()
-        queue.put(ClientRequestError("bad image", status_code=422))
+        queue.put(error)
 
         revived = queue.get(timeout=5.0)
 
         assert isinstance(revived, ClientRequestError)
-        assert revived.status_code == 422
+        assert revived.status_code == expected_status
         assert revived.detail == "bad image"
 
-    def test_pickle_round_trip_preserves_status_and_detail(self):
-        revived = pickle.loads(pickle.dumps(ClientRequestError("nope")))
+    def test_reduce_carries_both_constructor_arguments(self):
+        """Pin the ``__reduce__`` hook the queue above depends on.
 
-        assert revived.status_code == 400
-        assert revived.detail == "nope"
+        The queue test proves the round trip works; this one says *why*, so a
+        regression points straight at the hook instead of at the transport.
+        """
+        factory, args = ClientRequestError("nope", status_code=413).__reduce__()
+
+        assert factory is ClientRequestError
+        assert args == ("nope", 413)
+
+        rebuilt = factory(*args)
+        assert rebuilt.status_code == 413
+        assert rebuilt.detail == "nope"
 
     def test_str_matches_the_peer_wire_format(self):
         """Rank 0 writes ``str(exc)`` into SHM, and the peer's ``400: `` prefix
