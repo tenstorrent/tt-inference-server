@@ -125,11 +125,13 @@ templates:
   device_model_specs:
     - device: P150
       max_concurrency: 32
-      max_context: 32768  # Falcon3 native max_position_embeddings
+      max_context: 4096  # 4K (not Falcon3's native 32K): the 32K compile takes ~17-20 min,
+      # longer than DeviceLivenessTest's 81x10s budget, so CI never reaches the tests.
+      # No spec test needs long context -- largest generation is 1024 tokens.
       default_impl: true
       eval_max_retries: 1
       env_vars:
-        MAX_MODEL_LENGTH: "32768"
+        MAX_MODEL_LENGTH: "4096"
         MAX_NUM_SEQS: "32"
         GPU_MEMORY_UTILIZATION: "0.35"
         TT_KV_POOL_GB: "32"
