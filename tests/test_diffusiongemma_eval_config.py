@@ -2,7 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-from evals.eval_config import _eval_config_map
+from reference_config.evals.eval_config import _eval_config_map
 
 
 def test_diffusiongemma_gpqa_has_full_thinking_output_budget():
