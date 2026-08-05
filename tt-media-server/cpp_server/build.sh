@@ -274,6 +274,11 @@ elif [ -n "${TOOLCHAIN_PATH}" ]; then
     CMAKE_ARGS+=(-DCMAKE_TOOLCHAIN_FILE="${TOOLCHAIN_PATH}" -G "${CMAKE_GENERATOR}")
 elif [ -n "${TT_METAL_HOME}" ] && [ -d "${TT_METAL_HOME}/tt_metal/api" ]; then
     CMAKE_ARGS+=(-DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang)
+elif command -v g++-12 >/dev/null 2>&1; then
+    # No toolchain / TT_METAL_HOME: prefer g++-12 over the default g++-11.
+    echo "Using C++ compiler: g++-12 (no TT_METAL_HOME toolchain)"
+    CMAKE_ARGS+=(-DCMAKE_CXX_COMPILER=g++-12 -DCMAKE_C_COMPILER=gcc-12)
+    command -v ninja >/dev/null 2>&1 && CMAKE_ARGS+=(-G Ninja)
 fi
 
 echo ""
