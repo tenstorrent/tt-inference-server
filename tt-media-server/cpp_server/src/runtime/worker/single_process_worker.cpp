@@ -116,6 +116,10 @@ void SingleProcessWorker::start() {
       runner_ = tt::utils::ipc_runner_factory::createTtsIpcRunner(
           cfg.runner_config, taskQueue->get(), audioQueue->get(),
           cfg.cancel_queue.get());
+    } else if (tt::config::isImageService()) {
+      runner_ = tt::utils::ipc_runner_factory::createIpcRunner(
+          tt::config::ModelService::IMAGE, cfg.runner_config, nullptr, nullptr,
+          nullptr);
     } else {
       auto* taskQueue =
           std::get_if<std::shared_ptr<tt::ipc::ITaskQueue>>(&cfg.task_queue);
