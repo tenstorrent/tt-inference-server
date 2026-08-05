@@ -7,7 +7,8 @@
                 "qwen3_32b",
                 "llama_3_1_8b",
                 "llama_70b_family",
-                "gpt_oss_20b"
+                "gpt_oss_20b",
+                "falcon3_7b"
             ],
             "devices": [
                 "n150",

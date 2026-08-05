@@ -364,6 +364,27 @@
                 "p150"
             ]
         },
+        "falcon3_7b": {
+            "id_name": "falcon3-7b",
+            "weights": [
+                "Falcon3-7B-Instruct"
+            ],
+            "category": "LLM",
+            "compatible_devices": [
+                "n150",
+                "n300",
+                "t3k",
+                "gpu",
+                "p100",
+                "p150",
+                "p150x4",
+                "p150x8",
+                "p300",
+                "p300x2",
+                "galaxy",
+                "galaxy_t3k"
+            ]
+        },
         "gpt_oss_20b": {
             "id_name": "gpt-oss-20b",
             "weights": [
