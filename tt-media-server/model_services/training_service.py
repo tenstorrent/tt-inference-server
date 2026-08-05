@@ -163,7 +163,7 @@ class TrainingService(BaseJobService):
                         request._output_model_path,
                     )
             except Exception:
-                shutil.rmtree(request._output_model_path, ignore_errors=True)
+                self._safe_rmtree_under_root(request._output_model_path)
                 raise
             # Written last, in the parent, so its presence marks the checkpoint
             # fully complete and records provenance for `list_merged_checkpoints`.
@@ -176,6 +176,18 @@ class TrainingService(BaseJobService):
     def _merged_models_root(self) -> str:
         cache_root = os.getenv("CACHE_ROOT", ".")
         return os.path.join(cache_root, TRAINING_STORE_MERGED_MODELS_DIR)
+
+    def _safe_rmtree_under_root(self, path: str) -> None:
+        """Delete `path` only if it resolves to a location strictly inside the
+        merged-models root. """
+        root = os.path.realpath(self._merged_models_root())
+        target = os.path.realpath(path)
+        if target != root and os.path.commonpath([root, target]) == root:
+            shutil.rmtree(target, ignore_errors=True)
+        else:
+            self.logger.error(
+                f"Refusing to delete path outside merged-models root: {path!r}"
+            )
 
     def _write_merge_info(self, request: AdapterMergeRequest, output_dir: str) -> None:
         info = {
