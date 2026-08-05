@@ -615,6 +615,34 @@ class TestVideoI2VGenerateRequestValidation:
         assert request.num_inference_steps == 30
         assert request.seed == 42
 
+    def test_valid_image_with_data_uri_prefix_accepted(self):
+        """base64 image with 'data:image/png;base64,' prefix should pass."""
+        prefixed = "data:image/png;base64," + _tiny_png_base64()
+        entry = ImagePromptEntry(image=prefixed, frame_pos=0)
+        assert entry.image == prefixed
+
+    def test_invalid_base64_rejected(self):
+        """Garbage string that isn't valid base64 should fail validation."""
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError, match="not valid base64"):
+            ImagePromptEntry(image="not-a-real-image!!!", frame_pos=0)
+
+    def test_valid_base64_non_image_rejected(self):
+        """Valid base64 encoding of non-image bytes should fail validation."""
+        import base64
+
+        from pydantic import ValidationError
+
+        fake = base64.b64encode(b"hello world this is not an image").decode()
+        with pytest.raises(ValidationError, match="does not decode to a valid image"):
+            ImagePromptEntry(image=fake, frame_pos=0)
+
+    def test_raw_base64_png_accepted(self):
+        """Raw base64 PNG without data URI prefix should pass."""
+        entry = ImagePromptEntry(image=_tiny_png_base64(), frame_pos=0)
+        assert entry.frame_pos == 0
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
