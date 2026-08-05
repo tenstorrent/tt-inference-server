@@ -5259,13 +5259,18 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref=None,
+                    gpu_reference_score=70.0,
+                    gpu_reference_score_ref="Internal DiffusionGemma GPU GPQA baseline",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["exact_match,flexible-extract"],
                         "unit": "percent",
                     },
+                    # The shared gate accepts score/reference >= 1 - tolerance.
+                    # A 3-point margin on the 70% GPU baseline sets the boundary
+                    # at 67%; attainable GPQA scores are discrete, so the first
+                    # passing score is strictly greater than 67%.
+                    tolerance=3 / 70,
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 use_chat_api=True,

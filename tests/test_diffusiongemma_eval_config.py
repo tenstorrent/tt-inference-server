@@ -6,7 +6,13 @@ import os
 import subprocess
 import sys
 
-from reference_config.evals.eval_config import _eval_config_map
+import pytest
+
+from reference_config.evals.eval_config import (
+    _eval_config_map,
+    accept_eval_score,
+    resolve_eval_reference,
+)
 
 
 def _gpqa_task():
@@ -26,6 +32,28 @@ def test_diffusiongemma_release_eval_is_gpqa_only():
     assert task.score.score_func_kwargs["result_keys"] == [
         "exact_match,flexible-extract"
     ]
+
+
+def test_diffusiongemma_gpqa_gpu_reference_requires_more_than_67_percent():
+    task = _gpqa_task()
+    score = task.score
+
+    assert score.gpu_reference_score == 70.0
+    assert score.tolerance == pytest.approx(3 / 70)
+
+    reference = resolve_eval_reference(score, None)
+    assert accept_eval_score(reference, 132 / 198 * 100, n_total=198) is False
+    assert accept_eval_score(reference, 133 / 198 * 100, n_total=198) is True
+
+
+def test_diffusiongemma_nightly_gpqa_uses_the_same_quality_gate():
+    task = _gpqa_task()
+    reference = resolve_eval_reference(task.score, None)
+
+    # A 5% GPQA subset has approximately ten questions, so its attainable
+    # scores jump by ten points: 60% fails and 70% passes the >67% boundary.
+    assert accept_eval_score(reference, 60.0, n_total=10) is False
+    assert accept_eval_score(reference, 70.0, n_total=10) is True
 
 
 def test_diffusiongemma_gpqa_reserves_whole_canvas_output_budget():
