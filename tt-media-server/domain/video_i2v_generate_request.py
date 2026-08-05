@@ -18,6 +18,7 @@ from typing import List
 from config.constants import WAN22_NUM_FRAMES
 from domain.video_generate_request import VideoGenerateRequest
 from pydantic import BaseModel, Field, field_validator
+from utils.image_manager import ImageManager
 
 # The cap exists to bound HTTP body size, not to match
 # any pipeline constraint.
@@ -34,7 +35,6 @@ class ImagePromptEntry(BaseModel):
     @classmethod
     def validate_decodable_image(cls, v: str) -> str:
         """Ensure the base64 string decodes to a valid PIL image via ImageManager."""
-        from utils.image_manager import ImageManager
 
         try:
             img = ImageManager().base64_to_pil_image(v)
