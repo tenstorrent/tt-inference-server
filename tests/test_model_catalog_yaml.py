@@ -259,9 +259,7 @@ def test_catalog_yaml_loads_and_every_template_expands(env, yaml_name):
 def test_diffusiongemma_dev_spec_enables_upfront_early_halt_and_thinking():
     templates = load_templates_from_yaml(MODEL_SPECS_DIR / "dev" / "llm.yaml")
     template = next(
-        t
-        for t in templates
-        if t.weights == ["google/diffusiongemma-26B-A4B-it"]
+        t for t in templates if t.weights == ["google/diffusiongemma-26B-A4B-it"]
     )
     spec = template.expand_to_specs()[0]
 
@@ -269,9 +267,7 @@ def test_diffusiongemma_dev_spec_enables_upfront_early_halt_and_thinking():
         spec.device_model_spec.vllm_args["default-chat-template-kwargs"]
         == '{"enable_thinking": true}'
     )
-    assert (
-        spec.device_model_spec.vllm_args["reasoning-parser"] == "diffusion_gemma"
-    )
+    assert spec.device_model_spec.vllm_args["reasoning-parser"] == "diffusion_gemma"
     assert spec.metadata["reasoning_parser_name"] == "diffusion_gemma"
     assert spec.device_model_spec.max_context == 16384
     assert spec.device_model_spec.override_tt_config["enable_model_warmup"] is True
@@ -294,7 +290,10 @@ def test_diffusiongemma_dev_spec_enables_upfront_early_halt_and_thinking():
     assert env["DG_TRACE_REGION_SIZE"] == "5905580032"
     # The env var is only a mirror -- it does not carve the region -- but up-front validation
     # refuses to start when it disagrees with the real knob, so they must move together.
-    assert int(env["DG_TRACE_REGION_SIZE"]) == spec.device_model_spec.override_tt_config["trace_region_size"]
+    assert (
+        int(env["DG_TRACE_REGION_SIZE"])
+        == spec.device_model_spec.override_tt_config["trace_region_size"]
+    )
     for removed in (
         "DG_SPARSE_MOE",
         "DG_SPARSE_MOE_TUNED",
@@ -332,7 +331,9 @@ def test_diffusiongemma_dev_spec_enables_upfront_early_halt_and_thinking():
     benchmark_isls = {
         isl for isl, osl in BENCHMARK_ISL_OSL_PAIRS if isl + osl <= max_context
     }
-    missing = sorted(isl for isl in benchmark_isls if execution_bucket(isl) not in warmup_lens)
+    missing = sorted(
+        isl for isl in benchmark_isls if execution_bucket(isl) not in warmup_lens
+    )
     assert not missing, (
         f"benchmark ISLs {missing} do not map to a warmed prefill bucket; "
         "those sweep rows would return empty responses with a plausible tput"

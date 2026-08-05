@@ -7,7 +7,9 @@ from reference_config.evals.eval_config import _eval_config_map
 
 def test_diffusiongemma_gpqa_has_full_thinking_output_budget():
     config = _eval_config_map["google/diffusiongemma-26B-A4B-it"]
-    task = next(task for task in config.tasks if task.task_name == "gpqa_diamond_cot_zeroshot")
+    task = next(
+        task for task in config.tasks if task.task_name == "gpqa_diamond_cot_zeroshot"
+    )
 
     assert task.use_chat_api is True
     assert task.model_kwargs["max_length"] == 16384
@@ -15,10 +17,15 @@ def test_diffusiongemma_gpqa_has_full_thinking_output_budget():
     # (16384 - 2432) // 256 * 256 == 13824, i.e. 54 blocks. A smaller budget truncates CoT before
     # the answer and moves the score for reasons unrelated to whatever is under test.
     assert task.gen_kwargs["max_gen_toks"] == 13824
-    assert task.gen_kwargs["max_gen_toks"] == (task.model_kwargs["max_length"] - 2432) // 256 * 256
+    assert (
+        task.gen_kwargs["max_gen_toks"]
+        == (task.model_kwargs["max_length"] - 2432) // 256 * 256
+    )
     assert task.gen_kwargs["stream"] == "false"
     # CoT task exposes strict-match / flexible-extract filter keys (not "none").
-    assert task.score.score_func_kwargs["result_keys"] == ["exact_match,flexible-extract"]
+    assert task.score.score_func_kwargs["result_keys"] == [
+        "exact_match,flexible-extract"
+    ]
 
 
 def test_diffusiongemma_gpqa_omits_inert_sampling_params():
@@ -31,7 +38,9 @@ def test_diffusiongemma_gpqa_omits_inert_sampling_params():
     plumbing is ever wired up. See the comment in evals/eval_config.py.
     """
     config = _eval_config_map["google/diffusiongemma-26B-A4B-it"]
-    task = next(task for task in config.tasks if task.task_name == "gpqa_diamond_cot_zeroshot")
+    task = next(
+        task for task in config.tasks if task.task_name == "gpqa_diamond_cot_zeroshot"
+    )
 
     for inert_key in ("do_sample", "temperature", "top_k", "top_p"):
         assert inert_key not in task.gen_kwargs, (
