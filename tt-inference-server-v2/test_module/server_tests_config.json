@@ -42,7 +42,8 @@
             "Qwen3-32B",
             "Llama-3.1-8B-Instruct",
             "Llama-3.3-70B-Instruct",
-            "gpt-oss-20b"
+            "gpt-oss-20b",
+            "Falcon3-7B-Instruct"
         ]
     },
     "available_markers": {
