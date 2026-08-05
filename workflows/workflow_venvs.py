@@ -180,19 +180,28 @@ def setup_evals_agentic(
         return False
 
     harbor_dir = venv_config.venv_path / "harbor"
-    harbor_tag = "v0.6.5"
+    # Tenstorrent fork carrying the provider-neutral `kubernetes` Harbor
+    # environment (generic RKE2/EKS/... support that abstracts what gke.py did),
+    # used to schedule agentic-eval trial pods on our clusters. Tracks a branch
+    # rather than a release tag until it lands upstream; revert to
+    # harbor-framework/harbor + a tag once it does.
+    harbor_repo = "https://github.com/dcvijeticTT/harbor.git"
+    harbor_ref = "feat/generic-kubernetes-environment"
     if not harbor_dir.exists():
         clone_return_code = run_command(
-            "git clone --depth 1 --branch "
-            f"{harbor_tag} https://github.com/harbor-framework/harbor.git {harbor_dir}",
+            f"git clone --depth 1 --branch {harbor_ref} {harbor_repo} {harbor_dir}",
             logger=logger,
         )
         if clone_return_code != 0:
             return False
 
+    # Install with the `kubernetes` extra so the Python k8s client comes in: the
+    # kubernetes environment needs it, and it is declared as an optional extra,
+    # so a plain editable install omits it. Quoted so the shell does not
+    # glob-expand `[kubernetes]`.
     return_code = run_command(
         f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} "
-        f"-e {harbor_dir}",
+        f"-e '{harbor_dir}[kubernetes]'",
         logger=logger,
     )
     if return_code != 0:
