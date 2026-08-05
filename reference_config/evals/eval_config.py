@@ -5247,6 +5247,51 @@ _eval_config_list = [
             ),
         ],
     ),
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen3.5-9B",
+        tasks=[
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=82.5,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.5-9B#benchmark-results",
+                    # No gpu_reference_score yet: this model has no measured TT or
+                    # GPU baseline. The release accuracy check falls back to the
+                    # published score until a reference run lands.
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 65536,
+                    "timeout": "3600",
+                },
+                # Thinking-mode sampling per the model card's Best Practices; the
+                # published score above is from the thinking-mode results table.
+                # presence_penalty=1.5 is also recommended there but is omitted:
+                # no other task in this file passes it through gen_kwargs.
+                gen_kwargs={
+                    "stream": "true",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
 ]
 
 
