@@ -225,6 +225,29 @@ MODEL_SERVICE_RUNNER_MAP = {
 }
 
 
+# Wan2.2 I2V-only deployments: used by the video API to reject text-only
+# ``POST /generations`` before the work reaches the device worker.
+I2V_MODEL_RUNNERS = frozenset(
+    {
+        ModelRunners.TT_WAN_2_2_I2V,
+        ModelRunners.TT_WAN_2_2_I2V_PRODIA,
+        ModelRunners.TT_WAN_2_2_I2V_ANISORA,
+        ModelRunners.TT_WAN_2_2_I2V_DISTILL,
+        ModelRunners.TT_WAN_2_2_I2V_LORA,
+    }
+)
+# SP_RUNNER proxies to a multihost peer and serves either T2V or I2V weights,
+# so the runner alone cannot identify it — fall back to the model name.
+I2V_MODEL_NAMES = frozenset(
+    {
+        ModelNames.WAN_2_2_I2V,
+        ModelNames.WAN_2_2_I2V_PRODIA,
+        ModelNames.WAN_2_2_I2V_ANISORA,
+        ModelNames.WAN_2_2_I2V_DISTILL,
+        ModelNames.WAN_2_2_I2V_LORA,
+    }
+)
+
 INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_SDXL_EDIT: {ModelNames.STABLE_DIFFUSION_XL_INPAINTING},
     ModelRunners.TT_SDXL_IMAGE_TO_IMAGE: {ModelNames.STABLE_DIFFUSION_XL_IMG2IMG},

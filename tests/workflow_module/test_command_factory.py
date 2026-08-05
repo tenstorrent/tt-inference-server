@@ -21,6 +21,7 @@ from workflows.workflow_types import InferenceEngine
 
 from workflow_module import command_factory as cf
 from workflow_module.execution import (
+    AgenticTracesOptions,
     LLMBenchOptions,
     LLMEvalOptions,
     PrefixCacheOptions,
@@ -225,6 +226,74 @@ class TestSpecDecodeOptions:
         assert isinstance(opts, SpecDecodeOptions)
         assert opts.venv_python is not None
         assert "spec" in opts.venv_python.lower()
+
+
+class TestAgenticTracesOptions:
+    def _args(self, **overrides):
+        args = Namespace(
+            workflow="agentic_traces",
+            agentic_traces=False,
+            agentic_traces_mode="ci",
+            agentic_traces_sources=None,
+            agentic_traces_duration=None,
+            agentic_traces_git_ref=None,
+            agentic_traces_metrics_url=None,
+            jwt_secret=None,
+        )
+        for key, value in overrides.items():
+            setattr(args, key, value)
+        return args
+
+    def test_none_for_a_release_that_did_not_opt_in(self):
+        """``None`` is also what keeps ReleaseWorkflow from adding the child."""
+        assert cf._build_agentic_traces_options(self._args(workflow="release")) is None
+
+    def test_none_for_an_unrelated_workflow(self):
+        assert cf._build_agentic_traces_options(self._args(workflow="evals")) is None
+
+    def test_standalone_run_leaves_the_interpreter_unpinned(self, monkeypatch):
+        monkeypatch.delenv("JWT_SECRET", raising=False)
+        opts = cf._build_agentic_traces_options(self._args())
+        assert isinstance(opts, AgenticTracesOptions)
+        assert opts.mode == "ci"
+        # The launcher already re-exec'd into the AGENTIC_TRACES venv.
+        assert opts.venv_python is None
+
+    def test_release_child_pins_the_agentic_traces_venv(self, monkeypatch):
+        """A release child runs in WORKFLOW_RUN_SCRIPT, where ``aiperf`` is not
+        the InferenceX fork."""
+        monkeypatch.delenv("JWT_SECRET", raising=False)
+        opts = cf._build_agentic_traces_options(
+            self._args(workflow="release", agentic_traces=True)
+        )
+        assert isinstance(opts, AgenticTracesOptions)
+        assert opts.venv_python is not None
+        assert "agentic_traces" in opts.venv_python
+
+    def test_release_child_carries_the_overrides(self, monkeypatch):
+        monkeypatch.delenv("JWT_SECRET", raising=False)
+        opts = cf._build_agentic_traces_options(
+            self._args(
+                workflow="release",
+                agentic_traces=True,
+                agentic_traces_sources="inferencex_agentx",
+                agentic_traces_duration=1800,
+                agentic_traces_git_ref="cafebabe",
+            )
+        )
+        assert opts.trace_sources == "inferencex_agentx"
+        assert opts.duration_override == 1800
+        assert opts.git_ref_override == "cafebabe"
+
+    def test_metrics_urls_become_a_tuple(self, monkeypatch):
+        """Repeatable flag -> tuple, forwarded verbatim; the driver normalizes."""
+        monkeypatch.delenv("JWT_SECRET", raising=False)
+        opts = cf._build_agentic_traces_options(
+            self._args(
+                agentic_traces_metrics_url=["worker-a:9000", "worker-b:9000/metrics"]
+            )
+        )
+        assert opts.metrics_urls == ("worker-a:9000", "worker-b:9000/metrics")
 
 
 class TestLLMEvalOptions:

@@ -117,6 +117,32 @@ class SpecDecodeOptions:
 
 
 @dataclass(frozen=True)
+class AgenticTracesOptions:
+    """Agentic trace-replay knobs forwarded to ``AgenticTracesWorkflow``.
+
+    Every field is a CLI-level selection or override; the benchmark parameters
+    themselves live in the per-ModelSpec config
+    (:mod:`reference_config.agentic_traces.agentic_traces_config`). Threaded
+    through ``OrchestratorMetadata`` so ``run.py`` stays decoupled from
+    ``llm_module``.
+    """
+
+    # AgenticTracesMode name: "full" (reference run) or "ci" (shortest run the
+    # scenario permits).
+    mode: str = "full"
+    # Comma-separated TraceSource names narrowing which configured runs execute.
+    trace_sources: Optional[str] = None
+    # Ad-hoc overrides, for debugging a config without editing it.
+    duration_override: Optional[int] = None
+    git_ref_override: Optional[str] = None
+    # Extra Prometheus /metrics endpoints holding the prefix-cache counters,
+    # when the load target does not expose them. Tuple to stay hashable.
+    metrics_urls: Tuple[str, ...] = ()
+    auth_token: str = ""
+    venv_python: Optional[str] = None
+
+
+@dataclass(frozen=True)
 class ServingBenchOptions:
     """Serving-bench suite selection forwarded to ``ServingBenchWorkflow``.
 
@@ -173,6 +199,7 @@ class OrchestratorMetadata:
     serving_bench: Optional[ServingBenchOptions] = None
     llm_bench: Optional[LLMBenchOptions] = None
     llm_eval: Optional[LLMEvalOptions] = None
+    agentic_traces: Optional[AgenticTracesOptions] = None
 
 
 class WorkflowExecution(ABC):
@@ -405,6 +432,7 @@ class WorkflowExecution(ABC):
 
 
 __all__ = [
+    "AgenticTracesOptions",
     "ServingBenchOptions",
     "LLMBenchOptions",
     "LLMEvalOptions",

@@ -16,12 +16,13 @@ from .base import round_metric as _round
 
 
 class VLLMBenchParser(LLMResultParser):
-    kind = "vllm"
+    tool = "vllm"
+    tool_label = "vLLM"
 
     def parse(self, raw: Mapping[str, Any], *, device: str = "") -> Block:
         completed = _num(raw.get("completed"))
         record: Dict[str, Any] = {
-            "kind": self.kind,
+            "tool": self.tool,
             "model": str(raw.get("model_id", "") or ""),
             "device": device,
             "timestamp": _format_date(raw.get("date", "")),
