@@ -625,7 +625,9 @@ class TestVideoI2VGenerateRequestValidation:
         """Garbage string that isn't valid base64 should fail validation."""
         from pydantic import ValidationError
 
-        with pytest.raises(ValidationError, match="not valid base64"):
+        with pytest.raises(
+            ValidationError, match="could not be decoded to a valid PIL image"
+        ):
             ImagePromptEntry(image="not-a-real-image!!!", frame_pos=0)
 
     def test_valid_base64_non_image_rejected(self):
@@ -635,7 +637,9 @@ class TestVideoI2VGenerateRequestValidation:
         from pydantic import ValidationError
 
         fake = base64.b64encode(b"hello world this is not an image").decode()
-        with pytest.raises(ValidationError, match="does not decode to a valid image"):
+        with pytest.raises(
+            ValidationError, match="could not be decoded to a valid PIL image"
+        ):
             ImagePromptEntry(image=fake, frame_pos=0)
 
     def test_raw_base64_png_accepted(self):

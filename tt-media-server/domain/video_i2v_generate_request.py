@@ -13,13 +13,10 @@ The pipeline-level ``num_frames`` (used by both the runner and the validators
 below) is the single source of truth in ``config.constants.WAN22_NUM_FRAMES``.
 """
 
-import base64
-from io import BytesIO
 from typing import List
 
 from config.constants import WAN22_NUM_FRAMES
 from domain.video_generate_request import VideoGenerateRequest
-from PIL import Image
 from pydantic import BaseModel, Field, field_validator
 
 # The cap exists to bound HTTP body size, not to match
@@ -36,24 +33,20 @@ class ImagePromptEntry(BaseModel):
     @field_validator("image")
     @classmethod
     def validate_decodable_image(cls, v: str) -> str:
-        """Ensure the base64 string decodes to a valid image."""
-        raw = v
-        if raw.startswith("data:"):
-            raw = raw.split(",", 1)[1]
-        # Restore padding stripped during transport.
-        raw += "=" * (-len(raw) % 4)
+        """Ensure the base64 string decodes to a valid PIL image via ImageManager."""
+        from utils.image_manager import ImageManager
+
         try:
-            image_bytes = base64.b64decode(raw, validate=True)
-        except Exception as exc:
-            raise ValueError("image is not valid base64-encoded data") from exc
-        try:
-            img = Image.open(BytesIO(image_bytes))
-            img.load()
+            img = ImageManager().base64_to_pil_image(v)
         except Exception as exc:
             raise ValueError(
-                "image does not decode to a valid image "
+                "image could not be decoded to a valid PIL image "
                 "(supported formats: PNG, JPEG, WebP, etc.)"
             ) from exc
+        if img.size[0] < 1 or img.size[1] < 1:
+            raise ValueError(
+                "image has invalid dimensions (width and height must be >= 1)"
+            )
         return v
 
 
