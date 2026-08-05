@@ -4,7 +4,9 @@
 
 from __future__ import annotations
 
-from benchmarking.benchmark_config import expand_concurrency_sweep_params
+from reference_config.benchmarking.benchmark_config import (
+    expand_concurrency_sweep_params,
+)
 from workflows.utils_report import BenchmarkTaskParams
 
 
@@ -29,6 +31,30 @@ def test_expand_concurrency_sweeps_text_includes_powers_of_two_and_allowed_max()
     )
     got = sorted(p.max_concurrency for p in expanded if p.isl == 128 and p.osl == 128)
     assert got == [1, 2, 4, 8, 16]
+
+
+def test_expand_concurrency_sweep_applies_prompt_floor_only_to_multi_user_runs():
+    params = [
+        BenchmarkTaskParams(
+            isl=128,
+            osl=128,
+            max_concurrency=1,
+            num_prompts=8,
+            task_type="text",
+        )
+    ]
+    expanded = expand_concurrency_sweep_params(
+        params,
+        max_context=4096,
+        max_tokens_all_users=4096,
+        model_max_concurrency=16,
+        model_name="Qwen3-8B",
+        candidate_concurrencies=[1, 16],
+        min_num_prompts=256,
+    )
+    prompts_by_concurrency = {p.max_concurrency: p.num_prompts for p in expanded}
+
+    assert prompts_by_concurrency == {1: 8, 16: 256}
 
 
 def test_expand_concurrency_sweeps_text_includes_non_power_of_two_allowed_max():

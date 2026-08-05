@@ -43,6 +43,7 @@ class BlazePrefillRunner : public IRunner {
  private:
   void step();
 
+  void shutdownScheduler();
   void drainAndHandleSchedulerResponses();
   void drainAndHandleSchedulerOutputs();
   void drainAndHandleStopRequests();

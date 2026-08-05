@@ -20,7 +20,9 @@ COCO_CAPTIONS_DOWNLOAD_PATH = "https://github.com/mlcommons/inference/raw/4b1d11
 # Get the project root directory (assume this file is in utils/sdxl_accuracy_utils/)
 CAPTIONS_PATH = "utils/sdxl_accuracy_utils/coco_data/captions.tsv"
 COCO_STATISTICS_PATH = "utils/sdxl_accuracy_utils/coco_data/val2014.npz"
-ACCURACY_REFERENCE_PATH = "evals/eval_targets/model_accuracy_reference.json"
+ACCURACY_REFERENCE_PATH = (
+    "reference_config/evals/eval_targets/model_accuracy_reference.json"
+)
 
 logger = logging.getLogger(__name__)
 

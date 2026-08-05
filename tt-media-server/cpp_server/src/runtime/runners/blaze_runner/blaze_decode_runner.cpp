@@ -11,7 +11,6 @@
 #include <string>
 #include <utility>
 
-#include "config/settings.hpp"
 #include "domain/manage_memory.hpp"
 #include "ipc/helpers/token_push.hpp"
 #include "runtime/runners/blaze_runner/blaze_slot_manager.hpp"
@@ -49,9 +48,7 @@ BlazeDecodeRunner::BlazeDecodeRunner(
 
 BlazeDecodeRunner::~BlazeDecodeRunner() {
   stop();
-  if (decodeScheduler) {
-    decodeScheduler->stop();
-  }
+  shutdownScheduler();
 }
 
 void BlazeDecodeRunner::run() {
@@ -703,7 +700,14 @@ void BlazeDecodeRunner::checkOutputHang() {
 
     TT_LOG_CRITICAL("[BlazeRunner] State dump\n{}",
                     slotManager.dumpSlotStates());
+    shutdownScheduler();
     std::abort();
+  }
+}
+
+void BlazeDecodeRunner::shutdownScheduler() {
+  if (decodeScheduler) {
+    decodeScheduler->stop();
   }
 }
 

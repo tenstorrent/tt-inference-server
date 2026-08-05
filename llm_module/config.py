@@ -1,0 +1,118 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: 2026 Tenstorrent AI ULC
+
+"""Normalized config types passed across the llm_module boundary.
+
+Modeled on v1's ``BenchmarkTaskParams`` (workflows/utils_report.py) plus
+the server connection details that v1's per-tool runners pull out of
+``EnvironmentConfig`` / ``ModelSpec`` / ``RuntimeConfig``. Drivers
+consume both objects per run; the runner builds them once per sweep
+point.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Optional, Tuple
+from urllib.parse import urlparse
+
+
+@dataclass(frozen=True)
+class LLMRunConfig:
+    """One point in a benchmark sweep.
+
+    Maps onto v1 ``BenchmarkTaskParams`` for the LLM (text) task type;
+    VLM/CNN-only fields from v1 are intentionally excluded — the LLM
+    runner is text-only.
+    """
+
+    isl: int
+    osl: int
+    max_concurrency: int
+    num_prompts: int
+    targets: dict = field(default_factory=dict, compare=False)
+
+
+@dataclass(frozen=True)
+class ServerConnection:
+    """How a driver reaches the inference server."""
+
+    base_url: str
+    service_port: int
+    model: str
+    tokenizer: str = ""
+    auth_token: str = ""
+    is_remote: bool = False
+    # Allow AIPerf's tokenizer load to execute custom code from the HF Hub
+    # repo (e.g. moonshotai/Kimi-* ships a custom tokenizer). Driven per
+    # model from the spec metadata; off by default for safety.
+    tokenizer_trust_remote_code: bool = False
+    # Prompt source for the perf sweep, driven per model from spec metadata. Empty means the
+    # default `random` dataset, which fabricates token ids. A block-diffusion model has to opt
+    # into real text: its canvas never settles on gibberish (measured on QB2: 48/48 denoise steps
+    # and a 4.3% halt rate on random ids versus K~15-18 and 100% on real text), so `random`
+    # understates its tok/s about 3x. `sonnet` is the option that keeps the (ISL, OSL) sweep
+    # points meaningful, because it assembles real English up to a requested input length.
+    benchmark_dataset_name: str = ""
+    benchmark_dataset_path: str = ""
+    # Extra Prometheus ``/metrics`` endpoints (cpp_server workers) scraped
+    # by AIPerf via ``--server-metrics``, in addition to the load target in
+    # ``base_url``. Read by both the prefix-cache and agentic-traces
+    # benchmarks (each populating its own ServerConnection from its own flag)
+    # to find the worker-side ``tt_prefix_cache_*`` / ``vllm:prefix_cache_*``
+    # counters in a Dynamo deployment, where the frontend does not aggregate
+    # them. Each entry is a URL, ``host:port``, or ``host:port/metrics``,
+    # optionally prefixed with a disaggregation role (``prefill=`` /
+    # ``decode=``) so the prefix-cache driver reports each cache separately
+    # instead of blending them. A tuple keeps this frozen dataclass hashable.
+    prefix_cache_metrics_urls: Tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.tokenizer:
+            object.__setattr__(self, "tokenizer", self.model)
+
+    @property
+    def url_with_port(self) -> str:
+        host = self.base_url.rstrip("/")
+        if "://" not in host:
+            host = f"http://{host}"
+        if self.is_remote:
+            return host
+        if urlparse(host).port is not None:
+            return host
+        return f"{host}:{self.service_port}"
+
+    @property
+    def host(self) -> str:
+        """Bare hostname (no scheme/port), for drivers that take ``--host``."""
+        from utils.url_helpers import resolve_host_port
+
+        normalized = self.base_url.rstrip("/")
+        if "://" not in normalized:
+            normalized = f"http://{normalized}"
+        host, _ = resolve_host_port(normalized, self.service_port)
+        return host
+
+
+@dataclass(frozen=True)
+class DriverContext:
+    """Per-run context that's stable across the sweep.
+
+    ``output_dir`` is where drivers write raw result JSON. ``device``
+    flows through to the parser so it ends up on emitted Blocks.
+    """
+
+    output_dir: Path
+    device: str = ""
+    extra_env: dict = field(default_factory=dict)
+    per_run_timeout_s: Optional[float] = 7200.0
+    # AIPerf --goodput SLO string (space-separated KEY:VALUE pairs) applied to
+    # the sweep. Only the AIPerf driver consumes it; other drivers ignore it.
+    goodput: Optional[str] = None
+    # When True, agentic drivers group results under a top-level ``agentic/``
+    # dir (``agentic/eval_<hf>/<task>``) mirroring the ``llm/`` layout used in
+    # a ``release`` run. Standalone agentic runs leave this False and keep the
+    # ``eval_<hf>/agentic/<task>`` layout.
+    agentic_release_layout: bool = False

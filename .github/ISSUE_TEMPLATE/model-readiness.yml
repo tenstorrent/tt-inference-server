@@ -33,7 +33,7 @@ body:
     attributes:
       label: What accuracy evals are needed?
       placeholder: e.g. r1_aime24, leaderboard_ifeval, meta_ifeval, etc. ...
-      description: Corresponds to the evals/eval_config.py task_name.
+      description: Corresponds to the reference_config/evals/eval_config.py task_name.
     validations:
       required: true
   - type: textarea
@@ -54,11 +54,11 @@ body:
           required: false
         - label: vLLM or other inference server integration complete.
           required: false
-        - label: "[Non-blocking] Performance targets (Top Perf) set in benchmarking/benchmark_targets/model_performance_reference.json."
+        - label: "[Non-blocking] Performance targets (Top Perf) set in reference_config/benchmarking/benchmark_targets/model_performance_reference.json."
           required: false
-        - label: "[Non-blocking] Required evals are implemented and integrated for model in evals/eval_config.py."
+        - label: "[Non-blocking] Required evals are implemented and integrated for model in reference_config/evals/eval_config.py."
           required: false
-        - label: "[Non-blocking] GPU accuracy reference scores collected and set for model in evals/eval_config.py."
+        - label: "[Non-blocking] GPU accuracy reference scores collected and set for model in reference_config/evals/eval_config.py."
           required: false
   - type: checkboxes
     id: model-readiness-checklist

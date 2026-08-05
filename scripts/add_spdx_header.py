@@ -30,13 +30,22 @@ if __name__ == "__main__":
     repo_root = Path(__file__).resolve().parent.parent
     directories_to_process = [
         repo_root / "vllm-tt-metal",
-        repo_root / "tt-metal-yolov4",
-        repo_root / "tests",
-        repo_root / "utils",
-        repo_root / "evals",
-        repo_root / "benchmarking",
-        repo_root / "workflows",
         repo_root / "tt-media-server",
+        repo_root / "tt-sglang-plugin",
+        repo_root / "tt-vllm-plugin",
+        repo_root / "dynamo_frontend",
+        repo_root / "launchers",
+        repo_root / "llm_module",
+        repo_root / "report_module",
+        repo_root / "test_module",
+        repo_root / "workflow_module",
+        repo_root / "workflows",
+        repo_root / "mooncake",
+        repo_root / "scripts",
+        repo_root / "tests",
+        repo_root / "test_fixtures",
+        repo_root / "utils",
+        repo_root / "reference_config",
     ]
     # Walk through the specified directories and add the header to all relevant files
     for directory in directories_to_process:

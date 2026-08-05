@@ -6,11 +6,13 @@
 # workers across an Exabox cluster.
 #
 # One invocation brings up the whole stack:
-#   1. Starts the Mooncake HTTP discovery service on --discovery-host.
-#   2. Launches one mooncake_kv_migration_worker per host, each as its OWN
-#      process (local, or over ssh). One worker on each --prefill-host, one on
-#      each --decode-host. Each worker's logical tag (prefill-<i> / decode-<i>,
-#      or --{prefill,decode}-tags) is used as its --name, --host, and --peer key.
+#   1. Connects to the Mooncake HTTP discovery service from --discovery-server.
+#   2. Launches one migration-worker Docker container per host over SSH. One
+#      worker runs on each --prefill-host and each --decode-host. Each worker's
+#      logical tag is used as its --name, --host, and --peer key. Prefill tags
+#      are used verbatim; decode hostnames are converted to tt-blaze's stable
+#      host-<crc32> table tags (opt out for testing with
+#      --non-hashed-decode-tags, which passes decode tags through verbatim).
 #   3. Workers find each other through the discovery service (register-then-
 #      resolve) — a prefill resolves each decode tag to its routable host via the
 #      metadata service and dials its control channel. No MPI/collectives.
@@ -36,15 +38,14 @@
 # (point at it with --kafka-brokers, default kafka:9092).
 #
 # Requirements:
-#   * passwordless ssh from this host to --discovery-host and every worker host
-#   * the same mooncake_kv_migration_worker binary AND the KV .pb tables at the
-#     same path on all hosts (NFS share, or rsync first), built with the health
-#     server + Mooncake + kv-table; every worker host needs TT devices
-#   * curl on this host (health/readiness probes) and python3 (discovery probe)
+#   * passwordless ssh from this host to every *remote* worker host (hosts that
+#     match this machine's hostname/FQDN/loopback run locally — no SSH loopback)
+#   * Docker and the KV .pb tables at the configured paths on every worker host
+#   * curl on this host for health/readiness and discovery probes
 #
 # Example — 2 prefill hosts + 4 decode hosts (tables + tags from the config):
 #   ./scripts/deploy_migration_workers.sh \
-#     --discovery-host bh-glx-c01u02 \
+#     --discovery-server 10.32.89.65:8080 \
 #     --prefill-hosts  bh-glx-c01u02,bh-glx-c01u03 \
 #     --decode-hosts   bh-glx-c01u08,bh-glx-c02u02,bh-glx-c03u02,bh-glx-c04u02 \
 #     --health-port 9109
@@ -52,35 +53,49 @@
 set -uo pipefail
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# Per-worker launcher for the REAL data-plane worker (mooncake_kv_migration_worker).
-readonly RANK_LAUNCH="${SCRIPT_DIR}/../tests/e2e/scripts/migration_worker_launch.sh"
-readonly META_SERVER="${SCRIPT_DIR}/../tests/integration/run_mooncake_metadata_server.sh"
 # Sourced (if present) before flag parsing, so --flags still override it. Holds
 # the table-coupled settings (table paths, host tags, device map).
 readonly DEFAULT_CONFIG="${SCRIPT_DIR}/migration_deploy.conf"
 
 # --- defaults (override via flags) ---
-DISCOVERY_HOST=""
+DISCOVERY_SERVER="${DISCOVERY_SERVER:-}"
 PREFILL_HOSTS=""
 DECODE_HOSTS=""
 LAYER_START=0
 LAYER_END=0
 BUILD_DIR="./build"
-WORKER_BIN=""
+WORKER_BIN="${WORKER_BIN:-/usr/local/bin/mooncake_kv_migration_worker}"
+WORKER_IMAGE="${MIGRATION_WORKER_IMAGE:-ghcr.io/tenstorrent/tt-shield/tt-migration-worker:23072026-225800}"
+MIGRATION_MODE="${KV_MIGRATION_MODE:-dry-run}"
+TT_LOG_LEVEL="${TT_LOG_LEVEL:-debug}"
+GHCR_USERNAME="${GHCR_USERNAME:-}"
+GHCR_TOKEN_FILE="${GHCR_TOKEN_FILE:-}"
+GHCR_TOKEN_VALUE="${GHCR_TOKEN:-}"
+unset GHCR_TOKEN
+IMAGE_PULL_PARALLELISM="${IMAGE_PULL_PARALLELISM:-4}"
 # The KV tables the real worker migrates (see migration_deploy.conf). Required.
 PREFILL_TABLE="${PREFILL_TABLE:-}"
 DECODE_TABLE="${DECODE_TABLE:-}"
-# OPTIONAL directory of per-host FabricNode->UMD chip maps; each worker reads
-# <DEVICE_MAP_DIR>/<tag>.devmap (host-specific, so prefill/each decode differ).
-# Unset => discovery-only e2e (transfer plane needs it; discovery does not).
-DEVICE_MAP_DIR="${DEVICE_MAP_DIR:-}"
-# Optional table host tags (fabric_node_host), aligned with the host CSVs.
-# Empty => default to logical prefill-<i> / decode-<i>.
+# OPTIONAL FabricNode->UMD chip maps. DEVICE_MAP is a backward-compatible
+# fallback for either role-specific map.
+DEVICE_MAP="${DEVICE_MAP:-}"
+PREFILL_DEVICE_MAP="${PREFILL_DEVICE_MAP:-}"
+DECODE_DEVICE_MAP="${DECODE_DEVICE_MAP:-}"
+# A nonzero ENGINE_HANDOFF_PORT pushes the map over localhost after startup.
+# The default 0 mounts the map and passes it directly to the worker.
+ENGINE_HANDOFF_PORT="${ENGINE_HANDOFF_PORT:-}"
+HANDOFF_SENDER_BIN="${HANDOFF_SENDER_BIN:-}"
+# Optional table tag inputs (fabric_node_host), aligned with the host CSVs.
+# Prefill values are used verbatim. Decode values are hostnames hashed to the
+# table's host-<crc32> convention; empty => hash the corresponding decode host.
+# NON_HASHED_DECODE_TAGS is the testing-only escape hatch: when set, these tags
+# are used verbatim (no crc32) and take the place of DECODE_TAGS. Mutually
+# exclusive with DECODE_TAGS.
 PREFILL_TAGS="${PREFILL_TAGS:-}"
 DECODE_TAGS="${DECODE_TAGS:-}"
+NON_HASHED_DECODE_TAGS="${NON_HASHED_DECODE_TAGS:-}"
 # Optional alternate config file (else DEFAULT_CONFIG next to this script).
 CONFIG_FILE="${CONFIG_FILE:-}"
-DISCOVERY_PORT=8080
 # HTTP health port every worker exposes (/healthz /readyz /metrics). One worker
 # per host, so they all share it. REQUIRED — the watchdog probes it.
 HEALTH_PORT=0
@@ -90,12 +105,6 @@ HEALTH_PORT=0
 # metadata (this value is only the fallback for a peer that hasn't published).
 # Set in migration_deploy.conf or override with --control-port.
 CONTROL_PORT="${CONTROL_PORT:-18650}"
-# OPTIONAL container name. When set, workers run inside this container (via a
-# docker-exec --worker-bin wrapper) as root, so the sweep/teardown must kill them
-# with `docker exec <CONTAINER> pkill` — a host-side pkill as the deploy user
-# can't touch a root-in-container process, leaving stale workers + squatted ports
-# (exabox Bug A). Empty => host-side pkill (bare-host/in-container deploys).
-CONTAINER="${CONTAINER:-}"
 # Mirrors bringup_mooncake_worker's K_DEFAULT_HOST_DRAM_BYTES (4 GiB). Kept in
 # sync by hand; the worker also clamps/validates this against physical RAM.
 HOST_DRAM_BYTES=$((4 * 1024 * 1024 * 1024))
@@ -110,17 +119,32 @@ RESTART_AFTER=3
 # ssh hardening: fail fast on an unreachable host (never hang a prompt) and drop
 # a silently-dead session within ~60s so a truly gone worker is detected. An
 # array (not a string) so the flags word-split safely without relying on IFS.
-SSH_OPTS=(-o ConnectTimeout=5 -o BatchMode=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
+# accept-new: TOFU first contact under BatchMode (no interactive yes/no); still
+# rejects a *changed* key. Needed when a worker host is this machine itself —
+# operators rarely `ssh $(hostname)`, so own hostname is often missing from
+# known_hosts and BatchMode would otherwise die with "Host key verification failed".
+SSH_OPTS=(
+  -o ConnectTimeout=5
+  -o BatchMode=yes
+  -o StrictHostKeyChecking=accept-new
+  -o ServerAliveInterval=15
+  -o ServerAliveCountMax=4
+)
+# Cached once for isLocalHost — avoid SSH loopback to this deploy box.
+LOCAL_HOST_SHORT="$(hostname -s 2>/dev/null || hostname)"
+LOCAL_HOST_FULL="$(hostname 2>/dev/null || true)"
+LOCAL_HOST_FQDN="$(hostname -f 2>/dev/null || true)"
 # A restart escalates SIGTERM -> (grace) -> SIGKILL and only relaunches once the
 # health port is confirmed free, so a squatting worker can never wedge recovery.
 SWEEP_GRACE_SEC=5
 
 usage() {
   cat <<EOF
-Usage: $(basename "$0") --discovery-host H --prefill-hosts CSV --decode-hosts CSV --health-port PORT [options]
+Usage: $(basename "$0") --discovery-server IP:PORT --prefill-hosts CSV --decode-hosts CSV --health-port PORT [options]
 
 Required:
-  --discovery-host HOST    host that runs the Mooncake discovery service
+  --discovery-server IP:PORT
+                           existing Mooncake HTTP metadata server
   --prefill-hosts CSV      prefill hosts (one worker each); first is the master
   --decode-hosts CSV       decode hosts (one worker each); first is the master
   --health-port PORT       HTTP health port each worker serves (/healthz /readyz
@@ -134,20 +158,34 @@ fabric_node_host, not on the CLI):
   --config FILE            config to source first (default ${DEFAULT_CONFIG})
   --prefill-table PATH     prefill source table (.pb)
   --decode-table PATH      cluster decode table (.pb), shared by all decodes
-  --device-map-dir DIR     OPTIONAL dir of per-host <tag>.devmap files ('mesh
-                           chip umd' per line); each worker reads its own
-                           <tag>.devmap. Omit for discovery-only e2e (workers
-                           register + are discoverable but cannot move KV)
-  --prefill-tags CSV       table host tags per prefill host (default prefill-<i>)
-  --decode-tags CSV        table host tags per decode host (default decode-<i>)
+  --prefill-device-map PATH
+                           OPTIONAL map file used by every prefill worker
+  --decode-device-map PATH OPTIONAL map file used by every decode worker
+  --device-map PATH        OPTIONAL shared fallback for either role-specific
+                           map. Maps contain 'mesh chip umd' per line and are
+                           mounted directly by default. Omit all maps for
+                           discovery-only
+  --prefill-tags CSV       table host tags per prefill host, used verbatim
+                           (default prefill-<i>)
+  --decode-tags CSV        owning hostnames per decode host, converted to
+                           host-<crc32> tags (default: --decode-hosts values)
+  --non-hashed-decode-tags CSV
+                           TESTING ONLY: table host tags per decode host, used
+                           verbatim (skip host-<crc32> hashing). Mutually
+                           exclusive with --decode-tags
 
 Options:
-  --build-dir PATH         cpp_server build dir (default ${BUILD_DIR})
-  --worker-bin PATH        worker binary (default <build-dir>/mooncake_kv_migration_worker)
-  --container NAME          workers run inside this container (docker-exec
-                           --worker-bin wrapper); sweep/teardown kill via
-                           'docker exec NAME pkill'. Omit for host-side pkill
-  --discovery-port PORT    discovery service port (default ${DISCOVERY_PORT})
+  --image IMAGE            migration-worker Docker image (default ${WORKER_IMAGE})
+  --migration-mode MODE    device|dry-run (default ${MIGRATION_MODE})
+  --worker-bin PATH        binary path inside the image (default ${WORKER_BIN})
+  --log-level LEVEL        worker log level (default ${TT_LOG_LEVEL})
+  --ghcr-username USER     GHCR user; requires GHCR_TOKEN_FILE or GHCR_TOKEN
+  --ghcr-token-file FILE   local mode-600 file containing a read:packages token
+  --image-pull-parallelism N
+                           concurrent remote image pulls (default ${IMAGE_PULL_PARALLELISM})
+  --build-dir PATH         retained for engine handoff compatibility
+  --handoff-sender PATH    engine_handoff_sender (default <build-dir>/engine_handoff_sender)
+  --engine-handoff-port N  DeviceMap socket port (default 0 = direct file)
   --host-dram-bytes N      per-worker pool, page-aligned (default 4 GiB)
   --discovery-timeout-sec S  peer discovery timeout (default ${DISCOVERY_TIMEOUT_SEC})
   --kafka-brokers HOST:PORT  existing broker prefill workers use (default ${KAFKA_BROKERS})
@@ -186,23 +224,32 @@ loadConfig() {
 parseArgs() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --discovery-host) DISCOVERY_HOST="$2"; shift 2 ;;
+      --discovery-server) DISCOVERY_SERVER="$2"; shift 2 ;;
       --prefill-hosts) PREFILL_HOSTS="$2"; shift 2 ;;
       --decode-hosts) DECODE_HOSTS="$2"; shift 2 ;;
       --layer-start) LAYER_START="$2"; shift 2 ;;
       --layer-end) LAYER_END="$2"; shift 2 ;;
       --build-dir) BUILD_DIR="$2"; shift 2 ;;
       --worker-bin) WORKER_BIN="$2"; shift 2 ;;
+      --image) WORKER_IMAGE="$2"; shift 2 ;;
+      --migration-mode) MIGRATION_MODE="$2"; shift 2 ;;
+      --log-level) TT_LOG_LEVEL="$2"; shift 2 ;;
+      --ghcr-username) GHCR_USERNAME="$2"; shift 2 ;;
+      --ghcr-token-file) GHCR_TOKEN_FILE="$2"; shift 2 ;;
+      --image-pull-parallelism) IMAGE_PULL_PARALLELISM="$2"; shift 2 ;;
       --config) CONFIG_FILE="$2"; shift 2 ;;
       --prefill-table) PREFILL_TABLE="$2"; shift 2 ;;
       --decode-table) DECODE_TABLE="$2"; shift 2 ;;
-      --device-map-dir) DEVICE_MAP_DIR="$2"; shift 2 ;;
+      --device-map) DEVICE_MAP="$2"; shift 2 ;;
+      --prefill-device-map) PREFILL_DEVICE_MAP="$2"; shift 2 ;;
+      --decode-device-map) DECODE_DEVICE_MAP="$2"; shift 2 ;;
       --prefill-tags) PREFILL_TAGS="$2"; shift 2 ;;
       --decode-tags) DECODE_TAGS="$2"; shift 2 ;;
-      --discovery-port) DISCOVERY_PORT="$2"; shift 2 ;;
+      --non-hashed-decode-tags) NON_HASHED_DECODE_TAGS="$2"; shift 2 ;;
+      --handoff-sender) HANDOFF_SENDER_BIN="$2"; shift 2 ;;
+      --engine-handoff-port) ENGINE_HANDOFF_PORT="$2"; shift 2 ;;
       --health-port) HEALTH_PORT="$2"; shift 2 ;;
       --control-port) CONTROL_PORT="$2"; shift 2 ;;
-      --container) CONTAINER="$2"; shift 2 ;;
       --host-dram-bytes) HOST_DRAM_BYTES="$2"; shift 2 ;;
       --discovery-timeout-sec) DISCOVERY_TIMEOUT_SEC="$2"; shift 2 ;;
       --kafka-brokers) KAFKA_BROKERS="$2"; shift 2 ;;
@@ -217,21 +264,58 @@ parseArgs() {
 }
 
 validateArgs() {
-  [[ -n "${DISCOVERY_HOST}" ]] || die "--discovery-host is required"
+  [[ -n "${DISCOVERY_SERVER}" ]] || die "--discovery-server is required"
+  [[ "${DISCOVERY_SERVER}" =~ ^[^:/]+:[0-9]+$ ]] || \
+    die "--discovery-server must be IP:PORT, got: ${DISCOVERY_SERVER}"
   [[ -n "${PREFILL_HOSTS}" ]] || die "--prefill-hosts is required"
   [[ -n "${DECODE_HOSTS}" ]] || die "--decode-hosts is required"
   [[ "${HEALTH_PORT}" != "0" ]] || die "--health-port is required (the watchdog probes it)"
-  [[ -z "${WORKER_BIN}" ]] && WORKER_BIN="${BUILD_DIR}/mooncake_kv_migration_worker"
+  [[ -n "${WORKER_IMAGE}" ]] || die "--image is required"
+  [[ "${WORKER_BIN}" == /* ]] || die "--worker-bin must be an absolute container path"
+  [[ "${MIGRATION_MODE}" == "device" || "${MIGRATION_MODE}" == "dry-run" ]] || \
+    die "--migration-mode must be device|dry-run"
+  [[ "${IMAGE_PULL_PARALLELISM}" =~ ^[1-9][0-9]*$ ]] || \
+    die "--image-pull-parallelism must be a positive integer"
+  if [[ -n "${GHCR_TOKEN_FILE}" ]]; then
+    [[ -r "${GHCR_TOKEN_FILE}" ]] || die "GHCR token file is unreadable: ${GHCR_TOKEN_FILE}"
+    local tokenMode
+    tokenMode="$(stat -c '%a' "${GHCR_TOKEN_FILE}")" || \
+      die "cannot inspect GHCR token file: ${GHCR_TOKEN_FILE}"
+    (( (8#${tokenMode} & 077) == 0 )) || \
+      die "GHCR token file must not be accessible by group/others: ${GHCR_TOKEN_FILE}"
+    GHCR_TOKEN_VALUE="$(<"${GHCR_TOKEN_FILE}")"
+  fi
+  if [[ -n "${GHCR_TOKEN_VALUE}" && -z "${GHCR_USERNAME}" ]]; then
+    die "GHCR_USERNAME or --ghcr-username is required with a GHCR token"
+  fi
+  if [[ -n "${GHCR_USERNAME}" && -z "${GHCR_TOKEN_VALUE}" ]]; then
+    die "GHCR_TOKEN_FILE or GHCR_TOKEN is required with GHCR_USERNAME"
+  fi
+  [[ -z "${HANDOFF_SENDER_BIN}" ]] && HANDOFF_SENDER_BIN="${BUILD_DIR}/engine_handoff_sender"
   [[ -n "${PREFILL_TABLE}" ]] || die "--prefill-table (or PREFILL_TABLE in config) is required"
   [[ -n "${DECODE_TABLE}" ]] || die "--decode-table (or DECODE_TABLE in config) is required"
-  # Tables live on the NFS-shared path, so a local check on the lead is enough.
-  [[ -f "${PREFILL_TABLE}" ]] || die "prefill table not found: ${PREFILL_TABLE}"
-  [[ -f "${DECODE_TABLE}" ]] || die "decode table not found: ${DECODE_TABLE}"
-  # Device maps are OPTIONAL: unset => discovery-only e2e (no transfer). When set
-  # it's a real transfer run, so the dir must exist and every worker's own
-  # <tag>.devmap is checked in addWorkerSlot (fail-fast before any launch).
-  if [[ -n "${DEVICE_MAP_DIR}" ]]; then
-    [[ -d "${DEVICE_MAP_DIR}" ]] || die "device map dir not found: ${DEVICE_MAP_DIR}"
+  if [[ -n "${DECODE_TAGS}" && -n "${NON_HASHED_DECODE_TAGS}" ]]; then
+    die "--decode-tags and --non-hashed-decode-tags are mutually exclusive"
+  fi
+  [[ "${PREFILL_TABLE}" == /* ]] || die "--prefill-table must be an absolute remote path"
+  [[ "${DECODE_TABLE}" == /* ]] || die "--decode-table must be an absolute remote path"
+  PREFILL_DEVICE_MAP="${PREFILL_DEVICE_MAP:-${DEVICE_MAP}}"
+  DECODE_DEVICE_MAP="${DECODE_DEVICE_MAP:-${DEVICE_MAP}}"
+  # Device maps are OPTIONAL: unset => discovery-only e2e (no transfer). Paths
+  # refer to worker hosts and are validated there when worker slots are created.
+  # The deploy host does not need access to them.
+  # Default: mount and pass the map file directly. A nonzero port opts into
+  # socket handoff.
+  if [[ -n "${PREFILL_DEVICE_MAP}" || -n "${DECODE_DEVICE_MAP}" ]]; then
+    if [[ -z "${ENGINE_HANDOFF_PORT}" ]]; then
+      ENGINE_HANDOFF_PORT=0
+    fi
+    if [[ "${ENGINE_HANDOFF_PORT}" != "0" ]]; then
+      [[ -x "${HANDOFF_SENDER_BIN}" || -f "${HANDOFF_SENDER_BIN}" ]] || \
+        die "engine_handoff_sender not found: ${HANDOFF_SENDER_BIN}"
+    fi
+  else
+    ENGINE_HANDOFF_PORT=0
   fi
   command -v curl >/dev/null 2>&1 || die "curl not found; needed for health/readiness probes"
   command -v python3 >/dev/null 2>&1 || die "python3 not found; needed to probe the discovery service"
@@ -240,19 +324,27 @@ validateArgs() {
 # CSV -> count of non-empty fields.
 countHosts() { awk -F',' '{n=0; for(i=1;i<=NF;i++) if($i!="") n++; print n}' <<<"$1"; }
 
-# Is the given host name this machine? (covers localhost + this box's hostname)
-isLocalHost() {
-  local host="$1"
-  [[ "${host}" == "localhost" || "${host}" == "127.0.0.1" || "${host}" == "$(hostname)" || "${host}" == "$(hostname -s)" ]]
+# Hash a decode host to tt-blaze's stable host-<crc32> table tag. Kept in sync
+# with the make_test_table / decode-table producer so deploy tags match the
+# fabric_node_host values baked into the .pb.
+decodeTagForHost() {
+  python3 - "$1" <<'PY'
+import sys
+import zlib
+
+# tt-blaze gathers this value through signed int32 storage before formatting it.
+host_tag = zlib.crc32(sys.argv[1].encode()) & 0x7FFFFFFF
+sys.stdout.write(f"host-{host_tag:08x}")
+PY
 }
 
 META_URI=""
-META_PID=""
-META_LOG="${META_LOG:-/tmp/tt_mc_deploy_metadata.log}"
 # Per-worker tracking. Parallel arrays, one entry per worker: role, role-local
 # index, host, table tag (== --name/--host/--peer), resolved <tag>.devmap,
-# health port, launcher PID, and consecutive-failure count.
-declare -a WK_ROLE=() WK_INDEX=() WK_HOST=() WK_TAG=() WK_DEVMAP=() WK_PORT=() WK_PID=() WK_FAILS=() WK_LOG=()
+# bind IP, container name, health port, launcher PID, and failure count.
+declare -a WK_ROLE=() WK_INDEX=() WK_HOST=() WK_TAG=() WK_DEVMAP=()
+declare -a WK_BIND_IP=() WK_CONTAINER=() WK_DOCKER=()
+declare -a WK_PORT=() WK_PID=() WK_FAILS=() WK_LOG=()
 # Resolved peer CSV per worker (WK_PEERS[s]) — the generic, role-agnostic peer
 # list this worker is launched with. See peersForWorker() for how it's derived.
 declare -a WK_PEERS=()
@@ -278,75 +370,59 @@ except Exception:
 PY
 }
 
-startDiscoveryService() {
-  META_URI="http://${DISCOVERY_HOST}:${DISCOVERY_PORT}/metadata"
-  echo "[deploy] starting discovery service on ${DISCOVERY_HOST}:${DISCOVERY_PORT}"
+verifyDiscoveryService() {
+  META_URI="http://${DISCOVERY_SERVER}/metadata"
+  echo "[deploy] using discovery service at ${META_URI}"
   if (( DRY_RUN )); then
-    echo "[dry-run] HTTP_PORT=${DISCOVERY_PORT} BIND_HOST=0.0.0.0 ${META_SERVER} (on ${DISCOVERY_HOST})"
     return 0
   fi
-
-  if isLocalHost "${DISCOVERY_HOST}"; then
-    HTTP_PORT="${DISCOVERY_PORT}" BIND_HOST="0.0.0.0" \
-      "${META_SERVER}" >"${META_LOG}" 2>&1 &
-  else
-    ssh "${SSH_OPTS[@]}" "${DISCOVERY_HOST}" \
-      "HTTP_PORT='${DISCOVERY_PORT}' BIND_HOST='0.0.0.0' bash '${META_SERVER}'" \
-      >"${META_LOG}" 2>&1 &
-  fi
-  META_PID=$!
-
   for _ in $(seq 1 20); do
-    probeMetadata "${META_URI}" && { echo "[deploy] discovery service ready at ${META_URI}"; return 0; }
+    probeMetadata "${META_URI}" && {
+      echo "[deploy] discovery service ready at ${META_URI}"
+      return 0
+    }
     sleep 0.5
   done
   echo "ERROR: discovery service not ready at ${META_URI}" >&2
-  cat "${META_LOG}" >&2 || true
   return 1
 }
 
-# Emit the shell program a sweep runs on a host: SIGTERM the worker, wait up to
-# `grace` seconds for a clean exit, SIGKILL any survivor, then FAIL loudly unless
-# both the process is gone and the health port is free. When a worker name ($3)
-# is given the match is scoped to exactly that worker (anchored so decode-1 never
-# matches decode-15), so an unrelated deploy or a co-located worker is never hit;
-# with no name it falls back to matching any migration worker on the host. Fed to
-# `bash -s` on stdin (local or over ssh) so the pattern never lands in a
-# process's argv — that both avoids self-matching the sweeper and keeps quoting
-# sane.
+# Emit the shell program that removes one named worker container and verifies
+# that its health port is free before a restart.
 sweepScript() {
-  local port="$1" grace="$2" name="${3:-}"
-  local pat="mooncake_kv_migration_worker --metadata"
-  [[ -n "${name}" ]] && pat="mooncake_kv_migration_worker.*--name ${name}([[:space:]]|\$)"
-  # When CONTAINER is set the worker runs as root inside it, so pkill/pgrep must
-  # target the container's PID namespace, not the host's. Ports live in the host
-  # namespace (workers use --network host), so the `ss` check stays host-side.
-  local run=""
-  [[ -n "${CONTAINER}" ]] && run="docker exec ${CONTAINER} "
+  local port="$1" grace="$2" name="$3" dockerCommand="$4" container
+  container="$(containerNameForTag "${name}")"
   cat <<EOF
-pat='${pat}'
-${run}pkill -TERM -f "\$pat" 2>/dev/null || true
-for _ in \$(seq 1 ${grace}); do ${run}pgrep -f "\$pat" >/dev/null 2>&1 || break; sleep 1; done
-${run}pkill -KILL -f "\$pat" 2>/dev/null || true
-sleep 1
-if ${run}pgrep -f "\$pat" >/dev/null 2>&1; then
-  echo "SWEEP_FAIL: worker still alive on \$(hostname -s)" >&2; exit 1
+${dockerCommand} stop --time ${grace} '${container}' >/dev/null 2>&1 || true
+${dockerCommand} rm -f '${container}' >/dev/null 2>&1 || true
+if ${dockerCommand} inspect '${container}' >/dev/null 2>&1; then
+  echo "SWEEP_FAIL: container ${container} still exists on \$(hostname -s)" >&2
+  exit 1
 fi
 if command -v ss >/dev/null 2>&1 && ss -ltnH 2>/dev/null | grep -q ":${port} "; then
-  echo "SWEEP_FAIL: port ${port} still bound on \$(hostname -s)" >&2; exit 1
+  echo "SWEEP_FAIL: port ${port} still bound on \$(hostname -s)" >&2
+  exit 1
 fi
-echo "SWEEP_OK: ${port} free on \$(hostname -s)"
+echo "SWEEP_OK: ${container} removed; ${port} free on \$(hostname -s)"
 EOF
 }
 
-# Kill the migration worker on a host and BLOCK until its process is gone and the
-# health port is free. Pass the worker name ($2) to scope the kill to exactly
-# that worker; omit it to match any migration worker on the host. Returns
-# non-zero if the port cannot be freed, so the caller refuses to relaunch into a
-# squatted port (the churn bug).
+# True when host names this machine (short, FQDN, or loopback). Deploy often
+# runs on a worker node; those slots must not SSH to themselves.
+isLocalHost() {
+  local host="$1"
+  case "${host}" in
+    localhost|127.0.0.1|::1) return 0 ;;
+  esac
+  [[ "${host}" == "${LOCAL_HOST_SHORT}" || "${host}" == "${LOCAL_HOST_FULL}" ]] && return 0
+  [[ -n "${LOCAL_HOST_FQDN}" && "${host}" == "${LOCAL_HOST_FQDN}" ]] && return 0
+  return 1
+}
+
+# Remove the migration worker container and block until its health port is free.
 sweepWorkerOnHost() {
-  local host="$1" name="${2:-}" script
-  script="$(sweepScript "${HEALTH_PORT}" "${SWEEP_GRACE_SEC}" "${name}")"
+  local host="$1" name="$2" dockerCommand="$3" script
+  script="$(sweepScript "${HEALTH_PORT}" "${SWEEP_GRACE_SEC}" "${name}" "${dockerCommand}")"
   if isLocalHost "${host}"; then
     bash -s <<<"${script}"
   else
@@ -360,16 +436,14 @@ sweepWorkerOnHost() {
 # relaunch registers cleanly. Harmless on a first launch (keys won't exist).
 # Manual revive MUST call this too — skipping it is a common bring-up failure.
 clearRpcMeta() {
-  curl -sS -X DELETE "${META_URI}?key=mooncake/rpc_meta/$1" >/dev/null 2>&1 || \
-    echo "[deploy] WARN: could not clear rpc_meta for '$1' (discovery unreachable?);" \
-         "launch may fail on a duplicate rpc_meta key" >&2
-  curl -sS -X DELETE "${META_URI}?key=kv_control/$1" >/dev/null 2>&1 || true
+  # Short timeout — never hang teardown when metadata is already dead.
+  curl -sS --max-time 1 -X DELETE "${META_URI}?key=mooncake/rpc_meta/$1" >/dev/null 2>&1 || true
+  curl -sS --max-time 1 -X DELETE "${META_URI}?key=kv_control/$1" >/dev/null 2>&1 || true
+  curl -sS --max-time 1 -X DELETE "${META_URI}?key=mooncake/ram/$1" >/dev/null 2>&1 || true
 }
 
 # Register one worker slot (role, role-local index, host, tag) in the arrays.
-# When DEVICE_MAP_DIR is set, resolves this worker's host-specific map to
-# <DEVICE_MAP_DIR>/<tag>.devmap and fails fast if it's missing (a wrong/absent
-# map opens the wrong chip). Empty when unset => discovery-only, no transfer.
+# Each worker uses the map selected for its role. Empty => no device transfer.
 # Peer CSV for a worker, role-agnostic: an explicit WORKER_PEERS[<tag>] override
 # always wins; otherwise the role default — a prefill peers with every decode
 # (DECODE_TAG_LIST) for control TABLE_EXCHANGE + migrate; a decode peers with
@@ -417,31 +491,146 @@ WORKER_PEERS so each decode has a single prefill owner \
   done
 }
 
-addWorkerSlot() {
-  local devmap=""
-  if [[ -n "${DEVICE_MAP_DIR}" ]]; then
-    devmap="${DEVICE_MAP_DIR}/$4.devmap"
-    [[ -f "${devmap}" ]] || die "device map not found for tag '$4': ${devmap}"
+containerNameForTag() {
+  local name="${1//[^a-zA-Z0-9_.-]/-}"
+  printf 'tt-migration-worker-%s' "${name}"
+}
+
+resolveBindIp() {
+  local host="$1" ip command
+  command="hostname -I 2>/dev/null | tr ' ' '\\n' | awk '/^10\\./ {print; exit}'"
+  ip="$(runOnHost "${host}" "${command}")"
+  [[ "${ip}" =~ ^10(\.[0-9]{1,3}){3}$ ]] || \
+    die "no 10.* bind address found on ${host}; inspect with: ssh ${host} hostname -I"
+  printf '%s' "${ip}"
+}
+
+# Run a command string on host. Local hosts skip SSH (avoids known_hosts /
+# BatchMode failures when deploy runs on a node listed in --*-hosts).
+runOnHost() {
+  local host="$1" command="$2"
+  if isLocalHost "${host}"; then
+    bash -c "${command}"
+  else
+    ssh "${SSH_OPTS[@]}" "${host}" "${command}"
   fi
+}
+
+# Probe SSH before blaming Docker. Local hosts are always "reachable".
+assertHostReachable() {
+  local host="$1"
+  isLocalHost "${host}" && return 0
+  ssh "${SSH_OPTS[@]}" "${host}" true >/dev/null 2>&1 && return 0
+  die "${host}: SSH failed under BatchMode (not a Docker issue). Check passwordless keys \
+and known_hosts; first-time trust uses StrictHostKeyChecking=accept-new. Try: ssh ${host}"
+}
+
+resolveDockerCommand() {
+  local host="$1" command dockerCommand
+  command="if docker info >/dev/null 2>&1; then printf docker; \
+elif command -v sudo >/dev/null 2>&1 && sudo -n docker info >/dev/null 2>&1; \
+then printf 'sudo -n docker'; else exit 1; fi"
+  if ! dockerCommand="$(runOnHost "${host}" "${command}")"; then
+    return 1
+  fi
+  printf '%s' "${dockerCommand}"
+}
+
+validateWorkerHost() {
+  local host="$1" requiredFile="$2" command
+  printf -v command 'test -r %q' "${requiredFile}"
+  runOnHost "${host}" "${command}" || \
+    die "${host}: file unreadable: ${requiredFile}"
+}
+
+ensureWorkerImage() {
+  local host="$1" dockerCommand="$2" command quotedUser quotedImage
+  printf -v command '%s image inspect %q >/dev/null 2>&1' \
+    "${dockerCommand}" "${WORKER_IMAGE}"
+  if runOnHost "${host}" "${command}"; then
+    echo "[deploy] ${host}: image available"
+    return 0
+  fi
+  if (( DRY_RUN )); then
+    echo "[dry-run] WARNING: ${WORKER_IMAGE} is not cached on ${host}; real deployment will pull it" >&2
+    return 0
+  fi
+  if [[ -z "${GHCR_TOKEN_VALUE}" ]]; then
+    printf -v command '%s pull %q' "${dockerCommand}" "${WORKER_IMAGE}"
+    runOnHost "${host}" "${command}" || {
+      echo "ERROR: ${host}: cannot pull ${WORKER_IMAGE}; provide GHCR_USERNAME with GHCR_TOKEN_FILE or GHCR_TOKEN" >&2
+      return 1
+    }
+    return 0
+  fi
+  printf -v quotedUser '%q' "${GHCR_USERNAME}"
+  printf -v quotedImage '%q' "${WORKER_IMAGE}"
+  command="set -eu; IFS= read -r token; config=\$(mktemp -d); \
+trap 'rm -rf \"\$config\"' EXIT; \
+printf '%s' \"\$token\" | ${dockerCommand} --config \"\$config\" login ghcr.io \
+--username ${quotedUser} --password-stdin >/dev/null; \
+${dockerCommand} --config \"\$config\" pull ${quotedImage}"
+  printf '%s\n' "${GHCR_TOKEN_VALUE}" |
+    runOnHost "${host}" "${command}" || {
+      echo "ERROR: ${host}: authenticated pull failed for ${WORKER_IMAGE}" >&2
+      return 1
+    }
+}
+
+addWorkerSlot() {
+  local role="$1" host="$3" tag="$4" devmap="" table bindIp dockerCommand
+  if [[ "${role}" == "prefill" ]]; then
+    devmap="${PREFILL_DEVICE_MAP}"
+  else
+    devmap="${DECODE_DEVICE_MAP}"
+  fi
+  table="${DECODE_TABLE}"
+  [[ "${role}" == "prefill" ]] && table="${PREFILL_TABLE}"
+  assertHostReachable "${host}"
+  if ! dockerCommand="$(resolveDockerCommand "${host}")"; then
+    die "${host}: cannot access Docker API; add the SSH user to the docker group or configure passwordless sudo for docker"
+  fi
+  if isLocalHost "${host}"; then
+    echo "[deploy] ${host}: local host — running without SSH"
+  fi
+  validateWorkerHost "${host}" "${table}"
+  [[ -z "${devmap}" ]] || validateWorkerHost "${host}" "${devmap}"
+  bindIp="$(resolveBindIp "${host}")"
+  echo "[deploy] ${host}: docker='${dockerCommand}' MC_TCP_BIND_ADDRESS=${bindIp}"
   WK_ROLE+=("$1"); WK_INDEX+=("$2"); WK_HOST+=("$3"); WK_TAG+=("$4"); WK_DEVMAP+=("${devmap}")
+  WK_BIND_IP+=("${bindIp}"); WK_CONTAINER+=("$(containerNameForTag "${tag}")"); WK_DOCKER+=("${dockerCommand}")
   WK_PEERS+=("$(peersForWorker "$1" "$4")")
   WK_PORT+=("${HEALTH_PORT}"); WK_PID+=(""); WK_FAILS+=(0)
   WK_LOG+=("/tmp/tt_mc_deploy_$1-$2.log")
 }
 
 # Map worker i of each role onto host i of that role's CSV (one worker per host)
-# and resolve its table tag: the i'th entry of --{prefill,decode}-tags, or the
-# logical default {prefill,decode}-<i> when none is given.
+# and resolve its table tag. Prefill tags remain verbatim. Decode tags are
+# either:
+#   * hashed: each decode-tag input is the owning hostname and is converted to
+#     tt-blaze's host-<crc32> table tag (default; matches the fabric_node_host
+#     values baked into make_test_table's .pb output);
+#   * verbatim: --non-hashed-decode-tags supplies the fabric_node_host directly,
+#     bypassing the crc32 (testing-only escape hatch for pre-hashed tables).
 initWorkerSlots() {
   local -a prefill_hosts decode_hosts prefill_tags decode_tags
+  local -a non_hashed_decode_tags resolved_decode_tags
   IFS=',' read -ra prefill_hosts <<<"${PREFILL_HOSTS}"
   IFS=',' read -ra decode_hosts <<<"${DECODE_HOSTS}"
   IFS=',' read -ra prefill_tags <<<"${PREFILL_TAGS}"
   IFS=',' read -ra decode_tags <<<"${DECODE_TAGS}"
-  local i tag
+  IFS=',' read -ra non_hashed_decode_tags <<<"${NON_HASHED_DECODE_TAGS}"
+  local i tag decodeHost
   # Decodes first so DECODE_TAG_LIST is complete before any prefill reads it.
   for (( i = 0; i < NUM_DECODE; i++ )); do
-    tag="${decode_tags[$i]:-decode-${i}}"
+    if [[ -n "${NON_HASHED_DECODE_TAGS}" ]]; then
+      tag="${non_hashed_decode_tags[$i]:-${decode_hosts[$i]}}"
+    else
+      decodeHost="${decode_tags[$i]:-${decode_hosts[$i]}}"
+      tag="$(decodeTagForHost "${decodeHost}")" || \
+        die "failed to hash decode tag hostname: ${decodeHost}"
+    fi
+    resolved_decode_tags+=("${tag}")
     DECODE_TAG_LIST="${DECODE_TAG_LIST:+${DECODE_TAG_LIST},}${tag}"
   done
   for (( i = 0; i < NUM_PREFILL; i++ )); do
@@ -449,55 +638,173 @@ initWorkerSlots() {
     addWorkerSlot "prefill" "${i}" "${prefill_hosts[$i]}" "${tag}"
   done
   for (( i = 0; i < NUM_DECODE; i++ )); do
-    tag="${decode_tags[$i]:-decode-${i}}"
+    tag="${resolved_decode_tags[$i]}"
     addWorkerSlot "decode" "${i}" "${decode_hosts[$i]}" "${tag}"
   done
 }
 
-# The full env+command for the worker in slot $1. migration_worker_launch.sh
-# turns this env into the real worker's flags (--name/--host/--table/--peer),
-# so a relaunch reproduces the worker exactly. MC_TCP_BIND_ADDRESS=auto lets
-# each host resolve its own routable IP for peers to reach it on. PEERS is this
-# worker's resolved peer CSV (role-agnostic); the launcher forwards it as --peer.
-workerCmd() {
-  local s="$1" role="${WK_ROLE[$s]}" tag="${WK_TAG[$s]}" devmap="${WK_DEVMAP[$s]}"
-  local peers="${WK_PEERS[$s]}"
-  # DEVICE_MAP only when this slot resolved one (transfer runs); omitted for
-  # discovery-only so the launcher drops --device-map entirely.
-  printf '%s' "WORKER_ROLE=${role} WORKER_TAG=${tag} \
-WORKER_BIN=${WORKER_BIN} METADATA=${META_URI} \
-KAFKA_BROKERS=${KAFKA_BROKERS} HEALTH_PORT=${HEALTH_PORT} \
-CONTROL_PORT=${CONTROL_PORT} \
-${CONTAINER:+CTR=${CONTAINER} }\
-PREFILL_TABLE=${PREFILL_TABLE} DECODE_TABLE=${DECODE_TABLE} \
-${devmap:+DEVICE_MAP=${devmap} }PEERS=${peers} \
-MC_TCP_BIND_ADDRESS=auto bash ${RANK_LAUNCH}"
+ensureAllWorkerImages() {
+  local -A seenHosts=()
+  local -a pids=() labels=()
+  local s i failed=0
+  for (( s = 0; s < ${#WK_HOST[@]}; s++ )); do
+    [[ -n "${seenHosts[${WK_HOST[$s]}]:-}" ]] && continue
+    seenHosts["${WK_HOST[$s]}"]=1
+    ensureWorkerImage "${WK_HOST[$s]}" "${WK_DOCKER[$s]}" &
+    pids+=("$!")
+    labels+=("${WK_HOST[$s]}")
+    if (( ${#pids[@]} >= IMAGE_PULL_PARALLELISM )); then
+      for (( i = 0; i < ${#pids[@]}; i++ )); do
+        if ! wait "${pids[$i]}"; then
+          echo "ERROR: image provisioning failed on ${labels[$i]}" >&2
+          failed=1
+        fi
+      done
+      pids=()
+      labels=()
+    fi
+  done
+  for (( i = 0; i < ${#pids[@]}; i++ )); do
+    if ! wait "${pids[$i]}"; then
+      echo "ERROR: image provisioning failed on ${labels[$i]}" >&2
+      failed=1
+    fi
+  done
+  (( failed == 0 )) || die "worker image provisioning failed"
 }
 
-# (Re)launch the worker in slot $1, locally or over ssh, tracking its PID as a
-# kill handle only. For ssh the PID is the local ssh client (exits when the
-# remote worker exits *if* that ssh session still owns it); for local hosts
-# bash runs the worker in the background. Health probing uses /healthz, not
-# this PID — see workerSlotHealthy.
+# The full docker command for a worker slot. It stays attached to the SSH
+# session so worker logs are captured locally and the launcher PID remains a
+# useful teardown handle.
+workerCmd() {
+  local s="$1" role="${WK_ROLE[$s]}" tag="${WK_TAG[$s]}"
+  local devmap="${WK_DEVMAP[$s]}" peers="${WK_PEERS[$s]}"
+  local bindIp="${WK_BIND_IP[$s]}" container="${WK_CONTAINER[$s]}" table
+  local -a cmd dockerCommand
+  read -r -a dockerCommand <<<"${WK_DOCKER[$s]}"
+  table="${DECODE_TABLE}"
+  [[ "${role}" == "prefill" ]] && table="${PREFILL_TABLE}"
+
+  cmd=(
+    "${dockerCommand[@]}" run --rm
+    --name "${container}"
+    --network host
+    --label "tt.migration.worker=${tag}"
+    -e "WORKER_ROLE=${role}"
+    -e "WORKER_BIN=${WORKER_BIN}"
+    -e "WORKER_TAG=${tag}"
+    -e "METADATA=${META_URI}"
+    -e "PEERS=${peers}"
+    -e "HEALTH_PORT=${HEALTH_PORT}"
+    -e "CONTROL_PORT=${CONTROL_PORT}"
+    -e "KV_MIGRATION_MODE=${MIGRATION_MODE}"
+    -e "KAFKA_BROKERS=${KAFKA_BROKERS}"
+    -e "MC_TCP_BIND_ADDRESS=${bindIp}"
+    -e "TT_LOG_LEVEL=${TT_LOG_LEVEL}"
+    -v "${table}:${table}:ro"
+  )
+  if [[ "${MIGRATION_MODE}" == "device" ]]; then
+    cmd+=(
+      --device=/dev/tenstorrent
+      --mount source=/dev/hugepages-1G,target=/dev/hugepages-1G,type=bind
+    )
+  fi
+  if [[ "${role}" == "prefill" ]]; then
+    cmd+=(-e "PREFILL_TABLE=${PREFILL_TABLE}")
+  else
+    cmd+=(-e "DECODE_TABLE=${DECODE_TABLE}")
+  fi
+
+  if [[ "${ENGINE_HANDOFF_PORT}" != "0" && -n "${devmap}" ]]; then
+    cmd+=(-e "ENGINE_HANDOFF_PORT=${ENGINE_HANDOFF_PORT}")
+  elif [[ -n "${devmap}" ]]; then
+    cmd+=(-e "DEVICE_MAP=${devmap}" -v "${devmap}:${devmap}:ro")
+  fi
+  cmd+=("${WORKER_IMAGE}")
+  printf '%q ' "${cmd[@]}"
+}
+
+# Push the selected map to the worker on 127.0.0.1:ENGINE_HANDOFF_PORT.
+# Retries until the worker is listening after loading its .pb.
+pushDeviceMapSlot() {
+  local s="$1" host="${WK_HOST[$s]}" devmap="${WK_DEVMAP[$s]}"
+  local tag="${WK_TAG[$s]}"
+  [[ "${ENGINE_HANDOFF_PORT}" != "0" && -n "${devmap}" ]] || return 0
+  local sendCmd="${HANDOFF_SENDER_BIN} --host 127.0.0.1 --port ${ENGINE_HANDOFF_PORT} --device-map ${devmap}"
+  local attempt=0 maxAttempts=60
+  while (( attempt < maxAttempts )); do
+    if (( DRY_RUN )); then
+      echo "[dry-run] push DeviceMap ${tag} on ${host}: ${sendCmd}"
+      return 0
+    fi
+    if runOnHost "${host}" "${sendCmd}" >/dev/null 2>&1; then
+      echo "[deploy] DeviceMap pushed to ${tag} on ${host} (port ${ENGINE_HANDOFF_PORT})"
+      return 0
+    fi
+    sleep 1
+    attempt=$((attempt + 1))
+  done
+  die "failed to push DeviceMap to ${tag} on ${host} after ${maxAttempts}s (is worker listening on :${ENGINE_HANDOFF_PORT}?)"
+}
+
+containerIsRunning() {
+  local s="$1" command state
+  printf -v command "%s inspect --format '{{.State.Running}}' %q" \
+    "${WK_DOCKER[$s]}" "${WK_CONTAINER[$s]}"
+  state="$(runOnHost "${WK_HOST[$s]}" "${command}" 2>/dev/null)" || return 1
+  [[ "${state}" == "true" ]]
+}
+
+waitForContainerStart() {
+  local s="$1" pid="${WK_PID[$s]}" log="${WK_LOG[$s]}"
+  local deadline=$(( SECONDS + 60 )) rc
+  while (( SECONDS < deadline )); do
+    if containerIsRunning "${s}"; then
+      return 0
+    fi
+    if ! kill -0 "${pid}" 2>/dev/null; then
+      if wait "${pid}"; then rc=0; else rc=$?; fi
+      WK_PID[$s]=""
+      echo "ERROR: ${WK_ROLE[$s]}-${WK_INDEX[$s]} failed to launch on ${WK_HOST[$s]} (rc=${rc})" >&2
+      tail -n 20 "${log}" >&2
+      return 1
+    fi
+    sleep 0.25
+  done
+  echo "ERROR: timed out waiting for container ${WK_CONTAINER[$s]} on ${WK_HOST[$s]}" >&2
+  tail -n 20 "${log}" >&2
+  return 1
+}
+
+# Launch the worker over SSH and report success only after Docker confirms that
+# the named remote container is running.
 launchWorkerSlot() {
   local s="$1" role="${WK_ROLE[$s]}" index="${WK_INDEX[$s]}" host="${WK_HOST[$s]}"
-  local log="${WK_LOG[$s]}" cmd
+  local log="${WK_LOG[$s]}" archivedLog cmd
   cmd="$(workerCmd "${s}")"
   clearRpcMeta "${WK_TAG[$s]}"
-  : >"${log}"
-  if isLocalHost "${host}"; then
-    bash -c "${cmd}" >"${log}" 2>&1 &
-  else
-    ssh "${SSH_OPTS[@]}" "${host}" "${cmd}" >"${log}" 2>&1 &
+  sweepWorkerOnHost "${host}" "${WK_TAG[$s]}" "${WK_DOCKER[$s]}" >/dev/null || \
+    die "could not clear stale container for ${WK_TAG[$s]} on ${host}"
+  if [[ -e "${log}" ]]; then
+    archivedLog="${log%.log}.$(date -u +%Y%m%dT%H%M%S.%N).log"
+    mv -- "${log}" "${archivedLog}" || die "could not archive worker log: ${log}"
+    echo "[deploy] archived previous ${role}-${index} log at ${archivedLog}"
   fi
+  : >"${log}"
+  echo "[deploy] launching ${role}-${index} on ${host} (container=${WK_CONTAINER[$s]})"
+  runOnHost "${host}" "${cmd}" >"${log}" 2>&1 &
   WK_PID[$s]=$!
   WK_FAILS[$s]=0
-  echo "[deploy] ${role}-${index} on ${host} started (pid ${WK_PID[$s]}, log ${log})"
+  waitForContainerStart "${s}" || return 1
+  echo "[deploy] ${role}-${index} container running on ${host} (pid=${WK_PID[$s]}, log=${log})"
+  # pushDeviceMapSlot "${s}"
 }
 
 launchAllWorkers() {
   local s
-  for (( s = 0; s < ${#WK_ROLE[@]}; s++ )); do launchWorkerSlot "${s}"; done
+  for (( s = 0; s < ${#WK_ROLE[@]}; s++ )); do
+    launchWorkerSlot "${s}" || return 1
+  done
 }
 
 # Health = /healthz only. The launch PID is deploy's kill/sweep handle for a
@@ -561,7 +868,7 @@ superviseLoop() {
         # worker fails to bind, and the "restart" just churns launchers. If the
         # sweep can't free it, keep WK_FAILS so the next cycle retries the sweep.
         [[ -n "${WK_PID[$s]}" ]] && kill "${WK_PID[$s]}" 2>/dev/null
-        if sweepWorkerOnHost "${WK_HOST[$s]}" "${WK_TAG[$s]}"; then
+        if sweepWorkerOnHost "${WK_HOST[$s]}" "${WK_TAG[$s]}" "${WK_DOCKER[$s]}"; then
           launchWorkerSlot "${s}"
         else
           echo "[deploy] ERROR: could not free ${WK_HOST[$s]}:${HEALTH_PORT}; not relaunching (will retry next cycle)" >&2
@@ -572,34 +879,58 @@ superviseLoop() {
   done
 }
 
+# One-shot teardown. Bash INT traps resume the interrupted loop unless we
+# disable traps and exit — that was the "Ctrl-C forever / unhealthy spam" bug.
+CLEANUP_DONE=0
 cleanup() {
+  local exitCode="${1:-0}"
+  (( CLEANUP_DONE )) && return 0
+  CLEANUP_DONE=1
+  # Ignore further Ctrl-C so a signal mash cannot abort mid-sweep.
+  trap "" INT TERM
+  trap - EXIT
+
   echo ""
   echo "[deploy] tearing down..."
   local s
-  # Unpublish before kill so peers do not keep resolving dead workers if the
-  # metadata service outlives this deploy.
+  # Best-effort meta clear (never blocks long — see clearRpcMeta).
   for (( s = 0; s < ${#WK_TAG[@]}; s++ )); do
     clearRpcMeta "${WK_TAG[$s]}"
   done
   for (( s = 0; s < ${#WK_PID[@]}; s++ )); do
-    [[ -n "${WK_PID[$s]:-}" ]] && kill "${WK_PID[$s]}" 2>/dev/null
+    [[ -n "${WK_PID[$s]:-}" ]] && kill -9 "${WK_PID[$s]}" 2>/dev/null
   done
-  [[ -n "${META_PID}" ]] && kill "${META_PID}" 2>/dev/null
-  # Sweep our workers by name, in parallel (each blocks up to the grace period;
-  # serial across 17 hosts would make teardown crawl). Keep each background PID
-  # so we can wait on it individually and surface a failed sweep instead of
-  # swallowing it — a straggler left holding :HEALTH_PORT matters next deploy.
+
+  # Remove worker containers in parallel. Short grace keeps Ctrl-C teardown
+  # bounded even when a worker does not handle TERM promptly.
+  local savedGrace="${SWEEP_GRACE_SEC}"
+  SWEEP_GRACE_SEC=2
   local -a sweepPids=() sweepLabels=()
   for (( s = 0; s < ${#WK_ROLE[@]}; s++ )); do
-    sweepWorkerOnHost "${WK_HOST[$s]}" "${WK_TAG[$s]}" >/dev/null 2>&1 &
+    sweepWorkerOnHost "${WK_HOST[$s]}" "${WK_TAG[$s]}" "${WK_DOCKER[$s]}" >/dev/null 2>&1 &
     sweepPids+=("$!")
     sweepLabels+=("${WK_ROLE[$s]}-${WK_INDEX[$s]}@${WK_HOST[$s]}")
   done
-  local i
+  local i waited
   for (( i = 0; i < ${#sweepPids[@]}; i++ )); do
-    wait "${sweepPids[$i]}" || \
-      echo "[deploy] WARN: sweep of ${sweepLabels[$i]} failed; a straggler may still hold :${HEALTH_PORT}" >&2
+    # Bound wait so a wedged ssh cannot trap Ctrl-C forever.
+    # timeout(1) cannot wait on this shell's children — poll instead.
+    waited=0
+    while kill -0 "${sweepPids[$i]}" 2>/dev/null; do
+      if (( waited >= 15 )); then
+        kill -9 "${sweepPids[$i]}" 2>/dev/null || true
+        echo "[deploy] WARN: sweep of ${sweepLabels[$i]} timed out" >&2
+        break
+      fi
+      sleep 1
+      waited=$((waited + 1))
+    done
+    wait "${sweepPids[$i]}" 2>/dev/null || \
+      echo "[deploy] WARN: sweep of ${sweepLabels[$i]} failed" >&2
   done
+  SWEEP_GRACE_SEC="${savedGrace}"
+  echo "[deploy] tear down complete"
+  exit "${exitCode}"
 }
 
 main() {
@@ -612,23 +943,36 @@ main() {
   (( NUM_DECODE >= 1 )) || die "--decode-hosts must list at least one host"
 
   echo "[deploy] prefill hosts=${NUM_PREFILL} decode hosts=${NUM_DECODE} kafka=${KAFKA_BROKERS}"
-  echo "[deploy] tables: prefill=${PREFILL_TABLE} decode=${DECODE_TABLE}${DEVICE_MAP_DIR:+ device-map-dir=${DEVICE_MAP_DIR}}"
-  [[ -z "${DEVICE_MAP_DIR}" ]] && echo "[deploy] no device-map-dir: discovery-only (workers register + are discoverable, but cannot move KV)"
+  echo "[deploy] image=${WORKER_IMAGE} mode=${MIGRATION_MODE}"
+  echo "[deploy] tables: prefill=${PREFILL_TABLE} decode=${DECODE_TABLE}"
+  echo "[deploy] device maps: prefill=${PREFILL_DEVICE_MAP:-none} decode=${DECODE_DEVICE_MAP:-none}"
+  if [[ "${MIGRATION_MODE}" == "dry-run" ]]; then
+    echo "[deploy] dry-run mode: discovery, table exchange, health, and Kafka enabled; device I/O disabled"
+  elif [[ -z "${PREFILL_DEVICE_MAP}" && -z "${DECODE_DEVICE_MAP}" ]]; then
+    echo "[deploy] no device maps: discovery-only (workers register + are discoverable, but cannot move KV)"
+  elif [[ "${ENGINE_HANDOFF_PORT}" != "0" ]]; then
+    echo "[deploy] DeviceMap via socket handoff port=${ENGINE_HANDOFF_PORT} sender=${HANDOFF_SENDER_BIN}"
+  else
+    echo "[deploy] DeviceMaps via role-specific files (ENGINE_HANDOFF_PORT=0)"
+  fi
 
-  trap cleanup EXIT INT TERM
-  startDiscoveryService || exit 1
+  verifyDiscoveryService || exit 1
   initWorkerSlots
   assertExclusiveDecodePeers
+  ensureAllWorkerImages
 
   if (( DRY_RUN )); then
     local s
     for (( s = 0; s < ${#WK_ROLE[@]}; s++ )); do
       echo "[dry-run] ${WK_HOST[$s]} (${WK_TAG[$s]}): $(workerCmd "${s}")"
+      pushDeviceMapSlot "${s}"
     done
-    echo "[deploy] dry-run complete"; trap - EXIT INT TERM; exit 0
+    echo "[deploy] dry-run complete"; CLEANUP_DONE=1; trap - EXIT INT TERM; exit 0
   fi
 
-  launchAllWorkers
+  trap 'cleanup 130' INT TERM
+  trap 'cleanup $?' EXIT
+  launchAllWorkers || exit 1
   waitReady || true
   superviseLoop
 }

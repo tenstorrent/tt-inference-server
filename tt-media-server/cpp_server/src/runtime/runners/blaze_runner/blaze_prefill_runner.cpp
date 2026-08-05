@@ -48,9 +48,7 @@ BlazePrefillRunner::BlazePrefillRunner(
 
 BlazePrefillRunner::~BlazePrefillRunner() {
   stop();
-  if (prefillScheduler) {
-    prefillScheduler->stop();
-  }
+  shutdownScheduler();
 }
 
 void BlazePrefillRunner::run() {
@@ -673,9 +671,15 @@ void BlazePrefillRunner::checkOutputHang() {
       "in-flight generation(s) (threshold={} ms). Self-terminating worker so "
       "infrastructure can restart the server.",
       elapsed.count(), runningCount, outputHangTimeout.count());
+  shutdownScheduler();
   std::abort();
 }
 
+void BlazePrefillRunner::shutdownScheduler() {
+  if (prefillScheduler) {
+    prefillScheduler->stop();
+  }
+}
 void BlazePrefillRunner::handleTask(
     std::unique_ptr<tt::domain::llm::Sequence> task) {
   auto slotId = task->getPrefillKVCacheSlot();

@@ -13,6 +13,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
@@ -397,7 +398,7 @@ BlazeConfig blazeConfig() {
     cfg.migrationPrefillEndpointId = migrationPrefillEndpointId();
     cfg.migrationDecodeEndpointId = migrationDecodeEndpointId();
     cfg.specDecodeMode = specDecodeMode();
-    cfg.mtpLevel = mtpLevel();
+    cfg.specLevel = specLevel();
     cfg.blazeNumberOfPipelineStages = blazeNumberOfPipelineStages();
 
     // Pipeline / channel config
@@ -800,6 +801,10 @@ bool dynamoEndpointEnabled() {
   return envBool("DYNAMO_ENDPOINT_ENABLED", defaults::DYNAMO_ENDPOINT_ENABLED);
 }
 
+bool dynamoRoutingEnabled() {
+  return envBool("DYNAMO_ROUTING", defaults::DYNAMO_ROUTING);
+}
+
 std::string dynamoBindHost() {
   return envString("DYNAMO_BIND_HOST", defaults::DYNAMO_BIND_HOST);
 }
@@ -840,11 +845,8 @@ uint32_t blazeNumberOfPipelineStages() {
                                         resolveBlazeNumberOfPipelineStages()));
 }
 
-size_t mtpLevel() {
-  auto val = static_cast<size_t>(envUlong("MTP_LEVEL", defaults::MTP_LEVEL));
-  if (val > 4) {
-    throw std::runtime_error("MTP_LEVEL must be <= 4");
-  }
+size_t specLevel() {
+  auto val = static_cast<size_t>(envUlong("SPEC_LEVEL", defaults::SPEC_LEVEL));
   return val;
 }
 
@@ -868,6 +870,54 @@ std::string dynamoComponent() {
 
 std::string dynamoEndpointName() {
   return envString("DYNAMO_ENDPOINT_NAME", defaults::DYNAMO_ENDPOINT_NAME);
+}
+
+std::string dynamoDiscoveryBackend() {
+  return envString("DYNAMO_DISCOVERY_BACKEND",
+                   defaults::DYNAMO_DISCOVERY_BACKEND);
+}
+
+std::string dynamoKubeApiServer() {
+  if (const char* v = std::getenv("DYNAMO_KUBE_API_SERVER"); v && *v) {
+    return v;
+  }
+  const char* host = std::getenv("KUBERNETES_SERVICE_HOST");
+  if (host && *host) {
+    const char* port = std::getenv("KUBERNETES_SERVICE_PORT");
+    const std::string portStr = (port && *port) ? port : "443";
+    return "https://" + std::string(host) + ":" + portStr;
+  }
+  // DNS fallback
+  return "https://kubernetes.default.svc";
+}
+
+std::string dynamoKubeTokenPath() {
+  return envString("DYNAMO_KUBE_TOKEN_PATH", defaults::DYNAMO_KUBE_TOKEN_PATH);
+}
+
+bool dynamoKubeValidateCert() {
+  return envBool("DYNAMO_KUBE_VALIDATE_CERT",
+                 defaults::DYNAMO_KUBE_VALIDATE_CERT);
+}
+
+std::string dynamoPodName() { return envString("POD_NAME", ""); }
+
+std::string dynamoPodUid() { return envString("POD_UID", ""); }
+
+std::string dynamoPodNamespace() {
+  if (const char* v = std::getenv("POD_NAMESPACE"); v && *v) {
+    return v;
+  }
+  std::ifstream f(defaults::DYNAMO_KUBE_NAMESPACE_PATH);
+  if (f) {
+    std::string ns;
+    std::getline(f, ns);
+    while (!ns.empty() && std::isspace(static_cast<unsigned char>(ns.back()))) {
+      ns.pop_back();
+    }
+    return ns;
+  }
+  return "";
 }
 
 /**

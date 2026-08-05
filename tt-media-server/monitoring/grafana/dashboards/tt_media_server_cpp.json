@@ -457,7 +457,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Queries: returning-user requests (multiple 'user' messages) checked against the prefix cache. Hits: subset that reused an existing KV cache.",
+      "description": "Queries: total prompt tokens (block-aligned) that entered the prefix-cache lookup. Hits: the subset of those tokens served from an existing session's KV cache. Per-token, matching vLLM's vllm:prefix_cache_{queries,hits}_total.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2873,5 +2873,5 @@
   "timezone": "browser",
   "title": "TT Inference Server",
   "uid": "tt-inference-server",
-  "version": 3
+  "version": 4
 }

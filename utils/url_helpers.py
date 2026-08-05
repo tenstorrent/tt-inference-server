@@ -30,7 +30,7 @@ def normalize_server_url(value: str) -> str:
 
     Strips surrounding whitespace and a trailing slash, prepends ``http://``
     when no scheme is given, and validates that a hostname is present. Shared
-    by v1 and v2 ``run.py`` so both apply the same rule.
+    by ``run.py`` and the workflow engine so both apply the same rule.
 
     Raises ``ValueError`` (with a CLI-friendly message) when no hostname can be
     derived; callers should surface it via ``parser.error``.
@@ -65,7 +65,7 @@ def is_remote_server(runtime_config=None, args=None) -> bool:
 
     Checks the explicit ``--server-url`` CLI flag first (when ``args`` is
     provided), then falls back to ``runtime_config.server_url`` propagated
-    through the v2 bridge. A truthy value means tests/benchmarks should target
+    through the workflow dispatch. A truthy value means tests/benchmarks should target
     a remote OpenAI-compatible endpoint rather than a locally launched server.
     """
     return bool(

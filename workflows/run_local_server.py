@@ -362,7 +362,7 @@ def run_local_command(
             raise RuntimeError("Local server process failed to start.")
         time.sleep(0.1)
 
-    skip_workflows = {WorkflowType.SERVER, WorkflowType.REPORTS}
+    skip_workflows = {WorkflowType.SERVER}
     if WorkflowType.from_string(runtime_config.workflow) not in skip_workflows:
 
         def teardown_local_server():

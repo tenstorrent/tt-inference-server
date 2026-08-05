@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+
 # Download ShareGPT dataset if it doesn't exist
 if [ ! -f "datasets/sharegpt.json" ]; then
     echo "ShareGPT dataset not found. Downloading..."

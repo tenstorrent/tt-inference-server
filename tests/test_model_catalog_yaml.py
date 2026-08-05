@@ -2,8 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-from pathlib import Path
-
+from workflows.utils import get_repo_root_path
 from workflows.model_spec import (
     DeviceModelSpec,
     KnownIssue,
@@ -220,7 +219,7 @@ def test_dev_catalog_without_pinning_fields_loads(tmp_path):
     assert spec.code_link is None
 
 
-MODEL_SPECS_DIR = Path(__file__).resolve().parent.parent / "workflows" / "model_specs"
+MODEL_SPECS_DIR = get_repo_root_path() / "workflows" / "model_specs"
 EXPECTED_CATALOG_ENVS = ("prod", "dev")
 EXPECTED_CATALOG_FILES = (
     "llm.yaml",
@@ -326,7 +325,7 @@ def test_diffusiongemma_dev_spec_enables_upfront_early_halt_and_thinking():
     # request returns empty while `vllm bench serve` still reports a throughput
     # number taken from the SSE usage block. Derive the requirement from the sweep
     # so a max_context change cannot silently uncover a row.
-    from benchmarking.benchmark_config import BENCHMARK_ISL_OSL_PAIRS
+    from reference_config.benchmarking.benchmark_config import BENCHMARK_ISL_OSL_PAIRS
 
     max_context = spec.device_model_spec.max_context
     benchmark_isls = {

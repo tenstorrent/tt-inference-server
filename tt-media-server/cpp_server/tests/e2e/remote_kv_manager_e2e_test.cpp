@@ -361,7 +361,7 @@ TEST_F(RemoteKVManagerE2ETest, MigrateRoutesRequestToOwnerPartition) {
   ASSERT_TRUE(parsed.has_value());
   EXPECT_EQ(parsed->layer_begin, K_PARTITIONED_TARGET_LAYER);
   EXPECT_EQ(parsed->layer_end, K_PARTITIONED_TARGET_LAYER + 1);
-  EXPECT_EQ(parsed->migration_id, id);
+  EXPECT_EQ(parsed->kafka_request_id, id);
 
   for (auto& w : workers) w->stop();
 }

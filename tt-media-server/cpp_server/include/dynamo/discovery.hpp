@@ -6,21 +6,33 @@
 /**
  * Discovery registration for Dynamo backends.
  *
- * Uses etcd: PUTs instance + Model Descriptor Card JSON under keys
- * `v1/instances/<key>` and `v1/mdc/<key>` attached to a lease. Keep-alive
- * refreshes that lease; unregister revokes it (atomically deleting both keys).
- *
- * Wire-compatible with NVIDIA Dynamo's KVStoreDiscovery; the frontend reads
- * the same JSON payloads.
+ * Two backends, both wire-compatible with NVIDIA Dynamo (the frontend reads the
+ * same JSON payloads):
+ *   - Etcd: PUTs instance + Model Descriptor Card JSON under keys
+ *     `v1/instances/<key>` and `v1/mdc/<key>` attached to a lease. Keep-alive
+ *     refreshes the lease; unregister revokes it.
+ *   - Kubernetes: server-side-applies a `DynamoWorkerMetadata` custom resource
+ *     that bundles the same per-instance JSON into `spec.data`. No lease —
+ *     liveness/removal is owned by pod readiness (EndpointSlices) and the CR's
+ *     Pod owner-reference (garbage collection).
  */
 
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace tt::dynamo {
 
+/// Which discovery backend a registration talks to. Matches the frontend's
+/// DYN_DISCOVERY_BACKEND.
+enum class DiscoveryBackend { ETCD, KUBERNETES };
+
 struct DiscoveryConfig {
+  /// Selects the backend `DiscoveryRegistration::create` instantiates.
+  DiscoveryBackend backend = DiscoveryBackend::ETCD;
+
+  // ---- Etcd backend ------------------------------------------------------
   /// Single etcd HTTP endpoint or comma-separated list (only the first is
   /// dialed today). Use `http://<host>:2379`; HTTPS is unsupported.
   std::string etcd_endpoints = "http://localhost:2379";
@@ -43,6 +55,32 @@ struct DiscoveryConfig {
   /// Filesystem directory containing config.json + tokenizer.json +
   /// tokenizer_config.json.
   std::string model_path;
+
+  // ---- Model Deployment Card capabilities (shared by both backends) -------
+  /// Dynamo ModelType capability advertised in the Model Deployment Card.
+  std::string model_type = "Chat";
+  /// Dynamo ModelInput advertised in the Model Deployment Card.
+  std::string model_input = "Tokens";
+  /// Dynamo WorkerType advertised in newer Model Deployment Cards.
+  std::string worker_type;
+  /// Peer WorkerTypes required for serving readiness, encoded as DNF.
+  std::vector<std::vector<std::string>> needs;
+
+  // ---- Kubernetes backend ------------------------------------------------
+  /// API server base URL, e.g. "https://10.0.0.1:443".
+  std::string kube_api_server;
+  /// Path to the ServiceAccount bearer token file.
+  std::string kube_token_path =
+      "/var/run/secrets/kubernetes.io/serviceaccount/token";
+  /// Validate the API server's TLS certificate.
+  bool kube_validate_cert = true;
+  /// Namespace the DynamoWorkerMetadata CR is created in.
+  std::string pod_namespace;
+  /// Pod identity for the CR name and owner reference (downward API).
+  std::string pod_name;
+  std::string pod_uid;
+  /// Name of the DynamoWorkerMetadata CR. Pod mode: equal to `pod_name`.
+  std::string cr_name;
 };
 
 /**
@@ -63,19 +101,23 @@ class DiscoveryRegistration {
   /// Publish the instance + MDC documents. Throws on transport failure.
   virtual void registerSelf() = 0;
 
-  /// Refresh the registration so it doesn't expire. This is a lease
-  /// keep-alive that falls back to a full re-register if the lease has been
-  /// reaped. Errors are swallowed (logged) so a transient outage doesn't
-  /// kill the worker.
-  virtual void keepAlive() = 0;
+  /// Refresh the registration so it doesn't expire (e.g. etcd lease renewal,
+  /// falling back to a full re-register if the lease was reaped). Only invoked
+  /// when `keepAliveIntervalSecs() > 0`; the default no-op suits backends with
+  /// no expiry (kubernetes, whose liveness Kubernetes owns). Implementations
+  /// should swallow/log errors so a transient outage doesn't kill the worker.
+  virtual void keepAlive() {}
 
   /// Remove the registration. Errors are swallowed (best effort on
   /// shutdown).
   virtual void unregisterSelf() = 0;
 
-  /// Suggested keep-alive period. The endpoint thread sleeps for this many
-  /// seconds between `keepAlive()` calls.
-  virtual int keepAliveIntervalSecs() const = 0;
+  /// Keep-alive period: the endpoint thread sleeps this many seconds between
+  /// `keepAlive()` calls. The default 0 means the backend needs no periodic
+  /// keep-alive (kubernetes, whose liveness Kubernetes owns) and the endpoint
+  /// spawns no keep-alive thread; override to a positive value for lease-based
+  /// backends (etcd).
+  virtual int keepAliveIntervalSecs() const { return 0; }
 };
 
 }  // namespace tt::dynamo
