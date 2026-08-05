@@ -795,6 +795,11 @@ def handle_secrets(runtime_config):
         WorkflowType.SPEC_TESTS,
         WorkflowType.SERVING_BENCH,
         WorkflowType.PREFILL_DECODE,
+        # Agentic evals only drive an already-deployed OpenAI-compatible server,
+        # and their task datasets come from the harbor registry rather than the
+        # Hub. Without this the non-tty case dies inside the interactive
+        # "Enter your HF_TOKEN:" prompt with an EOFError.
+        WorkflowType.AGENTIC,
     }
     # --docker-server requires the HF_TOKEN env var to be available
     huggingface_required = (
