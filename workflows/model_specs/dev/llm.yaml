@@ -341,27 +341,33 @@ templates:
         MESH_DEVICE: "P150x4"
         # denoise blocks are ~tens of seconds; 900000 default RPC timeout is too tight.
         VLLM_RPC_TIMEOUT: "1800000"
+        # First-use compile/warmup collectives can legitimately exceed the generic
+        # five-second Metal op timeout; that timeout killed startup on QB2.
+        DISABLE_METAL_OP_TIMEOUT: "1"
         # On-device permuted-vocab Gumbel: keeps the RNG on device (outside the
-        # trace), dropping the ~313 ms/step host RNG and the ~1 GiB/step
-        # replicated PCIe DMA for ~1.8x denoise/step. This is a distribution
-        # change rather than a bit-exact swap, so this eval doubles as its
-        # GPQA re-gate; set "host" to fall back to IID full-vocabulary host
-        # Gumbel (bit-identical to the 2026-07-17 validated config).
+        # trace), dropping the old per-step host RNG and replicated PCIe DMA.
+        # It is the only materialized Gumbel source accepted by up-front capture;
+        # chunked/argmax require DG_UPFRONT_CAPTURE=0 and the host mode was removed.
         DG_VLLM_GUMBEL_MODE: "device"
-        # Sparse tuned MoE -- ~4x faster than the dense 128-expert eager path.
-        DG_SPARSE_MOE: "1"
-        DG_SPARSE_MOE_TUNED: "1"
         DG_VLLM_MAX_DENOISE_STEPS: "48"
         # Capture the sole denoise Metal trace profile once during model warmup
         # and reuse its persistent adapter across requests. Reveal masking and
         # one-step early halt are intrinsic to this path.
         DG_UPFRONT_CAPTURE: "1"
+        # Preserve logical prompt length while compiling prefill at power-of-two
+        # execution buckets. All buckets through the served 16K limit are warmed
+        # below, so arbitrary admitted prompt lengths need no exact whitelist entry.
+        DG_UPFRONT_COARSE_PREFILL_BUCKETS: "1"
+        # Safe fallback for a genuinely cold bucket: release the resident trace,
+        # compile with no trace active, then recapture. The complete bucket list
+        # below means normal eval/benchmark/server traffic should never rebuild.
+        DG_UPFRONT_LAZY_PREFILL_RECAPTURE: "1"
         # MUST track max_context. The committed prefix grows 256 tokens per block, so 54 blocks
         # plus the longest 2432-token prompt reaches 16256; a reveal span of 8192 would leave later
         # blocks unable to see the prefix they are supposed to condition on -- silently, since
         # nothing errors. This is also the expensive knob: the persistent reveal mask and the
-        # per-step prefix read both scale with it, so raising it competes with DG_MOE_CONCAT's
-        # 7.8 GiB for the same DRAM (measured free at 8192 with concat on: 2.47 GiB).
+        # per-step prefix read both scale with it, so raising it competes with the
+        # always-on concat-experts weight bank for the same DRAM.
         DG_DENOISE_REVEAL_PMAX: "16384"
         # HF's sliding layers retain only the last sliding_window-1 = 1023 committed
         # tokens, and 25 of DiffusionGemma's 30 layers are sliding; without this the
@@ -379,61 +385,14 @@ templates:
         # Evidence: models/experimental/diffusion_gemma/doc/decision_fidelity/
         #   device_gumbel_restored.md sections 10, 17, 19.
         DG_DENOISE_SLIDING_WINDOW: "1"
-        # The two largest remaining perf levers, both default OFF in tt-metal pending this gate.
-        # DG_MOE_CONCAT (-29.9%): concat-experts MoE. At the shipped capacity == canvas == 256 the
-        # token-gather path adds ~+89% MACs over an expert MAC count already equal to dense, and the
-        # gathered [1,E,C,H] is ~94% zero rows; the fold is exact by linearity of the down
-        # projection (device PCC 0.9999218). Costs 7.8 GiB of duplicated gate/up weights, which is
-        # why trace_region_size drops to 6 GiB below -- the two compete for the same DRAM.
-        # DG_NORM_FULLCANVAS (-17.9%): one full-canvas rms_norm instead of ~1700 chunked ones per
-        # step; also cuts commit from 2.04 s to 0.37 s per block. Together ~1.9x.
-        # Both change committed tokens, so they cannot be gated by bit-identity against a baseline
-        # our own #48291 record calls degenerate -- they are gated on absolute GPQA against the CUDA
-        # reference (70.71% / 70.20% flexible-extract, thinking, two reps). First partial read
-        # 2026-07-28: 47/61 = 77.05% over the questions served before an unrelated engine crash, vs
-        # 68.03% for the reference restricted to those same 61 -- no regression, and this run is the
-        # full-198 confirmation. Set either to "0" to drop back to the shipped default.
-        DG_MOE_CONCAT: "1"
-        DG_NORM_FULLCANVAS: "1"
-        # Up-front capture intentionally rejects unseen prefill shapes after
-        # activation, so this must cover every 32-aligned prefill length the
-        # server can see. The 198-sample gpqa_diamond_cot_zeroshot task with
-        # server-side enable_thinking=true occupies 128..832 plus a single
-        # 2432 outlier; the range is listed contiguously (and 2432 is paired
-        # with 2464) so a few tokens of prompt-template drift cannot push a
-        # doc into an unwarmed bucket and kill the engine. 32/64/96 are here for everything that
-        # is NOT an eval prompt: a curl smoke test, a readiness ping, a hand-typed question. On
-        # 2026-07-28 a 21-token "Reply with exactly: OK" probe (padding to 32) sent to a live server
-        # raised out of prefill_forward -- fatal to the vLLM EngineCore -- and emptied the 135
-        # requests still queued behind it, 56 minutes into a 198-question run. tt-metal 680114b3c2a
-        # makes an unwarmed length cost one request instead of the server, and always warms 32;
-        # these three entries make it cost nothing at all.
+        # Concat-experts MoE and full-canvas normalization are unconditional
+        # model paths now; their former DG_MOE_CONCAT, DG_SPARSE_MOE(_TUNED),
+        # and DG_NORM_FULLCANVAS selectors were deleted and must not be pinned.
         #
-        # The 1024..8224 tail exists for `--workflow benchmarks`, not for evals. Expanding this
-        # spec through benchmarking/benchmark_config.get_benchmark_config gives six
-        # `vllm bench serve` points at concurrency 1 -- isl/osl 128/128, 128/1024, 1024/128,
-        # 2048/128, 4096/128, 8192/128, i.e. the BENCHMARK_ISL_OSL_PAIRS entries satisfying
-        # isl + osl <= max_context -- for 26 requests total. The driver sends
-        # `--extra-body {"truncate_prompt_tokens": "<isl>"}`, so the served prompt is truncated to
-        # exactly isl and the aligned prefill length is isl itself (each isl is already a
-        # 32-multiple). Without these entries four of the six rows, 14 of the 26 requests, take the
-        # up-front-capture rejection: they return empty but still carry a plausible throughput
-        # number, because `vllm bench serve` reads its token counts from the SSE usage block rather
-        # than from the text it received.
-        # isl+32 is paired with each length for the same reason 2432 is paired with 2464: should
-        # the (deprecated) truncate_prompt_tokens path stop applying, the length becomes
-        # (isl - num_special) + chat-template overhead, which rounds up to isl + 32. The margin
-        # costs one warmup prefill each; not having it costs the run.
-        #
-        # The bands BELOW 1024/2048/4096/8192 are for the sonnet prompt source (see
-        # metadata.benchmark_dataset_name). sonnet assembles real English one WHOLE LINE at a time,
-        # so it undershoots the requested input length, and truncate_prompt_tokens can only cut from
-        # above -- it cannot pad back up. Measured offline against this checkpoint's tokenizer:
-        # isl 2048 -> 2033/1972 templated tokens (aligning to 2048 and 1984), 4096 -> 4085/4054
-        # (4096 and 4064), 8192 -> 8188/8137 (8192 and 8160). Worst observed undershoot is two
-        # tiles, so three tiles of margin are listed; without them those rows return empty answers
-        # while still reporting a throughput taken from the usage block.
-        DG_UPFRONT_PREFILL_WARMUP_LENS: "32,64,96,128,160,192,224,256,288,320,352,384,416,448,480,512,544,576,608,640,672,704,736,768,800,832,864,896,928,960,992,1024,1056,1952,1984,2016,2048,2080,2432,2464,4000,4032,4064,4096,4128,8096,8128,8160,8192,8224"
+        # Compile every coarse prefill bucket admitted by max_context before the
+        # resident denoise trace is captured. The model also warms the one-tile
+        # (32-token) startup shape automatically.
+        DG_UPFRONT_PREFILL_WARMUP_LENS: "128,256,512,1024,2048,4096,8192,16384"
         # The real trace-region knob is override_tt_config.trace_region_size
         # below (worker.py -> open_mesh_device); the env DG_TRACE_REGION_SIZE is
         # metrics/validation mirror and does NOT carve the region. Up-front
@@ -450,7 +409,7 @@ templates:
         # terminal), once up front rather than once per request.
         trace_mode: all
         # 5.5 GiB. Not a round number and not tuning for its own sake: at 6 GiB this exact
-        # configuration (max_context 16384 + DG_MOE_CONCAT) died on request 8 of 198 in tt-shield run
+        # configuration (max_context 16384 + concat-experts MoE) died on request 8 of 198 in tt-shield run
         # 30387840355 with TT_FATAL from bank_manager.cpp:462 -- and it died by 29,696 BYTES of
         # CONTIGUOUS space. Per bank: size 3.229 GiB, 98.04% allocated, free 64.76 MiB (2.02x the
         # 32.00 MiB request) but largest free block 31.97 MiB. So it was FRAGMENTATION, not capacity,
@@ -459,11 +418,8 @@ templates:
         # 0 OOM, 0 engine deaths, all 48 traces captured, min free DRAM 2.551 GiB vs 2.01 at 6 GiB.
         # NOT proven safe for the whole 198 -- that run reached 31 blocks and the allocation that
         # failed at 6 GiB is triggered by a new SDPA shape, which grows with the committed prefix.
-        # 12 GiB was the original figure and it sized the chunked-Gumbel terminal WITHOUT concat;
-        # going back to it REQUIRES turning DG_MOE_CONCAT off. Do NOT carry any of these to high
-        # context (msl=262144 KV alone is ~15 GiB) -- that regime needs the hybrid eager-terminal
-        # controller and/or bf8 weights. PCC-neutral (allocator-only; never enters an op/seed/command
-        # stream).
+        # Do not carry this reservation unchanged to a different context/model-memory
+        # profile. PCC-neutral (allocator-only; never enters an op/seed/command stream).
         trace_region_size: 5905580032  # 5.5 GiB
       vllm_args:
         # REQUIRED. Without it vLLM honors the model's generation_config.json
@@ -479,11 +435,9 @@ templates:
         default-chat-template-kwargs: '{"enable_thinking": true}'
         reasoning-parser: diffusion_gemma
   status: EXPERIMENTAL
-  # enable_model_warmup + DG_UPFRONT_PREFILL_WARMUP_LENS already warm every
-  # admitted prefill shape and capture the denoise trace before serving. The
-  # generic background trace capture is not just redundant here: it probes
-  # /v1/completions at 128/256/512/1024/2048/4096, and the first length outside
-  # the whitelist makes up-front capture raise, which kills EngineCore.
+  # The model's built-in two-phase warmup compiles every admitted coarse prefill
+  # bucket and captures the denoise trace before serving, so generic background
+  # trace capture is redundant.
   has_builtin_warmup: true
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
@@ -499,8 +453,8 @@ templates:
       # ids therefore publishes a ~3x understatement that no real traffic can produce.
       # sonnet keeps the six (ISL, OSL) points meaningful because it assembles real English up to a
       # requested length; the file is Shakespeare's sonnets, vendored from vllm's benchmarks/ (the
-      # wheel does not ship it, only the source tree does). Its whole-line assembly undershoots the
-      # target, which is why DG_UPFRONT_PREFILL_WARMUP_LENS carries bands below each large ISL.
+      # wheel does not ship it, only the source tree does). Coarse prefill buckets safely absorb its
+      # whole-line undershoot without exact warmup bands below each requested ISL.
       benchmark_dataset_name: sonnet
       benchmark_dataset_path: benchmarking/benchmark_targets/sonnet.txt
       # transformers loads DiffusionGemmaForBlockDiffusion via remote code, and the

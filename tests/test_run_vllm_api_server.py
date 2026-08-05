@@ -266,10 +266,17 @@ def test_main_passes_passthrough_port_to_trace_capture(
         run_vllm_api_server_module, "ensure_weights_available", MagicMock()
     )
     monkeypatch.setattr(run_vllm_api_server_module, "register_tt_models", MagicMock())
+    env_setup_order = []
     monkeypatch.setattr(
-        run_vllm_api_server_module, "set_metal_timeout_env_vars", MagicMock()
+        run_vllm_api_server_module,
+        "set_metal_timeout_env_vars",
+        lambda: env_setup_order.append("metal_timeout"),
     )
-    monkeypatch.setattr(run_vllm_api_server_module, "set_runtime_env_vars", MagicMock())
+    monkeypatch.setattr(
+        run_vllm_api_server_module,
+        "set_runtime_env_vars",
+        lambda _model_spec: env_setup_order.append("model_env"),
+    )
     monkeypatch.setattr(run_vllm_api_server_module, "runtime_settings", MagicMock())
     monkeypatch.setattr(run_vllm_api_server_module.runpy, "run_module", MagicMock())
     monkeypatch.setattr(sys, "argv", ["run_vllm_api_server.py"])
@@ -280,6 +287,7 @@ def test_main_passes_passthrough_port_to_trace_capture(
 
     run_vllm_api_server_module.main()
 
+    assert env_setup_order == ["model_env", "metal_timeout"]
     start_trace_capture.assert_called_once_with(
         model_spec,
         disable_trace_capture=False,

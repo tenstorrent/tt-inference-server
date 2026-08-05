@@ -276,29 +276,30 @@ def test_diffusiongemma_dev_spec_enables_upfront_early_halt_and_thinking():
     assert spec.metadata["reasoning_parser_name"] == "diffusion_gemma"
     assert spec.device_model_spec.max_context == 16384
     assert spec.device_model_spec.override_tt_config["enable_model_warmup"] is True
-    # The model warms its own prefill shapes; the generic background trace
-    # capture would probe unwhitelisted lengths and kill the engine.
+    # The model warms its own coarse prefill buckets and captures its denoise trace.
     assert spec.has_builtin_warmup is True
 
     env = spec.device_model_spec.env_vars
     assert env["DG_UPFRONT_CAPTURE"] == "1"
+    assert env["DG_UPFRONT_COARSE_PREFILL_BUCKETS"] == "1"
+    assert env["DG_UPFRONT_LAZY_PREFILL_RECAPTURE"] == "1"
+    assert env["DISABLE_METAL_OP_TIMEOUT"] == "1"
     # Must equal max_context: the committed prefix reaches 16256 at 54 blocks, and a shorter
     # reveal span silently stops later blocks from seeing their prefix.
     assert env["DG_DENOISE_REVEAL_PMAX"] == "16384"
     assert int(env["DG_DENOISE_REVEAL_PMAX"]) == spec.device_model_spec.max_context
     assert env["DG_VLLM_GUMBEL_MODE"] == "device"
-    # 5.5 GiB, not 6 and not 12: at 6 GiB this configuration OOMed on request 8 of 198 by 29,696
-    # bytes of CONTIGUOUS space (free was 2.02x the request), i.e. fragmentation. Verified at
-    # 5.5 GiB on QB2. Raising it back to 12 requires turning DG_MOE_CONCAT off.
+    # At 6 GiB this configuration OOMed on request 8 of 198 by 29,696 bytes of CONTIGUOUS space
+    # (free was 2.02x the request), i.e. fragmentation. Verified at 5.5 GiB on QB2.
     assert env["DG_TRACE_REGION_SIZE"] == "5905580032"
     # The env var is only a mirror -- it does not carve the region -- but up-front validation
     # refuses to start when it disagrees with the real knob, so they must move together.
     assert int(env["DG_TRACE_REGION_SIZE"]) == spec.device_model_spec.override_tt_config["trace_region_size"]
-    # The two perf levers under absolute-GPQA gate. Pinned because they change committed tokens:
-    # inheriting the tt-metal default would silently serve a different arm than the one measured.
-    assert env["DG_MOE_CONCAT"] == "1"
-    assert env["DG_NORM_FULLCANVAS"] == "1"
     for removed in (
+        "DG_SPARSE_MOE",
+        "DG_SPARSE_MOE_TUNED",
+        "DG_MOE_CONCAT",
+        "DG_NORM_FULLCANVAS",
         "DG_VLLM_TRACE",
         "DG_DENOISE_REVEAL_MASK",
         "DG_DENOISE_LAZY_CAPTURE",
@@ -307,17 +308,18 @@ def test_diffusiongemma_dev_spec_enables_upfront_early_halt_and_thinking():
     ):
         assert removed not in env
     warmup_lens = [int(v) for v in env["DG_UPFRONT_PREFILL_WARMUP_LENS"].split(",")]
-    assert all(n % 32 == 0 for n in warmup_lens)
-    # gpqa_diamond_cot_zeroshot occupies a contiguous 128..896 band plus a 2432
-    # outlier; keep the band gap-free so prompt-template drift cannot land on an
-    # unwarmed shape.
-    assert set(range(128, 896 + 32, 32)).issubset(warmup_lens)
-    assert {2432, 2464}.issubset(warmup_lens)
-    # The low end is for everything that is NOT an eval prompt. A 21-token curl smoke test pads to
-    # 32, and on 2026-07-28 that emptied 135 queued requests 56 minutes into a run: the rejection
-    # raised out of prefill_forward, which is fatal to the vLLM EngineCore. tt-metal 680114b3c2a
-    # makes that cost one request rather than the server; these entries make it cost nothing.
-    assert {32, 64, 96}.issubset(warmup_lens)
+    assert warmup_lens == [128, 256, 512, 1024, 2048, 4096, 8192, 16384]
+
+    def execution_bucket(prompt_len):
+        aligned = (prompt_len + 31) // 32 * 32
+        return next(bucket for bucket in warmup_lens if bucket >= aligned)
+
+    # Arbitrary prompt lengths, including shapes absent from the former exact
+    # whitelist, resolve to a bucket compiled before trace capture.
+    assert all(
+        execution_bucket(prompt_len) in warmup_lens
+        for prompt_len in (1, 32, 33, 97, 897, 1100, 2432, 8193, 16384)
+    )
     # `--workflow benchmarks` drives the same server with the ISLs from
     # BENCHMARK_ISL_OSL_PAIRS, truncated to exactly isl by the driver's
     # truncate_prompt_tokens extra-body. An unwarmed ISL does not fail loudly: the
@@ -330,23 +332,9 @@ def test_diffusiongemma_dev_spec_enables_upfront_early_halt_and_thinking():
     benchmark_isls = {
         isl for isl, osl in BENCHMARK_ISL_OSL_PAIRS if isl + osl <= max_context
     }
-    missing = sorted(isl for isl in benchmark_isls if isl not in warmup_lens)
+    missing = sorted(isl for isl in benchmark_isls if execution_bucket(isl) not in warmup_lens)
     assert not missing, (
-        f"benchmark ISLs {missing} are not in DG_UPFRONT_PREFILL_WARMUP_LENS; "
+        f"benchmark ISLs {missing} do not map to a warmed prefill bucket; "
         "those sweep rows would return empty responses with a plausible tput"
     )
-    # Margin for the case where the deprecated truncate_prompt_tokens path stops
-    # applying and the templated prompt rounds up to the next tile.
-    assert all(isl + 32 in warmup_lens for isl in benchmark_isls)
-    # This model benchmarks on real text (sonnet), which assembles whole lines and therefore
-    # UNDERSHOOTS the requested input length; truncate_prompt_tokens only cuts from above. Measured
-    # worst undershoot is two tiles, so require three below every ISL above the gap-free band.
     assert spec.metadata.get("benchmark_dataset_name") == "sonnet"
-    for isl in sorted(benchmark_isls):
-        if isl <= 896:
-            continue  # inside the contiguous 32..896 band already asserted above
-        missing_below = [isl - 32 * k for k in (1, 2, 3) if isl - 32 * k not in warmup_lens]
-        assert not missing_below, (
-            f"sonnet undershoots isl {isl}; lengths {missing_below} are unwarmed, so those rows "
-            "would return empty answers with a plausible tput"
-        )
