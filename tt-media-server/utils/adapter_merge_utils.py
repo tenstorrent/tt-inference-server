@@ -15,13 +15,6 @@ def merge_adapter(
     output_dir: str,
     dtype_str: str = "torch.bfloat16",
 ) -> str:
-    """Merge a LoRA adapter into its base model and write a full HF checkpoint.
-
-    Runs purely on CPU. The output is a standard HuggingFace checkpoint (config
-    + safetensors + tokenizer) servable via the vLLM container's
-    --host-weights-dir. Designed to run in a spawned subprocess: it is a
-    top-level function with picklable (string) arguments.
-    """
     # Heavy deps imported lazily so they only load inside the merge subprocess.
     from peft import PeftModel
     from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -42,8 +35,7 @@ def merge_adapter(
 
     os.makedirs(output_dir, exist_ok=True)
     logger.info(f"Saving merged model to {output_dir}")
-    # save_pretrained also writes config.json / generation_config.json; the
-    # tokenizer is saved separately since peft does not persist it.
+    
     merged_model.save_pretrained(output_dir, safe_serialization=True)
     AutoTokenizer.from_pretrained(base_model_name).save_pretrained(output_dir)
 

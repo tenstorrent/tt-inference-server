@@ -425,7 +425,6 @@ class TrainingOptimizers(Enum):
 
 
 TRAINING_STORE_ADAPTERS_DIR = "adapters/"
-
 TRAINING_STORE_MERGED_MODELS_DIR = "merged_models/"
 
 

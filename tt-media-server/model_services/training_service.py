@@ -23,10 +23,7 @@ from domain.training_request import TrainingRequest
 from typing import Optional
 from utils.adapter_merge_utils import merge_adapter
 
-# Sidecar metadata file written into each merged-model directory once the merge
-# fully completes. Its presence marks the checkpoint as ready to serve and
-# records its provenance (base model + source training job/checkpoint) so merged
-# checkpoints can be listed independently of the (GC-able) job records.
+
 MERGE_INFO_FILE_NAME = "merge_info.json"
 
 
@@ -37,11 +34,9 @@ class TrainingService(BaseJobService):
         self._model_name = ModelNames(self.settings.training_model).value
         # Base model HF repo id backing the configured training model; used when
         # merging LoRA adapters back into the base weights.
-        self._base_model_name = SupportedModels[
+        self._base_model_hf_repo_id = SupportedModels[
             ModelNames(self.settings.training_model).name
         ].value
-        # Serializes adapter merges: loading a base model on CPU is memory-heavy,
-        # so only one merge is allowed at a time within this container.
         self._adapter_merge_lock = asyncio.Lock()
         super().__init__()
 
@@ -115,14 +110,6 @@ class TrainingService(BaseJobService):
     async def create_adapter_merge_job(
         self, request: AdapterMergeRequest, org_id: Optional[str] = None
     ) -> dict:
-        """Create a job that merges a LoRA adapter checkpoint into its base model.
-
-        The merge runs on CPU and does not touch the accelerator; it is tracked
-        through the shared job manager like any other job. The merged checkpoint
-        is written under ``CACHE_ROOT`` (the persistent volume) at
-        ``<CACHE_ROOT>/merged_models/<task_id>`` so it survives outside the
-        container; its path is available via the job's ``result_path``.
-        """
         adapter_path = self.get_checkpoint_download_path(
             request.source_job_id, request.checkpoint_id, org_id=org_id
         )
@@ -132,21 +119,19 @@ class TrainingService(BaseJobService):
                 f"'{request.source_job_id}'"
             )
 
-        # Root under CACHE_ROOT (the persistent, host-mountable volume) so the
-        # merged model is visible outside the container.
         output_dir = os.path.join(self._merged_models_root(), request._task_id)
         request._adapter_path = adapter_path
         request._output_model_path = output_dir
 
         self.logger.info(
             f"Creating adapter merge job {request._task_id}: "
-            f"base={self._base_model_name}, adapter={adapter_path}, output={output_dir}"
+            f"base={self._base_model_hf_repo_id}, adapter={adapter_path}, output={output_dir}"
         )
 
         return await self._job_manager.create_job(
             job_id=request._task_id,
             job_type=JobTypes.ADAPTER_MERGE,
-            model=self._base_model_name,
+            model=self._base_model_hf_repo_id,
             request=request,
             task_function=self.run_adapter_merge,
             result_path=output_dir,
@@ -154,29 +139,26 @@ class TrainingService(BaseJobService):
         )
 
     async def run_adapter_merge(self, request: AdapterMergeRequest) -> str:
-        """Job task function: perform the LoRA adapter merge in a separate process.
-
+        """
         The merge is run in a freshly spawned subprocess (via a single-worker
         process pool) rather than a thread so that:
           - the large base-model memory footprint is fully reclaimed by the OS
             when the process exits, and
           - a crash or OOM in the merge cannot take down the API process.
-        Merges are serialized via a lock to bound peak host memory usage.
+        Merges are serialized via a lock to allow only one merge at a time 
+        and to bound peak host memory usage.
         """
         async with self._adapter_merge_lock:
             self.logger.info(f"Starting adapter merge for job {request._task_id}")
             loop = asyncio.get_running_loop()
             try:
-                # "spawn" gives a clean interpreter (no forked API state /
-                # threads); the executor is torn down on exit from the `with`
-                # block so the worker process exits and its memory is released.
                 with concurrent.futures.ProcessPoolExecutor(
                     max_workers=1, mp_context=get_context("spawn")
                 ) as executor:
                     output_dir = await loop.run_in_executor(
                         executor,
                         merge_adapter,
-                        self._base_model_name,
+                        self._base_model_hf_repo_id,
                         request._adapter_path,
                         request._output_model_path,
                     )
@@ -192,17 +174,13 @@ class TrainingService(BaseJobService):
             return output_dir
 
     def _merged_models_root(self) -> str:
-        """Directory holding all merged checkpoints, under the persistent volume.
-
-        Falls back to a relative path when CACHE_ROOT is unset (local/dev runs).
-        """
         cache_root = os.getenv("CACHE_ROOT", ".")
         return os.path.join(cache_root, TRAINING_STORE_MERGED_MODELS_DIR)
 
     def _write_merge_info(self, request: AdapterMergeRequest, output_dir: str) -> None:
         info = {
             "merge_id": request._task_id,
-            "model": self._base_model_name,
+            "model": self._base_model_hf_repo_id,
             "source_job_id": request.source_job_id,
             "checkpoint_id": request.checkpoint_id,
             "created_at": time.time(),
