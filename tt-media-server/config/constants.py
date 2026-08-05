@@ -424,14 +424,8 @@ class TrainingOptimizers(Enum):
     ADAMW = "adamw"
 
 
-# Base directory for storing LoRA adapters produced by fine-tuning jobs.
 TRAINING_STORE_ADAPTERS_DIR = "adapters/"
 
-# Base directory for storing full model checkpoints produced by merging an
-# adapter into its base model. These are standard HuggingFace checkpoints that
-# can be served directly by the vLLM container (e.g. via --host-weights-dir).
-# Kept separate from the adapter store so merged models persist independently of
-# the adapter-merge-job lifecycle.
 TRAINING_STORE_MERGED_MODELS_DIR = "merged_models/"
 
 
