@@ -3,9 +3,8 @@
 
 #include "config/settings.hpp"
 
-#include <unistd.h>
-
 #include <json/json.h>
+#include <unistd.h>
 
 #include <algorithm>
 #include <atomic>
@@ -722,8 +721,8 @@ size_t resolveMaxContextLength() {
   std::ifstream in(path);
   if (!in) {
     TT_LOG_WARN(
-        "[Config] Could not open {}; using default MAX_CONTEXT_LENGTH={}",
-        path, defaults::MAX_CONTEXT_LENGTH);
+        "[Config] Could not open {}; using default MAX_CONTEXT_LENGTH={}", path,
+        defaults::MAX_CONTEXT_LENGTH);
     return defaults::MAX_CONTEXT_LENGTH;
   }
   Json::Value root;
