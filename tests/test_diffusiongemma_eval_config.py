@@ -16,15 +16,24 @@ from reference_config.evals.eval_config import (
 from workflows.workflow_types import EvalLimitMode
 
 
+def _eval_tasks():
+    return _eval_config_map["google/diffusiongemma-26B-A4B-it"].tasks
+
+
+def _task(task_name):
+    return next(task for task in _eval_tasks() if task.task_name == task_name)
+
+
 def _gpqa_task():
-    config = _eval_config_map["google/diffusiongemma-26B-A4B-it"]
-    assert len(config.tasks) == 1
-    task = config.tasks[0]
-    assert task.task_name == "gpqa_diamond_cot_zeroshot"
-    return task
+    return _task("gpqa_diamond_cot_zeroshot")
 
 
-def test_diffusiongemma_release_eval_is_gpqa_only():
+def test_diffusiongemma_release_evals_are_gpqa_and_terminal_bench_only():
+    assert [task.task_name for task in _eval_tasks()] == [
+        "gpqa_diamond_cot_zeroshot",
+        "terminal_bench_2_1",
+    ]
+
     task = _gpqa_task()
 
     assert task.use_chat_api is True
@@ -81,6 +90,31 @@ def test_diffusiongemma_gpqa_omits_unsupported_sampling_params():
         "bad_words",
     ):
         assert unsupported_key not in task.gen_kwargs
+
+
+def test_diffusiongemma_terminal_bench_ci_is_small_and_single_request():
+    task = _task("terminal_bench_2_1")
+    config = task.agentic_eval_config
+
+    assert config.n_concurrent_trials == 1
+    assert config.n_attempts == 1
+    assert config.task_names_map[EvalLimitMode.CI_NIGHTLY] == [
+        "terminal-bench/break-filter-js-from-html",
+        "terminal-bench/cobol-modernization",
+        "terminal-bench/compile-compcert",
+        "terminal-bench/feal-differential-cryptanalysis",
+        "terminal-bench/qemu-startup",
+    ]
+    assert config.agent_kwargs["temperature"] == 1.0
+    assert config.agent_kwargs["model_info"] == {
+        "max_input_tokens": 192 * 1024,
+        "max_output_tokens": 64 * 1024,
+    }
+    assert config.agent_kwargs["llm_kwargs"] == {
+        "top_p": 1.0,
+        "max_tokens": 64 * 1024,
+        "timeout": 60 * 60,
+    }
 
 
 def test_diffusiongemma_dev_catalog_maps_gpqa_into_release_evals():

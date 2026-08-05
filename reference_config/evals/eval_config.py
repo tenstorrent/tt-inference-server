@@ -5292,6 +5292,61 @@ _eval_config_list = [
                     EvalLimitMode.CI_NIGHTLY: 0.05,
                 },
             ),
+            EvalTask(
+                task_name="terminal_bench_2_1",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2-1",
+                    agent="terminus-2",
+                    n_concurrent_trials=1,
+                    n_attempts=1,
+                    n_tasks=89,
+                    override_cpus=16,
+                    override_memory_mb=32 * 1024,
+                    agent_timeout_sec=2 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            # Reserve the final 64K for block-diffusion output.
+                            "max_input_tokens": 192 * 1024,
+                            "max_output_tokens": 64 * 1024,
+                        },
+                        "llm_kwargs": {
+                            # DiffusionGemma's model-owned sampler accepts only
+                            # the neutral vLLM sampling values.
+                            "top_p": 1.0,
+                            "max_tokens": 64 * 1024,
+                            "timeout": 60 * 60,
+                        },
+                    },
+                    # Keep CI-mode small and deterministic while exercising
+                    # multi-turn tool use through the block-serving API.
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/break-filter-js-from-html",
+                            "terminal-bench/cobol-modernization",
+                            "terminal-bench/compile-compcert",
+                            "terminal-bench/feal-differential-cryptanalysis",
+                            "terminal-bench/qemu-startup",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 1,
+                },
+            ),
         ],
     ),
 ]
