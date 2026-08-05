@@ -161,7 +161,7 @@ def gh_json_lines(endpoint: str, jq: str) -> list[dict]:
 def list_artifacts(repo: str, run_id: str) -> list[dict]:
     return gh_json_lines(
         f"repos/{repo}/actions/runs/{run_id}/artifacts?per_page=100",
-        ".artifacts[] | {id, name, size_in_bytes, expired}",
+        ".artifacts[] | {id, name, size_in_bytes, expired, created_at}",
     )
 
 
@@ -297,6 +297,83 @@ def resolve_model(
 
 
 # ---------------------------------------------------------------------------
+# dry-run diagnostics (multi-attempt / re-run inspection)
+# ---------------------------------------------------------------------------
+def debug_report(
+    models: dict[str, list[str]], artifacts: list[dict], jobs: list[dict]
+) -> None:
+    """Print, WITHOUT downloading or packaging, exactly which artifact the
+    current selection logic would choose per (model, device) — and flag when a
+    device has more than one candidate (i.e. the job was re-run under the same
+    run id, producing duplicate same-named artifacts across attempts).
+
+    Key facts this surfaces:
+      * The artifacts endpoint is RUN-scoped, not attempt-scoped (GitHub has no
+        per-attempt artifacts route), so every attempt's artifacts are returned
+        together. A re-run model shows up N times with the SAME name.
+      * ``resolve_model`` keeps the FIRST candidate per device, so the winner is
+        whatever order this REST endpoint happens to return. GitHub does not
+        document that order; empirically it is newest-created-first. This report
+        prints the raw API order and the created_at of every candidate so you
+        can see whether 'first' == 'latest attempt' for your run.
+    """
+    print("=" * 78)
+    print("DRY RUN — no downloads, no packaging. Selection diagnostics only.")
+    print("=" * 78)
+
+    # Raw API order of every workflow_logs_release_* artifact.
+    wl = [a for a in artifacts if a["name"].startswith(ARTIFACT_PREFIX)]
+    print(f"\nAll {len(wl)} '{ARTIFACT_PREFIX}*' artifacts in RAW API return order:")
+    for idx, a in enumerate(wl):
+        print(
+            f"  [{idx:2d}] id={a['id']}  created={a.get('created_at', '?')}  {a['name']}"
+        )
+
+    print("\nPer (model, device) resolution (mirrors resolve_model's first-match):")
+    for model, devices in models.items():
+        candidates = [
+            a for a in artifacts if a["name"].startswith(f"{ARTIFACT_PREFIX}{model}_")
+        ]
+        print(f"\n  MODEL {model}  (requested devices: {', '.join(devices)})")
+        if not candidates:
+            print("    (no candidates found)")
+            continue
+
+        # group candidates by resolved device, preserving API order
+        by_dev_all: dict[str, list[dict]] = {}
+        for a in candidates:
+            runner = runner_of(a["name"], model)
+            dev = device_from_jobs(jobs, model, runner)
+            key = dev or f"<unresolved runner={runner}>"
+            by_dev_all.setdefault(key, []).append(a)
+
+        for dev, cands in by_dev_all.items():
+            marker = "  <-- DUPLICATE (re-run)" if len(cands) > 1 else ""
+            print(f"    device {dev}: {len(cands)} candidate(s){marker}")
+            for i, a in enumerate(cands):
+                tag = "CHOSEN " if i == 0 else "ignored"
+                print(
+                    f"        [{tag}] id={a['id']}  created={a.get('created_at', '?')}  "
+                    f"size={a.get('size_in_bytes', '?')}  {a['name']}"
+                )
+            if len(cands) > 1:
+                newest = max(cands, key=lambda a: a.get("created_at", ""))
+                chosen = cands[0]
+                if newest["id"] != chosen["id"]:
+                    print(
+                        "        WARNING: chosen (first in API order) is NOT the newest "
+                        f"created artifact (newest id={newest['id']}). Selection depends "
+                        "on undocumented API ordering."
+                    )
+                else:
+                    print(
+                        "        note: chosen == newest created (latest attempt) for THIS "
+                        "run, but this relies on undocumented API order, not a contract."
+                    )
+    print("\n" + "=" * 78)
+
+
+# ---------------------------------------------------------------------------
 # packaging
 # ---------------------------------------------------------------------------
 def package(version: str, staged: dict[str, Path], out_dir: Path) -> Path:
@@ -426,6 +503,12 @@ def main() -> None:
         action="store_true",
         help="Treat a missing internal device token as a hard error (default: warn)",
     )
+    ap.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="List artifacts/jobs and print which candidate would be chosen per "
+        "(model, device) — flags re-run duplicates — then exit. No download or packaging.",
+    )
     args = ap.parse_args()
 
     if args.model:
@@ -461,6 +544,10 @@ def main() -> None:
     artifacts = list_artifacts(args.repo, args.run_id)
     jobs = list_jobs(args.repo, args.run_id)
     print(f"  {len(artifacts)} artifacts, {len(jobs)} jobs.\n")
+
+    if args.dry_run:
+        debug_report(models, artifacts, jobs)
+        return
 
     tmp_dir = Path(tempfile.mkdtemp(prefix="release_artifacts_"))
     cache: dict[int, Path] = {}
