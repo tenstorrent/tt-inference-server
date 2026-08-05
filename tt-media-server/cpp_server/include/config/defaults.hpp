@@ -177,8 +177,8 @@ constexpr uint32_t TTS_VOICE_SAMPLE_RATE_HZ = 16000;
 constexpr uint16_t TTS_VOICE_CHANNELS = 1;
 constexpr uint32_t TTS_AUDIO_SAMPLE_RATE_HZ = 48000;
 constexpr uint16_t TTS_AUDIO_CHANNELS = 1;
-constexpr const char* TTS_ENCODER_SOCKET_DESCRIPTOR_PREFIX = "tts_encoder";
-constexpr const char* TTS_SPEECHLM_SOCKET_DESCRIPTOR_PREFIX = "tts_speechlm";
-constexpr const char* TTS_DECODER_SOCKET_DESCRIPTOR_PREFIX = "tts_decoder";
+constexpr const char* TTS_ENCODER_SOCKET_DESCRIPTOR_PREFIX = "tts2_encoder";
+constexpr const char* TTS_SPEECHLM_SOCKET_DESCRIPTOR_PREFIX = "tts2_speechlm";
+constexpr const char* TTS_DECODER_SOCKET_DESCRIPTOR_PREFIX = "tts2_decoder";
 
 }  // namespace tt::config::defaults
