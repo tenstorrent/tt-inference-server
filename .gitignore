@@ -44,7 +44,6 @@ generated_modules
 *.pt
 *.tti
 *.txt
-!reference_config/benchmarking/benchmark_targets/*.txt
 unzipped_tti/
 db.sqlite3
 **/generated/inspector/

@@ -29,9 +29,6 @@ from .base import DriverResult, LLMDriver
 
 logger = logging.getLogger(__name__)
 
-SONNET_PREFIX_LEN = 200
-SONNET_MIN_ISL_FOR_PREFIX = 512
-
 
 def _resolve_auth_token(server: ServerConnection) -> str:
     return (
@@ -67,10 +64,16 @@ def build_vllm_bench_serve_argv(
         "/v1/chat/completions",
         "--model",
         server.model,
+        "--dataset-name",
+        "random",
         "--max-concurrency",
         str(config.max_concurrency),
         "--num-prompts",
         str(config.num_prompts),
+        "--random-input-len",
+        str(config.isl),
+        "--random-output-len",
+        str(config.osl),
         "--percentile-metrics",
         "ttft,tpot,itl,e2el",
         "--save-result",
@@ -78,46 +81,6 @@ def build_vllm_bench_serve_argv(
         "--result-filename",
         str(result_filename),
     ]
-
-    # Random token IDs force DiffusionGemma to exhaust its denoise schedule and
-    # also make vLLM bench ignore EOS. A model can opt into sonnet to preserve
-    # realistic early halt while keeping each configured ISL/OSL sweep point.
-    if server.benchmark_dataset_name == "sonnet":
-        if not server.benchmark_dataset_path:
-            raise ValueError(
-                "benchmark_dataset_name=sonnet requires benchmark_dataset_path"
-            )
-        prefix_len = 0 if config.isl < SONNET_MIN_ISL_FOR_PREFIX else SONNET_PREFIX_LEN
-        cmd.extend(
-            [
-                "--dataset-name",
-                "sonnet",
-                "--dataset-path",
-                str(server.benchmark_dataset_path),
-                "--sonnet-input-len",
-                str(config.isl),
-                "--sonnet-output-len",
-                str(config.osl),
-                "--sonnet-prefix-len",
-                str(prefix_len),
-            ]
-        )
-    elif server.benchmark_dataset_name:
-        raise ValueError(
-            f"unsupported benchmark_dataset_name {server.benchmark_dataset_name!r}; "
-            "supported: 'sonnet' (or empty for the default random dataset)"
-        )
-    else:
-        cmd.extend(
-            [
-                "--dataset-name",
-                "random",
-                "--random-input-len",
-                str(config.isl),
-                "--random-output-len",
-                str(config.osl),
-            ]
-        )
 
     is_remote_base_url = uses_remote_base_url(
         server.url_with_port,

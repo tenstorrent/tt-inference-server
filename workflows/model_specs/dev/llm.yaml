@@ -347,10 +347,6 @@ templates:
       output_block_size: 256
       # A request must leave one full output canvas inside max_context.
       max_effective_input_tokens: 261888
-      # Random token IDs prevent meaningful denoise early halt and make vLLM
-      # bench force ignore_eos, so DiffusionGemma benchmarks on real text.
-      benchmark_dataset_name: sonnet
-      benchmark_dataset_path: reference_config/benchmarking/benchmark_targets/sonnet.txt
 
 - weights:
     - Qwen/Qwen3-8B

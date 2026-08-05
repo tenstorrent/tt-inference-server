@@ -4,8 +4,6 @@
 
 from pathlib import Path
 
-import pytest
-
 from llm_module.config import LLMRunConfig, ServerConnection
 from llm_module.drivers.vllm import build_vllm_bench_serve_argv
 
@@ -86,64 +84,16 @@ def test_local_server_trusts_remote_code_when_spec_opts_in():
     assert cmd[cmd.index("--host") + 1] == "127.0.0.1"
 
 
-def _sonnet_server(**kwargs):
-    return ServerConnection(
-        base_url="http://127.0.0.1",
-        service_port=8000,
-        model="google/diffusiongemma-26B-A4B-it",
-        is_remote=False,
-        benchmark_dataset_name="sonnet",
-        benchmark_dataset_path=(
-            "/repo/reference_config/benchmarking/benchmark_targets/sonnet.txt"
-        ),
-        **kwargs,
-    )
-
-
-def test_sonnet_replaces_random_dataset_and_preserves_sweep_lengths():
-    cmd, _ = build_vllm_bench_serve_argv(
-        vllm_binary="vllm",
-        config=LLMRunConfig(isl=2048, osl=128, max_concurrency=1, num_prompts=4),
-        server=_sonnet_server(),
-        result_filename=_result_path(),
-    )
-
-    assert cmd[cmd.index("--dataset-name") + 1] == "sonnet"
-    assert cmd[cmd.index("--dataset-path") + 1].endswith("sonnet.txt")
-    assert cmd[cmd.index("--sonnet-input-len") + 1] == "2048"
-    assert cmd[cmd.index("--sonnet-output-len") + 1] == "128"
-    assert "--random-input-len" not in cmd
-    assert "--random-output-len" not in cmd
-    assert '"truncate_prompt_tokens": "2048"' in cmd[cmd.index("--extra-body") + 1]
-
-
-def test_sonnet_drops_shared_prefix_on_short_points():
-    short, _ = build_vllm_bench_serve_argv(
-        vllm_binary="vllm",
-        config=_config(),
-        server=_sonnet_server(),
-        result_filename=_result_path(),
-    )
-    long, _ = build_vllm_bench_serve_argv(
-        vllm_binary="vllm",
-        config=LLMRunConfig(isl=8192, osl=128, max_concurrency=1, num_prompts=2),
-        server=_sonnet_server(),
-        result_filename=_result_path(),
-    )
-
-    assert short[short.index("--sonnet-prefix-len") + 1] == "0"
-    assert long[long.index("--sonnet-prefix-len") + 1] == "200"
-
-
-def test_random_dataset_stays_default_for_other_models():
+def test_diffusiongemma_benchmark_uses_random_dataset():
     cmd, _ = build_vllm_bench_serve_argv(
         vllm_binary="vllm",
         config=_config(),
         server=ServerConnection(
             base_url="http://127.0.0.1",
             service_port=8000,
-            model="meta-llama/Llama-3.1-8B-Instruct",
+            model="google/diffusiongemma-26B-A4B-it",
             is_remote=False,
+            tokenizer_trust_remote_code=True,
         ),
         result_filename=_result_path(),
     )
@@ -151,37 +101,6 @@ def test_random_dataset_stays_default_for_other_models():
     assert cmd[cmd.index("--dataset-name") + 1] == "random"
     assert "--dataset-path" not in cmd
     assert "--sonnet-input-len" not in cmd
-
-
-def test_sonnet_without_path_is_rejected():
-    with pytest.raises(ValueError, match="benchmark_dataset_path"):
-        build_vllm_bench_serve_argv(
-            vllm_binary="vllm",
-            config=_config(),
-            server=ServerConnection(
-                base_url="http://127.0.0.1",
-                service_port=8000,
-                model="google/diffusiongemma-26B-A4B-it",
-                benchmark_dataset_name="sonnet",
-            ),
-            result_filename=_result_path(),
-        )
-
-
-def test_unknown_dataset_is_rejected_instead_of_falling_back_to_random():
-    with pytest.raises(ValueError, match="unsupported benchmark_dataset_name"):
-        build_vllm_bench_serve_argv(
-            vllm_binary="vllm",
-            config=_config(),
-            server=ServerConnection(
-                base_url="http://127.0.0.1",
-                service_port=8000,
-                model="m",
-                benchmark_dataset_name="sharegpt",
-                benchmark_dataset_path="/x",
-            ),
-            result_filename=_result_path(),
-        )
 
 
 def test_remote_server_passes_trust_remote_code_once():

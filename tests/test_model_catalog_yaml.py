@@ -281,8 +281,6 @@ def test_diffusiongemma_dev_spec_matches_validated_256k_contract():
         spec.metadata["max_effective_input_tokens"]
         == device_spec.max_context - spec.metadata["output_block_size"]
     )
-    assert spec.metadata["benchmark_dataset_name"] == "sonnet"
-    assert spec.metadata["benchmark_dataset_path"].endswith("sonnet.txt")
     assert spec.has_builtin_warmup is True
 
     env = device_spec.env_vars
