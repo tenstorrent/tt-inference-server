@@ -39,11 +39,16 @@ class TerminalBenchRunConfig:
     agent_import_path: Optional[str] = None
     environment_env: dict[str, str] = field(default_factory=dict)
     verifier_env: dict[str, str] = field(default_factory=dict)
+    # Provider-specific environment knobs (namespace, image_mode, node_selector,
+    # ... for the ``kubernetes`` environment). Only expressible through the
+    # config file, so a non-empty value forces that path.
+    environment_kwargs: dict[str, Any] = field(default_factory=dict)
     # Interpreter whose bin/ holds the ``harbor`` CLI. When ``None`` the current
     # interpreter is used (standalone ``run_agentic.py`` already re-execs into
     # the EVALS_AGENTIC venv). Set on the release path, where the harness runs
     # as a child of the WORKFLOW_RUN_SCRIPT engine and must reach harbor explicitly.
     venv_python: Optional[Path] = None
+    harbor_timeout_sec: Optional[float] = None
 
 
 def _get_agent_kwargs(config: TerminalBenchRunConfig) -> dict[str, Any]:
@@ -77,6 +82,8 @@ def _write_harbor_config(config: TerminalBenchRunConfig) -> Path:
         environment_config["override_cpus"] = config.override_cpus
     if config.override_memory_mb is not None:
         environment_config["override_memory_mb"] = config.override_memory_mb
+    if config.environment_kwargs:
+        environment_config["kwargs"] = config.environment_kwargs
 
     agent_config: dict[str, Any] = {
         "model_name": config.model_name,
@@ -126,6 +133,7 @@ def _needs_config_file(config: TerminalBenchRunConfig) -> bool:
         or config.agent_import_path is not None
         or bool(config.environment_env)
         or bool(config.verifier_env)
+        or bool(config.environment_kwargs)
     )
 
 
@@ -199,7 +207,15 @@ def run(config: TerminalBenchRunConfig) -> int:
             cmd.extend(["--agent-kwarg", f"{key}={_format_kwarg(value)}"])
 
     logger.info("Running command: %s", " ".join(cmd))
-    result = subprocess.run(cmd)
+    try:
+        result = subprocess.run(cmd, timeout=config.harbor_timeout_sec)
+    except subprocess.TimeoutExpired:
+        # A stuck harbor/trial otherwise hangs to the outer job cap.
+        logger.error(
+            "harbor run exceeded harbor_timeout_sec=%s; terminated.",
+            config.harbor_timeout_sec,
+        )
+        return 124
     if result.returncode != 0:
         return result.returncode
     _annotate_result_file(config.jobs_dir / config.task_name / "result.json")

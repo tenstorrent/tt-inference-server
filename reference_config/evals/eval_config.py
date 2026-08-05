@@ -2,7 +2,9 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+import json
 import math
+import os
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Union
 
@@ -14,6 +16,56 @@ from reference_config.evals.eval_utils import (
 from workflows.model_spec import MODEL_SPECS
 from workflows.utils import map_configs_by_attr
 from workflows.workflow_types import EvalLimitMode, WorkflowVenvType
+
+
+def _harbor_env_type() -> str:
+    """Harbor environment for agentic evals; defaults to ``docker``.
+
+    Trials run as local containers unless the caller opts into a cluster with
+    ``HARBOR_ENV_TYPE=kubernetes`` (plus the ``HARBOR_K8S_*`` vars consumed by
+    :func:`_harbor_env_kwargs`). The default stays ``docker`` so a laptop or a
+    bare-metal runner with no cluster credentials keeps working; CI sets the
+    variable in the job environment.
+    """
+    return os.getenv("HARBOR_ENV_TYPE", "docker")
+
+
+def _harbor_env_kwargs() -> Dict[str, Any]:
+    """Cluster knobs forwarded as Harbor ``environment.kwargs`` (opt-in).
+
+    Empty unless ``HARBOR_ENV_TYPE=kubernetes`` — so the docker path emits no
+    kwargs. Neither ``HARBOR_K8S_KUBECONFIG`` nor ``HARBOR_K8S_CONTEXT`` needs
+    to be set when the runner is itself a pod: with both absent Harbor falls
+    back to the in-cluster service account.
+    """
+    if _harbor_env_type() != "kubernetes":
+        return {}
+    kwargs: Dict[str, Any] = {
+        "namespace": os.getenv("HARBOR_K8S_NAMESPACE", "default"),
+        "image_mode": os.getenv("HARBOR_K8S_IMAGE_MODE", "prebuilt"),
+    }
+    passthrough = {
+        "HARBOR_K8S_KUBECONFIG": "kubeconfig",
+        "HARBOR_K8S_CONTEXT": "context",
+        "HARBOR_K8S_IMAGE_REGISTRY": "image_registry",
+        "HARBOR_K8S_IMAGE_PULL_SECRET": "image_pull_secret",
+        "HARBOR_K8S_SERVICE_ACCOUNT": "service_account",
+    }
+    for env_var, kwarg in passthrough.items():
+        value = os.getenv(env_var)
+        if value:
+            kwargs[kwarg] = value
+    node_selector = os.getenv("HARBOR_K8S_NODE_SELECTOR")
+    if node_selector:
+        # JSON object, e.g. '{"tt-pool": "shield"}'
+        kwargs["node_selector"] = json.loads(node_selector)
+    return kwargs
+
+
+def _harbor_timeout_sec() -> Optional[float]:
+    """Wall-clock ceiling for the ``harbor run`` subprocess (#4759), from env."""
+    value = os.getenv("HARBOR_TIMEOUT_SEC")
+    return float(value) if value else None
 
 
 @dataclass(frozen=True)
@@ -141,7 +193,7 @@ class TerminalBenchEvalConfig:
     task_names: List[str] = field(default_factory=list)
     exclude_task_names: List[str] = field(default_factory=list)
     agent_kwargs: Dict[str, Any] = field(default_factory=dict)
-    environment_type: str = "docker"
+    environment_type: str = field(default_factory=_harbor_env_type)
     override_cpus: Optional[int] = None
     override_memory_mb: Optional[int] = None
     timeout_multiplier: Optional[float] = None
@@ -152,6 +204,8 @@ class TerminalBenchEvalConfig:
     agent_import_path: Optional[str] = None
     environment_env: Dict[str, str] = field(default_factory=dict)
     verifier_env: Dict[str, str] = field(default_factory=dict)
+    environment_kwargs: Dict[str, Any] = field(default_factory=_harbor_env_kwargs)
+    harbor_timeout_sec: Optional[float] = field(default_factory=_harbor_timeout_sec)
 
 
 @dataclass(frozen=True)

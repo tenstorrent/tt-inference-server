@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
@@ -65,6 +66,8 @@ class FakeTerminalBenchConfig:
     agent_import_path: Optional[str] = None
     environment_env: Dict[str, str] = field(default_factory=dict)
     verifier_env: Dict[str, str] = field(default_factory=dict)
+    environment_kwargs: Dict[str, Any] = field(default_factory=dict)
+    harbor_timeout_sec: Optional[float] = None
 
 
 @dataclass
@@ -468,6 +471,81 @@ class TestTerminalBenchHarness:
             "TAU2_NL_ASSERTIONS_MODEL": "openai/Qwen/Qwen3.6-27B"
         }
         run_cmd.assert_called_once()
+
+    def test_environment_kwargs_force_the_config_file_path(self, tmp_path):
+        """Cluster knobs have no CLI equivalent, so they must select --config.
+
+        With every other config-file trigger cleared, kwargs alone have to flip
+        run() off the flag-based command line -- otherwise the namespace and
+        node selector are silently dropped and trials land in the wrong place
+        (or on the wrong cluster).
+        """
+        task = _terminal_task()
+        task.agentic_eval_config.agent_timeout_sec = None
+        task.agentic_eval_config.environment_type = "kubernetes"
+        task.agentic_eval_config.environment_kwargs = {
+            "namespace": "harbor-kube-env",
+            "image_mode": "prebuilt",
+            "node_selector": {"tt-pool": "shield"},
+        }
+        cfg = build_terminal_bench_config(
+            task,
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+
+        # Nonzero so run() returns before _annotate_result_file, which would
+        # otherwise demand a result.json no mocked harbor ever wrote.
+        with patch("llm_module.agentic.terminal_bench.subprocess.run") as run_cmd:
+            run_cmd.return_value.returncode = 17
+
+            assert run_terminal_bench(cfg) == 17
+
+        cmd = run_cmd.call_args.args[0]
+        assert "--config" in cmd
+
+        config_path = cfg.jobs_dir / f"{cfg.task_name}_harbor_config.json"
+        harbor_config = json.loads(config_path.read_text())
+        assert harbor_config["environment"]["type"] == "kubernetes"
+        assert harbor_config["environment"]["kwargs"] == {
+            "namespace": "harbor-kube-env",
+            "image_mode": "prebuilt",
+            "node_selector": {"tt-pool": "shield"},
+        }
+
+    def test_harbor_timeout_is_passed_to_the_subprocess(self, tmp_path):
+        task = _terminal_task()
+        task.agentic_eval_config.harbor_timeout_sec = 7200.0
+        cfg = build_terminal_bench_config(
+            task,
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+
+        with patch("llm_module.agentic.terminal_bench.subprocess.run") as run_cmd:
+            run_cmd.return_value.returncode = 17
+
+            assert run_terminal_bench(cfg) == 17
+
+        assert run_cmd.call_args.kwargs["timeout"] == 7200.0
+
+    def test_timed_out_harbor_run_returns_124(self, tmp_path):
+        """A stuck harbor otherwise hangs to the outer job cap (70h in CI)."""
+        task = _terminal_task()
+        task.agentic_eval_config.harbor_timeout_sec = 1.0
+        cfg = build_terminal_bench_config(
+            task,
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+
+        with patch("llm_module.agentic.terminal_bench.subprocess.run") as run_cmd:
+            run_cmd.side_effect = subprocess.TimeoutExpired(cmd="harbor", timeout=1.0)
+
+            assert run_terminal_bench(cfg) == 124
 
 
 class TestSWEbenchHarness:

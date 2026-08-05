@@ -242,6 +242,8 @@ def build_terminal_bench_config(
         agent_import_path=cfg.agent_import_path,
         environment_env=cfg.environment_env,
         verifier_env=cfg.verifier_env,
+        environment_kwargs=cfg.environment_kwargs,
+        harbor_timeout_sec=cfg.harbor_timeout_sec,
         venv_python=venv_python,
     )
 
