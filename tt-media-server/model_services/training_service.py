@@ -145,7 +145,7 @@ class TrainingService(BaseJobService):
           - the large base-model memory footprint is fully reclaimed by the OS
             when the process exits, and
           - a crash or OOM in the merge cannot take down the API process.
-        Merges are serialized via a lock to allow only one merge at a time 
+        Merges are serialized via a lock to allow only one merge at a time
         and to bound peak host memory usage.
         """
         async with self._adapter_merge_lock:
@@ -179,7 +179,7 @@ class TrainingService(BaseJobService):
 
     def _safe_rmtree_under_root(self, path: str) -> None:
         """Delete `path` only if it resolves to a location strictly inside the
-        merged-models root. """
+        merged-models root."""
         root = os.path.realpath(self._merged_models_root())
         target = os.path.realpath(path)
         if target != root and os.path.commonpath([root, target]) == root:

@@ -31,11 +31,13 @@ def merge_adapter(
     )
 
     logger.info(f"Merging LoRA adapter from {adapter_path}")
-    merged_model = PeftModel.from_pretrained(base_model, adapter_path).merge_and_unload()
+    merged_model = PeftModel.from_pretrained(
+        base_model, adapter_path
+    ).merge_and_unload()
 
     os.makedirs(output_dir, exist_ok=True)
     logger.info(f"Saving merged model to {output_dir}")
-    
+
     merged_model.save_pretrained(output_dir, safe_serialization=True)
     AutoTokenizer.from_pretrained(base_model_name).save_pretrained(output_dir)
 
