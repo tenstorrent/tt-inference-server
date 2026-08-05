@@ -13,6 +13,7 @@ from reference_config.evals.eval_config import (
     accept_eval_score,
     resolve_eval_reference,
 )
+from workflows.workflow_types import EvalLimitMode
 
 
 def _gpqa_task():
@@ -48,10 +49,11 @@ def test_diffusiongemma_gpqa_gpu_reference_requires_more_than_67_percent():
 
 def test_diffusiongemma_nightly_gpqa_uses_the_same_quality_gate():
     task = _gpqa_task()
-    reference = resolve_eval_reference(task.score, None)
+    reference = resolve_eval_reference(task.score, EvalLimitMode.CI_NIGHTLY)
 
     # A 5% GPQA subset has approximately ten questions, so its attainable
     # scores jump by ten points: 60% fails and 70% passes the >67% boundary.
+    assert reference["is_subset_reference"] is False
     assert accept_eval_score(reference, 60.0, n_total=10) is False
     assert accept_eval_score(reference, 70.0, n_total=10) is True
 
