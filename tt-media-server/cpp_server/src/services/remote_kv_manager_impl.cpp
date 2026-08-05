@@ -3,6 +3,7 @@
 
 #include "services/remote_kv_manager_impl.hpp"
 
+#include <string>
 #include <utility>
 
 #include "messaging/migration_message.hpp"
@@ -89,15 +90,16 @@ uint64_t RemoteKVManagerImpl::migrate(const MigrationRequest& request) {
         id, MigrationState{MigrationStatus::IN_PROGRESS, now});
     if (!inserted) {
       TT_LOG_WARN(
-          "[RemoteKVManagerImpl] id collision on migration_id={}; returning "
-          "existing record (status={})",
+          "[RemoteKVManagerImpl] id collision on kafka_request_id={}; "
+          "returning existing record (status={})",
           id, static_cast<int>(it->second.status));
       return id;
     }
   }
 
   const tt::messaging::MigrationRequestMessage msg{
-      .migration_id = id,
+      .kafka_request_id = id,
+      .migration_id = request.migration_id,
       .src_slot = request.src_slot,
       .dst_slot = request.dst_slot,
       .layer_begin = request.layer_begin,
@@ -136,8 +138,19 @@ uint64_t RemoteKVManagerImpl::migrate(const MigrationRequest& request) {
       it->second.status = MigrationStatus::FAILED;
     }
     TT_LOG_ERROR(
-        "[RemoteKVManagerImpl] producer.send failed for migration_id={}: {}",
-        id, err);
+        "[RemoteKVManagerImpl] producer.send failed for kafka_request_id={} "
+        "migration_id={}: {}",
+        id,
+        request.migration_id.has_value() ? std::to_string(*request.migration_id)
+                                         : "none",
+        err);
+  } else {
+    TT_LOG_DEBUG(
+        "[RemoteKVManagerImpl] published kafka_request_id={} "
+        "migration_id={}",
+        id,
+        request.migration_id.has_value() ? std::to_string(*request.migration_id)
+                                         : "none");
   }
 
   return id;
@@ -182,17 +195,20 @@ void RemoteKVManagerImpl::drainLoop() {
               *msg);
         } else {
           std::lock_guard<std::mutex> lock(mtx);
-          auto it = migrations.find(parsed->migration_id);
+          auto it = migrations.find(parsed->kafka_request_id);
           if (it == migrations.end()) {
             TT_LOG_WARN(
-                "[RemoteKVManagerImpl] ack for unknown migration_id={}; "
-                "ignoring",
-                parsed->migration_id);
+                "[RemoteKVManagerImpl] ack for unknown kafka_request_id={} "
+                "migration_id={}; ignoring",
+                parsed->kafka_request_id,
+                parsed->migration_id.has_value()
+                    ? std::to_string(*parsed->migration_id)
+                    : "none");
           } else if (it->second.status != MigrationStatus::IN_PROGRESS) {
             TT_LOG_DEBUG(
-                "[RemoteKVManagerImpl] ack for already-terminal migration_id="
-                "{}, status={}; ignoring",
-                parsed->migration_id, static_cast<int>(it->second.status));
+                "[RemoteKVManagerImpl] ack for already-terminal "
+                "kafka_request_id={}, status={}; ignoring",
+                parsed->kafka_request_id, static_cast<int>(it->second.status));
           } else {
             it->second.status = parsed->status;
           }
@@ -230,8 +246,8 @@ void RemoteKVManagerImpl::sweepLocked(
       migrationState.status = MigrationStatus::FAILED;
       ++timedOut;
       TT_LOG_WARN(
-          "[RemoteKVManagerImpl] migration_id={} timed out after {}ms; marked "
-          "FAILED",
+          "[RemoteKVManagerImpl] kafka_request_id={} timed out after {}ms; "
+          "marked FAILED",
           id, timeout.count());
     }
   }

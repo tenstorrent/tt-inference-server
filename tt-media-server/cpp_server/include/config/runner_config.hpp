@@ -61,7 +61,7 @@ struct BlazeConfig : RunnerConfigBase {
   uint32_t migrationPrefillEndpointId = defaults::MIGRATION_PREFILL_ENDPOINT_ID;
   uint32_t migrationDecodeEndpointId = defaults::MIGRATION_DECODE_ENDPOINT_ID;
   std::string specDecodeMode = defaults::SPEC_DECODE_MODE;
-  size_t mtpLevel = defaults::MTP_LEVEL;
+  size_t specLevel = defaults::SPEC_LEVEL;
   uint32_t blazeNumberOfPipelineStages =
       defaults::BLAZE_NUMBER_OF_PIPELINE_STAGES;
 

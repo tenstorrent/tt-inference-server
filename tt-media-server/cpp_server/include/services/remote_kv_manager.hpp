@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <ctime>
+#include <optional>
 
 namespace tt::services {
 
@@ -24,6 +25,11 @@ struct Migration {
 /**
  * Range convention: all `_begin` / `_end` pairs are HALF-OPEN, i.e. [begin,
  * end).
+ *
+ * `migration_id` is the parent burst / sequence id (Sequence::getMigrationId).
+ * When set, it is copied onto every Kafka request so workers and acks can be
+ * grepped by the same end-to-end id. Per-request ack correlation still uses
+ * the kafka_request_id returned by migrate().
  */
 struct MigrationRequest {
   uint32_t src_slot;
@@ -34,6 +40,7 @@ struct MigrationRequest {
   uint32_t src_position_end;  // exclusive
   uint32_t dst_position_begin;
   uint32_t dst_position_end;  // exclusive
+  std::optional<uint64_t> migration_id;
 };
 
 /**
