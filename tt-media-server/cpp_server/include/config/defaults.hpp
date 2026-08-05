@@ -169,4 +169,16 @@ constexpr uint32_t MOCK_PIPELINE_STAGES = 64;
 constexpr uint32_t MOCK_PREFILL_CHUNK_SIZE = 24;
 constexpr unsigned MOCK_DECODE_TOKEN_ID = 12345;
 
+// Text-to-speech scheduler defaults.
+constexpr size_t TTS_MAX_BATCH_SIZE = 1;
+constexpr size_t TTS_AUDIO_QUEUE_CAPACITY = 1024;
+constexpr uint32_t TTS_CHUNK_TOKENS = 30;
+constexpr uint32_t TTS_VOICE_SAMPLE_RATE_HZ = 16000;
+constexpr uint16_t TTS_VOICE_CHANNELS = 1;
+constexpr uint32_t TTS_AUDIO_SAMPLE_RATE_HZ = 48000;
+constexpr uint16_t TTS_AUDIO_CHANNELS = 1;
+constexpr const char* TTS_ENCODER_SOCKET_DESCRIPTOR_PREFIX = "tts2_encoder";
+constexpr const char* TTS_SPEECHLM_SOCKET_DESCRIPTOR_PREFIX = "tts2_speechlm";
+constexpr const char* TTS_DECODER_SOCKET_DESCRIPTOR_PREFIX = "tts2_decoder";
+
 }  // namespace tt::config::defaults

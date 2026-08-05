@@ -243,6 +243,12 @@ FetchContent_MakeAvailable(cppzmq)
 
 # Option to enable tt-llm-engine (formerly tt-blaze pipeline_manager)
 option(ENABLE_BLAZE "Enable tt-llm-engine support" OFF)
+set(TT_LLM_ENGINE_SOURCE_DIR "" CACHE PATH
+    "Optional tt-llm-engine source checkout to build directly when ENABLE_BLAZE=ON")
+if(NOT TT_LLM_ENGINE_SOURCE_DIR AND DEFINED ENV{TT_LLM_ENGINE_SOURCE_DIR})
+    set(TT_LLM_ENGINE_SOURCE_DIR "$ENV{TT_LLM_ENGINE_SOURCE_DIR}" CACHE PATH
+        "Optional tt-llm-engine source checkout to build directly when ENABLE_BLAZE=ON" FORCE)
+endif()
 # Real shmem migration (MigrationLayerClientAdapter + migration_client static lib).
 # mock_pipeline CI builds use --blaze only; disaggregated pipeline_manager runs
 # need --blaze-with-migration (implies ENABLE_BLAZE).
@@ -255,10 +261,29 @@ if(ENABLE_BLAZE)
     # Prefer a pre-built tt-llm-engine discovered via find_package — this is
     # the path used by the Docker build, which pulls /opt/tt-llm-engine out
     # of the tt-llm-engine builder image and sets CMAKE_PREFIX_PATH so the
-    # package is locatable. Fall back to building the in-tree submodule for
-    # local-dev workflows that don't go through Docker.
-    find_package(tt-llm-engine CONFIG QUIET)
-    if(tt-llm-engine_FOUND)
+    # package is locatable. If TT_LLM_ENGINE_SOURCE_DIR is explicitly set,
+    # build that checkout instead (useful for testing scheduler branches).
+    set(_TT_LLM_ENGINE_FROM_EXPLICIT_SOURCE OFF)
+    if(TT_LLM_ENGINE_SOURCE_DIR)
+        if(NOT EXISTS "${TT_LLM_ENGINE_SOURCE_DIR}/CMakeLists.txt")
+            message(FATAL_ERROR
+                "TT_LLM_ENGINE_SOURCE_DIR is set to '${TT_LLM_ENGINE_SOURCE_DIR}', "
+                "but no CMakeLists.txt was found there.")
+        endif()
+        set(DS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+        set(_tt_saved_cxx_flags "${CMAKE_CXX_FLAGS}")
+        string(APPEND CMAKE_CXX_FLAGS " -Wno-c++11-narrowing")
+        add_subdirectory("${TT_LLM_ENGINE_SOURCE_DIR}"
+                         "${CMAKE_CURRENT_BINARY_DIR}/tt-llm-engine")
+        set(CMAKE_CXX_FLAGS "${_tt_saved_cxx_flags}")
+        set(_TT_LLM_ENGINE_FROM_EXPLICIT_SOURCE ON)
+        message(STATUS "tt-llm-engine: building from TT_LLM_ENGINE_SOURCE_DIR=${TT_LLM_ENGINE_SOURCE_DIR}")
+    else()
+        find_package(tt-llm-engine CONFIG QUIET)
+    endif()
+    if(_TT_LLM_ENGINE_FROM_EXPLICIT_SOURCE)
+        # Target aliases are provided by the source checkout's CMakeLists.txt.
+    elseif(tt-llm-engine_FOUND)
         message(STATUS "tt-llm-engine: using pre-built package at ${tt-llm-engine_DIR}")
     elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/CMakeLists.txt")
         # Legacy path — local dev with the submodule checked out under cpp_server/.
@@ -496,6 +521,7 @@ target_link_libraries(llm_runner_lib PUBLIC tokenizers_cpp JsonCpp::JsonCpp xgra
 if(ENABLE_BLAZE)
     if(TARGET TtLlmEngine::Full)
         target_link_libraries(llm_runner_lib PUBLIC TtLlmEngine::Full)
+        target_compile_definitions(llm_runner_lib PUBLIC TT_MEDIA_SERVER_TTS_FULL_PIPELINES)
         message(STATUS "Linking llm_runner_lib against TtLlmEngine::Full")
     elseif(TARGET TtLlmEngine::Core)
         target_link_libraries(llm_runner_lib PUBLIC TtLlmEngine::Core)
@@ -509,7 +535,10 @@ if(ENABLE_BLAZE)
     #      the prebuilt tt-llm-engine image's source tree.
     # Both layouts expose the same subdirectories (src/, disaggregation/, tt-metal/),
     # so a single root variable lets every consumer-of-engine-source path adapt.
-    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/CMakeLists.txt")
+    if(TT_LLM_ENGINE_SOURCE_DIR AND EXISTS "${TT_LLM_ENGINE_SOURCE_DIR}/CMakeLists.txt")
+        set(_TT_LLM_ENGINE_ROOT "${TT_LLM_ENGINE_SOURCE_DIR}")
+        message(STATUS "tt-llm-engine source: explicit checkout at ${_TT_LLM_ENGINE_ROOT}")
+    elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/CMakeLists.txt")
         set(_TT_LLM_ENGINE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine")
         message(STATUS "tt-llm-engine source: in-tree at ${_TT_LLM_ENGINE_ROOT}")
     elseif(EXISTS "/opt/tt-llm-engine-src/CMakeLists.txt")
@@ -1087,6 +1116,9 @@ target_include_directories(lockfree_queue_test PRIVATE
 add_executable(tokenizer_test tests/unit/model/tokenizer_test.cpp)
 target_link_libraries(tokenizer_test PRIVATE llm_runner_lib GTest::gtest_main)
 
+add_executable(tts_prompt_compiler_test tests/unit/model/tts_prompt_compiler_test.cpp)
+target_link_libraries(tts_prompt_compiler_test PRIVATE llm_runner_lib GTest::gtest_main)
+
 add_executable(conversation_hasher_test tests/unit/model/conversation_hasher_test.cpp)
 target_link_libraries(conversation_hasher_test PRIVATE llm_runner_lib GTest::gtest_main)
 
@@ -1222,6 +1254,8 @@ add_executable(llm_service_test
     src/services/llm_service.cpp
     src/services/embedding_service.cpp
     src/services/image_service.cpp
+    src/services/tts_service.cpp
+    src/services/tts_request_preprocessor.cpp
     src/services/media_worker_scheduler.cpp
     src/services/model_service_registration.cpp
     src/runtime/worker/worker_manager.cpp
@@ -1232,10 +1266,13 @@ add_executable(llm_service_test
     src/utils/ipc_runner_factory.cpp
     src/utils/mapper.cpp
     src/utils/image_codec.cpp
+    src/utils/audio_codec.cpp
     src/runtime/runners/embedding_runner.cpp
     src/runtime/runners/sdxl/sdxl_runner.cpp
     src/runtime/runners/media_ipc_runner.cpp
     src/runtime/runners/image_ipc_runner.cpp
+    src/runtime/runners/blaze_runner/blaze_tts_runner.cpp
+    src/runtime/runners/blaze_runner/blaze_tts_scheduler_factory.cpp
     src/runtime/runners/sdxl/sdxl_generate_runner.cpp
     src/runtime/runners/sdxl/sdxl_image_to_image_runner.cpp
     src/runtime/runners/sdxl/sdxl_edit_runner.cpp
@@ -1284,21 +1321,28 @@ set(INTEGRATION_TEST_COMMON_SOURCES
     src/runtime/runners/sdxl/sdxl_runner.cpp
     src/runtime/runners/media_ipc_runner.cpp
     src/runtime/runners/image_ipc_runner.cpp
+    src/runtime/runners/blaze_runner/blaze_tts_runner.cpp
+    src/runtime/runners/blaze_runner/blaze_tts_scheduler_factory.cpp
     src/runtime/runners/sdxl/sdxl_generate_runner.cpp
     src/runtime/runners/sdxl/sdxl_image_to_image_runner.cpp
     src/runtime/runners/sdxl/sdxl_edit_runner.cpp
     src/runtime/runners/sdxl/sdxl_python_helpers.cpp
     src/services/image_service.cpp
+    src/services/tts_service.cpp
+    src/services/tts_request_preprocessor.cpp
     src/services/media_worker_scheduler.cpp
     src/utils/image_codec.cpp
+    src/utils/audio_codec.cpp
     src/metrics/metrics.cpp
     src/profiling/tracy.cpp
     src/api/llm_controller.cpp
+    src/api/tts_controller.cpp
     src/api/stream_event_formatter.cpp
     src/api/health_controller.cpp
     src/api/response_writer/response_writer.cpp
     src/api/response_writer/non_stream_response_writer.cpp
     src/api/response_writer/streaming_response_writer.cpp
+    src/api/response_writer/streaming_wav_response_writer.cpp
     src/api/route_registry.cpp
     src/services/service_container.cpp
     src/services/disaggregation_contract_mapping.cpp
@@ -1435,6 +1479,7 @@ endif()
 gtest_discover_tests(sequence_test)
 gtest_discover_tests(lockfree_queue_test)
 gtest_discover_tests(tokenizer_test)
+gtest_discover_tests(tts_prompt_compiler_test)
 gtest_discover_tests(conversation_hasher_test)
 gtest_discover_tests(cancel_queue_test)
 gtest_discover_tests(structured_output_test)
@@ -1732,9 +1777,11 @@ set(SOURCES
     src/main.cpp
     src/profiling/tracy.cpp
     src/api/llm_controller.cpp
+    src/api/tts_controller.cpp
     src/api/stream_event_formatter.cpp
     src/api/response_writer/response_writer.cpp
     src/api/response_writer/streaming_response_writer.cpp
+    src/api/response_writer/streaming_wav_response_writer.cpp
     src/api/response_writer/non_stream_response_writer.cpp
     src/api/health_controller.cpp
     src/api/info_controller.cpp
@@ -1763,13 +1810,18 @@ set(SOURCES
     src/runtime/runners/sdxl/sdxl_runner.cpp
     src/runtime/runners/media_ipc_runner.cpp
     src/runtime/runners/image_ipc_runner.cpp
+    src/runtime/runners/blaze_runner/blaze_tts_runner.cpp
+    src/runtime/runners/blaze_runner/blaze_tts_scheduler_factory.cpp
     src/runtime/runners/sdxl/sdxl_generate_runner.cpp
     src/runtime/runners/sdxl/sdxl_image_to_image_runner.cpp
     src/runtime/runners/sdxl/sdxl_edit_runner.cpp
     src/runtime/runners/sdxl/sdxl_python_helpers.cpp
     src/services/image_service.cpp
+    src/services/tts_service.cpp
+    src/services/tts_request_preprocessor.cpp
     src/services/media_worker_scheduler.cpp
     src/utils/image_codec.cpp
+    src/utils/audio_codec.cpp
     src/services/disaggregation_contract_mapping.cpp
     src/services/disaggregation_service.cpp
     src/services/llm_pipeline.cpp

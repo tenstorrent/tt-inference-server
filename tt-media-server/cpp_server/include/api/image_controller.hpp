@@ -43,7 +43,7 @@ class ImageController : public drogon::HttpController<ImageController> {
   static void applyImageToImageDefaults(
       tt::domain::ImageGenerateRequest& request);
 
-  std::shared_ptr<services::ImageService> service_;
+  std::shared_ptr<services::ImageService> service;
   std::atomic<uint64_t> request_counter_{0};
 };
 

@@ -12,28 +12,11 @@
 
 #include "config/settings.hpp"
 #include "ipc/boost/boost_memory_queue.hpp"
+#include "ipc/serialization.hpp"
 
 namespace tt::ipc::media_payload {
 
-namespace detail {
-
-inline void writeString(std::ostream& os, const std::string& value) {
-  const uint32_t size = static_cast<uint32_t>(value.size());
-  os.write(reinterpret_cast<const char*>(&size), sizeof(size));
-  os.write(value.data(), static_cast<std::streamsize>(value.size()));
-}
-
-inline std::string readString(std::istream& is) {
-  uint32_t size = 0;
-  is.read(reinterpret_cast<char*>(&size), sizeof(size));
-  std::string value(size, '\0');
-  if (size > 0) {
-    is.read(value.data(), static_cast<std::streamsize>(size));
-  }
-  return value;
-}
-
-}  // namespace detail
+namespace ser = tt::ipc::serialization;
 
 struct MediaPayloadTask {
   uint32_t task_id = 0;
@@ -54,16 +37,16 @@ struct MediaPayloadTask {
   void serialize(std::ostream& os) const {
     os.write(reinterpret_cast<const char*>(&task_id), sizeof(task_id));
     os.write(reinterpret_cast<const char*>(&flags), sizeof(flags));
-    detail::writeString(os, request_path);
-    detail::writeString(os, response_path);
+    ser::writeString(os, request_path);
+    ser::writeString(os, response_path);
   }
 
   static MediaPayloadTask deserialize(std::istream& is) {
     MediaPayloadTask task;
     is.read(reinterpret_cast<char*>(&task.task_id), sizeof(task.task_id));
     is.read(reinterpret_cast<char*>(&task.flags), sizeof(task.flags));
-    task.request_path = detail::readString(is);
-    task.response_path = detail::readString(is);
+    task.request_path = ser::readString(is);
+    task.response_path = ser::readString(is);
     return task;
   }
 };
@@ -90,8 +73,8 @@ struct MediaPayloadResult {
     os.write(reinterpret_cast<const char*>(&flags), sizeof(flags));
     os.write(reinterpret_cast<const char*>(&generation_time_seconds),
              sizeof(generation_time_seconds));
-    detail::writeString(os, response_path);
-    detail::writeString(os, error);
+    ser::writeString(os, response_path);
+    ser::writeString(os, error);
   }
 
   static MediaPayloadResult deserialize(std::istream& is) {
@@ -100,8 +83,8 @@ struct MediaPayloadResult {
     is.read(reinterpret_cast<char*>(&result.flags), sizeof(result.flags));
     is.read(reinterpret_cast<char*>(&result.generation_time_seconds),
             sizeof(result.generation_time_seconds));
-    result.response_path = detail::readString(is);
-    result.error = detail::readString(is);
+    result.response_path = ser::readString(is);
+    result.error = ser::readString(is);
     return result;
   }
 };

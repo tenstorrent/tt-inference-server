@@ -42,7 +42,7 @@ void SDXLGenerateRunner::distributeBlock() {
   cfgKwargs["guidance_scale"] = 5.0F;
   cfgKwargs["use_cfg_parallel"] = py::bool_(is_tensor_parallel_);
   cfgKwargs["image_resolution"] =
-      py::make_tuple(config_.image_width, config_.image_height);
+      py::make_tuple(config_.imageWidth, config_.imageHeight);
   py::object cfg = cfgClass(**cfgKwargs);
 
   py::dict pipelineKwargs;

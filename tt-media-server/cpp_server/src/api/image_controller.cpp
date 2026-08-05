@@ -15,10 +15,10 @@ ImageController::ImageController() {
   if (!tt::config::isImageService()) {
     return;
   }
-  service_ = std::dynamic_pointer_cast<tt::services::ImageService>(
+  service = std::dynamic_pointer_cast<tt::services::ImageService>(
       tt::services::ServiceContainer::instance().getService(
           tt::config::ModelService::IMAGE));
-  if (!service_) {
+  if (!service) {
     throw std::runtime_error(
         "[ImageController] Image service not found in container. "
         "Ensure initializeServices() is called before Drogon starts.");
@@ -33,7 +33,7 @@ void ImageController::generate(
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
   dispatchJsonRequest<tt::services::ImageService,
                       tt::domain::ImageGenerateRequest>(
-      req, std::move(callback), service_, request_counter_, "ImageController",
+      req, std::move(callback), service, request_counter_, "ImageController",
       "generations", {"prompt"});
 }
 
@@ -42,7 +42,7 @@ void ImageController::imageToImage(
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
   dispatchJsonRequest<tt::services::ImageService,
                       tt::domain::ImageGenerateRequest>(
-      req, std::move(callback), service_, request_counter_, "ImageController",
+      req, std::move(callback), service, request_counter_, "ImageController",
       "image-to-image", {"prompt", "image"}, applyImageToImageDefaults);
 }
 
@@ -51,7 +51,7 @@ void ImageController::edit(
     std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
   dispatchJsonRequest<tt::services::ImageService,
                       tt::domain::ImageGenerateRequest>(
-      req, std::move(callback), service_, request_counter_, "ImageController",
+      req, std::move(callback), service, request_counter_, "ImageController",
       "edits", {"prompt", "image", "mask"}, applyImageToImageDefaults);
 }
 
