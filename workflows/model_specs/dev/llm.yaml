@@ -305,28 +305,35 @@ templates:
   device_model_specs:
     - device: P300X2
       max_concurrency: 1
-      max_context: 16384
+      # Validated on QB2 across every power-of-two bucket from 128 through 256K.
+      # DeviceModelSpec derives block_size=64, max_num_seqs=1 and
+      # max_num_batched_tokens=max_context from these fields.
+      max_context: 262144
       default_impl: true
       env_vars:
         MESH_DEVICE: "P150x4"
         VLLM_RPC_TIMEOUT: "1800000"
+        VLLM_ENABLE_V1_MULTIPROCESSING: "0"
         DISABLE_METAL_OP_TIMEOUT: "1"
         DG_VLLM_GUMBEL_MODE: "device"
         DG_UPFRONT_CAPTURE: "1"
         DG_MODEL_OWNED_HYBRID_KV: "1"
         DG_UPFRONT_COARSE_PREFILL_BUCKETS: "1"
-        DG_DENOISE_REVEAL_PMAX: "16384"
+        DG_UPFRONT_LAZY_PREFILL_RECAPTURE: "1"
+        DG_PREFILL_CHUNK_SIZE: "16384"
+        DG_DENOISE_REVEAL_PMAX: "262144"
         DG_DENOISE_SLIDING_WINDOW: "1"
-        DG_UPFRONT_PREFILL_WARMUP_LENS: "128,256,512,1024,2048,4096,8192,16384"
-        DG_TRACE_REGION_SIZE: "5905580032"
+        # Keep startup bounded; unseen buckets atomically release, compile and
+        # recapture their resident traces on first use.
+        DG_UPFRONT_PREFILL_WARMUP_LENS: "32,64,96"
+        DG_TRACE_REGION_SIZE: "3758096384"
       override_tt_config:
         sample_on_device_mode: all
         enable_model_warmup: true
         trace_mode: all
-        trace_region_size: 5905580032
+        trace_region_size: 3758096384
       vllm_args:
         generation-config: vllm
-        max-num-batched-tokens: 16384
         default-chat-template-kwargs: '{"enable_thinking": true}'
         reasoning-parser: diffusion_gemma
   status: EXPERIMENTAL
