@@ -298,8 +298,8 @@ templates:
 
 # DiffusionGemma 26B-A4B-it: discrete text-diffusion LLM (encoder-decoder,
 # block-autoregressive multi-canvas), fine-tuned from google/gemma-4-26B-A4B so
-# the text backbone is identical to Gemma-4 26B-A4B MoE. tt-metal impl lives in
-# models/experimental/diffusion_gemma (branch diffusion-gemma-function); arch
+# the text backbone is identical to Gemma-4 26B-A4B MoE. The tt-metal implementation
+# is tracked by tt-metal PR #52120 under models/experimental/diffusion_gemma; arch
 # DiffusionGemmaForBlockDiffusion, model_type=diffusion_gemma.
 # Readiness tracking: tt-inference-server#4669 / tt-metal#47452.
 # Precondition for serving: vLLM plugin registration for model_type=diffusion_gemma
@@ -354,6 +354,10 @@ templates:
         # and reuse its persistent adapter across requests. Reveal masking and
         # one-step early halt are intrinsic to this path.
         DG_UPFRONT_CAPTURE: "1"
+        # Pin the model-owned hybrid paged cache rather than inheriting its
+        # default. Sliding layers retain a bounded circular window while the
+        # five full-attention layers retain the served context.
+        DG_MODEL_OWNED_HYBRID_KV: "1"
         # Preserve logical prompt length while compiling prefill at power-of-two
         # execution buckets. All buckets through the served 16K limit are warmed
         # below, so arbitrary admitted prompt lengths need no exact whitelist entry.

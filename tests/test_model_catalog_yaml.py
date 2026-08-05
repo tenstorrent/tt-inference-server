@@ -280,6 +280,7 @@ def test_diffusiongemma_dev_spec_enables_upfront_early_halt_and_thinking():
 
     env = spec.device_model_spec.env_vars
     assert env["DG_UPFRONT_CAPTURE"] == "1"
+    assert env["DG_MODEL_OWNED_HYBRID_KV"] == "1"
     assert env["DG_UPFRONT_COARSE_PREFILL_BUCKETS"] == "1"
     assert env["DG_UPFRONT_LAZY_PREFILL_RECAPTURE"] == "1"
     assert env["DISABLE_METAL_OP_TIMEOUT"] == "1"
