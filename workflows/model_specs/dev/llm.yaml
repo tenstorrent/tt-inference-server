@@ -1614,6 +1614,19 @@ templates:
         PREFILL_CHUNK_SIZE: "1024"
         MIN_NUM_SEQS: "1"  # b1-prefill: compile [1,n] graph alongside [32,n] (tt-xla #5281)
         PREFILL_BATCH_THRESHOLD: "16"  # route <=16 pending prefills to b1, serially
+      known_issues:
+        - workflow_type: SPEC_TESTS
+          task_name: test_n
+          reason: "tt-media-server builds chat `choices` as a hardcoded 1-element list (open_ai_api/chat.py), so `n` extra outputs are generated then discarded. Not forge- or model-specific: stock `vllm serve` on tt-xla returns n choices correctly. Tracked in #TBD."
+        - workflow_type: SPEC_TESTS
+          task_name: test_logprobs
+          reason: "tt-media-server's ChatCompletionRequest declares no `logprobs` field, so pydantic drops the parameter before vLLM sees it. Tracked in #TBD."
+        - workflow_type: SPEC_TESTS
+          task_name: test_seed_reproducibility
+          reason: "tt-media-server hardcodes seed=None for all Forge runners (utils/sampling_params_builder.py) pending per-row seed support in the tt::sampling kernel (tt-xla #4539). Tracked in #TBD."
+        - workflow_type: SPEC_TESTS
+          task_name: test_non_uniform_seeding
+          reason: "Same root cause as test_seed_reproducibility: the seed is dropped host-side before sampling location matters. Tracked in #TBD."
 
 - weights:
     - tiiuae/Falcon3-7B-Instruct
