@@ -9,6 +9,7 @@
 #include <stdexcept>
 #include <unordered_map>
 #include <unordered_set>
+#include <variant>
 
 #include "config/settings.hpp"
 #include "metrics/metrics.hpp"
@@ -198,11 +199,17 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
   TT_LOG_INFO("[Consumer-{}] Started", workerIdx);
 
   auto* worker = workerManager->worker(workerIdx);
-  if (!worker || !worker->cfg.result_queue) {
+  if (!worker) {
     TT_LOG_WARN("[Consumer-{}] No token buffer, exiting", workerIdx);
     return;
   }
-  auto resultQueue = worker->cfg.result_queue;
+  auto* resultQueuePtr = std::get_if<std::shared_ptr<tt::ipc::IResultQueue>>(
+      &worker->cfg.result_queue);
+  if (!resultQueuePtr || !*resultQueuePtr) {
+    TT_LOG_WARN("[Consumer-{}] No token buffer, exiting", workerIdx);
+    return;
+  }
+  auto resultQueue = *resultQueuePtr;
 
   std::unordered_map<
       uint32_t,

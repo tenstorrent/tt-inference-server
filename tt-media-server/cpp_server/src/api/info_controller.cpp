@@ -8,6 +8,8 @@
 #include <string>
 
 #include "config/build_info.hpp"
+#include "config/settings.hpp"
+#include "config/types.hpp"
 
 namespace tt::api {
 
@@ -22,6 +24,7 @@ void InfoController::info(
   response["tt_llm_engine"]["commit"] =
       std::string{tt::config::kTtLlmEngineCommit};
   response["tt_metal"]["commit"] = std::string{tt::config::kTtMetalCommit};
+  response["model_service"] = tt::config::toString(tt::config::modelService());
 
   callback(drogon::HttpResponse::newHttpJsonResponse(response));
 }

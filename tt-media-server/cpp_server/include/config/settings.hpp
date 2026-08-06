@@ -30,6 +30,9 @@ bool isLlmService();
 /** True when model_service() == IMAGE. */
 bool isImageService();
 
+/** True when model_service() == TTS. */
+bool isTtsService();
+
 /** Get runner type string based on current model service configuration. */
 std::string runnerType();
 
@@ -289,8 +292,8 @@ std::string ttCancelQueueName();
  */
 std::string specDecodeMode();
 
-/** MTP level from MTP_LEVEL. Default: defaults::MTP_LEVEL. */
-size_t mtpLevel();
+/** Spec level from SPEC_LEVEL. Default: defaults::SPEC_LEVEL. */
+size_t specLevel();
 
 /** Media payload task queue name from TT_MEDIA_TASK_QUEUE. */
 std::string ttMediaTaskQueueName();
@@ -433,6 +436,10 @@ BlazeConfig blazeConfig();
  * MODEL_RUNNER_TYPE, MAX_BATCH_SIZE, SDXL_IMAGE_RESOLUTION. Implemented in
  * src/config/settings.cpp. */
 ImageConfig imageEngineConfig();
+
+/** Build TtsConfig from environment variables and runtime settings.
+ * Implemented in src/config/settings.cpp. */
+TtsConfig ttsEngineConfig();
 
 /** Build the runner config used by a fork/exec worker for the active service.
  * Media configs receive the worker's DEVICE_IDS group as visible_devices. */

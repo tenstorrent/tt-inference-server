@@ -494,8 +494,9 @@ def parse_arguments():
         type=str,
         default=None,
         help="Comma-separated trace sources to run (inferencex_agentx, swarmone). When "
-        "unset, runs every source configured for the model. swarmone has no client "
-        "integration yet and fails fast if selected.",
+        "unset, runs every configured source except opt-in ones. swarmone is opt-in: "
+        "it replays SwarmOne swo-bench scenarios and needs a SwarmOne license "
+        "(SWO_LICENSE_KEY or ~/.swarmone/license.key), so name it explicitly to run it.",
     )
     agentic_traces_group.add_argument(
         "--agentic-traces-duration",

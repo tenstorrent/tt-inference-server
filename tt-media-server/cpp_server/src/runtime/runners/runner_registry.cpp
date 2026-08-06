@@ -47,6 +47,31 @@ bool RunnerRegistry::hasIpc(config::ModelService service,
   return it != ipc_factories_.end() && static_cast<bool>(it->second);
 }
 
+void RunnerRegistry::registerTtsIpcRunner(config::ModelService service,
+                                          config::ModelRunnerType type,
+                                          TtsIpcFactory factory) {
+  tts_ipc_factories_[{service, type}] = std::move(factory);
+}
+
+std::unique_ptr<runners::IRunner> RunnerRegistry::createTtsIpc(
+    config::ModelService service, config::ModelRunnerType type,
+    const config::RunnerConfig& config, ipc::tts::TtsTaskQueue* taskQueue,
+    ipc::tts::TtsAudioChunkQueue* audioQueue,
+    ipc::ICancelQueue* cancelQueue) const {
+  auto exact = tts_ipc_factories_.find({service, type});
+  if (exact != tts_ipc_factories_.end() && exact->second) {
+    return exact->second(config, taskQueue, audioQueue, cancelQueue);
+  }
+
+  return nullptr;
+}
+
+bool RunnerRegistry::hasTtsIpc(config::ModelService service,
+                               config::ModelRunnerType type) const {
+  auto it = tts_ipc_factories_.find({service, type});
+  return it != tts_ipc_factories_.end() && static_cast<bool>(it->second);
+}
+
 void RunnerRegistry::registerMediaRunner(config::ModelService service,
                                          config::ModelRunnerType type,
                                          MediaFactory factory) {
@@ -71,6 +96,7 @@ bool RunnerRegistry::hasMedia(config::ModelService service,
 
 void RunnerRegistry::clear() {
   ipc_factories_.clear();
+  tts_ipc_factories_.clear();
   media_factories_.clear();
 }
 
