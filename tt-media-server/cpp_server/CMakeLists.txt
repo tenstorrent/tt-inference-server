@@ -146,28 +146,6 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(blake3)
 
-# xgrammar for structured output / guided decoding (JSON schema constrained generation)
-FetchContent_Declare(xgrammar
-    GIT_REPOSITORY https://github.com/mlc-ai/xgrammar.git
-    GIT_TAG        v0.1.33
-    GIT_SHALLOW    TRUE
-)
-FetchContent_GetProperties(xgrammar)
-if(NOT xgrammar_POPULATED)
-    FetchContent_Populate(xgrammar)
-    # xgrammar ships cmake/config.cmake that forces PYTHON_BINDINGS=ON; override it
-    # in the source tree so its CMakeLists.txt picks up our settings.
-    file(WRITE "${xgrammar_SOURCE_DIR}/cmake/config.cmake"
-        "set(XGRAMMAR_BUILD_PYTHON_BINDINGS OFF)\n"
-        "set(XGRAMMAR_BUILD_CXX_TESTS OFF)\n"
-        "set(XGRAMMAR_ENABLE_CPPTRACE OFF)\n"
-        "set(XGRAMMAR_ENABLE_COVERAGE OFF)\n"
-        "set(XGRAMMAR_ENABLE_INTERNAL_CHECK OFF)\n"
-    )
-    add_subdirectory(${xgrammar_SOURCE_DIR} ${xgrammar_BINARY_DIR})
-    target_compile_options(xgrammar PRIVATE -Wno-deprecated-declarations -fno-lto)
-endif()
-
 # Import fmt from tt-metal for spdlog
 if(TT_METAL_HOME AND EXISTS "${TT_METAL_HOME}/build_Release/lib/cmake/fmt")
     set(fmt_DIR "${TT_METAL_HOME}/build_Release/lib/cmake/fmt")
@@ -492,7 +470,6 @@ set(LLM_RUNNER_LIB_SOURCES
     src/utils/tokenizers/llama_tokenizer.cpp
     src/utils/tokenizers/tokenizer_config_loader.cpp
     src/services/memory_services/memory_manager.cpp
-    src/runtime/runners/guided_decoder_manager.cpp
     src/services/service_registry.cpp
     src/runtime/runners/runner_registry.cpp
     src/api/route_registry.cpp
@@ -513,8 +490,8 @@ target_include_directories(llm_runner_lib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${TT_METAL_INCLUDE_DIRS}
 )
-# Link tokenizers_cpp, JsonCpp, xgrammar (guided decoding), and xxhash (stable hashing)
-target_link_libraries(llm_runner_lib PUBLIC tokenizers_cpp JsonCpp::JsonCpp xgrammar xxhash_lib)
+# Link tokenizers_cpp, JsonCpp, and xxhash (stable hashing)
+target_link_libraries(llm_runner_lib PUBLIC tokenizers_cpp JsonCpp::JsonCpp xxhash_lib)
 
 # Link tt-llm-engine when ENABLE_BLAZE is ON: prefer Full (SocketPipeline + TT::Metalium),
 # fall back to Core (mock pipeline only).
@@ -1128,12 +1105,6 @@ target_include_directories(cancel_queue_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-add_executable(structured_output_test tests/unit/api/structured_output_test.cpp)
-target_link_libraries(structured_output_test PRIVATE llm_runner_lib GTest::gtest_main)
-target_include_directories(structured_output_test PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
 add_executable(image_generate_request_test tests/unit/api/image_generate_request_test.cpp)
 target_link_libraries(image_generate_request_test PRIVATE
     JsonCpp::JsonCpp
@@ -1482,7 +1453,6 @@ gtest_discover_tests(tokenizer_test)
 gtest_discover_tests(tts_prompt_compiler_test)
 gtest_discover_tests(conversation_hasher_test)
 gtest_discover_tests(cancel_queue_test)
-gtest_discover_tests(structured_output_test)
 gtest_discover_tests(worker_metrics_shm_test)
 gtest_discover_tests(concurrent_map_test)
 gtest_discover_tests(session_test)
@@ -1952,7 +1922,6 @@ if(SANITIZE_ADDRESS)
         sequence_test
         lockfree_queue_test
         cancel_queue_test
-        structured_output_test
     )
     foreach(target IN LISTS ASAN_TARGETS)
         target_compile_options(${target} PRIVATE ${ASAN_FLAGS})
