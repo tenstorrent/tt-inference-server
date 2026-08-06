@@ -82,8 +82,9 @@ class ServerLaunchSpec:
 class ServerCommand(Command):
     """Bring up the inference server as the first step of a run.
 
-    Wraps ``workflows.run_docker_server`` / ``run_local_server`` so server
-    bring-up is a command in the same list the :class:`WorkflowRunner` executes.
+    Delegates to the registered :class:`ServerLifecycle` (vendor adapter:
+    docker/local launchers) so server bring-up is a command in the same list
+    the :class:`WorkflowRunner` executes.
     """
 
     name = "server"
@@ -92,31 +93,17 @@ class ServerCommand(Command):
         self.launch = launch
 
     def execute(self) -> CommandResult:
-        from workflows.run_docker_server import run_docker_server
-        from workflows.run_local_server import run_local_server
+        from .server_lifecycle import get_server_lifecycle
 
         spec = self.launch
         try:
-            if spec.mode is ServerMode.DOCKER:
-                payload = run_docker_server(
-                    spec.model_spec,
-                    spec.runtime_config,
-                    spec.setup_config,
-                    spec.json_fpath,
-                )
-            elif spec.mode is ServerMode.LOCAL:
-                payload = run_local_server(
-                    spec.model_spec,
-                    spec.runtime_config,
-                    spec.json_fpath,
-                    spec.setup_config,
-                )
-            else:  # pragma: no cover - ServerLaunchSpec rejects unknown modes
-                return CommandResult(
-                    command_name=self.name,
-                    return_code=1,
-                    error=f"unknown server mode: {spec.mode!r}",
-                )
+            payload = get_server_lifecycle().launch(
+                spec.mode,
+                spec.model_spec,
+                spec.runtime_config,
+                spec.setup_config,
+                spec.json_fpath,
+            )
         except Exception as e:
             logger.exception("Server bring-up failed: %s", e)
             return CommandResult(command_name=self.name, return_code=1, error=str(e))
