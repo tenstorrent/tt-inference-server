@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
+import json
 from pathlib import Path
 
 from llm_module.config import LLMRunConfig, ServerConnection
@@ -59,7 +60,9 @@ def test_local_server_uses_host_port_and_truncation():
     assert cmd[cmd.index("--host") + 1] == "127.0.0.1"
     assert cmd[cmd.index("--port") + 1] == "8000"
     assert "--base-url" not in cmd
-    assert '"truncate_prompt_tokens": "128"' in cmd[cmd.index("--extra-body") + 1]
+    assert json.loads(cmd[cmd.index("--extra-body") + 1]) == {
+        "truncate_prompt_tokens": 128
+    }
     assert "--trust-remote-code" not in cmd
     header_values = cmd[cmd.index("--header") + 1 :]
     assert header_values == ["Accept-Encoding=identity"]

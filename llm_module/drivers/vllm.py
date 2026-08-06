@@ -99,7 +99,7 @@ def build_vllm_bench_serve_argv(
         cmd.extend(
             [
                 "--extra-body",
-                json.dumps({"truncate_prompt_tokens": str(config.isl)}),
+                json.dumps({"truncate_prompt_tokens": config.isl}),
             ]
         )
 

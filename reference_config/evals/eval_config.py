@@ -204,6 +204,9 @@ class EvalTask:
     # LM_EVAL_PRESERVE_REASONING when this is True.
     capture_reasoning: bool = False
     gen_kwargs: Dict[str, str] = field(default_factory=lambda: {"stream": "False"})
+    # Keep the harness RNG seed (--seed) while allowing model-owned samplers to
+    # opt out of receiving it as an OpenAI request sampling parameter.
+    propagate_seed_to_gen_kwargs: bool = True
     model_kwargs: Dict[str, str] = field(default_factory=lambda: {})
     # Note: include_path is specified relative to the respective venv
     include_path: str = None
@@ -5281,12 +5284,17 @@ _eval_config_list = [
                 gen_kwargs={
                     # local-chat-completions requires non-streamed responses.
                     "stream": "false",
+                    # Override this lm-eval task's deterministic defaults. DG
+                    # samples on device and only accepts neutral API values.
+                    "do_sample": "true",
+                    "temperature": 1.0,
                     # Leave room for the longest 2432-token GPQA prompt and emit
                     # only whole 256-token diffusion canvases:
                     # (16384 - 2432) // 256 * 256 = 13824.
                     "max_gen_toks": 13824,
                     "until": [],
                 },
+                propagate_seed_to_gen_kwargs=False,
                 limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 5,
                     EvalLimitMode.CI_NIGHTLY: 0.05,

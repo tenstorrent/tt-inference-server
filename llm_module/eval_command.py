@@ -234,9 +234,10 @@ def build_eval_command(
     effective_gen_kwargs = _clamp_max_gen_toks(
         task.gen_kwargs, device_max_context, task.task_name
     )
-    effective_gen_kwargs = _inject_seed_into_gen_kwargs(
-        effective_gen_kwargs, getattr(task, "seed", None)
-    )
+    if getattr(task, "propagate_seed_to_gen_kwargs", True):
+        effective_gen_kwargs = _inject_seed_into_gen_kwargs(
+            effective_gen_kwargs, getattr(task, "seed", None)
+        )
 
     optional_model_args = []
     if effective_max_concurrent:

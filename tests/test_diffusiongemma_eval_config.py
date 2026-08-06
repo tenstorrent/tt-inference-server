@@ -5,10 +5,13 @@
 import os
 import subprocess
 import sys
+from types import SimpleNamespace
 
 import pytest
 
+from llm_module.eval_command import build_eval_command
 from reference_config.evals.eval_config import (
+    EvalTask,
     _eval_config_map,
     accept_eval_score,
     resolve_eval_reference,
@@ -26,6 +29,31 @@ def _task(task_name):
 
 def _gpqa_task():
     return _task("gpqa_diamond_cot_zeroshot")
+
+
+def _build_command(task):
+    model_spec = SimpleNamespace(
+        model_id="diffusiongemma-26B-A4B-it",
+        model_name="diffusiongemma-26B-A4B-it",
+        hf_model_repo="google/diffusiongemma-26B-A4B-it",
+        device_model_spec=SimpleNamespace(
+            max_context=262144,
+            max_concurrency=1,
+            eval_max_retries=0,
+        ),
+    )
+    return build_eval_command(
+        task,
+        model_spec,
+        "P300x2",
+        "/tmp/evals",
+        8000,
+    )
+
+
+def _command_gen_kwargs(command):
+    raw = command[command.index("--gen_kwargs") + 1]
+    return dict(item.split("=", 1) for item in raw.split(","))
 
 
 def test_diffusiongemma_release_evals_are_gpqa_and_terminal_bench_only():
@@ -77,12 +105,13 @@ def test_diffusiongemma_gpqa_reserves_whole_canvas_output_budget():
     )
 
 
-def test_diffusiongemma_gpqa_omits_unsupported_sampling_params():
+def test_diffusiongemma_gpqa_uses_neutral_model_owned_sampling_params():
     task = _gpqa_task()
 
+    assert task.gen_kwargs["do_sample"] == "true"
+    assert task.gen_kwargs["temperature"] == 1.0
+    assert task.propagate_seed_to_gen_kwargs is False
     for unsupported_key in (
-        "do_sample",
-        "temperature",
         "top_k",
         "top_p",
         "logprobs",
@@ -90,6 +119,27 @@ def test_diffusiongemma_gpqa_omits_unsupported_sampling_params():
         "bad_words",
     ):
         assert unsupported_key not in task.gen_kwargs
+
+
+def test_diffusiongemma_gpqa_keeps_harness_seed_out_of_server_requests():
+    command = _build_command(_gpqa_task())
+    gen_kwargs = _command_gen_kwargs(command)
+
+    assert gen_kwargs["do_sample"] == "true"
+    assert gen_kwargs["temperature"] == "1.0"
+    assert "seed" not in gen_kwargs
+    assert command[command.index("--seed") + 1] == "42"
+
+
+def test_eval_task_propagates_seed_to_server_by_default():
+    task = EvalTask(
+        task_name="seeded_sampling",
+        gen_kwargs={"do_sample": "true", "temperature": 1.0},
+    )
+    command = _build_command(task)
+
+    assert _command_gen_kwargs(command)["seed"] == "42"
+    assert command[command.index("--seed") + 1] == "42"
 
 
 def test_diffusiongemma_terminal_bench_ci_is_small_and_single_request():
