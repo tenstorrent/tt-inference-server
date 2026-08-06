@@ -234,6 +234,9 @@ templates:
         PREFILL_BATCH_THRESHOLD: "16"  # route <=16 pending prefills to b1, serially
       known_issues:
         - workflow_type: SPEC_TESTS
+          task_name: test_penalties
+          reason: "Same over-strict length-change assertion already waived for Llama-3.3-70B-Instruct (#3888): with short, low-repetition prompts decoded near-greedily, presence_penalty legitimately produces identical output. Passes locally at 4K context, fails at the 32K CI config."
+        - workflow_type: SPEC_TESTS
           task_name: test_n
           reason: "tt-media-server builds chat `choices` as a hardcoded 1-element list (open_ai_api/chat.py), so `n` extra outputs are generated then discarded. Not forge- or model-specific: stock `vllm serve` on tt-xla returns n choices correctly. Tracked in #TBD."
         - workflow_type: SPEC_TESTS
