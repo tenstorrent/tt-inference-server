@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from workflows.runtime_config import RuntimeConfig
-from workflows.workflow_types import DeviceTypes, InferenceEngine
+from workflows.workflow_types import InferenceEngine
 
 from utils.url_helpers import is_remote_server, resolve_deploy_url
 
@@ -27,6 +27,7 @@ from .commands import (
     SummaryCommand,
     WorkflowCommand,
 )
+from .device_catalog import get_device_catalog
 from .execution import (
     AgenticTracesOptions,
     LLMBenchOptions,
@@ -141,7 +142,7 @@ def _build_context(
     if args.num_prompts is not None:
         model_spec.cli_args["sdxl_num_prompts"] = max(2, args.num_prompts)
 
-    device = DeviceTypes.from_string(args.device)
+    device = get_device_catalog().from_string(args.device)
     runtime_config = _load_runtime_config(args.runtime_model_spec_json)
 
     if output_path is None:

@@ -2,8 +2,8 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+from workflow_module.device_catalog import get_device_catalog
 from workflow_module.model_catalog import get_model_spec_provider
-from workflows.workflow_types import DeviceTypes
 
 # Removed get_model_id - using MODEL_SPECS directly
 from typing import List, Dict, Tuple, Set
@@ -111,8 +111,8 @@ class StressTestParamSpace:
         else:
             self._resolve_model_config()
 
-        # Convert device string to DeviceTypes enum
-        self.device_type = DeviceTypes.from_string(self.device)
+        # Convert device string to an engine device token
+        self.device_type = get_device_catalog().from_string(self.device)
 
         # Extract parameter boundaries from model config
         self._extract_parameter_boundaries()
