@@ -102,6 +102,7 @@ def test_diffusiongemma_benchmark_uses_random_dataset():
     )
 
     assert cmd[cmd.index("--dataset-name") + 1] == "random"
+    assert cmd[cmd.index("--temperature") + 1] == "1.0"
     assert "--dataset-path" not in cmd
     assert "--sonnet-input-len" not in cmd
 

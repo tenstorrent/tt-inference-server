@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 from llm_module.eval_command import build_eval_command
+from llm_module.lm_eval_no_server_seed import _drop_server_seed
 from reference_config.evals.eval_config import (
     EvalTask,
     _eval_config_map,
@@ -129,6 +130,17 @@ def test_diffusiongemma_gpqa_keeps_harness_seed_out_of_server_requests():
     assert gen_kwargs["temperature"] == "1.0"
     assert "seed" not in gen_kwargs
     assert command[command.index("--seed") + 1] == "42"
+    assert command[0].endswith("/bin/python")
+    assert command[1].endswith("llm_module/lm_eval_no_server_seed.py")
+
+
+def test_diffusiongemma_gpqa_seed_wrapper_removes_adapter_seed():
+    payload = {"model": "diffusiongemma", "seed": 42, "temperature": 1.0}
+
+    assert _drop_server_seed(payload) == {
+        "model": "diffusiongemma",
+        "temperature": 1.0,
+    }
 
 
 def test_eval_task_propagates_seed_to_server_by_default():
@@ -140,6 +152,7 @@ def test_eval_task_propagates_seed_to_server_by_default():
 
     assert _command_gen_kwargs(command)["seed"] == "42"
     assert command[command.index("--seed") + 1] == "42"
+    assert command[0].endswith("/bin/lm_eval")
 
 
 def test_diffusiongemma_terminal_bench_ci_is_small_and_single_request():
