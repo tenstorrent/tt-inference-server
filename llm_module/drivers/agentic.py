@@ -11,6 +11,7 @@ import logging
 from pathlib import Path
 from typing import Any, List, Optional
 
+from utils.model_naming import slugify_model_id
 from workflows.workflow_types import EvalLimitMode
 
 from ..agentic.swebench import SWEbenchRunConfig, run as run_swebench
@@ -299,7 +300,7 @@ def _agentic_output_dir(
     *,
     release_layout: bool = False,
 ) -> Path:
-    safe_model_id = model_id.replace("/", "__")
+    safe_model_id = slugify_model_id(model_id)
     if release_layout:
         # release run: group all agentic results under a single top-level
         # ``agentic/`` dir (sibling of ``llm/`` / ``prefix_cache/``) so the

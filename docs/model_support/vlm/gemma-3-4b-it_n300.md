@@ -5,7 +5,7 @@ Supported weights variants for this model implementation are:
 - `gemma-3-4b-it`: [google/gemma-3-4b-it](https://huggingface.co/google/gemma-3-4b-it) **(default)** 
 - `medgemma-4b-it`: [google/medgemma-4b-it](https://huggingface.co/google/medgemma-4b-it)
 
-To use non-default weights, replace `gemma-3-4b-it` in commands below.
+To use non-default weights, replace `google/gemma-3-4b-it` in commands below.
 
 #### Useful links
 
@@ -34,14 +34,14 @@ docker run \
   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
   --volume volume_id_gemma-3-4b-it:/home/container_app_user/cache_root \
   ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-c254ee3-c4f2327 \
-  --model gemma-3-4b-it \
+  --model google/gemma-3-4b-it \
   --tt-device n300
 ```
 
 **via run.py command**
 
 ```bash
-python3 run.py --model gemma-3-4b-it --device n300 --workflow server --docker-server
+python3 run.py --model google/gemma-3-4b-it --device n300 --workflow server --docker-server
 ```
 For details on the run.py command, see the [run.py CLI Options](../../workflows_user_guide.md#runpy-cli-options) section of the User Guide.
 

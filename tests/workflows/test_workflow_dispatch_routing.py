@@ -14,8 +14,18 @@ from workflows.utils import get_repo_root_path
 from workflows.workflow_types import ModelType, WorkflowType
 
 
-def _spec(model_type, name="Llama-3.1-8B-Instruct"):
-    return SimpleNamespace(model_type=model_type, model_name=name)
+def _spec(model_type, name="Llama-3.1-8B-Instruct", hf_model_repo=None):
+    if hf_model_repo is None:
+        # EVAL_CONFIGS is keyed by the full HF repo id; map the default LLM
+        # name to its real repo so the routing lookups resolve.
+        hf_model_repo = (
+            "meta-llama/Llama-3.1-8B-Instruct"
+            if name == "Llama-3.1-8B-Instruct"
+            else name
+        )
+    return SimpleNamespace(
+        model_type=model_type, model_name=name, hf_model_repo=hf_model_repo
+    )
 
 
 def _rc(workflow="benchmarks", **kw):
@@ -489,7 +499,10 @@ def _patch_eval_configs(monkeypatch, *, agentic):
     venv = WorkflowVenvType.EVALS_AGENTIC if agentic else WorkflowVenvType.EVALS_COMMON
     cfg = SimpleNamespace(tasks=[SimpleNamespace(workflow_venv_type=venv)])
     monkeypatch.setattr(
-        eval_config, "EVAL_CONFIGS", {"Llama-3.1-8B-Instruct": cfg}, raising=False
+        eval_config,
+        "EVAL_CONFIGS",
+        {"meta-llama/Llama-3.1-8B-Instruct": cfg},
+        raising=False,
     )
 
 
@@ -635,6 +648,41 @@ def test_release_without_the_opt_in_forwards_nothing_agentic_traces(
 
     argv = _FakeRunner.captured[0].argv
     assert not any(a.startswith("--agentic-traces") for a in argv)
+
+
+def test_argv_with_canonical_model_rewrites_bare_flag():
+    spec = _spec(
+        ModelType.AUDIO,
+        name="whisper-large-v3",
+        hf_model_repo="openai/whisper-large-v3",
+    )
+    argv = [
+        "run.py",
+        "--model",
+        "whisper-large-v3",
+        "--workflow",
+        "release",
+        "--device",
+        "p150",
+    ]
+    out = workflow_dispatch._argv_with_canonical_model(argv, spec)
+    assert out[out.index("--model") + 1] == "openai/whisper-large-v3"
+
+
+def test_engine_env_records_canonical_model_in_run_command(monkeypatch):
+    spec = _spec(
+        ModelType.AUDIO,
+        name="whisper-large-v3",
+        hf_model_repo="openai/whisper-large-v3",
+    )
+    monkeypatch.setattr(
+        workflow_dispatch.sys,
+        "argv",
+        ["run.py", "--model", "whisper-large-v3", "--workflow", "release"],
+    )
+    env = workflow_dispatch._engine_env(spec)
+    assert "--model openai/whisper-large-v3" in env["TT_RUN_COMMAND"]
+    assert "--model whisper-large-v3 " not in env["TT_RUN_COMMAND"] + " "
 
 
 if __name__ == "__main__":

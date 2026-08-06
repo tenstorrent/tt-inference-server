@@ -671,10 +671,18 @@ class TestAgenticTracesRegistration:
 
     UNREGISTERED_ID = "id_tt-transformers_Llama-3.1-8B-Instruct_n150"
 
-    def _spec(self, model_id, model_name="Llama-3.1-8B-Instruct"):
+    UNREGISTERED_REPO = "meta-llama/Llama-3.1-8B-Instruct"
+
+    def _spec(
+        self,
+        model_id,
+        model_name="Llama-3.1-8B-Instruct",
+        hf_model_repo=UNREGISTERED_REPO,
+    ):
         spec = MagicMock()
         spec.model_id = model_id
         spec.model_name = model_name
+        spec.hf_model_repo = hf_model_repo
         spec.inference_engine = "vLLM"
         return spec
 
@@ -739,7 +747,7 @@ class TestAgenticTracesRegistration:
         """Without the opt-in there is no agentic-traces child to protect."""
         spec = self._spec(self.UNREGISTERED_ID)
         monkeypatch.setattr(
-            "workflows.validate_setup.EVAL_CONFIGS", {spec.model_name: object()}
+            "workflows.validate_setup.EVAL_CONFIGS", {spec.hf_model_repo: object()}
         )
         monkeypatch.setattr(
             "workflows.validate_setup.can_dispatch_to_engine", lambda *a, **k: True

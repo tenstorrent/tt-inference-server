@@ -23,6 +23,12 @@ from workflow_logs_parser import parse_workflow_logs_dir
 
 import _bootstrap  # noqa: F401,E402  (sets sys.path for imports below)
 from workflows.model_spec import MODEL_SPECS
+from utils.model_naming import (
+    device_from_ci_job_name,
+    model_name_variants,
+    split_workflow_logs_artifact_name,
+    unslugify_model_id,
+)
 
 # Configure logging
 logging.basicConfig(
@@ -797,16 +803,62 @@ def parse_job_name(job_name: str) -> Optional[dict]:
     return None
 
 
+def _match_job_to_bundle(
+    job_name: str,
+    workflow_type: str,
+    model_name: str,
+    hardware_name: str,
+    model_repo: Optional[str],
+) -> Optional[Tuple[str, str, str]]:
+    """``(model_name, hardware_name, hardware)`` if ``job_name`` is this bundle's job.
+
+    ``parse_job_name`` covers the parenthesised grammars. The flat
+    ``run-<workflow>-<model>-<runner>-<device>`` one it cannot see at all: both
+    the model and the label contain ``-``, so it is only readable once they are
+    known.
+    """
+    tokens = model_name_variants(model_repo or model_name)
+
+    parsed_job = parse_job_name(job_name)
+    if (
+        parsed_job
+        and parsed_job["workflow_type"] == workflow_type
+        and parsed_job["model_name"] in tokens
+        and parsed_job["hardware_name"] == hardware_name
+    ):
+        return (
+            parsed_job["model_name"],
+            parsed_job["hardware_name"],
+            parsed_job["hardware"],
+        )
+
+    device = device_from_ci_job_name(
+        job_name, workflow_type, model_repo or model_name, hardware_name
+    )
+    if device:
+        return (model_repo or model_name, hardware_name, device)
+
+    return None
+
+
 def match_jobs_to_workflow_logs(
-    jobs_ci_metadata: List[dict], workflow_logs_dir_name: str
+    jobs_ci_metadata: List[dict],
+    workflow_logs_dir_name: str,
+    model_repo: Optional[str] = None,
 ) -> Optional[dict]:
     """Match a job from jobs_ci_metadata to a workflow_logs directory.
 
-    Workflow logs dir format: workflow_logs_{workflow_type}_{model_name}_{hardware_name}
+    The bundle is
+    ``workflow_logs_<workflow>_<model>_<runner_label>_<impl-or-default>``, so
+    ``hardware_name`` is the runner label -- the fourth field, not the trailing
+    impl suffix. The grammar is not self-delimiting (the model contains ``__``,
+    the label may contain ``_``), which is what ``model_repo`` resolves.
 
     Args:
         jobs_ci_metadata: List of job metadata dicts from jobs_ci_metadata.json
         workflow_logs_dir_name: Name of workflow_logs directory
+        model_repo: Full HF repo id, from the bundle's own spec. Optional only so
+            a bundle with no readable spec still gets a best-effort guess.
 
     Returns:
         Matched job dict with added fields: model_name, hardware, hardware_name or None
@@ -815,63 +867,63 @@ def match_jobs_to_workflow_logs(
         logger.debug("No jobs_ci_metadata provided for matching")
         return None
 
-    # Parse workflow_logs_dir_name: workflow_logs_{workflow_type}_{model_name}_{hardware_name}
     if not workflow_logs_dir_name.startswith("workflow_logs_"):
         logger.warning(
             f"Invalid workflow_logs dir name format: {workflow_logs_dir_name}"
         )
         return None
 
-    # Remove "workflow_logs_" prefix
     remainder = workflow_logs_dir_name[len("workflow_logs_") :]
 
-    # Split by underscore to extract: workflow_type, model_name, hardware_name
-    # Format is: {workflow_type}_{model_name}_{hardware_name}
-    # But model_name can contain underscores, so we need to be careful
-    # We know workflow_type is usually "release", "benchmarks", etc.
-    # hardware_name is the last component (llmbox, n300, n150, t3k, tg, etc.)
+    # The only field safe to split off blind: a fixed vocabulary, no underscores.
+    workflow_parts = remainder.split("_", 1)
+    if len(workflow_parts) != 2:
+        logger.warning(f"Could not extract workflow_type from: {remainder}")
+        return None
+    workflow_type, model_and_runner = workflow_parts
 
-    parts = remainder.rsplit("_", 1)
-    if len(parts) != 2:
+    # (model_name, hardware_name) candidates. With the repo id the split is exact
+    # and every legacy escape is tolerated.
+    candidates: List[Tuple[str, str]] = []
+    if model_repo:
+        split = split_workflow_logs_artifact_name(
+            workflow_logs_dir_name, workflow_type, model_repo
+        )
+        if split:
+            candidates.append((model_repo, split[0]))
+
+    if not candidates:
+        # Boundary is a guess: today's 4-field grammar, then the older 3-field
+        # one. The lossy "_"->"-" coercion stays confined to this path.
+        for trailing_fields in (2, 1):
+            parts = model_and_runner.rsplit("_", trailing_fields)
+            if len(parts) == trailing_fields + 1:
+                candidates.append(
+                    (unslugify_model_id(parts[0]).replace("_", "-"), parts[1])
+                )
+
+    if not candidates:
         logger.warning(
             f"Could not parse workflow_logs dir name: {workflow_logs_dir_name}"
         )
         return None
 
-    model_and_workflow = parts[0]
-    hardware_name = parts[1]
-
-    # Extract workflow_type (first component before model name)
-    workflow_parts = model_and_workflow.split("_", 1)
-    if len(workflow_parts) != 2:
-        logger.warning(f"Could not extract workflow_type from: {model_and_workflow}")
-        return None
-
-    workflow_type = workflow_parts[0]
-    model_name = workflow_parts[1].replace(
-        "_", "-"
-    )  # Convert underscores back to hyphens
-
     logger.debug(
-        f"Parsed workflow_logs dir: workflow_type={workflow_type}, model_name={model_name}, hardware_name={hardware_name}"
+        f"Parsed workflow_logs dir: workflow_type={workflow_type}, "
+        f"model_repo={model_repo}, candidates={candidates}"
     )
 
-    # Match against jobs_ci_metadata
     for job in jobs_ci_metadata:
         job_name = job.get("job_name", "")
-        parsed_job = parse_job_name(job_name)
-
-        if not parsed_job:
-            continue
-
-        # Match when workflow_type, model_name, and hardware_name all match
-        if (
-            parsed_job["workflow_type"] == workflow_type
-            and parsed_job["model_name"] == model_name
-            and parsed_job["hardware_name"] == hardware_name
-        ):
-            # Create matched job info with parsed fields
-            matched_job = {
+        for model_name, hardware_name in candidates:
+            matched = _match_job_to_bundle(
+                job_name, workflow_type, model_name, hardware_name, model_repo
+            )
+            if not matched:
+                continue
+            matched_model, matched_runner, matched_device = matched
+            logger.info(f"Matched job {job.get('job_id')} to {workflow_logs_dir_name}")
+            return {
                 "job_id": job.get("job_id"),
                 "job_name": job.get("job_name"),
                 "job_status": job.get("job_status"),
@@ -879,13 +931,10 @@ def match_jobs_to_workflow_logs(
                 "job_url": job.get("job_url"),
                 "started_at": job.get("started_at"),
                 "completed_at": job.get("completed_at"),
-                "model_name": parsed_job["model_name"],
-                "hardware": parsed_job["hardware"],
-                "hardware_name": parsed_job["hardware_name"],
+                "model_name": matched_model,
+                "hardware": matched_device,
+                "hardware_name": matched_runner,
             }
-
-            logger.info(f"Matched job {job.get('job_id')} to {workflow_logs_dir_name}")
-            return matched_job
 
     logger.warning(f"Could not match any job to {workflow_logs_dir_name}")
     return None
@@ -1417,7 +1466,9 @@ def process_run_directory(
             dir_name = workflow_logs_dict.get("dir_name")
             if dir_name:
                 matched_job_info = match_jobs_to_workflow_logs(
-                    jobs_ci_metadata, dir_name
+                    jobs_ci_metadata,
+                    dir_name,
+                    (workflow_logs_dict.get("model_specs") or {}).get("hf_model_repo"),
                 )
 
         # Create model-specific ci_metadata with job metadata

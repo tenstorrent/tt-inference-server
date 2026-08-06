@@ -45,12 +45,14 @@ import sys
 import tempfile
 import urllib.error
 import urllib.request
+from collections.abc import Iterable
 from pathlib import Path
 
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT))
+from utils.model_naming import ci_job_matches_device  # noqa: E402
 from workflows.workflow_types import DeviceTypes, InferenceEngine  # noqa: E402
 
 DEFAULT_CI_CONFIG = REPO_ROOT / ".github" / "workflows" / "models-ci-config.json"
@@ -86,10 +88,6 @@ def iter_implementations(model_entry: dict):
         yield from model_entry["implementations"]
     else:
         yield model_entry
-
-
-def model_name_from_weight(weight: str) -> str:
-    return Path(weight).name
 
 
 def collect_release_combos(
@@ -173,7 +171,7 @@ def _block_devices(block: dict) -> set:
 
 
 def _block_models(block: dict) -> set:
-    return {model_name_from_weight(w) for w in block.get("weights", []) or []}
+    return set(block.get("weights", []) or [])
 
 
 def find_block(blocks, model_name, engine, device) -> dict | None:
@@ -238,16 +236,30 @@ def fetch_run_jobs(repo: str, run_id: str, token: str) -> list[dict] | None:
 
 
 def ci_job_url(
-    jobs, repo: str, run_id: str, model_name: str, device: DeviceTypes
+    jobs,
+    repo: str,
+    run_id: str,
+    model_name: str,
+    device: DeviceTypes,
+    other_model_names: Iterable[str] = (),
 ) -> str | None:
-    """URL of the run-release-<model>-<runner>-<device> job for this combo."""
+    """URL of the run-release-<model>-<runner>-<device> job for this combo.
+
+    ``model_name`` is the identity; the job name carries the escaped token, so
+    the comparison goes through ``ci_job_matches_device``. The other models in
+    the release go with it: a job name cannot be attributed to one of two
+    prefix siblings on its own.
+    """
     if not jobs:
         return None
-    token = device.name.lower()  # device token used in tt-shield job names
-    prefix = f"run-release-{model_name}-"
     for job in jobs:
-        leaf = job.get("name", "").split("/")[-1].strip()
-        if leaf.startswith(prefix) and leaf.endswith(f"-{token}"):
+        if ci_job_matches_device(
+            job.get("name", ""),
+            "release",
+            model_name,
+            device.name,
+            other_model_names,
+        ):
             return f"https://github.com/{repo}/actions/runs/{run_id}/job/{job['id']}"
     return None
 
@@ -258,6 +270,7 @@ def ci_job_url(
 def build_rows(new_blocks, old_blocks, combos, jobs, tt_shield_repo, run_id):
     rows = []
     seen: set = set()
+    all_model_names = {c[0] for c in combos}
     for model_name, engine, device in combos:
         new_b = find_block(new_blocks, model_name, engine, device)
         old_b = find_block(old_blocks, model_name, engine, device)
@@ -266,7 +279,11 @@ def build_rows(new_blocks, old_blocks, combos, jobs, tt_shield_repo, run_id):
         # bundling several weights (e.g. whisper) yields a single row.
         ident_block = new_b or old_b
         weights = tuple((ident_block or {}).get("weights", []) or [])
-        dedup_key = (weights, engine, device)
+        dedup_key = (
+            ("block", weights, engine, device)
+            if ident_block
+            else ("model", model_name, engine, device)
+        )
         if dedup_key in seen:
             continue
         seen.add(dedup_key)
@@ -281,7 +298,9 @@ def build_rows(new_blocks, old_blocks, combos, jobs, tt_shield_repo, run_id):
                 "tt_after": (new_b or {}).get("tt_metal_commit"),
                 "status_before": (old_b or {}).get("status"),
                 "status_after": (new_b or {}).get("status"),
-                "ci_url": ci_job_url(jobs, tt_shield_repo, run_id, model_name, device)
+                "ci_url": ci_job_url(
+                    jobs, tt_shield_repo, run_id, model_name, device, all_model_names
+                )
                 if (jobs and run_id)
                 else None,
             }

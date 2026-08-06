@@ -22,7 +22,7 @@ This model is supported by [tt-media-server](../../../tt-media-server/README.md)
 **via run.py command**
 
 ```bash
-python3 run.py --model Wan2.2-T2V-A14B-Diffusers --device t3k --workflow server --docker-server
+python3 run.py --model Wan-AI/Wan2.2-T2V-A14B-Diffusers --device t3k --workflow server --docker-server
 ```
 For details on the run.py command, see the [run.py CLI Options](../../workflows_user_guide.md#runpy-cli-options) section of the User Guide.
 

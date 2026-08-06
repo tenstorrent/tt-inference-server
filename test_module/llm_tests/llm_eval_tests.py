@@ -19,11 +19,12 @@ from llm_module import HttpServerController, RemoteOpenAIController
 from llm_module.eval_command import build_eval_command
 from llm_module.eval_configs import get_llm_eval_tasks
 from report_module.schema import Block
+from utils.model_naming import slugify_model_id
 from workflow_module import accept_blocks
 from workflows.utils import run_command
 from workflows.workflow_types import EvalLimitMode
 
-from .._test_common import ReportCheckTypes, TestStatus, block_id
+from .._test_common import ReportCheckTypes, TestStatus, block_id, report_model_fields
 from ..context import MediaContext
 
 logger = logging.getLogger(__name__)
@@ -60,7 +61,7 @@ def discover_eval_results(output_path, model_spec) -> List[str]:
     ``hf_repo__`` is the repo with ``/`` replaced by ``__`` (mirrors v1's
     per-model-type globs in run_reports.py).
     """
-    repo = model_spec.hf_model_repo.replace("/", "__")
+    repo = slugify_model_id(model_spec.hf_model_repo)
     base = f"eval_{model_spec.model_id}/{repo}"
     patterns = [
         f"{output_path}/{base}/results_*.json",
@@ -452,7 +453,7 @@ def _accept(ctx: MediaContext, blocks: List[Block]) -> None:
     accept_blocks(
         blocks,
         envelope={
-            "model_name": ctx.model_spec.hf_model_repo,
+            **report_model_fields(ctx.model_spec),
             "device": _device_label(ctx),
             "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         },

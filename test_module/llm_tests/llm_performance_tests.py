@@ -36,6 +36,7 @@ from llm_module import (
 from llm_module.runner import RunnerResult
 from workflow_module import accept_blocks
 
+from .._test_common import report_model_fields
 from ..context import MediaContext
 
 logger = logging.getLogger(__name__)
@@ -105,7 +106,7 @@ def run_llm_performance(
     accept_blocks(
         result.blocks,
         envelope={
-            "model_name": server.model,
+            **report_model_fields(ctx.model_spec),
             "device": device_label,
             "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         },

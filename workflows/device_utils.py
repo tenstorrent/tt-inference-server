@@ -54,7 +54,8 @@ def _collect_supported_devices_for_model(
 ) -> Set[DeviceTypes]:
     supported_devices = set()
     for _, model_spec in MODEL_SPECS.items():
-        if model_spec.model_name != model_name:
+        # Accept either the full HF repo id or the bare basename.
+        if model_name not in (model_spec.model_name, model_spec.hf_model_repo):
             continue
         if engine and model_spec.inference_engine != engine:
             continue

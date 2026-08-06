@@ -84,9 +84,9 @@ def _placeholder_llm(device):
     if device:
         want = device.lower()
         match = next((s for s in llms if s.device_type.name.lower() == want), None)
-        return (match.model_name, device) if match else None
+        return (match.hf_model_repo, device) if match else None
     spec = llms[0]
-    return spec.model_name, spec.device_type.name.lower()
+    return spec.hf_model_repo, spec.device_type.name.lower()
 
 
 def parse_arguments():
@@ -94,26 +94,40 @@ def parse_arguments():
     valid_devices = {device.name.lower() for device in DeviceTypes}
     valid_engines = {engine.to_string() for engine in InferenceEngine}
 
-    # Build valid models set, including full HF repo names for whisper models
+    # Build valid models set. The canonical model identifier is the full HF
+    # repo id (e.g. "meta-llama/Llama-3.1-8B-Instruct"); the bare basename
+    # (e.g. "Llama-3.1-8B-Instruct") is still accepted for backwards
+    # compatibility. Only full repo ids are listed as "Available models".
+    full_repo_models = set()
     valid_models = set()
     for _, config in MODEL_SPECS.items():
+        full_repo_models.add(config.hf_model_repo)
+        valid_models.add(config.hf_model_repo)
         valid_models.add(config.model_name)
 
     valid_impls = {config.impl.impl_name for _, config in MODEL_SPECS.items()}
     # required
     parser = argparse.ArgumentParser(
         description="A CLI for running workflows with optional docker, device, and workflow-args.",
-        epilog="\nAvailable models:\n  " + "\n  ".join(valid_models),
+        epilog="\nAvailable models:\n  " + "\n  ".join(sorted(full_repo_models)),
         formatter_class=argparse.RawTextHelpFormatter,
     )
     parser.add_argument(
         "--model",
+        # Not required at the argparse level: prefill_decode serves a mock stack
+        # chosen by --served-model and only needs a placeholder spec. Every other
+        # workflow still requires it -- enforced after parsing, where the
+        # workflow is known.
         required=False,
         default=None,
         choices=valid_models,
-        help="Model to run. Required for every workflow except prefill_decode, "
-        "which serves a mock stack chosen by --served-model and only needs a "
-        "placeholder spec (auto-picked when --model is omitted).",
+        # metavar because `choices` holds every full HF repo id; without it
+        # argparse prints all of them in the usage line.
+        metavar="MODEL",
+        help="Model to run (full HF repo id, e.g. meta-llama/Llama-3.1-8B-Instruct). "
+        "Required for every workflow except prefill_decode, which serves a mock "
+        "stack chosen by --served-model and only needs a placeholder spec "
+        "(auto-picked when --model is omitted).",
     )
     parser.add_argument(
         "--workflow",
@@ -940,6 +954,10 @@ def resolve_runtime(args):
             f"{args.runtime_model_spec_json}"
         )
         model_spec = ModelSpec.from_json(args.runtime_model_spec_json)
+        # Canonicalize bare --model to the HF identity so RuntimeConfig /
+        # run_command / report metadata all carry the same spelling.
+        if model_spec.hf_model_repo:
+            args.model = model_spec.hf_model_repo
         runtime_config = RuntimeConfig.from_args(args)
     else:
         model_spec, resolved_impl, resolved_engine = get_runtime_model_spec(
@@ -948,6 +966,8 @@ def resolve_runtime(args):
             engine=args.engine,
             impl=args.impl,
         )
+        if model_spec.hf_model_repo:
+            args.model = model_spec.hf_model_repo
         runtime_config = RuntimeConfig.from_args(
             args, impl=resolved_impl, engine=resolved_engine
         )

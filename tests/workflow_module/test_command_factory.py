@@ -13,10 +13,12 @@ from __future__ import annotations
 
 import json
 from argparse import Namespace
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
+from utils.model_naming import unslugify_model_id
 from workflows.workflow_types import InferenceEngine
 
 from workflow_module import command_factory as cf
@@ -538,3 +540,67 @@ class TestResolveAuthToken:
         )
         assert cf._engine_from_runtime_spec_json(None) is None
         assert cf._engine_from_runtime_spec_json("/no/such/file.json") is None
+
+
+class TestOutputLeaf:
+    """The run's output directory must stay one path component deep.
+
+    ``args.model`` is the full HF repo id, so interpolating it raw turned the
+    org prefix into a real parent directory and buried the report one level
+    below where every consumer (report globs, CI artifact payloads) looks.
+    """
+
+    @staticmethod
+    def _args(model):
+        return Namespace(model=model, device="p150", workflow="release")
+
+    def test_org_prefix_does_not_become_a_directory(self):
+        leaf = cf._output_leaf(self._args("Qwen/Qwen3-32B"))
+        assert leaf == "Qwen__Qwen3-32B_p150_release"
+        assert "/" not in leaf
+        assert len(Path(leaf).parts) == 1
+
+    def test_bare_model_id_is_unchanged(self):
+        assert cf._output_leaf(self._args("resnet-50")) == "resnet-50_p150_release"
+
+    def test_output_path_stays_directly_under_output_dir(self, tmp_path):
+        leaf = cf._output_leaf(self._args("meta-llama/Llama-3.1-8B-Instruct"))
+        assert (tmp_path / leaf).parent == tmp_path
+
+    @pytest.mark.parametrize(
+        "model", ["Qwen/Qwen3-32B", "microsoft/phi-1_5", "resnet-50"]
+    )
+    def test_model_portion_recovers_the_repo_id(self, model):
+        leaf = cf._output_leaf(self._args(model))
+        assert unslugify_model_id(leaf[: -len("_p150_release")]) == model
+
+
+class TestCanonicalizeCliModel:
+    """Bare --model must become the HF identity before eval/output use."""
+
+    def test_bare_basename_becomes_hf_repo(self):
+        args = Namespace(
+            model="whisper-large-v3",
+            device="n150",
+            runtime_model_spec_json=None,
+        )
+        cf._canonicalize_cli_model(args)
+        assert args.model == "openai/whisper-large-v3"
+
+    def test_prefixed_identity_unchanged(self):
+        args = Namespace(
+            model="openai/whisper-large-v3",
+            device="n150",
+            runtime_model_spec_json=None,
+        )
+        cf._canonicalize_cli_model(args)
+        assert args.model == "openai/whisper-large-v3"
+
+    def test_true_bare_identity_unchanged(self):
+        args = Namespace(
+            model="resnet-50",
+            device="n150",
+            runtime_model_spec_json=None,
+        )
+        cf._canonicalize_cli_model(args)
+        assert args.model == "resnet-50"

@@ -117,8 +117,8 @@ def validate_runtime_args(model_spec, runtime_config):
     )
 
     if workflow_type == WorkflowType.EVALS:
-        assert model_spec.model_name in EVAL_CONFIGS, (
-            f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
+        assert model_spec.hf_model_repo in EVAL_CONFIGS, (
+            f"Model:={model_spec.hf_model_repo} not found in EVAL_CONFIGS"
         )
     if (
         workflow_type == WorkflowType.BENCHMARKS
@@ -203,8 +203,8 @@ def validate_runtime_args(model_spec, runtime_config):
     if workflow_type == WorkflowType.RELEASE:
         # NOTE: fail fast for models without both defined evals and generated
         # benchmark tasks. A run_*.log file will be made for failed combinations.
-        assert model_spec.model_name in EVAL_CONFIGS, (
-            f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
+        assert model_spec.hf_model_repo in EVAL_CONFIGS, (
+            f"Model:={model_spec.hf_model_repo} not found in EVAL_CONFIGS"
         )
         if not can_dispatch_to_engine(model_spec, runtime_config):
             get_benchmark_config(model_spec)
