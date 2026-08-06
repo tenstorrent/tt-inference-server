@@ -2,8 +2,9 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+import logging
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Dict, List, Optional, Union
 
 from reference_config.evals.eval_utils import (
@@ -14,6 +15,8 @@ from reference_config.evals.eval_utils import (
 from workflows.model_spec import MODEL_SPECS
 from workflows.utils import map_configs_by_attr
 from workflows.workflow_types import EvalLimitMode, WorkflowVenvType
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -226,6 +229,16 @@ class EvalTask:
     allow_code_execution: bool = False
     agentic_eval_config: Optional[TerminalBenchEvalConfig] = None
     swebench_eval_config: Optional[SWEbenchEvalConfig] = None
+    # Per-device overrides, keyed by device name (e.g. "GALAXY",
+    # "SUPER_CLUSTER"; matched case-insensitively). EvalTask fields follow a
+    # three-tier device-variance model:
+    #   1. semantic identity (device-INVARIANT, rejected here): task_name,
+    #      workflow_venv_type, eval_class, num_fewshot, seed, include_path;
+    #   2. transport/execution (device-variant): max_concurrent, batch_size,
+    #      use_chat_api, apply_chat_template, gen_kwargs, model_kwargs, ...;
+    #   3. measured baselines (device-variant): score.
+    # Only tier-2/3 fields may appear in an override block.
+    device_overrides: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
     def __post_init__(self):
         self.validate_data()
@@ -247,7 +260,62 @@ class EvalTask:
             object.__setattr__(self, "model_kwargs", mk)
 
     def validate_data(self):
-        pass
+        tier1_fields = {
+            "task_name",
+            "workflow_venv_type",
+            "eval_class",
+            "num_fewshot",
+            "seed",
+            "include_path",
+            "device_overrides",
+        }
+        for device_key, overrides in self.device_overrides.items():
+            if not isinstance(overrides, dict):
+                raise ValueError(
+                    f"EvalTask {self.task_name!r}: device_overrides[{device_key!r}] "
+                    "must be a dict of field overrides"
+                )
+            unknown = set(overrides) - set(self.__dataclass_fields__)
+            if unknown:
+                raise ValueError(
+                    f"EvalTask {self.task_name!r}: device_overrides[{device_key!r}] "
+                    f"names unknown EvalTask fields: {sorted(unknown)}"
+                )
+            tier1 = set(overrides) & tier1_fields
+            if tier1:
+                raise ValueError(
+                    f"EvalTask {self.task_name!r}: device_overrides[{device_key!r}] "
+                    f"cannot override tier-1 (device-invariant) fields: {sorted(tier1)}"
+                )
+
+
+def resolve_task_for_device(task: "EvalTask", device) -> "EvalTask":
+    """Apply ``task``'s per-device overrides for ``device`` (identity if none).
+
+    ``device`` may be a device enum member (uses ``.name``) or a plain string;
+    matching is case-insensitive. Only tier-2 (transport/execution) and tier-3
+    (measured baseline) fields are overridable — see ``EvalTask`` validation.
+    """
+    if not device or not task.device_overrides:
+        return task
+    device_name = getattr(device, "name", device)
+    overrides = {
+        k: v
+        for key, v in task.device_overrides.items()
+        if key.upper() == str(device_name).upper()
+        for k, v in v.items()
+    }
+    if not overrides:
+        return task
+    resolved = replace(task, **overrides)
+    logger.info(
+        "Applied %d device override(s) for task=%s device=%s: %s",
+        len(overrides),
+        task.task_name,
+        device_name,
+        sorted(overrides),
+    )
+    return resolved
 
 
 @dataclass(frozen=True)
