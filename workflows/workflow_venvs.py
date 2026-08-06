@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Optional, Tuple
@@ -28,6 +29,53 @@ default_venv_path = get_repo_root_path() / ".workflow_venvs"
 
 # Per-venv pip lists live under <repo_root>/requirements/, sharing constraints.txt.
 REQUIREMENTS_DIR = get_repo_root_path() / "requirements"
+
+# Tenstorrent fork of Harbor carrying the provider-neutral `kubernetes`
+# environment (generic RKE2/EKS/... support abstracted out of what gke.py did),
+# used to schedule agentic-eval trial pods on our clusters. Temporary: revert to
+# harbor-framework/harbor at a release tag once the environment lands upstream.
+HARBOR_REPO = "https://github.com/dcvijeticTT/harbor.git"
+# A full commit SHA, never a branch name: `--branch <name>` resolves to whatever
+# the branch points at when CI happens to run, so a force-push would change the
+# code behind an eval result with no diff here to show it. Bump deliberately.
+HARBOR_REF = "729d0fdd057eab8c543c15b582546aa59ed22230"
+
+
+def checkout_pinned_repo(dest: Path, repo: str, ref: str) -> bool:
+    """Materialize *repo* at exactly *ref* in *dest*. Returns success.
+
+    Idempotent, and converging rather than incremental: the directory may be
+    absent, already at *ref*, left at a different revision by an earlier job,
+    or not a git repository at all. Self-hosted runners keep the venv tree
+    between jobs, so a "clone only when missing" shortcut would keep
+    installing whatever the previous pin was.
+    """
+    if not (dest / ".git").is_dir():
+        if dest.exists():
+            logger.info("Discarding non-git directory at %s", dest)
+            shutil.rmtree(dest)
+        if (
+            run_command(
+                f"git clone --filter=blob:none --no-checkout {repo} {dest}",
+                logger=logger,
+            )
+            != 0
+        ):
+            return False
+
+    # `fetch <sha>` rather than a full mirror fetch: uploadpack.allowAnySHA1InWant
+    # is on for GitHub, so a single commit and its trees come down without the
+    # rest of the history. --depth 1 keeps a bumped pin from accumulating it.
+    steps = (
+        f"git -C {dest} remote set-url origin {repo}",
+        f"git -C {dest} fetch --depth 1 origin {ref}",
+        f"git -C {dest} checkout --detach --force FETCH_HEAD",
+    )
+    for step in steps:
+        if run_command(step, logger=logger) != 0:
+            logger.error("Failed to pin %s to %s (%s)", dest, ref, step)
+            return False
+    return True
 
 
 def install_requirements(
@@ -180,20 +228,8 @@ def setup_evals_agentic(
         return False
 
     harbor_dir = venv_config.venv_path / "harbor"
-    # Tenstorrent fork carrying the provider-neutral `kubernetes` Harbor
-    # environment (generic RKE2/EKS/... support that abstracts what gke.py did),
-    # used to schedule agentic-eval trial pods on our clusters. Tracks a branch
-    # rather than a release tag until it lands upstream; revert to
-    # harbor-framework/harbor + a tag once it does.
-    harbor_repo = "https://github.com/dcvijeticTT/harbor.git"
-    harbor_ref = "feat/generic-kubernetes-environment"
-    if not harbor_dir.exists():
-        clone_return_code = run_command(
-            f"git clone --depth 1 --branch {harbor_ref} {harbor_repo} {harbor_dir}",
-            logger=logger,
-        )
-        if clone_return_code != 0:
-            return False
+    if not checkout_pinned_repo(harbor_dir, HARBOR_REPO, HARBOR_REF):
+        return False
 
     # Install with the `kubernetes` extra so the Python k8s client comes in: the
     # kubernetes environment needs it, and it is declared as an optional extra,
