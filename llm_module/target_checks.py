@@ -16,7 +16,7 @@ import logging
 from typing import Any, Dict, Mapping, Optional, Tuple
 
 from report_module.schema import Block
-from workflows.workflow_types import ReportCheckTypes
+from workflow_module.engine_types import ReportCheckTypes
 
 logger = logging.getLogger(__name__)
 

@@ -33,7 +33,7 @@ def get_llm_configs(
         get_benchmark_config,
         select_smoke_test_benchmark_config,
     )
-    from workflows.workflow_types import EvalLimitMode
+    from workflow_module.engine_types import EvalLimitMode
 
     benchmark_config = get_benchmark_config(model_spec)
 

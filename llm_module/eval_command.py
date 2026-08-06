@@ -16,7 +16,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional
 
 from utils.url_helpers import build_base_url
-from workflows.workflow_types import EvalLimitMode, WorkflowVenvType
+from workflow_module.engine_types import EvalLimitMode
+from workflows.workflow_types import WorkflowVenvType
 from workflows.workflow_venvs import VENV_CONFIGS
 
 if TYPE_CHECKING:

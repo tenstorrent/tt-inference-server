@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, List, Optional
 
-from workflows.workflow_types import EvalLimitMode
+from workflow_module.engine_types import EvalLimitMode
 
 from ..agentic.swebench import SWEbenchRunConfig, run as run_swebench
 from ..agentic.terminal_bench import TerminalBenchRunConfig, run as run_terminal_bench
