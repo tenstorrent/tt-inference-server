@@ -197,8 +197,9 @@ def test_vllm_exposes_block_metrics_for_block_diffusion():
 
     assert data["metric_semantics"] == "block_granular"
     assert data["output_block_size"] == 256
-    assert data["output_blocks_per_second"] == pytest.approx(480.0 / 256)
-    assert data["mean_block_latency_ms"] == pytest.approx(28.7 * 256)
+    assert data["output_blocks_per_request"] == 1
+    assert data["output_blocks_per_second"] == pytest.approx(2.1)
+    assert data["mean_block_latency_ms"] == pytest.approx(4200.0)
     assert data["primary_throughput_metric"] == "output_blocks_per_second"
     assert data["primary_latency_metric"] == "mean_block_latency_ms"
 
