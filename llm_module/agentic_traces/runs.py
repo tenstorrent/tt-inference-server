@@ -24,7 +24,7 @@ from reference_config.agentic_traces.agentic_traces_config import (
     AgenticTracesRunSpec,
     TraceSource,
 )
-from workflows.workflow_types import AgenticTracesMode
+from workflow_module.engine_types import AgenticTracesMode
 
 # Trace sources with a working client. Both the InferenceX AIPerf fork and the
 # SwarmOne ``swo-bench`` replay engine are wired; any source added to the config
