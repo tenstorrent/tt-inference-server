@@ -118,8 +118,9 @@ SUPER_CLUSTER_EXTRA_ISL_OSL_PAIRS = [
 # concurrency, but get_num_prompts scales prompts as a small multiple of
 # concurrency, so long-sequence points issue too few requests (e.g. 1x = 64)
 # to characterize steady-state throughput. Floor the prompt count so each
-# SUPER_CLUSTER sweep point sends at least this many requests.
-SUPER_CLUSTER_MIN_NUM_PROMPTS = 256
+# SUPER_CLUSTER sweep point sends at least this many multiples of the model's
+# batch size (the spec's max_concurrency).
+SUPER_CLUSTER_MIN_NUM_PROMPTS_BATCH_MULTIPLE = 2
 SMOKE_TEST_BENCHMARK_PAIR = (16, 4)
 
 
@@ -582,7 +583,9 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
     sweep_min_num_prompts = 0
     if device == DeviceTypes.SUPER_CLUSTER:
         text_isl_osl_pairs += SUPER_CLUSTER_EXTRA_ISL_OSL_PAIRS
-        sweep_min_num_prompts = SUPER_CLUSTER_MIN_NUM_PROMPTS
+        sweep_min_num_prompts = (
+            SUPER_CLUSTER_MIN_NUM_PROMPTS_BATCH_MULTIPLE * model_max_concurrency
+        )
 
     vllm_benchmark_venv = select_vllm_benchmark_venv(model_spec)
 
