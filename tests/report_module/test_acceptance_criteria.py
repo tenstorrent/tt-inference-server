@@ -19,6 +19,7 @@ from report_module.acceptance_criteria import (
     STATUS_PASS,
     CategoryResult,
     acceptance_criteria_check,
+    fully_waived_task_types,
     build_acceptance_export,
     format_acceptance_summary_markdown,
     task_failure_blockers,
@@ -536,3 +537,132 @@ def test_build_acceptance_export_failure_defaults_model_status():
     assert export["acceptance_blockers"] == {"benchmarks:B": "bad"}
     assert export["acceptance_criteria_metadata"]["enforcement_result"] == "FAIL"
     assert export["acceptance_criteria_metadata"]["model_status"] == ""
+
+
+def _spec_suite(failing, passing=(), status="fail"):
+    """A suite-style spec block with per-case verdicts (VLLMParamConformanceTest shape)."""
+    summary = [{"test_case": c, "status": "❌ FAIL"} for c in failing]
+    summary += [{"test_case": c, "status": "✅ PASS"} for c in passing]
+    return _spec(
+        status,
+        attempts=1,
+        test_name="VLLMParamConformanceTest",
+        parameter_conformance_summary=summary,
+    )
+
+
+def _waiver(task_name, workflow="SPEC_TESTS"):
+    return [{"workflow_type": workflow, "task_name": task_name, "reason": "known"}]
+
+
+def test_spec_known_issue_waives_by_case_name():
+    # Waiver naming an individual pytest function demotes the block, matching the
+    # per-case granularity the v1 acceptance path had.
+    schema = _schema(_spec_suite(["test_penalties"], passing=["test_stop"]))
+    accepted, blockers, cats = acceptance_criteria_check(
+        schema, _waiver("test_penalties")
+    )
+    by_name = {c.name: c for c in cats}
+    assert accepted is True and blockers == {}
+    assert by_name[CATEGORY_SPEC_TESTS].status == STATUS_PASS
+    assert "spec.spec_tests:T" in by_name[CATEGORY_SPEC_TESTS].waived
+
+
+def test_spec_known_issue_waives_by_suite_name():
+    schema = _schema(_spec_suite(["test_n"]))
+    accepted, _, _ = acceptance_criteria_check(
+        schema, _waiver("VLLMParamConformanceTest")
+    )
+    assert accepted is True
+
+
+def test_spec_known_issue_partial_coverage_still_blocks():
+    # test_n is waived but test_logprobs is not, so the block must still fail —
+    # a waiver must never mask an unlisted regression in the same suite.
+    schema = _schema(_spec_suite(["test_n", "test_logprobs"]))
+    accepted, blockers, _ = acceptance_criteria_check(schema, _waiver("test_n"))
+    assert accepted is False and "spec.spec_tests:T" in blockers
+
+
+def test_spec_known_issue_wrong_workflow_still_blocks():
+    schema = _schema(_spec_suite(["test_n"]))
+    accepted, _, _ = acceptance_criteria_check(
+        schema, _waiver("test_n", workflow="EVALS")
+    )
+    assert accepted is False
+
+
+def test_spec_known_issue_workflow_wide_waiver_applies():
+    # task_name=None matches every task in the workflow.
+    schema = _schema(_spec_suite(["test_n"]))
+    accepted, _, _ = acceptance_criteria_check(schema, _waiver(None))
+    assert accepted is True
+
+
+def test_spec_block_without_case_summary_needs_suite_level_waiver():
+    # No itemised cases (e.g. success:false blocks), so a case-level waiver can't
+    # be evaluated and must not silently pass.
+    schema = _schema(_spec("fail", attempts=1, test_name="OtherTest"))
+    accepted, _, _ = acceptance_criteria_check(schema, _waiver("test_n"))
+    assert accepted is False
+    accepted, _, _ = acceptance_criteria_check(schema, _waiver("OtherTest"))
+    assert accepted is True
+
+
+# --- task-level exit-code blocker vs waivers ------------------------------
+
+
+def test_waived_spec_task_does_not_block_on_exit_code():
+    # A waived suite still exits non-zero -- that is exactly what the waiver
+    # covers -- so the task-level blocker must not re-block the run.
+    schema = _schema(_spec_suite(["test_penalties"]))
+    _, _, cats = acceptance_criteria_check(schema, _waiver("test_penalties"))
+    waived_types = fully_waived_task_types(cats)
+    assert "spec_tests" in waived_types
+    blockers = task_failure_blockers(
+        [("spec_tests", 1, True)], waived_task_types=waived_types
+    )
+    assert blockers == {}
+
+
+def test_unwaived_spec_task_still_blocks_on_exit_code():
+    schema = _schema(_spec_suite(["test_n"]))
+    _, _, cats = acceptance_criteria_check(schema, _waiver("test_penalties"))
+    blockers = task_failure_blockers(
+        [("spec_tests", 1, True)], waived_task_types=fully_waived_task_types(cats)
+    )
+    assert "task:spec_tests" in blockers
+
+
+def test_crash_without_block_blocks_even_when_waived():
+    # No report block means the suite never ran to completion; a waiver must
+    # not launder that into a PASS.
+    schema = _schema(_spec_suite(["test_penalties"]))
+    _, _, cats = acceptance_criteria_check(schema, _waiver("test_penalties"))
+    blockers = task_failure_blockers(
+        [("spec_tests", 1, False)], waived_task_types=fully_waived_task_types(cats)
+    )
+    assert "task:spec_tests" in blockers
+    assert "produced no report block" in blockers["task:spec_tests"]
+
+
+def test_fully_waived_task_types_empty_when_category_has_blockers():
+    # Partial coverage: one case waived, one not -> category still blocks, so
+    # the task exit code must keep blocking too.
+    schema = _schema(_spec_suite(["test_n", "test_logprobs"]))
+    _, _, cats = acceptance_criteria_check(schema, _waiver("test_n"))
+    assert fully_waived_task_types(cats) == set()
+
+
+def test_status_tier_masked_evals_do_not_excuse_a_crashed_eval_task():
+    # #4830 masks eval failures for EXPERIMENTAL into the same `waived` bucket
+    # an explicit waiver uses. An eval task only exits non-zero when its runner
+    # raised, so that must still block -- masking a score is not a licence to
+    # ignore a crash.
+    schema = _schema(_eval({"task_name": "ifeval", "accuracy_check": 3}))
+    _, _, cats = acceptance_criteria_check(schema, None, "EXPERIMENTAL")
+    assert fully_waived_task_types(cats) == set()
+    blockers = task_failure_blockers(
+        [("evaluation", 1, True)], waived_task_types=fully_waived_task_types(cats)
+    )
+    assert "task:evaluation" in blockers
