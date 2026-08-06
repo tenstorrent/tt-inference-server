@@ -185,6 +185,24 @@ def test_vllm_derives_isl_osl_and_maps_percentiles():
     assert data["error_request_count"] is None
 
 
+def test_vllm_exposes_block_metrics_for_block_diffusion():
+    data = (
+        VLLMBenchParser()
+        .parse(
+            {**VLLM_RAW, "tt_output_block_size": 256},
+            device="P300X2",
+        )
+        .data
+    )
+
+    assert data["metric_semantics"] == "block_granular"
+    assert data["output_block_size"] == 256
+    assert data["output_blocks_per_second"] == pytest.approx(480.0 / 256)
+    assert data["mean_block_latency_ms"] == pytest.approx(28.7 * 256)
+    assert data["primary_throughput_metric"] == "output_blocks_per_second"
+    assert data["primary_latency_metric"] == "mean_block_latency_ms"
+
+
 def test_vllm_errors_surface_from_failed_count():
     data = VLLMBenchParser().parse({**VLLM_RAW, "failed": 4}, device="N150").data
     assert data["error_request_count"] == 4

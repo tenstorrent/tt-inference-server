@@ -82,10 +82,21 @@ def build_vllm_bench_serve_argv(
         str(result_filename),
     ]
 
-    if uses_remote_base_url(server.url_with_port, server.is_remote):
+    # vLLM's openai-chat benchmark defaults to temperature=0.0, while
+    # DiffusionGemma's model-owned sampler accepts only the neutral value.
+    if "diffusiongemma" in server.model.lower():
+        cmd.extend(["--temperature", "1.0"])
+
+    is_remote_base_url = uses_remote_base_url(
+        server.url_with_port,
+        server.is_remote,
+    )
+    if server.tokenizer_trust_remote_code or is_remote_base_url:
+        cmd.append("--trust-remote-code")
+
+    if is_remote_base_url:
         cmd.extend(["--base-url", server.url_with_port])
         cmd.extend(["--ready-check-timeout-sec", "0"])
-        cmd.extend(["--trust-remote-code"])
         if auth_token:
             headers.append(f"Authorization=Bearer {auth_token}")
     else:
@@ -93,7 +104,7 @@ def build_vllm_bench_serve_argv(
         cmd.extend(
             [
                 "--extra-body",
-                json.dumps({"truncate_prompt_tokens": str(config.isl)}),
+                json.dumps({"truncate_prompt_tokens": config.isl}),
             ]
         )
 
@@ -136,6 +147,8 @@ class VLLMBenchDriver(LLMDriver):
 
         rc = run_command(cmd, env=env, timeout_s=context.per_run_timeout_s)
         raw = load_json(result_filename) if rc == 0 else None
+        if raw is not None and server.output_block_size > 1:
+            raw["tt_output_block_size"] = server.output_block_size
         return DriverResult(return_code=rc, raw=raw, raw_path=result_filename)
 
 

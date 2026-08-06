@@ -1,3 +1,5 @@
 # additional inference server and client script requirements
 pyjwt==2.7.0
 requests==2.32.3
+# Required for the native DiffusionGemma architecture.
+transformers==5.12.1

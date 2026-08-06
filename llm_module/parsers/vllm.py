@@ -43,6 +43,33 @@ class VLLMBenchParser(LLMResultParser):
             "request_throughput": _round(raw.get("request_throughput"), 4),
             "error_request_count": _errors(raw.get("failed")),
         }
+        output_block_size = _num_int(raw.get("tt_output_block_size")) or 1
+        if output_block_size > 1:
+            output_tps = _num(raw.get("output_throughput"))
+            mean_tpot_ms = _num(raw.get("mean_tpot_ms"))
+            record.update(
+                {
+                    "metric_semantics": "block_granular",
+                    "output_block_size": output_block_size,
+                    "output_blocks_per_second": _round(
+                        output_tps / output_block_size
+                        if output_tps is not None
+                        else None,
+                        4,
+                    ),
+                    # vLLM reports TPOT over all committed token IDs. Multiplying
+                    # by the fixed block width expresses the same steady-state
+                    # interval at the model's actual scheduling granularity.
+                    "mean_block_latency_ms": _round(
+                        mean_tpot_ms * output_block_size
+                        if mean_tpot_ms is not None
+                        else None,
+                        4,
+                    ),
+                    "primary_throughput_metric": "output_blocks_per_second",
+                    "primary_latency_metric": "mean_block_latency_ms",
+                }
+            )
         return self._wrap_record(record)
 
 
