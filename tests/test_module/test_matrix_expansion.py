@@ -45,28 +45,48 @@ class TestImageMatrixExpansionSDXL:
             assert "ImageGenerationEvalsTest" in templates
             assert "ImageGenerationLoraLoadTest" in templates
 
+    def _load_test_times(self, suite_map, suite_id):
+        load_tests = [
+            tc
+            for tc in suite_map[suite_id]["test_cases"]
+            if tc["template"] == "ImageGenerationLoadTest"
+        ]
+        return [lt["targets"]["image_generation_time"] for lt in load_tests]
+
     def test_sdxl_galaxy_timing_differs(self):
-        """Galaxy should have different LoadTest timing (20/28/45 vs 10/14/23)."""
+        """Galaxy 20/28/45, n150 12/16/23 (Forge path), t3k 10/14/23 (trace path)."""
         suites = load_suite_files_by_category("image")
         suite_map = {s["id"]: s for s in suites}
 
-        galaxy = suite_map["sdxl-galaxy"]
-        load_tests = [
-            tc
-            for tc in galaxy["test_cases"]
-            if tc["template"] == "ImageGenerationLoadTest"
-        ]
-        times = [lt["targets"]["image_generation_time"] for lt in load_tests]
-        assert times == [20, 28, 45]
+        assert self._load_test_times(suite_map, "sdxl-galaxy") == [20, 28, 45]
 
-        n150 = suite_map["sdxl-n150"]
-        load_tests = [
-            tc
-            for tc in n150["test_cases"]
-            if tc["template"] == "ImageGenerationLoadTest"
-        ]
-        times = [lt["targets"]["image_generation_time"] for lt in load_tests]
-        assert times == [10, 14, 23]
+        # n150 runs the Forge UNet-only path (~11.1/14.9/22.5 s measured), so its
+        # targets are looser than the all-on-device trace path.
+        assert self._load_test_times(suite_map, "sdxl-n150") == [12, 16, 23]
+
+    def test_sdxl_t3k_timing_unchanged_by_n150_override(self):
+        """Regression guard: the sdxl+n150 override must not leak onto t3k."""
+        suites = load_suite_files_by_category("image")
+        suite_map = {s["id"]: s for s in suites}
+
+        assert self._load_test_times(suite_map, "sdxl-t3k") == [10, 14, 23]
+
+    def test_sdxl_n150_diff_params_ssim_override(self):
+        """n150 Forge images differ less between param sets; bar relaxed 0.98 -> 0.985."""
+        suites = load_suite_files_by_category("image")
+        suite_map = {s["id"]: s for s in suites}
+
+        def param_targets(suite_id):
+            return next(
+                tc["targets"]
+                for tc in suite_map[suite_id]["test_cases"]
+                if tc["template"] == "ImageGenerationParamTest"
+            )
+
+        assert param_targets("sdxl-n150")["diff_params_max_ssim"] == 0.985
+        # t3k/galaxy keep the DEFAULT_DIFF_PARAMS_MAX_SSIM fallback (0.98).
+        assert "diff_params_max_ssim" not in param_targets("sdxl-t3k")
+        assert "diff_params_max_ssim" not in param_targets("sdxl-galaxy")
 
     def test_sdxl_reduced_suites(self):
         """n300, p150x8, p300x2 should have 4 test cases (no LoRA)."""
