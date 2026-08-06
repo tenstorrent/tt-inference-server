@@ -36,8 +36,10 @@ from .execution import (
     ServingBenchOptions,
     SpecDecodeOptions,
 )
+from .engine_types import WorkflowVenvType
 from .model_catalog import ModelSpecLike, get_model_spec_provider
 from .server_lifecycle import get_server_lifecycle
+from .venv_provisioner import get_venv_provisioner
 
 # Workflows whose LLM path runs the standard-eval / perf-benchmark child.
 _LLM_BENCH_WORKFLOWS = frozenset({"benchmarks", "release"})
@@ -247,8 +249,6 @@ def _release_bench_venv_python(args: argparse.Namespace) -> Optional[str]:
     A release run executes in the WORKFLOW_RUN_SCRIPT venv, so pin the default
     perf-tool venv (LLM_VLLM); the workflow dispatch provisions it before run.py.
     """
-    from workflows.workflow_types import WorkflowVenvType
-
     return _release_venv_python(args, WorkflowVenvType.LLM_VLLM)
 
 
@@ -256,9 +256,7 @@ def _release_venv_python(args: argparse.Namespace, venv_type) -> Optional[str]:
     """Interpreter pinned for release children that need a tool venv."""
     if getattr(args, "workflow", None) != "release":
         return None
-    from workflows.workflow_venvs import VENV_CONFIGS
-
-    return str(VENV_CONFIGS[venv_type].venv_python)
+    return get_venv_provisioner().venv_python(venv_type)
 
 
 def _build_llm_eval_options(args: argparse.Namespace) -> Optional[LLMEvalOptions]:
@@ -291,7 +289,6 @@ def _build_agentic_traces_options(
     is_release_child = workflow == "release" and getattr(args, "agentic_traces", False)
     if workflow != "agentic_traces" and not is_release_child:
         return None
-    from workflows.workflow_types import WorkflowVenvType
 
     return AgenticTracesOptions(
         mode=getattr(args, "agentic_traces_mode", None) or "full",
@@ -328,7 +325,6 @@ def _build_prefix_cache_options(
     """
     if not getattr(args, "prefix_cache", False):
         return None
-    from workflows.workflow_types import WorkflowVenvType
 
     return PrefixCacheOptions(
         preset=args.prefix_cache_preset,
@@ -356,7 +352,6 @@ def _build_spec_decode_options(
     """
     if not getattr(args, "spec_decode", False):
         return None
-    from workflows.workflow_types import WorkflowVenvType
 
     return SpecDecodeOptions(
         preset=args.spec_decode_preset,

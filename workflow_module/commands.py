@@ -140,25 +140,24 @@ class VenvCommand(Command):
         import os
         import sys
 
-        from workflows.utils import run_command
+        from .proc import run_command
+        from .venv_provisioner import get_venv_provisioner
 
         if self.venv_type is None:
             python = sys.executable
         else:
-            from workflows.workflow_venvs import VENV_CONFIGS
+            provisioner = get_venv_provisioner()
 
             # Provision the primary venv plus any dependency venvs the workflow
             # needs before running.
             for venv_type in [self.venv_type, *self.dependency_venvs]:
-                try:
-                    venv_config = VENV_CONFIGS[venv_type]
-                except KeyError:
+                if not provisioner.has_venv(venv_type):
                     return CommandResult(
                         command_name=self.name,
                         return_code=1,
                         error=f"no venv config for {venv_type!r}",
                     )
-                if not venv_config.setup(model_spec=self.model_spec):
+                if not provisioner.provision(venv_type, model_spec=self.model_spec):
                     return CommandResult(
                         command_name=self.name,
                         return_code=1,
@@ -167,7 +166,7 @@ class VenvCommand(Command):
                             f"{getattr(venv_type, 'name', venv_type)}"
                         ),
                     )
-            python = str(VENV_CONFIGS[self.venv_type].venv_python)
+            python = provisioner.venv_python(self.venv_type)
 
         cmd = [python, *[str(a) for a in self.argv]]
         env = {**os.environ, **self.env} if self.env else None

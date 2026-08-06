@@ -16,8 +16,8 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from workflows.workflow_types import WorkflowVenvType
-from workflows.workflow_venvs import VENV_CONFIGS
+from workflow_module.engine_types import WorkflowVenvType
+from workflow_module.venv_provisioner import get_venv_provisioner
 
 from report_module.schema import Block
 
@@ -75,8 +75,11 @@ def _parse_embedding_benchmark_output(output: str) -> dict:
 def _run_embedding_transcription_benchmark(ctx: MediaContext) -> dict:
     model, isl, num_calls, _concurrency = _embedding_params(ctx)
 
-    venv_config = VENV_CONFIGS.get(WorkflowVenvType.BENCHMARKS_VLLM)
-    vllm_exec = venv_config.venv_path / "bin" / "vllm"
+    vllm_exec = (
+        get_venv_provisioner().venv_path(WorkflowVenvType.BENCHMARKS_VLLM)
+        / "bin"
+        / "vllm"
+    )
 
     os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
 

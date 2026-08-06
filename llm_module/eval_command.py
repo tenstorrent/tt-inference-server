@@ -17,8 +17,8 @@ from typing import TYPE_CHECKING, List, Optional
 
 from utils.url_helpers import build_base_url
 from workflow_module.engine_types import EvalLimitMode
-from workflows.workflow_types import WorkflowVenvType
-from workflows.workflow_venvs import VENV_CONFIGS
+from workflow_module.engine_types import WorkflowVenvType
+from workflow_module.venv_provisioner import get_venv_provisioner
 
 if TYPE_CHECKING:
     from reference_config.evals.eval_config import EvalTask
@@ -196,7 +196,7 @@ def build_eval_command(
     else:
         base_url = f"{host_with_port}/v1"
     eval_class = task.eval_class
-    task_venv_config = VENV_CONFIGS[task.workflow_venv_type]
+    task_venv_path = get_venv_provisioner().venv_path(task.workflow_venv_type)
     if task.use_chat_api:
         api_url = f"{base_url}/chat/completions"
     else:
@@ -274,9 +274,9 @@ def build_eval_command(
         WorkflowVenvType.EVALS_VISION,
         WorkflowVenvType.EVALS_AUDIO,
     ]:
-        lm_eval_exec = task_venv_config.venv_path / "bin" / "lmms-eval"
+        lm_eval_exec = task_venv_path / "bin" / "lmms-eval"
     else:
-        lm_eval_exec = task_venv_config.venv_path / "bin" / "lm_eval"
+        lm_eval_exec = task_venv_path / "bin" / "lm_eval"
 
     model_kwargs_list = [f"{k}={v}" for k, v in task.model_kwargs.items()]
     model_kwargs_list += optional_model_args
@@ -352,14 +352,14 @@ def build_eval_command(
             # relative to cwd. Give each invocation its own staging dir with a
             # symlink that masquerades as it, so parallel runs don't race.
             meta_data_dir = (
-                task_venv_config.venv_path
+                task_venv_path
                 / "llama-cookbook/end-to-end-use-cases/benchmarks/llm_eval_harness/meta_eval"
                 / f"work_dir_{model_spec.model_name}"
             )
             staging_dir = Path(
                 tempfile.mkdtemp(
                     prefix=f"meta_eval_{model_spec.model_name}_",
-                    dir=task_venv_config.venv_path,
+                    dir=task_venv_path,
                 )
             )
             atexit.register(shutil.rmtree, staging_dir, ignore_errors=True)
@@ -368,8 +368,8 @@ def build_eval_command(
             cmd.append(staging_work_dir)
             os.chdir(staging_dir)
         else:
-            cmd.append(task_venv_config.venv_path / task.include_path)
-            os.chdir(task_venv_config.venv_path)
+            cmd.append(task_venv_path / task.include_path)
+            os.chdir(task_venv_path)
     if task.apply_chat_template:
         cmd.append("--apply_chat_template")  # Flag argument (no value)
 
