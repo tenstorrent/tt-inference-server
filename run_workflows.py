@@ -66,11 +66,18 @@ from workflow_module.model_catalog import (  # noqa: E402
 from workflow_module.server_lifecycle import (  # noqa: E402
     register_server_lifecycle,
 )
+from workflow_module.target_pack import (  # noqa: E402
+    get_target_pack,
+    register_target_pack,
+)
 from workflow_module.venv_provisioner import (  # noqa: E402
     register_venv_provisioner,
 )
 from workflows.server_lifecycle_provider import (  # noqa: E402
     TenstorrentServerLifecycle,
+)
+from workflows.target_pack_provider import (  # noqa: E402
+    TenstorrentTargetPack,
 )
 from workflows.venv_provisioner_provider import (  # noqa: E402
     TenstorrentVenvProvisioner,
@@ -528,14 +535,11 @@ def parse_args() -> argparse.Namespace:
             f"(got --workflow {args.workflow})."
         )
     if args.agentic_traces_duration is not None:
-        from reference_config.agentic_traces.agentic_traces_config import (
-            AGENTIC_TRACES_MIN_PROFILE_SECONDS,
-        )
-
-        if args.agentic_traces_duration < AGENTIC_TRACES_MIN_PROFILE_SECONDS:
+        min_profile_seconds = get_target_pack().agentic_traces_min_profile_seconds()
+        if args.agentic_traces_duration < min_profile_seconds:
             parser.error(
                 "--agentic-traces-duration must be at least "
-                f"{AGENTIC_TRACES_MIN_PROFILE_SECONDS}s (the InferenceX "
+                f"{min_profile_seconds}s (the InferenceX "
                 f"scenario's floor), got {args.agentic_traces_duration}s."
             )
     if args.output_dir is None:
@@ -552,6 +556,7 @@ def main() -> int:
     register_device_catalog(TenstorrentDeviceCatalog())
     register_server_lifecycle(TenstorrentServerLifecycle())
     register_venv_provisioner(TenstorrentVenvProvisioner())
+    register_target_pack(TenstorrentTargetPack())
     args = parse_args()
     logging.basicConfig(
         level=_LOG_LEVELS[args.log_level],
