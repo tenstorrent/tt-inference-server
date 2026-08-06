@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import ClassVar, Dict, List, Optional, Sequence, Type
 
 from test_module.task_types import MediaTaskType
-from workflows.workflow_types import ModelType
+from workflow_module.engine_types import ModelType
 
 from .execution import (
     AgenticTracesOptions,
