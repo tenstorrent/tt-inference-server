@@ -21,7 +21,7 @@ from llm_module.eval_configs import get_llm_eval_tasks
 from report_module.schema import Block
 from workflow_module import accept_blocks
 from workflow_module.engine_types import EvalLimitMode
-from workflows.utils import run_command
+from workflow_module.proc import run_command
 
 from .._test_common import ReportCheckTypes, TestStatus, block_id
 from ..context import MediaContext
