@@ -34,18 +34,20 @@ def _harbor_env_kwargs() -> Dict[str, Any]:
     """Cluster knobs forwarded as Harbor ``environment.kwargs`` (opt-in).
 
     Empty unless ``HARBOR_ENV_TYPE=kubernetes`` — so the docker path emits no
-    kwargs. Neither ``HARBOR_K8S_KUBECONFIG`` nor ``HARBOR_K8S_CONTEXT`` needs
-    to be set when the runner is itself a pod: with both absent Harbor falls
-    back to the in-cluster service account.
+    kwargs.
     """
     if _harbor_env_type() != "kubernetes":
         return {}
+    if os.getenv("HARBOR_K8S_KUBECONFIG"):
+        raise ValueError(
+            "HARBOR_K8S_KUBECONFIG is not a Harbor setting and would be "
+            "silently ignored. Export KUBECONFIG with the same path instead."
+        )
     kwargs: Dict[str, Any] = {
         "namespace": os.getenv("HARBOR_K8S_NAMESPACE", "default"),
         "image_mode": os.getenv("HARBOR_K8S_IMAGE_MODE", "prebuilt"),
     }
     passthrough = {
-        "HARBOR_K8S_KUBECONFIG": "kubeconfig",
         "HARBOR_K8S_CONTEXT": "context",
         "HARBOR_K8S_IMAGE_REGISTRY": "image_registry",
         "HARBOR_K8S_IMAGE_PULL_SECRET": "image_pull_secret",

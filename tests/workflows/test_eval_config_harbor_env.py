@@ -16,6 +16,8 @@ the variables before importing the config.
 from pathlib import Path
 import sys
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from reference_config.evals.eval_config import TerminalBenchEvalConfig
@@ -81,7 +83,6 @@ def test_passthrough_vars_reach_kwargs(monkeypatch):
     monkeypatch.setenv("HARBOR_ENV_TYPE", "kubernetes")
     monkeypatch.setenv("HARBOR_K8S_NAMESPACE", "harbor-kube-env")
     monkeypatch.setenv("HARBOR_K8S_IMAGE_MODE", "build-and-push")
-    monkeypatch.setenv("HARBOR_K8S_KUBECONFIG", "/tmp/kubeconfig")
     monkeypatch.setenv("HARBOR_K8S_CONTEXT", "kix1")
     monkeypatch.setenv("HARBOR_K8S_IMAGE_REGISTRY", "registry.local/harbor")
     monkeypatch.setenv("HARBOR_K8S_IMAGE_PULL_SECRET", "regcred")
@@ -92,12 +93,59 @@ def test_passthrough_vars_reach_kwargs(monkeypatch):
     assert cfg.environment_kwargs == {
         "namespace": "harbor-kube-env",
         "image_mode": "build-and-push",
-        "kubeconfig": "/tmp/kubeconfig",
         "context": "kix1",
         "image_registry": "registry.local/harbor",
         "image_pull_secret": "regcred",
         "service_account": "harbor-task",
     }
+
+
+def test_kubeconfig_path_is_never_a_kwarg(monkeypatch):
+    """``KUBECONFIG`` is Harbor's own lookup, not something we forward.
+
+    ``KubernetesEnvironment.__init__`` takes namespace/context/image_mode/
+    image_registry/skip_image_check and nothing else; the file itself comes from
+    ``KUBECONFIG`` -> ``~/.kube/config`` -> the in-cluster service account
+    inside ``BaseKubernetesEnvironment.load_kube_config``. Forwarding the path
+    as a kwarg would be inert, so the variable must pass through the process
+    environment untouched.
+    """
+    monkeypatch.setenv("HARBOR_ENV_TYPE", "kubernetes")
+    monkeypatch.setenv("KUBECONFIG", "/run/secrets/kix1.kubeconfig")
+    monkeypatch.delenv("HARBOR_K8S_KUBECONFIG", raising=False)
+    monkeypatch.delenv("HARBOR_K8S_NAMESPACE", raising=False)
+    monkeypatch.delenv("HARBOR_K8S_IMAGE_MODE", raising=False)
+
+    cfg = _config()
+
+    assert cfg.environment_kwargs == {"namespace": "default", "image_mode": "prebuilt"}
+
+
+def test_harbor_k8s_kubeconfig_is_rejected(monkeypatch):
+    """A misnamed kubeconfig variable must fail loudly, not silently.
+
+    ``BaseEnvironment.__init__`` ends in ``*args, **kwargs``, so an unknown
+    ``kubeconfig=`` key is swallowed without a warning. Harbor would then fall
+    back to ``~/.kube/config`` (or the in-cluster service account) and schedule
+    every trial pod on whichever cluster that happens to name -- a wrong-cluster
+    run that looks completely healthy in the logs.
+    """
+    monkeypatch.setenv("HARBOR_ENV_TYPE", "kubernetes")
+    monkeypatch.setenv("HARBOR_K8S_KUBECONFIG", "/tmp/kix1.kubeconfig")
+
+    with pytest.raises(ValueError, match="KUBECONFIG"):
+        _config()
+
+
+def test_harbor_k8s_kubeconfig_is_ignored_on_the_docker_path(monkeypatch):
+    """The guard is scoped to the cluster path, so a stale var cannot break docker."""
+    monkeypatch.delenv("HARBOR_ENV_TYPE", raising=False)
+    monkeypatch.setenv("HARBOR_K8S_KUBECONFIG", "/tmp/kix1.kubeconfig")
+
+    cfg = _config()
+
+    assert cfg.environment_type == "docker"
+    assert cfg.environment_kwargs == {}
 
 
 def test_explicit_environment_type_overrides_env(monkeypatch):
