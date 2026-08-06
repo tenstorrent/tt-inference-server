@@ -43,7 +43,8 @@
             "Llama-3.1-8B-Instruct",
             "Llama-3.3-70B-Instruct",
             "gpt-oss-20b",
-            "Mistral-Small-3.1-24B-Instruct-2503"
+            "Mistral-Small-3.1-24B-Instruct-2503",
+            "Falcon3-7B-Instruct"
         ]
     },
     "available_markers": {
@@ -404,6 +405,27 @@
                 "p150x4",
                 "p150x8",
                 "p300x2"
+            ]
+        },
+        "falcon3_7b": {
+            "id_name": "falcon3-7b",
+            "weights": [
+                "Falcon3-7B-Instruct"
+            ],
+            "category": "LLM",
+            "compatible_devices": [
+                "n150",
+                "n300",
+                "t3k",
+                "gpu",
+                "p100",
+                "p150",
+                "p150x4",
+                "p150x8",
+                "p300",
+                "p300x2",
+                "galaxy",
+                "galaxy_t3k"
             ]
         },
         "llama_3_1_8b": {
