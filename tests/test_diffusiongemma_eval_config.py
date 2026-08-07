@@ -162,8 +162,8 @@ def test_diffusiongemma_terminal_bench_ci_is_small_and_single_request():
     assert config.n_concurrent_trials == 1
     assert config.n_attempts == 1
     assert config.task_names_map[EvalLimitMode.CI_NIGHTLY] == [
-        "terminal-bench/crack-7z-hash",
         "terminal-bench/fix-git",
+        "terminal-bench/openssl-selfsigned-cert",
         "terminal-bench/prove-plus-comm",
     ]
     assert config.agent_timeout_sec == 45 * 60

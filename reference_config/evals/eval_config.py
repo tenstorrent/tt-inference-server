@@ -5322,7 +5322,7 @@ _eval_config_list = [
                     n_tasks=89,
                     override_cpus=16,
                     override_memory_mb=32 * 1024,
-                    # These tasks are each estimated at five expert minutes.
+                    # The selected tasks are estimated at 5-20 expert minutes.
                     # DiffusionGemma is slower than the reference agents, but a
                     # bounded 45-minute budget keeps a stuck trial from
                     # consuming an entire nightly window.
@@ -5347,14 +5347,13 @@ _eval_config_list = [
                             "timeout": 15 * 60,
                         },
                     },
-                    # Exact Terminal-Bench 2.1 metadata rates all three at five
-                    # expert minutes. Together they exercise archive/password
-                    # tooling, Git recovery, and edit/compile/verify loops
-                    # without the multi-hour build, cryptanalysis, or VM tasks.
+                    # Together these exercise OpenSSL/file verification, Git
+                    # recovery, and edit/compile/formal-proof loops without the
+                    # multi-hour build, cryptanalysis, or VM tasks.
                     task_names_map={
                         EvalLimitMode.CI_NIGHTLY: [
-                            "terminal-bench/crack-7z-hash",
                             "terminal-bench/fix-git",
+                            "terminal-bench/openssl-selfsigned-cert",
                             "terminal-bench/prove-plus-comm",
                         ],
                     },
