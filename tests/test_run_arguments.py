@@ -510,8 +510,9 @@ class TestModelSpecCliArgsCompatibility:
 
         assert args.tt_metal_home == "/env/tt-metal"
 
-    def test_vllm_dir_defaults_from_env(self, base_args):
-        """Test --vllm-dir falls back to vllm_dir env var."""
+    def test_vllm_dir_still_accepted_from_env(self, base_args):
+        """--vllm-dir is deprecated but still parsed, so old invocations and an
+        exported vllm_dir do not become hard errors."""
         full_args = base_args + ["--local-server", "--tt-metal-home", "/srv/tt-metal"]
         with patch.dict(os.environ, {"vllm_dir": "/env/vllm"}, clear=False):
             with patch("sys.argv", ["run.py"] + full_args):
@@ -519,13 +520,20 @@ class TestModelSpecCliArgsCompatibility:
 
         assert args.vllm_dir == "/env/vllm"
 
-    def test_vllm_dir_defaults_from_tt_metal_home(self, base_args):
-        """Test --vllm-dir defaults to tt-metal-home/vllm."""
-        full_args = base_args + ["--local-server", "--tt-metal-home", "/srv/tt-metal"]
-        with patch("sys.argv", ["run.py"] + full_args):
-            args = parse_arguments()
+    def test_vllm_dir_is_not_derived_from_tt_metal_home(self, base_args):
+        """No vLLM source tree is assumed any more.
 
-        assert args.vllm_dir == "/srv/tt-metal/vllm"
+        vLLM is an ordinary installed package in the tt-metal venv and the TT
+        platform comes from the separately installed vllm-tt-plugin, so run.py
+        must not synthesise a tt-metal-home/vllm path.
+        """
+        full_args = base_args + ["--local-server", "--tt-metal-home", "/srv/tt-metal"]
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("vllm_dir", None)
+            with patch("sys.argv", ["run.py"] + full_args):
+                args = parse_arguments()
+
+        assert args.vllm_dir is None
 
     def test_host_hf_cache_bare_flag_defaults_from_env(self, base_args):
         """Test bare --host-hf-cache resolves via HOST_HF_HOME/HF_HOME defaults."""
