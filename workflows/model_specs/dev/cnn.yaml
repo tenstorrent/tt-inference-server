@@ -230,7 +230,7 @@ templates:
         CPU_SAMPLING: "false"            # owner-tested false on the 2D DP+TP mesh
         TT_RUNTIME_USING_BH_GALAXY: "1"
         TT_METAL_OPERATION_TIMEOUT_SECONDS: "120"  # fail hung device ops fast instead of wedging
-        PREFILL_CHUNK_SIZE: "1024"       # turns on chunked prefill (forge plugin owns chunking)
+        PREFILL_CHUNK_SIZE: "128"        # chunked prefill; small chunks = faster per-chunk compile (matches tt-xla test)
         MIN_NUM_SEQS: "1"                # enables b1-prefill (min<max)
         PREFILL_BATCH_THRESHOLD: "16"    # must be < MAX_NUM_SEQS (32); matches tt-xla chunked test
         # HARNESS-TEST OVERRIDE ONLY -- serve a 2-layer truncated model for a fast
