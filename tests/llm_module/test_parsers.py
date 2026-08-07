@@ -44,6 +44,7 @@ AIPERF_RAW: Dict[str, Any] = {
         "avg": 1240.09,
         "p50": 786.0,
         "p90": 1830.2,
+        "p95": 1961.0,
         "p99": 2093.6,
         "std": 402.7,
         "unit": "ms",
@@ -52,6 +53,7 @@ AIPERF_RAW: Dict[str, Any] = {
         "avg": 129.8,
         "p50": 121.4,
         "p90": 168.9,
+        "p95": 186.1,
         "p99": 204.3,
         "std": 22.6,
         "unit": "ms",
@@ -60,6 +62,7 @@ AIPERF_RAW: Dict[str, Any] = {
         "avg": 17525.9,
         "p50": 16980.0,
         "p90": 21044.5,
+        "p95": 22077.0,
         "p99": 23110.8,
         "std": 1904.2,
         "unit": "ms",
@@ -95,16 +98,19 @@ VLLM_RAW: Dict[str, Any] = {
     "mean_ttft_ms": 350.5,
     "median_ttft_ms": 300.1,
     "p90_ttft_ms": 900.4,
+    "p95_ttft_ms": 1050.2,
     "p99_ttft_ms": 1200.9,
     "std_ttft_ms": 210.3,
     "mean_tpot_ms": 28.7,
     "median_tpot_ms": 27.1,
     "p90_tpot_ms": 39.5,
+    "p95_tpot_ms": 45.0,
     "p99_tpot_ms": 51.2,
     "std_tpot_ms": 6.4,
     "mean_e2el_ms": 4200.0,
     "median_e2el_ms": 4050.0,
     "p90_e2el_ms": 5300.0,
+    "p95_e2el_ms": 5700.0,
     "p99_e2el_ms": 6100.0,
     "std_e2el_ms": 520.0,
     "request_throughput": 2.1,
@@ -166,12 +172,15 @@ def test_aiperf_maps_metrics_and_keeps_isl_integer():
 # for each latency family; the parser previously kept only three of the fifteen.
 PERCENTILE_FIELDS = (
     "p90_ttft",
+    "p95_ttft",
     "std_ttft_ms",
     "p50_tpot_ms",
     "p90_tpot_ms",
+    "p95_tpot_ms",
     "p99_tpot_ms",
     "p50_e2el_ms",
     "p90_e2el_ms",
+    "p95_e2el_ms",
     "p99_e2el_ms",
     "std_e2el_ms",
 )
@@ -180,13 +189,16 @@ PERCENTILE_FIELDS = (
 def test_aiperf_surfaces_every_latency_percentile():
     data = AIPerfParser().parse(AIPERF_RAW, device="N150").data
     assert data["p90_ttft"] == pytest.approx(1830.2)
+    assert data["p95_ttft"] == pytest.approx(1961.0)
     assert data["std_ttft_ms"] == pytest.approx(402.7)
     assert data["p50_tpot_ms"] == pytest.approx(121.4)
     assert data["p90_tpot_ms"] == pytest.approx(168.9)
+    assert data["p95_tpot_ms"] == pytest.approx(186.1)
     assert data["p99_tpot_ms"] == pytest.approx(204.3)
     assert data["std_tpot_ms"] == pytest.approx(22.6)
     assert data["p50_e2el_ms"] == pytest.approx(16980.0)
     assert data["p90_e2el_ms"] == pytest.approx(21044.5)
+    assert data["p95_e2el_ms"] == pytest.approx(22077.0)
     assert data["p99_e2el_ms"] == pytest.approx(23110.8)
     assert data["std_e2el_ms"] == pytest.approx(1904.2)
 
@@ -195,6 +207,7 @@ def test_vllm_surfaces_percentiles_when_the_run_requested_them():
     """`--percentile-metrics` adds these keys; the parser must carry them."""
     data = VLLMBenchParser().parse(VLLM_RAW, device="N150").data
     assert data["p90_ttft"] == pytest.approx(900.4)
+    assert data["p95_ttft"] == pytest.approx(1050.2)
     assert data["std_ttft_ms"] == pytest.approx(210.3)
     assert data["p50_tpot_ms"] == pytest.approx(27.1)
     assert data["p90_tpot_ms"] == pytest.approx(39.5)
@@ -226,16 +239,19 @@ def test_absent_percentiles_are_none_never_zero(parser, raw):
             "mean_ttft_ms",
             "median_ttft_ms",
             "p90_ttft_ms",
+            "p95_ttft_ms",
             "p99_ttft_ms",
             "std_ttft_ms",
             "mean_tpot_ms",
             "median_tpot_ms",
             "p90_tpot_ms",
+            "p95_tpot_ms",
             "p99_tpot_ms",
             "std_tpot_ms",
             "mean_e2el_ms",
             "median_e2el_ms",
             "p90_e2el_ms",
+            "p95_e2el_ms",
             "p99_e2el_ms",
             "std_e2el_ms",
         )
@@ -243,6 +259,27 @@ def test_absent_percentiles_are_none_never_zero(parser, raw):
     data = parser.parse(stripped, device="N150").data
     for field in PERCENTILE_FIELDS:
         assert data[field] is None, f"{field} coerced to {data[field]!r}, expected None"
+
+
+def test_aiperf_accepts_mean_and_median_stat_aliases():
+    """AIPerf labels the same stat `avg`/`mean` and `p50`/`median` by version.
+
+    `llm_module/drivers/aiperf_prefix_cache` already reads both spellings from
+    real AIPerf output, so the standard benchmark parser must too — otherwise
+    the same export parses on one code path and silently yields None on the
+    other.
+    """
+    aliased = dict(AIPERF_RAW)
+    aliased["time_to_first_token"] = {
+        "mean": 1240.09,
+        "median": 786.0,
+        "p90": 1830.2,
+        "unit": "ms",
+    }
+    data = AIPerfParser().parse(aliased, device="N150").data
+    assert data["mean_ttft_ms"] == pytest.approx(1240.09)
+    assert data["p50_ttft"] == pytest.approx(786.0)
+    assert data["p90_ttft"] == pytest.approx(1830.2)
 
 
 def test_new_percentile_fields_have_display_names():

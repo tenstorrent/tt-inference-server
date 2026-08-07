@@ -76,11 +76,12 @@ def build_vllm_bench_serve_argv(
         str(config.osl),
         "--percentile-metrics",
         "ttft,tpot,itl,e2el",
-        # vLLM defaults --metric-percentiles to "99", so p90 is never emitted.
-        # Request it explicitly: the grading rubric reads the 90th percentile,
-        # and it costs nothing to compute alongside the p99 already collected.
+        # vLLM defaults --metric-percentiles to "99", so p90 and p95 are never
+        # emitted. Request them explicitly: the grading rubric reads the 90th
+        # percentile, and both cost nothing alongside the p99 already collected.
+        # Matches the set AIPerf reports, so the two tools stay comparable.
         "--metric-percentiles",
-        "90,99",
+        "90,95,99",
         "--save-result",
         "--save-detailed",
         "--result-filename",

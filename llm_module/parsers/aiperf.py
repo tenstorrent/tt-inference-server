@@ -30,19 +30,22 @@ class AIPerfParser(LLMResultParser):
             "num_requests": _stat_int(raw, "request_count"),
             "input_sequence_length": _stat_int(raw, "input_sequence_length"),
             "output_sequence_length": _stat(raw, "output_sequence_length"),
-            "mean_ttft_ms": _stat(raw, "time_to_first_token", "avg"),
-            "p50_ttft": _stat(raw, "time_to_first_token", "p50"),
+            "mean_ttft_ms": _stat_any(raw, "time_to_first_token", "avg", "mean"),
+            "p50_ttft": _stat_any(raw, "time_to_first_token", "p50", "median"),
             "p90_ttft": _stat(raw, "time_to_first_token", "p90"),
+            "p95_ttft": _stat(raw, "time_to_first_token", "p95"),
             "p99_ttft": _stat(raw, "time_to_first_token", "p99"),
             "std_ttft_ms": _stat(raw, "time_to_first_token", "std"),
-            "mean_tpot_ms": _stat(raw, "inter_token_latency", "avg"),
-            "p50_tpot_ms": _stat(raw, "inter_token_latency", "p50"),
+            "mean_tpot_ms": _stat_any(raw, "inter_token_latency", "avg", "mean"),
+            "p50_tpot_ms": _stat_any(raw, "inter_token_latency", "p50", "median"),
             "p90_tpot_ms": _stat(raw, "inter_token_latency", "p90"),
+            "p95_tpot_ms": _stat(raw, "inter_token_latency", "p95"),
             "p99_tpot_ms": _stat(raw, "inter_token_latency", "p99"),
             "std_tpot_ms": _stat(raw, "inter_token_latency", "std"),
-            "mean_e2el_ms": _stat(raw, "request_latency", "avg"),
-            "p50_e2el_ms": _stat(raw, "request_latency", "p50"),
+            "mean_e2el_ms": _stat_any(raw, "request_latency", "avg", "mean"),
+            "p50_e2el_ms": _stat_any(raw, "request_latency", "p50", "median"),
             "p90_e2el_ms": _stat(raw, "request_latency", "p90"),
+            "p95_e2el_ms": _stat(raw, "request_latency", "p95"),
             "p99_e2el_ms": _stat(raw, "request_latency", "p99"),
             "std_e2el_ms": _stat(raw, "request_latency", "std"),
             "tput_user": _stat(raw, "output_token_throughput_per_user"),
@@ -51,6 +54,24 @@ class AIPerfParser(LLMResultParser):
             "error_request_count": _errors(raw),
         }
         return self._wrap_record(record)
+
+
+def _stat_any(raw: Mapping[str, Any], key: str, *stats: str) -> Any:
+    """First present stat from a metric block, trying each name in turn.
+
+    AIPerf labels the same statistic differently across versions — ``avg`` or
+    ``mean``, ``p50`` or ``median``. ``llm_module/drivers/aiperf_prefix_cache``
+    already handles both when reading real AIPerf output; this keeps the
+    standard benchmark parser consistent with it rather than silently
+    returning None on an export that uses the other spelling.
+    """
+    metric = raw.get(key)
+    if not isinstance(metric, Mapping):
+        return None
+    for stat in stats:
+        if stat in metric:
+            return _stat(raw, key, stat)
+    return None
 
 
 def _concurrency(raw: Mapping[str, Any]) -> Optional[int]:
