@@ -50,6 +50,49 @@ resolve_commit_to_full_sha() {
     return 1
 }
 
+# ------------------------------------------------------------------------------
+# Disk telemetry
+#
+# The image build can exhaust the container storage filesystem
+# (/var/lib/containerd or /var/lib/docker), which surfaces only as an opaque
+# "no space left on device" during the final export/unpack -- long after the
+# step that actually consumed the space. Reporting free space and docker's own
+# accounting before the build, and again on exit (success or failure, via the
+# EXIT trap), turns that into a measurable before/after instead of guesswork.
+#
+# Every command is best-effort: instrumentation must never fail the build.
+# ------------------------------------------------------------------------------
+report_disk() {
+    local label="$1"
+    echo "==================== DISK REPORT: ${label} ===================="
+    echo "--- date ---"
+    date -u '+%Y-%m-%dT%H:%M:%SZ' || true
+    echo "--- df -h (local filesystems) ---"
+    df -h -x tmpfs -x devtmpfs 2>/dev/null || df -h || true
+    echo "--- docker root dir ---"
+    local docker_root
+    docker_root=$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || echo "")
+    if [ -n "$docker_root" ]; then
+        echo "DockerRootDir=${docker_root}"
+        df -h "$docker_root" 2>/dev/null || true
+    fi
+    # containerd is the snapshotter that reported ENOSPC in CI; report it even
+    # when docker's own root dir sits elsewhere.
+    if [ -d /var/lib/containerd ]; then
+        echo "--- df -h /var/lib/containerd ---"
+        df -h /var/lib/containerd 2>/dev/null || true
+    fi
+    echo "--- docker system df (images / containers / build cache) ---"
+    docker system df 2>/dev/null || true
+    echo "==================== END DISK REPORT: ${label} ===================="
+}
+
+report_disk_on_exit() {
+    local rc=$?
+    report_disk "on exit (rc=${rc})"
+    return $rc
+}
+
 # ==============================================================================
 # Main script logic
 # ==============================================================================
@@ -274,6 +317,12 @@ generate_model_specs_json()
         fi
         echo "✅ Generated model_spec.json"
 
+        # Capture disk state before the build, and again however the script
+        # exits, so an ENOSPC failure comes with a measured before/after rather
+        # than only the kernel's error string.
+        trap report_disk_on_exit EXIT
+        report_disk "before docker build"
+
         docker build \
         -t ${dev_image_tag} \
         --build-arg TT_METAL_DOCKERFILE_URL="${TT_METAL_DOCKERFILE_URL}" \
@@ -283,6 +332,8 @@ generate_model_specs_json()
         . -f vllm-tt-metal/vllm.tt-metal.src.dev.Dockerfile
 
         echo "✅ built image: ${dev_image_tag}"
+        echo "--- built image size ---"
+        docker image ls --format "table {{.Repository}}:{{.Tag}}\t{{.Size}}" "${dev_image_tag}" || true
     else
         echo "skipping, build_dev_image=${build_dev_image}"
     fi

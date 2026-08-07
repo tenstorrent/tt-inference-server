@@ -89,7 +89,8 @@ RUN /bin/bash -c "git clone https://github.com/tenstorrent-metal/tt-metal.git ${
     && ( for i in 1 2 3 4 5; do CXX=clang++-17 CC=clang-17 bash ./create_venv.sh && exit 0; echo 'create_venv.sh failed, retrying in 30s'; sleep 30; done; exit 1 ) \
     && source ${PYTHON_ENV_DIR}/bin/activate \
     && if [ -f 'models/demos/qwen25_vl/requirements.txt' ]; then uv pip install -r models/demos/qwen25_vl/requirements.txt; fi \
-    && rm -rf ${TT_METAL_HOME}/.git"
+    && rm -rf ${TT_METAL_HOME}/.git \
+    && { echo '=== SIZE REPORT: after tt-metal build ==='; df -h /; du -sh ${TT_METAL_HOME} ${PYTHON_ENV_DIR} 2>/dev/null; du -sh /root/.cache/uv \$HOME/.cache/uv 2>/dev/null; echo '=== END SIZE REPORT ==='; true; }"
 
 # Build vllm-tt-plugin - clone with minimal history and clean.
 # The plugin owns the vLLM version pin and its dependency overrides, so the
@@ -100,7 +101,8 @@ RUN /bin/bash -c "git clone https://github.com/tenstorrent/vllm-tt-plugin.git ${
     && source ${PYTHON_ENV_DIR}/bin/activate \
     && uv pip install --upgrade pip \
     && source docs/install-vllm-tt.sh \
-    && rm -rf ${vllm_tt_plugin_dir}/.git"
+    && rm -rf ${vllm_tt_plugin_dir}/.git \
+    && { echo '=== SIZE REPORT: after vllm + vllm-tt-plugin install ==='; df -h /; du -sh ${vllm_tt_plugin_dir} ${PYTHON_ENV_DIR} 2>/dev/null; du -sh ${PYTHON_ENV_DIR}/lib/python*/site-packages/vllm 2>/dev/null; du -sh /root/.cache/uv \$HOME/.cache/uv 2>/dev/null; echo '--- largest site-packages entries ---'; du -sh ${PYTHON_ENV_DIR}/lib/python*/site-packages/* 2>/dev/null | sort -rh | head -15; echo '=== END SIZE REPORT ==='; true; }"
 
 # Build tt-smi in separate venv to avoid conflicts with tt-metal venv
 RUN /bin/bash -c "git clone https://github.com/tenstorrent/tt-smi.git ${TT_SMI_DIR} \
