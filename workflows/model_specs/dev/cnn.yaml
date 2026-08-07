@@ -214,10 +214,15 @@ templates:
       # The DP+TP additional_config keys are set by the mesh-aware runner when
       # device_mesh_shape[0] > 1; this block carries the served dims + env.
       max_concurrency: 32
-      max_context: 1024
+      max_context: 3072
       eval_max_retries: 1
       env_vars:
-        MAX_MODEL_LENGTH: "1024"
+        # 3072 (harness): fits the vLLM-bench "initial test run" probe (~136 prompt
+        # + 2048 max_tokens = 2184 tokens) so benchmark sweep points can run, while
+        # staying below the smallest eval min_context_required (mbpp=4096) so every
+        # eval task still SKIPs. The real release target is 4096 (where the probe
+        # also fits); 3072 is a 2-layer harness compromise to keep evals all-skip.
+        MAX_MODEL_LENGTH: "3072"
         MAX_NUM_SEQS: "32"
         GPU_MEMORY_UTILIZATION: "0.25"
         OPTIMIZATION_LEVEL: "0"
