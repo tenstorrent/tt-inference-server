@@ -116,8 +116,12 @@ uint64_t RemoteKVManagerImpl::migrate(const MigrationRequest& request) {
   if (requestProducer) {
     if (layerToPartition) {
       const int32_t partition = layerToPartition(request.layer_begin);
-      sent = partition >= 0 ? requestProducer->send(payload, partition, &err)
-                            : requestProducer->send(payload, &err);
+      if (partition < 0) {
+        err = "layer_begin=" + std::to_string(request.layer_begin) +
+              " has no owning Kafka partition (policy rejected mapping)";
+      } else {
+        sent = requestProducer->send(payload, partition, &err);
+      }
     } else {
       sent = requestProducer->send(payload, &err);
     }

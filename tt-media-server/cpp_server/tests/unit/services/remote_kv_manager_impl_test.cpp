@@ -19,6 +19,7 @@
 #include "messaging/i_kafka_consumer.hpp"
 #include "messaging/i_kafka_producer.hpp"
 #include "messaging/migration_message.hpp"
+#include "services/layer_to_partition.hpp"
 #include "services/remote_kv_manager.hpp"
 
 namespace tt::services {
@@ -162,10 +163,11 @@ std::unique_ptr<RemoteKVManagerImpl> makeManager(
     std::unique_ptr<IKafkaProducer> producer,
     std::unique_ptr<IKafkaConsumer> consumer,
     std::chrono::milliseconds timeout = 500ms,
-    std::chrono::milliseconds sweep = 10ms) {
+    std::chrono::milliseconds sweep = 10ms,
+    RemoteKVManagerImpl::LayerToPartition layerToPartition = nullptr) {
   return std::make_unique<RemoteKVManagerImpl>(
       std::move(producer), std::move(consumer), timeout, sweep,
-      /*drainPollMs=*/5);
+      /*drainPollMs=*/5, std::move(layerToPartition));
 }
 
 // ---------------------------------------------------------------------------
@@ -361,6 +363,45 @@ TEST(RemoteKVManagerImplTest, SendFailureMarksMigrationFailedImmediately) {
 
   const uint64_t id = mgr->migrate(makeRequest());
   EXPECT_EQ(mgr->getMigrationStatus(id), MigrationStatus::FAILED);
+}
+
+TEST(RemoteKVManagerImplTest, LayerToPartitionRoutesPublishToOwnerPartition) {
+  auto producerOwned = std::make_unique<FakeProducer>();
+  auto* producer = producerOwned.get();
+  auto consumer = std::make_unique<FakeConsumer>();
+  auto mgr = makeManager(
+      std::move(producerOwned), std::move(consumer), 500ms, 10ms,
+      makeLayerToPartition(LayerPartitionPolicy{.layersPerPartition = 16,
+                                                .numPartitions = 4}));
+
+  auto request = makeRequest();
+  request.layer_begin = 20;
+  request.layer_end = 21;
+  const uint64_t id = mgr->migrate(request);
+
+  EXPECT_EQ(mgr->getMigrationStatus(id), MigrationStatus::IN_PROGRESS);
+  ASSERT_EQ(producer->payloadCount(), 1u);
+  ASSERT_EQ(producer->getPartitions().size(), 1u);
+  EXPECT_EQ(producer->getPartitions().front(), 1);
+}
+
+TEST(RemoteKVManagerImplTest,
+     NegativeLayerToPartitionFailsWithoutBrokerFallback) {
+  auto producerOwned = std::make_unique<FakeProducer>();
+  auto* producer = producerOwned.get();
+  auto consumer = std::make_unique<FakeConsumer>();
+  auto mgr = makeManager(
+      std::move(producerOwned), std::move(consumer), 500ms, 10ms,
+      makeLayerToPartition(LayerPartitionPolicy{.layersPerPartition = 16,
+                                                .numPartitions = 4}));
+
+  auto request = makeRequest();
+  request.layer_begin = 64;  // maps to partition 4 -> rejected
+  request.layer_end = 65;
+  const uint64_t id = mgr->migrate(request);
+
+  EXPECT_EQ(mgr->getMigrationStatus(id), MigrationStatus::FAILED);
+  EXPECT_EQ(producer->payloadCount(), 0u);
 }
 
 TEST(RemoteKVManagerImplTest, ConcurrentMigratesAreThreadSafe) {

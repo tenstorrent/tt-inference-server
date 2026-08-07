@@ -46,7 +46,8 @@ class KvMigrationWorker {
   KvMigrationWorker(
       std::unique_ptr<tt::messaging::IKafkaConsumer> requestConsumer,
       std::unique_ptr<tt::messaging::IKafkaProducer> ackProducer,
-      std::unique_ptr<IMigrationExecutor> executor, int pollTimeoutMs = 100);
+      std::unique_ptr<IMigrationExecutor> executor, int pollTimeoutMs = 100,
+      std::optional<int32_t> ackPartition = std::nullopt);
 
   ~KvMigrationWorker();
 
@@ -65,6 +66,9 @@ class KvMigrationWorker {
   std::unique_ptr<tt::messaging::IKafkaProducer> ackProducer;
   std::unique_ptr<IMigrationExecutor> executor;
   int pollTimeoutMs;
+  // When set, acks are produced to this partition (affine with the request
+  // pin under N-prefill exclusive ownership). Unset => broker partitioner.
+  std::optional<int32_t> ackPartition;
 
   std::mutex ackMutex;
   std::atomic<bool> running{false};

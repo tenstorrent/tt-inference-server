@@ -949,6 +949,19 @@ uint32_t migrationDecodeEndpointId() {
 std::string kafkaGroupId() {
   return envString("KAFKA_GROUP_ID", defaults::KAFKA_GROUP_ID);
 }
+
+uint32_t kafkaMigrationNumPartitions() {
+  return static_cast<uint32_t>(
+      envUlong("KAFKA_MIGRATION_NUM_PARTITIONS",
+               defaults::KAFKA_MIGRATION_NUM_PARTITIONS));
+}
+
+uint32_t kafkaMigrationLayersPerPartition() {
+  return static_cast<uint32_t>(
+      envUlong("KAFKA_MIGRATION_LAYERS_PER_PARTITION",
+               defaults::KAFKA_MIGRATION_LAYERS_PER_PARTITION));
+}
+
 unsigned sessionAllocationMaxRetries() {
   return static_cast<unsigned>(
       envUlong("SESSION_ALLOCATION_MAX_RETRIES",

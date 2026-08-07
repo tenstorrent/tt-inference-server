@@ -40,8 +40,8 @@ class RemoteKVManagerImpl : public IRemoteKVManager {
    * layer_end) range) to the Kafka partition that owns that layer's work.
    * Migration requests are assumed to stay within a single partition block,
    * so layer_begin uniquely identifies the owning partition. Returning a
-   * negative value falls back to the broker-picked partition (i.e. legacy
-   * un-partitioned behavior).
+   * negative value fails the publish (no broker fallback) so a misconfigured
+   * N-prefill policy cannot silently misroute.
    */
   using LayerToPartition = std::function<int32_t(uint32_t layerId)>;
 
@@ -60,9 +60,9 @@ class RemoteKVManagerImpl : public IRemoteKVManager {
    * @param layerToPartition Optional layer -> partition mapping (applied to
    *   the request's layer_begin, since a migration is expected to stay
    *   inside a single partition block). When set, migrate() routes each
-   *   request to the returned partition of the request topic; a negative
-   *   return falls back to the broker's default partitioner. When null,
-   *   all requests use the default partitioner (legacy behavior).
+   *   request to the returned partition; a negative return fails the
+   *   publish immediately. When null, all requests use the broker's default
+   *   partitioner (legacy single-owner behavior).
    */
   RemoteKVManagerImpl(
       std::unique_ptr<tt::messaging::IKafkaProducer> requestProducer,
