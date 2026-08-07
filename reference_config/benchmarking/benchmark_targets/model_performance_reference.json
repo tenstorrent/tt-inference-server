@@ -18,6 +18,161 @@
                     }
                 }
             }
+        ],
+        "blackhole_galaxy": [
+            {
+                "isl": 128,
+                "osl": 1024,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": null,
+                        "tput_user": null,
+                        "tput": null
+                    }
+                }
+            },
+            {
+                "isl": 1024,
+                "osl": 1024,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": null,
+                        "tput_user": null,
+                        "tput": null
+                    }
+                }
+            },
+            {
+                "isl": 8192,
+                "osl": 1024,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": null,
+                        "tput_user": null,
+                        "tput": null
+                    }
+                }
+            },
+            {
+                "isl": 32768,
+                "osl": 1024,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": null,
+                        "tput_user": null,
+                        "tput": null
+                    }
+                }
+            },
+            {
+                "isl": 131072,
+                "osl": 1024,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": null,
+                        "tput_user": null,
+                        "tput": null
+                    }
+                }
+            },
+            {
+                "isl": 128,
+                "osl": 1024,
+                "max_concurrency": 8,
+                "num_prompts": 32,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": null,
+                        "tput_user": null,
+                        "tput": null
+                    }
+                }
+            },
+            {
+                "isl": 1024,
+                "osl": 1024,
+                "max_concurrency": 8,
+                "num_prompts": 32,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": null,
+                        "tput_user": null,
+                        "tput": null
+                    }
+                }
+            },
+            {
+                "isl": 8192,
+                "osl": 1024,
+                "max_concurrency": 8,
+                "num_prompts": 32,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": null,
+                        "tput_user": null,
+                        "tput": null
+                    }
+                }
+            },
+            {
+                "isl": 32768,
+                "osl": 1024,
+                "max_concurrency": 8,
+                "num_prompts": 32,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": null,
+                        "tput_user": null,
+                        "tput": null
+                    }
+                }
+            }
         ]
     },
     "Qwen3-VL-32B-Instruct": {

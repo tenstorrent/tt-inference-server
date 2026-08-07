@@ -1179,6 +1179,46 @@ templates:
         # --reasoning-parser separates the thought channel into reasoning_content.
         default-chat-template-kwargs: '{"enable_thinking": true}'
         reasoning-parser: gemma4
+    # DRAFT pending Blackhole Galaxy bring-up (readiness 5.4 / 7.1). Values follow the
+    # decision note docs/rfp/blackhole-galaxy-device-configuration.md in llm-gauntlet;
+    # performance targets live under the blackhole_galaxy key in
+    # model_performance_reference.json and stay unset until measured under AIPerf (5.3).
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 32
+      # 262144 matches the 256K agentic evals; 204800 is the fallback matching the H100
+      # reference run. Overrides max_num_batched_tokens; model card native context is 256K.
+      max_context: 262144
+      # The KV pool the sweep is authored against. The benchmark runs each point at
+      # min(max_tokens_all_users // (isl + osl), max_concurrency), so this -- not
+      # max_concurrency alone -- keeps readiness 5.7 satisfiable at long inputs. Both
+      # sizing anchors (QB2 x8 hybrid-off lower bound ~393K; H100 hybrid-KV estimate)
+      # exceed this; confirm the true DRAM headroom under AIPerf.
+      max_tokens_all_users_override: 1048576  # 1024 * 1024
+      default_impl: false
+      env_vars:
+        VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+        # Default logical mesh for the device; the shape is the Partner's choice per D.3.
+        MESH_DEVICE: "BH-Galaxy"
+        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/single_bh_galaxy_torus_xy_graph_descriptor.textproto"
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+        # Size the actual all-user KV pool to match max_tokens_all_users_override above.
+        GEMMA4_MAX_TOKENS_ALL_USERS: "1048576"
+      vllm_args:
+        # Pinned to 1 for the graded configuration (requirements D.3): a non-unit degree
+        # remaps the perf-target lookup to an unpopulated subdevice key and is ungradable.
+        data_parallel_size: 1
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: gemma4
+      override_tt_config:
+        # Established Galaxy-class value; FABRIC_2D does not exist in the stack.
+        fabric_config: FABRIC_1D_RING
+        dispatch_core_axis: col
+        # On-device decode sampling so token ids >= 65536 are reachable on the TP mesh.
+        sample_on_device_mode: decode_only
+        worker_l1_size: 1344544
+        trace_region_size: 184915840
   status: EXPERIMENTAL
   has_builtin_warmup: true
   env_vars:
