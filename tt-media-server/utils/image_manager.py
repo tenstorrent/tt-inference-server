@@ -3,7 +3,6 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import base64
-import urllib.request
 from io import BytesIO
 
 import numpy as np
@@ -99,39 +98,19 @@ class ImageManager:
         """Convert base64 string to PIL image with optional resizing and mode conversion.
 
         Args:
-            base64_string: Base64 encoded image string (with or without data URL
-                prefix), or an http(s) URL to fetch the image from
+            base64_string: Base64 encoded image string (with or without data URL prefix)
             target_size: Tuple (width, height) to resize to, or None to keep original size
             target_mode: PIL image mode to convert to (e.g., "RGB", "RGBA")
 
         Returns:
             PIL Image object
         """
-        if base64_string.startswith(("http://", "https://")):
-            # A default User-Agent is required or some CDNs (e.g. Unsplash) return
-            # an HTML error page instead of the image, which PIL cannot decode.
-            req = urllib.request.Request(base64_string, headers={"User-Agent": "Mozilla/5.0"})
-            try:
-                with urllib.request.urlopen(req, timeout=15) as resp:
-                    image_bytes = resp.read()
-            except Exception as e:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Failed to fetch image URL '{base64_string}': {e}",
-                )
-        else:
-            if base64_string.startswith("data:"):
-                base64_string = base64_string.split(",")[1]
-            # Restore stripped padding so HTTP/JSON-trimmed strings decode cleanly.
-            base64_string += "=" * (-len(base64_string) % 4)
-            image_bytes = base64.b64decode(base64_string)
-        try:
-            image = Image.open(BytesIO(image_bytes))
-        except Exception as e:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Could not decode image ({len(image_bytes)} bytes): {e}",
-            )
+        if base64_string.startswith("data:"):
+            base64_string = base64_string.split(",")[1]
+        # Restore stripped padding so HTTP/JSON-trimmed strings decode cleanly.
+        base64_string += "=" * (-len(base64_string) % 4)
+        image_bytes = base64.b64decode(base64_string)
+        image = Image.open(BytesIO(image_bytes))
 
         if image.mode != target_mode:
             image = image.convert(target_mode)
