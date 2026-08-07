@@ -75,6 +75,21 @@ class AIPerfDriver(LLMDriver):
             str(config.osl),
             "--output-tokens-stddev",
             "0",
+            # --output-tokens-mean/-stddev only *request* a fixed length; without
+            # ignore_eos the server may stop at its natural EOS and the sweep's
+            # osl axis stops meaning anything. Measured against
+            # llm-d-inference-sim asking for osl=128: 27-130 tokens returned
+            # (std 41) without this, 131-135 (std 1.5) with it. Output length
+            # feeds TPOT, E2EL and both throughput columns, so the whole row is
+            # affected, not just output_sequence_length.
+            #
+            # This restores the pairing the sibling drivers already use --
+            # aiperf_spec_decode.py couples ignore_eos:true with
+            # output-tokens-mean/-stddev, and the agentic-traces scenario enforces
+            # it too. This driver setting a fixed length without enforcing it was
+            # the outlier.
+            "--extra-inputs",
+            "ignore_eos:true",
             "--url",
             url,
             "--artifact-dir",
