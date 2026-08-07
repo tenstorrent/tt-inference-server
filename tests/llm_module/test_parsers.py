@@ -25,7 +25,8 @@ from report_module.display import display_name
 MODEL = "meta-llama/Llama-3.2-1B-Instruct"
 
 # NVIDIA aiperf / genai-perf share a schema: metrics are top-level mappings
-# of stat -> value. A clean run reports no errors (error_request_count None).
+# of stat -> value. This fixture omits error_request_count entirely, which is
+# the "not reported" case; a clean run that DID report reports 0, not None.
 AIPERF_RAW: Dict[str, Any] = {
     "schema_version": "1.0",
     "aiperf_version": "0.5.0",
@@ -291,10 +292,22 @@ def test_new_percentile_fields_have_display_names():
         assert rendered and rendered != field, f"{field} has no display name"
 
 
-def test_aiperf_errors_none_when_clean():
+def test_aiperf_errors_none_only_when_not_reported():
+    """None means nobody looked. A clean run reports 0 and must keep it."""
     data = AIPerfParser().parse(AIPERF_RAW, device="N150").data
-    # None -> the Errors column drops out of an all-successful sweep
     assert data["error_request_count"] is None
+
+
+@pytest.mark.parametrize("zero", [0, {"avg": 0}])
+def test_aiperf_a_measured_zero_survives_as_zero(zero):
+    # Zero is the outcome acceptance has to confirm (RFP G.2.6). Collapsing it
+    # to None would make "no requests failed" look like "nobody looked".
+    data = (
+        AIPerfParser()
+        .parse({**AIPERF_RAW, "error_request_count": zero}, device="N150")
+        .data
+    )
+    assert data["error_request_count"] == 0
 
 
 @pytest.mark.parametrize("err_value", [3, {"avg": 3}])
@@ -343,12 +356,21 @@ def test_vllm_derives_isl_osl_and_maps_percentiles():
     assert data["p50_ttft"] == pytest.approx(300.1)
     assert data["p99_ttft"] == pytest.approx(1200.9)
     assert data["tps_decode_throughput"] == pytest.approx(480.0)
-    assert data["error_request_count"] is None
+    # VLLM_RAW carries "failed": 0 — a real measurement, kept as 0.
+    assert data["error_request_count"] == 0
 
 
 def test_vllm_errors_surface_from_failed_count():
     data = VLLMBenchParser().parse({**VLLM_RAW, "failed": 4}, device="N150").data
     assert data["error_request_count"] == 4
+
+
+def test_vllm_errors_none_only_when_failed_is_absent():
+    """Distinguishes an unreported count from a reported zero."""
+    raw = {k: v for k, v in VLLM_RAW.items() if k != "failed"}
+    assert (
+        VLLMBenchParser().parse(raw, device="N150").data["error_request_count"] is None
+    )
 
 
 def test_vllm_handles_zero_completed_without_dividing():

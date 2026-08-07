@@ -89,8 +89,15 @@ def _per_request_int(total: Any, completed: Optional[float]) -> Optional[int]:
 
 
 def _errors(value: Any) -> Optional[int]:
+    """Failed request count, preserving a measured zero.
+
+    ``vllm bench serve`` reports ``failed: 0`` on a clean run. Zero must survive
+    as 0: it is the outcome acceptance has to confirm (RFP G.2.6 requires zero
+    failed requests), and collapsing it to None would make "no requests failed"
+    indistinguishable from "nobody looked".
+    """
     v = _num(value)
-    return int(v) if v else None
+    return int(v) if v is not None else None
 
 
 def _format_date(date_str: Any) -> str:

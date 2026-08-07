@@ -89,8 +89,63 @@ def test_task_failure_blocker_fails_acceptance_when_category_is_na():
 # --- Benchmarks -----------------------------------------------------------
 
 
-def _bench(target_checks) -> Block:
-    return Block(kind="benchmarks", title="B", data={"target_checks": target_checks})
+def _bench(target_checks, errors: object = 0) -> Block:
+    """A benchmark block that served every request unless told otherwise.
+
+    ``errors`` defaults to a reported 0 so these tests exercise target-check
+    routing rather than the failed-request gate, which has its own tests below.
+    Pass ``None`` to model a point that never reported a count.
+    """
+    data = {"target_checks": target_checks, "error_request_count": errors}
+    return Block(kind="benchmarks", title="B", data=data)
+
+
+# --- Failed requests (RFP G.2.6) -----------------------------------------
+
+_PASSING = {"target": {"ttft_check": 2, "ttft": 100, "ttft_ratio": 0.8}}
+
+
+def test_failed_requests_block_even_when_every_target_is_met():
+    """The point of the gate: speed over surviving requests is not a result."""
+    accepted, blockers, _ = acceptance_criteria_check(
+        _schema(_bench(_PASSING, errors=7))
+    )
+    assert accepted is False
+    assert "7 request(s) failed" in blockers["benchmarks:B.error_request_count"]
+
+
+def test_a_reported_zero_passes():
+    accepted, blockers, _ = acceptance_criteria_check(
+        _schema(_bench(_PASSING, errors=0))
+    )
+    assert accepted is True and blockers == {}
+
+
+def test_an_unreported_count_blocks_rather_than_passing_silently():
+    """Absent is not zero. The requirement is that zero was *confirmed*."""
+    accepted, blockers, _ = acceptance_criteria_check(
+        _schema(_bench(_PASSING, errors=None))
+    )
+    assert accepted is False
+    assert "cannot be confirmed" in blockers["benchmarks:B.error_request_count"]
+
+
+def test_every_point_is_checked_not_only_the_first():
+    """A sweep that starts clean and degrades under load must still fail."""
+    clean = Block(
+        kind="benchmarks",
+        title="c1",
+        data={"target_checks": _PASSING, "error_request_count": 0},
+    )
+    degraded = Block(
+        kind="benchmarks",
+        title="c32",
+        data={"target_checks": _PASSING, "error_request_count": 12},
+    )
+    accepted, blockers, _ = acceptance_criteria_check(_schema(clean, degraded))
+    assert accepted is False
+    assert "benchmarks:c32.error_request_count" in blockers
+    assert "benchmarks:c1.error_request_count" not in blockers
 
 
 def test_benchmarks_absent_is_na():

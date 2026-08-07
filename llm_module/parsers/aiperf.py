@@ -85,12 +85,19 @@ def _concurrency(raw: Mapping[str, Any]) -> Optional[int]:
 
 
 def _errors(raw: Mapping[str, Any]) -> Optional[int]:
+    """Failed request count, preserving a measured zero.
+
+    Zero must survive as 0. It is the *good* outcome and the one acceptance has
+    to confirm — RFP G.2.6 requires zero failed requests — so collapsing it to
+    None would make "no requests failed" indistinguishable from "nobody looked",
+    and an unverifiable requirement reads as a satisfied one.
+    """
     value = raw.get("error_request_count")
     if isinstance(value, Mapping):
         value = value.get("avg")
-    if isinstance(value, (int, float)) and value:
-        return int(value)
-    return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return int(value)
 
 
 def _model_name(raw: Mapping[str, Any]) -> str:

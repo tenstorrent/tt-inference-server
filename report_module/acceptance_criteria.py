@@ -293,6 +293,14 @@ def _check_benchmarks(
 
         block_blockers: Dict[str, str] = {}
         block_informational: Dict[str, str] = {}
+
+        # Graded independently of the target checks: a point can hit every
+        # latency target while dropping requests, and speed measured over only
+        # the requests that succeeded is not a result.
+        error_blocker = _failed_request_blocker(block)
+        if error_blocker is not None:
+            block_blockers[f"{block_key}.error_request_count"] = error_blocker
+
         target_checks = _resolve_nested(block.data, "target_checks")
         if not isinstance(target_checks, Mapping):
             block_blockers[f"{block_key}.target_checks"] = (
@@ -561,6 +569,29 @@ def _level_passes(level_checks: Mapping[str, Any]) -> bool:
         v for name, v in level_checks.items() if name.endswith(CHECK_SUFFIX)
     ]
     return bool(check_values) and all(_passes_check(v) for v in check_values)
+
+
+def _failed_request_blocker(block: Block) -> Optional[str]:
+    """Blocker message when a benchmark point did not serve every request.
+
+    Zero failed requests is a binary requirement (RFP G.2.6): a point that
+    dropped requests has not met it, however fast the surviving requests were.
+
+    A count that is absent also blocks, and deliberately so. The requirement is
+    that zero failures were *confirmed*, so a point with nothing to confirm has
+    not satisfied it — treating the absence as a pass is how an unverified
+    requirement silently becomes a satisfied one. Note this is distinct from a
+    reported ``0``, which is a real measurement and passes.
+    """
+    value = _resolve_nested(block.data, "error_request_count")
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return (
+            "No error_request_count reported, so zero failed requests cannot be "
+            "confirmed for this point."
+        )
+    if value > 0:
+        return f"{int(value)} request(s) failed at this point; zero are required."
+    return None
 
 
 def _resolve_nested(data: Any, key: str) -> Any:
