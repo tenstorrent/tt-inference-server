@@ -30,8 +30,6 @@ constexpr const char* PREFILL_SERVER_ID = "";
 constexpr uint32_t PREFILL_MAX_IN_FLIGHT = 0;
 
 constexpr size_t MAX_QUEUE_SIZE = 1000;
-constexpr const char* SCHEDULING_POLICY =
-    "prefill_first";  // "prefill_first" or "max_occupancy"
 constexpr const char* LLM_DEVICE_BACKEND =
     "mock_scheduler";  // "mock_pipeline", "mock_scheduler", or
                        // "pipeline_manager"
@@ -40,15 +38,18 @@ constexpr size_t MAX_SESSIONS_COUNT = 128;
 constexpr unsigned SESSION_EVICTION_RATE = 90;
 constexpr size_t SESSION_EVICTION_COUNT = 10;
 constexpr size_t MAX_TOKENS_TO_PREFILL_ON_DECODE = 1000;
-constexpr size_t MAX_CONTEXT_LENGTH = 65536;  // 64k
+constexpr size_t MAX_CONTEXT_LENGTH = 131072;  // 128k
 constexpr size_t MAX_ISL = 256000;  // 2000k (max input sequence length)
 constexpr size_t MIN_TOKENS_TO_COPY =
     1024;  // min matched tokens to justify slot copy
-constexpr size_t KV_CACHE_BLOCK_SIZE = 32;
-constexpr size_t KV_CACHE_FIRST_BLOCK_SIZE = 128;
+constexpr size_t PREFIX_CACHE_BLOCK_SIZE = 32;
+constexpr size_t PREFIX_CACHE_FIRST_BLOCK_SIZE = 128;
 constexpr unsigned PREFIX_CACHE_HIT_THRESHOLD = 40;
 constexpr bool USE_FAST_MODE = false;
 constexpr bool ENABLE_MIGRATION = false;
+// PrefillScheduler drives cross-endpoint (P->D) KV migration via the
+// Kafka-backed RemoteKVManagerAdapter
+constexpr bool PREFILL_USE_REMOTE_KV_MANAGER = false;
 constexpr const char* MIGRATION_CMD_QUEUE_NAME = "mig_ep0_cmd";
 constexpr const char* MIGRATION_TABLE_QUEUE_NAME = "mig_ep0_table";
 constexpr const char* MIGRATION_RESP_QUEUE_NAME = "mig_ep0_resp";
@@ -69,7 +70,10 @@ constexpr unsigned KV_MIGRATION_DRAIN_POLL_MS = 100;
 constexpr unsigned SESSION_ALLOCATION_MAX_RETRIES = 15;
 
 constexpr const char* SPEC_DECODE_MODE = "none";
-constexpr size_t MTP_LEVEL = 1;
+constexpr size_t SPEC_LEVEL = 1;
+
+// Number of pipeline stages of the Blaze Decode model.
+constexpr uint32_t BLAZE_NUMBER_OF_PIPELINE_STAGES = 64;
 
 constexpr const char* TT_TASK_QUEUE = "tt_tasks";
 constexpr const char* TT_RESULT_QUEUE = "tt_results";
@@ -134,10 +138,15 @@ constexpr int DECODE_MAX_TOKEN_IDS = 1;
 // frontends). All defaults are overridable via env vars; the endpoint is
 // off unless DYNAMO_ENDPOINT_ENABLED=1.
 constexpr bool DYNAMO_ENDPOINT_ENABLED = false;
+// When true, Dynamo owns prefill/decode routing and prefill-first
+// disaggregation is enabled (etcd discovers decode; ZMQ reserves slots).
+constexpr bool DYNAMO_ROUTING = false;
 constexpr const char* DYNAMO_BIND_HOST = "0.0.0.0";
+constexpr uint16_t DYNAMO_BIND_PORT = 0;  // 0 = OS-assigned ephemeral port.
 constexpr const char* DYNAMO_NAMESPACE = "default";
 constexpr const char* DYNAMO_COMPONENT = "backend";
 constexpr const char* DYNAMO_ENDPOINT_NAME = "generate";
+constexpr const char* DYNAMO_DISCOVERY_BACKEND = "etcd";
 
 // Discovery: etcd endpoint for Dynamo's KVStoreDiscovery.
 constexpr const char* DYNAMO_ETCD_ENDPOINTS = "http://etcd:2379/";
@@ -146,10 +155,30 @@ constexpr const char* DYNAMO_ETCD_ENDPOINTS = "http://etcd:2379/";
 // the reaper.
 constexpr int64_t DYNAMO_ETCD_LEASE_TTL_SECS = 10;
 
+// Standard in-cluster ServiceAccount mount paths.
+constexpr const char* DYNAMO_KUBE_TOKEN_PATH =
+    "/var/run/secrets/kubernetes.io/serviceaccount/token";
+constexpr const char* DYNAMO_KUBE_NAMESPACE_PATH =
+    "/var/run/secrets/kubernetes.io/serviceaccount/namespace";
+// Validate the API server's TLS certificate using mounted ServiceAccount CA.
+constexpr bool DYNAMO_KUBE_VALIDATE_CERT = true;
+
 constexpr unsigned MOCK_PREFILL_CHUNK_LATENCY_MS = 1353;
 constexpr unsigned MOCK_STAGE_LATENCY_US = 44;
 constexpr uint32_t MOCK_PIPELINE_STAGES = 64;
 constexpr uint32_t MOCK_PREFILL_CHUNK_SIZE = 24;
 constexpr unsigned MOCK_DECODE_TOKEN_ID = 12345;
+
+// Text-to-speech scheduler defaults.
+constexpr size_t TTS_MAX_BATCH_SIZE = 1;
+constexpr size_t TTS_AUDIO_QUEUE_CAPACITY = 1024;
+constexpr uint32_t TTS_CHUNK_TOKENS = 30;
+constexpr uint32_t TTS_VOICE_SAMPLE_RATE_HZ = 16000;
+constexpr uint16_t TTS_VOICE_CHANNELS = 1;
+constexpr uint32_t TTS_AUDIO_SAMPLE_RATE_HZ = 48000;
+constexpr uint16_t TTS_AUDIO_CHANNELS = 1;
+constexpr const char* TTS_ENCODER_SOCKET_DESCRIPTOR_PREFIX = "tts2_encoder";
+constexpr const char* TTS_SPEECHLM_SOCKET_DESCRIPTOR_PREFIX = "tts2_speechlm";
+constexpr const char* TTS_DECODER_SOCKET_DESCRIPTOR_PREFIX = "tts2_decoder";
 
 }  // namespace tt::config::defaults

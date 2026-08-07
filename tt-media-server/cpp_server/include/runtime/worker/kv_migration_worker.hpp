@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <thread>
 
 #include "messaging/i_kafka_consumer.hpp"
@@ -34,10 +35,11 @@ namespace tt::worker {
  * joins. Safe to call either repeatedly. Destruction implies stop().
  *
  * Ownership: the worker takes ownership of all three injected
- * dependencies. The caller MUST ensure the executor has drained any
- * in-flight callbacks before destroying this object. The bundled
- * StubMigrationExecutor is synchronous, so this requirement is met
- * trivially for early bring-up.
+ * dependencies. On destruction it stops the poll thread and then destroys the
+ * executor explicitly (before ackMutex / ackProducer tear down), so an async
+ * executor's in-flight DoneCallback (-> publishAck) drains against still-valid
+ * members. The DoneCallback captures `this`, so the executor must not outlive
+ * the worker — which this ordering guarantees.
  */
 class KvMigrationWorker {
  public:
@@ -56,7 +58,8 @@ class KvMigrationWorker {
 
  private:
   void consumerLoop();
-  void publishAck(uint64_t migrationId, tt::services::MigrationStatus status);
+  void publishAck(uint64_t kafkaRequestId, std::optional<uint64_t> migrationId,
+                  tt::services::MigrationStatus status);
 
   std::unique_ptr<tt::messaging::IKafkaConsumer> requestConsumer;
   std::unique_ptr<tt::messaging::IKafkaProducer> ackProducer;

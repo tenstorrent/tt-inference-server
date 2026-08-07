@@ -29,4 +29,18 @@ if [ -n "${TT_KV_POOL_GB:-}" ]; then
     fi
 fi
 
+# HF_HOME (a persistent cache_root path set by the launcher) isn't always
+# writable by this uid. Fall back to a per-user cache so model download/load 
+# never crashes at startup (sacrifices cache persistence for media model weights).
+if [ -n "${HF_HOME:-}" ]; then
+    if ( mkdir -p "${HF_HOME}" && touch "${HF_HOME}/.hf_write_test" ) 2>/dev/null; then
+        rm -f "${HF_HOME}/.hf_write_test"
+    else
+        _hf_fallback="${HOME:-/home/container_app_user}/.cache/huggingface"
+        echo "[run_uvicorn] HF_HOME=${HF_HOME} not writable; falling back to ${_hf_fallback} (weights will not persist)"
+        mkdir -p "${_hf_fallback}"
+        export HF_HOME="${_hf_fallback}"
+    fi
+fi
+
 uvicorn --host 0.0.0.0 main:app --lifespan on --port "${SERVICE_PORT:-8000}"

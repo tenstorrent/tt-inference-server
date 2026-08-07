@@ -9,8 +9,8 @@
 // The .pb to read is taken from the KV_TABLE_PB env var if set, else the
 // compile-time default (the prefill/decoder table produced by the model
 // runner). If neither file is readable the test SKIPs, so it never fails CI on
-// a missing artifact while still satisfying the Phase-0 "resolves real NoC
-// addresses" criterion when the file is present.
+// a missing artifact while still checking that real NoC addresses resolve when
+// the file is present.
 
 #include "transport/kv_chunk_address_table_adapter.hpp"
 

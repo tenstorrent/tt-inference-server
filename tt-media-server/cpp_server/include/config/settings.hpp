@@ -30,6 +30,9 @@ bool isLlmService();
 /** True when model_service() == IMAGE. */
 bool isImageService();
 
+/** True when model_service() == TTS. */
+bool isTtsService();
+
 /** Get runner type string based on current model service configuration. */
 std::string runnerType();
 
@@ -65,6 +68,13 @@ std::string tokenizerPath(ModelType model);
  * model_type(). */
 std::string tokenizerConfigPath();
 std::string tokenizerConfigPath(ModelType model);
+
+/** Model config path: tokenizers/<model>/config.json relative to the
+ * executable. This is the HuggingFace-style `config.json` (architectures,
+ * max_position_embeddings, etc.), not the tokenizer's own config. Empty if
+ * not found. No-arg overload uses the current model_type(). */
+std::string modelConfigPath();
+std::string modelConfigPath(ModelType model);
 
 /**
  * Parse DEVICE_IDS and return the content inside the Nth bracket pair.
@@ -117,13 +127,12 @@ std::string logInstanceTag(int workerIndex = -1);
 /** Capacity hint for the gateway, 0 = unlimited. From PREFILL_MAX_IN_FLIGHT. */
 uint32_t prefillMaxInFlight();
 
+// Number of pipeline stages for the Blaze Decode runner.
+uint32_t blazeNumberOfPipelineStages();
+
 /** Max in-flight requests before 429. From MAX_QUEUE_SIZE. Default:
  * defaults::MAX_QUEUE_SIZE. */
 size_t maxQueueSize();
-
-/** Scheduling policy from SCHEDULING_POLICY. Default:
- * defaults::SCHEDULING_POLICY ("prefill_first"). */
-SchedulingPolicy schedulingPolicy();
 
 /** Max in-flight requests from MAX_IN_FLIGHT_COUNT. Default:
  * defaults::MAX_IN_FLIGHT_COUNT. */
@@ -150,8 +159,13 @@ size_t sessionEvictionCount();
  * Default: defaults::MAX_TOKENS_TO_PREFILL_ON_DECODE. */
 size_t maxTokensToPrefillOnDecode();
 
-/** Max context length (prompt + completion) from MAX_CONTEXT_LENGTH. Default:
- * defaults::MAX_CONTEXT_LENGTH. */
+/** Max context length (prompt + completion). Resolution order:
+ *   1. `MAX_CONTEXT_LENGTH` env var (explicit operator override).
+ *   2. `max_position_embeddings` in the model's HF `config.json`
+ *      (tokenizers/<model>/config.json), also honoring `text_config.
+ *      max_position_embeddings` for multimodal wrappers.
+ *   3. `defaults::MAX_CONTEXT_LENGTH` if the file is missing or unparseable.
+ */
 size_t maxContextLength();
 
 /** Max input sequence length (prompt tokens) from MAX_ISL. Default:
@@ -169,13 +183,14 @@ size_t taskQueueMaxMsgSize();
  * From MIN_TOKENS_TO_COPY. Default: defaults::MIN_TOKENS_TO_COPY. */
 size_t minTokensToCopy();
 
-/** KV cache block size from KV_CACHE_BLOCK_SIZE. Default:
- * defaults::KV_CACHE_BLOCK_SIZE. */
-size_t kvCacheBlockSize();
+/** Prefix-cache block size from KV_CACHE_BLOCK_SIZE. Default:
+ * defaults::PREFIX_CACHE_BLOCK_SIZE. The memory layout is contiguous slots;
+ * "block size" only exists as a fiction for prefix-cache hashing. */
+size_t prefixCacheBlockSize();
 
-/** KV cache first block size from KV_CACHE_FIRST_BLOCK_SIZE. Default:
- * defaults::KV_CACHE_FIRST_BLOCK_SIZE. */
-size_t kvCacheFirstBlockSize();
+/** Prefix-cache first-block size from KV_CACHE_FIRST_BLOCK_SIZE. Default:
+ * defaults::PREFIX_CACHE_FIRST_BLOCK_SIZE. */
+size_t prefixCacheFirstBlockSize();
 
 /** Minimum match percentage for prefix cache hit from
  * PREFIX_CACHE_HIT_THRESHOLD. Default: defaults::PREFIX_CACHE_HIT_THRESHOLD.
@@ -235,6 +250,12 @@ uint32_t prefillChunkSize();
  * defaults::ENABLE_MIGRATION. */
 bool enableMigration();
 
+/**
+ * Route the PrefillScheduler's cross-endpoint (P->D) KV migration through the
+ * Kafka-backed RemoteKVManagerAdapter.
+ */
+bool prefillUseRemoteKvManager();
+
 /** Migration cmd queue name from MIGRATION_CMD_QUEUE_NAME. Default:
  * defaults::MIGRATION_CMD_QUEUE_NAME. */
 std::string migrationCmdQueueName();
@@ -283,8 +304,8 @@ std::string ttCancelQueueName();
  */
 std::string specDecodeMode();
 
-/** MTP level from MTP_LEVEL. Default: defaults::MTP_LEVEL. */
-size_t mtpLevel();
+/** Spec level from SPEC_LEVEL. Default: defaults::SPEC_LEVEL. */
+size_t specLevel();
 
 /** Media payload task queue name from TT_MEDIA_TASK_QUEUE. */
 std::string ttMediaTaskQueueName();
@@ -332,9 +353,19 @@ size_t memoryQueueCapacity();
  * DYNAMO_ENDPOINT_ENABLED. Default: defaults::DYNAMO_ENDPOINT_ENABLED. */
 bool dynamoEndpointEnabled();
 
+/** Experimental: let Dynamo own disaggregated prefill routing instead of the
+ * cpp_server socket/gateway path. Also enables prefill-first disaggregation
+ * (etcd discovers decode peers; ZMQ reserves decode slots). From
+ * DYNAMO_ROUTING. Default: defaults::DYNAMO_ROUTING. */
+bool dynamoRoutingEnabled();
+
 /** Bind host for the Dynamo listener. From DYNAMO_BIND_HOST. Default:
  * defaults::DYNAMO_BIND_HOST. */
 std::string dynamoBindHost();
+
+/** Bind port for the Dynamo listener. From DYNAMO_BIND_PORT. Default:
+ * defaults::DYNAMO_BIND_PORT (0 = OS-assigned). */
+uint16_t dynamoBindPort();
 
 /** Etcd endpoint(s) the discovery client dials. From DYNAMO_ETCD_ENDPOINTS,
  * falling back to ETCD_ENDPOINTS (the env var Dynamo's own runtime reads).
@@ -356,6 +387,36 @@ std::string dynamoComponent();
 /** Discovery endpoint key. From DYNAMO_ENDPOINT_NAME. Default:
  * defaults::DYNAMO_ENDPOINT_NAME. */
 std::string dynamoEndpointName();
+
+/** Discovery backend selector: "etcd" (default) or "kubernetes". From
+ * DYNAMO_DISCOVERY_BACKEND. Default: defaults::DYNAMO_DISCOVERY_BACKEND. */
+std::string dynamoDiscoveryBackend();
+
+/** Kubernetes API server base URL for the kubernetes discovery backend. From
+ * DYNAMO_KUBE_API_SERVER, else derived from the in-cluster
+ * KUBERNETES_SERVICE_HOST / KUBERNETES_SERVICE_PORT env vars, else
+ * https://kubernetes.default.svc. */
+std::string dynamoKubeApiServer();
+
+/** Path to the ServiceAccount bearer token. From DYNAMO_KUBE_TOKEN_PATH.
+ * Default: defaults::DYNAMO_KUBE_TOKEN_PATH. */
+std::string dynamoKubeTokenPath();
+
+/** Whether to validate the API server TLS certificate. From
+ * DYNAMO_KUBE_VALIDATE_CERT. Default: defaults::DYNAMO_KUBE_VALIDATE_CERT. */
+bool dynamoKubeValidateCert();
+
+/** Kubernetes namespace the worker's CR is created in. From POD_NAMESPACE, else
+ * the in-cluster ServiceAccount namespace file. */
+std::string dynamoPodNamespace();
+
+/** Pod name (downward API), used as the CR name in pod mode and in the CR's
+ * owner reference. From POD_NAME. Empty if unset. */
+std::string dynamoPodName();
+
+/** Pod UID (downward API), used in the CR's owner reference for GC. From
+ * POD_UID. Empty if unset. */
+std::string dynamoPodUid();
 
 /** Prefill completion latency for MockSchedulers. From
  * MOCK_PREFILL_CHUNK_LATENCY_MS. Default:
@@ -379,14 +440,18 @@ uint32_t mockPrefillChunkSize();
  * Default: defaults::MOCK_DECODE_TOKEN_ID. */
 uint32_t mockDecodeTokenId();
 
-/** Build LLMConfig from environment variables and runtime settings. Implemented
- * in src/config/settings.cpp. */
-LLMConfig llmEngineConfig();
+/** Build BlazeConfig from environment variables and runtime settings.
+ * Implemented in src/config/settings.cpp. */
+BlazeConfig blazeConfig();
 
 /** Build ImageConfig from environment variables and runtime settings. Reads
  * MODEL_RUNNER_TYPE, MAX_BATCH_SIZE, SDXL_IMAGE_RESOLUTION. Implemented in
  * src/config/settings.cpp. */
 ImageConfig imageEngineConfig();
+
+/** Build TtsConfig from environment variables and runtime settings.
+ * Implemented in src/config/settings.cpp. */
+TtsConfig ttsEngineConfig();
 
 /** Build the runner config used by a fork/exec worker for the active service.
  * Media configs receive the worker's DEVICE_IDS group as visible_devices. */

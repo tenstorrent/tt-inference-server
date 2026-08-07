@@ -28,7 +28,7 @@ namespace ps = tt_llm_engine::scheduler::prefill;
 class BlazePrefillRunner : public IRunner {
  public:
   BlazePrefillRunner(
-      const tt::config::LLMConfig& config,
+      const tt::config::BlazeConfig& config,
       std::unique_ptr<IPrefillScheduler> prefillScheduler,
       ipc::IResultQueue* resultQueue, tt::ipc::ITaskQueue* taskQueue,
       tt::ipc::ICancelQueue* cancelQueue,
@@ -43,6 +43,7 @@ class BlazePrefillRunner : public IRunner {
  private:
   void step();
 
+  void shutdownScheduler();
   void drainAndHandleSchedulerResponses();
   void drainAndHandleSchedulerOutputs();
   void drainAndHandleStopRequests();
@@ -65,7 +66,7 @@ class BlazePrefillRunner : public IRunner {
   void handleTask(std::unique_ptr<tt::domain::llm::Sequence> task);
   void checkOutputHang();
 
-  tt::config::LLMConfig config;
+  tt::config::BlazeConfig config;
   ipc::IResultQueue* resultQueue;
   tt::ipc::ITaskQueue* taskQueue;
   tt::ipc::ICancelQueue* stopQueue;

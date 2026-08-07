@@ -217,6 +217,8 @@ std::string tokenizerDirForModel(config::ModelType model) {
       return "openai/gpt-oss-120b";
     case config::ModelType::MINIMAX_M2_7:
       return "MiniMaxAI/MiniMax-M2.7";
+    case config::ModelType::MINIMAX_M3:
+      return "MiniMaxAI/MiniMax-M3";
     case config::ModelType::GLM_5_1:
       return "zai-org/GLM-5.1";
     case config::ModelType::GLM_5_2:
@@ -242,6 +244,7 @@ std::unique_ptr<Tokenizer> createTokenizer(config::ModelType model,
       return std::make_unique<DeepseekTokenizer>(path);
     case config::ModelType::GPT_OSS_120B:
     case config::ModelType::MINIMAX_M2_7:
+    case config::ModelType::MINIMAX_M3:
     case config::ModelType::GLM_5_1:
     case config::ModelType::GLM_5_2:
       // These load their own model-specific files but currently reuse the
@@ -350,6 +353,22 @@ const StaticTokenizerInfo& minimaxM27Info() {
   return kInfo;
 }
 
+// IDs verified against the fetched MiniMax-M3 tokenizer. Same special-token
+// layout as M2.7 (eos 200020, <think>/</think> 200050/200051); the top-level
+// config.json carries no eos_token_id, so discovery.cpp publishes the
+// generation_config.json that contains it.
+const StaticTokenizerInfo& minimaxM3Info() {
+  static const StaticTokenizerInfo kInfo{
+      /*modelName=*/"MiniMaxAI/MiniMax-M3",
+      /*stopTokenIds=*/{},
+      /*eosTokenId=*/200020,  // [e~[
+      /*assistantHeaderSequence=*/{},
+      /*thinkStartTokenId=*/200050,  // <think>
+      /*thinkEndTokenId=*/200051,    // </think>
+  };
+  return kInfo;
+}
+
 // IDs verified against the fetched GLM-5.1 tokenizer (added_tokens in
 // tokenizer.json). Identical special-token layout to GLM-5.2: same eos set
 // [154820, 154827, 154829] and <think>/</think> 154841/154842, and the same
@@ -419,6 +438,8 @@ const StaticTokenizerInfo& staticInfoFor(config::ModelType model) {
       return gptOss120bInfo();
     case config::ModelType::MINIMAX_M2_7:
       return minimaxM27Info();
+    case config::ModelType::MINIMAX_M3:
+      return minimaxM3Info();
     case config::ModelType::GLM_5_1:
       return glm51Info();
     case config::ModelType::GLM_5_2:

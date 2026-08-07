@@ -12,6 +12,7 @@
 #include <cstring>
 #include <filesystem>
 #include <iostream>
+#include <mutex>
 
 #include "config/defaults.hpp"
 
@@ -19,92 +20,92 @@ namespace tt::utils {
 
 ZeroOverheadLogger::Level ZeroOverheadLogger::level = ZeroOverheadLogger::INFO;
 std::shared_ptr<spdlog::logger> ZeroOverheadLogger::logger;
-bool ZeroOverheadLogger::initialized = false;
 
 void ZeroOverheadLogger::initialize(std::string instanceTag) {
-  if (initialized) {
-    return;
-  }
-
-  // Set log level from environment variable
-  const char* logLevelEnv = std::getenv("TT_LOG_LEVEL");
-  if (logLevelEnv) {
-    level = parseLogLevel(logLevelEnv);
-  }
-
-  if (instanceTag.empty()) {
-    instanceTag = "tt-media-server";
-  }
-  const std::string pattern =
-      "[%Y-%m-%d %H:%M:%S.%f] [" + instanceTag + "] [%l] %v";
-
-  // Create spdlog sinks
-  std::vector<spdlog::sink_ptr> sinks;
-
-  // Always add console sink
-  auto consoleSink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
-  consoleSink->set_pattern(pattern);
-  sinks.push_back(consoleSink);
-
-  // Check for file logging configuration
-  const char* logFileEnv = std::getenv("TT_LOG_FILE");
-  if (logFileEnv && std::strlen(logFileEnv) > 0) {
-    std::filesystem::path logPath(logFileEnv);
-
-    // Create directory if it doesn't exist
-    if (logPath.has_parent_path()) {
-      std::filesystem::create_directories(logPath.parent_path());
+  // Thread-safe, idempotent one-time init. Without this, two threads logging
+  // for the first time concurrently both call spdlog::register_logger() for the
+  // same name and the second throws "logger already exists" (aborts the
+  // process). std::call_once serializes init; later calls -- including with a
+  // different instanceTag -- are no-ops, matching the prior initialize-once
+  // contract (the first tag wins).
+  static std::once_flag onceFlag;
+  std::call_once(onceFlag, [&] {
+    // Set log level from environment variable
+    const char* logLevelEnv = std::getenv("TT_LOG_LEVEL");
+    if (logLevelEnv) {
+      level = parseLogLevel(logLevelEnv);
     }
 
-    auto fileSink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
-        logFileEnv, tt::config::defaults::LOG_FILE_MAX_BYTES,
-        tt::config::defaults::LOG_FILE_MAX_COUNT);
-    fileSink->set_pattern(pattern);
-    sinks.push_back(fileSink);
-  }
+    if (instanceTag.empty()) {
+      instanceTag = "tt-media-server";
+    }
+    const std::string pattern =
+        "[%Y-%m-%d %H:%M:%S.%f] [" + instanceTag + "] [%l] %v";
 
-  // Create logger
-  logger = std::make_shared<spdlog::logger>("tt-media-server", sinks.begin(),
-                                            sinks.end());
+    // Create spdlog sinks
+    std::vector<spdlog::sink_ptr> sinks;
 
-  // Set spdlog level
-  switch (level) {
-    case TRACE:
-      logger->set_level(spdlog::level::trace);
-      break;
-    case DEBUG:
-      logger->set_level(spdlog::level::debug);
-      break;
-    case INFO:
-      logger->set_level(spdlog::level::info);
-      break;
-    case WARN:
-      logger->set_level(spdlog::level::warn);
-      break;
-    case ERROR:
-      logger->set_level(spdlog::level::err);
-      break;
-    case CRITICAL:
-      logger->set_level(spdlog::level::critical);
-      break;
-    case OFF:
-      logger->set_level(spdlog::level::off);
-      break;
-  }
+    // Always add console sink
+    auto consoleSink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+    consoleSink->set_pattern(pattern);
+    sinks.push_back(consoleSink);
 
-  // Register logger globally
-  spdlog::register_logger(logger);
+    // Check for file logging configuration
+    const char* logFileEnv = std::getenv("TT_LOG_FILE");
+    if (logFileEnv && std::strlen(logFileEnv) > 0) {
+      std::filesystem::path logPath(logFileEnv);
 
-  initialized = true;
+      // Create directory if it doesn't exist
+      if (logPath.has_parent_path()) {
+        std::filesystem::create_directories(logPath.parent_path());
+      }
 
-  // Log initialization message
-  logger->info("Logger initialized with level: {}", levelToString(level));
+      auto fileSink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
+          logFileEnv, tt::config::defaults::LOG_FILE_MAX_BYTES,
+          tt::config::defaults::LOG_FILE_MAX_COUNT);
+      fileSink->set_pattern(pattern);
+      sinks.push_back(fileSink);
+    }
+
+    // Create logger
+    logger = std::make_shared<spdlog::logger>("tt-media-server", sinks.begin(),
+                                              sinks.end());
+
+    // Set spdlog level
+    switch (level) {
+      case TRACE:
+        logger->set_level(spdlog::level::trace);
+        break;
+      case DEBUG:
+        logger->set_level(spdlog::level::debug);
+        break;
+      case INFO:
+        logger->set_level(spdlog::level::info);
+        break;
+      case WARN:
+        logger->set_level(spdlog::level::warn);
+        break;
+      case ERROR:
+        logger->set_level(spdlog::level::err);
+        break;
+      case CRITICAL:
+        logger->set_level(spdlog::level::critical);
+        break;
+      case OFF:
+        logger->set_level(spdlog::level::off);
+        break;
+    }
+
+    // Register logger globally
+    spdlog::register_logger(logger);
+
+    // Log initialization message
+    logger->info("Logger initialized with level: {}", levelToString(level));
+  });
 }
 
 std::shared_ptr<spdlog::logger> ZeroOverheadLogger::getLogger() {
-  if (!initialized) {
-    initialize();
-  }
+  initialize();  // idempotent + thread-safe via std::call_once
   return logger;
 }
 

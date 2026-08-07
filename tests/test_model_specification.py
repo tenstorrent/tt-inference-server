@@ -762,6 +762,20 @@ class TestRequiredTargetTiers:
             "target",
         ]
 
+    def test_evals_enforced_false_only_for_experimental(self):
+        assert ModelStatusTypes.EXPERIMENTAL.evals_enforced is False
+        assert ModelStatusTypes.FUNCTIONAL.evals_enforced is True
+        assert ModelStatusTypes.COMPLETE.evals_enforced is True
+        assert ModelStatusTypes.TOP_PERF.evals_enforced is True
+
+    def test_resolve_looks_up_by_name(self):
+        assert ModelStatusTypes.resolve("EXPERIMENTAL") is ModelStatusTypes.EXPERIMENTAL
+
+    def test_resolve_returns_none_for_missing_or_unrecognized(self):
+        assert ModelStatusTypes.resolve(None) is None
+        assert ModelStatusTypes.resolve("") is None
+        assert ModelStatusTypes.resolve("not_a_real_status") is None
+
 
 class TestEnforceAcceptanceCriteria:
     """Tests for the enforce_acceptance_criteria function."""

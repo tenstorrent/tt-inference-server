@@ -3,6 +3,7 @@
 
 #include "config/settings.hpp"
 
+#include <json/json.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -13,6 +14,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
@@ -55,12 +57,37 @@ std::string resolveBlazeSocketDescriptorPrefix() {
     case ModelType::GPT_OSS_120B:
       return "gpt-oss";
     case ModelType::MINIMAX_M2_7:
-      return "minimax";
+      return "minimax-m2";
+    case ModelType::MINIMAX_M3:
+      return "minimax-m3";
     case ModelType::GLM_5_1:
     case ModelType::GLM_5_2:
       return "glm";
     case ModelType::DEEPSEEK_V4_PRO:
       return "deepseek";
+  }
+  throw std::runtime_error("Unsupported model type for Blaze socket prefix");
+}
+
+uint32_t resolveBlazeNumberOfPipelineStages() {
+  switch (modelType()) {
+    case ModelType::DEEPSEEK_R1_0528:
+      return 64;
+    case ModelType::LLAMA_3_1_8B_INSTRUCT:
+      return 40;
+    case ModelType::KIMI_K2_6:
+    case ModelType::KIMI_K2_7_CODE:
+      return 64;
+    case ModelType::GPT_OSS_120B:
+      return 64;
+    case ModelType::MINIMAX_M2_7:
+    case ModelType::MINIMAX_M3:
+      return 64;
+    case ModelType::GLM_5_1:
+    case ModelType::GLM_5_2:
+      return 80;
+    default:
+      return defaults::BLAZE_NUMBER_OF_PIPELINE_STAGES;
   }
 }
 
@@ -152,6 +179,8 @@ bool isLlmService() { return modelService() == ModelService::LLM; }
 
 bool isImageService() { return modelService() == ModelService::IMAGE; }
 
+bool isTtsService() { return modelService() == ModelService::TTS; }
+
 std::string runnerType() { return toString(modelService()); }
 
 size_t numWorkers() { return deviceIdsParsed().size(); }
@@ -226,6 +255,19 @@ std::string tokenizerConfigPath(ModelType model) {
 }
 
 std::string tokenizerConfigPath() { return tokenizerConfigPath(modelType()); }
+
+std::string modelConfigPath(ModelType model) {
+  auto base = tokenizersDir();
+  if (base.empty()) return "";
+  std::string modelDir = utils::tokenizers::tokenizerDirForModel(model);
+  std::filesystem::path p = base / modelDir / "config.json";
+  if (std::filesystem::exists(p)) {
+    return std::filesystem::absolute(p).string();
+  }
+  return "";
+}
+
+std::string modelConfigPath() { return modelConfigPath(modelType()); }
 
 std::string visibleDevicesForWorker(size_t workerIndex) {
   const auto& ids = deviceIdsParsed();
@@ -346,11 +388,9 @@ uint32_t mockDecodeTokenId() {
       envUlong("MOCK_DECODE_TOKEN_ID", defaults::MOCK_DECODE_TOKEN_ID));
 }
 
-LLMConfig llmEngineConfig() {
-  static const LLMConfig cached = [] {
-    LLMConfig cfg;
-    cfg.stop_token_ids = utils::tokenizers::staticInfo().stopTokenIds;
-    cfg.max_in_flight_count = maxInFlightCount();
+BlazeConfig blazeConfig() {
+  static const BlazeConfig cached = [] {
+    BlazeConfig cfg;
     std::string backend =
         envStringLower("LLM_DEVICE_BACKEND", defaults::LLM_DEVICE_BACKEND);
     if (backend == "pipeline_manager") {
@@ -361,7 +401,40 @@ LLMConfig llmEngineConfig() {
       // Default and "mock_pipeline" both route through the blaze mock pipeline.
       cfg.runner_type = ModelRunnerType::MOCK_PIPELINE;
     }
-    cfg.scheduling_policy = schedulingPolicy();
+
+    // Sizing & timeouts
+    cfg.maxUsers = pmMaxUsers();
+    cfg.warmupTimeoutMs = warmupTimeoutMs();
+    cfg.outputHangTimeoutMs = outputHangTimeoutMs();
+
+    // Scheduler params
+    cfg.modelNumLayers = modelNumLayers();
+    cfg.prefillChunkSize = prefillChunkSize();
+    cfg.enableMigration = enableMigration();
+    cfg.prefillUseRemoteKvManager = prefillUseRemoteKvManager();
+    cfg.migrationPrefillEndpointId = migrationPrefillEndpointId();
+    cfg.migrationDecodeEndpointId = migrationDecodeEndpointId();
+    cfg.specDecodeMode = specDecodeMode();
+    cfg.specLevel = specLevel();
+    cfg.blazeNumberOfPipelineStages = blazeNumberOfPipelineStages();
+
+    // Pipeline / channel config
+    cfg.blazeSocketDescriptorPrefix = blazeSocketDescriptorPrefix();
+    cfg.pmConnectTimeoutMs = pmConnectTimeoutMs();
+    cfg.wireFormat = wireFormat();
+    cfg.prefillAckChannelName = prefillAckChannelName();
+    cfg.migrationCmdQueueName = migrationCmdQueueName();
+    cfg.migrationTableQueueName = migrationTableQueueName();
+    cfg.migrationRespQueueName = migrationRespQueueName();
+
+    // Mock pipeline knobs
+    cfg.numPipelineStages = mockPipelineStages();
+    cfg.mockStageLatencyUs = mockStageLatencyUs();
+    cfg.mockPrefillLatencyMs = mockPrefillLatencyMs();
+    cfg.mockDecodeTokenId = mockDecodeTokenId();
+
+    // Generation fallbacks read by blaze_utils
+    cfg.maxContextLength = maxContextLength();
     return cfg;
   }();
   return cached;
@@ -461,9 +534,71 @@ ImageConfig imageEngineConfig() {
     readMediaRunnerConfig(cfg);
 
     if (auto wh = parseResolution(envString("SDXL_IMAGE_RESOLUTION", ""))) {
-      cfg.image_width = wh->first;
-      cfg.image_height = wh->second;
+      cfg.imageWidth = wh->first;
+      cfg.imageHeight = wh->second;
     }
+    return cfg;
+  }();
+  return cached;
+}
+
+TtsConfig ttsEngineConfig() {
+  static const TtsConfig cached = [] {
+    TtsConfig cfg;
+    const std::string runner = envStringLower("MODEL_RUNNER_TYPE", "tt_tts");
+    if (runner == "tt_tts") {
+      cfg.runner_type = ModelRunnerType::TT_TTS;
+    } else if (runner == "mock_tts") {
+      cfg.runner_type = ModelRunnerType::MOCK_SCHEDULER;
+    } else {
+      throw std::runtime_error("[Config] Unknown TTS MODEL_RUNNER_TYPE='" +
+                               runner + "'; expected one of: tt_tts, mock_tts");
+    }
+
+    cfg.maxBatchSize = static_cast<size_t>(
+        envUlong("TTS_MAX_BATCH_SIZE", defaults::TTS_MAX_BATCH_SIZE));
+    cfg.maxUsers =
+        static_cast<size_t>(envUlong("TTS_MAX_USERS", defaults::PM_MAX_USERS));
+    cfg.connectTimeoutMs = static_cast<unsigned>(
+        envUlong("TTS_CONNECT_TIMEOUT_MS", defaults::PM_CONNECT_TIMEOUT_MS));
+    cfg.outputHangTimeoutMs = static_cast<unsigned>(envUlong(
+        "TTS_OUTPUT_HANG_TIMEOUT_MS", defaults::OUTPUT_HANG_TIMEOUT_MS));
+
+    cfg.taskQueueCapacity = static_cast<size_t>(
+        envUlong("TTS_TASK_QUEUE_CAPACITY", defaults::MAX_QUEUE_SIZE));
+    cfg.audioQueueCapacity = static_cast<size_t>(envUlong(
+        "TTS_AUDIO_QUEUE_CAPACITY", defaults::TTS_AUDIO_QUEUE_CAPACITY));
+    cfg.cancelQueueCapacity = static_cast<size_t>(
+        envUlong("TTS_CANCEL_QUEUE_CAPACITY", defaults::CANCEL_QUEUE_CAPACITY));
+
+    cfg.chunkTokens = static_cast<uint32_t>(
+        envUlong("TTS_CHUNK_TOKENS", defaults::TTS_CHUNK_TOKENS));
+    if (cfg.chunkTokens == 0 || cfg.chunkTokens > defaults::TTS_CHUNK_TOKENS) {
+      throw std::runtime_error("[Config] TTS_CHUNK_TOKENS must be in [1, " +
+                               std::to_string(defaults::TTS_CHUNK_TOKENS) +
+                               "]");
+    }
+    cfg.tokenizerPath = envString(
+        "TTS_TOKENIZER_PATH", tokenizerPath(ModelType::LLAMA_3_1_8B_INSTRUCT));
+    cfg.voiceSampleRateHz = static_cast<uint32_t>(envUlong(
+        "TTS_VOICE_SAMPLE_RATE_HZ", defaults::TTS_VOICE_SAMPLE_RATE_HZ));
+    cfg.voiceChannels = static_cast<uint16_t>(
+        envUlong("TTS_VOICE_CHANNELS", defaults::TTS_VOICE_CHANNELS));
+    cfg.audioSampleRateHz = static_cast<uint32_t>(envUlong(
+        "TTS_AUDIO_SAMPLE_RATE_HZ", defaults::TTS_AUDIO_SAMPLE_RATE_HZ));
+    cfg.audioChannels = static_cast<uint16_t>(
+        envUlong("TTS_AUDIO_CHANNELS", defaults::TTS_AUDIO_CHANNELS));
+
+    cfg.encoderSocketDescriptorPrefix =
+        envString("TTS_ENCODER_SOCKET_DESCRIPTOR_PREFIX",
+                  defaults::TTS_ENCODER_SOCKET_DESCRIPTOR_PREFIX);
+    cfg.speechlmSocketDescriptorPrefix =
+        envString("TTS_SPEECHLM_SOCKET_DESCRIPTOR_PREFIX",
+                  defaults::TTS_SPEECHLM_SOCKET_DESCRIPTOR_PREFIX);
+    cfg.decoderSocketDescriptorPrefix =
+        envString("TTS_DECODER_SOCKET_DESCRIPTOR_PREFIX",
+                  defaults::TTS_DECODER_SOCKET_DESCRIPTOR_PREFIX);
+
     return cfg;
   }();
   return cached;
@@ -477,11 +612,15 @@ RunnerConfig workerRunnerConfig(size_t workerIndex) {
       cfg.visible_devices = visibleDevicesForWorker(workerIndex);
       return cfg;
     }
+    case ModelService::TTS: {
+      auto cfg = ttsEngineConfig();
+      return cfg;
+    }
     case ModelService::EMBEDDING:
       return EmbeddingConfig{};
     case ModelService::LLM:
     default:
-      return llmEngineConfig();
+      return blazeConfig();
   }
 }
 
@@ -495,6 +634,7 @@ ModelType modelType() {
       return ModelType::LLAMA_3_1_8B_INSTRUCT;
     if (m == "openai/gpt-oss-120b") return ModelType::GPT_OSS_120B;
     if (m == "MiniMaxAI/MiniMax-M2.7") return ModelType::MINIMAX_M2_7;
+    if (m == "MiniMaxAI/MiniMax-M3") return ModelType::MINIMAX_M3;
     if (m == "zai-org/GLM-5.1") return ModelType::GLM_5_1;
     if (m == "zai-org/GLM-5.2") return ModelType::GLM_5_2;
     if (m == "deepseek-ai/DeepSeek-V4-Pro") return ModelType::DEEPSEEK_V4_PRO;
@@ -509,33 +649,9 @@ Model model() {
   return cached;
 }
 
-bool sampleOnlyInReasoning() {
-  switch (modelType()) {
-    // DeepSeek samples only inside the reasoning phase; argmax otherwise.
-    case ModelType::DEEPSEEK_R1_0528:
-      return true;
-    case ModelType::LLAMA_3_1_8B_INSTRUCT:
-    case ModelType::KIMI_K2_6:
-    case ModelType::KIMI_K2_7_CODE:
-    case ModelType::GPT_OSS_120B:
-    case ModelType::MINIMAX_M2_7:
-    case ModelType::GLM_5_1:
-    case ModelType::GLM_5_2:
-    case ModelType::DEEPSEEK_V4_PRO:
-      return false;
-  }
-  return false;
-}
-
 LLMMode llmMode() {
   static const LLMMode cached =
       llmModeFromString(envStringLower("LLM_MODE", defaults::LLM_MODE));
-  return cached;
-}
-
-SchedulingPolicy schedulingPolicy() {
-  static const SchedulingPolicy cached = schedulingPolicyFromString(
-      envStringLower("SCHEDULING_POLICY", defaults::SCHEDULING_POLICY));
   return cached;
 }
 
@@ -639,9 +755,84 @@ size_t maxTokensToPrefillOnDecode() {
                defaults::MAX_TOKENS_TO_PREFILL_ON_DECODE));
 }
 
+namespace {
+
+/** Extract a non-negative integer `max_position_embeddings` from a JSON node,
+ *  if present. */
+std::optional<size_t> readMaxPositionEmbeddings(const Json::Value& node) {
+  if (!node.isObject() || !node.isMember("max_position_embeddings")) {
+    return std::nullopt;
+  }
+  const Json::Value& v = node["max_position_embeddings"];
+  if (v.isUInt64()) return static_cast<size_t>(v.asUInt64());
+  if (v.isInt64()) {
+    const int64_t x = v.asInt64();
+    if (x > 0) return static_cast<size_t>(x);
+  }
+  return std::nullopt;
+}
+
+/** Resolve the model's max context length from its HF `config.json`
+ *  (tokenizers/<MODEL>/config.json). Reads top-level `max_position_embeddings`
+ *  first, then falls back to `text_config.max_position_embeddings` for
+ *  multimodal wrapper configs (e.g. Kimi-K2.7-Code, MiniMax-M3). Returns
+ *  `defaults::MAX_CONTEXT_LENGTH` when the file is missing, unreadable, or has
+ *  no such field. */
+size_t resolveMaxContextLength() {
+  const std::string path = modelConfigPath();
+  if (path.empty()) {
+    TT_LOG_WARN(
+        "[Config] Model config.json not found for MODEL; using default "
+        "MAX_CONTEXT_LENGTH={}",
+        defaults::MAX_CONTEXT_LENGTH);
+    return defaults::MAX_CONTEXT_LENGTH;
+  }
+  std::ifstream in(path);
+  if (!in) {
+    TT_LOG_WARN(
+        "[Config] Could not open {}; using default MAX_CONTEXT_LENGTH={}", path,
+        defaults::MAX_CONTEXT_LENGTH);
+    return defaults::MAX_CONTEXT_LENGTH;
+  }
+  Json::Value root;
+  Json::CharReaderBuilder builder;
+  std::string errs;
+  if (!Json::parseFromStream(builder, in, &root, &errs)) {
+    TT_LOG_WARN(
+        "[Config] Failed to parse {}: {}; using default MAX_CONTEXT_LENGTH={}",
+        path, errs, defaults::MAX_CONTEXT_LENGTH);
+    return defaults::MAX_CONTEXT_LENGTH;
+  }
+  if (auto v = readMaxPositionEmbeddings(root)) return *v;
+  if (auto v = readMaxPositionEmbeddings(root["text_config"])) return *v;
+  TT_LOG_WARN(
+      "[Config] {} has no max_position_embeddings field; using default "
+      "MAX_CONTEXT_LENGTH={}",
+      path, defaults::MAX_CONTEXT_LENGTH);
+  return defaults::MAX_CONTEXT_LENGTH;
+}
+
+}  // namespace
+
 size_t maxContextLength() {
-  static const size_t cached = static_cast<size_t>(
-      envUlong("MAX_CONTEXT_LENGTH", defaults::MAX_CONTEXT_LENGTH));
+  // MAX_CONTEXT_LENGTH env wins so operators can shrink/expand the window
+  // without editing weights; otherwise honor the model card's
+  // max_position_embeddings so the default automatically tracks whatever
+  // MODEL is currently deployed.
+  static const size_t cached = [] {
+    const char* v = std::getenv("MAX_CONTEXT_LENGTH");
+    if (v && *v) {
+      try {
+        return static_cast<size_t>(std::stoul(v));
+      } catch (const std::exception&) {
+        TT_LOG_WARN(
+            "[Config] MAX_CONTEXT_LENGTH={} is not a valid unsigned integer; "
+            "falling back to model config.json",
+            v);
+      }
+    }
+    return resolveMaxContextLength();
+  }();
   return cached;
 }
 
@@ -663,18 +854,18 @@ size_t minTokensToCopy() {
   return cached;
 }
 
-size_t kvCacheBlockSize() {
+size_t prefixCacheBlockSize() {
   static const size_t cached = []() {
     return kvCacheSizeFromEnv("KV_CACHE_BLOCK_SIZE",
-                              defaults::KV_CACHE_BLOCK_SIZE);
+                              defaults::PREFIX_CACHE_BLOCK_SIZE);
   }();
   return cached;
 }
 
-size_t kvCacheFirstBlockSize() {
+size_t prefixCacheFirstBlockSize() {
   static const size_t cached = []() {
     return kvCacheSizeFromEnv("KV_CACHE_FIRST_BLOCK_SIZE",
-                              defaults::KV_CACHE_FIRST_BLOCK_SIZE);
+                              defaults::PREFIX_CACHE_FIRST_BLOCK_SIZE);
   }();
   return cached;
 }
@@ -698,6 +889,11 @@ bool useFastMode() {
 
 bool enableMigration() {
   return envBool("ENABLE_MIGRATION", defaults::ENABLE_MIGRATION);
+}
+
+bool prefillUseRemoteKvManager() {
+  return envBool("PREFILL_USE_REMOTE_KV_MANAGER",
+                 defaults::PREFILL_USE_REMOTE_KV_MANAGER);
 }
 
 std::string migrationCmdQueueName() {
@@ -763,8 +959,25 @@ bool dynamoEndpointEnabled() {
   return envBool("DYNAMO_ENDPOINT_ENABLED", defaults::DYNAMO_ENDPOINT_ENABLED);
 }
 
+bool dynamoRoutingEnabled() {
+  return envBool("DYNAMO_ROUTING", defaults::DYNAMO_ROUTING);
+}
+
 std::string dynamoBindHost() {
   return envString("DYNAMO_BIND_HOST", defaults::DYNAMO_BIND_HOST);
+}
+
+uint16_t dynamoBindPort() {
+  const unsigned long port =
+      envUlong("DYNAMO_BIND_PORT", defaults::DYNAMO_BIND_PORT);
+  if (port > 65535) {
+    TT_LOG_WARN(
+        "[Config] DYNAMO_BIND_PORT={} is out of range [0, 65535], using "
+        "default={}",
+        port, defaults::DYNAMO_BIND_PORT);
+    return defaults::DYNAMO_BIND_PORT;
+  }
+  return static_cast<uint16_t>(port);
 }
 
 std::string dynamoEtcdEndpoints() {
@@ -785,11 +998,13 @@ std::string specDecodeMode() {
   return envString("SPEC_DECODE_MODE", defaults::SPEC_DECODE_MODE);
 }
 
-size_t mtpLevel() {
-  auto val = static_cast<size_t>(envUlong("MTP_LEVEL", defaults::MTP_LEVEL));
-  if (val > 4) {
-    throw std::runtime_error("MTP_LEVEL must be <= 4");
-  }
+uint32_t blazeNumberOfPipelineStages() {
+  return static_cast<uint32_t>(envUlong("BLAZE_NUMBER_OF_PIPELINE_STAGES",
+                                        resolveBlazeNumberOfPipelineStages()));
+}
+
+size_t specLevel() {
+  auto val = static_cast<size_t>(envUlong("SPEC_LEVEL", defaults::SPEC_LEVEL));
   return val;
 }
 
@@ -813,6 +1028,54 @@ std::string dynamoComponent() {
 
 std::string dynamoEndpointName() {
   return envString("DYNAMO_ENDPOINT_NAME", defaults::DYNAMO_ENDPOINT_NAME);
+}
+
+std::string dynamoDiscoveryBackend() {
+  return envString("DYNAMO_DISCOVERY_BACKEND",
+                   defaults::DYNAMO_DISCOVERY_BACKEND);
+}
+
+std::string dynamoKubeApiServer() {
+  if (const char* v = std::getenv("DYNAMO_KUBE_API_SERVER"); v && *v) {
+    return v;
+  }
+  const char* host = std::getenv("KUBERNETES_SERVICE_HOST");
+  if (host && *host) {
+    const char* port = std::getenv("KUBERNETES_SERVICE_PORT");
+    const std::string portStr = (port && *port) ? port : "443";
+    return "https://" + std::string(host) + ":" + portStr;
+  }
+  // DNS fallback
+  return "https://kubernetes.default.svc";
+}
+
+std::string dynamoKubeTokenPath() {
+  return envString("DYNAMO_KUBE_TOKEN_PATH", defaults::DYNAMO_KUBE_TOKEN_PATH);
+}
+
+bool dynamoKubeValidateCert() {
+  return envBool("DYNAMO_KUBE_VALIDATE_CERT",
+                 defaults::DYNAMO_KUBE_VALIDATE_CERT);
+}
+
+std::string dynamoPodName() { return envString("POD_NAME", ""); }
+
+std::string dynamoPodUid() { return envString("POD_UID", ""); }
+
+std::string dynamoPodNamespace() {
+  if (const char* v = std::getenv("POD_NAMESPACE"); v && *v) {
+    return v;
+  }
+  std::ifstream f(defaults::DYNAMO_KUBE_NAMESPACE_PATH);
+  if (f) {
+    std::string ns;
+    std::getline(f, ns);
+    while (!ns.empty() && std::isspace(static_cast<unsigned char>(ns.back()))) {
+      ns.pop_back();
+    }
+    return ns;
+  }
+  return "";
 }
 
 /**

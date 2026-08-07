@@ -87,6 +87,19 @@ struct TransferStatus {
 };
 
 /**
+ * @brief Opaque handle to a batch submitted asynchronously via
+ *        ITransferEngine::submitBatch, awaited with ITransferEngine::waitBatch.
+ *
+ * `value` is engine-private (the Mooncake BatchID) and meaningless to callers.
+ * A default-constructed handle is invalid — it means submitBatch failed before
+ * dispatch, and waitBatch on it reports FAILED.
+ */
+struct TransferHandle {
+  uint64_t value = 0;  ///< engine-private; do not interpret.
+  bool valid = false;  ///< false if the batch was never dispatched.
+};
+
+/**
  * @brief Storage mechanism a transfer addresses (issue #3890 core assumption:
  *        "Transfer Engine defines both Storage mechanism (host DRAM, device
  *        DRAM..) [and] Transport mechanism (TCP, RDMA..)").

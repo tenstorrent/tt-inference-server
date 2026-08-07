@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <vector>
 
@@ -39,10 +40,8 @@ class KvCacheMirror {
   uint64_t totalBytes() const { return layout_.totalBytes(); }
 
   /// Base of the registered host buffer (nullptr if empty).
-  uint8_t* base() { return buffer_.empty() ? nullptr : buffer_.data(); }
-  const uint8_t* base() const {
-    return buffer_.empty() ? nullptr : buffer_.data();
-  }
+  uint8_t* base() { return buffer_.get(); }
+  const uint8_t* base() const { return buffer_.get(); }
 
   /// Byte offset of a device address within the mirror; see KvCacheLayout.
   std::optional<uint64_t> offsetOf(LocalDeviceId device,
@@ -59,7 +58,14 @@ class KvCacheMirror {
 
  private:
   KvCacheLayout layout_;
-  std::vector<uint8_t> buffer_;
+  // Uninitialized on purpose: the buffer is a scratch mirror, not zero-state.
+  // Only chunks a migration actually writes are ever read back (see
+  // MooncakeKvReceiver::drain, which touches only that migration's chunks), so
+  // untouched bytes never reach a device. A value-initialized vector would
+  // eagerly zero (memset) all of totalBytes() — tens of GB for a full table —
+  // at construction; a default-init array lets those pages fault in lazily,
+  // only for the chunks that are actually staged.
+  std::unique_ptr<uint8_t[]> buffer_;
 };
 
 }  // namespace tt::transport

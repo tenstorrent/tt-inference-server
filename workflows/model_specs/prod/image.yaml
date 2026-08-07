@@ -152,8 +152,8 @@ templates:
 
 - weights:
     - black-forest-labs/FLUX.1-schnell
-  version: "0.10.1"
-  tt_metal_commit: 555f240
+  version: "0.18.0"
+  tt_metal_commit: "c49bb76"
   impl: tt_transformers
   min_disk_gb: 15
   min_ram_gb: 6
@@ -164,6 +164,8 @@ templates:
       max_concurrency: 1
       max_context: 65536  # 64 * 1024
       default_impl: true
+      override_tt_config:
+        trace_region_size: 55000000
   status: COMPLETE
 
 - weights:

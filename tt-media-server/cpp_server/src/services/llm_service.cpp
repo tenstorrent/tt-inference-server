@@ -9,6 +9,7 @@
 #include <stdexcept>
 #include <unordered_map>
 #include <unordered_set>
+#include <variant>
 
 #include "config/settings.hpp"
 #include "metrics/metrics.hpp"
@@ -198,11 +199,17 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
   TT_LOG_INFO("[Consumer-{}] Started", workerIdx);
 
   auto* worker = workerManager->worker(workerIdx);
-  if (!worker || !worker->cfg.result_queue) {
+  if (!worker) {
     TT_LOG_WARN("[Consumer-{}] No token buffer, exiting", workerIdx);
     return;
   }
-  auto resultQueue = worker->cfg.result_queue;
+  auto* resultQueuePtr = std::get_if<std::shared_ptr<tt::ipc::IResultQueue>>(
+      &worker->cfg.result_queue);
+  if (!resultQueuePtr || !*resultQueuePtr) {
+    TT_LOG_WARN("[Consumer-{}] No token buffer, exiting", workerIdx);
+    return;
+  }
+  auto resultQueue = *resultQueuePtr;
 
   std::unordered_map<
       uint32_t,
@@ -368,10 +375,8 @@ void LLMService::produceStream(
   }
 
   auto sequence = std::make_unique<tt::domain::llm::Sequence>(
-      taskId,
-      static_cast<int>(tt::config::llmEngineConfig().kvcache_block_size),
-      std::move(tokenIds), prompt.size(), request.slotId, request.prefillSlotId,
-      request.continuation, request.disaggregated,
+      taskId, std::move(tokenIds), prompt.size(), request.slotId,
+      request.prefillSlotId, request.continuation, request.disaggregated,
       std::make_unique<tt::domain::llm::SamplingParams>(
           tt::utils::mapper::mapSamplingParams(request)),
       request.kv_position_id, request.decode_position_id,
@@ -382,22 +387,29 @@ void LLMService::produceStream(
 
 void LLMService::abortRequest(uint32_t taskId) {
   // Atomically remove the stream callback and decrement pendingTasks.
+  // If the callback is already gone the request finished (final token delivered
+  // or a prior abort won the race). Treat this as a no-op so late disconnect /
+  // closeSession cancel paths do not log, cancel, or record finish_reason=abort
+  // on top of the real completion metrics.
   auto entry = streamCallbacks.take(taskId);
-  if (entry.has_value()) {
-    pendingTasks.fetch_sub(1);
-    tt::metrics::ServerMetrics::instance().setQueueDepth(
-        static_cast<double>(pendingTasks.load()));
+  if (!entry.has_value()) {
+    TT_LOG_DEBUG(
+        "[LLMService] abortRequest for task {} ignored (already finished)",
+        taskId);
+    return;
   }
+
+  pendingTasks.fetch_sub(1);
+  tt::metrics::ServerMetrics::instance().setQueueDepth(
+      static_cast<double>(pendingTasks.load()));
 
   tt::metrics::ServerMetrics::instance().onRequestCompleted(taskId, "abort");
 
   // Invoke the detached callback with isFinal=true. For streaming requests the
   // controller sets done=true BEFORE calling abortRequest, so the callback's
   // done->load() check returns immediately — no SSE data is sent.
-  if (entry.has_value()) {
-    auto abortChunk = makeAbortChunk(taskId);
-    entry->callback(abortChunk, /*isFinal=*/true);
-  }
+  auto abortChunk = makeAbortChunk(taskId);
+  entry->callback(abortChunk, /*isFinal=*/true);
 
   for (auto& cq : queueManager->cancelQueues) {
     cq->push(taskId);

@@ -29,12 +29,14 @@ RemoteKVManagerAdapter::BurstId RemoteKVManagerAdapter::start_burst(
         "[RemoteKVManagerAdapter] start_burst() called after shutdown()");
   }
 
-  auto [it, inserted] =
-      groups_.emplace(uuid, MigrationGroup{.token = uuid,
-                                           .pendingKafkaIds = {},
-                                           .closed = false,
-                                           .failed = false,
-                                           .failedReported = false});
+  auto [it, inserted] = groups_.emplace(
+      uuid, MigrationGroup{.token = uuid,
+                           .pendingKafkaIds = {},
+                           .totalKafkaRequests = 0,
+                           .startedAt = std::chrono::steady_clock::now(),
+                           .closed = false,
+                           .failed = false,
+                           .failedReported = false});
   if (!inserted) {
     // Duplicate uuid in flight — tt-llm-engine treats this as MigrationFailed
     // {DuplicateId}; we throw so callers crash loudly at the source of the bug
@@ -45,21 +47,21 @@ RemoteKVManagerAdapter::BurstId RemoteKVManagerAdapter::start_burst(
         " (a burst with this uuid is already in flight)");
   }
 
-  TT_LOG_DEBUG("[RemoteKVManagerAdapter] start_burst: uuid={}", uuid);
+  TT_LOG_DEBUG("[RemoteKVManagerAdapter] start_burst: migration_id={}", uuid);
   return uuid;
 }
 
 void RemoteKVManagerAdapter::enqueue_migration_in_burst(
-    BurstId burst, int /*remote_endpoint_id*/, uint32_t src_slot,
-    uint32_t dst_slot, uint32_t layer_start, uint32_t layer_end_exclusive,
-    uint32_t pos_start, uint32_t pos_end_exclusive) {
+    BurstId burst, int /*remote_endpoint_id*/, uint32_t srcSlot,
+    uint32_t dstSlot, uint32_t layerStart, uint32_t layerEndExclusive,
+    uint32_t posStart, uint32_t posEndExclusive) {
   // remote_endpoint_id ignored: Kafka topic routing is not endpoint-specific.
-  if (layer_end_exclusive <= layer_start) {
+  if (layerEndExclusive <= layerStart) {
     throw std::invalid_argument(
         "[RemoteKVManagerAdapter] enqueue_migration_in_burst(): empty layer "
         "range");
   }
-  if (pos_end_exclusive <= pos_start) {
+  if (posEndExclusive <= posStart) {
     throw std::invalid_argument(
         "[RemoteKVManagerAdapter] enqueue_migration_in_burst(): empty position "
         "range");
@@ -88,28 +90,35 @@ void RemoteKVManagerAdapter::enqueue_migration_in_burst(
         std::to_string(burst) + " is already closed (finish_burst was called)");
   }
 
-  for (uint32_t layer = layer_start; layer < layer_end_exclusive; ++layer) {
+  for (uint32_t layer = layerStart; layer < layerEndExclusive; ++layer) {
     const MigrationRequest request{
-        .src_slot = src_slot,
-        .dst_slot = dst_slot,
+        .src_slot = srcSlot,
+        .dst_slot = dstSlot,
         .layer_begin = layer,
         .layer_end = layer + 1,
-        .src_position_begin = pos_start,
-        .src_position_end = pos_end_exclusive,
-        .dst_position_begin = pos_start,
-        .dst_position_end = pos_end_exclusive,
+        .src_position_begin = posStart,
+        .src_position_end = posEndExclusive,
+        .dst_position_begin = posStart,
+        .dst_position_end = posEndExclusive,
+        .migration_id = burst,
     };
-    const uint64_t kafkaId = kvManager_->migrate(request);
-    group.pendingKafkaIds.insert(kafkaId);
-    kafkaToGroup_.emplace(kafkaId, burst);
+    const uint64_t kafkaRequestId = kvManager_->migrate(request);
+    group.pendingKafkaIds.insert(kafkaRequestId);
+    ++group.totalKafkaRequests;
+    kafkaToGroup_.emplace(kafkaRequestId, burst);
+    TT_LOG_DEBUG(
+        "[RemoteKVManagerAdapter] migration_id={} kafka_request_id={} "
+        "slot {}->{}, layers [{},{}), pos [{},{})",
+        burst, kafkaRequestId, srcSlot, dstSlot, layer, layer + 1, posStart,
+        posEndExclusive);
   }
 
   TT_LOG_DEBUG(
-      "[RemoteKVManagerAdapter] enqueue_migration_in_burst: uuid={}, slot "
-      "{}->{}, layers [{},{}) fanned out ({} pending Kafka req(s) total), "
+      "[RemoteKVManagerAdapter] enqueue_migration_in_burst: migration_id={}, "
+      "slot {}->{}, layers [{},{}) fanned out ({} pending Kafka req(s) total), "
       "pos [{},{})",
-      burst, src_slot, dst_slot, layer_start, layer_end_exclusive,
-      group.pendingKafkaIds.size(), pos_start, pos_end_exclusive);
+      burst, srcSlot, dstSlot, layerStart, layerEndExclusive,
+      group.pendingKafkaIds.size(), posStart, posEndExclusive);
 }
 
 RemoteKVManagerAdapter::MigrationToken RemoteKVManagerAdapter::finish_burst(
@@ -137,8 +146,8 @@ RemoteKVManagerAdapter::MigrationToken RemoteKVManagerAdapter::finish_burst(
   group.closed = true;
 
   TT_LOG_DEBUG(
-      "[RemoteKVManagerAdapter] finish_burst: uuid={}, {} Kafka req(s) "
-      "still pending; poll() will fire terminal event once drained",
+      "[RemoteKVManagerAdapter] finish_burst: migration_id={}, {} Kafka "
+      "req(s) still pending; poll() will fire terminal event once drained",
       burst, group.pendingKafkaIds.size());
   return burst;
 }
@@ -159,6 +168,16 @@ RemoteKVManagerAdapter::MigrationToken RemoteKVManagerAdapter::migrate(
 }
 
 int RemoteKVManagerAdapter::poll() {
+  const auto logMigrationSummary = [](const MigrationGroup& group) {
+    const auto latency = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - group.startedAt);
+    TT_LOG_INFO(
+        "[RemoteKVManagerAdapter] migration_id={} kafka_requests={} "
+        "total_migration_latency_ms={} status={}",
+        group.token, group.totalKafkaRequests, latency.count(),
+        group.failed ? "FAILED" : "SUCCESSFUL");
+  };
+
   // Snapshot the pending Kafka ids under the lock; do the getStatus() calls
   // (which take the impl's own lock) OUTSIDE our lock to avoid nested-lock
   // ordering issues, and to keep the critical section small.
@@ -166,8 +185,8 @@ int RemoteKVManagerAdapter::poll() {
   {
     std::lock_guard<std::mutex> lock(mtx_);
     toCheck.reserve(kafkaToGroup_.size());
-    for (const auto& [kafkaId, _token] : kafkaToGroup_) {
-      toCheck.push_back(kafkaId);
+    for (const auto& [kafkaRequestId, _token] : kafkaToGroup_) {
+      toCheck.push_back(kafkaRequestId);
     }
   }
 
@@ -185,15 +204,16 @@ int RemoteKVManagerAdapter::poll() {
   std::vector<PendingFailure> failuresToFire;
   std::vector<PendingComplete> completionsToFire;
 
-  for (uint64_t kafkaId : toCheck) {
-    const MigrationStatus status = kvManager_->getMigrationStatus(kafkaId);
+  for (uint64_t kafkaRequestId : toCheck) {
+    const MigrationStatus status =
+        kvManager_->getMigrationStatus(kafkaRequestId);
     if (status == MigrationStatus::IN_PROGRESS ||
         status == MigrationStatus::UNKNOWN) {
       continue;
     }
 
     std::lock_guard<std::mutex> lock(mtx_);
-    auto kit = kafkaToGroup_.find(kafkaId);
+    auto kit = kafkaToGroup_.find(kafkaRequestId);
     if (kit == kafkaToGroup_.end()) {
       // Already drained (concurrent migrate() unlikely; defensive).
       continue;
@@ -207,7 +227,7 @@ int RemoteKVManagerAdapter::poll() {
       continue;
     }
     MigrationGroup& group = git->second;
-    group.pendingKafkaIds.erase(kafkaId);
+    group.pendingKafkaIds.erase(kafkaRequestId);
 
     if (status == MigrationStatus::FAILED) {
       // Fail-fast: mark sticky, fire onFailed_ once. Keep draining the rest
@@ -235,6 +255,7 @@ int RemoteKVManagerAdapter::poll() {
         // by failedReported == true so we never emit both onFailed_ and this.
         completionsToFire.push_back({.token = token, .ok = false});
       }
+      logMigrationSummary(group);
       groups_.erase(git);
       drainCv_.notify_all();
     }
@@ -257,6 +278,7 @@ int RemoteKVManagerAdapter::poll() {
         } else if (!onFailed_) {
           completionsToFire.push_back({.token = g.token, .ok = false});
         }
+        logMigrationSummary(g);
         it = groups_.erase(it);
         drainCv_.notify_all();
       } else {
@@ -303,7 +325,7 @@ void RemoteKVManagerAdapter::on_endpoint_disconnected(
 }
 
 void RemoteKVManagerAdapter::on_connection_received(
-    std::function<void(int remote_endpoint_id)> cb) {
+    std::function<void(int /*remote_endpoint_id*/)> cb) {
   onConnectionReceived_ = std::move(cb);
 }
 

@@ -44,11 +44,6 @@ tt::domain::llm::SamplingParams mapSamplingParams(
   params.truncate_prompt_tokens = request.truncate_prompt_tokens;
   params.fast_mode = config::useFastMode() || request.fast_mode;
 
-  if (request.response_format.has_value()) {
-    params.response_format_type = request.response_format->type;
-    params.json_schema_str = request.response_format->json_schema_str;
-  }
-
   return params;
 }
 

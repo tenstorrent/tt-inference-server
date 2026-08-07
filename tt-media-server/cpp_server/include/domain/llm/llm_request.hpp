@@ -15,7 +15,6 @@
 #include "domain/base_request.hpp"
 #include "domain/json_field.hpp"
 #include "domain/llm/chat_message.hpp"
-#include "domain/response_format.hpp"
 #include "domain/session.hpp"
 
 namespace tt::domain::llm {
@@ -135,9 +134,11 @@ struct LLMRequest : BaseRequest {
   // First free index in the per-user KV cache: the absolute KV position where
   // the worker writes the next token's KV, equal to the position of the first
   // token handed to the worker. The runner forwards it verbatim as
-  // `position_id`. Set on continuations (prefix-cache hits, response-id hits,
-  // slot copies) to `matched_tokens + accumulated_think_tokens`, where
-  // `matched_tokens` is the trimmed prefix length.
+  // `position_id`. Set on every resolved request: continuations (prefix-cache
+  // hits, response-id hits, slot copies) get `matched_tokens +
+  // accumulated_think_tokens`, where `matched_tokens` is the trimmed prefix
+  // length; a brand-new session matches no prefix, so its first free index is
+  // 0.
   //
   // One intentional exception: a disaggregated decode handoff reprocesses the
   // last prompt token (the prefill-generated token is not migrated), so it is
@@ -160,9 +161,6 @@ struct LLMRequest : BaseRequest {
   int decode_skip_tokens = 0;
 
   std::optional<bool> disaggregation_override;
-
-  // Structured output constraint
-  std::optional<ResponseFormat> response_format;
 
   // When true, skip adding <bos><user> and <assistant> tags in chat template.
   bool skip_apply_chat_template = false;

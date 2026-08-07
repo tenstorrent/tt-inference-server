@@ -59,8 +59,8 @@ int computeExpectedCachedTokens(int promptTokens, size_t firstBlockSize,
 
 struct PrefixCacheTestConfig {
   DynamoConfig dynamo;
-  size_t firstBlockSize = tt::config::defaults::KV_CACHE_FIRST_BLOCK_SIZE;
-  size_t blockSize = tt::config::defaults::KV_CACHE_BLOCK_SIZE;
+  size_t firstBlockSize = tt::config::defaults::PREFIX_CACHE_FIRST_BLOCK_SIZE;
+  size_t blockSize = tt::config::defaults::PREFIX_CACHE_BLOCK_SIZE;
 
   static PrefixCacheTestConfig fromEnv() {
     PrefixCacheTestConfig cfg;

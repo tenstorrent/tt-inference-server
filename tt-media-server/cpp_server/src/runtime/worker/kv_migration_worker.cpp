@@ -3,6 +3,7 @@
 
 #include "runtime/worker/kv_migration_worker.hpp"
 
+#include <string>
 #include <utility>
 
 #include "messaging/migration_message.hpp"
@@ -32,7 +33,17 @@ KvMigrationWorker::KvMigrationWorker(
   }
 }
 
-KvMigrationWorker::~KvMigrationWorker() { stop(); }
+KvMigrationWorker::~KvMigrationWorker() {
+  stop();  // join the poll thread first: no new jobs are submitted after this.
+  // Then drain the executor while this worker is still fully valid. An async
+  // executor (e.g. MooncakeMigrationExecutor) finishes its in-flight job during
+  // destruction and fires its DoneCallback -> publishAck, which locks ackMutex
+  // and uses ackProducer. Destroying it here, in the dtor body, guarantees
+  // those members still exist. Relying on member-destruction order would be
+  // fragile: `executor` is declared before `ackMutex`, so by default it is torn
+  // down AFTER ackMutex -- the in-flight ack would then lock a destroyed mutex.
+  executor.reset();
+}
 
 void KvMigrationWorker::start() {
   bool expected = false;
@@ -75,7 +86,8 @@ void KvMigrationWorker::consumerLoop() {
       continue;
     }
 
-    const uint64_t migrationId = parsed->migration_id;
+    const uint64_t kafkaRequestId = parsed->kafka_request_id;
+    const std::optional<uint64_t> migrationId = parsed->migration_id;
     const tt::services::MigrationRequest apiReq{
         .src_slot = parsed->src_slot,
         .dst_slot = parsed->dst_slot,
@@ -85,32 +97,41 @@ void KvMigrationWorker::consumerLoop() {
         .src_position_end = parsed->src_position_end,
         .dst_position_begin = parsed->dst_position_begin,
         .dst_position_end = parsed->dst_position_end,
+        .migration_id = migrationId,
     };
 
-    TT_LOG_DEBUG("[KvMigrationWorker] dispatching migration_id={} to executor",
-                 migrationId);
+    TT_LOG_DEBUG(
+        "[KvMigrationWorker] dispatching kafka_request_id={} "
+        "migration_id={} to executor",
+        kafkaRequestId,
+        migrationId.has_value() ? std::to_string(*migrationId) : "none");
 
     if (!executor) {
       // Surface the failure rather than silently dropping the request.
-      publishAck(migrationId, tt::services::MigrationStatus::FAILED);
+      publishAck(kafkaRequestId, migrationId,
+                 tt::services::MigrationStatus::FAILED);
       continue;
     }
 
     // execute() is contractually non-blocking; the callback may fire on
     // this thread (synchronous Stub) or on an executor-owned thread.
-    executor->execute(
-        migrationId, apiReq,
-        [this, migrationId](tt::services::MigrationStatus status) {
-          publishAck(migrationId, status);
-        });
+    // Transport job uuid stays the per-request kafkaRequestId so parallel
+    // layers of the same burst do not collide on the control channel.
+    executor->execute(kafkaRequestId, apiReq,
+                      [this, kafkaRequestId,
+                       migrationId](tt::services::MigrationStatus status) {
+                        publishAck(kafkaRequestId, migrationId, status);
+                      });
   }
 
   TT_LOG_INFO("[KvMigrationWorker] consumer loop exited");
 }
 
-void KvMigrationWorker::publishAck(uint64_t migrationId,
+void KvMigrationWorker::publishAck(uint64_t kafkaRequestId,
+                                   std::optional<uint64_t> migrationId,
                                    tt::services::MigrationStatus status) {
   const tt::messaging::MigrationResponseMessage ackMsg{
+      .kafka_request_id = kafkaRequestId,
       .migration_id = migrationId,
       .status = status,
   };
@@ -119,8 +140,9 @@ void KvMigrationWorker::publishAck(uint64_t migrationId,
   if (!ackProducer) {
     TT_LOG_ERROR(
         "[KvMigrationWorker] no ackProducer; cannot publish ack for "
-        "migration_id={}",
-        migrationId);
+        "kafka_request_id={} migration_id={}",
+        kafkaRequestId,
+        migrationId.has_value() ? std::to_string(*migrationId) : "none");
     return;
   }
 
@@ -135,11 +157,17 @@ void KvMigrationWorker::publishAck(uint64_t migrationId,
 
   if (!sent) {
     TT_LOG_ERROR(
-        "[KvMigrationWorker] ackProducer.send failed for migration_id={}: {}",
-        migrationId, err);
+        "[KvMigrationWorker] ackProducer.send failed for kafka_request_id={} "
+        "migration_id={}: {}",
+        kafkaRequestId,
+        migrationId.has_value() ? std::to_string(*migrationId) : "none", err);
   } else {
-    TT_LOG_DEBUG("[KvMigrationWorker] published ack migration_id={} status={}",
-                 migrationId, static_cast<int>(status));
+    TT_LOG_DEBUG(
+        "[KvMigrationWorker] published ack kafka_request_id={} "
+        "migration_id={} status={}",
+        kafkaRequestId,
+        migrationId.has_value() ? std::to_string(*migrationId) : "none",
+        static_cast<int>(status));
   }
 }
 

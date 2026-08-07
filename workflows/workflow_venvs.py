@@ -229,6 +229,137 @@ def check_docker_available(
     return True
 
 
+INFERENCEX_REPO_URL = "https://github.com/SemiAnalysisAI/InferenceX.git"
+# Records the revision the checkout is currently on, so a repeat run with the
+# same pin skips the fetch + reinstall and a run with a different pin does not.
+_INFERENCEX_REF_STAMP = ".inferencex_ref"
+
+
+def setup_agentic_traces(
+    venv_config: VenvConfig,
+    model_spec: "ModelSpec",  # noqa: F821
+) -> bool:
+    """Hook for AGENTIC_TRACES: clone InferenceX at the ModelSpec's pinned ref.
+
+    The agentic-trace client is the AIPerf fork vendored in InferenceX (it owns
+    the ``inferencex-agentx-mvp`` scenario and the Weka dataset loaders), so the
+    pinned revision *is* part of the benchmark definition. The ref comes from
+    the per-ModelSpec config rather than a module constant, which is why this
+    runs as a setup hook -- ``VenvConfig.setup`` passes the resolved spec in.
+
+    Re-entrant: an existing checkout already on the configured ref is left
+    alone, and a different ref re-checkouts and re-installs so a run can never
+    silently benchmark a client it was not pinned to.
+    """
+    from reference_config.agentic_traces.agentic_traces_config import (
+        TraceSource,
+        get_agentic_traces_config,
+    )
+
+    config = get_agentic_traces_config(model_spec)
+    if config is None:
+        logger.error(
+            "No agentic-traces config registered for model_id=%s. Add an entry "
+            "to reference_config/agentic_traces/agentic_traces_config.py before "
+            "running --workflow agentic_traces for this model.",
+            getattr(model_spec, "model_id", "<unknown>"),
+        )
+        return False
+
+    # The InferenceX AIPerf fork is only needed for inferencex_agentx runs. A
+    # config whose runs are all SwarmOne relies solely on the swo-bench package
+    # installed from agentic-traces.txt, so skip the multi-minute clone/install.
+    if not any(
+        run.trace_source is TraceSource.INFERENCEX_AGENTX for run in config.runs
+    ):
+        logger.info(
+            "No InferenceX runs configured for model_id=%s; skipping InferenceX "
+            "checkout (SwarmOne swo-bench is installed from agentic-traces.txt).",
+            getattr(model_spec, "model_id", "<unknown>"),
+        )
+        return True
+
+    git_ref = config.inferencex_git_ref
+    repo_dir = venv_config.venv_path / "InferenceX"
+    stamp_file = venv_config.venv_path / _INFERENCEX_REF_STAMP
+
+    if repo_dir.is_dir() and stamp_file.is_file():
+        if stamp_file.read_text().strip() == git_ref:
+            logger.info(
+                "InferenceX already checked out at %s in %s; skipping setup.",
+                git_ref,
+                repo_dir,
+            )
+            return True
+        logger.info(
+            "InferenceX checkout is on a different ref than the configured %s; "
+            "re-checking out and reinstalling.",
+            git_ref,
+        )
+
+    if not repo_dir.is_dir():
+        if (
+            run_command(f"git clone {INFERENCEX_REPO_URL} {repo_dir}", logger=logger)
+            != 0
+        ):
+            return False
+
+    # Fetch everything before checkout: a bare `git checkout <sha>` fails on a
+    # shallow/stale clone, and the pin may be newer than the initial clone.
+    if run_command(f"git -C {repo_dir} fetch --tags origin", logger=logger) != 0:
+        return False
+    if run_command(f"git -C {repo_dir} checkout --force {git_ref}", logger=logger) != 0:
+        logger.error(
+            "Could not check out InferenceX ref %s. Verify the ref exists in %s.",
+            git_ref,
+            INFERENCEX_REPO_URL,
+        )
+        return False
+    # The vendored aiperf lives in a submodule-bearing tree; without this the
+    # editable install below imports a half-populated package.
+    if (
+        run_command(
+            f"git -C {repo_dir} submodule update --init --recursive", logger=logger
+        )
+        != 0
+    ):
+        return False
+
+    logger.warning(
+        "Installing the InferenceX AIPerf fork; this pulls transformers from "
+        "git and may take 5 to 15+ minutes on first run ..."
+    )
+    agentic_requirements = repo_dir / "utils" / "agentic-benchmark" / "requirements.txt"
+    vendored_aiperf = repo_dir / "utils" / "aiperf"
+    if not vendored_aiperf.is_dir():
+        logger.error(
+            "Expected the vendored AIPerf fork at %s; the InferenceX layout at "
+            "ref %s is not what this workflow expects.",
+            vendored_aiperf,
+            git_ref,
+        )
+        return False
+    # One resolve pass for both so uv reconciles the fork's pins with the
+    # agentic-benchmark helper deps instead of one clobbering the other.
+    install_cmd = (
+        f"{UV_EXEC} pip install --managed-python "
+        f"--python {venv_config.venv_python} "
+        f"--index-strategy unsafe-best-match "
+        f"-r {agentic_requirements} -e {vendored_aiperf}"
+    )
+    if run_command(install_cmd, logger=logger) != 0:
+        return False
+
+    stamp_file.write_text(f"{git_ref}\n")
+    logger.info("InferenceX ready at %s (ref %s)", repo_dir, git_ref)
+    return True
+
+
+def get_inferencex_repo_path(venv_config: VenvConfig) -> Path:
+    """Location of the InferenceX checkout inside the AGENTIC_TRACES venv."""
+    return venv_config.venv_path / "InferenceX"
+
+
 def setup_evals_meta(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",
@@ -365,7 +496,7 @@ STRUCTURED_OUTPUT_FETCH_FILES = (
 
 # Filename of the structured-output benchmark script downloaded into the
 # BENCHMARKS_VLLM venv work_dir by fetch_structured_output_scripts().
-# Imported by benchmarking/run_benchmarks.py to locate the script at run time.
+# Used to locate the structured-output benchmark script at run time.
 STRUCTURED_OUTPUT_SCRIPT_NAME = "benchmark_serving_structured_output.py"
 
 
@@ -420,174 +551,6 @@ def _fetch_structured_output_scripts(
     return True
 
 
-# Sentinel marker appended to lm_eval's api_models.py so the streaming patch is
-# applied at most once per venv (idempotent across repeated setup runs).
-_LM_EVAL_CHAT_STREAM_SENTINEL = "# === TT patch: chat-completions SSE streaming ==="
-
-# Monkeypatch appended to the END of lm_eval/models/api_models.py (after
-# TemplateAPI is defined). Stock _consume_sse_stream only handled text-completion
-# chunks (choice["text"]) and emitted {"index","text"}. Chat-completions stream
-# tokens in choice["delta"]["content"] and the chat parser reads
-# choice["message"]["content"], so streamed chat responses raised
-# KeyError: 'message'. This makes streaming handle both shapes, and teaches the
-# synchronous model_call() path to consume SSE (stock sync path had none).
-_LM_EVAL_CHAT_STREAM_PATCH = """
-
-# === TT patch: chat-completions SSE streaming ===
-# Applied post-install by workflows.workflow_venvs.patch_evals_common_chat_streaming.
-def _tt_stream_chunk_text(choice: dict):
-    delta = choice.get("delta") or {}
-    if "content" in delta:
-        return delta.get("content") or "", True
-    return choice.get("text", ""), False
-
-
-def _tt_format_sse_response(accumulated_text: dict, uses_chat_chunks: bool) -> dict:
-    choices = []
-    for index, text in sorted(accumulated_text.items()):
-        if uses_chat_chunks:
-            choices.append({"index": index, "message": {"content": text}})
-        else:
-            choices.append({"index": index, "text": text})
-    return {"choices": choices}
-
-
-async def _tt_consume_sse_stream(self, response) -> dict:
-    accumulated_text = {}
-    uses_chat_chunks = False
-    try:
-        while True:
-            line_bytes = await response.content.readline()
-            if not line_bytes:
-                break
-            line = line_bytes.decode("utf-8").strip()
-            if not line or not line.startswith("data:"):
-                continue
-            data = line[len("data:"):].strip()
-            if data == "[DONE]":
-                break
-            try:
-                chunk = json.loads(data)
-            except json.JSONDecodeError:
-                continue
-            for choice in chunk.get("choices", []):
-                index = choice.get("index", 0)
-                text, is_chat_chunk = _tt_stream_chunk_text(choice)
-                uses_chat_chunks = uses_chat_chunks or is_chat_chunk
-                accumulated_text[index] = accumulated_text.get(index, "") + text
-    except BaseException as exc:
-        if not accumulated_text:
-            raise
-        prefix = "__PARTIAL_OUTPUT__ (" + repr(exc) + "): "
-        accumulated_text = {i: prefix + t for i, t in accumulated_text.items()}
-    return _tt_format_sse_response(accumulated_text, uses_chat_chunks)
-
-
-def _tt_consume_requests_sse_stream(response) -> dict:
-    accumulated_text = {}
-    uses_chat_chunks = False
-    try:
-        for line in response.iter_lines(decode_unicode=True):
-            if isinstance(line, bytes):
-                line = line.decode("utf-8")
-            line = str(line or "").strip()
-            if not line or not line.startswith("data:"):
-                continue
-            data = line[len("data:"):].strip()
-            if data == "[DONE]":
-                break
-            try:
-                chunk = json.loads(data)
-            except json.JSONDecodeError:
-                continue
-            for choice in chunk.get("choices", []):
-                index = choice.get("index", 0)
-                text, is_chat_chunk = _tt_stream_chunk_text(choice)
-                uses_chat_chunks = uses_chat_chunks or is_chat_chunk
-                accumulated_text[index] = accumulated_text.get(index, "") + text
-    except BaseException as exc:
-        if not accumulated_text:
-            raise
-        prefix = "__PARTIAL_OUTPUT__ (" + repr(exc) + "): "
-        accumulated_text = {i: prefix + t for i, t in accumulated_text.items()}
-    return _tt_format_sse_response(accumulated_text, uses_chat_chunks)
-
-
-def _tt_model_call(self, messages, *, generate: bool = True, gen_kwargs: dict = None, **kwargs):
-    gen_kwargs = copy.deepcopy(gen_kwargs)
-    payload = self._create_payload(
-        self.create_message(messages),
-        generate=generate,
-        gen_kwargs=gen_kwargs,
-        seed=self._seed,
-        eos=self.eos_string,
-        **kwargs,
-    )
-    is_streaming = generate and str(payload.get("stream", False)).lower() == "true"
-    try:
-        response = requests.post(
-            self.base_url,
-            json=payload,
-            headers=self.header,
-            verify=self.verify_certificate,
-            stream=is_streaming,
-        )
-        if not response.ok:
-            eval_logger.warning(
-                "API request failed with error message: " + response.text + ". Retrying..."
-            )
-        response.raise_for_status()
-        if is_streaming:
-            return _tt_consume_requests_sse_stream(response)
-        return response.json()
-    except RetryError:
-        eval_logger.error(
-            "API request failed after multiple retries. Please check the API status."
-        )
-        return None
-
-
-TemplateAPI._consume_sse_stream = _tt_consume_sse_stream
-TemplateAPI.model_call = _tt_model_call
-# === end TT patch ===
-"""
-
-
-def patch_evals_common_chat_streaming(
-    venv_config: VenvConfig,
-    model_spec: "ModelSpec",
-) -> bool:
-    """Hook for EVALS_COMMON: fix lm-eval chat-completions SSE streaming.
-
-    lm-eval's streaming path was written for the text-completions API and breaks
-    chat-completions streaming (KeyError: 'message'). Streaming is required
-    against the remote console to avoid 504s on long reasoning generations, so we
-    patch the installed package in place rather than disabling streaming. The
-    patch is appended once (guarded by a sentinel) to the module so it survives as
-    long as the venv exists; venv rebuilds re-apply it.
-    """
-    matches = sorted(
-        venv_config.venv_path.glob(
-            "lib/python*/site-packages/lm_eval/models/api_models.py"
-        )
-    )
-    if not matches:
-        logger.warning(
-            "Could not locate lm_eval/models/api_models.py under "
-            f"{venv_config.venv_path}; chat-completions streaming patch not "
-            "applied. Streaming evals may fail to parse generations."
-        )
-        return True
-    api_models_path = matches[0]
-    text = api_models_path.read_text()
-    if _LM_EVAL_CHAT_STREAM_SENTINEL in text:
-        logger.info(f"chat-streaming patch already present in {api_models_path}")
-        return True
-    api_models_path.write_text(text + _LM_EVAL_CHAT_STREAM_PATCH)
-    logger.info(f"applied chat-streaming patch to {api_models_path}")
-    return True
-
-
 def fetch_structured_output_scripts(
     venv_config: "VenvConfig",
     model_spec: "ModelSpec",
@@ -631,7 +594,6 @@ _venv_config_list = [
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_COMMON,
         requirements_file="evals-common.txt",
-        setup_function=patch_evals_common_chat_streaming,
     ),
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_VISION,
@@ -656,40 +618,49 @@ _venv_config_list = [
         setup_function=setup_evals_agentic,
     ),
     VenvConfig(
-        venv_type=WorkflowVenvType.V2_RUN_SCRIPT,
-        requirements_file="v2-run-script.txt",
+        venv_type=WorkflowVenvType.WORKFLOW_RUN_SCRIPT,
+        requirements_file="workflow-run-script.txt",
     ),
     VenvConfig(
-        venv_type=WorkflowVenvType.V2_PREFIX_CACHE,
-        requirements_file="v2-prefix-cache.txt",
+        venv_type=WorkflowVenvType.PREFIX_CACHE,
+        requirements_file="prefix-cache.txt",
         extra_dirs=("artifacts",),
         python_version="3.11",
     ),
+    # 3.12: the InferenceX AIPerf fork requires >=3.10,<3.14 and its agentic
+    # scenario is only exercised on 3.12 upstream.
     VenvConfig(
-        venv_type=WorkflowVenvType.V2_LLM_VLLM,
-        requirements_file="v2-llm-vllm.txt",
+        venv_type=WorkflowVenvType.AGENTIC_TRACES,
+        requirements_file="agentic-traces.txt",
+        extra_dirs=("artifacts",),
+        python_version="3.12",
+        setup_function=setup_agentic_traces,
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.LLM_VLLM,
+        requirements_file="llm-vllm.txt",
         # Force transformers 5.x past vllm==0.13.0's `transformers<5` cap so the
         # gemma-4 tokenizer loads; keeps vllm (and the bench-serve client) at
-        # 0.13.0 for every other model. See v2-llm-vllm-overrides.txt.
-        overrides_file="v2-llm-vllm-overrides.txt",
+        # 0.13.0 for every other model. See llm-vllm-overrides.txt.
+        overrides_file="llm-vllm-overrides.txt",
         extra_dirs=("artifacts",),
         python_version="3.11",
     ),
     VenvConfig(
-        venv_type=WorkflowVenvType.V2_LLM_GUIDELLM,
-        requirements_file="v2-llm-guidellm.txt",
+        venv_type=WorkflowVenvType.LLM_GUIDELLM,
+        requirements_file="llm-guidellm.txt",
         extra_dirs=("artifacts",),
         python_version="3.11",
     ),
     VenvConfig(
-        venv_type=WorkflowVenvType.V2_LLM_AIPERF,
-        requirements_file="v2-llm-aiperf.txt",
+        venv_type=WorkflowVenvType.LLM_AIPERF,
+        requirements_file="llm-aiperf.txt",
         extra_dirs=("artifacts",),
         python_version="3.11",
     ),
     VenvConfig(
-        venv_type=WorkflowVenvType.V2_SPEC_DECODE,
-        requirements_file="v2-spec-decode.txt",
+        venv_type=WorkflowVenvType.SPEC_DECODE,
+        requirements_file="spec-decode.txt",
         extra_dirs=("artifacts",),
         python_version="3.11",
     ),
@@ -712,11 +683,6 @@ _venv_config_list = [
     ),
     # Pip install + sub-directory
     VenvConfig(
-        venv_type=WorkflowVenvType.EVALS_VIDEO,
-        requirements_file="evals-video.txt",
-        extra_dirs=("work_dir",),
-    ),
-    VenvConfig(
         venv_type=WorkflowVenvType.BENCHMARKS_VLLM,
         requirements_file="benchmarks-vllm.txt",
         extra_dirs=("work_dir",),
@@ -731,11 +697,6 @@ _venv_config_list = [
         extra_dirs=("work_dir",),
         python_version="3.11",
         setup_function=fetch_structured_output_scripts_forge,
-    ),
-    # No pip; directory and/or runtime check
-    VenvConfig(
-        venv_type=WorkflowVenvType.BENCHMARKS_VIDEO,
-        extra_dirs=("work_dir",),
     ),
     VenvConfig(
         venv_type=WorkflowVenvType.BENCHMARKS_GENAI_PERF,

@@ -154,7 +154,7 @@ PrefixCachingInfo computePrefixCachingInfoFromTokens(
 /**
  * Compute per-block KV cache hashes using vLLM's prefix caching approach.
  *
- * Tokens are divided into blocks of `kvCacheBlockSize` (from config). Each
+ * Tokens are divided into blocks of `prefixCacheBlockSize` (from config). Each
  * block's hash is computed as `xxh64(block_tokens, seed=parent_hash)`, where
  * `parent_hash` is the hash of the previous block (0 for the first block).
  * This chaining ensures that two sequences sharing a common prefix produce

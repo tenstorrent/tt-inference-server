@@ -12,6 +12,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -50,6 +51,7 @@ class SessionManager {
  public:
   using Candidate = domain::prefix_cache::Candidate;
   using AcquiredSession = PrefixCacheAcquireResult;
+  using SlotResult = SlotAcquireResult;
 
   SessionManager();
   ~SessionManager();
@@ -120,6 +122,41 @@ class SessionManager {
   std::optional<AcquiredSession> tryAcquireByPrefixHash(
       const std::vector<utils::BlockHashInfo>& blockInfos,
       std::function<void()> cancelFn);
+
+  /**
+   * Compute block hashes from prompt tokens.
+   * Convenience wrapper around PrefixCacheRouter::computeBlockInfos.
+   */
+  std::vector<utils::BlockHashInfo> computeBlockInfos(
+      std::span<const uint32_t> promptTokenIds) const;
+
+  /**
+   * Unified slot acquisition - the main entry point for prefix cache routing.
+   *
+   * Internally handles all routing layers:
+   *   1. Response-id lookup (if previousResponseId provided)
+   *   2. Prefix-hash lookup
+   *   3. New session allocation (if no cache hit)
+   *
+   * All hashing, block splitting, and session creation happens inside.
+   *
+   * @param promptTokenIds  Token IDs from the request prompt.
+   * @param opts            Routing options (previousResponseId, responseId,
+   * cancelFn).
+   * @param loop            Event loop for async session creation callback.
+   * @param onResolved      Callback with the result (session found or created).
+   * @param onError         Callback for errors (e.g., rate limit).
+   *
+   * The result contains everything needed to set up the request:
+   *   - sessionId, slotId: the acquired session/slot
+   *   - matchedTokens, accumulatedThinkTokens: for delta computation
+   *   - isNewSession: whether this is a fresh session
+   *   - blocks: for token accumulator initialization
+   */
+  void getSlot(std::span<const uint32_t> promptTokenIds, GetSlotOptions opts,
+               trantor::EventLoop* loop,
+               std::function<void(SlotAcquireResult)> onResolved,
+               std::function<void(const std::string&)> onError);
 
   /**
    * Route future lookups to this session by registering the given block infos.

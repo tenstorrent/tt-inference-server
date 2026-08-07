@@ -11,9 +11,9 @@
 namespace tt::runners::blaze {
 
 std::unique_ptr<IDecodeScheduler> makeDecodeScheduler(
-    const tt::config::LLMConfig& config);
+    const tt::config::BlazeConfig& config);
 
 std::unique_ptr<IPrefillScheduler> makePrefillScheduler(
-    const tt::config::LLMConfig& config);
+    const tt::config::BlazeConfig& config);
 
 }  // namespace tt::runners::blaze

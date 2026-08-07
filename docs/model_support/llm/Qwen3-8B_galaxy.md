@@ -8,6 +8,7 @@
 
 `Qwen3-8B` is also supported on hardware:
 
+- [BH P300](Qwen3-8B_p300.md)
 - [WH LoudBox/QuietBox](Qwen3-8B_t3k.md)
 - [N150](Qwen3-8B_n150.md)
 - [N300](Qwen3-8B_n300.md)
