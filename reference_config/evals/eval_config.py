@@ -3661,6 +3661,59 @@ _eval_config_list = [
                     },
                 ),
             ),
+            # TEMP: single-container terminal-bench agentic smoke eval for
+            # the KIX1 harbor plumbing test. Uses llama-3.1-8b as a cheap
+            # stand-in model; scores are expected near zero and are not
+            # compared against any reference. Revert this task once the
+            # kimi deployment is reachable from KIX1.
+            #
+            # `model=` overrides the name the terminus-2 agent sends to the
+            # server (agentic.py: cfg.model or f"openai/{server.model}"),
+            # so the agent hits the llama vLLM, not "Kimi-K2.7-Code".
+            # Verify the value matches `curl <server>/v1/models | jq -r
+            # '.data[].id'` and adjust if the deployment serves a
+            # different name.
+            EvalTask(
+                task_name="terminal_bench_llama318b_smoke",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2-1",
+                    agent="terminus-2",
+                    model="openai/meta-llama/Llama-3.1-8B-Instruct",
+                    n_concurrent_trials=4,
+                    n_attempts=1,
+                    n_tasks=5,
+                    override_cpus=16,
+                    override_memory_mb=32 * 1024,
+                    agent_timeout_sec=30 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            "max_input_tokens": 128 * 1024,
+                            "max_output_tokens": 4 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 4 * 1024,
+                            "timeout": 10 * 60,
+                        },
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 3,
+                },
+            ),
         ],
     ),
     EvalConfig(
