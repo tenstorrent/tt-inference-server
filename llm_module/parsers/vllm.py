@@ -11,7 +11,7 @@ from typing import Any, Dict, Mapping, Optional
 
 from report_module.schema import Block
 
-from .base import LLMResultParser
+from .base import LLMResultParser, decode_throughput
 from .base import round_metric as _round
 
 
@@ -56,10 +56,17 @@ class VLLMBenchParser(LLMResultParser):
             "p95_e2el_ms": _round(raw.get("p95_e2el_ms"), 4),
             "p99_e2el_ms": _round(raw.get("p99_e2el_ms"), 4),
             "std_e2el_ms": _round(raw.get("std_e2el_ms"), 4),
-            "tps_decode_throughput": _round(raw.get("output_throughput"), 4),
+            # See llm_module.parsers.base.decode_throughput: the `tput` target is
+            # decode interactivity x concurrency, not a wall-clock token rate.
+            # vllm bench serve reports no per-user rate, so it comes from TPOT.
+            "tps_decode_throughput": None,  # set below, needs concurrency
+            "tps_output_throughput": _round(raw.get("output_throughput"), 4),
             "request_throughput": _round(raw.get("request_throughput"), 4),
             "error_request_count": _errors(raw.get("failed")),
         }
+        record["tps_decode_throughput"] = decode_throughput(
+            record.get("tput_user"), record["mean_tpot_ms"], record["concurrency"]
+        )
         return self._wrap_record(record)
 
 

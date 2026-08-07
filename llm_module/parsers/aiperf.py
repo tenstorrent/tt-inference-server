@@ -11,7 +11,7 @@ from typing import Any, Dict, Mapping, Optional
 
 from report_module.schema import Block
 
-from .base import LLMResultParser
+from .base import LLMResultParser, decode_throughput
 from .base import metric_stat as _stat
 from .base import metric_stat_int as _stat_int
 
@@ -49,10 +49,18 @@ class AIPerfParser(LLMResultParser):
             "p99_e2el_ms": _stat(raw, "request_latency", "p99"),
             "std_e2el_ms": _stat(raw, "request_latency", "std"),
             "tput_user": _stat(raw, "output_token_throughput_per_user"),
-            "tps_decode_throughput": _stat(raw, "output_token_throughput"),
+            # Graded against the `tput` target, which is defined as decode
+            # interactivity x concurrency -- so it is derived the same way rather
+            # than taken from AIPerf's wall-clock output_token_throughput. See
+            # llm_module.parsers.base.decode_throughput.
+            "tps_decode_throughput": None,  # set below, needs concurrency
+            "tps_output_throughput": _stat(raw, "output_token_throughput"),
             "request_throughput": _stat(raw, "request_throughput"),
             "error_request_count": _errors(raw),
         }
+        record["tps_decode_throughput"] = decode_throughput(
+            record["tput_user"], record["mean_tpot_ms"], record["concurrency"]
+        )
         return self._wrap_record(record)
 
 

@@ -18,6 +18,7 @@ from typing import Any, Dict, Mapping
 import pytest
 
 from llm_module.parsers.aiperf import AIPerfParser
+from llm_module.parsers.base import decode_throughput
 from llm_module.parsers.genai_perf import GenAIPerfParser
 from llm_module.parsers.vllm import VLLMBenchParser
 from report_module.display import display_name
@@ -164,7 +165,11 @@ def test_aiperf_maps_metrics_and_keeps_isl_integer():
     assert data["mean_tpot_ms"] == pytest.approx(129.8)
     assert data["mean_e2el_ms"] == pytest.approx(17525.9)
     assert data["tput_user"] == pytest.approx(7.71)
-    assert data["tps_decode_throughput"] == pytest.approx(228.47)
+    # tps_decode_throughput is the graded quantity: per-user decode rate x
+    # concurrency (7.71 * 32), NOT AIPerf's wall-clock output_token_throughput,
+    # which charges decode for prefill and queueing time and is kept separately.
+    assert data["tps_decode_throughput"] == pytest.approx(246.72)
+    assert data["tps_output_throughput"] == pytest.approx(228.47)
     assert data["request_throughput"] == pytest.approx(1.81)
 
 
@@ -355,7 +360,10 @@ def test_vllm_derives_isl_osl_and_maps_percentiles():
     # vLLM's "median" maps to p50; p99 carried through
     assert data["p50_ttft"] == pytest.approx(300.1)
     assert data["p99_ttft"] == pytest.approx(1200.9)
-    assert data["tps_decode_throughput"] == pytest.approx(480.0)
+    # vllm bench serve reports no per-user rate, so the decode aggregate comes
+    # from TPOT: (1000 / 28.7) * 32. Its own output_throughput is wall-clock.
+    assert data["tps_decode_throughput"] == pytest.approx(1114.9826)
+    assert data["tps_output_throughput"] == pytest.approx(480.0)
     # VLLM_RAW carries "failed": 0 — a real measurement, kept as 0.
     assert data["error_request_count"] == 0
 
@@ -427,6 +435,31 @@ def test_canonical_keys_have_display_names():
     assert display_name("tput_user") == "Tput User (TPS)"
     assert display_name("error_request_count") == "Errors"
     assert display_name("input_sequence_length") == "ISL"
+
+
+# The `tput` perf target is defined as decode interactivity x concurrency, so
+# the metric graded against it must be derived that way and must degrade to NA
+# rather than to a wrong number when an input is missing.
+@pytest.mark.parametrize(
+    "tput_user, tpot, concurrency, expected",
+    [
+        (36.72, 27.235, 32, 1175.04),  # per-user rate preferred when present
+        (None, 28.7, 32, 1114.9826),  # else derived from TPOT
+        (36.72, None, 1, 36.72),  # concurrency 1: aggregate == per-user
+        (None, None, 32, None),  # no rate at all -> NA, never 0
+        (36.72, 27.235, None, None),  # unknown concurrency -> NA
+        (36.72, 27.235, 0, None),  # guard against divide-by-nothing nonsense
+        (None, 0, 32, None),  # zero TPOT would be a division error
+    ],
+)
+def test_decode_throughput_is_interactivity_times_concurrency(
+    tput_user, tpot, concurrency, expected
+):
+    result = decode_throughput(tput_user, tpot, concurrency)
+    if expected is None:
+        assert result is None
+    else:
+        assert result == pytest.approx(expected)
 
 
 if __name__ == "__main__":
