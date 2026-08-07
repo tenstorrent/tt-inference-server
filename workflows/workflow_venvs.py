@@ -38,7 +38,7 @@ HARBOR_REPO = "https://github.com/dcvijeticTT/harbor.git"
 # A full commit SHA, never a branch name: `--branch <name>` resolves to whatever
 # the branch points at when CI happens to run, so a force-push would change the
 # code behind an eval result with no diff here to show it. Bump deliberately.
-HARBOR_REF = "729d0fdd057eab8c543c15b582546aa59ed22230"
+HARBOR_REF = "3ea4f5884c5aed63858650277adc18fc1e7f9519"
 
 
 def checkout_pinned_repo(dest: Path, repo: str, ref: str) -> bool:
