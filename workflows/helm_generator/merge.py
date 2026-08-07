@@ -183,6 +183,48 @@ def set_default_engine(doc: Any, model_name: str, engine: str) -> bool:
     return True
 
 
+def set_device_board_counts(doc: Any, counts: Mapping[str, int]) -> bool:
+    """Set/refresh the top-level `deviceBoardCounts` map (device_key -> DRA
+    board count), inserted just before `models` for readability. Idempotent.
+
+    Returns True if the file changed.
+    """
+    from ruamel.yaml.comments import CommentedMap
+
+    desired = CommentedMap()
+    for key in sorted(counts):
+        desired[key] = int(counts[key])
+
+    existing = doc.get("deviceBoardCounts")
+    if existing is not None and {k: int(v) for k, v in existing.items()} == {
+        k: int(v) for k, v in desired.items()
+    }:
+        return False
+
+    if "deviceBoardCounts" in doc:
+        doc["deviceBoardCounts"] = desired
+    else:
+        keys = list(doc.keys())
+        pos = keys.index("models") if "models" in keys else len(keys)
+        # Inserting a key before `models` would otherwise swallow the comment
+        # block attached to `models`; capture and restore it around the insert.
+        models_comment = getattr(doc, "ca", None) and doc.ca.items.get("models")
+        doc.insert(pos, "deviceBoardCounts", desired)
+        doc.yaml_set_comment_before_after_key(
+            "deviceBoardCounts",
+            # Leading newline renders a blank line after the preceding block.
+            before=(
+                "\nDRA board count per device — number of Tenstorrent boards a "
+                "ResourceClaim requests for each device shape.\n"
+                "Generated from workflows/device_utils.py:BOARD_TYPE_COUNT_TO_DEVICE; "
+                "consumed by tt-inference-server.draDeviceCount."
+            ),
+        )
+        if models_comment is not None:
+            doc.ca.items["models"] = models_comment
+    return True
+
+
 def format_path(path: PathTuple) -> str:
     return ".".join(path)
 
@@ -206,6 +248,7 @@ __all__: List[str] = [
     "MergeResult",
     "merge_spec",
     "set_default_engine",
+    "set_device_board_counts",
     "format_change_summary",
     "format_path",
 ]
