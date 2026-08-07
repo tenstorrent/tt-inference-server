@@ -40,9 +40,30 @@ AIPERF_RAW: Dict[str, Any] = {
     "error_request_count": None,
     "input_sequence_length": {"avg": 16384.0, "unit": "tokens"},
     "output_sequence_length": {"avg": 126.5, "unit": "tokens"},
-    "time_to_first_token": {"avg": 1240.09, "p50": 786.0, "p99": 2093.6, "unit": "ms"},
-    "inter_token_latency": {"avg": 129.8, "unit": "ms"},
-    "request_latency": {"avg": 17525.9, "unit": "ms"},
+    "time_to_first_token": {
+        "avg": 1240.09,
+        "p50": 786.0,
+        "p90": 1830.2,
+        "p99": 2093.6,
+        "std": 402.7,
+        "unit": "ms",
+    },
+    "inter_token_latency": {
+        "avg": 129.8,
+        "p50": 121.4,
+        "p90": 168.9,
+        "p99": 204.3,
+        "std": 22.6,
+        "unit": "ms",
+    },
+    "request_latency": {
+        "avg": 17525.9,
+        "p50": 16980.0,
+        "p90": 21044.5,
+        "p99": 23110.8,
+        "std": 1904.2,
+        "unit": "ms",
+    },
     "output_token_throughput_per_user": {"avg": 7.71, "unit": "tokens/sec/user"},
     "output_token_throughput": {"avg": 228.47, "unit": "tokens/sec"},
     "request_throughput": {"avg": 1.81, "unit": "requests/sec"},
@@ -73,9 +94,19 @@ VLLM_RAW: Dict[str, Any] = {
     "total_output_tokens": 16384,
     "mean_ttft_ms": 350.5,
     "median_ttft_ms": 300.1,
+    "p90_ttft_ms": 900.4,
     "p99_ttft_ms": 1200.9,
+    "std_ttft_ms": 210.3,
     "mean_tpot_ms": 28.7,
+    "median_tpot_ms": 27.1,
+    "p90_tpot_ms": 39.5,
+    "p99_tpot_ms": 51.2,
+    "std_tpot_ms": 6.4,
     "mean_e2el_ms": 4200.0,
+    "median_e2el_ms": 4050.0,
+    "p90_e2el_ms": 5300.0,
+    "p99_e2el_ms": 6100.0,
+    "std_e2el_ms": 520.0,
     "request_throughput": 2.1,
     "output_throughput": 480.0,
     "total_token_throughput": 900.0,
@@ -128,6 +159,99 @@ def test_aiperf_maps_metrics_and_keeps_isl_integer():
     assert data["tput_user"] == pytest.approx(7.71)
     assert data["tps_decode_throughput"] == pytest.approx(228.47)
     assert data["request_throughput"] == pytest.approx(1.81)
+
+
+# The grading rubric reads high percentiles directly, so every percentile the
+# tool measured must survive normalisation. AIPerf reports mean/p50/p90/p99/std
+# for each latency family; the parser previously kept only three of the fifteen.
+PERCENTILE_FIELDS = (
+    "p90_ttft",
+    "std_ttft_ms",
+    "p50_tpot_ms",
+    "p90_tpot_ms",
+    "p99_tpot_ms",
+    "p50_e2el_ms",
+    "p90_e2el_ms",
+    "p99_e2el_ms",
+    "std_e2el_ms",
+)
+
+
+def test_aiperf_surfaces_every_latency_percentile():
+    data = AIPerfParser().parse(AIPERF_RAW, device="N150").data
+    assert data["p90_ttft"] == pytest.approx(1830.2)
+    assert data["std_ttft_ms"] == pytest.approx(402.7)
+    assert data["p50_tpot_ms"] == pytest.approx(121.4)
+    assert data["p90_tpot_ms"] == pytest.approx(168.9)
+    assert data["p99_tpot_ms"] == pytest.approx(204.3)
+    assert data["std_tpot_ms"] == pytest.approx(22.6)
+    assert data["p50_e2el_ms"] == pytest.approx(16980.0)
+    assert data["p90_e2el_ms"] == pytest.approx(21044.5)
+    assert data["p99_e2el_ms"] == pytest.approx(23110.8)
+    assert data["std_e2el_ms"] == pytest.approx(1904.2)
+
+
+def test_vllm_surfaces_percentiles_when_the_run_requested_them():
+    """`--percentile-metrics` adds these keys; the parser must carry them."""
+    data = VLLMBenchParser().parse(VLLM_RAW, device="N150").data
+    assert data["p90_ttft"] == pytest.approx(900.4)
+    assert data["std_ttft_ms"] == pytest.approx(210.3)
+    assert data["p50_tpot_ms"] == pytest.approx(27.1)
+    assert data["p90_tpot_ms"] == pytest.approx(39.5)
+    assert data["p99_tpot_ms"] == pytest.approx(51.2)
+    assert data["p50_e2el_ms"] == pytest.approx(4050.0)
+    assert data["p90_e2el_ms"] == pytest.approx(5300.0)
+    assert data["p99_e2el_ms"] == pytest.approx(6100.0)
+
+
+@pytest.mark.parametrize(
+    "parser,raw",
+    [(AIPerfParser(), AIPERF_RAW), (VLLMBenchParser(), VLLM_RAW)],
+)
+def test_absent_percentiles_are_none_never_zero(parser, raw):
+    """A percentile the tool did not report must be None, not 0.
+
+    Zero is the best possible latency, so a missing value silently coerced to
+    0 would score as a perfect result in the grading rubric rather than as
+    unmeasured. Every consumer must be able to tell the two apart.
+    """
+    stripped = {
+        k: v
+        for k, v in raw.items()
+        if k
+        not in (
+            "time_to_first_token",
+            "inter_token_latency",
+            "request_latency",
+            "mean_ttft_ms",
+            "median_ttft_ms",
+            "p90_ttft_ms",
+            "p99_ttft_ms",
+            "std_ttft_ms",
+            "mean_tpot_ms",
+            "median_tpot_ms",
+            "p90_tpot_ms",
+            "p99_tpot_ms",
+            "std_tpot_ms",
+            "mean_e2el_ms",
+            "median_e2el_ms",
+            "p90_e2el_ms",
+            "p99_e2el_ms",
+            "std_e2el_ms",
+        )
+    }
+    data = parser.parse(stripped, device="N150").data
+    for field in PERCENTILE_FIELDS:
+        assert data[field] is None, f"{field} coerced to {data[field]!r}, expected None"
+
+
+def test_new_percentile_fields_have_display_names():
+    """Every emitted field needs a column heading, or it renders as a raw key."""
+    from report_module.display import display_name
+
+    for field in PERCENTILE_FIELDS + ("std_tpot_ms",):
+        rendered = display_name(field)
+        assert rendered and rendered != field, f"{field} has no display name"
 
 
 def test_aiperf_errors_none_when_clean():

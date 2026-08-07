@@ -34,11 +34,25 @@ class VLLMBenchParser(LLMResultParser):
             "output_sequence_length": _per_request(
                 raw.get("total_output_tokens"), completed
             ),
+            # Percentile keys beyond mean/median/p99 are only present when the run
+            # passed `--percentile-metrics` and `--metric-percentiles`. When absent
+            # `_round` yields None, never 0 — a zero here would score as a perfect
+            # result in the grading rubric.
             "mean_ttft_ms": _round(raw.get("mean_ttft_ms"), 4),
             "p50_ttft": _round(raw.get("median_ttft_ms"), 4),
+            "p90_ttft": _round(raw.get("p90_ttft_ms"), 4),
             "p99_ttft": _round(raw.get("p99_ttft_ms"), 4),
+            "std_ttft_ms": _round(raw.get("std_ttft_ms"), 4),
             "mean_tpot_ms": _round(raw.get("mean_tpot_ms"), 4),
+            "p50_tpot_ms": _round(raw.get("median_tpot_ms"), 4),
+            "p90_tpot_ms": _round(raw.get("p90_tpot_ms"), 4),
+            "p99_tpot_ms": _round(raw.get("p99_tpot_ms"), 4),
+            "std_tpot_ms": _round(raw.get("std_tpot_ms"), 4),
             "mean_e2el_ms": _round(raw.get("mean_e2el_ms"), 4),
+            "p50_e2el_ms": _round(raw.get("median_e2el_ms"), 4),
+            "p90_e2el_ms": _round(raw.get("p90_e2el_ms"), 4),
+            "p99_e2el_ms": _round(raw.get("p99_e2el_ms"), 4),
+            "std_e2el_ms": _round(raw.get("std_e2el_ms"), 4),
             "tps_decode_throughput": _round(raw.get("output_throughput"), 4),
             "request_throughput": _round(raw.get("request_throughput"), 4),
             "error_request_count": _errors(raw.get("failed")),
