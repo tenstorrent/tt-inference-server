@@ -954,6 +954,13 @@ target_include_directories(mooncake_migration_executor_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+add_executable(mooncake_migration_executor_bench_test
+    tests/unit/transport/mooncake_migration_executor_bench_test.cpp)
+target_link_libraries(mooncake_migration_executor_bench_test PRIVATE transport_lib GTest::gtest_main)
+target_include_directories(mooncake_migration_executor_bench_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 # Endpoint wiring: control-channel connector (prefill) + receiver server (decode)
 # over a loopback fake transport, end to end through the multi-host data plane.
 add_executable(kv_migration_endpoints_test
@@ -1436,6 +1443,7 @@ gtest_discover_tests(kv_control_channel_test)
 gtest_discover_tests(mooncake_kv_migration_test)
 gtest_discover_tests(kv_migration_orchestrator_test)
 gtest_discover_tests(mooncake_migration_executor_test)
+gtest_discover_tests(mooncake_migration_executor_bench_test)
 gtest_discover_tests(kv_migration_endpoints_test)
 gtest_discover_tests(engine_table_handoff_test)
 gtest_discover_tests(engine_table_resolve_test)

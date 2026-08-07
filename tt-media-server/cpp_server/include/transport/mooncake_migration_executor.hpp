@@ -10,6 +10,7 @@
 #include <mutex>
 #include <queue>
 #include <thread>
+#include <vector>
 
 #include "runtime/worker/migration_executor.hpp"
 #include "services/remote_kv_manager.hpp"
@@ -51,11 +52,14 @@ class MooncakeMigrationExecutor : public tt::worker::IMigrationExecutor {
       std::function<bool(uint64_t uuid, const MigrationRequest& request)>;
 
   /// Production: drive the real multi-host data plane. `sender` must outlive
-  /// this executor.
-  explicit MooncakeMigrationExecutor(KvMigrationMultiHostSender& sender);
+  /// this executor. @p numThreads controls the number of parallel executor
+  /// threads (default 1 = serial; >1 enables concurrent migrations).
+  explicit MooncakeMigrationExecutor(KvMigrationMultiHostSender& sender,
+                                     std::size_t numThreads = 1);
 
   /// Test/DI: drive an arbitrary migrate callable.
-  explicit MooncakeMigrationExecutor(MigrateFn migrate);
+  explicit MooncakeMigrationExecutor(MigrateFn migrate,
+                                     std::size_t numThreads = 1);
 
   ~MooncakeMigrationExecutor() override;
 
@@ -82,7 +86,7 @@ class MooncakeMigrationExecutor : public tt::worker::IMigrationExecutor {
   std::condition_variable cv_;
   std::queue<Job> queue_;
   bool stopping_ = false;
-  std::thread worker_;
+  std::vector<std::thread> workers_;
 };
 
 }  // namespace tt::transport
