@@ -114,15 +114,20 @@ def _build_context(
     # requests and reject them all. Override with the SERVED value recorded in
     # the runtime spec JSON when it is smaller.
     served_ctx = _served_max_context(args.runtime_model_spec_json)
-    if served_ctx and getattr(model_spec.device_model_spec, "max_context", None):
-        if served_ctx < model_spec.device_model_spec.max_context:
-            logger.info(
-                "Overriding device_model_spec.max_context %s -> served %s "
-                "(from runtime spec JSON)",
-                model_spec.device_model_spec.max_context,
-                served_ctx,
-            )
-            model_spec.device_model_spec.max_context = served_ctx
+    _dms = model_spec.device_model_spec
+    _cur = getattr(_dms, "max_context", None)
+    if served_ctx and _cur and served_ctx < _cur:
+        logger.info(
+            "Overriding device_model_spec.max_context %s -> served %s "
+            "(from runtime spec JSON)",
+            _cur,
+            served_ctx,
+        )
+        # DeviceModelSpec is a frozen dataclass; bypass the frozen guard.
+        try:
+            object.__setattr__(_dms, "max_context", served_ctx)
+        except (AttributeError, TypeError):
+            logger.warning("Could not override max_context; leaving %s", _cur)
 
     if output_path is None:
         output_path = args.output_dir / f"{args.model}_{args.device}_{args.workflow}"
