@@ -2,7 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
-from workflows.model_spec import MODEL_SPECS
+from workflow_module.model_catalog import get_model_spec_provider
 from workflows.workflow_types import DeviceTypes
 
 # Removed get_model_id - using MODEL_SPECS directly
@@ -122,38 +122,12 @@ class StressTestParamSpace:
 
     def _resolve_model_config(self):
         """Resolve the appropriate model configuration."""
-        # Find matching model spec in MODEL_SPECS
-        if True:  # Simplified logic - search through all specs
-            # For backward compatibility, try to find a config with default_impl=True
-            self.model_spec = None
-            for model_id, config in MODEL_SPECS.items():
-                if (
-                    config.model_name == self.model_name
-                    and config.device_type.name.lower() == self.device.lower()
-                    and config.device_model_spec.default_impl
-                ):
-                    self.model_id = model_id
-                    self.model_spec = config
-                    break
-
-            if not self.model_spec:
-                # Fall back to first matching model/device combination
-                for model_id, config in MODEL_SPECS.items():
-                    if (
-                        config.model_name == self.model_name
-                        and config.device_type.name.lower() == self.device.lower()
-                    ):
-                        self.model_id = model_id
-                        self.model_spec = config
-                        logger.warning(
-                            f"Using non-default implementation for {model_id}"
-                        )
-                        break
-
-            if not self.model_spec:
-                raise ValueError(
-                    f"No model configuration found for model: {self.model_name}, device: {self.device}"
-                )
+        # Prefer a default_impl spec; fall back to the first matching impl
+        # (with a warning inside the provider) when no default exists.
+        self.model_spec = get_model_spec_provider().resolve_lenient(
+            self.model_name, self.device
+        )
+        self.model_id = self.model_spec.model_id
 
     def _extract_parameter_boundaries(self):
         """Extract parameter boundaries from model specification."""
