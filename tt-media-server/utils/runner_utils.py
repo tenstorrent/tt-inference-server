@@ -57,6 +57,16 @@ def setup_runner_environment(
         # CUSTOM cluster type and asserts that a fabric mesh graph descriptor
         # path is set. Providing the BH mesh descriptor avoids that.
         ModelRunners.TRAINING_LORA.value,
+        # Data-parallel forge embedding runners: one single-chip (1,1) worker per
+        # galaxy chip. Without a single-chip descriptor tt-metal brings up the
+        # galaxy fabric from one chip and asserts
+        #   "Chip 0 logical eth core 0-N connects to a remote mmio device",
+        # after which every later process falls back to the mock cluster
+        # descriptor and rejects its own chip with "Invalid chip ID in
+        # TT_VISIBLE_DEVICES".
+        ModelRunners.VLLMForge_QWEN_EMBEDDING.value,
+        ModelRunners.VLLMForge_QWEN_EMBEDDING_0_6B.value,
+        ModelRunners.VLLMForge_BGE_M3.value,
     }
     if settings.model_runner in _RUNNERS_REQUIRING_MESH_DESCRIPTOR:
         if settings.is_galaxy:
@@ -98,19 +108,46 @@ def _setup_blackhole_mesh_config(tt_metal_home: str):
 
 
 def _setup_galaxy_mesh_config(tt_metal_home: str):
-    """Configure mesh graph descriptors for Galaxy hardware"""
-    os.environ["TT_METAL_CORE_GRID_OVERRIDE_TODEPRECATE"] = "7,7"
+    """Configure mesh graph descriptors for Galaxy hardware.
 
-    mesh_descriptors = {
-        (1, 1): "n150_mesh_graph_descriptor.textproto",
-        (2, 1): "n300_mesh_graph_descriptor.textproto",
-        (2, 4): "t3k_mesh_graph_descriptor.textproto",
-    }
+    A worker that owns a slice of a galaxy has to be told how big that slice is,
+    or tt-metal will try to bring the whole fabric up from it. The descriptor is
+    per-architecture: a Wormhole galaxy slice is described by the Wormhole
+    part (n150/n300/t3k), a Blackhole galaxy slice by the Blackhole one (p150).
+    """
+    _logger = TTLogger()
+    is_blackhole = (settings.device or "").lower() == DeviceTypes.BLACKHOLE_GALAXY.value
+
+    # Usable core grid differs per architecture; the Blackhole galaxy value
+    # matches what _setup_grid_override applies for the SDXL runners.
+    os.environ["TT_METAL_CORE_GRID_OVERRIDE_TODEPRECATE"] = (
+        "10,9" if is_blackhole else "7,7"
+    )
+
+    if is_blackhole:
+        mesh_descriptors = {
+            (1, 1): "p150_mesh_graph_descriptor.textproto",
+        }
+    else:
+        mesh_descriptors = {
+            (1, 1): "n150_mesh_graph_descriptor.textproto",
+            (2, 1): "n300_mesh_graph_descriptor.textproto",
+            (2, 4): "t3k_mesh_graph_descriptor.textproto",
+        }
 
     descriptor = mesh_descriptors.get(settings.device_mesh_shape)
     if descriptor:
-        os.environ["TT_MESH_GRAPH_DESC_PATH"] = (
-            f"{tt_metal_home}/tt_metal/fabric/mesh_graph_descriptors/{descriptor}"
+        path = f"{tt_metal_home}/tt_metal/fabric/mesh_graph_descriptors/{descriptor}"
+        os.environ["TT_MESH_GRAPH_DESC_PATH"] = path
+        _logger.info(
+            f"_setup_galaxy_mesh_config: device={settings.device!r} "
+            f"mesh_shape={settings.device_mesh_shape} "
+            f"TT_MESH_GRAPH_DESC_PATH={path} exists={os.path.isfile(path)}"
+        )
+    else:
+        _logger.warning(
+            f"_setup_galaxy_mesh_config: no mesh descriptor for device={settings.device!r} "
+            f"mesh_shape={settings.device_mesh_shape}; leaving TT_MESH_GRAPH_DESC_PATH unset"
         )
 
 
