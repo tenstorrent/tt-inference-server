@@ -1076,6 +1076,7 @@ class TTWan22I2VLightningRunner(TTDiTRunner):
                 height=self.resolution.height,
                 width=self.resolution.width,
                 num_frames=WAN22_NUM_FRAMES,
+                cfg_enabled=False,
                 config_overrides={"boundary_ratio": WAN22_LIGHTNING_BOUNDARY_RATIO},
             )
             return WanPipelineI2VLora(
