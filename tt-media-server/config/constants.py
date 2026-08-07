@@ -28,6 +28,7 @@ class SupportedModels(Enum):
     DISTIL_WHISPER_LARGE_V3 = "distil-whisper/distil-large-v3"
     OPENAI_WHISPER_LARGE_V3 = "openai/whisper-large-v3"
     PYANNOTE_SPEAKER_DIARIZATION = "pyannote/speaker-diarization-3.0"
+    QWEN_3_EMBEDDING_0_6B = "Qwen/Qwen3-Embedding-0.6B"
     QWEN_3_EMBEDDING_4B = "Qwen/Qwen3-Embedding-4B"
     QWEN_3_EMBEDDING_8B = "Qwen/Qwen3-Embedding-8B"
     BGE_LARGE_EN_V1_5 = "BAAI/bge-large-en-v1.5"
@@ -81,6 +82,7 @@ class ModelNames(Enum):
     SEGFORMER = "segformer"
     UNET = "unet"
     VIT = "vit"
+    QWEN_3_EMBEDDING_0_6B = "Qwen3-Embedding-0.6B"
     QWEN_3_EMBEDDING_4B = "Qwen3-Embedding-4B"
     QWEN_3_EMBEDDING_8B = "Qwen3-Embedding-8B"
     BGE_LARGE_EN_V1_5 = "bge-large-en-v1.5"
@@ -123,6 +125,8 @@ class ModelRunners(Enum):
     VLLMForge = "vllm_forge"
     TT_YOLOV4 = "tt-yolov4"
     VLLMForge_QWEN_EMBEDDING = "vllmforge_qwen_embedding"
+    VLLMForge_QWEN_EMBEDDING_0_6B = "vllmforge_qwen_embedding_0_6b"
+    VLLMForge_BGE_M3 = "vllmforge_bge_m3"
     VLLMForge_LLAMA_70B = "vllm_forge_llama_70b"
     VLLMForge_GEMMA4_31B = "vllm_forge_gemma4_31b"
     VLLMForge_QWEN_32B = "vllm_forge_qwen_32b"
@@ -187,6 +191,8 @@ MODEL_SERVICE_RUNNER_MAP = {
     },
     ModelServices.EMBEDDING: {
         ModelRunners.VLLMForge_QWEN_EMBEDDING,
+        ModelRunners.VLLMForge_QWEN_EMBEDDING_0_6B,
+        ModelRunners.VLLMForge_BGE_M3,
         ModelRunners.QWEN_EMBEDDING_8B,
         ModelRunners.BGELargeEN_V1_5,
         ModelRunners.BGEM3,
@@ -284,6 +290,7 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_XLA_VIT: {ModelNames.VIT},
     ModelRunners.TT_XLA_YOLOX_NANO: {ModelNames.YOLOX_NANO},
     ModelRunners.VLLMForge_QWEN_EMBEDDING: {ModelNames.QWEN_3_EMBEDDING_4B},
+    ModelRunners.VLLMForge_QWEN_EMBEDDING_0_6B: {ModelNames.QWEN_3_EMBEDDING_0_6B},
     ModelRunners.VLLMForge_LLAMA_70B: {ModelNames.LLAMA_3_1_70B},
     ModelRunners.VLLMForge_GEMMA4_31B: {ModelNames.GEMMA_4_31B_IT},
     ModelRunners.VLLMForge_QWEN_32B: {ModelNames.QWEN_3_32B},
@@ -293,6 +300,11 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.QWEN_EMBEDDING_8B: {ModelNames.QWEN_3_EMBEDDING_8B},
     ModelRunners.BGELargeEN_V1_5: {ModelNames.BGE_LARGE_EN_V1_5},
     ModelRunners.BGEM3: {ModelNames.BGE_M3},
+    # Forge (forge-vllm-plugin) galaxy data-parallel variant of bge-m3. Shares
+    # the BGE_M3 model name with the MEDIA runner above; kept AFTER it so the
+    # name-only fallback still defaults to MEDIA. The forge serving path selects
+    # this runner explicitly via MODEL_RUNNER (set in the forge embedding.yaml).
+    ModelRunners.VLLMForge_BGE_M3: {ModelNames.BGE_M3},
     ModelRunners.VLLMForge: {
         ModelNames.LLAMA_3_2_3B,
         ModelNames.LLAMA_3_2_3B_INSTRUCT,
@@ -1097,6 +1109,51 @@ ModelConfigs = {
             "model": SupportedModels.QWEN_3_EMBEDDING_4B.value,
             "max_model_length": 1024,
             "max_num_batched_tokens": 1024,
+            "min_context_length": 32,
+            "max_num_seqs": 1,
+        },
+    },
+    # ----- BH Galaxy (Blackhole, 32x P150) data-parallel forge embeddings -----
+    # 32 independent single-chip (1,1) workers (DEVICE_IDS_32), model replicated
+    # per chip. Mirrors the production config validated standalone in tt-xla
+    # (b32 aggregate, opt=1, trace, bfp_bf8 weights -- the runner sets those
+    # additional_config knobs).
+    (ModelRunners.VLLMForge_QWEN_EMBEDDING, DeviceTypes.BLACKHOLE_GALAXY): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": True,
+        "device_ids": DeviceIds.DEVICE_IDS_32.value,
+        "max_batch_size": 1,
+        "vllm": {
+            "model": SupportedModels.QWEN_3_EMBEDDING_4B.value,
+            "max_model_length": 128,
+            "max_num_batched_tokens": 128,
+            "min_context_length": 32,
+            "max_num_seqs": 1,
+        },
+    },
+    (ModelRunners.VLLMForge_QWEN_EMBEDDING_0_6B, DeviceTypes.BLACKHOLE_GALAXY): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": True,
+        "device_ids": DeviceIds.DEVICE_IDS_32.value,
+        "max_batch_size": 1,
+        "vllm": {
+            "model": SupportedModels.QWEN_3_EMBEDDING_0_6B.value,
+            "max_model_length": 128,
+            "max_num_batched_tokens": 128,
+            "min_context_length": 32,
+            "max_num_seqs": 1,
+        },
+    },
+    (ModelRunners.VLLMForge_BGE_M3, DeviceTypes.BLACKHOLE_GALAXY): {
+        # bge-m3 validated at seq len 512 in tt-xla.
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": True,
+        "device_ids": DeviceIds.DEVICE_IDS_32.value,
+        "max_batch_size": 1,
+        "vllm": {
+            "model": SupportedModels.BGE_M3.value,
+            "max_model_length": 512,
+            "max_num_batched_tokens": 512,
             "min_context_length": 32,
             "max_num_seqs": 1,
         },
