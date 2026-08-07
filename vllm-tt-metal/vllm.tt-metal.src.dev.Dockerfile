@@ -81,6 +81,8 @@ RUN /bin/bash -c "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ENV UV_HTTP_RETRIES=10
 
 # Build tt-metal - clone with minimal history, build, and clean
+# uv's cache grows to ~3G here and ~11G after the vLLM install; the builder stage is
+# discarded, but its layers still fill the container storage fs during image export.
 RUN /bin/bash -c "git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
     && cd ${TT_METAL_HOME} \
     && git checkout ${TT_METAL_COMMIT_SHA_OR_TAG} \
@@ -89,7 +91,8 @@ RUN /bin/bash -c "git clone https://github.com/tenstorrent-metal/tt-metal.git ${
     && ( for i in 1 2 3 4 5; do CXX=clang++-17 CC=clang-17 bash ./create_venv.sh && exit 0; echo 'create_venv.sh failed, retrying in 30s'; sleep 30; done; exit 1 ) \
     && source ${PYTHON_ENV_DIR}/bin/activate \
     && if [ -f 'models/demos/qwen25_vl/requirements.txt' ]; then uv pip install -r models/demos/qwen25_vl/requirements.txt; fi \
-    && rm -rf ${TT_METAL_HOME}/.git"
+    && rm -rf ${TT_METAL_HOME}/.git \
+    && { uv cache clean || echo 'WARN: uv cache clean failed'; true; }"
 
 # Build vllm-tt-plugin - clone with minimal history and clean.
 # The plugin owns the vLLM version pin and its dependency overrides, so the
@@ -100,7 +103,8 @@ RUN /bin/bash -c "git clone https://github.com/tenstorrent/vllm-tt-plugin.git ${
     && source ${PYTHON_ENV_DIR}/bin/activate \
     && uv pip install --upgrade pip \
     && source docs/install-vllm-tt.sh \
-    && rm -rf ${vllm_tt_plugin_dir}/.git"
+    && rm -rf ${vllm_tt_plugin_dir}/.git \
+    && { uv cache clean || echo 'WARN: uv cache clean failed'; true; }"
 
 # Build tt-smi in separate venv to avoid conflicts with tt-metal venv
 RUN /bin/bash -c "git clone https://github.com/tenstorrent/tt-smi.git ${TT_SMI_DIR} \
