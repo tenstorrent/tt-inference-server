@@ -52,6 +52,13 @@ def _harbor_env_kwargs() -> Dict[str, Any]:
         "HARBOR_K8S_IMAGE_REGISTRY": "image_registry",
         "HARBOR_K8S_IMAGE_PULL_SECRET": "image_pull_secret",
         "HARBOR_K8S_SERVICE_ACCOUNT": "service_account",
+        # Opt-in compose execution strategy. "pods" runs each compose
+        # service as a container of one ordinary pod (no privileged DinD),
+        # but requires HARBOR_K8S_IMAGE_REGISTRY the cluster can pull from.
+        "HARBOR_K8S_COMPOSE_STRATEGY": "compose_strategy",
+        # Skip the `docker manifest inspect` probe when the registry has no
+        # credentials or is unreachable from the Harbor host.
+        "HARBOR_K8S_SKIP_IMAGE_CHECK": "skip_image_check",
     }
     for env_var, kwarg in passthrough.items():
         value = os.getenv(env_var)
@@ -3711,7 +3718,62 @@ _eval_config_list = [
                     },
                 ),
                 limit_samples_map={
-                    EvalLimitMode.SMOKE_TEST: 3,
+                    EvalLimitMode.SMOKE_TEST: 8,
+                },
+            ),
+            # TEMP: tau3-banking agentic smoke eval for the KIX1 harbor plumbing
+            # test. Unlike the single-container terminal-bench smoke above,
+            # tau3-bench tasks ship a docker-compose.yaml, so this exercises
+            # the harbor ``compose_strategy: pods`` path (one container per
+            # compose service in a single ordinary pod, images built on the
+            # 6u host and pushed to the in-cluster registry). That is the
+            # real point of this task: prove the pods compose mode + registry
+            # end-to-end. Scores are expected near zero (llama-8b plays both
+            # the agent and the simulated user) and are not compared against
+            # any reference. Revert once the kimi deployment is reachable.
+            EvalTask(
+                task_name="tau3_bench_banking_llama318b_smoke",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="sierra-research/tau3-bench",
+                    agent="tau3_llm_agent",
+                    agent_import_path="adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent",
+                    task_names=["sierra-research/tau3-bench__tau3-banking_knowledge-*"],
+                    model="openai/meta-llama/Llama-3.1-8B-Instruct",
+                    n_concurrent_trials=4,
+                    n_attempts=1,
+                    n_tasks=8,
+                    override_cpus=4,
+                    override_memory_mb=8 * 1024,
+                    agent_timeout_sec=30 * 60,
+                    agent_kwargs={
+                        "tau2_trial_index": 0,
+                        "temperature": 1.0,
+                        "max_steps": 200,
+                        "tool_timeout_sec": 900,
+                        "read_timeout_sec": 120,
+                    },
+                    # llama-8b plays the agent, the simulated user, and the
+                    # NL verifier -- the only model we have in-cluster right now.
+                    environment_env={
+                        "TAU2_USER_MODEL": "openai/meta-llama/Llama-3.1-8B-Instruct",
+                    },
+                    verifier_env={
+                        "TAU2_NL_ASSERTIONS_MODEL": "openai/meta-llama/Llama-3.1-8B-Instruct",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 8,
                 },
             ),
         ],
