@@ -490,6 +490,20 @@ def generate_docker_run_command(
                         "--mount",
                         f"type=bind,src={src},dst={user_home_path}/app/server/{rel},readonly",
                     ]
+            # Optional: overlay a patched tt-xla vllm_tt/model_runner.py onto the
+            # baked forge wheel (e.g. a fix newer than the image's wheel). Set
+            # TT_XLA_MODEL_RUNNER_SRC. Python-only; a compiled-plugin change needs a
+            # wheel rebuild instead.
+            mr_override = os.getenv("TT_XLA_MODEL_RUNNER_SRC")
+            if mr_override and Path(mr_override).is_file():
+                _mr_dst = (
+                    f"{user_home_path}/app/server/venv-worker/lib/python3.12/"
+                    f"site-packages/vllm_tt/model_runner.py"
+                )
+                docker_command += [
+                    "--mount",
+                    f"type=bind,src={mr_override},dst={_mr_dst},readonly",
+                ]
         # fmt: on
 
     for key, value in docker_env_vars.items():
