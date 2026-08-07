@@ -161,6 +161,41 @@ so two impls on the same device don't share a cache directory.
 {{- end }}
 
 {{/*
+DRA device count — how many Tenstorrent boards a ResourceClaim must request for
+the selected device shape.
+
+The count is purely a function of .Values.device (not the model), so it comes
+from the top-level `.Values.deviceBoardCounts` map — a single source of truth
+generated from workflows/device_utils.py:BOARD_TYPE_COUNT_TO_DEVICE, not hand-
+maintained here.
+
+A plain board count is only correct when the claim takes a whole dedicated
+device (no wrong subset to pick). Topology-sensitive partitions — e.g.
+galaxy_t3k, which carves a T3K-shaped mesh out of a Galaxy and must be pinned to
+adjacent chips in one tray — are absent from the map and fail loudly; expressing
+them needs DRA constraints matching topology attributes the tt-dra-driver does
+not yet publish (future work).
+
+Behaviour:
+  - device in deviceBoardCounts -> returns the board count
+  - non-Tenstorrent device       -> returns "" (no ResourceClaim; e.g. gpu/cpu)
+  - anything else                -> fails the render (fail closed, rather than
+    silently deploying a device-less Pod)
+*/}}
+{{- define "tt-inference-server.draDeviceCount" -}}
+{{- $counts := .Values.deviceBoardCounts | default dict -}}
+{{- $nonTT := list "gpu" "cpu" -}}
+{{- $d := .Values.device | lower -}}
+{{- if hasKey $counts $d -}}
+{{- index $counts $d -}}
+{{- else if has $d $nonTT -}}
+{{- /* non-Tenstorrent device: intentionally no ResourceClaim */ -}}
+{{- else -}}
+{{- fail (printf "device '%s' is not supported via DRA in this chart. Topology-sensitive partitions (e.g. galaxy_t3k) are future work and need the tt-dra-driver to publish topology attributes. Supported: %s." $d (keys $counts | sortAlpha | join ", ")) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 Chart name helpers
 */}}
 {{- define "tt-inference-server.name" -}}
@@ -207,25 +242,16 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
-Compose the final affinity object.
+Compose the final affinity object — user-supplied affinity, passed through as-is.
 
-Always prepends a hardcoded device-collision podAntiAffinity term to any
-user-supplied affinity. The term label-selects every pod of this chart
-across releases and uses topologyKey=kubernetes.io/hostname to enforce
-1:1 Pod-to-Node placement (issue #2801). Operators can freely add
-nodeAffinity / podAffinity / extra anti-affinity terms via .Values.affinity
-without losing the guarantee; the chart's term is unconditional and not
-values-driven so it cannot be disabled accidentally.
+Under DRA the scheduler prevents device collisions by allocation (two Pods can
+never be assigned the same board), so multiple Pods may run on one Node (e.g. 4
+single-n300 Pods on a T3K). Operators can supply their own nodeAffinity /
+podAffinity / podAntiAffinity via .Values.affinity.
 */}}
 {{- define "tt-inference-server.affinity" -}}
 {{- $cfg := include "tt-inference-server.resolvedConfig" . | fromYaml -}}
-{{- $aff := deepCopy (default (dict) $cfg.affinity) -}}
-{{- $autoTerm := dict
-     "labelSelector" (dict "matchLabels" (dict "app.kubernetes.io/name" (include "tt-inference-server.name" .)))
-     "topologyKey"   "kubernetes.io/hostname" -}}
-{{- $paa := default (dict) (index $aff "podAntiAffinity") -}}
-{{- $req := default (list) (index $paa "requiredDuringSchedulingIgnoredDuringExecution") -}}
-{{- $_   := set $paa "requiredDuringSchedulingIgnoredDuringExecution" (prepend $req $autoTerm) -}}
-{{- $_   := set $aff "podAntiAffinity" $paa -}}
-{{- toYaml $aff -}}
+{{- with $cfg.affinity -}}
+{{- toYaml . -}}
+{{- end -}}
 {{- end -}}

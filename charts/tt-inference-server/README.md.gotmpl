@@ -16,6 +16,82 @@ Three engines are supported:
 - **media** — image/audio/video/embedding models served via the tt-media-inference-server API
 - **forge** — models served via the tt-forge backend
 
+Devices are acquired through **Dynamic Resource Allocation (DRA)**: each Pod
+declares a `ResourceClaim` that the [tt-operator](https://github.com/tenstorrent/tt-operator)
+DRA driver satisfies by allocating Tenstorrent boards and injecting the matching
+`/dev/tenstorrent/<N>` node(s). The container runs **unprivileged**, with **no
+`hostPath` on `/dev/tenstorrent`**, and multiple Pods can share one Node.
+
+---
+
+## Requirements
+
+- **Kubernetes ≥ 1.34** — the chart emits `resource.k8s.io/v1`, which is served
+  from 1.34 (DRA GA). Verify the API is present:
+  `kubectl api-resources --api-group=resource.k8s.io`.
+- **tt-operator installed on the cluster**, providing at least the DRA driver
+  (`tt-dra-driver`), the fabric manager (`tt-fabric-manager`, which the DRA
+  driver queries to enumerate devices), and node-feature-discovery. tt-operator
+  is a cluster-level prerequisite installed **once by an administrator**, on a
+  lifecycle separate from this chart — this chart never installs or manages it,
+  it only emits a `ResourceClaim` that the driver fulfils.
+
+Minimal tt-operator install (device acquisition only):
+
+```bash
+kubectl create namespace tt-operator-system
+# GHCR pull secret (k3s/containerd cannot pull the component images anonymously)
+kubectl create secret generic ghcr \
+  --from-file=.dockerconfigjson=$HOME/.docker/config.json \
+  --type=kubernetes.io/dockerconfigjson -n tt-operator-system
+helm install tt-operator oci://ghcr.io/tenstorrent/helm/tt-operator \
+  --version 0.2.0 -n tt-operator-system \
+  --set tt-k8s-driver-manager.enabled=false \
+  --set tt-telemetry.enabled=false \
+  --set jobset.enabled=false \
+  --set kubepmix.enabled=false
+# Verify: a DeviceClass and a per-node ResourceSlice appear
+kubectl get deviceclass          # tenstorrent.com
+kubectl get resourceslices       # <node> / tenstorrent.com, one device per board
+```
+
+> The other tt-operator sub-charts (driver-manager, telemetry, jobset, kubepmix)
+> are optional and documented separately.
+
+---
+
+## Device Acquisition (DRA)
+
+The chart renders a `ResourceClaimTemplate`; every Pod gets its own claim from
+it. The number of boards requested is a function of `device` (not the model): it
+comes from the top-level `deviceBoardCounts` map in `values.yaml`, which the
+generator produces from `workflows/device_utils.py:BOARD_TYPE_COUNT_TO_DEVICE`
+(a single source of truth, not a per-model value):
+
+| device | boards requested (`count`) |
+|---|---|
+| `n150`, `n300`, `p100`, `p150`, `p300` | 1 |
+| `p300x2` | 2 |
+| `n150x4`, `p150x4`, `t3k` | 4 |
+| `p150x8` | 8 |
+| `galaxy` | 32 |
+
+**Multiple Pods per Node.** The scheduler places a Pod only once its claim can be
+allocated and never assigns the same board twice, so a T3K node can run e.g. four
+independent single-`n300` Pods. When all boards are claimed, an extra Pod stays
+`Pending` (`FailedScheduling: cannot allocate all claims`) until one frees.
+
+**Not yet supported (future work).** A board count is only sufficient when the
+claim takes a whole dedicated device. Topology-sensitive partitions — e.g.
+`galaxy_t3k` (a T3K mesh carved from a Galaxy that must be pinned to adjacent
+chips in one tray) — need DRA constraints (`constraints.matchAttribute` / CEL)
+matching topology attributes the tt-dra-driver does not yet publish. Installing
+such a device **fails at render time** with a clear message.
+
+**Teardown order.** Delete the inference workload *before* uninstalling
+tt-operator; removing the DRA driver first leaves Pods unable to release their
+claims and stuck `Terminating`.
+
 ---
 
 ## Quick Start
@@ -110,6 +186,8 @@ All fields under `defaults` apply to every model/engine/device/impl unless overr
 |---|---|---|
 | `defaults.replicaCount` | `1` | Number of Deployment replicas. |
 | `defaults.progressDeadlineSeconds` | `3600` | Deployment progress deadline. Set high due to long model load times. |
+| `defaults.dra.deviceClassName` | `tenstorrent.com` | DRA `DeviceClass` (published by tt-operator) that the `ResourceClaim` selects. The board `count` is not set here — it is derived from `device` by `tt-inference-server.draDeviceCount`. |
+| `defaults.updateStrategy` | `RollingUpdate` (maxSurge 0, maxUnavailable 1) | Deployment update strategy. `maxSurge=0` terminates the old Pod before creating its replacement so its board and hugepages are freed first; `maxUnavailable=1` rolls one Pod at a time when `replicaCount > 1`. |
 | `defaults.podAnnotations` | `{}` | Annotations applied to the pod template. |
 | `defaults.podSecurityContext` | `{}` | Pod-level `securityContext`. |
 | `defaults.image.pullPolicy` | `IfNotPresent` | Image pull policy. |
@@ -130,7 +208,7 @@ All fields under `defaults` apply to every model/engine/device/impl unless overr
 | `defaults.probes.readiness.initialDelaySeconds` | `2400` | Readiness probe initial delay. |
 | `defaults.nodeSelector` | `{}` | Node selector applied to the pod. |
 | `defaults.tolerations` | `[]` | Tolerations applied to the pod. |
-| `defaults.affinity` | `{}` | Affinity rules applied to the pod. |
+| `defaults.affinity` | `{}` | User-supplied affinity, applied as-is. v0.2 no longer injects a 1-Pod-per-Node `podAntiAffinity` — DRA prevents device collisions by allocation, so multiple Pods may run on one Node. |
 | `defaults.extraEnv` | `[]` | Additional environment variables (see [Extra Environment Variables](#extra-environment-variables)). |
 
 ---
@@ -209,4 +287,12 @@ Each pod runs two init containers before the inference server starts:
 Runs `chown -R 1000:1000 /cache` on the cache host path volume. The inference server runs as UID 1000 and requires write access to the cache directory, which may be created by root on the host.
 
 **`cleanup-hugepages`**
-Removes stale hugepage files left by previous runs (`/dev/hugepages-1G/device_*_tenstorrent` and `/dev/hugepages-1G/tenstorrent`). Runs privileged. Without this cleanup, the inference server may fail to acquire hugepages if a previous pod exited uncleanly.
+Removes stale hugepage files left by previous runs, **scoped to this Pod's
+DRA-allocated board(s)** only. The init container requests the same
+`ResourceClaim` as the main container, so the DRA driver injects its
+`/dev/tenstorrent/<N>` node(s); the container then deletes only
+`/dev/hugepages-1G/device_<N>_*tenstorrent` (and the bare `tenstorrent` file for
+board 0) for each allocated `N`. This is required now that multiple Pods can run
+on one Node — a global `rm` would delete a co-located running Pod's hugepage
+files. Without the cleanup, a replacement Pod reusing the same board may fail to
+acquire hugepages if a previous Pod exited uncleanly.

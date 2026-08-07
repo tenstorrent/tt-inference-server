@@ -1,0 +1,26 @@
+{{- include "tt-inference-server.validateValues" . }}
+{{- $cfg := include "tt-inference-server.resolvedConfig" . | fromYaml }}
+{{- $count := include "tt-inference-server.draDeviceCount" . }}
+{{- if $count }}
+# Dynamic Resource Allocation: one ResourceClaim per Pod, generated from this
+# template. The tt-operator DRA driver (tt-dra-driver) satisfies it by allocating
+# {{ $count }} Tenstorrent board(s) for device "{{ .Values.device }}" and injecting
+# the matching /dev/tenstorrent/<N> node(s) into the container — no privileged
+# mode or hostPath /dev/tenstorrent required.
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: {{ include "tt-inference-server.fullname" . }}-tt
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "tt-inference-server.labels" . | nindent 4 }}
+spec:
+  spec:
+    devices:
+      requests:
+        - name: tt
+          exactly:
+            deviceClassName: {{ $cfg.dra.deviceClassName }}
+            allocationMode: ExactCount
+            count: {{ $count }}
+{{- end }}

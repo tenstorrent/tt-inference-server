@@ -49,6 +49,21 @@ BOARD_TYPE_COUNT_TO_DEVICE: Dict[Tuple[Tuple[str, int], ...], DeviceTypes] = {
 }
 
 
+def dra_device_board_counts() -> Dict[str, int]:
+    """Map device_key (e.g. "t3k") -> number of Tenstorrent boards a DRA
+    ResourceClaim must request for that device shape.
+
+    Derived from BOARD_TYPE_COUNT_TO_DEVICE (the authoritative board-type/count
+    -> DeviceType mapping, also used for tt-smi device detection) so the Helm
+    chart's per-device DRA count has a single source of truth. The board count
+    is the total number of boards across the device's board-type tuple.
+    """
+    counts: Dict[str, int] = {}
+    for board_tuple, device in BOARD_TYPE_COUNT_TO_DEVICE.items():
+        counts[device.name.lower()] = sum(count for _, count in board_tuple)
+    return dict(sorted(counts.items()))
+
+
 def _collect_supported_devices_for_model(
     model_name: str, engine: Optional[str] = None
 ) -> Set[DeviceTypes]:
