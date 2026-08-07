@@ -383,6 +383,7 @@ templates:
         MESH_DEVICE: "(1, 4)"
         TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
         QWEN36_MAX_TOKENS_ALL_USERS: "525312"
+        TT_METAL_OPERATION_TIMEOUT_SECONDS: "30.0"
       vllm_args:
         enable_auto_tool_choice: true
         reasoning_parser: qwen3
