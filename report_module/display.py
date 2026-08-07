@@ -37,6 +37,10 @@ DISPLAY_NAMES: Dict[str, str] = {
     "ttft_p95": "TTFT P95 (s)",
     "p5_ttft": "P5 TTFT (ms)",
     "p25_ttft": "P25 TTFT (ms)",
+    # Derived prefill quality metrics (llm_module/derived_metrics.py)
+    "prefill_throughput_tok_s": "Prefill Tput (tok/s)",
+    "ttft_tail_ratio": "TTFT Tail (p99/p50)",
+    "ttft_scaling_exponent": "TTFT Scaling Exp",
     "p50_ttft": "P50 TTFT (ms)",
     "p90_ttft": "P90 TTFT (ms)",
     "p95_ttft": "P95 TTFT (ms)",
