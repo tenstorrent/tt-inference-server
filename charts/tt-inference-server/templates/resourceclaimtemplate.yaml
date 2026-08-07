@@ -1,0 +1,24 @@
+{{- include "tt-inference-server.validateValues" . }}
+{{- $cfg := include "tt-inference-server.resolvedConfig" . | fromYaml }}
+{{- $count := include "tt-inference-server.draDeviceCount" . }}
+{{- if $count }}
+# DRA ResourceClaim (one per Pod): tt-dra-driver allocates {{ $count }} Tenstorrent
+# board(s) for device "{{ .Values.device }}" and injects /dev/tenstorrent/<N> —
+# no privileged mode or hostPath needed.
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  name: {{ include "tt-inference-server.fullname" . }}-tt
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "tt-inference-server.labels" . | nindent 4 }}
+spec:
+  spec:
+    devices:
+      requests:
+        - name: tt
+          exactly:
+            deviceClassName: {{ $cfg.dra.deviceClassName }}
+            allocationMode: ExactCount
+            count: {{ $count }}
+{{- end }}
