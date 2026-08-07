@@ -25,7 +25,7 @@ from typing import Callable, List, Optional, Tuple
 
 from report_module.schema import Block
 from workflow_module import accept_blocks
-from workflows.workflow_types import ModelType
+from workflow_module.engine_types import ModelType
 
 from ._test_common import (
     SkipTest,
