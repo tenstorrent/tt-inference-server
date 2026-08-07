@@ -67,6 +67,18 @@ class AIPerfDriver(LLMDriver):
             str(config.max_concurrency),
             "--request-count",
             str(config.num_prompts),
+            # AIPerf generates 100 unique dataset entries by default and reuses
+            # them once --request-count exceeds that, so a 128-request point sends
+            # 28 duplicate prompts. Duplicates are served from the server's prefix
+            # cache, and their TTFT collapses to roughly the dispatch overhead --
+            # which drags the *mean* down while leaving the median intact, so it
+            # reads as a fast system rather than a measurement artefact. Measured
+            # at ISL 8192, concurrency 32, 128 requests: mean TTFT 1021 ms with 28
+            # cache hits vs 1294 ms with none, a 21 % understatement, while the
+            # median moved 1279 -> 1294 ms. Prefix caching is on by default in
+            # vLLM, so this is not simulator-specific.
+            "--num-dataset-entries",
+            str(config.num_prompts),
             "--synthetic-input-tokens-mean",
             str(config.isl),
             "--synthetic-input-tokens-stddev",
