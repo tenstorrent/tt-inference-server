@@ -72,6 +72,11 @@ class EtcdClient {
   /// Delete a single key (range_end is left unset).
   void deleteRange(const std::string& key);
 
+  /// Return true if at least one key exists under `prefix`. Used by
+  /// integration-test readiness checks to confirm a backend registered in
+  /// etcd before polling the Dynamo frontend's /v1/models.
+  bool hasKeysWithPrefix(const std::string& prefix);
+
  private:
   std::string host_;
   int port_ = 2379;

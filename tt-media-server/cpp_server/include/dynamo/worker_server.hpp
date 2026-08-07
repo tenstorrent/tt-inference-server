@@ -102,6 +102,12 @@ class DynamoWorkerServer {
   /// to call multiple times.
   void stop();
 
+  /// Revoke discovery and stop accepting, but do not join in-flight Dynamo
+  /// call-home streams or destroy the event-loop pool. Intended for
+  /// integration-test teardown where the process exits immediately afterward;
+  /// not for production graceful shutdown (use stop()).
+  void abandon();
+
  private:
   GenerateHandler makeGenerateHandler();
   /// Resolve the address discovery should advertise. Precedence: the
