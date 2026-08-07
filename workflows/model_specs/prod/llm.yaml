@@ -225,6 +225,25 @@ templates:
         fabric_config: FABRIC_1D_RING
         worker_l1_size: 1344544
         trace_region_size: 184915840
+    # First-of-kind BLACKHOLE_GALAXY prod entry (readiness 5.1): proves the LLM
+    # serving path on the 32x P150 compute class. Config is identical to the GALAXY
+    # (Wormhole Galaxy) spec above and to the qwen3_32b_galaxy BLACKHOLE_GALAXY spec
+    # in dev/llm.yaml, which the dev catalog marks status: COMPLETE.
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 32  # 8 * 4
+      # NOTE: model natively supports 40K but use this to override max_num_batched_tokens
+      max_context: 131072  # 128 * 1024
+      default_impl: true
+      env_vars:
+        VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+      vllm_args:
+        data_parallel_size: 4
+      override_tt_config:
+        dispatch_core_axis: col
+        sample_on_device_mode: all
+        fabric_config: FABRIC_1D_RING
+        worker_l1_size: 1344544
+        trace_region_size: 184915840
   system_requirements:
     firmware:
       specifier: ">=18.6.0"
