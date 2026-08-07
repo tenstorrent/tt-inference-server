@@ -92,4 +92,5 @@ replaces it with the implementation they contribute.
 
 - **#65 / #70** (promote/author the prod `BLACKHOLE_GALAXY` specs): promote these dev entries with pinned commits once AIPerf targets exist.
 - **#66 / #67** (sweep + targets): author `blackhole_galaxy` targets as absolute per-system values (item 4).
+- **[#64 / §5.7](m0-scaling-quality-sweep-coverage.md)** (scaling-quality coverage): the `max_context`/`max_concurrency` chosen here interact with the three-input-lengths-per-graded-concurrency rule. With the token pool defaulted to `max_context`, only ISLs 128 and 1024 reach concurrency 128 — so the Milestone-0 specs carry a `[TBD — Performance] max_tokens_all_users_override` (floor 278528) that must be sized to the measured 32-chip KV pool.
 - Feeds Appendix B.0 of the partner RFP (`max_context`, `max_concurrency`, data-parallelism rows).

@@ -93,7 +93,82 @@ def get_llm_configs(
             model_spec.model_id,
             getattr(device, "name", device),
         )
+
+    _enforce_scaling_quality_coverage(model_spec, device, configs)
+
     return configs
+
+
+def _enforce_scaling_quality_coverage(model_spec, device, configs) -> None:
+    """Fail fast when a scaling-quality-graded device's graded sweep cannot be fit.
+
+    The scaling-quality rubric line fits time-to-first-token against input
+    length separately at each graded concurrency level, so every graded
+    concurrency level needs at least three distinct input lengths or the fit is
+    meaningless (RFP Appendix B.1/B.2/F.1; readiness §5.7). We validate the
+    *post-cap* graded set (the points that actually carry targets and will be
+    graded) so context/token-budget capping that silently moves a point to a
+    lower concurrency is caught here rather than producing an ungradeable run.
+    """
+    if not getattr(device, "grades_scaling_quality", None) or not device.grades_scaling_quality():
+        return
+
+    from reference_config.benchmarking.benchmark_config import (
+        SCALING_QUALITY_MIN_INPUT_LENGTHS,
+        max_gradeable_concurrency,
+        min_token_pool_for_concurrency,
+        scaling_quality_coverage_violations,
+    )
+
+    graded_points = [
+        (c.isl, c.max_concurrency) for c in configs if c.targets
+    ]
+    violations = scaling_quality_coverage_violations(graded_points)
+    if not violations:
+        return
+
+    dms = model_spec.device_model_spec
+    max_context = getattr(dms, "max_context", None)
+    max_tokens_all_users = getattr(dms, "max_tokens_all_users", None)
+    model_max_concurrency = getattr(dms, "max_concurrency", None)
+
+    detail = "; ".join(
+        f"concurrency={c} has {len(isls)} input length(s) {isls}"
+        for c, isls in sorted(violations.items())
+    )
+    hint = ""
+    if None not in (max_context, max_tokens_all_users, model_max_concurrency):
+        reachable_top = max_gradeable_concurrency(
+            max_context=max_context,
+            max_tokens_all_users=max_tokens_all_users,
+            model_max_concurrency=model_max_concurrency,
+        )
+        try:
+            pool_needed = min_token_pool_for_concurrency(
+                model_max_concurrency, max_context=max_context
+            )
+        except ValueError:
+            pool_needed = None
+        hint = (
+            f" With max_context={max_context}, max_tokens_all_users="
+            f"{max_tokens_all_users}, max_concurrency={model_max_concurrency}, "
+            f"only concurrency<={reachable_top} is reachable by "
+            f"{SCALING_QUALITY_MIN_INPUT_LENGTHS} distinct input lengths."
+        )
+        if pool_needed is not None:
+            hint += (
+                f" To grade at concurrency {model_max_concurrency}, set "
+                f"max_tokens_all_users_override>={pool_needed} on the "
+                f"{getattr(device, 'name', device)} spec, or rescope the graded "
+                f"concurrency levels."
+            )
+
+    raise ValueError(
+        f"Scaling-quality coverage violation for model_id={model_spec.model_id!r} "
+        f"on device={getattr(device, 'name', device)!r}: every graded concurrency "
+        f"level must carry at least {SCALING_QUALITY_MIN_INPUT_LENGTHS} distinct "
+        f"input lengths (RFP Appendix F.1; readiness §5.7), but {detail}.{hint}"
+    )
 
 
 __all__ = ["get_llm_configs"]

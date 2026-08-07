@@ -230,6 +230,15 @@ templates:
       # [Verify — Performance: confirm the hybrid-off KV pool fits Galaxy DRAM at
       # 262144 with prefill scratch headroom.]
       max_context: 262144  # 256 * 1024
+      # [TBD — Performance] Device KV-token pool for the concurrency sweep. Left
+      # unset, this defaults to max_context (262144), which lets only ISLs 128 and
+      # 1024 reach concurrency 128 — too few for the scaling-quality fit, which
+      # needs >=3 distinct input lengths at every graded concurrency level (RFP
+      # Appendix F.1; readiness §5.7). A 32-chip Galaxy has a far larger aggregate
+      # KV pool; set this to the measured value, and >= 278528 (=128*2176) so
+      # ISLs {128,1024,2048} all reach concurrency 128. get_llm_configs enforces
+      # this once blackhole_galaxy targets are authored (#66/#67).
+      # max_tokens_all_users_override: 278528
       default_impl: true
       env_vars:
         # Fixed 4x8 2D torus mesh graph descriptor (RFP D.2). Not a partner choice.
@@ -289,6 +298,14 @@ templates:
       # runs at full native context. [Verify — Partner: confirm
       # max_position_embeddings in the HF config.json.]
       max_context: 1048576  # 1024 * 1024 (1M)
+      # [TBD — Partner/Performance] Device KV-token pool for the concurrency
+      # sweep. Defaults to max_context if unset, which starves high concurrency at
+      # large ISL and leaves too few input lengths at the top graded concurrency
+      # for the scaling-quality fit (>=3 required per level; RFP Appendix F.1,
+      # readiness §5.7). Set to the measured 32-chip pool, and >= 278528
+      # (=128*2176) so ISLs {128,1024,2048} reach concurrency 128. Enforced by
+      # get_llm_configs once blackhole_galaxy targets are authored.
+      # max_tokens_all_users_override: 278528
       default_impl: true
       env_vars:
         # Fixed 4x8 2D torus mesh graph descriptor (RFP D.2). Not a partner choice.
@@ -326,6 +343,14 @@ templates:
       # Full native context: Mistral Small 4 has a 256k context window (model
       # card; the vLLM recipe serves --max-model-len 262144).
       max_context: 262144  # 256 * 1024
+      # [TBD — Partner/Performance] Device KV-token pool for the concurrency
+      # sweep. Defaults to max_context if unset, which lets only ISLs 128 and 1024
+      # reach concurrency 128 — too few for the scaling-quality fit (>=3 distinct
+      # input lengths required per graded concurrency level; RFP Appendix F.1,
+      # readiness §5.7). Set to the measured 32-chip pool, and >= 278528
+      # (=128*2176) so ISLs {128,1024,2048} reach concurrency 128. Enforced by
+      # get_llm_configs once blackhole_galaxy targets are authored.
+      # max_tokens_all_users_override: 278528
       default_impl: true
       env_vars:
         # Fixed 4x8 2D torus mesh graph descriptor (RFP D.2). Not a partner choice.

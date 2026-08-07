@@ -225,6 +225,21 @@ class DeviceTypes(IntEnum):
         """
         return self in {DeviceTypes.BLACKHOLE_GALAXY}
 
+    def grades_scaling_quality(self) -> bool:
+        """Whether the RFP grades a per-concurrency time-to-first-token vs.
+        input-length regression (the "scaling-quality" rubric line) on this
+        device.
+
+        The scaling-quality line fits TTFT against input length *separately at
+        each graded concurrency level*, so a level with fewer than three
+        distinct input lengths cannot be regressed and its fit is meaningless
+        (RFP Appendix B.1/B.2/F.1; readiness §5.7). Sweep construction enforces
+        the three-point rule per graded concurrency level for these devices
+        (see ``get_llm_configs`` /
+        ``reference_config.benchmarking.benchmark_config.scaling_quality_coverage_violations``).
+        """
+        return self in {DeviceTypes.BLACKHOLE_GALAXY}
+
     def get_data_parallel_subdevice(self, data_parallel: int) -> "DeviceTypes":
         data_parallel_map = {
             (DeviceTypes.GALAXY, 1): DeviceTypes.GALAXY,

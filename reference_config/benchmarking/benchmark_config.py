@@ -120,6 +120,12 @@ SUPER_CLUSTER_EXTRA_ISL_OSL_PAIRS = [
 SUPER_CLUSTER_MIN_NUM_PROMPTS = 256
 SMOKE_TEST_BENCHMARK_PAIR = (16, 4)
 
+# Scaling-quality rubric (RFP Appendix B.1/B.2/F.1; readiness §5.7): the graded
+# time-to-first-token vs. input-length regression is fit separately at each
+# graded concurrency level, so every graded concurrency level must carry at
+# least this many *distinct* input lengths or its fit is meaningless.
+SCALING_QUALITY_MIN_INPUT_LENGTHS = 3
+
 
 # Image resolution pairs for multimodal benchmarks
 # Format here is isl, osl, image_height, image_width, images_per_prompt
@@ -346,6 +352,128 @@ def powers_of_two_up_to(max_value: int) -> List[int]:
         values.append(v)
         v *= 2
     return values
+
+
+def scaling_quality_coverage(graded_points: Iterable[Tuple[int, int]]) -> Dict[int, List[int]]:
+    """Map each graded concurrency level to its sorted distinct input lengths.
+
+    ``graded_points`` is an iterable of ``(isl, max_concurrency)`` pairs drawn
+    from the *graded* subset of a sweep (the points that carry targets). Points
+    with a missing ``isl`` or ``max_concurrency`` are ignored.
+    """
+    coverage: Dict[int, set] = {}
+    for isl, concurrency in graded_points:
+        if isl is None or concurrency is None:
+            continue
+        coverage.setdefault(int(concurrency), set()).add(int(isl))
+    return {c: sorted(isls) for c, isls in coverage.items()}
+
+
+def scaling_quality_coverage_violations(
+    graded_points: Iterable[Tuple[int, int]],
+    min_input_lengths: int = SCALING_QUALITY_MIN_INPUT_LENGTHS,
+) -> Dict[int, List[int]]:
+    """Return the graded concurrency levels that break the three-point rule.
+
+    A scaling-quality fit needs ``min_input_lengths`` distinct input lengths at
+    each graded concurrency level (RFP Appendix F.1; readiness §5.7). The result
+    maps each *offending* concurrency to its (too few) distinct input lengths;
+    an empty result means the graded set satisfies the rule.
+    """
+    return {
+        concurrency: isls
+        for concurrency, isls in scaling_quality_coverage(graded_points).items()
+        if len(isls) < min_input_lengths
+    }
+
+
+def input_lengths_reaching_concurrency(
+    concurrency: int,
+    *,
+    max_context: int,
+    max_tokens_all_users: int,
+    model_max_concurrency: int,
+    isl_osl_pairs: Iterable[Tuple[int, int]] = BENCHMARK_ISL_OSL_PAIRS,
+) -> List[int]:
+    """Distinct input lengths from ``isl_osl_pairs`` that can physically run at
+    ``concurrency`` under the device's token budget.
+
+    An input length reaches ``concurrency`` when it fits ``max_context`` and the
+    per-request token budget (``max_tokens_all_users``) admits at least
+    ``concurrency`` concurrent requests of that shape (see
+    ``get_benchmark_max_concurrency``). This is what caps how many distinct
+    input lengths can share the top graded concurrency level.
+    """
+    reachable: set = set()
+    for isl, osl in isl_osl_pairs:
+        if isl + osl > max_context:
+            continue
+        allowed = get_benchmark_max_concurrency(
+            isl, osl, max_context, max_tokens_all_users, model_max_concurrency
+        )
+        if allowed >= concurrency:
+            reachable.add(int(isl))
+    return sorted(reachable)
+
+
+def max_gradeable_concurrency(
+    *,
+    max_context: int,
+    max_tokens_all_users: int,
+    model_max_concurrency: int,
+    min_input_lengths: int = SCALING_QUALITY_MIN_INPUT_LENGTHS,
+    isl_osl_pairs: Iterable[Tuple[int, int]] = BENCHMARK_ISL_OSL_PAIRS,
+) -> int:
+    """Largest concurrency reachable by at least ``min_input_lengths`` distinct
+    input lengths, i.e. the highest concurrency level that can be graded on the
+    scaling-quality line for this device configuration.
+
+    Returns 0 when fewer than ``min_input_lengths`` input lengths fit at all.
+    """
+    per_isl_allowed_max: Dict[int, int] = {}
+    for isl, osl in isl_osl_pairs:
+        if isl + osl > max_context:
+            continue
+        allowed = get_benchmark_max_concurrency(
+            isl, osl, max_context, max_tokens_all_users, model_max_concurrency
+        )
+        # An input length reaches the best concurrency any of its shapes admits.
+        per_isl_allowed_max[int(isl)] = max(per_isl_allowed_max.get(int(isl), 0), allowed)
+    if len(per_isl_allowed_max) < min_input_lengths:
+        return 0
+    # To keep >= min_input_lengths input lengths at a concurrency C, C cannot
+    # exceed the min_input_lengths-th largest per-input-length ceiling.
+    return sorted(per_isl_allowed_max.values(), reverse=True)[min_input_lengths - 1]
+
+
+def min_token_pool_for_concurrency(
+    target_concurrency: int,
+    *,
+    max_context: int,
+    min_input_lengths: int = SCALING_QUALITY_MIN_INPUT_LENGTHS,
+    isl_osl_pairs: Iterable[Tuple[int, int]] = BENCHMARK_ISL_OSL_PAIRS,
+) -> int:
+    """Smallest ``max_tokens_all_users`` (device KV-token pool) that lets at
+    least ``min_input_lengths`` distinct input lengths reach ``target_concurrency``.
+
+    Use this to size ``max_tokens_all_users_override`` so the top graded
+    concurrency can satisfy the three-point rule. Raises ``ValueError`` when
+    fewer than ``min_input_lengths`` input lengths even fit ``max_context``.
+    """
+    # Cheapest shape per input length (smallest isl+osl that still fits context).
+    cheapest_by_isl: Dict[int, int] = {}
+    for isl, osl in isl_osl_pairs:
+        if isl + osl > max_context:
+            continue
+        cost = isl + osl
+        cheapest_by_isl[int(isl)] = min(cheapest_by_isl.get(int(isl), cost), cost)
+    if len(cheapest_by_isl) < min_input_lengths:
+        raise ValueError(
+            f"Only {len(cheapest_by_isl)} input length(s) fit max_context={max_context}; "
+            f"cannot place {min_input_lengths} at concurrency {target_concurrency}."
+        )
+    nth_smallest_cost = sorted(cheapest_by_isl.values())[min_input_lengths - 1]
+    return int(target_concurrency) * int(nth_smallest_cost)
 
 
 def _benchmark_param_dedupe_key(params: BenchmarkTaskParams) -> Tuple:
