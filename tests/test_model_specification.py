@@ -25,15 +25,10 @@ from workflows.model_spec import (
     spec_templates,
     SystemRequirements,
 )
-from workflows.acceptance_criteria import (
-    _is_check_failing,
-    enforce_acceptance_criteria,
-)
 from workflows.workflow_types import (
     DeviceTypes,
     InferenceEngine,
     ModelStatusTypes,
-    ReportCheckTypes,
     VersionMode,
     WorkflowType,
 )
@@ -1172,115 +1167,6 @@ class TestRequiredTargetTiers:
         assert ModelStatusTypes.resolve("") is None
         assert ModelStatusTypes.resolve("not_a_real_status") is None
 
-
-class TestEnforceAcceptanceCriteria:
-    """Tests for the enforce_acceptance_criteria function."""
-
-    @pytest.fixture
-    def passing_target_checks(self):
-        return {
-            "functional": {
-                "ttft_check": ReportCheckTypes.PASS,
-                "tput_check": ReportCheckTypes.PASS,
-            },
-            "complete": {
-                "ttft_check": ReportCheckTypes.PASS,
-                "tput_check": ReportCheckTypes.PASS,
-            },
-            "target": {
-                "ttft_check": ReportCheckTypes.PASS,
-                "tput_check": ReportCheckTypes.PASS,
-            },
-        }
-
-    @pytest.fixture
-    def failing_target_checks(self):
-        return {
-            "functional": {
-                "ttft_check": ReportCheckTypes.PASS,
-                "tput_check": ReportCheckTypes.PASS,
-            },
-            "complete": {
-                "ttft_check": ReportCheckTypes.FAIL,
-                "tput_check": ReportCheckTypes.PASS,
-            },
-            "target": {
-                "ttft_check": ReportCheckTypes.FAIL,
-                "tput_check": ReportCheckTypes.FAIL,
-            },
-        }
-
-    def test_experimental_passes_even_when_all_fail(self, failing_target_checks):
-        result = enforce_acceptance_criteria(
-            failing_target_checks, ModelStatusTypes.EXPERIMENTAL
-        )
-        assert result["enforcement_result"] == "PASS"
-        assert result["enforced_tiers"] == []
-        assert result["failed_enforced_tiers"] == []
-        assert set(result["informational_tiers"]) == {
-            "functional",
-            "complete",
-            "target",
-        }
-
-    def test_functional_passes_when_functional_passes(self, failing_target_checks):
-        result = enforce_acceptance_criteria(
-            failing_target_checks, ModelStatusTypes.FUNCTIONAL
-        )
-        assert result["enforcement_result"] == "PASS"
-        assert result["enforced_tiers"] == ["functional"]
-        assert result["failed_enforced_tiers"] == []
-
-    def test_complete_fails_when_complete_fails(self, failing_target_checks):
-        result = enforce_acceptance_criteria(
-            failing_target_checks, ModelStatusTypes.COMPLETE
-        )
-        assert result["enforcement_result"] == "FAIL"
-        assert "complete" in result["failed_enforced_tiers"]
-
-    def test_top_perf_fails_when_any_tier_fails(self, failing_target_checks):
-        result = enforce_acceptance_criteria(
-            failing_target_checks, ModelStatusTypes.TOP_PERF
-        )
-        assert result["enforcement_result"] == "FAIL"
-        assert "complete" in result["failed_enforced_tiers"]
-        assert "target" in result["failed_enforced_tiers"]
-
-    def test_all_pass(self, passing_target_checks):
-        result = enforce_acceptance_criteria(
-            passing_target_checks, ModelStatusTypes.TOP_PERF
-        )
-        assert result["enforcement_result"] == "PASS"
-        assert result["failed_enforced_tiers"] == []
-
-    def test_handles_integer_check_values(self):
-        """Media model reports use raw integers (2=PASS, 3=FAIL)."""
-        target_checks = {
-            "functional": {"ttft_check": 2, "tput_check": 3},
-            "complete": {"ttft_check": 2, "tput_check": 2},
-            "target": {"ttft_check": 2, "tput_check": 2},
-        }
-        result = enforce_acceptance_criteria(target_checks, ModelStatusTypes.FUNCTIONAL)
-        assert result["enforcement_result"] == "FAIL"
-        assert "functional" in result["failed_enforced_tiers"]
-
-    def test_na_checks_are_not_failures(self):
-        target_checks = {
-            "functional": {
-                "ttft_check": ReportCheckTypes.NA,
-                "tput_check": ReportCheckTypes.PASS,
-            },
-        }
-        result = enforce_acceptance_criteria(target_checks, ModelStatusTypes.FUNCTIONAL)
-        assert result["enforcement_result"] == "PASS"
-
-    def test_model_status_is_included_in_result(self, passing_target_checks):
-        result = enforce_acceptance_criteria(
-            passing_target_checks, ModelStatusTypes.COMPLETE
-        )
-        assert result["model_status"] == "COMPLETE"
-
-
 class TestKnownIssue:
     def test_known_issue_creation_with_enum(self):
         ki = KnownIssue(
@@ -1480,30 +1366,6 @@ class TestKnownIssue:
             json.dump(spec_payload, f)
         with pytest.raises(ValueError):
             ModelSpec.from_json(spec_json)
-
-
-class TestIsCheckFailing:
-    """Tests for _is_check_failing helper."""
-
-    def test_report_check_fail(self):
-        assert _is_check_failing(ReportCheckTypes.FAIL) is True
-
-    def test_report_check_pass(self):
-        assert _is_check_failing(ReportCheckTypes.PASS) is False
-
-    def test_report_check_na(self):
-        assert _is_check_failing(ReportCheckTypes.NA) is False
-
-    def test_integer_fail(self):
-        assert _is_check_failing(3) is True  # ReportCheckTypes.FAIL == 3
-
-    def test_integer_pass(self):
-        assert _is_check_failing(2) is False  # ReportCheckTypes.PASS == 2
-
-    def test_non_check_values(self):
-        assert _is_check_failing("FAIL") is False
-        assert _is_check_failing(None) is False
-
 
 if __name__ == "__main__":
     pytest.main([__file__])

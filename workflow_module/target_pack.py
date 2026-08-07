@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Mapping, Optional, Protocol, runtime_checkable
+from typing import Any, Mapping, Optional, Protocol, Tuple, runtime_checkable
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +100,16 @@ class TargetPack(Protocol):
 
     def accuracy_targets_path(self) -> Path:
         """Absolute path to the accuracy reference-targets JSON."""
+        ...
+
+    # --- report metadata ---
+    def extra_spec_metadata_fields(self) -> Tuple[Tuple[str, str], ...]:
+        """Vendor provenance fields as ``(report_key, spec_key)`` pairs.
+
+        Appended to the engine's generic identity fields when report
+        metadata is injected from the runtime model spec. Tenstorrent:
+        ``tt_metal_commit`` / ``vllm_commit``.
+        """
         ...
 
 
