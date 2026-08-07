@@ -391,6 +391,34 @@ templates:
         trace_region_size: 268435456
         l1_small_size: 24576
         sample_on_device_mode: decode_only
+    # Same as Gemma4 note, QB2's 4 Blackhole chips (4x p150a) also
+    # run as a P150x4 (1,4) mesh.
+    # https://github.com/tenstorrent/tt-inference-server/blob/edb99fae3113f7ce10ba51b6ea310ede173b4b93/workflows/model_specs/dev/llm.yaml#L174-L177
+    - device: P150X4
+      # TODO(batching): pinned to max_concurrency=1 (B=1). The qwen36 Blackhole
+      # tt-transformers path added batched text decode (tt-metal PR #48380), but on
+      # current builds batched paged-attention/GDN decode corrupts output for >=2
+      # concurrent sequences (garbled/truncated generations; tt-metal issue #50512).
+      # Measured on p150x4: ifeval prompt_level_strict=1.0 at num_concurrent=1 vs 0.20
+      # at num_concurrent=32 with incoherent outputs. Raise to 32 (max_num_seqs=32 +
+      # QWEN36_MAX_TOKENS_ALL_USERS shared KV pool) only after #50512 is fixed and
+      # batched decode PCC is verified.
+      max_concurrency: 1
+      max_context: 262144
+      default_impl: true
+      env_vars:
+        TT_QWEN35_TEXT_VER: qwen36_blackhole
+        HF_MODEL: Qwen/Qwen3.6-27B
+        MESH_DEVICE: "P150x4"
+      vllm_args:
+        async_scheduling: true
+        enable_auto_tool_choice: true
+        reasoning_parser: qwen3
+        tool_call_parser: qwen3_coder
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 268435456
+        l1_small_size: 24576
   status: EXPERIMENTAL
   has_builtin_warmup: true
   metadata:
@@ -1766,3 +1794,43 @@ templates:
       remote_api_model: zai-org/GLM-5.2
       reasoning_parser_name: glm45
       tool_call_parser_name: glm47
+
+- weights:
+    - Qwen/Qwen3.5-27B
+  impl: qwen36_blackhole  # the same model structure as 3.6
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+  device_model_specs:
+    - device: P150X4
+      # TODO(batching): pinned to max_concurrency=1 (B=1). The qwen36 Blackhole
+      # tt-transformers path added batched text decode (tt-metal PR #48380), but on
+      # current builds batched paged-attention/GDN decode corrupts output for >=2
+      # concurrent sequences (garbled/truncated generations; tt-metal issue #50512).
+      # Measured on p150x4: ifeval prompt_level_strict=1.0 at num_concurrent=1 vs 0.20
+      # at num_concurrent=32 with incoherent outputs. Raise to 32 (max_num_seqs=32 +
+      # QWEN36_MAX_TOKENS_ALL_USERS shared KV pool) only after #50512 is fixed and
+      # batched decode PCC is verified.
+      max_concurrency: 1
+      max_context: 262144
+      default_impl: true
+      env_vars:
+        TT_QWEN35_TEXT_VER: qwen36_blackhole
+        HF_MODEL: Qwen/Qwen3.5-27B
+        MESH_DEVICE: "P150x4"
+      vllm_args:
+        async_scheduling: true
+        enable_auto_tool_choice: true
+        reasoning_parser: qwen3
+        tool_call_parser: qwen3_coder
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 268435456
+        l1_small_size: 24576
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  metadata:
+    Qwen/Qwen3.5-27B:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: qwen3_coder
