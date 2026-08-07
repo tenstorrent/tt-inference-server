@@ -12,6 +12,7 @@ error handling) is tested without running a real workflow.
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
 import pytest
@@ -176,22 +177,28 @@ def _install_fake_venv_stack(
     run_rc=0,
     recorder=None,
 ):
-    """Stand in fake ``workflows.workflow_venvs`` / ``workflows.utils`` modules so
+    """Register a fake ``VenvProvisioner`` and stub ``proc.run_command`` so
     VenvCommand resolves a venv + runs a subprocess without touching the disk.
     """
 
-    class _FakeVenvConfig:
+    class _FakeProvisioner:
         def __init__(self):
-            self.venv_python = venv_python
             self.setup_calls = []
 
-        def setup(self, model_spec=None):
+        def has_venv(self, vt):
+            return vt == venv_type
+
+        def venv_path(self, vt):
+            return Path(venv_python).parent.parent
+
+        def venv_python(self, vt):
+            return venv_python
+
+        def provision(self, vt, model_spec=None):
             self.setup_calls.append(model_spec)
             return setup_ok
 
-    config = _FakeVenvConfig()
-    venvs_mod = ModuleType("workflows.workflow_venvs")
-    venvs_mod.VENV_CONFIGS = {venv_type: config}
+    provisioner = _FakeProvisioner()
 
     def _run_command(command, logger=None, env=None, **kwargs):
         if recorder is not None:
@@ -199,12 +206,9 @@ def _install_fake_venv_stack(
             recorder["env"] = env
         return run_rc
 
-    utils_mod = ModuleType("workflows.utils")
-    utils_mod.run_command = _run_command
-
-    monkeypatch.setitem(sys.modules, "workflows.workflow_venvs", venvs_mod)
-    monkeypatch.setitem(sys.modules, "workflows.utils", utils_mod)
-    return config
+    monkeypatch.setattr("workflow_module.venv_provisioner._provisioner", provisioner)
+    monkeypatch.setattr("workflow_module.proc.run_command", _run_command)
+    return provisioner
 
 
 class TestVenvCommand:

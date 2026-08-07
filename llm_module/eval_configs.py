@@ -9,7 +9,8 @@ from __future__ import annotations
 import logging
 from typing import List
 
-from workflows.workflow_types import EvalLimitMode, WorkflowVenvType
+from workflow_module.engine_types import EvalLimitMode
+from workflow_module.engine_types import WorkflowVenvType
 
 from .eval_command import _get_limit_mode, _parse_eval_samples_mapping
 

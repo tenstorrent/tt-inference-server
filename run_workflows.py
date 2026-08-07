@@ -51,10 +51,30 @@ _REPO_ROOT = Path(__file__).resolve().parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from workflows.model_spec import MODEL_SPECS  # noqa: E402
-from workflows.workflow_types import DeviceTypes  # noqa: E402
+from workflows.device_catalog_provider import TenstorrentDeviceCatalog  # noqa: E402
+from workflows.model_spec_provider import TenstorrentModelSpecProvider  # noqa: E402
 
 from workflow_module import CommandFactory, WorkflowRunner  # noqa: E402
+from workflow_module.device_catalog import (  # noqa: E402
+    get_device_catalog,
+    register_device_catalog,
+)
+from workflow_module.model_catalog import (  # noqa: E402
+    get_model_spec_provider,
+    register_model_spec_provider,
+)
+from workflow_module.server_lifecycle import (  # noqa: E402
+    register_server_lifecycle,
+)
+from workflow_module.venv_provisioner import (  # noqa: E402
+    register_venv_provisioner,
+)
+from workflows.server_lifecycle_provider import (  # noqa: E402
+    TenstorrentServerLifecycle,
+)
+from workflows.venv_provisioner_provider import (  # noqa: E402
+    TenstorrentVenvProvisioner,
+)
 
 logger = logging.getLogger("tt_workflow_runner")
 
@@ -69,8 +89,8 @@ _LOG_LEVELS = {
 def parse_args() -> argparse.Namespace:
     from workflow_module import WORKFLOW_REGISTRY
 
-    valid_models = sorted({spec.model_name for spec in MODEL_SPECS.values()})
-    valid_devices = sorted({d.name.lower() for d in DeviceTypes})
+    valid_models = get_model_spec_provider().model_names()
+    valid_devices = get_device_catalog().device_names()
     valid_workflows = sorted(WORKFLOW_REGISTRY)
 
     parser = argparse.ArgumentParser(
@@ -510,6 +530,12 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    # Entry-point injection: install the Tenstorrent catalog as the engine's
+    # model spec provider before any command building touches it.
+    register_model_spec_provider(TenstorrentModelSpecProvider())
+    register_device_catalog(TenstorrentDeviceCatalog())
+    register_server_lifecycle(TenstorrentServerLifecycle())
+    register_venv_provisioner(TenstorrentVenvProvisioner())
     args = parse_args()
     logging.basicConfig(
         level=_LOG_LEVELS[args.log_level],
