@@ -34,16 +34,32 @@ class TestImageMatrixExpansionSDXL:
         assert not missing, f"SDXL suites missing from v2 image.json: {missing}"
 
     def test_sdxl_full_lora_suites(self):
-        """n150, t3k, galaxy should have 6 test cases including LoRA tests."""
+        """n150, t3k, galaxy should have 7 test cases including LoRA tests."""
         suites = load_suite_files_by_category("image")
         suite_map = {s["id"]: s for s in suites}
 
         for suite_id in ["sdxl-n150", "sdxl-t3k", "sdxl-galaxy"]:
             suite = suite_map[suite_id]
-            assert len(suite["test_cases"]) == 6, f"{suite_id}: expected 6 test cases"
+            assert len(suite["test_cases"]) == 7, f"{suite_id}: expected 7 test cases"
             templates = [tc["template"] for tc in suite["test_cases"]]
             assert "ImageGenerationEvalsTest" in templates
             assert "ImageGenerationLoraLoadTest" in templates
+            assert "ImageGenerationLoraRollbackTest" in templates
+
+    def test_sdxl_rollback_test_has_lora_target(self):
+        """The rollback test raises without targets.lora, so it must be configured."""
+        suites = load_suite_files_by_category("image")
+        suite_map = {s["id"]: s for s in suites}
+
+        for suite_id in ["sdxl-n150", "sdxl-t3k", "sdxl-galaxy"]:
+            case = next(
+                tc
+                for tc in suite_map[suite_id]["test_cases"]
+                if tc["template"] == "ImageGenerationLoraRollbackTest"
+            )
+            lora = case["targets"]["lora"]
+            assert lora["lora_path"] == "artificialguybr/ColoringBookRedmond-V2"
+            assert lora["lora_scale"] == 1
 
     def test_sdxl_galaxy_timing_differs(self):
         """Per-device LoadTest timing: galaxy 20/28/45, n150 12/16/23 (Forge
