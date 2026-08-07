@@ -1179,6 +1179,13 @@ templates:
         # --reasoning-parser separates the thought channel into reasoning_content.
         default-chat-template-kwargs: '{"enable_thinking": true}'
         reasoning-parser: gemma4
+    # Simulation / bring-your-own-server path (docs/gpu_workflows.md). Lets the
+    # benchmark workflows target an OpenAI-compatible endpoint with no Tenstorrent
+    # hardware present — used by the RFP simulation harness in llm-gauntlet.
+    - device: GPU
+      max_concurrency: 32
+      max_context: 262144 # 256 * 1024
+      default_impl: true
   status: EXPERIMENTAL
   has_builtin_warmup: true
   env_vars:

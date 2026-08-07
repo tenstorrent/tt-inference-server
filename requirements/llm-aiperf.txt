@@ -21,9 +21,41 @@
 # Our CPU-only torch is pinned to 2.4 so transformers is capped at <5 to
 # avoid `ModuleNotFoundError: torch.distributed.tensor.device_mesh` on
 # import of `AutoTokenizer`. aiperf itself only requires transformers>=4.56.
-torch==2.4.0+cpu
+# RFP Milestone-0 handoff change — NOT upstream. See tenstorrent#4883.
+#
+# torch is not required by anything in this venv: `aiperf` does not depend on it,
+# and no other installed distribution declares it. But the pin breaks two things.
+#
+#   1. torch 2.4.0 is incompatible with transformers 5.x, which needs DTensor from
+#      torch.distributed.tensor (2.5+). With both pinned, loading a tokenizer
+#      raises ImportError, AIPerf swallows it and hangs in futex_wait with a
+#      0-byte aiperf.log — a benchmark that never returns and never says why.
+#   2. The +cpu local-version wheel is published for linux/x86_64 only, so this
+#      venv cannot be built on macOS or linux/aarch64 at all.
+#
+# Dropping it removes a ~200 MB download, unblocks transformers 5.x (needed for
+# the Gemma-4 tokenizer), and avoids adding protobuf, which the 4.x SentencePiece
+# path would otherwise require. Verified: aiperf installs and
+# AutoTokenizer.from_pretrained("google/gemma-4-31B-it") loads in 4.4s
+# (GemmaTokenizer, vocab 262144) with no torch present.
+#
+# Revert once #4883 lands upstream.
 aiperf
-transformers>=4.56,<5
+# RFP Milestone-0 handoff change — NOT upstream. See tenstorrent#4883.
+#
+# The <5 ceiling caps this venv at transformers 4.57.x, on which the Gemma-4
+# tokenizer cannot be loaded: AIPerf calls AutoTokenizer.from_pretrained() before
+# issuing any request, that raises, and AIPerf then hangs in futex_wait with a
+# 0-byte aiperf.log rather than reporting the failure. The result is a benchmark
+# that never returns and gives no diagnostic.
+#
+# 5.x loads it cleanly via the fast-tokenizer path (GemmaTokenizer, vocab 262144)
+# and does not need protobuf, so this removes a dependency rather than adding one.
+# Other venvs here already run 5.x — benchmarks-vllm-forge.txt pins 5.5.1 and
+# llm-vllm-overrides.txt uses >=5.5.0,<6 — so the ceiling reads as stale.
+#
+# Revert this once #4883 lands upstream.
+transformers>=5.5.0,<6
 pyjwt
 requests
 datasets

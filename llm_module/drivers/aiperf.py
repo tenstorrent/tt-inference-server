@@ -79,6 +79,13 @@ class AIPerfDriver(LLMDriver):
             url,
             "--artifact-dir",
             str(artifact_dir),
+            # RFP Milestone-0 handoff change — NOT upstream. See tenstorrent#4883.
+            # AIPerf defaults --ui-type to "dashboard", a full-screen Textual TUI.
+            # With no attached terminal it emits alternate-screen escape codes and
+            # blocks forever, writing a 0-byte aiperf.log. Benchmarks are always
+            # run non-interactively here, so the UI is pure liability.
+            "--ui-type",
+            "none",
         ]
         # AIPerf parses --goodput as a single token holding the full
         # space-separated KEY:VALUE SLO list, so pass it as one argument.
