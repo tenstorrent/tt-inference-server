@@ -64,27 +64,35 @@ resolve_commit_to_full_sha() {
 # ------------------------------------------------------------------------------
 report_disk() {
     local label="$1"
-    echo "==================== DISK REPORT: ${label} ===================="
-    echo "--- date ---"
-    date -u '+%Y-%m-%dT%H:%M:%SZ' || true
-    echo "--- df -h (local filesystems) ---"
-    df -h -x tmpfs -x devtmpfs 2>/dev/null || df -h || true
-    echo "--- docker root dir ---"
-    local docker_root
-    docker_root=$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || echo "")
-    if [ -n "$docker_root" ]; then
-        echo "DockerRootDir=${docker_root}"
-        df -h "$docker_root" 2>/dev/null || true
-    fi
-    # containerd is the snapshotter that reported ENOSPC in CI; report it even
-    # when docker's own root dir sits elsewhere.
-    if [ -d /var/lib/containerd ]; then
-        echo "--- df -h /var/lib/containerd ---"
-        df -h /var/lib/containerd 2>/dev/null || true
-    fi
-    echo "--- docker system df (images / containers / build cache) ---"
-    docker system df 2>/dev/null || true
-    echo "==================== END DISK REPORT: ${label} ===================="
+    # Everything goes to stderr on purpose. Callers of this script capture its
+    # stdout (tt-shield does `IMAGE_OUTPUT=$(./scripts/build_single_docker.sh ...)`
+    # to scrape the image tag), so anything written to stdout is swallowed and
+    # never reaches the CI log -- which is exactly what happened the first time
+    # this telemetry was added. docker build already writes to stderr, which is
+    # why its output was visible while these reports were not.
+    {
+        echo "==================== DISK REPORT: ${label} ===================="
+        echo "--- date ---"
+        date -u '+%Y-%m-%dT%H:%M:%SZ' || true
+        echo "--- df -h (local filesystems) ---"
+        df -h -x tmpfs -x devtmpfs 2>/dev/null || df -h || true
+        echo "--- docker root dir ---"
+        local docker_root
+        docker_root=$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || echo "")
+        if [ -n "$docker_root" ]; then
+            echo "DockerRootDir=${docker_root}"
+            df -h "$docker_root" 2>/dev/null || true
+        fi
+        # containerd is the snapshotter that reported ENOSPC in CI; report it even
+        # when docker's own root dir sits elsewhere.
+        if [ -d /var/lib/containerd ]; then
+            echo "--- df -h /var/lib/containerd ---"
+            df -h /var/lib/containerd 2>/dev/null || true
+        fi
+        echo "--- docker system df (images / containers / build cache) ---"
+        docker system df 2>/dev/null || true
+        echo "==================== END DISK REPORT: ${label} ===================="
+    } >&2
 }
 
 report_disk_on_exit() {
@@ -332,8 +340,9 @@ generate_model_specs_json()
         . -f vllm-tt-metal/vllm.tt-metal.src.dev.Dockerfile
 
         echo "✅ built image: ${dev_image_tag}"
-        echo "--- built image size ---"
-        docker image ls --format "table {{.Repository}}:{{.Tag}}\t{{.Size}}" "${dev_image_tag}" || true
+        # stderr: callers scrape stdout for the image tag with
+        # `grep -oE 'ghcr\.io/[^ ]+src-dev[^ ]+'`, and this table repeats the tag.
+        { echo "--- built image size ---"; docker image ls --format "table {{.Repository}}:{{.Tag}}\t{{.Size}}" "${dev_image_tag}" || true; } >&2
     else
         echo "skipping, build_dev_image=${build_dev_image}"
     fi
