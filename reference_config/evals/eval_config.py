@@ -5322,32 +5322,40 @@ _eval_config_list = [
                     n_tasks=89,
                     override_cpus=16,
                     override_memory_mb=32 * 1024,
-                    agent_timeout_sec=2 * 60 * 60,
+                    # These tasks are each estimated at five expert minutes.
+                    # DiffusionGemma is slower than the reference agents, but a
+                    # bounded 45-minute budget keeps a stuck trial from
+                    # consuming an entire nightly window.
+                    agent_timeout_sec=45 * 60,
                     agent_kwargs={
                         "parser_name": "json",
                         "temperature": 1.0,
                         "model_info": {
-                            # Reserve the final 64K for block-diffusion output.
-                            "max_input_tokens": 192 * 1024,
-                            "max_output_tokens": 64 * 1024,
+                            # The deterministic CI tasks have short
+                            # instructions and artifacts. Bound accumulated
+                            # tool history so an unproductive loop cannot grow
+                            # into a device-fatal long prefill.
+                            "max_input_tokens": 16 * 1024,
+                            "max_output_tokens": 4 * 1024,
                         },
                         "llm_kwargs": {
                             # DiffusionGemma's model-owned sampler accepts only
                             # the neutral vLLM sampling values.
                             "top_p": 1.0,
-                            "max_tokens": 64 * 1024,
-                            "timeout": 60 * 60,
+                            # Emit only whole 256-token diffusion canvases.
+                            "max_tokens": 4 * 1024,
+                            "timeout": 15 * 60,
                         },
                     },
-                    # Keep CI-mode small and deterministic while exercising
-                    # multi-turn tool use through the block-serving API.
+                    # Exact Terminal-Bench 2.1 metadata rates all three at five
+                    # expert minutes. Together they exercise archive/password
+                    # tooling, Git recovery, and edit/compile/verify loops
+                    # without the multi-hour build, cryptanalysis, or VM tasks.
                     task_names_map={
                         EvalLimitMode.CI_NIGHTLY: [
-                            "terminal-bench/break-filter-js-from-html",
-                            "terminal-bench/cobol-modernization",
-                            "terminal-bench/compile-compcert",
-                            "terminal-bench/feal-differential-cryptanalysis",
-                            "terminal-bench/qemu-startup",
+                            "terminal-bench/crack-7z-hash",
+                            "terminal-bench/fix-git",
+                            "terminal-bench/prove-plus-comm",
                         ],
                     },
                 ),

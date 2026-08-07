@@ -289,6 +289,7 @@ def test_diffusiongemma_dev_spec_matches_validated_256k_contract():
     assert env["DG_UPFRONT_COARSE_PREFILL_BUCKETS"] == "1"
     assert env["DG_UPFRONT_LAZY_PREFILL_RECAPTURE"] == "1"
     assert env["DG_PREFILL_CHUNK_SIZE"] == "16384"
+    assert env["DG_PREFILL_RAGGED_CHUNK"] == "1024"
     assert env["DG_DENOISE_REVEAL_PMAX"] == "262144"
     assert env["DG_UPFRONT_PREFILL_WARMUP_LENS"] == "32,64,96"
     assert env["DISABLE_METAL_OP_TIMEOUT"] == "1"

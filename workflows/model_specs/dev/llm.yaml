@@ -321,6 +321,12 @@ templates:
         DG_UPFRONT_COARSE_PREFILL_BUCKETS: "1"
         DG_UPFRONT_LAZY_PREFILL_RECAPTURE: "1"
         DG_PREFILL_CHUNK_SIZE: "16384"
+        # A 2048-token ragged-MoE slice needs a 176 MiB embedding output.
+        # After a 118-turn Terminal-Bench trial fragmented DRAM, its 23 MiB
+        # per-bank allocation killed EngineCore despite 1.30 GiB total free.
+        # Halving the bounded inner slice keeps the same per-token computation
+        # while reducing that contiguous allocation to 11 MiB per bank.
+        DG_PREFILL_RAGGED_CHUNK: "1024"
         DG_DENOISE_REVEAL_PMAX: "262144"
         DG_DENOISE_SLIDING_WINDOW: "1"
         # Keep startup bounded; unseen buckets atomically release, compile and

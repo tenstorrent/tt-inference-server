@@ -162,21 +162,20 @@ def test_diffusiongemma_terminal_bench_ci_is_small_and_single_request():
     assert config.n_concurrent_trials == 1
     assert config.n_attempts == 1
     assert config.task_names_map[EvalLimitMode.CI_NIGHTLY] == [
-        "terminal-bench/break-filter-js-from-html",
-        "terminal-bench/cobol-modernization",
-        "terminal-bench/compile-compcert",
-        "terminal-bench/feal-differential-cryptanalysis",
-        "terminal-bench/qemu-startup",
+        "terminal-bench/crack-7z-hash",
+        "terminal-bench/fix-git",
+        "terminal-bench/prove-plus-comm",
     ]
+    assert config.agent_timeout_sec == 45 * 60
     assert config.agent_kwargs["temperature"] == 1.0
     assert config.agent_kwargs["model_info"] == {
-        "max_input_tokens": 192 * 1024,
-        "max_output_tokens": 64 * 1024,
+        "max_input_tokens": 16 * 1024,
+        "max_output_tokens": 4 * 1024,
     }
     assert config.agent_kwargs["llm_kwargs"] == {
         "top_p": 1.0,
-        "max_tokens": 64 * 1024,
-        "timeout": 60 * 60,
+        "max_tokens": 4 * 1024,
+        "timeout": 15 * 60,
     }
 
 
