@@ -41,6 +41,12 @@ DISPLAY_NAMES: Dict[str, str] = {
     "prefill_throughput_tok_s": "Prefill Tput (tok/s)",
     "ttft_tail_ratio": "TTFT Tail (p99/p50)",
     "ttft_scaling_exponent": "TTFT Scaling Exp",
+    # Scored prefix-cache figures (report_module/prefix_cache_uplift.py). Note the
+    # sign: ttft_reduction_pct is positive when the cache helped, the opposite of
+    # the ttft_uplift_pct delta shown in the uplift table.
+    "decode_prefix_cache_hit_rate": "Decode Cache Hit Rate",
+    "ttft_reduction_pct": "TTFT Reduction % vs base",
+    "baseline_mean_ttft_ms": "Baseline TTFT (ms)",
     "p50_ttft": "P50 TTFT (ms)",
     "p90_ttft": "P90 TTFT (ms)",
     "p95_ttft": "P95 TTFT (ms)",

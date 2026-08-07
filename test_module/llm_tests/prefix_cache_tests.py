@@ -41,6 +41,7 @@ from llm_module.prefix_cache import (
 )
 from llm_module.runner import RunnerResult
 from llm_module.server_control import ServerController
+from report_module.prefix_cache_uplift import apply_prefix_cache_uplift
 from workflow_module import accept_blocks
 
 from ..context import MediaContext
@@ -236,6 +237,10 @@ def run_prefix_cache(
     if not result.blocks:
         logger.error("[prefix-cache] No blocks produced -- sweep had zero successes.")
         return result
+
+    # Applied after the sweep, not per run: the uplift compares a treatment run
+    # against its matched baseline run, so both have to have finished first.
+    result.blocks = apply_prefix_cache_uplift(result.blocks)
 
     accept_blocks(
         result.blocks,
