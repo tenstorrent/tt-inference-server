@@ -21,6 +21,7 @@ from config.settings import get_settings
 from domain.image_generate_request import ImageGenerateRequest
 from domain.video_generate_request import VideoGenerateRequest
 from domain.video_i2v_generate_request import ImagePromptEntry, VideoI2VGenerateRequest
+from huggingface_hub import hf_hub_download
 from models.common.utility_functions import is_blackhole
 from models.tt_dit.pipelines.flux1.pipeline_flux1 import Flux1Pipeline
 from models.tt_dit.pipelines.mochi.pipeline_mochi import MochiPipeline
@@ -50,11 +51,13 @@ dit_runner_log_map = {
     ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW.value: "Motif-Image-6B-Preview",
     ModelRunners.TT_MOCHI_1.value: "Mochi1",
     ModelRunners.TT_WAN_2_2.value: "Wan22",
+    ModelRunners.TT_WAN_2_2_T2V_PRODIA.value: "Wan22-T2V-Prodia",
     ModelRunners.TT_WAN_2_2_I2V.value: "Wan22-I2V",
     ModelRunners.TT_WAN_2_2_I2V_PRODIA.value: "Wan22-I2V-Prodia",
     ModelRunners.TT_WAN_2_2_I2V_ANISORA.value: "Wan22-I2V-AniSora",
     ModelRunners.TT_WAN_2_2_I2V_DISTILL.value: "Wan22-I2V-Distill",
     ModelRunners.TT_WAN_2_2_I2V_LORA.value: "Wan22-I2V-LoRA",
+    ModelRunners.TT_WAN_2_2_I2V_LIGHTNING.value: "Wan22-I2V-Lightning",
     ModelRunners.TT_QWEN_IMAGE.value: "Qwen-Image",
     ModelRunners.TT_QWEN_IMAGE_2512.value: "Qwen-Image-2512",
     ModelRunners.SP_RUNNER.value: "SP-Runner",
@@ -64,6 +67,12 @@ DIT_WEIGHTS_DISTRIBUTION_TIMEOUT_SECONDS = 6000
 
 
 class TTDiTRunner(BaseMetalDeviceRunner):
+    # Set True by runners that require image conditioning (I2V). The SP inference
+    # loop uses this to reject image-less requests with a clean per-request error
+    # instead of letting a base VideoGenerateRequest reach the runner and crash
+    # on the missing ``image_prompts`` field.
+    requires_image_conditioning: bool = False
+
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.pipeline = None
@@ -387,6 +396,10 @@ WAN22_ANISORA_GUIDANCE_SCALE = 3.5
 # num_inference_steps is ignored, same as the distill runner.
 WAN22_ANISORA_NUM_STEPS = 8
 
+WAN22_LIGHTNING_NUM_STEPS = 4
+WAN22_LIGHTNING_BOUNDARY_RATIO = 0.875
+WAN22_LIGHTNING_FLOW_SHIFT = 5.0
+
 
 def _wan22_needs_ring_fabric(mesh_shape: tuple) -> bool:
     """Return True when Wan2.2 must advertise FABRIC_1D_RING for ``mesh_shape``."""
@@ -484,6 +497,84 @@ class TTWan22Runner(TTDiTRunner):
         return _wan22_dit_device_params(self.settings.device_mesh_shape)
 
 
+def _prodia_wan_device_params(device_mesh_shape) -> dict:
+    """Shared device params for Prodia Wan T2V/I2V distilled runners.
+
+    The 4x8 LoudBox trace binary needs ~30.6MB; the default 30MB region
+    rejects it and warmup OOMs. Both 4x8 (32 chips) and 4x32 (128 chips)
+    Blackhole meshes get the bumped trace region.
+    """
+    device_params = {"fabric_config": ttnn.FabricConfig.FABRIC_1D_RING}
+    mesh_size = device_mesh_shape[0] * device_mesh_shape[1]
+    if mesh_size >= 32 and is_blackhole():
+        device_params["trace_region_size"] = 150_000_000
+        config = ttnn.FabricRouterConfig()
+        config.max_packet_payload_size_bytes = 8192
+        device_params["fabric_router_config"] = config
+    return device_params
+
+
+class TTWan22T2VProdiaRunner(TTDiTRunner):
+    """Wan2.2 T2V runner using the Prodia distilled pipeline (no image prompt)."""
+
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
+        # Export MP4 inside the device worker by default to avoid pickling the
+        # raw frame array (~226MB at 720p×81 frames) over IPC.
+        self.export_in_runner = True
+
+    def load_weights(self):
+        return False
+
+    def get_pipeline_device_params(self):
+        return _prodia_wan_device_params(self.settings.device_mesh_shape)
+
+    def create_pipeline(self):
+        try:
+            from pipelines.pipeline import create_pipeline
+
+            resolution = wan22_target_resolution(self.settings.device_mesh_shape)
+            return create_pipeline(
+                self.ttnn_device,
+                weights_dir=self.settings.model_weights_path,
+                height=resolution.height,
+                width=resolution.width,
+                num_frames=WAN22_NUM_FRAMES,
+            )
+        except Exception as e:
+            log_exception_chain(
+                self.logger,
+                self.device_id,
+                "Prodia T2V pipeline creation failed",
+                e,
+            )
+            raise
+
+    @log_execution_time(
+        f"{dit_runner_log_map[get_settings().model_runner]} inference",
+        TelemetryEvent.MODEL_INFERENCE,
+        os.environ.get("TT_VISIBLE_DEVICES"),
+    )
+    def run(self, requests: list[VideoGenerateRequest]):
+        self.logger.debug(f"Device {self.device_id}: Running inference")
+        request = requests[0]
+        resolution = wan22_target_resolution(self.settings.device_mesh_shape)
+        frames = self.pipeline(
+            prompt=request.prompt,
+            height=resolution.height,
+            width=resolution.width,
+            num_frames=WAN22_NUM_FRAMES,
+            seed=int(request.seed or 0),
+            traced=True,
+        )
+        self.logger.debug(f"Device {self.device_id}: Inference completed")
+        if self.export_in_runner:
+            from utils.video_manager import VideoManager
+
+            return [VideoManager().export_to_mp4(frames)]
+        return frames
+
+
 class TTWan22I2VProdiaRunner(TTDiTRunner):
     """Wan2.2 I2V runner using the Prodia distilled pipeline.
     Single-image conditioning only — when the broadcast carries
@@ -491,6 +582,8 @@ class TTWan22I2VProdiaRunner(TTDiTRunner):
     ``frame_pos`` is selected and the rest are dropped (the distilled pipeline
     does not accept multi-frame conditioning).
     """
+
+    requires_image_conditioning = True
 
     def __init__(self, device_id: str):
         super().__init__(device_id)
@@ -521,23 +614,11 @@ class TTWan22I2VProdiaRunner(TTDiTRunner):
         return False
 
     def get_pipeline_device_params(self):
-        # The 4x8 LoudBox trace binary needs ~30.6MB; the default 30MB region
-        # rejects it and warmup OOMs. Both 4x8 (32 chips) and 4x32 (128 chips)
-        # Blackhole meshes get the bumped trace region.
-        device_params = {"fabric_config": ttnn.FabricConfig.FABRIC_1D_RING}
-        mesh_size = (
-            self.settings.device_mesh_shape[0] * self.settings.device_mesh_shape[1]
-        )
-        if mesh_size >= 32 and is_blackhole():
-            device_params["trace_region_size"] = 120_000_000
-            config = ttnn.FabricRouterConfig()
-            config.max_packet_payload_size_bytes = 8192
-            device_params["fabric_router_config"] = config
-        return device_params
+        return _prodia_wan_device_params(self.settings.device_mesh_shape)
 
     def create_pipeline(self):
         try:
-            from models.tt_dit.prodia.pipelines.pipeline_i2v import (
+            from pipelines.pipeline_i2v import (
                 create_i2v_pipeline,
             )
 
@@ -607,6 +688,8 @@ class TTWan22I2VRunner(TTDiTRunner):
     """
     Wan2.2 image-to-video runner.
     """
+
+    requires_image_conditioning = True
 
     def __init__(self, device_id: str):
         super().__init__(device_id)
@@ -706,6 +789,8 @@ def _wan22_i2v_warmup_request(prompt: str = "Sunrise on a beach"):
 class TTWan22I2VAniSoraRunner(TTDiTRunner):
     """Wan2.2 I2V with AniSora V3.2 anime fine-tune weights."""
 
+    requires_image_conditioning = True
+
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.resolution = wan22_target_resolution(self.settings.device_mesh_shape)
@@ -795,6 +880,8 @@ class TTWan22I2VDistillRunner(TTDiTRunner):
     to 1.0 and ``num_inference_steps`` defaults to 4.
     """
 
+    requires_image_conditioning = True
+
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.resolution = wan22_target_resolution(self.settings.device_mesh_shape)
@@ -883,6 +970,8 @@ class TTWan22I2VLoRARunner(TTDiTRunner):
     environment variables by the pipeline's ``__init__``.
     """
 
+    requires_image_conditioning = True
+
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.resolution = wan22_target_resolution(self.settings.device_mesh_shape)
@@ -897,11 +986,17 @@ class TTWan22I2VLoRARunner(TTDiTRunner):
             lora_high = os.environ.get("LORA_HIGH_PATH")
             lora_low = os.environ.get("LORA_LOW_PATH")
 
-            return WanPipelineI2VLora.create_pipeline(
+            # create_pipeline can't forward LoRA stacks, so build the config and
+            # construct directly.
+            config = WanPipelineI2VLora.default_config(
                 mesh_device=self.ttnn_device,
                 height=self.resolution.height,
                 width=self.resolution.width,
                 num_frames=WAN22_NUM_FRAMES,
+            )
+            return WanPipelineI2VLora(
+                device=self.ttnn_device,
+                config=config,
                 lora_high=lora_high,
                 lora_low=lora_low,
             )
@@ -945,3 +1040,93 @@ class TTWan22I2VLoRARunner(TTDiTRunner):
 
     def _build_warmup_video_request(self) -> VideoI2VGenerateRequest:
         return _wan22_i2v_warmup_request("A golden retriever running on a sandy beach")
+
+
+class TTWan22I2VLightningRunner(TTDiTRunner):
+    """Wan2.2 I2V with lightx2v/Wan2.2-Lightning distilled LoRA weights."""
+
+    requires_image_conditioning = True
+
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
+        self.resolution = wan22_target_resolution(self.settings.device_mesh_shape)
+        self.image_manager = ImageManager()
+
+    def create_pipeline(self):
+        try:
+            from models.tt_dit.experimental.pipelines.pipeline_wan_lora import (
+                WanPipelineI2VLora,
+            )
+
+            lora_high = os.environ.get("LORA_HIGH_PATH") or hf_hub_download(
+                repo_id="lightx2v/Wan2.2-Lightning",
+                filename="Wan2.2-I2V-A14B-4steps-lora-rank64-Seko-V1/high_noise_model.safetensors",
+            )
+            lora_low = os.environ.get("LORA_LOW_PATH") or hf_hub_download(
+                repo_id="lightx2v/Wan2.2-Lightning",
+                filename="Wan2.2-I2V-A14B-4steps-lora-rank64-Seko-V1/low_noise_model.safetensors",
+            )
+            self.logger.info(
+                f"Device {self.device_id}: Lightning adapters "
+                f"high={lora_high}, low={lora_low}"
+            )
+
+            config = WanPipelineI2VLora.default_config(
+                mesh_device=self.ttnn_device,
+                height=self.resolution.height,
+                width=self.resolution.width,
+                num_frames=WAN22_NUM_FRAMES,
+                cfg_enabled=False,
+                config_overrides={"boundary_ratio": WAN22_LIGHTNING_BOUNDARY_RATIO},
+            )
+            return WanPipelineI2VLora(
+                device=self.ttnn_device,
+                config=config,
+                lora_high=lora_high,
+                lora_low=lora_low,
+            )
+        except Exception as e:
+            log_exception_chain(
+                self.logger, self.device_id, "Lightning I2V pipeline creation failed", e
+            )
+            raise
+
+    def load_weights(self):
+        return False
+
+    def _build_image_prompt(self, request: VideoI2VGenerateRequest) -> list:
+        return [
+            ImagePrompt(
+                image=self.image_manager.base64_to_pil_image(entry.image),
+                frame_pos=entry.frame_pos,
+            )
+            for entry in request.image_prompts
+        ]
+
+    @log_execution_time(
+        f"{dit_runner_log_map.get(get_settings().model_runner, 'Lightning')} inference",
+        TelemetryEvent.MODEL_INFERENCE,
+        os.environ.get("TT_VISIBLE_DEVICES"),
+    )
+    def run(self, requests: list[VideoI2VGenerateRequest]):
+        self.logger.debug(f"Device {self.device_id}: Running Lightning inference")
+        request = requests[0]
+        seed = int(request.seed) if request.seed is not None else 0
+        pipeline_args = {
+            "prompts": [request.prompt],
+            "num_inference_steps": WAN22_LIGHTNING_NUM_STEPS,
+            "guidance_scale": 1.0,
+            "guidance_scale_2": 1.0,
+            "seed": seed,
+            "traced": True,
+            "image_prompt": self._build_image_prompt(request),
+        }
+        frames = self.pipeline(**pipeline_args)
+        self.logger.debug(f"Device {self.device_id}: Lightning inference completed")
+        return frames
+
+    def get_pipeline_device_params(self):
+        return _wan22_dit_device_params(self.settings.device_mesh_shape)
+
+    def _build_warmup_video_request(self) -> VideoI2VGenerateRequest:
+        return _wan22_i2v_warmup_request()
