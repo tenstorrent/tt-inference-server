@@ -4435,7 +4435,38 @@ _eval_config_list = [
     # =========================================================================
     EvalConfig(
         hf_model_repo="google/gemma-4-31B-it",
+        # EVAL_CONFIGS keys on model_name, so this one config serves BOTH
+        # gemma-4-31B-it impls: tt_transformers/VLLM on P300X2 (max_context
+        # 49152, the Model Readiness path) and forge_vllm_plugin on P300X2
+        # (max_context 4096, llm.yaml). The reasoning/agentic tasks below need
+        # tens of thousands of tokens per request, so they carry
+        # min_context_required=16384 -- skipped on the 4K Forge impl instead of
+        # burning hours on HTTP 400 retries, unchanged on the 48K impl. ifeval
+        # is short-form and runs on both.
         tasks=[
+            EvalTask(
+                # Short-form instruction following: fits the 4K Forge impl, so
+                # it is the one task that path can actually run. No
+                # published/reference score -- this is a functional check, not
+                # an accuracy gate.
+                task_name="ifeval",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                            "inst_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
             EvalTask(
                 # R1-style zero-shot reasoning GPQA Diamond. This matches the
                 # thinking-mode methodology behind the Qwen3.6-27B table's
@@ -4445,6 +4476,8 @@ _eval_config_list = [
                 # reasoning model: its 5-shot examples demonstrate bare "(C)"
                 # answers, suppressing reasoning (gemma-4 scored only ~53%).
                 task_name="r1_gpqa_diamond",
+                # ~48K tokens/sample of reasoning; impossible at 4K.
+                min_context_required=16384,
                 score=EvalTaskScore(
                     published_score=84.3,
                     published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
@@ -4517,6 +4550,8 @@ _eval_config_list = [
             EvalTask(
                 task_name="terminal_bench_2",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                # Agent sends 112K in + 80K out per request; impossible at 4K.
+                min_context_required=16384,
                 score=EvalTaskScore(
                     published_score=42.9,
                     published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
@@ -4590,6 +4625,8 @@ _eval_config_list = [
             EvalTask(
                 task_name="swe_bench_verified",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                # Agent sends 160K in + 32K out per request; impossible at 4K.
+                min_context_required=16384,
                 score=EvalTaskScore(
                     published_score=52.0,
                     published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
