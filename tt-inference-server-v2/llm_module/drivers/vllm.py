@@ -90,6 +90,15 @@ def build_vllm_bench_serve_argv(
             headers.append(f"Authorization=Bearer {auth_token}")
     else:
         cmd.extend(["--host", server.host, "--port", str(server.service_port)])
+        # Skip vLLM-bench's readiness probe (as the remote path already does).
+        # That probe issues a fixed ~2048-max_tokens request whose prompt+output
+        # overflows a small served context (prompt_len + 2048 > max_model_len),
+        # so every sweep point with isl within ~2048 of max_model_len fails at
+        # ready-check and fails the whole benchmark task — even though the real
+        # requests (isl+osl <= max_context by the sweep filter) fit fine. run.py
+        # already waits for /health before benchmarking, so the probe is
+        # redundant here.
+        cmd.extend(["--ready-check-timeout-sec", "0"])
         cmd.extend(
             [
                 "--extra-body",
