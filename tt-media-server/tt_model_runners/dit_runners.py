@@ -1071,9 +1071,6 @@ class TTWan22I2VLightningRunner(TTDiTRunner):
                 f"high={lora_high}, low={lora_low}"
             )
 
-            # create_pipeline can't forward LoRA stacks, so build the config and
-            # construct directly. flow_shift is dropped: the LoRA pipeline defaults
-            # to a CustomSigmaScheduler with the Lightning sigmas.
             config = WanPipelineI2VLora.default_config(
                 mesh_device=self.ttnn_device,
                 height=self.resolution.height,
