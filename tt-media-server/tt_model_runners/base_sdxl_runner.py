@@ -142,6 +142,20 @@ class BaseSDXLRunner(BaseMetalDeviceRunner):
 
         return True
 
+    def health_check(self, deep: bool = False) -> bool:
+        if not super().health_check():
+            return False
+        if not deep or self.tt_sdxl is None:
+            return True
+        try:
+            self._warmup_inference_block()
+            return True
+        except Exception as e:
+            self.logger.warning(
+                f"Device {self.device_id}: deep health_check failed: {e}"
+            )
+            return False
+
     @abstractmethod
     def run(self, requests: list[ImageGenerateRequest]):
         pass
