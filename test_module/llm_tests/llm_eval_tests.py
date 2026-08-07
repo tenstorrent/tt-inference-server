@@ -14,14 +14,14 @@ from glob import glob
 from pathlib import Path
 from typing import List, Tuple, Union
 
-from reference_config.evals.eval_config import accept_eval_score, resolve_eval_reference
 from llm_module import HttpServerController, RemoteOpenAIController
 from llm_module.eval_command import build_eval_command
 from llm_module.eval_configs import get_llm_eval_tasks
 from report_module.schema import Block
 from workflow_module import accept_blocks
-from workflows.utils import run_command
-from workflows.workflow_types import EvalLimitMode
+from workflow_module.engine_types import EvalLimitMode
+from workflow_module.proc import run_command
+from workflow_module.target_pack import get_target_pack
 
 from .._test_common import ReportCheckTypes, TestStatus, block_id
 from ..context import MediaContext
@@ -201,7 +201,7 @@ def _score_one(
         ratio_to_reference: Union[float, str] = score / reference
         # Sample-count-aware for subset references, ratio for full-set.
         accuracy_check = ReportCheckTypes.from_result(
-            accept_eval_score(ref, score, n_total=n_total)
+            get_target_pack().accept_eval_score(ref, score, n_total=n_total)
         )
     else:
         ratio_to_reference = "N/A"
@@ -236,7 +236,7 @@ def blocks_for_task(
     # Under --ci-mode / --limit-samples-mode, compare the subset score against
     # the matching subset reference (mode_reference_scores) instead of the
     # full-dataset gpu_reference_score.
-    ref = resolve_eval_reference(task.score, _limit_mode(ctx))
+    ref = get_target_pack().resolve_eval_reference(task.score, _limit_mode(ctx))
 
     blocks: List[Block] = []
     for t_key in _target_keys(task, results):
@@ -365,7 +365,7 @@ def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
     emits FAIL Blocks rather than silently dropping the task, so a release run
     surfaces the failure.
     """
-    tasks = get_llm_eval_tasks(ctx.model_spec, ctx.runtime_config)
+    tasks = get_llm_eval_tasks(ctx.model_spec, ctx.runtime_config, device=ctx.device)
     if not tasks:
         logger.info(
             "No standard eval tasks for model=%s; nothing to run.",
