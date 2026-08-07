@@ -49,6 +49,41 @@ def _device_label(ctx: MediaContext) -> str:
     return ctx.device.name if hasattr(ctx.device, "name") else str(ctx.device)
 
 
+def _served_max_context(ctx: MediaContext):
+    """Best-effort SERVED context length (max_model_len) the running server uses.
+
+    Reads the runtime spec JSON the server was launched with (written by the
+    launcher), which records the real served dims -- device_model_spec.max_context
+    and vllm_args.max_model_len -- as opposed to ctx.model_spec, which is
+    re-resolved from the catalog + HF config and reports the model's native max
+    (e.g. Qwen3-32B -> 131072). Falls back to ctx.model_spec.device_model_spec
+    when the JSON is unavailable. Returns an int or None.
+    """
+    import json as _json
+
+    rc = getattr(ctx, "runtime_config", None)
+    path = getattr(rc, "runtime_model_spec_json", None) if rc is not None else None
+    if path:
+        try:
+            with open(path) as f:
+                spec = (_json.load(f).get("runtime_model_spec") or {})
+            dms = spec.get("device_model_spec") or {}
+            val = dms.get("max_context")
+            if not val:
+                val = (dms.get("vllm_args") or {}).get("max_model_len")
+            if val:
+                return int(val)
+        except (OSError, ValueError, TypeError, KeyError):
+            pass
+    # Fallback: the re-resolved model spec (may be the model's native max).
+    dms = getattr(ctx.model_spec, "device_model_spec", None)
+    val = dms.get("max_context") if isinstance(dms, dict) else getattr(dms, "max_context", None)
+    try:
+        return int(val) if val else None
+    except (ValueError, TypeError):
+        return None
+
+
 # --- reading lm-eval's result JSON off disk (it runs as a subprocess) --------
 
 
@@ -383,15 +418,16 @@ def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
 
     # Trace capture is skipped for evals (it's a perf warm-up; eval correctness
     # doesn't depend on it). lm-eval carries its own per-request timeout.
-    _dms = getattr(ctx.model_spec, "device_model_spec", None)
-    if isinstance(_dms, dict):
-        # runtime spec is often deserialized as a dict here; getattr(dict, ...)
-        # would return None and silently bypass the min_context skip (every task
-        # would then run, incl. long-context ones the device can't serve).
-        device_max_context = _dms.get("max_context")
-    else:
-        device_max_context = getattr(_dms, "max_context", None)
-    logger.info("Eval min-context gate: device max_context=%s", device_max_context)
+    #
+    # Use the SERVED context (what the running server was actually launched with,
+    # recorded in the runtime spec JSON), NOT ctx.model_spec.device_model_spec.
+    # get_runtime_model_spec() re-derives max_context from the HF model config
+    # (e.g. Qwen3-32B -> 131072) which is the model's native max, not the served
+    # MAX_MODEL_LENGTH. Sizing/gating off that makes long-context tasks run at a
+    # small-context server and get rejected ("length + max_tokens exceeds max
+    # model length"). Prefer the served value; fall back to the model spec.
+    device_max_context = _served_max_context(ctx)
+    logger.info("Eval min-context gate: served max_context=%s", device_max_context)
     ran_tasks = []
     rc_by_task = {}
     skipped_blocks: List[Block] = []

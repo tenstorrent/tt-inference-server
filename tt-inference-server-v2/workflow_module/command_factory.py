@@ -105,6 +105,25 @@ def _build_context(
     device = DeviceTypes.from_string(args.device)
     runtime_config = _load_runtime_config(args.runtime_model_spec_json)
 
+    # get_runtime_model_spec() re-derives device_model_spec.max_context from the
+    # HF model config (e.g. Qwen3-32B -> 131072 native), NOT the context the
+    # server was actually launched with. Both eval sizing (max_gen_toks clamp,
+    # min_context skip) and the benchmark sweep (isl+osl <= max_context filter)
+    # read device_model_spec.max_context, so a small-context first-light server
+    # (MAX_MODEL_LENGTH=1024) would otherwise be probed with 131072-sized
+    # requests and reject them all. Override with the SERVED value recorded in
+    # the runtime spec JSON when it is smaller.
+    served_ctx = _served_max_context(args.runtime_model_spec_json)
+    if served_ctx and getattr(model_spec.device_model_spec, "max_context", None):
+        if served_ctx < model_spec.device_model_spec.max_context:
+            logger.info(
+                "Overriding device_model_spec.max_context %s -> served %s "
+                "(from runtime spec JSON)",
+                model_spec.device_model_spec.max_context,
+                served_ctx,
+            )
+            model_spec.device_model_spec.max_context = served_ctx
+
     if output_path is None:
         output_path = args.output_dir / f"{args.model}_{args.device}_{args.workflow}"
     output_path = Path(output_path)
@@ -368,6 +387,24 @@ def _mint_jwt_if_secret(jwt_secret_arg: Optional[str]) -> str:
     os.environ["OPENAI_API_KEY"] = encoded
     logger.info("Minted debug-test JWT and exported as OPENAI_API_KEY.")
     return encoded
+
+
+def _served_max_context(path: Optional[str]) -> Optional[int]:
+    """Served context length (max_model_len) from the runtime spec JSON, or None.
+
+    The launcher records the real served dims here; prefer
+    device_model_spec.max_context, then vllm_args.max_model_len.
+    """
+    if not path:
+        return None
+    try:
+        with open(path) as f:
+            spec = json.load(f).get("runtime_model_spec") or {}
+        dms = spec.get("device_model_spec") or {}
+        val = dms.get("max_context") or (dms.get("vllm_args") or {}).get("max_model_len")
+        return int(val) if val else None
+    except (OSError, ValueError, TypeError, KeyError):
+        return None
 
 
 def _load_runtime_config(path: Optional[str]) -> Optional[RuntimeConfig]:
