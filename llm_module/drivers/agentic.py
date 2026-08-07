@@ -88,6 +88,16 @@ class SWEbenchAgenticDriver(AgenticEvalDriver):
                 self.task.task_name,
             )
             return DriverResult(return_code=0, raw=None, raw_path=None)
+        _cfg = self.task.swebench_eval_config
+        logger.info(
+            "[agentic] starting %r: n_tasks=%s n_concurrent=%s agent=%s dataset=%s model=%s",
+            self.task.task_name,
+            n_tasks,
+            getattr(_cfg, "n_concurrent_trials", "?"),
+            getattr(_cfg, "agent_backend", "?"),
+            getattr(_cfg, "dataset_name", "?"),
+            getattr(_cfg, "model", None),
+        )
         run_config = build_swebench_config(
             self.task,
             server,
@@ -116,6 +126,16 @@ class TerminalBenchAgenticDriver(AgenticEvalDriver):
                 self.task.task_name,
             )
             return DriverResult(return_code=0, raw=None, raw_path=None)
+        _cfg = self.task.agentic_eval_config
+        logger.info(
+            "[agentic] starting %r: n_tasks=%s n_concurrent=%s agent=%s dataset=%s model=%s",
+            self.task.task_name,
+            n_tasks,
+            getattr(_cfg, "n_concurrent_trials", "?"),
+            getattr(_cfg, "agent", "?"),
+            getattr(_cfg, "dataset", "?"),
+            getattr(_cfg, "model", None),
+        )
         run_config = build_terminal_bench_config(
             self.task,
             server,
