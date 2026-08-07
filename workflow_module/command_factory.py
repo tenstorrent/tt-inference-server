@@ -13,9 +13,7 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
-from workflows.model_spec import ModelSpec, get_runtime_model_spec
 from workflows.runtime_config import RuntimeConfig
-from workflows.workflow_types import DeviceTypes, InferenceEngine
 
 from utils.url_helpers import is_remote_server, resolve_deploy_url
 
@@ -28,6 +26,7 @@ from .commands import (
     SummaryCommand,
     WorkflowCommand,
 )
+from .device_catalog import get_device_catalog
 from .execution import (
     AgenticTracesOptions,
     LLMBenchOptions,
@@ -37,6 +36,10 @@ from .execution import (
     ServingBenchOptions,
     SpecDecodeOptions,
 )
+from .engine_types import WorkflowVenvType
+from .model_catalog import ModelSpecLike, get_model_spec_provider
+from .server_lifecycle import get_server_lifecycle
+from .venv_provisioner import get_venv_provisioner
 
 # Workflows whose LLM path runs the standard-eval / perf-benchmark child.
 _LLM_BENCH_WORKFLOWS = frozenset({"benchmarks", "release"})
@@ -113,27 +116,18 @@ def _build_repeated_commands(
     return commands
 
 
-def _load_model_spec_override(path: Optional[str]) -> Optional[ModelSpec]:
+def _load_model_spec_override(path: Optional[str]) -> Optional[ModelSpecLike]:
     """Prefer the already-resolved runtime spec over re-resolving from the catalog.
 
     run.py resolves --impl/--engine and any CLI overrides into this JSON before
-    dispatching here. Re-resolving fresh from MODEL_SPECS by (model, device)
+    dispatching here. Re-resolving fresh from the catalog by (model, device)
     alone silently drops that resolution whenever more than one impl targets
     the same model+device: it always falls back to whichever device_model_spec
     has default_impl=True, ignoring the impl that was actually selected.
     """
     if not path:
         return None
-    try:
-        return ModelSpec.from_json(path)
-    except (FileNotFoundError, ValueError, json.JSONDecodeError) as e:
-        logger.warning(
-            "Could not load model_spec from runtime_model_spec_json=%r (%s); "
-            "falling back to catalog resolution by (model, device).",
-            path,
-            e,
-        )
-        return None
+    return get_model_spec_provider().load_runtime_spec(path)
 
 
 def _build_context(
@@ -143,12 +137,14 @@ def _build_context(
         getattr(args, "runtime_model_spec_json", None)
     )
     if model_spec is None:
-        model_spec, _, _ = get_runtime_model_spec(model=args.model, device=args.device)
+        model_spec = get_model_spec_provider().resolve(
+            model=args.model, device=args.device
+        )
     model_spec.cli_args["device"] = args.device
     if args.num_prompts is not None:
         model_spec.cli_args["sdxl_num_prompts"] = max(2, args.num_prompts)
 
-    device = DeviceTypes.from_string(args.device)
+    device = get_device_catalog().from_string(args.device)
     runtime_config = _load_runtime_config(args.runtime_model_spec_json)
 
     if output_path is None:
@@ -190,12 +186,9 @@ def _resolve_server_url(
 
 
 def _resolve_eval_config(model_name: str):
-    try:
-        from reference_config.evals.eval_config import EVAL_CONFIGS
-    except Exception as e:
-        logger.warning("Could not import v1 EVAL_CONFIGS (%s); evals will fail.", e)
-        return None
-    cfg = EVAL_CONFIGS.get(model_name)
+    from .target_pack import get_target_pack
+
+    cfg = get_target_pack().eval_config(model_name)
     if cfg is None:
         logger.warning(
             "No EvalConfig registered for model=%r; eval task metadata will be empty.",
@@ -253,8 +246,6 @@ def _release_bench_venv_python(args: argparse.Namespace) -> Optional[str]:
     A release run executes in the WORKFLOW_RUN_SCRIPT venv, so pin the default
     perf-tool venv (LLM_VLLM); the workflow dispatch provisions it before run.py.
     """
-    from workflows.workflow_types import WorkflowVenvType
-
     return _release_venv_python(args, WorkflowVenvType.LLM_VLLM)
 
 
@@ -262,9 +253,7 @@ def _release_venv_python(args: argparse.Namespace, venv_type) -> Optional[str]:
     """Interpreter pinned for release children that need a tool venv."""
     if getattr(args, "workflow", None) != "release":
         return None
-    from workflows.workflow_venvs import VENV_CONFIGS
-
-    return str(VENV_CONFIGS[venv_type].venv_python)
+    return get_venv_provisioner().venv_python(venv_type)
 
 
 def _build_llm_eval_options(args: argparse.Namespace) -> Optional[LLMEvalOptions]:
@@ -297,7 +286,6 @@ def _build_agentic_traces_options(
     is_release_child = workflow == "release" and getattr(args, "agentic_traces", False)
     if workflow != "agentic_traces" and not is_release_child:
         return None
-    from workflows.workflow_types import WorkflowVenvType
 
     return AgenticTracesOptions(
         mode=getattr(args, "agentic_traces_mode", None) or "full",
@@ -334,7 +322,6 @@ def _build_prefix_cache_options(
     """
     if not getattr(args, "prefix_cache", False):
         return None
-    from workflows.workflow_types import WorkflowVenvType
 
     return PrefixCacheOptions(
         preset=args.prefix_cache_preset,
@@ -362,7 +349,6 @@ def _build_spec_decode_options(
     """
     if not getattr(args, "spec_decode", False):
         return None
-    from workflows.workflow_types import WorkflowVenvType
 
     return SpecDecodeOptions(
         preset=args.spec_decode_preset,
@@ -373,7 +359,7 @@ def _build_spec_decode_options(
 
 
 def _engine_from_runtime_spec_json(path: Optional[str]) -> Optional[str]:
-    """``inference_engine`` (enum value, e.g. ``"forge"``) from the runtime spec JSON."""
+    """``inference_engine`` (adapter value form, e.g. ``"forge"``) from the runtime spec JSON."""
     if not path:
         return None
     try:
@@ -383,10 +369,9 @@ def _engine_from_runtime_spec_json(path: Optional[str]) -> Optional[str]:
             )
     except (OSError, ValueError):
         return None
-    # Serialized as the enum value ("forge"/"media"/"vLLM"); tolerate the name form too.
-    if engine in InferenceEngine.__members__:
-        return InferenceEngine[engine].value
-    return engine or None
+    # Serialized as the enum value ("forge"/"media"/"vLLM"); the adapter
+    # tolerates the name form too.
+    return get_server_lifecycle().normalize_engine_value(engine)
 
 
 def _resolve_auth_token(args: argparse.Namespace) -> str:
@@ -404,11 +389,13 @@ def _resolve_auth_token(args: argparse.Namespace) -> str:
     )
     if engine is None:
         try:
-            spec, _, _ = get_runtime_model_spec(model=args.model, device=args.device)
+            spec = get_model_spec_provider().resolve(
+                model=args.model, device=args.device
+            )
             engine = getattr(spec.inference_engine, "value", spec.inference_engine)
         except Exception:  # pragma: no cover - defensive
             engine = None
-    if engine in (InferenceEngine.FORGE.value, InferenceEngine.MEDIA.value):
+    if get_server_lifecycle().uses_literal_api_key(engine):
         return os.getenv("VLLM_API_KEY") or os.getenv("API_KEY") or "your-secret-key"
     return _mint_jwt_if_secret(getattr(args, "jwt_secret", None))
 
