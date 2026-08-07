@@ -461,6 +461,35 @@ def generate_docker_run_command(
             docker_command += [
                 "--mount", f"type=bind,src={repo_root_path}/vllm-tt-metal/src,dst={user_home_path}/app/src",
             ]
+            # NOTE(2026-08): for LLM/VLM forge models the server code is baked into
+            # the image at {home}/app/server (venv-worker/ lives inside it) and is
+            # NOT overlaid by dev-mode -- only the workflow dirs above are. Overlay
+            # the host forge source files that carry local integration work
+            # (ModelConfigs catalog + forge runners + greedy sampler) as FILE binds
+            # onto app/server so local edits take effect without rebuilding the
+            # image; the baked venv-worker and all other files stay intact. Only
+            # files that exist on the host are mounted.
+            forge_dev_files = [
+                "config/constants.py",
+                "tt_model_runners/vllm_forge_qwen_32b.py",
+                "tt_model_runners/vllm_forge_devstral_123b.py",
+                "utils/sampling_params_builder.py",
+            ]
+            media_src_root = Path(repo_root_path) / "tt-media-server"
+            # Optional: source config/constants.py from an explicit path (e.g. a
+            # baked-image constants patched with one extra ModelConfigs entry) when
+            # the host branch has diverged from the image. Set TT_FORGE_CONSTANTS_SRC.
+            constants_override = os.getenv("TT_FORGE_CONSTANTS_SRC")
+            for rel in forge_dev_files:
+                if rel == "config/constants.py" and constants_override:
+                    src = Path(constants_override)
+                else:
+                    src = media_src_root / rel
+                if src.is_file():
+                    docker_command += [
+                        "--mount",
+                        f"type=bind,src={src},dst={user_home_path}/app/server/{rel},readonly",
+                    ]
         # fmt: on
 
     for key, value in docker_env_vars.items():

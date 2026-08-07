@@ -56,6 +56,11 @@ class VLLMForgeQwen32BRunner(BaseDeviceRunner):
         prefill_chunk_size = os.getenv("PREFILL_CHUNK_SIZE")
         min_num_seqs = os.getenv("MIN_NUM_SEQS")
         prefill_batch_threshold = os.getenv("PREFILL_BATCH_THRESHOLD")
+        # Optional depth override (mirrors the tt-xla generation tests'
+        # num_hidden_layers): serve a truncated model for a fast bring-up / harness
+        # smoke test. Output is garbage at low depth -- NEVER set for real evals.
+        # Only passed through when the env var is present.
+        num_hidden_layers = os.getenv("NUM_HIDDEN_LAYERS")
         # Mesh-aware: the SAME runner serves P300X2 (mesh (1,4), pure 1D TP) and
         # the BH Galaxy (mesh (8,4), DP+TP). When the DP replica dim
         # (device_mesh_shape[0]) > 1 we switch on the 2D DP+TP path (mirrors
@@ -87,6 +92,8 @@ class VLLMForgeQwen32BRunner(BaseDeviceRunner):
             additional_config["min_num_seqs"] = int(min_num_seqs)
         if prefill_batch_threshold:
             additional_config["prefill_batch_threshold"] = int(prefill_batch_threshold)
+        if num_hidden_layers:
+            additional_config["num_hidden_layers"] = int(num_hidden_layers)
         engine_args = AsyncEngineArgs(
             model=self.settings.vllm.model,
             max_model_len=self.settings.vllm.max_model_length,

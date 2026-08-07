@@ -213,20 +213,25 @@ templates:
       # forced to 0 in the runner). CPU_SAMPLING=false (owner-tested on this mesh).
       # The DP+TP additional_config keys are set by the mesh-aware runner when
       # device_mesh_shape[0] > 1; this block carries the served dims + env.
-      max_concurrency: 16
-      max_context: 4096
+      max_concurrency: 32
+      max_context: 1024
       eval_max_retries: 1
       env_vars:
-        MAX_MODEL_LENGTH: "4096"
-        MAX_NUM_SEQS: "16"
+        MAX_MODEL_LENGTH: "1024"
+        MAX_NUM_SEQS: "32"
         GPU_MEMORY_UTILIZATION: "0.25"
         OPTIMIZATION_LEVEL: "0"
         ENABLE_TRACE: "true"
         CPU_SAMPLING: "false"            # owner-tested false on the 2D DP+TP mesh
         TT_RUNTIME_USING_BH_GALAXY: "1"
+        TT_METAL_OPERATION_TIMEOUT_SECONDS: "120"  # fail hung device ops fast instead of wedging
         PREFILL_CHUNK_SIZE: "1024"       # turns on chunked prefill (forge plugin owns chunking)
         MIN_NUM_SEQS: "1"                # enables b1-prefill (min<max)
-        PREFILL_BATCH_THRESHOLD: "4"     # must be < MAX_NUM_SEQS
+        PREFILL_BATCH_THRESHOLD: "16"    # must be < MAX_NUM_SEQS (32); matches tt-xla chunked test
+        # HARNESS-TEST OVERRIDE ONLY -- serve a 2-layer truncated model for a fast
+        # local Mode-C (evals+benchmarks) plumbing check. Output is garbage at this
+        # depth; REMOVE before any real eval/accuracy run.
+        NUM_HIDDEN_LAYERS: "2"
         # TODO(verify): pin a BH-galaxy 8x4 mesh_graph_descriptor here only if
         # compile hits "unknown mesh: @mesh" (analogous to the p300_x2 pin above).
 

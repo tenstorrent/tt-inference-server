@@ -383,9 +383,15 @@ def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
 
     # Trace capture is skipped for evals (it's a perf warm-up; eval correctness
     # doesn't depend on it). lm-eval carries its own per-request timeout.
-    device_max_context = getattr(
-        getattr(ctx.model_spec, "device_model_spec", None), "max_context", None
-    )
+    _dms = getattr(ctx.model_spec, "device_model_spec", None)
+    if isinstance(_dms, dict):
+        # runtime spec is often deserialized as a dict here; getattr(dict, ...)
+        # would return None and silently bypass the min_context skip (every task
+        # would then run, incl. long-context ones the device can't serve).
+        device_max_context = _dms.get("max_context")
+    else:
+        device_max_context = getattr(_dms, "max_context", None)
+    logger.info("Eval min-context gate: device max_context=%s", device_max_context)
     ran_tasks = []
     rc_by_task = {}
     skipped_blocks: List[Block] = []
