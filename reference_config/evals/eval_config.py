@@ -4257,6 +4257,12 @@ _eval_config_list = [
                 use_chat_api=True,
                 model_kwargs={
                     "max_length": 131072,
+                    # lm-eval default HTTP timeout is 1800s. Under
+                    # num_concurrent=32, non-terminating / near-max_gen
+                    # thinking gens share decode and hit that wall (~30min)
+                    # while seq1 finishes each sample in a few minutes.
+                    # Match other reasoning models (Kimi/MiniMax): allow 2h.
+                    "timeout": 7200,
                 },
                 # Thinking-mode sampling (Qwen3.6 page, general tasks):
                 # temperature=1.0, top_p=0.95, top_k=20.
@@ -4575,8 +4581,9 @@ _eval_config_list = [
                 # "GPQA Diamond" methodology; scores exact_match,none.
                 task_name="r1_gpqa_diamond",
                 score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
+                    # Official Gemma 4 model card / HF README (12B Unified).
+                    published_score=78.8,
+                    published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4",
                     gpu_reference_score=None,
                     gpu_reference_score_ref="TBD",
                     score_func=score_task_single_key,
@@ -4594,11 +4601,17 @@ _eval_config_list = [
                 # would render with the default enable_thinking=false and
                 # suppress native reasoning (see gemma-4-31B-it note above).
                 use_chat_api=True,
+                # KV is ~264k tokens (~1.01x @ 256k). 10 concurrent 32k thinking
+                # gens thrash at ~95% KV / ~2 tok/s and never finish. Run seq=1.
+                max_concurrent=1,
                 model_kwargs={
                     "max_length": 131072,
+                    # Same as 31B: under num_concurrent=32, long thinking gens
+                    # exceed lm-eval's default 1800s HTTP timeout (prior QB2
+                    # ci-nightly lost 10/40 to TimeoutError). Allow 2h.
+                    "timeout": 7200,
                 },
-                # Thinking-mode sampling (Qwen3.6 page, general tasks):
-                # temperature=1.0, top_p=0.95, top_k=20.
+                # Thinking-mode sampling for published-score GPQA (model card 78.8).
                 # stream=false is REQUIRED: lm-eval's local-chat-completions
                 # streaming parser raises KeyError 'message' on every response.
                 gen_kwargs={

@@ -211,10 +211,10 @@ templates:
         enable_chunked_prefill: true
         max_num_batched_tokens: 2048
         long_prefill_token_threshold: 2048
-    # LoudBox (8x P150). Metal policy: unbounded through 128k; auto-bounded at
-    # 256k for DRAM. Prefill chunk default 4096 (no QB2-style 2048 tier).
-    # Leave GEMMA4_GEN_PREFILL_CHUNK unset. B=32 needs ≥512MB trace region;
-    # disable 5s metal op timeout for long ISL.
+    # LoudBox (8x P150). Metal policy: unbounded through 64k; auto-bounded at
+    # ≥128k (generator_trace). Prefill chunk default 4096; at ≥128k + bounded
+    # → 2048. Scheduler tokens stay 2048 to match metal at long ISL. B=32 needs
+    # ≥512MB trace region.
     - device: P150X8
       max_concurrency: 32
       max_context: 262144  # 256 * 1024
@@ -230,6 +230,8 @@ templates:
       override_tt_config:
         fabric_config: FABRIC_1D
         trace_region_size: 512000000
+        # On-device decode sampling required on TP so token ids >= 65536 are
+        # reachable (host sampling only sees device 0's vocab shard).
         sample_on_device_mode: decode_only
       vllm_args:
         # Overlap host schedule with device decode (metal supports_async_decode; #51186).
@@ -238,10 +240,10 @@ templates:
         tool-call-parser: gemma4
         default-chat-template-kwargs: '{"enable_thinking": true}'
         reasoning-parser: gemma4
-        # Token-chunked prefill (tenstorrent/vllm#448). Match metal default chunk.
+        # Token-chunked prefill (tenstorrent/vllm#448). Match metal 2048 @ ≥128k.
         enable_chunked_prefill: true
-        max_num_batched_tokens: 4096
-        long_prefill_token_threshold: 4096
+        max_num_batched_tokens: 2048
+        long_prefill_token_threshold: 2048
     # GPU (H100 NVL) bring-your-own vLLM server (see docs/gpu_workflows.md); used
     # to collect GPU reference eval scores for GPQA-Diamond, Terminal-Bench 2.0,
     # and SWE-Bench Verified. Dev-only; no tt_metal_commit/version pin needed
@@ -323,13 +325,17 @@ templates:
       default_impl: true
       env_vars:
         MESH_DEVICE: "P150x8"
+        GEMMA4_CCL_TOPOLOGY: "linear"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
+        # Shared KV pool; 262144 is ~max that fits P150x8 12B DRAM (524288 OOMs).
         GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
         GEMMA4_CHUNKED_PREFILL_TRACE: "1"
       override_tt_config:
         fabric_config: FABRIC_1D
         trace_region_size: 512000000
+        # On-device decode sampling required on TP so token ids >= 65536 are
+        # reachable (host sampling only sees device 0's vocab shard).
         sample_on_device_mode: decode_only
       vllm_args:
         # Overlap host schedule with device decode (metal supports_async_decode; #51186).
