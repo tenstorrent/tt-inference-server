@@ -9,20 +9,30 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <variant>
 
 #include "config/runner_config.hpp"
 #include "ipc/interface/cancel_queue.hpp"
 #include "ipc/interface/result_queue.hpp"
 #include "ipc/interface/task_queue.hpp"
+#include "ipc/tts_ipc.hpp"
 #include "runtime/runners/ipc_runner.hpp"
 
 namespace tt::worker {
 
+using WorkerTaskQueue =
+    std::variant<std::shared_ptr<tt::ipc::ITaskQueue>,
+                 std::shared_ptr<tt::ipc::tts::TtsTaskQueue>>;
+using WorkerResultQueue =
+    std::variant<std::shared_ptr<tt::ipc::IResultQueue>,
+                 std::shared_ptr<tt::ipc::tts::TtsAudioChunkQueue>>;
+using WorkerCancelQueue = std::shared_ptr<tt::ipc::ICancelQueue>;
+
 struct WorkerConfig {
   std::unordered_map<std::string, std::string> env_vars;
-  std::shared_ptr<tt::ipc::ITaskQueue> task_queue;
-  std::shared_ptr<tt::ipc::IResultQueue> result_queue;
-  std::shared_ptr<tt::ipc::ICancelQueue> cancel_queue;
+  WorkerTaskQueue task_queue;
+  WorkerResultQueue result_queue;
+  WorkerCancelQueue cancel_queue;
   int worker_id;
   tt::config::RunnerConfig runner_config;
 };

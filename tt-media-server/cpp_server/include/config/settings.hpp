@@ -30,6 +30,9 @@ bool isLlmService();
 /** True when model_service() == IMAGE. */
 bool isImageService();
 
+/** True when model_service() == TTS. */
+bool isTtsService();
+
 /** Get runner type string based on current model service configuration. */
 std::string runnerType();
 
@@ -65,6 +68,13 @@ std::string tokenizerPath(ModelType model);
  * model_type(). */
 std::string tokenizerConfigPath();
 std::string tokenizerConfigPath(ModelType model);
+
+/** Model config path: tokenizers/<model>/config.json relative to the
+ * executable. This is the HuggingFace-style `config.json` (architectures,
+ * max_position_embeddings, etc.), not the tokenizer's own config. Empty if
+ * not found. No-arg overload uses the current model_type(). */
+std::string modelConfigPath();
+std::string modelConfigPath(ModelType model);
 
 /**
  * Parse DEVICE_IDS and return the content inside the Nth bracket pair.
@@ -149,8 +159,13 @@ size_t sessionEvictionCount();
  * Default: defaults::MAX_TOKENS_TO_PREFILL_ON_DECODE. */
 size_t maxTokensToPrefillOnDecode();
 
-/** Max context length (prompt + completion) from MAX_CONTEXT_LENGTH. Default:
- * defaults::MAX_CONTEXT_LENGTH. */
+/** Max context length (prompt + completion). Resolution order:
+ *   1. `MAX_CONTEXT_LENGTH` env var (explicit operator override).
+ *   2. `max_position_embeddings` in the model's HF `config.json`
+ *      (tokenizers/<model>/config.json), also honoring `text_config.
+ *      max_position_embeddings` for multimodal wrappers.
+ *   3. `defaults::MAX_CONTEXT_LENGTH` if the file is missing or unparseable.
+ */
 size_t maxContextLength();
 
 /** Max input sequence length (prompt tokens) from MAX_ISL. Default:
@@ -433,6 +448,10 @@ BlazeConfig blazeConfig();
  * MODEL_RUNNER_TYPE, MAX_BATCH_SIZE, SDXL_IMAGE_RESOLUTION. Implemented in
  * src/config/settings.cpp. */
 ImageConfig imageEngineConfig();
+
+/** Build TtsConfig from environment variables and runtime settings.
+ * Implemented in src/config/settings.cpp. */
+TtsConfig ttsEngineConfig();
 
 /** Build the runner config used by a fork/exec worker for the active service.
  * Media configs receive the worker's DEVICE_IDS group as visible_devices. */

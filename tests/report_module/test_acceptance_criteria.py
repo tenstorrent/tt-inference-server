@@ -220,6 +220,111 @@ def test_summary_detail_absent_vs_all_na_are_distinguished():
     assert "1 NA" in present_md
 
 
+# --- Model-status-aware tier masking ---------------------------------------
+
+
+def test_benchmark_failing_check_blocks_at_functional_status():
+    # FUNCTIONAL requires the "functional" tier -- a failing functional check
+    # still blocks, same as with no status at all.
+    schema = _schema(
+        _bench({"functional": {"ttft_check": 3, "ttft": 100, "ttft_ratio": 1.2}})
+    )
+    accepted, blockers, _ = acceptance_criteria_check(schema, model_status="FUNCTIONAL")
+    assert accepted is False
+    assert "benchmarks:B.functional.ttft_check" in blockers
+
+
+def test_benchmark_failing_check_informational_at_experimental_status():
+    # EXPERIMENTAL requires no tiers -- the same failing check is masked to a
+    # waiver instead of a blocker, and the run is accepted.
+    schema = _schema(
+        _bench({"target": {"ttft_check": 3, "ttft": 100, "ttft_ratio": 1.2}})
+    )
+    accepted, blockers, cats = acceptance_criteria_check(
+        schema, model_status="EXPERIMENTAL"
+    )
+    by_name = {c.name: c for c in cats}
+    assert accepted is True and blockers == {}
+    assert "benchmarks:B" in by_name[CATEGORY_BENCHMARKS].waived
+
+
+def test_benchmark_failing_complete_tier_still_blocks_at_complete_status():
+    # COMPLETE requires functional + complete -- a failing "complete" tier
+    # check still blocks. The also-failing "target" tier doesn't add a
+    # blocker, but is still surfaced (as waived/informational) rather than
+    # silently dropped just because the block already failed elsewhere.
+    schema = _schema(
+        _bench(
+            {
+                "complete": {"ttft_check": 3, "ttft": 100, "ttft_ratio": 1.2},
+                "target": {"ttft_check": 3, "ttft": 100, "ttft_ratio": 1.5},
+            }
+        )
+    )
+    accepted, blockers, cats = acceptance_criteria_check(
+        schema, model_status="COMPLETE"
+    )
+    by_name = {c.name: c for c in cats}
+    assert accepted is False
+    assert "benchmarks:B.complete.ttft_check" in blockers
+    assert "benchmarks:B.target.ttft_check" not in blockers
+    assert "benchmarks:B" in by_name[CATEGORY_BENCHMARKS].waived
+
+
+def test_benchmark_unrecognized_status_falls_back_to_fully_enforced():
+    # A missing/garbled status must never accidentally loosen acceptance.
+    schema = _schema(
+        _bench({"target": {"ttft_check": 3, "ttft": 100, "ttft_ratio": 1.2}})
+    )
+    accepted, blockers, _ = acceptance_criteria_check(
+        schema, model_status="not_a_real_status"
+    )
+    assert accepted is False
+    assert "benchmarks:B.target.ttft_check" in blockers
+
+
+def test_eval_accuracy_check_fail_informational_at_experimental_status():
+    schema = _schema(_eval({"accuracy_check": 3}))
+    accepted, blockers, cats = acceptance_criteria_check(
+        schema, model_status="EXPERIMENTAL"
+    )
+    by_name = {c.name: c for c in cats}
+    assert accepted is True and blockers == {}
+    assert "evals:E" in by_name[CATEGORY_EVALS].waived
+
+
+def test_eval_accuracy_check_fail_still_blocks_at_functional_status():
+    schema = _schema(_eval({"accuracy_check": 3}))
+    accepted, blockers, _ = acceptance_criteria_check(schema, model_status="FUNCTIONAL")
+    assert accepted is False
+    assert "Accuracy check failed" in blockers["evals:E"]
+
+
+def test_eval_explicit_error_informational_at_experimental_status():
+    schema = _schema(_eval({"status": "error", "attempts": 2}))
+    accepted, blockers, cats = acceptance_criteria_check(
+        schema, model_status="EXPERIMENTAL"
+    )
+    by_name = {c.name: c for c in cats}
+    assert accepted is True and blockers == {}
+    assert "evals:E" in by_name[CATEGORY_EVALS].waived
+
+
+def test_eval_known_issue_waiver_takes_precedence_over_status_message():
+    # Both an EXPERIMENTAL status and a known_issues waiver would mask this --
+    # the known_issue reason should still be the one recorded.
+    schema = _schema(_eval({"task_name": "ifeval", "accuracy_check": 3}))
+    known_issues = [
+        {"workflow_type": "EVALS", "task_name": "ifeval", "reason": "tracked in #4733"}
+    ]
+    accepted, blockers, cats = acceptance_criteria_check(
+        schema, known_issues=known_issues, model_status="EXPERIMENTAL"
+    )
+    by_name = {c.name: c for c in cats}
+    assert accepted is True and blockers == {}
+    assert "waived: tracked in #4733" in by_name[CATEGORY_EVALS].waived["evals:E"]
+
+
 # --- Spec tests -----------------------------------------------------------
 
 
