@@ -2,11 +2,11 @@
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 //
 // Lightweight HTTP/1.1 response parser for the integration tests. Wraps the
-// raw bytes returned by tt::test::sendAndReceive so tests can assert on
+// raw bytes returned by tt::test::sendDynamoRequest so tests can assert on
 // status code, headers, JSON body, or SSE event stream — instead of
 // hand-rolled string searches.
 //
-//   auto response = HttpResponse::parse(sendAndReceive(...));
+//   auto response = HttpResponse::parse(sendDynamoRequest(cfg, body));
 //   EXPECT_EQ(response.statusCode(), 200);
 //   EXPECT_EQ(response.json()["choices"].size(), 1u);
 

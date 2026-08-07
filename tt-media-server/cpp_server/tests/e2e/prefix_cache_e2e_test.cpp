@@ -23,12 +23,12 @@
 #include <thread>
 #include <vector>
 
+#include "../support/dynamo_test_fixture.hpp"
 #include "config/defaults.hpp"
-#include "dynamo_test_helpers.hpp"
 
 namespace {
 
-using namespace tt::test::dynamo;
+using namespace tt::test;
 
 // The mock_pipeline backend emits a fixed reasoning sequence:
 //   <think> + 10 content tokens + </think> = 12 reasoning tokens.

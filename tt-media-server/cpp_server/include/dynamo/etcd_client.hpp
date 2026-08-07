@@ -72,6 +72,9 @@ class EtcdClient {
   /// Delete a single key (range_end is left unset).
   void deleteRange(const std::string& key);
 
+  /// Return true if at least one key exists with the given prefix.
+  bool hasKeysWithPrefix(const std::string& prefix);
+
  private:
   std::string host_;
   int port_ = 2379;
