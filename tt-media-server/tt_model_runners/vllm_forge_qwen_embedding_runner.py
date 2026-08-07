@@ -22,6 +22,17 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
     def model_name(self) -> str:
         return self.settings.vllm.model
 
+    @property
+    def supports_matryoshka(self) -> bool:
+        """True when the served model can honor a per-request output dimension.
+
+        Only Qwen3-Embedding is matryoshka here. vLLM raises on
+        ``PoolingParams(dimensions=...)`` for anything else, so bge-m3 must
+        return its native dimension instead — matching the MEDIA embedding
+        runner, which ignores ``dimensions`` outright.
+        """
+        return "Qwen3-Embedding" in self.model_name
+
     @log_execution_time("Model warmup")
     async def warmup(self) -> bool:
         model_name = self.model_name
@@ -58,7 +69,7 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
         }
         # Matryoshka (variable output dimensions) is Qwen3-Embedding-specific;
         # bge-m3 does not support it.
-        if "Qwen3-Embedding" in model_name:
+        if self.supports_matryoshka:
             llm_args["hf_overrides"] = {"is_matryoshka": True}
         self.logger.info(
             f"Device {self.device_id}: additional_config={additional_config}"
@@ -120,7 +131,15 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
 
         pooling_params = None
         if self.dimensions_in_batch is not None:
-            pooling_params = vllm.PoolingParams(dimensions=self.dimensions_in_batch)
+            if self.supports_matryoshka:
+                pooling_params = vllm.PoolingParams(dimensions=self.dimensions_in_batch)
+            else:
+                self.logger.warning(
+                    f"Device {self.device_id}: {self.model_name} does not support "
+                    f"matryoshka embeddings; ignoring requested "
+                    f"dimensions={self.dimensions_in_batch} and returning the "
+                    f"native dimension."
+                )
 
         output_embedding = self.llm.embed(input, pooling_params=pooling_params)
 

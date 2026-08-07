@@ -17,10 +17,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-payload = {
-    "input": "The quick brown fox jumps over the lazy dog",
-    "model": "test-model",
-}
+DEFAULT_INPUT = "The quick brown fox jumps over the lazy dog"
 
 headers = {
     "accept": "application/json",
@@ -34,18 +31,33 @@ class EmbeddingLoadTest(BaseTest):
     TASK_TYPE = "embedding"
     HARDWARE_REQUIREMENT = HardwareRequirement.FULL_BOARD
 
+    def _model_name(self) -> str:
+        """Model id to send in the request body.
+
+        Forge embedding runners reject a request whose ``model`` is not the one
+        they loaded, so this has to be the real repo id — an invented default
+        turns the whole test into a 500.
+        """
+        configured = self.config.get("model")
+        if configured:
+            return configured
+        if self.ctx is not None:
+            return self.ctx.model_spec.hf_model_repo
+        raise ValueError(
+            "EmbeddingLoadTest needs a model: pass test_config['model'] or a ctx."
+        )
+
     async def _run_specific_test_async(self):
         self.url = f"{self.base_url}/v1/embeddings"
         logger.info(self.targets)
         num_concurrent_requests = self._get_num_concurrent_requests(default=1)
         embedding_target_time = self.targets.get("embedding_time", 5)  # in seconds
         dimensions = self.targets.get("dimensions", None)
-        model = self.config.get("model", "test-model")
 
-        payload["model"] = model
-
+        self.payload = {"input": DEFAULT_INPUT, "model": self._model_name()}
         if dimensions is not None:
-            payload["dimensions"] = dimensions
+            self.payload["dimensions"] = dimensions
+        logger.info(f"Embedding load test payload model={self.payload['model']!r}")
 
         (
             requests_duration,
@@ -66,13 +78,16 @@ class EmbeddingLoadTest(BaseTest):
             try:
                 start = time.perf_counter()
                 async with session.post(
-                    self.url, json=payload, headers=headers
+                    self.url, json=self.payload, headers=headers
                 ) as response:
                     duration = time.perf_counter() - start
                     if response.status == 200:
                         await response.json()
                     else:
-                        raise Exception(f"Status {response.status} {response.reason}")
+                        body = (await response.text())[:500]
+                        raise Exception(
+                            f"Status {response.status} {response.reason}: {body}"
+                        )
                     logger.info(
                         f"[{index}] Status: {response.status}, Time: {duration:.2f}s",
                     )
@@ -83,7 +98,10 @@ class EmbeddingLoadTest(BaseTest):
                 logger.info(f"[{index}] Error after {duration:.2f}s: {e}")
                 raise
 
-        # First iteration is warmup, second is measured (original behavior)
+        # First iteration is warmup, second is measured. The warmup matters:
+        # the first request against a forge runner can pay trace-capture /
+        # compile cost, which would otherwise be charged to the reported time.
+        requests_duration = avg_duration = 0.0
         for iteration in range(2):
             session_timeout = aiohttp.ClientTimeout(total=2000)
             async with aiohttp.ClientSession(
@@ -94,7 +112,6 @@ class EmbeddingLoadTest(BaseTest):
                 requests_duration = max(results)
                 total_duration = sum(results)
                 avg_duration = total_duration / batch_size
-                return requests_duration, avg_duration
             if iteration == 0:
                 logger.info("🔥 Warm up run done.")
 
@@ -108,6 +125,7 @@ class EmbeddingLoadTest(BaseTest):
         logger.info(
             f"🚀 Avg time for {batch_size} concurrent requests: {avg_duration:.2f}s"
         )
+        return requests_duration, avg_duration
 
 
 def run_embedding_load(ctx: "MediaContext", targets: dict | None = None) -> Block:

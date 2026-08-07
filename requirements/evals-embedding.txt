@@ -9,3 +9,6 @@
 
 mteb>=2.6.6
 openai
+# mteb's OpenAIModel imports tiktoken at construction time but does not declare
+# it, so the eval subprocess dies with ModuleNotFoundError without this.
+tiktoken

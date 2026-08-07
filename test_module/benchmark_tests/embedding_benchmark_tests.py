@@ -16,7 +16,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from workflows.workflow_types import WorkflowVenvType
+from reference_config.benchmarking.benchmark_config import select_vllm_benchmark_venv
 from workflows.workflow_venvs import VENV_CONFIGS
 
 from report_module.schema import Block
@@ -75,7 +75,10 @@ def _parse_embedding_benchmark_output(output: str) -> dict:
 def _run_embedding_transcription_benchmark(ctx: MediaContext) -> dict:
     model, isl, num_calls, _concurrency = _embedding_params(ctx)
 
-    venv_config = VENV_CONFIGS.get(WorkflowVenvType.BENCHMARKS_VLLM)
+    # Forge-served models need the newer vllm client (BENCHMARKS_VLLM_FORGE);
+    # anything else uses the shared one. Must match the venv that
+    # workflow_dispatch provisions for this model, or the exec is missing.
+    venv_config = VENV_CONFIGS.get(select_vllm_benchmark_venv(ctx.model_spec))
     vllm_exec = venv_config.venv_path / "bin" / "vllm"
 
     os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY

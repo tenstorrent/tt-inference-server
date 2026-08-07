@@ -5,12 +5,14 @@
         {
             "models": [
                 "bge",
+                "bge_m3",
                 "qwen3_emb"
             ],
             "devices": [
                 "n150",
                 "t3k",
-                "galaxy"
+                "galaxy",
+                "blackhole_galaxy"
             ],
             "test_cases": [
                 {
@@ -26,6 +28,12 @@
                         },
                         "qwen3_emb+n150": {
                             "embedding_time": 0.1
+                        },
+                        "qwen3_emb+blackhole_galaxy": {
+                            "embedding_time": 2
+                        },
+                        "bge_m3+blackhole_galaxy": {
+                            "embedding_time": 2
                         }
                     }
                 }
