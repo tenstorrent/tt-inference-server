@@ -3,12 +3,14 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import atexit
+import io
 import json
 import logging
 import os
 import shlex
 import shutil
 import subprocess
+import tarfile
 import threading
 import time
 import uuid
@@ -193,30 +195,8 @@ def generate_docker_volume_name(model_spec) -> str:
     return f"volume_id_{model_spec.impl.impl_id}-{model_spec.model_name}"
 
 
-def _find_inference_server_container() -> str:
-    """Most recently created tt-inference-server container name, or "" if none."""
-    result = subprocess.run(
-        [
-            "docker",
-            "ps",
-            "-a",
-            "--filter",
-            "name=tt-inference-server-",
-            "--format",
-            "{{.Names}}",
-        ],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        return ""
-    # `docker ps` lists newest first.
-    names = result.stdout.split()
-    return names[0] if names else ""
-
-
 def collect_tt_triage_logs(
-    setup_config, dest_dir: Path, container_name: str = "", since_ts: float = None
+    setup_config, model_spec, dest_dir: Path, since_ts: float = None
 ) -> int:
     """Copy tt-triage hang reports out of cache_root so CI can upload them.
 
@@ -255,33 +235,45 @@ def collect_tt_triage_logs(
                 if src.is_file():
                     shutil.copy2(src, dest_dir / src.name)
         else:
-            # cache_root is a named docker volume -- extract it via the container.
-            name = container_name or _find_inference_server_container()
-            if not name:
-                logger.warning(
-                    "tt-triage reports not collected: no tt-inference-server "
-                    "container found to copy from. They remain in docker volume "
-                    f"{setup_config.docker_volume_name!r} under logs/."
-                )
-                return 0
-            ensure_readwriteable_dir(dest_dir)
+            # cache_root is a named docker volume. Read the volume directly
+            # rather than `docker cp` from the server container: that container
+            # runs with --rm, so a hang that kills it also deletes it, and the
+            # hang is precisely the case a report exists for. Mount the volume
+            # into a throwaway container and tar to stdout, so the extracted
+            # files end up owned by the host user instead of root.
             result = subprocess.run(
                 [
                     "docker",
-                    "cp",
-                    f"{name}:{setup_config.cache_root}/logs/.",
-                    str(dest_dir),
+                    "run",
+                    "--rm",
+                    "--entrypoint",
+                    "tar",
+                    "--volume",
+                    f"{setup_config.docker_volume_name}:/cache_root:ro",
+                    model_spec.docker_image,
+                    "-cf",
+                    "-",
+                    "-C",
+                    "/cache_root/logs",
+                    ".",
                 ],
                 capture_output=True,
-                text=True,
             )
             if result.returncode != 0:
-                # Nothing to copy is the common case: no hang, so no report.
+                # A missing logs/ directory is the common case: nothing hung.
+                stderr = result.stderr.decode(errors="replace").strip()
                 logger.info(
-                    f"No tt-triage reports copied from container {name}: "
-                    f"{result.stderr.strip()}"
+                    "No tt-triage reports in docker volume "
+                    f"{setup_config.docker_volume_name}: {stderr}"
                 )
                 return 0
+            ensure_readwriteable_dir(dest_dir)
+            with tarfile.open(fileobj=io.BytesIO(result.stdout)) as tar:
+                try:
+                    tar.extractall(dest_dir, filter="data")
+                except TypeError:
+                    # filter= is only available on newer Python 3.10/3.11 patches.
+                    tar.extractall(dest_dir)
 
         collected = sorted(p for p in dest_dir.iterdir() if p.is_file())
         if since_ts is not None:

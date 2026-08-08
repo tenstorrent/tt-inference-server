@@ -1162,19 +1162,10 @@ def main():
             # it detects a device hang; copy it under workflow_logs/ so CI's
             # existing artifact upload picks it up. Runs on success too -- the
             # report is simply absent when nothing hung.
-            server_payload = next(
-                (
-                    result.payload
-                    for result in runner.results
-                    if result.command_name == "server"
-                    and isinstance(result.payload, dict)
-                ),
-                {},
-            )
             collect_tt_triage_logs(
                 setup_config=setup_config,
+                model_spec=model_spec,
                 dest_dir=log_path / "tt_triage",
-                container_name=server_payload.get("container_name", ""),
                 since_ts=run_start.timestamp(),
             )
     if main_return_code == 0:
