@@ -402,6 +402,7 @@ templates:
         HF_MODEL: Qwen/Qwen3.6-27B
         MESH_DEVICE: "P150x8"
         QWEN36_MAX_TOKENS_ALL_USERS: "525312"
+        TT_DECODE_BUCKETING: "0"
       vllm_args:
         enable_auto_tool_choice: true
         reasoning_parser: qwen3
