@@ -17,14 +17,10 @@ mistral-common[image]==1.11.7 # mistral's tokenizer
 datasets # model training
 peft # model training
 
-# Training recipes reused by trainer_training_lora_runner. Pinned to a commit rather
+# Training recipes reused by trainer runners. Pinned to a commit rather
 # than a branch so a worker image build is reproducible.
-blacksmith @ git+https://github.com/tenstorrent/tt-blacksmith.git@5ca53306de7a4f382d630c387876d118bc69f22f
-# blacksmith declares no install_requires, so its transitive imports are listed
-# here. jax is only reached through ReproducibilityManager, which this runner
-# does not use, but blacksmith imports it eagerly.
-# TODO: REMOVE jax
-jax
+blacksmith @ git+https://github.com/tenstorrent/tt-blacksmith.git@b5a35e6af09b3aba488e0adfd4a8b0cc8d6f826f
+# blacksmith declares no install_requires, so its transitive imports are listed here.
 pandas
 torchvision
 tqdm

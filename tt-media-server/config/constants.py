@@ -431,8 +431,6 @@ class JobTypes(Enum):
 class DatasetLoaders(Enum):
     SST2 = "SST2"
     ALPACA = "Alpaca"
-    # A local file supplied with the request rather than a built-in dataset; only
-    # the trainer-training-lora runner can load it.
     CUSTOM = "Custom"
 
 
@@ -449,6 +447,7 @@ class ModelDisplayNames(Enum):
     LLAMA_3_1_8B_INSTRUCT = "Llama 3.1 8B Instruct"
     QWEN_3_4B = "Qwen 3 4B"
     QWEN_3_8B = "Qwen 3 8B"
+
 
 class TrainingOptimizers(Enum):
     ADAMW = "adamw"
