@@ -10,6 +10,8 @@ runners emit; these tests assert against that shape directly.
 
 from __future__ import annotations
 
+import pytest
+
 from report_module.acceptance_criteria import (
     CATEGORY_BENCHMARKS,
     CATEGORY_EVALS,
@@ -18,6 +20,7 @@ from report_module.acceptance_criteria import (
     STATUS_NA,
     STATUS_PASS,
     CategoryResult,
+    _detail,
     acceptance_criteria_check,
     build_acceptance_export,
     format_acceptance_summary_markdown,
@@ -52,6 +55,52 @@ def test_category_result_passed_and_to_dict():
         "blockers": {},
         "waived": {},
     }
+
+
+# `waived` overlaps the other counts instead of partitioning alongside them: a
+# block can fail AND carry an informational tier note (asserted deliberately by
+# test_benchmark_failing_complete_tier_still_blocks_at_complete_status). Counting
+# it as its own share produced negative pass counts -- a real 20-point sweep
+# reported "-2/20 passed, 10 failed, 2 waived, 10 NA".
+@pytest.mark.parametrize(
+    "total, failed, na, skipped, waived, expected",
+    [
+        (1, 1, 0, 0, 1, 0),  # the minimal repro: one block, failed AND waived
+        (20, 10, 10, 0, 2, 0),  # the sweep that reported -2/20
+        (5, 2, 1, 1, 0, 1),  # no waivers: unchanged from before
+        (3, 0, 0, 0, 3, 3),  # waived-only blocks still passed the gate
+    ],
+)
+def test_passed_never_goes_negative_and_counts_partition_total(
+    total, failed, na, skipped, waived, expected
+):
+    cat = CategoryResult(
+        "Benchmarks",
+        STATUS_FAIL,
+        total=total,
+        failed=failed,
+        na=na,
+        skipped=skipped,
+        waived={f"k{i}": "informational" for i in range(waived)},
+    )
+    assert cat.passed == expected
+    assert cat.passed >= 0
+    # The four buckets must partition total; waived is an annotation on top.
+    assert cat.passed + cat.failed + cat.na + cat.skipped == cat.total
+
+
+def test_waived_is_worded_as_an_annotation_not_a_share():
+    cat = CategoryResult(
+        "Benchmarks",
+        STATUS_FAIL,
+        total=20,
+        failed=10,
+        na=10,
+        waived={"a": "informational", "b": "informational"},
+    )
+    detail = _detail(cat)
+    assert detail.startswith("0/20 passed")
+    assert "2 with waived check(s)" in detail
 
 
 # --- Task failure blockers ------------------------------------------------
