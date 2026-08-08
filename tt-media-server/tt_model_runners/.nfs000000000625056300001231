@@ -83,15 +83,8 @@ class VLLMForgeQwen32BRunner(BaseDeviceRunner):
         }
         if is_dp_tp:
             # 2D DP+TP (BH galaxy) keys the 1D TP path never sets.
-            # shard_weights_on_batch_axis: False replicates weights across DP
-            # replicas (fewer CCLs); True FSDP-shards them across the batch axis
-            # to free per-chip DRAM for a bigger KV cache / longer context. Env
-            # SHARD_WEIGHTS_ON_BATCH_AXIS (dev/cnn.yaml) selects; default False.
-            shard_weights = (
-                os.getenv("SHARD_WEIGHTS_ON_BATCH_AXIS", "false").lower() == "true"
-            )
             additional_config["enable_data_parallel"] = True
-            additional_config["shard_weights_on_batch_axis"] = shard_weights
+            additional_config["shard_weights_on_batch_axis"] = False
             additional_config["mesh_shape"] = mesh_shape
         if prefill_chunk_size:
             additional_config["prefill_chunk_size"] = int(prefill_chunk_size)

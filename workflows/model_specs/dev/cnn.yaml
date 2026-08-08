@@ -213,30 +213,27 @@ templates:
       # forced to 0 in the runner). CPU_SAMPLING=false (owner-tested on this mesh).
       # The DP+TP additional_config keys are set by the mesh-aware runner when
       # device_mesh_shape[0] > 1; this block carries the served dims + env.
+      # Full-model real run: batch 32 / ctx 16384 / GMU 0.55 with FSDP weight
+      # sharding + explicit KV-head sharding (tt-xla devstral-qwen-5893 GMU +
+      # KV-shard fixes, a39909d53 / 7caa96bb6). shard_weights_on_batch_axis=True
+      # frees per-chip DRAM so the KV cache fits at 16k/batch32. Chunked prefill
+      # (chunk 128) + b1-prefill + greedy, cpu_sampling=false.
       max_concurrency: 32
-      max_context: 3072
+      max_context: 16384
       eval_max_retries: 1
       env_vars:
-        # 3072 (harness): fits the vLLM-bench "initial test run" probe (~136 prompt
-        # + 2048 max_tokens = 2184 tokens) so benchmark sweep points can run, while
-        # staying below the smallest eval min_context_required (mbpp=4096) so every
-        # eval task still SKIPs. The real release target is 4096 (where the probe
-        # also fits); 3072 is a 2-layer harness compromise to keep evals all-skip.
-        MAX_MODEL_LENGTH: "3072"
+        MAX_MODEL_LENGTH: "16384"
         MAX_NUM_SEQS: "32"
-        GPU_MEMORY_UTILIZATION: "0.25"
+        GPU_MEMORY_UTILIZATION: "0.55"
+        SHARD_WEIGHTS_ON_BATCH_AXIS: "true"   # FSDP: free DRAM for KV at 16k/batch32
         OPTIMIZATION_LEVEL: "0"
         ENABLE_TRACE: "true"
         CPU_SAMPLING: "false"            # owner-tested false on the 2D DP+TP mesh
         TT_RUNTIME_USING_BH_GALAXY: "1"
-        TT_METAL_OPERATION_TIMEOUT_SECONDS: "120"  # fail hung device ops fast instead of wedging
-        PREFILL_CHUNK_SIZE: "128"        # chunked prefill; small chunks = faster per-chunk compile (matches tt-xla test)
+        TT_METAL_OPERATION_TIMEOUT_SECONDS: "120"
+        PREFILL_CHUNK_SIZE: "128"        # chunked prefill; small chunks compile faster
         MIN_NUM_SEQS: "1"                # enables b1-prefill (min<max)
         PREFILL_BATCH_THRESHOLD: "16"    # must be < MAX_NUM_SEQS (32); matches tt-xla chunked test
-        # HARNESS-TEST OVERRIDE ONLY -- serve a 2-layer truncated model for a fast
-        # local Mode-C (evals+benchmarks) plumbing check. Output is garbage at this
-        # depth; REMOVE before any real eval/accuracy run.
-        NUM_HIDDEN_LAYERS: "2"
         # TODO(verify): pin a BH-galaxy 8x4 mesh_graph_descriptor here only if
         # compile hits "unknown mesh: @mesh" (analogous to the p300_x2 pin above).
 
