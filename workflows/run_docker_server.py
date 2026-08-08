@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import shlex
+import shutil
 import subprocess
 import threading
 import time
@@ -190,6 +191,118 @@ def generate_docker_volume_name(model_spec) -> str:
     The volume name excludes version to allow image upgrades without creating new volumes.
     """
     return f"volume_id_{model_spec.impl.impl_id}-{model_spec.model_name}"
+
+
+def _find_inference_server_container() -> str:
+    """Most recently created tt-inference-server container name, or "" if none."""
+    result = subprocess.run(
+        [
+            "docker",
+            "ps",
+            "-a",
+            "--filter",
+            "name=tt-inference-server-",
+            "--format",
+            "{{.Names}}",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return ""
+    # `docker ps` lists newest first.
+    names = result.stdout.split()
+    return names[0] if names else ""
+
+
+def collect_tt_triage_logs(
+    setup_config, dest_dir: Path, container_name: str = "", since_ts: float = None
+) -> int:
+    """Copy tt-triage hang reports out of cache_root so CI can upload them.
+
+    tt-metal runs ``tools/triage/triage.py`` automatically when its dispatch
+    layer detects a device timeout (via the
+    ``TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE`` hook) and writes the report
+    to ``TT_TRIAGE_LOGS_PATH``, which :func:`generate_docker_run_command` points
+    at ``<cache_root>/logs`` in CI mode. ``cache_root`` is a docker volume, so
+    the reports outlive the container but sit outside ``workflow_logs/`` -- the
+    only tree CI uploads as an artifact. Copying them in makes the existing
+    upload step collect them with no CI-side change.
+
+    The volume is reused across runs, so ``since_ts`` (epoch seconds, normally
+    the start of this run) drops reports left behind by earlier runs rather
+    than misattributing them to this one.
+
+    Best-effort: logs and returns 0 on any failure, never raises, so a
+    collection problem can never mask the workload's own result.
+
+    Returns:
+        Number of reports collected into ``dest_dir``.
+    """
+    if setup_config is None:
+        return 0
+
+    dest_dir = Path(dest_dir)
+    try:
+        if setup_config.host_model_volume_root:
+            # cache_root is a host bind mount -- read it directly, no docker needed.
+            host_logs = Path(setup_config.host_model_volume_root) / "logs"
+            if not host_logs.is_dir():
+                logger.info(f"No tt-triage log directory at {host_logs}.")
+                return 0
+            ensure_readwriteable_dir(dest_dir)
+            for src in host_logs.iterdir():
+                if src.is_file():
+                    shutil.copy2(src, dest_dir / src.name)
+        else:
+            # cache_root is a named docker volume -- extract it via the container.
+            name = container_name or _find_inference_server_container()
+            if not name:
+                logger.warning(
+                    "tt-triage reports not collected: no tt-inference-server "
+                    "container found to copy from. They remain in docker volume "
+                    f"{setup_config.docker_volume_name!r} under logs/."
+                )
+                return 0
+            ensure_readwriteable_dir(dest_dir)
+            result = subprocess.run(
+                [
+                    "docker",
+                    "cp",
+                    f"{name}:{setup_config.cache_root}/logs/.",
+                    str(dest_dir),
+                ],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode != 0:
+                # Nothing to copy is the common case: no hang, so no report.
+                logger.info(
+                    f"No tt-triage reports copied from container {name}: "
+                    f"{result.stderr.strip()}"
+                )
+                return 0
+
+        collected = sorted(p for p in dest_dir.iterdir() if p.is_file())
+        if since_ts is not None:
+            stale = [p for p in collected if p.stat().st_mtime < since_ts]
+            for path in stale:
+                # Left over from an earlier run sharing this volume.
+                path.unlink()
+            collected = [p for p in collected if p not in stale]
+
+        if collected:
+            logger.info(
+                f"Collected {len(collected)} tt-triage report(s) to {dest_dir}:"
+            )
+            for path in collected:
+                logger.info(f"  {path.name}")
+        else:
+            logger.info("No tt-triage reports from this run.")
+        return len(collected)
+    except Exception as e:
+        logger.warning(f"Failed to collect tt-triage reports: {e}")
+        return 0
 
 
 def format_docker_command(docker_command):
