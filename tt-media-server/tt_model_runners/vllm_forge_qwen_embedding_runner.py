@@ -10,6 +10,7 @@ from domain.text_embedding_request import TextEmbeddingRequest
 from transformers import AutoTokenizer
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.decorators import log_execution_time
+from utils.runner_utils import probe_device_env
 
 
 class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
@@ -74,6 +75,9 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
         self.logger.info(
             f"Device {self.device_id}: additional_config={additional_config}"
         )
+        # Last point before the device is touched: record what this process will
+        # hand to the engine, since the EngineCore inherits this environment.
+        probe_device_env(f"embedding_warmup:device_id={self.device_id}")
         self.llm = vllm.LLM(**llm_args)
 
         self.llm.embed(prompts)

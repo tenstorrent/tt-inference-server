@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 import os
+import sys
 
 from config.constants import DeviceTypes, ModelRunners
 from config.settings import settings
@@ -10,6 +11,31 @@ from telemetry.telemetry_client import get_telemetry_client
 
 from utils.logger import TTLogger
 from utils.torch_utils import set_torch_thread_limits
+
+# CI streams container logs through `grep -v -i INFO`, so logger.info() from a
+# worker is invisible in a tt-shield job log. Device-pinning problems are only
+# debuggable from what the worker actually had in its environment, so emit that
+# on raw stderr, which no log config or filter can swallow. Keep the word
+# "info" out of the output or the CI filter will drop the line.
+_PROBE_TAG = "[TT-DEVICE-ENV]"
+
+
+def probe_device_env(where: str) -> None:
+    """Print the device-selection environment as this process sees it."""
+    mgd = os.environ.get("TT_MESH_GRAPH_DESC_PATH")
+    print(
+        f"{_PROBE_TAG} at={where} pid={os.getpid()} "
+        f"TT_VISIBLE_DEVICES={os.environ.get('TT_VISIBLE_DEVICES')!r} "
+        f"TT_MESH_GRAPH_DESC_PATH={mgd!r} "
+        f"mesh_desc_exists={os.path.isfile(mgd) if mgd else None} "
+        f"TT_METAL_HOME={os.environ.get('TT_METAL_HOME')!r} "
+        f"grid_override={os.environ.get('TT_METAL_CORE_GRID_OVERRIDE_TODEPRECATE')!r} "
+        f"runner={settings.model_runner!r} device={settings.device!r} "
+        f"is_galaxy={settings.is_galaxy} mesh_shape={settings.device_mesh_shape}",
+        file=sys.stderr,
+        flush=True,
+    )
+
 
 _BH_DEVICE_MESH_DESCRIPTORS = {
     "p150": "p150_mesh_graph_descriptor.textproto",
@@ -85,6 +111,8 @@ def setup_runner_environment(
     }
     if settings.model_runner in _RUNNERS_REQUIRING_GRID_OVERRIDE:
         _setup_grid_override(settings.device)
+
+    probe_device_env("setup_runner_environment:end")
 
 
 def setup_cpu_threading_limits(cpu_threads: str, num_torch_threads: int = 1):
