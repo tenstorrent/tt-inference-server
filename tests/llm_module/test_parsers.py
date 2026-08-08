@@ -322,6 +322,49 @@ def test_aiperf_errors_surface_when_present(err_value):
     assert data["error_request_count"] == 3
 
 
+# AIPerf drops error_request_count from the export when nothing failed and only
+# adds it once something has, so absence is its healthiest output rather than a
+# gap. error_summary is always written, so an empty one is a confirmed zero --
+# which is what the acceptance gate needs to tell apart from silence.
+def test_aiperf_empty_error_summary_is_a_confirmed_zero():
+    raw = {**AIPERF_RAW, "error_summary": []}
+    del raw["error_request_count"]
+    data = AIPerfParser().parse(raw, device="N150").data
+    assert data["error_request_count"] == 0
+
+
+def test_aiperf_error_summary_is_summed_when_the_aggregate_is_missing():
+    """A partial export must not report zero failures while listing some."""
+    raw = {
+        **AIPERF_RAW,
+        "error_summary": [
+            {"error_details": {"code": 404}, "count": 2},
+            {"error_details": {"code": 503}, "count": 1},
+        ],
+    }
+    del raw["error_request_count"]
+    data = AIPerfParser().parse(raw, device="N150").data
+    assert data["error_request_count"] == 3
+
+
+def test_aiperf_aggregate_count_wins_over_the_summary():
+    raw = {
+        **AIPERF_RAW,
+        "error_request_count": {"avg": 5},
+        "error_summary": [{"error_details": {"code": 404}, "count": 2}],
+    }
+    data = AIPerfParser().parse(raw, device="N150").data
+    assert data["error_request_count"] == 5
+
+
+def test_aiperf_errors_stay_none_when_neither_key_is_present():
+    """Still blocks the gate: no count and no summary means nobody looked."""
+    raw = {k: v for k, v in AIPERF_RAW.items() if k != "error_request_count"}
+    assert "error_summary" not in raw
+    data = AIPerfParser().parse(raw, device="N150").data
+    assert data["error_request_count"] is None
+
+
 def test_genai_unwraps_concurrency_list_and_resolves_model():
     block = GenAIPerfParser().parse(GENAI_RAW, device="N150")
     data = block.data

@@ -99,13 +99,41 @@ def _errors(raw: Mapping[str, Any]) -> Optional[int]:
     to confirm — RFP G.2.6 requires zero failed requests — so collapsing it to
     None would make "no requests failed" indistinguishable from "nobody looked",
     and an unverifiable requirement reads as a satisfied one.
+
+    AIPerf makes that harder than it sounds: it omits ``error_request_count``
+    from the export entirely when nothing failed, and only emits it (alongside
+    ``error_isl`` / ``total_error_isl``) once at least one request has failed.
+    Reading absence as "nobody looked" therefore inverted the meaning of AIPerf's
+    healthiest possible output, and blocked the acceptance gate on every clean
+    point.
+
+    ``error_summary`` is the signal to use instead. AIPerf always writes it — an
+    empty list on a clean run, one entry per distinct failure otherwise — so it
+    is an affirmative "the tool looked", which is exactly what the gate needs to
+    distinguish a confirmed zero from silence. Verified against v0.5.0 with the
+    simulator's ``--failure-injection-rate``: at 0 the export carries
+    ``error_summary: []`` and no count; at 50 it carries ``error_request_count:
+    5`` and five summarised failures.
+
+    An export with neither key still yields None and still blocks.
     """
     value = raw.get("error_request_count")
     if isinstance(value, Mapping):
         value = value.get("avg")
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        return None
-    return int(value)
+    if not isinstance(value, bool) and isinstance(value, (int, float)):
+        return int(value)
+
+    summary = raw.get("error_summary")
+    if isinstance(summary, list):
+        # Normally the aggregate above is present whenever the summary is
+        # non-empty; sum it rather than assume, so a partial export cannot
+        # report zero failures when it listed some.
+        total = 0
+        for entry in summary:
+            count = entry.get("count") if isinstance(entry, Mapping) else None
+            total += int(count) if isinstance(count, (int, float)) else 1
+        return total
+    return None
 
 
 def _model_name(raw: Mapping[str, Any]) -> str:
