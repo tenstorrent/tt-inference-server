@@ -114,6 +114,7 @@ class TestCreateDitRunner:
         mock_wan_i2v=None,
         mock_wan_i2v_prodia=None,
         mock_wan_t2v_prodia=None,
+        mock_ltx_2_3=None,
     ):
         mock_mochi.__name__ = "TTMochi1Runner"
         mock_wan.__name__ = "TTWan22Runner"
@@ -129,6 +130,9 @@ class TestCreateDitRunner:
         if mock_wan_t2v_prodia is not None:
             mock_wan_t2v_prodia.__name__ = "TTWan22T2VProdiaRunner"
             mod.TTWan22T2VProdiaRunner = mock_wan_t2v_prodia
+        if mock_ltx_2_3 is not None:
+            mock_ltx_2_3.__name__ = "TTLtx23DistilledRunner"
+            mod.TTLtx23DistilledRunner = mock_ltx_2_3
         return {"tt_model_runners.dit_runners": mod}
 
     def test_creates_mochi_runner(self):
@@ -203,6 +207,29 @@ class TestCreateDitRunner:
         ):
             _create_dit_runner("tt-wan2.2-t2v-prodia", 0)
             mock_wan_t2v_prodia.assert_called_once_with("")
+            mock_wan.assert_not_called()
+            mock_mochi.assert_not_called()
+
+    def test_creates_ltx_2_3_runner(self):
+        """``tt-ltx-2.3`` must resolve to ``TTLtx23DistilledRunner``. Unlike the
+        Wan runners this one serves audio+video from a single pipeline, so a
+        missing entry here surfaces as an unsupported-runner crash at worker
+        start rather than a degraded generation."""
+        mock_mochi = Mock()
+        mock_wan = Mock()
+        mock_wan_i2v = Mock()
+        mock_ltx_2_3 = Mock()
+        with patch.dict(
+            sys.modules,
+            self._make_dit_module(
+                mock_mochi,
+                mock_wan,
+                mock_wan_i2v,
+                mock_ltx_2_3=mock_ltx_2_3,
+            ),
+        ):
+            _create_dit_runner("tt-ltx-2.3", 0)
+            mock_ltx_2_3.assert_called_once_with("")
             mock_wan.assert_not_called()
             mock_mochi.assert_not_called()
 
