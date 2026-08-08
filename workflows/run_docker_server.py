@@ -474,6 +474,8 @@ def generate_docker_run_command(
                 "tt_model_runners/vllm_forge_qwen_32b.py",
                 "tt_model_runners/vllm_forge_devstral_123b.py",
                 "utils/sampling_params_builder.py",
+                "domain/chat_completion_request.py",
+                "open_ai_api/chat.py",
             ]
             media_src_root = Path(repo_root_path) / "tt-media-server"
             # Optional: source config/constants.py from an explicit path (e.g. a

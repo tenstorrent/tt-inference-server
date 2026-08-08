@@ -56,13 +56,25 @@ def _count_tokens(text: str) -> int:
     return len(tokenizer.encode(text))
 
 
+def _effective_max_tokens(chat_request: ChatCompletionRequest) -> int | None:
+    """Prefer OpenAI's max_completion_tokens over the deprecated max_tokens.
+
+    max_tokens defaults to 2048 on the model, so a client that sends only
+    max_completion_tokens (e.g. vllm bench serve) would otherwise get 2048 and
+    overflow a small served context. When max_completion_tokens is set it wins.
+    """
+    if chat_request.max_completion_tokens is not None:
+        return chat_request.max_completion_tokens
+    return chat_request.max_tokens
+
+
 def _build_completion_request(
     chat_request: ChatCompletionRequest, prompt: str
 ) -> CompletionRequest:
     return CompletionRequest(
         model=chat_request.model,
         prompt=prompt,
-        max_tokens=chat_request.max_tokens,
+        max_tokens=_effective_max_tokens(chat_request),
         temperature=chat_request.temperature,
         top_p=chat_request.top_p,
         top_k=chat_request.top_k,
@@ -112,9 +124,8 @@ async def chat_completions(
     max_model_len = settings.vllm.max_model_length
     # Default to 1 when max_tokens is unset; vLLM needs >= 1 output token. Pass
     # explicit values through (incl. 0) so the check matches what the engine sees.
-    output_tokens_needed = (
-        chat_request.max_tokens if chat_request.max_tokens is not None else 1
-    )
+    _eff = _effective_max_tokens(chat_request)
+    output_tokens_needed = _eff if _eff is not None else 1
     if prompt_tokens + output_tokens_needed > max_model_len:
         logger.warning(
             f"Rejected prompt: length ({prompt_tokens}) + max_tokens "

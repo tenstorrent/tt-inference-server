@@ -34,6 +34,10 @@ class ChatCompletionRequest(BaseModel):
     model: str | None = None
     messages: list[ChatMessage]
     max_tokens: int | None = 2048
+    # OpenAI's modern field; supersedes the deprecated max_tokens when set. Tools
+    # like `vllm bench serve --backend openai-chat` send only this, so honor it
+    # (else max_tokens silently uses its 2048 default and overflows small ctx).
+    max_completion_tokens: int | None = None
     temperature: float | None = None
     top_p: float | None = None
     top_k: int | None = None
