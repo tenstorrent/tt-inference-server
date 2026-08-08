@@ -322,6 +322,117 @@ for submodule, mock in submodules.items():
     if submodule not in sys.modules:
         sys.modules[submodule] = mock
 
+
+def _install_blacksmith_stubs():
+    """Stand in for tt-blacksmith, which only ships in the forge worker image.
+
+    These cannot be MagicMocks like the modules above: trainer_training_lora_runner
+    subclasses LoraLLMTrainer and Callback at import time, and a MagicMock is not
+    a usable base class. The config stubs just record their kwargs, which is what
+    the config-mapping tests assert on.
+    """
+
+    torch_dtypes = {"torch.bfloat16": "bfloat16", "torch.float32": "float32"}
+
+    class StubConfig:
+        def __init__(self, **kwargs):
+            self.__dict__.update(kwargs)
+
+    class StubTrainerConfig(StubConfig):
+        # Mirrors TrainerConfig.torch_dtype, which the runner calls when loading
+        # the base model.
+        def torch_dtype(self):
+            return torch_dtypes[self.dtype]
+
+    class StubCallback:
+        pass
+
+    class StubCallbackHandler:
+        def __init__(self, trainer, callbacks):
+            self.trainer = trainer
+            self.callbacks = list(callbacks)
+
+        def __call__(self, method_name, *args, **kwargs):
+            for callback in self.callbacks:
+                if hasattr(callback, method_name):
+                    getattr(callback, method_name)(self.trainer, *args, **kwargs)
+
+    class StubDeviceManager:
+        def __init__(self, config):
+            self.config = config
+            self.device = "xla:0"
+
+    class StubTrainingLogger:
+        def __init__(self, config):
+            self.config = config
+
+        def info(self, message):
+            pass
+
+        def warning(self, message):
+            pass
+
+        def error(self, message, traceback_str=None):
+            pass
+
+        def finish(self):
+            pass
+
+    class StubLoraLLMTrainer:
+        def __init__(self, callbacks=None):
+            self.callback_handler = StubCallbackHandler(self, callbacks or [])
+            self.config = None
+            self.reproducibility_manager = None
+            self.logger = None
+            self.global_step = 0
+            self.epoch = 0
+
+        def _load_dataloaders(self):
+            return MagicMock(), MagicMock()
+
+        def _load_optimizer(self):
+            return MagicMock()
+
+        def train(self):
+            pass
+
+    def module(name, **attrs):
+        stub = types.ModuleType(name)
+        for key, value in attrs.items():
+            setattr(stub, key, value)
+        sys.modules[name] = stub
+
+    module("blacksmith")
+    module("blacksmith.tools")
+    module(
+        "blacksmith.tools.configs",
+        CheckpointConfig=type("CheckpointConfig", (StubConfig,), {}),
+        CustomDatasetConfig=type("CustomDatasetConfig", (StubConfig,), {}),
+        LoggingConfig=type("LoggingConfig", (StubConfig,), {}),
+        MetricsConfig=type("MetricsConfig", (StubConfig,), {}),
+    )
+    module("blacksmith.tools.device_manager", DeviceManager=StubDeviceManager)
+    module("blacksmith.tools.logging_manager", TrainingLogger=StubTrainingLogger)
+    module("blacksmith.tools.trainer")
+    module("blacksmith.tools.trainer.callback", Callback=StubCallback)
+    module("blacksmith.tools.trainer.configs")
+    module("blacksmith.tools.trainer.configs.base", TORCH_DTYPES=torch_dtypes)
+    module(
+        "blacksmith.tools.trainer.configs.lora_llm",
+        LoraLLMConfig=type("LoraLLMConfig", (StubTrainerConfig,), {}),
+    )
+    module("blacksmith.tools.trainer.strategies")
+    module(
+        "blacksmith.tools.trainer.strategies.lora_llm_trainer",
+        LoraLLMTrainer=StubLoraLLMTrainer,
+    )
+
+
+try:
+    import blacksmith  # noqa: F401
+except ImportError:
+    _install_blacksmith_stubs()
+
 # Mock open_ai_api modules that use FastAPI decorators with Pydantic models
 # This prevents import errors when test_device_worker.py mocks domain objects.
 # The .router must be a REAL (empty) APIRouter, not a MagicMock: open_ai_api
