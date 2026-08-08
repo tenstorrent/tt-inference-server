@@ -41,11 +41,22 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
 
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
 
-        # Production knobs validated standalone in tt-xla (mirrors the forge LLM
-        # runners): opt>=1 for meaningful max_model_len, trace for decode-graph
-        # replay, bfp_bf8 weights (faster than bf16, halves weight DRAM traffic).
+        # Production knobs, mirroring the forge LLM runners: opt>=1 for a
+        # meaningful max_model_len, bfp_bf8 weights (faster than bf16, halves
+        # weight DRAM traffic).
+        #
+        # ENABLE_TRACE defaults OFF here, unlike the LLM runners. Trace replays
+        # the *decode* graph, and a pooling model has no decode loop — it runs
+        # prefill once and hands the embedding back to the host. That last part
+        # is what makes trace capture fail outright on the current wheel: the
+        # traced function ends in a ttnn.from_device, and trace requires every
+        # output to stay on device, so vllm_tt.pooling_runner._precompile_backbone
+        # dies in tt-mlir with
+        #   'ttnn.capture_or_execute_trace' op All output tensors of trace
+        #   function must be on device
+        # and the engine never starts. Still env-overridable for experiments.
         optimization_level = int(os.getenv("OPTIMIZATION_LEVEL", "1"))
-        enable_trace = os.getenv("ENABLE_TRACE", "true").lower() == "true"
+        enable_trace = os.getenv("ENABLE_TRACE", "false").lower() == "true"
 
         prompts = [
             "The capital of France is Paris",
