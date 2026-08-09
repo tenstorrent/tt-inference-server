@@ -368,6 +368,11 @@ def _run_eval_task(ctx: MediaContext, task, auth_token: str) -> int:
         deploy_url=ctx.server_host,
     )
     env = dict(os.environ)
+    # Code-generation evals (mbpp, humaneval) score with HF evaluate's code_eval
+    # metric, which refuses to execute model-generated code unless this is set --
+    # otherwise the task dies with "ValueError: ... set HF_ALLOW_CODE_EVAL=1".
+    # lm-eval's --confirm_run_unsafe_code flag is separate and not sufficient.
+    env.setdefault("HF_ALLOW_CODE_EVAL", "1")
     if auth_token:
         # lm-eval local-completions reads the bearer token from OPENAI_API_KEY.
         env["OPENAI_API_KEY"] = auth_token
