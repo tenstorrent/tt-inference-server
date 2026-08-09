@@ -109,6 +109,7 @@ class VLLMParamConformanceTest(BaseTest):
             endpoint_url,
             "--model-name",
             model_name,
+            *self._extra_pytest_args(),
             "-q",
         ]
         logger.info("Running vLLM parameter suite: %s", " ".join(command))
@@ -153,6 +154,9 @@ class VLLMParamConformanceTest(BaseTest):
             )
 
         return json.loads(report_path.read_text())
+
+    def _extra_pytest_args(self) -> List[str]:
+        return []
 
     def _record_pytest_output(
         self, return_code: Optional[int], stdout: Optional[bytes]
@@ -252,6 +256,22 @@ class VLLMQwen3StreamingParamConformanceTest(VLLMParamConformanceTest):
     PYTEST_FILENAME = "test_vllm_qwen3_streaming.py"
     ENDPOINT_PATH = "/v1/chat/completions"
     REPORT_TASK_NAME = "vllm_qwen3_streaming"
+
+
+class VLLMDiffusionGemmaParamConformanceTest(VLLMParamConformanceTest):
+    """Run DiffusionGemma's block-serving and admission regression suite."""
+
+    KIND = "vllm_diffusiongemma"
+    PYTEST_FILENAME = "test_vllm_diffusiongemma.py"
+    ENDPOINT_PATH = "/v1/chat/completions"
+    REPORT_TASK_NAME = "vllm_diffusiongemma"
+
+    def _extra_pytest_args(self) -> List[str]:
+        if self.ctx is None:
+            return []
+        device_spec = getattr(self.ctx.model_spec, "device_model_spec", None)
+        max_context = getattr(device_spec, "max_context", None)
+        return ["--max-context", str(max_context)] if max_context is not None else []
 
 
 def run_vllm_param_conformance(

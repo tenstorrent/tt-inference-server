@@ -42,7 +42,8 @@
             "Qwen3-32B",
             "Llama-3.1-8B-Instruct",
             "Llama-3.3-70B-Instruct",
-            "gpt-oss-20b"
+            "gpt-oss-20b",
+            "diffusiongemma-26B-A4B-it"
         ]
     },
     "available_markers": {
@@ -362,6 +363,16 @@
             "compatible_devices": [
                 "n150",
                 "p150"
+            ]
+        },
+        "diffusiongemma_26b": {
+            "id_name": "diffusiongemma-26b-a4b-it",
+            "weights": [
+                "diffusiongemma-26B-A4B-it"
+            ],
+            "category": "LLM",
+            "compatible_devices": [
+                "p300x2"
             ]
         },
         "gpt_oss_20b": {
@@ -888,6 +899,22 @@
                 "param",
                 "e2e",
                 "slow"
+            ],
+            "test_config": {
+                "test_timeout": 3600,
+                "retry_attempts": 0,
+                "retry_delay": 10,
+                "break_on_failure": false,
+                "mock_mode": false
+            }
+        },
+        "VLLMDiffusionGemmaParamConformanceTest": {
+            "module": "test_module.llm_tests.vllm_param_conformance_test",
+            "markers": [
+                "param",
+                "e2e",
+                "slow",
+                "heavy"
             ],
             "test_config": {
                 "test_timeout": 3600,

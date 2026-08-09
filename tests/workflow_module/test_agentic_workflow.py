@@ -17,12 +17,12 @@ from workflow_module.workflows import (
 )
 
 
-def _fake_block() -> Block:
+def _fake_block(*, success=True) -> Block:
     return Block(
         kind="evals",
         task_type="llm",
         title="Agentic Eval — test_task",
-        data={"success": True, "accuracy_check": 1, "accuracy": 0.6},
+        data={"success": success, "accuracy_check": 1, "accuracy": 0.6},
     )
 
 
@@ -82,6 +82,19 @@ class TestAgenticWorkflowRunTasks:
         assert len(outcomes) == 1
         assert outcomes[0].exit_code == 1
         assert outcomes[0].block_kind is None
+
+    def test_failed_result_block_gives_failed_outcome(self):
+        wf = self._make_workflow()
+        block = _fake_block(success=False)
+        with patch(
+            "test_module.llm_tests.agentic_eval_tests.run_llm_agentic_eval",
+            return_value=[block],
+        ):
+            outcomes = wf.run_tasks()
+
+        assert len(outcomes) == 1
+        assert outcomes[0].exit_code == 1
+        assert outcomes[0].block_kind == "evals"
 
     def test_runner_returns_empty_list_gives_failed_outcome(self):
         wf = self._make_workflow()

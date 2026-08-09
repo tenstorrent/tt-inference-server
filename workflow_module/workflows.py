@@ -183,6 +183,20 @@ class AgenticWorkflow(WorkflowExecution):
             self.logger.error("❌ agentic produced no blocks (%.1fs)", elapsed)
             return [TaskOutcome("evaluation", 1, elapsed, None)]
 
+        failed_blocks = [
+            block
+            for block in blocks
+            if isinstance(block.data, dict) and block.data.get("success") is False
+        ]
+        if failed_blocks:
+            self.logger.error(
+                "❌ agentic produced %d failed block(s) out of %d (%.1fs)",
+                len(failed_blocks),
+                len(blocks),
+                elapsed,
+            )
+            return [TaskOutcome("evaluation", 1, elapsed, blocks[0].kind)]
+
         self.logger.info(
             "✅ agentic blocks=%d kind=%s (%.1fs)",
             len(blocks),

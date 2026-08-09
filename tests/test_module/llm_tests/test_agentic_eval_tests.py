@@ -12,6 +12,8 @@ from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from llm_module import DriverContext, ServerConnection
 from llm_module.drivers.agentic import (
     build_swebench_config,
@@ -31,6 +33,8 @@ from llm_module.parsers.agentic import (
     compute_accuracy_check,
     extract_harbor_metrics,
 )
+from report_module.acceptance_criteria import acceptance_criteria_check
+from report_module.schema import ReportSchema
 from test_module.llm_tests.agentic_eval_tests import _select_agentic_tasks
 from workflows.workflow_types import EvalLimitMode, ReportCheckTypes, WorkflowVenvType
 
@@ -154,6 +158,35 @@ HARBOR_RESULT_FIXTURE = {
     },
 }
 
+HARBOR_ZERO_TRIALS_FIXTURE = {
+    "stats": {
+        "n_completed_trials": 5,
+        "n_errored_trials": 5,
+        "evals": {
+            "terminal_bench_2": {
+                "metrics": [],
+                "n_trials": 0,
+                "n_errors": 5,
+                "exception_stats": {
+                    "RuntimeError": [f"task-{index}" for index in range(5)]
+                },
+                "pass_at_k": {"1": 0.0},
+            }
+        },
+    },
+    "trial_results": [
+        {
+            "trial_name": f"task-{index}",
+            "verifier_result": None,
+            "exception_info": {
+                "exception_type": "RuntimeError",
+                "exception_message": "environment setup failed",
+            },
+        }
+        for index in range(5)
+    ],
+}
+
 
 class TestAgenticParser:
     def test_parse_harbor_result_to_evals_block(self):
@@ -174,6 +207,108 @@ class TestAgenticParser:
         assert block.data["accuracy_check"] == ReportCheckTypes.PASS
         assert "success" not in block.data
         assert "accuracy" not in block.data
+
+    def test_zero_trial_result_fails_closed_and_blocks_acceptance(self):
+        block = AgenticEvalParser(
+            task_name="terminal_bench_2", score=FakeScore()
+        ).parse(HARBOR_ZERO_TRIALS_FIXTURE, device="N150")
+
+        assert block.targets["n_trials"] == 0
+        assert block.targets["pass_at_1"] == 0.0
+        assert block.data["score"] is None
+        assert block.data["accuracy_check"] == ReportCheckTypes.FAIL
+        assert block.data["success"] is False
+        assert "n_trials=0" in block.data["error"]
+
+        accepted, blockers, _ = acceptance_criteria_check(
+            ReportSchema(metadata={"report_id": "zero-trials"}, sections=[block])
+        )
+        assert accepted is False
+        assert blockers
+
+    def test_positive_trials_with_zero_score_is_evaluated(self):
+        raw = {
+            "stats": {
+                "evals": {
+                    "terminal_bench_2": {
+                        "metrics": [{"mean": 0.0}],
+                        "n_trials": 5,
+                        "n_errors": 0,
+                        "reward_stats": {
+                            "reward": {"0.0": [f"task-{index}" for index in range(5)]}
+                        },
+                        "pass_at_k": {"1": 0.0},
+                    }
+                }
+            }
+        }
+
+        block = AgenticEvalParser(
+            task_name="terminal_bench_2", score=FakeScore()
+        ).parse(raw, device="N150")
+
+        assert block.targets["n_trials"] == 5
+        assert block.data["score"] == 0.0
+        assert block.data["accuracy_check"] == ReportCheckTypes.FAIL
+        assert "success" not in block.data
+        assert "error" not in block.data
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            {"stats": {"evals": {}}},
+            {
+                "stats": {
+                    "evals": {
+                        "terminal_bench_2": {
+                            "metrics": [],
+                            "n_trials": 5,
+                        }
+                    }
+                }
+            },
+        ],
+    )
+    def test_missing_or_invalid_harbor_aggregate_fails_closed(self, raw):
+        block = AgenticEvalParser(
+            task_name="terminal_bench_2", score=FakeScore()
+        ).parse(raw, device="N150")
+
+        assert block.data["score"] is None
+        assert block.data["accuracy_check"] == ReportCheckTypes.FAIL
+        assert block.data["success"] is False
+        assert "Harbor result" in block.data["error"]
+
+    def test_exception_only_trials_fail_even_with_positive_aggregate_count(self):
+        raw = {
+            "stats": {
+                "evals": {
+                    "terminal_bench_2": {
+                        "metrics": [{"mean": 0.0}],
+                        "n_trials": 2,
+                        "n_errors": 2,
+                    }
+                }
+            },
+            "trial_results": [
+                {
+                    "exception_info": {"exception_type": "RuntimeError"},
+                    "verifier_result": None,
+                },
+                {
+                    "exception_info": {"exception_type": "TimeoutError"},
+                    "verifier_result": None,
+                },
+            ],
+        }
+
+        block = AgenticEvalParser(
+            task_name="terminal_bench_2", score=FakeScore()
+        ).parse(raw, device="N150")
+
+        assert block.data["accuracy_check"] == ReportCheckTypes.FAIL
+        assert block.data["success"] is False
+        assert "only infrastructure/runtime exceptions" in block.data["error"]
 
     def test_mean_seconds_per_task_from_harbor_timing(self):
         raw = {

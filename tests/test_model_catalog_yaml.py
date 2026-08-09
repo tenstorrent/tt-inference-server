@@ -2,6 +2,8 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
+import json
+
 from workflows.utils import get_repo_root_path
 from workflows.model_spec import (
     DeviceModelSpec,
@@ -254,3 +256,58 @@ def test_catalog_yaml_loads_and_every_template_expands(env, yaml_name):
     for t in templates:
         specs = t.expand_to_specs()
         assert specs, f"{env}/{yaml_name}: template {t.weights} expanded to zero specs"
+
+
+def test_diffusiongemma_dev_spec_matches_validated_256k_contract():
+    templates = load_templates_from_yaml(MODEL_SPECS_DIR / "dev" / "llm.yaml")
+    template = next(
+        t for t in templates if t.weights == ["google/diffusiongemma-26B-A4B-it"]
+    )
+    spec = template.expand_to_specs()[0]
+    device_spec = spec.device_model_spec
+
+    assert device_spec.max_context == 262144
+    assert device_spec.max_concurrency == 1
+    assert device_spec.vllm_args["block_size"] == "64"
+    assert device_spec.vllm_args["max_model_len"] == "262144"
+    assert device_spec.vllm_args["max_num_batched_tokens"] == "262144"
+    assert device_spec.vllm_args["max_num_seqs"] == "1"
+    assert (
+        device_spec.vllm_args["default-chat-template-kwargs"]
+        == '{"enable_thinking": true}'
+    )
+    # vLLM 0.24 makes the DiffusionGemma parser effective, but lm-eval only
+    # scores message.content. Keep scored serving parser-off so a final boxed
+    # answer cannot be moved exclusively into message.reasoning.
+    assert "reasoning-parser" not in device_spec.vllm_args
+    assert "reasoning_parser_name" not in spec.metadata
+    assert spec.metadata["output_block_size"] == 256
+    assert (
+        spec.metadata["max_effective_input_tokens"]
+        == device_spec.max_context - spec.metadata["output_block_size"]
+    )
+    assert spec.has_builtin_warmup is True
+
+    env = device_spec.env_vars
+    assert env["DG_UPFRONT_CAPTURE"] == "1"
+    assert env["DG_MODEL_OWNED_HYBRID_KV"] == "1"
+    assert env["DG_UPFRONT_COARSE_PREFILL_BUCKETS"] == "1"
+    assert env["DG_UPFRONT_LAZY_PREFILL_RECAPTURE"] == "1"
+    assert env["DG_PREFILL_CHUNK_SIZE"] == "16384"
+    assert env["DG_PREFILL_RAGGED_CHUNK"] == "1024"
+    assert env["DG_DENOISE_REVEAL_PMAX"] == "262144"
+    assert env["DG_UPFRONT_PREFILL_WARMUP_LENS"] == "32,64,96"
+    assert env["DISABLE_METAL_OP_TIMEOUT"] == "1"
+    assert int(env["DG_TRACE_REGION_SIZE"]) == 3758096384
+    additional_config = json.loads(device_spec.vllm_args["additional_config"])
+    assert additional_config == {
+        "tt": {
+            "sample_on_device_mode": "all",
+            "enable_model_warmup": True,
+            "trace_mode": "all",
+            "trace_region_size": 3758096384,
+        }
+    }
+    assert (
+        int(env["DG_TRACE_REGION_SIZE"]) == additional_config["tt"]["trace_region_size"]
+    )

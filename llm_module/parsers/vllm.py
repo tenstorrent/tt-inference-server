@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import math
 from typing import Any, Dict, Mapping, Optional
 
 from report_module.schema import Block
@@ -43,6 +44,41 @@ class VLLMBenchParser(LLMResultParser):
             "request_throughput": _round(raw.get("request_throughput"), 4),
             "error_request_count": _errors(raw.get("failed")),
         }
+        output_block_size = _num_int(raw.get("tt_output_block_size")) or 1
+        if output_block_size > 1:
+            blocks_per_request = _blocks_per_request(
+                raw,
+                completed=completed,
+                output_block_size=output_block_size,
+            )
+            request_throughput = _num(raw.get("request_throughput"))
+            mean_e2el_ms = _num(raw.get("mean_e2el_ms"))
+            record.update(
+                {
+                    "metric_semantics": "block_granular",
+                    "output_block_size": output_block_size,
+                    "output_blocks_per_request": _round(blocks_per_request, 4),
+                    "output_blocks_per_second": _round(
+                        request_throughput * blocks_per_request
+                        if request_throughput is not None and blocks_per_request
+                        else None,
+                        4,
+                    ),
+                    # vLLM's token TPOT divides inter-event time by every token ID
+                    # delivered in that event. A 256-ID block can therefore report
+                    # a near-zero TPOT even though producing it took tens of
+                    # seconds. Derive latency from request E2EL and the number of
+                    # scheduling blocks that request emitted instead.
+                    "mean_block_latency_ms": _round(
+                        mean_e2el_ms / blocks_per_request
+                        if mean_e2el_ms is not None and blocks_per_request
+                        else None,
+                        4,
+                    ),
+                    "primary_throughput_metric": "output_blocks_per_second",
+                    "primary_latency_metric": "mean_block_latency_ms",
+                }
+            )
         return self._wrap_record(record)
 
 
@@ -69,6 +105,27 @@ def _per_request(total: Any, completed: Optional[float]) -> Optional[float]:
 def _per_request_int(total: Any, completed: Optional[float]) -> Optional[int]:
     value = _per_request(total, completed)
     return int(round(value)) if value is not None else None
+
+
+def _blocks_per_request(
+    raw: Mapping[str, Any],
+    *,
+    completed: float | None,
+    output_block_size: int,
+) -> float | None:
+    output_lens = raw.get("output_lens")
+    if isinstance(output_lens, list) and output_lens:
+        valid_lens = [_num(value) for value in output_lens]
+        if all(value is not None and value >= 0 for value in valid_lens):
+            return sum(
+                math.ceil(value / output_block_size) if value else 0
+                for value in valid_lens
+            ) / len(valid_lens)
+
+    output_tokens = _per_request(raw.get("total_output_tokens"), completed)
+    if output_tokens is None or output_tokens <= 0:
+        return None
+    return float(math.ceil(output_tokens / output_block_size))
 
 
 def _errors(value: Any) -> Optional[int]:
