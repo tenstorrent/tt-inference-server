@@ -104,9 +104,24 @@ def _run_embedding_transcription_benchmark(ctx: MediaContext) -> dict:
         "benchmark",
     ]
 
-    logger.info(f"Running embedding benchmark with {num_calls} calls...")
-    output = subprocess.run(cmd, capture_output=True, text=True, check=True).stdout
-    return _parse_embedding_benchmark_output(output)
+    logger.info(
+        "Running embedding benchmark with %s calls: %s", num_calls, " ".join(cmd)
+    )
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    if proc.returncode != 0:
+        # Without this the failure reaches the report as a bare exit code and
+        # the client's own error (bad arg, tokenizer fetch, refused connection)
+        # is thrown away with the captured pipes.
+        logger.error(
+            "vllm bench serve exited %s\n--- stdout ---\n%s\n--- stderr ---\n%s",
+            proc.returncode,
+            proc.stdout,
+            proc.stderr,
+        )
+        raise subprocess.CalledProcessError(
+            proc.returncode, cmd, output=proc.stdout, stderr=proc.stderr
+        )
+    return _parse_embedding_benchmark_output(proc.stdout)
 
 
 def _embedding_target_checks(
