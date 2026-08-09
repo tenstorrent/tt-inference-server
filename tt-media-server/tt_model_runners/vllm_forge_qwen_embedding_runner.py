@@ -58,20 +58,66 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
         optimization_level = int(os.getenv("OPTIMIZATION_LEVEL", "1"))
         enable_trace = os.getenv("ENABLE_TRACE", "false").lower() == "true"
 
+        # SPMD data parallelism: ONE worker holding every chip in its group,
+        # replicating the model across them, instead of one pinned worker per
+        # chip. Opt-in because it changes what a worker owns, so it only makes
+        # sense with a grouped DEVICE_IDS (e.g. "(0,1,2,3)").
+        #
+        # This is the only multi-chip layout that works on Blackhole today:
+        # per-chip pinning sets TT_VISIBLE_DEVICES=<one chip>, which aborts in
+        # device init (tt-xla#5521, regressed in 33b887ae3) with
+        #   TT_FATAL: Chip 0 logical eth core ... connects to a remote mmio device
+        # on any multi-chip host whose chips have live ethernet links.
+        #
+        # The plugin needs max_num_seqs > 1 or it disables DP and falls back to a
+        # single device; it also pads each batch up to a multiple of the DP size,
+        # so max_num_seqs wants to be a multiple of the chip count. Note it is the
+        # GLOBAL batch split across replicas, not per chip.
+        enable_data_parallel = (
+            os.getenv("ENABLE_DATA_PARALLEL", "false").lower() == "true"
+        )
+
         prompts = [
             "The capital of France is Paris",
         ]
+        # ON. This was False from the runner's first commit (#1048) and cost a
+        # flat ~11.5 s on EVERY embed() call: const-eval hoists constant work
+        # (weight prep) out of the per-call graph, so with it off that work was
+        # redone per request. Measured on 4x Blackhole, Qwen3-Embedding-0.6B,
+        # b32 DP, seq 128 -- everything else held equal:
+        #     False -> 11.500 s/request, 32 concurrent in 34,566 ms
+        #     True  ->  0.071 s/request, 32 concurrent in    226 ms  (153x)
+        # For reference the tt-xla DP benchmark, which leaves const-eval at its
+        # default True, does 32 prompts in 117 ms -- so this brings the served
+        # path in line with standalone rather than making it unusually fast.
+        # Ruled out first, each with a controlled run: trace (272.6 vs 249.3
+        # samples/s), CPU/torch threads (2/1 vs 16/16, no change), and
+        # gpu_memory_utilization (KV pool was 101,088 tokens either way).
+        enable_const_eval = os.getenv("ENABLE_CONST_EVAL", "true").lower() == "true"
+
         additional_config = {
-            "enable_const_eval": False,
+            "enable_const_eval": enable_const_eval,
             "batch_size": self.settings.max_batch_size,
             "min_context_len": self.settings.vllm.min_context_length,
             "experimental_weight_dtype": "bfp_bf8",
             "optimization_level": optimization_level,
             "enable_trace": enable_trace,
         }
+        if enable_data_parallel:
+            additional_config["enable_data_parallel"] = True
+            if self.settings.vllm.max_num_seqs <= 1:
+                self.logger.warning(
+                    f"Device {self.device_id}: ENABLE_DATA_PARALLEL is set but "
+                    f"max_num_seqs={self.settings.vllm.max_num_seqs}; the plugin "
+                    f"requires >1 and will fall back to single-device execution."
+                )
         llm_args = {
             "model": model_name,
             "dtype": "bfloat16",
+            # Every other forge runner passes this; without it GPU_MEMORY_UTILIZATION
+            # (spec env_vars or launcher) is silently ignored and vLLM falls back to
+            # its own default, sizing a far larger KV pool than the config asks for.
+            "gpu_memory_utilization": self.settings.vllm.gpu_memory_utilization,
             "disable_sliding_window": True,
             "enable_prefix_caching": False,
             "max_model_len": self.settings.vllm.max_model_length,

@@ -1173,6 +1173,29 @@ ModelConfigs = {
             "max_num_seqs": 1,
         },
     },
+    # ----- SPMD data-parallel embeddings (one worker, whole device group) -----
+    # QB2 (2x P300 = 4 Blackhole chips) is the scale-down proxy for the galaxy:
+    # same code path, dp_size 4 instead of 32. One worker takes the grouped
+    # DEVICE_IDS, the plugin replicates the model across every visible chip
+    # (ENABLE_DATA_PARALLEL=true in the spec env_vars), and nothing is pinned —
+    # which is what keeps it clear of tt-xla#5521.
+    #
+    # max_num_seqs is the GLOBAL batch split across the 4 replicas and must be
+    # >1 and a multiple of the chip count, or the plugin disables DP / pads with
+    # zero rows.
+    (ModelRunners.VLLMForge_QWEN_EMBEDDING_0_6B, DeviceTypes.P300X2): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
+        "max_batch_size": 32,
+        "vllm": {
+            "model": SupportedModels.QWEN_3_EMBEDDING_0_6B.value,
+            "max_model_length": 128,
+            "max_num_batched_tokens": 4096,  # max_num_seqs * max_model_length
+            "min_context_length": 32,
+            "max_num_seqs": 32,
+        },
+    },
     (ModelRunners.VLLMForge_BGE_M3, DeviceTypes.BLACKHOLE_GALAXY): {
         # bge-m3 validated at seq len 512 in tt-xla.
         "device_mesh_shape": (1, 1),
