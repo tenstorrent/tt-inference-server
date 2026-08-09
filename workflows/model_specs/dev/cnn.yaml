@@ -219,10 +219,10 @@ templates:
       # frees per-chip DRAM so the KV cache fits at 16k/batch32. Chunked prefill
       # (chunk 128) + b1-prefill + greedy, cpu_sampling=false.
       max_concurrency: 32
-      max_context: 16384
+      max_context: 8192
       eval_max_retries: 1
       env_vars:
-        MAX_MODEL_LENGTH: "16384"
+        MAX_MODEL_LENGTH: "8192"
         MAX_NUM_SEQS: "32"
         GPU_MEMORY_UTILIZATION: "0.55"
         SHARD_WEIGHTS_ON_BATCH_AXIS: "true"   # FSDP: free DRAM for KV at 16k/batch32
