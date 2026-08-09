@@ -99,7 +99,20 @@ RUN /bin/bash -c "git clone https://github.com/tenstorrent-metal/tt-metal.git ${
 # install is delegated to its own docs/install-vllm-tt.sh rather than restated here
 RUN /bin/bash -c "git clone https://github.com/tenstorrent/vllm-tt-plugin.git ${vllm_tt_plugin_dir} \
     && cd ${vllm_tt_plugin_dir} \
-    && git checkout ${TT_VLLM_COMMIT_SHA_OR_TAG} \
+    && (git checkout '${TT_VLLM_COMMIT_SHA_OR_TAG}' \
+        || { resolved_shas=\$(git ls-remote origin '${TT_VLLM_COMMIT_SHA_OR_TAG}' | awk '{print \$1}' | sort -u); \
+             if [ -z \"\${resolved_shas}\" ]; then \
+                 resolved_shas=\$(git ls-remote origin | awk -v prefix='${TT_VLLM_COMMIT_SHA_OR_TAG}' 'index(\$1, prefix) == 1 {print \$1}' | sort -u); \
+             fi; \
+             resolved_count=\$(printf '%s\n' \"\${resolved_shas}\" | awk 'NF {count++} END {print count + 0}'); \
+             if [ \"\${resolved_count}\" -ne 1 ]; then \
+                 echo 'Unable to resolve plugin ref ${TT_VLLM_COMMIT_SHA_OR_TAG} to one remote commit' >&2; \
+                 exit 1; \
+             fi; \
+             resolved_sha=\$(printf '%s\n' \"\${resolved_shas}\" | awk 'NF {print; exit}'); \
+             git fetch --depth 1 origin \"\${resolved_sha}\" \
+             && git checkout --detach \"\${resolved_sha}\"; \
+           }) \
     && source ${PYTHON_ENV_DIR}/bin/activate \
     && uv pip install --upgrade pip \
     && source docs/install-vllm-tt.sh \
