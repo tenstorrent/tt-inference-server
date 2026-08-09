@@ -38,13 +38,22 @@ OPENAI_API_KEY = "your-secret-key"
 
 
 def _embedding_params(ctx: MediaContext) -> tuple[str, int, int, int]:
-    """Return (model, isl, num_calls, concurrency)."""
-    env = ctx.model_spec.device_model_spec.env_vars
+    """Return (model, isl, num_calls, concurrency).
+
+    Concurrency is the *server's* — ``device_model_spec.max_concurrency``, i.e.
+    one per data-parallel worker (1 on n150, 32 on a galaxy). It is not
+    ``VLLM__MAX_NUM_SEQS``, which is per worker and is 1 in both cases.
+    """
+    device_spec = ctx.model_spec.device_model_spec
+    env = device_spec.env_vars
+    concurrency = getattr(device_spec, "max_concurrency", None) or int(
+        env.get("VLLM__MAX_NUM_SEQS", 1)
+    )
     return (
         ctx.model_spec.hf_model_repo,
         int(env.get("VLLM__MAX_MODEL_LENGTH", 1024)),
         1000,
-        int(env.get("VLLM__MAX_NUM_SEQS", 1)),
+        int(concurrency),
     )
 
 
@@ -73,7 +82,7 @@ def _parse_embedding_benchmark_output(output: str) -> dict:
 
 
 def _run_embedding_transcription_benchmark(ctx: MediaContext) -> dict:
-    model, isl, num_calls, _concurrency = _embedding_params(ctx)
+    model, isl, num_calls, concurrency = _embedding_params(ctx)
 
     # Forge-served models need the newer vllm client (BENCHMARKS_VLLM_FORGE);
     # anything else uses the shared one. Must match the venv that
@@ -93,6 +102,12 @@ def _run_embedding_transcription_benchmark(ctx: MediaContext) -> dict:
         str(isl),
         "--num-prompts",
         str(num_calls),
+        # Without this the client fires all num_calls at once. The server holds
+        # a bounded queue (50) and serves max_concurrency at a time, so an
+        # unbounded fan-out just fails almost every request: an n150 run
+        # measured 14 successful / 986 failed with a mean E2EL of 534 s.
+        "--max-concurrency",
+        str(concurrency),
         "--backend",
         "openai-embeddings",
         "--endpoint",
@@ -179,6 +194,21 @@ def run_embedding_benchmark(ctx: MediaContext) -> Block:
     mean_e2el = float(metrics.get("Mean E2EL", 0.0))
     req_tput = float(metrics.get("Request throughput", 0.0))
 
+    if failed_requests:
+        logger.error(
+            "%s of %s embedding requests FAILED (%s succeeded) — the throughput "
+            "and latency below are computed from the successful ones only and "
+            "do not describe a healthy run",
+            failed_requests,
+            successful_requests + failed_requests,
+            successful_requests,
+        )
+    if not successful_requests:
+        raise RuntimeError(
+            f"embedding benchmark produced no successful requests "
+            f"({failed_requests} failed); refusing to report metrics"
+        )
+
     tput_prefill = (
         total_input_tokens / benchmark_duration if benchmark_duration else 0.0
     )
@@ -202,6 +232,10 @@ def run_embedding_benchmark(ctx: MediaContext) -> Block:
                 "isl": isl,
                 "concurrency": concurrency,
                 "num_requests": successful_requests + failed_requests,
+                # Report these separately: num_requests alone reads as a clean
+                # run even when almost every request failed.
+                "successful_requests": successful_requests,
+                "failed_requests": failed_requests,
                 "tput_user": tput_user,
                 "tput_prefill": tput_prefill,
                 "e2el": mean_e2el,
