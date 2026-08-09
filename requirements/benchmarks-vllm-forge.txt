@@ -13,6 +13,12 @@
 
 vllm==0.19.1
 transformers==5.5.1
+# transformers 5.x imports tqdm.contrib.logging, which does not exist before
+# tqdm 4.60 (verified: absent in 4.51.0, present from 4.60.0). Nothing here caps
+# tqdm, but this venv resolved 4.49.0 on its own and every `vllm bench serve`
+# died with ModuleNotFoundError: No module named 'tqdm.contrib.logging' before
+# it could send a request. Floor it.
+tqdm>=4.67.1
 torch
 # Extra deps required by benchmark_serving_structured_output.py; the
 # `vllm bench serve` CLI does not pull these in transitively.
