@@ -254,6 +254,9 @@ def test_diffusiongemma_launch_uses_standalone_plugin_vllm_024_contract(
     assert value("--block-size") == "64"
     assert value("--generation-config") == "vllm"
     assert value("--default-chat-template-kwargs") == '{"enable_thinking": true}'
+    assert "--no-enable-prefix-caching" in argv
+    assert "--no-enable-chunked-prefill" in argv
+    assert "--no-async-scheduling" in argv
     assert json.loads(value("--additional-config")) == {
         "tt": {
             "sample_on_device_mode": "all",

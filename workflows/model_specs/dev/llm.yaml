@@ -341,6 +341,12 @@ templates:
       vllm_args:
         generation-config: vllm
         default-chat-template-kwargs: '{"enable_thinking": true}'
+        # vLLM 0.24 enables these generative defaults before the TT platform
+        # hook runs. DiffusionGemma owns whole-prompt prefill/KV and emits
+        # synchronous 256-token blocks, so reject the defaults at CLI parsing.
+        no-enable-prefix-caching: true
+        no-enable-chunked-prefill: true
+        no-async-scheduling: true
         # Deliberately omit --reasoning-parser for scored GPQA runs. vLLM 0.24
         # honors the parser's request to retain <channel|> delimiters, which can
         # move the boxed answer from message.content into message.reasoning.
