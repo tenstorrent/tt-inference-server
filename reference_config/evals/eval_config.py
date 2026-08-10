@@ -71,6 +71,25 @@ def _harbor_env_kwargs() -> Dict[str, Any]:
     return kwargs
 
 
+def _openai_creds_env() -> Dict[str, str]:
+    """Model-endpoint creds for agentic compose tasks, read from the shell.
+
+    tau3-bench's docker-compose interpolates ``${OPENAI_API_KEY}`` /
+    ``${OPENAI_BASE_URL}`` when the compose file is rendered. Harbor's
+    ``pods`` compose strategy renders with a curated environment (task env +
+    ``environment.env`` + Harbor infra vars) and deliberately does NOT seed
+    the Harbor host's ``os.environ``, so these must be threaded through
+    ``environment.env`` (the ``environment_env`` dict on each eval) rather
+    than relying on ambient shell interpolation. Vars absent from the shell
+    are simply omitted, so the docker path is unchanged.
+    """
+    return {
+        key: value
+        for key in ("OPENAI_API_KEY", "OPENAI_BASE_URL")
+        if (value := os.getenv(key))
+    }
+
+
 def _harbor_timeout_sec() -> Optional[float]:
     """Wall-clock ceiling for the ``harbor run`` subprocess (#4759), from env."""
     value = os.getenv("HARBOR_TIMEOUT_SEC")
@@ -512,10 +531,13 @@ _eval_config_list = [
                     # path, so use literal values -- a templated model name
                     # reaches litellm unexpanded and fails with "LLM Provider
                     # NOT provided". OPENAI_BASE_URL / OPENAI_API_KEY are
-                    # intentionally omitted: the task's docker-compose already
-                    # substitutes those from the launching shell env.
+                    # threaded via environment.env (see _openai_creds_env): the
+                    # task's docker-compose interpolates them at render time,
+                    # and Harbor's pods strategy renders from environment.env,
+                    # not the host shell.
                     environment_env={
                         "TAU2_USER_MODEL": "openai/zai-org/GLM-5.2-FP8",
+                        **_openai_creds_env(),
                     },
                     verifier_env={
                         "TAU2_NL_ASSERTIONS_MODEL": "openai/zai-org/GLM-5.2-FP8",
@@ -866,10 +888,13 @@ _eval_config_list = [
                     # path, so use literal values -- a templated model name
                     # reaches litellm unexpanded and fails with "LLM Provider
                     # NOT provided". OPENAI_BASE_URL / OPENAI_API_KEY are
-                    # intentionally omitted: the task's docker-compose already
-                    # substitutes those from the launching shell env.
+                    # threaded via environment.env (see _openai_creds_env): the
+                    # task's docker-compose interpolates them at render time,
+                    # and Harbor's pods strategy renders from environment.env,
+                    # not the host shell.
                     environment_env={
                         "TAU2_USER_MODEL": "openai/moonshotai/Kimi-K2.7-Code",
+                        **_openai_creds_env(),
                     },
                     verifier_env={
                         "TAU2_NL_ASSERTIONS_MODEL": "openai/moonshotai/Kimi-K2.7-Code",
@@ -1066,10 +1091,13 @@ _eval_config_list = [
                     # path, so use literal values -- a templated model name
                     # reaches litellm unexpanded and fails with "LLM Provider
                     # NOT provided". OPENAI_BASE_URL / OPENAI_API_KEY are
-                    # intentionally omitted: the task's docker-compose already
-                    # substitutes those from the launching shell env.
+                    # threaded via environment.env (see _openai_creds_env): the
+                    # task's docker-compose interpolates them at render time,
+                    # and Harbor's pods strategy renders from environment.env,
+                    # not the host shell.
                     environment_env={
                         "TAU2_USER_MODEL": "openai/MiniMaxAI/MiniMax-M2.7",
+                        **_openai_creds_env(),
                     },
                     verifier_env={
                         "TAU2_NL_ASSERTIONS_MODEL": "openai/MiniMaxAI/MiniMax-M2.7",
@@ -1263,6 +1291,7 @@ _eval_config_list = [
                     },
                     environment_env={
                         "TAU2_USER_MODEL": "openai/MiniMaxAI/MiniMax-M3",
+                        **_openai_creds_env(),
                     },
                     verifier_env={
                         "TAU2_NL_ASSERTIONS_MODEL": "openai/MiniMaxAI/MiniMax-M3",
@@ -3767,6 +3796,7 @@ _eval_config_list = [
                     # NL verifier -- the only model we have in-cluster right now.
                     environment_env={
                         "TAU2_USER_MODEL": "openai/meta-llama/Llama-3.1-8B-Instruct",
+                        **_openai_creds_env(),
                     },
                     verifier_env={
                         "TAU2_NL_ASSERTIONS_MODEL": "openai/meta-llama/Llama-3.1-8B-Instruct",
