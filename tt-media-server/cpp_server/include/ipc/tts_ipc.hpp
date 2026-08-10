@@ -131,6 +131,7 @@ struct TtsAudioChunkMessage {
     message.task_id = taskId;
     message.chunkIndex = chunk.chunkIndex;
     message.sampleRateHz = chunk.sampleRateHz;
+
     message.channels = chunk.channels;
     message.samplesBf16 = chunk.samplesBf16;
     return message;
