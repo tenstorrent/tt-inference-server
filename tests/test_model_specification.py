@@ -771,6 +771,7 @@ class TestRequiredTargetTiers:
         assert ModelStatusTypes.resolve("") is None
         assert ModelStatusTypes.resolve("not_a_real_status") is None
 
+
 class TestKnownIssue:
     def test_known_issue_creation_with_enum(self):
         ki = KnownIssue(
@@ -970,6 +971,7 @@ class TestKnownIssue:
             json.dump(spec_payload, f)
         with pytest.raises(ValueError):
             ModelSpec.from_json(spec_json)
+
 
 if __name__ == "__main__":
     pytest.main([__file__])
