@@ -1372,6 +1372,49 @@ templates:
       reasoning_parser_name: gemma4
       tool_call_parser_name: gemma4
 
+# =============================================================================
+# DeepSeek-V4-Flash - GPU reference spec (bring-your-own vLLM server; see
+# docs/gpu_workflows.md). Used to collect GPU reference eval scores for
+# GPQA-Diamond, Terminal-Bench 2.1, and SWE-Bench Verified against an external
+# CUDA vLLM server. Dev-only entry; the GPU bring-your-own-server path builds no
+# tt-metal docker image, so no tt_metal_commit/version pin is needed.
+#
+# The weight id below MUST match the vLLM served model name (the server was
+# launched with `vllm serve deepseek-ai/DeepSeek-V4-Flash-0731 ...` and no
+# --served-model-name override), otherwise eval requests 404. lm-eval also
+# loads the HF tokenizer from this repo id (tokenizer_backend=huggingface).
+#
+# Reference scores in reference_config/evals/eval_config.py (GPQA 90.40,
+# Terminal-Bench 2.1 74.16, SWE-Bench Verified 87.20) were measured against a
+# server launched with thinking ENABLED -- reproduce with:
+#   --max-model-len 500000 --tokenizer-mode deepseek_v4
+#   --tool-call-parser deepseek_v4 --enable-auto-tool-choice
+#   --reasoning-parser deepseek_v4
+#   --default-chat-template-kwargs '{"thinking": true, "reasoning_effort": "max"}'
+#   --override-generation-config '{"temperature": 1.0, "top_p": 0.95, "max_new_tokens": 393216}'
+# Without thinking enabled, scores collapse ~15-20 pts (GPQA fell to 74.24).
+# =============================================================================
+- weights:
+    - deepseek-ai/DeepSeek-V4-Flash-0731
+  impl: tt_transformers
+  inference_engine: VLLM
+  device_model_specs:
+    - device: GPU
+      max_concurrency: 32
+      # Matches the server's --max-model-len 500000 (~488K). DeepSeek-V4-Flash
+      # natively supports 1M ctx; the reference server is capped at 500K.
+      max_context: 500000
+      default_impl: true
+  status: EXPERIMENTAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    deepseek-ai/DeepSeek-V4-Flash-0731:
+      # Informational for the bring-your-own GPU server path (the running vLLM
+      # already sets --reasoning-parser / --tool-call-parser deepseek_v4).
+      reasoning_parser_name: deepseek_v4
+      tool_call_parser_name: deepseek_v4
+
 # Remote-served model: evaluated against an external OpenAI-compatible
 # endpoint via `--server-url` (e.g. Tenstorrent console). The device entry
 # is a placeholder so the model resolves through MODEL_SPECS / EVAL_CONFIGS;
