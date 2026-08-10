@@ -181,8 +181,7 @@ class RequirementsTargetPack:
                 else template.score.gpu_reference_score
             ),
             gpu_reference_score_ref=(
-                ae.published_score_url
-                or f"requirements:{self._doc.id}"
+                ae.published_score_url or f"requirements:{self._doc.id}"
             ),
             published_score=(
                 ae.published_score

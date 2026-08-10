@@ -587,7 +587,9 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def _apply_requirements(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+def _apply_requirements(
+    args: argparse.Namespace, parser: argparse.ArgumentParser
+) -> None:
     """Load the requirements document and default --model/--device from it.
 
     Stores the parsed document on ``args.requirements_doc`` so ``main`` can

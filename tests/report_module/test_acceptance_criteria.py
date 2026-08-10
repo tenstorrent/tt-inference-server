@@ -186,7 +186,9 @@ def test_benchmark_should_priority_failure_is_informational():
         title="B",
         data={
             "priority": "should",
-            "target_checks": {"target": {"tput_check": 3, "tput": 12000, "tput_ratio": 0.5}},
+            "target_checks": {
+                "target": {"tput_check": 3, "tput": 12000, "tput_ratio": 0.5}
+            },
         },
     )
     accepted, blockers, cats = acceptance_criteria_check(_schema(block))
@@ -201,7 +203,9 @@ def test_benchmark_must_priority_failure_still_blocks():
         title="B",
         data={
             "priority": "must",
-            "target_checks": {"target": {"tput_check": 3, "tput": 12000, "tput_ratio": 0.5}},
+            "target_checks": {
+                "target": {"tput_check": 3, "tput": 12000, "tput_ratio": 0.5}
+            },
         },
     )
     accepted, blockers, _ = acceptance_criteria_check(_schema(block))
