@@ -29,9 +29,7 @@ _HARDWARE_TO_DEVICE = {}
 # Cluster ships in several node counts (SC8, SC12, SC20, ...); every ``SC<N>``
 # is the same SUPER_CLUSTER device from the engine's perspective (the node
 # count affects capacity, not the device taxonomy the workflow keys on).
-_HARDWARE_PATTERN_TO_DEVICE = (
-    (re.compile(r"^SC\d+$"), "SUPER_CLUSTER"),
-)
+_HARDWARE_PATTERN_TO_DEVICE = ((re.compile(r"^SC\d+$"), "SUPER_CLUSTER"),)
 
 
 def hardware_to_device_name(hardware: str) -> str:

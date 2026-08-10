@@ -270,7 +270,9 @@ class RequirementsDoc:
         if not isinstance(model_data, Mapping):
             raise RequirementsError("requirements: missing required 'model' object")
         return cls(
-            id=str(data.get("id") or data.get("model", {}).get("name") or "requirements"),
+            id=str(
+                data.get("id") or data.get("model", {}).get("name") or "requirements"
+            ),
             schema_version=schema_version,
             model=ModelInfo.from_dict(model_data),
             deployment=Deployment.from_dict(data.get("deployment")),
