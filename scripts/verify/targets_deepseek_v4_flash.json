@@ -1,0 +1,30 @@
+{
+  "_derivation": {
+    "model": "deepseek-ai/DeepSeek-V4-Flash-0731",
+    "device": "BLACKHOLE_GALAXY (32x P150)",
+    "source": "Milestone-0 Appendix B AIPerf target sheet (OpenRouter competitive analysis + BH-Galaxy projection).",
+    "system_context_informational": {
+      "asics_per_bh_glx": 32,
+      "aggregate_decode_tput_t_s": 6413,
+      "aggregate_prefill_tput_t_s": 371835,
+      "max_num_seqs_at_max_context": 64,
+      "target_mean_isl": 8192
+    },
+    "graded_metrics": "Graded on the two concurrency-independent per-request metrics: TTFT and interactivity (per-user decode throughput, tput_user). Aggregate decode throughput is a per-system steady-state figure (6413 t/s) and is left ungraded here so the bar does not move with the sweep point's concurrency.",
+    "tiers": {
+      "target": "Full performance. tput_user = target interactivity 100 t/s/u. ttft = target_mean_isl * max_num_seqs / prefill_tput = 8192*64/371835 = 1.410 s.",
+      "functional": "Downrated bar (sheet downrate factors: interactivity x0.25, prefill x0.50). tput_user = 25 t/s/u. ttft = 8192*64/185918 = 2.820 s."
+    },
+    "note": "complete tier intentionally omitted: the sheet defines only the full and downrated bars. Replace/extend when the RFP tiering is finalized (#66/#67)."
+  },
+  "functional": {
+    "ttft_ms": 2820.0,
+    "tput_user": 25.0,
+    "tolerance": 0.05
+  },
+  "target": {
+    "ttft_ms": 1410.0,
+    "tput_user": 100.0,
+    "tolerance": 0.05
+  }
+}
