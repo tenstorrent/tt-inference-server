@@ -166,7 +166,14 @@ def run_device_liveness(
             "break_on_failure": False,
         }
     )
-    full_board = ctx.model_spec.device_model_spec.max_concurrency
+    # "Full board" means every worker is ready. That equals max_concurrency only
+    # when each worker owns one chip; under SPMD data parallelism a single worker
+    # owns the whole group, so the spec states the worker count explicitly.
+    device_spec = ctx.model_spec.device_model_spec
+    full_board = (
+        getattr(device_spec, "expected_ready_workers", None)
+        or device_spec.max_concurrency
+    )
     target = min_ready_devices if min_ready_devices is not None else full_board
     targets = {"num_of_devices": target if target and target > 0 else None}
     return DeviceLivenessTest(test_config, targets, ctx=ctx).run_tests()

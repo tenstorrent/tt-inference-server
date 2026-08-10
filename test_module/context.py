@@ -89,7 +89,15 @@ def get_health(
       still produce a valid result on a degraded board.
     """
     device_name = ctx.device.name if hasattr(ctx.device, "name") else str(ctx.device)
-    full_board = ctx.model_spec.device_model_spec.max_concurrency
+    # "Full board" is every declared WORKER being ready. That equals
+    # max_concurrency only when each worker owns one chip; under SPMD data
+    # parallelism one worker owns the whole device group while max_concurrency
+    # still describes request capacity, so the spec states the count explicitly.
+    device_spec = ctx.model_spec.device_model_spec
+    full_board = (
+        getattr(device_spec, "expected_ready_workers", None)
+        or device_spec.max_concurrency
+    )
     min_required = full_board if requirement is HardwareRequirement.FULL_BOARD else 1
     logger.info(
         "Checking server health using DeviceLivenessTest "

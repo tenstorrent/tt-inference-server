@@ -96,6 +96,12 @@ def _run_embedding_transcription_benchmark(ctx: MediaContext) -> dict:
         str(vllm_exec),
         "bench",
         "serve",
+        # Target the server this workflow is actually pointed at. Without this
+        # the client falls back to its own default of 127.0.0.1:8000, so with
+        # --service-port/--server-url on anything else every request fails to
+        # connect and the run reports 0 successful / N failed with no clue why.
+        "--base-url",
+        ctx.base_url,
         "--model",
         model,
         "--random-input-len",

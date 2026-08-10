@@ -246,6 +246,31 @@ templates:
         MAX_BATCH_SIZE: "1"
         DEFAULT_THROTTLE_LEVEL: "0"
         TT_METAL_INSPECTOR_RPC: "0"
+    # QB2 (2x P300 = 4 Blackhole chips): SPMD data-parallel across all four in
+    # ONE worker, rather than the per-chip layout above. Scale-down proxy for the
+    # galaxy that also avoids tt-xla#5521, where pinning a single chip aborts.
+    # Deliberately NOT registered in test_module/test_suites/embedding.json, so
+    # a release here runs evals + benchmarks with no spec tests.
+    - device: P300X2
+      max_concurrency: 32   # global batch, split across the 4 DP replicas
+      # One worker owns all four chips under SPMD, so "full board" is 1 ready
+      # worker, not max_concurrency. Without this the benchmark's FULL_BOARD
+      # health gate waits for 32 workers that never appear.
+      expected_ready_workers: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+      env_vars:
+        VLLM__MAX_NUM_BATCHED_TOKENS: "4096"   # max_num_seqs * max_model_length
+        VLLM__MAX_MODEL_LENGTH: "128"
+        VLLM__MIN_CONTEXT_LENGTH: "32"
+        VLLM__MAX_NUM_SEQS: "32"
+        MAX_BATCH_SIZE: "32"
+        ENABLE_DATA_PARALLEL: "true"
+        # Required: >1 max_num_seqs auto-enables the dynamic batcher, which
+        # dispatches via _run_async -- not implemented by this runner.
+        USE_DYNAMIC_BATCHER: "false"
+        DEFAULT_THROTTLE_LEVEL: "0"
+        TT_METAL_INSPECTOR_RPC: "0"
 
 - weights:
     - BAAI/bge-m3
