@@ -40,6 +40,9 @@ class LLMRunConfig:
     # file instead of ``--dataset-name random``. Selection happens when the
     # sweep is built, not inside the driver.
     custom_dataset_path: Optional[Path] = None
+    # Acceptance severity ("must"/"should") for this sweep point, propagated
+    # from the benchmark params to the emitted block. None => default (must).
+    priority: Optional[str] = field(default=None, compare=False)
 
 
 @dataclass(frozen=True)

@@ -1,0 +1,377 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+
+"""Requirements-driven adapters over the Tenstorrent validation content.
+
+A Blaze customer-requirements document (parsed by
+``workflow_module.requirements_schema``) declares *what* to validate and the
+targets that gate it. These adapters map that declaration onto the concrete
+Tenstorrent content via the engine seams, wrapping the stock Tenstorrent
+implementations so anything the document does not specify falls through to the
+catalog:
+
+- :class:`RequirementsModelSpecProvider` — resolves the document's model from
+  the catalog when present, otherwise synthesizes an off-catalog spec from the
+  document's model + deployment metadata.
+- :class:`RequirementsTargetPack` — builds the eval config (from the document's
+  ``accuracyEvals``, borrowing each task's runnable harness definition from the
+  catalog and re-gating it with the document's reference score/tolerance) and
+  the benchmark config (the document's sweep points + scalar targets / SLOs).
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import replace
+from typing import Any, List, Mapping, Optional
+
+from workflow_module.requirements_schema import (
+    PRIORITY_MUST,
+    PRIORITY_SHOULD,
+    AccuracyEval,
+    RequirementsDoc,
+    Scenario,
+)
+
+logger = logging.getLogger(__name__)
+
+# Human-facing accuracy-eval names (from the document) -> catalog task_name.
+# Matched case-insensitively after stripping whitespace. Extend as new evals
+# appear in requirement documents.
+_EVAL_NAME_TO_TASK = {
+    "gpqa-diamond": "gpqa_diamond_cot_zeroshot",
+    "gpqa diamond": "gpqa_diamond_cot_zeroshot",
+    "swe-bench verified": "swe_bench_verified",
+    "swe-bench-verified": "swe_bench_verified",
+    "terminal-bench 2.0": "terminal_bench_2",
+    "terminal-bench 2": "terminal_bench_2",
+    "terminal-bench 2.1": "terminal_bench_2_1",
+}
+
+# Scenario scalar-target metric -> (PerformanceTarget attribute, lower_is_better).
+# Only these aggregate metrics are graded; others are ignored with a warning.
+_SCALAR_METRIC_TO_ATTR = {
+    "system_throughput": "tput",
+    "request_goodput": "goodput",
+}
+
+# Requests per sweep point = concurrency * this multiple, floored, so each
+# point issues enough requests to characterize steady state.
+_NUM_PROMPTS_CONCURRENCY_MULTIPLE = 8
+_MIN_NUM_PROMPTS = 16
+
+
+def _normalize_eval_name(name: str) -> str:
+    return " ".join(name.strip().lower().split())
+
+
+def _num_prompts_for(concurrency: int) -> int:
+    return max(_MIN_NUM_PROMPTS, concurrency * _NUM_PROMPTS_CONCURRENCY_MULTIPLE)
+
+
+class RequirementsModelSpecProvider:
+    """Model-spec provider that synthesizes off-catalog specs from a document.
+
+    Delegates to the wrapped Tenstorrent provider for catalog models; when the
+    catalog has no entry for the requested ``(model, device)`` it synthesizes a
+    spec from the requirements document's model context length and the
+    deployment's per-instance concurrency.
+    """
+
+    def __init__(self, delegate: Any, doc: RequirementsDoc) -> None:
+        self._delegate = delegate
+        self._doc = doc
+
+    def model_names(self) -> List[str]:
+        return self._delegate.model_names()
+
+    def resolve(self, model: str, device: str) -> Any:
+        try:
+            return self._delegate.resolve(model=model, device=device)
+        except ValueError:
+            logger.info(
+                "Model %r not in catalog for device %r; synthesizing spec from "
+                "requirements document.",
+                model,
+                device,
+            )
+            return self._synthesize(model, device)
+
+    def resolve_lenient(self, model: str, device: str) -> Any:
+        try:
+            return self._delegate.resolve_lenient(model=model, device=device)
+        except ValueError:
+            return self._synthesize(model, device)
+
+    def load_runtime_spec(self, path: str) -> Optional[Any]:
+        return self._delegate.load_runtime_spec(path)
+
+    def synthesize(self, **kwargs: Any) -> Any:
+        return self._delegate.synthesize(**kwargs)
+
+    def _synthesize(self, model: str, device: str) -> Any:
+        context_length = self._doc.model.context_length
+        if not context_length:
+            raise ValueError(
+                f"Cannot synthesize spec for off-catalog model {model!r}: the "
+                "requirements document has no model.contextLength."
+            )
+        max_concurrency = self._doc.deployment.max_concurrency_per_instance
+        if not max_concurrency:
+            raise ValueError(
+                f"Cannot synthesize spec for off-catalog model {model!r}: the "
+                "requirements document has no deployment.maxConcurrencyPerInstance."
+            )
+        return self._delegate.synthesize(
+            model_name=model,
+            hf_model_repo=self._doc.model.name,
+            device=device,
+            max_context=context_length,
+            max_concurrency=max_concurrency,
+        )
+
+
+class RequirementsTargetPack:
+    """Target pack whose eval + benchmark content comes from a requirements doc.
+
+    Everything the document does not define (agentic traces, reference-target
+    paths, report-metadata policy, score acceptance math) is delegated to the
+    wrapped Tenstorrent target pack.
+    """
+
+    def __init__(self, doc: RequirementsDoc, delegate: Any) -> None:
+        self._doc = doc
+        self._delegate = delegate
+
+    # --- eval configs ---
+    def eval_config(self, model_name: str) -> Optional[Any]:
+        from reference_config.evals.eval_config import EvalConfig
+
+        if not self._doc.accuracy_evals:
+            return None
+        tasks = [self._build_eval_task(ae) for ae in self._doc.accuracy_evals]
+        return EvalConfig(hf_model_repo=self._doc.model.name, tasks=tasks)
+
+    def _build_eval_task(self, ae: AccuracyEval) -> Any:
+        task_name = _EVAL_NAME_TO_TASK.get(_normalize_eval_name(ae.name))
+        if task_name is None:
+            available = sorted(set(_EVAL_NAME_TO_TASK))
+            raise ValueError(
+                f"Requirements accuracy eval {ae.name!r} has no known catalog "
+                f"task mapping. Known eval names: {available}."
+            )
+        template = self._find_task_template(task_name)
+        if template is None:
+            raise ValueError(
+                f"No runnable catalog template found for task {task_name!r} "
+                f"(required by requirements eval {ae.name!r}). Add the task to a "
+                "catalog EvalConfig first."
+            )
+        if template.score is None:
+            raise ValueError(
+                f"Catalog template for task {task_name!r} has no score definition; "
+                "cannot re-gate it from the requirements document."
+            )
+        new_score = replace(
+            template.score,
+            gpu_reference_score=(
+                ae.gpu_reference_score
+                if ae.gpu_reference_score is not None
+                else template.score.gpu_reference_score
+            ),
+            gpu_reference_score_ref=(
+                ae.published_score_url
+                or f"requirements:{self._doc.id}"
+            ),
+            published_score=(
+                ae.published_score
+                if ae.published_score is not None
+                else template.score.published_score
+            ),
+            published_score_ref=(
+                ae.published_score_url or template.score.published_score_ref
+            ),
+            tolerance=ae.tolerance,
+        )
+        return replace(template, score=new_score, priority=ae.priority)
+
+    def _find_task_template(self, task_name: str) -> Optional[Any]:
+        """Borrow a runnable EvalTask for ``task_name`` from the catalog.
+
+        Prefer the document model's own catalog entry (so any model-specific
+        harness tuning is preserved), then fall back to any model that defines
+        the task.
+        """
+        from reference_config.evals.eval_config import EVAL_CONFIGS
+
+        preferred = EVAL_CONFIGS.get(self._doc.model.name)
+        if preferred is not None:
+            for task in preferred.tasks:
+                if task.task_name == task_name:
+                    return task
+        for cfg in EVAL_CONFIGS.values():
+            for task in cfg.tasks:
+                if task.task_name == task_name:
+                    return task
+        return None
+
+    def resolve_eval_reference(self, score: Any, limit_mode: Any) -> Mapping[str, Any]:
+        return self._delegate.resolve_eval_reference(score, limit_mode)
+
+    def accept_eval_score(
+        self,
+        ref: Mapping[str, Any],
+        score: float,
+        n_total: Optional[int] = None,
+    ) -> Optional[bool]:
+        return self._delegate.accept_eval_score(ref, score, n_total=n_total)
+
+    def resolve_eval_task_for_device(self, task: Any, device: Any) -> Any:
+        return self._delegate.resolve_eval_task_for_device(task, device)
+
+    # --- benchmark configs ---
+    def benchmark_config(self, model_spec: Any) -> Any:
+        from reference_config.benchmarking.benchmark_config import (
+            select_vllm_benchmark_venv,
+        )
+        from reference_config.benchmarking.benchmark_config import (
+            BenchmarkConfig,
+            BenchmarkTask,
+        )
+
+        device = model_spec.device_type
+        params = []
+        for scenario in self._doc.scenarios:
+            if scenario.kind and scenario.kind != "text":
+                logger.info(
+                    "Skipping non-text scenario %r (kind=%s) for LLM benchmark.",
+                    scenario.id,
+                    scenario.kind,
+                )
+                continue
+            params.extend(self._scenario_params(scenario))
+
+        task = BenchmarkTask(
+            param_map={device: params},
+            workflow_venv_type=select_vllm_benchmark_venv(model_spec),
+        )
+        return BenchmarkConfig(model_id=model_spec.model_id, tasks=[task])
+
+    def _scenario_params(self, scenario: Scenario) -> List[Any]:
+        from workflows.utils_report import BenchmarkTaskParams, PerformanceTarget
+
+        if not scenario.sweep:
+            return []
+        peak_concurrency = max(p.concurrency for p in scenario.sweep)
+
+        params: List[Any] = []
+        for point in scenario.sweep:
+            tier_kwargs: dict = {}
+            priorities: List[str] = []
+
+            slo = scenario.slo
+            if slo is not None:
+                # Per-request SLOs apply to every sweep point (default must).
+                if slo.ttft_ms is not None:
+                    tier_kwargs["ttft_ms"] = slo.ttft_ms
+                    priorities.append(PRIORITY_MUST)
+                if slo.tpot_ms is not None:
+                    tier_kwargs["tpot_ms"] = slo.tpot_ms
+                    priorities.append(PRIORITY_MUST)
+                if slo.e2el_ms is not None:
+                    tier_kwargs["e2el_ms"] = slo.e2el_ms
+                    priorities.append(PRIORITY_MUST)
+
+            # Aggregate scalar targets only make sense at the peak-throughput
+            # operating point, so attach them to the max-concurrency point.
+            if point.concurrency == peak_concurrency:
+                for st in scenario.scalar_targets:
+                    attr = _SCALAR_METRIC_TO_ATTR.get(st.metric)
+                    if attr is None:
+                        logger.warning(
+                            "Ignoring unsupported scalar target metric %r in "
+                            "scenario %r.",
+                            st.metric,
+                            scenario.id,
+                        )
+                        continue
+                    tier_kwargs[attr] = st.target
+                    priorities.append(st.priority)
+
+            targets = (
+                {"target": PerformanceTarget(tolerance=0.0, **tier_kwargs)}
+                if tier_kwargs
+                else {}
+            )
+            params.append(
+                BenchmarkTaskParams(
+                    isl=point.isl,
+                    osl=point.osl,
+                    max_concurrency=point.concurrency,
+                    num_prompts=_num_prompts_for(point.concurrency),
+                    task_type="text",
+                    targets=targets,
+                    priority=_aggregate_priority(priorities),
+                )
+            )
+        return params
+
+    def smoke_test_benchmark_config(self, config: Any, device: Any) -> Any:
+        from reference_config.benchmarking.benchmark_config import (
+            BenchmarkConfig,
+            BenchmarkTask,
+        )
+
+        for task in config.tasks:
+            points = task.param_map.get(device) or []
+            if points:
+                return BenchmarkConfig(
+                    model_id=config.model_id,
+                    tasks=[
+                        BenchmarkTask(
+                            param_map={device: [points[0]]},
+                            workflow_venv_type=task.workflow_venv_type,
+                        )
+                    ],
+                )
+        return config
+
+    # --- agentic traces (delegated) ---
+    def agentic_traces_config(self, model_spec: Any) -> Optional[Any]:
+        return self._delegate.agentic_traces_config(model_spec)
+
+    def resolve_agentic_run_specs(
+        self,
+        config: Any,
+        *,
+        trace_sources: Any = None,
+        git_ref_override: Optional[str] = None,
+    ) -> Any:
+        return self._delegate.resolve_agentic_run_specs(
+            config, trace_sources=trace_sources, git_ref_override=git_ref_override
+        )
+
+    def agentic_traces_min_profile_seconds(self) -> int:
+        return self._delegate.agentic_traces_min_profile_seconds()
+
+    # --- measured reference data (delegated) ---
+    def performance_targets_path(self):
+        return self._delegate.performance_targets_path()
+
+    def accuracy_targets_path(self):
+        return self._delegate.accuracy_targets_path()
+
+    # --- report metadata (delegated) ---
+    def extra_spec_metadata_fields(self):
+        return self._delegate.extra_spec_metadata_fields()
+
+
+def _aggregate_priority(priorities: List[str]) -> Optional[str]:
+    """A sweep point is ``must`` if any of its targets is must, else ``should``."""
+    if not priorities:
+        return None
+    return PRIORITY_MUST if PRIORITY_MUST in priorities else PRIORITY_SHOULD
+
+
+__all__ = ["RequirementsModelSpecProvider", "RequirementsTargetPack"]
