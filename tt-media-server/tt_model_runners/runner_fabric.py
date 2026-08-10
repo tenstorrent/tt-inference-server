@@ -43,6 +43,9 @@ AVAILABLE_RUNNERS = {
     ModelRunners.TT_WAN_2_2: lambda wid: __import__(
         "tt_model_runners.dit_runners", fromlist=["TTWan22Runner"]
     ).TTWan22Runner(wid),
+    ModelRunners.TT_WAN_2_2_T2V_PRODIA: lambda wid: __import__(
+        "tt_model_runners.dit_runners", fromlist=["TTWan22T2VProdiaRunner"]
+    ).TTWan22T2VProdiaRunner(wid),
     ModelRunners.TT_WAN_2_2_I2V: lambda wid: __import__(
         "tt_model_runners.dit_runners", fromlist=["TTWan22I2VRunner"]
     ).TTWan22I2VRunner(wid),
@@ -58,6 +61,9 @@ AVAILABLE_RUNNERS = {
     ModelRunners.TT_WAN_2_2_I2V_LORA: lambda wid: __import__(
         "tt_model_runners.dit_runners", fromlist=["TTWan22I2VLoRARunner"]
     ).TTWan22I2VLoRARunner(wid),
+    ModelRunners.TT_WAN_2_2_I2V_LIGHTNING: lambda wid: __import__(
+        "tt_model_runners.dit_runners", fromlist=["TTWan22I2VLightningRunner"]
+    ).TTWan22I2VLightningRunner(wid),
     ModelRunners.TT_WHISPER: lambda wid: __import__(
         "tt_model_runners.whisper_runner", fromlist=["TTWhisperRunner"]
     ).TTWhisperRunner(wid),

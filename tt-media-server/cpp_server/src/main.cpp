@@ -82,6 +82,7 @@ tt::worker::MetricsLayout metricsLayoutFromConfig() {
     case tt::config::ModelService::EMBEDDING:
       return tt::worker::MetricsLayout::EMBEDDING;
     case tt::config::ModelService::IMAGE:
+    case tt::config::ModelService::TTS:
       return tt::worker::MetricsLayout::UNKNOWN;
   }
   return tt::worker::MetricsLayout::UNKNOWN;

@@ -113,6 +113,12 @@ if [ "${RUNTIME_ONLY}" = 0 ] && { ! command -v clang-format-20 >/dev/null 2>&1 |
     install_llvm_apt_repo
     $SUDO apt-get install -y --no-install-recommends clang-format-20 clang-tidy-20
 fi
+
+# Install a newer g++ than Ubuntu 22.04's default 11.4. tt-llm-engine uses
+# g++-12 
+if [ "${RUNTIME_ONLY}" = 0 ] && ! command -v g++-12 >/dev/null 2>&1; then
+    $SUDO apt-get install -y --no-install-recommends g++-12
+fi
 $SUDO rm -rf /var/lib/apt/lists/*
 
 if [ "${RUNTIME_ONLY}" = 0 ] && ! command -v cargo >/dev/null 2>&1; then
