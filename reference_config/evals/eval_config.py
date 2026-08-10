@@ -229,6 +229,10 @@ class EvalTask:
     allow_code_execution: bool = False
     agentic_eval_config: Optional[TerminalBenchEvalConfig] = None
     swebench_eval_config: Optional[SWEbenchEvalConfig] = None
+    # Acceptance severity for this eval ("must"/"should"). "must" failures block
+    # acceptance; "should" failures are informational. Set by requirements-driven
+    # runs from the document's per-eval priority; catalog tasks default to must.
+    priority: str = "must"
     # Per-device overrides, keyed by device name (e.g. "GALAXY",
     # "SUPER_CLUSTER"; matched case-insensitively). EvalTask fields follow a
     # three-tier device-variance model:

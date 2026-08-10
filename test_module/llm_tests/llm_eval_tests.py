@@ -266,6 +266,7 @@ def blocks_for_task(
                     "ratio_to_published": ratio_pub,
                     "ratio_to_reference": ratio_ref,
                     "accuracy_check": accuracy_check,
+                    "priority": getattr(task, "priority", "must"),
                 },
             )
         )
@@ -288,6 +289,7 @@ def _fail_block(ctx: MediaContext, task, error: str) -> Block:
             "score": None,
             "accuracy_check": ReportCheckTypes.FAIL,
             "error": error,
+            "priority": getattr(task, "priority", "must"),
         },
     )
 

@@ -85,6 +85,13 @@ from workflows.venv_provisioner_provider import (  # noqa: E402
 
 logger = logging.getLogger("tt_workflow_runner")
 
+# Device assumed for a requirements-driven run when neither --device nor the
+# document's deployment.hardware is given. SUPER_CLUSTER matches a remote,
+# horizontally-scaled OpenAI-compatible endpoint (token budget = context ×
+# concurrency rather than a single-device KV pool), which is the target shape
+# for requirements-driven validation.
+_DEFAULT_REQUIREMENTS_DEVICE = "super_cluster"
+
 _LOG_LEVELS = {
     "DEBUG": logging.DEBUG,
     "INFO": logging.INFO,
@@ -100,6 +107,15 @@ def parse_args() -> argparse.Namespace:
     valid_devices = get_device_catalog().device_names()
     valid_workflows = sorted(WORKFLOW_REGISTRY)
 
+    # A requirements-driven run supplies the model/device (and off-catalog
+    # models) from the requirements document, so the catalog ``choices`` gate is
+    # relaxed when --requirements-json is present. Pre-scan argv because argparse
+    # evaluates ``choices``/``required`` at definition time.
+    requirements_mode = any(
+        arg == "--requirements-json" or arg.startswith("--requirements-json=")
+        for arg in sys.argv[1:]
+    )
+
     parser = argparse.ArgumentParser(
         description=(
             "Standalone CLI for the WorkflowRunner — drives a workflow "
@@ -109,9 +125,28 @@ def parse_args() -> argparse.Namespace:
         epilog="Available models:\n  " + "\n  ".join(valid_models),
         formatter_class=argparse.RawTextHelpFormatter,
     )
-    parser.add_argument("--model", required=True, choices=valid_models)
+    if requirements_mode:
+        # Un-gated and optional: defaults come from the requirements document
+        # after parsing (and the model may not be in the catalog at all).
+        parser.add_argument("--model", required=False, default=None)
+        parser.add_argument("--device", required=False, default=None)
+    else:
+        parser.add_argument("--model", required=True, choices=valid_models)
+        parser.add_argument("--device", required=True, choices=valid_devices)
     parser.add_argument("--workflow", required=True, choices=valid_workflows)
-    parser.add_argument("--device", required=True, choices=valid_devices)
+    parser.add_argument(
+        "--requirements-json",
+        type=str,
+        default=None,
+        help=(
+            "Path to a Blaze customer-requirements document (schemaVersion "
+            "2.x). Drives the run from the document: the accuracy evals it "
+            "lists (gated by their reference scores/tolerances), the benchmark "
+            "sweep points and their scalar targets/SLOs, and the model + "
+            "deployment metadata (so a model not in the catalog can still be "
+            "run). --model/--device default from the document when omitted."
+        ),
+    )
     parser.add_argument("--service-port", type=int, default=8000)
     parser.add_argument(
         "--server-url",
@@ -476,6 +511,9 @@ def parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     if args.repeat < 1:
         parser.error("--repeat must be >= 1")
+    args.requirements_doc = None
+    if args.requirements_json:
+        _apply_requirements(args, parser)
     if args.server_url:
         from utils.url_helpers import normalize_server_url
 
@@ -533,6 +571,44 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
+def _apply_requirements(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+    """Load the requirements document and default --model/--device from it.
+
+    Stores the parsed document on ``args.requirements_doc`` so ``main`` can
+    install the requirements-backed model-spec provider and target pack.
+    """
+    from workflow_module.requirements_schema import RequirementsError, load_requirements
+    from workflows.model_spec_provider import hardware_to_device_name
+
+    try:
+        doc = load_requirements(args.requirements_json)
+    except RequirementsError as e:
+        parser.error(str(e))
+    args.requirements_doc = doc
+
+    # Device precedence: explicit --device, then the document's
+    # deployment.hardware, then a default. The device does not decide which
+    # endpoint is hit (that's --server-url) — it only keys benchmark configs,
+    # token-budget math, and report labeling — so a requirements run against an
+    # already-running server can omit hardware entirely.
+    if not args.device:
+        hardware = doc.deployment.hardware
+        if hardware:
+            try:
+                args.device = hardware_to_device_name(hardware).lower()
+            except ValueError as e:
+                parser.error(str(e))
+        else:
+            args.device = _DEFAULT_REQUIREMENTS_DEVICE
+            logger.warning(
+                "No --device and no deployment.hardware in the requirements "
+                "document; defaulting device to %r. Pass --device to override.",
+                args.device,
+            )
+    if not args.model:
+        args.model = doc.model.name
+
+
 def main() -> int:
     # Entry-point injection: install the Tenstorrent catalog as the engine's
     # model spec provider before any command building touches it.
@@ -542,6 +618,25 @@ def main() -> int:
     register_venv_provisioner(TenstorrentVenvProvisioner())
     register_target_pack(TenstorrentTargetPack())
     args = parse_args()
+    if args.requirements_doc is not None:
+        # A requirements-driven run overlays the document's content onto the
+        # engine: the model-spec provider synthesizes an off-catalog spec when
+        # needed, and the target pack supplies the doc's evals + benchmark
+        # targets. Both wrap the Tenstorrent defaults so anything the document
+        # does not specify falls through to the catalog.
+        from workflows.requirements_target_pack import (
+            RequirementsModelSpecProvider,
+            RequirementsTargetPack,
+        )
+
+        register_model_spec_provider(
+            RequirementsModelSpecProvider(
+                TenstorrentModelSpecProvider(), args.requirements_doc
+            )
+        )
+        register_target_pack(
+            RequirementsTargetPack(args.requirements_doc, TenstorrentTargetPack())
+        )
     logging.basicConfig(
         level=_LOG_LEVELS[args.log_level],
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",

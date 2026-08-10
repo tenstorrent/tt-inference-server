@@ -63,6 +63,11 @@ def get_llm_configs(
         for params in text_params
         if params.targets
     }
+    priority_by_shape = {
+        (params.isl, params.osl, params.max_concurrency): params.priority
+        for params in text_params
+        if getattr(params, "priority", None)
+    }
 
     configs: List[LLMRunConfig] = []
     seen = set()
@@ -71,17 +76,15 @@ def get_llm_configs(
         if key in seen:
             continue
         seen.add(key)
+        shape = (params.isl, params.osl, params.max_concurrency)
         configs.append(
             LLMRunConfig(
                 isl=params.isl,
                 osl=params.osl,
                 max_concurrency=params.max_concurrency,
                 num_prompts=params.num_prompts,
-                targets=dict(
-                    targets_by_shape.get(
-                        (params.isl, params.osl, params.max_concurrency), {}
-                    )
-                ),
+                targets=dict(targets_by_shape.get(shape, {})),
+                priority=priority_by_shape.get(shape),
             )
         )
 
