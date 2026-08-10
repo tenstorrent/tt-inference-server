@@ -384,6 +384,13 @@ templates:
         TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
         QWEN36_MAX_TOKENS_ALL_USERS: "525312"
         TT_METAL_OPERATION_TIMEOUT_SECONDS: "30.0"
+        # DEBUG BRANCH ONLY: turn on the reduce-scatter credit audit added in tt-metal
+        # atupe/qwen36-ccl-credit-audit. It prints RSAUDIT_STALL1 / RSAUDIT_STALL2 with want-vs-have
+        # for a credit wait that is not already satisfied, which is the state the hang leaves the
+        # ring in. A healthy run prints nothing, so the log stays small. NC selects ncrisc, which
+        # runs the reduce-scatter reader that blocks.
+        TT_METAL_DPRINT_CORES: "all"
+        TT_METAL_DPRINT_RISCVS: "NC"
       vllm_args:
         enable_auto_tool_choice: true
         reasoning_parser: qwen3
