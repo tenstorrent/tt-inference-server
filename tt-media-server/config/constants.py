@@ -1147,30 +1147,45 @@ ModelConfigs = {
     # per chip. Mirrors the production config validated standalone in tt-xla
     # (b32 aggregate, opt=1, trace, bfp_bf8 weights -- the runner sets those
     # additional_config knobs).
+    # ----- BH Galaxy: SPMD data parallel (one worker, all 32 chips) -----
+    # Converted from the per-chip layout (DEVICE_IDS_32, max_num_seqs 1) because
+    # pinning one chip aborts in device init on Blackhole -- tt-xla#5521. SPMD
+    # takes the whole group in ONE worker instead, which is the only forge
+    # multi-chip layout that works today. Validated at 4 chips on QB2 (p300x2):
+    # full release green, 1000/1000 requests, 137.9 req/s.
+    #
+    # To revert to Jona's per-chip design once #5521 is fixed: device_ids ->
+    # DEVICE_IDS_32, max_batch_size/max_num_seqs -> 1, drop ENABLE_DATA_PARALLEL
+    # and expected_ready_workers from the spec env_vars.
+    #
+    # max_num_seqs is the GLOBAL batch split across 32 replicas, so 256 is 8 per
+    # chip -- the same per-chip ratio validated on QB2. Raise together with
+    # max_num_batched_tokens (= max_num_seqs * max_model_length) once a run at
+    # this size is green; ~1024 (32/chip) is the eventual target.
     (ModelRunners.VLLMForge_QWEN_EMBEDDING, DeviceTypes.BLACKHOLE_GALAXY): {
         "device_mesh_shape": (1, 1),
-        "is_galaxy": True,
-        "device_ids": DeviceIds.DEVICE_IDS_32.value,
-        "max_batch_size": 1,
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 256,
         "vllm": {
             "model": SupportedModels.QWEN_3_EMBEDDING_4B.value,
             "max_model_length": 128,
-            "max_num_batched_tokens": 128,
+            "max_num_batched_tokens": 32768,
             "min_context_length": 32,
-            "max_num_seqs": 1,
+            "max_num_seqs": 256,
         },
     },
     (ModelRunners.VLLMForge_QWEN_EMBEDDING_0_6B, DeviceTypes.BLACKHOLE_GALAXY): {
         "device_mesh_shape": (1, 1),
-        "is_galaxy": True,
-        "device_ids": DeviceIds.DEVICE_IDS_32.value,
-        "max_batch_size": 1,
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 256,
         "vllm": {
             "model": SupportedModels.QWEN_3_EMBEDDING_0_6B.value,
             "max_model_length": 128,
-            "max_num_batched_tokens": 128,
+            "max_num_batched_tokens": 32768,
             "min_context_length": 32,
-            "max_num_seqs": 1,
+            "max_num_seqs": 256,
         },
     },
     # ----- SPMD data-parallel embeddings (one worker, whole device group) -----
@@ -1197,17 +1212,16 @@ ModelConfigs = {
         },
     },
     (ModelRunners.VLLMForge_BGE_M3, DeviceTypes.BLACKHOLE_GALAXY): {
-        # bge-m3 validated at seq len 512 in tt-xla.
         "device_mesh_shape": (1, 1),
-        "is_galaxy": True,
-        "device_ids": DeviceIds.DEVICE_IDS_32.value,
-        "max_batch_size": 1,
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 256,
         "vllm": {
             "model": SupportedModels.BGE_M3.value,
             "max_model_length": 512,
-            "max_num_batched_tokens": 512,
+            "max_num_batched_tokens": 131072,
             "min_context_length": 32,
-            "max_num_seqs": 1,
+            "max_num_seqs": 256,
         },
     },
     (ModelRunners.VLLMForge_LLAMA_70B, DeviceTypes.T3K): {
