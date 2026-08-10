@@ -157,17 +157,10 @@ def test_streaming_keeps_final_answer_in_content_for_scoring(
         ("logprobs", True),
         ("response_format", {"type": "json_object"}),
         ("bad_words", ["forbidden"]),
-        ("seed", 42),
-        ("temperature", 0.5),
-        ("top_k", 10),
-        ("top_p", 0.9),
-        ("presence_penalty", 0.5),
-        ("frequency_penalty", 0.5),
-        ("repetition_penalty", 1.1),
         ("n", 2),
     ],
 )
-def test_unsupported_sampling_parameter_is_4xx_without_engine_exit(
+def test_unsupported_response_parameter_is_4xx_without_engine_exit(
     report_test, api_client, endpoint_url, parameter, value
 ):
     with pytest.raises(requests.exceptions.HTTPError) as exc_info:
@@ -181,6 +174,31 @@ def test_unsupported_sampling_parameter_is_4xx_without_engine_exit(
         )
 
     assert "400" in str(exc_info.value) or "422" in str(exc_info.value)
+    _assert_healthy(endpoint_url)
+
+
+def test_transport_sampling_parameters_are_accepted_and_ignored(
+    report_test, api_client, endpoint_url
+):
+    response = api_client(
+        {
+            "messages": SIMPLE_MESSAGES,
+            "max_tokens": CANVAS_LENGTH,
+            "ignore_eos": True,
+            "seed": 42,
+            "temperature": 0.5,
+            "top_k": 10,
+            "top_p": 0.9,
+            "min_p": 0.1,
+            "presence_penalty": 0.5,
+            "frequency_penalty": 0.5,
+            "repetition_penalty": 1.1,
+        },
+        timeout=600,
+    )
+
+    assert response["usage"]["completion_tokens"] == CANVAS_LENGTH
+    assert response["choices"]
     _assert_healthy(endpoint_url)
 
 
