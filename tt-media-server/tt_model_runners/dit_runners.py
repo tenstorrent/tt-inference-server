@@ -10,11 +10,16 @@ from abc import abstractmethod
 
 import ttnn
 from config.constants import (
+    MINIMAX_H3_FPS,
+    MINIMAX_H3_NUM_FRAMES,
+    MINIMAX_H3_NUM_INFERENCE_STEPS,
+    MINIMAX_H3_RESOLUTION,
     WAN22_NUM_FRAMES,
     ModelRunners,
     ModelServices,
     SupportedModels,
     is_large_mesh,
+    minimax_h3_frames_are_aligned,
     wan22_target_resolution,
 )
 from config.settings import get_settings
@@ -23,6 +28,7 @@ from domain.video_generate_request import VideoGenerateRequest
 from domain.video_i2v_generate_request import ImagePromptEntry, VideoI2VGenerateRequest
 from models.common.utility_functions import is_blackhole
 from models.tt_dit.pipelines.flux1.pipeline_flux1 import Flux1Pipeline
+from models.tt_dit.pipelines.minimax_h3.pipeline_minimax_h3 import MiniMaxH3Pipeline
 from models.tt_dit.pipelines.mochi.pipeline_mochi import MochiPipeline
 from models.tt_dit.pipelines.motif.pipeline_motif import MotifPipeline
 from models.tt_dit.pipelines.qwenimage.pipeline_qwenimage import (
@@ -55,6 +61,7 @@ dit_runner_log_map = {
     ModelRunners.TT_WAN_2_2_I2V_ANISORA.value: "Wan22-I2V-AniSora",
     ModelRunners.TT_WAN_2_2_I2V_DISTILL.value: "Wan22-I2V-Distill",
     ModelRunners.TT_WAN_2_2_I2V_LORA.value: "Wan22-I2V-LoRA",
+    ModelRunners.TT_MINIMAX_H3_T2VA.value: "MiniMaxH3-T2VA",
     ModelRunners.TT_QWEN_IMAGE.value: "Qwen-Image",
     ModelRunners.TT_QWEN_IMAGE_2512.value: "Qwen-Image-2512",
     ModelRunners.SP_RUNNER.value: "SP-Runner",
@@ -945,3 +952,235 @@ class TTWan22I2VLoRARunner(TTDiTRunner):
 
     def _build_warmup_video_request(self) -> VideoI2VGenerateRequest:
         return _wan22_i2v_warmup_request("A golden retriever running on a sandy beach")
+
+
+# The prompt the pipeline is warmed with. Its *token count* is the load-bearing part, not its
+# content: every program in the 50-block stack is keyed on the padded packed length, which the
+# prompt length feeds into, so warming at a two-word prompt and serving hundred-token ones can
+# warm nothing. Roughly 100 tokens is representative of a real request.
+MINIMAX_H3_WARMUP_PASSES = 1
+
+MINIMAX_H3_WARMUP_PROMPT = (
+    "A red fox steps through wet grass at dawn, breath fogging in the cold air, while the camera "
+    "tracks slowly alongside. Birdsong rises in the background and the fox pauses, ears turning "
+    "toward a rustle in the undergrowth, before trotting on through the low golden light."
+)
+
+
+def _minimax_h3_device_params() -> dict:
+    """Device params for MiniMax-H3 t2va on the 4x8 Blackhole Galaxy.
+
+    Ring is not a tuning choice. The model issues ring collectives, and a ring collective on a
+    line fabric dies as `TT_FATAL fabric.cpp:174 forwarding_direction.has_value()`.
+
+    `l1_small_size` is mandatory and its absence does not name itself: a bare open fails later
+    at `bank_manager.cpp:462` / "bank size is 0 B", which means *unallocated*, not too small.
+
+    No `trace_region_size`: the H3 denoise loop runs eagerly. The pipeline's per-step host round
+    trip through the torch scheduler cannot sit inside a captured trace, and the tracing work that
+    would have removed it was measured at roughly break-even, so it is not carried here.
+    """
+    router_config = ttnn.FabricRouterConfig()
+    router_config.max_packet_payload_size_bytes = 8192
+    return {
+        "fabric_config": ttnn.FabricConfig.FABRIC_1D_RING,
+        "fabric_router_config": router_config,
+        "l1_small_size": 65536,
+    }
+
+
+class TTMiniMaxH3Runner(TTDiTRunner):
+    """MiniMax-H3 `t2va`: text in, a video **and its soundtrack** out.
+
+    Two things make this runner differ from the Wan2.2 one it is otherwise modelled on, and both
+    are silent-failure modes rather than crashes:
+
+    1. **Warmup has to be the real shape at a realistic prompt length.** The base class warms with
+       a throwaway two-word prompt at `num_inference_steps=2`. For H3 that warms nothing useful --
+       the program cache is keyed on the padded packed length, and the AdaLN modulation table is
+       cached per *step count*, so a 2-step warm builds a schedule no request will ever use. The
+       cost of getting it wrong is ~210 s per request instead of ~73 s, with nothing in the logs
+       saying so. `warmup` is overridden and the padded length is asserted.
+
+    2. **The audio has to reach the client.** `t2va` returns a soundtrack alongside the video and
+       the delivered MP4 has to carry both; a silent track is a bug. The muxing happens here and
+       the runner returns a *path*, which `VideoService.post_process` passes straight through.
+
+    One shape only in v1, validated at the boundary. A request at an unwarmed shape would compile
+    inside the request rather than fail, which is worse than a clear error.
+    """
+
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
+        self.resolution = MINIMAX_H3_RESOLUTION
+
+    def _weights_dir(self) -> str | None:
+        """A local snapshot directory, or None to let the pipeline read its own env var.
+
+        `settings.model_weights_path` defaults to the **HuggingFace repo id**
+        (`MiniMaxAI/MiniMax-H3`), not a path, so passing it through unconditionally would send the
+        pipeline looking for `MiniMaxAI/MiniMax-H3/transformer/config.json`. Only an actual
+        directory is used; otherwise `MINIMAX_H3_DIFFUSERS_DIR` decides, which is what the model's
+        own tests and docs use. The weights are ~62 GB per transformer partition and are always
+        mounted, never baked into the image.
+        """
+        configured = self.settings.model_weights_path
+        if configured and os.path.isdir(configured):
+            return configured
+        if configured:
+            self.logger.info(
+                f"Device {self.device_id}: model_weights_path={configured!r} is not a directory "
+                "(it is the HF repo id); falling back to MINIMAX_H3_DIFFUSERS_DIR"
+            )
+        return None
+
+    def create_pipeline(self):
+        try:
+            return MiniMaxH3Pipeline.create_pipeline(
+                mesh_device=self.ttnn_device,
+                weights_dir=self._weights_dir(),
+            )
+        except Exception as e:
+            log_exception_chain(
+                self.logger,
+                self.device_id,
+                "MiniMax-H3 pipeline creation failed",
+                e,
+            )
+            raise
+
+    def load_weights(self):
+        return False
+
+    def get_pipeline_device_params(self):
+        return _minimax_h3_device_params()
+
+    async def warmup(self) -> bool:
+        """Build the pipeline, then warm it at the exact shape and step count that will be served.
+
+        Deliberately not the base class's implementation: this calls the pipeline's own `warmup`,
+        which runs one full generation at the target working point, rather than a 2-step throwaway.
+        It is slow (minutes) and that is why the readiness probe's delay is generous -- readiness
+        must mean *warm*, or the first real request pays the compile.
+        """
+        self.logger.info(f"Device {self.device_id}: Loading MiniMax-H3...")
+
+        def distribute_block():
+            self.pipeline = self.create_pipeline()
+
+        weights_distribution_timeout = max(
+            self.settings.weights_distribution_timeout_seconds,
+            DIT_WEIGHTS_DISTRIBUTION_TIMEOUT_SECONDS,
+        )
+        try:
+            await asyncio.wait_for(
+                asyncio.to_thread(distribute_block),
+                timeout=weights_distribution_timeout,
+            )
+        except asyncio.TimeoutError:
+            self.logger.error(
+                f"Device {self.device_id}: pipeline construction timed out after "
+                f"{weights_distribution_timeout} seconds"
+            )
+            raise
+        except Exception as e:
+            log_exception_chain(self.logger, self.device_id, "Exception during model loading", e)
+            raise
+
+        self.logger.info(f"Device {self.device_id}: Model loaded, warming at the serving shape...")
+        # The first served request pays ~12 s on its first denoise step against a 1.05 s steady
+        # step, then settles to 1.1 s. A second warmup pass does NOT absorb it (measured: still
+        # 11.9 s after two passes), so this stays at 1 until the cause is found.
+        for pass_index in range(MINIMAX_H3_WARMUP_PASSES):
+            await asyncio.to_thread(
+                lambda: self.pipeline.warmup(
+                    prompt=MINIMAX_H3_WARMUP_PROMPT,
+                    num_frames=MINIMAX_H3_NUM_FRAMES,
+                    height=self.resolution.height,
+                    width=self.resolution.width,
+                    num_inference_steps=MINIMAX_H3_NUM_INFERENCE_STEPS,
+                )
+            )
+            self.logger.info(
+                f"Device {self.device_id}: warmup pass {pass_index + 1}/{MINIMAX_H3_WARMUP_PASSES} done"
+            )
+        self._warm_padded_len = self.pipeline.last_padded_len
+        self.logger.info(
+            f"Device {self.device_id}: warm at padded_len={self._warm_padded_len} "
+            f"({self.resolution.width}x{self.resolution.height}, {MINIMAX_H3_NUM_FRAMES} frames, "
+            f"{MINIMAX_H3_NUM_INFERENCE_STEPS} steps)"
+        )
+        return True
+
+    def _validate(self, request: VideoGenerateRequest) -> None:
+        """Reject anything this deployment has not warmed, with a reason.
+
+        The pipeline would otherwise either raise from deep inside packing or -- worse -- accept
+        the request and silently recompile the whole 50-block stack inside it.
+        """
+        num_frames = getattr(request, "num_frames", None) or MINIMAX_H3_NUM_FRAMES
+        if not minimax_h3_frames_are_aligned(num_frames):
+            raise ValueError(
+                f"num_frames must be 17n + 5 (124, 243, 362, ...); got {num_frames}"
+            )
+        if num_frames != MINIMAX_H3_NUM_FRAMES:
+            raise ValueError(
+                f"this deployment serves {MINIMAX_H3_NUM_FRAMES} frames only "
+                f"({MINIMAX_H3_NUM_FRAMES / MINIMAX_H3_FPS:.2f} s); got {num_frames}"
+            )
+        # `VideoGenerateRequest.num_inference_steps` defaults to 20 and nothing in the server
+        # applies the per-model value from `ModelConfigs` (`settings.num_inference_steps` has no
+        # readers). Rejecting on the *default* would 400 every request that simply omits the
+        # field, so only an explicit disagreement is an error; an omitted field gets 50.
+        explicit = "num_inference_steps" in getattr(request, "model_fields_set", set())
+        steps = request.num_inference_steps if explicit else MINIMAX_H3_NUM_INFERENCE_STEPS
+        if steps != MINIMAX_H3_NUM_INFERENCE_STEPS:
+            raise ValueError(
+                f"this deployment serves num_inference_steps={MINIMAX_H3_NUM_INFERENCE_STEPS} only "
+                f"(the modulation table is precomputed per step count, and the pipeline is warmed "
+                f"at that schedule); got {steps}"
+            )
+
+    @log_execution_time(
+        f"{dit_runner_log_map[get_settings().model_runner]} inference",
+        TelemetryEvent.MODEL_INFERENCE,
+        os.environ.get("TT_VISIBLE_DEVICES"),
+    )
+    def run(self, requests: list[VideoGenerateRequest]):
+        from utils.video_manager import VideoManager
+
+        request = requests[0]
+        self._validate(request)
+        self.logger.debug(f"Device {self.device_id}: Running inference")
+
+        output = self.pipeline(
+            request.prompt,
+            num_frames=MINIMAX_H3_NUM_FRAMES,
+            height=self.resolution.height,
+            width=self.resolution.width,
+            num_inference_steps=MINIMAX_H3_NUM_INFERENCE_STEPS,
+            seed=int(request.seed) if request.seed is not None else 0,
+        )
+
+        warm = getattr(self, "_warm_padded_len", None)
+        if warm is not None and self.pipeline.last_padded_len != warm:
+            # Not fatal -- the video is fine -- but it means this request compiled rather than
+            # replayed, and the latency will look inexplicable if it is not said out loud.
+            self.logger.warning(
+                f"Device {self.device_id}: served at padded_len {self.pipeline.last_padded_len} "
+                f"but warmed at {warm}; this request paid compilation"
+            )
+
+        self.logger.debug(f"Device {self.device_id}: Inference completed, muxing a/v")
+        # (1, 3, F, H, W) in [0, 1] -> (F, H, W, 3), which is what the exporter's rawvideo pipe
+        # wants. Without the permute it reads the width as a channel count and raises.
+        frames = output.video[0].permute(1, 2, 3, 0).contiguous().numpy()
+        audio = output.audio[0].numpy()
+        path = VideoManager().export_to_mp4_with_audio(
+            frames, audio, output.sampling_rate, fps=output.fps
+        )
+        # A **list**, one entry per request in the batch -- `base_service.py:40` and
+        # `device_worker.py:115` both do `results[0]`. Returning the bare path string is not a type
+        # error anywhere; it just gets indexed, and the job's result path becomes "/" -- the first
+        # character. Same shape as the Prodia runner's `return [VideoManager().export_to_mp4(...)]`.
+        return [path]

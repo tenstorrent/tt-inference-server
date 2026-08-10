@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import uuid
 from pathlib import Path
@@ -66,6 +67,97 @@ class VideoManager:
             self._logger.error(f"Video export failed: {e}")
             raise RuntimeError(f"Failed to export video: {e}") from e
 
+    @log_execution_time("Processing frames for export")
+    def _process_frames_for_export(self, frames: NDArray) -> NDArray[np.uint8]:
+        """Normalize to contiguous uint8 (N, H, W, 3) for rawvideo rgb24."""
+        frames = _normalize_shape(frames)
+        frames = _normalize_channels(frames)
+        if not frames.flags["C_CONTIGUOUS"]:
+            frames = np.ascontiguousarray(frames)
+        return _normalize_dtype(frames)
+
+    @log_execution_time("Exporting video with audio to MP4")
+    def export_to_mp4_with_audio(
+        self,
+        frames: NDArray,
+        audio: NDArray,
+        sampling_rate: int,
+        fps: int = 16,
+    ) -> str:
+        """Export frames plus a soundtrack to a single muxed MP4.
+
+        `audio` is `(channels, samples)` float in [-1, 1]. It goes to a temp WAV rather than a
+        pipe because ffmpeg reads only one stream from stdin. `-shortest` trims the two streams
+        to the common length; they round independently and differ slightly.
+        """
+        if hasattr(frames, "frames"):
+            frames = frames.frames
+
+        _VIDEO_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        stem = uuid.uuid4()
+        output_path = str(_VIDEO_OUTPUT_DIR / f"{stem}.mp4")
+        silent_path = str(_VIDEO_OUTPUT_DIR / f"{stem}_silent.mp4")
+        wav_path = str(_VIDEO_OUTPUT_DIR / f"{stem}.wav")
+
+        crf = int(os.environ.get("TT_VIDEO_EXPORT_CRF", "23"))
+        crf = max(_MIN_CRF, min(_MAX_CRF, crf))
+        preset = os.environ.get("TT_VIDEO_EXPORT_PRESET", "ultrafast").strip()
+
+        try:
+            processed = self._process_frames_for_export(frames)
+            self._run_ffmpeg(
+                self._build_encode_cmd(processed, silent_path, fps, crf, preset),
+                stdin_data=memoryview(processed),
+            )
+            self._write_wav(audio, sampling_rate, wav_path)
+            self._run_ffmpeg(
+                [
+                    "ffmpeg", "-y",
+                    "-i", silent_path,
+                    "-i", wav_path,
+                    "-c:v", "copy",
+                    "-c:a", "aac",
+                    "-b:a", "192k",
+                    "-shortest",
+                    "-movflags", "+faststart",
+                    output_path,
+                ]
+            )
+            return output_path
+        except Exception as e:
+            self._logger.error(f"Video+audio export failed: {e}")
+            raise RuntimeError(f"Failed to export video with audio: {e}") from e
+        finally:
+            for path in (silent_path, wav_path):
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
+
+    @staticmethod
+    def _write_wav(audio: NDArray, sampling_rate: int, path: str) -> None:
+        """Write `(channels, samples)` float audio in [-1, 1] as 16-bit interleaved PCM."""
+        import wave
+
+        samples = np.asarray(audio)
+        if samples.ndim == 1:
+            samples = samples[None, :]
+        if samples.ndim == 3 and samples.shape[0] == 1:
+            samples = samples[0]
+        if samples.ndim != 2:
+            raise ValueError(f"expected audio shaped (channels, samples), got {samples.shape}")
+
+        channels = samples.shape[0]
+        # Clip before scaling; out-of-range would wrap to the opposite int16 rail.
+        interleaved = np.clip(samples.T, -1.0, 1.0)
+        pcm = (interleaved * 32767.0).astype("<i2")
+
+        with wave.open(path, "wb") as handle:
+            handle.setnchannels(channels)
+            handle.setsampwidth(2)
+            handle.setframerate(int(sampling_rate))
+            handle.writeframes(pcm.tobytes())
+
     @staticmethod
     def _build_encode_cmd(
         frames: NDArray, output_path: str, fps: int, crf: int, preset: str
@@ -121,12 +213,31 @@ class VideoManager:
         return cmd
 
     @staticmethod
+    def _ffmpeg_binary() -> str:
+        """ffmpeg from PATH (the image installs it), else the `imageio_ffmpeg` wheel."""
+        found = shutil.which("ffmpeg")
+        if found:
+            return found
+        try:
+            import imageio_ffmpeg
+
+            return imageio_ffmpeg.get_ffmpeg_exe()
+        except Exception as e:
+            raise RuntimeError(
+                "ffmpeg not found on PATH and imageio_ffmpeg is not available; "
+                "install ffmpeg or `pip install imageio-ffmpeg`"
+            ) from e
+
+    @classmethod
     def _run_ffmpeg(
+        cls,
         cmd: list[str],
         stdin_data: bytes | None = None,
         timeout: int = _FFMPEG_ENCODE_TIMEOUT_S,
     ) -> None:
         """Execute an ffmpeg command, raising on failure or timeout."""
+        if cmd and cmd[0] == "ffmpeg":
+            cmd = [cls._ffmpeg_binary(), *cmd[1:]]
         process = subprocess.Popen(
             cmd,
             stdin=subprocess.PIPE if stdin_data else None,
@@ -220,6 +331,25 @@ def _normalize_channels(frames: NDArray) -> NDArray:
         return frames[..., :_RGB_CHANNELS]
 
     return frames
+
+
+def _normalize_dtype(frames: NDArray) -> NDArray[np.uint8]:
+    """Convert a whole (N, H, W, C) stack to uint8, handling float [0,1] and [0,255].
+
+    The batch counterpart to `_normalize_dtype_single`, and deliberately the same rule: the
+    range is decided from the max over the *whole* stack, not per frame, so a dark frame in a
+    [0,255] video cannot be mistaken for normalized data and brightened on its own.
+    """
+    if frames.dtype == np.uint8:
+        return frames
+
+    if frames.dtype in (np.float32, np.float64):
+        max_val = float(np.max(frames)) if frames.size else 0.0
+        if max_val <= _NORMALIZED_RANGE_MAX:
+            return (frames * _MAX_PIXEL_VALUE).clip(0, 255).astype(np.uint8)
+        return frames.clip(0, 255).astype(np.uint8)
+
+    return frames.clip(0, 255).astype(np.uint8)
 
 
 def _normalize_dtype_single(frame: NDArray) -> NDArray[np.uint8]:

@@ -58,6 +58,9 @@ AVAILABLE_RUNNERS = {
     ModelRunners.TT_WAN_2_2_I2V_LORA: lambda wid: __import__(
         "tt_model_runners.dit_runners", fromlist=["TTWan22I2VLoRARunner"]
     ).TTWan22I2VLoRARunner(wid),
+    ModelRunners.TT_MINIMAX_H3_T2VA: lambda wid: __import__(
+        "tt_model_runners.dit_runners", fromlist=["TTMiniMaxH3Runner"]
+    ).TTMiniMaxH3Runner(wid),
     ModelRunners.TT_WHISPER: lambda wid: __import__(
         "tt_model_runners.whisper_runner", fromlist=["TTWhisperRunner"]
     ).TTWhisperRunner(wid),
