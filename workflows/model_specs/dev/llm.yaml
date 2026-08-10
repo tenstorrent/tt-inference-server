@@ -305,7 +305,8 @@ templates:
   device_model_specs:
     - device: P300X2
       max_concurrency: 1
-      # Validated on QB2 across every power-of-two bucket from 128 through 256K.
+      # Validated on QB2 from short prompts through 250K with one shared 4K
+      # prefill program.
       # DeviceModelSpec derives block_size=64, max_num_seqs=1 and
       # max_num_batched_tokens=max_context from these fields.
       max_context: 262144
@@ -320,7 +321,10 @@ templates:
         DG_MODEL_OWNED_HYBRID_KV: "1"
         DG_UPFRONT_COARSE_PREFILL_BUCKETS: "1"
         DG_UPFRONT_LAZY_PREFILL_RECAPTURE: "1"
-        DG_PREFILL_CHUNK_SIZE: "16384"
+        # Reuse one bounded 4K prefill program for every prompt length. This
+        # prevents cold bucket recapture after long agent histories fragment DRAM.
+        DG_PREFILL_FIXED_CHUNKS: "1"
+        DG_PREFILL_CHUNK_SIZE: "4096"
         # A 2048-token ragged-MoE slice needs a 176 MiB embedding output.
         # After a 118-turn Terminal-Bench trial fragmented DRAM, its 23 MiB
         # per-bank allocation killed EngineCore despite 1.30 GiB total free.
@@ -329,8 +333,7 @@ templates:
         DG_PREFILL_RAGGED_CHUNK: "1024"
         DG_DENOISE_REVEAL_PMAX: "262144"
         DG_DENOISE_SLIDING_WINDOW: "1"
-        # Keep startup bounded; unseen buckets atomically release, compile and
-        # recapture their resident traces on first use.
+        # Warm representative short lengths before capturing the shared program.
         DG_UPFRONT_PREFILL_WARMUP_LENS: "32,64,96"
         DG_TRACE_REGION_SIZE: "3758096384"
       override_tt_config:
