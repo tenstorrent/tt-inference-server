@@ -18,8 +18,8 @@ def _impl_config(**overrides):
         image=HelmImage(repository="ghcr.io/org/image", tag="1.0.0"),
         progress_deadline_seconds=5400,
         probes=HelmProbes(
-            liveness=HelmProbe(initial_delay_seconds=2400),
-            readiness=HelmProbe(initial_delay_seconds=2400),
+            liveness=HelmProbe(),
+            readiness=HelmProbe(),
         ),
     )
     defaults.update(overrides)
@@ -31,17 +31,24 @@ def test_image_yaml_dict():
     assert img.to_yaml_dict() == {"repository": "repo", "tag": "t"}
 
 
-def test_probe_omits_path_when_none():
-    assert HelmProbe(initial_delay_seconds=600).to_yaml_dict() == {
-        "initialDelaySeconds": 600
-    }
+def test_probe_omits_block_when_path_none():
+    assert HelmProbe().to_yaml_dict() == {}
 
 
 def test_probe_includes_path_when_set():
-    assert HelmProbe(initial_delay_seconds=600, path="/tt-liveness").to_yaml_dict() == {
-        "initialDelaySeconds": 600,
-        "path": "/tt-liveness",
-    }
+    assert HelmProbe(path="/tt-liveness").to_yaml_dict() == {"path": "/tt-liveness"}
+
+
+def test_probes_omitted_when_empty():
+    cfg = _impl_config()
+    assert "probes" not in cfg.to_yaml_dict()
+
+
+def test_probes_emits_only_liveness_path():
+    cfg = _impl_config(
+        probes=HelmProbes(liveness=HelmProbe(path="/tt-liveness"), readiness=HelmProbe())
+    )
+    assert cfg.to_yaml_dict()["probes"] == {"liveness": {"path": "/tt-liveness"}}
 
 
 def test_resources_omits_block_when_no_memory():
