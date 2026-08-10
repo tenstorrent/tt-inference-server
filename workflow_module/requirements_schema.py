@@ -284,15 +284,35 @@ class RequirementsDoc:
         )
 
 
+def _resolve_requirements_path(path: Union[str, Path]) -> Path:
+    """Resolve ``path`` to a canonical absolute file, rejecting traversal.
+
+    The path comes from the ``--requirements-json`` CLI flag (operator input).
+    Canonicalizing with :meth:`Path.resolve` collapses ``..`` segments and
+    follows symlinks, and requiring the result to be a regular file under an
+    existing directory guards against accidental (or malicious) references to
+    unexpected locations. This is a local dev CLI, so no fixed base directory
+    is imposed — operators legitimately keep requirements docs anywhere — but
+    the resolved path must exist as a real file.
+    """
+    try:
+        resolved = Path(path).expanduser().resolve(strict=False)
+    except (OSError, RuntimeError) as e:
+        raise RequirementsError(f"Invalid requirements path {path!r}: {e}") from e
+    if not resolved.exists():
+        raise RequirementsError(f"Requirements file not found: {resolved}")
+    if not resolved.is_file():
+        raise RequirementsError(f"Requirements path is not a file: {resolved}")
+    return resolved
+
+
 def load_requirements(path: Union[str, Path]) -> RequirementsDoc:
     """Load and parse a requirements document from ``path``.
 
     Raises :class:`RequirementsError` on a missing file, invalid JSON, or an
     unsupported ``schemaVersion`` major.
     """
-    json_path = Path(path)
-    if not json_path.exists():
-        raise RequirementsError(f"Requirements file not found: {json_path}")
+    json_path = _resolve_requirements_path(path)
     try:
         with open(json_path, "r", encoding="utf-8") as f:
             data = json.load(f)

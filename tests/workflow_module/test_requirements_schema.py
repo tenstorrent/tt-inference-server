@@ -37,6 +37,37 @@ def test_loads_acme_fixture():
     assert doc.deployment.max_concurrency_per_instance == 64
 
 
+def test_load_rejects_missing_file(tmp_path):
+    with pytest.raises(RequirementsError, match="not found"):
+        load_requirements(tmp_path / "does-not-exist.json")
+
+
+def test_load_rejects_directory(tmp_path):
+    # A directory is not a requirements document; fail loudly rather than
+    # letting open() raise a confusing IsADirectoryError downstream.
+    with pytest.raises(RequirementsError, match="not a file"):
+        load_requirements(tmp_path)
+
+
+def test_load_resolves_traversal_to_real_file(tmp_path):
+    # A path containing ".." still resolves to the real file (canonicalized),
+    # so legitimate relative references keep working.
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    target = tmp_path / "req.json"
+    target.write_text(
+        json.dumps(
+            {
+                "schemaVersion": "2.1.0",
+                "model": {"name": "acme/tiny"},
+                "deployment": {},
+            }
+        )
+    )
+    doc = load_requirements(sub / ".." / "req.json")
+    assert doc.model.name == "acme/tiny"
+
+
 def test_accuracy_evals_parsed_with_priorities():
     doc = load_requirements(_FIXTURE)
     by_name = {e.name: e for e in doc.accuracy_evals}
