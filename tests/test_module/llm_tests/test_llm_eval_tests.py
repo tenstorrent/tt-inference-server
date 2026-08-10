@@ -73,9 +73,9 @@ def _ctx(max_context=131072):
 
 
 class TestBlocksForTask:
-    def _blocks(self, task, results):
+    def _blocks(self, task, results, **kwargs):
         with patch(f"{_MOD}.block_id", return_value=""):
-            return mod.blocks_for_task(_ctx(), task, results)
+            return mod.blocks_for_task(_ctx(), task, results, **kwargs)
 
     def test_reference_pass(self):
         (b,) = self._blocks(
@@ -119,6 +119,41 @@ class TestBlocksForTask:
         )
         names = sorted(b.data["task_name"] for b in blocks)
         assert names == ["longbench_2wikimqa", "longbench_hotpotqa"]
+
+    def test_mean_seconds_per_task_uses_wall_time_and_effective_samples(self):
+        (block,) = self._blocks(
+            _task(score=_score(published=90.5, reference=90.91)),
+            {"gpqa": {"acc,none": 0.9}},
+            sample_counts={"gpqa": 10},
+            elapsed_seconds=900.0,
+        )
+
+        assert block.data["mean_seconds_per_task"] == 90.0
+
+    def test_group_mean_seconds_uses_total_subtask_sample_count(self):
+        blocks = self._blocks(
+            _task("longbench", _score(published=50.0, reference=50.0)),
+            {
+                "longbench_2wikimqa": {"acc,none": 0.6},
+                "longbench_hotpotqa": {"acc,none": 0.4},
+            },
+            sample_counts={
+                "longbench_2wikimqa": 2,
+                "longbench_hotpotqa": 3,
+            },
+            elapsed_seconds=50.0,
+        )
+
+        assert {block.data["mean_seconds_per_task"] for block in blocks} == {10.0}
+
+    def test_mean_seconds_per_task_is_omitted_without_sample_count(self):
+        (block,) = self._blocks(
+            _task(score=_score(published=90.5, reference=90.91)),
+            {"gpqa": {"acc,none": 0.9}},
+            elapsed_seconds=900.0,
+        )
+
+        assert "mean_seconds_per_task" not in block.data
 
     def test_wer_is_inverted(self):
         def wer_func(results, task_name, kwargs):
@@ -209,34 +244,39 @@ class TestRunLLMEval:
             f"{_MOD}.discover_eval_results", return_value=["f.json"]
         ), patch(f"{_MOD}.merge_eval_results", return_value=results or {}), patch(
             f"{_MOD}.blocks_for_task", return_value=blocks if blocks is not None else []
-        ), patch(f"{_MOD}.accept_blocks") as accept, patch(
-            f"{_MOD}.block_id", return_value=""
-        ):
+        ) as score_task, patch(f"{_MOD}.collect_sample_counts", return_value={}), patch(
+            f"{_MOD}.accept_blocks"
+        ) as accept, patch(f"{_MOD}.block_id", return_value=""):
             out = mod.run_llm_eval(_ctx())
-        return out, run_task, accept
+        return out, run_task, score_task, accept
 
     def test_happy_path(self):
         blk = MagicMock()
         blk.kind = "evals"
-        out, run_task, accept = self._run([_task()], blocks=[blk])
+        out, run_task, score_task, accept = self._run([_task()], blocks=[blk])
         assert out == [blk]
         run_task.assert_called_once()
+        assert score_task.call_args.kwargs["elapsed_seconds"] >= 0
         accept.assert_called_once()
 
     def test_no_tasks(self):
-        out, run_task, accept = self._run([])
+        out, run_task, _score_task, accept = self._run([])
         assert out == []
         run_task.assert_not_called()
         accept.assert_not_called()
 
     def test_unhealthy_emits_fail_blocks(self):
-        out, run_task, _accept = self._run([_task("a"), _task("b")], healthy=False)
+        out, run_task, _score_task, _accept = self._run(
+            [_task("a"), _task("b")], healthy=False
+        )
         assert len(out) == 2
         assert all(b.data["accuracy_check"] == ReportCheckTypes.FAIL for b in out)
         run_task.assert_not_called()
 
     def test_ran_but_no_block_gets_fail_block(self):
-        out, run_task, _accept = self._run([_task("gpqa")], blocks=[], run_rc=1)
+        out, run_task, _score_task, _accept = self._run(
+            [_task("gpqa")], blocks=[], run_rc=1
+        )
         assert len(out) == 1
         assert out[0].data["accuracy_check"] == ReportCheckTypes.FAIL
         assert "no eval results parsed" in out[0].data["error"]
@@ -245,7 +285,7 @@ class TestRunLLMEval:
     def test_min_context_skip(self):
         # Task needs more context than the device provides: not run, but now a
         # visible SKIP block instead of silently vanishing.
-        out, run_task, _accept = self._run(
+        out, run_task, _score_task, _accept = self._run(
             [_task("longctx", min_context_required=200000)]
         )
         run_task.assert_not_called()
