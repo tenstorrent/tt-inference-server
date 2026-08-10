@@ -81,12 +81,12 @@ allocated and never assigns the same board twice, so a T3K node can run e.g. fou
 independent single-`n300` Pods. When all boards are claimed, an extra Pod stays
 `Pending` (`FailedScheduling: cannot allocate all claims`) until one frees.
 
-**Not yet supported (future work).** A board count is only sufficient when the
-claim takes a whole dedicated device. Topology-sensitive partitions — e.g.
-`galaxy_t3k` (a T3K mesh carved from a Galaxy that must be pinned to adjacent
-chips in one tray) — need DRA constraints (`constraints.matchAttribute` / CEL)
-matching topology attributes the tt-dra-driver does not yet publish. Installing
-such a device **fails at render time** with a clear message.
+**Not yet supported (future work).** A board count is correct only for a single DRA
+device (`n300` = one board = an adjacent on-board chip pair) or a whole dedicated node
+(`t3k`). Adjacency-partitioned requests — several separate devices that must be
+physically adjacent (QSFP-linked), e.g. `galaxy_t3k` or a Galaxy dual — can't be
+expressed (DRA allocates by count, not position), so they are absent from
+`deviceBoardCounts` and fail at render.
 
 **Teardown order.** Delete the inference workload *before* uninstalling
 tt-operator; removing the DRA driver first leaves Pods unable to release their
