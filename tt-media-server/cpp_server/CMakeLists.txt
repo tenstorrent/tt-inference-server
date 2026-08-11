@@ -1065,6 +1065,17 @@ if(ENABLE_BLAZE)
         ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
 
+    add_executable(blaze_tts_runner_test
+        tests/integration/runners/blaze_tts_runner_test.cpp
+        src/runtime/runners/blaze_runner/blaze_tts_runner.cpp
+        src/runtime/worker/single_process_worker_metrics.cpp
+        src/runtime/worker/worker_metrics_shm.cpp
+    )
+    target_link_libraries(blaze_tts_runner_test PRIVATE llm_runner_lib GTest::gtest_main)
+    target_include_directories(blaze_tts_runner_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
     add_executable(mock_schedulers_test
         tests/unit/runners/mock_schedulers_test.cpp
     )
@@ -1095,6 +1106,12 @@ target_link_libraries(tokenizer_test PRIVATE llm_runner_lib GTest::gtest_main)
 
 add_executable(tts_prompt_compiler_test tests/unit/model/tts_prompt_compiler_test.cpp)
 target_link_libraries(tts_prompt_compiler_test PRIVATE llm_runner_lib GTest::gtest_main)
+
+add_executable(voice_sample_cache_test tests/unit/utils/voice_sample_cache_test.cpp)
+target_link_libraries(voice_sample_cache_test PRIVATE xxhash_lib GTest::gtest_main)
+target_include_directories(voice_sample_cache_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
 
 add_executable(conversation_hasher_test tests/unit/model/conversation_hasher_test.cpp)
 target_link_libraries(conversation_hasher_test PRIVATE llm_runner_lib GTest::gtest_main)
@@ -1445,12 +1462,14 @@ endif()
 if(ENABLE_BLAZE)
     gtest_discover_tests(blaze_decode_runner_test)
     gtest_discover_tests(blaze_prefill_runner_test)
+    gtest_discover_tests(blaze_tts_runner_test)
     gtest_discover_tests(mock_schedulers_test)
 endif()
 gtest_discover_tests(sequence_test)
 gtest_discover_tests(lockfree_queue_test)
 gtest_discover_tests(tokenizer_test)
 gtest_discover_tests(tts_prompt_compiler_test)
+gtest_discover_tests(voice_sample_cache_test)
 gtest_discover_tests(conversation_hasher_test)
 gtest_discover_tests(cancel_queue_test)
 gtest_discover_tests(worker_metrics_shm_test)
