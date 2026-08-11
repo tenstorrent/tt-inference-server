@@ -396,13 +396,18 @@ class RealTtsScheduler final : public tts_scheduler::ITtsScheduler {
     engine_tts::VoiceEncodeRequest engineRequest;
     engineRequest.requestId = static_cast<uint64_t>(request.requestId);
     engineRequest.wavPcm = std::move(request.wavPcm);
-    return impl->enqueueVoiceEncode(std::move(engineRequest));
+    // LOCAL UNBLOCK — do not commit. The tt-llm-engine fork this image builds
+    // against renamed the voice-encode methods to snake_case (matching the
+    // rest of TtsScheduler); restore the camelCase spelling once cpp_server
+    // and the engine agree again.
+    return impl->enqueue_voice_encode(std::move(engineRequest));
   }
 
   bool tryPopVoiceEncodeResult(
       tts_scheduler::VoiceEncodeResult& result) override {
     engine_tts::VoiceEncodeResult engineResult;
-    if (!impl->tryPopVoiceEncodeResult(engineResult)) {
+    // LOCAL UNBLOCK — see enqueue_voice_encode above.
+    if (!impl->try_pop_voice_encode_result(engineResult)) {
       return false;
     }
     result.requestId = static_cast<uint32_t>(engineResult.requestId);

@@ -26,3 +26,14 @@ tt-media-server/cpp_server/build
 tt-media-server/cpp_server/build-*
 tt-media-server/cpp_server/compile_commands.json
 tt-media-server/cpp_server/tt-llm-engine
+
+# Untracked local dev checkouts / caches. None are image inputs: Dockerfile.blaze
+# clones tt-llm-engine itself into cpp_server/tt-llm-engine (excluded above).
+# Without these the context is ~52 GB and COPY tt-media-server drags ~19 GB of
+# local-only state into the image.
+tt-media-server/cpp_server/_deps
+tt-media-server/cpp_server/tt-blaze
+tt-media-server/cpp_server/nanicic-TTS-llm-engine
+tt-media-server/vllm-venv
+build
+.bench_uvpy

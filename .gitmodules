@@ -1,6 +1,6 @@
 [submodule "tt-media-server/cpp_server/tt-llm-engine"]
 	path = tt-media-server/cpp_server/tt-llm-engine
-	url = https://github.com/tenstorrent/tt-llm-engine.git
+	url = git@github.com:nanicicTT/nanicic-TTS-llm-engine.git
 	branch = main
 	ignore = dirty
 [submodule "tt-media-server/cpp_server/third_party/Mooncake"]
