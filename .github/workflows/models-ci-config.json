@@ -160,7 +160,7 @@
         {
           "inference_engine": "FORGE",
           "ci": {
-            "weekly": {
+            "nightly": {
               "devices": [
                 "BH_GALAXY"
               ]
