@@ -6792,6 +6792,8 @@ models:
                 value: '1'
               - name: MESH_DEVICE
                 value: N150
+              - name: MODEL_RUNNER
+                value: vllmforge_qwen_embedding
               - name: VLLM__MAX_MODEL_LENGTH
                 value: '1024'
               - name: VLLM__MAX_NUM_BATCHED_TOKENS
@@ -6826,6 +6828,8 @@ models:
                 value: '1'
               - name: MESH_DEVICE
                 value: N300
+              - name: MODEL_RUNNER
+                value: vllmforge_qwen_embedding
               - name: VLLM__MAX_MODEL_LENGTH
                 value: '1024'
               - name: VLLM__MAX_NUM_BATCHED_TOKENS
@@ -6862,6 +6866,8 @@ models:
                 value: '1'
               - name: MESH_DEVICE
                 value: T3K
+              - name: MODEL_RUNNER
+                value: vllmforge_qwen_embedding
               - name: VLLM__MAX_MODEL_LENGTH
                 value: '1024'
               - name: VLLM__MAX_NUM_BATCHED_TOKENS
@@ -6898,6 +6904,8 @@ models:
                 value: '1'
               - name: MESH_DEVICE
                 value: TG
+              - name: MODEL_RUNNER
+                value: vllmforge_qwen_embedding
               - name: VLLM__MAX_MODEL_LENGTH
                 value: '1024'
               - name: VLLM__MAX_NUM_BATCHED_TOKENS
@@ -6928,18 +6936,66 @@ models:
                 value: blackhole
               - name: DEFAULT_THROTTLE_LEVEL
                 value: '0'
+              - name: ENABLE_DATA_PARALLEL
+                value: 'true'
               - name: MAX_BATCH_SIZE
-                value: '1'
+                value: '256'
               - name: MESH_DEVICE
                 value: BH-Galaxy
+              - name: MODEL_RUNNER
+                value: vllmforge_qwen_embedding
               - name: TT_METAL_INSPECTOR_RPC
                 value: '0'
+              - name: USE_DYNAMIC_BATCHER
+                value: 'false'
               - name: VLLM__MAX_MODEL_LENGTH
                 value: '128'
               - name: VLLM__MAX_NUM_BATCHED_TOKENS
-                value: '128'
+                value: '32768'
               - name: VLLM__MAX_NUM_SEQS
-                value: '1'
+                value: '256'
+              - name: VLLM__MIN_CONTEXT_LENGTH
+                value: '32'
+      p300x2:
+        defaultImpl: forge_vllm_plugin
+        impls:
+          forge_vllm_plugin:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge
+              tag: a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673
+            probes:
+              liveness:
+                initialDelaySeconds: 2400
+                path: /tt-liveness
+              readiness:
+                initialDelaySeconds: 2400
+            resources:
+              requests:
+                memory: 6Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: DEFAULT_THROTTLE_LEVEL
+                value: '0'
+              - name: ENABLE_DATA_PARALLEL
+                value: 'true'
+              - name: MAX_BATCH_SIZE
+                value: '32'
+              - name: MESH_DEVICE
+                value: P300x2
+              - name: MODEL_RUNNER
+                value: vllmforge_qwen_embedding
+              - name: TT_METAL_INSPECTOR_RPC
+                value: '0'
+              - name: USE_DYNAMIC_BATCHER
+                value: 'false'
+              - name: VLLM__MAX_MODEL_LENGTH
+                value: '128'
+              - name: VLLM__MAX_NUM_BATCHED_TOKENS
+                value: '4096'
+              - name: VLLM__MAX_NUM_SEQS
+                value: '32'
               - name: VLLM__MIN_CONTEXT_LENGTH
                 value: '32'
     defaultEngine: forge
@@ -7767,18 +7823,66 @@ models:
                 value: blackhole
               - name: DEFAULT_THROTTLE_LEVEL
                 value: '0'
+              - name: ENABLE_DATA_PARALLEL
+                value: 'true'
               - name: MAX_BATCH_SIZE
-                value: '1'
+                value: '256'
               - name: MESH_DEVICE
                 value: BH-Galaxy
+              - name: MODEL_RUNNER
+                value: vllmforge_qwen_embedding_0_6b
               - name: TT_METAL_INSPECTOR_RPC
                 value: '0'
+              - name: USE_DYNAMIC_BATCHER
+                value: 'false'
               - name: VLLM__MAX_MODEL_LENGTH
                 value: '128'
               - name: VLLM__MAX_NUM_BATCHED_TOKENS
-                value: '128'
+                value: '32768'
               - name: VLLM__MAX_NUM_SEQS
-                value: '1'
+                value: '256'
+              - name: VLLM__MIN_CONTEXT_LENGTH
+                value: '32'
+      p300x2:
+        defaultImpl: forge_vllm_plugin
+        impls:
+          forge_vllm_plugin:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge
+              tag: a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673
+            probes:
+              liveness:
+                initialDelaySeconds: 2400
+                path: /tt-liveness
+              readiness:
+                initialDelaySeconds: 2400
+            resources:
+              requests:
+                memory: 6Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: DEFAULT_THROTTLE_LEVEL
+                value: '0'
+              - name: ENABLE_DATA_PARALLEL
+                value: 'true'
+              - name: MAX_BATCH_SIZE
+                value: '32'
+              - name: MESH_DEVICE
+                value: P300x2
+              - name: MODEL_RUNNER
+                value: vllmforge_qwen_embedding_0_6b
+              - name: TT_METAL_INSPECTOR_RPC
+                value: '0'
+              - name: USE_DYNAMIC_BATCHER
+                value: 'false'
+              - name: VLLM__MAX_MODEL_LENGTH
+                value: '128'
+              - name: VLLM__MAX_NUM_BATCHED_TOKENS
+                value: '4096'
+              - name: VLLM__MAX_NUM_SEQS
+                value: '32'
               - name: VLLM__MIN_CONTEXT_LENGTH
                 value: '32'
     defaultEngine: forge
@@ -7806,20 +7910,66 @@ models:
                 value: blackhole
               - name: DEFAULT_THROTTLE_LEVEL
                 value: '0'
+              - name: ENABLE_DATA_PARALLEL
+                value: 'true'
               - name: MAX_BATCH_SIZE
-                value: '1'
+                value: '256'
               - name: MESH_DEVICE
                 value: BH-Galaxy
               - name: MODEL_RUNNER
                 value: vllmforge_bge_m3
               - name: TT_METAL_INSPECTOR_RPC
                 value: '0'
+              - name: USE_DYNAMIC_BATCHER
+                value: 'false'
               - name: VLLM__MAX_MODEL_LENGTH
                 value: '512'
               - name: VLLM__MAX_NUM_BATCHED_TOKENS
-                value: '512'
+                value: '131072'
               - name: VLLM__MAX_NUM_SEQS
-                value: '1'
+                value: '256'
+              - name: VLLM__MIN_CONTEXT_LENGTH
+                value: '32'
+      p300x2:
+        defaultImpl: forge_vllm_plugin
+        impls:
+          forge_vllm_plugin:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge
+              tag: a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673
+            probes:
+              liveness:
+                initialDelaySeconds: 2400
+                path: /tt-liveness
+              readiness:
+                initialDelaySeconds: 2400
+            resources:
+              requests:
+                memory: 6Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: DEFAULT_THROTTLE_LEVEL
+                value: '0'
+              - name: ENABLE_DATA_PARALLEL
+                value: 'true'
+              - name: MAX_BATCH_SIZE
+                value: '32'
+              - name: MESH_DEVICE
+                value: P300x2
+              - name: MODEL_RUNNER
+                value: vllmforge_bge_m3
+              - name: TT_METAL_INSPECTOR_RPC
+                value: '0'
+              - name: USE_DYNAMIC_BATCHER
+                value: 'false'
+              - name: VLLM__MAX_MODEL_LENGTH
+                value: '128'
+              - name: VLLM__MAX_NUM_BATCHED_TOKENS
+                value: '4096'
+              - name: VLLM__MAX_NUM_SEQS
+                value: '32'
               - name: VLLM__MIN_CONTEXT_LENGTH
                 value: '32'
     defaultEngine: forge

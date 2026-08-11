@@ -386,6 +386,9 @@ class DeviceModelSpec:
     # num_calls = num_batches * max_concurrency.
     # Uniform default of 3 across all image models; override per model in the YAML spec
     image_benchmark_num_batches: int = 3
+    # Workers required for a full-board health check. Defaults to max_concurrency,
+    # which holds only when each worker owns one chip.
+    expected_ready_workers: Optional[int] = None
 
     def __post_init__(self):
         self.validate_data()
@@ -1036,6 +1039,7 @@ class ModelSpecTemplate:
                     system_requirements=device_model_spec.system_requirements,
                     known_issues=device_model_spec.known_issues,
                     eval_max_retries=device_model_spec.eval_max_retries,
+                    expected_ready_workers=device_model_spec.expected_ready_workers,
                 )
                 spec = ModelSpec(
                     # Core identity

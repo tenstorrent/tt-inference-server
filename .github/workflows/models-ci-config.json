@@ -346,7 +346,7 @@
       "ci": {
         "weekly": {
           "devices": [
-            "BH_GALAXY",
+            "P300X2",
             "N150"
           ]
         }
@@ -357,7 +357,7 @@
       "ci": {
         "nightly": {
           "devices": [
-            "BH_GALAXY"
+            "P300X2"
           ]
         }
       }
@@ -393,7 +393,7 @@
           "ci": {
             "nightly": {
               "devices": [
-                "BH_GALAXY"
+                "P300X2"
               ]
             }
           }
