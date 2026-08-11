@@ -31,8 +31,14 @@ class BaseDeviceRunner(ABC):
             if not cpu_threads:
                 # Dynamic batcher is used for LLM workloads where VLLM performs better with higher thread counts
                 cpu_threads = "16" if self.settings.use_dynamic_batcher else "2"
+                # Override for runners that dispatch on the host but cannot use
+                # the dynamic batcher.
+                cpu_threads = os.getenv("RUNNER_CPU_THREADS") or cpu_threads
             if not num_torch_threads:
                 num_torch_threads = 16 if self.settings.use_dynamic_batcher else 1
+                num_torch_threads = int(
+                    os.getenv("RUNNER_TORCH_THREADS") or num_torch_threads
+                )
             setup_runner_environment(device_id, cpu_threads, num_torch_threads)
 
         hf_home = os.getenv("HF_HOME")

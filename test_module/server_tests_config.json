@@ -342,17 +342,29 @@
                 "galaxy"
             ]
         },
+        "bge_m3": {
+            "id_name": "bge-m3",
+            "weights": [
+                "bge-m3"
+            ],
+            "category": "EMBEDDING",
+            "compatible_devices": [
+                "blackhole_galaxy"
+            ]
+        },
         "qwen3_emb": {
             "id_name": "qwen3-emb-8b",
             "weights": [
                 "Qwen3-Embedding-8B",
-                "Qwen3-Embedding-4B"
+                "Qwen3-Embedding-4B",
+                "Qwen3-Embedding-0.6B"
             ],
             "category": "EMBEDDING",
             "compatible_devices": [
                 "n150",
                 "t3k",
-                "galaxy"
+                "galaxy",
+                "blackhole_galaxy"
             ]
         },
         "speecht5": {

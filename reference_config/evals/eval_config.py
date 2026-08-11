@@ -3961,6 +3961,11 @@ _eval_config_list = [
                 include_path="work_dir",
                 max_concurrent=None,
                 apply_chat_template=False,
+                # Fractions, not counts: the MTEB runner subsets each split.
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.10,
+                    EvalLimitMode.SMOKE_TEST: 0.05,
+                },
                 score=EvalTaskScore(
                     published_score="",
                     published_score_ref="",
@@ -3980,6 +3985,11 @@ _eval_config_list = [
                 include_path="work_dir",
                 max_concurrent=None,
                 apply_chat_template=False,
+                # Fractions, not counts: the MTEB runner subsets each split.
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.10,
+                    EvalLimitMode.SMOKE_TEST: 0.05,
+                },
                 score=EvalTaskScore(
                     published_score=70.58,
                     published_score_ref="https://huggingface.co/Qwen/Qwen3-Embedding-8B",
@@ -3997,6 +4007,11 @@ _eval_config_list = [
                 include_path="work_dir",
                 max_concurrent=None,
                 apply_chat_template=False,
+                # Fractions, not counts: the MTEB runner subsets each split.
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.10,
+                    EvalLimitMode.SMOKE_TEST: 0.05,
+                },
                 score=EvalTaskScore(
                     published_score=85.2,
                     published_score_ref="https://huggingface.co/Qwen/Qwen3-Embedding-4B",
@@ -4014,6 +4029,11 @@ _eval_config_list = [
                 include_path="work_dir",
                 max_concurrent=None,
                 apply_chat_template=False,
+                # Fractions, not counts: the MTEB runner subsets each split.
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.10,
+                    EvalLimitMode.SMOKE_TEST: 0.05,
+                },
                 score=EvalTaskScore(
                     published_score=64.33,
                     published_score_ref="https://huggingface.co/Qwen/Qwen3-Embedding-0.6B",

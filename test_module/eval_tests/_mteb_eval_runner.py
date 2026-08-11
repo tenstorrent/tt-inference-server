@@ -106,6 +106,7 @@ class MtebEvalConfig:
     dimensions: int
     api_key: str
     tasks: list[str]
+    limit_fraction: float | None = None
 
     @classmethod
     def from_argv(cls, argv: list[str] | None = None) -> "MtebEvalConfig":
@@ -116,6 +117,17 @@ class MtebEvalConfig:
         ap.add_argument("--dimensions", type=int, required=True)
         ap.add_argument("--api-key", required=True)
         ap.add_argument("--tasks", nargs="+", required=True)
+        ap.add_argument(
+            "--limit-fraction",
+            type=float,
+            default=None,
+            help=(
+                "Fraction of each task split to evaluate (0 < f <= 1). MTEB has "
+                "no --limit of its own, and STS12's test split alone is 3108 "
+                "pairs sent one request at a time, so a full run does not fit a "
+                "CI job. Omit for the full dataset."
+            ),
+        )
         args = ap.parse_args(argv)
         return cls(
             base_url=args.base_url,
@@ -124,6 +136,7 @@ class MtebEvalConfig:
             dimensions=args.dimensions,
             api_key=args.api_key,
             tasks=args.tasks,
+            limit_fraction=args.limit_fraction,
         )
 
 
@@ -157,10 +170,41 @@ class MtebEvalRunner:
             client=client,
         )
 
+    @staticmethod
+    def _downsample(tasks, fraction: float) -> None:
+        """Truncate each task split in place to ``fraction`` of its rows.
+
+        MTEB exposes no sample limit, so subset the loaded HF DatasetDict
+        directly. Deterministic head-slice rather than a random sample so runs
+        are comparable to each other; scores are therefore not comparable to a
+        published full-dataset number.
+        """
+        for task in tasks:
+            task.load_data()
+            dataset = task.dataset
+            splits = dataset.keys() if hasattr(dataset, "keys") else []
+            for split in list(splits):
+                total = len(dataset[split])
+                keep = max(1, int(total * fraction))
+                if keep < total:
+                    dataset[split] = dataset[split].select(range(keep))
+                print(
+                    f"[mteb-limit] {task.metadata.name}/{split}: {keep}/{total} "
+                    f"rows ({fraction:.0%})",
+                    file=sys.stderr,
+                    flush=True,
+                )
+
     def run(self) -> dict:
         """Execute the evaluation and return the parsed metric scores."""
         model = self._build_model()
         tasks = mteb.get_tasks(tasks=self.config.tasks)
+        if self.config.limit_fraction is not None:
+            if not 0 < self.config.limit_fraction <= 1:
+                raise ValueError(
+                    f"--limit-fraction must be in (0, 1], got {self.config.limit_fraction}"
+                )
+            self._downsample(tasks, self.config.limit_fraction)
         results = mteb.evaluate(
             model,
             tasks=tasks,
