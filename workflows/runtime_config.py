@@ -107,6 +107,9 @@ class RuntimeConfig:
     host_volume: Optional[str] = None
     host_hf_cache: Optional[str] = None
     host_weights_dir: Optional[str] = None
+    # --custom-weights: label giving custom weights a distinct identity derived
+    # from the base --model spec. See run.py / model_spec.derive_custom_weights_spec.
+    custom_weights: Optional[str] = None
     image_user: str = "1000"
 
     # Validation
@@ -201,6 +204,7 @@ class RuntimeConfig:
             host_volume=args.host_volume,
             host_hf_cache=args.host_hf_cache,
             host_weights_dir=args.host_weights_dir,
+            custom_weights=getattr(args, "custom_weights", None),
             image_user=args.image_user,
             skip_system_sw_validation=args.skip_system_sw_validation,
             ci_mode=args.ci_mode,

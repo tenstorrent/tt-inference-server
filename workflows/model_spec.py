@@ -8,7 +8,7 @@ import json
 import os
 import re
 import yaml
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Union
 
@@ -1351,3 +1351,54 @@ def get_runtime_model_spec(
 
     model_spec = MODEL_SPECS[selected_spec.model_id]
     return model_spec, resolved_impl, resolved_engine
+
+
+def derive_custom_weights_spec(base_spec: ModelSpec, custom_weights: str) -> ModelSpec:
+    """Derive a ModelSpec for custom weights from an already-resolved base spec.
+
+    Separates *identity* from *source of bytes*. The returned spec copies the
+    base's impl / device configs / inference engine / env_vars / metadata /
+    docker image, but takes its identity from ``custom_weights``:
+
+    - ``model_name`` becomes ``Path(custom_weights).name`` (via
+      ``model_weights_to_model_name``),
+    - ``hf_model_repo`` and ``hf_weights_repo`` become ``custom_weights``,
+    - ``model_id`` is regenerated from the new model_name.
+
+    Because every persistent path keys off ``model_name`` (the
+    ``volume_id_<impl>-<model_name>`` docker volume, the
+    ``cache_{model_name}`` tt-metal cache subtree, the ``weights/<model_name>``
+    download dir), the derived spec automatically lands in its own subtree and
+    never collides with the base model.
+
+    ``custom_weights`` is a label: it must be a valid HF repo id when weights are
+    downloaded from the Hub, but may be any name when paired with
+    ``--host-weights-dir`` (bytes come from local disk and the label is only an
+    identity/cache key).
+    """
+    if not custom_weights or not custom_weights.strip():
+        raise ValueError("custom_weights must be a non-empty string")
+
+    custom_weights = custom_weights.strip()
+    model_name = model_weights_to_model_name(custom_weights)
+    model_id = get_model_id(
+        base_spec.impl.impl_name, model_name, base_spec.device_type.name.lower()
+    )
+
+    # ModelSpec.__post_init__ bakes vllm_args["model"] = hf_model_repo into the
+    # (shared) device_model_spec. Rebuild it so the served model name reflects
+    # the custom identity rather than the base repo.
+    new_vllm_args = dict(base_spec.device_model_spec.vllm_args)
+    new_vllm_args["model"] = custom_weights
+    new_device_model_spec = replace(
+        base_spec.device_model_spec, vllm_args=new_vllm_args
+    )
+
+    return replace(
+        base_spec,
+        model_id=model_id,
+        model_name=model_name,
+        hf_model_repo=custom_weights,
+        hf_weights_repo=custom_weights,
+        device_model_spec=new_device_model_spec,
+    )
