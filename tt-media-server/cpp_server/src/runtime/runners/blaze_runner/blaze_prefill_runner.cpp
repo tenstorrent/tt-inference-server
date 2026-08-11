@@ -18,6 +18,7 @@
 #include "runtime/runners/blaze_runner/blaze_utils.hpp"
 #include "runtime/worker/single_process_worker_metrics.hpp"
 #include "services/memory_services/memory_manager.hpp"
+#include "utils/crash_handler.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::runners::blaze {
@@ -44,9 +45,18 @@ BlazePrefillRunner::BlazePrefillRunner(
                       ? std::move(injectedMemoryManager)
                       : std::make_unique<tt::services::MemoryManager>();
   TT_LOG_INFO("BlazePrefillRunner: Constructor complete");
+
+  // Dump scheduler state if the worker dies via std::terminate. Runs on the
+  // terminate path only (not async-signal-safe — see utils/crash_handler.hpp);
+  // the rendering mirrors checkOutputHang().
+  tt::utils::setCrashStateDumpCallback(this, [](void* ctx, std::ostream& os) {
+    auto* self = static_cast<BlazePrefillRunner*>(ctx);
+    self->prefillScheduler->dump_diagnostics(os);
+  });
 }
 
 BlazePrefillRunner::~BlazePrefillRunner() {
+  tt::utils::clearCrashStateDumpCallback(this);
   stop();
   shutdownScheduler();
 }
@@ -634,6 +644,11 @@ void BlazePrefillRunner::handleSchedulerOutput(
   }
   auto taskId = slotContext.taskId.value();
   if (output.ctx_exhausted) {
+    TT_LOG_WARN(
+        "[BlazePrefillRunner] handleSchedulerOutput: ctx_exhausted for "
+        "taskId={}, slotId={} (real_pos={}, token_id={}) — failing the "
+        "request (FLAG_ERROR)",
+        taskId, output.slot_id, output.real_pos, output.token_id);
     slotManager.setSlotAsIdle(output.slot_id);
     tt::worker::SingleProcessWorkerMetrics::instance()
         .decrementActiveRequests();
@@ -730,10 +745,10 @@ void BlazePrefillRunner::handleTask(
           req.migration_uuid.has_value() ? std::to_string(*req.migration_uuid)
                                          : "none");
       if (!prefillScheduler->push_request(req)) {
-        TT_LOG_DEBUG(
-            "[BlazePrefillRunner] handleRequest: failed to push request, "
-            "taskId={}, "
-            "slotId={}",
+        TT_LOG_WARN(
+            "[BlazePrefillRunner] handleRequest: scheduler request queue "
+            "full — deferring SUBMIT taskId={}, slotId={} (retried next "
+            "step)",
             task->taskId, slotId);
         pendingRequests.pendingTask = std::move(task);
         return;

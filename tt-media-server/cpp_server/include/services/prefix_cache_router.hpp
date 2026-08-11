@@ -3,9 +3,12 @@
 
 #pragma once
 
+#include <chrono>
 #include <cstdint>
+#include <deque>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <span>
 #include <string>
@@ -139,6 +142,19 @@ class PrefixCacheRouter {
                        const std::string& responseId);
 
   /**
+   * Diagnostics tombstone: record that a session holding `keyHash` was
+   * evicted under capacity pressure, so a later prefix-cache MISS can report
+   * "evicted" vs "never existed" (decode/prefill session-state divergence).
+   */
+  void noteSessionEvicted(uint64_t keyHash);
+
+  /**
+   * Seconds since a session with this keyHash was last evicted, or nullopt if
+   * no recent eviction is recorded for it.
+   */
+  std::optional<double> secondsSinceEviction(uint64_t keyHash) const;
+
+  /**
    * Unified slot acquisition - the main entry point for prefix cache routing.
    *
    * Internally handles all routing layers:
@@ -162,6 +178,13 @@ class PrefixCacheRouter {
   PrefixCacheRouterCallbacks callbacks;
   domain::prefix_cache::PrefixIndex prefixIndex;
   domain::prefix_cache::ResponseIdIndex responseIdIndex;
+
+  // Bounded ring of (keyHash, eviction time) for the divergence diagnostic
+  // above. 512 entries cover many eviction waves; oldest are dropped.
+  static constexpr size_t kMaxEvictionTombstones = 512;
+  mutable std::mutex evictionTombstoneMutex;
+  std::deque<std::pair<uint64_t, std::chrono::steady_clock::time_point>>
+      evictionTombstones;
 };
 
 }  // namespace tt::services

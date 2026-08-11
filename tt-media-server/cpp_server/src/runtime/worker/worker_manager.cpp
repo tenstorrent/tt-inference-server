@@ -4,6 +4,7 @@
 #include "runtime/worker/worker_manager.hpp"
 
 #include <sys/prctl.h>
+#include <sys/resource.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -33,6 +34,17 @@ namespace {
   // do not become orphaned under PID 1 if the main process crashes.  This
   // survives execv, so it only needs to be set once here in the child.
   prctl(PR_SET_PDEATHSIG, SIGTERM);
+
+  // Let the worker dump core on fatal signals (best-effort; the limit is
+  // inherited across execv). NOTE: the host must also point kernel.core_pattern
+  // at a persistent path (e.g. /data/cores/core.%e.%p) for the core to land
+  // somewhere durable — that part is host-side setup, out of scope here.
+  {
+    struct rlimit coreLimit {RLIM_INFINITY, RLIM_INFINITY};
+    if (setrlimit(RLIMIT_CORE, &coreLimit) != 0) {
+      perror("setrlimit RLIMIT_CORE");
+    }
+  }
 
   for (const auto& [key, value] : envVars) {
     setenv(key.c_str(), value.c_str(), 1);

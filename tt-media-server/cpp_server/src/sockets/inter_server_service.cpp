@@ -310,14 +310,38 @@ void InterServerService::setupMessageHandlers() {
         });
 
     socketManager.registerHandler<PrefillRegistrationMessage>(
-        tags::PREFILL_REGISTRATION, [](const PrefillRegistrationMessage&) {});
+        tags::PREFILL_REGISTRATION,
+        [this](const PrefillRegistrationMessage& message) {
+          // Runs on the SocketManager message thread (handler context).
+          if (seenPrefillServerIds.insert(message.serverId).second) {
+            if (seenPrefillServerIds.size() == 1) {
+              TT_LOG_INFO(
+                  "[InterServerService] Prefill registered: serverId={} "
+                  "maxInFlight={}",
+                  message.serverId, message.maxInFlight);
+            } else {
+              TT_LOG_WARN(
+                  "[InterServerService] MULTIPLE distinct prefill "
+                  "registrations seen (new serverId={} maxInFlight={}, "
+                  "distinct={}) — a second/stale prefill container is "
+                  "connected; this ROUTER routes requests only to the most "
+                  "recent sender.",
+                  message.serverId, message.maxInFlight,
+                  seenPrefillServerIds.size());
+            }
+          }
+        });
 
     socketManager.registerHandler<PrefillResultMessage>(
         tags::PREFILL_RESULT, [this](const PrefillResultMessage& message) {
           if (message.error) {
             TT_LOG_ERROR(
-                "[InterServerService] Received prefill error for task: {}",
-                message.taskId);
+                "[InterServerService] Received prefill error for task: {} "
+                "(reason: '{}', slotId: {}, sessionId: '{}', migrationId: {})",
+                message.taskId, message.generatedText,
+                message.slotId.has_value() ? std::to_string(*message.slotId)
+                                           : "none",
+                message.sessionId, message.migrationId);
           } else {
             TT_LOG_INFO(
                 "[InterServerService] Received prefill result: {} - text: "

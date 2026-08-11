@@ -99,6 +99,11 @@ class ZmqSocketTransport : public ISocketTransport,
   std::vector<uint8_t>
       peerId;  // ROUTER stores the connected DEALER's identity.
   std::atomic<bool> routerPeerReady{false};
+  // ROUTER-side multi-peer detection: set once frames from two DISTINCT peer
+  // identities have been observed. ROUTER sends go only to the most recent
+  // sender, so a second (e.g. stale) DEALER silently hijacks traffic.
+  bool routerMultiPeerWarned{false};
+  uint64_t routerPeerSwitches{0};
 
   ZmqSendQueue<SendRequest> sendQueue;
 

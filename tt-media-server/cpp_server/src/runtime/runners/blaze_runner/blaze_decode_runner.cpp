@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
+#include <sstream>
 #include <string>
 #include <utility>
 
@@ -18,6 +19,7 @@
 #include "runtime/worker/single_process_worker_metrics.hpp"
 #include "services/memory_services/memory_manager.hpp"
 #include "tt_llm_engine/scheduler/scheduler_types.hpp"
+#include "utils/crash_handler.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::runners::blaze {
@@ -44,9 +46,20 @@ BlazeDecodeRunner::BlazeDecodeRunner(
                       ? std::move(injectedMemoryManager)
                       : std::make_unique<tt::services::MemoryManager>();
   TT_LOG_INFO("BlazeDecodeRunner: Constructor complete");
+
+  // Dump scheduler + per-slot state if the worker dies via std::terminate.
+  // Runs on the terminate path only (not async-signal-safe — see
+  // utils/crash_handler.hpp); the rendering mirrors checkOutputHang().
+  tt::utils::setCrashStateDumpCallback(this, [](void* ctx, std::ostream& os) {
+    auto* self = static_cast<BlazeDecodeRunner*>(ctx);
+    std::stringstream ss;
+    self->decodeScheduler->dump_diagnostics(ss);
+    os << self->slotManager.dumpSlotStates(ss.str());
+  });
 }
 
 BlazeDecodeRunner::~BlazeDecodeRunner() {
+  tt::utils::clearCrashStateDumpCallback(this);
   stop();
   shutdownScheduler();
 }
@@ -632,10 +645,11 @@ void BlazeDecodeRunner::handleSchedulerOutput(const ds::OutputMessage& output) {
   slotContext.lastProgressTime = std::chrono::steady_clock::now();
   auto taskId = slotContext.taskId.value();
   if (output.ctx_exhausted) {
-    TT_LOG_INFO(
+    TT_LOG_WARN(
         "[BlazeDecodeRunner] handleSchedulerOutput: ctx_exhausted for "
-        "slotId={}",
-        output.slot_id);
+        "taskId={}, slotId={} (position={}) — failing the request "
+        "(FLAG_ERROR)",
+        taskId, output.slot_id, output.position_id);
     slotManager.setSlotAsIdle(output.slot_id);
     metrics.decrementActiveRequests();
     ipc::helpers::pushToken(
@@ -751,11 +765,10 @@ void BlazeDecodeRunner::handleTask(
         slotContext.currentPosition = *task->getKVPositionId();
       }
       if (!decodeScheduler->push_request(req)) {
-        TT_LOG_DEBUG(
-            "[BlazeDecodeRunner] handleRequest: failed to push request, "
-            "taskId={}, "
-            "slotId={}",
-            task->taskId, slotId);
+        TT_LOG_WARN(
+            "[BlazeDecodeRunner] handleRequest: scheduler request queue "
+            "full — deferring {} taskId={}, slotId={} (retried next step)",
+            isNew ? "SUBMIT" : "CONTINUE", task->taskId, slotId);
         pendingRequests.pendingTask = std::move(task);
         return;
       }

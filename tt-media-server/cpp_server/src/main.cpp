@@ -34,6 +34,7 @@
 #include "services/llm_pipeline.hpp"
 #include "services/llm_service.hpp"
 #include "services/service_container.hpp"
+#include "utils/crash_handler.hpp"
 #include "utils/logger.hpp"
 #include "utils/service_factory.hpp"
 
@@ -89,6 +90,11 @@ tt::worker::MetricsLayout metricsLayoutFromConfig() {
 }
 
 void startWorker(int workerId) {
+  // First thing in the exec'd worker: crash handlers + unbuffered stderr, so
+  // a fatal signal or std::terminate self-reports (reason + backtrace + any
+  // registered scheduler dump) to fd 2 instead of dying silently.
+  tt::utils::installCrashHandlers(tt::config::logInstanceTag(workerId));
+
   tracy_config::tracyStartupWorker(workerId);
   tt::utils::ZeroOverheadLogger::initialize(
       tt::config::logInstanceTag(workerId));
@@ -121,6 +127,10 @@ void startWorker(int workerId) {
 }  // namespace
 
 int main(int argc, char* argv[]) {
+  // Main-process crash handlers so a main-thread abort/segfault also
+  // self-reports; the --worker branch re-installs with the per-worker tag.
+  tt::utils::installCrashHandlers(tt::config::logInstanceTag());
+
   if (argc >= 3 && std::strcmp(argv[1], "--worker") == 0) {
     int workerId = std::atoi(argv[2]);
     startWorker(workerId);

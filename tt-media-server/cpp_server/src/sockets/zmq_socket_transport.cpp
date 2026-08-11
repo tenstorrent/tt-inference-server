@@ -3,6 +3,7 @@
 
 #include "sockets/zmq_socket_transport.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <cstring>
@@ -386,8 +387,30 @@ std::vector<uint8_t> ZmqSocketTransport::receiveAsRouter() {
   auto idResult = socket->recv(identity, zmq::recv_flags::dontwait);
   if (!idResult.has_value()) return {};
 
-  peerId.assign(static_cast<uint8_t*>(identity.data()),
-                static_cast<uint8_t*>(identity.data()) + identity.size());
+  const auto* idBegin = static_cast<uint8_t*>(identity.data());
+  const auto* idEnd = idBegin + identity.size();
+  if (routerPeerReady.load() &&
+      !std::equal(peerId.begin(), peerId.end(), idBegin, idEnd)) {
+    // A different DEALER identity than the one we currently route to: either
+    // the prefill reconnected (fine) or a SECOND prefill is connected (silent
+    // traffic hijack — sends go only to the most recent sender).
+    ++routerPeerSwitches;
+    if (!routerMultiPeerWarned) {
+      routerMultiPeerWarned = true;
+      TT_LOG_WARN(
+          "[ZmqSocketTransport] ROUTER peer identity changed (old len={}, "
+          "new len={}) — more than one prefill DEALER has sent frames; "
+          "outbound requests route only to the most recent sender. Check for "
+          "stale/duplicate prefill containers.",
+          peerId.size(), identity.size());
+    } else {
+      TT_LOG_DEBUG(
+          "[ZmqSocketTransport] ROUTER peer identity changed again "
+          "(switches={})",
+          routerPeerSwitches);
+    }
+  }
+  peerId.assign(idBegin, idEnd);
   routerPeerReady = true;
 
   if (!identity.more()) return {};

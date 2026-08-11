@@ -5,11 +5,14 @@
 
 #include <trantor/net/EventLoopThread.h>
 
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "config/types.hpp"
@@ -138,6 +141,21 @@ class DisaggregationService {
       PrefillFirstPending pending,
       const tt::sockets::SlotReservationResponseMessage& result);
 
+  // Decode-side watchdog bookkeeping: tracks prefill requests sent over the
+  // inter-server socket so a periodic sweep can log the ones that never got a
+  // result (distinguishes "never arrived / result lost" from "rejected").
+  struct PendingPrefillTrack {
+    std::mutex mutex;
+    std::unordered_map<uint32_t,
+                       std::pair<std::chrono::steady_clock::time_point /*sentAt*/,
+                                 std::chrono::steady_clock::time_point /*lastWarn*/>>
+        entries;
+  };
+  void notePrefillRequestSent(uint32_t taskId);
+  void notePrefillResult(uint32_t taskId);
+  void clearPendingPrefillTrack();
+  void startPrefillWatchdog();
+
   tt::config::LLMMode mode;
   std::shared_ptr<LLMService> llmService;
   std::shared_ptr<sockets::InterServerService> socketService;
@@ -145,6 +163,10 @@ class DisaggregationService {
   trantor::EventLoopThread eventLoopThread;
   utils::ConcurrentMap<uint32_t, StreamCallback> streamCallbacks;
   utils::ConcurrentMap<uint32_t, PrefillFirstPending> pendingSlotReservations;
+  // shared_ptr so the watchdog timer (scheduled on eventLoopThread) never
+  // dereferences a destroyed service member during teardown.
+  std::shared_ptr<PendingPrefillTrack> pendingPrefillTrack =
+      std::make_shared<PendingPrefillTrack>();
 
   std::unique_ptr<tt::dynamo::EtcdClient> etcdClient;
 };

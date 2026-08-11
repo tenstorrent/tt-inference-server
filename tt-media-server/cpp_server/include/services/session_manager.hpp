@@ -124,6 +124,13 @@ class SessionManager {
       std::function<void()> cancelFn);
 
   /**
+   * Diagnostics: seconds since a session holding `keyHash` was last evicted
+   * under capacity pressure, or nullopt if none recorded. Lets a prefix-cache
+   * MISS report "evicted" vs "never existed".
+   */
+  std::optional<double> prefixEvictedSecondsAgo(uint64_t keyHash) const;
+
+  /**
    * Compute block hashes from prompt tokens.
    * Convenience wrapper around PrefixCacheRouter::computeBlockInfos.
    */

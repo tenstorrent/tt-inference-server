@@ -53,6 +53,13 @@ Json::Value parseJsonOrEmpty(const std::string& text) {
   return root;
 }
 
+// Decode-side watchdog knobs: a prefill request with no result after this long
+// is logged (the decode side otherwise has no timeout and hangs silently).
+constexpr double PREFILL_WATCHDOG_INTERVAL_SECONDS = 30.0;
+constexpr auto PREFILL_RESULT_WARN_AFTER = std::chrono::seconds(120);
+// Re-log at most this often while the same task stays unanswered.
+constexpr auto PREFILL_RESULT_WARN_PERIOD = std::chrono::minutes(5);
+
 }  // namespace
 
 DisaggregationService::DisaggregationService(
@@ -80,6 +87,9 @@ DisaggregationService::DisaggregationService(
     }
   }
   setupSocketHandlers();
+  if (mode == tt::config::LLMMode::DECODE_ONLY) {
+    startPrefillWatchdog();
+  }
 }
 
 void DisaggregationService::setupSocketHandlers() {
@@ -90,6 +100,7 @@ void DisaggregationService::setupSocketHandlers() {
   if (mode == tt::config::LLMMode::DECODE_ONLY) {
     socketService->onPrefillComplete(
         [this](const tt::sockets::PrefillResultMessage& message) {
+          notePrefillResult(message.taskId);
           auto callback = streamCallbacks.get(message.taskId);
           if (!callback.has_value()) {
             TT_LOG_WARN("[DisaggregationService] No callback for task_id: {}",
@@ -101,8 +112,12 @@ void DisaggregationService::setupSocketHandlers() {
           if (message.error) {
             TT_LOG_ERROR(
                 "[DisaggregationService] Prefill error received for task {}, "
-                "propagating error to client",
-                message.taskId);
+                "propagating error to client (reason: '{}', sessionId: '{}', "
+                "slotId: {}, migrationId: {})",
+                message.taskId, message.generatedText, message.sessionId,
+                message.slotId.has_value() ? std::to_string(*message.slotId)
+                                           : "none",
+                message.migrationId);
             const auto reason =
                 tt::sockets::errorReasonFromPrefillResult(message);
             callback.value()(makeErrorChunk(message.taskId,
@@ -160,12 +175,17 @@ void DisaggregationService::setupSocketHandlers() {
         });
 
     socketService->setConnectionLostCallback([this]() {
+      TT_LOG_WARN(
+          "[DisaggregationService] Inter-server connection lost; failing {} "
+          "pending prefill stream(s)",
+          streamCallbacks.size());
       streamCallbacks.forEach(
           [](uint32_t taskId, const StreamCallback& callback) {
             callback(makeErrorChunk(taskId, "connection lost"),
                      /*isFinal=*/true);
           });
       streamCallbacks.clear();
+      clearPendingPrefillTrack();
     });
 
     TT_LOG_INFO(
@@ -295,10 +315,14 @@ void DisaggregationService::handlePrefillRequest(
       request, message.registrationHashes,
       [this, work = std::move(work), message, resultCallback]() mutable {
         const auto requestPtr = work.request;
-        launchPrefillWork(
+        // Capture before submitStreamingRequest moves from the request.
+        const std::string prefillSessionId =
+            requestPtr->sessionId.value_or("");
+        try {
+          launchPrefillWork(
             std::move(work),
             [message, requestPtr, slotId = message.slotId,
-             maxTokens = message.maxTokens,
+             maxTokens = message.maxTokens, prefillSessionId,
              resultCallback](const LLMStreamChunk& response, bool /*isFinal*/) {
               auto prefillResult =
                   tt::sockets::PrefillResultMessage(message.taskId);
@@ -321,6 +345,13 @@ void DisaggregationService::handlePrefillRequest(
                 prefillResult.generatedText =
                     tt::sockets::prefillErrorTextForReason(
                         reason, response.error.value_or("error"));
+                TT_LOG_WARN(
+                    "[DisaggregationService] Prefill taskId={} errored "
+                    "(finish_reason='{}', error='{}', sessionId='{}', "
+                    "slotId={}) — sending error result to decode",
+                    message.taskId, finishReason.value(),
+                    response.error.value_or(""), prefillSessionId,
+                    slotId.has_value() ? std::to_string(*slotId) : "none");
               } else {
                 prefillResult.remainingTokens =
                     maxTokens.has_value()
@@ -339,12 +370,35 @@ void DisaggregationService::handlePrefillRequest(
 
               (*resultCallback)(prefillResult);
             });
+        } catch (const std::exception& e) {
+          // Log-and-rethrow: today this escapes into the SocketManager message
+          // loop ("Message handling error") and NO error result is sent, so
+          // the decode side hangs with no reason logged here.
+          TT_LOG_ERROR(
+              "[DisaggregationService] launchPrefillWork threw for taskId={} "
+              "(sessionId='{}'): {} — no prefill result will be sent",
+              message.taskId, prefillSessionId, e.what());
+          throw;
+        }
       },
-      [message, slotId, resultCallback](std::string_view error) {
+      [this, message, slotId, resultCallback](std::string_view error) {
+        // Distinguish "prefix belonged to a session evicted under pressure"
+        // from "prefix never existed here" — the former indicates
+        // decode/prefill session-state divergence.
+        std::optional<double> evictedAgo;
+        if (sessionManager && !message.registrationHashes.empty()) {
+          evictedAgo =
+              sessionManager->prefixEvictedSecondsAgo(message.registrationHashes.front());
+        }
         TT_LOG_WARN(
             "[DisaggregationService] Session resolution failed for taskId={}: "
-            "{}",
-            message.taskId, error);
+            "{} (hashes={}{})",
+            message.taskId, error, message.registrationHashes.size(),
+            evictedAgo.has_value()
+                ? ", keyHash matches a session evicted " +
+                      std::to_string(static_cast<long long>(*evictedAgo)) +
+                      "s ago"
+                : ", keyHash never seen here");
         auto prefillResult = tt::sockets::PrefillResultMessage(message.taskId);
         prefillResult.slotId = slotId;
         prefillResult.error = true;
@@ -705,10 +759,15 @@ void DisaggregationService::applySlotReservationAndLaunch(
        taskId, fullPromptTokenIds, temperature, topP, topK, fastMode, slotId,
        decodeSessionId]() mutable {
         const auto requestPtr = work.request;
-        launchPrefillWork(
+        // Capture before submitStreamingRequest moves from the request.
+        const std::string prefillSessionId =
+            requestPtr->sessionId.value_or("");
+        try {
+          launchPrefillWork(
             std::move(work),
             [streamCallback, resultCallbackShared, taskId, fullPromptTokenIds,
              temperature, topP, topK, fastMode, slotId, decodeSessionId,
+             prefillSessionId,
              requestPtr](const LLMStreamChunk& response, bool isFinal) {
               if (resultCallbackShared && *resultCallbackShared) {
                 if (!isFinal && !response.choices.empty() &&
@@ -740,6 +799,15 @@ void DisaggregationService::applySlotReservationAndLaunch(
                   prefillResult.generatedText =
                       tt::sockets::prefillErrorTextForReason(
                           reason, response.error.value_or("error"));
+                  TT_LOG_WARN(
+                      "[DisaggregationService] Prefill-first taskId={} "
+                      "errored (finish_reason='{}', error='{}', "
+                      "prefillSessionId='{}', decodeSessionId='{}', "
+                      "slotId={}) — sending error result",
+                      taskId, finishReason.value(),
+                      response.error.value_or(""), prefillSessionId,
+                      decodeSessionId,
+                      slotId.has_value() ? std::to_string(*slotId) : "none");
                 } else {
                   // Dynamo invokes prefill with max_tokens=1 and sends the
                   // real client budget on the decode hop; do not echo the
@@ -757,12 +825,21 @@ void DisaggregationService::applySlotReservationAndLaunch(
                 (*resultCallbackShared)(prefillResult);
                 return;
               }
-              if (streamCallback) {
-                streamCallback(response, isFinal);
-              }
-            });
-      },
-      [taskId, streamCallback, resultCallbackShared](std::string_view error) {
+               if (streamCallback) {
+                 streamCallback(response, isFinal);
+               }
+             });
+        } catch (const std::exception& e) {
+          // Log-and-rethrow (see handlePrefillRequest): without this the task
+          // fails with no reason logged on the prefill side.
+          TT_LOG_ERROR(
+              "[DisaggregationService] launchPrefillWork threw for taskId={} "
+              "(prefillSessionId='{}', decodeSessionId='{}'): {}",
+              taskId, prefillSessionId, decodeSessionId, e.what());
+          throw;
+        }
+       },
+       [taskId, streamCallback, resultCallbackShared](std::string_view error) {
         TT_LOG_WARN(
             "[DisaggregationService] Prefill session resolution failed after "
             "slot reservation taskId={}: {}",
@@ -847,6 +924,20 @@ void DisaggregationService::resolvePrefillSession(
         "[DisaggregationService] Prefill prefix cache MISS taskId={} "
         "hashes={}, creating new session",
         request->task_id, routingHashes.size());
+
+    // Decode/prefill session-state divergence probe: if decode routed this
+    // continuation expecting a cached prefix that we evicted, say so loudly.
+    if (!routingHashes.empty()) {
+      const auto evictedAgo =
+          sessionManager->prefixEvictedSecondsAgo(routingHashes.front());
+      if (evictedAgo.has_value()) {
+        TT_LOG_WARN(
+            "[DisaggregationService] taskId={} prefix MISS matches a session "
+            "evicted {:.1f}s ago (keyHash={}) — decode/prefill session-state "
+            "divergence; falling back to full re-prefill",
+            request->task_id, *evictedAgo, routingHashes.front());
+      }
+    }
 
     // A slot copy still reuses copyMatchedTokens of KV cache, so credit those
     // as hits (0 when no copy happened) rather than always reporting a full
@@ -933,11 +1024,27 @@ void DisaggregationService::handleStreamingRequest(
 
     if (!sent) {
       streamCallbacks.erase(request.task_id);
+      TT_LOG_WARN(
+          "[DisaggregationService] Failed to send prefill request for "
+          "task_id={} (sessionId='{}', socket status: {}) — the prefill "
+          "server never saw this request",
+          request.task_id, request.sessionId.value_or(""),
+          socketService ? socketService->getStatus() : "no socket service");
       throw std::runtime_error(
           "[DisaggregationService] Failed to send prefill request for "
           "task_id: " +
           std::to_string(request.task_id));
     }
+
+    notePrefillRequestSent(request.task_id);
+    TT_LOG_INFO(
+        "[DisaggregationService] Sent prefill request taskId={} "
+        "sessionId='{}' tokens={} slotId={} decodePositionId={} "
+        "decodeSkipTokens={} matchedTokens={}",
+        request.task_id, request.sessionId.value_or(""), tokenIds.size(),
+        slotId.has_value() ? std::to_string(*slotId) : "none",
+        decodePositionId, decodeSkipTokens,
+        request.kv_position_id.value_or(0));
   } else {
     throw std::runtime_error(
         "[DisaggregationService] Server must be in decode only mode to handle "
@@ -947,6 +1054,7 @@ void DisaggregationService::handleStreamingRequest(
 
 void DisaggregationService::abortRequest(uint32_t taskId) {
   if (mode == tt::config::LLMMode::DECODE_ONLY) {
+    notePrefillResult(taskId);  // stop watchdog; the stream ends locally
     auto callback = streamCallbacks.take(taskId);
     if (!callback.has_value()) {
       return;
@@ -1037,6 +1145,49 @@ DisaggregationService::selectDecodePeer(
     }
   }
   return peers.front();
+}
+
+void DisaggregationService::notePrefillRequestSent(uint32_t taskId) {
+  const auto now = std::chrono::steady_clock::now();
+  std::lock_guard lock(pendingPrefillTrack->mutex);
+  pendingPrefillTrack->entries[taskId] = {now, now};
+}
+
+void DisaggregationService::notePrefillResult(uint32_t taskId) {
+  std::lock_guard lock(pendingPrefillTrack->mutex);
+  pendingPrefillTrack->entries.erase(taskId);
+}
+
+void DisaggregationService::clearPendingPrefillTrack() {
+  std::lock_guard lock(pendingPrefillTrack->mutex);
+  pendingPrefillTrack->entries.clear();
+}
+
+void DisaggregationService::startPrefillWatchdog() {
+  // Capture the tracker by value (shared_ptr) so the timer never touches a
+  // destroyed DisaggregationService.
+  auto track = pendingPrefillTrack;
+  eventLoopThread.getLoop()->runEvery(
+      PREFILL_WATCHDOG_INTERVAL_SECONDS, [track]() {
+        const auto now = std::chrono::steady_clock::now();
+        std::lock_guard lock(track->mutex);
+        for (auto& [taskId, times] : track->entries) {
+          const auto& [sentAt, lastWarn] = times;
+          const auto pendingFor = now - sentAt;
+          if (pendingFor < PREFILL_RESULT_WARN_AFTER ||
+              now - lastWarn < PREFILL_RESULT_WARN_PERIOD) {
+            continue;
+          }
+          times.second = now;
+          TT_LOG_WARN(
+              "[DisaggregationService] No prefill result for task {} after "
+              "{}s — the request never reached a prefill server, or its "
+              "result was lost (check gateway/prefill logs for this taskId)",
+              taskId,
+              std::chrono::duration_cast<std::chrono::seconds>(pendingFor)
+                  .count());
+        }
+      });
 }
 
 }  // namespace tt::services

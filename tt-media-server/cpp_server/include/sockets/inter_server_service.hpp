@@ -10,6 +10,7 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <unordered_set>
 #include <vector>
 
 #include "config/types.hpp"
@@ -187,6 +188,11 @@ class InterServerService {
   std::mutex registrationMutex;
   std::condition_variable registrationCv;
   std::jthread registrationThread;
+  // Decode-side: distinct prefill serverIds seen in PREFILL_REGISTRATION
+  // frames. Only touched on the SocketManager message thread (handler
+  // context), so no lock. >1 distinct id means a second (e.g. stale) prefill
+  // container is connected — the ROUTER routes only to the last sender.
+  std::unordered_set<std::string> seenPrefillServerIds;
   mutable std::mutex prefillHealthMutex;
   bool prefillHealthReady = false;
   std::condition_variable prefillHealthCv;

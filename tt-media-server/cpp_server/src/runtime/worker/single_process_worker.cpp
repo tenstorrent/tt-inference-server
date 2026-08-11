@@ -15,69 +15,11 @@
 #include "config/settings.hpp"
 #include "ipc/boost/boost_warmup_signal_queue.hpp"
 #include "profiling/tracy.hpp"
+#include "utils/crash_handler.hpp"
 #include "utils/ipc_runner_factory.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::worker {
-
-namespace {
-
-volatile sig_atomic_t gWorkerId =
-    -1;  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
-
-void fatalSignalHandler(int sig) {
-  const char prefix[] = "[SingleProcessWorker] Worker ";
-  const char mid[] = " killed by signal: ";
-  const char suffix[] = "\n";
-
-  char idBuf[16];
-  int wid = gWorkerId;
-  if (wid < 0) wid = 0;
-  int len = 0;
-  char tmp[16];
-  int n = wid;
-  if (n == 0) {
-    tmp[len++] = '0';
-  } else {
-    while (n > 0) {
-      tmp[len++] = '0' + (n % 10);
-      n /= 10;
-    }
-  }
-  for (int i = 0; i < len; ++i) idBuf[i] = tmp[len - 1 - i];
-
-  const char* sigName = strsignal(sig);
-  if (!sigName) sigName = "unknown";
-
-  if (write(STDERR_FILENO, prefix, sizeof(prefix) - 1) < 0) {
-  }
-  if (write(STDERR_FILENO, idBuf, len) < 0) {
-  }
-  if (write(STDERR_FILENO, mid, sizeof(mid) - 1) < 0) {
-  }
-  if (write(STDERR_FILENO, sigName, strlen(sigName)) < 0) {
-  }
-  if (write(STDERR_FILENO, suffix, sizeof(suffix) - 1) < 0) {
-  }
-
-  signal(sig, SIG_DFL);
-  raise(sig);
-}
-
-void installFatalSignalHandlers() {
-  struct sigaction sa{};
-  sa.sa_handler = fatalSignalHandler;
-  sigemptyset(&sa.sa_mask);
-  sa.sa_flags = SA_RESETHAND;
-
-  sigaction(SIGSEGV, &sa, nullptr);
-  sigaction(SIGABRT, &sa, nullptr);
-  sigaction(SIGBUS, &sa, nullptr);
-  sigaction(SIGFPE, &sa, nullptr);
-  sigaction(SIGILL, &sa, nullptr);
-}
-
-}  // namespace
 
 SingleProcessWorker::SingleProcessWorker(WorkerConfig& cfg)
     : cfg(std::move(cfg)) {
@@ -89,8 +31,11 @@ SingleProcessWorker::SingleProcessWorker(WorkerConfig& cfg)
 SingleProcessWorker::~SingleProcessWorker() = default;
 
 void SingleProcessWorker::start() {
-  gWorkerId = worker_id;
-  installFatalSignalHandlers();
+  // The exec'd worker entrypoint (main.cpp startWorker) already installed the
+  // shared crash handlers before anything else ran; re-install here (same
+  // handlers, same tag) so in-process uses of SingleProcessWorker (unit and
+  // integration tests that never go through main) are covered too.
+  tt::utils::installCrashHandlers(tt::config::logInstanceTag(worker_id));
 
   tracy_config::tracySetThreadName(
       ("Worker-" + std::to_string(cfg.worker_id)).c_str());

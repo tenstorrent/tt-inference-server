@@ -313,6 +313,32 @@ void PrefixCacheRouter::onSessionClosed(const std::string& sessionId,
   responseIdIndex.removeIf(sessionId, responseId);
 }
 
+void PrefixCacheRouter::noteSessionEvicted(uint64_t keyHash) {
+  if (keyHash == 0) {
+    return;
+  }
+  std::lock_guard lock(evictionTombstoneMutex);
+  evictionTombstones.emplace_back(keyHash,
+                                  std::chrono::steady_clock::now());
+  if (evictionTombstones.size() > kMaxEvictionTombstones) {
+    evictionTombstones.pop_front();
+  }
+}
+
+std::optional<double> PrefixCacheRouter::secondsSinceEviction(
+    uint64_t keyHash) const {
+  std::lock_guard lock(evictionTombstoneMutex);
+  for (auto it = evictionTombstones.rbegin(); it != evictionTombstones.rend();
+       ++it) {
+    if (it->first == keyHash) {
+      return std::chrono::duration<double>(std::chrono::steady_clock::now() -
+                                           it->second)
+          .count();
+    }
+  }
+  return std::nullopt;
+}
+
 void PrefixCacheRouter::getSlot(
     std::span<const uint32_t> promptTokenIds, GetSlotOptions opts,
     trantor::EventLoop* eventLoop,

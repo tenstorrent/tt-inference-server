@@ -420,9 +420,10 @@ void SessionManager::evictOldSessions() {
       continue;
     }
     auto& evictedS = *ms;  // shared_ptr taken out of the map
-    TT_LOG_DEBUG(
+    TT_LOG_INFO(
         "[SessionManager] evictOldSessions: evicting sessionId={}, slotId={}",
         sessionId, evictedS->getSlotId());
+    prefixCacheRouter->noteSessionEvicted(evictedS->getHash());
     prefixCacheRouter->onSessionClosed(sessionId, evictedS->getHash(),
                                        evictedS->getResponseId());
     finalizeSessionClose(sessionId, *evictedS);
@@ -672,6 +673,11 @@ SessionManager::tryAcquireByPrefixHash(
     std::function<void()> cancelFn) {
   return prefixCacheRouter->tryAcquireByPrefixHash(blockInfos,
                                                    std::move(cancelFn));
+}
+
+std::optional<double> SessionManager::prefixEvictedSecondsAgo(
+    uint64_t keyHash) const {
+  return prefixCacheRouter->secondsSinceEviction(keyHash);
 }
 
 std::vector<utils::BlockHashInfo> SessionManager::computeBlockInfos(

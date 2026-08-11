@@ -58,6 +58,12 @@ the service name (`image` / `embedding`) otherwise. Forked worker subprocesses
 append `-worker<index>` (e.g. `decode-worker0`) so they stay distinguishable
 from the HTTP node. Controlled by `LLM_MODE`.
 
+Fatal-exit lines bypass spdlog and go straight to fd 2 from the crash handler
+(`src/utils/crash_handler.cpp`, installed by `main()` and by every worker):
+`[<role> pid=N] FATAL signal=N — backtrace:` for fatal signals, and
+`[<role> pid=N] std::terminate: uncaught exception (type=...): ...` plus a
+scheduler state dump for uncaught C++ exceptions.
+
 ## C++ Naming
 
 For new or edited C++ identifiers, prefer camel-style names such as `taskId`,
