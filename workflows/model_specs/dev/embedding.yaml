@@ -174,6 +174,7 @@ templates:
       max_context: 65536  # 64 * 1024
       default_impl: true
       env_vars:
+        MODEL_RUNNER: "vllmforge_qwen_embedding"
         VLLM__MAX_NUM_BATCHED_TOKENS: "1024"
         VLLM__MAX_MODEL_LENGTH: "1024"
         VLLM__MIN_CONTEXT_LENGTH: "32"
@@ -185,6 +186,7 @@ templates:
       max_context: 65536  # 64 * 1024
       default_impl: true
       env_vars:
+        MODEL_RUNNER: "vllmforge_qwen_embedding"
         VLLM__MAX_NUM_BATCHED_TOKENS: "1024"
         VLLM__MAX_MODEL_LENGTH: "1024"
         VLLM__MIN_CONTEXT_LENGTH: "32"
@@ -196,6 +198,7 @@ templates:
       max_context: 65536  # 64 * 1024
       default_impl: true
       env_vars:
+        MODEL_RUNNER: "vllmforge_qwen_embedding"
         VLLM__MAX_NUM_BATCHED_TOKENS: "1024"
         VLLM__MAX_MODEL_LENGTH: "1024"
         VLLM__MIN_CONTEXT_LENGTH: "32"
@@ -207,22 +210,26 @@ templates:
       max_context: 65536  # 64 * 1024
       default_impl: true
       env_vars:
+        MODEL_RUNNER: "vllmforge_qwen_embedding"
         VLLM__MAX_NUM_BATCHED_TOKENS: "1024"
         VLLM__MAX_MODEL_LENGTH: "1024"
         VLLM__MIN_CONTEXT_LENGTH: "32"
         VLLM__MAX_NUM_SEQS: "1"
         MAX_BATCH_SIZE: "1"
         DEFAULT_THROTTLE_LEVEL: "0"
-    - device: BLACKHOLE_GALAXY
-      max_concurrency: 32
+
+    - device: P300X2
+      max_concurrency: 4   # one worker per chip
       max_context: 65536  # 64 * 1024
       default_impl: true
       env_vars:
-        VLLM__MAX_NUM_BATCHED_TOKENS: "128"
+        MODEL_RUNNER: "vllmforge_qwen_embedding"
+        VLLM__MAX_NUM_BATCHED_TOKENS: '1024'
         VLLM__MAX_MODEL_LENGTH: "128"
         VLLM__MIN_CONTEXT_LENGTH: "32"
-        VLLM__MAX_NUM_SEQS: "1"
-        MAX_BATCH_SIZE: "1"
+        VLLM__MAX_NUM_SEQS: '8'
+        MAX_BATCH_SIZE: '8'
+        USE_DYNAMIC_BATCHER: "false"
         DEFAULT_THROTTLE_LEVEL: "0"
         TT_METAL_INSPECTOR_RPC: "0"
 
@@ -234,16 +241,18 @@ templates:
   model_type: EMBEDDING
   inference_engine: FORGE
   device_model_specs:
-    - device: BLACKHOLE_GALAXY
-      max_concurrency: 32
+    - device: P300X2
+      max_concurrency: 4   # one worker per chip
       max_context: 65536  # 64 * 1024
       default_impl: true
       env_vars:
-        VLLM__MAX_NUM_BATCHED_TOKENS: "128"
+        MODEL_RUNNER: "vllmforge_qwen_embedding_0_6b"
+        VLLM__MAX_NUM_BATCHED_TOKENS: '1024'
         VLLM__MAX_MODEL_LENGTH: "128"
         VLLM__MIN_CONTEXT_LENGTH: "32"
-        VLLM__MAX_NUM_SEQS: "1"
-        MAX_BATCH_SIZE: "1"
+        VLLM__MAX_NUM_SEQS: '8'
+        MAX_BATCH_SIZE: '8'
+        USE_DYNAMIC_BATCHER: "false"
         DEFAULT_THROTTLE_LEVEL: "0"
         TT_METAL_INSPECTOR_RPC: "0"
 
@@ -255,16 +264,17 @@ templates:
   model_type: EMBEDDING
   inference_engine: FORGE
   device_model_specs:
-    - device: BLACKHOLE_GALAXY
-      max_concurrency: 32
+    - device: P300X2
+      max_concurrency: 4   # one worker per chip
       max_context: 65536  # 64 * 1024
       default_impl: true
       env_vars:
         MODEL_RUNNER: "vllmforge_bge_m3"
-        VLLM__MAX_NUM_BATCHED_TOKENS: "512"
-        VLLM__MAX_MODEL_LENGTH: "512"
+        VLLM__MAX_NUM_BATCHED_TOKENS: '1024'
+        VLLM__MAX_MODEL_LENGTH: "128"
         VLLM__MIN_CONTEXT_LENGTH: "32"
-        VLLM__MAX_NUM_SEQS: "1"
-        MAX_BATCH_SIZE: "1"
+        VLLM__MAX_NUM_SEQS: '8'
+        MAX_BATCH_SIZE: '8'
+        USE_DYNAMIC_BATCHER: "false"
         DEFAULT_THROTTLE_LEVEL: "0"
         TT_METAL_INSPECTOR_RPC: "0"

@@ -1142,49 +1142,44 @@ ModelConfigs = {
             "max_num_seqs": 1,
         },
     },
-    # ----- BH Galaxy (Blackhole, 32x P150) data-parallel forge embeddings -----
-    # 32 independent single-chip (1,1) workers (DEVICE_IDS_32), model replicated
-    # per chip. Mirrors the production config validated standalone in tt-xla
-    # (b32 aggregate, opt=1, trace, bfp_bf8 weights -- the runner sets those
-    # additional_config knobs).
-    (ModelRunners.VLLMForge_QWEN_EMBEDDING, DeviceTypes.BLACKHOLE_GALAXY): {
+    (ModelRunners.VLLMForge_QWEN_EMBEDDING, DeviceTypes.P300X2): {
         "device_mesh_shape": (1, 1),
-        "is_galaxy": True,
-        "device_ids": DeviceIds.DEVICE_IDS_32.value,
-        "max_batch_size": 1,
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4.value,
+        "max_batch_size": 8,
         "vllm": {
             "model": SupportedModels.QWEN_3_EMBEDDING_4B.value,
             "max_model_length": 128,
-            "max_num_batched_tokens": 128,
+            "max_num_batched_tokens": 1024,  # max_num_seqs * max_model_length
             "min_context_length": 32,
-            "max_num_seqs": 1,
+            "max_num_seqs": 8,
         },
     },
-    (ModelRunners.VLLMForge_QWEN_EMBEDDING_0_6B, DeviceTypes.BLACKHOLE_GALAXY): {
+    #
+    (ModelRunners.VLLMForge_QWEN_EMBEDDING_0_6B, DeviceTypes.P300X2): {
         "device_mesh_shape": (1, 1),
-        "is_galaxy": True,
-        "device_ids": DeviceIds.DEVICE_IDS_32.value,
-        "max_batch_size": 1,
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4.value,
+        "max_batch_size": 8,
         "vllm": {
             "model": SupportedModels.QWEN_3_EMBEDDING_0_6B.value,
             "max_model_length": 128,
-            "max_num_batched_tokens": 128,
+            "max_num_batched_tokens": 1024,  # max_num_seqs * max_model_length
             "min_context_length": 32,
-            "max_num_seqs": 1,
+            "max_num_seqs": 8,
         },
     },
-    (ModelRunners.VLLMForge_BGE_M3, DeviceTypes.BLACKHOLE_GALAXY): {
-        # bge-m3 validated at seq len 512 in tt-xla.
+    (ModelRunners.VLLMForge_BGE_M3, DeviceTypes.P300X2): {
         "device_mesh_shape": (1, 1),
-        "is_galaxy": True,
-        "device_ids": DeviceIds.DEVICE_IDS_32.value,
-        "max_batch_size": 1,
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4.value,
+        "max_batch_size": 8,
         "vllm": {
             "model": SupportedModels.BGE_M3.value,
-            "max_model_length": 512,
-            "max_num_batched_tokens": 512,
+            "max_model_length": 128,
+            "max_num_batched_tokens": 1024,  # max_num_seqs * max_model_length
             "min_context_length": 32,
-            "max_num_seqs": 1,
+            "max_num_seqs": 8,
         },
     },
     (ModelRunners.VLLMForge_LLAMA_70B, DeviceTypes.T3K): {

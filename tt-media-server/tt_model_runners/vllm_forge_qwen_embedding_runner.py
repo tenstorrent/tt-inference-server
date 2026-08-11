@@ -46,13 +46,6 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
         optimization_level = int(os.getenv("OPTIMIZATION_LEVEL", "1"))
         enable_trace = os.getenv("ENABLE_TRACE", "false").lower() == "true"
 
-        # One worker replicates the model across every chip in its group, so this
-        # needs a grouped DEVICE_IDS. max_num_seqs is the global batch across
-        # replicas and must be > 1 and a multiple of the chip count.
-        enable_data_parallel = (
-            os.getenv("ENABLE_DATA_PARALLEL", "false").lower() == "true"
-        )
-
         prompts = [
             "The capital of France is Paris",
         ]
@@ -67,14 +60,6 @@ class VLLMForgeEmbeddingQwenRunner(BaseDeviceRunner):
             "optimization_level": optimization_level,
             "enable_trace": enable_trace,
         }
-        if enable_data_parallel:
-            additional_config["enable_data_parallel"] = True
-            if self.settings.vllm.max_num_seqs <= 1:
-                self.logger.warning(
-                    f"Device {self.device_id}: ENABLE_DATA_PARALLEL is set but "
-                    f"max_num_seqs={self.settings.vllm.max_num_seqs}; the plugin "
-                    f"requires >1 and will fall back to single-device execution."
-                )
         llm_args = {
             "model": model_name,
             "dtype": "bfloat16",
