@@ -42,6 +42,7 @@ def build_vllm_bench_serve_argv(
     config: LLMRunConfig,
     server: ServerConnection,
     result_filename: Path,
+    custom_dataset_path: Optional[Path] = None,
 ) -> Tuple[List[str], str]:
     """Build the ``vllm bench serve`` argv list.
 
@@ -64,16 +65,10 @@ def build_vllm_bench_serve_argv(
         "/v1/chat/completions",
         "--model",
         server.model,
-        "--dataset-name",
-        "random",
         "--max-concurrency",
         str(config.max_concurrency),
         "--num-prompts",
         str(config.num_prompts),
-        "--random-input-len",
-        str(config.isl),
-        "--random-output-len",
-        str(config.osl),
         "--percentile-metrics",
         "ttft,tpot,itl,e2el",
         "--save-result",
@@ -81,6 +76,34 @@ def build_vllm_bench_serve_argv(
         "--result-filename",
         str(result_filename),
     ]
+
+    if custom_dataset_path is not None:
+        # Pre-built exact-ISL prompts (SPEED-Bench text for block-granular
+        # models): real language reaches the entropy halt, so the sweep
+        # reports serving behaviour instead of the 48-step worst case that
+        # random token salad pins every block to.
+        cmd.extend(
+            [
+                "--dataset-name",
+                "custom",
+                "--dataset-path",
+                str(custom_dataset_path),
+                "--custom-output-len",
+                str(config.osl),
+                "--disable-shuffle",
+            ]
+        )
+    else:
+        cmd.extend(
+            [
+                "--dataset-name",
+                "random",
+                "--random-input-len",
+                str(config.isl),
+                "--random-output-len",
+                str(config.osl),
+            ]
+        )
 
     # vLLM's openai-chat benchmark defaults to temperature=0.0, while
     # DiffusionGemma's model-owned sampler accepts only the neutral value.
@@ -134,11 +157,13 @@ class VLLMBenchDriver(LLMDriver):
             f"_maxcon-{config.max_concurrency}_n-{config.num_prompts}.json"
         )
 
+        custom_dataset_path = self._maybe_speed_bench_prompts(config, server, context)
         cmd, auth_token = build_vllm_bench_serve_argv(
             vllm_binary=self.vllm_binary,
             config=config,
             server=server,
             result_filename=result_filename,
+            custom_dataset_path=custom_dataset_path,
         )
 
         env = dict(context.extra_env)
@@ -150,6 +175,46 @@ class VLLMBenchDriver(LLMDriver):
         if raw is not None and server.output_block_size > 1:
             raw["tt_output_block_size"] = server.output_block_size
         return DriverResult(return_code=rc, raw=raw, raw_path=result_filename)
+
+
+    @staticmethod
+    def _maybe_speed_bench_prompts(
+        config: LLMRunConfig,
+        server: ServerConnection,
+        context: DriverContext,
+    ) -> Optional[Path]:
+        """Exact-ISL SPEED-Bench prompt file for block-granular sweeps.
+
+        DiffusionGemma denoises whole 256-token canvases and halts on entropy;
+        random-token prompts never halt, so the sweep would only ever measure
+        the 48-step cap. Falls back to the random dataset with a loud warning
+        when the prompts cannot be built (offline host, gated tokenizer), so a
+        benchmark run still produces rows.
+        """
+        if "diffusiongemma" not in server.model.lower():
+            return None
+        from ..speed_bench_prompts import write_speed_bench_prompt_file
+
+        prompts_path = context.output_dir / (
+            f"speed_bench_prompts_isl-{config.isl}_n-{config.num_prompts}.jsonl"
+        )
+        try:
+            return write_speed_bench_prompt_file(
+                output_path=prompts_path,
+                model=server.model,
+                target_isl=config.isl,
+                num_prompts=config.num_prompts,
+                trust_remote_code=server.tokenizer_trust_remote_code,
+            )
+        except Exception as build_error:  # noqa: BLE001 - fail open to random
+            logger.warning(
+                "falling back to --dataset-name random for %s isl=%d: "
+                "SPEED-Bench prompt construction failed: %r",
+                server.model,
+                config.isl,
+                build_error,
+            )
+            return None
 
 
 __all__ = ["VLLMBenchDriver", "build_vllm_bench_serve_argv"]

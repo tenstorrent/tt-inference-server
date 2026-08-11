@@ -123,3 +123,46 @@ def test_remote_server_passes_trust_remote_code_once():
     )
 
     assert cmd.count("--trust-remote-code") == 1
+
+
+def test_custom_dataset_path_switches_off_random():
+    server = ServerConnection(
+        base_url="http://127.0.0.1",
+        service_port=8000,
+        model="google/diffusiongemma-26B-A4B-it",
+        is_remote=False,
+    )
+    cmd, _ = build_vllm_bench_serve_argv(
+        vllm_binary="vllm",
+        config=_config(),
+        server=server,
+        result_filename=_result_path(),
+        custom_dataset_path=Path("/tmp/speed_bench_prompts.jsonl"),
+    )
+
+    assert cmd[cmd.index("--dataset-name") + 1] == "custom"
+    assert cmd[cmd.index("--dataset-path") + 1] == "/tmp/speed_bench_prompts.jsonl"
+    assert cmd[cmd.index("--custom-output-len") + 1] == "128"
+    assert "--disable-shuffle" in cmd
+    assert "--random-input-len" not in cmd
+    assert "--random-output-len" not in cmd
+    # the DiffusionGemma neutral-temperature override still applies
+    assert cmd[cmd.index("--temperature") + 1] == "1.0"
+
+
+def test_without_custom_dataset_the_sweep_stays_random():
+    server = ServerConnection(
+        base_url="http://127.0.0.1",
+        service_port=8000,
+        model="google/diffusiongemma-26B-A4B-it",
+        is_remote=False,
+    )
+    cmd, _ = build_vllm_bench_serve_argv(
+        vllm_binary="vllm",
+        config=_config(),
+        server=server,
+        result_filename=_result_path(),
+    )
+
+    assert cmd[cmd.index("--dataset-name") + 1] == "random"
+    assert cmd[cmd.index("--random-input-len") + 1] == "128"
