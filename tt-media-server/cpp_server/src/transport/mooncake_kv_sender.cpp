@@ -231,7 +231,8 @@ bool MooncakeKvSender::transferSlot(uint64_t kafkaRequestId,
     }
   }
   TT_LOG_INFO(
-      "[MooncakeKvSender] kafka_request_id={} planned {} chunks -> {} segments; bounce "
+      "[MooncakeKvSender] kafka_request_id={} planned {} chunks -> {} "
+      "segments; bounce "
       "buffer "
       "{} sections x {} B",
       kafkaRequestId, planned.size(), segments.size(), geometry.section_count,
@@ -403,10 +404,12 @@ bool MooncakeKvSender::transferSlot(uint64_t kafkaRequestId,
                          (static_cast<double>(ns) / 1e9);
   };
   TT_LOG_INFO(
-      "[MooncakeKvSender] kafka_request_id={} split: read={}ms ({} ops, {}B, {:.1f} "
+      "[MooncakeKvSender] kafka_request_id={} split: read={}ms ({} ops, {}B, "
+      "{:.1f} "
       "MB/s) | net={}ms ({} window(s), {}B, {:.1f} MB/s) [pipelined]",
-      kafkaRequestId, readNs / 1'000'000, readOps, readBytes, mbps(readBytes, readNs),
-      netNs / 1'000'000, windowOps, writeBytes, mbps(writeBytes, netNs));
+      kafkaRequestId, readNs / 1'000'000, readOps, readBytes,
+      mbps(readBytes, readNs), netNs / 1'000'000, windowOps, writeBytes,
+      mbps(writeBytes, netNs));
 
   if (transferFailed) refreshPeerSegment(segmentName);
   return ok;

@@ -47,34 +47,40 @@ bool KvMigrationSender::migrate(uint64_t uuid,
   KvControlChannel::Transaction txn(channel_);
 
   if (!channel_.send(beginMessage(uuid, request.dstSlice()))) {
-    TT_LOG_ERROR("[KvMigrationSender] kafka_request_id={}: send BeginMigration failed",
-                 uuid);
+    TT_LOG_ERROR(
+        "[KvMigrationSender] kafka_request_id={}: send BeginMigration failed",
+        uuid);
     return false;
   }
 
   KvControlMessage ready;
   switch (channel_.receiveMessage(ready)) {
     case KvControlChannel::ReceiveOutcome::TimedOut:
-      TT_LOG_ERROR("[KvMigrationSender] kafka_request_id={}: timed out for BounceReady",
-                   uuid);
+      TT_LOG_ERROR(
+          "[KvMigrationSender] kafka_request_id={}: timed out for BounceReady",
+          uuid);
       return false;
     case KvControlChannel::ReceiveOutcome::Closed:
-      TT_LOG_ERROR("[KvMigrationSender] kafka_request_id={}: closed awaiting BounceReady",
-                   uuid);
+      TT_LOG_ERROR(
+          "[KvMigrationSender] kafka_request_id={}: closed awaiting "
+          "BounceReady",
+          uuid);
       return false;
     case KvControlChannel::ReceiveOutcome::Message:
       break;
   }
   if (ready.type != KvControlType::BOUNCE_READY || ready.uuid != uuid) {
     TT_LOG_ERROR(
-        "[KvMigrationSender] kafka_request_id={}: expected BounceReady, got type={} "
+        "[KvMigrationSender] kafka_request_id={}: expected BounceReady, got "
+        "type={} "
         "kafka_request_id={}",
         uuid, static_cast<int>(ready.type), ready.uuid);
     return false;
   }
   if (!ready.ok || ready.segment_name.empty()) {
     TT_LOG_ERROR(
-        "[KvMigrationSender] kafka_request_id={}: receiver could not ready its bounce "
+        "[KvMigrationSender] kafka_request_id={}: receiver could not ready its "
+        "bounce "
         "buffer "
         "(ok={}, segment empty={})",
         uuid, ready.ok, ready.segment_name.empty());
@@ -92,7 +98,9 @@ bool KvMigrationSender::migrate(uint64_t uuid,
     wr.uuid = id;
     wr.window = window;
     if (!channel_.send(wr)) {
-      TT_LOG_ERROR("[KvMigrationSender] kafka_request_id={}: send WindowReady failed", id);
+      TT_LOG_ERROR(
+          "[KvMigrationSender] kafka_request_id={}: send WindowReady failed",
+          id);
       return false;
     }
     KvControlMessage ack;
@@ -103,7 +111,8 @@ bool KvMigrationSender::migrate(uint64_t uuid,
     }
     if (ack.type != KvControlType::WINDOW_ACK || ack.uuid != id || !ack.ok) {
       TT_LOG_ERROR(
-          "[KvMigrationSender] kafka_request_id={}: bad WindowAck (type={}, kafka_request_id={}, "
+          "[KvMigrationSender] kafka_request_id={}: bad WindowAck (type={}, "
+          "kafka_request_id={}, "
           "ok={})",
           id, static_cast<int>(ack.type), ack.uuid, ack.ok);
       return false;
@@ -113,7 +122,8 @@ bool KvMigrationSender::migrate(uint64_t uuid,
 
   if (!sender_.transferSlot(uuid, request, ready.segment_name, geometry,
                             sink)) {
-    TT_LOG_ERROR("[KvMigrationSender] kafka_request_id={}: transferSlot failed", uuid);
+    TT_LOG_ERROR("[KvMigrationSender] kafka_request_id={}: transferSlot failed",
+                 uuid);
     return false;
   }
 
@@ -121,24 +131,29 @@ bool KvMigrationSender::migrate(uint64_t uuid,
   done.type = KvControlType::DONE_MARKER;
   done.uuid = uuid;
   if (!channel_.send(done)) {
-    TT_LOG_ERROR("[KvMigrationSender] kafka_request_id={}: send DoneMarker failed", uuid);
+    TT_LOG_ERROR(
+        "[KvMigrationSender] kafka_request_id={}: send DoneMarker failed",
+        uuid);
     return false;
   }
 
   KvControlMessage ack;
   switch (channel_.receiveMessage(ack)) {
     case KvControlChannel::ReceiveOutcome::TimedOut:
-      TT_LOG_ERROR("[KvMigrationSender] kafka_request_id={}: timed out for Ack", uuid);
+      TT_LOG_ERROR("[KvMigrationSender] kafka_request_id={}: timed out for Ack",
+                   uuid);
       return false;
     case KvControlChannel::ReceiveOutcome::Closed:
-      TT_LOG_ERROR("[KvMigrationSender] kafka_request_id={}: closed awaiting Ack", uuid);
+      TT_LOG_ERROR(
+          "[KvMigrationSender] kafka_request_id={}: closed awaiting Ack", uuid);
       return false;
     case KvControlChannel::ReceiveOutcome::Message:
       break;
   }
   if (ack.type != KvControlType::ACK || ack.uuid != uuid || !ack.ok) {
     TT_LOG_ERROR(
-        "[KvMigrationSender] kafka_request_id={}: bad final Ack (type={}, kafka_request_id={}, "
+        "[KvMigrationSender] kafka_request_id={}: bad final Ack (type={}, "
+        "kafka_request_id={}, "
         "ok={})",
         uuid, static_cast<int>(ack.type), ack.uuid, ack.ok);
     return false;
@@ -201,7 +216,8 @@ bool KvMigrationReceiver::handle(const KvControlMessage& msg) {
     case KvControlType::BEGIN_MIGRATION: {
       if (receiver_ == nullptr) {
         TT_LOG_WARN(
-            "[KvMigrationReceiver] dry-run BeginMigration(kafka_request_id={}) received; "
+            "[KvMigrationReceiver] dry-run BeginMigration(kafka_request_id={}) "
+            "received; "
             "no "
             "device or bounce buffer is available — rejecting",
             msg.uuid);
@@ -224,8 +240,10 @@ bool KvMigrationReceiver::handle(const KvControlMessage& msg) {
         ready.bounce_section_size = g.section_size;
       }
       if (!channel_.send(ready)) {
-        TT_LOG_ERROR("[KvMigrationReceiver] send BounceReady(kafka_request_id={}) failed",
-                     msg.uuid);
+        TT_LOG_ERROR(
+            "[KvMigrationReceiver] send BounceReady(kafka_request_id={}) "
+            "failed",
+            msg.uuid);
         return false;
       }
       break;
@@ -240,8 +258,10 @@ bool KvMigrationReceiver::handle(const KvControlMessage& msg) {
       ack.ok = drained;
       ack.credits = static_cast<uint32_t>(msg.window.size());
       if (!channel_.send(ack)) {
-        TT_LOG_ERROR("[KvMigrationReceiver] send WindowAck(ukafka_request_iduid={}) failed",
-                     msg.uuid);
+        TT_LOG_ERROR(
+            "[KvMigrationReceiver] send WindowAck(ukafka_request_iduid={}) "
+            "failed",
+            msg.uuid);
         return false;
       }
       break;
@@ -257,8 +277,9 @@ bool KvMigrationReceiver::handle(const KvControlMessage& msg) {
       ack.uuid = msg.uuid;
       ack.ok = allOk;
       if (!channel_.send(ack)) {
-        TT_LOG_ERROR("[KvMigrationReceiver] send Ack(kafka_request_id={}) failed",
-                     msg.uuid);
+        TT_LOG_ERROR(
+            "[KvMigrationReceiver] send Ack(kafka_request_id={}) failed",
+            msg.uuid);
         return false;
       }
       break;

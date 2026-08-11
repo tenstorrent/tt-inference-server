@@ -697,6 +697,7 @@ if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
         target_sources(transport_lib PRIVATE
             ${_KV_MIG}/src/worker/device_io.cpp
             ${_KV_MIG}/src/worker/drisc_device_io.cpp
+            ${_KV_MIG}/utils/stall_timer.cpp
             ${_KV_MIG}/src/multi_device_reader.cpp
             ${_KV_MIG}/src/multi_device_writer.cpp
             ${TT_METAL_HOME}/tt_metal/llrt/metal_soc_descriptor.cpp
@@ -710,6 +711,7 @@ if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
         set_source_files_properties(
             ${_KV_MIG}/src/worker/device_io.cpp
             ${_KV_MIG}/src/worker/drisc_device_io.cpp
+            ${_KV_MIG}/utils/stall_timer.cpp
             ${_KV_MIG}/src/multi_device_reader.cpp
             ${_KV_MIG}/src/multi_device_writer.cpp
             ${TT_METAL_HOME}/tt_metal/llrt/metal_soc_descriptor.cpp
@@ -724,6 +726,7 @@ if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
         file(GLOB _KV_TASKFLOW "${TT_METAL_HOME}/.cpmcache/taskflow/5*")
         file(GLOB _KV_YAMLINC  "${TT_METAL_HOME}/.cpmcache/yaml-cpp/*/include")
         target_include_directories(transport_lib SYSTEM PRIVATE
+            "${_KV_MIG}"
             "${_KV_MIG}/include"
             "${TT_METAL_HOME}/tt_metal/impl"
             "${TT_METAL_HOME}/tt_metal/impl/debug"
@@ -808,7 +811,7 @@ if(ENABLE_KV_TABLE)
     set(_KV_MIG_DIR "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/disaggregation/migration")
     set(_KV_TTM "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/tt-metal")
     set(_KV_PROTO_FILE
-        "${_KV_TTM}/tt_metal/impl/experimental/disaggregation/protobuf/kv_chunk_address_table.proto")
+        "${_KV_TTM}/tt_metal/impl/internal/disaggregation/protobuf/kv_chunk_address_table.proto")
     protobuf_generate_cpp(_KV_PROTO_SRCS _KV_PROTO_HDRS "${_KV_PROTO_FILE}")
 
     # tt-metal sources #include "protobuf/kv_chunk_address_table.pb.h"; stage the
@@ -826,7 +829,7 @@ if(ENABLE_KV_TABLE)
     add_library(kv_table_lib STATIC
         ${_KV_MIG_DIR}/src/kv_chunk_address_table_synthetic.cpp
         ${_KV_MIG_DIR}/src/fabric_types_shim.cpp
-        ${_KV_TTM}/tt_metal/impl/experimental/disaggregation/kv_chunk_address_table_protobuf.cpp
+        ${_KV_TTM}/tt_metal/impl/internal/disaggregation/kv_chunk_address_table_protobuf.cpp
         ${_KV_PROTO_SRCS}
         "${_KV_PROTO_INC}/protobuf/kv_chunk_address_table.pb.h"
     )
@@ -838,7 +841,7 @@ if(ENABLE_KV_TABLE)
     set_target_properties(kv_table_lib PROPERTIES CXX_CLANG_TIDY "")
     target_include_directories(kv_table_lib PUBLIC
         ${TT_METAL_INCLUDE_DIRS}
-        "${_KV_TTM}/tt_metal/impl"          # experimental/disaggregation/...protobuf.hpp
+        "${_KV_TTM}/tt_metal/impl"          # internal/disaggregation/...protobuf.hpp
         ${CMAKE_CURRENT_BINARY_DIR}          # generated kv_chunk_address_table.pb.h
         ${_KV_PROTO_INC}                     # protobuf/ alias
     )
