@@ -393,7 +393,6 @@ templates:
         trace_region_size: 1073741824
         l1_small_size: 24576
         sample_on_device_mode: decode_only
-        trace_mode: decode_only
     - device: P150X8
       max_concurrency: 32
       max_context: 262144
