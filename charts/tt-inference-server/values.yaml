@@ -6792,6 +6792,8 @@ models:
                 value: '1'
               - name: MESH_DEVICE
                 value: N150
+              - name: MODEL_RUNNER
+                value: vllmforge_qwen_embedding
               - name: VLLM__MAX_MODEL_LENGTH
                 value: '1024'
               - name: VLLM__MAX_NUM_BATCHED_TOKENS
@@ -6826,6 +6828,8 @@ models:
                 value: '1'
               - name: MESH_DEVICE
                 value: N300
+              - name: MODEL_RUNNER
+                value: vllmforge_qwen_embedding
               - name: VLLM__MAX_MODEL_LENGTH
                 value: '1024'
               - name: VLLM__MAX_NUM_BATCHED_TOKENS
@@ -6862,6 +6866,8 @@ models:
                 value: '1'
               - name: MESH_DEVICE
                 value: T3K
+              - name: MODEL_RUNNER
+                value: vllmforge_qwen_embedding
               - name: VLLM__MAX_MODEL_LENGTH
                 value: '1024'
               - name: VLLM__MAX_NUM_BATCHED_TOKENS
@@ -6898,6 +6904,8 @@ models:
                 value: '1'
               - name: MESH_DEVICE
                 value: TG
+              - name: MODEL_RUNNER
+                value: vllmforge_qwen_embedding
               - name: VLLM__MAX_MODEL_LENGTH
                 value: '1024'
               - name: VLLM__MAX_NUM_BATCHED_TOKENS
@@ -6934,6 +6942,8 @@ models:
                 value: '256'
               - name: MESH_DEVICE
                 value: BH-Galaxy
+              - name: MODEL_RUNNER
+                value: vllmforge_qwen_embedding
               - name: TT_METAL_INSPECTOR_RPC
                 value: '0'
               - name: USE_DYNAMIC_BATCHER
@@ -7777,6 +7787,8 @@ models:
                 value: '256'
               - name: MESH_DEVICE
                 value: BH-Galaxy
+              - name: MODEL_RUNNER
+                value: vllmforge_qwen_embedding_0_6b
               - name: TT_METAL_INSPECTOR_RPC
                 value: '0'
               - name: USE_DYNAMIC_BATCHER
@@ -7820,6 +7832,8 @@ models:
                 value: '256'
               - name: MESH_DEVICE
                 value: BH-Galaxy
+              - name: MODEL_RUNNER
+                value: vllmforge_bge_m3
               - name: TT_METAL_INSPECTOR_RPC
                 value: '0'
               - name: USE_DYNAMIC_BATCHER

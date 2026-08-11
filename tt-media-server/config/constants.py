@@ -1171,6 +1171,19 @@ ModelConfigs = {
             "max_num_seqs": 256,
         },
     },
+    (ModelRunners.VLLMForge_QWEN_EMBEDDING, DeviceTypes.P300X2): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
+        "max_batch_size": 32,
+        "vllm": {
+            "model": SupportedModels.QWEN_3_EMBEDDING_4B.value,
+            "max_model_length": 128,
+            "max_num_batched_tokens": 4096,  # max_num_seqs * max_model_length
+            "min_context_length": 32,
+            "max_num_seqs": 32,
+        },
+    },
     (ModelRunners.VLLMForge_QWEN_EMBEDDING_0_6B, DeviceTypes.BLACKHOLE_GALAXY): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
@@ -1184,6 +1197,20 @@ ModelConfigs = {
             "max_num_seqs": 256,
         },
     },
+    #
+    (ModelRunners.VLLMForge_QWEN_EMBEDDING_0_6B, DeviceTypes.P300X2): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
+        "max_batch_size": 32,
+        "vllm": {
+            "model": SupportedModels.QWEN_3_EMBEDDING_0_6B.value,
+            "max_model_length": 128,
+            "max_num_batched_tokens": 4096,  # max_num_seqs * max_model_length
+            "min_context_length": 32,
+            "max_num_seqs": 32,
+        },
+    },
     (ModelRunners.VLLMForge_BGE_M3, DeviceTypes.BLACKHOLE_GALAXY): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
@@ -1195,6 +1222,19 @@ ModelConfigs = {
             "max_num_batched_tokens": 131072,
             "min_context_length": 32,
             "max_num_seqs": 256,
+        },
+    },
+    (ModelRunners.VLLMForge_BGE_M3, DeviceTypes.P300X2): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
+        "max_batch_size": 32,
+        "vllm": {
+            "model": SupportedModels.BGE_M3.value,
+            "max_model_length": 128,
+            "max_num_batched_tokens": 4096,  # max_num_seqs * max_model_length
+            "min_context_length": 32,
+            "max_num_seqs": 32,
         },
     },
     (ModelRunners.VLLMForge_LLAMA_70B, DeviceTypes.T3K): {
