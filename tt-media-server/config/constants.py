@@ -1157,6 +1157,14 @@ ModelConfigs = {
         "max_batch_size": 1,
         "queue_for_multiprocessing": QueueType.FasterFifo.value,
     },
+    (ModelRunners.VLLMForge_GEMMA4_31B, DeviceTypes.BLACKHOLE_GALAXY): {
+        "device_mesh_shape": (8, 4),      
+        "is_galaxy": False,               
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,              
+        "queue_for_multiprocessing": QueueType.FasterFifo.value,
+    },
+
     (ModelRunners.VLLMForge_QWEN_32B, DeviceTypes.P300X2): {
         "device_mesh_shape": (1, 4),
         "is_galaxy": False,

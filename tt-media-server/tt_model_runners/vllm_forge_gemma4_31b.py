@@ -48,11 +48,62 @@ class VLLMForgeGemma4_31BRunner(BaseDeviceRunner):
         #                         {10,11}; tt-xla#5204 / tt-mlir#8767). Fixed by
         #                         tt-mlir#8769, which postdates this wheel -- flip
         #                         to opt=1 once the forge wheel includes it.
-        # Weights stay bfp_bf8: measured FASTER than bf16 (greedy 9.2 vs 8.0),
-        # since bf16 doubles per-token weight DRAM traffic.
+        # Weights stay bfp_bf8 by default: measured FASTER than bf16 (greedy 9.2
+        # vs 8.0), since bf16 doubles per-token weight DRAM traffic. Set
+        # EXPERIMENTAL_WEIGHT_DTYPE="" to drop the key and run bf16.
+        #
+        # ENABLE_DATA_PARALLEL=true selects the DP+TP path (bh-galaxy): the
+        # (dp, tp) SPMD mesh comes from settings.device_mesh_shape (ModelConfigs),
+        # weights sharded on the "model" (TP) axis and the batch on "batch" (DP).
         optimization_level = int(os.getenv("OPTIMIZATION_LEVEL", "0"))
         cpu_sampling = os.getenv("CPU_SAMPLING", "false").lower() == "true"
         enable_trace = os.getenv("ENABLE_TRACE", "true").lower() == "true"
+        enable_data_parallel = (
+            os.getenv("ENABLE_DATA_PARALLEL", "false").lower() == "true"
+        )
+        min_context_len = int(
+            os.getenv("MIN_CONTEXT_LEN", str(self.settings.vllm.min_context_length))
+        )
+        weight_dtype = os.getenv("EXPERIMENTAL_WEIGHT_DTYPE", "bfp_bf8")
+
+        additional_config = {
+            "enable_const_eval": True,
+            "min_context_len": min_context_len,
+            "enable_tensor_parallel": True,
+            "cpu_sampling": cpu_sampling,
+            "optimization_level": optimization_level,
+            "enable_trace": enable_trace,
+        }
+        if weight_dtype:
+            additional_config["experimental_weight_dtype"] = weight_dtype
+
+        if enable_data_parallel:
+            # TTConfig treats an explicit mesh_shape as an override of
+            # use_2d_mesh, so only one of the two is passed. The mesh must come
+            # from ModelConfigs -- defaulting it here would silently build the
+            # wrong topology on a machine with a different chip count.
+            mesh_shape = list(self.settings.device_mesh_shape or ())
+            if len(mesh_shape) != 2 or mesh_shape[0] < 2:
+                raise ValueError(
+                    "ENABLE_DATA_PARALLEL=true requires a (dp, tp) "
+                    "device_mesh_shape with dp >= 2 from ModelConfigs; got "
+                    f"{self.settings.device_mesh_shape!r}"
+                )
+            shard_on_batch = (
+                os.getenv("SHARD_WEIGHTS_ON_BATCH_AXIS", "true").lower() == "true"
+            )
+            flat_model_io = os.getenv("FLAT_MODEL_IO", "true").lower() == "true"
+            additional_config.update(
+                {
+                    "enable_data_parallel": True,
+                    "mesh_shape": mesh_shape,
+                    "shard_weights_on_batch_axis": shard_on_batch,
+                    "flat_model_io": flat_model_io,
+                }
+            )
+        else:
+            additional_config["use_2d_mesh"] = False
+
         engine_args = AsyncEngineArgs(
             model=self.settings.vllm.model,
             max_model_len=self.settings.vllm.max_model_length,
@@ -60,16 +111,11 @@ class VLLMForgeGemma4_31BRunner(BaseDeviceRunner):
             max_num_seqs=self.settings.vllm.max_num_seqs,
             enable_chunked_prefill=False,
             gpu_memory_utilization=self.settings.vllm.gpu_memory_utilization,
-            additional_config={
-                "enable_const_eval": True,
-                "min_context_len": self.settings.vllm.min_context_length,
-                "enable_tensor_parallel": True,
-                "use_2d_mesh": False,
-                "experimental_weight_dtype": "bfp_bf8",
-                "cpu_sampling": cpu_sampling,
-                "optimization_level": optimization_level,
-                "enable_trace": enable_trace,
-            },
+            # gemma-4-31b is multimodal but served text-only here (chat.py
+            # flattens content to text): zero every modality so the mm-encoder
+            # graph never compiles the vision tower.
+            limit_mm_per_prompt={"image": 0, "video": 0, "audio": 0},
+            additional_config=additional_config,
         )
         self.logger.info(
             f"Device {self.device_id}: additional_config={engine_args.additional_config}"
