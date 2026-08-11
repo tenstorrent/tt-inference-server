@@ -41,6 +41,11 @@ _ENGINE_WORKFLOW_NAMES = {
 
 _ENGINE_EVAL_WORKFLOWS = frozenset({WorkflowType.EVALS, WorkflowType.RELEASE})
 
+_ENGINE_BENCHMARK_WORKFLOWS = frozenset({WorkflowType.BENCHMARKS, WorkflowType.RELEASE})
+
+# Media/forge model types whose benchmark client is `vllm bench serve`.
+_ENGINE_VLLM_CLIENT_BENCHMARK_TYPES = frozenset({ModelType.EMBEDDING})
+
 
 _ENGINE_EVAL_VENV_BY_MODEL_TYPE = {
     ModelType.AUDIO: WorkflowVenvType.EVALS_AUDIO,
@@ -715,6 +720,17 @@ def _engine_dependency_venv_types(
             venv_types.append(eval_venv)
         if model_spec.model_type in _LLM_LIKE_TYPES:
             venv_types.extend(_llm_eval_venv_types(model_spec, runtime_config))
+    # Embedding benchmarks shell out to `vllm bench serve`, which needs the vllm
+    # client venv.
+    if (
+        wf in _ENGINE_BENCHMARK_WORKFLOWS
+        and model_spec.model_type in _ENGINE_VLLM_CLIENT_BENCHMARK_TYPES
+    ):
+        from reference_config.benchmarking.benchmark_config import (
+            select_vllm_benchmark_venv,
+        )
+
+        venv_types.append(select_vllm_benchmark_venv(model_spec))
     # The release benchmark child runs the default perf tool (vllm) in-process
     # under WORKFLOW_RUN_SCRIPT, so its tool venv must exist up front.
     if wf == WorkflowType.RELEASE and model_spec.model_type in _LLM_LIKE_TYPES:

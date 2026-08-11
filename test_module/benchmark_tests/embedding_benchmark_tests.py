@@ -16,7 +16,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from workflows.workflow_types import WorkflowVenvType
+from reference_config.benchmarking.benchmark_config import select_vllm_benchmark_venv
 from workflows.workflow_venvs import VENV_CONFIGS
 
 from report_module.schema import Block
@@ -38,13 +38,20 @@ OPENAI_API_KEY = "your-secret-key"
 
 
 def _embedding_params(ctx: MediaContext) -> tuple[str, int, int, int]:
-    """Return (model, isl, num_calls, concurrency)."""
-    env = ctx.model_spec.device_model_spec.env_vars
+    """Return (model, isl, num_calls, concurrency).
+
+    Concurrency is the *server's* — ``device_model_spec.max_concurrency``, i.e.
+    one per data-parallel worker (1 on n150, 32 on a galaxy). It is not
+    ``VLLM__MAX_NUM_SEQS``, which is per worker and is 1 in both cases.
+    """
+    device_spec = ctx.model_spec.device_model_spec
+    env = device_spec.env_vars
+    concurrency = device_spec.max_concurrency
     return (
         ctx.model_spec.hf_model_repo,
         int(env.get("VLLM__MAX_MODEL_LENGTH", 1024)),
         1000,
-        int(env.get("VLLM__MAX_NUM_SEQS", 1)),
+        int(concurrency),
     )
 
 
@@ -73,9 +80,10 @@ def _parse_embedding_benchmark_output(output: str) -> dict:
 
 
 def _run_embedding_transcription_benchmark(ctx: MediaContext) -> dict:
-    model, isl, num_calls, _concurrency = _embedding_params(ctx)
+    model, isl, num_calls, concurrency = _embedding_params(ctx)
 
-    venv_config = VENV_CONFIGS.get(WorkflowVenvType.BENCHMARKS_VLLM)
+    # Must match the venv workflow_dispatch provisions for this model.
+    venv_config = VENV_CONFIGS.get(select_vllm_benchmark_venv(ctx.model_spec))
     vllm_exec = venv_config.venv_path / "bin" / "vllm"
 
     os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
@@ -84,12 +92,19 @@ def _run_embedding_transcription_benchmark(ctx: MediaContext) -> dict:
         str(vllm_exec),
         "bench",
         "serve",
+        # Without this the client uses its own default of 127.0.0.1:8000.
+        "--base-url",
+        ctx.base_url,
         "--model",
         model,
         "--random-input-len",
         str(isl),
         "--num-prompts",
         str(num_calls),
+        # The server queue is bounded, so an unbounded fan-out fails most
+        # requests.
+        "--max-concurrency",
+        str(concurrency),
         "--backend",
         "openai-embeddings",
         "--endpoint",
@@ -101,9 +116,22 @@ def _run_embedding_transcription_benchmark(ctx: MediaContext) -> dict:
         "benchmark",
     ]
 
-    logger.info(f"Running embedding benchmark with {num_calls} calls...")
-    output = subprocess.run(cmd, capture_output=True, text=True, check=True).stdout
-    return _parse_embedding_benchmark_output(output)
+    logger.info(
+        "Running embedding benchmark with %s calls: %s", num_calls, " ".join(cmd)
+    )
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    if proc.returncode != 0:
+        # Surface the client's own error, not just the exit code.
+        logger.error(
+            "vllm bench serve exited %s\n--- stdout ---\n%s\n--- stderr ---\n%s",
+            proc.returncode,
+            proc.stdout,
+            proc.stderr,
+        )
+        raise subprocess.CalledProcessError(
+            proc.returncode, cmd, output=proc.stdout, stderr=proc.stderr
+        )
+    return _parse_embedding_benchmark_output(proc.stdout)
 
 
 def _embedding_target_checks(
@@ -161,6 +189,21 @@ def run_embedding_benchmark(ctx: MediaContext) -> Block:
     mean_e2el = float(metrics.get("Mean E2EL", 0.0))
     req_tput = float(metrics.get("Request throughput", 0.0))
 
+    if failed_requests:
+        logger.error(
+            "%s of %s embedding requests FAILED (%s succeeded) — the throughput "
+            "and latency below are computed from the successful ones only and "
+            "do not describe a healthy run",
+            failed_requests,
+            successful_requests + failed_requests,
+            successful_requests,
+        )
+    if not successful_requests:
+        raise RuntimeError(
+            f"embedding benchmark produced no successful requests "
+            f"({failed_requests} failed); refusing to report metrics"
+        )
+
     tput_prefill = (
         total_input_tokens / benchmark_duration if benchmark_duration else 0.0
     )
@@ -184,6 +227,9 @@ def run_embedding_benchmark(ctx: MediaContext) -> Block:
                 "isl": isl,
                 "concurrency": concurrency,
                 "num_requests": successful_requests + failed_requests,
+                # num_requests alone reads as a clean run even when most failed.
+                "successful_requests": successful_requests,
+                "failed_requests": failed_requests,
                 "tput_user": tput_user,
                 "tput_prefill": tput_prefill,
                 "e2el": mean_e2el,
