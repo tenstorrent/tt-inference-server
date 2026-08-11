@@ -386,10 +386,14 @@ templates:
         TT_METAL_OPERATION_TIMEOUT_SECONDS: "30.0"
         # DEBUG BRANCH ONLY: turn on the reduce-scatter credit audit added in tt-metal
         # atupe/qwen36-ccl-credit-audit. It prints RSAUDIT_STALL1 / RSAUDIT_STALL2 with want-vs-have
-        # for a credit wait that is not already satisfied, which is the state the hang leaves the
-        # ring in. A healthy run prints nothing, so the log stays small. NC selects ncrisc, which
-        # runs the reduce-scatter reader that blocks.
-        TT_METAL_DPRINT_CORES: "all"
+        # for a credit that stays late past a long window, which is the state the hang leaves the
+        # ring in. NC selects ncrisc, which runs the reduce-scatter reader that blocks.
+        #
+        # The core range must EXCLUDE column 11, where cq_prefetch (11,0) and cq_dispatch (11,1)
+        # live. Those kernels carry their own DPRINT calls and print for every dispatched command.
+        # "all" included them and produced a 20 GB job log in tt-shield run 31427208691, three
+        # quarters of it dispatch chatter. Column 10 is a normal worker, so it stays in range.
+        TT_METAL_DPRINT_CORES: "(0,0)-(10,9)"
         TT_METAL_DPRINT_RISCVS: "NC"
       vllm_args:
         enable_auto_tool_choice: true
