@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+
 """Authentication and request-header checks for the MiniMax mock."""
 
 from __future__ import annotations

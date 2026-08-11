@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+
 """Output-media specifications for request-matched MiniMax fixture videos."""
 
 from __future__ import annotations

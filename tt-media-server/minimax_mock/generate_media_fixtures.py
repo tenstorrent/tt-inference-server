@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+
 """Generate compact MP4 fixtures for every supported output combination."""
 
 from __future__ import annotations

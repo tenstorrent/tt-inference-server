@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+
 """Standalone FastAPI application for the fixture-backed MiniMax mock."""
 
 from __future__ import annotations

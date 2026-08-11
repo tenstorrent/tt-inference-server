@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+
 """Tests for MiniMax mock task storage and lifecycle transitions."""
 
 from __future__ import annotations

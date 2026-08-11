@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+
 """Thread-safe in-memory task storage for the MiniMax mock."""
 
 from __future__ import annotations
