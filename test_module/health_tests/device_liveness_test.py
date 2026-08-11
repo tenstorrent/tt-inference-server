@@ -166,7 +166,11 @@ def run_device_liveness(
             "break_on_failure": False,
         }
     )
-    full_board = ctx.model_spec.device_model_spec.max_concurrency
+    device_spec = ctx.model_spec.device_model_spec
+    full_board = (
+        getattr(device_spec, "expected_ready_workers", None)
+        or device_spec.max_concurrency
+    )
     target = min_ready_devices if min_ready_devices is not None else full_board
     targets = {"num_of_devices": target if target and target > 0 else None}
     return DeviceLivenessTest(test_config, targets, ctx=ctx).run_tests()

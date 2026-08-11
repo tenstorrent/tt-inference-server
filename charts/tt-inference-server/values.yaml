@@ -6928,18 +6928,22 @@ models:
                 value: blackhole
               - name: DEFAULT_THROTTLE_LEVEL
                 value: '0'
+              - name: ENABLE_DATA_PARALLEL
+                value: 'true'
               - name: MAX_BATCH_SIZE
-                value: '1'
+                value: '256'
               - name: MESH_DEVICE
                 value: BH-Galaxy
               - name: TT_METAL_INSPECTOR_RPC
                 value: '0'
+              - name: USE_DYNAMIC_BATCHER
+                value: 'false'
               - name: VLLM__MAX_MODEL_LENGTH
                 value: '128'
               - name: VLLM__MAX_NUM_BATCHED_TOKENS
-                value: '128'
+                value: '32768'
               - name: VLLM__MAX_NUM_SEQS
-                value: '1'
+                value: '256'
               - name: VLLM__MIN_CONTEXT_LENGTH
                 value: '32'
     defaultEngine: forge
@@ -7767,18 +7771,22 @@ models:
                 value: blackhole
               - name: DEFAULT_THROTTLE_LEVEL
                 value: '0'
+              - name: ENABLE_DATA_PARALLEL
+                value: 'true'
               - name: MAX_BATCH_SIZE
-                value: '1'
+                value: '256'
               - name: MESH_DEVICE
                 value: BH-Galaxy
               - name: TT_METAL_INSPECTOR_RPC
                 value: '0'
+              - name: USE_DYNAMIC_BATCHER
+                value: 'false'
               - name: VLLM__MAX_MODEL_LENGTH
                 value: '128'
               - name: VLLM__MAX_NUM_BATCHED_TOKENS
-                value: '128'
+                value: '32768'
               - name: VLLM__MAX_NUM_SEQS
-                value: '1'
+                value: '256'
               - name: VLLM__MIN_CONTEXT_LENGTH
                 value: '32'
     defaultEngine: forge
@@ -7806,20 +7814,22 @@ models:
                 value: blackhole
               - name: DEFAULT_THROTTLE_LEVEL
                 value: '0'
+              - name: ENABLE_DATA_PARALLEL
+                value: 'true'
               - name: MAX_BATCH_SIZE
-                value: '1'
+                value: '256'
               - name: MESH_DEVICE
                 value: BH-Galaxy
-              - name: MODEL_RUNNER
-                value: vllmforge_bge_m3
               - name: TT_METAL_INSPECTOR_RPC
                 value: '0'
+              - name: USE_DYNAMIC_BATCHER
+                value: 'false'
               - name: VLLM__MAX_MODEL_LENGTH
                 value: '512'
               - name: VLLM__MAX_NUM_BATCHED_TOKENS
-                value: '512'
+                value: '131072'
               - name: VLLM__MAX_NUM_SEQS
-                value: '1'
+                value: '256'
               - name: VLLM__MIN_CONTEXT_LENGTH
                 value: '32'
     defaultEngine: forge
