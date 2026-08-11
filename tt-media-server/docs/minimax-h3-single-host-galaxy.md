@@ -11,7 +11,7 @@ one mesh.
 ```bash
 git clone git@github.com:tenstorrent/tt-metal.git
 cd tt-metal
-git checkout cglagovich/minimax-h3
+git checkout 759d8db199f6c57b6c32db682a68a13ee2b0b013
 ./build_metal.sh --build-all
 ```
 
@@ -20,7 +20,7 @@ git checkout cglagovich/minimax-h3
 ```bash
 git clone git@github.com:tenstorrent/tt-inference-server.git
 cd tt-inference-server
-git checkout minimax-h3-server
+git checkout 5b1a3bbde56af30b8ffd4ac3a892ea793939bb91
 ```
 
 ## 3. Create the python env inside the media server
@@ -39,8 +39,6 @@ Then add the server's own requirements:
 cd /path_to/tt-inference-server/tt-media-server
 uv pip install -r requirements.txt
 ```
-
-Skip `install_mpi4py_ulfm.sh` — that is for the multi-host path only.
 
 ### diffusers must be overridden (required)
 
@@ -199,18 +197,10 @@ row drops to 0.0 s.
 
 ## Constraints
 
-- **One shape.** 1344x768, 124 frames, 50 steps. Anything else is rejected rather than silently
-  recompiled. `num_frames` must satisfy `17n + 5` (124, 243, 362); an omitted `num_inference_steps`
-  is served as 50, an explicit value other than 50 is rejected.
-- **One request at a time.** One device worker owns the mesh; requests queue.
-- **`t2va` only.** `ref2va` needs the `transformer_ref/` partition and switching task in-process is a
-  62 GB reload — that is a separate deployment.
-
-## If something goes wrong
-
-- **Never `tt-smi -r`** on this machine — it dropped all 32 chips off PCIe on CPLD < 1.16. Use
-  `tt-smi -glx_reset`, then `tt-smi -ls`.
-- Reset after every kill, or the next run fails somewhere unrelated (`bank_manager.cpp:462`).
-- Stop the server by PID (`pgrep -f main:app`). `pkill -f "uvicorn ... main:app"` matches its own
-  shell and kills the caller.
-- Mysteriously ~10x slow? Check `TT_DIT_CACHE_DIR` before anything else.
+| constraint | detail |
+|---|---|
+| One shape | 1344x768, 124 frames, 50 steps. Anything else is rejected rather than silently recompiled. |
+| `num_frames` | Must satisfy `17n + 5`: 124, 243, 362. |
+| `num_inference_steps` | Omitted is served as 50. An explicit value other than 50 is rejected. |
+| One request at a time | One device worker owns the mesh; further requests queue. |
+| `t2va` only | `ref2va` needs the `transformer_ref/` partition, and switching task in-process is a 62 GB reload. Separate deployment. |
