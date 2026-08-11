@@ -6586,6 +6586,19 @@
         ]
     },
     "bge-m3": {
+        "p300x2": [
+            {
+                "max_concurrency": 32,
+                "task_type": "embedding",
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 5750,
+                        "tput_prefill": 46000,
+                        "e2el_ms": 8300
+                    }
+                }
+            }
+        ],
         "n150": [
             {
                 "max_concurrency": 1,
@@ -6637,16 +6650,18 @@
                     }
                 }
             }
-        ],
-        "blackhole_galaxy": [
+        ]
+    },
+    "Qwen3-Embedding-0.6B": {
+        "p300x2": [
             {
                 "max_concurrency": 32,
                 "task_type": "embedding",
                 "targets": {
                     "theoretical": {
-                        "tput_user": 5750,
-                        "tput_prefill": 46000,
-                        "e2el_ms": 8300
+                        "tput_user": 6000,
+                        "tput_prefill": 6000,
+                        "e2el_ms": 100
                     }
                 }
             }
@@ -6707,6 +6722,19 @@
         ]
     },
     "Qwen3-Embedding-4B": {
+        "p300x2": [
+            {
+                "max_concurrency": 32,
+                "task_type": "embedding",
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 6000,
+                        "tput_prefill": 6000,
+                        "e2el_ms": 100
+                    }
+                }
+            }
+        ],
         "n150": [
             {
                 "max_concurrency": 1,
@@ -6749,34 +6777,6 @@
         "galaxy": [
             {
                 "max_concurrency": 1,
-                "task_type": "embedding",
-                "targets": {
-                    "theoretical": {
-                        "tput_user": 6000,
-                        "tput_prefill": 6000,
-                        "e2el_ms": 100
-                    }
-                }
-            }
-        ],
-        "blackhole_galaxy": [
-            {
-                "max_concurrency": 32,
-                "task_type": "embedding",
-                "targets": {
-                    "theoretical": {
-                        "tput_user": 6000,
-                        "tput_prefill": 6000,
-                        "e2el_ms": 100
-                    }
-                }
-            }
-        ]
-    },
-    "Qwen3-Embedding-0.6B": {
-        "blackhole_galaxy": [
-            {
-                "max_concurrency": 32,
                 "task_type": "embedding",
                 "targets": {
                     "theoretical": {

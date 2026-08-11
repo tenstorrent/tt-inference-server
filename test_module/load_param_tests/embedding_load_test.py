@@ -32,12 +32,7 @@ class EmbeddingLoadTest(BaseTest):
     HARDWARE_REQUIREMENT = HardwareRequirement.FULL_BOARD
 
     def _model_name(self) -> str:
-        """Model id to send in the request body.
-
-        Forge embedding runners reject a request whose ``model`` is not the one
-        they loaded, so this has to be the real repo id — an invented default
-        turns the whole test into a 500.
-        """
+        """Model id to send; forge runners reject any id but the loaded one."""
         configured = self.config.get("model")
         if configured:
             return configured
@@ -98,10 +93,7 @@ class EmbeddingLoadTest(BaseTest):
                 logger.info(f"[{index}] Error after {duration:.2f}s: {e}")
                 raise
 
-        # First iteration is warmup, second is measured. The warmup matters:
-        # the first request against a forge runner can pay trace-capture /
-        # compile cost, which would otherwise be charged to the reported time.
-        requests_duration = avg_duration = 0.0
+        # First iteration is warmup, second is measured.
         for iteration in range(2):
             session_timeout = aiohttp.ClientTimeout(total=2000)
             async with aiohttp.ClientSession(
@@ -121,9 +113,6 @@ class EmbeddingLoadTest(BaseTest):
         )
         logger.info(
             f"\n🚀 Avg time for {batch_size} concurrent requests: {avg_duration:.2f}s"
-        )
-        logger.info(
-            f"🚀 Avg time for {batch_size} concurrent requests: {avg_duration:.2f}s"
         )
         return requests_duration, avg_duration
 

@@ -40,13 +40,11 @@ OPENAI_API_KEY = "your-secret-key"
 def _embedding_params(ctx: MediaContext) -> tuple[str, int, int, int]:
     """Return (model, isl, num_calls, concurrency).
 
-    Concurrency is the *server's* — ``device_model_spec.max_concurrency``, i.e.
-    one per data-parallel worker (1 on n150, 32 on a galaxy). It is not
-    ``VLLM__MAX_NUM_SEQS``, which is per worker and is 1 in both cases.
+    ``BENCHMARK_MAX_CONCURRENCY`` overrides the per-worker batch for specs whose
+    workers each serve several requests at once.
     """
-    device_spec = ctx.model_spec.device_model_spec
-    env = device_spec.env_vars
-    concurrency = device_spec.max_concurrency
+    env = ctx.model_spec.device_model_spec.env_vars
+    concurrency = env.get("BENCHMARK_MAX_CONCURRENCY", env.get("VLLM__MAX_NUM_SEQS", 1))
     return (
         ctx.model_spec.hf_model_repo,
         int(env.get("VLLM__MAX_MODEL_LENGTH", 1024)),
@@ -92,7 +90,6 @@ def _run_embedding_transcription_benchmark(ctx: MediaContext) -> dict:
         str(vllm_exec),
         "bench",
         "serve",
-        # Without this the client uses its own default of 127.0.0.1:8000.
         "--base-url",
         ctx.base_url,
         "--model",
@@ -101,8 +98,6 @@ def _run_embedding_transcription_benchmark(ctx: MediaContext) -> dict:
         str(isl),
         "--num-prompts",
         str(num_calls),
-        # The server queue is bounded, so an unbounded fan-out fails most
-        # requests.
         "--max-concurrency",
         str(concurrency),
         "--backend",
@@ -121,7 +116,6 @@ def _run_embedding_transcription_benchmark(ctx: MediaContext) -> dict:
     )
     proc = subprocess.run(cmd, capture_output=True, text=True)
     if proc.returncode != 0:
-        # Surface the client's own error, not just the exit code.
         logger.error(
             "vllm bench serve exited %s\n--- stdout ---\n%s\n--- stderr ---\n%s",
             proc.returncode,
@@ -227,7 +221,6 @@ def run_embedding_benchmark(ctx: MediaContext) -> Block:
                 "isl": isl,
                 "concurrency": concurrency,
                 "num_requests": successful_requests + failed_requests,
-                # num_requests alone reads as a clean run even when most failed.
                 "successful_requests": successful_requests,
                 "failed_requests": failed_requests,
                 "tput_user": tput_user,

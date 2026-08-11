@@ -88,7 +88,6 @@ def _run_embedding_mteb_eval(ctx: MediaContext) -> dict:
     logger.info("Running embedding MTEB eval via %s: tasks=%s", venv_python, MTEB_TASKS)
     proc = subprocess.run(cmd, capture_output=True, text=True)
     if proc.returncode != 0:
-        # CalledProcessError alone hides the runner's traceback.
         logger.error(
             "MTEB runner exited %s\n--- stdout ---\n%s\n--- stderr ---\n%s",
             proc.returncode,

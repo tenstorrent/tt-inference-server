@@ -13,7 +13,7 @@
 
 vllm==0.19.1
 transformers==5.5.1
-# transformers 5.x needs tqdm.contrib.logging, added in tqdm 4.60.
+# transformers 5.x imports tqdm.contrib.logging.
 tqdm>=4.67.1
 torch
 # Extra deps required by benchmark_serving_structured_output.py; the

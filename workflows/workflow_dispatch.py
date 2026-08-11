@@ -720,8 +720,6 @@ def _engine_dependency_venv_types(
             venv_types.append(eval_venv)
         if model_spec.model_type in _LLM_LIKE_TYPES:
             venv_types.extend(_llm_eval_venv_types(model_spec, runtime_config))
-    # Embedding benchmarks shell out to `vllm bench serve`, which needs the vllm
-    # client venv.
     if (
         wf in _ENGINE_BENCHMARK_WORKFLOWS
         and model_spec.model_type in _ENGINE_VLLM_CLIENT_BENCHMARK_TYPES
