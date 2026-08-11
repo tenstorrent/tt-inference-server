@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+
 """Tests for temporary fixture download authorization."""
 
 from minimax_mock.download_signer import DownloadSigner
