@@ -1182,6 +1182,24 @@ target_include_directories(session_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+# Header-only layer -> Kafka partition ownership policy (#4795). No Kafka link.
+add_executable(layer_to_partition_test
+    tests/unit/services/layer_to_partition_test.cpp
+)
+target_link_libraries(layer_to_partition_test PRIVATE GTest::gtest_main)
+target_include_directories(layer_to_partition_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+# Header-only Kafka partition pin helpers for N-prefill workers (#4795).
+add_executable(kafka_partition_pin_test
+    tests/unit/services/kafka_partition_pin_test.cpp
+)
+target_link_libraries(kafka_partition_pin_test PRIVATE GTest::gtest_main)
+target_include_directories(kafka_partition_pin_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 add_executable(prefix_cache_router_test
     tests/unit/services/prefix_cache_router_test.cpp
     src/domain/session.cpp
@@ -1475,6 +1493,8 @@ gtest_discover_tests(cancel_queue_test)
 gtest_discover_tests(worker_metrics_shm_test)
 gtest_discover_tests(concurrent_map_test)
 gtest_discover_tests(session_test)
+gtest_discover_tests(layer_to_partition_test)
+gtest_discover_tests(kafka_partition_pin_test)
 gtest_discover_tests(prefix_cache_router_test)
 gtest_discover_tests(session_manager_test)
 gtest_discover_tests(worker_manager_test)
@@ -1743,10 +1763,14 @@ if(KAFKA_ENABLED)
     target_include_directories(remote_kv_manager_kafka_test PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
+    # Opt-in via INTEGRATION_TESTS_ENABLED=1 (each TEST GTEST_SKIPs otherwise).
+    gtest_discover_tests(remote_kv_manager_kafka_test
+        PROPERTIES LABELS "kafka;integration"
+    )
 
     # E2E test: real RemoteKVManagerImpl driven against a scriptable
-    # MockMigrationWorker over a real Kafka broker (scripts/dev-kafka.sh up).
-    # Not registered with add_test() -- opt-in, run manually.
+    # MockKafkaWorker over a real Kafka broker (scripts/dev-kafka.sh up).
+    # Opt-in via INTEGRATION_TESTS_ENABLED=1 (each TEST GTEST_SKIPs otherwise).
     add_executable(remote_kv_manager_e2e_test
         tests/e2e/remote_kv_manager_e2e_test.cpp
     )
@@ -1756,6 +1780,9 @@ if(KAFKA_ENABLED)
     )
     target_include_directories(remote_kv_manager_e2e_test PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    gtest_discover_tests(remote_kv_manager_e2e_test
+        PROPERTIES LABELS "kafka;e2e"
     )
 else()
     message(STATUS "Kafka support disabled (use -DKAFKA_ENABLED=ON to enable)")

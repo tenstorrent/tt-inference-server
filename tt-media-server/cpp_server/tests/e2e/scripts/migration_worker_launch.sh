@@ -30,7 +30,7 @@
 #   HEALTH_PORT.
 # Decode also needs DECODE_TABLE. Prefill needs PREFILL_TABLE and non-empty
 #   PEERS; DECODE_TABLE is an optional disk fallback to control TABLE_EXCHANGE.
-# Optional: PEERS (see above), KAFKA_BROKERS, KAFKA_GROUP_ID,
+# Optional: PEERS (see above), KAFKA_BROKERS, KAFKA_GROUP_ID, KAFKA_PARTITION,
 #   KV_MIGRATION_MODE (device|dry-run; applies to both roles),
 #   MC_TCP_BIND_ADDRESS
 #   (unset/"auto" => detect this host's routable IP so peers can reach it),
@@ -38,6 +38,11 @@
 #   defaults to the worker's own default when unset), DEVICE_MAP (legacy file
 #   fallback), ENGINE_HANDOFF_PORT (listen for DeviceMap over localhost; preferred
 #   when deploy pushes via engine_handoff_sender). Omit both for discovery-only.
+#
+# KAFKA_PARTITION (prefill): when set, exclusive ownership mode — worker
+#   --kafka-partition N uses rd_kafka_assign (no rebalance). Group defaults to
+#   the shared migration-workers id. When unset, legacy broadcast: each prefill
+#   gets its own KAFKA_GROUP_ID so every prefill sees every request.
 set -euo pipefail
 
 die() { echo "ERROR: $*" >&2; exit 2; }
@@ -111,9 +116,16 @@ case "${WORKER_ROLE}" in
     [[ -n "${DECODE_TABLE:-}" ]] && decode_table_args=(--decode-table "${DECODE_TABLE}")
     # The sender needs a control channel to every peer it might route to.
     (( ${#peer_args[@]} > 0 )) || die "prefill has no peers (PEERS empty)"
-    # One consumer group per prefill so every prefill sees each request (Kafka
-    # delivers a record to one member per group => broadcast across prefills).
-    export KAFKA_GROUP_ID="${KAFKA_GROUP_ID:-migration-workers-prefill-${WORKER_TAG}}"
+    kafka_partition_args=()
+    if [[ -n "${KAFKA_PARTITION:-}" ]]; then
+      # Exclusive N-prefill ownership (#4795): assign(partition), shared group.
+      kafka_partition_args=(--kafka-partition "${KAFKA_PARTITION}")
+      export KAFKA_GROUP_ID="${KAFKA_GROUP_ID:-migration-workers}"
+    else
+      # Legacy broadcast: one group per prefill so every prefill sees each
+      # request (Kafka delivers a record to one member per group).
+      export KAFKA_GROUP_ID="${KAFKA_GROUP_ID:-migration-workers-prefill-${WORKER_TAG}}"
+    fi
     exec "${WORKER_BIN}" \
       --role "${WORKER_ROLE}" \
       --metadata "${METADATA}" --name "${WORKER_TAG}" --host "${WORKER_TAG}" \
@@ -122,7 +134,8 @@ case "${WORKER_ROLE}" in
       "${peer_args[@]}" \
       ${peer_control_args[@]+"${peer_control_args[@]}"} \
       ${device_args[@]+"${device_args[@]}"} \
-      ${health_args[@]+"${health_args[@]}"}
+      ${health_args[@]+"${health_args[@]}"} \
+      ${kafka_partition_args[@]+"${kafka_partition_args[@]}"}
     ;;
   *)
     die "WORKER_ROLE must be prefill|decode (got '${WORKER_ROLE}')"
