@@ -5290,13 +5290,17 @@ _eval_config_list = [
                 # the task's extractor scores exact_match,none.
                 task_name="r1_gpqa_diamond",
                 score=EvalTaskScore(
-                    published_score=87.4,
+                    # V4-Flash "Max" GPQA Diamond (88.1) from the author's
+                    # per-mode table; we report the max-effort number since our
+                    # GPU reference is collected at reasoning_effort=max
+                    # (Non-Think 71.2 / High 87.4 / Max 88.1).
+                    published_score=88.1,
                     published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash",
                     # Full 198-sample r1_gpqa_diamond, single run, GPU bring-your-own
                     # vLLM (DeepSeek-V4-Flash-0731, --max-model-len 500000) with
                     # thinking enabled server-side (--default-chat-template-kwargs
                     # '{"thinking": true, "reasoning_effort": "max"}'). 90.40% +/-
-                    # 2.10 (exceeds the published 87.4). With thinking OFF the same
+                    # 2.10 (exceeds the published 88.1). With thinking OFF the same
                     # task scored only 74.24 -- enabling thinking is the key.
                     gpu_reference_score=90.40,
                     gpu_reference_score_ref="run.py --workflow evals r1_gpqa_diamond full (198), GPU DeepSeek-V4-Flash-0731 bring-your-own vLLM w/ thinking=true reasoning_effort=max, 2026-08-07",
@@ -5342,14 +5346,19 @@ _eval_config_list = [
                 task_name="terminal_bench_2_1",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
-                    published_score=56.6,
-                    published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash",
+                    # Terminal Bench 2.1 = 82.7 from the DeepSeek-V4-Flash-0731
+                    # model card, which reports the code-agent tasks at the max
+                    # reasoning effort level (temperature=1.0, top_p=0.95) --
+                    # matching how our GPU reference is collected.
+                    published_score=82.7,
+                    published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash-0731",
                     # Full terminal-bench-2-1 (89 tasks), terminus-2, GPU
                     # bring-your-own vLLM (DeepSeek-V4-Flash-0731, max-model-len
                     # 500000, thinking=true reasoning_effort=max), 96K in / 384K
-                    # out, top_p=0.95. 66/89 resolved = 74.16% (exceeds the
-                    # published 56.6). Wider tolerance than the 5% default: only
-                    # 89 tasks and max-effort reasoning is highly
+                    # out, top_p=0.95. 66/89 resolved = 74.16% (below the
+                    # published 82.7; the author uses the DeepSeek Harness agent
+                    # whereas we use terminus-2). Wider tolerance than the 5%
+                    # default: only 89 tasks and max-effort reasoning is highly
                     # non-deterministic, so one flipped task moves ~1.1 pts.
                     gpu_reference_score=74.16,
                     gpu_reference_score_ref="run.py --workflow agentic terminal_bench_2_1 full (66/89 resolved), GPU DeepSeek-V4-Flash-0731 bring-your-own vLLM w/ thinking=true reasoning_effort=max, 2026-08-08",
@@ -5408,13 +5417,17 @@ _eval_config_list = [
                 task_name="swe_bench_verified",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
-                    published_score=78.6,
+                    # V4-Flash "Max" SWE Verified (79.0) from the author's
+                    # per-mode table; we report the max-effort number since our
+                    # GPU reference is collected at reasoning_effort=max
+                    # (Non-Think 73.7 / High 78.6 / Max 79.0).
+                    published_score=79.0,
                     published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash",
                     # Full SWE-bench Verified (500), mini-swe-agent, GPU
                     # bring-your-own vLLM (DeepSeek-V4-Flash-0731, max-model-len
                     # 500000, thinking=true reasoning_effort=max), 96K in / 384K
                     # out, top_p=0.95. 436/500 resolved = 87.20% (exceeds the
-                    # published 78.6).
+                    # published 79.0).
                     gpu_reference_score=87.20,
                     gpu_reference_score_ref="run.py --workflow agentic swe_bench_verified full (436/500 resolved), GPU DeepSeek-V4-Flash-0731 bring-your-own vLLM w/ thinking=true reasoning_effort=max, 2026-08-08",
                     score_func=score_task_single_key,
