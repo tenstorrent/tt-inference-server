@@ -27,6 +27,8 @@ docker run \
   --tt-device p300x2
 ```
 
+> **Caution (build pin):** the pinned `0.18.0-c49bb76-6b4a3a7` image carries the "coherent but incorrect" generation bug for this model ([tt-metal#49513](https://github.com/tenstorrent/tt-metal/issues/49513)). Use a 0.19.0+ build that includes [tt-metal#48861](https://github.com/tenstorrent/tt-metal/pull/48861) (chunked-GDN C++ op) and commit `c355c15b` (weight loading).
+
 **via run.py command**
 
 ```bash
@@ -40,9 +42,11 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 |-----------|-------|
 | Weights | [Qwen/Qwen3.6-27B](https://huggingface.co/Qwen/Qwen3.6-27B) |
 | Model Status | 🛠️ Experimental |
-| Max Batch Size | 1 |
+| Max Batch Size | 4 @ 262144 ctx (see note below) |
 | Max Context Length | 262144 |
 | Implementation Code | [qwen36-blackhole](https://github.com/tenstorrent/tt-metal/tree/c49bb76/models/demos/blackhole/qwen36) |
 | tt-metal Commit | `c49bb76` |
 | vLLM Commit | `6b4a3a7` |
 | Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.18.0-c49bb76-6b4a3a7` |
+
+> **Batch size note:** independently verified on a TT-QuietBox 2 (4×P150): `max_num_seqs=4` at full 262144 ctx decodes 4 requests concurrently (61.87 tok/s aggregate @4; 4-prompt concurrent correctness gate 4/4), while `max_num_seqs=8` at 262144 ctx OOMs in device DRAM (`bank_manager.cpp:462`). Batch=8 is available via the 64k-context spec from [#4706](https://github.com/tenstorrent/tt-inference-server/pull/4706).
