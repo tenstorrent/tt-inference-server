@@ -378,7 +378,12 @@ def _validate_poll_task(
     created_at = task.get("created_at")
     updated_at = task.get("updated_at")
     if not isinstance(created_at, int) or not isinstance(updated_at, int):
-        return False, "created_at and updated_at must be Unix integer timestamps", None, None
+        return (
+            False,
+            "created_at and updated_at must be Unix integer timestamps",
+            None,
+            None,
+        )
     if created_at > updated_at:
         return False, "created_at is later than updated_at", None, None
     if previous_created_at is not None and created_at != previous_created_at:
@@ -397,9 +402,7 @@ async def _poll_task(
     poll_interval: float,
     poll_timeout: float,
 ) -> tuple[dict[str, Any], dict[str, Any] | None]:
-    endpoint_url = (
-        f"{base_url.rstrip('/')}{QUERY_PATH.format(task_id=task_id)}"
-    )
+    endpoint_url = f"{base_url.rstrip('/')}{QUERY_PATH.format(task_id=task_id)}"
     start = time.monotonic()
     observed_statuses: list[str] = []
     previous_created_at: int | None = None
@@ -595,8 +598,7 @@ def _validate_succeeded_task(
         usage["input_seconds"] != 0
         or usage["input_image_count"] != 0
         or usage["output_seconds"] != EXPECTED_DURATION_SECONDS
-        or usage["total_seconds"]
-        != usage["input_seconds"] + usage["output_seconds"]
+        or usage["total_seconds"] != usage["input_seconds"] + usage["output_seconds"]
     ):
         return (
             _error_result(
@@ -775,7 +777,13 @@ async def _probe_video(
         width = int(video_stream["width"])
         height = int(video_stream["height"])
         duration = float(metadata["format"]["duration"])
-    except (KeyError, TypeError, ValueError, StopIteration, json.JSONDecodeError) as exc:
+    except (
+        KeyError,
+        TypeError,
+        ValueError,
+        StopIteration,
+        json.JSONDecodeError,
+    ) as exc:
         return _error_result(
             "probe_generated_video",
             expected_status="valid ffprobe metadata",
@@ -893,12 +901,9 @@ async def _check_video_frames(
             quality_warning=True,
         )
 
-    average_brightness = sum(sum(frame) / len(frame) for frame in frames) / len(
-        frames
-    )
+    average_brightness = sum(sum(frame) / len(frame) for frame in frames) / len(frames)
     frame_deltas = [
-        _mean_absolute_delta(left, right)
-        for left, right in zip(frames, frames[1:])
+        _mean_absolute_delta(left, right) for left, right in zip(frames, frames[1:])
     ]
     mean_frame_delta = sum(frame_deltas) / len(frame_deltas)
     quality_issues = []
@@ -925,9 +930,7 @@ async def _check_video_frames(
             else "decodable sampled frames"
         ),
         actual_status=(
-            "valid sampled frames"
-            if not quality_issues
-            else "quality warning"
+            "valid sampled frames" if not quality_issues else "quality warning"
         ),
         message="; ".join(quality_issues),
         sampled_frames=frame_count,
@@ -944,9 +947,7 @@ async def _delete_succeeded_task(
     api_key: str,
     task_id: str,
 ) -> dict[str, Any]:
-    endpoint_url = (
-        f"{base_url.rstrip('/')}{DELETE_PATH.format(task_id=task_id)}"
-    )
+    endpoint_url = f"{base_url.rstrip('/')}{DELETE_PATH.format(task_id=task_id)}"
     try:
         async with session.delete(
             endpoint_url,
@@ -960,8 +961,7 @@ async def _delete_succeeded_task(
                     expected_status=HTTP_OK,
                     actual_status=response.status,
                     message=(
-                        f"delete failed; "
-                        f"response={_response_excerpt(response_text)!r}"
+                        f"delete failed; response={_response_excerpt(response_text)!r}"
                     ),
                 )
             expected = {
@@ -1001,9 +1001,7 @@ async def _check_deleted_record(
     api_key: str,
     task_id: str,
 ) -> dict[str, Any]:
-    endpoint_url = (
-        f"{base_url.rstrip('/')}{QUERY_PATH.format(task_id=task_id)}"
-    )
+    endpoint_url = f"{base_url.rstrip('/')}{QUERY_PATH.format(task_id=task_id)}"
     try:
         async with session.get(
             endpoint_url,
@@ -1208,12 +1206,8 @@ class MiniMaxH3LifecycleDeleteTest(BaseTest):
                     DEFAULT_POLL_TIMEOUT_SECONDS,
                 )
             ),
-            require_media_probe=bool(
-                self.targets.get("require_media_probe", True)
-            ),
-            require_frame_checks=bool(
-                self.targets.get("require_frame_checks", False)
-            ),
+            require_media_probe=bool(self.targets.get("require_media_probe", True)),
+            require_frame_checks=bool(self.targets.get("require_frame_checks", False)),
         )
 
 
