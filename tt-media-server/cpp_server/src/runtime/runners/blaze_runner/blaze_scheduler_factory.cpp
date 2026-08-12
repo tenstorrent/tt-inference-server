@@ -44,36 +44,6 @@ class RealDecodeScheduler final : public IDecodeScheduler {
   uint32_t get_spec_rejects(uint32_t slotId) const override {
     return impl->get_spec_rejects(slotId);
   }
-  uint32_t get_in_flight_count(uint32_t slotId) const override {
-    return impl->get_in_flight_count(slotId);
-  }
-  uint32_t get_tokens_generated(uint32_t slotId) const override {
-    return impl->get_tokens_generated(slotId);
-  }
-  uint32_t get_max_new_tokens(uint32_t slotId) const override {
-    return impl->get_max_new_tokens(slotId);
-  }
-  uint32_t get_current_position(uint32_t slotId) const override {
-    return impl->get_current_position(slotId);
-  }
-  uint32_t get_generation(uint32_t slotId) const override {
-    return impl->get_generation(slotId);
-  }
-  bool get_evict_pending(uint32_t slotId) const override {
-    return impl->get_evict_pending(slotId);
-  }
-  bool get_stop_pending(uint32_t slotId) const override {
-    return impl->get_stop_pending(slotId);
-  }
-  uint32_t get_decode_staging_size() const override {
-    return impl->get_decode_staging_size();
-  }
-  uint32_t get_prefill_queue_size() const override {
-    return impl->get_prefill_queue_size();
-  }
-  void dump_diagnostics(std::ostream& os) const override {
-    impl->dump_diagnostics(os);
-  }
 
  private:
   std::unique_ptr<ds::DecodeScheduler> impl;
@@ -94,10 +64,6 @@ class RealPrefillScheduler final : public IPrefillScheduler {
   }
   bool try_pop_output(ps::OutputMessage& output) override {
     return impl->try_pop_output(output);
-  }
-
-  void dump_diagnostics(std::ostream& os) const override {
-    impl->dump_diagnostics(os);
   }
 
  private:

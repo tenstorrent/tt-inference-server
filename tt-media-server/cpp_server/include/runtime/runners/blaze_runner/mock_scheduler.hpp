@@ -208,10 +208,6 @@ class MockPrefillScheduler final : public IPrefillScheduler {
     return core.tryPopOutput(output);
   }
 
-  void dump_diagnostics(std::ostream& os) const override {
-    os << "MockPrefillScheduler";
-  }
-
  private:
   detail::MockSchedulerCore core;
   MockPrefillSchedulerConfig cfg;
@@ -343,22 +339,6 @@ class MockDecodeScheduler final : public IDecodeScheduler {
 
   uint32_t get_spec_accepts(uint32_t /*slotId*/) const override { return 0; }
   uint32_t get_spec_rejects(uint32_t /*slotId*/) const override { return 0; }
-  uint32_t get_in_flight_count(uint32_t /*slotId*/) const override { return 0; }
-  uint32_t get_tokens_generated(uint32_t /*slotId*/) const override {
-    return 0;
-  }
-  uint32_t get_max_new_tokens(uint32_t /*slotId*/) const override { return 0; }
-  uint32_t get_current_position(uint32_t /*slotId*/) const override {
-    return 0;
-  }
-  uint32_t get_generation(uint32_t /*slotId*/) const override { return 0; }
-  bool get_evict_pending(uint32_t /*slotId*/) const override { return false; }
-  bool get_stop_pending(uint32_t /*slotId*/) const override { return false; }
-  uint32_t get_decode_staging_size() const override { return 0; }
-  uint32_t get_prefill_queue_size() const override { return 0; }
-  void dump_diagnostics(std::ostream& os) const override {
-    os << "MockDecodeScheduler";
-  }
 
  private:
   struct PendingJob {

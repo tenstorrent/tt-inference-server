@@ -238,5 +238,4 @@ _gateway_add_unit_test(prefill_registry_test)
 _gateway_add_unit_test(dispatcher_test)
 _gateway_add_unit_test(gateway_metrics_test)
 _gateway_add_unit_test(gateway_health_test)
-# Disabled:
-# _gateway_add_e2e_test(gateway_e2e_test)
+_gateway_add_e2e_test(gateway_e2e_test)

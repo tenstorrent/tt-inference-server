@@ -5,7 +5,7 @@
 
 """End-to-end verification of the AIPerf benchmark path for Blackhole Galaxy.
 
-Readiness item 7.1 (llm-gauntlet#72): confirm the ``--tools aiperf`` benchmark
+Readiness item 7.1: confirm the ``--tools aiperf`` benchmark
 path works end to end against a model "served" on a 32-chip Blackhole Galaxy.
 Real Galaxy hardware is not required here: a mock OpenAI-compatible server
 (``llm-d-inference-sim``) stands in for the served model, seeded with
@@ -65,7 +65,7 @@ _DEFAULT_TARGETS = {
     "target": {"ttft_ms": 500.0, "tput_user": 30.0, "tput": 20.0},
 }
 
-# Small Blackhole-Galaxy-shaped sweep. Honors readiness §5.7 (#64): every graded
+# Small Blackhole-Galaxy-shaped sweep. Honors readiness §5.7: every graded
 # concurrency level carries >= 3 distinct input lengths so a scaling-quality fit
 # is possible. Kept tiny (short ISL/OSL, few prompts) so the mock run is quick.
 _DEFAULT_ISLS = [128, 512, 1024]

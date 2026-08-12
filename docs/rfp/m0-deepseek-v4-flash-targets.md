@@ -1,8 +1,7 @@
 # Milestone-0 — DeepSeek-V4-Flash-0731 performance targets (Blackhole Galaxy)
 
 **Readiness item:** 6.x / target authoring — owner: Benchmark tooling + Partner
-**Issues:** [llm-gauntlet#66 / #67](https://github.tenstorrent.com/tenstorrent/llm-gauntlet/issues/56) (author sweep + targets) · Parent: [#56](https://github.tenstorrent.com/tenstorrent/llm-gauntlet/issues/56)
-**RFP references:** Appendix B.0 (per-system target expression), B.1/B.2 (sweep grid / graded points), F.1 (scaling-quality rubric). Builds on the device config ([§5.4 / #68](m0-blackhole-galaxy-device-config.md)), the scaling-quality rule ([§5.7 / #64](m0-scaling-quality-sweep-coverage.md)), and the AIPerf E2E verification ([§7.1 / #72](m0-aiperf-e2e-verification.md)).
+**RFP references:** Appendix B.0 (per-system target expression), B.1/B.2 (sweep grid / graded points), F.1 (scaling-quality rubric). Builds on the device config ([§5.4](m0-blackhole-galaxy-device-config.md)), the scaling-quality rule ([§5.7](m0-scaling-quality-sweep-coverage.md)), and the AIPerf E2E verification ([§7.1](m0-aiperf-e2e-verification.md)).
 
 ## Source
 
@@ -62,12 +61,12 @@ tiers are derived from it by `perf_targets_map` (repo default
   ~linearly with input length, so this is the standard first-order model — **not** a
   measured curve.
 
-## Open decisions (flagged for #66/#67 + Partner)
+## Open decisions (flagged for sweep/target authoring + Partner)
 
 1. **TTFT off the anchor point is modeled, not measured.** Only the 8,192-ISL / conc-64
    TTFT comes from the sheet; the 4,096 and 16,384 values are the linear-prefill
    extrapolation above. Replace with AIPerf-measured TTFT-vs-ISL once real 32-chip Galaxy
-   numbers exist (the [#72 harness](m0-aiperf-e2e-verification.md) already consumes exactly
+   numbers exist (the [AIPerf E2E harness](m0-aiperf-e2e-verification.md) already consumes exactly
    these shapes).
 2. **Single graded concurrency level (64).** The sheet characterizes one operating point,
    so only concurrency 64 is graded. If the RFP wants a single-stream (conc 1) graded line

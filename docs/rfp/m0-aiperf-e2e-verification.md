@@ -1,8 +1,7 @@
 # Milestone-0 — AIPerf benchmark path end-to-end verification (Blackhole Galaxy)
 
 **Readiness item:** 7.1 — Verify — owner: Benchmark tooling
-**Issue:** [llm-gauntlet#72](https://github.com/tenstorrent/llm-gauntlet/issues/72) · Parent: [#56](https://github.com/tenstorrent/llm-gauntlet/issues/56)
-**RFP references:** requirements §G.1 (AIPerf is the pinned measurement tool), readiness §7.1. Interacts with the device config ([§5.4 / #68](m0-blackhole-galaxy-device-config.md)) and the scaling-quality sweep rule ([§5.7 / #64](m0-scaling-quality-sweep-coverage.md)).
+**RFP references:** requirements §G.1 (AIPerf is the pinned measurement tool), readiness §7.1. Interacts with the device config ([§5.4](m0-blackhole-galaxy-device-config.md)) and the scaling-quality sweep rule ([§5.7](m0-scaling-quality-sweep-coverage.md)).
 
 ## Problem
 

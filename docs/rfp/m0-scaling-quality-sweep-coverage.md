@@ -1,8 +1,7 @@
 # Milestone-0 — Scaling-quality sweep coverage (three-point rule)
 
 **Readiness item:** 5.7 — Blocker — owner: Performance
-**Issue:** [llm-gauntlet#64](https://github.com/tenstorrent/llm-gauntlet/issues/64) · Parent: [#56](https://github.com/tenstorrent/llm-gauntlet/issues/56)
-**RFP references:** Appendix B.1 (sweep grid), Appendix B.2 (graded points), Appendix F.1 (scaling-quality rubric line), readiness §5.7. Interacts with the device configuration ([§5.4 / #68](m0-blackhole-galaxy-device-config.md)).
+**RFP references:** Appendix B.1 (sweep grid), Appendix B.2 (graded points), Appendix F.1 (scaling-quality rubric line), readiness §5.7. Interacts with the device configuration ([§5.4](m0-blackhole-galaxy-device-config.md)).
 
 The scaling-quality rubric line fits **time-to-first-token against input length,
 separately at each graded concurrency level**. A regression needs at least three
@@ -13,7 +12,7 @@ points, so the RFP requires a hard constraint on how the graded sweep is authore
 A sweep with five input lengths at concurrency 1 but only two at maximum
 concurrency makes the high-concurrency fit meaningless — and that level carries
 75 % of the line. This is a **Blocker**: it must be settled before the sweep and
-targets are authored (#66/#67), because it constrains *which* points can be graded.
+targets are authored (sweep/target work), because it constrains *which* points can be graded.
 
 ---
 
@@ -70,10 +69,10 @@ out of the concurrency-128 group.
 
 The guard is **vacuous for the current catalog** (prod has no `BLACKHOLE_GALAXY`
 specs, and no Milestone-0 model has `blackhole_galaxy` targets yet), so it changes
-no existing run. It activates the moment #66/#67 author the graded sweep — which is
+no existing run. It activates the moment the graded sweep is authored — which is
 precisely when the rule must hold.
 
-## 3. Interaction with the device configuration (#68)
+## 3. Interaction with the device configuration (§5.4)
 
 The `max_context = 262144` / `max_concurrency = 128` decisions from
 [§5.4](m0-blackhole-galaxy-device-config.md) do **not** by themselves guarantee the
@@ -99,7 +98,7 @@ concurrency levels instead (e.g. grade at concurrency 1 and at
 
 ## Downstream
 
-- **#66 / #67** (sweep + targets): author the `blackhole_galaxy` graded set with
+- **Sweep + targets authoring**: author the `blackhole_galaxy` graded set with
   ≥3 distinct input lengths at each graded concurrency level; run against the
   validator (now enforced automatically by `get_llm_configs`). Set
   `max_tokens_all_users_override` from the AIPerf measurement, or rescope.

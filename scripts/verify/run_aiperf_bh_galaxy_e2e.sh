@@ -4,7 +4,7 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 #
 # End-to-end verification of the `--tools aiperf` benchmark path for a model
-# "served" on a 32-chip Blackhole Galaxy (readiness item 7.1, llm-gauntlet#72).
+# "served" on a 32-chip Blackhole Galaxy (readiness item 7.1).
 #
 # Real Galaxy hardware is not required: this starts a mock OpenAI-compatible
 # server (llm-d-inference-sim) seeded with Blackhole-Galaxy-representative

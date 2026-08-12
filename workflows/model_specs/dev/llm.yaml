@@ -237,7 +237,7 @@ templates:
       # Appendix F.1; readiness §5.7). A 32-chip Galaxy has a far larger aggregate
       # KV pool; set this to the measured value, and >= 278528 (=128*2176) so
       # ISLs {128,1024,2048} all reach concurrency 128. get_llm_configs enforces
-      # this once blackhole_galaxy targets are authored (#66/#67).
+      # this once blackhole_galaxy targets are authored (sweep/target work).
       # max_tokens_all_users_override: 278528
       default_impl: true
       env_vars:

@@ -1,10 +1,9 @@
 # Milestone-0 — Blackhole Galaxy device-level configuration determination
 
 **Readiness item:** 5.4 — Required — owner: Model bring-up
-**Issue:** [llm-gauntlet#68](https://github.com/tenstorrent/llm-gauntlet/issues/68) · Parent: [#56](https://github.com/tenstorrent/llm-gauntlet/issues/56)
 **RFP references:** requirements §D.1/§D.2 (fixed system + torus descriptor), §D.3 (logical mesh is the operator's choice), Appendix B.0 (device-level prerequisites for setting targets), readiness §5.4.
 
-This is the `tt-inference-server`-side determination of the device-level configuration for the 32-chip Blackhole Galaxy, plus the concrete scaffolding it produces. It settles the four open items from §5.4 and lands the artifacts that unblock the sweep/target work (#65/#66/#67/#70).
+This is the `tt-inference-server`-side determination of the device-level configuration for the 32-chip Blackhole Galaxy, plus the concrete scaffolding it produces. It settles the four open items from §5.4 and lands the artifacts that unblock the sweep/target work (prod spec promotion + target authoring).
 
 The system is fixed by the RFP: **32 × P150 in a 4×8 2D torus**, mesh graph descriptor
 `tt_metal/fabric/mesh_graph_descriptors/single_bh_galaxy_torus_xy_graph_descriptor.textproto`
@@ -64,7 +63,7 @@ Why this needed a code change. `workflows/model_spec.py::scale_llm_perf_targets`
 - Serving mechanics untouched (`_infer_data` still splits per-system concurrency across DP engines). Only the grading target is made DP-invariant.
 - Regression-guarded: the Wormhole Galaxy DP specs keep the per-replica ×DP behaviour. See `tests/test_perf_reference_per_system.py`.
 
-**Consequence for authoring (#66/#67):** the `blackhole_galaxy` targets in `model_performance_reference.json` are absolute **per-system** values established from AIPerf (readiness §5.3), not per-replica figures to be scaled up.
+**Consequence for authoring (sweep/target work):** the `blackhole_galaxy` targets in `model_performance_reference.json` are absolute **per-system** values established from AIPerf (readiness §5.3), not per-replica figures to be scaled up.
 
 ---
 
@@ -90,7 +89,7 @@ replaces it with the implementation they contribute.
 
 ## Downstream
 
-- **#65 / #70** (promote/author the prod `BLACKHOLE_GALAXY` specs): promote these dev entries with pinned commits once AIPerf targets exist.
-- **#66 / #67** (sweep + targets): author `blackhole_galaxy` targets as absolute per-system values (item 4).
-- **[#64 / §5.7](m0-scaling-quality-sweep-coverage.md)** (scaling-quality coverage): the `max_context`/`max_concurrency` chosen here interact with the three-input-lengths-per-graded-concurrency rule. With the token pool defaulted to `max_context`, only ISLs 128 and 1024 reach concurrency 128 — so the Milestone-0 specs carry a `[TBD — Performance] max_tokens_all_users_override` (floor 278528) that must be sized to the measured 32-chip KV pool.
+- **Prod spec promotion** (promote/author the prod `BLACKHOLE_GALAXY` specs): promote these dev entries with pinned commits once AIPerf targets exist.
+- **Sweep + targets authoring**: author `blackhole_galaxy` targets as absolute per-system values (item 4).
+- **[Scaling-quality coverage (§5.7)](m0-scaling-quality-sweep-coverage.md)**: the `max_context`/`max_concurrency` chosen here interact with the three-input-lengths-per-graded-concurrency rule. With the token pool defaulted to `max_context`, only ISLs 128 and 1024 reach concurrency 128 — so the Milestone-0 specs carry a `[TBD — Performance] max_tokens_all_users_override` (floor 278528) that must be sized to the measured 32-chip KV pool.
 - Feeds Appendix B.0 of the partner RFP (`max_context`, `max_concurrency`, data-parallelism rows).

@@ -697,11 +697,9 @@ void BlazeDecodeRunner::checkOutputHang() {
         stalledFor.count(),                 // How bad is it?
         outputHangTimeout.count(),          // What was the limit?
         slotManager.activeRunningCount());  // Global context
-    std::stringstream ss;
-    decodeScheduler->dump_diagnostics(ss);
 
     TT_LOG_CRITICAL("[BlazeRunner] State dump\n{}",
-                    slotManager.dumpSlotStates(ss.str()));
+                    slotManager.dumpSlotStates());
     shutdownScheduler();
     std::abort();
   }

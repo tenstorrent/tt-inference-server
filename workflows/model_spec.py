@@ -268,14 +268,14 @@ deepseek_r1_galaxy_impl = ImplSpec(
 # Milestone-0 stub impl for deepseek-ai/DeepSeek-V4-Flash-0731. No serving path
 # exists yet (readiness §6.2): tt-metal has dimensions-only constants under
 # models/demos/deepseek_v3_d_p but no V4-Flash adapter/demo, and there is no
-# tenstorrent/vllm registration. code_path points at the expected home so the
-# catalog stub is loadable; the Partner replaces this with the real
-# implementation they contribute per RFP F.2.3.
+# tenstorrent/vllm registration. code_path is intentionally left as a fill-in
+# placeholder for the Partner to point at the real implementation they contribute
+# per RFP F.2.3.
 deepseek_v4_flash_impl = ImplSpec(
     impl_id="deepseek_v4_flash",
     impl_name="deepseek-v4-flash",
     repo_url="https://github.com/tenstorrent/tt-metal",
-    code_path="models/demos/deepseek_v3_d_p",
+    code_path="<FILL IN>",  # [TBD — Partner] path to the contributed tt-metal impl
 )
 whisper_impl = ImplSpec(
     impl_id="whisper",
