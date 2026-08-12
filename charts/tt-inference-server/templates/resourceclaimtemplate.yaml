@@ -1,6 +1,7 @@
 {{- include "tt-inference-server.validateValues" . }}
 {{- $cfg := include "tt-inference-server.resolvedConfig" . | fromYaml }}
 {{- $count := include "tt-inference-server.draDeviceCount" . }}
+{{- $boardName := include "tt-inference-server.draBoardName" . }}
 {{- if $count }}
 # DRA ResourceClaim (one per Pod): tt-dra-driver allocates {{ $count }} Tenstorrent
 # board(s) for device "{{ .Values.device }}" and injects /dev/tenstorrent/<N> —
@@ -21,4 +22,8 @@ spec:
             deviceClassName: {{ $cfg.dra.deviceClassName }}
             allocationMode: ExactCount
             count: {{ $count }}
+            selectors:
+              - cel:
+                  expression: |-
+                    device.attributes["tenstorrent.com"].boardName == {{ $boardName | quote }}
 {{- end }}

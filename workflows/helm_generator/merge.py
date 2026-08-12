@@ -225,6 +225,49 @@ def set_device_board_counts(doc: Any, counts: Mapping[str, int]) -> bool:
     return True
 
 
+def set_device_board_names(doc: Any, names: Mapping[str, str]) -> bool:
+    """Set/refresh the top-level `deviceBoardNames` map (device_key -> tt-dra-driver
+    `boardName`), inserted just before `models` for readability. Idempotent.
+
+    Returns True if the file changed.
+    """
+    from ruamel.yaml.comments import CommentedMap
+
+    desired = CommentedMap()
+    for key in sorted(names):
+        desired[key] = str(names[key])
+
+    existing = doc.get("deviceBoardNames")
+    if existing is not None and {k: str(v) for k, v in existing.items()} == {
+        k: str(v) for k, v in desired.items()
+    }:
+        return False
+
+    if "deviceBoardNames" in doc:
+        doc["deviceBoardNames"] = desired
+    else:
+        # Insert just before deviceBoardCounts, which the CLI always writes first.
+        keys = list(doc.keys())
+        pos = keys.index("deviceBoardCounts")
+        counts_comment = getattr(doc, "ca", None) and doc.ca.items.get(
+            "deviceBoardCounts"
+        )
+        doc.insert(pos, "deviceBoardNames", desired)
+        doc.yaml_set_comment_before_after_key(
+            "deviceBoardNames",
+            # Leading newline renders a blank line after the preceding block.
+            before=(
+                "\nDRA boardName per device — the tt-dra-driver `boardName` attribute a "
+                "ResourceClaim selects (CEL) for each device shape.\n"
+                "Generated from workflows/device_utils.py:BOARD_TYPE_COUNT_TO_DEVICE; "
+                "consumed by tt-inference-server.draBoardName."
+            ),
+        )
+        if counts_comment is not None:
+            doc.ca.items["deviceBoardCounts"] = counts_comment
+    return True
+
+
 def format_path(path: PathTuple) -> str:
     return ".".join(path)
 
@@ -249,6 +292,7 @@ __all__: List[str] = [
     "merge_spec",
     "set_default_engine",
     "set_device_board_counts",
+    "set_device_board_names",
     "format_change_summary",
     "format_path",
 ]

@@ -181,6 +181,16 @@ DRA board count for .Values.device, read from the generated
 {{- end -}}
 
 {{/*
+DRA boardName for .Values.device, from the generated .Values.deviceBoardNames map.
+The ResourceClaim selects boards by this attribute (CEL). Returns "" for non-TT
+devices (gpu/cpu); only used when draDeviceCount is non-empty.
+*/}}
+{{- define "tt-inference-server.draBoardName" -}}
+{{- $names := .Values.deviceBoardNames | default dict -}}
+{{- index $names (.Values.device | lower) | default "" -}}
+{{- end -}}
+
+{{/*
 Chart name helpers
 */}}
 {{- define "tt-inference-server.name" -}}

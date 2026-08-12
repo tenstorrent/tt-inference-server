@@ -5,7 +5,7 @@
 
 import json
 import subprocess
-from typing import Dict, Optional, Set, Tuple
+from typing import Dict, Iterator, Optional, Set, Tuple
 
 from workflows.model_spec import MODEL_SPECS
 from workflows.workflow_types import DeviceTypes, WorkflowVenvType
@@ -49,19 +49,53 @@ BOARD_TYPE_COUNT_TO_DEVICE: Dict[Tuple[Tuple[str, int], ...], DeviceTypes] = {
 }
 
 
+# tt-dra-driver boardName per board_type. Matches board_type except the Galaxy
+# UBBs, which the driver names differently.
+_DRA_BOARD_NAME_OVERRIDES: Dict[str, str] = {
+    "tt-galaxy-wh": "galaxy-wormhole",
+    "tt-galaxy-bh": "galaxy-blackhole",
+}
+
+
+def _dra_single_board_type_devices() -> Iterator[Tuple[str, str, int]]:
+    """Yield (device_key, board_type, board_count) for each DRA-deployable device.
+
+    Heterogeneous (multi-board-type) shapes are future work: they can't be
+    expressed as a single boardName selector, so they are skipped here. Both DRA
+    maps below are built from this one generator so deviceBoardCounts and
+    deviceBoardNames always cover the exact same devices (no count-without-name
+    drift that would render an unsatisfiable `boardName == ""` selector).
+    """
+    for board_tuple, device in BOARD_TYPE_COUNT_TO_DEVICE.items():
+        board_types = {board_type for board_type, _ in board_tuple}
+        if len(board_types) != 1:
+            continue
+        board_type = next(iter(board_types))
+        board_count = sum(count for _, count in board_tuple)
+        yield device.name.lower(), board_type, board_count
+
+
 def dra_device_board_counts() -> Dict[str, int]:
     """Map device_key (e.g. "t3k") -> number of Tenstorrent boards a DRA
-    ResourceClaim must request for that device shape.
-
-    Derived from BOARD_TYPE_COUNT_TO_DEVICE (the authoritative board-type/count
-    -> DeviceType mapping, also used for tt-smi device detection) so the Helm
-    chart's per-device DRA count has a single source of truth. The board count
-    is the total number of boards across the device's board-type tuple.
+    ResourceClaim must request. Single source of truth for the chart's per-device
+    board count (see _dra_single_board_type_devices).
     """
-    counts: Dict[str, int] = {}
-    for board_tuple, device in BOARD_TYPE_COUNT_TO_DEVICE.items():
-        counts[device.name.lower()] = sum(count for _, count in board_tuple)
-    return dict(sorted(counts.items()))
+    return dict(
+        sorted((key, count) for key, _bt, count in _dra_single_board_type_devices())
+    )
+
+
+def dra_device_board_names() -> Dict[str, str]:
+    """Map device_key (e.g. "t3k") -> the tt-dra-driver `boardName` a DRA
+    ResourceClaim selects (via CEL). Same source and device coverage as
+    dra_device_board_counts (see _dra_single_board_type_devices).
+    """
+    return dict(
+        sorted(
+            (key, _DRA_BOARD_NAME_OVERRIDES.get(bt, bt))
+            for key, bt, _count in _dra_single_board_type_devices()
+        )
+    )
 
 
 def _collect_supported_devices_for_model(

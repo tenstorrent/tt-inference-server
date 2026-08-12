@@ -85,6 +85,21 @@ defaults:
   affinity: {}
   extraEnv: []
 
+# DRA boardName per device — the tt-dra-driver `boardName` attribute a ResourceClaim selects (CEL) for each device shape.
+# Generated from workflows/device_utils.py:BOARD_TYPE_COUNT_TO_DEVICE; consumed by tt-inference-server.draBoardName.
+deviceBoardNames:
+  galaxy: galaxy-wormhole
+  n150: n150
+  n150x4: n150
+  n300: n300
+  p100: p100
+  p150: p150
+  p150x4: p150
+  p150x8: p150
+  p300: p300
+  p300x2: p300
+  t3k: n300
+
 # DRA board count per device — number of Tenstorrent boards a ResourceClaim requests for each device shape.
 # Generated from workflows/device_utils.py:BOARD_TYPE_COUNT_TO_DEVICE; consumed by tt-inference-server.draDeviceCount.
 deviceBoardCounts:
