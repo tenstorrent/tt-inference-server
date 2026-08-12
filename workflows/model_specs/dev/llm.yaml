@@ -238,7 +238,7 @@ templates:
       # KV pool; set this to the measured value, and >= 278528 (=128*2176) so
       # ISLs {128,1024,2048} all reach concurrency 128. get_llm_configs enforces
       # this once blackhole_galaxy targets are authored (sweep/target work).
-      # max_tokens_all_users_override: 278528
+      max_tokens_all_users_override: 32 * 256 * 1024
       default_impl: true
       env_vars:
         # Fixed 4x8 2D torus mesh graph descriptor (RFP D.2). Not a partner choice.
