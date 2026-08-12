@@ -728,7 +728,7 @@ def _engine_dependency_venv_types(
         # the AGENTIC_TRACES venv setup performs.
         if getattr(runtime_config, "agentic_traces", False):
             venv_types.append(WorkflowVenvType.AGENTIC_TRACES)
-        # The agentic release child resolves harbor/sweagent from the
+        # The agentic release child resolves the harbor CLI from the
         # EVALS_AGENTIC venv, so it must exist before the engine subprocess runs.
         if _llm_release_includes_agentic(model_spec):
             venv_types.append(WorkflowVenvType.EVALS_AGENTIC)
