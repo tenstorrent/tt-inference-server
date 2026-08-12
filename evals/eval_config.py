@@ -537,6 +537,13 @@ _eval_config_list = [
                     agent_kwargs={
                         "tau2_trial_index": 0,
                         "temperature": 1.0,
+                        # The adapter's build_llm_args() sets only temperature,
+                        # so without this the agent samples at top_p=1.0 while
+                        # every other Kimi task clamps to 0.95. The untruncated
+                        # tail emits malformed tool-call arguments (~2% of calls
+                        # measured against the served endpoint) and one bad
+                        # parse aborts the whole trial.
+                        "llm_args_json": {"top_p": 0.95},
                         "max_steps": 200,
                         # Default is 120s; a single reasoning user-sim turn under
                         # load can exceed that and trip an MCP request timeout.
