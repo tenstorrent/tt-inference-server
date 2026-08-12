@@ -528,7 +528,11 @@ _eval_config_list = [
                     task_names=["sierra-research/tau3-bench__tau3-banking_knowledge-*"],
                     # A single served instance is shared by the agent,
                     # the simulated user, and the Natural Language verifier.
-                    n_concurrent_trials=64,
+                    # Those are separate conversations, and the server holds a
+                    # session entry per conversation between turns (not just
+                    # while generating), so a trial costs 2-3 entries against
+                    # the server's session cap rather than 1.
+                    n_concurrent_trials=32,
                     n_attempts=1,
                     n_tasks=97,
                     override_cpus=4,
