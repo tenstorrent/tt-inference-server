@@ -56,6 +56,23 @@ _SCALAR_METRIC_TO_ATTR = {
     "request_goodput": "goodput",
 }
 
+# Minimal harness profiles for known evals, used only when NO catalog model
+# defines the task (fully off-catalog model). A profile carries just the
+# task-specific scoring wiring; everything model-specific stays neutral —
+# EvalTask defaults supply the rest (EVALS_COMMON venv, gen_kwargs
+# {"stream": "False"}, smoke limit), and max_length comes from the document's
+# model.contextLength. Tasks backed by a harness config (SWE-bench,
+# Terminal-Bench) have no profile: they cannot be synthesized and always
+# require a catalog template.
+_TASK_PROFILES = {
+    "gpqa_diamond_cot_zeroshot": {
+        "score_func_kwargs": {
+            "result_keys": ["exact_match,flexible-extract"],
+            "unit": "percent",
+        },
+    },
+}
+
 # Requests per sweep point = concurrency * this multiple, floored, so each
 # point issues enough requests to characterize steady state.
 _NUM_PROMPTS_CONCURRENCY_MULTIPLE = 8
@@ -163,11 +180,7 @@ class RequirementsTargetPack:
             )
         template = self._find_task_template(task_name)
         if template is None:
-            raise ValueError(
-                f"No runnable catalog template found for task {task_name!r} "
-                f"(required by requirements eval {ae.name!r}). Add the task to a "
-                "catalog EvalConfig first."
-            )
+            return self._synthesize_eval_task(ae, task_name)
         if template.score is None:
             raise ValueError(
                 f"Catalog template for task {task_name!r} has no score definition; "
@@ -214,6 +227,66 @@ class RequirementsTargetPack:
                 if task.task_name == task_name:
                     return task
         return None
+
+    def _synthesize_eval_task(self, ae: AccuracyEval, task_name: str) -> Any:
+        """Build a neutral EvalTask for a known eval with no catalog template.
+
+        Used for fully off-catalog models: the task-specific scoring wiring
+        comes from ``_TASK_PROFILES``, ``max_length`` from the document's
+        ``model.contextLength``, and everything else from ``EvalTask``'s
+        neutral defaults (no sampling overrides — the server/model defaults
+        apply). Scores, tolerance, and priority are gated by the document.
+        """
+        from reference_config.evals.eval_config import (
+            EvalTask,
+            EvalTaskScore,
+            score_task_single_key,
+        )
+
+        profile = _TASK_PROFILES.get(task_name)
+        if profile is None:
+            raise ValueError(
+                f"No catalog template or built-in profile for task {task_name!r} "
+                f"(requirements eval {ae.name!r}). Harness-backed tasks "
+                "(SWE-bench, Terminal-Bench) require a catalog template; plain "
+                f"lm-eval tasks need a _TASK_PROFILES entry. Known profiles: "
+                f"{sorted(_TASK_PROFILES)}."
+            )
+        model_kwargs: dict = {"timeout": "3600"}
+        if self._doc.model.context_length:
+            model_kwargs["max_length"] = self._doc.model.context_length
+        logger.warning(
+            "No catalog template for task %r; synthesizing with neutral "
+            "defaults (max_length=%s from model.contextLength, streaming on, "
+            "no sampling overrides).",
+            task_name,
+            model_kwargs.get("max_length"),
+        )
+        return EvalTask(
+            task_name=task_name,
+            # Streaming on by default for synthesized tasks (long generations
+            # against an OpenAI-compatible server); no sampling overrides.
+            gen_kwargs={"stream": "True"},
+            score=EvalTaskScore(
+                published_score=(
+                    ae.published_score
+                    if ae.published_score is not None
+                    else (ae.gpu_reference_score or 0.0)
+                ),
+                published_score_ref=(
+                    ae.published_score_url or f"requirements:{self._doc.id}"
+                ),
+                gpu_reference_score=ae.gpu_reference_score,
+                gpu_reference_score_ref=(
+                    ae.published_score_url or f"requirements:{self._doc.id}"
+                ),
+                tolerance=ae.tolerance,
+                score_func=score_task_single_key,
+                score_func_kwargs=dict(profile["score_func_kwargs"]),
+            ),
+            model_kwargs=model_kwargs,
+            priority=ae.priority,
+        )
 
     def resolve_eval_reference(self, score: Any, limit_mode: Any) -> Mapping[str, Any]:
         return self._delegate.resolve_eval_reference(score, limit_mode)
