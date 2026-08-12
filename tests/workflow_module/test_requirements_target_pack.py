@@ -133,6 +133,40 @@ def test_eval_config_none_when_no_evals(doc):
     assert pack.eval_config(doc.model.name) is None
 
 
+def test_eval_task_synthesized_with_neutral_defaults(doc, monkeypatch):
+    from dataclasses import replace
+
+    # Fully off-catalog path: no catalog model defines the task, so the pack
+    # synthesizes a neutral EvalTask — max_length from the document's
+    # contextLength, streaming on, no sampling overrides, doc-gated score.
+    # Narrow the doc to GPQA only: the harness-backed evals (SWE-bench,
+    # Terminal-Bench) cannot be synthesized and are covered by the test below.
+    gpqa_only = replace(doc, accuracy_evals=[doc.accuracy_evals[0]])
+    pack = RequirementsTargetPack(gpqa_only, TenstorrentTargetPack())
+    monkeypatch.setattr(pack, "_find_task_template", lambda task_name: None)
+    cfg = pack.eval_config("acme/off-catalog-model")
+    gpqa = next(t for t in cfg.tasks if t.task_name == "gpqa_diamond_cot_zeroshot")
+
+    assert gpqa.model_kwargs == {"timeout": "3600", "max_length": 131072}
+    assert gpqa.gen_kwargs == {"stream": "True"}  # synthesized default: stream on
+    assert gpqa.score.gpu_reference_score == 79.2
+    assert gpqa.score.published_score == 80.9
+    assert gpqa.score.tolerance == 0.05
+    assert gpqa.score.score_func_kwargs == {
+        "result_keys": ["exact_match,flexible-extract"],
+        "unit": "percent",
+    }
+    assert gpqa.priority == "must"
+
+
+def test_eval_task_synthesis_rejects_harness_backed_task(pack, monkeypatch):
+    # SWE-bench needs its SWEbenchEvalConfig harness wiring, which cannot be
+    # synthesized — with no catalog template it must fail loudly.
+    monkeypatch.setattr(pack, "_find_task_template", lambda task_name: None)
+    with pytest.raises(ValueError, match="No catalog template or built-in profile"):
+        pack.eval_config("acme/off-catalog-model")
+
+
 # --- benchmark config synthesis ----------------------------------------------
 
 
