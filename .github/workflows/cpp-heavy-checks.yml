@@ -1871,3 +1871,70 @@ jobs:
             tt-media-server/gw_tsan.log
           retention-days: 7
           if-no-files-found: warn
+
+  migration-executor-bench:
+    name: Migration Executor Thread Benchmark
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      no_proxy: "localhost,127.0.0.1,::1"
+      CI_CCACHE: "1"
+      CCACHE_DIR: ${{ github.workspace }}/tt-media-server/.cache/ccache
+    defaults:
+      run:
+        working-directory: tt-media-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          token: ${{ secrets.TT_LLM_ENGINE }}
+
+      - name: Set up C++ CI dependencies
+        uses: ./.github/actions/setup-cpp-ci
+        with:
+          token: ${{ secrets.TT_LLM_ENGINE }}
+          ccache-key-suffix: server
+
+      - name: Build migration executor bench test
+        run: |
+          cd cpp_server
+          cmake -B build -G Ninja -DENABLE_MOONCAKE=ON -DENABLE_KV_TABLE=OFF -DENABLE_KAFKA=OFF
+          ninja -C build mooncake_migration_executor_bench_test
+
+      - name: Run migration executor bench
+        run: |
+          cd cpp_server
+          ./build/mooncake_migration_executor_bench_test \
+            --gtest_output=xml:migration_executor_bench_results.xml \
+            2>&1 | tee migration_executor_bench.log
+
+      - name: Check 16-thread latency threshold (50 ms)
+        run: |
+          cd cpp_server
+          # Extract the 16-thread total time from the bench output table.
+          # The Comparison test prints: "       16 | <total_ms> | ..."
+          TOTAL_MS=$(grep -P '^\s+16\s*\|' migration_executor_bench.log \
+            | awk -F'|' '{print $2}' | tr -d ' ')
+          echo "16-thread total: ${TOTAL_MS} ms"
+          # Compare against 50 ms threshold (integer comparison, ceil).
+          THRESHOLD=50
+          ROUNDED=$(printf '%.0f' "$TOTAL_MS")
+          if [ "$ROUNDED" -gt "$THRESHOLD" ]; then
+            echo "::error::Migration executor 16-thread bench exceeded ${THRESHOLD} ms threshold: ${TOTAL_MS} ms"
+            exit 1
+          fi
+          echo "✅ 16-thread migration bench: ${TOTAL_MS} ms <= ${THRESHOLD} ms"
+
+      - name: Upload bench results
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: migration-executor-bench-results
+          path: |
+            tt-media-server/cpp_server/migration_executor_bench.log
+            tt-media-server/cpp_server/migration_executor_bench_results.xml
+          retention-days: 7
+          if-no-files-found: warn

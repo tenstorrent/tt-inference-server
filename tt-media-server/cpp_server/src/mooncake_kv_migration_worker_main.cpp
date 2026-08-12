@@ -855,10 +855,13 @@ int runPrefill(const WorkerConfig& cfg) {
   if (cfg.migrationMode == MigrationMode::DRY_RUN) {
     executor = std::make_unique<tt::worker::StubMigrationExecutor>();
   } else {
+    const std::size_t executorThreads = static_cast<std::size_t>(
+        tt::config::defaults::KV_MIGRATION_EXECUTOR_THREADS);
     sender = std::make_unique<KvMigrationMultiHostSender>(
         engine, *device, resolved->table, decodeTable, cfg.host,
         connector.channels(), &health);
-    executor = std::make_unique<MooncakeMigrationExecutor>(*sender);
+    executor =
+        std::make_unique<MooncakeMigrationExecutor>(*sender, executorThreads);
   }
 
   const std::string brokers =
