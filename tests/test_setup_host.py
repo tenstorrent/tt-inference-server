@@ -956,8 +956,29 @@ class TestDeriveCustomWeightsSpec:
         assert derived.model_id == (
             f"id_{tiny_model_spec.impl.impl_name}_{CUSTOM_LABEL_HF_NAME}_n150"
         )
-        # Served vLLM model reflects the custom identity, not the base repo.
+        # Custom-alone (no local path): vLLM --model is the label (a real HF repo),
+        # and /v1/models reports the label via served_model_name.
         assert derived.device_model_spec.vllm_args["model"] == CUSTOM_LABEL_HF
+        assert (
+            derived.device_model_spec.vllm_args["served_model_name"] == CUSTOM_LABEL_HF
+        )
+
+    def test_local_model_path_points_vllm_model_at_mount(self, tiny_model_spec):
+        """With --host-weights-dir, vLLM's --model resolves config/tokenizer from
+        the local mount (offline), while served_model_name still exposes the
+        label. Avoids a 404 when the label is not a real HF repo."""
+        container_path = "/home/container_app_user/readonly_weights_mount/my_weights"
+        derived = derive_custom_weights_spec(
+            tiny_model_spec, CUSTOM_LABEL_LOCAL, local_model_path=container_path
+        )
+        assert derived.device_model_spec.vllm_args["model"] == container_path
+        assert (
+            derived.device_model_spec.vllm_args["served_model_name"]
+            == CUSTOM_LABEL_LOCAL
+        )
+        # Identity/cache key is still the basename, independent of the model path.
+        assert derived.model_name == CUSTOM_LABEL_LOCAL
+        assert derived.hf_model_repo == CUSTOM_LABEL_LOCAL
 
     def test_inherits_base_fields(self, tiny_model_spec):
         derived = derive_custom_weights_spec(tiny_model_spec, CUSTOM_LABEL_HF)

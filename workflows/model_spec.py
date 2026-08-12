@@ -1353,7 +1353,12 @@ def get_runtime_model_spec(
     return model_spec, resolved_impl, resolved_engine
 
 
-def derive_custom_weights_spec(base_spec: ModelSpec, custom_weights: str) -> ModelSpec:
+def derive_custom_weights_spec(
+    base_spec: ModelSpec,
+    custom_weights: str,
+    *,
+    local_model_path: Optional[str] = None,
+) -> ModelSpec:
     """Derive a ModelSpec for custom weights from an already-resolved base spec.
 
     Separates *identity* from *source of bytes*. The returned spec copies the
@@ -1375,6 +1380,19 @@ def derive_custom_weights_spec(base_spec: ModelSpec, custom_weights: str) -> Mod
     downloaded from the Hub, but may be any name when paired with
     ``--host-weights-dir`` (bytes come from local disk and the label is only an
     identity/cache key).
+
+    ``vllm_args`` handling (what ``vllm serve`` actually loads):
+
+    - ``served_model_name`` is set to ``custom_weights`` so the OpenAI API
+      (``/v1/models``) reports the custom identity regardless of where bytes
+      come from.
+    - ``model`` (what vLLM resolves config/tokenizer/weights from) is set to
+      ``local_model_path`` when given -- the *container* path of the mounted
+      ``--host-weights-dir`` -- so config + tokenizer + weights all resolve
+      locally/offline. A custom label is not a real HF repo, so leaving vLLM's
+      ``--model`` as the label would 404 on ``config.json``. When
+      ``local_model_path`` is None (custom-alone, download-from-Hub), ``model``
+      stays ``custom_weights`` because the label *is* the HF repo id.
     """
     if not custom_weights or not custom_weights.strip():
         raise ValueError("custom_weights must be a non-empty string")
@@ -1386,10 +1404,11 @@ def derive_custom_weights_spec(base_spec: ModelSpec, custom_weights: str) -> Mod
     )
 
     # ModelSpec.__post_init__ bakes vllm_args["model"] = hf_model_repo into the
-    # (shared) device_model_spec. Rebuild it so the served model name reflects
-    # the custom identity rather than the base repo.
+    # (shared) device_model_spec. Rebuild it so vLLM loads config/tokenizer from
+    # the right place and reports the custom identity on the API.
     new_vllm_args = dict(base_spec.device_model_spec.vllm_args)
-    new_vllm_args["model"] = custom_weights
+    new_vllm_args["model"] = local_model_path if local_model_path else custom_weights
+    new_vllm_args["served_model_name"] = custom_weights
     new_device_model_spec = replace(
         base_spec.device_model_spec, vllm_args=new_vllm_args
     )

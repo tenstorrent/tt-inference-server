@@ -981,7 +981,22 @@ def resolve_runtime(args):
         # (distinct model_name -> distinct volume_id_/cache subtree) while
         # inheriting the base's impl/device/engine/image.
         if args.custom_weights:
-            model_spec = derive_custom_weights_spec(model_spec, args.custom_weights)
+            # With --host-weights-dir the label is not a real HF repo, so point
+            # vLLM's --model at the container mount of the local weights (config
+            # + tokenizer + weights load offline); served_model_name still
+            # exposes the label. Mirrors setup_host's readonly weights mount.
+            local_model_path = None
+            if args.host_weights_dir:
+                from workflows.setup_host import SetupConfig
+
+                local_model_path = str(
+                    SetupConfig.containter_user_home
+                    / "readonly_weights_mount"
+                    / Path(args.host_weights_dir).name
+                )
+            model_spec = derive_custom_weights_spec(
+                model_spec, args.custom_weights, local_model_path=local_model_path
+            )
         runtime_config = RuntimeConfig.from_args(
             args, impl=resolved_impl, engine=resolved_engine
         )
