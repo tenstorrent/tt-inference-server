@@ -174,7 +174,6 @@ DRA board count for .Values.device, read from the generated
 {{- if hasKey $counts $d -}}
 {{- index $counts $d -}}
 {{- else if has $d $nonTT -}}
-{{- /* non-Tenstorrent device: intentionally no ResourceClaim */ -}}
 {{- else -}}
 {{- fail (printf "device '%s' is not supported via DRA in this chart. Topology-sensitive partitions (e.g. galaxy_t3k) are future work and need the tt-dra-driver to publish topology attributes. Supported: %s." $d (keys $counts | sortAlpha | join ", ")) -}}
 {{- end -}}

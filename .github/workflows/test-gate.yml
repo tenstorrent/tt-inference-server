@@ -1134,21 +1134,16 @@ jobs:
               echo "FAILED (kubeconform): $model / $engine / $device"
               FAILED=1
             fi
-            # Universal DRA safety invariants — must hold for every device:
-            # no privileged mode and no hostPath on /dev/tenstorrent.
-            if echo "$RENDERED" | grep -qE '^[[:space:]]*privileged: true$'; then
-              echo "::error::privileged:true present in $model/$engine/$device"; FAILED=1; fi
-            if echo "$RENDERED" | grep -qE '^[[:space:]]*path: /dev/tenstorrent$'; then
-              echo "::error::hostPath /dev/tenstorrent present in $model/$engine/$device"; FAILED=1; fi
           done < /tmp/helm-matrix.txt
           exit $FAILED
 
-      - name: Verify DRA claim structure and board counts
+      - name: Verify DRA claim structure, board counts, and safety invariants
         run: |
           set -e
-          # Check the DRA claim structure and the per-device board count across
-          # representative shapes (1 / 4 / 32 boards). The "no privileged / no
-          # hostPath" invariants are enforced for all devices in the matrix step.
+          # Check the DRA claim structure and per-device board count across
+          # representative shapes (1 / 4 / 32 boards), plus the safety invariants
+          # (no privileged, no hostPath on /dev/tenstorrent). The invariants are
+          # device-independent, so checking these representative renders covers them.
           # device:expected-count
           for pair in n300:1 t3k:4 galaxy:32; do
             device="${pair%%:*}"; want="${pair##*:}"
@@ -1163,6 +1158,10 @@ jobs:
               || { echo "::error::$device must request $want board(s) via DRA"; exit 1; }
             echo "$RENDERED" | grep -qE 'resourceClaimTemplateName:' \
               || { echo "::error::Pod does not reference the ResourceClaimTemplate for $device"; exit 1; }
+            echo "$RENDERED" | grep -qE '^[[:space:]]*privileged: true$' \
+              && { echo "::error::privileged:true present for $device"; exit 1; } || true
+            echo "$RENDERED" | grep -qE '^[[:space:]]*path: /dev/tenstorrent$' \
+              && { echo "::error::hostPath /dev/tenstorrent present for $device"; exit 1; } || true
           done
 
   ci-gate:
