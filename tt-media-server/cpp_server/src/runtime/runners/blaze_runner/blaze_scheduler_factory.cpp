@@ -150,8 +150,9 @@ std::unique_ptr<IDecodeScheduler> makeDecodeScheduler(
     managerParams.spec_decode_mode = ds::SpecDecodeMode::MTP;
   } else if (config.specDecodeMode == "dflash") {
     // LOCAL UNBLOCK — do not commit. The tt-llm-engine fork this image is
-    // built against (nanicicTT/nanicic-TTS-llm-engine @ nanicicTT/TTS_Scheduler)
-    // predates SpecDecodeMode::DFLASH; upstream tt-llm-engine has it, so
+    // built against (nanicicTT/nanicic-TTS-llm-engine @
+    // nanicicTT/TTS_Scheduler) predates SpecDecodeMode::DFLASH; upstream
+    // tt-llm-engine has it, so
     // `= ds::SpecDecodeMode::DFLASH;` belongs here and must be restored once
     // the fork is rebased onto upstream. Throwing rather than falling through
     // keeps a dflash config from silently degrading to SpecDecodeMode::NONE.

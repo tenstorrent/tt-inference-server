@@ -255,6 +255,15 @@ CMAKE_ARGS=(
     -DENABLE_KV_TABLE="${ENABLE_KV_TABLE}"
 )
 [ -n "${TT_METAL_HOME}" ] && CMAKE_ARGS+=(-DTT_METAL_HOME="${TT_METAL_HOME}")
+# Forwarded for the in-tree tt-llm-engine build (add_subdirectory fallback).
+# When the engine links TT::Metalium it builds TtLlmEngine::Full, whose
+# sources include tt-metal headers that the installed TT-Metalium package does
+# not ship (ttnn/services/h2d_socket_service.hpp, DeepSeek metadata.hpp). The
+# engine's CMakeLists adds them from TT_METAL_SOURCE_DIR; its own build.sh
+# passes this, so forward it here too. Defaults to TT_METAL_HOME, which is the
+# tt-metal source root in the blaze image.
+: "${TT_METAL_SOURCE_DIR:=${TT_METAL_HOME}}"
+[ -n "${TT_METAL_SOURCE_DIR}" ] && CMAKE_ARGS+=(-DTT_METAL_SOURCE_DIR="${TT_METAL_SOURCE_DIR}")
 [ -n "${FETCHCONTENT_BASE_DIR:-}" ] && CMAKE_ARGS+=(-DFETCHCONTENT_BASE_DIR="${FETCHCONTENT_BASE_DIR}")
 # Use ccache if available for faster rebuilds
 if command -v ccache >/dev/null 2>&1; then

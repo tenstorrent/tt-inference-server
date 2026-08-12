@@ -589,6 +589,8 @@ TtsConfig ttsEngineConfig() {
     cfg.audioChannels = static_cast<uint16_t>(
         envUlong("TTS_AUDIO_CHANNELS", defaults::TTS_AUDIO_CHANNELS));
 
+    cfg.encoderEnabled =
+        envBool("TTS_ENCODER_ENABLED", defaults::TTS_ENCODER_ENABLED);
     cfg.encoderSocketDescriptorPrefix =
         envString("TTS_ENCODER_SOCKET_DESCRIPTOR_PREFIX",
                   defaults::TTS_ENCODER_SOCKET_DESCRIPTOR_PREFIX);
