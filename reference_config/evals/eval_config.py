@@ -4515,7 +4515,7 @@ _eval_config_list = [
                 },
             ),
             EvalTask(
-                task_name="terminal_bench_2",
+                task_name="terminal_bench_2_1",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
                     published_score=42.9,
@@ -4537,7 +4537,7 @@ _eval_config_list = [
                     },
                 ),
                 agentic_eval_config=TerminalBenchEvalConfig(
-                    dataset="terminal-bench/terminal-bench-2",
+                    dataset="terminal-bench/terminal-bench-2-1",
                     agent="terminus-2",
                     n_concurrent_trials=1,  # TODO increase back to 5 when batch > 1 is supported
                     n_attempts=1,
@@ -5231,6 +5231,227 @@ _eval_config_list = [
                             "top_k": 20,
                         },
                     },
+                    instance_ids_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-11299",
+                            "astropy__astropy-14096",
+                            "matplotlib__matplotlib-25332",
+                            "sympy__sympy-13551",
+                            "scikit-learn__scikit-learn-14629",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+        ],
+    ),
+    # =========================================================================
+    # DeepSeek-V4-Flash - GPU reference eval config (bring-your-own vLLM).
+    #
+    # Mirrors the Gemma-4-31B agentic + GPQA-Diamond block above; the recipe is
+    # adapted to DeepSeek-V4-Flash per its HF model card
+    # (https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash) and the vLLM recipe
+    # (https://recipes.vllm.ai/deepseek-ai/DeepSeek-V4-Flash):
+    #   - Sampling: temperature=1.0 everywhere. top_p=1.0 for GPQA ("How to Run
+    #     Locally") but top_p=0.95 for the agentic tasks (DeepSeek's agentic
+    #     recommendation). No top_k. NB: in thinking mode DeepSeek-V4 ignores
+    #     temperature/top_p, so these mainly matter if thinking is ever off.
+    #   - The published_score values are the "Think High" reasoning-mode column
+    #     of the model card's "Comparison across Modes" table (V4-Flash High):
+    #     GPQA Diamond 87.4, Terminal-Bench 2.0 56.6, SWE Verified 78.6.
+    #
+    # THINKING MODE (required for the above scores): DeepSeek-V4 ships NO Jinja
+    # chat template -- it uses a custom deepseek_v4 tokenizer/encoding, and
+    # thinking is off by default. Enable it server-side with
+    #   --default-chat-template-kwargs '{"thinking": true, "reasoning_effort": "<high|max>"}'
+    # (plus --reasoning-parser deepseek_v4, which splits the thought into
+    # reasoning_content). Without it these tasks collapse toward the Non-Think
+    # column (GPQA 71.2, TB2 49.1, SWE 73.7 -- an early GPQA run with thinking
+    # off scored 74.24). The gpu_reference_score values below were measured with
+    # thinking ON at reasoning_effort=max (GPQA 90.40, TB2.1 74.16, SWE 87.20),
+    # so a bring-your-own server must launch with the flags above to reproduce
+    # them.
+    #
+    # Context / output budget: DeepSeek-V4-Flash natively supports 1M tokens;
+    # the reference server runs --max-model-len 500000 (~488K). At reasoning
+    # effort high/max the model emits very long thought traces, so output is
+    # allowed up to 384K tokens; the agent sends ~max_input + max_output per
+    # request, so inputs are capped at 96K to keep 96K + 384K = 480K under the
+    # 500K window.
+    # =========================================================================
+    EvalConfig(
+        hf_model_repo="deepseek-ai/DeepSeek-V4-Flash-0731",
+        tasks=[
+            EvalTask(
+                # R1-style zero-shot reasoning GPQA Diamond (see gemma-4-31B-it
+                # note above): the model emits reasoning then a final answer;
+                # the task's extractor scores exact_match,none.
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    # V4-Flash "Max" GPQA Diamond (88.1) from the author's
+                    # per-mode table; we report the max-effort number since our
+                    # GPU reference is collected at reasoning_effort=max
+                    # (Non-Think 71.2 / High 87.4 / Max 88.1).
+                    published_score=88.1,
+                    published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash",
+                    # Full 198-sample r1_gpqa_diamond, single run, GPU bring-your-own
+                    # vLLM (DeepSeek-V4-Flash-0731, --max-model-len 500000) with
+                    # thinking enabled server-side (--default-chat-template-kwargs
+                    # '{"thinking": true, "reasoning_effort": "max"}'). 90.40% +/-
+                    # 2.10 (exceeds the published 88.1). With thinking OFF the same
+                    # task scored only 74.24 -- enabling thinking is the key.
+                    gpu_reference_score=90.40,
+                    gpu_reference_score_ref="run.py --workflow evals r1_gpqa_diamond full (198), GPU DeepSeek-V4-Flash-0731 bring-your-own vLLM w/ thinking=true reasoning_effort=max, 2026-08-07",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                # Use the chat endpoint so the server applies its own template
+                # (DeepSeek-V4 has no client-side Jinja template) and the
+                # deepseek_v4 reasoning parser separates the thought channel.
+                use_chat_api=True,
+                model_kwargs={
+                    "max_length": 500000,
+                },
+                # DeepSeek-V4 sampling (model card "How to Run Locally"):
+                # temperature=1.0, top_p=1.0. stream=false is REQUIRED:
+                # lm-eval's local-chat-completions streaming parser raises
+                # KeyError 'message' on every response. max_gen_toks is the
+                # reasoning output ceiling; 384K lets high/max thinking finish
+                # without truncation (GPQA prompt is tiny, so 384K fits the
+                # 500K ctx with ample headroom).
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 384 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 1.0,
+                },
+                # CI_NIGHTLY 0.05 (~10 samples): reasoning eval served batch-1
+                # runs samples sequentially and dominates CI runtime.
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="terminal_bench_2_1",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # Terminal Bench 2.1 = 82.7 from the DeepSeek-V4-Flash-0731
+                    # model card, which reports the code-agent tasks at the max
+                    # reasoning effort level (temperature=1.0, top_p=0.95) --
+                    # matching how our GPU reference is collected.
+                    published_score=82.7,
+                    published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash-0731",
+                    # Full terminal-bench-2-1 (89 tasks), terminus-2, GPU
+                    # bring-your-own vLLM (DeepSeek-V4-Flash-0731, max-model-len
+                    # 500000, thinking=true reasoning_effort=max), 96K in / 384K
+                    # out, top_p=0.95. 66/89 resolved = 74.16% (below the
+                    # published 82.7; the author uses the DeepSeek Harness agent
+                    # whereas we use terminus-2). Wider tolerance than the 5%
+                    # default: only 89 tasks and max-effort reasoning is highly
+                    # non-deterministic, so one flipped task moves ~1.1 pts.
+                    gpu_reference_score=74.16,
+                    gpu_reference_score_ref="run.py --workflow agentic terminal_bench_2_1 full (66/89 resolved), GPU DeepSeek-V4-Flash-0731 bring-your-own vLLM w/ thinking=true reasoning_effort=max, 2026-08-08",
+                    tolerance=0.10,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2-1",
+                    agent="terminus-2",
+                    n_concurrent_trials=16,
+                    n_attempts=1,
+                    n_tasks=None,  # full dataset
+                    override_cpus=16,
+                    override_memory_mb=48 * 1024,
+                    agent_timeout_sec=3 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            # Server runs --max-model-len 500000 (~488K). At
+                            # reasoning effort high/max the thought trace is
+                            # long, so output is allowed up to 384K; the agent
+                            # sends ~max_input + max_output per request, so cap
+                            # input at 96K (96K + 384K = 480K, ~20K headroom).
+                            "max_input_tokens": 96 * 1024,
+                            "max_output_tokens": 384 * 1024,
+                        },
+                        "llm_kwargs": {
+                            # top_p=0.95 per DeepSeek's agentic recommendation.
+                            "top_p": 0.95,
+                            "max_tokens": 384 * 1024,
+                            # 2h/request: a single max-effort turn can emit
+                            # hundreds of thousands of reasoning tokens.
+                            "timeout": 2 * 60 * 60,
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/break-filter-js-from-html",
+                            "terminal-bench/cobol-modernization",
+                            "terminal-bench/compile-compcert",
+                            "terminal-bench/feal-differential-cryptanalysis",
+                            "terminal-bench/qemu-startup",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+            EvalTask(
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # V4-Flash "Max" SWE Verified (79.0) from the author's
+                    # per-mode table; we report the max-effort number since our
+                    # GPU reference is collected at reasoning_effort=max
+                    # (Non-Think 73.7 / High 78.6 / Max 79.0).
+                    published_score=79.0,
+                    published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash",
+                    # Full SWE-bench Verified (500), mini-swe-agent, GPU
+                    # bring-your-own vLLM (DeepSeek-V4-Flash-0731, max-model-len
+                    # 500000, thinking=true reasoning_effort=max), 96K in / 384K
+                    # out, top_p=0.95. 436/500 resolved = 87.20% (exceeds the
+                    # published 79.0).
+                    gpu_reference_score=87.20,
+                    gpu_reference_score_ref="run.py --workflow agentic swe_bench_verified full (436/500 resolved), GPU DeepSeek-V4-Flash-0731 bring-your-own vLLM w/ thinking=true reasoning_effort=max, 2026-08-08",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                swebench_eval_config=SWEbenchEvalConfig(
+                    dataset_name="SWE-bench/SWE-bench_Verified",
+                    sweagent_subset="verified",
+                    dataset_split="test",
+                    agent_backend="mini-swe-agent",
+                    n_concurrent_trials=5,
+                    max_workers=8,
+                    n_tasks=None,  # full dataset
+                    temperature=1.0,
+                    # top_p=0.95 per DeepSeek's agentic recommendation.
+                    top_p=0.95,
+                    # Server runs --max-model-len 500000 (~488K). Output is
+                    # allowed up to 384K for high/max reasoning; input is capped
+                    # at 96K so 96K + 384K = 480K stays under the 500K window.
+                    max_input_tokens=96 * 1024,
+                    max_output_tokens=384 * 1024,
                     instance_ids_map={
                         EvalLimitMode.CI_NIGHTLY: [
                             "django__django-11299",
