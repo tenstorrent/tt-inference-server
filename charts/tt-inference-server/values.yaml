@@ -36,6 +36,17 @@ hfCacheDir: ""
 hugepages:
   enabled: true
 
+# PodMonitor scraping the inference server's own /metrics (vLLM and media-server
+# expose it). Disabled by default: a PodMonitor needs the Prometheus Operator
+# CRDs (monitoring.coreos.com), and rendering one without them fails at install.
+podMonitor:
+  enabled: false
+  # Set the label your Prometheus's podMonitorSelector matches (e.g.
+  # release: kube-prometheus-stack), or the PodMonitor won't be scraped.
+  labels: {}
+  interval: 30s
+  path: /metrics
+
 # ---------------------------------------------------------------------------
 # Defaults — merged with (and overridden by) per-model config below.
 # ---------------------------------------------------------------------------

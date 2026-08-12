@@ -174,6 +174,10 @@ Set per release, typically via `--set`.
 | `hfToken` | yes* | `""` | HuggingFace token. Injected as `HF_TOKEN`. Required unless weights are pre-downloaded via `hfCacheDir`. |
 | `hfCacheDir` | no | `""` | Host path to a pre-downloaded HuggingFace weights directory. Mounted read-only at `/mnt/hf-cache`; skips download at startup. |
 | `hugepages.enabled` | no | `true` | Whether Tenstorrent boards need 1Gi hugepages. Set `false` on IOMMU + KMD 1.29.0+ clusters to drop the `hugepages-1Gi` request/limit, the `/dev/hugepages-1G` volume + mounts, and the `cleanup-hugepages` initContainer. |
+| `podMonitor.enabled` | no | `false` | Emit a `PodMonitor` scraping the server's `/metrics`. Requires the Prometheus Operator CRDs (`monitoring.coreos.com`); leave `false` on clusters without them. |
+| `podMonitor.labels` | no | `{}` | Extra labels on the `PodMonitor`. Set the label your Prometheus's `podMonitorSelector` matches (e.g. `release: kube-prometheus-stack`). |
+| `podMonitor.interval` | no | `30s` | Scrape interval. |
+| `podMonitor.path` | no | `/metrics` | Metrics HTTP path (scraped on the `http` port). |
 | `cache.hostPath` | no | `""` | Override the host path used for the ttnn cache volume. Defaults to `/opt/cache/<model>-<device>-<impl>`. |
 | `nameOverride` | no | `""` | Overrides the chart name component in resource names. |
 | `fullnameOverride` | no | `""` | Fully overrides the resource name prefix. |
@@ -560,6 +564,34 @@ helm install my-model ./charts/tt-inference-server \
   --set hfToken="hf_xxx" \
   --set cache.hostPath="/mnt/fast-nvme/cache"
 ```
+
+### Monitoring
+
+Metrics come from two independent sources, each enabled separately:
+
+| Source | Measures | Owned by | Enable with |
+|---|---|---|---|
+| App metrics | Inference server: request rate, latency, tokens/s, queue depth | this chart (consumer) | `podMonitor.enabled=true` |
+| Device telemetry | Tenstorrent boards: temperature, power, chip utilization | tt-operator (supply side) | `tt-telemetry.enabled=true` on tt-operator |
+
+**App metrics** — vLLM and media-server expose `/metrics`. Set `podMonitor.enabled=true` to emit a `PodMonitor` that Prometheus scrapes:
+
+```bash
+helm install my-model ./charts/tt-inference-server \
+  --set model="Llama-3.1-8B-Instruct" \
+  --set device=galaxy \
+  --set hfToken="hf_xxx" \
+  --set podMonitor.enabled=true \
+  --set podMonitor.labels.release=kube-prometheus-stack
+```
+
+The label must match your Prometheus's `podMonitorSelector` (e.g. `release: kube-prometheus-stack`) or it won't be scraped; see the [Values Reference](#values-reference) for the other `podMonitor.*` options and the Prometheus Operator CRD requirement.
+
+The chart ships no Grafana dashboard (metrics differ per engine). For vLLM, import the [official vLLM dashboard](https://docs.vllm.ai/en/stable/examples/online_serving/prometheus_grafana/) ([JSON](https://github.com/vllm-project/vllm/tree/main/examples/observability/prometheus_grafana)) via Grafana → Import, pointed at your Prometheus. For media-server / forge, build panels in Grafana Explore from the scraped metrics.
+
+**Device telemetry** is not part of this chart. It is a tt-operator component (`tt-telemetry`) — a cluster-wide singleton with a separate lifecycle. The cluster admin enables it by setting the `tt-telemetry.enabled=true` subchart value when installing the tt-operator umbrella chart (`oci://ghcr.io/tenstorrent/helm/tt-operator`); see the [tt-operator documentation](https://docs.tenstorrent.com/cloud-native-support/) for the full install procedure.
+
+Correlating the two (device × app) is future work — it needs a supply-side bridge exporter that maps devices to pods.
 
 ---
 
