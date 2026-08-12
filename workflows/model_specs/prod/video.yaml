@@ -110,8 +110,8 @@ templates:
 - weights:
     - Lightricks/LTX-2.3-distilled  # basename -> MODEL=LTX-2.3-distilled (must match tt-media-server ModelNames)
   hf_weights_repo: Lightricks/LTX-2.3  # real gated repo the weights download from
-  version: "0.19.0"  # matches VERSION file; media image tag = 0.19.0-88183a0c4658
-  tt_metal_commit: 88183a0c46589e87cce14adf0441de6bd562ca9a  # tt-metal main HEAD baked into the tt-shield build
+  version: "0.19.0"  # matches VERSION file; media image tag = 0.19.0-3a73746196f2
+  tt_metal_commit: 3a73746196f23de4f22041648fe16a0d38298094  # runbook-verified tt-metal; baked into tt-shield build 94291998297
   impl: tt_transformers
   min_disk_gb: 80  # weights ~69 GB
   min_ram_gb: 32
