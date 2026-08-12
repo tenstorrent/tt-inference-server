@@ -38,7 +38,7 @@ constexpr size_t MAX_SESSIONS_COUNT = 128;
 constexpr unsigned SESSION_EVICTION_RATE = 90;
 constexpr size_t SESSION_EVICTION_COUNT = 10;
 constexpr size_t MAX_TOKENS_TO_PREFILL_ON_DECODE = 1000;
-constexpr size_t MAX_CONTEXT_LENGTH = 65536;  // 64k
+constexpr size_t MAX_CONTEXT_LENGTH = 131072;  // 128k
 constexpr size_t MAX_ISL = 256000;  // 2000k (max input sequence length)
 constexpr size_t MIN_TOKENS_TO_COPY =
     1024;  // min matched tokens to justify slot copy
@@ -96,6 +96,7 @@ constexpr unsigned WARMUP_TIMEOUT_MS = 150000;
  * the crash and restart the server instead of hanging silently.
  */
 constexpr unsigned OUTPUT_HANG_TIMEOUT_MS = 150000;
+constexpr size_t TTS_VOICE_SAMPLE_CACHE_SIZE = 1024;
 
 constexpr const char* MODEL = "deepseek-ai/DeepSeek-R1-0528";
 constexpr const char* WIRE_FORMAT = "blaze";
@@ -168,5 +169,17 @@ constexpr unsigned MOCK_STAGE_LATENCY_US = 44;
 constexpr uint32_t MOCK_PIPELINE_STAGES = 64;
 constexpr uint32_t MOCK_PREFILL_CHUNK_SIZE = 24;
 constexpr unsigned MOCK_DECODE_TOKEN_ID = 12345;
+
+// Text-to-speech scheduler defaults.
+constexpr size_t TTS_MAX_BATCH_SIZE = 1;
+constexpr size_t TTS_AUDIO_QUEUE_CAPACITY = 1024;
+constexpr uint32_t TTS_CHUNK_TOKENS = 30;
+constexpr uint32_t TTS_VOICE_SAMPLE_RATE_HZ = 16000;
+constexpr uint16_t TTS_VOICE_CHANNELS = 1;
+constexpr uint32_t TTS_AUDIO_SAMPLE_RATE_HZ = 48000;
+constexpr uint16_t TTS_AUDIO_CHANNELS = 1;
+constexpr const char* TTS_ENCODER_SOCKET_DESCRIPTOR_PREFIX = "tts2_encoder";
+constexpr const char* TTS_SPEECHLM_SOCKET_DESCRIPTOR_PREFIX = "tts2_speechlm";
+constexpr const char* TTS_DECODER_SOCKET_DESCRIPTOR_PREFIX = "tts2_decoder";
 
 }  // namespace tt::config::defaults

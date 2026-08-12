@@ -42,4 +42,21 @@ std::unique_ptr<runners::IRunner> createIpcRunner(
   return runner;
 }
 
+std::unique_ptr<runners::IRunner> createTtsIpcRunner(
+    const config::RunnerConfig& config, ipc::tts::TtsTaskQueue* taskQueue,
+    ipc::tts::TtsAudioChunkQueue* audioQueue, ipc::ICancelQueue* cancelQueue) {
+  services::registerBuiltinModelServices();
+
+  const config::ModelRunnerType runnerType = runnerTypeFromConfig(config);
+  auto runner = RunnerRegistry::instance().createTtsIpc(
+      config::ModelService::TTS, runnerType, config, taskQueue, audioQueue,
+      cancelQueue);
+  if (!runner) {
+    TT_LOG_ERROR(
+        "[IpcRunnerFactory] No TTS IPC runner registered for requested type");
+    throw std::runtime_error("No TTS IPC runner registered for requested type");
+  }
+  return runner;
+}
+
 }  // namespace tt::utils::ipc_runner_factory
