@@ -17,6 +17,7 @@
 
 #include "sockets/i_socket_transport.hpp"
 #include "transport/in_memory_kv_table.hpp"
+#include "transport/kv_bounce_buffer.hpp"
 #include "transport/kv_migration_multi_host_sender.hpp"
 #include "transport/mooncake_kv_receiver.hpp"
 #include "transport_test_fakes.hpp"
@@ -34,6 +35,7 @@ using test::FakeTransferEngine;
 using test::K_CHUNK;
 using test::makeContent;
 using test::Pipe;
+using test::SpanDeviceIo;
 using test::wholeSlot5;
 
 using Endpoint = KvControlChannelConnector::Endpoint;
@@ -41,6 +43,9 @@ using Endpoint = KvControlChannelConnector::Endpoint;
 // Fast channel timings so the not-ready/timeout paths never slow the suite.
 constexpr auto K_RECV_TIMEOUT = 1000ms;
 constexpr auto K_POLL_INTERVAL = 1ms;
+// A bounce buffer large enough to merge each layer's contiguous chunks into one
+// slot.
+constexpr BounceGeometry K_GEO{/*section_count=*/4, /*section_size=*/256};
 
 void seedPrefill(FakeDeviceIo& dev) {
   for (uint32_t p = 0; p < 128; p += 32) {
@@ -54,7 +59,8 @@ void seedPrefill(FakeDeviceIo& dev) {
 
 // One decode host stood up behind a KvMigrationReceiverServer over a loopback
 // fake socket pair. clientTp is the matching sender-side end the connector
-// wraps. The MooncakeKvReceiver registers its full-table mirror as the segment.
+// wraps. The bounce receiver registers its small bounce buffer as the segment
+// and holds no table (it drains from the window descriptors).
 struct DecodeHost {
   std::shared_ptr<Pipe> ab{std::make_shared<Pipe>()};  // sender -> receiver
   std::shared_ptr<Pipe> ba{std::make_shared<Pipe>()};  // receiver -> sender
@@ -63,13 +69,11 @@ struct DecodeHost {
   std::unique_ptr<MooncakeKvReceiver> receiver;
   std::unique_ptr<KvMigrationReceiverServer> server;
 
-  DecodeHost(const std::shared_ptr<FakeRegistry>& reg,
-             const std::shared_ptr<const IKvTable>& table,
-             const std::string& host, const std::string& seg, IDeviceIo& dev) {
+  DecodeHost(const std::shared_ptr<FakeRegistry>& reg, const std::string& seg,
+             SpanDeviceIo& dev) {
     clientTp = std::make_shared<BlockingFakeTransport>(/*in=*/ba, /*out=*/ab);
     engine = std::make_shared<FakeTransferEngine>(reg, seg);
-    receiver =
-        std::make_unique<MooncakeKvReceiver>(engine, dev, table, host, seg);
+    receiver = std::make_unique<MooncakeKvReceiver>(engine, dev, seg, K_GEO);
     auto serverTp =
         std::make_shared<BlockingFakeTransport>(/*in=*/ab, /*out=*/ba);
     server = std::make_unique<KvMigrationReceiverServer>(
@@ -106,8 +110,6 @@ TEST(KvControlChannelConnectorTest, OpensOneChannelPerEndpoint) {
   ASSERT_TRUE(channels.count("D0"));
   ASSERT_TRUE(channels.count("D1"));
   EXPECT_NE(channels["D0"], nullptr);
-  // The factory saw each host's real endpoint (host + port), not the logical
-  // key.
   EXPECT_EQ(seen[7001].host, "10.0.0.1");
   EXPECT_EQ(seen[7002].host, "10.0.0.2");
 }
@@ -150,7 +152,6 @@ TEST(KvControlChannelConnectorTest, OpenChannelAddsLatePeer) {
   ASSERT_TRUE(channels.count("D1"));
   EXPECT_NE(channels["D1"], nullptr);
 
-  // Idempotent: second open of the same name is a no-op success.
   EXPECT_TRUE(connector.openChannel("D1", Endpoint{"10.0.0.2", 7002}));
   EXPECT_EQ(connector.channelCount(), 2u);
 }
@@ -172,12 +173,10 @@ TEST(KvControlChannelConnectorTest, ReplaceChannelMovesEndpoint) {
   EXPECT_EQ(factoryCalls, 1);
   auto first = connector.channels().at("D0");
 
-  // Same endpoint: no rebuild.
   EXPECT_TRUE(connector.replaceChannel("D0", Endpoint{"10.0.0.1", 7001}));
   EXPECT_EQ(factoryCalls, 1);
   EXPECT_EQ(connector.channels().at("D0"), first);
 
-  // New host:port: tear down and dial again.
   EXPECT_TRUE(connector.replaceChannel("D0", Endpoint{"10.0.0.9", 7009}));
   EXPECT_EQ(factoryCalls, 2);
   EXPECT_NE(connector.channels().at("D0"), first);
@@ -187,9 +186,6 @@ TEST(KvControlChannelConnectorTest, ReplaceChannelMovesEndpoint) {
   EXPECT_EQ(ep->port, 7009);
 }
 
-// Holding a channels() snapshot must keep the old channel alive across
-// replaceChannel() — mirrors migrate() / mesh-watch concurrent with
-// rediscovery.
 TEST(KvControlChannelConnectorTest, ReplaceKeepsHeldChannelAlive) {
   std::unordered_map<std::string, Endpoint> eps{{"D0", {"10.0.0.1", 7001}}};
   int factoryCalls = 0;
@@ -207,11 +203,10 @@ TEST(KvControlChannelConnectorTest, ReplaceKeepsHeldChannelAlive) {
   auto held = connector.channels().at("D0");
   ASSERT_NE(held, nullptr);
   const KvControlChannel* raw = held.get();
-  EXPECT_GE(held.use_count(), 2);  // connector + held
+  EXPECT_GE(held.use_count(), 2);
 
   ASSERT_TRUE(connector.replaceChannel("D0", Endpoint{"10.0.0.9", 7009}));
   EXPECT_EQ(factoryCalls, 2);
-  // Connector dropped its ref; held keeps the old object alive.
   EXPECT_EQ(held.get(), raw);
   EXPECT_EQ(held.use_count(), 1);
   EXPECT_NE(connector.channels().at("D0"), held);
@@ -228,9 +223,9 @@ TEST(KvMigrationMultiHostSenderTest, AddHostWiresLatePeerForMigrate) {
 
   FakeDeviceIo prefillDev;
   seedPrefill(prefillDev);
-  FakeDeviceIo devD0, devD1;
-  DecodeHost d0(reg, decode, "D0", "segD0", devD0);
-  DecodeHost d1(reg, decode, "D1", "segD1", devD1);
+  SpanDeviceIo devD0, devD1;
+  DecodeHost d0(reg, "segD0", devD0);
+  DecodeHost d1(reg, "segD1", devD1);
 
   std::unordered_map<std::string, Endpoint> eps{{"D0", {"127.0.0.1", 7001}}};
   std::unordered_map<uint16_t, std::shared_ptr<BlockingFakeTransport>> clients{
@@ -260,16 +255,14 @@ TEST(KvMigrationMultiHostSenderTest, AddHostWiresLatePeerForMigrate) {
 }
 
 // ---------------------------------------------------------------------------
-// KvMigrationReceiverServer — start failure
+// KvMigrationReceiverServer — start failure + session lifecycle
 // ---------------------------------------------------------------------------
 
 TEST(KvMigrationReceiverServerTest, StartFailsWhenTransportFactoryReturnsNull) {
   auto reg = std::make_shared<FakeRegistry>();
-  auto table = std::make_shared<InMemoryKvTable>(
-      buildTable("D0", {2, 0}, {2, 1}, {2, 2}, {2, 3}, 0x8000, 0, 0x9000, 1));
   auto engine = std::make_shared<FakeTransferEngine>(reg, "segD0");
-  FakeDeviceIo dev;
-  MooncakeKvReceiver receiver(engine, dev, table, "D0", "segD0");
+  SpanDeviceIo dev;
+  MooncakeKvReceiver receiver(engine, dev, "segD0", K_GEO);
 
   KvMigrationReceiverServer server(
       /*port=*/0, [](uint16_t) { return nullptr; }, receiver);
@@ -328,15 +321,11 @@ class ImmediatelyClosedPeer : public sockets::ISocketTransport {
   void setConnectionEstablishedCallback(std::function<void()>) override {}
 };
 
-// Finished sessions free themselves when run() exits (no wait for the next
-// accept) so large peer-table blobs are not retained indefinitely.
 TEST(KvMigrationReceiverServerTest, ReapsFinishedSessionsWithoutNextAccept) {
   auto reg = std::make_shared<FakeRegistry>();
-  auto table = std::make_shared<InMemoryKvTable>(
-      buildTable("D0", {2, 0}, {2, 1}, {2, 2}, {2, 3}, 0x8000, 0, 0x9000, 1));
   auto engine = std::make_shared<FakeTransferEngine>(reg, "segD0");
-  FakeDeviceIo dev;
-  MooncakeKvReceiver receiver(engine, dev, table, "D0", "segD0");
+  SpanDeviceIo dev;
+  MooncakeKvReceiver receiver(engine, dev, "segD0", K_GEO);
 
   auto listen = std::make_shared<MultiAcceptListenFake>();
   KvMigrationReceiverServer server(
@@ -353,15 +342,11 @@ TEST(KvMigrationReceiverServerTest, ReapsFinishedSessionsWithoutNextAccept) {
   server.stop();
 }
 
-// B1: finished sessions must also be reaped on the next accept (belt+suspenders
-// if a session's self-reap raced with try_lock failure under stop()).
 TEST(KvMigrationReceiverServerTest, ReapsFinishedSessionsOnAccept) {
   auto reg = std::make_shared<FakeRegistry>();
-  auto table = std::make_shared<InMemoryKvTable>(
-      buildTable("D0", {2, 0}, {2, 1}, {2, 2}, {2, 3}, 0x8000, 0, 0x9000, 1));
   auto engine = std::make_shared<FakeTransferEngine>(reg, "segD0");
-  FakeDeviceIo dev;
-  MooncakeKvReceiver receiver(engine, dev, table, "D0", "segD0");
+  SpanDeviceIo dev;
+  MooncakeKvReceiver receiver(engine, dev, "segD0", K_GEO);
 
   auto listen = std::make_shared<MultiAcceptListenFake>();
   KvMigrationReceiverServer server(
@@ -370,7 +355,6 @@ TEST(KvMigrationReceiverServerTest, ReapsFinishedSessionsOnAccept) {
   ASSERT_TRUE(server.start());
 
   listen->fireAccept(std::make_shared<ImmediatelyClosedPeer>());
-  // run() should observe CLOSED and finish quickly.
   for (int i = 0; i < 200 && server.activeSessionCount() > 0; ++i) {
     std::this_thread::sleep_for(1ms);
   }
@@ -380,8 +364,6 @@ TEST(KvMigrationReceiverServerTest, ReapsFinishedSessionsOnAccept) {
     std::this_thread::sleep_for(1ms);
   }
 
-  // After the second accept, the first finished session was reaped; at most
-  // one (the latest, possibly still exiting) may remain briefly.
   EXPECT_LE(server.activeSessionCount(), 1u);
 
   server.stop();
@@ -389,7 +371,7 @@ TEST(KvMigrationReceiverServerTest, ReapsFinishedSessionsOnAccept) {
 }
 
 // ---------------------------------------------------------------------------
-// End to end: connector + receiver server drive the real data plane
+// End to end: connector + receiver server drive the real bounce data plane
 // ---------------------------------------------------------------------------
 
 TEST(KvMigrationEndpoints, SingleHostMigratesThroughConnectorAndServer) {
@@ -397,14 +379,13 @@ TEST(KvMigrationEndpoints, SingleHostMigratesThroughConnectorAndServer) {
   auto senderEngine = std::make_shared<FakeTransferEngine>(reg, "P");
   auto prefill = std::make_shared<InMemoryKvTable>(
       buildTable("P", {1, 0}, {1, 1}, {1, 2}, {1, 3}, 0x1000, 0, 0x2000, 0));
-  // Single decode host "D0" owns both layers.
   auto decode = std::make_shared<InMemoryKvTable>(
       buildTable("D0", {2, 0}, {2, 1}, {2, 2}, {2, 3}, 0x8000, 0, 0x9000, 1));
 
   FakeDeviceIo prefillDev;
   seedPrefill(prefillDev);
-  FakeDeviceIo devD0;
-  DecodeHost d0(reg, decode, "D0", "segD0", devD0);
+  SpanDeviceIo devD0;
+  DecodeHost d0(reg, "segD0", devD0);
 
   std::unordered_map<std::string, Endpoint> eps{{"D0", {"127.0.0.1", 7001}}};
   std::unordered_map<uint16_t, std::shared_ptr<BlockingFakeTransport>> clients{
@@ -426,12 +407,12 @@ TEST(KvMigrationEndpoints, SingleHostMigratesThroughConnectorAndServer) {
 
   for (uint32_t p = 0; p < 128; p += 32) {
     const uint32_t idx = p / 32;
-    EXPECT_EQ(
-        devD0.get(encodeDevice({2, 0}), makeNocAddr(0, 0x8000 + idx * K_CHUNK)),
-        makeContent(0, p));
-    EXPECT_EQ(
-        devD0.get(encodeDevice({2, 2}), makeNocAddr(1, 0x9000 + idx * K_CHUNK)),
-        makeContent(1, p));
+    EXPECT_EQ(devD0.get(encodeDevice({2, 0}),
+                        makeNocAddr(0, 0x8000 + idx * K_CHUNK), K_CHUNK),
+              makeContent(0, p));
+    EXPECT_EQ(devD0.get(encodeDevice({2, 2}),
+                        makeNocAddr(1, 0x9000 + idx * K_CHUNK), K_CHUNK),
+              makeContent(1, p));
   }
 }
 
@@ -440,15 +421,14 @@ TEST(KvMigrationEndpoints, TwoHostFanOutThroughConnectorAndServers) {
   auto senderEngine = std::make_shared<FakeTransferEngine>(reg, "P");
   auto prefill = std::make_shared<InMemoryKvTable>(
       buildTable("P", {1, 0}, {1, 1}, {1, 2}, {1, 3}, 0x1000, 0, 0x2000, 0));
-  // layer 0 -> D0, layer 1 -> D1.
   auto decode = std::make_shared<InMemoryKvTable>(buildTableSplitHosts(
       "D0", "D1", {2, 0}, {2, 1}, {3, 0}, {3, 1}, 0x8000, 0, 0x9000, 1));
 
   FakeDeviceIo prefillDev;
   seedPrefill(prefillDev);
-  FakeDeviceIo devD0, devD1;
-  DecodeHost d0(reg, decode, "D0", "segD0", devD0);
-  DecodeHost d1(reg, decode, "D1", "segD1", devD1);
+  SpanDeviceIo devD0, devD1;
+  DecodeHost d0(reg, "segD0", devD0);
+  DecodeHost d1(reg, "segD1", devD1);
 
   std::unordered_map<std::string, Endpoint> eps{{"D0", {"127.0.0.1", 7001}},
                                                 {"D1", {"127.0.0.1", 7002}}};
@@ -473,12 +453,12 @@ TEST(KvMigrationEndpoints, TwoHostFanOutThroughConnectorAndServers) {
 
   for (uint32_t p = 0; p < 128; p += 32) {
     const uint32_t idx = p / 32;
-    EXPECT_EQ(
-        devD0.get(encodeDevice({2, 0}), makeNocAddr(0, 0x8000 + idx * K_CHUNK)),
-        makeContent(0, p));
-    EXPECT_EQ(
-        devD1.get(encodeDevice({3, 0}), makeNocAddr(1, 0x9000 + idx * K_CHUNK)),
-        makeContent(1, p));
+    EXPECT_EQ(devD0.get(encodeDevice({2, 0}),
+                        makeNocAddr(0, 0x8000 + idx * K_CHUNK), K_CHUNK),
+              makeContent(0, p));
+    EXPECT_EQ(devD1.get(encodeDevice({3, 0}),
+                        makeNocAddr(1, 0x9000 + idx * K_CHUNK), K_CHUNK),
+              makeContent(1, p));
   }
 }
 

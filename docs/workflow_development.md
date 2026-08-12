@@ -552,9 +552,52 @@ doomed run.
 ### Trace sources
 
 `TraceSource` is pluggable so configs and `--agentic-traces-sources` can name a
-harness. `inferencex_agentx` is implemented; `swarmone` is a recognized value with
-no client integration yet and raises `NotImplementedError` at plan time, so
-selecting it can never look like a clean empty sweep.
+harness; both implemented sources are listed in `SUPPORTED_TRACE_SOURCES`
+([`llm_module/agentic_traces/runs.py`](../llm_module/agentic_traces/runs.py)).
+A source added to the config schema without a driver still fails loudly with
+`NotImplementedError` at plan time, so selecting it can never look like a clean
+empty sweep. When `--agentic-traces-sources` is unset, every configured source
+runs **except** those listed in `OPT_IN_TRACE_SOURCES`, which must be named
+explicitly (see `default_run_specs`); the orchestrator dispatches each run to the
+driver for its `trace_source`.
+
+- **`inferencex_agentx`** — the AIPerf fork vendored in InferenceX, driven by
+  [`AIPerfAgenticTracesDriver`](../llm_module/drivers/aiperf_agentic_traces.py).
+- **`swarmone`** — SwarmOne's [`swo-bench`](https://swarmone.ai/docs/swo-bench)
+  replay engine, driven by
+  [`SwoBenchAgenticTracesDriver`](../llm_module/drivers/swo_bench_agentic_traces.py).
+  `swo-bench` is a normal PyPI package pinned in
+  [`requirements/agentic-traces.txt`](../requirements/agentic-traces.txt), so no
+  git checkout is needed; a config whose runs are all `swarmone` skips the
+  InferenceX clone entirely. It replays recorded Claude-Code / Codex coding
+  scenarios (`swo-bench list-scenarios`) turn-by-turn with growing history, and
+  the replay plan is built server-side by the SwarmOne backend. A **SwarmOne
+  license** is required (`SWO_LICENSE_KEY`, or the key written to
+  `~/.swarmone/license.key`), which is why `swarmone` is listed in
+  `OPT_IN_TRACE_SOURCES`: registering a SwarmOne run for a model leaves that
+  model's plain sweep untouched, and the license is only demanded — up front, in
+  [`workflows/validate_setup.py`](../workflows/validate_setup.py) — once
+  `--agentic-traces-sources swarmone` asks for it. The scenario's
+  `--model-context-length` is always supplied from the ModelSpec (with context
+  auto-resolution disabled) because the Tenstorrent Console `/v1/models` does not
+  report the window.
+
+  For each SwarmOne run, `full` replays every task of the scenario at the
+  configured concurrency while `ci` narrows to a single short task at concurrency
+  1 (per-run mode scoping via `AgenticTracesRunSpec.modes`). SwarmOne runs are
+  request-count-driven rather than wall-clock-bounded, so their subprocess
+  timeout comes from `estimated_run_seconds` rather than the profiling-window
+  formula. Example:
+
+```bash
+MODEL_SPECS_ENV=dev python run.py \
+    --model Kimi-K2.7-Code \
+    --workflow agentic_traces \
+    --agentic-traces-sources swarmone \
+    --agentic-traces-mode ci \
+    --device super_cluster \
+    --server-url http://localhost:8000
+```
 
 ### Reported metrics and what invalidates a run
 

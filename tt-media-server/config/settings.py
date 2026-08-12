@@ -336,11 +336,13 @@ class Settings(BaseSettings):
             ModelRunners.TT_QWEN_IMAGE.value,
             ModelRunners.TT_MOCHI_1.value,
             ModelRunners.TT_WAN_2_2.value,
+            ModelRunners.TT_WAN_2_2_T2V_PRODIA.value,
             ModelRunners.TT_WAN_2_2_I2V.value,
             ModelRunners.TT_WAN_2_2_I2V_PRODIA.value,
             ModelRunners.TT_WAN_2_2_I2V_ANISORA.value,
             ModelRunners.TT_WAN_2_2_I2V_DISTILL.value,
             ModelRunners.TT_WAN_2_2_I2V_LORA.value,
+            ModelRunners.TT_WAN_2_2_I2V_LIGHTNING.value,
         ]:
             self.default_throttle_level = None
 

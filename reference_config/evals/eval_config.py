@@ -197,6 +197,12 @@ class EvalTask:
     use_chat_api: bool = False
     apply_chat_template: bool = True
     log_samples: bool = True
+    # Opt-in: preserve the model's separate reasoning_content trace in the
+    # per-sample logs (requires the chat API + a server that returns reasoning
+    # as a distinct field). Off by default so reasoning never bloats logs or
+    # reaches scoring; the eval launcher gates lm-eval via
+    # LM_EVAL_PRESERVE_REASONING when this is True.
+    capture_reasoning: bool = False
     gen_kwargs: Dict[str, str] = field(default_factory=lambda: {"stream": "False"})
     model_kwargs: Dict[str, str] = field(default_factory=lambda: {})
     # Note: include_path is specified relative to the respective venv
@@ -3994,6 +4000,23 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=85.2,
                     published_score_ref="https://huggingface.co/Qwen/Qwen3-Embedding-4B",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen3-Embedding-0.6B",
+        tasks=[
+            EvalTask(
+                task_name="embedding",
+                workflow_venv_type=WorkflowVenvType.EVALS_EMBEDDING,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=64.33,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3-Embedding-0.6B",
                     score_func=lambda results: 0.0,
                 ),
             ),

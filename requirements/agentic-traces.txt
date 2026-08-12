@@ -44,3 +44,11 @@ huggingface_hub[cli]>=0.25.0
 # trust_remote_code, which imports tiktoken (and blobfile to fetch the vocab).
 tiktoken
 blobfile
+
+# SwarmOne swo-bench replay client (TraceSource.SWARMONE). It replays recorded
+# Claude-Code / Codex coding sessions against the endpoint; the replay plan is
+# built server-side by the SwarmOne backend. Unlike the InferenceX AIPerf fork
+# this is a normal PyPI package, so it installs here rather than via a git
+# checkout. A SwarmOne license (SWO_LICENSE_KEY / ~/.swarmone/license.key) is
+# required at run time, checked up front in run.py.
+swo-bench==3.1.2

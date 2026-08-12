@@ -3,6 +3,7 @@
 
 #include "config/settings.hpp"
 
+#include <json/json.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -65,6 +66,7 @@ std::string resolveBlazeSocketDescriptorPrefix() {
     case ModelType::DEEPSEEK_V4_PRO:
       return "deepseek";
   }
+  throw std::runtime_error("Unsupported model type for Blaze socket prefix");
 }
 
 uint32_t resolveBlazeNumberOfPipelineStages() {
@@ -177,6 +179,8 @@ bool isLlmService() { return modelService() == ModelService::LLM; }
 
 bool isImageService() { return modelService() == ModelService::IMAGE; }
 
+bool isTtsService() { return modelService() == ModelService::TTS; }
+
 std::string runnerType() { return toString(modelService()); }
 
 size_t numWorkers() { return deviceIdsParsed().size(); }
@@ -251,6 +255,19 @@ std::string tokenizerConfigPath(ModelType model) {
 }
 
 std::string tokenizerConfigPath() { return tokenizerConfigPath(modelType()); }
+
+std::string modelConfigPath(ModelType model) {
+  auto base = tokenizersDir();
+  if (base.empty()) return "";
+  std::string modelDir = utils::tokenizers::tokenizerDirForModel(model);
+  std::filesystem::path p = base / modelDir / "config.json";
+  if (std::filesystem::exists(p)) {
+    return std::filesystem::absolute(p).string();
+  }
+  return "";
+}
+
+std::string modelConfigPath() { return modelConfigPath(modelType()); }
 
 std::string visibleDevicesForWorker(size_t workerIndex) {
   const auto& ids = deviceIdsParsed();
@@ -398,7 +415,7 @@ BlazeConfig blazeConfig() {
     cfg.migrationPrefillEndpointId = migrationPrefillEndpointId();
     cfg.migrationDecodeEndpointId = migrationDecodeEndpointId();
     cfg.specDecodeMode = specDecodeMode();
-    cfg.mtpLevel = mtpLevel();
+    cfg.specLevel = specLevel();
     cfg.blazeNumberOfPipelineStages = blazeNumberOfPipelineStages();
 
     // Pipeline / channel config
@@ -517,9 +534,71 @@ ImageConfig imageEngineConfig() {
     readMediaRunnerConfig(cfg);
 
     if (auto wh = parseResolution(envString("SDXL_IMAGE_RESOLUTION", ""))) {
-      cfg.image_width = wh->first;
-      cfg.image_height = wh->second;
+      cfg.imageWidth = wh->first;
+      cfg.imageHeight = wh->second;
     }
+    return cfg;
+  }();
+  return cached;
+}
+
+TtsConfig ttsEngineConfig() {
+  static const TtsConfig cached = [] {
+    TtsConfig cfg;
+    const std::string runner = envStringLower("MODEL_RUNNER_TYPE", "tt_tts");
+    if (runner == "tt_tts") {
+      cfg.runner_type = ModelRunnerType::TT_TTS;
+    } else if (runner == "mock_tts") {
+      cfg.runner_type = ModelRunnerType::MOCK_SCHEDULER;
+    } else {
+      throw std::runtime_error("[Config] Unknown TTS MODEL_RUNNER_TYPE='" +
+                               runner + "'; expected one of: tt_tts, mock_tts");
+    }
+
+    cfg.maxBatchSize = static_cast<size_t>(
+        envUlong("TTS_MAX_BATCH_SIZE", defaults::TTS_MAX_BATCH_SIZE));
+    cfg.maxUsers =
+        static_cast<size_t>(envUlong("TTS_MAX_USERS", defaults::PM_MAX_USERS));
+    cfg.connectTimeoutMs = static_cast<unsigned>(
+        envUlong("TTS_CONNECT_TIMEOUT_MS", defaults::PM_CONNECT_TIMEOUT_MS));
+    cfg.outputHangTimeoutMs = static_cast<unsigned>(envUlong(
+        "TTS_OUTPUT_HANG_TIMEOUT_MS", defaults::OUTPUT_HANG_TIMEOUT_MS));
+
+    cfg.taskQueueCapacity = static_cast<size_t>(
+        envUlong("TTS_TASK_QUEUE_CAPACITY", defaults::MAX_QUEUE_SIZE));
+    cfg.audioQueueCapacity = static_cast<size_t>(envUlong(
+        "TTS_AUDIO_QUEUE_CAPACITY", defaults::TTS_AUDIO_QUEUE_CAPACITY));
+    cfg.cancelQueueCapacity = static_cast<size_t>(
+        envUlong("TTS_CANCEL_QUEUE_CAPACITY", defaults::CANCEL_QUEUE_CAPACITY));
+
+    cfg.chunkTokens = static_cast<uint32_t>(
+        envUlong("TTS_CHUNK_TOKENS", defaults::TTS_CHUNK_TOKENS));
+    if (cfg.chunkTokens == 0 || cfg.chunkTokens > defaults::TTS_CHUNK_TOKENS) {
+      throw std::runtime_error("[Config] TTS_CHUNK_TOKENS must be in [1, " +
+                               std::to_string(defaults::TTS_CHUNK_TOKENS) +
+                               "]");
+    }
+    cfg.tokenizerPath = envString(
+        "TTS_TOKENIZER_PATH", tokenizerPath(ModelType::LLAMA_3_1_8B_INSTRUCT));
+    cfg.voiceSampleRateHz = static_cast<uint32_t>(envUlong(
+        "TTS_VOICE_SAMPLE_RATE_HZ", defaults::TTS_VOICE_SAMPLE_RATE_HZ));
+    cfg.voiceChannels = static_cast<uint16_t>(
+        envUlong("TTS_VOICE_CHANNELS", defaults::TTS_VOICE_CHANNELS));
+    cfg.audioSampleRateHz = static_cast<uint32_t>(envUlong(
+        "TTS_AUDIO_SAMPLE_RATE_HZ", defaults::TTS_AUDIO_SAMPLE_RATE_HZ));
+    cfg.audioChannels = static_cast<uint16_t>(
+        envUlong("TTS_AUDIO_CHANNELS", defaults::TTS_AUDIO_CHANNELS));
+
+    cfg.encoderSocketDescriptorPrefix =
+        envString("TTS_ENCODER_SOCKET_DESCRIPTOR_PREFIX",
+                  defaults::TTS_ENCODER_SOCKET_DESCRIPTOR_PREFIX);
+    cfg.speechlmSocketDescriptorPrefix =
+        envString("TTS_SPEECHLM_SOCKET_DESCRIPTOR_PREFIX",
+                  defaults::TTS_SPEECHLM_SOCKET_DESCRIPTOR_PREFIX);
+    cfg.decoderSocketDescriptorPrefix =
+        envString("TTS_DECODER_SOCKET_DESCRIPTOR_PREFIX",
+                  defaults::TTS_DECODER_SOCKET_DESCRIPTOR_PREFIX);
+
     return cfg;
   }();
   return cached;
@@ -531,6 +610,10 @@ RunnerConfig workerRunnerConfig(size_t workerIndex) {
       auto cfg = imageEngineConfig();
       cfg.worker_id = workerIndex;
       cfg.visible_devices = visibleDevicesForWorker(workerIndex);
+      return cfg;
+    }
+    case ModelService::TTS: {
+      auto cfg = ttsEngineConfig();
       return cfg;
     }
     case ModelService::EMBEDDING:
@@ -672,9 +755,84 @@ size_t maxTokensToPrefillOnDecode() {
                defaults::MAX_TOKENS_TO_PREFILL_ON_DECODE));
 }
 
+namespace {
+
+/** Extract a non-negative integer `max_position_embeddings` from a JSON node,
+ *  if present. */
+std::optional<size_t> readMaxPositionEmbeddings(const Json::Value& node) {
+  if (!node.isObject() || !node.isMember("max_position_embeddings")) {
+    return std::nullopt;
+  }
+  const Json::Value& v = node["max_position_embeddings"];
+  if (v.isUInt64()) return static_cast<size_t>(v.asUInt64());
+  if (v.isInt64()) {
+    const int64_t x = v.asInt64();
+    if (x > 0) return static_cast<size_t>(x);
+  }
+  return std::nullopt;
+}
+
+/** Resolve the model's max context length from its HF `config.json`
+ *  (tokenizers/<MODEL>/config.json). Reads top-level `max_position_embeddings`
+ *  first, then falls back to `text_config.max_position_embeddings` for
+ *  multimodal wrapper configs (e.g. Kimi-K2.7-Code, MiniMax-M3). Returns
+ *  `defaults::MAX_CONTEXT_LENGTH` when the file is missing, unreadable, or has
+ *  no such field. */
+size_t resolveMaxContextLength() {
+  const std::string path = modelConfigPath();
+  if (path.empty()) {
+    TT_LOG_WARN(
+        "[Config] Model config.json not found for MODEL; using default "
+        "MAX_CONTEXT_LENGTH={}",
+        defaults::MAX_CONTEXT_LENGTH);
+    return defaults::MAX_CONTEXT_LENGTH;
+  }
+  std::ifstream in(path);
+  if (!in) {
+    TT_LOG_WARN(
+        "[Config] Could not open {}; using default MAX_CONTEXT_LENGTH={}", path,
+        defaults::MAX_CONTEXT_LENGTH);
+    return defaults::MAX_CONTEXT_LENGTH;
+  }
+  Json::Value root;
+  Json::CharReaderBuilder builder;
+  std::string errs;
+  if (!Json::parseFromStream(builder, in, &root, &errs)) {
+    TT_LOG_WARN(
+        "[Config] Failed to parse {}: {}; using default MAX_CONTEXT_LENGTH={}",
+        path, errs, defaults::MAX_CONTEXT_LENGTH);
+    return defaults::MAX_CONTEXT_LENGTH;
+  }
+  if (auto v = readMaxPositionEmbeddings(root)) return *v;
+  if (auto v = readMaxPositionEmbeddings(root["text_config"])) return *v;
+  TT_LOG_WARN(
+      "[Config] {} has no max_position_embeddings field; using default "
+      "MAX_CONTEXT_LENGTH={}",
+      path, defaults::MAX_CONTEXT_LENGTH);
+  return defaults::MAX_CONTEXT_LENGTH;
+}
+
+}  // namespace
+
 size_t maxContextLength() {
-  static const size_t cached = static_cast<size_t>(
-      envUlong("MAX_CONTEXT_LENGTH", defaults::MAX_CONTEXT_LENGTH));
+  // MAX_CONTEXT_LENGTH env wins so operators can shrink/expand the window
+  // without editing weights; otherwise honor the model card's
+  // max_position_embeddings so the default automatically tracks whatever
+  // MODEL is currently deployed.
+  static const size_t cached = [] {
+    const char* v = std::getenv("MAX_CONTEXT_LENGTH");
+    if (v && *v) {
+      try {
+        return static_cast<size_t>(std::stoul(v));
+      } catch (const std::exception&) {
+        TT_LOG_WARN(
+            "[Config] MAX_CONTEXT_LENGTH={} is not a valid unsigned integer; "
+            "falling back to model config.json",
+            v);
+      }
+    }
+    return resolveMaxContextLength();
+  }();
   return cached;
 }
 
@@ -845,11 +1003,8 @@ uint32_t blazeNumberOfPipelineStages() {
                                         resolveBlazeNumberOfPipelineStages()));
 }
 
-size_t mtpLevel() {
-  auto val = static_cast<size_t>(envUlong("MTP_LEVEL", defaults::MTP_LEVEL));
-  if (val > 4) {
-    throw std::runtime_error("MTP_LEVEL must be <= 4");
-  }
+size_t specLevel() {
+  auto val = static_cast<size_t>(envUlong("SPEC_LEVEL", defaults::SPEC_LEVEL));
   return val;
 }
 

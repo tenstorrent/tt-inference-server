@@ -10,9 +10,11 @@ hour in (or worse, as a plausible-looking row of numbers):
 * every configured model pins an InferenceX ref and covers every mode,
 * no mode can drop below the scenario's 900s profiling floor,
 * the derived knobs (max context, trust-remote-code) track the ModelSpec,
-* selecting the unimplemented SwarmOne source fails loudly instead of
-  producing an empty sweep,
-* the emitted CLI carries the flags the scenario requires.
+* a trace source with no driver still fails loudly instead of producing an
+  empty sweep, while the two implemented sources (InferenceX, SwarmOne) build,
+* SwarmOne's per-mode scoping runs all tasks at load in ``full`` and a single
+  short task at concurrency 1 in ``ci``,
+* the emitted CLI (AIPerf and swo-bench) carries the flags the scenario requires.
 """
 
 from __future__ import annotations
@@ -22,13 +24,28 @@ from pathlib import Path
 
 import pytest
 
-from llm_module.agentic_traces import build_runs, summarize_runs, total_planned_seconds
+from llm_module.agentic_traces import (
+    build_runs,
+    estimated_run_seconds,
+    summarize_runs,
+    total_planned_seconds,
+)
 from llm_module.drivers.aiperf_agentic_traces import (
     _invalid_result_reason,
     build_aiperf_cmd,
     parse_aiperf_output,
 )
+from llm_module.drivers.swo_bench_agentic_traces import (
+    build_swo_bench_cmd,
+    build_swo_bench_env,
+    parse_swo_bench_output,
+    swo_bench_executable,
+)
+from llm_module.drivers.swo_bench_agentic_traces import (
+    _invalid_result_reason as _swo_invalid_result_reason,
+)
 from llm_module.parsers.aiperf_agentic_traces import AIPerfAgenticTracesParser
+from llm_module.parsers.swo_bench_agentic_traces import SwoBenchAgenticTracesParser
 from reference_config.agentic_traces.agentic_traces_config import (
     AGENTIC_TRACES_CONFIGS,
     AGENTIC_TRACES_MIN_PROFILE_SECONDS,
@@ -296,24 +313,55 @@ class TestTraceSourceSelection:
         with pytest.raises(ValueError, match="Invalid TraceSource"):
             TraceSource.from_string("mystery_traces")
 
-    def test_swarmone_run_raises_not_implemented(self):
+    def test_swarmone_run_builds(self):
+        """SwarmOne is a supported source; building its runs must not raise."""
+        config = AgenticTracesConfig(
+            model_id="id_test",
+            inferencex_git_ref="abc123",
+            runs=(
+                AgenticTracesRunSpec(
+                    trace_source=TraceSource.SWARMONE,
+                    scenario="claude-code-swe-bench-python-kimi-k2.7-code",
+                    public_dataset="",
+                ),
+            ),
+        )
+        runs = build_runs(config, _FakeModelSpec())
+        assert len(runs) == 1
+        assert runs[0].trace_source is TraceSource.SWARMONE
+
+    def test_unimplemented_source_still_fails_loudly(self):
+        """A source outside SUPPORTED_TRACE_SOURCES fails at plan time."""
+        import llm_module.agentic_traces.runs as runs_mod
+
         config = AgenticTracesConfig(
             model_id="id_test",
             inferencex_git_ref="abc123",
             runs=(AgenticTracesRunSpec(trace_source=TraceSource.SWARMONE),),
         )
-        with pytest.raises(NotImplementedError, match="swarmone"):
-            build_runs(config, _FakeModelSpec())
+        original = runs_mod.SUPPORTED_TRACE_SOURCES
+        runs_mod.SUPPORTED_TRACE_SOURCES = (TraceSource.INFERENCEX_AGENTX,)
+        try:
+            with pytest.raises(NotImplementedError, match="swarmone"):
+                build_runs(config, _FakeModelSpec())
+        finally:
+            runs_mod.SUPPORTED_TRACE_SOURCES = original
 
     def test_narrowing_to_a_configured_source_keeps_its_runs(self):
         config = AGENTIC_TRACES_CONFIGS[KIMI_MODEL_ID]
         _, runs = resolve_run_specs(
             config, trace_sources=(TraceSource.INFERENCEX_AGENTX,)
         )
-        assert len(runs) == len(config.runs)
+        assert runs
+        assert all(r.trace_source is TraceSource.INFERENCEX_AGENTX for r in runs)
 
     def test_narrowing_to_an_unconfigured_source_raises(self):
-        config = AGENTIC_TRACES_CONFIGS[KIMI_MODEL_ID]
+        # A config that only has an InferenceX run rejects a swarmone selection.
+        config = AgenticTracesConfig(
+            model_id="id_test",
+            inferencex_git_ref="abc123",
+            runs=(AgenticTracesRunSpec(trace_source=TraceSource.INFERENCEX_AGENTX),),
+        )
         with pytest.raises(ValueError, match="do not match|No agentic-trace runs"):
             resolve_run_specs(config, trace_sources=(TraceSource.SWARMONE,))
 
@@ -908,3 +956,420 @@ class TestParser:
         block = AIPerfAgenticTracesParser().parse({"model_id": "m"})
         assert "error_rate" not in block.data
         assert "submission_status" not in block.data
+
+
+SWO_SCENARIO = "claude-code-swe-bench-python-kimi-k2.7-code"
+
+
+class TestSwarmOneModeScoping:
+    """The Kimi config runs SwarmOne all-tasks at load in full, sympy c1 in ci."""
+
+    def _swo_runs(self, mode):
+        config = AGENTIC_TRACES_CONFIGS[KIMI_MODEL_ID]
+        return [
+            run
+            for run in build_runs(config, _FakeModelSpec(), mode=mode)
+            if run.trace_source is TraceSource.SWARMONE
+        ]
+
+    def test_full_runs_every_task_at_load(self):
+        runs = self._swo_runs(AgenticTracesMode.FULL)
+        assert len(runs) == 1
+        run = runs[0]
+        assert run.scenario == SWO_SCENARIO
+        assert run.task is None
+        assert run.concurrency == 8
+
+    def test_ci_narrows_to_one_task_at_concurrency_one(self):
+        runs = self._swo_runs(AgenticTracesMode.CI)
+        assert len(runs) == 1
+        run = runs[0]
+        assert run.task == "sympy-bugfix"
+        assert run.concurrency == 1
+
+    def test_inferencex_run_is_unchanged_by_swarmone_ci(self):
+        """SwarmOne's CI c1 scoping must not shrink the InferenceX CI run.
+
+        The InferenceX run keeps its own configured concurrency (from its spec /
+        CI mode settings), never SwarmOne's concurrency of 1.
+        """
+        config = AGENTIC_TRACES_CONFIGS[KIMI_MODEL_ID]
+        inferencex_spec = next(
+            spec
+            for spec in config.runs
+            if spec.trace_source is TraceSource.INFERENCEX_AGENTX
+        )
+        expected = (
+            config.settings_for_mode(AgenticTracesMode.CI).concurrency
+            or inferencex_spec.concurrency
+        )
+        inferencex = [
+            run
+            for run in build_runs(config, _FakeModelSpec(), mode=AgenticTracesMode.CI)
+            if run.trace_source is TraceSource.INFERENCEX_AGENTX
+        ]
+        assert len(inferencex) == 1
+        assert inferencex[0].concurrency == expected
+        assert inferencex[0].concurrency != 1
+
+    def test_default_selection_holds_swarmone_back(self):
+        """swarmone is opt-in, so an unnarrowed sweep must not pull it in and
+        make a SwarmOne license a precondition for every Kimi run."""
+        config = AGENTIC_TRACES_CONFIGS[KIMI_MODEL_ID]
+        _, specs = resolve_run_specs(config)
+        sources = {spec.trace_source for spec in specs}
+        assert sources == {TraceSource.INFERENCEX_AGENTX}
+
+    def test_explicitly_selecting_both_sources_runs_both(self):
+        config = AGENTIC_TRACES_CONFIGS[KIMI_MODEL_ID]
+        _, specs = resolve_run_specs(
+            config,
+            trace_sources=(TraceSource.INFERENCEX_AGENTX, TraceSource.SWARMONE),
+        )
+        sources = {
+            run.trace_source
+            for run in build_runs(
+                config,
+                _FakeModelSpec(),
+                mode=AgenticTracesMode.FULL,
+                run_specs=specs,
+            )
+        }
+        assert sources == {TraceSource.INFERENCEX_AGENTX, TraceSource.SWARMONE}
+
+    def test_a_swarmone_only_config_still_runs_by_default(self):
+        """Holding back the only configured source would leave an empty sweep."""
+        config = AgenticTracesConfig(
+            model_id="id_test",
+            inferencex_git_ref=None,
+            runs=(
+                AgenticTracesRunSpec(
+                    trace_source=TraceSource.SWARMONE, scenario=SWO_SCENARIO
+                ),
+            ),
+        )
+        _, specs = resolve_run_specs(config)
+        assert [spec.trace_source for spec in specs] == [TraceSource.SWARMONE]
+
+    def test_swarmone_timeout_estimate_is_generous(self):
+        full = self._swo_runs(AgenticTracesMode.FULL)[0]
+        ci = self._swo_runs(AgenticTracesMode.CI)[0]
+        assert estimated_run_seconds(full) == 8 * 3600
+        assert estimated_run_seconds(ci) == 3600
+
+    def test_swarmone_label_keys_on_scenario_and_task(self):
+        ci = self._swo_runs(AgenticTracesMode.CI)[0]
+        assert "swarmone" in ci.label
+        assert SWO_SCENARIO in ci.label
+        assert "sympy-bugfix" in ci.label
+        assert ci.label.endswith("_ci")
+
+
+class TestSwarmOneRunSpecValidation:
+    def test_bad_cache_mode_is_rejected(self):
+        with pytest.raises(ValueError, match="cache_mode"):
+            AgenticTracesRunSpec(trace_source=TraceSource.SWARMONE, cache_mode="turbo")
+
+    def test_bad_history_mode_is_rejected(self):
+        with pytest.raises(ValueError, match="history_mode"):
+            AgenticTracesRunSpec(
+                trace_source=TraceSource.SWARMONE, history_mode="rewind"
+            )
+
+    def test_bad_max_tokens_mode_is_rejected(self):
+        with pytest.raises(ValueError, match="max_tokens_mode"):
+            AgenticTracesRunSpec(
+                trace_source=TraceSource.SWARMONE, max_tokens_mode="dynamic"
+            )
+
+    def test_zero_max_tokens_is_rejected(self):
+        with pytest.raises(ValueError, match="max_tokens"):
+            AgenticTracesRunSpec(trace_source=TraceSource.SWARMONE, max_tokens=0)
+
+    def test_zero_resident_is_rejected(self):
+        with pytest.raises(ValueError, match="resident"):
+            AgenticTracesRunSpec(trace_source=TraceSource.SWARMONE, resident=0)
+
+
+class TestSwarmOneConfigWithoutInferencex:
+    def test_swarmone_only_config_needs_no_git_ref(self):
+        config = AgenticTracesConfig(
+            model_id="id_swo_only",
+            inferencex_git_ref="",
+            runs=(
+                AgenticTracesRunSpec(
+                    trace_source=TraceSource.SWARMONE,
+                    scenario=SWO_SCENARIO,
+                    public_dataset="",
+                ),
+            ),
+        )
+        runs = build_runs(config, _FakeModelSpec())
+        assert runs[0].trace_source is TraceSource.SWARMONE
+
+
+@pytest.fixture
+def swo_venv(tmp_path):
+    """A venv bin layout holding the console script swo-bench installs."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "swo-bench").write_text("#!/bin/sh\n")
+    return bin_dir
+
+
+class TestSwoBenchCommand:
+    def _run(self, mode=AgenticTracesMode.CI):
+        config = AGENTIC_TRACES_CONFIGS[KIMI_MODEL_ID]
+        return [
+            run
+            for run in build_runs(config, _FakeModelSpec(), mode=mode)
+            if run.trace_source is TraceSource.SWARMONE
+        ][0]
+
+    def _cmd(self, swo_venv, mode=AgenticTracesMode.CI, **kwargs):
+        defaults = dict(
+            run=self._run(mode),
+            venv_python=swo_venv / "python",
+            model_name="moonshotai/Kimi-K2.7-Code",
+            url="http://localhost:8000",
+            results_path=Path("/tmp/artifacts/swo_bench_results.json"),
+        )
+        defaults.update(kwargs)
+        return build_swo_bench_cmd(**defaults)
+
+    def test_invokes_the_venv_console_script(self, swo_venv):
+        """swo_bench ships no ``__main__``, so ``python -m swo_bench`` aborts
+        with "cannot be directly executed" before reaching the endpoint."""
+        cmd = self._cmd(swo_venv)
+        assert cmd[:2] == [str(swo_venv / "swo-bench"), "replay"]
+        assert "-m" not in cmd
+
+    def test_carries_scenario_task_and_context(self, swo_venv):
+        cmd = self._cmd(swo_venv)
+        assert cmd[cmd.index("--scenario") + 1] == SWO_SCENARIO
+        assert cmd[cmd.index("--task") + 1] == "sympy-bugfix"
+        assert cmd[cmd.index("--model-context-length") + 1] == "262144"
+        assert "--no-resolve-model-context" in cmd
+
+    def test_endpoint_gets_v1_suffix(self, swo_venv):
+        cmd = self._cmd(swo_venv)
+        assert cmd[cmd.index("--endpoint") + 1] == "http://localhost:8000/v1"
+
+    def test_bare_host_gets_scheme_and_v1(self, swo_venv):
+        cmd = self._cmd(swo_venv, url="localhost:8000")
+        assert cmd[cmd.index("--endpoint") + 1] == "http://localhost:8000/v1"
+
+    def test_concurrency_and_resident_default_together(self, swo_venv):
+        cmd = self._cmd(swo_venv, mode=AgenticTracesMode.CI)
+        assert cmd[cmd.index("--concurrent") + 1] == "1"
+        # resident defaults to concurrency when unset in the spec.
+        assert cmd[cmd.index("--resident") + 1] == "1"
+
+    def test_replay_knobs_and_output(self, swo_venv):
+        cmd = self._cmd(swo_venv)
+        assert cmd[cmd.index("--cache-mode") + 1] == "realistic"
+        assert cmd[cmd.index("--history-mode") + 1] == "faithful"
+        assert cmd[cmd.index("--max-tokens") + 1] == "4096"
+        assert cmd[cmd.index("--max-tokens-mode") + 1] == "flat"
+        assert "--verbose-text" in cmd
+        assert cmd[cmd.index("--json-output") + 1] == (
+            "/tmp/artifacts/swo_bench_results.json"
+        )
+
+    def test_full_mode_replays_all_tasks(self, swo_venv):
+        cmd = self._cmd(swo_venv, mode=AgenticTracesMode.FULL)
+        assert "--task" not in cmd
+        assert cmd[cmd.index("--concurrent") + 1] == "8"
+
+
+class TestSwoBenchCredentials:
+    """Neither the licence nor the endpoint token may reach argv.
+
+    ``run_command`` logs the command it executes, so a credential passed as a
+    flag is written into every run log.
+    """
+
+    def test_no_credential_appears_on_argv(self, swo_venv):
+        cmd = TestSwoBenchCommand()._cmd(swo_venv)
+        joined = " ".join(cmd)
+        for leaked in ("--api-key", "--license-key", "SWO_LICENSE_KEY"):
+            assert leaked not in joined
+
+    def test_the_token_travels_by_environment(self):
+        assert build_swo_bench_env("tok123") == {"SWO_REPLAY_API_KEY": "tok123"}
+
+    def test_no_token_sets_no_variable(self):
+        """An unauthenticated endpoint must not get an empty bearer token."""
+        assert build_swo_bench_env("") == {}
+
+
+class TestSwoBenchExecutable:
+    def test_prefers_the_console_script_beside_the_interpreter(self, swo_venv):
+        assert swo_bench_executable(swo_venv / "python") == swo_venv / "swo-bench"
+
+    def test_falls_back_to_path(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            "llm_module.drivers.swo_bench_agentic_traces.shutil.which",
+            lambda name: "/usr/local/bin/swo-bench",
+        )
+        assert swo_bench_executable(tmp_path / "python") == Path(
+            "/usr/local/bin/swo-bench"
+        )
+
+    def test_a_missing_executable_names_where_it_comes_from(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.setattr(
+            "llm_module.drivers.swo_bench_agentic_traces.shutil.which",
+            lambda name: None,
+        )
+        with pytest.raises(RuntimeError, match="agentic-traces.txt"):
+            swo_bench_executable(tmp_path / "python")
+
+
+def _swo_results(**overrides):
+    """A trimmed swo-bench ``--json-output`` file (real 3.x schema)."""
+    results = {
+        "session_id": "bench_session_abc",
+        "source": SWO_SCENARIO,
+        "endpoint": "http://localhost:8000/v1",
+        "model": "moonshotai/Kimi-K2.7-Code",
+        "config": {"concurrency": 1, "max_tokens": 4096, "max_requests": None},
+        "wall_clock_ms": 67053.4,
+        "timings": [
+            {"index": 0, "status": "success", "prompt_tokens": 1015},
+            {"index": 1, "status": "success", "prompt_tokens": 21834},
+        ],
+        "report": {
+            "metrics": {
+                "aggregate_throughput_tok_s": 107.59,
+                "decode_tok_per_sec": {
+                    "max": 142.7,
+                    "mean": 106.09,
+                    "min": 52.13,
+                    "p50": 113.31,
+                    "p90": 127.64,
+                    "p99": 142.7,
+                },
+                "failed": 0,
+                "itl_ms_p50": {"mean": 0.02, "p50": 0.02},
+                "latency_ms": {
+                    "max": 7324.25,
+                    "mean": 2481.6,
+                    "min": 485.18,
+                    "p50": 1692.27,
+                    "p90": 5078.3,
+                    "p99": 7324.25,
+                },
+                "prefill_tok_per_sec": {
+                    "mean": 500.81,
+                    "p50": 276.16,
+                    "p90": 985.43,
+                },
+                "successful": 26,
+                "total_output_tokens": 7214,
+                "total_requests": 26,
+                "ttft_ms": {
+                    "max": 7314.14,
+                    "mean": 2553.08,
+                    "min": 484.15,
+                    "p50": 1691.08,
+                    "p90": 5078.19,
+                    "p99": 7314.14,
+                },
+                "wall_clock_s": 67.05,
+            },
+            "summary": "26/26 requests succeeded",
+        },
+    }
+    results.update(overrides)
+    return results
+
+
+def _write_swo_results(tmp_path, **overrides):
+    path = tmp_path / "swo_bench_results.json"
+    path.write_text(json.dumps(_swo_results(**overrides)))
+    return path
+
+
+class TestSwoBenchOutputParsing:
+    def test_missing_file_yields_no_metrics(self, tmp_path):
+        assert parse_swo_bench_output(tmp_path / "nope.json") == {}
+
+    def test_reads_latency_and_throughput(self, tmp_path):
+        metrics = parse_swo_bench_output(_write_swo_results(tmp_path))
+        assert metrics["mean_ttft_ms"] == 2553.08
+        assert metrics["median_ttft_ms"] == 1691.08
+        assert metrics["p99_ttft_ms"] == 7314.14
+        assert metrics["median_e2el_ms"] == 1692.27
+        assert metrics["output_token_throughput_per_user"] == 106.09
+        assert metrics["output_token_throughput"] == 107.59
+        assert metrics["prefill_tok_per_sec_p50"] == 276.16
+        assert metrics["measured_benchmark_duration"] == 67.05
+
+    def test_inter_token_latency_is_not_published(self, tmp_path):
+        """swo-bench's itl_ms_p50 is not a usable TPOT: a live run reported
+        0.01 ms/token beside a measured 38.9 tok/s decode rate. Emitting it
+        would render a false 0.0 next to AIPerf's real TPOT."""
+        metrics = parse_swo_bench_output(_write_swo_results(tmp_path))
+        assert "mean_tpot_ms" not in metrics
+        assert "median_tpot_ms" not in metrics
+
+    def test_counts_and_error_rate(self, tmp_path):
+        metrics = parse_swo_bench_output(_write_swo_results(tmp_path))
+        assert metrics["completed"] == 26
+        assert metrics["completed_with_errors"] == 26
+        assert metrics["error_request_count"] == 0
+        assert metrics["error_rate_pct"] == 0.0
+
+    def test_input_tokens_summed_from_timings(self, tmp_path):
+        metrics = parse_swo_bench_output(_write_swo_results(tmp_path))
+        assert metrics["total_input_tokens"] == 1015 + 21834
+        assert metrics["total_output_tokens"] == 7214
+
+    def test_provenance_is_carried(self, tmp_path):
+        metrics = parse_swo_bench_output(_write_swo_results(tmp_path))
+        assert metrics["swo_session_id"] == "bench_session_abc"
+        assert metrics["swo_source_label"] == SWO_SCENARIO
+
+    def test_missing_report_block_yields_no_metrics(self, tmp_path):
+        path = tmp_path / "swo_bench_results.json"
+        path.write_text(json.dumps({"session_id": "x", "timings": []}))
+        assert parse_swo_bench_output(path) == {}
+
+
+class TestSwoBenchResultValidity:
+    def test_healthy_run_is_usable(self, tmp_path):
+        metrics = parse_swo_bench_output(_write_swo_results(tmp_path))
+        assert _swo_invalid_result_reason(metrics) is None
+
+    def test_zero_successful_requests_is_rejected(self, tmp_path):
+        results = _swo_results()
+        results["report"]["metrics"]["successful"] = 0
+        results["report"]["metrics"]["failed"] = 26
+        path = tmp_path / "swo_bench_results.json"
+        path.write_text(json.dumps(results))
+        metrics = parse_swo_bench_output(path)
+        assert "no request completed" in (_swo_invalid_result_reason(metrics) or "")
+
+
+class TestSwoBenchParser:
+    def test_block_kind_and_error_rate(self, tmp_path):
+        metrics = parse_swo_bench_output(_write_swo_results(tmp_path))
+        block = SwoBenchAgenticTracesParser().parse(
+            {
+                "model_id": "moonshotai/Kimi-K2.7-Code",
+                "date": "20260727-120000",
+                "trace_source": "swarmone",
+                "backend": "swo-bench",
+                "metadata": {"mode": "ci"},
+                **metrics,
+            },
+            device="super_cluster",
+        )
+        assert block.kind == "agentic_traces"
+        assert block.data["trace_source"] == "swarmone"
+        assert block.data["error_rate"] == pytest.approx(0.0)
+        assert block.data["mode"] == "ci"
+        assert block.targets["device"] == "super_cluster"
+        assert block.targets["timestamp"] == "2026-07-27 12:00:00"

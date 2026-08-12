@@ -15,7 +15,6 @@
 #include "domain/base_request.hpp"
 #include "domain/json_field.hpp"
 #include "domain/llm/chat_message.hpp"
-#include "domain/response_format.hpp"
 #include "domain/session.hpp"
 
 namespace tt::domain::llm {
@@ -162,9 +161,6 @@ struct LLMRequest : BaseRequest {
   int decode_skip_tokens = 0;
 
   std::optional<bool> disaggregation_override;
-
-  // Structured output constraint
-  std::optional<ResponseFormat> response_format;
 
   // When true, skip adding <bos><user> and <assistant> tags in chat template.
   bool skip_apply_chat_template = false;

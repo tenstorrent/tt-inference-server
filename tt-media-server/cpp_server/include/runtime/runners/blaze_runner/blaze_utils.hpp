@@ -24,6 +24,7 @@
 #include "tt_llm_engine/scheduler/migration_client_interface.hpp"
 #include "utils/logger.hpp"
 #ifdef KAFKA_ENABLED
+#include "config/settings.hpp"
 #include "messaging/kafka_consumer.hpp"
 #include "messaging/kafka_producer.hpp"
 #include "services/composite_migration_client.hpp"
@@ -338,7 +339,11 @@ makeShmemOrMockMigrationClient(const tt::config::BlazeConfig& config) {
   switch (config.runner_type) {
     case tt::config::ModelRunnerType::PIPELINE_MANAGER:
 #ifdef ENABLE_BLAZE_MIGRATION
-      return std::make_unique<sch::MigrationLayerClientAdapter>(
+      // create() waits (retries) for the migration endpoint's shmem queues to
+      // appear instead of throwing immediately, so the server can start before
+      // the endpoint is up. Timeout via TT_MIGRATION_CLIENT_ATTACH_TIMEOUT_MS
+      // (default 2 min).
+      return sch::MigrationLayerClientAdapter::create(
           config.migrationCmdQueueName, config.migrationTableQueueName,
           config.migrationRespQueueName);
 #else
@@ -448,7 +453,11 @@ makeDecodeMigrationClientInterface(const tt::config::BlazeConfig& config) {
   switch (config.runner_type) {
     case tt::config::ModelRunnerType::PIPELINE_MANAGER:
 #ifdef ENABLE_BLAZE_MIGRATION
-      return std::make_unique<sch::MigrationLayerClientAdapter>(
+      // create() waits (retries) for the migration endpoint's shmem queues to
+      // appear instead of throwing immediately, so the server can start before
+      // the endpoint is up. Timeout via TT_MIGRATION_CLIENT_ATTACH_TIMEOUT_MS
+      // (default 2 min).
+      return sch::MigrationLayerClientAdapter::create(
           config.migrationCmdQueueName, config.migrationTableQueueName,
           config.migrationRespQueueName);
 #else
