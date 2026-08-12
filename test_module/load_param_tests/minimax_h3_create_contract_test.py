@@ -441,9 +441,7 @@ def _resolve_api_key() -> str:
 def _normalize_profile(value: Any) -> Profile:
     profile = str(value or DEFAULT_PROFILE).lower()
     if profile not in _PROFILES:
-        raise ValueError(
-            f"profile must be one of {sorted(_PROFILES)}, got {value!r}"
-        )
+        raise ValueError(f"profile must be one of {sorted(_PROFILES)}, got {value!r}")
     return cast(Profile, profile)
 
 
