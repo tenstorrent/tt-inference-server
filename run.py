@@ -261,6 +261,21 @@ def parse_arguments():
         "Text/LLM evals only.",
     )
     parser.add_argument(
+        "--agentic-n-concurrent",
+        type=int,
+        default=None,
+        help="Override n_concurrent_trials for agentic evals "
+        "(terminal-bench / swe-bench). Takes precedence over eval_config.py.",
+    )
+    parser.add_argument(
+        "--agentic-n-tasks",
+        type=int,
+        default=None,
+        help="Override the number of dataset tasks for agentic evals. Takes "
+        "precedence over eval_config.py n_tasks and over CI/limit-mode pinned "
+        "task lists.",
+    )
+    parser.add_argument(
         "--skip-system-sw-validation",
         action="store_true",
         help="Skips the system software validation step (no tt-smi or tt-topology verification)",
@@ -600,6 +615,13 @@ def parse_arguments():
     if args.eval_samples and args.limit_samples_mode:
         parser.error("--eval-samples and --limit-samples-mode are mutually exclusive.")
 
+    for flag, value in (
+        ("--agentic-n-concurrent", args.agentic_n_concurrent),
+        ("--agentic-n-tasks", args.agentic_n_tasks),
+    ):
+        if value is not None and value < 1:
+            parser.error(f"{flag} must be >= 1 (got {value})")
+
     if args.prefix_cache and args.workflow not in ("benchmarks", "release"):
         parser.error(
             "--prefix-cache currently requires --workflow benchmarks or release "
@@ -742,6 +764,8 @@ def format_cli_args_summary(runtime_config):
         f"  workflow_args:              {runtime_config.workflow_args}",
         f"  limit_samples_mode:         {runtime_config.limit_samples_mode}",
         f"  eval_samples:               {runtime_config.eval_samples}",
+        f"  agentic_n_concurrent:       {runtime_config.agentic_n_concurrent}",
+        f"  agentic_n_tasks:            {runtime_config.agentic_n_tasks}",
         f"  skip_system_sw_validation:  {runtime_config.skip_system_sw_validation}",
         "",
         "Host Storage Options:",

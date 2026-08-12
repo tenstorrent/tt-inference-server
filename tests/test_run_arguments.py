@@ -1200,5 +1200,56 @@ class TestUtilityFunctions:
         mock_ensure_dir.assert_called_once_with(mock_log_dir)
 
 
+class TestAgenticOverrideArgs:
+    """--agentic-n-concurrent / --agentic-n-tasks parsing and plumbing."""
+
+    def test_defaults_are_none(self, base_args):
+        with patch("sys.argv", ["run.py"] + base_args):
+            args = parse_arguments()
+        assert args.agentic_n_concurrent is None
+        assert args.agentic_n_tasks is None
+
+    def test_values_parsed_as_ints(self, base_args):
+        full_args = base_args + [
+            "--agentic-n-concurrent",
+            "5",
+            "--agentic-n-tasks",
+            "10",
+        ]
+        with patch("sys.argv", ["run.py"] + full_args):
+            args = parse_arguments()
+        assert args.agentic_n_concurrent == 5
+        assert args.agentic_n_tasks == 10
+
+    @pytest.mark.parametrize("flag", ["--agentic-n-concurrent", "--agentic-n-tasks"])
+    @pytest.mark.parametrize("bad_value", ["0", "-3"])
+    def test_rejects_non_positive_values(self, base_args, flag, bad_value, capsys):
+        full_args = base_args + [flag, bad_value]
+        with patch("sys.argv", ["run.py"] + full_args):
+            with pytest.raises(SystemExit) as exc_info:
+                parse_arguments()
+        assert exc_info.value.code == 2
+        captured = capsys.readouterr()
+        assert flag in captured.err
+        assert "must be >= 1" in captured.err
+
+    def test_runtime_config_from_args_and_round_trip(self, base_args):
+        full_args = base_args + [
+            "--agentic-n-concurrent",
+            "5",
+            "--agentic-n-tasks",
+            "10",
+        ]
+        with patch("sys.argv", ["run.py"] + full_args):
+            args = parse_arguments()
+        runtime_config = RuntimeConfig.from_args(args)
+        assert runtime_config.agentic_n_concurrent == 5
+        assert runtime_config.agentic_n_tasks == 10
+        # Same mechanism the v2 bridge uses: to_dict -> JSON doc -> from_dict.
+        restored = RuntimeConfig.from_dict(runtime_config.to_dict())
+        assert restored.agentic_n_concurrent == 5
+        assert restored.agentic_n_tasks == 10
+
+
 if __name__ == "__main__":
     pytest.main([__file__])

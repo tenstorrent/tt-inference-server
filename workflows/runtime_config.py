@@ -68,6 +68,8 @@ class RuntimeConfig:
     workflow_args: Optional[str] = None
     limit_samples_mode: Optional[str] = None
     eval_samples: Optional[str] = None
+    agentic_n_concurrent: Optional[int] = None
+    agentic_n_tasks: Optional[int] = None
     sdxl_num_prompts: str = "100"
 
     # Prefix-cache benchmark
@@ -157,6 +159,8 @@ class RuntimeConfig:
             workflow_args=args.workflow_args,
             limit_samples_mode=args.limit_samples_mode,
             eval_samples=args.eval_samples,
+            agentic_n_concurrent=getattr(args, "agentic_n_concurrent", None),
+            agentic_n_tasks=getattr(args, "agentic_n_tasks", None),
             sdxl_num_prompts=args.sdxl_num_prompts,
             prefix_cache=getattr(args, "prefix_cache", False),
             prefix_cache_preset=getattr(args, "prefix_cache_preset", "full"),
