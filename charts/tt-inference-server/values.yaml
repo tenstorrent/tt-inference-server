@@ -7707,3 +7707,34 @@ models:
               - name: VLLM_TARGET_DEVICE
                 value: tt
     defaultEngine: vllm
+  LTX-2.3-distilled:
+    media:
+      galaxy:
+        defaultImpl: tt_transformers
+        impls:
+          tt_transformers:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-media-inference-server
+              tag: 0.19.0-88183a0c4658
+            probes:
+              liveness:
+                initialDelaySeconds: 2400
+                path: /tt-liveness
+              readiness:
+                initialDelaySeconds: 2400
+            resources:
+              requests:
+                memory: 32Gi
+            env:
+              - name: ARCH_NAME
+                value: wormhole_b0
+              - name: LTX_YUV_EXPORT
+                value: '1'
+              - name: MESH_DEVICE
+                value: TG
+              - name: TT_DIT_CACHE_DIR
+                value: /home/container_app_user/cache_root/tt_dit_cache
+              - name: TT_VIDEO_OUTPUT_DIR
+                value: /home/container_app_user/cache_root/tt-media-videos
+    defaultEngine: media
