@@ -1165,6 +1165,16 @@ ModelConfigs = {
         "max_batch_size": 1,
         "queue_for_multiprocessing": QueueType.FasterFifo.value,
     },
+    (ModelRunners.VLLMForge_QWEN_32B, DeviceTypes.BLACKHOLE_GALAXY): {
+        # Qwen3-32B forge on the BH Galaxy: 8x4 DP+TP mesh, single 32-group (one
+        # worker owns all 32 devices). EXPERIMENTAL non-default path; dims are
+        # env-driven via dev/llm.yaml.
+        "device_mesh_shape": (8, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "queue_for_multiprocessing": QueueType.FasterFifo.value,
+    },
     (ModelRunners.VLLMForge_MISTRAL_SMALL_31_24B, DeviceTypes.BLACKHOLE_GALAXY): {
         "device_mesh_shape": (8, 4),
         "is_galaxy": False,

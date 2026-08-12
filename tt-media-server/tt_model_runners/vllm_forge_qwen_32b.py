@@ -50,23 +50,56 @@ class VLLMForgeQwen32BRunner(BaseDeviceRunner):
         optimization_level = int(os.getenv("OPTIMIZATION_LEVEL", "0"))
         cpu_sampling = os.getenv("CPU_SAMPLING", "false").lower() == "true"
         enable_trace = os.getenv("ENABLE_TRACE", "true").lower() == "true"
+        # Chunked prefill (forge): prefill_batch_threshold MUST be < max_num_seqs
+        # or every step serializes. Passed only when set.
+        prefill_chunk_size = os.getenv("PREFILL_CHUNK_SIZE")
+        min_num_seqs = os.getenv("MIN_NUM_SEQS")
+        prefill_batch_threshold = os.getenv("PREFILL_BATCH_THRESHOLD")
+        # Depth override for fast bring-up; garbage output -- NEVER set for real evals.
+        num_hidden_layers = os.getenv("NUM_HIDDEN_LAYERS")
+        # Mesh-aware: same runner serves P300X2 (mesh (1,4), 1D TP) and BH Galaxy
+        # (mesh (8,4), DP+TP); mesh_shape[0] > 1 switches on the 2D DP+TP path.
+        # KV_CACHE_DTYPE=bfp_bf8 stores KV as bfp8 (~half the KV DRAM); set only when present.
+        kv_cache_dtype = os.getenv("KV_CACHE_DTYPE")
+        mesh_shape = list(self.settings.device_mesh_shape)  # P300X2 [1,4]; galaxy [8,4]
+        is_dp_tp = mesh_shape[0] > 1
+        additional_config = {
+            "enable_const_eval": True,
+            "min_context_len": self.settings.vllm.min_context_length,
+            "enable_tensor_parallel": True,
+            "use_2d_mesh": is_dp_tp,
+            "experimental_weight_dtype": "bfp_bf8",
+            "cpu_sampling": cpu_sampling,
+            "optimization_level": optimization_level,
+            "enable_trace": enable_trace,
+        }
+        if is_dp_tp:
+            # 2D DP+TP keys the 1D path omits. shard_weights_on_batch_axis: True
+            # FSDP-shards weights (frees per-chip DRAM); False replicates. Env-selected.
+            shard_weights = (
+                os.getenv("SHARD_WEIGHTS_ON_BATCH_AXIS", "false").lower() == "true"
+            )
+            additional_config["enable_data_parallel"] = True
+            additional_config["shard_weights_on_batch_axis"] = shard_weights
+            additional_config["mesh_shape"] = mesh_shape
+        if prefill_chunk_size:
+            additional_config["prefill_chunk_size"] = int(prefill_chunk_size)
+        if min_num_seqs:
+            additional_config["min_num_seqs"] = int(min_num_seqs)
+        if prefill_batch_threshold:
+            additional_config["prefill_batch_threshold"] = int(prefill_batch_threshold)
+        if kv_cache_dtype:
+            additional_config["experimental_kv_cache_dtype"] = kv_cache_dtype
+        if num_hidden_layers:
+            additional_config["num_hidden_layers"] = int(num_hidden_layers)
         engine_args = AsyncEngineArgs(
             model=self.settings.vllm.model,
             max_model_len=self.settings.vllm.max_model_length,
             max_num_batched_tokens=self.settings.vllm.max_num_batched_tokens,
             max_num_seqs=self.settings.vllm.max_num_seqs,
-            enable_chunked_prefill=False,
+            enable_chunked_prefill=False,  # forge drives chunking via prefill_chunk_size; keep False
             gpu_memory_utilization=self.settings.vllm.gpu_memory_utilization,
-            additional_config={
-                "enable_const_eval": True,
-                "min_context_len": self.settings.vllm.min_context_length,
-                "enable_tensor_parallel": True,
-                "use_2d_mesh": False,
-                "experimental_weight_dtype": "bfp_bf8",
-                "cpu_sampling": cpu_sampling,
-                "optimization_level": optimization_level,
-                "enable_trace": enable_trace,
-            },
+            additional_config=additional_config,
         )
         self.logger.info(
             f"Device {self.device_id}: additional_config={engine_args.additional_config}"
