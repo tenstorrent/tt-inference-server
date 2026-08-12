@@ -17,14 +17,8 @@ mistral-common[image]>=1.11.7 # mistral's tokenizer
 datasets # model training
 peft # model training
 
-# Training recipes reused by trainer runners. Pinned to a commit rather
-# than a branch so a worker image build is reproducible.
-blacksmith @ git+https://github.com/tenstorrent/tt-blacksmith.git@b5a35e6af09b3aba488e0adfd4a8b0cc8d6f826f
-# blacksmith declares no install_requires, so its transitive imports are listed here.
-pandas
-torchvision
-tqdm
-wandb
+# Training recipes reused by trainer runners.
+blacksmith @ git+https://github.com/tenstorrent/tt-blacksmith.git@62cfc66fcba9222214510b9148d7651fc2279938
 
 # yolox requirements
 thop
