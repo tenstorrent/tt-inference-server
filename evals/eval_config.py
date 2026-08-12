@@ -543,7 +543,12 @@ _eval_config_list = [
                         # tail emits malformed tool-call arguments (~2% of calls
                         # measured against the served endpoint) and one bad
                         # parse aborts the whole trial.
-                        "llm_args_json": {"top_p": 0.95},
+                        #
+                        # Must stay a JSON *string*: agent_kwargs are written
+                        # verbatim into the harbor config file, and the adapter
+                        # shlex.quotes this value onto the container command
+                        # line, which fails with TypeError on a dict.
+                        "llm_args_json": '{"top_p": 0.95}',
                         "max_steps": 200,
                         # Default is 120s; a single reasoning user-sim turn under
                         # load can exceed that and trip an MCP request timeout.
