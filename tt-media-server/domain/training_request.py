@@ -15,24 +15,33 @@ class TrainingRequest(BaseRequest):
     dataset_loader: str = DatasetLoaders.SST2.value
     dataset_max_sequence_length: int = 64
 
-    # Only read when dataset_loader is Custom. Paths are resolved against, and
-    # confined to, the server's training_datasets_dir. Validation is optional;
-    # without it the run reports training loss alone. The column mapping names
-    # which dataset columns fill the prompt template's instruction, input and
-    # output slots, and can be omitted when they already carry those names.
+    # Only read when dataset_loader is Custom. Paths are used as given.
+    # Validation is optional; without it the run reports training loss alone.
+    # file_type is the datasets.load_dataset loader name (e.g. "json", "jsonl").
+    # The column mapping names which dataset columns fill the prompt template's
+    # instruction, input and output slots, and can be omitted when they already
+    # carry those names.
     train_dataset_path: Optional[str] = None
     val_dataset_path: Optional[str] = None
+    file_type: Optional[str] = None
     column_mapping: Optional[dict[str, str]] = None
 
     @model_validator(mode="after")
     def check_custom_dataset(self) -> "TrainingRequest":
-        if (
-            self.dataset_loader == DatasetLoaders.CUSTOM.value
-            and not self.train_dataset_path
-        ):
+        if self.dataset_loader != DatasetLoaders.CUSTOM.value:
+            return self
+        missing = [
+            name
+            for name, value in (
+                ("train_dataset_path", self.train_dataset_path),
+                ("file_type", self.file_type),
+            )
+            if not value
+        ]
+        if missing:
             raise ValueError(
-                f"'train_dataset_path' is required when dataset_loader is "
-                f"'{DatasetLoaders.CUSTOM.value}'"
+                f"{', '.join(repr(n) for n in missing)} required when "
+                f"dataset_loader is '{DatasetLoaders.CUSTOM.value}'"
             )
         return self
 

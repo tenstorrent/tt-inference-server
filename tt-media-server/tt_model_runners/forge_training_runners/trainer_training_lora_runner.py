@@ -55,7 +55,6 @@ from tt_model_runners.forge_training_runners.blacksmith_callbacks import (
     JobControlCallback,
     JobMetricsCallback,
 )
-from utils.dataset_path_resolver import dataset_file_type
 from utils.decorators import log_execution_time
 
 # dtype the base model is loaded with at warmup. Matches TrainingRequest's
@@ -340,12 +339,6 @@ class TrainerTrainingLoraRunner(BaseDeviceRunner):
         for name in ("steps_freq", "val_steps_freq"):
             if getattr(request, name) < 1:
                 raise ValueError(f"'{name}' must be >= 1, got {getattr(request, name)}")
-        if request.dataset_loader == DatasetLoaders.CUSTOM.value:
-            # The paths were confined to the dataset directory when the job was
-            # submitted; what is left is whether the files name a loader.
-            for path in (request.train_dataset_path, request.val_dataset_path):
-                if path:
-                    dataset_file_type(path)
 
     def _logging_config(self) -> LoggingConfig:
         return LoggingConfig(
@@ -375,7 +368,7 @@ class TrainerTrainingLoraRunner(BaseDeviceRunner):
         if request.dataset_loader != DatasetLoaders.CUSTOM.value:
             return None
         return CustomDatasetConfig(
-            file_type=dataset_file_type(request.train_dataset_path),
+            file_type=request.file_type,
             train_dataset_path=request.train_dataset_path,
             # Left unset the trainer skips validation entirely, reporting
             # training loss alone.

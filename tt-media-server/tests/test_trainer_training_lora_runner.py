@@ -178,6 +178,7 @@ class TestJobConfig:
                 dataset_loader=DatasetLoaders.CUSTOM.value,
                 train_dataset_path="/datasets/train.jsonl",
                 val_dataset_path="/datasets/val.jsonl",
+                file_type="jsonl",
                 column_mapping={"instruction": "prompt", "output": "response"},
             )
         )
@@ -197,6 +198,7 @@ class TestJobConfig:
             _request(
                 dataset_loader=DatasetLoaders.CUSTOM.value,
                 train_dataset_path="/datasets/train.json",
+                file_type="json",
             )
         )
 
@@ -238,36 +240,24 @@ class TestValidate:
             _request(
                 dataset_loader=DatasetLoaders.CUSTOM.value,
                 train_dataset_path="/datasets/train.json",
+                file_type="json",
             )
         )
 
-    def test_rejects_a_custom_dataset_file_blacksmith_cannot_load(self, runner):
-        with pytest.raises(ValueError, match="Unsupported dataset file"):
-            runner._validate(
-                _request(
-                    dataset_loader=DatasetLoaders.CUSTOM.value,
-                    train_dataset_path="/datasets/train.csv",
-                )
-            )
-
-    def test_rejects_a_custom_validation_file_blacksmith_cannot_load(self, runner):
-        with pytest.raises(ValueError, match="Unsupported dataset file"):
-            runner._validate(
-                _request(
-                    dataset_loader=DatasetLoaders.CUSTOM.value,
-                    train_dataset_path="/datasets/train.json",
-                    val_dataset_path="/datasets/val.parquet",
-                )
-            )
-
 
 class TestTrainingRequest:
-    def test_a_custom_dataset_requires_a_train_path(self):
+    def test_a_custom_dataset_requires_a_train_path_and_file_type(self):
         with pytest.raises(ValueError, match="train_dataset_path"):
-            _request(dataset_loader=DatasetLoaders.CUSTOM.value)
+            _request(dataset_loader=DatasetLoaders.CUSTOM.value, file_type="json")
+        with pytest.raises(ValueError, match="file_type"):
+            _request(
+                dataset_loader=DatasetLoaders.CUSTOM.value,
+                train_dataset_path="/datasets/train.json",
+            )
 
     def test_built_in_datasets_need_no_paths(self):
         assert _request().train_dataset_path is None
+        assert _request().file_type is None
 
 
 class TestRun:

@@ -5,7 +5,7 @@ import io
 import os
 import zipfile
 
-from config.constants import DatasetLoaders, JobTypes
+from config.constants import JobTypes
 from config.settings import get_settings
 from domain.training_request import TrainingRequest
 from fastapi import APIRouter, Depends, HTTPException, Security
@@ -15,7 +15,6 @@ from resolver.service_resolver import service_resolver
 from security.api_key_checker import get_api_key
 from security.org_id_checker import get_org_id
 from utils.build_catalog import build_training_catalog
-from utils.dataset_path_resolver import resolve_dataset_path
 
 router = APIRouter()
 
@@ -66,17 +65,6 @@ async def submit_fine_tuning_request(
             status_code=400,
             detail=f"Request device '{request.device_type}' does not match server device '{settings.device}'",
         )
-
-    # Resolved here rather than in the worker so a bad path is a 400 on submission
-    # instead of a job that fails minutes later, and so the worker only ever sees
-    # a path that has already been confined to the dataset directory.
-    if request.dataset_loader == DatasetLoaders.CUSTOM.value:
-        try:
-            request.train_dataset_path = resolve_dataset_path(request.train_dataset_path)
-            if request.val_dataset_path:
-                request.val_dataset_path = resolve_dataset_path(request.val_dataset_path)
-        except (ValueError, FileNotFoundError) as e:
-            raise HTTPException(status_code=400, detail=str(e))
 
     try:
         job_data = await service.create_job(JobTypes.TRAINING, request, org_id=org_id)

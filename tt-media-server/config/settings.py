@@ -50,10 +50,6 @@ class Settings(BaseSettings):
     )
     model_weights_path: str = ""
     training_model: Optional[str] = None
-    # Root a fine-tuning request's dataset paths are resolved against and confined
-    # to. Relative to the server working directory unless set absolute; point it at
-    # a mounted volume so datasets survive restarts and are visible to the worker.
-    training_datasets_dir: str = "datasets"
     chat_template_kwargs: dict = {}  # extra kwargs passed to apply_chat_template
     tokenizer_type: str = ""  # AutoTokenizer tokenizer_type
     preprocessing_model_weights_path: str = ""
