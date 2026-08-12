@@ -12,8 +12,7 @@ from .aiperf_spec_decode import AIPerfSpecDecodeDriver, SpecDecodeDriverResult
 from .swo_bench_agentic_traces import SwoBenchAgenticTracesDriver
 from .agentic import (
     AgenticEvalDriver,
-    SWEbenchAgenticDriver,
-    TerminalBenchAgenticDriver,
+    HarborAgenticDriver,
     make_agentic_driver,
 )
 from .base import DriverResult, LLMDriver
@@ -35,8 +34,7 @@ __all__ = [
     "SwoBenchAgenticTracesDriver",
     "GenAIPerfDriver",
     "GuideLLMDriver",
-    "SWEbenchAgenticDriver",
-    "TerminalBenchAgenticDriver",
+    "HarborAgenticDriver",
     "VLLMBenchDriver",
     "make_agentic_driver",
 ]
