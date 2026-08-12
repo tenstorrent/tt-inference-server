@@ -75,12 +75,31 @@ class CategoryResult:
     na: int = 0
     skipped: int = 0
     blockers: Dict[str, str] = field(default_factory=dict)
-    # Would-be blockers dropped because a model_spec known_issues waiver matched.
+    # Would-be blockers dropped because a model_spec known_issues waiver matched,
+    # or tier checks that failed without blocking. An OVERLAY on the counts below,
+    # not a bucket of its own: an entry here may belong to a block that passed the
+    # gate or to one already counted in `failed`.
     waived: Dict[str, str] = field(default_factory=dict)
 
     @property
     def passed(self) -> int:
-        return self.total - self.failed - self.na - self.skipped - len(self.waived)
+        """Blocks that neither failed nor opted out.
+
+        ``waived`` is deliberately not subtracted. A block lands in it when a tier
+        check failed without blocking, which happens either on its own (the block
+        still passed the gate) or alongside a real blocker (the block is already
+        counted in ``failed`` — see
+        ``test_benchmark_failing_complete_tier_still_blocks_at_complete_status``,
+        which asserts that overlap on purpose).
+
+        Subtracting it removed passing blocks that were never in a non-pass
+        bucket, and removed failed blocks a second time. One block that both
+        failed and carried an informational note reported ``passed == -1``; a real
+        20-point sweep reported ``-2/20 passed, 10 failed, 2 waived, 10 NA``.
+        Leaving it out also makes the four counts sum to ``total``, which is what
+        lets the summary line be read as a partition.
+        """
+        return self.total - self.failed - self.na - self.skipped
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -252,12 +271,14 @@ def _detail(category: CategoryResult) -> str:
     parts = [f"{category.passed}/{category.total} passed"]
     if category.failed:
         parts.append(f"{category.failed} failed")
-    if category.waived:
-        parts.append(f"{len(category.waived)} waived")
     if category.skipped:
         parts.append(f"{category.skipped} skipped")
     if category.na:
         parts.append(f"{category.na} NA")
+    # passed/failed/skipped/na partition `total`; waived overlaps them, so it is
+    # worded as an annotation rather than listed as though it were a fifth share.
+    if category.waived:
+        parts.append(f"{len(category.waived)} with waived check(s)")
     return ", ".join(parts)
 
 
@@ -293,6 +314,14 @@ def _check_benchmarks(
 
         block_blockers: Dict[str, str] = {}
         block_informational: Dict[str, str] = {}
+
+        # Graded independently of the target checks: a point can hit every
+        # latency target while dropping requests, and speed measured over only
+        # the requests that succeeded is not a result.
+        error_blocker = _failed_request_blocker(block)
+        if error_blocker is not None:
+            block_blockers[f"{block_key}.error_request_count"] = error_blocker
+
         target_checks = _resolve_nested(block.data, "target_checks")
         if not isinstance(target_checks, Mapping):
             block_blockers[f"{block_key}.target_checks"] = (
@@ -561,6 +590,29 @@ def _level_passes(level_checks: Mapping[str, Any]) -> bool:
         v for name, v in level_checks.items() if name.endswith(CHECK_SUFFIX)
     ]
     return bool(check_values) and all(_passes_check(v) for v in check_values)
+
+
+def _failed_request_blocker(block: Block) -> Optional[str]:
+    """Blocker message when a benchmark point did not serve every request.
+
+    Zero failed requests is a binary requirement (RFP G.2.6): a point that
+    dropped requests has not met it, however fast the surviving requests were.
+
+    A count that is absent also blocks, and deliberately so. The requirement is
+    that zero failures were *confirmed*, so a point with nothing to confirm has
+    not satisfied it — treating the absence as a pass is how an unverified
+    requirement silently becomes a satisfied one. Note this is distinct from a
+    reported ``0``, which is a real measurement and passes.
+    """
+    value = _resolve_nested(block.data, "error_request_count")
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return (
+            "No error_request_count reported, so zero failed requests cannot be "
+            "confirmed for this point."
+        )
+    if value > 0:
+        return f"{int(value)} request(s) failed at this point; zero are required."
+    return None
 
 
 def _resolve_nested(data: Any, key: str) -> Any:

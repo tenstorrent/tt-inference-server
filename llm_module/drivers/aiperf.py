@@ -67,6 +67,18 @@ class AIPerfDriver(LLMDriver):
             str(config.max_concurrency),
             "--request-count",
             str(config.num_prompts),
+            # AIPerf generates 100 unique dataset entries by default and reuses
+            # them once --request-count exceeds that, so a 128-request point sends
+            # 28 duplicate prompts. Duplicates are served from the server's prefix
+            # cache, and their TTFT collapses to roughly the dispatch overhead --
+            # which drags the *mean* down while leaving the median intact, so it
+            # reads as a fast system rather than a measurement artefact. Measured
+            # at ISL 8192, concurrency 32, 128 requests: mean TTFT 1021 ms with 28
+            # cache hits vs 1294 ms with none, a 21 % understatement, while the
+            # median moved 1279 -> 1294 ms. Prefix caching is on by default in
+            # vLLM, so this is not simulator-specific.
+            "--num-dataset-entries",
+            str(config.num_prompts),
             "--synthetic-input-tokens-mean",
             str(config.isl),
             "--synthetic-input-tokens-stddev",
@@ -75,10 +87,32 @@ class AIPerfDriver(LLMDriver):
             str(config.osl),
             "--output-tokens-stddev",
             "0",
+            # --output-tokens-mean/-stddev only *request* a fixed length; without
+            # ignore_eos the server may stop at its natural EOS and the sweep's
+            # osl axis stops meaning anything. Measured against
+            # llm-d-inference-sim asking for osl=128: 27-130 tokens returned
+            # (std 41) without this, 131-135 (std 1.5) with it. Output length
+            # feeds TPOT, E2EL and both throughput columns, so the whole row is
+            # affected, not just output_sequence_length.
+            #
+            # This restores the pairing the sibling drivers already use --
+            # aiperf_spec_decode.py couples ignore_eos:true with
+            # output-tokens-mean/-stddev, and the agentic-traces scenario enforces
+            # it too. This driver setting a fixed length without enforcing it was
+            # the outlier.
+            "--extra-inputs",
+            "ignore_eos:true",
             "--url",
             url,
             "--artifact-dir",
             str(artifact_dir),
+            # RFP Milestone-0 handoff change — NOT upstream. See tenstorrent#4883.
+            # AIPerf defaults --ui-type to "dashboard", a full-screen Textual TUI.
+            # With no attached terminal it emits alternate-screen escape codes and
+            # blocks forever, writing a 0-byte aiperf.log. Benchmarks are always
+            # run non-interactively here, so the UI is pure liability.
+            "--ui-type",
+            "none",
         ]
         # AIPerf parses --goodput as a single token holding the full
         # space-separated KEY:VALUE SLO list, so pass it as one argument.

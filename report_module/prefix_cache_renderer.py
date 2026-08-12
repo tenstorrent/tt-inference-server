@@ -19,9 +19,14 @@ Registered with :func:`report_module.renderers.register` at import time
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Sequence, Tuple
 
 from report_module.markdown_table import build_markdown_table
+from report_module.prefix_cache_uplift import (
+    BASELINE_SCENARIO,
+    baseline_key,
+    delta_pct as _delta_pct,
+)
 from report_module.renderers import _extract_records, _resolve_model_device, register
 from report_module.schema import Block
 
@@ -180,19 +185,10 @@ def _build_baseline_index(
 ) -> Dict[Tuple[Any, Any, Any], Mapping[str, Any]]:
     index: Dict[Tuple[Any, Any, Any], Mapping[str, Any]] = {}
     for row in rows:
-        if row.get("scenario") != "baseline":
+        if row.get("scenario") != BASELINE_SCENARIO:
             continue
-        key = (row.get("concurrency"), row.get("arrival_pattern"), row.get("isl_mean"))
-        index[key] = row
+        index[baseline_key(row)] = row
     return index
-
-
-def _delta_pct(
-    treatment: Optional[float], baseline: Optional[float]
-) -> Optional[float]:
-    if treatment is None or baseline is None or baseline == 0:
-        return None
-    return (treatment - baseline) / baseline * 100.0
 
 
 def _build_uplift_rows(
@@ -204,10 +200,9 @@ def _build_uplift_rows(
     uplift_rows: List[Dict[str, Any]] = []
     for row in rows:
         scenario = row.get("scenario")
-        if scenario == "baseline":
+        if scenario == BASELINE_SCENARIO:
             continue
-        key = (row.get("concurrency"), row.get("arrival_pattern"), row.get("isl_mean"))
-        base = baselines.get(key)
+        base = baselines.get(baseline_key(row))
         if base is None:
             continue
         t_ttft = row.get("mean_ttft_ms")
@@ -307,7 +302,7 @@ def _build_sla_rows(rows: Sequence[Mapping[str, Any]]) -> List[Dict[str, str]]:
 
     sla_rows: List[Dict[str, str]] = []
     for row in rows:
-        if row.get("scenario") == "baseline":
+        if row.get("scenario") == BASELINE_SCENARIO:
             continue
         if all(row.get(pass_key) is None for _, pass_key, _, _ in sla_columns):
             continue
@@ -336,7 +331,7 @@ def _sort_rows(rows: Sequence[Mapping[str, Any]]) -> List[Mapping[str, Any]]:
     return sorted(
         rows,
         key=lambda r: (
-            0 if r.get("scenario") == "baseline" else 1,
+            0 if r.get("scenario") == BASELINE_SCENARIO else 1,
             str(r.get("scenario") or ""),
             int(r.get("isl_mean") or 0),
             int(r.get("concurrency") or 0),

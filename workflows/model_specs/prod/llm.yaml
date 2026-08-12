@@ -1179,6 +1179,27 @@ templates:
         # --reasoning-parser separates the thought channel into reasoning_content.
         default-chat-template-kwargs: '{"enable_thinking": true}'
         reasoning-parser: gemma4
+    # Simulation / bring-your-own-server path (docs/gpu_workflows.md). Lets the
+    # benchmark workflows target an OpenAI-compatible endpoint with no Tenstorrent
+    # hardware present — used by the RFP simulation harness in llm-gauntlet.
+    - device: GPU
+      max_concurrency: 32
+      max_context: 262144 # 256 * 1024
+      # max_context * max_concurrency. Without this, max_tokens_all_users
+      # defaults to max_context (model_spec.py::_infer_data), i.e. the KV budget
+      # shared by ALL users equals ONE full-context request — so
+      # get_benchmark_max_concurrency (benchmark_config.py:331) clamps the
+      # long-context sweep points to concurrency 28 / 7 / 1 at ISL 8192 / 32768 /
+      # 131072 and they are never measured at the concurrency they registered.
+      #
+      # The RFP requires bidders to serve max context AT max concurrency, so the
+      # single-device-pool default is the wrong model for this endpoint. This is a
+      # bring-your-own-server endpoint (docs/gpu_workflows.md), which like
+      # SUPER_CLUSTER is not bound by one device's KV pool; SUPER_CLUSTER already
+      # gets this treatment in _infer_data, and arguably GPU should too rather
+      # than needing an override here.
+      max_tokens_all_users_override: 8388608
+      default_impl: true
   status: EXPERIMENTAL
   has_builtin_warmup: true
   env_vars:

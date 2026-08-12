@@ -11,7 +11,7 @@ from typing import Any, Dict, Mapping, Optional
 
 from report_module.schema import Block
 
-from .base import LLMResultParser
+from .base import LLMResultParser, decode_throughput
 from .base import round_metric as _round
 
 
@@ -34,15 +34,39 @@ class VLLMBenchParser(LLMResultParser):
             "output_sequence_length": _per_request(
                 raw.get("total_output_tokens"), completed
             ),
+            # Percentile keys beyond mean/median/p99 are only present when the run
+            # passed `--percentile-metrics` and `--metric-percentiles`. When absent
+            # `_round` yields None, never 0 — a zero here would score as a perfect
+            # result in the grading rubric.
             "mean_ttft_ms": _round(raw.get("mean_ttft_ms"), 4),
             "p50_ttft": _round(raw.get("median_ttft_ms"), 4),
+            "p90_ttft": _round(raw.get("p90_ttft_ms"), 4),
+            "p95_ttft": _round(raw.get("p95_ttft_ms"), 4),
             "p99_ttft": _round(raw.get("p99_ttft_ms"), 4),
+            "std_ttft_ms": _round(raw.get("std_ttft_ms"), 4),
             "mean_tpot_ms": _round(raw.get("mean_tpot_ms"), 4),
+            "p50_tpot_ms": _round(raw.get("median_tpot_ms"), 4),
+            "p90_tpot_ms": _round(raw.get("p90_tpot_ms"), 4),
+            "p95_tpot_ms": _round(raw.get("p95_tpot_ms"), 4),
+            "p99_tpot_ms": _round(raw.get("p99_tpot_ms"), 4),
+            "std_tpot_ms": _round(raw.get("std_tpot_ms"), 4),
             "mean_e2el_ms": _round(raw.get("mean_e2el_ms"), 4),
-            "tps_decode_throughput": _round(raw.get("output_throughput"), 4),
+            "p50_e2el_ms": _round(raw.get("median_e2el_ms"), 4),
+            "p90_e2el_ms": _round(raw.get("p90_e2el_ms"), 4),
+            "p95_e2el_ms": _round(raw.get("p95_e2el_ms"), 4),
+            "p99_e2el_ms": _round(raw.get("p99_e2el_ms"), 4),
+            "std_e2el_ms": _round(raw.get("std_e2el_ms"), 4),
+            # See llm_module.parsers.base.decode_throughput: the `tput` target is
+            # decode interactivity x concurrency, not a wall-clock token rate.
+            # vllm bench serve reports no per-user rate, so it comes from TPOT.
+            "tps_decode_throughput": None,  # set below, needs concurrency
+            "tps_output_throughput": _round(raw.get("output_throughput"), 4),
             "request_throughput": _round(raw.get("request_throughput"), 4),
             "error_request_count": _errors(raw.get("failed")),
         }
+        record["tps_decode_throughput"] = decode_throughput(
+            record.get("tput_user"), record["mean_tpot_ms"], record["concurrency"]
+        )
         return self._wrap_record(record)
 
 
@@ -72,8 +96,15 @@ def _per_request_int(total: Any, completed: Optional[float]) -> Optional[int]:
 
 
 def _errors(value: Any) -> Optional[int]:
+    """Failed request count, preserving a measured zero.
+
+    ``vllm bench serve`` reports ``failed: 0`` on a clean run. Zero must survive
+    as 0: it is the outcome acceptance has to confirm (RFP G.2.6 requires zero
+    failed requests), and collapsing it to None would make "no requests failed"
+    indistinguishable from "nobody looked".
+    """
     v = _num(value)
-    return int(v) if v else None
+    return int(v) if v is not None else None
 
 
 def _format_date(date_str: Any) -> str:

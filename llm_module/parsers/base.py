@@ -104,6 +104,42 @@ def metric_stat_int(raw: Mapping[str, Any], key: str) -> Any:
     return int(value) if isinstance(value, (int, float)) else None
 
 
+def decode_throughput(
+    tput_user: Any, mean_tpot_ms: Any, concurrency: Any, digits: int = 4
+) -> Any:
+    """Aggregate decode throughput: per-user decode rate x concurrency.
+
+    This is the quantity the ``tput`` perf target is defined in terms of --
+    median decode interactivity (``1000 / TPOT``) summed over the concurrent
+    users -- so it must be measured the same way to be gradeable.
+
+    It is deliberately NOT the tools' own ``output_token_throughput`` /
+    ``output_throughput``, which is total output tokens over the whole
+    benchmark window and therefore charges decode for time spent in prefill
+    and in queueing. The two agree only when prefill is negligible; at
+    ISL 131072 the wall-clock figure came out 0.46x of a target the run was
+    actually meeting on a decode basis. That figure is still reported, as
+    ``tps_output_throughput``.
+
+    Matches how ``test_module/stress_tests/stress_tests_record_builder``
+    already derives the same field (``mean_tps * actual_max_con``).
+    """
+    if isinstance(concurrency, bool) or not isinstance(concurrency, (int, float)):
+        return None
+    if concurrency <= 0:
+        return None
+    per_user = tput_user
+    if isinstance(per_user, bool) or not isinstance(per_user, (int, float)):
+        per_user = None
+    if per_user is None:
+        if isinstance(mean_tpot_ms, bool) or not isinstance(mean_tpot_ms, (int, float)):
+            return None
+        if mean_tpot_ms <= 0:
+            return None
+        per_user = 1000.0 / mean_tpot_ms
+    return round_metric(per_user * concurrency, digits)
+
+
 def _slugify_block_id(model: str, device: str) -> str:
     parts = [p for p in (model, device) if p]
     if not parts:

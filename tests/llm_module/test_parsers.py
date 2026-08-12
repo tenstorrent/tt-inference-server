@@ -18,6 +18,7 @@ from typing import Any, Dict, Mapping
 import pytest
 
 from llm_module.parsers.aiperf import AIPerfParser
+from llm_module.parsers.base import decode_throughput
 from llm_module.parsers.genai_perf import GenAIPerfParser
 from llm_module.parsers.vllm import VLLMBenchParser
 from report_module.display import display_name
@@ -25,7 +26,8 @@ from report_module.display import display_name
 MODEL = "meta-llama/Llama-3.2-1B-Instruct"
 
 # NVIDIA aiperf / genai-perf share a schema: metrics are top-level mappings
-# of stat -> value. A clean run reports no errors (error_request_count None).
+# of stat -> value. This fixture omits error_request_count entirely, which is
+# the "not reported" case; a clean run that DID report reports 0, not None.
 AIPERF_RAW: Dict[str, Any] = {
     "schema_version": "1.0",
     "aiperf_version": "0.5.0",
@@ -40,9 +42,33 @@ AIPERF_RAW: Dict[str, Any] = {
     "error_request_count": None,
     "input_sequence_length": {"avg": 16384.0, "unit": "tokens"},
     "output_sequence_length": {"avg": 126.5, "unit": "tokens"},
-    "time_to_first_token": {"avg": 1240.09, "p50": 786.0, "p99": 2093.6, "unit": "ms"},
-    "inter_token_latency": {"avg": 129.8, "unit": "ms"},
-    "request_latency": {"avg": 17525.9, "unit": "ms"},
+    "time_to_first_token": {
+        "avg": 1240.09,
+        "p50": 786.0,
+        "p90": 1830.2,
+        "p95": 1961.0,
+        "p99": 2093.6,
+        "std": 402.7,
+        "unit": "ms",
+    },
+    "inter_token_latency": {
+        "avg": 129.8,
+        "p50": 121.4,
+        "p90": 168.9,
+        "p95": 186.1,
+        "p99": 204.3,
+        "std": 22.6,
+        "unit": "ms",
+    },
+    "request_latency": {
+        "avg": 17525.9,
+        "p50": 16980.0,
+        "p90": 21044.5,
+        "p95": 22077.0,
+        "p99": 23110.8,
+        "std": 1904.2,
+        "unit": "ms",
+    },
     "output_token_throughput_per_user": {"avg": 7.71, "unit": "tokens/sec/user"},
     "output_token_throughput": {"avg": 228.47, "unit": "tokens/sec"},
     "request_throughput": {"avg": 1.81, "unit": "requests/sec"},
@@ -73,9 +99,22 @@ VLLM_RAW: Dict[str, Any] = {
     "total_output_tokens": 16384,
     "mean_ttft_ms": 350.5,
     "median_ttft_ms": 300.1,
+    "p90_ttft_ms": 900.4,
+    "p95_ttft_ms": 1050.2,
     "p99_ttft_ms": 1200.9,
+    "std_ttft_ms": 210.3,
     "mean_tpot_ms": 28.7,
+    "median_tpot_ms": 27.1,
+    "p90_tpot_ms": 39.5,
+    "p95_tpot_ms": 45.0,
+    "p99_tpot_ms": 51.2,
+    "std_tpot_ms": 6.4,
     "mean_e2el_ms": 4200.0,
+    "median_e2el_ms": 4050.0,
+    "p90_e2el_ms": 5300.0,
+    "p95_e2el_ms": 5700.0,
+    "p99_e2el_ms": 6100.0,
+    "std_e2el_ms": 520.0,
     "request_throughput": 2.1,
     "output_throughput": 480.0,
     "total_token_throughput": 900.0,
@@ -126,14 +165,154 @@ def test_aiperf_maps_metrics_and_keeps_isl_integer():
     assert data["mean_tpot_ms"] == pytest.approx(129.8)
     assert data["mean_e2el_ms"] == pytest.approx(17525.9)
     assert data["tput_user"] == pytest.approx(7.71)
-    assert data["tps_decode_throughput"] == pytest.approx(228.47)
+    # tps_decode_throughput is the graded quantity: per-user decode rate x
+    # concurrency (7.71 * 32), NOT AIPerf's wall-clock output_token_throughput,
+    # which charges decode for prefill and queueing time and is kept separately.
+    assert data["tps_decode_throughput"] == pytest.approx(246.72)
+    assert data["tps_output_throughput"] == pytest.approx(228.47)
     assert data["request_throughput"] == pytest.approx(1.81)
 
 
-def test_aiperf_errors_none_when_clean():
+# The grading rubric reads high percentiles directly, so every percentile the
+# tool measured must survive normalisation. AIPerf reports mean/p50/p90/p99/std
+# for each latency family; the parser previously kept only three of the fifteen.
+PERCENTILE_FIELDS = (
+    "p90_ttft",
+    "p95_ttft",
+    "std_ttft_ms",
+    "p50_tpot_ms",
+    "p90_tpot_ms",
+    "p95_tpot_ms",
+    "p99_tpot_ms",
+    "p50_e2el_ms",
+    "p90_e2el_ms",
+    "p95_e2el_ms",
+    "p99_e2el_ms",
+    "std_e2el_ms",
+)
+
+
+def test_aiperf_surfaces_every_latency_percentile():
     data = AIPerfParser().parse(AIPERF_RAW, device="N150").data
-    # None -> the Errors column drops out of an all-successful sweep
+    assert data["p90_ttft"] == pytest.approx(1830.2)
+    assert data["p95_ttft"] == pytest.approx(1961.0)
+    assert data["std_ttft_ms"] == pytest.approx(402.7)
+    assert data["p50_tpot_ms"] == pytest.approx(121.4)
+    assert data["p90_tpot_ms"] == pytest.approx(168.9)
+    assert data["p95_tpot_ms"] == pytest.approx(186.1)
+    assert data["p99_tpot_ms"] == pytest.approx(204.3)
+    assert data["std_tpot_ms"] == pytest.approx(22.6)
+    assert data["p50_e2el_ms"] == pytest.approx(16980.0)
+    assert data["p90_e2el_ms"] == pytest.approx(21044.5)
+    assert data["p95_e2el_ms"] == pytest.approx(22077.0)
+    assert data["p99_e2el_ms"] == pytest.approx(23110.8)
+    assert data["std_e2el_ms"] == pytest.approx(1904.2)
+
+
+def test_vllm_surfaces_percentiles_when_the_run_requested_them():
+    """`--percentile-metrics` adds these keys; the parser must carry them."""
+    data = VLLMBenchParser().parse(VLLM_RAW, device="N150").data
+    assert data["p90_ttft"] == pytest.approx(900.4)
+    assert data["p95_ttft"] == pytest.approx(1050.2)
+    assert data["std_ttft_ms"] == pytest.approx(210.3)
+    assert data["p50_tpot_ms"] == pytest.approx(27.1)
+    assert data["p90_tpot_ms"] == pytest.approx(39.5)
+    assert data["p99_tpot_ms"] == pytest.approx(51.2)
+    assert data["p50_e2el_ms"] == pytest.approx(4050.0)
+    assert data["p90_e2el_ms"] == pytest.approx(5300.0)
+    assert data["p99_e2el_ms"] == pytest.approx(6100.0)
+
+
+@pytest.mark.parametrize(
+    "parser,raw",
+    [(AIPerfParser(), AIPERF_RAW), (VLLMBenchParser(), VLLM_RAW)],
+)
+def test_absent_percentiles_are_none_never_zero(parser, raw):
+    """A percentile the tool did not report must be None, not 0.
+
+    Zero is the best possible latency, so a missing value silently coerced to
+    0 would score as a perfect result in the grading rubric rather than as
+    unmeasured. Every consumer must be able to tell the two apart.
+    """
+    stripped = {
+        k: v
+        for k, v in raw.items()
+        if k
+        not in (
+            "time_to_first_token",
+            "inter_token_latency",
+            "request_latency",
+            "mean_ttft_ms",
+            "median_ttft_ms",
+            "p90_ttft_ms",
+            "p95_ttft_ms",
+            "p99_ttft_ms",
+            "std_ttft_ms",
+            "mean_tpot_ms",
+            "median_tpot_ms",
+            "p90_tpot_ms",
+            "p95_tpot_ms",
+            "p99_tpot_ms",
+            "std_tpot_ms",
+            "mean_e2el_ms",
+            "median_e2el_ms",
+            "p90_e2el_ms",
+            "p95_e2el_ms",
+            "p99_e2el_ms",
+            "std_e2el_ms",
+        )
+    }
+    data = parser.parse(stripped, device="N150").data
+    for field in PERCENTILE_FIELDS:
+        assert data[field] is None, f"{field} coerced to {data[field]!r}, expected None"
+
+
+def test_aiperf_accepts_mean_and_median_stat_aliases():
+    """AIPerf labels the same stat `avg`/`mean` and `p50`/`median` by version.
+
+    `llm_module/drivers/aiperf_prefix_cache` already reads both spellings from
+    real AIPerf output, so the standard benchmark parser must too — otherwise
+    the same export parses on one code path and silently yields None on the
+    other.
+    """
+    aliased = dict(AIPERF_RAW)
+    aliased["time_to_first_token"] = {
+        "mean": 1240.09,
+        "median": 786.0,
+        "p90": 1830.2,
+        "unit": "ms",
+    }
+    data = AIPerfParser().parse(aliased, device="N150").data
+    assert data["mean_ttft_ms"] == pytest.approx(1240.09)
+    assert data["p50_ttft"] == pytest.approx(786.0)
+    assert data["p90_ttft"] == pytest.approx(1830.2)
+
+
+def test_new_percentile_fields_have_display_names():
+    """Every emitted field needs a column heading, or it renders as a raw key."""
+    from report_module.display import display_name
+
+    for field in PERCENTILE_FIELDS + ("std_tpot_ms",):
+        rendered = display_name(field)
+        assert rendered and rendered != field, f"{field} has no display name"
+
+
+def test_aiperf_errors_none_only_when_not_reported():
+    """None means nobody looked. A clean run reports 0 and must keep it."""
+    data = AIPerfParser().parse(AIPERF_RAW, device="N150").data
     assert data["error_request_count"] is None
+
+
+@pytest.mark.parametrize("zero", [0, {"avg": 0}])
+def test_aiperf_a_measured_zero_survives_as_zero(zero):
+    # Zero is the outcome acceptance has to confirm (RFP G.2.6). Collapsing it
+    # to None would make "no requests failed" look like "nobody looked".
+    data = (
+        AIPerfParser()
+        .parse({**AIPERF_RAW, "error_request_count": zero}, device="N150")
+        .data
+    )
+    assert data["error_request_count"] == 0
 
 
 @pytest.mark.parametrize("err_value", [3, {"avg": 3}])
@@ -141,6 +320,49 @@ def test_aiperf_errors_surface_when_present(err_value):
     raw = {**AIPERF_RAW, "error_request_count": err_value}
     data = AIPerfParser().parse(raw, device="N150").data
     assert data["error_request_count"] == 3
+
+
+# AIPerf drops error_request_count from the export when nothing failed and only
+# adds it once something has, so absence is its healthiest output rather than a
+# gap. error_summary is always written, so an empty one is a confirmed zero --
+# which is what the acceptance gate needs to tell apart from silence.
+def test_aiperf_empty_error_summary_is_a_confirmed_zero():
+    raw = {**AIPERF_RAW, "error_summary": []}
+    del raw["error_request_count"]
+    data = AIPerfParser().parse(raw, device="N150").data
+    assert data["error_request_count"] == 0
+
+
+def test_aiperf_error_summary_is_summed_when_the_aggregate_is_missing():
+    """A partial export must not report zero failures while listing some."""
+    raw = {
+        **AIPERF_RAW,
+        "error_summary": [
+            {"error_details": {"code": 404}, "count": 2},
+            {"error_details": {"code": 503}, "count": 1},
+        ],
+    }
+    del raw["error_request_count"]
+    data = AIPerfParser().parse(raw, device="N150").data
+    assert data["error_request_count"] == 3
+
+
+def test_aiperf_aggregate_count_wins_over_the_summary():
+    raw = {
+        **AIPERF_RAW,
+        "error_request_count": {"avg": 5},
+        "error_summary": [{"error_details": {"code": 404}, "count": 2}],
+    }
+    data = AIPerfParser().parse(raw, device="N150").data
+    assert data["error_request_count"] == 5
+
+
+def test_aiperf_errors_stay_none_when_neither_key_is_present():
+    """Still blocks the gate: no count and no summary means nobody looked."""
+    raw = {k: v for k, v in AIPERF_RAW.items() if k != "error_request_count"}
+    assert "error_summary" not in raw
+    data = AIPerfParser().parse(raw, device="N150").data
+    assert data["error_request_count"] is None
 
 
 def test_genai_unwraps_concurrency_list_and_resolves_model():
@@ -181,13 +403,25 @@ def test_vllm_derives_isl_osl_and_maps_percentiles():
     # vLLM's "median" maps to p50; p99 carried through
     assert data["p50_ttft"] == pytest.approx(300.1)
     assert data["p99_ttft"] == pytest.approx(1200.9)
-    assert data["tps_decode_throughput"] == pytest.approx(480.0)
-    assert data["error_request_count"] is None
+    # vllm bench serve reports no per-user rate, so the decode aggregate comes
+    # from TPOT: (1000 / 28.7) * 32. Its own output_throughput is wall-clock.
+    assert data["tps_decode_throughput"] == pytest.approx(1114.9826)
+    assert data["tps_output_throughput"] == pytest.approx(480.0)
+    # VLLM_RAW carries "failed": 0 — a real measurement, kept as 0.
+    assert data["error_request_count"] == 0
 
 
 def test_vllm_errors_surface_from_failed_count():
     data = VLLMBenchParser().parse({**VLLM_RAW, "failed": 4}, device="N150").data
     assert data["error_request_count"] == 4
+
+
+def test_vllm_errors_none_only_when_failed_is_absent():
+    """Distinguishes an unreported count from a reported zero."""
+    raw = {k: v for k, v in VLLM_RAW.items() if k != "failed"}
+    assert (
+        VLLMBenchParser().parse(raw, device="N150").data["error_request_count"] is None
+    )
 
 
 def test_vllm_handles_zero_completed_without_dividing():
@@ -244,6 +478,31 @@ def test_canonical_keys_have_display_names():
     assert display_name("tput_user") == "Tput User (TPS)"
     assert display_name("error_request_count") == "Errors"
     assert display_name("input_sequence_length") == "ISL"
+
+
+# The `tput` perf target is defined as decode interactivity x concurrency, so
+# the metric graded against it must be derived that way and must degrade to NA
+# rather than to a wrong number when an input is missing.
+@pytest.mark.parametrize(
+    "tput_user, tpot, concurrency, expected",
+    [
+        (36.72, 27.235, 32, 1175.04),  # per-user rate preferred when present
+        (None, 28.7, 32, 1114.9826),  # else derived from TPOT
+        (36.72, None, 1, 36.72),  # concurrency 1: aggregate == per-user
+        (None, None, 32, None),  # no rate at all -> NA, never 0
+        (36.72, 27.235, None, None),  # unknown concurrency -> NA
+        (36.72, 27.235, 0, None),  # guard against divide-by-nothing nonsense
+        (None, 0, 32, None),  # zero TPOT would be a division error
+    ],
+)
+def test_decode_throughput_is_interactivity_times_concurrency(
+    tput_user, tpot, concurrency, expected
+):
+    result = decode_throughput(tput_user, tpot, concurrency)
+    if expected is None:
+        assert result is None
+    else:
+        assert result == pytest.approx(expected)
 
 
 if __name__ == "__main__":

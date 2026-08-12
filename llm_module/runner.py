@@ -9,9 +9,14 @@ Mirrors v1 ``benchmarking/run_benchmarks.py`` orchestration:
 1. ``server.wait_for_healthy()`` — block until the inference server is up.
 2. ``server.capture_traces(unique (isl,osl) pairs)`` — warm trace cache.
 3. For each ``LLMRunConfig`` in the sweep: health-check, sleep 2 s,
-   ``driver.run()``, ``driver.parse(raw)`` → ``Block``, then grade the
+   ``driver.run()``, ``driver.parse(raw)`` → ``Block``, attach the per-point
+   prefill metrics
+   (:func:`llm_module.derived_metrics.apply_derived_metrics`), then grade the
    Block against the sweep point's perf targets
    (:func:`llm_module.target_checks.apply_target_checks`).
+4. Once the sweep is done, fit the time-to-first-token scaling exponent per
+   concurrency level across all blocks
+   (:func:`llm_module.derived_metrics.apply_scaling_exponents`).
 
 Returns the list of Blocks plus any nonzero driver exit codes the
 caller should surface.
@@ -29,6 +34,7 @@ import requests
 from report_module.schema import Block
 
 from .config import DriverContext, LLMRunConfig, ServerConnection
+from .derived_metrics import apply_derived_metrics, apply_scaling_exponents
 from .drivers.base import LLMDriver
 from .server_control import ServerController
 from .target_checks import apply_target_checks
@@ -152,7 +158,11 @@ class LLMPerformanceRunner:
                 continue
 
             block = self.driver.parse(outcome.raw, device=context.device)
+            block = apply_derived_metrics(block)
             block = apply_target_checks(block, cfg)
             result.blocks.append(block)
 
+        # Fitted after the sweep, not per point: the exponent needs several input
+        # lengths at one concurrency level to mean anything.
+        result.blocks = apply_scaling_exponents(result.blocks)
         return result

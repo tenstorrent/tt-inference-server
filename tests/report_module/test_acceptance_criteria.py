@@ -10,6 +10,8 @@ runners emit; these tests assert against that shape directly.
 
 from __future__ import annotations
 
+import pytest
+
 from report_module.acceptance_criteria import (
     CATEGORY_BENCHMARKS,
     CATEGORY_EVALS,
@@ -18,6 +20,7 @@ from report_module.acceptance_criteria import (
     STATUS_NA,
     STATUS_PASS,
     CategoryResult,
+    _detail,
     acceptance_criteria_check,
     build_acceptance_export,
     format_acceptance_summary_markdown,
@@ -52,6 +55,52 @@ def test_category_result_passed_and_to_dict():
         "blockers": {},
         "waived": {},
     }
+
+
+# `waived` overlaps the other counts instead of partitioning alongside them: a
+# block can fail AND carry an informational tier note (asserted deliberately by
+# test_benchmark_failing_complete_tier_still_blocks_at_complete_status). Counting
+# it as its own share produced negative pass counts -- a real 20-point sweep
+# reported "-2/20 passed, 10 failed, 2 waived, 10 NA".
+@pytest.mark.parametrize(
+    "total, failed, na, skipped, waived, expected",
+    [
+        (1, 1, 0, 0, 1, 0),  # the minimal repro: one block, failed AND waived
+        (20, 10, 10, 0, 2, 0),  # the sweep that reported -2/20
+        (5, 2, 1, 1, 0, 1),  # no waivers: unchanged from before
+        (3, 0, 0, 0, 3, 3),  # waived-only blocks still passed the gate
+    ],
+)
+def test_passed_never_goes_negative_and_counts_partition_total(
+    total, failed, na, skipped, waived, expected
+):
+    cat = CategoryResult(
+        "Benchmarks",
+        STATUS_FAIL,
+        total=total,
+        failed=failed,
+        na=na,
+        skipped=skipped,
+        waived={f"k{i}": "informational" for i in range(waived)},
+    )
+    assert cat.passed == expected
+    assert cat.passed >= 0
+    # The four buckets must partition total; waived is an annotation on top.
+    assert cat.passed + cat.failed + cat.na + cat.skipped == cat.total
+
+
+def test_waived_is_worded_as_an_annotation_not_a_share():
+    cat = CategoryResult(
+        "Benchmarks",
+        STATUS_FAIL,
+        total=20,
+        failed=10,
+        na=10,
+        waived={"a": "informational", "b": "informational"},
+    )
+    detail = _detail(cat)
+    assert detail.startswith("0/20 passed")
+    assert "2 with waived check(s)" in detail
 
 
 # --- Task failure blockers ------------------------------------------------
@@ -89,8 +138,63 @@ def test_task_failure_blocker_fails_acceptance_when_category_is_na():
 # --- Benchmarks -----------------------------------------------------------
 
 
-def _bench(target_checks) -> Block:
-    return Block(kind="benchmarks", title="B", data={"target_checks": target_checks})
+def _bench(target_checks, errors: object = 0) -> Block:
+    """A benchmark block that served every request unless told otherwise.
+
+    ``errors`` defaults to a reported 0 so these tests exercise target-check
+    routing rather than the failed-request gate, which has its own tests below.
+    Pass ``None`` to model a point that never reported a count.
+    """
+    data = {"target_checks": target_checks, "error_request_count": errors}
+    return Block(kind="benchmarks", title="B", data=data)
+
+
+# --- Failed requests (RFP G.2.6) -----------------------------------------
+
+_PASSING = {"target": {"ttft_check": 2, "ttft": 100, "ttft_ratio": 0.8}}
+
+
+def test_failed_requests_block_even_when_every_target_is_met():
+    """The point of the gate: speed over surviving requests is not a result."""
+    accepted, blockers, _ = acceptance_criteria_check(
+        _schema(_bench(_PASSING, errors=7))
+    )
+    assert accepted is False
+    assert "7 request(s) failed" in blockers["benchmarks:B.error_request_count"]
+
+
+def test_a_reported_zero_passes():
+    accepted, blockers, _ = acceptance_criteria_check(
+        _schema(_bench(_PASSING, errors=0))
+    )
+    assert accepted is True and blockers == {}
+
+
+def test_an_unreported_count_blocks_rather_than_passing_silently():
+    """Absent is not zero. The requirement is that zero was *confirmed*."""
+    accepted, blockers, _ = acceptance_criteria_check(
+        _schema(_bench(_PASSING, errors=None))
+    )
+    assert accepted is False
+    assert "cannot be confirmed" in blockers["benchmarks:B.error_request_count"]
+
+
+def test_every_point_is_checked_not_only_the_first():
+    """A sweep that starts clean and degrades under load must still fail."""
+    clean = Block(
+        kind="benchmarks",
+        title="c1",
+        data={"target_checks": _PASSING, "error_request_count": 0},
+    )
+    degraded = Block(
+        kind="benchmarks",
+        title="c32",
+        data={"target_checks": _PASSING, "error_request_count": 12},
+    )
+    accepted, blockers, _ = acceptance_criteria_check(_schema(clean, degraded))
+    assert accepted is False
+    assert "benchmarks:c32.error_request_count" in blockers
+    assert "benchmarks:c1.error_request_count" not in blockers
 
 
 def test_benchmarks_absent_is_na():
