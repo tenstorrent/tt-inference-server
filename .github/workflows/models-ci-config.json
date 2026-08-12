@@ -7,6 +7,11 @@
           "devices": [
             "BH_GALAXY"
           ]
+        }, 
+        "release": {
+          "devices": [
+            "BH_GALAXY"
+          ]
         }
       }
     },
