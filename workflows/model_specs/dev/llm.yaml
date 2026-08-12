@@ -353,7 +353,7 @@ templates:
       # readiness §5.7). Set to the measured 32-chip pool, and >= 278528
       # (=128*2176) so ISLs {128,1024,2048} reach concurrency 128. Enforced by
       # get_llm_configs once blackhole_galaxy targets are authored.
-      # max_tokens_all_users_override: 278528
+      max_tokens_all_users_override: 32 * 256 * 1024
       default_impl: true
       env_vars:
         # Fixed 4x8 2D torus mesh graph descriptor (RFP D.2). Not a partner choice.
