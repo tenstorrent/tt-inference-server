@@ -342,7 +342,7 @@ templates:
   device_model_specs:
     - device: BLACKHOLE_GALAXY  # M0 target: 32x P150, 4x8 2D torus (RFP D.1/D.2)
       # [TBD — Partner] per-system max concurrent requests (sweep upper corner).
-      max_concurrency: 128
+      max_concurrency: 32
       # Full native context: Mistral Small 4 has a 256k context window (model
       # card; the vLLM recipe serves --max-model-len 262144).
       max_context: 262144  # 256 * 1024
