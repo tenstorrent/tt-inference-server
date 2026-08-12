@@ -185,7 +185,11 @@ def _require_openai_server(ctx: MediaContext) -> None:
     auth_token = os.getenv("OPENAI_API_KEY") or os.getenv("API_KEY") or ""
     if ctx.remote_server:
         controller = RemoteOpenAIController(
-            base_url=ctx.server_url,
+            # ctx.base_url, not ctx.server_url: the latter is the raw
+            # --server-url, which carries no port when the caller passed a
+            # bare host. Polling it then targets port 80 and burns the whole
+            # DEFAULT_WAIT_HEALTHY_TIMEOUT_S with no output.
+            base_url=ctx.base_url,
             auth_token=auth_token,
         )
     else:
@@ -198,6 +202,7 @@ def _require_openai_server(ctx: MediaContext) -> None:
     endpoint = getattr(controller, "health_url", None) or getattr(
         controller, "models_url", ""
     )
+    logger.info("Waiting for inference server readiness at %s", endpoint)
     if not controller.wait_for_healthy():
         raise RuntimeError(f"Inference server health check failed at {endpoint}")
     logger.info("Inference server health check passed via %s", endpoint)

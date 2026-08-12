@@ -397,13 +397,17 @@ with speculative decoding enabled.
 
 ## Agentic evals
 
-Run agentic accuracy evals (Terminal-Bench and SWE-bench) directly against an
-already-up OpenAI-compatible LLM server. The workflow is `agentic`; it bypasses
-the generic media-task dispatcher and emits `Block(kind="evals")` results through
-the same report/acceptance path as other evals.
+Run agentic accuracy evals (Terminal-Bench, tau3-bench, and SWE-bench) directly
+against an already-up OpenAI-compatible LLM server. The workflow is `agentic`; it
+bypasses the generic media-task dispatcher and emits `Block(kind="evals")` results
+through the same report/acceptance path as other evals.
 
-Agentic harnesses require the dedicated `EVALS_AGENTIC` venv (Harbor,
-mini-swe-agent, SWE-bench, and related tools). Use the thin launcher
+Every agentic eval runs through [Harbor](https://github.com/harbor-framework/harbor):
+Harbor acquires the tasks, sandboxes them (`docker` locally, `kubernetes` on a
+cluster), installs and runs the agent *inside* the task container, and scores. So
+the dedicated `EVALS_AGENTIC` venv holds only the Harbor CLI — the agents
+(mini-swe-agent, terminus-2, ...) and per-benchmark graders are container-side and
+are not host dependencies. Use the thin launcher
 `run_agentic.py`, which selects/creates that venv and re-execs `run_workflows.py`
 inside it:
 
@@ -865,7 +869,7 @@ Policy: new benchmarks and runners should be authored as engine modules
 │   ├── benchmark_configs.py        # get_llm_configs(model_spec, device)
 │   ├── drivers/                    # base, agentic, aiperf, aiperf_agentic_traces, aiperf_prefix_cache, genai_perf, guidellm, inferencex, vllm
 │   ├── parsers/                    # mirror of drivers/
-│   ├── agentic/                    # Terminal-Bench/SWE-bench harness wrappers
+│   ├── agentic/                    # Harbor CLI wrapper (terminal-bench/tau3/SWE-bench)
 │   ├── agentic_traces/             # Agentic trace-replay run expansion (config + mode → runs)
 │   └── prefix_cache/               # Scenario manifest + expander + CI mooncake trace
 ├── tests/                          # pytest tests for the modules above
