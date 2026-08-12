@@ -17,6 +17,7 @@ from llm_module.drivers.agentic import (
     build_swebench_config,
     build_terminal_bench_config,
     resolve_instance_ids,
+    resolve_n_concurrent,
     resolve_n_tasks,
     resolve_task_names,
 )
@@ -92,8 +93,16 @@ class FakeSWEbenchConfig:
     instance_ids_map: Dict[EvalLimitMode, List[str]] = field(default_factory=dict)
 
 
-def _runtime(limit_samples_mode: Optional[str] = None):
-    return SimpleNamespace(limit_samples_mode=limit_samples_mode)
+def _runtime(
+    limit_samples_mode: Optional[str] = None,
+    agentic_n_concurrent: Optional[int] = None,
+    agentic_n_tasks: Optional[int] = None,
+):
+    return SimpleNamespace(
+        limit_samples_mode=limit_samples_mode,
+        agentic_n_concurrent=agentic_n_concurrent,
+        agentic_n_tasks=agentic_n_tasks,
+    )
 
 
 def _terminal_task(**overrides):
@@ -414,6 +423,98 @@ class TestAgenticDriverConfigMapping:
             "/tmp/out/eval_Qwen__Qwen3.6-27B/agentic/swe_bench_verified"
         )
         assert cfg.model_name == "openai/Qwen/Qwen3.6-27B"
+
+
+class TestAgenticCliOverrides:
+    """--agentic-n-tasks / --agentic-n-concurrent override semantics."""
+
+    def test_n_tasks_override_beats_limit_mode_and_config(self):
+        task = _terminal_task()
+        task.agentic_eval_config.task_names_map = {
+            EvalLimitMode.CI_NIGHTLY: ["terminal-bench/pinned-a"]
+        }
+        rt = _runtime("ci-nightly", agentic_n_tasks=10)
+        assert resolve_n_tasks(task, rt) == 10
+        # Pinned CI list dropped; base task_names (empty) kept.
+        assert resolve_task_names(task, rt) == []
+
+    def test_n_tasks_override_keeps_base_task_names_filter(self):
+        task = _terminal_task()
+        task.agentic_eval_config.task_names = ["dataset/wildcard-*"]
+        task.agentic_eval_config.task_names_map = {
+            EvalLimitMode.CI_NIGHTLY: ["dataset/pinned"]
+        }
+        rt = _runtime("ci-nightly", agentic_n_tasks=10)
+        assert resolve_task_names(task, rt) == ["dataset/wildcard-*"]
+
+    def test_no_override_preserves_limit_mode_behavior(self):
+        task = _terminal_task()
+        task.agentic_eval_config.task_names_map = {
+            EvalLimitMode.CI_NIGHTLY: ["dataset/pinned"]
+        }
+        rt = _runtime("ci-nightly")
+        assert resolve_task_names(task, rt) == ["dataset/pinned"]
+        assert resolve_n_tasks(task, rt) == 89
+
+    def test_swebench_instance_ids_dropped_on_override(self):
+        task = _swebench_task()
+        task.swebench_eval_config.instance_ids_map = {
+            EvalLimitMode.CI_NIGHTLY: ["django__django-11299"]
+        }
+        rt = _runtime("ci-nightly", agentic_n_tasks=10)
+        assert resolve_n_tasks(task, rt) == 10
+        assert resolve_instance_ids(task, rt) == []
+
+    def test_swebench_no_override_preserves_instance_ids(self):
+        task = _swebench_task()
+        task.swebench_eval_config.instance_ids_map = {
+            EvalLimitMode.CI_NIGHTLY: ["django__django-11299"]
+        }
+        rt = _runtime("ci-nightly")
+        assert resolve_instance_ids(task, rt) == ["django__django-11299"]
+
+    def test_concurrency_override_reaches_terminal_bench_config(self):
+        task = _terminal_task()
+        cfg = build_terminal_bench_config(
+            task,
+            _server(),
+            _driver_context(),
+            runtime_config=_runtime(agentic_n_concurrent=3),
+        )
+        assert cfg.n_concurrent_trials == 3
+
+    def test_concurrency_default_without_override(self):
+        task = _terminal_task()
+        cfg = build_terminal_bench_config(
+            task,
+            _server(),
+            _driver_context(),
+            runtime_config=_runtime(),
+        )
+        assert cfg.n_concurrent_trials == 5
+
+    def test_concurrency_override_reaches_swebench_config(self):
+        task = _swebench_task()
+        cfg = build_swebench_config(
+            task,
+            _server(),
+            _driver_context(),
+            runtime_config=_runtime(agentic_n_concurrent=3),
+        )
+        assert cfg.n_concurrent_trials == 3
+
+    def test_none_runtime_config_unchanged(self):
+        task = _terminal_task()
+        assert resolve_n_tasks(task, None) == 89
+        assert resolve_task_names(task, None) == []
+        cfg = build_terminal_bench_config(task, _server(), _driver_context())
+        assert cfg.n_concurrent_trials == 5
+
+    def test_resolve_n_concurrent_direct(self):
+        cfg = FakeTerminalBenchConfig()
+        assert resolve_n_concurrent(cfg, _runtime(agentic_n_concurrent=7)) == 7
+        assert resolve_n_concurrent(cfg, _runtime()) == 5
+        assert resolve_n_concurrent(cfg, None) == 5
 
 
 class TestTerminalBenchHarness:

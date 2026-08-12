@@ -186,7 +186,7 @@ def build_swebench_config(
         mini_config=cfg.mini_config,
         mini_model_class=cfg.mini_model_class,
         mini_environment_class=cfg.mini_environment_class,
-        n_concurrent_trials=cfg.n_concurrent_trials,
+        n_concurrent_trials=resolve_n_concurrent(cfg, runtime_config),
         max_workers=cfg.max_workers,
         n_tasks=n_tasks if n_tasks is not None else cfg.n_tasks,
         temperature=cfg.temperature,
@@ -226,7 +226,7 @@ def build_terminal_bench_config(
         model_name=cfg.model or f"openai/{server.model}",
         jobs_dir=jobs_dir,
         api_base=f"{server.url_with_port}/v1",
-        n_concurrent_trials=cfg.n_concurrent_trials,
+        n_concurrent_trials=resolve_n_concurrent(cfg, runtime_config),
         n_attempts=cfg.n_attempts,
         environment_type=cfg.environment_type,
         agent_kwargs=cfg.agent_kwargs,
@@ -250,9 +250,12 @@ def resolve_task_names(task: Any, runtime_config: Any = None) -> List[str]:
     agentic_config = task.agentic_eval_config
     if agentic_config is None:
         return []
-    limit_mode = _get_limit_mode(runtime_config)
-    if limit_mode is not None and limit_mode in agentic_config.task_names_map:
-        return agentic_config.task_names_map[limit_mode]
+    # --agentic-n-tasks replaces the limit-mode pinned list: the run takes
+    # n_tasks from the full dataset instead of the pinned subset.
+    if _get_agentic_override(runtime_config, "agentic_n_tasks") is None:
+        limit_mode = _get_limit_mode(runtime_config)
+        if limit_mode is not None and limit_mode in agentic_config.task_names_map:
+            return agentic_config.task_names_map[limit_mode]
     return agentic_config.task_names
 
 
@@ -260,13 +263,17 @@ def resolve_instance_ids(task: Any, runtime_config: Any = None) -> List[str]:
     swebench_config = task.swebench_eval_config
     if swebench_config is None:
         return []
-    limit_mode = _get_limit_mode(runtime_config)
-    if limit_mode is not None and limit_mode in swebench_config.instance_ids_map:
-        return swebench_config.instance_ids_map[limit_mode]
+    if _get_agentic_override(runtime_config, "agentic_n_tasks") is None:
+        limit_mode = _get_limit_mode(runtime_config)
+        if limit_mode is not None and limit_mode in swebench_config.instance_ids_map:
+            return swebench_config.instance_ids_map[limit_mode]
     return []
 
 
 def resolve_n_tasks(task: Any, runtime_config: Any = None) -> Optional[int]:
+    override = _get_agentic_override(runtime_config, "agentic_n_tasks")
+    if override is not None:
+        return override
     agentic_config = task.agentic_eval_config or task.swebench_eval_config
     limit_mode = _get_limit_mode(runtime_config)
     if limit_mode is None:
@@ -290,6 +297,19 @@ def _get_limit_mode(runtime_config: Any = None) -> Optional[EvalLimitMode]:
     ):
         return None
     return EvalLimitMode.from_string(runtime_config.limit_samples_mode)
+
+
+def _get_agentic_override(runtime_config: Any, attr: str) -> Optional[int]:
+    """CLI override (--agentic-n-concurrent / --agentic-n-tasks) or None."""
+    value = getattr(runtime_config, attr, None) if runtime_config is not None else None
+    return int(value) if value is not None else None
+
+
+def resolve_n_concurrent(cfg: Any, runtime_config: Any = None) -> int:
+    override = _get_agentic_override(runtime_config, "agentic_n_concurrent")
+    if override is not None:
+        return override
+    return cfg.n_concurrent_trials
 
 
 def _agentic_output_dir(
@@ -317,6 +337,7 @@ __all__ = [
     "build_terminal_bench_config",
     "make_agentic_driver",
     "resolve_instance_ids",
+    "resolve_n_concurrent",
     "resolve_n_tasks",
     "resolve_task_names",
 ]
