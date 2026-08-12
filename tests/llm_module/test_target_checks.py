@@ -38,6 +38,9 @@ def _record(ttft=350.0, tpot=69.8, tput=13.9, **extra):
         "mean_ttft_ms": ttft,
         "mean_tpot_ms": tpot,
         "tps_decode_throughput": tput,
+        # A parsed record always carries this. 0 means the point served every
+        # request, which acceptance now requires (RFP G.2.6).
+        "error_request_count": 0,
     }
     record.update(extra)
     return record

@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import yaml
@@ -94,6 +95,8 @@ def read_performance_reference_json() -> Dict[DeviceTypes, List[BenchmarkTaskPar
     return data
 
 
+logger = logging.getLogger("run_log")
+
 model_performance_reference = read_performance_reference_json()
 
 
@@ -102,6 +105,36 @@ def get_perf_reference_map(
 ) -> Dict[DeviceTypes, List[BenchmarkTaskParams]]:
     perf_reference_map: Dict[DeviceTypes, List[BenchmarkTaskParams]] = {}
     model_data = model_performance_reference.get(model_name, {})
+
+    # RFP Milestone-0 handoff change — NOT upstream. See tenstorrent#4884.
+    #
+    # A model whose targets are filed under a differently-spelled key used to
+    # resolve to {} in silence: no targets, no warning, and every benchmark point
+    # then grades as ungradable. gemma-4-31B-it hits this today — the reference
+    # file stores "gemma-4-31b-it" (lowercase b, matching the Forge dev spec and
+    # tt-media-server's ModelNames constant) while this lookup derives
+    # "gemma-4-31B-it" from the prod HF repo, so the prod spec loads 0 entries.
+    #
+    # Which spec those targets belong to is a question for the model owner, so
+    # this does not guess. It just makes the miss visible.
+    if not model_data:
+        near = [
+            k for k in model_performance_reference if k.lower() == model_name.lower()
+        ]
+        if near:
+            logger.warning(
+                "No performance targets for %r, but the reference file has %r — "
+                "the keys differ only by case, so the targets are unreachable "
+                "for this spec.",
+                model_name,
+                near[0],
+            )
+        else:
+            logger.warning(
+                "No performance targets found for %r; every benchmark point for "
+                "this model will be reported as ungradable.",
+                model_name,
+            )
 
     for device_str, benchmarks in model_data.items():
         device_type = DeviceTypes.from_string(device_str)

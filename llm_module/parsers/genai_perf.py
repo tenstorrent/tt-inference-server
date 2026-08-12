@@ -11,7 +11,7 @@ from typing import Any, Dict, Mapping, Optional
 
 from report_module.schema import Block
 
-from .base import LLMResultParser
+from .base import LLMResultParser, decode_throughput
 from .base import metric_stat as _stat
 from .base import metric_stat_int as _stat_int
 
@@ -36,9 +36,15 @@ class GenAIPerfParser(LLMResultParser):
             "mean_tpot_ms": _stat(raw, "inter_token_latency", "avg"),
             "mean_e2el_ms": _stat(raw, "request_latency", "avg"),
             "tput_user": _stat(raw, "output_token_throughput_per_user"),
-            "tps_decode_throughput": _stat(raw, "output_token_throughput"),
+            # See llm_module.parsers.base.decode_throughput: the `tput` target is
+            # decode interactivity x concurrency, not a wall-clock token rate.
+            "tps_decode_throughput": None,  # set below, needs concurrency
+            "tps_output_throughput": _stat(raw, "output_token_throughput"),
             "request_throughput": _stat(raw, "request_throughput"),
         }
+        record["tps_decode_throughput"] = decode_throughput(
+            record["tput_user"], record["mean_tpot_ms"], record["concurrency"]
+        )
         return self._wrap_record(record)
 
 
