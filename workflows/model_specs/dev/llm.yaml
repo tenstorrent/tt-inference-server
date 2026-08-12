@@ -308,7 +308,7 @@ templates:
       # three-point rule at the top graded level (>=3 input lengths; RFP Appendix F.1,
       # readiness §5.7; enforced by get_llm_configs). [TBD — Performance: replace with
       # the measured 32-chip pool once available.]
-      max_tokens_all_users_override: 1056768  # 64 * (16384 + 128)
+      max_tokens_all_users_override: 1056768  # 64 * 1024 * 1024
       default_impl: true
       env_vars:
         # Fixed 4x8 2D torus mesh graph descriptor (RFP D.2). Not a partner choice.
