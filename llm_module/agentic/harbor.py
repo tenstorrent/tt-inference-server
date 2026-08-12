@@ -2,6 +2,15 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
+"""Runner for agentic evals executed through the Harbor CLI.
+
+Drives every agentic benchmark we run -- terminal-bench, tau3-bench, and
+SWE-bench -- by shelling out to ``harbor run``. Harbor owns task acquisition,
+sandboxing (docker / kubernetes / ...), the agent, and scoring, and writes a
+``result.json`` the agentic parser reads directly, so this module only has to
+translate an eval config into a Harbor job config.
+"""
+
 from __future__ import annotations
 
 import json
@@ -20,15 +29,38 @@ from llm_module.agentic.progress import (
 
 logger = logging.getLogger(__name__)
 
-# Conservative fallback per-trial agent budget when the config leaves
-# ``agent_timeout_sec`` unset (Harbor then uses each task's own default, which
-# we cannot see from here). Only feeds the deadline math; the stall watchdog is
-# the real protection, so err generous to avoid false kills.
-_DEFAULT_AGENT_TIMEOUT_SEC = 60 * 60
+HARBOR_SIGTERM_GRACE_SEC = 300
+
+
+def _run_with_timeout(cmd: list[str], timeout_sec: Optional[float]) -> int:
+    """Run harbor, terminating it *gracefully* if it overruns."""
+    with subprocess.Popen(cmd) as proc:
+        try:
+            return proc.wait(timeout=timeout_sec)
+        except subprocess.TimeoutExpired:
+            logger.warning(
+                "harbor exceeded %ss; sending SIGTERM and allowing %ss for "
+                "sandbox teardown before SIGKILL.",
+                timeout_sec,
+                HARBOR_SIGTERM_GRACE_SEC,
+            )
+            proc.terminate()
+            try:
+                proc.wait(timeout=HARBOR_SIGTERM_GRACE_SEC)
+                logger.info("harbor shut down cleanly after SIGTERM.")
+            except subprocess.TimeoutExpired:
+                logger.error(
+                    "harbor did not exit %ss after SIGTERM; sending SIGKILL. "
+                    "Sandboxes may be left behind.",
+                    HARBOR_SIGTERM_GRACE_SEC,
+                )
+                proc.kill()
+                proc.wait()
+            raise
 
 
 @dataclass(frozen=True)
-class TerminalBenchRunConfig:
+class HarborRunConfig:
     task_name: str
     dataset: str
     agent: str
@@ -44,32 +76,47 @@ class TerminalBenchRunConfig:
     override_memory_mb: Optional[int]
     timeout_multiplier: Optional[float]
     agent_timeout_sec: Optional[float]
+    agent_setup_timeout_multiplier: Optional[float] = None
     task_names: list[str] = field(default_factory=list)
     exclude_task_names: list[str] = field(default_factory=list)
     quiet: bool = True
     yes: bool = True
+    # Stream harbor's per-trial DEBUG logs to stdout. On by default so CI -- a
+    # non-TTY where harbor's Rich Live progress does not render -- still shows
+    # which evals and rollouts are running. Orthogonal to (and safe alongside)
+    # ``quiet``, which only governs the progress display.
+    debug: bool = True
     agent_import_path: Optional[str] = None
+    # Injected into the agent's container for the agent phase. Harbor's
+    # installed agents also fall back to the harbor host's ``os.environ``, so
+    # this is only needed to override the ambient value (or to be explicit
+    # about it) -- e.g. pointing one eval at a different endpoint.
+    agent_env: dict[str, str] = field(default_factory=dict)
     environment_env: dict[str, str] = field(default_factory=dict)
     verifier_env: dict[str, str] = field(default_factory=dict)
-    # Wave-aware deadline model (see progress.py). Reserved allowance for
-    # Harbor's additive non-agent phases (env build, agent setup, verifier);
-    # currently NOT folded into the per-task budget -- B is just
-    # ``agent_timeout_sec``, and the stall watchdog is the real protection.
-    per_task_overhead_sec: int = 20 * 60
-    startup_grace_sec: int = 10 * 60
-    stall_grace_sec: int = 5 * 60
-    progress_log_interval_sec: int = 5 * 60
-    # When False the progress watchdog logs deadlines but never kills the harbor
-    # subprocess, letting it run to completion.
-    enforce_agent_deadline: bool = False
+    # Provider-specific environment knobs (namespace, image_mode, node_selector,
+    # ... for the ``kubernetes`` environment). Only expressible through the
+    # config file, so a non-empty value forces that path.
+    environment_kwargs: dict[str, Any] = field(default_factory=dict)
     # Interpreter whose bin/ holds the ``harbor`` CLI. When ``None`` the current
     # interpreter is used (standalone ``run_agentic.py`` already re-execs into
     # the EVALS_AGENTIC venv). Set on the release path, where the harness runs
     # as a child of the WORKFLOW_RUN_SCRIPT engine and must reach harbor explicitly.
     venv_python: Optional[Path] = None
+    harbor_timeout_sec: Optional[float] = None
 
 
-def _get_agent_kwargs(config: TerminalBenchRunConfig) -> dict[str, Any]:
+def _get_agent_kwargs(config: HarborRunConfig) -> dict[str, Any]:
+    """Agent kwargs with the resolved endpoint added as ``api_base``.
+
+    Note that ``api_base`` is not how every agent learns the endpoint. Harbor's
+    in-container "installed" agents (mini-swe-agent among them) accept the kwarg
+    but ignore it, reading ``OPENAI_BASE_URL`` / ``OPENAI_API_BASE`` from the
+    agent env -- which falls back to the harbor host's environment, where
+    ``agentic_eval_tests._configure_openai_env`` has already exported them. Set
+    ``agent_env`` to override that per eval. Agents implemented in Harbor itself
+    (e.g. terminus-2) do read this kwarg, hence the unconditional default.
+    """
     agent_kwargs = dict(config.agent_kwargs)
     agent_kwargs.setdefault("api_base", config.api_base)
     return agent_kwargs
@@ -83,7 +130,7 @@ def _format_kwarg(value: Any) -> str:
     return str(value)
 
 
-def _write_harbor_config(config: TerminalBenchRunConfig) -> Path:
+def _write_harbor_config(config: HarborRunConfig) -> Path:
     config_path = config.jobs_dir / f"{config.task_name}_harbor_config.json"
     config.jobs_dir.mkdir(parents=True, exist_ok=True)
 
@@ -100,6 +147,8 @@ def _write_harbor_config(config: TerminalBenchRunConfig) -> Path:
         environment_config["override_cpus"] = config.override_cpus
     if config.override_memory_mb is not None:
         environment_config["override_memory_mb"] = config.override_memory_mb
+    if config.environment_kwargs:
+        environment_config["kwargs"] = config.environment_kwargs
 
     agent_config: dict[str, Any] = {
         "model_name": config.model_name,
@@ -110,6 +159,8 @@ def _write_harbor_config(config: TerminalBenchRunConfig) -> Path:
         agent_config["import_path"] = config.agent_import_path
     else:
         agent_config["name"] = config.agent
+    if config.agent_env:
+        agent_config["env"] = config.agent_env
 
     if config.environment_env:
         environment_config["env"] = config.environment_env
@@ -130,6 +181,10 @@ def _write_harbor_config(config: TerminalBenchRunConfig) -> Path:
     }
     if verifier_config:
         harbor_config["verifier"] = verifier_config
+    if config.agent_setup_timeout_multiplier is not None:
+        harbor_config["agent_setup_timeout_multiplier"] = (
+            config.agent_setup_timeout_multiplier
+        )
     if config.timeout_multiplier is not None:
         harbor_config["timeout_multiplier"] = config.timeout_multiplier
     if config.agent_timeout_sec is not None:
@@ -143,12 +198,15 @@ def _write_harbor_config(config: TerminalBenchRunConfig) -> Path:
     return config_path
 
 
-def _needs_config_file(config: TerminalBenchRunConfig) -> bool:
+def _needs_config_file(config: HarborRunConfig) -> bool:
     return (
         config.agent_timeout_sec is not None
+        or config.agent_setup_timeout_multiplier is not None
         or config.agent_import_path is not None
+        or bool(config.agent_env)
         or bool(config.environment_env)
         or bool(config.verifier_env)
+        or bool(config.environment_kwargs)
     )
 
 
@@ -169,7 +227,7 @@ def _annotate_result_file(result_file: Path) -> None:
         raise RuntimeError(msg) from e
 
 
-def run(config: TerminalBenchRunConfig) -> int:
+def run(config: HarborRunConfig) -> int:
     interpreter = config.venv_python or Path(sys.executable)
     harbor_exec = Path(interpreter).parent / "harbor"
 
@@ -212,6 +270,13 @@ def run(config: TerminalBenchRunConfig) -> int:
             cmd.extend(["--override-memory-mb", str(config.override_memory_mb)])
         if config.timeout_multiplier is not None:
             cmd.extend(["--timeout-multiplier", str(config.timeout_multiplier)])
+        if config.agent_setup_timeout_multiplier is not None:
+            cmd.extend(
+                [
+                    "--agent-setup-timeout-multiplier",
+                    str(config.agent_setup_timeout_multiplier),
+                ]
+            )
         for task_name in config.task_names:
             cmd.extend(["--include-task-name", task_name])
         for task_name in config.exclude_task_names:
@@ -221,45 +286,20 @@ def run(config: TerminalBenchRunConfig) -> int:
         for key, value in agent_kwargs.items():
             cmd.extend(["--agent-kwarg", f"{key}={_format_kwarg(value)}"])
 
-    job_dir = config.jobs_dir / config.task_name
-    agent_timeout = (
-        config.agent_timeout_sec
-        if config.agent_timeout_sec is not None
-        else _DEFAULT_AGENT_TIMEOUT_SEC
-    )
-    per_task_budget = agent_timeout
-    rc = run_with_progress(
-        cmd,
-        cwd=None,
-        env=os.environ.copy(),
-        probe=make_terminal_bench_probe(job_dir),
-        label=config.task_name,
-        per_task_budget_s=per_task_budget,
-        concurrency=config.n_concurrent_trials,
-        startup_grace_s=config.startup_grace_sec,
-        stall_grace_s=config.stall_grace_sec,
-        log_interval_s=config.progress_log_interval_sec,
-        enforce_deadlines=config.enforce_agent_deadline,
-        log=logger,
-    )
-    # A watchdog timeout (124) still leaves harbor's per-trial results (each
-    # already graded inline) in result.json worth annotating; only a genuine
-    # harness error aborts before annotation.
-    if rc != 0 and rc != TIMEOUT_EXIT_CODE:
-        return rc
-    result_path = job_dir / "result.json"
-    if rc == TIMEOUT_EXIT_CODE and not result_path.exists():
+    if config.debug:
+        cmd.append("--debug")
+
+    logger.info("Running command: %s", " ".join(cmd))
+    try:
+        returncode = _run_with_timeout(cmd, config.harbor_timeout_sec)
+    except subprocess.TimeoutExpired:
+        # A stuck harbor/trial otherwise hangs to the outer job cap.
         logger.error(
-            "Harbor timed out before writing any results; nothing to annotate."
+            "harbor run exceeded harbor_timeout_sec=%s; terminated.",
+            config.harbor_timeout_sec,
         )
-        return rc
-    if rc == TIMEOUT_EXIT_CODE:
-        logger.warning(
-            "Harbor hit the deadline; annotating the partial results in %s.",
-            result_path,
-        )
-    _annotate_result_file(result_path)
-    # Partial results were graded and annotated; report success so downstream
-    # scoring reads the (lower) partial score instead of treating the run as a
-    # hard failure.
-    return 0
+        return 124
+    if returncode != 0:
+        return returncode
+    _annotate_result_file(config.jobs_dir / config.task_name / "result.json")
+    return returncode

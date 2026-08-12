@@ -14,13 +14,22 @@ from typing import Any, List, Optional
 
 from workflow_module.engine_types import EvalLimitMode
 
-from ..agentic.swebench import SWEbenchRunConfig, run as run_swebench
-from ..agentic.terminal_bench import TerminalBenchRunConfig, run as run_terminal_bench
+from ..agentic.harbor import HarborRunConfig, run as run_harbor
 from ..config import DriverContext, LLMRunConfig, ServerConnection
 from ..parsers.agentic import AgenticEvalParser
 from .base import DriverResult, LLMDriver
 
 logger = logging.getLogger(__name__)
+
+
+def _openai_model_name(model: str) -> str:
+    """Add LiteLLM's provider prefix to the server's model ID.
+
+    The server model ID may itself begin with ``openai/``. In that case,
+    ``openai/openai/...`` is intentional: the first segment selects LiteLLM's
+    OpenAI provider and the remainder is sent unchanged to the server.
+    """
+    return f"openai/{model}"
 
 
 class AgenticEvalDriver(LLMDriver):
@@ -78,8 +87,14 @@ class AgenticEvalDriver(LLMDriver):
         return DriverResult(return_code=rc, raw=raw, raw_path=result_path)
 
 
-class SWEbenchAgenticDriver(AgenticEvalDriver):
-    name = "swebench"
+class HarborAgenticDriver(AgenticEvalDriver):
+    """Runs one agentic eval task through Harbor.
+
+    One driver for every agentic benchmark: terminal-bench, tau3-bench, and
+    SWE-bench differ only in the dataset/agent/environment Harbor is pointed at.
+    """
+
+    name = "harbor"
 
     def run(
         self,
@@ -90,12 +105,22 @@ class SWEbenchAgenticDriver(AgenticEvalDriver):
         n_tasks = resolve_n_tasks(self.task, self.runtime_config)
         if n_tasks == 0:
             logger.info(
-                "Skipping SWE-bench task %s: n_tasks=0 for this limit mode",
+                "Skipping agentic task %s: n_tasks=0 for this limit mode",
                 self.task.task_name,
             )
             return DriverResult(return_code=0, raw=None, raw_path=None)
         self._run_stamp = _run_timestamp()
-        run_config = build_swebench_config(
+        _cfg = self.task.agentic_eval_config
+        logger.info(
+            "[agentic] starting %r: n_tasks=%s n_concurrent=%s agent=%s dataset=%s model=%s",
+            self.task.task_name,
+            n_tasks,
+            getattr(_cfg, "n_concurrent_trials", "?"),
+            getattr(_cfg, "agent", "?"),
+            getattr(_cfg, "dataset", "?"),
+            getattr(_cfg, "model", None),
+        )
+        run_config = build_harbor_config(
             self.task,
             server,
             context,
@@ -104,37 +129,7 @@ class SWEbenchAgenticDriver(AgenticEvalDriver):
             venv_python=self.venv_python,
             run_stamp=self._run_stamp,
         )
-        rc = run_swebench(run_config)
-        return self._load_result(rc, self.result_path(server, context))
-
-
-class TerminalBenchAgenticDriver(AgenticEvalDriver):
-    name = "terminal_bench"
-
-    def run(
-        self,
-        config: LLMRunConfig,
-        server: ServerConnection,
-        context: DriverContext,
-    ) -> DriverResult:
-        n_tasks = resolve_n_tasks(self.task, self.runtime_config)
-        if n_tasks == 0:
-            logger.info(
-                "Skipping Terminal-Bench task %s: n_tasks=0 for this limit mode",
-                self.task.task_name,
-            )
-            return DriverResult(return_code=0, raw=None, raw_path=None)
-        self._run_stamp = _run_timestamp()
-        run_config = build_terminal_bench_config(
-            self.task,
-            server,
-            context,
-            runtime_config=self.runtime_config,
-            n_tasks=n_tasks,
-            venv_python=self.venv_python,
-            run_stamp=self._run_stamp,
-        )
-        rc = run_terminal_bench(run_config)
+        rc = run_harbor(run_config)
         return self._load_result(rc, self.result_path(server, context))
 
 
@@ -158,17 +153,14 @@ def _agentic_venv_python() -> Optional[Path]:
 
 
 def make_agentic_driver(task: Any, *, runtime_config: Any = None) -> AgenticEvalDriver:
-    if task.swebench_eval_config is not None:
-        return SWEbenchAgenticDriver(task, runtime_config=runtime_config)
-    if task.agentic_eval_config is not None:
-        return TerminalBenchAgenticDriver(task, runtime_config=runtime_config)
-    raise RuntimeError(
-        f"EVALS_AGENTIC task {task.task_name!r} has neither "
-        "swebench_eval_config nor agentic_eval_config set."
-    )
+    if task.agentic_eval_config is None:
+        raise RuntimeError(
+            f"EVALS_AGENTIC task {task.task_name!r} has no agentic_eval_config set."
+        )
+    return HarborAgenticDriver(task, runtime_config=runtime_config)
 
 
-def build_swebench_config(
+def build_harbor_config(
     task: Any,
     server: ServerConnection,
     context: DriverContext,
@@ -177,66 +169,8 @@ def build_swebench_config(
     n_tasks: Optional[int] = None,
     venv_python: Optional[Path] = None,
     run_stamp: Optional[str] = None,
-) -> SWEbenchRunConfig:
-    cfg = task.swebench_eval_config
-    return SWEbenchRunConfig(
-        task_name=task.task_name,
-        dataset_name=cfg.dataset_name,
-        dataset_split=cfg.dataset_split,
-        sweagent_subset=cfg.sweagent_subset,
-        agent_backend=cfg.agent_backend,
-        model_name=cfg.model or f"openai/{server.model}",
-        api_base=f"{server.url_with_port}/v1",
-        output_dir=_agentic_output_dir(
-            context.output_dir,
-            server.model,
-            task,
-            release_layout=context.agentic_release_layout,
-            run_stamp=run_stamp,
-        ),
-        sweagent_config=cfg.sweagent_config,
-        mini_config=cfg.mini_config,
-        mini_model_class=cfg.mini_model_class,
-        mini_environment_class=cfg.mini_environment_class,
-        n_concurrent_trials=cfg.n_concurrent_trials,
-        max_workers=cfg.max_workers,
-        n_tasks=n_tasks if n_tasks is not None else cfg.n_tasks,
-        temperature=cfg.temperature,
-        top_p=cfg.top_p,
-        max_input_tokens=cfg.max_input_tokens,
-        max_output_tokens=cfg.max_output_tokens,
-        completion_kwargs=cfg.completion_kwargs,
-        swebench_timeout_sec=cfg.swebench_timeout_sec,
-        llm_timeout_sec=cfg.llm_timeout_sec,
-        mini_container_timeout_sec=cfg.mini_container_timeout_sec,
-        startup_grace_sec=cfg.startup_grace_sec,
-        stall_grace_sec=cfg.stall_grace_sec,
-        progress_log_interval_sec=cfg.progress_log_interval_sec,
-        agent_subprocess_timeout_sec=cfg.agent_subprocess_timeout_sec,
-        enforce_agent_deadline=cfg.enforce_agent_deadline,
-        shuffle=cfg.shuffle,
-        random_delay_multiplier=cfg.random_delay_multiplier,
-        score_existing_predictions=False,
-        instance_ids=resolve_instance_ids(task, runtime_config),
-        venv_python=venv_python,
-    )
-
-
-def build_terminal_bench_config(
-    task: Any,
-    server: ServerConnection,
-    context: DriverContext,
-    *,
-    runtime_config: Any = None,
-    n_tasks: Optional[int] = None,
-    venv_python: Optional[Path] = None,
-    run_stamp: Optional[str] = None,
-) -> TerminalBenchRunConfig:
+) -> HarborRunConfig:
     cfg = task.agentic_eval_config
-    # Harbor creates its job folder as ``jobs_dir / job_name`` and refuses to
-    # start a new run in an existing folder, so stamp the per-task folder name
-    # (job_name) to keep re-runs collision-free. ``jobs_dir`` stays the shared
-    # ``agentic/`` parent.
     task_output_dir = _agentic_output_dir(
         context.output_dir,
         server.model,
@@ -244,11 +178,11 @@ def build_terminal_bench_config(
         release_layout=context.agentic_release_layout,
         run_stamp=run_stamp,
     )
-    return TerminalBenchRunConfig(
+    return HarborRunConfig(
         task_name=task_output_dir.name,
         dataset=cfg.dataset,
         agent=cfg.agent,
-        model_name=cfg.model or f"openai/{server.model}",
+        model_name=_openai_model_name(cfg.model or server.model),
         jobs_dir=task_output_dir.parent,
         api_base=f"{server.url_with_port}/v1",
         n_concurrent_trials=cfg.n_concurrent_trials,
@@ -260,18 +194,17 @@ def build_terminal_bench_config(
         override_memory_mb=cfg.override_memory_mb,
         timeout_multiplier=cfg.timeout_multiplier,
         agent_timeout_sec=cfg.agent_timeout_sec,
+        agent_setup_timeout_multiplier=cfg.agent_setup_timeout_multiplier,
         task_names=resolve_task_names(task, runtime_config),
         exclude_task_names=cfg.exclude_task_names,
         quiet=cfg.quiet,
         yes=cfg.yes,
         agent_import_path=cfg.agent_import_path,
+        agent_env=cfg.agent_env,
         environment_env=cfg.environment_env,
         verifier_env=cfg.verifier_env,
-        per_task_overhead_sec=cfg.per_task_overhead_sec,
-        startup_grace_sec=cfg.startup_grace_sec,
-        stall_grace_sec=cfg.stall_grace_sec,
-        progress_log_interval_sec=cfg.progress_log_interval_sec,
-        enforce_agent_deadline=cfg.enforce_agent_deadline,
+        environment_kwargs=cfg.environment_kwargs,
+        harbor_timeout_sec=cfg.harbor_timeout_sec,
         venv_python=venv_python,
     )
 
@@ -286,18 +219,8 @@ def resolve_task_names(task: Any, runtime_config: Any = None) -> List[str]:
     return agentic_config.task_names
 
 
-def resolve_instance_ids(task: Any, runtime_config: Any = None) -> List[str]:
-    swebench_config = task.swebench_eval_config
-    if swebench_config is None:
-        return []
-    limit_mode = _get_limit_mode(runtime_config)
-    if limit_mode is not None and limit_mode in swebench_config.instance_ids_map:
-        return swebench_config.instance_ids_map[limit_mode]
-    return []
-
-
 def resolve_n_tasks(task: Any, runtime_config: Any = None) -> Optional[int]:
-    agentic_config = task.agentic_eval_config or task.swebench_eval_config
+    agentic_config = task.agentic_eval_config
     limit_mode = _get_limit_mode(runtime_config)
     if limit_mode is None:
         return agentic_config.n_tasks if agentic_config else None
@@ -351,12 +274,9 @@ def _agentic_output_dir(
 
 __all__ = [
     "AgenticEvalDriver",
-    "SWEbenchAgenticDriver",
-    "TerminalBenchAgenticDriver",
-    "build_swebench_config",
-    "build_terminal_bench_config",
+    "HarborAgenticDriver",
+    "build_harbor_config",
     "make_agentic_driver",
-    "resolve_instance_ids",
     "resolve_n_tasks",
     "resolve_task_names",
 ]
