@@ -84,7 +84,7 @@ curl -sS -N --fail-with-body \
     | sub("^data: "; "")
     | select(. != "[DONE]")
     | (fromjson? // {})
-    | .choices[0].delta.content // ""
+    | ((.choices[0].delta.reasoning_content // "") + (.choices[0].delta.content // ""))
   '
 status=${PIPESTATUS[0]}
 
