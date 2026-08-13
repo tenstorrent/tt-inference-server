@@ -21,7 +21,7 @@ from config.settings import get_settings
 from domain.adapter_merge_request import AdapterMergeRequest
 from domain.training_request import TrainingRequest
 from typing import Optional
-from utils.adapter_merge_utils import merge_adapter
+from utils.adapter_merge_utils import MergeResult, merge_adapter
 
 
 MERGE_INFO_FILE_NAME = "merge_info.json"
@@ -155,7 +155,7 @@ class TrainingService(BaseJobService):
                 with concurrent.futures.ProcessPoolExecutor(
                     max_workers=1, mp_context=get_context("spawn")
                 ) as executor:
-                    output_dir = await loop.run_in_executor(
+                    result = await loop.run_in_executor(
                         executor,
                         merge_adapter,
                         self._base_model_hf_repo_id,
@@ -167,11 +167,12 @@ class TrainingService(BaseJobService):
                 raise
             # Written last, in the parent, so its presence marks the checkpoint
             # fully complete and records provenance for `list_merged_checkpoints`.
-            self._write_merge_info(request, output_dir)
+            self._write_merge_info(request, result)
             self.logger.info(
-                f"Completed adapter merge for job {request._task_id}: {output_dir}"
+                f"Completed adapter merge for job {request._task_id}: "
+                f"{result.output_dir}"
             )
-            return output_dir
+            return result.output_dir
 
     def _merged_models_root(self) -> str:
         cache_root = os.getenv("CACHE_ROOT", ".")
@@ -189,14 +190,19 @@ class TrainingService(BaseJobService):
                 f"Refusing to delete path outside merged-models root: {path!r}"
             )
 
-    def _write_merge_info(self, request: AdapterMergeRequest, output_dir: str) -> None:
+    def _write_merge_info(
+        self, request: AdapterMergeRequest, result: MergeResult
+    ) -> None:
         info = {
             "merge_id": request._task_id,
             "model": self._base_model_hf_repo_id,
+            # Pins which base revision the merged checkpoint inherited its
+            # config and tokenizer from.
+            "base_revision": result.base_revision,
             "source_job_id": request.source_job_id,
             "checkpoint_id": request.checkpoint_id,
             "created_at": time.time(),
         }
-        info_path = os.path.join(output_dir, MERGE_INFO_FILE_NAME)
+        info_path = os.path.join(result.output_dir, MERGE_INFO_FILE_NAME)
         with open(info_path, "w") as f:
             json.dump(info, f)
