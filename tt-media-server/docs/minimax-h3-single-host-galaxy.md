@@ -44,24 +44,24 @@ cd /path_to/tt-inference-server/tt-media-server
 uv pip install -r requirements.txt
 ```
 
-### diffusers must be overridden (required)
+### diffusers is NOT required to serve
 
-tt-metal pins `diffusers==0.38.0`, which does **not** contain MiniMax-H3. The pipeline imports
-`diffusers.modular_pipelines.minimax_h3` and `diffusers.models.transformers.transformer_minimax_h3`,
-so a stock env fails at import. Install the dev build this was brought up against:
+An earlier version of this doc said a MiniMax-H3 diffusers dev build was required. It is not, for
+this deployment. Nothing in the serving path imports diffusers: the tt-metal pipeline, the server's
+`TTMiniMaxH3Runner` and the tokenizer all load without it, and every `diffusers` mention in
+`models/tt_dit/.../minimax_h3/` is a comment about how the checkpoint's keys were converted.
+Verified by probing each import against a stock env (diffusers 0.35.1, transformers 4.53.0).
+
+The dev build *is* needed to run the **model-side tests** in tt-metal, which build reference modules
+from `diffusers.models.autoencoders.autoencoder_kl_minimax_h3`. If that is what you are doing:
 
 ```bash
 uv pip install --force-reinstall \
   "diffusers @ git+https://github.com/huggingface/diffusers@abc5e9bf71fd38f53cd471bc3acaa84bc5ecbfdc"
 ```
 
-Check it:
-
-```bash
-python -c "import diffusers, importlib.util; print(diffusers.__version__, \
-  importlib.util.find_spec('diffusers.modular_pipelines.minimax_h3') is not None)"
-# 0.40.0.dev0 True
-```
+Do not force-reinstall it just to serve. This env is shared with the other models on the box, and a
+diffusers bump for no reason is a way to break one of them.
 
 ### Weights (~120 GB)
 
@@ -103,6 +103,7 @@ persistent across restarts, or each restart pays that again.
 ```bash
 export TT_METAL_HOME=/path_to/tt-metal
 export MODEL="MiniMax-H3"
+export MODEL_RUNNER=tt-minimax-h3-t2va
 export DEVICE="galaxy"
 export ARCH_NAME=blackhole
 export MESH_DEVICE="(4, 8)"
@@ -113,7 +114,7 @@ export TT_DIT_CACHE_DIR=/path_to/tt_dit_cache
 export USE_ASYNC_VIDEO=true
 ```
 
-Three of these bite if wrong:
+Four of these bite if wrong:
 
 | var | what happens if it is wrong |
 |---|---|
@@ -121,6 +122,7 @@ Three of these bite if wrong:
 | `TT_DIT_CACHE_DIR` | unset -> **degrades silently**, ~713 s instead of ~64 s |
 | `MINIMAX_H3_MODEL_PATH` | the single weights lever. Unset -> nothing finds the snapshot, and the model-side gates *skip* rather than fail, so a run can look clean while testing nothing. (`MINIMAX_H3_DIFFUSERS_DIR` was folded into this one and is no longer read.) |
 | `USE_ASYNC_VIDEO` | false -> the request blocks for ~70 s and clients time out |
+| `MODEL_RUNNER` | set it. `MODEL`+`DEVICE` resolve the runner on their own, but an inherited `MODEL_RUNNER` **wins over them silently** -- and `/data/cglagovich/inference_server_env.sh` exports `MODEL_RUNNER=tt-wan2.2`, so sourcing that script loads Wan and ignores `MODEL="MiniMax-H3"` entirely. The only symptom is a `WanPipeline` traceback in a log you were expecting to say MiniMax. |
 
 The weights directory needs `transformer/`, `text_encoder/`, `vae/`, `audio_vae/` and `tokenizer/`.
 They are mounted, never baked: ~62 GB for the transformer partition, and the text encoder alone is
@@ -190,7 +192,16 @@ Forward port 8000 to your machine for web access / the video request UI.
 Verify both streams actually arrived — a silent track is a bug, not a partial success:
 
 ```bash
-ffprobe out.mp4     # expect h264 1344x768 24 fps + aac stereo 32000 Hz, 5.17 s
+# ffprobe is often absent -- an env whose ffmpeg came from imageio_ffmpeg ships only ffmpeg -- so
+# read the streams with ffmpeg itself. Expect one h264 video and one aac stereo 32000 Hz track,
+# at the canvas and duration you asked for.
+ffmpeg -hide_banner -i out.mp4 2>&1 | grep -E 'Stream #|Duration'
+```
+
+A missing audio stream is a bug, not a partial success. To count frames as well:
+
+```bash
+ffmpeg -v error -i out.mp4 -map 0:v:0 -f rawvideo -y /dev/null -stats 2>&1 | tail -1
 ```
 
 ## Served shapes
