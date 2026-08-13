@@ -12,7 +12,7 @@ import sys
 import re
 import time
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
@@ -544,6 +544,10 @@ def normalize_swebench_report(
 
 
 def run(config: SWEbenchRunConfig) -> int:
+    # The agent and harness subprocesses run with cwd=output_dir, and their
+    # arguments are paths built from output_dir, so a relative output_dir (e.g.
+    # CACHE_ROOT=debug_logs) would be applied twice by the child.
+    config = replace(config, output_dir=config.output_dir.resolve())
     config.output_dir.mkdir(parents=True, exist_ok=True)
 
     env = os.environ.copy()
