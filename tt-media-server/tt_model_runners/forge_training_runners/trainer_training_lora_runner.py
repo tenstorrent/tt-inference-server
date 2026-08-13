@@ -268,7 +268,6 @@ class TrainerTrainingLoraRunner(BaseDeviceRunner):
             )
 
         request: TrainingRequest = training_requests[0]
-        self._validate(request)
 
         log_handler = None
         if request._training_logs is not None:
@@ -291,6 +290,7 @@ class TrainerTrainingLoraRunner(BaseDeviceRunner):
 
         trainer = self._trainer
         try:
+            self._validate(request)
             # Swaps in the job's config. The logger and device manager are
             # rebuilt from it; only the base model carries over from warmup.
             trainer.setup(self._job_config(request))
@@ -298,6 +298,7 @@ class TrainerTrainingLoraRunner(BaseDeviceRunner):
             trainer.train_dataloader, trainer.val_dataloader = (
                 trainer._load_dataloaders()
             )
+            self._ensure_nonempty_train_dataloader(trainer, request)
             trainer.optimizer = trainer._load_optimizer()
 
             trainer.train()
@@ -326,6 +327,33 @@ class TrainerTrainingLoraRunner(BaseDeviceRunner):
                 self.logger.remove_handler(log_handler)
 
         return [request._output_model_path]
+
+    def _ensure_nonempty_train_dataloader(self, trainer, request: TrainingRequest) -> None:
+        try:
+            n_train = len(trainer.train_dataloader)
+        except TypeError:
+            return
+        if n_train == 0:
+            raise ValueError(
+                "Train dataloader is empty after filtering to "
+                f"max_length={request.dataset_max_sequence_length} with "
+                f"batch_size={request.batch_size} (drop_last=True). "
+                "Increase dataset_max_sequence_length or lower batch_size."
+            )
+        if trainer.val_dataloader is not None:
+            try:
+                n_val = len(trainer.val_dataloader)
+            except TypeError:
+                n_val = None
+            if n_val == 0:
+                self.logger.warning(
+                    "Validation dataloader is empty after filtering to "
+                    f"max_length={request.dataset_max_sequence_length} with "
+                    f"batch_size={request.batch_size} (drop_last=True). "
+                    "Validation will be skipped. Lower batch_size or add more "
+                    "val examples.",
+                    extra={"log_type": "info", "step": 0},
+                )
 
     def _validate(self, request: TrainingRequest) -> None:
         if request.device_type != self.settings.device:
