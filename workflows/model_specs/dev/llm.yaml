@@ -1415,6 +1415,49 @@ templates:
       reasoning_parser_name: deepseek_v4
       tool_call_parser_name: deepseek_v4
 
+# =============================================================================
+# Mistral-Small-4 - GPU reference spec (bring-your-own vLLM server; see
+# docs/gpu_workflows.md). Used to collect GPU reference eval scores for
+# GPQA-Diamond, AIME 2025, and Terminal-Bench 2.1 against an external CUDA vLLM
+# server. Dev-only entry; the GPU bring-your-own-server path builds no tt-metal
+# docker image, so no tt_metal_commit/version pin is needed.
+#
+# The weight id below MUST match the vLLM served model name (server launched
+# with `vllm serve mistralai/Mistral-Small-4-119B-2603 ...`, no
+# --served-model-name override), otherwise eval requests 404. lm-eval also
+# loads the HF tokenizer from this repo id (tokenizer_backend=huggingface).
+#
+# Reasoning is opt-in PER REQUEST via reasoning_effort (only "none"/"high" are
+# accepted; there is no server-side default flag). The eval config passes
+# reasoning_effort="high" for the reasoning tasks. Reference server:
+#   --max-model-len 262144 --tensor-parallel-size 2
+#   --tool-call-parser mistral --enable-auto-tool-choice
+#   --reasoning-parser mistral --max-num-batched-tokens 16384
+#   --max-num-seqs 128 --gpu-memory-utilization 0.8
+# Mistral Small 4 is multimodal, but these evals are text-only, so the spec is
+# typed LLM (default) to route through the text lm-eval / agentic paths.
+# =============================================================================
+- weights:
+    - mistralai/Mistral-Small-4-119B-2603
+  impl: tt_transformers
+  inference_engine: VLLM
+  device_model_specs:
+    - device: GPU
+      max_concurrency: 32
+      # Matches the server's --max-model-len 262144 (256K), the Mistral-
+      # recommended serving length (config advertises 1M positions via YaRN).
+      max_context: 262144  # 256 * 1024
+      default_impl: true
+  status: EXPERIMENTAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    mistralai/Mistral-Small-4-119B-2603:
+      # Informational for the bring-your-own GPU server path (the running vLLM
+      # already sets --reasoning-parser / --tool-call-parser mistral).
+      reasoning_parser_name: mistral
+      tool_call_parser_name: mistral
+
 # Remote-served model: evaluated against an external OpenAI-compatible
 # endpoint via `--server-url` (e.g. Tenstorrent console). The device entry
 # is a placeholder so the model resolves through MODEL_SPECS / EVAL_CONFIGS;

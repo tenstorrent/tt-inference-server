@@ -5468,6 +5468,187 @@ _eval_config_list = [
             ),
         ],
     ),
+    # =========================================================================
+    # Mistral-Small-4 - GPU reference eval config (bring-your-own vLLM).
+    #
+    # Follows the DeepSeek-V4-Flash approach above; the AIME task mirrors the
+    # gpt-oss aime25 block. Recipe per the Mistral Small 4 model card
+    # (https://huggingface.co/mistralai/Mistral-Small-4-119B-2603) and vLLM
+    # recipe (https://recipes.vllm.ai/mistralai/Mistral-Small-4-119B-2603):
+    #   - Reasoning is opt-in PER REQUEST via reasoning_effort; ONLY "none" and
+    #     "high" are accepted (any other value raises in the chat template).
+    #     The reasoning tasks below pass reasoning_effort="high"; there is no
+    #     server-side default, so this must ride on every request.
+    #   - Sampling (Magistral-style reasoning): temperature=0.7, top_p=0.95.
+    #   - Published (reasoning-mode) scores: GPQA Diamond 71.2, AIME 2025 84.0.
+    #     Mistral publishes no Terminal-Bench score (published_score left None).
+    #
+    # gpu_reference_score is None/TBD until a full thinking-on run lands (set it
+    # from the run.py --workflow evals / agentic results, like DeepSeek).
+    # Context: server runs --max-model-len 262144 (256K); the reasoning output
+    # ceiling (64K) and agentic max_input+max_output (128K+64K=192K) stay well
+    # within it. Mistral Small 4 is token-efficient, so 64K output is ample.
+    # =========================================================================
+    EvalConfig(
+        hf_model_repo="mistralai/Mistral-Small-4-119B-2603",
+        tasks=[
+            EvalTask(
+                # R1-style zero-shot reasoning GPQA Diamond (same task DeepSeek
+                # used): the model reasons then emits a final answer; the task's
+                # extractor scores exact_match,none.
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=71.2,
+                    published_score_ref="https://huggingface.co/mistralai/Mistral-Small-4-119B-2603",
+                    # Full 198-sample r1_gpqa_diamond, single run, GPU
+                    # bring-your-own vLLM (Mistral-Small-4-119B-2603,
+                    # --max-model-len 262144) with reasoning_effort=high,
+                    # temperature=0.7, top_p=0.95. 153/198 = 77.27% (exceeds
+                    # the published 71.2).
+                    gpu_reference_score=77.27,
+                    gpu_reference_score_ref="run.py --workflow evals r1_gpqa_diamond full (153/198), GPU Mistral-Small-4-119B-2603 bring-your-own vLLM w/ reasoning_effort=high, 2026-08-10",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                # Chat endpoint so reasoning_effort reaches the server (which
+                # applies the mistral chat template + reasoning parser).
+                use_chat_api=True,
+                model_kwargs={
+                    "max_length": 262144,
+                },
+                # reasoning_effort=high enables Mistral's reasoning mode.
+                # Magistral-style sampling: temperature=0.7, top_p=0.95.
+                # stream=false is REQUIRED: lm-eval's local-chat-completions
+                # streaming parser raises KeyError 'message' on every response.
+                gen_kwargs={
+                    "stream": "false",
+                    "reasoning_effort": "high",
+                    "max_gen_toks": 64 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 0.7,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                # AIME 2025 (mirrors the gpt-oss aime25 block); scores
+                # exact_match,none over the 30-question set.
+                task_name="aime25",
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 0.05,  # 30 samples * 0.05 ~= 1 sample
+                    EvalLimitMode.CI_NIGHTLY: 0.2,  # 30 samples * 0.2 = 6 samples
+                },
+                score=EvalTaskScore(
+                    published_score=84.0,  # AIME 2025, reasoning mode (High)
+                    published_score_ref="https://huggingface.co/mistralai/Mistral-Small-4-119B-2603",
+                    # Full 30-question AIME 2025, single run, GPU bring-your-own
+                    # vLLM (Mistral-Small-4-119B-2603) with reasoning_effort=high,
+                    # temperature=0.7, top_p=0.95. 26/30 = 86.67% (exceeds the
+                    # published 84.0). Small 30-sample set: one question is
+                    # ~3.3 pts, so results are noisy run-to-run.
+                    gpu_reference_score=86.67,
+                    gpu_reference_score_ref="run.py --workflow evals aime25 full (26/30), GPU Mistral-Small-4-119B-2603 bring-your-own vLLM w/ reasoning_effort=high, 2026-08-10",
+                    tolerance=0.10,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                use_chat_api=True,
+                max_concurrent=16,
+                model_kwargs={
+                    "timeout": "7200",
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "reasoning_effort": "high",
+                    "do_sample": "true",
+                    "temperature": 0.7,
+                    "top_p": 0.95,
+                    "max_gen_toks": 64 * 1024,
+                },
+            ),
+            EvalTask(
+                task_name="terminal_bench_2_1",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # Mistral publishes no Terminal-Bench score.
+                    published_score=None,
+                    published_score_ref="https://huggingface.co/mistralai/Mistral-Small-4-119B-2603",
+                    # Full terminal-bench-2-1 (89 tasks), terminus-2, GPU
+                    # bring-your-own vLLM (Mistral-Small-4-119B-2603,
+                    # --max-model-len 262144, reasoning_effort=high), 128K in /
+                    # 64K out, temperature=0.7, top_p=0.95. 29/89 resolved =
+                    # 32.58%. Wider tolerance than the 5% default: only 89 tasks
+                    # and reasoning is non-deterministic, so one flipped task
+                    # moves ~1.1 pts.
+                    gpu_reference_score=32.58,
+                    gpu_reference_score_ref="run.py --workflow agentic terminal_bench_2_1 full (29/89 resolved), GPU Mistral-Small-4-119B-2603 bring-your-own vLLM w/ reasoning_effort=high, 2026-08-10",
+                    tolerance=0.10,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2-1",
+                    agent="terminus-2",
+                    n_concurrent_trials=16,
+                    n_attempts=1,
+                    n_tasks=None,  # full dataset
+                    override_cpus=16,
+                    override_memory_mb=48 * 1024,
+                    agent_timeout_sec=3 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 0.7,
+                        # terminus-2 takes reasoning_effort as a top-level agent
+                        # arg and forwards it into LiteLLM itself; keep it OUT of
+                        # llm_kwargs or LiteLLM() gets it twice (TypeError).
+                        "reasoning_effort": "high",
+                        "model_info": {
+                            # Server runs --max-model-len 262144 (256K). The
+                            # agent sends ~max_input + max_output per request;
+                            # 128K + 64K = 192K stays within it with headroom.
+                            "max_input_tokens": 128 * 1024,
+                            "max_output_tokens": 64 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 64 * 1024,
+                            "timeout": 60 * 60,
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/break-filter-js-from-html",
+                            "terminal-bench/cobol-modernization",
+                            "terminal-bench/compile-compcert",
+                            "terminal-bench/feal-differential-cryptanalysis",
+                            "terminal-bench/qemu-startup",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+        ],
+    ),
 ]
 
 
