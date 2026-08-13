@@ -1,6 +1,7 @@
 # Running MiniMax-H3 `t2va` on a single-host Galaxy through the inference server
 
-Text in, a 5.17 s video **with its own soundtrack** out. 1344x768, 124 frames @ 24 fps.
+Text in, a video **with its own soundtrack** out. Every published 768P working point: six
+aspect ratios (21:9 .. 9:16) x 5 / 10 / 15 s, at 24 fps.
 
 Single host, 4x8 Blackhole Galaxy (32 chips). There is **no `tt-run`, no MPI, no rankfile and no
 `sp_runner`** — that machinery is for multi-host deployments. This is one uvicorn process talking to
@@ -134,18 +135,31 @@ source python_env/bin/activate
 ./run_uvicorn.sh --skip-venv
 ```
 
-## 6. Wait for warmup
+## 6. Wait for readiness
 
-Weight load plus one full 50-step warmup generation. **Expect ~10 minutes on a warm cache, and
-20-30 minutes the very first time**, while the ttnn cache and AdaLN table are built. Readiness means warm:
-serving before this would make the first request pay full compilation (~210 s instead of ~73 s).
+Weight load only -- **nothing is warmed by default**, so this is a few minutes on a warm ttnn cache
+(longer the very first time, while the ~68 GB cache and the AdaLN table are built).
 
 ```
 Device 0,...,31: Loading MiniMax-H3...
-Device 0,...,31: Model loaded, warming at the serving shape...
-Device 0,...,31: warmup pass 1/1 done
-Device 0,...,31: warm at padded_len=37888 (1344x768, 124 frames, 50 steps)
+Device 0,...,31: Model loaded, warming nothing (MINIMAX_H3_WARM_SHAPES unset). The first request at each shape compiles.
 ```
+
+**Readiness does not mean warm.** Programs are keyed on the padded sequence length, so the first
+request at each of the 18 shapes compiles inside that request -- minutes, not seconds -- and says so:
+
+```
+padded_len 37888 was not resident (resident: none); this request paid compilation.
+```
+
+It is logged once per shape, not per request. To pre-pay it for the shapes you actually serve, set
+`MINIMAX_H3_WARM_SHAPES` before starting:
+
+| value | effect |
+|---|---|
+| unset | warm nothing (default) |
+| `16:9@5,9:16@10` | warm just those, `@` seconds |
+| `all` | all 6 ratios x 3 durations -- correct for production, but **hours** of startup (4-16 min per shape, worst at 15 s / 1 MPix) |
 
 ```bash
 curl -s localhost:8000/tt-liveness      # {"status":"alive","model_ready":true,...}
@@ -156,11 +170,11 @@ curl -s localhost:8000/tt-liveness      # {"status":"alive","model_ready":true,.
 `API_KEY` defaults to `your-secret-key`.
 
 ```bash
-# submit -> 202 + job id
+# submit -> 202 + job id. aspect_ratio and duration_seconds are optional; omitted gives 16:9 / 5 s.
 curl -X POST localhost:8000/v1/videos/generations \
   -H 'Content-Type: application/json' \
   -H 'Authorization: Bearer your-secret-key' \
-  -d '{"prompt":"A red fox steps through wet grass at dawn.","seed":0}'
+  -d '{"prompt":"A red fox steps through wet grass at dawn.","aspect_ratio":"9:16","duration_seconds":10,"seed":0}'
 
 # poll until "status":"completed"
 curl -H 'Authorization: Bearer your-secret-key' \
@@ -179,9 +193,25 @@ Verify both streams actually arrived — a silent track is a bug, not a partial 
 ffprobe out.mp4     # expect h264 1344x768 24 fps + aac stereo 32000 Hz, 5.17 s
 ```
 
+## Served shapes
+
+| ratio | canvas | 5 s (124f) | 10 s (243f) | 15 s (362f) |
+|---|---|---|---|---|
+| 21:9 | 1536x672 | 70.0 s | 175.3 s | 324.2 s |
+| 16:9 | 1344x768 | 69.5 s | 174.7 s | 325.4 s |
+| 4:3 | 1024x768 | 52.4 s | 121.2 s | 221.2 s |
+| 1:1 | 768x768 | 38.2 s | 81.9 s | 142.3 s |
+| 3:4 | 768x1024 | 52.0 s | 121.7 s | 219.9 s |
+| 9:16 | 768x1344 | 69.1 s | 174.8 s | 324.2 s |
+
+Warm compute per request, measured 2026-08-13 on `9c96923d1bb`. Two things the numbers say: cost
+tracks pixel count and sequence length only -- equal-pixel ratios agree to within 0.6 %, so
+orientation is free -- and duration is superlinear, 2.92x the frames costing 4.67x at 1 MPix but
+3.67x at 0.59 MPix, because denoise carries a quadratic term while VAE and audio decode stay linear.
+
 ## What to expect
 
-Steady-state, per request:
+Steady-state at the default shape (16:9, 5 s), per request:
 
 | stage | s | share |
 |---|---|---|
@@ -209,8 +239,11 @@ row drops to 0.0 s.
 
 | constraint | detail |
 |---|---|
-| One shape | 1344x768, **124 frames**, 50 steps. Anything else is rejected rather than silently recompiled: programs are keyed on the padded sequence length, and warmup covers exactly one. |
-| `num_frames` | Two checks, in order. The model-level rule is `17n + 5` (124, 243, 362, ...) and its rejection message lists those values -- but a second check then rejects anything that is not 124, because that is the only length this deployment warmed. 243 and 362 do generate correctly; serving them needs its own warmup, so they are a separate deployment, not a request-time option. |
+| `aspect_ratio` | One of `21:9`, `16:9`, `4:3`, `1:1`, `3:4`, `9:16`. Anything else is a 422 listing those. The model accepts 1:4..4:1, but only these are calibrated. Omitted gives `16:9`. |
+| `duration_seconds` | `5`, `10` or `15`. Anything else is a 422. Only these land on a whole `17n + 5` frame count (124 / 243 / 362) without rounding a request into a different shape. Omitted gives `5`. |
+| Resolution | 768P throughout: short edge 768 from 16:9 to 9:16, area capped at ~1 MPix for wider (21:9 is 1536x672). Derived by the model's `resolve_canvas_size`, not settable directly. |
+| `num_inference_steps` | **Not accepted.** Sending it at any value -- including 50 -- is a 422. The deployment always runs 50: the AdaLN modulation table is precomputed per step count. |
+| Warmup | Nothing is warmed by default; the first request per shape compiles. See section 6. |
 | `num_inference_steps` | Omitted is served as 50. An explicit value other than 50 is rejected. |
 | One request at a time | One device worker owns the mesh; further requests queue. |
 | `t2va` only | `ref2va` needs the `transformer_ref/` partition, and switching task in-process is a 62 GB reload. Separate deployment. |

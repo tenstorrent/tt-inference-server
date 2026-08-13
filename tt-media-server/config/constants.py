@@ -414,13 +414,49 @@ def wan22_target_resolution(mesh_shape: Tuple[int, int]) -> Resolution:
 
 
 # --- MiniMax-H3 (t2va) inference shape policy ---------------------------------
-# 4x8 Blackhole Galaxy only; one warmed shape, others rejected.
-MINIMAX_H3_NUM_FRAMES = 124
-MINIMAX_H3_RESOLUTION = Resolution(height=768, width=1344)
+# 4x8 Blackhole Galaxy only. Every published 768P working point is servable: six aspect ratios
+# x three durations. The canvas is never tabulated here -- `resolve_canvas_size` in the model's
+# packing module owns that rule (768 short edge from 16:9 through 9:16, area capped at 768*1344
+# for wider, both axes snapped to 32), and `align_num_frames` owns the 17n+5 frame rule. Copying
+# either into this file is how they drift.
+MINIMAX_H3_NUM_FRAMES = 124  # the default when a request names no duration (5.17 s)
+MINIMAX_H3_RESOLUTION = Resolution(height=768, width=1344)  # the default canvas (16:9)
 MINIMAX_H3_NUM_INFERENCE_STEPS = 50
 MINIMAX_H3_FPS = 24
 MINIMAX_H3_FRAME_ALIGNMENT = 17
 MINIMAX_H3_FRAME_OFFSET = 5
+
+# Published aspect ratios, widest to tallest. The model accepts 1:4..4:1, but only these are
+# calibrated, and each is a distinct canvas the pipeline must be warmed at.
+MINIMAX_H3_ASPECT_RATIOS = ((21, 9), (16, 9), (4, 3), (1, 1), (3, 4), (9, 16))
+MINIMAX_H3_DEFAULT_ASPECT_RATIO = (16, 9)
+
+# Durations in seconds. The model's own bounds are 5..15 s; these are the three that land on a
+# whole 17n+5 frame count (124 / 243 / 362) without rounding a request into a different shape.
+MINIMAX_H3_DURATIONS_S = (5, 10, 15)
+MINIMAX_H3_DEFAULT_DURATION_S = 5
+
+
+def minimax_h3_parse_aspect_ratio(value: str) -> tuple[int, int]:
+    """`"16:9"` -> `(16, 9)`, restricted to the published set.
+
+    Rejects rather than rounds: a caller asking for 2:1 wants 2:1, and quietly serving 16:9
+    would be a wrong answer dressed as a right one.
+    """
+    text = str(value).strip().replace("x", ":").replace("/", ":")
+    parts = text.split(":")
+    if len(parts) != 2 or not all(part.strip().isdigit() for part in parts):
+        raise ValueError(
+            f"aspect_ratio must look like 'W:H' (got {value!r}); supported: "
+            + ", ".join(f"{w}:{h}" for w, h in MINIMAX_H3_ASPECT_RATIOS)
+        )
+    pair = (int(parts[0]), int(parts[1]))
+    if pair not in MINIMAX_H3_ASPECT_RATIOS:
+        raise ValueError(
+            f"aspect_ratio {pair[0]}:{pair[1]} is not served; supported: "
+            + ", ".join(f"{w}:{h}" for w, h in MINIMAX_H3_ASPECT_RATIOS)
+        )
+    return pair
 
 
 def minimax_h3_frames_are_aligned(num_frames: int) -> bool:
