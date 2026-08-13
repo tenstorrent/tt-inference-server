@@ -93,6 +93,11 @@ async def test_adapter_merge_workflow_end_to_end(tmp_path, monkeypatch):
 
     # Adapter checkpoint resolved and merge ran in the subprocess for this model.
     assert request._adapter_path == str(checkpoint_dir)
+    # Merged checkpoint is named after the model it came from, then the merge id.
+    assert os.path.basename(output_dir) == (
+        f"{ModelNames.LLAMA_3_1_8B.value}-{request._task_id}"
+    )
+    assert os.path.dirname(output_dir) == str(tmp_path / "merged_models")
     assert json.load(open(os.path.join(output_dir, "config.json")))["base_model"] == (
         BASE_REPO
     )
