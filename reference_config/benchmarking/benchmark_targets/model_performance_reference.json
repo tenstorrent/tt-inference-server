@@ -12,11 +12,12 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 705,
-                        "tput_user": 100,
-                        "tput": 6413
+                        "ttft_ms": 1410,
+                        "tput_user": 25,
+                        "tput": 1603
                     }
-                }
+                },
+                "tolerance": 0.1
             },
             {
                 "isl": 8192,
@@ -29,11 +30,12 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 1410,
-                        "tput_user": 100,
-                        "tput": 6413
+                        "ttft_ms": 2820,
+                        "tput_user": 25,
+                        "tput": 1603
                     }
-                }
+                },
+                "tolerance": 0.1
             },
             {
                 "isl": 16384,
@@ -46,11 +48,12 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 2820,
-                        "tput_user": 100,
-                        "tput": 6413
+                        "ttft_ms": 5640,
+                        "tput_user": 25,
+                        "tput": 1603
                     }
-                }
+                },
+                "tolerance": 0.1
             }
         ]
     },

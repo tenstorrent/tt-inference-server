@@ -101,18 +101,34 @@ def build_target_checks(
 
 
 def _verdict(target_checks: Mapping[str, Mapping[str, Any]]) -> ReportCheckTypes:
-    """PASS/FAIL/NA for the strictest (``target``) tier."""
-    tier = target_checks.get("target", {})
-    real = [
-        value
-        for name, value in tier.items()
-        if name.endswith("_check") and value != ReportCheckTypes.NA
-    ]
-    if not real:
-        return ReportCheckTypes.NA
-    if any(value == ReportCheckTypes.FAIL for value in real):
-        return ReportCheckTypes.FAIL
-    return ReportCheckTypes.PASS
+    """PASS/FAIL/NA for the strictest tier this spec actually defines.
+
+    Strictest means last in :data:`TIER_ORDER`, so with the default
+    functional/complete/target ladder this is ``target``, unchanged.
+
+    It used to read ``target`` by name. That silently mis-graded any spec with a
+    custom ``perf_targets_map`` that does not define a tier of that name: the
+    lookup returned ``{}``, the verdict came back ``NA``, and downstream
+    acceptance then counted the point as *ungradable* rather than failed — so a
+    point missing its target by any margin was accepted. Milestone-0 hits this
+    directly, grading against a single tier named ``functional`` that holds the
+    published absolute value (docs/rfp/m0-target-convention.md).
+    """
+    for tier_name in reversed(TIER_ORDER):
+        tier = target_checks.get(tier_name)
+        if not isinstance(tier, Mapping):
+            continue
+        real = [
+            value
+            for name, value in tier.items()
+            if name.endswith("_check") and value != ReportCheckTypes.NA
+        ]
+        if not real:
+            continue
+        if any(value == ReportCheckTypes.FAIL for value in real):
+            return ReportCheckTypes.FAIL
+        return ReportCheckTypes.PASS
+    return ReportCheckTypes.NA
 
 
 def apply_target_checks(block: Block, config: Any) -> Block:

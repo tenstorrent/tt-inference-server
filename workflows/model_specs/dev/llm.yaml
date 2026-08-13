@@ -220,6 +220,20 @@ templates:
     # (with pinned commits) via scripts/release/promote_dev_spec_to_prod.py once
     # AIPerf targets are established (readiness §5.2/§5.3).
     - device: BLACKHOLE_GALAXY
+      # Milestone-0 graded bar. ONE tier holding the published absolute target
+      # verbatim (perf_targets_map value 1.0), not the default
+      # functional 0.10 / complete 0.50 / target 1.0 ladder — the RFP states one
+      # number per point (Appendix B.2), so three bars in code would invite a
+      # Partner to look for two they cannot find.
+      #
+      # The tier name and `status` below MUST stay in step:
+      # ModelStatusTypes.required_target_tiers matches on tier NAME, and
+      # FUNCTIONAL enforces exactly ["functional"]. Renaming this tier to
+      # "target" while leaving status FUNCTIONAL computes the bar, reports it,
+      # and then ignores it — the gate goes silently inert. See
+      # docs/rfp/m0-target-convention.md.
+      perf_targets_map:
+        functional: 1.0
       # Per-system max concurrent requests; sets the sweep's upper concurrency
       # corner (RFP Appendix B.0/B.1). Enforced per system regardless of the
       # operator's data-parallel choice — see get_perf_reference. Partner-tunable.
@@ -261,7 +275,14 @@ templates:
         tool-call-parser: gemma4
         default-chat-template-kwargs: '{"enable_thinking": true}'
         reasoning-parser: gemma4
-  status: EXPERIMENTAL
+  # Milestone-0: FUNCTIONAL, not EXPERIMENTAL. required_target_tiers is EMPTY at
+  # EXPERIMENTAL, and evals_enforced reuses the same signal, so an EXPERIMENTAL
+  # model can fail every performance target AND every accuracy eval and still be
+  # accepted. FUNCTIONAL enforces exactly ["functional"] — the single graded tier
+  # defined on the BLACKHOLE_GALAXY row above. Not TOP_PERF: that would claim
+  # near-peak optimisation, which Milestone-0 does not claim about a
+  # first-of-kind bring-up. See docs/rfp/m0-target-convention.md.
+  status: FUNCTIONAL
   has_builtin_warmup: true
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
@@ -290,6 +311,20 @@ templates:
   inference_engine: VLLM
   device_model_specs:
     - device: BLACKHOLE_GALAXY  # M0 target: 32x P150, 4x8 2D torus (RFP D.1/D.2)
+      # Milestone-0 graded bar. ONE tier holding the published absolute target
+      # verbatim (perf_targets_map value 1.0), not the default
+      # functional 0.10 / complete 0.50 / target 1.0 ladder — the RFP states one
+      # number per point (Appendix B.2), so three bars in code would invite a
+      # Partner to look for two they cannot find.
+      #
+      # The tier name and `status` below MUST stay in step:
+      # ModelStatusTypes.required_target_tiers matches on tier NAME, and
+      # FUNCTIONAL enforces exactly ["functional"]. Renaming this tier to
+      # "target" while leaving status FUNCTIONAL computes the bar, reports it,
+      # and then ignores it — the gate goes silently inert. See
+      # docs/rfp/m0-target-convention.md.
+      perf_targets_map:
+        functional: 1.0
       # Per-system max concurrent requests (sweep upper corner). 64 = the Appendix B
       # target sheet's "max-num-seqs @ max context" for this model on a 32-chip
       # Galaxy; the graded targets (model_performance_reference.json) are authored at
@@ -321,7 +356,14 @@ templates:
         fabric_config: FABRIC_1D_RING
       # [TBD — Partner] vllm_args (reasoning/tool-call parsers, chat-template kwargs)
       # and a metadata block with reasoning_parser_name / tool_call_parser_name.
-  status: EXPERIMENTAL
+  # Milestone-0: FUNCTIONAL, not EXPERIMENTAL. required_target_tiers is EMPTY at
+  # EXPERIMENTAL, and evals_enforced reuses the same signal, so an EXPERIMENTAL
+  # model can fail every performance target AND every accuracy eval and still be
+  # accepted. FUNCTIONAL enforces exactly ["functional"] — the single graded tier
+  # defined on the BLACKHOLE_GALAXY row above. Not TOP_PERF: that would claim
+  # near-peak optimisation, which Milestone-0 does not claim about a
+  # first-of-kind bring-up. See docs/rfp/m0-target-convention.md.
+  status: FUNCTIONAL
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Milestone-0 stub: mistralai/Mistral-Small-4-119B-2603
@@ -341,6 +383,20 @@ templates:
   inference_engine: VLLM
   device_model_specs:
     - device: BLACKHOLE_GALAXY  # M0 target: 32x P150, 4x8 2D torus (RFP D.1/D.2)
+      # Milestone-0 graded bar. ONE tier holding the published absolute target
+      # verbatim (perf_targets_map value 1.0), not the default
+      # functional 0.10 / complete 0.50 / target 1.0 ladder — the RFP states one
+      # number per point (Appendix B.2), so three bars in code would invite a
+      # Partner to look for two they cannot find.
+      #
+      # The tier name and `status` below MUST stay in step:
+      # ModelStatusTypes.required_target_tiers matches on tier NAME, and
+      # FUNCTIONAL enforces exactly ["functional"]. Renaming this tier to
+      # "target" while leaving status FUNCTIONAL computes the bar, reports it,
+      # and then ignores it — the gate goes silently inert. See
+      # docs/rfp/m0-target-convention.md.
+      perf_targets_map:
+        functional: 1.0
       # [TBD — Partner] per-system max concurrent requests (sweep upper corner).
       max_concurrency: 32
       # Full native context: Mistral Small 4 has a 256k context window (model
@@ -364,7 +420,14 @@ templates:
         # 6U-Galaxy default).
         fabric_config: FABRIC_1D_RING
       # [TBD — Partner] vllm_args and a metadata block with the parser names.
-  status: EXPERIMENTAL
+  # Milestone-0: FUNCTIONAL, not EXPERIMENTAL. required_target_tiers is EMPTY at
+  # EXPERIMENTAL, and evals_enforced reuses the same signal, so an EXPERIMENTAL
+  # model can fail every performance target AND every accuracy eval and still be
+  # accepted. FUNCTIONAL enforces exactly ["functional"] — the single graded tier
+  # defined on the BLACKHOLE_GALAXY row above. Not TOP_PERF: that would claim
+  # near-peak optimisation, which Milestone-0 does not claim about a
+  # first-of-kind bring-up. See docs/rfp/m0-target-convention.md.
+  status: FUNCTIONAL
 
 - weights:
     - google/gemma-4-12B-it

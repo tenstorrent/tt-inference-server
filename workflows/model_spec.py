@@ -101,9 +101,25 @@ model_performance_reference = read_performance_reference_json()
 
 
 def get_perf_reference_map(
-    model_name: str, perf_targets_map: Dict[str, float]
+    model_name: str,
+    perf_targets_map: Dict[str, float],
+    device_targets_maps: Optional[Dict[DeviceTypes, Dict[str, float]]] = None,
 ) -> Dict[DeviceTypes, List[BenchmarkTaskParams]]:
+    """Resolve every device's benchmark points and their tiered targets.
+
+    ``perf_targets_map`` is the model-wide tier ladder. ``device_targets_maps``
+    overrides it for individual devices, which Milestone-0 needs: a
+    BLACKHOLE_GALAXY row is graded against a single tier holding the published
+    absolute target, while the same model's other devices keep the ordinary
+    functional/complete/target ladder.
+
+    Until now :attr:`DeviceModelSpec.perf_targets_map` existed and was carried
+    through :meth:`ModelSpecTemplate.expand_to_specs`, but nothing ever read it
+    when deriving tiers — the model-wide map was applied to every device. Setting
+    it had no effect, silently. This is what makes it mean what its name says.
+    """
     perf_reference_map: Dict[DeviceTypes, List[BenchmarkTaskParams]] = {}
+    device_targets_maps = device_targets_maps or {}
     model_data = model_performance_reference.get(model_name, {})
 
     # RFP Milestone-0 handoff change — NOT upstream. See tenstorrent#4884.
@@ -138,10 +154,21 @@ def get_perf_reference_map(
 
     for device_str, benchmarks in model_data.items():
         device_type = DeviceTypes.from_string(device_str)
+        device_targets_map = device_targets_maps.get(device_type) or perf_targets_map
 
         params_list: List[BenchmarkTaskParams] = []
 
         for bench in benchmarks:
+            # Pass/fail allowance for this point, applied by
+            # llm_module.target_checks as `ratio < 1 + tolerance` (lower-is-better)
+            # or `ratio > 1 - tolerance` (higher-is-better).
+            #
+            # Read per point rather than per tier: it is a policy knob, not a
+            # measured metric, so it sits beside `targets` rather than inside the
+            # `theoretical` block. Defaults to 0.0 — meaning "must beat target
+            # outright" — so an entry that does not opt in keeps today's behaviour.
+            tolerance = bench.get("tolerance", 0.0) or 0.0
+
             # Parse performance targets under the "reference" key.
             target_dict = {}
             targets = bench.get("targets", {})
@@ -149,7 +176,7 @@ def get_perf_reference_map(
                 # Create the PerformanceTarget instance.
                 if target_name == "theoretical":
                     # add customer definitions: functional, complete, sellable
-                    for target_key, percentage in perf_targets_map.items():
+                    for target_key, percentage in device_targets_map.items():
                         target_dict[target_key] = PerformanceTarget(
                             ttft_ms=target_data.get("ttft_ms") / percentage
                             if target_data.get("ttft_ms")
@@ -160,6 +187,7 @@ def get_perf_reference_map(
                             tput=target_data.get("tput") * percentage
                             if target_data.get("tput")
                             else None,
+                            tolerance=tolerance,
                         )
 
             # Create the BenchmarkTaskParams instance.
@@ -1058,7 +1086,13 @@ class ModelSpecTemplate:
         # Generate performance reference map
         main_model_name = model_weights_to_model_name(self.weights[0])
         perf_reference_map = get_perf_reference_map(
-            main_model_name, self.perf_targets_map
+            main_model_name,
+            self.perf_targets_map,
+            {
+                d.device: d.perf_targets_map
+                for d in self.device_model_specs
+                if d.perf_targets_map
+            },
         )
 
         for weight in self.weights:
