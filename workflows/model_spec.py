@@ -215,6 +215,15 @@ def get_perf_reference(device_model_spec, perf_reference_map):
     # Migrated to vLLM API for data parallelism
     data_parallel = device_model_spec.vllm_args.get("data_parallel_size")
 
+    # Per-system target expression (RFP Milestone-0 §5.4 / Appendix B.0). For
+    # compute classes whose targets are published per whole system rather than
+    # per replica, the bar must not move with the operator's data-parallel
+    # choice. Resolve straight from the system device key and skip both the
+    # per-replica subdevice lookup and the data_parallel scaling below, even
+    # when data_parallel_size is set on the spec.
+    if device_model_spec.device.expresses_targets_per_system():
+        return perf_reference_map.get(device_model_spec.device, [])
+
     if data_parallel:
         # need to adjust perf target device for data_parallel factor
         dp_device = device_model_spec.device.get_data_parallel_subdevice(data_parallel)
@@ -289,6 +298,18 @@ deepseek_r1_galaxy_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/deepseek_v3",
 )
+# Milestone-0 stub impl for deepseek-ai/DeepSeek-V4-Flash-0731. No serving path
+# exists yet (readiness §6.2): tt-metal has dimensions-only constants under
+# models/demos/deepseek_v3_d_p but no V4-Flash adapter/demo, and there is no
+# tenstorrent/vllm registration. code_path is intentionally left as a fill-in
+# placeholder for the Partner to point at the real implementation they contribute
+# per RFP F.2.3.
+deepseek_v4_flash_impl = ImplSpec(
+    impl_id="deepseek_v4_flash",
+    impl_name="deepseek-v4-flash",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="<FILL IN>",  # [TBD — Partner] path to the contributed tt-metal impl
+)
 whisper_impl = ImplSpec(
     impl_id="whisper",
     impl_name="whisper",
@@ -347,6 +368,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "qwen3_32b_galaxy": qwen3_32b_galaxy_impl,
     "gpt_oss": gpt_oss_impl,
     "deepseek_r1_galaxy": deepseek_r1_galaxy_impl,
+    "deepseek_v4_flash": deepseek_v4_flash_impl,
     "whisper": whisper_impl,
     "speecht5_tts": speecht5_impl,
     "forge_vllm_plugin": forge_vllm_plugin_impl,

@@ -214,6 +214,53 @@ templates:
       max_concurrency: 32
       max_context: 204800  # 200 * 1024; native ctx is 256K but a single H100 NVL (94GB, bf16 KV) caps servable ctx at ~205K (KV cache = 210,605 tokens)
       default_impl: true
+    # BLACKHOLE_GALAXY — Milestone-0 target system: 32x P150 in a 4x8 2D torus
+    # (RFP D.1/D.2). gemma-4 already runs via tt_transformers, so this is a real
+    # starting config rather than a comment-only stub. Promote to prod/llm.yaml
+    # (with pinned commits) via scripts/release/promote_dev_spec_to_prod.py once
+    # AIPerf targets are established (readiness §5.2/§5.3).
+    - device: BLACKHOLE_GALAXY
+      # Per-system max concurrent requests; sets the sweep's upper concurrency
+      # corner (RFP Appendix B.0/B.1). Enforced per system regardless of the
+      # operator's data-parallel choice — see get_perf_reference. Partner-tunable.
+      max_concurrency: 128
+      # Full native context (256K). Unlike the QB2/P300X2 entry above there is no
+      # hybrid-off ~49K pool cap here: a 32-chip Galaxy has the DRAM to hold the
+      # full-length KV pool, so Milestone-0 runs at full context (readiness §5.4).
+      # [Verify — Performance: confirm the hybrid-off KV pool fits Galaxy DRAM at
+      # 262144 with prefill scratch headroom.]
+      max_context: 262144  # 256 * 1024
+      # [TBD — Performance] Device KV-token pool for the concurrency sweep. Left
+      # unset, this defaults to max_context (262144), which lets only ISLs 128 and
+      # 1024 reach concurrency 128 — too few for the scaling-quality fit, which
+      # needs >=3 distinct input lengths at every graded concurrency level (RFP
+      # Appendix F.1; readiness §5.7). A 32-chip Galaxy has a far larger aggregate
+      # KV pool; set this to the measured value, and >= 278528 (=128*2176) so
+      # ISLs {128,1024,2048} all reach concurrency 128. get_llm_configs enforces
+      # this once blackhole_galaxy targets are authored (sweep/target work).
+      max_tokens_all_users_override: 32 * 256 * 1024
+      default_impl: true
+      env_vars:
+        # Fixed 4x8 2D torus mesh graph descriptor (RFP D.2). Not a partner choice.
+        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/single_bh_galaxy_torus_xy_graph_descriptor.textproto"
+        # The logical mesh (MESH_DEVICE) is deliberately left to the operator
+        # (RFP D.3); omit here to default to BH-Galaxy, or override per submission.
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+        # Size the hybrid-off all-user KV pool to the full context on Galaxy DRAM.
+        GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
+      override_tt_config:
+        # Pinned for Milestone-0: 1D ring fabric on the Galaxy. Matches the vLLM
+        # plugin's 6U-cluster default (tt_worker.get_fabric_config).
+        fabric_config: FABRIC_1D_RING
+        trace_region_size: 200000000
+        # On-device decode sampling so token ids >= 65536 are reachable (host
+        # sampling only sees device 0's vocab shard on a TP mesh).
+        sample_on_device_mode: decode_only
+      vllm_args:
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: gemma4
   status: EXPERIMENTAL
   has_builtin_warmup: true
   env_vars:
@@ -224,6 +271,100 @@ templates:
       # tool parser ships in vllm-tt-plugin as of tenstorrent/vllm #431; activated
       # by enable-auto-tool-choice in vllm_args above.
       tool_call_parser_name: gemma4
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Milestone-0 stub: deepseek-ai/DeepSeek-V4-Flash-0731
+# GREENFIELD — no serving path exists in tt-metal, tenstorrent/vllm, or here
+# (readiness §6.2): tt-metal carries dimensions-only constants but no V4-Flash
+# adapter/demo, and there is no vLLM registration. This template is a scaffold
+# for the Partner to complete per RFP F.2.3(a). Fill in every [TBD — Partner]
+# before use; the entry is intentionally minimal so it loads without asserting a
+# configuration that does not exist yet.
+# ─────────────────────────────────────────────────────────────────────────────
+- weights:
+    # [TBD — Partner] confirm the exact HF repo id + pin the revision hash.
+    - deepseek-ai/DeepSeek-V4-Flash-0731
+  # [TBD — Partner] the tt-metal implementation you contribute. `deepseek_v4_flash`
+  # is a stub impl (models/demos/deepseek_v3_d_p is dimensions-only today).
+  impl: deepseek_v4_flash
+  inference_engine: VLLM
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY  # M0 target: 32x P150, 4x8 2D torus (RFP D.1/D.2)
+      # Per-system max concurrent requests (sweep upper corner). 64 = the Appendix B
+      # target sheet's "max-num-seqs @ max context" for this model on a 32-chip
+      # Galaxy; the graded targets (model_performance_reference.json) are authored at
+      # this concurrency. [TBD — Partner: re-confirm against the contributed impl.]
+      max_concurrency: 64
+      # Full native context. DeepSeek-V4 is a million-token-context model
+      # ("DeepSeek-V4: Towards Highly Efficient Million-Token Context
+      # Intelligence"; the card recommends a 384K max output length). Milestone-0
+      # runs at full native context. [Verify — Partner: confirm
+      # max_position_embeddings in the HF config.json.]
+      max_context: 1048576  # 1024 * 1024 (1M)
+      # Device KV-token pool for the concurrency sweep. Sized so the graded ISLs
+      # {4096, 8192, 16384} all reach concurrency 64 (the largest, ISL 16384, needs
+      # 64 * (16384 + 128) = 1,056,768 tokens); without this the pool defaults to
+      # max_context and ISL 16384 would demote below 64, breaking the scaling-quality
+      # three-point rule at the top graded level (>=3 input lengths; RFP Appendix F.1,
+      # readiness §5.7; enforced by get_llm_configs). [TBD — Performance: replace with
+      # the measured 32-chip pool once available.]
+      max_tokens_all_users_override: 1056768  # 64 * 1024 * 1024
+      default_impl: true
+      env_vars:
+        # Fixed 4x8 2D torus mesh graph descriptor (RFP D.2). Not a partner choice.
+        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/single_bh_galaxy_torus_xy_graph_descriptor.textproto"
+        # Logical mesh (MESH_DEVICE) is the operator's choice (RFP D.3); omit to
+        # default to BH-Galaxy, or set per submission.
+      override_tt_config:
+        # Pinned for Milestone-0: 1D ring fabric (matches the vLLM plugin's
+        # 6U-Galaxy default).
+        fabric_config: FABRIC_1D_RING
+      # [TBD — Partner] vllm_args (reasoning/tool-call parsers, chat-template kwargs)
+      # and a metadata block with reasoning_parser_name / tool_call_parser_name.
+  status: EXPERIMENTAL
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Milestone-0 stub: mistralai/Mistral-Small-4-119B-2603
+# Released, but no tt-metal serving path exists yet. Scaffold for the Partner to
+# complete per RFP F.2.3(a). It is a mistral3 MoE (128 experts / 4 active, 119B /
+# 6.5B activated) and multimodal; Milestone-0 is text-generation only (RFP A.4).
+# Mistral Small models have historically served via the generic tt_transformers
+# impl; confirm or replace as the architecture requires. Fill in every
+# [TBD — Partner] before use.
+# ─────────────────────────────────────────────────────────────────────────────
+- weights:
+    # [TBD — Partner] pin the revision hash.
+    - mistralai/Mistral-Small-4-119B-2603
+  # [TBD — Partner] confirm tt_transformers serves this architecture, or replace
+  # with the impl you contribute.
+  impl: tt_transformers
+  inference_engine: VLLM
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY  # M0 target: 32x P150, 4x8 2D torus (RFP D.1/D.2)
+      # [TBD — Partner] per-system max concurrent requests (sweep upper corner).
+      max_concurrency: 32
+      # Full native context: Mistral Small 4 has a 256k context window (model
+      # card; the vLLM recipe serves --max-model-len 262144).
+      max_context: 262144  # 256 * 1024
+      # [TBD — Partner/Performance] Device KV-token pool for the concurrency
+      # sweep. Defaults to max_context if unset, which lets only ISLs 128 and 1024
+      # reach concurrency 128 — too few for the scaling-quality fit (>=3 distinct
+      # input lengths required per graded concurrency level; RFP Appendix F.1,
+      # readiness §5.7). Set to the measured 32-chip pool, and >= 278528
+      # (=128*2176) so ISLs {128,1024,2048} reach concurrency 128. Enforced by
+      # get_llm_configs once blackhole_galaxy targets are authored.
+      max_tokens_all_users_override: 32 * 256 * 1024
+      default_impl: true
+      env_vars:
+        # Fixed 4x8 2D torus mesh graph descriptor (RFP D.2). Not a partner choice.
+        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/single_bh_galaxy_torus_xy_graph_descriptor.textproto"
+        # Logical mesh (MESH_DEVICE) is the operator's choice (RFP D.3).
+      override_tt_config:
+        # Pinned for Milestone-0: 1D ring fabric (matches the vLLM plugin's
+        # 6U-Galaxy default).
+        fabric_config: FABRIC_1D_RING
+      # [TBD — Partner] vllm_args and a metadata block with the parser names.
+  status: EXPERIMENTAL
 
 - weights:
     - google/gemma-4-12B-it

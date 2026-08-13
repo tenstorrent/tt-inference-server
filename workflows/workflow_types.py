@@ -208,6 +208,38 @@ class DeviceTypes(IntEnum):
             )
         return host_counts[self]
 
+    def expresses_targets_per_system(self) -> bool:
+        """Whether performance targets for this device are published per whole
+        system rather than per data-parallel replica.
+
+        For these compute classes the graded bar must be a single per-system
+        value that the operator's logical-mesh / data-parallel choice cannot
+        move: the target is resolved directly from the device's own key in
+        ``model_performance_reference.json`` and is NOT scaled by the
+        ``data_parallel_size`` factor (contrast ``scale_llm_perf_targets``,
+        which derives an aggregate from a per-replica subdevice reference).
+
+        This implements the Milestone-0 RFP decision that the logical mesh is
+        left free while targets stay comparable across data-parallel choices
+        (RFP §D.3, Appendix B.0; readiness §5.4).
+        """
+        return self in {DeviceTypes.BLACKHOLE_GALAXY}
+
+    def grades_scaling_quality(self) -> bool:
+        """Whether the RFP grades a per-concurrency time-to-first-token vs.
+        input-length regression (the "scaling-quality" rubric line) on this
+        device.
+
+        The scaling-quality line fits TTFT against input length *separately at
+        each graded concurrency level*, so a level with fewer than three
+        distinct input lengths cannot be regressed and its fit is meaningless
+        (RFP Appendix B.1/B.2/F.1; readiness §5.7). Sweep construction enforces
+        the three-point rule per graded concurrency level for these devices
+        (see ``get_llm_configs`` /
+        ``reference_config.benchmarking.benchmark_config.scaling_quality_coverage_violations``).
+        """
+        return self in {DeviceTypes.BLACKHOLE_GALAXY}
+
     def get_data_parallel_subdevice(self, data_parallel: int) -> "DeviceTypes":
         data_parallel_map = {
             (DeviceTypes.GALAXY, 1): DeviceTypes.GALAXY,
