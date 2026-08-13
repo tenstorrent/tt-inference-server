@@ -671,6 +671,10 @@ void BlazePrefillRunner::checkOutputHang() {
       "in-flight generation(s) (threshold={} ms). Self-terminating worker so "
       "infrastructure can restart the server.",
       elapsed.count(), runningCount, outputHangTimeout.count());
+  std::stringstream ss;
+  prefillScheduler->dump_diagnostics(ss);
+  TT_LOG_CRITICAL("[BlazePrefillRunner] Scheduler internal dump:\n{}",
+                  ss.str());
   shutdownScheduler();
   std::abort();
 }

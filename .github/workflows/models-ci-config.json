@@ -160,7 +160,7 @@
         {
           "inference_engine": "FORGE",
           "ci": {
-            "weekly": {
+            "nightly": {
               "devices": [
                 "BH_GALAXY"
               ]
@@ -344,9 +344,34 @@
     "Qwen3-Embedding-4B": {
       "inference_engine": "FORGE",
       "ci": {
+        "nightly": {
+          "devices": [
+            "P300X2"
+          ]
+        },
+        "release": {
+          "devices": [
+            "P300X2"
+          ]
+        },
         "weekly": {
           "devices": [
             "N150"
+          ]
+        }
+      }
+    },
+    "Qwen3-Embedding-0.6B": {
+      "inference_engine": "FORGE",
+      "ci": {
+        "nightly": {
+          "devices": [
+            "P300X2"
+          ]
+        },
+        "release": {
+          "devices": [
+            "P300X2"
           ]
         }
       }
@@ -363,17 +388,36 @@
       }
     },
     "bge-m3": {
-      "inference_engine": "MEDIA",
-      "ci": {
-        "nightly": {
-          "devices": [
-            "GALAXY",
-            "N150",
-            "N300",
-            "T3K"
-          ]
+      "implementations": [
+        {
+          "inference_engine": "MEDIA",
+          "ci": {
+            "nightly": {
+              "devices": [
+                "GALAXY",
+                "N150",
+                "N300",
+                "T3K"
+              ]
+            }
+          }
+        },
+        {
+          "inference_engine": "FORGE",
+          "ci": {
+            "nightly": {
+              "devices": [
+                "P300X2"
+              ]
+            },
+            "release": {
+              "devices": [
+                "P300X2"
+              ]
+            }
+          }
         }
-      }
+      ]
     },
     "Wan2.2-T2V-A14B-Diffusers": {
       "inference_engine": "MEDIA",

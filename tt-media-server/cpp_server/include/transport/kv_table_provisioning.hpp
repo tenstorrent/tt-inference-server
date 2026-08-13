@@ -54,7 +54,7 @@ std::shared_ptr<const IKvTable> deserializeKvTable(
     const std::vector<uint8_t>& blob);
 
 /// Default wall-clock budget for TABLE_EXCHANGE of large .pb blobs. Migrate
-/// MirrorReady/Ack use the channel's shorter receiveTimeout() instead.
+/// BounceReady/Ack use the channel's shorter receiveTimeout() instead.
 inline constexpr std::chrono::milliseconds kDefaultTableExchangeTimeout{300000};
 
 /// Swap serialized-table blobs over `channel` (one TABLE_EXCHANGE each way).

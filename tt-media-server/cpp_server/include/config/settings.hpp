@@ -69,6 +69,13 @@ std::string tokenizerPath(ModelType model);
 std::string tokenizerConfigPath();
 std::string tokenizerConfigPath(ModelType model);
 
+/** Model config path: tokenizers/<model>/config.json relative to the
+ * executable. This is the HuggingFace-style `config.json` (architectures,
+ * max_position_embeddings, etc.), not the tokenizer's own config. Empty if
+ * not found. No-arg overload uses the current model_type(). */
+std::string modelConfigPath();
+std::string modelConfigPath(ModelType model);
+
 /**
  * Parse DEVICE_IDS and return the content inside the Nth bracket pair.
  * DEVICE_IDS format: "(0,1,2,3),(4,5,6,7)" → worker 0 gets "0,1,2,3", worker 1
@@ -152,8 +159,13 @@ size_t sessionEvictionCount();
  * Default: defaults::MAX_TOKENS_TO_PREFILL_ON_DECODE. */
 size_t maxTokensToPrefillOnDecode();
 
-/** Max context length (prompt + completion) from MAX_CONTEXT_LENGTH. Default:
- * defaults::MAX_CONTEXT_LENGTH. */
+/** Max context length (prompt + completion). Resolution order:
+ *   1. `MAX_CONTEXT_LENGTH` env var (explicit operator override).
+ *   2. `max_position_embeddings` in the model's HF `config.json`
+ *      (tokenizers/<model>/config.json), also honoring `text_config.
+ *      max_position_embeddings` for multimodal wrappers.
+ *   3. `defaults::MAX_CONTEXT_LENGTH` if the file is missing or unparseable.
+ */
 size_t maxContextLength();
 
 /** Max input sequence length (prompt tokens) from MAX_ISL. Default:

@@ -20,14 +20,17 @@ class SupportedModels(Enum):
     QWEN_IMAGE_2512 = "Qwen/Qwen-Image-2512"
     MOCHI_1 = "genmo/mochi-1-preview"
     WAN_2_2 = "Wan-AI/Wan2.2-T2V-A14B-Diffusers"
+    WAN_2_2_T2V_PRODIA = "Wan-AI/Wan2.2-T2V-A14B-Diffusers"
     WAN_2_2_I2V = "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
     WAN_2_2_I2V_PRODIA = "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
     WAN_2_2_I2V_ANISORA = "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
     WAN_2_2_I2V_DISTILL = "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
     WAN_2_2_I2V_LORA = "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
+    WAN_2_2_I2V_LIGHTNING = "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
     DISTIL_WHISPER_LARGE_V3 = "distil-whisper/distil-large-v3"
     OPENAI_WHISPER_LARGE_V3 = "openai/whisper-large-v3"
     PYANNOTE_SPEAKER_DIARIZATION = "pyannote/speaker-diarization-3.0"
+    QWEN_3_EMBEDDING_0_6B = "Qwen/Qwen3-Embedding-0.6B"
     QWEN_3_EMBEDDING_4B = "Qwen/Qwen3-Embedding-4B"
     QWEN_3_EMBEDDING_8B = "Qwen/Qwen3-Embedding-8B"
     BGE_LARGE_EN_V1_5 = "BAAI/bge-large-en-v1.5"
@@ -66,11 +69,13 @@ class ModelNames(Enum):
     QWEN_IMAGE_2512 = "Qwen-Image-2512"
     MOCHI_1 = "mochi-1-preview"
     WAN_2_2 = "Wan2.2-T2V-A14B-Diffusers"
+    WAN_2_2_T2V_PRODIA = "Wan2.2-T2V-A14B-Prodia"
     WAN_2_2_I2V = "Wan2.2-I2V-A14B-Diffusers"
     WAN_2_2_I2V_PRODIA = "Wan2.2-I2V-A14B-Prodia"
     WAN_2_2_I2V_ANISORA = "Wan2.2-I2V-AniSora-V3.2"
     WAN_2_2_I2V_DISTILL = "Wan2.2-I2V-Distill-LightX2V"
     WAN_2_2_I2V_LORA = "Wan2.2-I2V-LoRA"
+    WAN_2_2_I2V_LIGHTNING = "Wan2.2-I2V-Lightning"
     DISTIL_WHISPER_LARGE_V3 = "distil-large-v3"
     OPENAI_WHISPER_LARGE_V3 = "whisper-large-v3"
     MICROSOFT_RESNET_50 = "resnet-50"
@@ -81,6 +86,7 @@ class ModelNames(Enum):
     SEGFORMER = "segformer"
     UNET = "unet"
     VIT = "vit"
+    QWEN_3_EMBEDDING_0_6B = "Qwen3-Embedding-0.6B"
     QWEN_3_EMBEDDING_4B = "Qwen3-Embedding-4B"
     QWEN_3_EMBEDDING_8B = "Qwen3-Embedding-8B"
     BGE_LARGE_EN_V1_5 = "bge-large-en-v1.5"
@@ -114,15 +120,19 @@ class ModelRunners(Enum):
     TT_QWEN_IMAGE_2512 = "tt-qwen-image-2512"
     TT_MOCHI_1 = "tt-mochi-1"
     TT_WAN_2_2 = "tt-wan2.2"
+    TT_WAN_2_2_T2V_PRODIA = "tt-wan2.2-t2v-prodia"
     TT_WAN_2_2_I2V = "tt-wan2.2-i2v"
     TT_WAN_2_2_I2V_PRODIA = "tt-wan2.2-i2v-prodia"
     TT_WAN_2_2_I2V_ANISORA = "tt-wan2.2-i2v-anisora"
     TT_WAN_2_2_I2V_DISTILL = "tt-wan2.2-i2v-distill"
     TT_WAN_2_2_I2V_LORA = "tt-wan2.2-i2v-lora"
+    TT_WAN_2_2_I2V_LIGHTNING = "tt-wan2.2-i2v-lightning"
     TT_WHISPER = "tt-whisper"
     VLLMForge = "vllm_forge"
     TT_YOLOV4 = "tt-yolov4"
     VLLMForge_QWEN_EMBEDDING = "vllmforge_qwen_embedding"
+    VLLMForge_QWEN_EMBEDDING_0_6B = "vllmforge_qwen_embedding_0_6b"
+    VLLMForge_BGE_M3 = "vllmforge_bge_m3"
     VLLMForge_LLAMA_70B = "vllm_forge_llama_70b"
     VLLMForge_GEMMA4_31B = "vllm_forge_gemma4_31b"
     VLLMForge_QWEN_32B = "vllm_forge_qwen_32b"
@@ -187,6 +197,8 @@ MODEL_SERVICE_RUNNER_MAP = {
     },
     ModelServices.EMBEDDING: {
         ModelRunners.VLLMForge_QWEN_EMBEDDING,
+        ModelRunners.VLLMForge_QWEN_EMBEDDING_0_6B,
+        ModelRunners.VLLMForge_BGE_M3,
         ModelRunners.QWEN_EMBEDDING_8B,
         ModelRunners.BGELargeEN_V1_5,
         ModelRunners.BGEM3,
@@ -208,11 +220,13 @@ MODEL_SERVICE_RUNNER_MAP = {
     ModelServices.VIDEO: {
         ModelRunners.TT_MOCHI_1,
         ModelRunners.TT_WAN_2_2,
+        ModelRunners.TT_WAN_2_2_T2V_PRODIA,
         ModelRunners.TT_WAN_2_2_I2V,
         ModelRunners.TT_WAN_2_2_I2V_PRODIA,
         ModelRunners.TT_WAN_2_2_I2V_ANISORA,
         ModelRunners.TT_WAN_2_2_I2V_DISTILL,
         ModelRunners.TT_WAN_2_2_I2V_LORA,
+        ModelRunners.TT_WAN_2_2_I2V_LIGHTNING,
         ModelRunners.SP_RUNNER,
     },
     ModelServices.TRAINING: {
@@ -234,6 +248,7 @@ I2V_MODEL_RUNNERS = frozenset(
         ModelRunners.TT_WAN_2_2_I2V_ANISORA,
         ModelRunners.TT_WAN_2_2_I2V_DISTILL,
         ModelRunners.TT_WAN_2_2_I2V_LORA,
+        ModelRunners.TT_WAN_2_2_I2V_LIGHTNING,
     }
 )
 # SP_RUNNER proxies to a multihost peer and serves either T2V or I2V weights,
@@ -245,6 +260,7 @@ I2V_MODEL_NAMES = frozenset(
         ModelNames.WAN_2_2_I2V_ANISORA,
         ModelNames.WAN_2_2_I2V_DISTILL,
         ModelNames.WAN_2_2_I2V_LORA,
+        ModelNames.WAN_2_2_I2V_LIGHTNING,
     }
 )
 
@@ -260,15 +276,19 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_QWEN_IMAGE_2512: {ModelNames.QWEN_IMAGE_2512},
     ModelRunners.TT_MOCHI_1: {ModelNames.MOCHI_1},
     ModelRunners.TT_WAN_2_2: {ModelNames.WAN_2_2},
+    ModelRunners.TT_WAN_2_2_T2V_PRODIA: {ModelNames.WAN_2_2_T2V_PRODIA},
     ModelRunners.TT_WAN_2_2_I2V: {ModelNames.WAN_2_2_I2V},
     ModelRunners.TT_WAN_2_2_I2V_PRODIA: {ModelNames.WAN_2_2_I2V_PRODIA},
     ModelRunners.TT_WAN_2_2_I2V_ANISORA: {ModelNames.WAN_2_2_I2V_ANISORA},
     ModelRunners.TT_WAN_2_2_I2V_DISTILL: {ModelNames.WAN_2_2_I2V_DISTILL},
     ModelRunners.TT_WAN_2_2_I2V_LORA: {ModelNames.WAN_2_2_I2V_LORA},
+    ModelRunners.TT_WAN_2_2_I2V_LIGHTNING: {ModelNames.WAN_2_2_I2V_LIGHTNING},
     ModelRunners.SP_RUNNER: {
         ModelNames.WAN_2_2,
+        ModelNames.WAN_2_2_T2V_PRODIA,
         ModelNames.WAN_2_2_I2V,
         ModelNames.WAN_2_2_I2V_PRODIA,
+        ModelNames.WAN_2_2_I2V_LIGHTNING,
         ModelNames.MOCHI_1,
     },
     ModelRunners.TT_WHISPER: {
@@ -284,6 +304,7 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_XLA_VIT: {ModelNames.VIT},
     ModelRunners.TT_XLA_YOLOX_NANO: {ModelNames.YOLOX_NANO},
     ModelRunners.VLLMForge_QWEN_EMBEDDING: {ModelNames.QWEN_3_EMBEDDING_4B},
+    ModelRunners.VLLMForge_QWEN_EMBEDDING_0_6B: {ModelNames.QWEN_3_EMBEDDING_0_6B},
     ModelRunners.VLLMForge_LLAMA_70B: {ModelNames.LLAMA_3_1_70B},
     ModelRunners.VLLMForge_GEMMA4_31B: {ModelNames.GEMMA_4_31B_IT},
     ModelRunners.VLLMForge_QWEN_32B: {ModelNames.QWEN_3_32B},
@@ -293,6 +314,9 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.QWEN_EMBEDDING_8B: {ModelNames.QWEN_3_EMBEDDING_8B},
     ModelRunners.BGELargeEN_V1_5: {ModelNames.BGE_LARGE_EN_V1_5},
     ModelRunners.BGEM3: {ModelNames.BGE_M3},
+    # Shares the BGE_M3 name with the MEDIA runner above; must stay AFTER it so
+    # the name-only fallback still resolves to MEDIA. MODEL_RUNNER selects this.
+    ModelRunners.VLLMForge_BGE_M3: {ModelNames.BGE_M3},
     ModelRunners.VLLMForge: {
         ModelNames.LLAMA_3_2_3B,
         ModelNames.LLAMA_3_2_3B_INSTRUCT,
@@ -920,6 +944,14 @@ ModelConfigs = {
         "download_weights_from_service": False,
         "request_processing_timeout_seconds": 5000,
     },
+    (ModelRunners.TT_WAN_2_2_T2V_PRODIA, DeviceTypes.GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 5000,
+        "num_inference_steps": 3,
+    },
     (ModelRunners.TT_WAN_2_2_I2V_PRODIA, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
@@ -943,6 +975,13 @@ ModelConfigs = {
         "request_processing_timeout_seconds": 5000,
     },
     (ModelRunners.TT_WAN_2_2_I2V_LORA, DeviceTypes.BLACKHOLE_GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_WAN_2_2_I2V_LIGHTNING, DeviceTypes.BLACKHOLE_GALAXY): {
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
@@ -1099,6 +1138,45 @@ ModelConfigs = {
             "max_num_batched_tokens": 1024,
             "min_context_length": 32,
             "max_num_seqs": 1,
+        },
+    },
+    (ModelRunners.VLLMForge_QWEN_EMBEDDING, DeviceTypes.P300X2): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4.value,
+        "max_batch_size": 8,
+        "vllm": {
+            "model": SupportedModels.QWEN_3_EMBEDDING_4B.value,
+            "max_model_length": 128,
+            "max_num_batched_tokens": 1024,
+            "min_context_length": 32,
+            "max_num_seqs": 8,
+        },
+    },
+    (ModelRunners.VLLMForge_QWEN_EMBEDDING_0_6B, DeviceTypes.P300X2): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4.value,
+        "max_batch_size": 8,
+        "vllm": {
+            "model": SupportedModels.QWEN_3_EMBEDDING_0_6B.value,
+            "max_model_length": 128,
+            "max_num_batched_tokens": 1024,
+            "min_context_length": 32,
+            "max_num_seqs": 8,
+        },
+    },
+    (ModelRunners.VLLMForge_BGE_M3, DeviceTypes.P300X2): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4.value,
+        "max_batch_size": 8,
+        "vllm": {
+            "model": SupportedModels.BGE_M3.value,
+            "max_model_length": 128,
+            "max_num_batched_tokens": 1024,
+            "min_context_length": 32,
+            "max_num_seqs": 8,
         },
     },
     (ModelRunners.VLLMForge_LLAMA_70B, DeviceTypes.T3K): {

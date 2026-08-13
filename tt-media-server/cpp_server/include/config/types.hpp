@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include <cstdint>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -181,11 +180,5 @@ inline Model modelFromString(const std::string_view& v) {
   }
   throw std::invalid_argument("Invalid model: " + std::string(v));
 }
-
-enum class ResponseFormatType : uint8_t {
-  TEXT = 0,
-  JSON_OBJECT = 1,
-  JSON_SCHEMA = 2
-};
 
 }  // namespace tt::config
