@@ -51,18 +51,33 @@ class TestSubmitCustomDatasetJob:
         response = submit(
             train_dataset_path="/datasets/train.json",
             file_type="json",
+            template="alpaca",
         )
 
         assert response.status_code == 201
         request = mock_service.create_job.call_args.args[1]
         assert request.train_dataset_path == "/datasets/train.json"
         assert request.file_type == "json"
+        assert request.template == "alpaca"
 
     def test_rejects_a_custom_dataset_without_a_path(self, submit):
-        assert submit(file_type="json").status_code == 422
+        assert submit(file_type="json", template="alpaca").status_code == 422
 
     def test_rejects_a_custom_dataset_without_a_file_type(self, submit):
-        assert submit(train_dataset_path="/datasets/train.json").status_code == 422
+        assert (
+            submit(
+                train_dataset_path="/datasets/train.json", template="alpaca"
+            ).status_code
+            == 422
+        )
+
+    def test_rejects_a_custom_dataset_without_a_template(self, submit):
+        assert (
+            submit(
+                train_dataset_path="/datasets/train.json", file_type="json"
+            ).status_code
+            == 422
+        )
 
 
 class TestGetCatalog:

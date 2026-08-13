@@ -15,15 +15,10 @@ class TrainingRequest(BaseRequest):
     dataset_loader: str = DatasetLoaders.SST2.value
     dataset_max_sequence_length: int = 64
 
-    # Only read when dataset_loader is Custom. Paths are used as given.
-    # Validation is optional; without it the run reports training loss alone.
-    # file_type is the datasets.load_dataset loader name (e.g. "json", "jsonl").
-    # The column mapping names which dataset columns fill the prompt template's
-    # instruction, input and output slots, and can be omitted when they already
-    # carry those names.
     train_dataset_path: Optional[str] = None
     val_dataset_path: Optional[str] = None
     file_type: Optional[str] = None
+    template: Optional[str] = None
     column_mapping: Optional[dict[str, str]] = None
 
     @model_validator(mode="after")
@@ -35,6 +30,7 @@ class TrainingRequest(BaseRequest):
             for name, value in (
                 ("train_dataset_path", self.train_dataset_path),
                 ("file_type", self.file_type),
+                ("template", self.template),
             )
             if not value
         ]
@@ -47,8 +43,6 @@ class TrainingRequest(BaseRequest):
 
     batch_size: int = 4
     learning_rate: float = 2e-5
-    # torch.optim.AdamW's own default, which is what the training-lora runner
-    # ends up with since it only passes `lr`.
     weight_decay: float = Field(default=0.01, ge=0.0)
     num_epochs: int = 1
     val_steps_freq: int = 50

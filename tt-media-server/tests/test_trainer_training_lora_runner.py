@@ -2,6 +2,8 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
+import json
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -50,9 +52,22 @@ def _request(**overrides):
     return request
 
 
+def _write_json_dataset(path: Path, rows: list[dict]) -> str:
+    path.write_text(json.dumps(rows))
+    return str(path)
+
+
 @pytest.fixture
 def runner():
     return _build_runner(_settings())
+
+
+@pytest.fixture
+def alpaca_train_path(tmp_path):
+    return _write_json_dataset(
+        tmp_path / "train.json",
+        [{"instruction": "Say hi", "input": "", "output": "Hello"}],
+    )
 
 
 class _Loss:
@@ -179,6 +194,7 @@ class TestJobConfig:
                 train_dataset_path="/datasets/train.jsonl",
                 val_dataset_path="/datasets/val.jsonl",
                 file_type="jsonl",
+                template="alpaca",
                 column_mapping={"instruction": "prompt", "output": "response"},
             )
         )
@@ -199,6 +215,7 @@ class TestJobConfig:
                 dataset_loader=DatasetLoaders.CUSTOM.value,
                 train_dataset_path="/datasets/train.json",
                 file_type="json",
+                template="alpaca",
             )
         )
 
@@ -235,29 +252,118 @@ class TestValidate:
         with pytest.raises(ValueError, match="Unsupported dataset_loader"):
             runner._validate(_request(dataset_loader="nonexistent"))
 
-    def test_accepts_a_custom_dataset(self, runner):
+    def test_accepts_a_custom_dataset(self, runner, alpaca_train_path):
         runner._validate(
+            _request(
+                dataset_loader=DatasetLoaders.CUSTOM.value,
+                train_dataset_path=alpaca_train_path,
+                file_type="json",
+                template="alpaca",
+            )
+        )
+
+    def test_accepts_a_custom_dataset_with_column_mapping(self, runner, tmp_path):
+        train_path = _write_json_dataset(
+            tmp_path / "mapped_train.json",
+            [{"prompt": "Say hi", "response": "Hello"}],
+        )
+        runner._validate(
+            _request(
+                dataset_loader=DatasetLoaders.CUSTOM.value,
+                train_dataset_path=train_path,
+                file_type="json",
+                template="alpaca",
+                column_mapping={"instruction": "prompt", "output": "response"},
+            )
+        )
+
+    def test_rejects_unsupported_template(self, runner, alpaca_train_path):
+        with pytest.raises(ValueError, match="unsupported"):
+            runner._validate(
+                _request(
+                    dataset_loader=DatasetLoaders.CUSTOM.value,
+                    train_dataset_path=alpaca_train_path,
+                    file_type="json",
+                    template="chat",
+                )
+            )
+
+    def test_rejects_missing_required_columns(self, runner, tmp_path):
+        train_path = _write_json_dataset(
+            tmp_path / "incomplete.json",
+            [{"instruction": "Say hi"}],
+        )
+        with pytest.raises(ValueError, match="missing required keys"):
+            runner._validate(
+                _request(
+                    dataset_loader=DatasetLoaders.CUSTOM.value,
+                    train_dataset_path=train_path,
+                    file_type="json",
+                    template="alpaca",
+                )
+            )
+
+    def test_rejects_column_mapping_to_missing_dataset_columns(
+        self, runner, alpaca_train_path
+    ):
+        with pytest.raises(ValueError, match="non-existent dataset columns"):
+            runner._validate(
+                _request(
+                    dataset_loader=DatasetLoaders.CUSTOM.value,
+                    train_dataset_path=alpaca_train_path,
+                    file_type="json",
+                    template="alpaca",
+                    column_mapping={
+                        "instruction": "prompt",
+                        "output": "response",
+                    },
+                )
+            )
+
+    def test_rejects_val_dataset_with_incompatible_columns(
+        self, runner, tmp_path, alpaca_train_path
+    ):
+        val_path = _write_json_dataset(
+            tmp_path / "val.json",
+            [{"text": "no alpaca columns here"}],
+        )
+        with pytest.raises(ValueError, match="missing required keys"):
+            runner._validate(
+                _request(
+                    dataset_loader=DatasetLoaders.CUSTOM.value,
+                    train_dataset_path=alpaca_train_path,
+                    val_dataset_path=val_path,
+                    file_type="json",
+                    template="alpaca",
+                )
+            )
+
+
+class TestTrainingRequest:
+    def test_a_custom_dataset_requires_path_file_type_and_template(self):
+        with pytest.raises(ValueError, match="train_dataset_path"):
+            _request(
+                dataset_loader=DatasetLoaders.CUSTOM.value,
+                file_type="json",
+                template="alpaca",
+            )
+        with pytest.raises(ValueError, match="file_type"):
+            _request(
+                dataset_loader=DatasetLoaders.CUSTOM.value,
+                train_dataset_path="/datasets/train.json",
+                template="alpaca",
+            )
+        with pytest.raises(ValueError, match="template"):
             _request(
                 dataset_loader=DatasetLoaders.CUSTOM.value,
                 train_dataset_path="/datasets/train.json",
                 file_type="json",
             )
-        )
-
-
-class TestTrainingRequest:
-    def test_a_custom_dataset_requires_a_train_path_and_file_type(self):
-        with pytest.raises(ValueError, match="train_dataset_path"):
-            _request(dataset_loader=DatasetLoaders.CUSTOM.value, file_type="json")
-        with pytest.raises(ValueError, match="file_type"):
-            _request(
-                dataset_loader=DatasetLoaders.CUSTOM.value,
-                train_dataset_path="/datasets/train.json",
-            )
 
     def test_built_in_datasets_need_no_paths(self):
         assert _request().train_dataset_path is None
         assert _request().file_type is None
+        assert _request().template is None
 
 
 class TestRun:
