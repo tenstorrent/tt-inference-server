@@ -134,7 +134,7 @@ class JobMetricsCallback(JobCallback):
 
     def _record(self, trainer, name: str, value: float, log_type: str) -> None:
         self._logger.info(
-            f"{self._epoch_step_label(trainer)} | {name}: {value:.4f}",
+            f"{self._epoch_step_label(trainer)} | {name}: {value:.6f}",
             extra={"log_type": log_type, "step": trainer.global_step},
         )
         if self._request is None or self._request._training_metrics is None:
@@ -144,7 +144,7 @@ class JobMetricsCallback(JobCallback):
                 "global_step": trainer.global_step,
                 "epoch": trainer.epoch,
                 "metric_name": name,
-                "value": round(value, 4),
+                "value": round(value, 6),
                 "learning_rate": trainer.optimizer.param_groups[0]["lr"],
                 "timestamp": time.time(),
             }
@@ -204,9 +204,9 @@ class AdapterCheckpointCallback(JobCallback):
 
         metrics = {}
         if self._metrics.last_train_loss is not None:
-            metrics["train_loss"] = round(self._metrics.last_train_loss, 4)
+            metrics["train_loss"] = round(self._metrics.last_train_loss, 6)
         if self._metrics.last_val_loss is not None:
-            metrics["val_loss"] = round(self._metrics.last_val_loss, 4)
+            metrics["val_loss"] = round(self._metrics.last_val_loss, 6)
         self._request._training_checkpoints.append(
             {
                 "id": checkpoint_id,
@@ -231,22 +231,38 @@ class JobControlCallback(JobCallback):
         self.error = None
         self.stop_reason = None
 
+    def on_train_batch_start(self, trainer, batch, *args, **kwargs):
+        self._stop_if_cancelled(trainer)
+
+    def on_validation_batch_start(self, trainer, batch, *args, **kwargs):
+        self._stop_if_cancelled(trainer)
+
+    def on_validation_batch_end(self, trainer, batch, loss, *args, **kwargs):
+        self._stop_if_cancelled(trainer)
+
     def on_train_batch_end(self, trainer, *args, **kwargs):
         request = self._request
         # Checked per micro-batch, so cancellation stays responsive even when
         # `global_step` only advances every `gradient_accumulation_steps` batches.
-        if request._cancel_event is not None and request._cancel_event.is_set():
-            self._stop(
-                trainer,
-                f"Cancellation requested at step {trainer.global_step}, stopping training. "
-                f"Directory containing checkpoints: {request._output_model_path}",
-            )
+        self._stop_if_cancelled(trainer)
         if request.max_steps > 0 and trainer.global_step >= request.max_steps:
             self._stop(
                 trainer,
                 f"Reached max_steps={request.max_steps} at step {trainer.global_step}, "
                 "stopping training.",
             )
+
+    def _stop_if_cancelled(self, trainer) -> None:
+        request = self._request
+        if request is None or request._cancel_event is None:
+            return
+        if not request._cancel_event.is_set():
+            return
+        self._stop(
+            trainer,
+            f"Job cancelled at step {trainer.global_step}. "
+            f"Directory containing checkpoints: {request._output_model_path}",
+        )
 
     def _stop(self, trainer, reason: str) -> None:
         self.stop_reason = reason
@@ -260,7 +276,7 @@ class JobControlCallback(JobCallback):
             return
         self.error = exception
         self._logger.error(
-            f"Training failed with error: {exception}",
+            f"Job failed at step {trainer.global_step}: {exception}",
             extra={"log_type": "error", "step": trainer.global_step},
         )
         self._logger.error(

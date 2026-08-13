@@ -496,8 +496,24 @@ class TestJobControlCallback:
         request._cancel_event.is_set.return_value = True
         callback = self._callback(request)
 
-        with pytest.raises(StopTraining, match="Cancellation requested"):
+        with pytest.raises(StopTraining, match="Job cancelled"):
             callback.on_train_batch_end(_fake_trainer())
+
+    def test_stops_on_cancel_during_validation(self):
+        from tt_model_runners.forge_training_runners.blacksmith_callbacks import (
+            StopTraining,
+        )
+
+        request = _request(max_steps=0)
+        request._cancel_event = MagicMock()
+        request._cancel_event.is_set.return_value = True
+        callback = self._callback(request)
+        trainer = _fake_trainer()
+
+        with pytest.raises(StopTraining, match="Job cancelled"):
+            callback.on_validation_batch_end(trainer, batch=None, loss=None)
+        callback._logger.info.assert_called()
+        assert "Job cancelled at step 0" in callback._logger.info.call_args.args[0]
 
     def test_stop_is_not_recorded_as_an_error(self):
         from tt_model_runners.forge_training_runners.blacksmith_callbacks import (
@@ -519,6 +535,9 @@ class TestJobControlCallback:
 
         callback.on_error(_fake_trainer(), boom)
         assert callback.error is boom
+        error_messages = [call.args[0] for call in callback._logger.error.call_args_list]
+        assert any(msg.startswith("Job failed at step 0: boom") for msg in error_messages)
+        assert any("Full traceback:" in msg for msg in error_messages)
 
 
 class TestJobMetricsCallback:
@@ -585,7 +604,7 @@ class TestJobMetricsCallback:
             if "train_loss" in call.args[0]
         ]
         assert loss_messages == [
-            "Epoch 1/3 | Step 2 | train_loss: 2.0000",
+            "Epoch 1/3 | Step 2 | train_loss: 2.000000",
         ]
 
     def test_logs_validation_batch_progress_without_loss(self):
@@ -606,7 +625,7 @@ class TestJobMetricsCallback:
             "first batch may take several minutes to compile",
             "Epoch 1/2 | Step 10 | Validation batch 1/2",
             "Epoch 1/2 | Step 10 | Validation batch 2/2",
-            "Epoch 1/2 | Step 10 | val_loss: 1.5000",
+            "Epoch 1/2 | Step 10 | val_loss: 1.500000",
         ]
         assert [m["metric_name"] for m in request._training_metrics] == ["val_loss"]
 
