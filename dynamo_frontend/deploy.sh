@@ -125,6 +125,12 @@ LLM_DEVICE_BACKEND, HF_TOKEN, and perf knobs (ROUTER_MODE, DYN_TOKENIZER,
 RAYON_NUM_THREADS, DYN_RUNTIME_*, RUST_LOG, DYN_TX_TRACE,
 DYN_ENABLE_ANTHROPIC_API) are read from the environment.
 
+Sentry distributed tracing: set SENTRY_DSN (plus optional SENTRY_ENVIRONMENT,
+SENTRY_RELEASE, SENTRY_TRACES_SAMPLE_RATE, SENTRY_DEBUG) to enable tracing in
+the cpp_server workers. The frontend runs with DYN_LOGGING_JSONL=1 (JSONL
+logs), which Dynamo requires to propagate traceparent to the workers; set
+DYN_LOGGING_JSONL=0 to get pretty logs back at the cost of trace propagation.
+
 Monitoring is enabled by default and uses tt-media-server/monitoring/docker-compose.yml.
 Override SERVER_TARGET/SERVER_SERVICE/GATEWAY_TARGET/GF_HOME_DASHBOARD in the
 environment if you want Prometheus to scrape a different container or dashboard.
@@ -256,6 +262,16 @@ case "$HF_MODEL_ID" in
     *)         WORKER_MODEL_ENV+=(-e USE_DEEPSEEK_MD_FORMAT=1 -e BLAZE_SOCKET_DESCRIPTOR_PREFIX=deepseek) ;;
 esac
 
+# Sentry distributed tracing (opt-in via SENTRY_DSN) for cpp_server workers.
+SENTRY_ENV=()
+if [[ -n "${SENTRY_DSN:-}" ]]; then
+    SENTRY_ENV+=(-e SENTRY_DSN="$SENTRY_DSN")
+    [[ -n "${SENTRY_ENVIRONMENT:-}" ]]        && SENTRY_ENV+=(-e SENTRY_ENVIRONMENT="$SENTRY_ENVIRONMENT")
+    [[ -n "${SENTRY_RELEASE:-}" ]]            && SENTRY_ENV+=(-e SENTRY_RELEASE="$SENTRY_RELEASE")
+    [[ -n "${SENTRY_TRACES_SAMPLE_RATE:-}" ]] && SENTRY_ENV+=(-e SENTRY_TRACES_SAMPLE_RATE="$SENTRY_TRACES_SAMPLE_RATE")
+    [[ -n "${SENTRY_DEBUG:-}" ]]              && SENTRY_ENV+=(-e SENTRY_DEBUG="$SENTRY_DEBUG")
+fi
+
 prefill_worker_name() {
     local idx="$1"
     if [[ "$idx" == "0" ]]; then
@@ -285,6 +301,7 @@ start_prefill_worker() {
         -e LLM_MODE=prefill \
         -e DEVICE_IDS="$DEVICE_IDS" \
         "${WORKER_MODEL_ENV[@]}" \
+        "${SENTRY_ENV[@]}" \
         -e MAX_SESSIONS_COUNT=128 -e TT_LOG_LEVEL=debug -e USE_FAST_MODE=1 \
         "$@" \
         "$WORKER_IMAGE" \
@@ -381,6 +398,7 @@ docker run -d --name "$WORKER_NAME" --network "$NETWORK_NAME" --shm-size=2g \
     -e DEVICE_IDS="$DEVICE_IDS" \
     "${WORKER_ROUTING_ENV[@]}" \
     "${WORKER_MODEL_ENV[@]}" \
+    "${SENTRY_ENV[@]}" \
     -e MAX_SESSIONS_COUNT=128 -e TT_LOG_LEVEL=debug -e USE_FAST_MODE=1 \
     -e MIN_TOKENS_TO_COPY="${MIN_TOKENS_TO_COPY:-1024}" \
     -e MOCK_PREFILL_SLEEP_MS="${MOCK_PREFILL_SLEEP_MS:-0}" \
@@ -466,6 +484,7 @@ docker run -d --name "$FRONTEND_NAME" --network "$NETWORK_NAME" -p "${FRONTEND_H
     -e DYN_DEBUG_PERF="${DYN_DEBUG_PERF:-0}" \
     -e DYN_ENABLE_ANTHROPIC_API="${DYN_ENABLE_ANTHROPIC_API:-true}" \
     -e ROUTER_MODE="${ROUTER_MODE:-kv}" \
+    -e DYN_LOGGING_JSONL="${DYN_LOGGING_JSONL:-1}" \
     "${FRONTEND_EXTRA_ENV[@]}" \
     -e RUST_LOG="${RUST_LOG:-}" \
     "$FRONTEND_IMAGE" >/dev/null

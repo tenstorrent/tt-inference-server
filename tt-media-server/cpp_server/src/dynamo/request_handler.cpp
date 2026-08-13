@@ -25,10 +25,44 @@
 #include "services/llm_pipeline.hpp"
 #include "services/session_manager.hpp"
 #include "sockets/socket_messages.hpp"
+#include "telemetry/sentry_tracing.hpp"
 #include "utils/logger.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 
 namespace tt::dynamo {
+
+namespace {
+
+/// One Sentry transaction per Dynamo generate request. The name/op encode
+/// the server role so prefill and decode hops of one disaggregated request
+/// show up as distinct transactions inside the same distributed trace.
+std::shared_ptr<tt::telemetry::Transaction> startGenerateTransaction(
+    const GenerateRequest& dynReq, const std::string& requestId) {
+  const auto mode = tt::config::llmMode();
+  const std::string modeTag{tt::config::toString(mode)};
+  std::string name = "generate";
+  std::string op = "llm.generate";
+  if (mode == tt::config::LLMMode::PREFILL_ONLY) {
+    name = "prefill/generate";
+    op = "llm.prefill";
+  } else if (mode == tt::config::LLMMode::DECODE_ONLY) {
+    name = "decode/generate";
+    op = "llm.decode";
+  }
+  auto tx = std::make_shared<tt::telemetry::Transaction>(
+      tt::telemetry::startTransaction(
+          name, op, tt::telemetry::traceparentFromHeaders(dynReq.headers)));
+  tx->setTag("llm.mode", modeTag);
+  if (!requestId.empty()) tx->setTag("dynamo.request_id", requestId);
+  if (!dynReq.model.empty()) tx->setTag("llm.model", dynReq.model);
+  tx->setData("tokens.prompt", static_cast<int64_t>(dynReq.token_ids.size()));
+  if (dynReq.max_tokens.has_value()) {
+    tx->setData("llm.max_tokens", static_cast<int64_t>(*dynReq.max_tokens));
+  }
+  return tx;
+}
+
+}  // namespace
 
 DynamoRequestHandler::DynamoRequestHandler(
     std::shared_ptr<services::LLMPipeline> pipeline,
@@ -49,8 +83,14 @@ void DynamoRequestHandler::handle(const GenerateRequest& dynReq,
   const std::string probeId = dynReq.raw.get("request_id", "").asString();
   auto firstChunkSeen = std::make_shared<std::atomic<bool>>(false);
 
+  auto tx = startGenerateTransaction(dynReq, probeId);
+
   trantor::EventLoop* loop = pool->getNextLoop();
   auto req = buildLLMRequestFromGenerateRequest(dynReq);
+  // Hand this transaction's trace context to the request so the
+  // disaggregated decode -> prefill ZMQ hop continues the same trace.
+  // Empty when tracing is off or the request carried no traceparent.
+  req->traceparentHeader = tx->traceparent();
 
   // Reasoning/usage accounting for the Dynamo path. The worker doesn't decode
   // or run the response writer here (the frontend detokenizes), so we count
@@ -95,10 +135,17 @@ void DynamoRequestHandler::handle(const GenerateRequest& dynReq,
   auto writer = DynamoStreamWriter::create(loop, connInfo, probeId, cancelFn);
   writer->connect();
 
-  auto sendChunk = [writer](const TokenChunk& chunk) {
+  // Every exit funnels through sendChunk/signalDone: an error chunk finishes
+  // the transaction with an error status, the end-of-stream finishes it ok
+  // (idempotent — whichever happens first wins).
+  auto sendChunk = [writer, tx](const TokenChunk& chunk) {
+    if (chunk.error.has_value()) tx->finishError(*chunk.error);
     return writer->sendChunk(chunk);
   };
-  auto signalDone = [writer]() { writer->finalize(); };
+  auto signalDone = [writer, tx]() {
+    tx->finish();
+    writer->finalize();
+  };
 
   auto sendErrorAndDone = [sendChunk, signalDone](
                               const std::string& message = "backend error",
@@ -323,14 +370,15 @@ void DynamoRequestHandler::handle(const GenerateRequest& dynReq,
   pipeline->runStreamingRequest(
       req, loop,
       [pipeline, req, sendChunk, signalDone, recvT, firstChunkSeen, probeId,
-       usage, dispatchStart](services::LLMPipeline::SessionInfo,
-                             std::shared_ptr<tt::domain::Session> sessionPtr) {
+       usage, dispatchStart, tx](services::LLMPipeline::SessionInfo,
+                                 std::shared_ptr<tt::domain::Session>
+                                     sessionPtr) {
         services::LLMPipeline::StreamCallback cb = [pipeline, req, sessionPtr,
                                                     sendChunk, signalDone,
                                                     recvT, firstChunkSeen,
                                                     probeId,
                                                     tDispatch = *dispatchStart,
-                                                    usage](
+                                                    usage, tx](
                                                        const tt::domain::llm::
                                                            LLMStreamChunk&
                                                                chunk,
@@ -405,6 +453,10 @@ void DynamoRequestHandler::handle(const GenerateRequest& dynReq,
               du.reasoning_tokens = usage->reasoning;
             }
             out.completion_usage = du;
+            tx->setData("tokens.completion",
+                        static_cast<int64_t>(du.completion_tokens));
+            tx->setData("tokens.cached",
+                        static_cast<int64_t>(du.cached_tokens.value_or(0)));
           }
 
           const bool sent = sendChunk(out);

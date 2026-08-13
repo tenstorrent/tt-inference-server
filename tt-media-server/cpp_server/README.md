@@ -41,6 +41,34 @@ Solution approach:
 - Structured logging with request-ID correlation across HTTP → worker → device.
 - Production metrics (tokens/sec, queue depth, latency histograms, device health).
 - Health/liveness endpoints that surface meaningful diagnostics, not just "alive."
+- Sentry distributed tracing of Dynamo generate requests (see below).
+
+#### Sentry distributed tracing
+
+A request arriving over the Dynamo transport with a W3C `traceparent` header
+continues that trace with a single Sentry transaction per server role:
+`decode/generate` and `prefill/generate` in disaggregated mode, `generate`
+otherwise. A request without a (valid) `traceparent` publishes nothing — the
+server never starts a trace of its own. On the decode → prefill ZMQ hop the
+decode transaction's traceparent rides inside `PrefillRequestMessage`, so
+both halves of a disaggregated request appear in one trace.
+
+Configuration (tracing is disabled unless `SENTRY_DSN` is set):
+
+| Env var | Meaning | Default |
+|---|---|---|
+| `SENTRY_DSN` | Sentry project DSN; enables tracing | unset (disabled) |
+| `SENTRY_ENVIRONMENT` | Sentry environment tag | `development` |
+| `SENTRY_RELEASE` | Release override | server version |
+| `SENTRY_TRACES_SAMPLE_RATE` | Transaction sample rate 0.0–1.0 | `1.0` |
+| `SENTRY_DEBUG` | `1` logs SDK activity to stderr | off |
+
+The Dynamo frontend only injects `traceparent` towards the worker when its
+OTel layers are installed, which requires running it with
+`DYN_LOGGING_JSONL=1` (default in `dynamo_frontend/Dockerfile.frontend`,
+`deploy.sh`, and `scripts/start_dynamo.sh`; the frontend logs become JSON
+lines). The frontend does not forward `baggage` / `sentry-trace` headers, so
+the server deliberately handles only `traceparent`.
 
 ### 4. Extensibility
 

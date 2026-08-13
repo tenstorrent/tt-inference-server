@@ -41,10 +41,15 @@ RUN chmod +x /app/patch_owned_by.sh && /app/patch_owned_by.sh
 # Environment for Dynamo (all overridable at runtime via -e).
 # Defaults to etcd-backed discovery; ETCD_ENDPOINTS is the var Dynamo's
 # Python frontend reads (see cpp_server/scripts/start_dynamo.sh).
+# DYN_LOGGING_JSONL=1 installs Dynamo's OTel logging/tracing layers, which is
+# what makes the frontend inject a W3C `traceparent` header towards the
+# worker — required for the cpp_server's Sentry distributed tracing. Side
+# effect: frontend logs are emitted as JSON lines instead of pretty text.
 ENV DYN_DISCOVERY_BACKEND=etcd \
     ETCD_ENDPOINTS=http://etcd:2379 \
     DYN_REQUEST_PLANE=tcp \
     DYN_EVENT_PLANE=zmq \
+    DYN_LOGGING_JSONL=1 \
     MODEL_NAME=mock-model \
     HTTP_PORT=8000 \
     VIRTUAL_ENV=/app/.venv \
