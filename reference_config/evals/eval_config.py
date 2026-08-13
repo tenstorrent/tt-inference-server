@@ -4597,65 +4597,12 @@ _eval_config_list = [
             #         EvalLimitMode.SMOKE_TEST: 5,
             #     },
             # ),
-            # EvalTask(
-            #     task_name="tau3_bench_banking",
-            #     workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
-            #     score=EvalTaskScore(
-            #         published_score=None,
-            #         published_score_ref=None,
-            #         gpu_reference_score=None,
-            #         gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4903",
-            #         score_func=score_task_single_key,
-            #         score_func_kwargs={
-            #             "result_keys": ["accuracy"],
-            #             "unit": "percent",
-            #         },
-            #         tolerance=0.10,
-            #     ),
-            #     agentic_eval_config=TerminalBenchEvalConfig(
-            #         dataset="sierra-research/tau3-bench",
-            #         agent="tau3_llm_agent",
-            #         agent_import_path="adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent",
-            #         task_names=["sierra-research/tau3-bench__tau3-banking_knowledge-*"],
-            #         n_concurrent_trials=4,
-            #         n_attempts=1,
-            #         n_tasks=97,
-            #         override_cpus=4,
-            #         override_memory_mb=8 * 1024,
-            #         agent_timeout_sec=3600,
-            #         agent_kwargs={
-            #             "tau2_trial_index": 0,
-            #             "temperature": 1.0,
-            #             "max_steps": 200,
-            #             "tool_timeout_sec": 900,
-            #             "read_timeout_sec": 120,
-            #         },
-            #         environment_env={
-            #             "TAU2_USER_MODEL": "openai/openai/gpt-oss-120b",
-            #             **_openai_creds_env(),
-            #         },
-            #         verifier_env={
-            #             "TAU2_NL_ASSERTIONS_MODEL": "openai/openai/gpt-oss-120b",
-            #         },
-            #         task_names_map={
-            #             EvalLimitMode.CI_NIGHTLY: [
-            #                 "sierra-research/tau3-bench__tau3-banking_knowledge-task-031",
-            #                 "sierra-research/tau3-bench__tau3-banking_knowledge-task-032",
-            #                 "sierra-research/tau3-bench__tau3-banking_knowledge-task-052",
-            #                 "sierra-research/tau3-bench__tau3-banking_knowledge-task-002",
-            #             ],
-            #         },
-            #     ),
-            #     limit_samples_map={
-            #         EvalLimitMode.SMOKE_TEST: 3,
-            #     },
-            # ),
             EvalTask(
-                task_name="swe_bench_verified",
+                task_name="tau3_bench_banking",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
-                    published_score=62.4,  # SWE-Bench Verified, reasoning=high
-                    published_score_ref="https://cdn.openai.com/pdf/419b6906-9da6-406c-a19d-1bb078ac7637/oai_gpt-oss_model_card.pdf",
+                    published_score=None,
+                    published_score_ref=None,
                     gpu_reference_score=None,
                     gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4903",
                     score_func=score_task_single_key,
@@ -4663,60 +4610,39 @@ _eval_config_list = [
                         "result_keys": ["accuracy"],
                         "unit": "percent",
                     },
+                    tolerance=0.10,
                 ),
-                agentic_eval_config=HarborEvalConfig(
-                    dataset="swebench-verified",
-                    agent="mini-swe-agent",
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="sierra-research/tau3-bench",
+                    agent="tau3_llm_agent",
+                    agent_import_path="adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent",
+                    task_names=["sierra-research/tau3-bench__tau3-banking_knowledge-*"],
                     n_concurrent_trials=4,
                     n_attempts=1,
-                    n_tasks=None,
-                    exclude_task_names=SWEBENCH_VERIFIED_KNOWN_BAD_TASKS,
+                    n_tasks=97,
                     override_cpus=4,
                     override_memory_mb=8 * 1024,
-                    agent_timeout_sec=2 * 60 * 60,
-                    # Fresh pods install uv, mini-swe-agent, and proxy extras.
-                    # Allow 18 minutes instead of Harbor's 6-minute default.
-                    agent_setup_timeout_multiplier=3.0,
+                    agent_timeout_sec=3600,
                     agent_kwargs={
-                        "version": MINI_SWE_AGENT_VERSION,
-                        # Keep individual tool-call turns bounded on the
-                        # low-throughput Galaxy deployment.
-                        "max_tokens": 16 * 1024,
-                        # reasoning_effort rides in extra_body, NOT in Harbor's
-                        # `reasoning_effort` agent kwarg: for an `openai/`
-                        # model name that kwarg switches mini-swe-agent to
-                        # model_class=litellm_response, i.e. litellm.responses()
-                        # against /v1/responses -- which our vLLM does not
-                        # serve. extra_body keeps it on /v1/chat/completions,
-                        # matching what the pre-Harbor runs sent.
-                        "config": {
-                            "model": {
-                                "model_kwargs": {
-                                    "temperature": 1.0,
-                                    "top_p": 0.95,
-                                    "extra_body": {
-                                        "reasoning_effort": "medium",
-                                    },
-                                }
-                            }
-                        },
+                        "tau2_trial_index": 0,
+                        "temperature": 1.0,
+                        "max_steps": 200,
+                        "tool_timeout_sec": 900,
+                        "read_timeout_sec": 120,
+                    },
+                    environment_env={
+                        "TAU2_USER_MODEL": "openai/openai/gpt-oss-120b",
+                        **_openai_creds_env(),
+                    },
+                    verifier_env={
+                        "TAU2_NL_ASSERTIONS_MODEL": "openai/openai/gpt-oss-120b",
                     },
                     task_names_map={
-                        # TEMP: smoke subset pinned to SWE-bench Verified
-                        # "<15 min fix" instances (OpenAI human difficulty
-                        # labels) so Harbor/k8s plumbing can be validated on
-                        # a slow gpt-oss-120b deployment without a full sweep.
-                        EvalLimitMode.SMOKE_TEST: [
-                            "django__django-10880",
-                            "django__django-10914",
-                            "django__django-11299",
-                        ],
                         EvalLimitMode.CI_NIGHTLY: [
-                            "django__django-12143",
-                            "pytest-dev__pytest-5262",
-                            "django__django-14672",
-                            "sympy__sympy-13551",
-                            "sphinx-doc__sphinx-9281",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-031",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-032",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-052",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-002",
                         ],
                     },
                 ),
@@ -4724,6 +4650,80 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 3,
                 },
             ),
+            # EvalTask(
+            #     task_name="swe_bench_verified",
+            #     workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+            #     score=EvalTaskScore(
+            #         published_score=62.4,  # SWE-Bench Verified, reasoning=high
+            #         published_score_ref="https://cdn.openai.com/pdf/419b6906-9da6-406c-a19d-1bb078ac7637/oai_gpt-oss_model_card.pdf",
+            #         gpu_reference_score=None,
+            #         gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4903",
+            #         score_func=score_task_single_key,
+            #         score_func_kwargs={
+            #             "result_keys": ["accuracy"],
+            #             "unit": "percent",
+            #         },
+            #     ),
+            #     agentic_eval_config=HarborEvalConfig(
+            #         dataset="swebench-verified",
+            #         agent="mini-swe-agent",
+            #         n_concurrent_trials=4,
+            #         n_attempts=1,
+            #         n_tasks=None,
+            #         exclude_task_names=SWEBENCH_VERIFIED_KNOWN_BAD_TASKS,
+            #         override_cpus=4,
+            #         override_memory_mb=8 * 1024,
+            #         agent_timeout_sec=2 * 60 * 60,
+            #         # Fresh pods install uv, mini-swe-agent, and proxy extras.
+            #         # Allow 18 minutes instead of Harbor's 6-minute default.
+            #         agent_setup_timeout_multiplier=3.0,
+            #         agent_kwargs={
+            #             "version": MINI_SWE_AGENT_VERSION,
+            #             # Keep individual tool-call turns bounded on the
+            #             # low-throughput Galaxy deployment.
+            #             "max_tokens": 16 * 1024,
+            #             # reasoning_effort rides in extra_body, NOT in Harbor's
+            #             # `reasoning_effort` agent kwarg: for an `openai/`
+            #             # model name that kwarg switches mini-swe-agent to
+            #             # model_class=litellm_response, i.e. litellm.responses()
+            #             # against /v1/responses -- which our vLLM does not
+            #             # serve. extra_body keeps it on /v1/chat/completions,
+            #             # matching what the pre-Harbor runs sent.
+            #             "config": {
+            #                 "model": {
+            #                     "model_kwargs": {
+            #                         "temperature": 1.0,
+            #                         "top_p": 0.95,
+            #                         "extra_body": {
+            #                             "reasoning_effort": "medium",
+            #                         },
+            #                     }
+            #                 }
+            #             },
+            #         },
+            #         task_names_map={
+            #             # TEMP: smoke subset pinned to SWE-bench Verified
+            #             # "<15 min fix" instances (OpenAI human difficulty
+            #             # labels) so Harbor/k8s plumbing can be validated on
+            #             # a slow gpt-oss-120b deployment without a full sweep.
+            #             EvalLimitMode.SMOKE_TEST: [
+            #                 "django__django-10880",
+            #                 "django__django-10914",
+            #                 "django__django-11299",
+            #             ],
+            #             EvalLimitMode.CI_NIGHTLY: [
+            #                 "django__django-12143",
+            #                 "pytest-dev__pytest-5262",
+            #                 "django__django-14672",
+            #                 "sympy__sympy-13551",
+            #                 "sphinx-doc__sphinx-9281",
+            #             ],
+            #         },
+            #     ),
+            #     limit_samples_map={
+            #         EvalLimitMode.SMOKE_TEST: 3,
+            #     },
+            # ),
         ],
     ),
     EvalConfig(
