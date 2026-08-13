@@ -1304,7 +1304,7 @@ templates:
         MESH_DEVICE: "P150x4"
       override_tt_config:
         fabric_config: FABRIC_1D
-        trace_region_size: 120000000
+        trace_region_size: 402653184
   status: EXPERIMENTAL
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
