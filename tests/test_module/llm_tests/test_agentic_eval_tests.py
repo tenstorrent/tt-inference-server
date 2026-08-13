@@ -16,6 +16,8 @@ import pytest
 
 from llm_module import DriverContext, ServerConnection
 from llm_module.drivers.agentic import (
+    SWEbenchAgenticDriver,
+    TerminalBenchAgenticDriver,
     build_swebench_config,
     build_terminal_bench_config,
     resolve_instance_ids,
@@ -801,6 +803,56 @@ class TestAgenticBenchmarkSelection:
         tasks = self._tasks()
         selected = _filter_agentic_tasks_by_benchmark(tasks, "tb2.1")
         assert [t.task_name for t in selected] == ["terminal_bench_2_1"]
+
+
+class TestAgenticRunTimestamp:
+    """The harnesses (harbor job, sweagent output) refuse to start a new run in
+    an existing folder, so each run stamps its per-task folder to stay
+    collision-free; the driver's result_path must point at the stamped folder."""
+
+    STAMP = "20260813T120000"
+
+    def test_terminal_bench_config_stamps_job_folder(self):
+        cfg = build_terminal_bench_config(
+            _terminal_task(), _server(), _driver_context(), n_tasks=1,
+            run_stamp=self.STAMP,
+        )
+        # jobs_dir stays the shared agentic/ parent; the job folder is stamped.
+        assert cfg.jobs_dir == Path("/tmp/out/eval_Qwen__Qwen3.6-27B/agentic")
+        assert cfg.task_name == f"terminal_bench_2_{self.STAMP}"
+        assert cfg.jobs_dir / cfg.task_name == Path(
+            f"/tmp/out/eval_Qwen__Qwen3.6-27B/agentic/terminal_bench_2_{self.STAMP}"
+        )
+
+    def test_swebench_config_stamps_output_dir(self):
+        cfg = build_swebench_config(
+            _swebench_task(), _server(), _driver_context(), n_tasks=1,
+            run_stamp=self.STAMP,
+        )
+        assert cfg.output_dir == Path(
+            f"/tmp/out/eval_Qwen__Qwen3.6-27B/agentic/swe_bench_verified_{self.STAMP}"
+        )
+
+    def test_terminal_driver_result_path_matches_stamped_folder(self):
+        driver = TerminalBenchAgenticDriver(_terminal_task())
+        driver._run_stamp = self.STAMP
+        assert driver.result_path(_server(), _driver_context()) == Path(
+            f"/tmp/out/eval_Qwen__Qwen3.6-27B/agentic/terminal_bench_2_{self.STAMP}/result.json"
+        )
+
+    def test_swebench_driver_result_path_matches_stamped_folder(self):
+        driver = SWEbenchAgenticDriver(_swebench_task())
+        driver._run_stamp = self.STAMP
+        assert driver.result_path(_server(), _driver_context()) == Path(
+            f"/tmp/out/eval_Qwen__Qwen3.6-27B/agentic/swe_bench_verified_{self.STAMP}/result.json"
+        )
+
+    def test_no_stamp_preserves_legacy_layout(self):
+        cfg = build_terminal_bench_config(
+            _terminal_task(), _server(), _driver_context(), n_tasks=1
+        )
+        assert cfg.task_name == "terminal_bench_2"
+        assert cfg.jobs_dir == Path("/tmp/out/eval_Qwen__Qwen3.6-27B/agentic")
 
 
 class TestAgenticBridge:

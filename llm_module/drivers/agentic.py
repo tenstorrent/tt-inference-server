@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime
 from pathlib import Path
 from typing import Any, List, Optional
 
@@ -31,6 +32,10 @@ class AgenticEvalDriver(LLMDriver):
         self.task = task
         self.runtime_config = runtime_config
         self.venv_python = _agentic_venv_python()
+        # Set at the start of run(); stamped onto the harness job/output folder
+        # so a re-run into the same logs dir does not collide with the previous
+        # run's folder (harbor/sweagent refuse to start in an existing one).
+        self._run_stamp: Optional[str] = None
         self._parser = AgenticEvalParser(
             task_name=task.task_name,
             score=task.score,
@@ -43,6 +48,7 @@ class AgenticEvalDriver(LLMDriver):
             server.model,
             self.task,
             release_layout=context.agentic_release_layout,
+            run_stamp=self._run_stamp,
         )
         return output_dir / "result.json"
 
@@ -88,6 +94,7 @@ class SWEbenchAgenticDriver(AgenticEvalDriver):
                 self.task.task_name,
             )
             return DriverResult(return_code=0, raw=None, raw_path=None)
+        self._run_stamp = _run_timestamp()
         run_config = build_swebench_config(
             self.task,
             server,
@@ -95,6 +102,7 @@ class SWEbenchAgenticDriver(AgenticEvalDriver):
             runtime_config=self.runtime_config,
             n_tasks=n_tasks,
             venv_python=self.venv_python,
+            run_stamp=self._run_stamp,
         )
         rc = run_swebench(run_config)
         return self._load_result(rc, self.result_path(server, context))
@@ -116,6 +124,7 @@ class TerminalBenchAgenticDriver(AgenticEvalDriver):
                 self.task.task_name,
             )
             return DriverResult(return_code=0, raw=None, raw_path=None)
+        self._run_stamp = _run_timestamp()
         run_config = build_terminal_bench_config(
             self.task,
             server,
@@ -123,6 +132,7 @@ class TerminalBenchAgenticDriver(AgenticEvalDriver):
             runtime_config=self.runtime_config,
             n_tasks=n_tasks,
             venv_python=self.venv_python,
+            run_stamp=self._run_stamp,
         )
         rc = run_terminal_bench(run_config)
         return self._load_result(rc, self.result_path(server, context))
@@ -166,6 +176,7 @@ def build_swebench_config(
     runtime_config: Any = None,
     n_tasks: Optional[int] = None,
     venv_python: Optional[Path] = None,
+    run_stamp: Optional[str] = None,
 ) -> SWEbenchRunConfig:
     cfg = task.swebench_eval_config
     return SWEbenchRunConfig(
@@ -181,6 +192,7 @@ def build_swebench_config(
             server.model,
             task,
             release_layout=context.agentic_release_layout,
+            run_stamp=run_stamp,
         ),
         sweagent_config=cfg.sweagent_config,
         mini_config=cfg.mini_config,
@@ -211,20 +223,26 @@ def build_terminal_bench_config(
     runtime_config: Any = None,
     n_tasks: Optional[int] = None,
     venv_python: Optional[Path] = None,
+    run_stamp: Optional[str] = None,
 ) -> TerminalBenchRunConfig:
     cfg = task.agentic_eval_config
-    jobs_dir = _agentic_output_dir(
+    # Harbor creates its job folder as ``jobs_dir / job_name`` and refuses to
+    # start a new run in an existing folder, so stamp the per-task folder name
+    # (job_name) to keep re-runs collision-free. ``jobs_dir`` stays the shared
+    # ``agentic/`` parent.
+    task_output_dir = _agentic_output_dir(
         context.output_dir,
         server.model,
         task,
         release_layout=context.agentic_release_layout,
-    ).parent
+        run_stamp=run_stamp,
+    )
     return TerminalBenchRunConfig(
-        task_name=task.task_name,
+        task_name=task_output_dir.name,
         dataset=cfg.dataset,
         agent=cfg.agent,
         model_name=cfg.model or f"openai/{server.model}",
-        jobs_dir=jobs_dir,
+        jobs_dir=task_output_dir.parent,
         api_base=f"{server.url_with_port}/v1",
         n_concurrent_trials=cfg.n_concurrent_trials,
         n_attempts=cfg.n_attempts,
@@ -292,21 +310,33 @@ def _get_limit_mode(runtime_config: Any = None) -> Optional[EvalLimitMode]:
     return EvalLimitMode.from_string(runtime_config.limit_samples_mode)
 
 
+def _run_timestamp() -> str:
+    """Filesystem-safe per-run stamp, e.g. ``20260813T120000``."""
+    return datetime.now().strftime("%Y%m%dT%H%M%S")
+
+
 def _agentic_output_dir(
     output_root: Path,
     model_id: str,
     task: Any,
     *,
     release_layout: bool = False,
+    run_stamp: Optional[str] = None,
 ) -> Path:
     safe_model_id = model_id.replace("/", "__")
+    # Stamp the per-task folder so a re-run into the same logs dir gets a fresh
+    # folder; the harnesses (harbor job, sweagent output) refuse to start in an
+    # existing one.
+    task_dir = (
+        task.task_name if not run_stamp else f"{task.task_name}_{run_stamp}"
+    )
     if release_layout:
         # release run: group all agentic results under a single top-level
         # ``agentic/`` dir (sibling of ``llm/`` / ``prefix_cache/``) so the
         # tree mirrors the LLM layout: agentic/eval_<hf>/<task>.
-        return Path(output_root) / "agentic" / f"eval_{safe_model_id}" / task.task_name
+        return Path(output_root) / "agentic" / f"eval_{safe_model_id}" / task_dir
     # standalone agentic run: eval_<hf>/agentic/<task>.
-    return Path(output_root) / f"eval_{safe_model_id}" / "agentic" / task.task_name
+    return Path(output_root) / f"eval_{safe_model_id}" / "agentic" / task_dir
 
 
 __all__ = [
