@@ -18,7 +18,7 @@ What is derived, and what must be supplied
 ------------------------------------------
 
 **Derived** from the benchmark reports, because the mapping is exact: every graded
-point's targets (from its own ``target_checks["target"]``) and measurements, the
+point's targets (from its own graded tier in ``target_checks``) and measurements, the
 fitted scaling exponent per concurrency level, and — when a prefix-cache report is
 present — the two bonus figures named in
 :data:`report_module.prefix_cache_uplift.SCORED_FIELDS`.
@@ -48,6 +48,7 @@ import statistics
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
+from llm_module.target_checks import graded_tier
 from report_module.prefix_cache_uplift import SCORED_FIELDS
 
 #: How ``run_to_run_cov`` is derived when it is not supplied explicitly. Stated in
@@ -118,9 +119,14 @@ def graded_points(report: Mapping[str, Any]) -> List[Dict[str, Any]]:
         checks = data.get("target_checks")
         if not isinstance(checks, Mapping):
             continue
-        target = checks.get("target")
-        if not isinstance(target, Mapping):
+        # Not checks["target"]: which tiers exist depends on the spec's
+        # perf_targets_map, and Milestone-0 grades against a single tier named
+        # `functional` holding the published absolute value. See
+        # llm_module.target_checks.graded_tier.
+        graded = graded_tier(checks)
+        if graded is None:
             continue
+        _, target = graded
         point: Dict[str, Any] = {
             "concurrency": data.get("concurrency"),
             "input_length": data.get("input_sequence_length"),

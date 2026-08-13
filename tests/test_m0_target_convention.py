@@ -23,9 +23,10 @@ from __future__ import annotations
 
 import pytest
 
-from llm_module.target_checks import apply_target_checks
+from llm_module.target_checks import apply_target_checks, graded_tier
 from report_module.acceptance_criteria import acceptance_criteria_check
 from report_module.schema import Block, ReportSchema
+from report_module.submission import graded_points
 from workflows.model_spec import get_perf_reference_map
 from workflows.utils_report import BenchmarkTaskParams, PerformanceTarget
 from workflows.workflow_types import DeviceTypes, ModelStatusTypes, ReportCheckTypes
@@ -291,6 +292,59 @@ def test_each_m0_spec_grades_against_exactly_one_tier_at_full_value(weights):
         d for d in template["device_model_specs"] if d["device"] == "BLACKHOLE_GALAXY"
     )
     assert row["perf_targets_map"] == {M0_TIER: 1.0}
+
+
+# --------------------------------------------------------------------------
+# Every consumer of target_checks must resolve the tier, not name it
+# --------------------------------------------------------------------------
+
+
+def _report_with_tier(tier: str) -> dict:
+    return {
+        "sections": [
+            {
+                "kind": "benchmarks",
+                "title": "B",
+                "data": {
+                    "concurrency": 64,
+                    "input_sequence_length": 8192,
+                    "p50_ttft": 2700.0,
+                    "p90_ttft": 3100.0,
+                    "p99_ttft": 3400.0,
+                    "tput_user": TPUT_USER_TARGET,
+                    "tps_decode_throughput": TPUT_TARGET,
+                    "target_checks": {
+                        tier: {
+                            "ttft": TTFT_TARGET,
+                            "ttft_check": ReportCheckTypes.PASS,
+                            "tput_user": TPUT_USER_TARGET,
+                            "tput": TPUT_TARGET,
+                        }
+                    },
+                },
+            }
+        ]
+    }
+
+
+def test_graded_tier_picks_the_strictest_present():
+    assert graded_tier({"functional": {"ttft": 9}})[0] == "functional"
+    assert (
+        graded_tier({"functional": {"ttft": 9}, "target": {"ttft": 1}})[0] == "target"
+    )
+    assert graded_tier({}) is None
+
+
+@pytest.mark.parametrize("tier", ["functional", "target"])
+def test_the_submission_assembler_finds_targets_under_either_tier_name(tier):
+    """report_module.submission read target_checks["target"] by name, so under the
+    Milestone-0 single-tier config it found no targets and silently dropped every
+    graded point from the submission — producing a scorecard of zeros."""
+    points = graded_points(_report_with_tier(tier))
+    assert len(points) == 1
+    assert points[0]["target_ttft_ms"] == TTFT_TARGET
+    assert points[0]["target_tput_user"] == TPUT_USER_TARGET
+    assert points[0]["target_decode_throughput"] == TPUT_TARGET
 
 
 def test_without_an_override_the_default_ladder_still_derives_three_tiers():

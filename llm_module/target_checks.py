@@ -30,6 +30,28 @@ _METRIC_SPECS: Tuple[Tuple[str, str, bool], ...] = (
 TIER_ORDER: Tuple[str, ...] = ("functional", "complete", "target")
 
 
+def graded_tier(
+    target_checks: Mapping[str, Any],
+) -> Optional[Tuple[str, Mapping[str, Any]]]:
+    """The strictest tier present in ``target_checks``, as ``(name, checks)``.
+
+    Strictest means last in :data:`TIER_ORDER`, so with the default
+    functional/complete/target ladder this is ``target``.
+
+    Callers must not look a tier up by name. Which tiers exist depends on the
+    spec's ``perf_targets_map``, and Milestone-0 grades against a single tier
+    named ``functional`` holding the published absolute value
+    (``docs/rfp/m0-target-convention.md``). Hardcoding ``"target"`` silently finds
+    nothing under that configuration — and "nothing" reads downstream as
+    *ungradable*, not as *failed*, which is the safe-looking direction.
+    """
+    for tier_name in reversed(TIER_ORDER):
+        tier = target_checks.get(tier_name)
+        if isinstance(tier, Mapping) and tier:
+            return tier_name, tier
+    return None
+
+
 def _measured(record: Mapping[str, Any]) -> Dict[str, Optional[float]]:
     """Pull the three graded metrics out of a flat perf record.
 
@@ -129,6 +151,9 @@ def _verdict(target_checks: Mapping[str, Mapping[str, Any]]) -> ReportCheckTypes
             return ReportCheckTypes.FAIL
         return ReportCheckTypes.PASS
     return ReportCheckTypes.NA
+
+
+__all__ = ["TIER_ORDER", "apply_target_checks", "build_target_checks", "graded_tier"]
 
 
 def apply_target_checks(block: Block, config: Any) -> Block:
