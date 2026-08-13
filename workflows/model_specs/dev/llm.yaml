@@ -1296,6 +1296,15 @@ templates:
         TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
       override_tt_config:
         fabric_config: FABRIC_1D
+    - device: P300X2  # BH QB2
+      max_concurrency: 32
+      max_context: 32768  # 32 * 1024
+      default_impl: true
+      env_vars:
+        MESH_DEVICE: "P150x4"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 100000000
   status: EXPERIMENTAL
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
