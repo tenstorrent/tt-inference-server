@@ -11,7 +11,7 @@ one mesh.
 ```bash
 git clone git@github.com:tenstorrent/tt-metal.git
 cd tt-metal
-git checkout 759d8db199f6c57b6c32db682a68a13ee2b0b013
+git checkout 9c96923d1bb  # 'Add Minimax H3 support (#52874)', the squashed merge on main
 ./build_metal.sh --build-all
 ```
 
@@ -20,8 +20,11 @@ git checkout 759d8db199f6c57b6c32db682a68a13ee2b0b013
 ```bash
 git clone git@github.com:tenstorrent/tt-inference-server.git
 cd tt-inference-server
-git checkout 5b1a3bbde56af30b8ffd4ac3a892ea793939bb91
+git checkout minimax-h3-server
 ```
+
+No commit pin here: this doc ships in the repo, so the revision you are reading it at is the one to
+use. Only tt-metal is pinned, because the model code has to match.
 
 ## 3. Create the python env inside the media server
 
@@ -103,20 +106,19 @@ export DEVICE="galaxy"
 export ARCH_NAME=blackhole
 export MESH_DEVICE="(4, 8)"
 
-export MINIMAX_H3_DIFFUSERS_DIR=/path_to/MiniMax-H3-diffusers
 export MINIMAX_H3_MODEL_PATH=/path_to/MiniMax-H3-diffusers
 export TT_DIT_CACHE_DIR=/path_to/tt_dit_cache
 
 export USE_ASYNC_VIDEO=true
 ```
 
-Four of these bite if wrong:
+Three of these bite if wrong:
 
 | var | what happens if it is wrong |
 |---|---|
 | `TT_METAL_HOME` | unset -> the kernel cache falls back to root-owned `/built` and mesh init dies as *"Failed to generate binaries for fabric_erisc_router ... Permission denied"* |
 | `TT_DIT_CACHE_DIR` | unset -> **degrades silently**, ~713 s instead of ~64 s |
-| `MINIMAX_H3_DIFFUSERS_DIR` / `MINIMAX_H3_MODEL_PATH` | must be the **same snapshot**; different paths made a whole gate silently skip |
+| `MINIMAX_H3_MODEL_PATH` | the single weights lever. Unset -> nothing finds the snapshot, and the model-side gates *skip* rather than fail, so a run can look clean while testing nothing. (`MINIMAX_H3_DIFFUSERS_DIR` was folded into this one and is no longer read.) |
 | `USE_ASYNC_VIDEO` | false -> the request blocks for ~70 s and clients time out |
 
 The weights directory needs `transformer/`, `text_encoder/`, `vae/`, `audio_vae/` and `tokenizer/`.
@@ -181,13 +183,21 @@ ffprobe out.mp4     # expect h264 1344x768 24 fps + aac stereo 32000 Hz, 5.17 s
 
 Steady-state, per request:
 
-| stage | s |
-|---|---|
-| Encoder (novel prompt) | 1.6 |
-| Denoise (49 forwards) | 52.0 |
-| VAE decode | 6.5 |
-| Audio decode | 1.6 |
-| **Total (compute)** | **60.5** |
+| stage | s | share |
+|---|---|---|
+| Encoder (novel prompt) | 0.4 | 0.6 % |
+| Denoise (49 forwards) | 57.2 | 83.4 % |
+| VAE decode | 4.3 | 6.2 % |
+| Audio decode | 6.8 | 9.8 % |
+| **Total (compute)** | **68.6** | |
+
+1168 ms per forward, 13.3x realtime (compute / 5.17 s of video). Compute only: weight load,
+prompt-embedding cache writes and mp4 export are outside these rows.
+
+Measured 2026-08-13 on `9c96923d1bb` via `test_t2va_end_to_end[4x8-16x9_5s]`, one 4x8 Blackhole
+Galaxy, warm. Reproduced within 1.3 % across three runs spanning a rebase onto main, so treat a
+>5 % move as a real regression rather than noise. Numbers come from the model-side gate, not from
+the server's own instrumentation, so server-side overhead is not included.
 
 The **first request after warmup is ~12 s slower** — a first-step transient that settles from ~12 s
 to ~1.1 s and then stays there. A second warmup pass does not absorb it. Cause not yet identified.
@@ -199,8 +209,8 @@ row drops to 0.0 s.
 
 | constraint | detail |
 |---|---|
-| One shape | 1344x768, 124 frames, 50 steps. Anything else is rejected rather than silently recompiled. |
-| `num_frames` | Must satisfy `17n + 5`: 124, 243, 362. |
+| One shape | 1344x768, **124 frames**, 50 steps. Anything else is rejected rather than silently recompiled: programs are keyed on the padded sequence length, and warmup covers exactly one. |
+| `num_frames` | Two checks, in order. The model-level rule is `17n + 5` (124, 243, 362, ...) and its rejection message lists those values -- but a second check then rejects anything that is not 124, because that is the only length this deployment warmed. 243 and 362 do generate correctly; serving them needs its own warmup, so they are a separate deployment, not a request-time option. |
 | `num_inference_steps` | Omitted is served as 50. An explicit value other than 50 is rejected. |
 | One request at a time | One device worker owns the mesh; further requests queue. |
 | `t2va` only | `ref2va` needs the `transformer_ref/` partition, and switching task in-process is a 62 GB reload. Separate deployment. |
