@@ -18,7 +18,7 @@ datasets # model training
 peft # model training
 
 # Training recipes reused by trainer runners.
-blacksmith @ git+https://github.com/tenstorrent/tt-blacksmith.git@6deeabc771f92dbb2195a1308d7c2c32b8a9cf26
+blacksmith @ git+https://github.com/tenstorrent/tt-blacksmith.git@e222d0105e540ab327dd5111104e7f91a02f6de0
 
 # yolox requirements
 thop

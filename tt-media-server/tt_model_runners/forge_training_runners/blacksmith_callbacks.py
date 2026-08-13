@@ -58,7 +58,7 @@ class JobMetricsCallback(JobCallback):
         self.last_train_loss = None
         self.last_val_loss = None
 
-    def on_forward_end(self, trainer, loss, *args, **kwargs):
+    def on_backward_end(self, trainer, loss, *args, **kwargs):
         self._step_running_loss += loss.item()
 
     def on_train_batch_end(self, trainer, *args, **kwargs):
