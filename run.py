@@ -277,6 +277,17 @@ def parse_arguments():
         "Text/LLM evals only.",
     )
     parser.add_argument(
+        "--eval-max-concurrent",
+        type=int,
+        default=None,
+        help="Override the client-side concurrency for standard LLM/VLM evals "
+        "(lm-eval num_concurrent). Applies to every eval task, replacing the "
+        "per-task max_concurrent from the eval config (e.g. the default 64 for "
+        "the large super_cluster models). Still clamped to the server's "
+        "device_model_spec.max_concurrency. Text/LLM/VLM evals only "
+        "(--workflow evals or release).",
+    )
+    parser.add_argument(
         "--skip-system-sw-validation",
         action="store_true",
         help="Skips the system software validation step (no tt-smi or tt-topology verification)",
@@ -702,6 +713,16 @@ def parse_arguments():
     if args.eval_samples and args.limit_samples_mode:
         parser.error("--eval-samples and --limit-samples-mode are mutually exclusive.")
 
+    if args.eval_max_concurrent is not None:
+        if args.eval_max_concurrent < 1:
+            parser.error("--eval-max-concurrent must be a positive integer.")
+        if args.workflow not in ("evals", "release"):
+            parser.error(
+                "--eval-max-concurrent applies to standard LLM/VLM evals and "
+                "requires --workflow evals or release "
+                f"(got --workflow {args.workflow})."
+            )
+
     if args.prefix_cache and args.workflow not in ("benchmarks", "release"):
         parser.error(
             "--prefix-cache currently requires --workflow benchmarks or release "
@@ -893,6 +914,7 @@ def format_cli_args_summary(runtime_config):
         f"  workflow_args:              {runtime_config.workflow_args}",
         f"  limit_samples_mode:         {runtime_config.limit_samples_mode}",
         f"  eval_samples:               {runtime_config.eval_samples}",
+        f"  eval_max_concurrent:        {runtime_config.eval_max_concurrent}",
         f"  skip_system_sw_validation:  {runtime_config.skip_system_sw_validation}",
         "",
         "Host Storage Options:",

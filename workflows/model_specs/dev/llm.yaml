@@ -1749,3 +1749,9 @@ templates:
       remote_api_model: zai-org/GLM-5.2
       reasoning_parser_name: glm45
       tool_call_parser_name: glm47
+
+
+      ["sanity", 
+      "inference-workflow-evals --dev-mode --model Kimi-K2.7-Code", 
+      "inference-workflow-agentic --limit-samples-mode ci-nightly --model Kimi-K2.7-Code --workflow agentic --device super_cluster --server-url https://pd-k27-q9-ngrok.n.cloud.tenstorrent.com:443 --skip-system-sw-validation --dev-mode", 
+      "inference-workflow-agentic --model Kimi-K2.7-Code --workflow agentic --device super_cluster --server-url https://pd-k27-q9-ngrok.n.cloud.tenstorrent.com:443 --skip-system-sw-validation --dev-mode"]

@@ -68,6 +68,10 @@ class RuntimeConfig:
     workflow_args: Optional[str] = None
     limit_samples_mode: Optional[str] = None
     eval_samples: Optional[str] = None
+    # Client-side eval concurrency override (lm-eval num_concurrent). Replaces
+    # the per-task max_concurrent from the eval config when set; still clamped
+    # to device_model_spec.max_concurrency in build_eval_command.
+    eval_max_concurrent: Optional[int] = None
     sdxl_num_prompts: str = "100"
 
     # Prefix-cache benchmark
@@ -169,6 +173,7 @@ class RuntimeConfig:
             workflow_args=args.workflow_args,
             limit_samples_mode=args.limit_samples_mode,
             eval_samples=args.eval_samples,
+            eval_max_concurrent=getattr(args, "eval_max_concurrent", None),
             sdxl_num_prompts=args.sdxl_num_prompts,
             prefix_cache=getattr(args, "prefix_cache", False),
             prefix_cache_preset=getattr(args, "prefix_cache_preset", "full"),
