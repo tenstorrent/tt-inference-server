@@ -2,12 +2,12 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-"""Baseline-first quality evaluation for MiniMax-H3 generated videos.
+"""Reference-driven quality evaluation for MiniMax-H3 text-to-video output.
 
 This evaluator uses the documented MiniMax V2 create/query/delete lifecycle,
 downloads each output immediately, and computes spatial, temporal, and optional
-CLIP metrics. Quality is report-only in ``baseline`` mode; ``gate`` mode
-requires explicit thresholds collected from real MiniMax-H3 runs.
+CLIP metrics. When a matching reference is configured, the metrics are graded;
+otherwise the result is informational with ``accuracy_check=NA``.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
@@ -54,20 +54,17 @@ RESOLUTION = "768P"
 DURATION_SECONDS = 5
 ASPECT_RATIO = "16:9"
 
-DEFAULT_PROFILE = "smoke"
-DEFAULT_MODE = "baseline"
 DEFAULT_SAMPLE_COUNT = 8
+DEFAULT_SAMPLES_PER_PROMPT = 3
 DEFAULT_REQUEST_TIMEOUT_SECONDS = 60.0
 DEFAULT_DOWNLOAD_TIMEOUT_SECONDS = 300.0
 DEFAULT_POLL_INTERVAL_SECONDS = 5.0
 DEFAULT_POLL_TIMEOUT_SECONDS = 900.0
 DEFAULT_TEST_TIMEOUT_SECONDS = 7200
 DEFAULT_OUTPUT_DIR = Path("/tmp/minimax_h3_video_quality")
-
-Profile = Literal["smoke", "full", "calibration"]
-EvaluationMode = Literal["baseline", "gate"]
-_PROFILES = frozenset({"smoke", "full", "calibration"})
-_MODES = frozenset({"baseline", "gate"})
+ACCURACY_REFERENCE_PATH = Path(
+    "reference_config/evals/eval_targets/model_accuracy_reference.json"
+)
 
 
 @dataclass(frozen=True)
@@ -83,91 +80,30 @@ class VideoQualityPrompt:
     expects_motion: bool = True
 
 
-@dataclass(frozen=True)
-class QualityThresholds:
-    """Explicit one-sided thresholds for opt-in gate mode."""
-
-    min_generation_success_ratio: float = 1.0
-    min_average_clip: float | None = None
-    min_minimum_clip: float | None = None
-    max_invalid_videos: int = 0
-    max_frozen_videos: int = 0
-
-
-QUALITY_PROMPTS = (
-    VideoQualityPrompt(
-        id="subject_identity",
-        category="subject_identity",
-        prompt=(
-            "A small corgi wearing a bright yellow raincoat and round red "
-            "glasses walks through a sunlit city plaza. Keep the same dog, "
-            "raincoat, and glasses throughout the shot."
-        ),
-        required_concepts=(
-            "a small corgi",
-            "a bright yellow raincoat",
-            "round red glasses",
-        ),
+T2V_PROMPT = VideoQualityPrompt(
+    id="t2v",
+    category="t2v",
+    prompt=(
+        "A small corgi wearing a bright yellow raincoat and round red "
+        "glasses starts beside a red ball in a bright room. The camera "
+        "smoothly tracks from left to right as the corgi nudges the ball, "
+        "follows it across the floor, and stops with the ball beside a "
+        "blue box near a sunlit window. Keep the same corgi, raincoat, "
+        "and glasses throughout the shot."
     ),
-    VideoQualityPrompt(
-        id="object_action",
-        category="object_action",
-        prompt=(
-            "A silver spoon falls into a clear glass of water on a white table, "
-            "creating a visible splash and droplets that fall back down."
-        ),
-        required_concepts=(
-            "a silver spoon",
-            "a clear glass of water",
-            "a visible water splash",
-        ),
-        expected_start="a silver spoon above a calm clear glass of water",
-        expected_end="a spoon inside the glass with water droplets after a splash",
+    required_concepts=(
+        "a small corgi",
+        "a bright yellow raincoat",
+        "round red glasses",
+        "a red ball",
+        "a blue box",
+        "a sunlit window",
     ),
-    VideoQualityPrompt(
-        id="camera_movement",
-        category="camera_movement",
-        prompt=(
-            "The camera slowly orbits clockwise around a glossy blue ceramic "
-            "teapot on a white table in a bright studio, keeping the teapot "
-            "centered while its viewpoint changes smoothly."
-        ),
-        required_concepts=(
-            "a glossy blue ceramic teapot",
-            "a white table in a bright studio",
-        ),
+    expected_start=(
+        "a corgi in a yellow raincoat and red glasses beside a red ball "
+        "in a bright room"
     ),
-    VideoQualityPrompt(
-        id="multi_object_composition",
-        category="multi_object_composition",
-        prompt=(
-            "On a clean white floor, a red cube remains on the left, a blue "
-            "sphere remains in the center, and a yellow pyramid remains on the "
-            "right while a small green ball rolls in front of all three."
-        ),
-        required_concepts=(
-            "a red cube",
-            "a blue sphere",
-            "a yellow pyramid",
-            "a small green ball",
-        ),
-    ),
-    VideoQualityPrompt(
-        id="temporal_progression",
-        category="temporal_progression",
-        prompt=(
-            "A white paper airplane starts resting on a wooden desk, lifts into "
-            "the air, glides smoothly across a bright room, and lands beside a "
-            "sunlit window."
-        ),
-        required_concepts=(
-            "a white paper airplane",
-            "a wooden desk",
-            "a sunlit window",
-        ),
-        expected_start="a white paper airplane resting on a wooden desk",
-        expected_end="a white paper airplane beside a sunlit window",
-    ),
+    expected_end=("the same corgi and red ball beside a blue box near a sunlit window"),
 )
 
 
@@ -181,31 +117,8 @@ def _resolve_api_key() -> str:
     )
 
 
-def _normalize_profile(value: Any) -> Profile:
-    profile = str(value or DEFAULT_PROFILE).lower()
-    if profile not in _PROFILES:
-        raise ValueError(f"profile must be one of {sorted(_PROFILES)}, got {value!r}")
-    return cast(Profile, profile)
-
-
-def _normalize_mode(value: Any) -> EvaluationMode:
-    mode = str(value or DEFAULT_MODE).lower()
-    if mode not in _MODES:
-        raise ValueError(f"mode must be one of {sorted(_MODES)}, got {value!r}")
-    return cast(EvaluationMode, mode)
-
-
-def _selected_prompts(profile: Profile) -> tuple[VideoQualityPrompt, ...]:
-    return QUALITY_PROMPTS[:1] if profile == "smoke" else QUALITY_PROMPTS
-
-
-def _resolved_samples_per_prompt(
-    profile: Profile,
-    requested: int | None,
-) -> int:
-    samples = (
-        requested if requested is not None else (3 if profile == "calibration" else 1)
-    )
+def _resolved_samples_per_prompt(requested: int | None) -> int:
+    samples = requested if requested is not None else DEFAULT_SAMPLES_PER_PROMPT
     if samples < 1:
         raise ValueError("samples_per_prompt must be at least 1")
     return samples
@@ -382,40 +295,72 @@ def _aggregate_category_results(
     ]
 
 
-def _quality_gate(
+def _load_quality_reference(requested_count: int) -> dict[str, Any] | None:
+    """Load the configured MiniMax reference for this evaluation size."""
+
+    try:
+        reference_data = json.loads(ACCURACY_REFERENCE_PATH.read_text())
+    except FileNotFoundError:
+        logger.warning("Accuracy reference file not found: %s", ACCURACY_REFERENCE_PATH)
+        return None
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"invalid accuracy reference JSON at {ACCURACY_REFERENCE_PATH}: {exc}"
+        ) from exc
+
+    model_reference = reference_data.get(MODEL_NAME)
+    if not isinstance(model_reference, dict):
+        return None
+    accuracy = model_reference.get("accuracy")
+    if not isinstance(accuracy, dict):
+        return None
+    reference = accuracy.get(str(requested_count))
+    return reference if isinstance(reference, dict) else None
+
+
+def _reference_checks(
     *,
     summary: dict[str, Any],
-    thresholds: QualityThresholds,
+    reference: dict[str, Any],
     clip_enabled: bool,
 ) -> tuple[bool, list[dict[str, Any]]]:
+    """Compare current metrics with a pre-recorded reference configuration."""
+
     checks = [
         {
             "metric": "generation_success_ratio",
             "actual": summary["generation_success_ratio"],
             "operator": ">=",
-            "threshold": thresholds.min_generation_success_ratio,
+            "threshold": reference.get("generation_success_ratio_min", 1.0),
             "passed": (
                 summary["generation_success_ratio"]
-                >= thresholds.min_generation_success_ratio
+                >= float(reference.get("generation_success_ratio_min", 1.0))
             ),
         },
         {
             "metric": "invalid_video_count",
             "actual": summary["invalid_video_count"],
             "operator": "<=",
-            "threshold": thresholds.max_invalid_videos,
-            "passed": summary["invalid_video_count"] <= thresholds.max_invalid_videos,
+            "threshold": reference.get("max_invalid_videos", 0),
+            "passed": summary["invalid_video_count"]
+            <= int(reference.get("max_invalid_videos", 0)),
         },
         {
             "metric": "frozen_video_count",
             "actual": summary["frozen_video_count"],
             "operator": "<=",
-            "threshold": thresholds.max_frozen_videos,
-            "passed": summary["frozen_video_count"] <= thresholds.max_frozen_videos,
+            "threshold": reference.get("max_frozen_videos", 0),
+            "passed": summary["frozen_video_count"]
+            <= int(reference.get("max_frozen_videos", 0)),
         },
     ]
 
-    if not clip_enabled:
+    clip_range = reference.get("clip_valid_range")
+    if clip_range is not None and (
+        not isinstance(clip_range, list) or len(clip_range) != 2
+    ):
+        raise ValueError("MiniMax clip_valid_range must contain [minimum, maximum]")
+    if clip_range is not None and not clip_enabled:
         checks.append(
             {
                 "metric": "clip_enabled",
@@ -425,42 +370,33 @@ def _quality_gate(
                 "passed": False,
             }
         )
-    if thresholds.min_average_clip is None:
-        checks.append(
-            {
-                "metric": "min_average_clip_configured",
-                "actual": None,
-                "operator": "is not",
-                "threshold": None,
-                "passed": False,
-            }
-        )
-    else:
+    elif clip_range is not None:
         average_clip = summary.get("average_clip")
         checks.append(
             {
                 "metric": "average_clip",
                 "actual": average_clip,
-                "operator": ">=",
-                "threshold": thresholds.min_average_clip,
+                "operator": "within",
+                "threshold": clip_range,
                 "passed": (
                     average_clip is not None
-                    and average_clip >= thresholds.min_average_clip
+                    and float(clip_range[0]) <= average_clip <= float(clip_range[1])
                 ),
             }
         )
 
-    if thresholds.min_minimum_clip is not None:
+    minimum_clip_threshold = reference.get("minimum_clip_min")
+    if minimum_clip_threshold is not None:
         minimum_clip = summary.get("minimum_clip")
         checks.append(
             {
                 "metric": "minimum_clip",
                 "actual": minimum_clip,
                 "operator": ">=",
-                "threshold": thresholds.min_minimum_clip,
+                "threshold": minimum_clip_threshold,
                 "passed": (
                     minimum_clip is not None
-                    and minimum_clip >= thresholds.min_minimum_clip
+                    and minimum_clip >= float(minimum_clip_threshold)
                 ),
             }
         )
@@ -470,8 +406,6 @@ def _quality_gate(
 def _aggregate_results(
     *,
     detailed_results: list[dict[str, Any]],
-    mode: EvaluationMode,
-    thresholds: QualityThresholds,
     clip_enabled: bool,
 ) -> dict[str, Any]:
     requested_count = len(detailed_results)
@@ -538,29 +472,29 @@ def _aggregate_results(
         "average_progression_margin": _mean(progression_margins),
     }
 
-    if mode == "gate":
-        gate_passed, gate_checks = _quality_gate(
+    reference = _load_quality_reference(requested_count)
+    if reference is not None:
+        reference_passed, reference_checks = _reference_checks(
             summary=summary,
-            thresholds=thresholds,
+            reference=reference,
             clip_enabled=clip_enabled,
         )
-        accuracy_check = ReportCheckTypes.from_result(gate_passed)
-        success = gate_passed
+        accuracy_check = ReportCheckTypes.from_result(reference_passed)
+        success = bool(analyzed) and reference_passed
+        quality_status = "pass" if reference_passed else "fail"
     else:
-        gate_checks = []
+        reference_checks = []
         accuracy_check = ReportCheckTypes.NA
-        # Baseline mode evaluates quality without asserting an uncalibrated
-        # threshold. At least one analyzed output is required for a useful run.
         success = bool(analyzed)
+        quality_status = "na"
 
     return {
         "summary": summary,
         "category_results": _aggregate_category_results(detailed_results),
-        "quality_gate_checks": gate_checks,
+        "quality_reference": reference,
+        "quality_reference_checks": reference_checks,
         "accuracy_check": int(accuracy_check),
-        "quality_status": (
-            "baseline" if mode == "baseline" else ("pass" if success else "fail")
-        ),
+        "quality_status": quality_status,
         "success": success,
     }
 
@@ -570,12 +504,9 @@ async def run_video_quality_evaluation(
     base_url: str,
     api_key: str,
     output_dir: Path,
-    profile: Profile = DEFAULT_PROFILE,
-    mode: EvaluationMode = DEFAULT_MODE,
     samples_per_prompt: int | None = None,
     sample_count: int = DEFAULT_SAMPLE_COUNT,
     enable_clip: bool = True,
-    thresholds: QualityThresholds = QualityThresholds(),
     request_timeout: float = DEFAULT_REQUEST_TIMEOUT_SECONDS,
     download_timeout: float = DEFAULT_DOWNLOAD_TIMEOUT_SECONDS,
     poll_interval: float = DEFAULT_POLL_INTERVAL_SECONDS,
@@ -583,16 +514,11 @@ async def run_video_quality_evaluation(
 ) -> dict[str, Any]:
     """Generate, score, preserve, and clean up a MiniMax-H3 quality run."""
 
-    normalized_profile = _normalize_profile(profile)
-    normalized_mode = _normalize_mode(mode)
-    resolved_samples = _resolved_samples_per_prompt(
-        normalized_profile,
-        samples_per_prompt,
-    )
+    resolved_samples = _resolved_samples_per_prompt(samples_per_prompt)
     if sample_count < 2:
         raise ValueError("sample_count must be at least 2")
 
-    selected_prompts = _selected_prompts(normalized_profile)
+    selected_prompts = (T2V_PROMPT,)
     output_dir.mkdir(parents=True, exist_ok=True)
     clip_scorer = BatchedCLIPScorer() if enable_clip else None
     detailed_results: list[dict[str, Any]] = []
@@ -626,27 +552,17 @@ async def run_video_quality_evaluation(
 
     aggregate = _aggregate_results(
         detailed_results=detailed_results,
-        mode=normalized_mode,
-        thresholds=thresholds,
         clip_enabled=enable_clip,
     )
     return {
         "task_name": "minimax_h3_video_quality",
         "base_url": base_url.rstrip("/"),
         "model": MODEL_NAME,
-        "profile": normalized_profile,
-        "mode": normalized_mode,
+        "evaluation_type": "calibration",
         "samples_per_prompt": resolved_samples,
         "frame_sample_count": sample_count,
         "clip_enabled": enable_clip,
         "output_dir": str(output_dir),
-        "thresholds": {
-            "min_generation_success_ratio": thresholds.min_generation_success_ratio,
-            "min_average_clip": thresholds.min_average_clip,
-            "min_minimum_clip": thresholds.min_minimum_clip,
-            "max_invalid_videos": thresholds.max_invalid_videos,
-            "max_frozen_videos": thresholds.max_frozen_videos,
-        },
         **aggregate,
         "detailed_results": detailed_results,
     }
@@ -672,20 +588,9 @@ class MiniMaxH3VideoQualityTest(BaseTest):
             base_url=self.base_url,
             api_key=_resolve_api_key(),
             output_dir=output_dir,
-            profile=_normalize_profile(self.targets.get("profile")),
-            mode=_normalize_mode(self.targets.get("mode")),
             samples_per_prompt=self.targets.get("samples_per_prompt"),
             sample_count=int(self.targets.get("sample_count", DEFAULT_SAMPLE_COUNT)),
             enable_clip=bool(self.targets.get("enable_clip", True)),
-            thresholds=QualityThresholds(
-                min_generation_success_ratio=float(
-                    self.targets.get("min_generation_success_ratio", 1.0)
-                ),
-                min_average_clip=_optional_float(self.targets.get("min_average_clip")),
-                min_minimum_clip=_optional_float(self.targets.get("min_minimum_clip")),
-                max_invalid_videos=int(self.targets.get("max_invalid_videos", 0)),
-                max_frozen_videos=int(self.targets.get("max_frozen_videos", 0)),
-            ),
             request_timeout=float(
                 self.targets.get(
                     "request_timeout",
@@ -711,10 +616,6 @@ class MiniMaxH3VideoQualityTest(BaseTest):
                 )
             ),
         )
-
-
-def _optional_float(value: Any) -> float | None:
-    return None if value is None else float(value)
 
 
 def run_minimax_h3_video_quality(
@@ -751,11 +652,12 @@ def run_minimax_h3_video_quality(
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Generate and score MiniMax-H3 videos against a fixed prompt set."
+        description=(
+            "Generate calibration samples and score MiniMax-H3 videos "
+            "against the T2V prompt."
+        )
     )
     parser.add_argument("--base-url", required=True)
-    parser.add_argument("--profile", choices=sorted(_PROFILES), default=DEFAULT_PROFILE)
-    parser.add_argument("--mode", choices=sorted(_MODES), default=DEFAULT_MODE)
     parser.add_argument("--samples-per-prompt", type=int)
     parser.add_argument("--sample-count", type=int, default=DEFAULT_SAMPLE_COUNT)
     parser.add_argument("--skip-clip", action="store_true")
@@ -777,11 +679,6 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--poll-timeout", type=float, default=DEFAULT_POLL_TIMEOUT_SECONDS
     )
-    parser.add_argument("--min-generation-success-ratio", type=float, default=1.0)
-    parser.add_argument("--min-average-clip", type=float)
-    parser.add_argument("--min-minimum-clip", type=float)
-    parser.add_argument("--max-invalid-videos", type=int, default=0)
-    parser.add_argument("--max-frozen-videos", type=int, default=0)
     return parser.parse_args(argv)
 
 
@@ -793,18 +690,9 @@ def main(argv: list[str] | None = None) -> int:
                 base_url=args.base_url,
                 api_key=_resolve_api_key(),
                 output_dir=args.output_dir,
-                profile=_normalize_profile(args.profile),
-                mode=_normalize_mode(args.mode),
                 samples_per_prompt=args.samples_per_prompt,
                 sample_count=args.sample_count,
                 enable_clip=not args.skip_clip,
-                thresholds=QualityThresholds(
-                    min_generation_success_ratio=args.min_generation_success_ratio,
-                    min_average_clip=args.min_average_clip,
-                    min_minimum_clip=args.min_minimum_clip,
-                    max_invalid_videos=args.max_invalid_videos,
-                    max_frozen_videos=args.max_frozen_videos,
-                ),
                 request_timeout=args.request_timeout,
                 download_timeout=args.download_timeout,
                 poll_interval=args.poll_interval,
@@ -832,8 +720,7 @@ def main(argv: list[str] | None = None) -> int:
 
 __all__ = [
     "MiniMaxH3VideoQualityTest",
-    "QUALITY_PROMPTS",
-    "QualityThresholds",
+    "T2V_PROMPT",
     "VideoQualityPrompt",
     "run_minimax_h3_video_quality",
     "run_video_quality_evaluation",
