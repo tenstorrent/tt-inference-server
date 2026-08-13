@@ -3866,6 +3866,7 @@ _eval_config_list = [
             EvalTask(
                 task_name="mbpp_instruct",
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                allow_code_execution=True,
                 score=EvalTaskScore(
                     published_score=90.2,
                     published_score_ref="https://qwen.ai/blog?id=60a9025af59d5f27f1d4f0cc149725393e5f9130&from=research.research-list",
@@ -3890,6 +3891,8 @@ _eval_config_list = [
             EvalTask(
                 task_name="humaneval_instruct",
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                # Same code_eval requirement as mbpp_instruct above.
+                allow_code_execution=True,
                 score=EvalTaskScore(
                     published_score=92.7,
                     published_score_ref="https://qwen.ai/blog?id=60a9025af59d5f27f1d4f0cc149725393e5f9130&from=research.research-list",
