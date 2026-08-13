@@ -69,6 +69,10 @@ constexpr unsigned KV_MIGRATION_DRAIN_POLL_MS = 100;
 
 constexpr unsigned SESSION_ALLOCATION_MAX_RETRIES = 15;
 
+// Seconds a session may remain IN_FLIGHT before eviction forces it back to
+// IDLE. Applied when evictOldSessions finds no idle candidates. 0 = disabled.
+constexpr unsigned SESSION_IN_FLIGHT_TIMEOUT_S = 1800;  // 30 minutes
+
 constexpr const char* SPEC_DECODE_MODE = "none";
 constexpr size_t SPEC_LEVEL = 1;
 

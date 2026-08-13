@@ -394,6 +394,38 @@ void SessionManager::evictOldSessions() {
       });
 
   size_t n = std::min(evictionCount, candidates.size());
+
+  // If no idle candidates exist, force-release sessions that have been
+  // IN_FLIGHT longer than the configured timeout — they might have leaked
+  if (candidates.empty()) {
+    const unsigned timeoutS = tt::config::sessionInFlightTimeoutSeconds();
+    if (timeoutS > 0) {
+      const auto threshold =
+          std::chrono::system_clock::now() - std::chrono::seconds(timeoutS);
+      std::vector<std::string> stale;
+      sessions.forEach([&](const std::string& id,
+                           const std::shared_ptr<domain::Session>& s) {
+        if (s->isInFlight() && s->getLastActivityTime() < threshold) {
+          stale.push_back(id);
+        }
+      });
+      for (const auto& sessionId : stale) {
+        sessions.modify(sessionId, [&](std::shared_ptr<domain::Session>& s) {
+          if (s->isInFlight() && s->getLastActivityTime() < threshold) {
+            auto cancelFn = s->takeCancelFn();
+            if (cancelFn) cancelFn();
+            s->clearInFlight();
+            TT_LOG_WARN(
+                "[SessionManager] Force-released stale IN_FLIGHT session {} "
+                "(in-flight > {}s)",
+                sessionId, timeoutS);
+          }
+        });
+      }
+    }
+    return;
+  }
+
   std::nth_element(
       candidates.begin(), candidates.begin() + n, candidates.end(),
       [](const Entry& a, const Entry& b) { return a.first < b.first; });
