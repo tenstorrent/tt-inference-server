@@ -49,17 +49,52 @@ class JobMetricsCallback(JobCallback):
     reporting has to happen here. Loss accumulation mirrors blacksmith's own
     ``MetricsCallback``: the logged value is the mean over the window of each
     step's mean micro-batch loss.
+
+    Progress (epoch/step, validation batch index) is logged every step so the
+    job stream moves while tqdm stays on process stdout. Loss itself is only
+    logged every ``metrics.steps_freq`` steps, plus once at the end of validation.
     """
 
     def _reset(self) -> None:
         self._running_loss = 0.0
         self._step_running_loss = 0.0
         self._prev_global_step = 0
+        self._val_batch = 0
         self.last_train_loss = None
         self.last_val_loss = None
 
     def on_backward_end(self, trainer, loss, *args, **kwargs):
         self._step_running_loss += loss.item()
+
+    def on_validation_start(self, trainer, *args, **kwargs):
+        self._val_batch = 0
+        # Surface the long first XLA/TT compile in job logs (tqdm stays on stdout).
+        n_batches = None
+        try:
+            n_batches = len(trainer.val_dataloader)
+        except TypeError:
+            pass
+        msg = (
+            f"{self._epoch_step_label(trainer)} | Starting validation"
+            + (f" ({n_batches} batches)" if n_batches is not None else "")
+            + "; first batch may take several minutes to compile"
+        )
+        self._logger.info(
+            msg, extra={"log_type": "info", "step": trainer.global_step}
+        )
+
+    def on_validation_batch_end(self, trainer, batch, loss, *args, **kwargs):
+        self._val_batch += 1
+        total = None
+        try:
+            total = len(trainer.val_dataloader)
+        except TypeError:
+            pass
+        suffix = f"/{total}" if total is not None else ""
+        self._logger.info(
+            f"{self._epoch_step_label(trainer)} | Validation batch {self._val_batch}{suffix}",
+            extra={"log_type": "info", "step": trainer.global_step},
+        )
 
     def on_train_batch_end(self, trainer, *args, **kwargs):
         # Under gradient accumulation most micro-batches do not advance
@@ -73,6 +108,11 @@ class JobMetricsCallback(JobCallback):
         )
         self._step_running_loss = 0.0
 
+        self._logger.info(
+            self._epoch_step_label(trainer),
+            extra={"log_type": "info", "step": trainer.global_step},
+        )
+
         steps_freq = trainer.config.metrics.steps_freq
         if trainer.global_step % steps_freq:
             return
@@ -85,9 +125,16 @@ class JobMetricsCallback(JobCallback):
         self.last_val_loss = val_loss
         self._record(trainer, "val_loss", val_loss, log_type="eval")
 
+    @staticmethod
+    def _epoch_step_label(trainer) -> str:
+        num_epochs = getattr(trainer.config, "num_epochs", None)
+        epoch = trainer.epoch + 1
+        epoch_part = f"Epoch {epoch}/{num_epochs}" if num_epochs else f"Epoch {epoch}"
+        return f"{epoch_part} | Step {trainer.global_step}"
+
     def _record(self, trainer, name: str, value: float, log_type: str) -> None:
         self._logger.info(
-            f"Epoch {trainer.epoch + 1} | Step {trainer.global_step} | {name}: {value:.4f}",
+            f"{self._epoch_step_label(trainer)} | {name}: {value:.4f}",
             extra={"log_type": log_type, "step": trainer.global_step},
         )
         if self._request is None or self._request._training_metrics is None:

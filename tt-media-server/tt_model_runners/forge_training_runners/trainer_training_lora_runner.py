@@ -174,6 +174,10 @@ class JobLoraTrainer(LoraLLMTrainer):
         # strips the adapter back off. Dtype was already applied at warmup.
         self.peft_model = get_peft_model(self._base_model, lora_config)
         self.peft_model.to(self.device_manager.device)
+        # Flush the host→device weight move before torch.compile builds the first
+        # graph; otherwise the opening validation sync can sit on a mixed pending
+        # transfer + compile for a very long time on large models.
+        torch_xla.sync(wait=True)
         return torch.compile(
             self.peft_model, backend="tt", options=MODEL_COMPILE_OPTIONS
         )
@@ -466,6 +470,7 @@ class TrainerTrainingLoraRunner(BaseDeviceRunner):
             input_sharding_dim=None,
             model_sharding_patterns=None,
             max_length=request.dataset_max_sequence_length,
+            ignored_index=request.ignored_index,
             lora_r=request.lora_r,
             lora_alpha=request.lora_alpha,
             lora_target_modules=request.lora_target_modules,

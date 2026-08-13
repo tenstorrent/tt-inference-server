@@ -78,13 +78,18 @@ class _Loss:
         return self._value
 
 
-def _fake_trainer(grad_accum=1, steps_freq=1):
+def _fake_trainer(grad_accum=1, steps_freq=1, num_epochs=1, val_batches=None):
     trainer = MagicMock()
     trainer.config.gradient_accumulation_steps = grad_accum
     trainer.config.metrics.steps_freq = steps_freq
+    trainer.config.num_epochs = num_epochs
     trainer.global_step = 0
     trainer.epoch = 0
     trainer.optimizer.param_groups = [{"lr": 0.001}]
+    if val_batches is None:
+        trainer.val_dataloader.__len__.side_effect = TypeError()
+    else:
+        trainer.val_dataloader.__len__.return_value = val_batches
     return trainer
 
 
@@ -531,12 +536,12 @@ class TestJobMetricsCallback:
         callback = self._callback(request)
         trainer = _fake_trainer(grad_accum=2, steps_freq=1)
 
-        callback.on_forward_end(trainer, _Loss(2.0))
+        callback.on_backward_end(trainer, _Loss(2.0))
         # First micro-batch: no optimizer step, so nothing is reported yet.
         callback.on_train_batch_end(trainer)
         assert request._training_metrics == []
 
-        callback.on_forward_end(trainer, _Loss(4.0))
+        callback.on_backward_end(trainer, _Loss(4.0))
         trainer.global_step = 1
         callback.on_train_batch_end(trainer)
 
@@ -549,11 +554,61 @@ class TestJobMetricsCallback:
         trainer = _fake_trainer(grad_accum=1, steps_freq=2)
 
         for step, loss in enumerate((1.0, 3.0), start=1):
-            callback.on_forward_end(trainer, _Loss(loss))
+            callback.on_backward_end(trainer, _Loss(loss))
             trainer.global_step = step
             callback.on_train_batch_end(trainer)
 
         assert [m["value"] for m in request._training_metrics] == [2.0]
+
+    def test_logs_epoch_and_step_every_step_without_loss(self):
+        request = _request()
+        callback = self._callback(request)
+        trainer = _fake_trainer(grad_accum=1, steps_freq=2, num_epochs=3)
+
+        for step, loss in enumerate((1.0, 3.0), start=1):
+            callback.on_backward_end(trainer, _Loss(loss))
+            trainer.global_step = step
+            callback.on_train_batch_end(trainer)
+
+        progress_messages = [
+            call.args[0]
+            for call in callback._logger.info.call_args_list
+            if "train_loss" not in call.args[0]
+        ]
+        assert progress_messages == [
+            "Epoch 1/3 | Step 1",
+            "Epoch 1/3 | Step 2",
+        ]
+        loss_messages = [
+            call.args[0]
+            for call in callback._logger.info.call_args_list
+            if "train_loss" in call.args[0]
+        ]
+        assert loss_messages == [
+            "Epoch 1/3 | Step 2 | train_loss: 2.0000",
+        ]
+
+    def test_logs_validation_batch_progress_without_loss(self):
+        request = _request()
+        callback = self._callback(request)
+        trainer = _fake_trainer(num_epochs=2, val_batches=2)
+        trainer.global_step = 10
+        trainer.epoch = 0
+
+        callback.on_validation_start(trainer)
+        callback.on_validation_batch_end(trainer, batch=None, loss=_Loss(1.0))
+        callback.on_validation_batch_end(trainer, batch=None, loss=_Loss(2.0))
+        callback.on_validation_end(trainer, 1.5)
+
+        messages = [call.args[0] for call in callback._logger.info.call_args_list]
+        assert messages == [
+            "Epoch 1/2 | Step 10 | Starting validation (2 batches); "
+            "first batch may take several minutes to compile",
+            "Epoch 1/2 | Step 10 | Validation batch 1/2",
+            "Epoch 1/2 | Step 10 | Validation batch 2/2",
+            "Epoch 1/2 | Step 10 | val_loss: 1.5000",
+        ]
+        assert [m["metric_name"] for m in request._training_metrics] == ["val_loss"]
 
     def test_records_validation_loss(self):
         request = _request()
