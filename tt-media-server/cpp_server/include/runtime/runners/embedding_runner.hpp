@@ -14,10 +14,12 @@
 namespace tt::runners {
 
 /**
- * Embedding runner that calls Python BGELargeENRunner.
+ * Embedding runner that calls the Python embedding model runner in-process.
  *
- * Uses Python C API to instantiate and call the BGELargeENRunner class
- * from tt_model_runners/embedding_runner.py.
+ * Uses pybind11 (embedded interpreter) to instantiate and call the
+ * BGELargeENRunner class from tt_model_runners/embedding_runner.py.
+ * Python errors are captured with full tracebacks and surfaced as
+ * per-request error responses rather than swallowed.
  */
 class EmbeddingRunner : public IRunner {
  public:

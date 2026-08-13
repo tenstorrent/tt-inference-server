@@ -9,6 +9,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstdlib>
 #include <cstring>
 #include <future>
 #include <memory>
@@ -216,6 +217,24 @@ struct EmbeddingService::Impl {
 
   [[noreturn]] static void workerProcessMain(int workerId, int readFd,
                                              int writeFd) {
+    // The embedded Python runner resolves its model config (max_batch_size,
+    // mesh shape, ...) from the MODEL and DEVICE env vars via the Python
+    // Settings singleton. If they are missing, Settings silently falls back
+    // to defaults for a different model (max_batch_size=1), which passes
+    // warmup and then fails under load with "Batch size N exceeds max 1".
+    // Fail fast with an actionable message instead.
+    const char* modelEnv = std::getenv("MODEL");
+    const char* deviceEnv = std::getenv("DEVICE");
+    if (!modelEnv || !*modelEnv || !deviceEnv || !*deviceEnv) {
+      TT_LOG_ERROR(
+          "[Worker {}] MODEL and DEVICE env vars are required for the "
+          "embedding service (e.g. MODEL=bge-large-en-v1.5 DEVICE=n150); "
+          "without them the Python model config silently falls back to "
+          "defaults for a different model. Exiting.",
+          workerId);
+      _exit(1);
+    }
+
     size_t wid = static_cast<size_t>(workerId);
     std::string visibleDevices = tt::config::visibleDevicesForWorker(wid);
     setenv("TT_VISIBLE_DEVICES", visibleDevices.c_str(), 1);
