@@ -22,7 +22,12 @@ from config.constants import (
     ModelServices,
     SupportedModels,
     is_large_mesh,
+    MINIMAX_H3_DEFAULT_ASPECT_RATIO,
+    MINIMAX_H3_DEFAULT_DURATION_S,
+    MINIMAX_H3_DURATIONS_S,
+    MINIMAX_H3_ASPECT_RATIOS,
     minimax_h3_frames_are_aligned,
+    minimax_h3_parse_aspect_ratio,
     wan22_target_resolution,
 )
 from config.settings import get_settings
@@ -1422,58 +1427,148 @@ class TTMiniMaxH3Runner(TTDiTRunner):
             log_exception_chain(self.logger, self.device_id, "Exception during model loading", e)
             raise
 
-        self.logger.info(f"Device {self.device_id}: Model loaded, warming at the serving shape...")
+        # Nothing is warmed by default. All 18 published working points are servable, and warming
+        # them costs 4-16 min each (measured, worst at the 15 s / 1 MPix points), so an eager
+        # warmup would trade hours of startup for a latency win on whichever shapes it guessed.
+        # Instead the first request at a given shape compiles, once, and says so in the log.
+        #
+        #   MINIMAX_H3_WARM_SHAPES unset  -> warm nothing (default).
+        #   "all"                         -> all 6 ratios x 3 durations. Hours of startup.
+        #   "16:9@5,9:16@10,..."          -> an explicit subset, for shapes worth pre-paying.
+        shapes = self._warmup_shapes()
+        if shapes:
+            self.logger.info(
+                f"Device {self.device_id}: Model loaded, warming {len(shapes)} shape(s): "
+                + ", ".join(f"{w}x{h}/{f}f" for h, w, f in shapes)
+            )
+        else:
+            self.logger.info(
+                f"Device {self.device_id}: Model loaded, warming nothing "
+                "(MINIMAX_H3_WARM_SHAPES unset). The first request at each shape compiles."
+            )
         # The first served request pays ~12 s on its first denoise step against a 1.05 s steady
         # step, then settles to 1.1 s. A second warmup pass does NOT absorb it (measured: still
         # 11.9 s after two passes), so this stays at 1 until the cause is found.
-        for pass_index in range(MINIMAX_H3_WARMUP_PASSES):
-            await asyncio.to_thread(
-                lambda: self.pipeline.warmup(
-                    prompt=MINIMAX_H3_WARMUP_PROMPT,
-                    num_frames=MINIMAX_H3_NUM_FRAMES,
-                    height=self.resolution.height,
-                    width=self.resolution.width,
-                    num_inference_steps=MINIMAX_H3_NUM_INFERENCE_STEPS,
+        self._warm_padded_lens = set()
+        for height, width, num_frames in shapes:
+            for pass_index in range(MINIMAX_H3_WARMUP_PASSES):
+                await asyncio.to_thread(
+                    lambda h=height, w=width, f=num_frames: self.pipeline.warmup(
+                        prompt=MINIMAX_H3_WARMUP_PROMPT,
+                        num_frames=f,
+                        height=h,
+                        width=w,
+                        num_inference_steps=MINIMAX_H3_NUM_INFERENCE_STEPS,
+                    )
                 )
-            )
+                self.logger.info(
+                    f"Device {self.device_id}: {width}x{height}/{num_frames}f warmup pass "
+                    f"{pass_index + 1}/{MINIMAX_H3_WARMUP_PASSES} done"
+                )
+            self._warm_padded_lens.add(self.pipeline.last_padded_len)
             self.logger.info(
-                f"Device {self.device_id}: warmup pass {pass_index + 1}/{MINIMAX_H3_WARMUP_PASSES} done"
+                f"Device {self.device_id}: warm at padded_len={self.pipeline.last_padded_len} "
+                f"({width}x{height}, {num_frames} frames, {MINIMAX_H3_NUM_INFERENCE_STEPS} steps)"
             )
-        self._warm_padded_len = self.pipeline.last_padded_len
-        self.logger.info(
-            f"Device {self.device_id}: warm at padded_len={self._warm_padded_len} "
-            f"({self.resolution.width}x{self.resolution.height}, {MINIMAX_H3_NUM_FRAMES} frames, "
-            f"{MINIMAX_H3_NUM_INFERENCE_STEPS} steps)"
-        )
         return True
 
+    def _warmup_shapes(self) -> list[tuple[int, int, int]]:
+        """`(height, width, num_frames)` per shape to warm, from MINIMAX_H3_WARM_SHAPES."""
+        from models.tt_dit.pipelines.minimax_h3.packing import (
+            align_num_frames,
+            resolve_canvas_size,
+        )
+
+        def shape(ratio, seconds):
+            height, width = resolve_canvas_size(*ratio)
+            return height, width, align_num_frames(round(seconds * MINIMAX_H3_FPS))
+
+        spec = (os.environ.get("MINIMAX_H3_WARM_SHAPES") or "").strip()
+        if not spec:
+            return []
+        if spec.lower() == "all":
+            return [
+                shape(ratio, seconds)
+                for ratio in MINIMAX_H3_ASPECT_RATIOS
+                for seconds in MINIMAX_H3_DURATIONS_S
+            ]
+
+        shapes: list[tuple[int, int, int]] = []
+        for entry in spec.split(","):
+            entry = entry.strip()
+            if not entry:
+                continue
+            ratio_text, _, seconds_text = entry.partition("@")
+            ratio = minimax_h3_parse_aspect_ratio(ratio_text)
+            seconds = int(seconds_text) if seconds_text else MINIMAX_H3_DEFAULT_DURATION_S
+            if seconds not in MINIMAX_H3_DURATIONS_S:
+                raise ValueError(
+                    f"MINIMAX_H3_WARM_SHAPES entry {entry!r}: duration must be one of "
+                    f"{', '.join(str(d) for d in MINIMAX_H3_DURATIONS_S)}"
+                )
+            candidate = shape(ratio, seconds)
+            if candidate not in shapes:
+                shapes.append(candidate)
+        if not shapes:
+            raise ValueError("MINIMAX_H3_WARM_SHAPES was set but parsed to no shapes")
+        return shapes
+
+    def _resolve_shape(self, request: VideoGenerateRequest) -> tuple[int, int, int]:
+        """`(height, width, num_frames)` for this request, or raise with what is served.
+
+        Both levers are validated against the published set and then handed to the model's own
+        `resolve_canvas_size` / `align_num_frames`, so the canvas and frame rules live in exactly
+        one place. Nothing here rounds: an unsupported ratio or duration is refused, because
+        quietly serving a neighbouring shape returns a video the caller did not ask for.
+        """
+        from models.tt_dit.pipelines.minimax_h3.packing import (
+            align_num_frames,
+            resolve_canvas_size,
+        )
+
+        ratio = (
+            minimax_h3_parse_aspect_ratio(request.aspect_ratio)
+            if getattr(request, "aspect_ratio", None) is not None
+            else MINIMAX_H3_DEFAULT_ASPECT_RATIO
+        )
+
+        seconds = getattr(request, "duration_seconds", None)
+        if seconds is None:
+            seconds = MINIMAX_H3_DEFAULT_DURATION_S
+        elif seconds not in MINIMAX_H3_DURATIONS_S:
+            raise ValueError(
+                f"duration_seconds must be one of "
+                f"{', '.join(str(d) for d in MINIMAX_H3_DURATIONS_S)}; got {seconds}. "
+                "Only these land on a whole 17n + 5 frame count, and each is warmed separately."
+            )
+
+        height, width = resolve_canvas_size(*ratio)
+        num_frames = align_num_frames(round(seconds * MINIMAX_H3_FPS))
+        if not minimax_h3_frames_are_aligned(num_frames):
+            # Unreachable via the duration allow-list; kept so a future edit to it cannot smuggle
+            # a frame count the VAE's 17-frame chunking would reject deep inside packing.
+            raise ValueError(f"num_frames must be 17n + 5; {seconds} s resolved to {num_frames}")
+        return height, width, num_frames
+
     def _validate(self, request: VideoGenerateRequest) -> None:
-        """Reject anything this deployment has not warmed, with a reason.
+        """Reject anything outside the published working points, with a reason.
 
         The pipeline would otherwise either raise from deep inside packing or -- worse -- accept
         the request and silently recompile the whole 50-block stack inside it.
         """
-        num_frames = getattr(request, "num_frames", None) or MINIMAX_H3_NUM_FRAMES
-        if not minimax_h3_frames_are_aligned(num_frames):
+        self._resolve_shape(request)
+
+        # `num_inference_steps` is not a lever on this deployment: the AdaLN modulation table is
+        # precomputed per step count and every shape is warmed at 50, so another value would
+        # recompile the stack and read from a table built for a different schedule. It stays on
+        # the shared request model because Wan uses it, so it is refused here rather than removed
+        # there -- and refused even when it happens to equal 50, so the API has one answer instead
+        # of "accepted if you guess the number we wanted".
+        if "num_inference_steps" in getattr(request, "model_fields_set", set()):
             raise ValueError(
-                f"num_frames must be 17n + 5 (124, 243, 362, ...); got {num_frames}"
-            )
-        if num_frames != MINIMAX_H3_NUM_FRAMES:
-            raise ValueError(
-                f"this deployment serves {MINIMAX_H3_NUM_FRAMES} frames only "
-                f"({MINIMAX_H3_NUM_FRAMES / MINIMAX_H3_FPS:.2f} s); got {num_frames}"
-            )
-        # `VideoGenerateRequest.num_inference_steps` defaults to 20 and nothing in the server
-        # applies the per-model value from `ModelConfigs` (`settings.num_inference_steps` has no
-        # readers). Rejecting on the *default* would 400 every request that simply omits the
-        # field, so only an explicit disagreement is an error; an omitted field gets 50.
-        explicit = "num_inference_steps" in getattr(request, "model_fields_set", set())
-        steps = request.num_inference_steps if explicit else MINIMAX_H3_NUM_INFERENCE_STEPS
-        if steps != MINIMAX_H3_NUM_INFERENCE_STEPS:
-            raise ValueError(
-                f"this deployment serves num_inference_steps={MINIMAX_H3_NUM_INFERENCE_STEPS} only "
-                f"(the modulation table is precomputed per step count, and the pipeline is warmed "
-                f"at that schedule); got {steps}"
+                "num_inference_steps is not accepted for MiniMax-H3 t2va; omit it. This "
+                f"deployment always runs {MINIMAX_H3_NUM_INFERENCE_STEPS} steps (the modulation "
+                "table is precomputed for that schedule and every shape is warmed at it)."
             )
 
     @log_execution_time(
@@ -1486,25 +1581,35 @@ class TTMiniMaxH3Runner(TTDiTRunner):
 
         request = requests[0]
         self._validate(request)
-        self.logger.debug(f"Device {self.device_id}: Running inference")
+        height, width, num_frames = self._resolve_shape(request)
+        self.logger.debug(
+            f"Device {self.device_id}: Running inference at {width}x{height}, {num_frames} frames"
+        )
 
         output = self.pipeline(
             request.prompt,
-            num_frames=MINIMAX_H3_NUM_FRAMES,
-            height=self.resolution.height,
-            width=self.resolution.width,
+            num_frames=num_frames,
+            height=height,
+            width=width,
             num_inference_steps=MINIMAX_H3_NUM_INFERENCE_STEPS,
             seed=int(request.seed) if request.seed is not None else 0,
         )
 
-        warm = getattr(self, "_warm_padded_len", None)
-        if warm is not None and self.pipeline.last_padded_len != warm:
-            # Not fatal -- the video is fine -- but it means this request compiled rather than
-            # replayed, and the latency will look inexplicable if it is not said out loud.
+        # `_warm_padded_lens` is what is known resident: seeded by warmup (possibly empty) and
+        # extended as shapes are served, so this fires once per shape -- when compilation actually
+        # happened -- rather than on every request of an un-pre-warmed deployment.
+        warm = getattr(self, "_warm_padded_lens", None)
+        served = self.pipeline.last_padded_len
+        if warm is not None and served not in warm:
+            # Not fatal -- the video is fine -- but this request compiled rather than replayed, and
+            # the latency looks inexplicable unless it is said out loud. Recorded afterwards so the
+            # next request at this shape is quiet.
             self.logger.warning(
-                f"Device {self.device_id}: served at padded_len {self.pipeline.last_padded_len} "
-                f"but warmed at {warm}; this request paid compilation"
+                f"Device {self.device_id}: padded_len {served} was not resident "
+                f"(resident: {sorted(warm) or 'none'}); this request paid compilation. "
+                "Pre-pay it with MINIMAX_H3_WARM_SHAPES if this shape is served often."
             )
+            warm.add(served)
 
         self.logger.debug(f"Device {self.device_id}: Inference completed, muxing a/v")
         # (1, 3, F, H, W) in [0, 1] -> (F, H, W, 3), which is what the exporter's rawvideo pipe
