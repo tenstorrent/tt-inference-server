@@ -189,7 +189,7 @@ class TestModeResolution:
     def test_full_mode_uses_the_reference_durations(self):
         config = AGENTIC_TRACES_CONFIGS[KIMI_MODEL_ID]
         run = build_runs(config, _FakeModelSpec(), mode=AgenticTracesMode.FULL)[0]
-        assert run.benchmark_duration == 3600
+        assert run.benchmark_duration == 1800
         assert run.warmup_requests_per_lane == 14
         assert run.num_dataset_entries == 393
         assert run.mode is AgenticTracesMode.FULL
@@ -423,7 +423,6 @@ class TestAiperfCommand:
         cmd = self._cmd()
         for flag in (
             "--streaming",
-            "--use-server-token-count",
             "--no-gpu-telemetry",
             "--tokenizer-trust-remote-code",
             "--max-context-length",
@@ -431,6 +430,9 @@ class TestAiperfCommand:
             "--warmup-grace-period",
         ):
             assert flag in cmd, f"{flag} missing from {cmd}"
+        # Token counts come from the local tokenizer (vllm bench serve style),
+        # not from a streaming ``usage`` chunk TT endpoints typically omit.
+        assert "--use-server-token-count" not in cmd
 
     def test_the_superseded_duration_warmup_flag_is_not_emitted(self):
         """It is mutually exclusive with --warmup-requests-per-lane."""
@@ -451,6 +453,23 @@ class TestAiperfCommand:
         assert "--api-key" not in self._cmd()
         cmd = self._cmd(auth_token="tok123")
         assert cmd[cmd.index("--api-key") + 1] == "tok123"
+
+    def test_server_token_count_flag_is_opt_in(self):
+        config = AgenticTracesConfig(
+            model_id="id_test",
+            inferencex_git_ref="abc123",
+            runs=(AgenticTracesRunSpec(use_server_token_count=True),),
+        )
+        run = build_runs(config, _FakeModelSpec())[0]
+        cmd = build_aiperf_cmd(
+            run=run,
+            venv_python=Path("/venv/bin/python"),
+            model_name="m",
+            tokenizer="m",
+            url="http://localhost:8000",
+            artifact_dir=Path("/tmp/artifacts"),
+        )
+        assert "--use-server-token-count" in cmd
 
     def test_gpu_telemetry_flag_is_omitted_when_enabled(self):
         config = AgenticTracesConfig(

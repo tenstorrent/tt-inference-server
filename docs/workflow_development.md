@@ -490,7 +490,7 @@ report. It runs last, being the longest child, and a model with no config entry
 is rejected by `validate_setup` before the evals rather than after them.
 
 It is opt-in rather than implied by having a config because full mode is roughly
-an hour of profiling per configured run on top of the rest of the release; pass
+30 minutes of profiling per configured run on top of the rest of the release; pass
 `--agentic-traces-mode ci` for the 900s shape. The same
 `--agentic-traces-sources/-duration/-git-ref` overrides apply, and are rejected
 unless the run is either the standalone workflow or an opted-in release.
@@ -527,7 +527,7 @@ wall-clock profiling time rather than a dataset sample count.
 
 | Mode | Profiling | Cache warmup | Trace pool |
 | --- | --- | --- | --- |
-| `full` | 3600s | 14 req/lane | 393 entries |
+| `full` | 1800s | 14 req/lane | 393 entries |
 | `ci` | 900s | 3 req/lane | 32 entries |
 
 Cache warmup is sized by request count, not wall-clock. The harness offers both
