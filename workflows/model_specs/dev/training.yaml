@@ -25,7 +25,6 @@ templates:
     - device: P150
       max_concurrency: 1
       max_context: 1024
-      default_impl: true
     - device: P300
       max_concurrency: 1
       max_context: 1024
@@ -47,7 +46,6 @@ templates:
     - device: P150
       max_concurrency: 1
       max_context: 1024
-      default_impl: true
     - device: P300
       max_concurrency: 1
       max_context: 1024
