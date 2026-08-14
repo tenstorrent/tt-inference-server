@@ -25,20 +25,12 @@ class TrainingRequest(BaseRequest):
     def check_custom_dataset(self) -> "TrainingRequest":
         if self.dataset_loader != DatasetLoaders.CUSTOM.value:
             return self
-        missing = [
-            name
-            for name, value in (
-                ("train_dataset_path", self.train_dataset_path),
-                ("file_type", self.file_type),
-                ("template", self.template),
-            )
-            if not value
-        ]
-        if missing:
-            raise ValueError(
-                f"{', '.join(repr(n) for n in missing)} required when "
-                f"dataset_loader is '{DatasetLoaders.CUSTOM.value}'"
-            )
+        for name in ("train_dataset_path", "file_type", "template"):
+            if not getattr(self, name):
+                raise ValueError(
+                    f"{name!r} required when dataset_loader is "
+                    f"'{DatasetLoaders.CUSTOM.value}'"
+                )
         return self
 
     batch_size: int = 4
