@@ -3,28 +3,6 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 """LoRA fine-tuning runner backed by an external trainer class.
-
-Unlike ``training_lora_runner``, which re-implements mesh setup, loss, the
-train/validation loops and checkpointing, this runner translates a
-``TrainingRequest`` into a trainer config and lets the trainer own the loop.
-The trainer is tt-blacksmith's ``LoraLLMTrainer`` today; the name is deliberately
-backend-agnostic so a tt-train loop can be offered here later. Both runners are
-registered; this one is selected with ``MODEL_RUNNER=trainer-training-lora``.
-
-MULTICHIP TODO: single-chip only, enforced in ``warmup()``. Unblocking it needs
-the following in tt-blacksmith first:
-  * ``mesh_shape`` / ``mesh_axis_names`` defaults derived from
-    ``xr.global_runtime_device_count()``. ``DeviceManager._create_mesh`` returns
-    ``None`` unless both are supplied, and every multichip config today is a
-    hand-written per-machine YAML.
-  * Default ``model_sharding_patterns`` per architecture. They are hand-authored
-    regex lists per (model x topology) today; ``TrainingLoraRunner.MODEL_SHARDING_PATTERNS``
-    is the ad-hoc copy of that, with its own TODO about LoRA target-module coupling.
-  * A multichip-safe loss. ``LoraLLMTrainer._forward`` uses ``F.cross_entropy``,
-    which hits https://github.com/tenstorrent/tt-xla/issues/1993; the older
-    runner works around it with manual log_softmax plus CPU-side one-hot
-    (https://github.com/tenstorrent/tt-blacksmith/issues/455).
-  * ``DeviceManager.shard_optimizer``, which currently raises ``NotImplementedError``.
 """
 
 import math
@@ -65,8 +43,6 @@ WARMUP_DTYPE = "torch.bfloat16"
 # Device-level compile options, matching training_lora_runner.
 DEVICE_COMPILE_OPTIONS = {"fp32_dest_acc_en": True, "math_fidelity": "hifi4"}
 
-# Kept identical to blacksmith.models.torch.huggingface.hf_models.get_model so
-# results do not diverge from the equivalent blacksmith experiment.
 MODEL_COMPILE_OPTIONS = {
     "tt_enable_torch_fx_fusion_pass": False,
     "tt_legacy_compile": True,
@@ -82,15 +58,6 @@ DATASET_IDS = {
 
 @dataclass
 class DeploymentConfig:
-    """Deployment-scoped subset of the fields ``Trainer.setup()`` reads.
-
-    A ``LoraLLMConfig`` cannot be built at warmup without inventing placeholder
-    hyperparameters (``learning_rate``, ``dataset_id``, ``lora_r``, ...) that a
-    later job could silently inherit, so warmup passes this instead. The device
-    fields must exist even when ``None``: ``DeviceManager.is_data_parallel`` and
-    ``is_tensor_parallel`` read them unguarded on every batch.
-    """
-
     model_name: str
     logging: LoggingConfig
     dtype: str = WARMUP_DTYPE
@@ -110,15 +77,6 @@ class DeploymentConfig:
 
 
 class JobLoraTrainer(LoraLLMTrainer):
-    """``LoraLLMTrainer`` adapted to a long-lived serving process.
-
-    ``setup()`` is the base ``Trainer.setup()`` minus the reproducibility manager
-    (no seed reaches us from a ``TrainingRequest``) and minus the dataloader and
-    optimizer construction, which the runner drives per job. The base model
-    survives ``cleanup()``, so a request that keeps the resident dtype only pays
-    for swapping the LoRA adapter.
-    """
-
     def setup(self, config=None, **kwargs) -> None:
         if self.config is not None:
             self.cleanup()
@@ -132,10 +90,6 @@ class JobLoraTrainer(LoraLLMTrainer):
 
     def _load_base_model(self, config) -> None:
         """Load the shared base model, reusing the resident one where possible.
-
-        A dtype change re-reads the checkpoint instead of casting the resident
-        copy: that copy has already been rounded to the narrower dtype, so
-        casting it up would keep the rounding rather than undo it.
         """
         if (
             getattr(self, "_base_model", None) is not None
@@ -165,13 +119,8 @@ class JobLoraTrainer(LoraLLMTrainer):
             target_modules=self.config.lora_target_modules,
             task_type=self.config.lora_task_type,
         )
-        # Wraps the base model in place rather than copying it; `cleanup()`
-        # strips the adapter back off. Dtype was already applied at warmup.
         self.peft_model = get_peft_model(self._base_model, lora_config)
         self.peft_model.to(self.device_manager.device)
-        # Flush the host→device weight move before torch.compile builds the first
-        # graph; otherwise the opening validation sync can sit on a mixed pending
-        # transfer + compile for a very long time on large models.
         torch_xla.sync(wait=True)
         return torch.compile(
             self.peft_model, backend="tt", options=MODEL_COMPILE_OPTIONS
@@ -181,8 +130,6 @@ class JobLoraTrainer(LoraLLMTrainer):
         """``Trainer.cleanup()`` plus the adapter unload, keeping the base model."""
         peft_model = getattr(self, "peft_model", None)
         if peft_model is not None:
-            # Without this, `get_peft_model` would stack a second adapter on top
-            # of the first on the next job.
             self._base_model = peft_model.unload()
             if hasattr(self._base_model, "peft_config"):
                 delattr(self._base_model, "peft_config")
@@ -328,8 +275,6 @@ class TrainerTrainingLoraRunner(BaseDeviceRunner):
                 f"Request device '{request.device_type}' does not match "
                 f"server device '{self.settings.device}'"
             )
-        # Checked here rather than at first use so an unusable dtype fails before
-        # the job discards a perfectly good resident base model.
         if request.dtype not in TORCH_DTYPES:
             raise ValueError(
                 f"Unsupported dtype '{request.dtype}'; "
@@ -361,21 +306,13 @@ class TrainerTrainingLoraRunner(BaseDeviceRunner):
     def _custom_dataset_config(
         self, request: TrainingRequest
     ) -> Optional[CustomDatasetConfig]:
-        """Point blacksmith at the files the request carries, if it carries any.
-
-        ``TrainerConfig`` demands this sub-config whenever ``dataset_id`` is
-        ``"custom"``, and has no use for it otherwise.
-        """
         if request.dataset_loader != DatasetLoaders.CUSTOM.value:
             return None
         return CustomDatasetConfig(
             file_type=request.file_type,
             train_dataset_path=request.train_dataset_path,
-            # Left unset the trainer skips validation entirely, reporting
-            # training loss alone.
             val_dataset_path=request.val_dataset_path,
             template=request.template,
-            # blacksmith fills this in by column name when it is None.
             column_mapping=request.column_mapping,
         )
 
@@ -400,8 +337,6 @@ class TrainerTrainingLoraRunner(BaseDeviceRunner):
                 train_metrics=["loss"],
                 val_metrics=["loss"],
             ),
-            # Checkpointing is driven by AdapterCheckpointCallback, but the
-            # sub-config is required on TrainerConfig.
             checkpoint=CheckpointConfig(
                 steps_freq=max(request.save_interval, 1),
                 epoch_freq=1,
@@ -425,8 +360,6 @@ class TrainerTrainingLoraRunner(BaseDeviceRunner):
             seed=0,
             deterministic=False,
             use_tt=True,
-            # Inert, since the live DeviceManager is built from this config and
-            # the multichip guard already rejects a mesh.
             mesh_shape=None,
             mesh_axis_names=None,
             input_sharding_dim=None,
