@@ -5,6 +5,7 @@ import asyncio
 import concurrent.futures
 import json
 import os
+import re
 import shutil
 import time
 from multiprocessing import Manager, get_context
@@ -119,7 +120,10 @@ class TrainingService(BaseJobService):
                 f"'{request.source_job_id}'"
             )
 
-        output_dir = os.path.join(self._merged_models_root(), request._task_id)
+        merged_model_dir_name = re.sub(
+            r"[^a-zA-Z0-9_.-]", "-", f"{self._model_name}-{request._task_id}"
+        )
+        output_dir = os.path.join(self._merged_models_root(), merged_model_dir_name)
         request._adapter_path = adapter_path
         request._output_model_path = output_dir
 
