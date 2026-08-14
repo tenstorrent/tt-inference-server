@@ -1253,12 +1253,22 @@ templates:
         # The autoport declares supports_async_decode, unlike models/demos/gemma4,
         # so async scheduling is honored rather than disabled with a warning.
         async-scheduling: true
-        # Deliberately no tool-call or reasoning parser and no
-        # default-chat-template-kwargs: this is the *base* checkpoint, whose
-        # tokenizer has chat_template=None. vLLM's chat warmup logs a
-        # ChatTemplateResolutionError for it (non-fatal). Chat-shaped evals need
-        # doc/vllm_integration/chat_template.jinja supplied explicitly, or raw
-        # completions.
+        # The base checkpoint's tokenizer has chat_template=None, so any
+        # chat-shaped request fails with ChatTemplateResolutionError. TTI's trace
+        # capture posts to /v1/chat/completions unconditionally
+        # (utils/prompt_client.py::call_chat_inference), which failed the first
+        # benchmarks dispatch, so a template has to be supplied. This is the same
+        # file the recorded Stage 09 serving run passed: a minimal
+        # bos_token + newline-joined-content template that preserves base
+        # completion semantics rather than inventing an instruct format.
+        # The path is repo-relative and anchored to TT_METAL_HOME by
+        # run_vllm_api_server.resolve_repo_relative_vllm_args, because the
+        # checkout sits at a different absolute path in the container than in a
+        # local tree.
+        chat-template: models/autoports/google_gemma_4_31b/doc/vllm_integration/chat_template.jinja
+        # Deliberately still no tool-call or reasoning parser and no
+        # default-chat-template-kwargs: those belong to the instruction-tuned
+        # variant's contract, not this base checkpoint's.
   status: EXPERIMENTAL
   has_builtin_warmup: true
   env_vars:

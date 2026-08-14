@@ -388,3 +388,52 @@ def test_register_tt_models_leaves_extra_models_dir_unset_without_bundles(
     run_vllm_api_server_module.register_tt_models()
 
     assert "EXTRA_MODELS_DIR" not in os.environ
+
+
+def test_resolve_repo_relative_vllm_args_anchors_chat_template(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    """A spec cannot hardcode an absolute chat-template path: the tt-metal
+    checkout sits at a different location in the container than in a local tree.
+    A repo-relative value must be anchored to TT_METAL_HOME, since the server is
+    launched from its own working directory."""
+    rel = "models/autoports/google_gemma_4_31b/doc/vllm_integration/chat_template.jinja"
+    target = tmp_path / rel
+    target.parent.mkdir(parents=True)
+    target.write_text("{{ bos_token }}")
+    monkeypatch.setenv("TT_METAL_HOME", str(tmp_path))
+
+    out = run_vllm_api_server_module.resolve_repo_relative_vllm_args(
+        {"chat-template": rel, "async-scheduling": True}
+    )
+
+    assert out["chat-template"] == str(target)
+    assert out["async-scheduling"] is True
+
+
+def test_resolve_repo_relative_vllm_args_leaves_absolute_and_missing_alone(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    """Absolute paths are honored so a spec can point outside tt-metal, and a
+    relative value that does not exist under the checkout is passed through
+    rather than silently rewritten to a nonexistent path."""
+    monkeypatch.setenv("TT_METAL_HOME", str(tmp_path))
+
+    out = run_vllm_api_server_module.resolve_repo_relative_vllm_args(
+        {"chat-template": "/etc/elsewhere/tpl.jinja"}
+    )
+    assert out["chat-template"] == "/etc/elsewhere/tpl.jinja"
+
+    out = run_vllm_api_server_module.resolve_repo_relative_vllm_args(
+        {"chat-template": "does/not/exist.jinja"}
+    )
+    assert out["chat-template"] == "does/not/exist.jinja"
+
+
+def test_resolve_repo_relative_vllm_args_no_tt_metal_home(
+    monkeypatch, run_vllm_api_server_module
+):
+    """Without TT_METAL_HOME there is nothing to anchor to; return unchanged."""
+    monkeypatch.delenv("TT_METAL_HOME", raising=False)
+    args = {"chat-template": "some/rel/path.jinja"}
+    assert run_vllm_api_server_module.resolve_repo_relative_vllm_args(args) == args
