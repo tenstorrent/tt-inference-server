@@ -4,6 +4,7 @@
 #include "telemetry/sentry_tracing.hpp"
 
 #include <sentry.h>
+#include <unistd.h>
 
 #include <atomic>
 #include <cctype>
@@ -211,6 +212,13 @@ void init(const std::string& release, const std::string& instanceTag) {
     return;
   }
   gInitialized.store(true);
+
+  // sentry-native does not auto-detect the host like the Python/Node SDKs
+  // do, so attach it as a global tag (in k8s this is the pod name).
+  char hostname[256] = {};
+  if (gethostname(hostname, sizeof(hostname) - 1) == 0 && hostname[0] != '\0') {
+    sentry_set_tag("server_name", hostname);
+  }
   TT_LOG_INFO(
       "[Telemetry] Sentry tracing enabled (environment={}, release={}, "
       "traces_sample_rate={})",
