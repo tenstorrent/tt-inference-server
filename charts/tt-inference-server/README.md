@@ -325,6 +325,7 @@ All fields under `defaults` apply to every model/engine/device/impl unless overr
 | `Qwen3-8B` | p300 |
 | `Qwen3-8B` | t3k |
 | `Qwen3-VL-32B-Instruct` | t3k |
+| `Qwen3.6-27B` | p150x8 |
 | `Qwen3.6-27B` | p300x2 |
 | `gemma-3-1b-it` | n150 |
 | `gemma-3-27b-it` | galaxy |
@@ -468,10 +469,13 @@ All fields under `defaults` apply to every model/engine/device/impl unless overr
 | `Qwen3-8B` | n150 |
 | `Qwen3-8B` | n300 |
 | `Qwen3-8B` | p150 |
+| `Qwen3-Embedding-0.6B` | p300x2 |
 | `Qwen3-Embedding-4B` | galaxy |
 | `Qwen3-Embedding-4B` | n150 |
 | `Qwen3-Embedding-4B` | n300 |
+| `Qwen3-Embedding-4B` | p300x2 |
 | `Qwen3-Embedding-4B` | t3k |
+| `bge-m3` | p300x2 |
 | `efficientnet` | n150 |
 | `efficientnet` | n300 |
 | `mobilenetv2` | n150 |

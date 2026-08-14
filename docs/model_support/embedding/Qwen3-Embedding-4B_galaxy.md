@@ -8,6 +8,7 @@
 
 `Qwen3-Embedding-4B` is also supported on hardware:
 
+- [BH QuietBox 2](Qwen3-Embedding-4B_p300x2.md)
 - [WH LoudBox/QuietBox](Qwen3-Embedding-4B_t3k.md)
 - [N150](Qwen3-Embedding-4B_n150.md)
 - [N300](Qwen3-Embedding-4B_n300.md)
