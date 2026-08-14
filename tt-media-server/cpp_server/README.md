@@ -53,11 +53,13 @@ server never starts a trace of its own. On the decode → prefill ZMQ hop the
 decode transaction's traceparent rides inside `PrefillRequestMessage`, so
 both halves of a disaggregated request appear in one trace.
 
-Configuration (tracing is disabled unless `SENTRY_DSN` is set):
+Configuration: env vars override the compiled-in defaults from
+`include/config/defaults.hpp` (see `tt::config::sentry*` in
+`src/config/settings.cpp`). Export `SENTRY_DSN=` (empty) to disable tracing.
 
 | Env var | Meaning | Default |
 |---|---|---|
-| `SENTRY_DSN` | Sentry project DSN; enables tracing | unset (disabled) |
+| `SENTRY_DSN` | Sentry project DSN; empty disables tracing | shared `tt-inference-server` project DSN |
 | `SENTRY_ENVIRONMENT` | Sentry environment tag | `development` |
 | `SENTRY_RELEASE` | Release override | server version |
 | `SENTRY_TRACES_SAMPLE_RATE` | Transaction sample rate 0.0–1.0 | `1.0` |

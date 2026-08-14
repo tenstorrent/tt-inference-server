@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <utility>
 
+#include "config/settings.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::telemetry {
@@ -77,23 +78,6 @@ void collectHeader(const char* key, const char* value, void* userdata) {
   auto* out = static_cast<HeaderMap*>(userdata);
   if (key != nullptr && value != nullptr) {
     (*out)[lowercase(key)] = value;
-  }
-}
-
-double tracesSampleRateFromEnv() {
-  const char* raw = std::getenv("SENTRY_TRACES_SAMPLE_RATE");
-  if (raw == nullptr || raw[0] == '\0') {
-    return 1.0;
-  }
-  try {
-    const double rate = std::stod(raw);
-    if (rate < 0.0) return 0.0;
-    if (rate > 1.0) return 1.0;
-    return rate;
-  } catch (const std::exception&) {
-    TT_LOG_WARN("[Telemetry] Invalid SENTRY_TRACES_SAMPLE_RATE='{}', using 1.0",
-                raw);
-    return 1.0;
   }
 }
 
@@ -177,33 +161,28 @@ void Transaction::finishError(const std::string& message) {
 // ---------------------------------------------------------------------------
 
 void init(const std::string& release, const std::string& instanceTag) {
-  const char* dsn = std::getenv("SENTRY_DSN");
-  if (dsn == nullptr || dsn[0] == '\0') {
-    TT_LOG_INFO("[Telemetry] SENTRY_DSN not set; Sentry tracing disabled");
+  const std::string dsn = tt::config::sentryDsn();
+  if (dsn.empty()) {
+    TT_LOG_INFO("[Telemetry] SENTRY_DSN is empty; Sentry tracing disabled");
     return;
   }
 
-  const char* environment = std::getenv("SENTRY_ENVIRONMENT");
-  const char* releaseOverride = std::getenv("SENTRY_RELEASE");
-  const char* debug = std::getenv("SENTRY_DEBUG");
-  const double sampleRate = tracesSampleRateFromEnv();
+  const std::string environment = tt::config::sentryEnvironment();
+  const std::string releaseOverride = tt::config::sentryRelease();
+  const std::string effectiveRelease =
+      releaseOverride.empty() ? release : releaseOverride;
+  const double sampleRate = tt::config::sentryTracesSampleRate();
 
   sentry_options_t* options = sentry_options_new();
-  sentry_options_set_dsn(options, dsn);
-  sentry_options_set_environment(
-      options, (environment != nullptr && environment[0] != '\0')
-                   ? environment
-                   : "development");
-  sentry_options_set_release(
-      options, (releaseOverride != nullptr && releaseOverride[0] != '\0')
-                   ? releaseOverride
-                   : release.c_str());
+  sentry_options_set_dsn(options, dsn.c_str());
+  sentry_options_set_environment(options, environment.c_str());
+  sentry_options_set_release(options, effectiveRelease.c_str());
   sentry_options_set_traces_sample_rate(options, sampleRate);
   // Per-role SDK run directory: decode and prefill share a working
   // directory in local/disaggregated deployments.
   sentry_options_set_database_path(
       options, ("./logs/.sentry-native-" + instanceTag).c_str());
-  if (debug != nullptr && debug[0] == '1') {
+  if (tt::config::sentryDebug()) {
     sentry_options_set_debug(options, 1);
   }
 
@@ -222,12 +201,7 @@ void init(const std::string& release, const std::string& instanceTag) {
   TT_LOG_INFO(
       "[Telemetry] Sentry tracing enabled (environment={}, release={}, "
       "traces_sample_rate={})",
-      (environment != nullptr && environment[0] != '\0') ? environment
-                                                         : "development",
-      (releaseOverride != nullptr && releaseOverride[0] != '\0')
-          ? releaseOverride
-          : release,
-      sampleRate);
+      environment, effectiveRelease, sampleRate);
 }
 
 void shutdown() {

@@ -1079,6 +1079,38 @@ std::string dynamoPodNamespace() {
 }
 
 /**
+ * Sentry distributed tracing (issue #4778).
+ */
+std::string sentryDsn() {
+  return envString("SENTRY_DSN", defaults::SENTRY_DSN);
+}
+
+std::string sentryEnvironment() {
+  const std::string env =
+      envString("SENTRY_ENVIRONMENT", defaults::SENTRY_ENVIRONMENT);
+  return env.empty() ? defaults::SENTRY_ENVIRONMENT : env;
+}
+
+std::string sentryRelease() {
+  return envString("SENTRY_RELEASE", defaults::SENTRY_RELEASE);
+}
+
+double sentryTracesSampleRate() {
+  const char* raw = std::getenv("SENTRY_TRACES_SAMPLE_RATE");
+  double rate = defaults::SENTRY_TRACES_SAMPLE_RATE;
+  if (raw != nullptr && raw[0] != '\0') {
+    try {
+      rate = std::stod(raw);
+    } catch (const std::exception&) {
+      rate = defaults::SENTRY_TRACES_SAMPLE_RATE;
+    }
+  }
+  return std::clamp(rate, 0.0, 1.0);
+}
+
+bool sentryDebug() { return envBool("SENTRY_DEBUG", defaults::SENTRY_DEBUG); }
+
+/**
  * Mooncake KV Migration configuration.
  */
 unsigned kvMigrationTimeoutMs() {

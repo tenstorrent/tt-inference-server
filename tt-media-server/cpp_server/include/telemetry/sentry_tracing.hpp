@@ -17,14 +17,12 @@
  * handled. Transaction::traceparent() emits the header value for the next
  * hop (the disaggregated decode -> prefill ZMQ leg).
  *
- * Environment:
- *   SENTRY_DSN                 enables the SDK (unset = disabled)
- *   SENTRY_ENVIRONMENT         Sentry environment (default: development)
- *   SENTRY_RELEASE             release override (default: server version)
- *   SENTRY_TRACES_SAMPLE_RATE  head sample rate 0..1 (default: 1.0); the
- *                              upstream sampling decision carried in
- *                              traceparent is always honored
- *   SENTRY_DEBUG               1 = verbose SDK logging
+ * Configuration comes from tt::config (env vars with compiled-in defaults
+ * from config/defaults.hpp): SENTRY_DSN (default: the shared
+ * tt-inference-server project; export it empty to disable tracing),
+ * SENTRY_ENVIRONMENT, SENTRY_RELEASE, SENTRY_TRACES_SAMPLE_RATE (the
+ * upstream sampling decision carried in traceparent is always honored) and
+ * SENTRY_DEBUG.
  */
 
 #include <cstdint>

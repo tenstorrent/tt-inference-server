@@ -461,6 +461,31 @@ RunnerConfig workerRunnerConfig(size_t workerIndex);
 Model model();
 
 // ---------------------------------------------------------------------------
+// Sentry distributed tracing (issue #4778)
+// ---------------------------------------------------------------------------
+
+/** Sentry DSN. From SENTRY_DSN; export it empty to disable tracing. Default:
+ * defaults::SENTRY_DSN (the shared tt-inference-server project). */
+std::string sentryDsn();
+
+/** Environment tag on every transaction. From SENTRY_ENVIRONMENT. Default:
+ * defaults::SENTRY_ENVIRONMENT. */
+std::string sentryEnvironment();
+
+/** Release tag override; empty = use the server version passed to
+ * telemetry::init(). From SENTRY_RELEASE. Default: defaults::SENTRY_RELEASE. */
+std::string sentryRelease();
+
+/** Head sample rate clamped to [0, 1]; the upstream sampling decision in
+ * traceparent always wins. From SENTRY_TRACES_SAMPLE_RATE. Default:
+ * defaults::SENTRY_TRACES_SAMPLE_RATE. */
+double sentryTracesSampleRate();
+
+/** Verbose Sentry SDK logging. From SENTRY_DEBUG. Default:
+ * defaults::SENTRY_DEBUG. */
+bool sentryDebug();
+
+// ---------------------------------------------------------------------------
 // Mooncake KV Migration configuration.
 // ---------------------------------------------------------------------------
 /** Max age (ms) of an IN_PROGRESS KV migration before the sweeper marks it
