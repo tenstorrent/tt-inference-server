@@ -174,6 +174,19 @@ def build_local_server_env(
     env["TT_METAL_LOGS_PATH"] = str(logs_path)
     env["RUNTIME_MODEL_SPEC_JSON_PATH"] = str(Path(json_fpath).resolve())
 
+    # Point the TT vLLM plugin at any model bundles the checkout ships. The
+    # plugin registers every bundle under EXTRA_MODELS_DIR before its built-in
+    # map, so a repo-local implementation (e.g. models/autoports/<model>) can be
+    # served with no source edit to tenstorrent/vllm. The path is only knowable
+    # at runtime because it is relative to the resolved tt-metal checkout, and
+    # spec `env_vars` are written to a dotenv without variable expansion, so a
+    # spec cannot express it. Left unset when the directory is absent so nothing
+    # changes for checkouts without bundles; an explicit caller-provided value
+    # always wins.
+    bundles_dir = tt_metal_home / "models" / "autoports" / "vllm_bundles"
+    if "EXTRA_MODELS_DIR" not in env and bundles_dir.is_dir():
+        env["EXTRA_MODELS_DIR"] = str(bundles_dir)
+
     if setup_config.host_weights_dir:
         env["MODEL_WEIGHTS_DIR"] = str(
             Path(setup_config.host_model_weights_mount_dir).resolve()

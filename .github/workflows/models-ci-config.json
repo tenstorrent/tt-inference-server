@@ -794,6 +794,16 @@
           ]
         }
       }
+    },
+    "gemma-4-31B": {
+      "inference_engine": "vLLM",
+      "ci": {
+        "nightly": {
+          "devices": [
+            "P300X2"
+          ]
+        }
+      }
     }
   }
 }

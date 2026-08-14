@@ -308,8 +308,20 @@ qwen36_blackhole_b8_impl = ImplSpec(
     code_path="models/demos/blackhole/qwen36",
 )
 
+# Agentic autoport of base google/gemma-4-31B. Distinct impl (rather than reusing
+# tt_transformers or tt_vllm_plugin) so the release report's impl.code_path names
+# the generated implementation under test: the Stage 11 contract rules a report
+# invalid if it evaluates stock tt-transformers or models/demos instead.
+gemma4_31b_autoport_impl = ImplSpec(
+    impl_id="gemma4_31b_autoport",
+    impl_name="gemma4-31b-autoport",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/autoports/google_gemma_4_31b",
+)
+
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "tt_transformers": tt_transformers_impl,
+    "gemma4_31b_autoport": gemma4_31b_autoport_impl,
     "llama3_70b_galaxy": llama3_70b_galaxy_impl,
     "qwen3_32b_galaxy": qwen3_32b_galaxy_impl,
     "gpt_oss": gpt_oss_impl,
