@@ -170,8 +170,8 @@ templates:
 
 - weights:
     - Motif-Technologies/Motif-Image-6B-Preview
-  version: "0.9.0"
-  tt_metal_commit: c180ef7
+  version: "0.18.0"
+  tt_metal_commit: c49bb76
   impl: tt_transformers
   min_disk_gb: 15
   min_ram_gb: 6
