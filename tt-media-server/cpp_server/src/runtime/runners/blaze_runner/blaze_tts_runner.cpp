@@ -30,6 +30,19 @@ sched::GenerationParams toSchedulerGeneration(
   return out;
 }
 
+/** Bounded metrics dimension for "which voice produced these tokens". A
+ *  cloned voice costs more per token than the default speaker, and the TTS
+ *  API exposes no voice ID to label by. */
+tt::worker::tts::VoiceSource voiceSourceOf(const ipc::tts::TtsIpcTask& task) {
+  if (!task.voiceWavPcm.empty()) {
+    return tt::worker::tts::VoiceSource::VoiceSample;
+  }
+  if (task.description.has_value() && !task.description->empty()) {
+    return tt::worker::tts::VoiceSource::Description;
+  }
+  return tt::worker::tts::VoiceSource::Default;
+}
+
 }  // namespace
 
 BlazeTtsRunner::BlazeTtsRunner(
@@ -385,6 +398,7 @@ void BlazeTtsRunner::handleAllocateAck(
   slot->task_id = task.task_id;
   slot->completionPending = false;
   slot->audioLastReceived = false;
+  slot->voiceSource = voiceSourceOf(task);
 
   sched::TtsSubmit submit;
   submit.requestId = task.task_id;
@@ -432,6 +446,17 @@ void BlazeTtsRunner::handleTokenOutput(const sched::TokenOutput& output) {
       "[BlazeTtsRunner] Drained speech token taskId={} slotId={} "
       "tokenId={} final={}",
       output.taskId, output.slotId, output.tokenId, output.final);
+
+  // Every drained TokenOutput is one acoustic/codec token off the decoder,
+  // terminal one included (the engine stamps is_complete on a real token, not
+  // on a synthetic sentinel). Counting them here — the single point where the
+  // runner observes the token stream — is what makes codec-token throughput
+  // (`rate(tt_tts_codec_tokens_total[...])`) observable.
+  if (auto* slot = findSlot(output.slotId)) {
+    tt::worker::SingleProcessWorkerMetrics::instance().onCodecToken(
+        slot->voiceSource);
+  }
+
   if (output.final) {
     if (auto* slot = findSlot(output.slotId)) {
       slot->completionPending = true;

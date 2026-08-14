@@ -1874,6 +1874,7 @@ set(SOURCES
     src/runtime/worker/worker_metrics_shm.cpp
     src/runtime/worker/worker_metrics_aggregator.cpp
     src/runtime/worker/blaze_worker_metrics_renderer.cpp
+    src/runtime/worker/tts_worker_metrics_renderer.cpp
     src/dynamo/transport_protocol.cpp
     src/dynamo/llm_mapping.cpp
     src/dynamo/prefill_result_mapping.cpp

@@ -82,6 +82,36 @@ Two dedicated dashboards are provisioned for this setup:
 > construction (e.g. TPOT on the prefill dashboard, were it shown). Tailoring
 > the *exposed* metrics per mode is the next iteration.
 
+### TTS server
+
+A TTS deployment (`MODEL_SERVICE=tts`) is scraped by the plain
+`tt_media_server` job — point `SERVER_TARGET` at it like any other single
+server, and open the **TT Media Server — TTS (codec decode)** dashboard
+(uid `tt-media-server-tts`):
+
+```bash
+SERVER_TARGET=<tts-container-name>:8000 SERVER_SERVICE=cpp \
+  docker compose -f monitoring/docker-compose.yml up -d
+```
+
+Its headline metric is `tt_tts_codec_tokens_total` — cumulative acoustic /
+codec tokens emitted by the TTS decoder, labelled by `worker_id`, `device`
+(the worker's `DEVICE_IDS` group), `model_name` and `voice_source`. Throughput
+is `rate(tt_tts_codec_tokens_total[$__rate_interval])`, i.e. the autoregressive
+decode capacity that has to stay ahead of playback. Per-replica granularity
+comes from the scrape `instance` label.
+
+The metric is published by the TTS worker process into its worker-metrics
+shared-memory slot (`MetricsLayout::TTS_RUNNER`, see
+`cpp_server/include/runtime/worker/tts_metrics_layout.hpp`) and rendered on the
+main process's `/metrics` by `TtsWorkerMetricsRenderer`.
+
+There is deliberately **no `voice` or `language` label**: the TTS API accepts
+only `text`, a free-form `description` and an optional voice WAV, so neither
+dimension exists to label by. `voice_source`
+(`default` / `description` / `voice_sample`) is the bounded stand-in until
+those fields are added to the request.
+
 ### Docker Scrape Targets
 
 Prometheus runs in Docker, so `localhost` inside Prometheus refers to the
@@ -129,6 +159,7 @@ monitoring/
         ├── tt_media_server_cpp.json          # C++ server dashboard, regular mode (latency, throughput, queue)
         ├── tt_media_server_cpp_prefill.json  # C++ disaggregated prefill node (role="prefill")
         ├── tt_media_server_cpp_decode.json   # C++ disaggregated decode node (role="decode")
+        ├── tt_media_server_cpp_tts.json      # C++ TTS server (MODEL_SERVICE=tts): codec-token throughput
         ├── tt_media_server_python.json       # Python server dashboard (legacy, sunsetting)
         └── tt_prefill_gateway.json           # PrefillGateway routing, latency, registration-age dashboard
 ```

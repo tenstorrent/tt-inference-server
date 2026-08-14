@@ -179,6 +179,20 @@ class MockTtsScheduler final : public tts_scheduler::ITtsScheduler {
   void enqueueAudio(const tts_scheduler::TtsSubmit& request) {
     constexpr size_t kSamplesPerChunk = 960;  // 20 ms at 48 kHz.
     constexpr size_t kChunkCount = 3;
+    // Codec tokens the mock "decodes" into each audio chunk. The real engine
+    // emits one TokenOutput per acoustic token; the mock mirrors that shape so
+    // codec-token throughput (tt_tts_codec_tokens_total) is exercisable
+    // without hardware.
+    constexpr size_t kTokensPerChunk = 8;
+
+    for (size_t i = 0; i < kChunkCount * kTokensPerChunk; ++i) {
+      tts_scheduler::TokenOutput token;
+      token.requestId = request.requestId;
+      token.taskId = request.taskId;
+      token.slotId = request.slotId;
+      token.tokenId = static_cast<uint32_t>(i);
+      tokens.push_back(std::move(token));
+    }
 
     tts_scheduler::TokenOutput terminalToken;
     terminalToken.requestId = request.requestId;

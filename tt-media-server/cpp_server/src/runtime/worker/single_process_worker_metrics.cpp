@@ -6,9 +6,11 @@
 #include <unistd.h>
 
 #include <chrono>
+#include <cstdint>
 
 #include "config/settings.hpp"
 #include "runtime/worker/blaze_metrics_layout.hpp"
+#include "runtime/worker/tts_metrics_layout.hpp"
 #include "runtime/worker/worker_metrics_shm.hpp"
 #include "utils/logger.hpp"
 
@@ -48,12 +50,15 @@ void SingleProcessWorkerMetrics::initialize(int workerId,
   shm_->setLayout(workerId, layout);
   shm_->setPid(workerId, static_cast<int32_t>(getpid()));
 
-  // Seed sp_pipeline timestamps so age starts at ~0 instead of since-epoch.
-  if (layout == MetricsLayout::BLAZE_RUNNER) {
+  // Seed heartbeat timestamps so age starts at ~0 instead of since-epoch.
+  const size_t stepIdx = stepEpochIdx();
+  const size_t outputIdx = outputEpochIdx();
+  if (stepIdx != SIZE_MAX) {
     auto now = nowMs();
-    shm_->storeScratch(workerId, sp_pipeline::SCRATCH_STEP_EPOCH_MS, now);
-    shm_->storeScratch(workerId, sp_pipeline::SCRATCH_LAST_OUTPUT_EPOCH_MS,
-                       now);
+    shm_->storeScratch(workerId, stepIdx, now);
+    shm_->storeScratch(workerId, outputIdx, now);
+  }
+  if (layout == MetricsLayout::BLAZE_RUNNER) {
     shm_->storeScratch(workerId, sp_pipeline::SCRATCH_ACTIVE_REQUESTS, 0);
   }
 
@@ -70,15 +75,46 @@ uint64_t SingleProcessWorkerMetrics::nowMs() {
           .count());
 }
 
+size_t SingleProcessWorkerMetrics::stepEpochIdx() const {
+  switch (layout_) {
+    case MetricsLayout::BLAZE_RUNNER:
+      return sp_pipeline::SCRATCH_STEP_EPOCH_MS;
+    case MetricsLayout::TTS_RUNNER:
+      return tts::SCRATCH_STEP_EPOCH_MS;
+    default:
+      return SIZE_MAX;
+  }
+}
+
+size_t SingleProcessWorkerMetrics::outputEpochIdx() const {
+  switch (layout_) {
+    case MetricsLayout::BLAZE_RUNNER:
+      return sp_pipeline::SCRATCH_LAST_OUTPUT_EPOCH_MS;
+    case MetricsLayout::TTS_RUNNER:
+      return tts::SCRATCH_LAST_OUTPUT_EPOCH_MS;
+    default:
+      return SIZE_MAX;
+  }
+}
+
 void SingleProcessWorkerMetrics::updateStepHeartbeat() {
   if (shm_ == nullptr) return;
-  shm_->storeScratch(workerId_, sp_pipeline::SCRATCH_STEP_EPOCH_MS, nowMs());
+  const size_t idx = stepEpochIdx();
+  if (idx == SIZE_MAX) return;
+  shm_->storeScratch(workerId_, idx, nowMs());
 }
 
 void SingleProcessWorkerMetrics::updateOutputHeartbeat() {
   if (shm_ == nullptr) return;
-  shm_->storeScratch(workerId_, sp_pipeline::SCRATCH_LAST_OUTPUT_EPOCH_MS,
-                     nowMs());
+  const size_t idx = outputEpochIdx();
+  if (idx == SIZE_MAX) return;
+  shm_->storeScratch(workerId_, idx, nowMs());
+}
+
+void SingleProcessWorkerMetrics::onCodecToken(tts::VoiceSource source) {
+  if (shm_ == nullptr || layout_ != MetricsLayout::TTS_RUNNER) return;
+  shm_->fetchAddScratch(workerId_, tts::codecTokensIdx(source), 1);
+  shm_->storeScratch(workerId_, tts::SCRATCH_LAST_OUTPUT_EPOCH_MS, nowMs());
 }
 
 void SingleProcessWorkerMetrics::incrementActiveRequests() {

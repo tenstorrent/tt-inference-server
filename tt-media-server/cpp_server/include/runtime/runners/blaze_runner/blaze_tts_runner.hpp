@@ -18,6 +18,7 @@
 #include "ipc/tts_ipc.hpp"
 #include "runtime/runners/blaze_runner/tts_scheduler_interface.hpp"
 #include "runtime/runners/ipc_runner.hpp"
+#include "runtime/worker/tts_metrics_layout.hpp"
 #include "utils/voice_sample_cache.hpp"
 
 namespace tt::runners::blaze {
@@ -51,6 +52,11 @@ class BlazeTtsRunner : public IRunner {
     uint32_t task_id = 0;
     bool completionPending = false;
     bool audioLastReceived = false;
+    // Which voice path this slot's request took. Latched when the slot is
+    // allocated so per-token metrics can be attributed without re-reading the
+    // (already moved-from) task.
+    tt::worker::tts::VoiceSource voiceSource =
+        tt::worker::tts::VoiceSource::Default;
   };
 
   struct PendingTerminalMessage {

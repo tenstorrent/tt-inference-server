@@ -44,6 +44,11 @@ class TtsService : public IService {
   bool generate(domain::tts::TtsRequest request, StreamCallback callback);
   void cancel(uint32_t taskId);
 
+  /** Worker liveness source for WorkerMetricsAggregator (see LLMService). */
+  tt::worker::WorkerManager* getWorkerManager() const {
+    return workerManager.get();
+  }
+
  private:
   size_t capacityLimit() const;
   size_t currentQueueSize() const;
