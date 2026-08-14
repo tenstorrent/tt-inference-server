@@ -12,9 +12,14 @@ one mesh.
 ```bash
 git clone git@github.com:tenstorrent/tt-metal.git
 cd tt-metal
-git checkout 9c96923d1bb  # 'Add Minimax H3 support (#52874)', the squashed merge on main
+git checkout a01e402540629bb5cadd8642fbde1b83c06f6a05  # 'Let a line-cabled mesh run the H3 FFN'
 ./build_metal.sh --build-all
 ```
+
+That commit is `cglagovich/minimax-h3-linear`: current `main` plus the one gate the FFN's fused
+reduce-scatter needs to fall back on a line-cabled mesh. On a ring it is a no-op, so this pin is
+correct for both topologies; see [fabric topology](#fabric-topology) below. Building plain `main`
+instead is fine **only** for a ring.
 
 ## 2. Clone the inference server
 
@@ -128,6 +133,7 @@ Four of these bite if wrong:
 | `MINIMAX_H3_MODEL_PATH` | the single weights lever. Unset -> nothing finds the snapshot, and the model-side gates *skip* rather than fail, so a run can look clean while testing nothing. (`MINIMAX_H3_DIFFUSERS_DIR` was folded into this one and is no longer read.) |
 | `USE_ASYNC_VIDEO` | false -> the request blocks for ~70 s and clients time out |
 | `MODEL_RUNNER` | set it. `MODEL`+`DEVICE` resolve the runner on their own, but an inherited `MODEL_RUNNER` **wins over them silently** -- and `/data/cglagovich/inference_server_env.sh` exports `MODEL_RUNNER=tt-wan2.2`, so sourcing that script loads Wan and ignores `MODEL="MiniMax-H3"` entirely. The only symptom is a `WanPipeline` traceback in a log you were expecting to say MiniMax. |
+| `MINIMAX_H3_FABRIC_TOPOLOGY` | `ring` (default) or `linear`, and it must match how the mesh is cabled. Anything else is rejected at startup rather than deep in fabric init. See [fabric topology](#fabric-topology). |
 
 The weights directory needs `transformer/`, `text_encoder/`, `vae/`, `audio_vae/` and `tokenizer/`.
 They are mounted, never baked: ~62 GB for the transformer partition, and the text encoder alone is
@@ -171,6 +177,40 @@ It is logged once per shape, not per request. To pre-pay it for the shapes you a
 ```bash
 curl -s localhost:8000/tt-liveness      # {"status":"alive","model_ready":true,...}
 ```
+
+### Fabric topology
+
+H3 runs its collectives on a **ring** by default, which is what a 4x8 Blackhole Galaxy is normally
+cabled for. A deployment whose mesh is only a line sets one variable before starting:
+
+```bash
+export MINIMAX_H3_FABRIC_TOPOLOGY=linear   # 'ring' is the default; nothing else is accepted
+```
+
+It moves the fabric config and the collectives the model issues **together** -- `FABRIC_1D` instead
+of `FABRIC_1D_RING`, and `Topology.Linear` into the pipeline's `CCLManager`. They are not
+independently settable on purpose: a line fabric under ring collectives dies as `TT_FATAL
+fabric.cpp:174 forwarding_direction.has_value()`. Confirm the pair in the log at startup:
+
+```
+Fabric Initialized with config FabricConfig::FABRIC_1D
+Device 0,...,31: MiniMax-H3 collectives on Topology.Linear
+```
+
+`linear` costs about 30%, all of it in denoise, because two fusions are ring-only -- the fused
+all-gather-matmul (`use_fused_agmm`) and the FFN's fused matmul + reduce-scatter. Measured at
+16:9/5s, warm:
+
+| topology | compute | denoise (49 steps) | VAE | audio |
+|---|---|---|---|---|
+| `ring` | 74.2 s | 60.1 s | 6.5 s | 6.8 s |
+| `linear` | 96.3 s | 82.6 s | 6.6 s | 6.8 s |
+
+The two VAEs are data-parallel over work units with replicated weights, so they do not move.
+
+`linear` needs the tt-metal pin from step 1. On plain `main` the fused reduce-scatter is selected on
+shape alone and the **first denoise step of the first request** dies as *"MinimalMatmulStridedReduce
+ScatterAsync only supports Ring topology"* -- after warmup has already reported the model loaded.
 
 ## 7. Generate
 

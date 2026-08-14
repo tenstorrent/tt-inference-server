@@ -1307,11 +1307,35 @@ MINIMAX_H3_WARMUP_PROMPT = (
 )
 
 
+def minimax_h3_topology() -> ttnn.Topology:
+    """Collective topology for H3, from `MINIMAX_H3_FABRIC_TOPOLOGY` (`ring` default, or `linear`).
+
+    The fabric config and the *collectives the model issues* must agree, so this one value feeds
+    both `_minimax_h3_device_params` and the pipeline. Setting only the fabric to a line while the
+    model still issues ring collectives is what dies as
+    `TT_FATAL fabric.cpp:174 forwarding_direction.has_value()`.
+
+    `linear` exists for deployments whose Galaxy is not cabled as a ring. It is slower: the H3
+    transformer takes its fused all-gather-matmul path only on Ring (`use_fused_agmm` in
+    `transformer_block_minimax_h3.py`, `attention_minimax_h3.py`, `token_refiner_minimax_h3.py`),
+    so `linear` silently falls back to unfused all-gather then matmul.
+    """
+    raw = (os.environ.get("MINIMAX_H3_FABRIC_TOPOLOGY") or "ring").strip().lower()
+    if raw == "ring":
+        return ttnn.Topology.Ring
+    if raw == "linear":
+        return ttnn.Topology.Linear
+    raise ValueError(
+        f"MINIMAX_H3_FABRIC_TOPOLOGY={raw!r} is not recognised; use 'ring' (default) or 'linear'"
+    )
+
+
 def _minimax_h3_device_params() -> dict:
     """Device params for MiniMax-H3 t2va on the 4x8 Blackhole Galaxy.
 
-    Ring is not a tuning choice. The model issues ring collectives, and a ring collective on a
-    line fabric dies as `TT_FATAL fabric.cpp:174 forwarding_direction.has_value()`.
+    Ring is the default because it is faster, but it is not the only option: a deployment whose
+    mesh is cabled as a line sets `MINIMAX_H3_FABRIC_TOPOLOGY=linear`, which switches the fabric
+    and the model's collectives together. See `minimax_h3_topology`.
 
     `l1_small_size` is mandatory and its absence does not name itself: a bare open fails later
     at `bank_manager.cpp:462` / "bank size is 0 B", which means *unallocated*, not too small.
@@ -1322,8 +1346,11 @@ def _minimax_h3_device_params() -> dict:
     """
     router_config = ttnn.FabricRouterConfig()
     router_config.max_packet_payload_size_bytes = 8192
+    ring = minimax_h3_topology() == ttnn.Topology.Ring
     return {
-        "fabric_config": ttnn.FabricConfig.FABRIC_1D_RING,
+        "fabric_config": (
+            ttnn.FabricConfig.FABRIC_1D_RING if ring else ttnn.FabricConfig.FABRIC_1D
+        ),
         "fabric_router_config": router_config,
         "l1_small_size": 65536,
     }
@@ -1376,9 +1403,16 @@ class TTMiniMaxH3Runner(TTDiTRunner):
 
     def create_pipeline(self):
         try:
+            # Must match the fabric this runner opened the mesh with; both read the same env var.
+            topology = minimax_h3_topology()
+            self.logger.info(
+                f"Device {self.device_id}: MiniMax-H3 collectives on {topology} "
+                f"(MINIMAX_H3_FABRIC_TOPOLOGY={os.environ.get('MINIMAX_H3_FABRIC_TOPOLOGY') or 'ring (default)'})"
+            )
             return MiniMaxH3Pipeline.create_pipeline(
                 mesh_device=self.ttnn_device,
                 weights_dir=self._weights_dir(),
+                topology=topology,
             )
         except Exception as e:
             log_exception_chain(
