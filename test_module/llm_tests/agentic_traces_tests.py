@@ -5,17 +5,19 @@
 """Orchestrator for the agentic trace-replay benchmark.
 
 Bridges ``test_module`` to ``llm_module``: resolves the per-ModelSpec config,
-expands it into runs for the requested :class:`AgenticTracesMode`, executes one
-:class:`AIPerfAgenticTracesDriver` invocation per run, converts each payload into
-a :class:`report_module.schema.Block` via
-:class:`AIPerfAgenticTracesParser`, and forwards the Blocks to
-``workflow_module.accept_blocks`` so the unified report generator picks them up.
+expands it into runs for the requested :class:`AgenticTracesMode`, dispatches
+each run to the driver for its :class:`TraceSource`, converts each payload into
+a :class:`report_module.schema.Block` via that source's parser, and forwards the
+Blocks to ``workflow_module.accept_blocks`` so the unified report generator
+picks them up.
 
 Modeled on :mod:`test_module.llm_tests.prefix_cache_tests`. The one structural
 difference is the timeout: a full-length agentic run profiles for an hour after
 warming the cache, which comfortably exceeds the 2h default in
-:class:`llm_module.config.DriverContext`, so the per-run timeout is derived from
-the plan instead of left at the default.
+:class:`llm_module.config.DriverContext`, so each run's timeout is derived from
+its own entry in the plan instead of left at the default. Deriving it per run
+rather than once for the sweep keeps a short run's hang short even when a
+long-running source is planned alongside it.
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ from __future__ import annotations
 import logging
 import sys
 import time
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Sequence
@@ -30,6 +33,7 @@ from typing import Optional, Sequence
 from llm_module import ServerConnection
 from llm_module.agentic_traces import (
     build_runs,
+    estimated_run_seconds,
     summarize_runs,
     total_planned_seconds,
 )
@@ -38,7 +42,9 @@ from llm_module.drivers.aiperf_agentic_traces import (
     AgenticTracesDriverResult,
     AIPerfAgenticTracesDriver,
 )
+from llm_module.drivers.swo_bench_agentic_traces import SwoBenchAgenticTracesDriver
 from llm_module.parsers.aiperf_agentic_traces import AIPerfAgenticTracesParser
+from llm_module.parsers.swo_bench_agentic_traces import SwoBenchAgenticTracesParser
 from llm_module.runner import RunnerResult
 from llm_module.server_control import ServerController
 from reference_config.agentic_traces.agentic_traces_config import (
@@ -153,27 +159,46 @@ def run_agentic_traces(
         return result
 
     logger.info(summarize_runs(runs))
-    logger.info(
-        "[agentic-traces] InferenceX client pinned at %s",
-        effective_config.inferencex_git_ref,
-    )
+    # The pinned InferenceX ref only matters when an InferenceX run is planned;
+    # a swarmone-only sweep never clones it.
+    if any(run.trace_source is TraceSource.INFERENCEX_AGENTX for run in runs):
+        logger.info(
+            "[agentic-traces] InferenceX client pinned at %s",
+            effective_config.inferencex_git_ref,
+        )
 
     output_root = Path(ctx.output_path) / output_subdir
-    artifact_root = output_root / "aiperf_artifacts"
     output_root.mkdir(parents=True, exist_ok=True)
-    artifact_root.mkdir(parents=True, exist_ok=True)
 
     model_repo = getattr(spec, "hf_model_repo", "") or ""
     model_id = getattr(spec, "model_id", "") or model_repo
     device_label = ctx.device.name if hasattr(ctx.device, "name") else str(ctx.device)
+    resolved_venv_python = Path(venv_python) if venv_python else Path(sys.executable)
 
-    driver = AIPerfAgenticTracesDriver(
-        venv_python=Path(venv_python) if venv_python else Path(sys.executable),
-        artifact_root=artifact_root,
+    # One driver per trace source, each writing under its own artifact subtree so
+    # a mixed sweep keeps AIPerf and swo-bench artifacts separate.
+    aiperf_driver = AIPerfAgenticTracesDriver(
+        venv_python=resolved_venv_python,
+        artifact_root=output_root / "aiperf_artifacts",
         model_repo=model_repo,
         model_id=model_id,
         output_dir=output_root,
     )
+    swo_bench_driver = SwoBenchAgenticTracesDriver(
+        venv_python=resolved_venv_python,
+        artifact_root=output_root / "swo_bench_artifacts",
+        model_repo=model_repo,
+        model_id=model_id,
+        output_dir=output_root,
+    )
+    drivers = {
+        TraceSource.INFERENCEX_AGENTX: aiperf_driver,
+        TraceSource.SWARMONE: swo_bench_driver,
+    }
+    parsers = {
+        TraceSource.INFERENCEX_AGENTX: AIPerfAgenticTracesParser(),
+        TraceSource.SWARMONE: SwoBenchAgenticTracesParser(),
+    }
 
     server = ServerConnection(
         base_url=ctx.server_host,
@@ -189,22 +214,13 @@ def run_agentic_traces(
         ),
         prefix_cache_metrics_urls=tuple(metrics_urls or ()),
     )
-    context = DriverContext(
-        output_dir=output_root,
-        device=device_label,
-        # The request-bounded warmup has no wall-clock cap, so warmup_grace_period
-        # is the allowance for it rather than a guarantee; the timeout backstops.
-        per_run_timeout_s=float(
-            max(run.benchmark_duration for run in runs)
-            + max(run.warmup_grace_period for run in runs)
-            + _TIMEOUT_HEADROOM_SECONDS
-        ),
-    )
+    # Timeouts are sized per run rather than once for the sweep: a mixed sweep
+    # spans very different shapes (a swarmone replay is allowed hours, an
+    # InferenceX profile is a fixed window), and a sweep-wide maximum would let
+    # a hung short run hold the cluster for the longest run's allowance.
+    base_context = DriverContext(output_dir=output_root, device=device_label)
     logger.info(
-        "[agentic-traces] Per-run subprocess timeout: %.0fs (planned sweep "
-        "wall-clock: %ds)",
-        context.per_run_timeout_s,
-        total_planned_seconds(runs),
+        "[agentic-traces] Planned sweep wall-clock: %ds", total_planned_seconds(runs)
     )
 
     if server_controller is not None and not server_controller.wait_for_healthy():
@@ -212,17 +228,30 @@ def run_agentic_traces(
         result.return_codes.append(1)
         return result
 
-    parser = AIPerfAgenticTracesParser()
     for i, run in enumerate(runs, 1):
         if server_controller is not None and not _server_still_healthy(
             server_controller, result
         ):
             break
 
-        logger.info("[agentic-traces] Running %d/%d: %s", i, len(runs), run.label)
+        # The estimate is source-aware: InferenceX profiles for a fixed window
+        # (its request-bounded warmup has no wall-clock cap, so
+        # warmup_grace_period is the allowance, not a guarantee) while swo-bench
+        # replays a request-count-driven scenario (see ``estimated_run_seconds``).
+        run_timeout_s = float(estimated_run_seconds(run) + _TIMEOUT_HEADROOM_SECONDS)
+        logger.info(
+            "[agentic-traces] Running %d/%d: %s (timeout %.0fs)",
+            i,
+            len(runs),
+            run.label,
+            run_timeout_s,
+        )
         if i > 1 and inter_run_sleep_s:
             time.sleep(inter_run_sleep_s)
 
+        driver = drivers[run.trace_source]
+        parser = parsers[run.trace_source]
+        context = replace(base_context, per_run_timeout_s=run_timeout_s)
         outcome: AgenticTracesDriverResult = driver.run(run, server, context)
         result.return_codes.append(outcome.return_code)
         if outcome.return_code != 0 or outcome.payload is None:

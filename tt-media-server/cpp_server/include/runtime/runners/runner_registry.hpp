@@ -15,6 +15,7 @@
 #include "ipc/interface/cancel_queue.hpp"
 #include "ipc/interface/result_queue.hpp"
 #include "ipc/interface/task_queue.hpp"
+#include "ipc/tts_ipc.hpp"
 #include "runtime/runners/ipc_runner.hpp"
 #include "runtime/runners/runner_base.hpp"
 
@@ -31,6 +32,11 @@ class RunnerRegistry {
   using IpcFactory = std::function<std::unique_ptr<runners::IRunner>(
       const config::RunnerConfig& config, ipc::IResultQueue* resultQueue,
       ipc::ITaskQueue* taskQueue, ipc::ICancelQueue* cancelQueue)>;
+
+  using TtsIpcFactory = std::function<std::unique_ptr<runners::IRunner>(
+      const config::RunnerConfig& config, ipc::tts::TtsTaskQueue* taskQueue,
+      ipc::tts::TtsAudioChunkQueue* audioQueue,
+      ipc::ICancelQueue* cancelQueue)>;
 
   using MediaFactory = std::function<std::unique_ptr<runners::IRunnerBase>(
       const config::RunnerConfig& config)>;
@@ -49,6 +55,19 @@ class RunnerRegistry {
       ipc::ITaskQueue* taskQueue, ipc::ICancelQueue* cancelQueue) const;
 
   bool hasIpc(config::ModelService service, config::ModelRunnerType type) const;
+
+  void registerTtsIpcRunner(config::ModelService service,
+                            config::ModelRunnerType type,
+                            TtsIpcFactory factory);
+
+  std::unique_ptr<runners::IRunner> createTtsIpc(
+      config::ModelService service, config::ModelRunnerType type,
+      const config::RunnerConfig& config, ipc::tts::TtsTaskQueue* taskQueue,
+      ipc::tts::TtsAudioChunkQueue* audioQueue,
+      ipc::ICancelQueue* cancelQueue) const;
+
+  bool hasTtsIpc(config::ModelService service,
+                 config::ModelRunnerType type) const;
 
   void registerMediaRunner(config::ModelService service,
                            config::ModelRunnerType type, MediaFactory factory);
@@ -96,6 +115,7 @@ class RunnerRegistry {
   };
 
   std::unordered_map<Key, IpcFactory, KeyHash> ipc_factories_;
+  std::unordered_map<Key, TtsIpcFactory, KeyHash> tts_ipc_factories_;
   std::unordered_map<Key, MediaFactory, KeyHash> media_factories_;
 };
 

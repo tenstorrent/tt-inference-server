@@ -11,7 +11,6 @@
 #include <string>
 #include <utility>
 
-#include "config/settings.hpp"
 #include "domain/manage_memory.hpp"
 #include "ipc/helpers/token_push.hpp"
 #include "runtime/runners/blaze_runner/blaze_slot_manager.hpp"
@@ -698,9 +697,11 @@ void BlazeDecodeRunner::checkOutputHang() {
         stalledFor.count(),                 // How bad is it?
         outputHangTimeout.count(),          // What was the limit?
         slotManager.activeRunningCount());  // Global context
+    std::stringstream ss;
+    decodeScheduler->dump_diagnostics(ss);
 
     TT_LOG_CRITICAL("[BlazeRunner] State dump\n{}",
-                    slotManager.dumpSlotStates());
+                    slotManager.dumpSlotStates(ss.str()));
     shutdownScheduler();
     std::abort();
   }
@@ -719,13 +720,6 @@ void BlazeDecodeRunner::handleTask(
   assert(slotId < config.maxUsers);
 
   bool isNew = !task->isContinuation() && !task->isDisaggregated();
-  if (isNew && task->getSamplingParams().hasGuidedDecoding()) {
-    TT_LOG_WARN(
-        "[BlazeDecodeRunner] task_id={} has response_format constraint but "
-        "SP Pipeline does not support per-step guided decoding yet. "
-        "Output may not conform to the requested schema.",
-        task->taskId);
-  }
 
   auto& slotContext = slotManager.getSlotContext(slotId);
   switch (slotContext.state) {

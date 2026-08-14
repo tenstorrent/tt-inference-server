@@ -33,6 +33,10 @@
       "description": "OpenAI-compatible image generation, image-to-image, and edit endpoints. Only the route matching the active runner_type is registered at runtime."
     },
     {
+      "name": "Text to speech processing",
+      "description": "Text-to-speech audio generation endpoints. Only registered when MODEL_SERVICE=tts."
+    },
+    {
       "name": "Sessions",
       "description": "Session management for slot assignments"
     },
@@ -141,6 +145,85 @@
           },
           "503": {
             "description": "Model not ready",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/audio/speech": {
+      "post": {
+        "tags": ["Text to speech processing"],
+        "summary": "Create speech audio",
+        "description": "Generates speech audio from text. Registered only when MODEL_SERVICE=tts. The initial C++ implementation streams audio/wav.",
+        "operationId": "createSpeech",
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/TtsSpeechRequest" }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "allOf": [
+                  { "$ref": "#/components/schemas/TtsSpeechRequest" },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "voice_sample": {
+                        "type": "string",
+                        "format": "binary",
+                        "description": "Optional PCM16 WAV voice reference. The server normalizes it to 16 kHz mono PCM16 before scheduling."
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Streaming WAV audio",
+            "content": {
+              "audio/wav": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid authentication token",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "429": {
+            "description": "TTS request queue is full",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "503": {
+            "description": "TTS backend is not ready",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/Error" }
@@ -435,7 +518,7 @@
       "get": {
         "tags": ["Health"],
         "summary": "Build identity",
-        "description": "Returns the build identity of the running server: tt-inference-server version and commit, tt-blaze commit, and tt-metal commit. Missing values appear as the literal string \"unknown\". No authentication required.",
+        "description": "Returns the build identity of the running server: tt-inference-server version and commit, tt-llm-engine commit, tt-metal commit, and active model service. Missing values appear as the literal string \"unknown\". No authentication required.",
         "operationId": "getInfo",
         "security": [],
         "responses": {
@@ -518,44 +601,10 @@
           "frequency_penalty": { "type": "number" },
           "seed": { "type": "integer" },
           "user": { "type": "string" },
-          "response_format": {
-            "$ref": "#/components/schemas/ResponseFormat"
-          },
           "enable_reasoning": {
             "type": "boolean",
             "default": true,
             "description": "When false, reasoning models (e.g. DeepSeek-R1) skip chain-of-thought and respond directly. Has no effect on non-reasoning models."
-          }
-        }
-      },
-      "ResponseFormat": {
-        "type": "object",
-        "required": ["type"],
-        "properties": {
-          "type": {
-            "type": "string",
-            "enum": ["text", "json_object", "json_schema"],
-            "description": "The format the model must output. 'text' for free-form, 'json_object' for any valid JSON, 'json_schema' for JSON matching a specific schema."
-          },
-          "json_schema": {
-            "type": "object",
-            "description": "Required when type is 'json_schema'. Specifies the JSON schema the output must conform to.",
-            "properties": {
-              "name": {
-                "type": "string",
-                "description": "A name for the schema (for identification)"
-              },
-              "strict": {
-                "type": "boolean",
-                "default": false,
-                "description": "Whether to enforce strict schema adherence"
-              },
-              "schema": {
-                "type": "object",
-                "description": "The JSON Schema object that the output must match"
-              }
-            },
-            "required": ["schema"]
           }
         }
       },
@@ -712,16 +761,22 @@
       },
       "InfoResponse": {
         "type": "object",
-        "required": ["tt_inference_server", "tt_blaze", "tt_metal"],
+        "required": ["tt_inference_server", "tt_llm_engine", "tt_metal", "model_service"],
         "properties": {
           "tt_inference_server": { "$ref": "#/components/schemas/ServerVersionInfo" },
-          "tt_blaze": { "$ref": "#/components/schemas/CommitInfo" },
-          "tt_metal": { "$ref": "#/components/schemas/CommitInfo" }
+          "tt_llm_engine": { "$ref": "#/components/schemas/CommitInfo" },
+          "tt_metal": { "$ref": "#/components/schemas/CommitInfo" },
+          "model_service": {
+            "type": "string",
+            "enum": ["llm", "embedding", "image", "tts"],
+            "description": "Active MODEL_SERVICE for route gating."
+          }
         },
         "example": {
           "tt_inference_server": { "version": "0.13.0", "commit": "b0f8adfc1234567890abcdef1234567890abcdef" },
-          "tt_blaze": { "commit": "abc123def456abc123def456abc123def4567890" },
-          "tt_metal": { "commit": "915d9e67ad572b97fbaf5339bd3e518db6dc05e3" }
+          "tt_llm_engine": { "commit": "abc123def456abc123def456abc123def4567890" },
+          "tt_metal": { "commit": "915d9e67ad572b97fbaf5339bd3e518db6dc05e3" },
+          "model_service": "tts"
         }
       },
       "ServerVersionInfo": {
@@ -843,6 +898,20 @@
               "prompt_tokens": { "type": "integer" },
               "total_tokens": { "type": "integer" }
             }
+          }
+        }
+      },
+      "TtsSpeechRequest": {
+        "type": "object",
+        "required": ["text"],
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "Text to synthesize into speech."
+          },
+          "description": {
+            "type": "string",
+            "description": "Optional natural-language voice description."
           }
         }
       },

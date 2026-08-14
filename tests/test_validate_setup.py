@@ -6,14 +6,14 @@
 
 import os
 from argparse import Namespace
-from unittest.mock import ANY, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from reference_config.agentic_traces.agentic_traces_config import (
     AGENTIC_TRACES_CONFIGS,
+    TraceSource,
 )
-from workflows.run_local_server import vllm_tt_plugin_source_path
 from workflows.runtime_config import RuntimeConfig
 from workflows.utils import check_path_permissions_for_uid
 from workflows.validate_setup import (
@@ -507,15 +507,20 @@ class TestLocalServerValidation:
 
         mock_get_log_dir.return_value = tmp_path / "logs"
 
-        # No vllm checkout, so plugin install + check are skipped and the only
-        # run_command call is the existing `import vllm` probe.
         validate_local_setup(model_spec, runtime_config, tmp_path / "runtime.json")
 
         mock_ensure_dir.assert_called_once_with(tmp_path / "logs")
-        mock_run_command.assert_any_call(
-            [str(venv_python), "-c", "import vllm"], logger=ANY
-        )
-        assert mock_run_command.call_count == 1
+        # Two probes, both unconditional: vLLM importable, then the vllm-tt-plugin
+        # `tt` platform entry point registered. Neither needs a source checkout.
+        assert mock_run_command.call_count == 2
+        calls = mock_run_command.call_args_list
+        assert calls[0].args[0] == [str(venv_python), "-c", "import vllm"]
+        probe_cmd = calls[1].args[0]
+        assert probe_cmd[0] == str(venv_python)
+        assert probe_cmd[1] == "-c"
+        assert "import vllm_tt_plugin" in probe_cmd[2]
+        assert "vllm.platform_plugins" in probe_cmd[2]
+        assert "'tt' in eps" in probe_cmd[2]
 
     @patch("workflows.validate_setup.run_command", return_value=1)
     @patch("workflows.validate_setup.ensure_readwriteable_dir")
@@ -545,21 +550,21 @@ class TestLocalServerValidation:
         mock_ensure_dir.assert_called_once_with(tmp_path / "logs")
         mock_run_command.assert_called_once()
 
-    @patch("workflows.run_local_server.run_command", return_value=0)
-    @patch("workflows.validate_setup.run_command", return_value=0)
     @patch("workflows.validate_setup.ensure_readwriteable_dir")
     @patch("workflows.validate_setup.get_default_workflow_root_log_dir")
-    def test_validate_local_setup_installs_and_verifies_tt_plugin_when_present(
+    def test_validate_local_setup_probes_tt_plugin_without_a_vllm_checkout(
         self,
         mock_get_log_dir,
         mock_ensure_dir,
-        mock_validate_run_command,
-        mock_runlocal_run_command,
         tmp_path,
     ):
-        """When the vLLM checkout ships plugins/vllm-tt-plugin, local-server
-        validation must (a) editable-install the plugin via run_local_server's
-        install helper and (b) probe that the `tt` entry-point is registered.
+        """The `tt` entry-point probe must run unconditionally.
+
+        vllm-tt-plugin is its own repository now, installed into the tt-metal
+        venv by its docs/install-vllm-tt.sh. There is no plugin source tree
+        under the vLLM checkout to gate the probe on, and gating on one meant
+        validation was silently skipped in exactly the case it was needed --
+        letting `vllm serve` fail later with no TT platform registered.
         """
         tt_metal_home = tmp_path / "tt-metal"
         python_bin_dir = tt_metal_home / "python_env" / "bin"
@@ -567,96 +572,27 @@ class TestLocalServerValidation:
         venv_python = python_bin_dir / "python"
         venv_python.write_text("")
 
-        # Stage the plugin source so the validator detects it.
-        vllm_dir = tmp_path / "vllm"
-        plugin_dir = vllm_tt_plugin_source_path(vllm_dir)
-        plugin_dir.mkdir(parents=True)
-        (plugin_dir / "pyproject.toml").write_text(
-            "[project]\nname = 'vllm-tt-plugin'\n"
-        )
-
         model_spec = self._make_model_spec()
         runtime_config = self._make_runtime_config()
         runtime_config.tt_metal_home = str(tt_metal_home)
-        runtime_config.vllm_dir = str(vllm_dir)
         runtime_config.skip_system_sw_validation = True
 
         mock_get_log_dir.return_value = tmp_path / "logs"
 
-        validate_local_setup(model_spec, runtime_config, tmp_path / "runtime.json")
-
-        # The plugin install happens through workflows.run_local_server.run_command
-        # because install_vllm_tt_plugin_if_present is defined in that module.
-        mock_runlocal_run_command.assert_called_once()
-        plugin_install_cmd = mock_runlocal_run_command.call_args.args[0]
-        assert "pip install" in plugin_install_cmd
-        assert "--no-deps" in plugin_install_cmd
-        assert "plugins/vllm-tt-plugin" in plugin_install_cmd
-        assert mock_runlocal_run_command.call_args.kwargs["check"] is True
-
-        # The validator side does two calls: `import vllm` and the entry-point check.
-        validate_calls = mock_validate_run_command.call_args_list
-        assert len(validate_calls) == 2
-        assert validate_calls[0].args[0] == [str(venv_python), "-c", "import vllm"]
-        entry_point_cmd = validate_calls[1].args[0]
-        assert entry_point_cmd[0] == str(venv_python)
-        assert entry_point_cmd[1] == "-c"
-        script = entry_point_cmd[2]
-        assert "import vllm_tt_plugin" in script
-        assert "vllm.platform_plugins" in script
-        assert "'tt' in eps" in script
-
-    @patch("workflows.run_local_server.run_command", return_value=0)
-    @patch("workflows.validate_setup.ensure_readwriteable_dir")
-    @patch("workflows.validate_setup.get_default_workflow_root_log_dir")
-    def test_validate_local_setup_raises_when_tt_plugin_entry_point_missing(
-        self,
-        mock_get_log_dir,
-        mock_ensure_dir,
-        mock_runlocal_run_command,
-        tmp_path,
-    ):
-        """If the plugin install succeeds but the entry-point check fails
-        (e.g. wheel staleness, missing pip --editable refresh), validation
-        must raise an actionable error rather than letting `vllm serve`
-        crash later.
-        """
-        tt_metal_home = tmp_path / "tt-metal"
-        python_bin_dir = tt_metal_home / "python_env" / "bin"
-        python_bin_dir.mkdir(parents=True)
-        (python_bin_dir / "python").write_text("")
-
-        vllm_dir = tmp_path / "vllm"
-        plugin_dir = vllm_tt_plugin_source_path(vllm_dir)
-        plugin_dir.mkdir(parents=True)
-        (plugin_dir / "pyproject.toml").write_text(
-            "[project]\nname = 'vllm-tt-plugin'\n"
-        )
-
-        model_spec = self._make_model_spec()
-        runtime_config = self._make_runtime_config()
-        runtime_config.tt_metal_home = str(tt_metal_home)
-        runtime_config.vllm_dir = str(vllm_dir)
-        runtime_config.skip_system_sw_validation = True
-
-        mock_get_log_dir.return_value = tmp_path / "logs"
-
-        # `import vllm` (call 1) succeeds with rc=0; the plugin entry-point
-        # probe (call 2) fails with rc=1.
+        # Deliberately no vLLM checkout staged anywhere. `import vllm` succeeds
+        # (rc=0); the plugin probe fails (rc=1) and must surface as an error.
         with patch(
             "workflows.validate_setup.run_command", side_effect=[0, 1]
-        ) as mock_validate_run_command:
-            with pytest.raises(
-                ValueError,
-                match=r"`vllm_tt_plugin` Python package",
-            ):
+        ) as mock_run_command:
+            with pytest.raises(ValueError, match=r"`vllm_tt_plugin` Python package"):
                 validate_local_setup(
                     model_spec, runtime_config, tmp_path / "runtime.json"
                 )
 
-            assert mock_validate_run_command.call_count == 2
-
-        mock_runlocal_run_command.assert_called_once()
+            assert mock_run_command.call_count == 2
+            probe_script = mock_run_command.call_args_list[1].args[0][2]
+            assert "import vllm_tt_plugin" in probe_script
+            assert "vllm.platform_plugins" in probe_script
 
 
 class TestAgenticTracesRegistration:
@@ -687,7 +623,14 @@ class TestAgenticTracesRegistration:
         return config
 
     def _validate(self, spec, runtime_config):
-        with patch.dict("workflows.validate_setup.MODEL_SPECS", {spec.model_id: spec}):
+        # No license, deliberately: these paths must not depend on one. The
+        # host running the suite may happen to have a key, so pin it to absent.
+        with patch.dict(
+            "workflows.validate_setup.MODEL_SPECS", {spec.model_id: spec}
+        ), patch(
+            "workflows.validate_setup._swarmone_license_available",
+            return_value=False,
+        ):
             validate_runtime_args(spec, runtime_config)
 
     def test_unregistered_model_is_rejected(self):
@@ -708,7 +651,11 @@ class TestAgenticTracesRegistration:
         assert "git ref" in message
 
     def test_registered_model_passes(self):
-        """Guards against the assertion firing on an onboarded model."""
+        """Guards against the assertion firing on an onboarded model.
+
+        Runs without a SwarmOne license on purpose: the plain sweep must stay
+        usable for a model that merely has an opt-in SwarmOne run configured.
+        """
         registered_id = next(iter(AGENTIC_TRACES_CONFIGS))
         spec = self._spec(registered_id, model_name="Kimi-K2.7-Code")
         config = RuntimeConfig(
@@ -733,6 +680,100 @@ class TestAgenticTracesRegistration:
             "workflows.validate_setup.can_dispatch_to_engine", lambda *a, **k: True
         )
         self._validate(spec, self._runtime_config("release"))
+
+
+class TestSwarmOneLicenseGate:
+    """A swarmone run needs a swo-bench license, checked up front in run.py.
+
+    The check fires only when swarmone will actually run, so a multi-minute
+    venv build is never wasted on a sweep that will fail the moment the
+    swo-bench driver looks for its key -- while a plain sweep of a model that
+    merely *has* a swarmone run configured stays license-free, because swarmone
+    is opt-in.
+    """
+
+    def _spec(self):
+        registered_id = next(iter(AGENTIC_TRACES_CONFIGS))
+        spec = MagicMock()
+        spec.model_id = registered_id
+        spec.model_name = "Kimi-K2.7-Code"
+        spec.inference_engine = "vLLM"
+        return spec
+
+    def _config(self, **overrides):
+        return RuntimeConfig(
+            model="Kimi-K2.7-Code",
+            workflow="agentic_traces",
+            device="super_cluster",
+            **overrides,
+        )
+
+    def _validate(self, spec, config, *, license_available):
+        with patch.dict(
+            "workflows.validate_setup.MODEL_SPECS", {spec.model_id: spec}
+        ), patch(
+            "workflows.validate_setup._swarmone_license_available",
+            return_value=license_available,
+        ):
+            validate_runtime_args(spec, config)
+
+    def test_configured_but_unselected_swarmone_needs_no_license(self):
+        """The regression this gate once caused: Kimi gaining a swarmone run
+        made ``--workflow agentic_traces`` demand a license from everyone."""
+        spec = self._spec()
+        assert any(
+            run.trace_source is TraceSource.SWARMONE
+            for run in AGENTIC_TRACES_CONFIGS[spec.model_id].runs
+        ), "fixture no longer covers the mixed-source case this test guards"
+        self._validate(spec, self._config(), license_available=False)
+
+    def test_missing_license_is_rejected_when_swarmone_is_selected(self):
+        spec = self._spec()
+        with pytest.raises(ValueError, match="SwarmOne license"):
+            self._validate(
+                spec,
+                self._config(agentic_traces_sources="swarmone"),
+                license_available=False,
+            )
+
+    def test_the_error_says_how_to_proceed_without_swarmone(self):
+        """Someone who just wants the InferenceX sweep needs a way out."""
+        spec = self._spec()
+        with pytest.raises(ValueError) as exc:
+            self._validate(
+                spec,
+                self._config(agentic_traces_sources="swarmone"),
+                license_available=False,
+            )
+        message = str(exc.value)
+        assert "SWO_LICENSE_KEY" in message
+        assert "--agentic-traces-sources swarmone" in message
+
+    def test_present_license_allows_an_explicit_swarmone_sweep(self):
+        spec = self._spec()
+        self._validate(
+            spec,
+            self._config(agentic_traces_sources="swarmone"),
+            license_available=True,
+        )
+
+    def test_selecting_swarmone_alongside_inferencex_still_needs_a_license(self):
+        spec = self._spec()
+        with pytest.raises(ValueError, match="SwarmOne license"):
+            self._validate(
+                spec,
+                self._config(agentic_traces_sources="inferencex_agentx,swarmone"),
+                license_available=False,
+            )
+
+    def test_selecting_only_inferencex_skips_the_license_check(self):
+        """Narrowing away from swarmone means no license is needed."""
+        spec = self._spec()
+        self._validate(
+            spec,
+            self._config(agentic_traces_sources="inferencex_agentx"),
+            license_available=False,
+        )
 
 
 class TestCheckImageVersionSupported:

@@ -24,8 +24,8 @@ namespace tt::transport {
  *
  * KvMigrationWorker hands every parsed request to an IMigrationExecutor and is
  * indifferent to how the bytes move. This implementation drives the migration
- * across the decode cluster via KvMigrationMultiHostSender (which fans out to
- * every decode host the request touches). It replaces StubMigrationExecutor.
+ * across the decode cluster via KvMigrationMultiHostSender (which fans out
+ * to every decode host the request touches).
  *
  * No request-shape translation: tt::services::MigrationRequest mirrors
  * tt::transport::MigrationRequest field-for-field, so the only mapping is a

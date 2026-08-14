@@ -7,7 +7,12 @@ import tempfile
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from config.constants import JobTypes
+from config.constants import (
+    DEFAULT_VIDEO_INFERENCE_STEPS,
+    JobTypes,
+    MAX_VIDEO_INFERENCE_STEPS,
+    MIN_VIDEO_INFERENCE_STEPS,
+)
 from domain.video_generate_request import VideoGenerateRequest
 from domain.video_i2v_generate_request import (
     ImagePromptEntry,
@@ -424,6 +429,42 @@ class TestVideoGenerateRequestValidation:
         assert request.num_inference_steps == 30
         assert request.seed == 42
 
+    def test_default_inference_steps(self):
+        request = VideoGenerateRequest(prompt="A cat walking in the park")
+        assert request.num_inference_steps == DEFAULT_VIDEO_INFERENCE_STEPS
+
+    def test_min_inference_steps_accepted(self):
+        request = VideoGenerateRequest(
+            prompt="A cat walking in the park",
+            num_inference_steps=MIN_VIDEO_INFERENCE_STEPS,
+        )
+        assert request.num_inference_steps == MIN_VIDEO_INFERENCE_STEPS
+
+    def test_below_min_inference_steps_rejected(self):
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            VideoGenerateRequest(
+                prompt="A cat walking in the park",
+                num_inference_steps=MIN_VIDEO_INFERENCE_STEPS - 1,
+            )
+
+    def test_max_inference_steps_accepted(self):
+        request = VideoGenerateRequest(
+            prompt="A cat walking in the park",
+            num_inference_steps=MAX_VIDEO_INFERENCE_STEPS,
+        )
+        assert request.num_inference_steps == MAX_VIDEO_INFERENCE_STEPS
+
+    def test_above_max_inference_steps_rejected(self):
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            VideoGenerateRequest(
+                prompt="A cat walking in the park",
+                num_inference_steps=MAX_VIDEO_INFERENCE_STEPS + 1,
+            )
+
 
 class TestResponseContent:
     """Tests for response content structure"""
@@ -614,6 +655,57 @@ class TestVideoI2VGenerateRequestValidation:
         assert request.negative_prompt == "blurry"
         assert request.num_inference_steps == 30
         assert request.seed == 42
+
+    def test_inherits_min_inference_steps(self):
+        """I2V uses the same API floor as T2V; 4 must not 422."""
+        request = VideoI2VGenerateRequest(
+            prompt="A cat",
+            num_inference_steps=MIN_VIDEO_INFERENCE_STEPS,
+            image_prompts=[ImagePromptEntry(image=_tiny_png_base64(), frame_pos=0)],
+        )
+        assert request.num_inference_steps == MIN_VIDEO_INFERENCE_STEPS
+
+    def test_inherits_below_min_inference_steps_rejected(self):
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            VideoI2VGenerateRequest(
+                prompt="A cat",
+                num_inference_steps=MIN_VIDEO_INFERENCE_STEPS - 1,
+                image_prompts=[ImagePromptEntry(image=_tiny_png_base64(), frame_pos=0)],
+            )
+
+    def test_valid_image_with_data_uri_prefix_accepted(self):
+        """base64 image with 'data:image/png;base64,' prefix should pass."""
+        prefixed = "data:image/png;base64," + _tiny_png_base64()
+        entry = ImagePromptEntry(image=prefixed, frame_pos=0)
+        assert entry.image == prefixed
+
+    def test_invalid_base64_rejected(self):
+        """Garbage string that isn't valid base64 should fail validation."""
+        from pydantic import ValidationError
+
+        with pytest.raises(
+            ValidationError, match="could not be decoded to a valid PIL image"
+        ):
+            ImagePromptEntry(image="not-a-real-image!!!", frame_pos=0)
+
+    def test_valid_base64_non_image_rejected(self):
+        """Valid base64 encoding of non-image bytes should fail validation."""
+        import base64
+
+        from pydantic import ValidationError
+
+        fake = base64.b64encode(b"hello world this is not an image").decode()
+        with pytest.raises(
+            ValidationError, match="could not be decoded to a valid PIL image"
+        ):
+            ImagePromptEntry(image=fake, frame_pos=0)
+
+    def test_raw_base64_png_accepted(self):
+        """Raw base64 PNG without data URI prefix should pass."""
+        entry = ImagePromptEntry(image=_tiny_png_base64(), frame_pos=0)
+        assert entry.frame_pos == 0
 
 
 if __name__ == "__main__":

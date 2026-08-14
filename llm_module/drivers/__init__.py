@@ -9,6 +9,7 @@ from .aiperf_agentic_traces import (
 )
 from .aiperf_prefix_cache import AIPerfPrefixCacheDriver, PrefixCacheDriverResult
 from .aiperf_spec_decode import AIPerfSpecDecodeDriver, SpecDecodeDriverResult
+from .swo_bench_agentic_traces import SwoBenchAgenticTracesDriver
 from .agentic import (
     AgenticEvalDriver,
     SWEbenchAgenticDriver,
@@ -31,6 +32,7 @@ __all__ = [
     "AIPerfSpecDecodeDriver",
     "PrefixCacheDriverResult",
     "SpecDecodeDriverResult",
+    "SwoBenchAgenticTracesDriver",
     "GenAIPerfDriver",
     "GuideLLMDriver",
     "SWEbenchAgenticDriver",

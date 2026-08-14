@@ -146,28 +146,6 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(blake3)
 
-# xgrammar for structured output / guided decoding (JSON schema constrained generation)
-FetchContent_Declare(xgrammar
-    GIT_REPOSITORY https://github.com/mlc-ai/xgrammar.git
-    GIT_TAG        v0.1.33
-    GIT_SHALLOW    TRUE
-)
-FetchContent_GetProperties(xgrammar)
-if(NOT xgrammar_POPULATED)
-    FetchContent_Populate(xgrammar)
-    # xgrammar ships cmake/config.cmake that forces PYTHON_BINDINGS=ON; override it
-    # in the source tree so its CMakeLists.txt picks up our settings.
-    file(WRITE "${xgrammar_SOURCE_DIR}/cmake/config.cmake"
-        "set(XGRAMMAR_BUILD_PYTHON_BINDINGS OFF)\n"
-        "set(XGRAMMAR_BUILD_CXX_TESTS OFF)\n"
-        "set(XGRAMMAR_ENABLE_CPPTRACE OFF)\n"
-        "set(XGRAMMAR_ENABLE_COVERAGE OFF)\n"
-        "set(XGRAMMAR_ENABLE_INTERNAL_CHECK OFF)\n"
-    )
-    add_subdirectory(${xgrammar_SOURCE_DIR} ${xgrammar_BINARY_DIR})
-    target_compile_options(xgrammar PRIVATE -Wno-deprecated-declarations -fno-lto)
-endif()
-
 # Import fmt from tt-metal for spdlog
 if(TT_METAL_HOME AND EXISTS "${TT_METAL_HOME}/build_Release/lib/cmake/fmt")
     set(fmt_DIR "${TT_METAL_HOME}/build_Release/lib/cmake/fmt")
@@ -243,6 +221,12 @@ FetchContent_MakeAvailable(cppzmq)
 
 # Option to enable tt-llm-engine (formerly tt-blaze pipeline_manager)
 option(ENABLE_BLAZE "Enable tt-llm-engine support" OFF)
+set(TT_LLM_ENGINE_SOURCE_DIR "" CACHE PATH
+    "Optional tt-llm-engine source checkout to build directly when ENABLE_BLAZE=ON")
+if(NOT TT_LLM_ENGINE_SOURCE_DIR AND DEFINED ENV{TT_LLM_ENGINE_SOURCE_DIR})
+    set(TT_LLM_ENGINE_SOURCE_DIR "$ENV{TT_LLM_ENGINE_SOURCE_DIR}" CACHE PATH
+        "Optional tt-llm-engine source checkout to build directly when ENABLE_BLAZE=ON" FORCE)
+endif()
 # Real shmem migration (MigrationLayerClientAdapter + migration_client static lib).
 # mock_pipeline CI builds use --blaze only; disaggregated pipeline_manager runs
 # need --blaze-with-migration (implies ENABLE_BLAZE).
@@ -255,10 +239,29 @@ if(ENABLE_BLAZE)
     # Prefer a pre-built tt-llm-engine discovered via find_package — this is
     # the path used by the Docker build, which pulls /opt/tt-llm-engine out
     # of the tt-llm-engine builder image and sets CMAKE_PREFIX_PATH so the
-    # package is locatable. Fall back to building the in-tree submodule for
-    # local-dev workflows that don't go through Docker.
-    find_package(tt-llm-engine CONFIG QUIET)
-    if(tt-llm-engine_FOUND)
+    # package is locatable. If TT_LLM_ENGINE_SOURCE_DIR is explicitly set,
+    # build that checkout instead (useful for testing scheduler branches).
+    set(_TT_LLM_ENGINE_FROM_EXPLICIT_SOURCE OFF)
+    if(TT_LLM_ENGINE_SOURCE_DIR)
+        if(NOT EXISTS "${TT_LLM_ENGINE_SOURCE_DIR}/CMakeLists.txt")
+            message(FATAL_ERROR
+                "TT_LLM_ENGINE_SOURCE_DIR is set to '${TT_LLM_ENGINE_SOURCE_DIR}', "
+                "but no CMakeLists.txt was found there.")
+        endif()
+        set(DS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+        set(_tt_saved_cxx_flags "${CMAKE_CXX_FLAGS}")
+        string(APPEND CMAKE_CXX_FLAGS " -Wno-c++11-narrowing")
+        add_subdirectory("${TT_LLM_ENGINE_SOURCE_DIR}"
+                         "${CMAKE_CURRENT_BINARY_DIR}/tt-llm-engine")
+        set(CMAKE_CXX_FLAGS "${_tt_saved_cxx_flags}")
+        set(_TT_LLM_ENGINE_FROM_EXPLICIT_SOURCE ON)
+        message(STATUS "tt-llm-engine: building from TT_LLM_ENGINE_SOURCE_DIR=${TT_LLM_ENGINE_SOURCE_DIR}")
+    else()
+        find_package(tt-llm-engine CONFIG QUIET)
+    endif()
+    if(_TT_LLM_ENGINE_FROM_EXPLICIT_SOURCE)
+        # Target aliases are provided by the source checkout's CMakeLists.txt.
+    elseif(tt-llm-engine_FOUND)
         message(STATUS "tt-llm-engine: using pre-built package at ${tt-llm-engine_DIR}")
     elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/CMakeLists.txt")
         # Legacy path — local dev with the submodule checked out under cpp_server/.
@@ -467,7 +470,6 @@ set(LLM_RUNNER_LIB_SOURCES
     src/utils/tokenizers/llama_tokenizer.cpp
     src/utils/tokenizers/tokenizer_config_loader.cpp
     src/services/memory_services/memory_manager.cpp
-    src/runtime/runners/guided_decoder_manager.cpp
     src/services/service_registry.cpp
     src/runtime/runners/runner_registry.cpp
     src/api/route_registry.cpp
@@ -488,14 +490,15 @@ target_include_directories(llm_runner_lib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${TT_METAL_INCLUDE_DIRS}
 )
-# Link tokenizers_cpp, JsonCpp, xgrammar (guided decoding), and xxhash (stable hashing)
-target_link_libraries(llm_runner_lib PUBLIC tokenizers_cpp JsonCpp::JsonCpp xgrammar xxhash_lib)
+# Link tokenizers_cpp, JsonCpp, and xxhash (stable hashing)
+target_link_libraries(llm_runner_lib PUBLIC tokenizers_cpp JsonCpp::JsonCpp xxhash_lib)
 
 # Link tt-llm-engine when ENABLE_BLAZE is ON: prefer Full (SocketPipeline + TT::Metalium),
 # fall back to Core (mock pipeline only).
 if(ENABLE_BLAZE)
     if(TARGET TtLlmEngine::Full)
         target_link_libraries(llm_runner_lib PUBLIC TtLlmEngine::Full)
+        target_compile_definitions(llm_runner_lib PUBLIC TT_MEDIA_SERVER_TTS_FULL_PIPELINES)
         message(STATUS "Linking llm_runner_lib against TtLlmEngine::Full")
     elseif(TARGET TtLlmEngine::Core)
         target_link_libraries(llm_runner_lib PUBLIC TtLlmEngine::Core)
@@ -509,7 +512,10 @@ if(ENABLE_BLAZE)
     #      the prebuilt tt-llm-engine image's source tree.
     # Both layouts expose the same subdirectories (src/, disaggregation/, tt-metal/),
     # so a single root variable lets every consumer-of-engine-source path adapt.
-    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/CMakeLists.txt")
+    if(TT_LLM_ENGINE_SOURCE_DIR AND EXISTS "${TT_LLM_ENGINE_SOURCE_DIR}/CMakeLists.txt")
+        set(_TT_LLM_ENGINE_ROOT "${TT_LLM_ENGINE_SOURCE_DIR}")
+        message(STATUS "tt-llm-engine source: explicit checkout at ${_TT_LLM_ENGINE_ROOT}")
+    elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/CMakeLists.txt")
         set(_TT_LLM_ENGINE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine")
         message(STATUS "tt-llm-engine source: in-tree at ${_TT_LLM_ENGINE_ROOT}")
     elseif(EXISTS "/opt/tt-llm-engine-src/CMakeLists.txt")
@@ -589,35 +595,41 @@ if(SANITIZE_ADDRESS)
     target_link_options(llm_runner_lib PUBLIC -fsanitize=address)
 endif()
 
-# Transport layer placeholder (#3890, "Custom backend for DRAM access via UMD").
-# Models the Transfer Engine's two mechanisms at the cpp_server level:
-#   - storage  : IStorageBackend + host/device-DRAM backends, the device one
-#                being the custom UMD backend (umd_device_access wrapper);
+# Transport layer (#3890). Models the Transfer Engine's two mechanisms at the
+# cpp_server level:
+#   - storage  : IStorageBackend + a host-DRAM backend;
 #   - transport: the Mooncake Transfer Engine wrapper (TCP/RDMA).
-# Plus the migration-worker spike (write-on-sender / transfer / verify-on-
-# receiver). Self-contained stubs with no Mooncake/tt-metal deps, so this builds
-# in every configuration; the real backends land behind the pimpls.
+# Device DRAM is moved by the migrators' IDeviceIo (DriscDeviceIo), not a storage
+# backend. Self-contained without Mooncake/tt-metal deps, so this builds in every
+# configuration; the real backends land behind the pimpls.
 add_library(transport_lib
     src/transport/host_dram_storage_backend.cpp
-    src/transport/device_dram_storage_backend.cpp
-    src/transport/umd_device_access.cpp
     src/transport/mooncake_transfer_engine.cpp
     src/transport/worker_health.cpp
     src/transport/worker_health_server.cpp
-    # Real KV-cache addressing: physical mirror layout + sender/receiver views +
-    # multi-device UMD I/O. Dependency-free host code (no tt-metal/Mooncake), so
-    # transport_lib still builds in every configuration.
-    src/transport/kv_cache_layout.cpp
-    src/transport/kv_cache_mirror.cpp
-    src/transport/remote_region.cpp
-    src/transport/multi_device_umd.cpp
+    # DRISC NOC-DMA device I/O: the migration data plane's IDeviceIo (and
+    # enumerateDevicesByUniqueId). Real impl under USE_METAL_CPP_LIB (wraps the
+    # disaggregation DriscSocketLink, added to this target in the coexistence
+    # block below); no-op fallback otherwise, so this TU builds in every
+    # configuration.
+    src/transport/drisc_device_io.cpp
     src/transport/kv_table_adapter.cpp
     src/transport/kv_chunk_address_table_adapter.cpp
     src/transport/kv_control_message.cpp
     src/transport/kv_control_channel.cpp
-    src/transport/mooncake_kv_sender.cpp
+    # Shared staging pool (double-pinned host buffers), used by the bounce sender.
+    src/transport/kv_staging_pool.cpp
+    # RDMA-over-host (the KV data plane): a small double-pinned bounce buffer; the
+    # sender streams a slot through it a window at a time (windowed + credit-
+    # based, pipelined).
+    src/transport/kv_bounce_buffer.cpp
+    # Phase B3: one host buffer pinned for BOTH transports — engine ibv_reg_mr
+    # (NIC) + device NOC-map (DRISC). Dependency-free (device map is injected).
+    src/transport/double_pinned_buffer.cpp
     src/transport/mooncake_kv_receiver.cpp
+    src/transport/mooncake_kv_sender.cpp
     src/transport/kv_migration_orchestrator.cpp
+    # Bounce n->m fan-out across the decode hosts a slot spans.
     src/transport/kv_migration_multi_host_sender.cpp
     # The real IMigrationExecutor: bridges the Kafka trigger (tt::worker /
     # tt::services, header-only here) to the multi-host data plane.
@@ -646,16 +658,16 @@ target_link_libraries(transport_lib PUBLIC spdlog::spdlog prometheus-cpp::core)
 if(USE_EXTERNAL_FMT)
     target_link_libraries(transport_lib PUBLIC fmt::fmt)
 endif()
-# Real UMD device-DRAM backend (umd_device_access.cpp). Uses the coexistence
-# UmdDevice from tt-llm-engine/disaggregation (raw UMD Cluster, NO start_device
-# / NO CHIP_IN_USE flock / NO dispatch firmware), so the migration worker shares
-# device DRAM with a live inference engine. We compile the two sources it needs
-# directly (device_io.cpp + tt-metal's metal_soc_descriptor.cpp) and link UMD —
-# NOT libtt_metal (which would take exclusive chip ownership and JIT-build
-# dispatch kernels; see the device-mode failures this replaces). Requires a
-# BUILT tt-metal (UMD .so + yaml-cpp); a headers-only / unbuilt tree leaves
-# USE_METAL_CPP_LIB undefined so umd_device_access.cpp uses its no-op fallback
-# and transport_lib still builds in every configuration.
+# Coexistence device-DRAM path for DRISC. Uses the coexistence UmdDevice from
+# tt-llm-engine/disaggregation (raw UMD Cluster, NO start_device / NO
+# CHIP_IN_USE flock / NO dispatch firmware) to open the chip, so the migration
+# worker shares device DRAM with a live inference engine. We compile the sources
+# it needs directly (device_io.cpp + tt-metal's metal_soc_descriptor.cpp) and
+# link UMD — NOT libtt_metal (which would take exclusive chip ownership and
+# JIT-build dispatch kernels). Requires a BUILT tt-metal (UMD .so + yaml-cpp); a
+# headers-only / unbuilt tree leaves USE_METAL_CPP_LIB undefined so
+# drisc_device_io.cpp uses its no-op fallback and transport_lib still builds in
+# every configuration.
 if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
     set(_TTM_BUILD "")
     if(EXISTS "${TT_METAL_HOME}/build_Release/lib")
@@ -675,15 +687,35 @@ if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
         target_include_directories(transport_lib PUBLIC ${TT_METAL_INCLUDE_DIRS})
 
         # device_io.cpp (UmdDevice) + metal_soc_descriptor.cpp compiled directly.
+        # Plus the DRISC socket backend: drisc_device_io.cpp (the DRISC-RISC
+        # device-DRAM<->host NOC-DMA mover) and the MultiDevice reader/writer TUs
+        # its factories construct. This enables DriscDeviceIo (the migration data
+        # plane's IDeviceIo) over the coexistence UMD path (raw Cluster, no
+        # libtt_metal). The DRISC service kernel is a RUNTIME ELF
+        # (MIGRATION_DRISC_SERVICE_ELF), not a link dep.
         set(_KV_MIG "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/disaggregation/migration")
         target_sources(transport_lib PRIVATE
             ${_KV_MIG}/src/worker/device_io.cpp
-            ${TT_METAL_HOME}/tt_metal/llrt/metal_soc_descriptor.cpp)
+            ${_KV_MIG}/src/worker/drisc_device_io.cpp
+            ${_KV_MIG}/utils/stall_timer.cpp
+            ${_KV_MIG}/src/multi_device_reader.cpp
+            ${_KV_MIG}/src/multi_device_writer.cpp
+            ${TT_METAL_HOME}/tt_metal/llrt/metal_soc_descriptor.cpp
+            # FabricNodeId operator==/hash the MultiDevice reader/writer need.
+            # Compiled directly (as with metal_soc_descriptor.cpp) so a non-blaze
+            # coexistence build resolves them without linking libtt_metal.
+            ${TT_METAL_HOME}/tt_metal/fabric/fabric_types.cpp)
+        target_compile_definitions(transport_lib PUBLIC TT_TRANSPORT_WITH_DRISC)
         # Third-party TUs: silence tt-metal/UMD header warnings (we're not -Werror,
         # but keep the log clean) without relaxing diagnostics on our own code.
         set_source_files_properties(
             ${_KV_MIG}/src/worker/device_io.cpp
+            ${_KV_MIG}/src/worker/drisc_device_io.cpp
+            ${_KV_MIG}/utils/stall_timer.cpp
+            ${_KV_MIG}/src/multi_device_reader.cpp
+            ${_KV_MIG}/src/multi_device_writer.cpp
             ${TT_METAL_HOME}/tt_metal/llrt/metal_soc_descriptor.cpp
+            ${TT_METAL_HOME}/tt_metal/fabric/fabric_types.cpp
             PROPERTIES COMPILE_OPTIONS "-w")
 
         # device_io.hpp + the tt-metal-internal headers metal_soc_descriptor.cpp
@@ -694,6 +726,7 @@ if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
         file(GLOB _KV_TASKFLOW "${TT_METAL_HOME}/.cpmcache/taskflow/5*")
         file(GLOB _KV_YAMLINC  "${TT_METAL_HOME}/.cpmcache/yaml-cpp/*/include")
         target_include_directories(transport_lib SYSTEM PRIVATE
+            "${_KV_MIG}"
             "${_KV_MIG}/include"
             "${TT_METAL_HOME}/tt_metal/impl"
             "${TT_METAL_HOME}/tt_metal/impl/debug"
@@ -778,7 +811,7 @@ if(ENABLE_KV_TABLE)
     set(_KV_MIG_DIR "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/disaggregation/migration")
     set(_KV_TTM "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/tt-metal")
     set(_KV_PROTO_FILE
-        "${_KV_TTM}/tt_metal/impl/experimental/disaggregation/protobuf/kv_chunk_address_table.proto")
+        "${_KV_TTM}/tt_metal/impl/internal/disaggregation/protobuf/kv_chunk_address_table.proto")
     protobuf_generate_cpp(_KV_PROTO_SRCS _KV_PROTO_HDRS "${_KV_PROTO_FILE}")
 
     # tt-metal sources #include "protobuf/kv_chunk_address_table.pb.h"; stage the
@@ -796,7 +829,7 @@ if(ENABLE_KV_TABLE)
     add_library(kv_table_lib STATIC
         ${_KV_MIG_DIR}/src/kv_chunk_address_table_synthetic.cpp
         ${_KV_MIG_DIR}/src/fabric_types_shim.cpp
-        ${_KV_TTM}/tt_metal/impl/experimental/disaggregation/kv_chunk_address_table_protobuf.cpp
+        ${_KV_TTM}/tt_metal/impl/internal/disaggregation/kv_chunk_address_table_protobuf.cpp
         ${_KV_PROTO_SRCS}
         "${_KV_PROTO_INC}/protobuf/kv_chunk_address_table.pb.h"
     )
@@ -808,7 +841,7 @@ if(ENABLE_KV_TABLE)
     set_target_properties(kv_table_lib PROPERTIES CXX_CLANG_TIDY "")
     target_include_directories(kv_table_lib PUBLIC
         ${TT_METAL_INCLUDE_DIRS}
-        "${_KV_TTM}/tt_metal/impl"          # experimental/disaggregation/...protobuf.hpp
+        "${_KV_TTM}/tt_metal/impl"          # internal/disaggregation/...protobuf.hpp
         ${CMAKE_CURRENT_BINARY_DIR}          # generated kv_chunk_address_table.pb.h
         ${_KV_PROTO_INC}                     # protobuf/ alias
     )
@@ -833,7 +866,8 @@ target_compile_options(transport_lib PRIVATE -Wall -Wextra -Wpedantic)
 # KAFKA_ENABLED block, because it links kv_migration_worker for the Kafka
 # request loop. See `if(KAFKA_ENABLED)` further down.
 if(TARGET transfer_engine)
-    # Real KV-cache migration (table-addressed mirror + orchestration over a
+    # Real KV-cache migration (table-addressed bounce-buffer data plane +
+    # orchestration over a
     # TCP control channel). Self-contained TCP control transport, links only
     # transport_lib. host mode runs with no hardware; device mode needs --blaze;
     # real-table (--table <pb>) needs -DENABLE_KV_TABLE=ON.
@@ -886,19 +920,11 @@ target_include_directories(transport_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-# KV-cache addressing unit tests: mirror layout / offset math, sender-receiver
-# offset parity, multi-device UMD dispatch. Host-only, runs in any build config.
+# Worker health / readiness HTTP server. Host-only, runs in any build config.
 add_executable(worker_health_server_test
     tests/unit/transport/worker_health_server_test.cpp)
 target_link_libraries(worker_health_server_test PRIVATE transport_lib GTest::gtest_main)
 target_include_directories(worker_health_server_test PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
-add_executable(kv_cache_addressing_test
-    tests/unit/transport/kv_cache_addressing_test.cpp)
-target_link_libraries(kv_cache_addressing_test PRIVATE transport_lib GTest::gtest_main)
-target_include_directories(kv_cache_addressing_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
@@ -911,8 +937,8 @@ target_include_directories(kv_table_adapter_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-# Control-plane message codec + channel (table exchange, request, mirror name,
-# done-marker, ack). Host-only loopback, runs in any build config.
+# Control-plane message codec + channel (table exchange, request, bounce segment
+# name, done-marker, ack). Host-only loopback, runs in any build config.
 add_executable(kv_control_channel_test
     tests/unit/transport/kv_control_channel_test.cpp)
 target_link_libraries(kv_control_channel_test PRIVATE transport_lib GTest::gtest_main)
@@ -920,8 +946,17 @@ target_include_directories(kv_control_channel_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-# End-to-end KV migration data plane (sender -> simulated one-sided wire ->
-# receiver -> device) with in-memory fakes. Host-only, runs in any build config.
+
+# RDMA-over-host (Phase A): bounce-buffer geometry/allocator + wire codec.
+add_executable(kv_bounce_buffer_test
+    tests/unit/transport/kv_bounce_buffer_test.cpp)
+target_link_libraries(kv_bounce_buffer_test PRIVATE transport_lib GTest::gtest_main)
+target_include_directories(kv_bounce_buffer_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+# RDMA-over-host (Phase A): bounce data plane (sender -> bounce buffer -> receiver ->
+# device), single- and multi-window; in-memory fakes, host-only.
 add_executable(mooncake_kv_migration_test
     tests/unit/transport/mooncake_kv_migration_test.cpp)
 target_link_libraries(mooncake_kv_migration_test PRIVATE transport_lib GTest::gtest_main)
@@ -929,12 +964,32 @@ target_include_directories(mooncake_kv_migration_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-# Control-channel orchestration: drives BeginMigration/MirrorReady/DoneMarker/Ack
-# end to end over a blocking loopback channel (receiver on its own thread).
+# RDMA-over-host (Phase A): bounce orchestration end to end over a loopback
+# channel (BounceReady -> WindowReady/WindowAck* -> DoneMarker/Ack).
 add_executable(kv_migration_orchestrator_test
     tests/unit/transport/kv_migration_orchestrator_test.cpp)
 target_link_libraries(kv_migration_orchestrator_test PRIVATE transport_lib GTest::gtest_main)
 target_include_directories(kv_migration_orchestrator_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+# RDMA-over-host (Phase B): DriscDeviceIo build/link + no-hardware graceful
+# degradation (the DRISC data path itself is the Phase B6 HW gate). Linking this
+# also verifies the DRISC TUs resolve with no undefined symbols.
+add_executable(drisc_device_io_test
+    tests/unit/transport/drisc_device_io_test.cpp)
+target_link_libraries(drisc_device_io_test PRIVATE transport_lib GTest::gtest_main)
+target_include_directories(drisc_device_io_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+# RDMA-over-host (Phase B3): the double-pinned buffer (engine ibv_reg_mr + device
+# NOC-map on one aligned arena) + KvStagingPool adoption, with a recording device
+# map (no HW).
+add_executable(double_pinned_buffer_test
+    tests/unit/transport/double_pinned_buffer_test.cpp)
+target_link_libraries(double_pinned_buffer_test PRIVATE transport_lib GTest::gtest_main)
+target_include_directories(double_pinned_buffer_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
@@ -1059,6 +1114,17 @@ if(ENABLE_BLAZE)
         ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
 
+    add_executable(blaze_tts_runner_test
+        tests/integration/runners/blaze_tts_runner_test.cpp
+        src/runtime/runners/blaze_runner/blaze_tts_runner.cpp
+        src/runtime/worker/single_process_worker_metrics.cpp
+        src/runtime/worker/worker_metrics_shm.cpp
+    )
+    target_link_libraries(blaze_tts_runner_test PRIVATE llm_runner_lib GTest::gtest_main)
+    target_include_directories(blaze_tts_runner_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
     add_executable(mock_schedulers_test
         tests/unit/runners/mock_schedulers_test.cpp
     )
@@ -1087,18 +1153,21 @@ target_include_directories(lockfree_queue_test PRIVATE
 add_executable(tokenizer_test tests/unit/model/tokenizer_test.cpp)
 target_link_libraries(tokenizer_test PRIVATE llm_runner_lib GTest::gtest_main)
 
+add_executable(tts_prompt_compiler_test tests/unit/model/tts_prompt_compiler_test.cpp)
+target_link_libraries(tts_prompt_compiler_test PRIVATE llm_runner_lib GTest::gtest_main)
+
+add_executable(voice_sample_cache_test tests/unit/utils/voice_sample_cache_test.cpp)
+target_link_libraries(voice_sample_cache_test PRIVATE xxhash_lib GTest::gtest_main)
+target_include_directories(voice_sample_cache_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 add_executable(conversation_hasher_test tests/unit/model/conversation_hasher_test.cpp)
 target_link_libraries(conversation_hasher_test PRIVATE llm_runner_lib GTest::gtest_main)
 
 add_executable(cancel_queue_test tests/unit/data_structures/cancel_queue_test.cpp)
 target_link_libraries(cancel_queue_test PRIVATE llm_runner_lib GTest::gtest_main)
 target_include_directories(cancel_queue_test PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
-add_executable(structured_output_test tests/unit/api/structured_output_test.cpp)
-target_link_libraries(structured_output_test PRIVATE llm_runner_lib GTest::gtest_main)
-target_include_directories(structured_output_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
@@ -1222,6 +1291,8 @@ add_executable(llm_service_test
     src/services/llm_service.cpp
     src/services/embedding_service.cpp
     src/services/image_service.cpp
+    src/services/tts_service.cpp
+    src/services/tts_request_preprocessor.cpp
     src/services/media_worker_scheduler.cpp
     src/services/model_service_registration.cpp
     src/runtime/worker/worker_manager.cpp
@@ -1232,10 +1303,13 @@ add_executable(llm_service_test
     src/utils/ipc_runner_factory.cpp
     src/utils/mapper.cpp
     src/utils/image_codec.cpp
+    src/utils/audio_codec.cpp
     src/runtime/runners/embedding_runner.cpp
     src/runtime/runners/sdxl/sdxl_runner.cpp
     src/runtime/runners/media_ipc_runner.cpp
     src/runtime/runners/image_ipc_runner.cpp
+    src/runtime/runners/blaze_runner/blaze_tts_runner.cpp
+    src/runtime/runners/blaze_runner/blaze_tts_scheduler_factory.cpp
     src/runtime/runners/sdxl/sdxl_generate_runner.cpp
     src/runtime/runners/sdxl/sdxl_image_to_image_runner.cpp
     src/runtime/runners/sdxl/sdxl_edit_runner.cpp
@@ -1284,21 +1358,28 @@ set(INTEGRATION_TEST_COMMON_SOURCES
     src/runtime/runners/sdxl/sdxl_runner.cpp
     src/runtime/runners/media_ipc_runner.cpp
     src/runtime/runners/image_ipc_runner.cpp
+    src/runtime/runners/blaze_runner/blaze_tts_runner.cpp
+    src/runtime/runners/blaze_runner/blaze_tts_scheduler_factory.cpp
     src/runtime/runners/sdxl/sdxl_generate_runner.cpp
     src/runtime/runners/sdxl/sdxl_image_to_image_runner.cpp
     src/runtime/runners/sdxl/sdxl_edit_runner.cpp
     src/runtime/runners/sdxl/sdxl_python_helpers.cpp
     src/services/image_service.cpp
+    src/services/tts_service.cpp
+    src/services/tts_request_preprocessor.cpp
     src/services/media_worker_scheduler.cpp
     src/utils/image_codec.cpp
+    src/utils/audio_codec.cpp
     src/metrics/metrics.cpp
     src/profiling/tracy.cpp
     src/api/llm_controller.cpp
+    src/api/tts_controller.cpp
     src/api/stream_event_formatter.cpp
     src/api/health_controller.cpp
     src/api/response_writer/response_writer.cpp
     src/api/response_writer/non_stream_response_writer.cpp
     src/api/response_writer/streaming_response_writer.cpp
+    src/api/response_writer/streaming_wav_response_writer.cpp
     src/api/route_registry.cpp
     src/services/service_container.cpp
     src/services/disaggregation_contract_mapping.cpp
@@ -1414,12 +1495,14 @@ set_tests_properties(MainIntegrationTest PrefillIntegrationTest DisaggregatedE2E
 gtest_discover_tests(transport_test)
 gtest_discover_tests(dynamo_protocol_test)
 gtest_discover_tests(kube_discovery_test)
-gtest_discover_tests(kv_cache_addressing_test)
 gtest_discover_tests(worker_health_server_test)
 gtest_discover_tests(kv_table_adapter_test)
 gtest_discover_tests(kv_control_channel_test)
+gtest_discover_tests(kv_bounce_buffer_test)
 gtest_discover_tests(mooncake_kv_migration_test)
 gtest_discover_tests(kv_migration_orchestrator_test)
+gtest_discover_tests(drisc_device_io_test)
+gtest_discover_tests(double_pinned_buffer_test)
 gtest_discover_tests(mooncake_migration_executor_test)
 gtest_discover_tests(kv_migration_endpoints_test)
 gtest_discover_tests(engine_table_handoff_test)
@@ -1430,14 +1513,16 @@ endif()
 if(ENABLE_BLAZE)
     gtest_discover_tests(blaze_decode_runner_test)
     gtest_discover_tests(blaze_prefill_runner_test)
+    gtest_discover_tests(blaze_tts_runner_test)
     gtest_discover_tests(mock_schedulers_test)
 endif()
 gtest_discover_tests(sequence_test)
 gtest_discover_tests(lockfree_queue_test)
 gtest_discover_tests(tokenizer_test)
+gtest_discover_tests(tts_prompt_compiler_test)
+gtest_discover_tests(voice_sample_cache_test)
 gtest_discover_tests(conversation_hasher_test)
 gtest_discover_tests(cancel_queue_test)
-gtest_discover_tests(structured_output_test)
 gtest_discover_tests(worker_metrics_shm_test)
 gtest_discover_tests(concurrent_map_test)
 gtest_discover_tests(session_test)
@@ -1732,9 +1817,11 @@ set(SOURCES
     src/main.cpp
     src/profiling/tracy.cpp
     src/api/llm_controller.cpp
+    src/api/tts_controller.cpp
     src/api/stream_event_formatter.cpp
     src/api/response_writer/response_writer.cpp
     src/api/response_writer/streaming_response_writer.cpp
+    src/api/response_writer/streaming_wav_response_writer.cpp
     src/api/response_writer/non_stream_response_writer.cpp
     src/api/health_controller.cpp
     src/api/info_controller.cpp
@@ -1763,13 +1850,18 @@ set(SOURCES
     src/runtime/runners/sdxl/sdxl_runner.cpp
     src/runtime/runners/media_ipc_runner.cpp
     src/runtime/runners/image_ipc_runner.cpp
+    src/runtime/runners/blaze_runner/blaze_tts_runner.cpp
+    src/runtime/runners/blaze_runner/blaze_tts_scheduler_factory.cpp
     src/runtime/runners/sdxl/sdxl_generate_runner.cpp
     src/runtime/runners/sdxl/sdxl_image_to_image_runner.cpp
     src/runtime/runners/sdxl/sdxl_edit_runner.cpp
     src/runtime/runners/sdxl/sdxl_python_helpers.cpp
     src/services/image_service.cpp
+    src/services/tts_service.cpp
+    src/services/tts_request_preprocessor.cpp
     src/services/media_worker_scheduler.cpp
     src/utils/image_codec.cpp
+    src/utils/audio_codec.cpp
     src/services/disaggregation_contract_mapping.cpp
     src/services/disaggregation_service.cpp
     src/services/llm_pipeline.cpp
@@ -1900,7 +1992,6 @@ if(SANITIZE_ADDRESS)
         sequence_test
         lockfree_queue_test
         cancel_queue_test
-        structured_output_test
     )
     foreach(target IN LISTS ASAN_TARGETS)
         target_compile_options(${target} PRIVATE ${ASAN_FLAGS})
