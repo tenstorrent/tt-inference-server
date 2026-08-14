@@ -2,7 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from config.constants import DatasetLoaders, ModelNames, SupportedModels
@@ -241,85 +241,6 @@ class TestValidate:
     def test_rejects_unknown_dataset(self, runner):
         with pytest.raises(ValueError, match="Unsupported dataset_loader"):
             runner._validate(_request(dataset_loader="nonexistent"))
-
-    def test_calls_resolve_column_mapping_for_a_custom_dataset(self, runner):
-        request = _request(
-            dataset_loader=DatasetLoaders.CUSTOM.value,
-            train_dataset_path="/datasets/train.json",
-            file_type="json",
-            template="alpaca",
-            column_mapping={"instruction": "prompt"},
-        )
-        columns = {"prompt", "response"}
-        with patch(f"{RUNNER_MODULE}.resolve_column_mapping") as resolve, patch.object(
-            runner, "_dataset_columns", return_value=columns
-        ) as dataset_columns:
-            runner._validate(request)
-
-        dataset_columns.assert_called_once_with("/datasets/train.json", "json")
-        resolve.assert_called_once_with("alpaca", request.column_mapping, columns)
-
-    def test_calls_resolve_column_mapping_for_the_val_dataset_too(self, runner):
-        request = _request(
-            dataset_loader=DatasetLoaders.CUSTOM.value,
-            train_dataset_path="/datasets/train.json",
-            val_dataset_path="/datasets/val.json",
-            file_type="json",
-            template="alpaca",
-        )
-        columns = {
-            "/datasets/train.json": {"instruction", "output"},
-            "/datasets/val.json": {"instruction", "output", "input"},
-        }
-        with patch(f"{RUNNER_MODULE}.resolve_column_mapping") as resolve, patch.object(
-            runner,
-            "_dataset_columns",
-            side_effect=lambda path, file_type: columns[path],
-        ):
-            runner._validate(request)
-
-        assert resolve.call_args_list == [
-            call("alpaca", None, columns["/datasets/train.json"]),
-            call("alpaca", None, columns["/datasets/val.json"]),
-        ]
-
-    def test_propagates_errors_from_resolve_column_mapping(self, runner):
-        request = _request(
-            dataset_loader=DatasetLoaders.CUSTOM.value,
-            train_dataset_path="/datasets/train.json",
-            file_type="json",
-            template="alpaca",
-        )
-        with patch(
-            f"{RUNNER_MODULE}.resolve_column_mapping",
-            side_effect=ValueError("from blacksmith"),
-        ), patch.object(runner, "_dataset_columns", return_value={"instruction"}):
-            with pytest.raises(ValueError, match="from blacksmith"):
-                runner._validate(request)
-
-
-class TestDatasetColumns:
-    def test_returns_keys_from_the_first_row(self, runner):
-        with patch(
-            f"{RUNNER_MODULE}.normalize_file_type", return_value="json"
-        ) as normalize, patch(
-            f"{RUNNER_MODULE}.load_dataset",
-            return_value=[{"instruction": "Say hi", "output": "Hello"}],
-        ) as load:
-            columns = runner._dataset_columns("/datasets/train.jsonl", "jsonl")
-
-        normalize.assert_called_once_with("jsonl")
-        load.assert_called_once_with(
-            "json", data_files={"data": "/datasets/train.jsonl"}, split="data"
-        )
-        assert columns == {"instruction", "output"}
-
-    def test_rejects_an_empty_dataset(self, runner):
-        with patch(f"{RUNNER_MODULE}.normalize_file_type", return_value="json"), patch(
-            f"{RUNNER_MODULE}.load_dataset", return_value=[]
-        ):
-            with pytest.raises(ValueError, match="empty"):
-                runner._dataset_columns("/datasets/train.json", "json")
 
 
 class TestTrainingRequest:

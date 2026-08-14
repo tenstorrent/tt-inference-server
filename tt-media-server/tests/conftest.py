@@ -328,8 +328,7 @@ def _install_blacksmith_stubs():
 
     These cannot be MagicMocks like the modules above: trainer_training_lora_runner
     subclasses LoraLLMTrainer and Callback at import time, and a MagicMock is not
-    a usable base class. Config stubs just record kwargs. Dataset helpers are
-    MagicMocks; tests assert they are called, not that blacksmith's logic is right.
+    a usable base class. Config stubs just record kwargs.
     """
 
     torch_dtypes = {"torch.bfloat16": "bfloat16", "torch.float32": "float32"}
@@ -408,14 +407,6 @@ def _install_blacksmith_stubs():
         sys.modules[name] = stub
 
     module("blacksmith")
-    module("blacksmith.datasets")
-    module("blacksmith.datasets.torch")
-    module("blacksmith.datasets.torch.custom")
-    module(
-        "blacksmith.datasets.torch.custom.custom_dataset_utils",
-        normalize_file_type=MagicMock(),
-        resolve_column_mapping=MagicMock(),
-    )
     module("blacksmith.tools")
     module(
         "blacksmith.tools.configs",

@@ -29,15 +29,11 @@ the following in tt-blacksmith first:
 
 import math
 from dataclasses import dataclass
-from typing import List, Optional, Set
+from typing import List, Optional
 
 import torch
 import torch_xla
 import torch_xla.runtime as xr
-from blacksmith.datasets.torch.custom.custom_dataset_utils import (
-    normalize_file_type,
-    resolve_column_mapping,
-)
 from blacksmith.tools.configs import (
     CheckpointConfig,
     CustomDatasetConfig,
@@ -50,7 +46,6 @@ from blacksmith.tools.trainer.configs.base import TORCH_DTYPES
 from blacksmith.tools.trainer.configs.lora_llm import LoraLLMConfig
 from blacksmith.tools.trainer.strategies.lora_llm_trainer import LoraLLMTrainer
 from config.constants import DatasetLoaders, ModelNames, SupportedModels
-from datasets import load_dataset
 from domain.training_request import TrainingRequest
 from peft import LoraConfig, get_peft_model
 from transformers import AutoModelForCausalLM
@@ -378,35 +373,6 @@ class TrainerTrainingLoraRunner(BaseDeviceRunner):
         for name in ("steps_freq", "val_steps_freq"):
             if getattr(request, name) < 1:
                 raise ValueError(f"'{name}' must be >= 1, got {getattr(request, name)}")
-        if request.dataset_loader == DatasetLoaders.CUSTOM.value:
-            self._validate_custom_dataset(request)
-
-    def _dataset_columns(self, path: str, file_type: str) -> Set[str]:
-        """Read column names from the first row of a custom dataset file."""
-        normalized = normalize_file_type(file_type)
-        raw_dataset = load_dataset(normalized, data_files={"data": path}, split="data")
-        if len(raw_dataset) == 0:
-            raise ValueError(f"Dataset at {path!r} is empty")
-        return set(raw_dataset[0].keys())
-
-    def _validate_custom_dataset(self, request: TrainingRequest) -> None:
-        """Apply blacksmith's template/column checks before the trainer starts.
-
-        ``CustomLLMDataset`` runs the same ``resolve_column_mapping`` later; doing
-        it here fails the job before model reload / dataloader setup when the
-        template and file columns do not line up.
-        """
-        train_columns = self._dataset_columns(
-            request.train_dataset_path, request.file_type
-        )
-        resolve_column_mapping(request.template, request.column_mapping, train_columns)
-        if request.val_dataset_path:
-            val_columns = self._dataset_columns(
-                request.val_dataset_path, request.file_type
-            )
-            resolve_column_mapping(
-                request.template, request.column_mapping, val_columns
-            )
 
     def _logging_config(self) -> LoggingConfig:
         return LoggingConfig(
