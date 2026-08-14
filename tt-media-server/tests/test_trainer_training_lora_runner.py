@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from config.constants import DatasetLoaders, ModelNames, SupportedModels
 from domain.training_request import TrainingRequest
+from pydantic import ValidationError
 
 RUNNER_MODULE = "tt_model_runners.forge_training_runners.trainer_training_lora_runner"
 
@@ -274,6 +275,13 @@ class TestTrainingRequest:
         assert _request().train_dataset_path is None
         assert _request().file_type is None
         assert _request().template is None
+
+    def test_val_steps_freq_zero_is_allowed(self):
+        assert _request(val_steps_freq=0).val_steps_freq == 0
+
+    def test_val_steps_freq_must_not_be_negative(self):
+        with pytest.raises(ValidationError, match="val_steps_freq"):
+            _request(val_steps_freq=-1)
 
 
 class TestRun:
