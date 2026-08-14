@@ -46,7 +46,9 @@ def test_probes_omitted_when_empty():
 
 def test_probes_emits_only_liveness_path():
     cfg = _impl_config(
-        probes=HelmProbes(liveness=HelmProbe(path="/tt-liveness"), readiness=HelmProbe())
+        probes=HelmProbes(
+            liveness=HelmProbe(path="/tt-liveness"), readiness=HelmProbe()
+        )
     )
     assert cfg.to_yaml_dict()["probes"] == {"liveness": {"path": "/tt-liveness"}}
 
