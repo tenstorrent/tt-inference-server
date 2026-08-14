@@ -1265,6 +1265,8 @@ add_executable(llm_service_test
     src/utils/image_codec.cpp
     src/utils/audio_codec.cpp
     src/runtime/runners/embedding_runner.cpp
+    src/runtime/runners/mock_embedding_runner.cpp
+    src/runtime/runners/embedding_runner_factory.cpp
     src/runtime/runners/sdxl/sdxl_runner.cpp
     src/runtime/runners/media_ipc_runner.cpp
     src/runtime/runners/image_ipc_runner.cpp
@@ -1315,6 +1317,8 @@ set(INTEGRATION_TEST_COMMON_SOURCES
     src/utils/conversation_hasher.cpp
     src/utils/service_factory.cpp
     src/runtime/runners/embedding_runner.cpp
+    src/runtime/runners/mock_embedding_runner.cpp
+    src/runtime/runners/embedding_runner_factory.cpp
     src/runtime/runners/sdxl/sdxl_runner.cpp
     src/runtime/runners/media_ipc_runner.cpp
     src/runtime/runners/image_ipc_runner.cpp
@@ -1804,6 +1808,8 @@ set(SOURCES
     src/utils/mapper.cpp
     src/api/embedding_controller.cpp
     src/runtime/runners/embedding_runner.cpp
+    src/runtime/runners/mock_embedding_runner.cpp
+    src/runtime/runners/embedding_runner_factory.cpp
     src/services/embedding_service.cpp
     src/api/image_controller.cpp
     src/runtime/runners/sdxl/sdxl_runner.cpp

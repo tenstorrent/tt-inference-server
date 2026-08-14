@@ -250,6 +250,11 @@ so that is the natural granularity, same as vLLM and friends.
 
 ## Level 5 — the working launch recipe, justified line by line
 
+> **Superseded as of the v1 cleanup.** Skip to *Level 7* for the current
+> recipe. The version below is the *pre-cleanup* one; it is kept because every
+> line of it documents a real failure, and because the problems it works around
+> are what Level 6 and 7 explain.
+
 ```bash
 # 1) venv on PATH → embedded interpreter finds the pinned ttnn
 source /localdev/jzivanovic/tt-metal-65718bb/python_env/bin/activate
@@ -349,6 +354,80 @@ via a file, env vars, or CLI flags, they should be parsed once by the C++
 `Settings`, validated (fail fast on nonsense), and then *pushed* to every
 consumer — including the embedded Python — rather than each consumer pulling
 from the raw environment independently.
+
+---
+
+## Level 7 — the current recipe, after the v1 cleanup
+
+Model selection is now configuration. `MODEL_RUNNER_TYPE` picks a row in the
+`embeddingModels()` table in `settings.cpp`, and that row carries only what the
+parent process must know before any interpreter exists: the HF id (the
+controller's default when a client omits `"model"`), the internal `MODEL` enum
+value, and the per-device `max_batch_size` (the parent forms the batches). The
+forked worker exports `MODEL` / `DEVICE` / `MODEL_RUNNER` into its own
+environment before Python is imported, so those are no longer yours to set.
+
+Which Python class implements a model is deliberately *not* in that table. The
+worker calls `tt_model_runners.runner_fabric.get_device_runner()`, which maps
+`settings.model_runner` — set from the `MODEL_RUNNER` we exported — to a class.
+That registry already exists in Python and is where new models get added
+anyway, so C++ asks for the runner by name rather than keeping a second copy of
+the mapping that could drift.
+
+```bash
+source /localdev/jzivanovic/tt-metal-65718bb/python_env/bin/activate
+
+env PYTHONPATH= \
+    TT_METAL_HOME=/localdev/jzivanovic/tt-metal-65718bb \
+    MODEL_SERVICE=embedding \
+    MODEL_RUNNER_TYPE=tt_bge_large_en \
+    DEVICE=n150 \
+    DEVICE_IDS='(0)' \
+    TT_PYTHON_PATH=/localdev/jzivanovic/tt-inference-server/tt-media-server \
+    ./build/tt_media_server_cpp -p 8000
+```
+
+Three variables from the old recipe are gone. `MODEL` is derived from
+`MODEL_RUNNER_TYPE` — and setting it yourself is now an error rather than an
+override, because that is exactly how the wrong model's config used to get
+paired with the runner. `MAX_IN_FLIGHT_COUNT` is gone because batches are
+capped by the model's own `max_batch_size`; the invariant that nothing used to
+enforce is now structural. The enum-vs-HF-id footgun is gone with it: the table
+holds both spellings, so the controller's default model id comes from config
+instead of a string literal.
+
+`DEVICE` stays, and cannot be derived: it describes the machine, not the model,
+and Python's `ModelConfigs` is keyed on it (BGE is batch 8 on n150, 16 on t3k).
+Set it wrong and you get a startup error listing the supported values.
+
+Because the C++ table mirrors numbers that Python owns, the worker re-reads
+`settings.max_batch_size` after import and refuses to start if the two
+disagree, logging `max_batch_size=8 (agrees with Python)` when they match. A
+drifted table is a hard error at boot rather than an oversized batch hours
+later.
+
+### Running with no hardware
+
+`MODEL_RUNNER_TYPE=embedding_mock` selects a runner that imports no Python and
+opens no device. It answers with a deterministic unit-length 1024-dim vector
+derived from a hash of the input text, so identical inputs
+give identical vectors and different inputs give different ones. It also
+reproduces the real runner's two failure modes — unknown model name, oversized
+batch — so the HTTP, batching, and codec layers can be regression-tested in CI:
+
+```bash
+MODEL_SERVICE=embedding MODEL_RUNNER_TYPE=embedding_mock DEVICE_IDS='(0)' \
+    ./build/tt_media_server_cpp -p 8000
+```
+
+No venv, no `TT_METAL_HOME`, no `DEVICE` needed, and it is ready in
+milliseconds. The vectors are meaningless as embeddings — this is a plumbing
+stand-in, not an approximation of the model.
+
+To add another embedding model: one enumerator in `ModelRunnerType`, its two
+string cases (`toString`, and `toClientRunnerName` which must match Python's
+`ModelRunners` value), and one row in `embeddingModels()`. The runner class
+comes from Python's fabric, so nothing else in C++ changes.
 
 ---
 

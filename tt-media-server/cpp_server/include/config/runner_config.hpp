@@ -84,7 +84,34 @@ struct BlazeConfig : RunnerConfigBase {
   size_t maxContextLength = defaults::MAX_CONTEXT_LENGTH;
 };
 
-struct EmbeddingConfig : RunnerConfigBase {};
+/** Config for the embedding runners. Deliberately standalone rather than
+ *  derived from MediaRunnerConfigBase: the embedding path reads none of the
+ *  image/TTS weight-distribution fields, and inheriting would make it grow
+ *  whenever those gain a field. `device_mesh_shape` is likewise absent -
+ *  nothing here reads it, and Python derives the mesh from its own
+ *  (runner, device) table in config/constants.py. */
+struct EmbeddingConfig : RunnerConfigBase {
+  EmbeddingConfig() { runner_type = ModelRunnerType::TT_BGE_LARGE_EN; }
+
+  size_t worker_id = 0;
+  // Chip ids this worker may use, e.g. "0" or "0,1" (from DEVICE_IDS).
+  std::string visible_devices;
+  // Hard cap on requests per forward pass. Python derives it from its own
+  // (MODEL, DEVICE) table; the parent process needs it too because its
+  // dispatch thread forms the batches, so the worker verifies the two agree
+  // once Python is up.
+  size_t max_batch_size = 1;
+  // Device type string, e.g. "n150" - selects the Python model config row.
+  std::string device;
+
+  // The two names C++ must know before Python exists. hf_model_id is what
+  // clients send and what the runner validates against; python_model_name is
+  // the internal enum value exported as MODEL, without which Python's Settings
+  // skips its config lookup entirely. Which Python class implements the model
+  // is not here: tt_model_runners/runner_fabric.py picks it from MODEL_RUNNER.
+  std::string hf_model_id;
+  std::string python_model_name;
+};
 
 struct ImageConfig : MediaRunnerConfigBase {
   ImageConfig() { runner_type = ModelRunnerType::TT_SDXL_GENERATE; }

@@ -21,7 +21,7 @@
 #include "config/defaults.hpp"
 #include "config/settings.hpp"
 #include "profiling/tracy.hpp"
-#include "runtime/runners/embedding_runner.hpp"
+#include "runtime/runners/i_embedding_runner.hpp"
 #include "services/embedding_codec.hpp"
 #include "services/embedding_service.hpp"
 #include "utils/logger.hpp"
@@ -204,7 +204,11 @@ struct EmbeddingService::Impl {
 
   Impl() {
     numWorkers = tt::config::numWorkers();
-    maxBatchSize = tt::config::maxInFlightCount();
+    // The cap must be the model's own limit: batches larger than
+    // max_batch_size make the model assert and every request in the batch
+    // fails with HTTP 500. It used to come from MAX_IN_FLIGHT_COUNT (default
+    // 32), which is unrelated to what the model can take.
+    maxBatchSize = tt::config::embeddingEngineConfig().max_batch_size;
     batchTimeout = std::chrono::milliseconds(tt::config::batchTimeoutMs());
     maxQueueSize = tt::config::maxQueueSize();
     TT_LOG_INFO(
@@ -217,33 +221,45 @@ struct EmbeddingService::Impl {
 
   [[noreturn]] static void workerProcessMain(int workerId, int readFd,
                                              int writeFd) {
-    // The embedded Python runner resolves its model config (max_batch_size,
-    // mesh shape, ...) from the MODEL and DEVICE env vars via the Python
-    // Settings singleton. If they are missing, Settings silently falls back
-    // to defaults for a different model (max_batch_size=1), which passes
-    // warmup and then fails under load with "Batch size N exceeds max 1".
-    // Fail fast with an actionable message instead.
-    const char* modelEnv = std::getenv("MODEL");
-    const char* deviceEnv = std::getenv("DEVICE");
-    if (!modelEnv || !*modelEnv || !deviceEnv || !*deviceEnv) {
-      TT_LOG_ERROR(
-          "[Worker {}] MODEL and DEVICE env vars are required for the "
-          "embedding service (e.g. MODEL=bge-large-en-v1.5 DEVICE=n150); "
-          "without them the Python model config silently falls back to "
-          "defaults for a different model. Exiting.",
-          workerId);
+    const size_t wid = static_cast<size_t>(workerId);
+    const auto cfg = tt::config::embeddingEngineConfig();
+    const std::string visibleDevices = tt::config::visibleDevicesForWorker(wid);
+
+    // Everything Python reads is exported here, in the child, before any
+    // Python import happens. Two reasons this must be the child and not the
+    // parent: the Python Settings singleton is built at import time and never
+    // re-reads the environment, and MODEL means something different to C++
+    // (config::model() throws on any non-LLM value), so the parent must never
+    // see an embedding model name.
+    setenv("TT_VISIBLE_DEVICES", visibleDevices.c_str(), 1);
+    if (!cfg.python_model_name.empty()) {
+      setenv("MODEL", cfg.python_model_name.c_str(), 1);
+    }
+    setenv("DEVICE", cfg.device.c_str(), 1);
+    const std::string clientRunner = tt::config::toClientRunnerName(
+        cfg.runner_type);
+    if (!clientRunner.empty()) {
+      setenv("MODEL_RUNNER", clientRunner.c_str(), 1);
+    }
+
+    TT_LOG_INFO(
+        "[Worker {}] Started (PID {}, runner_type={}, TT_VISIBLE_DEVICES={}, "
+        "MODEL={}, DEVICE={}, max_batch_size={})",
+        workerId, getpid(), tt::config::toString(cfg.runner_type),
+        visibleDevices, cfg.python_model_name, cfg.device, cfg.max_batch_size);
+
+    std::unique_ptr<runners::IEmbeddingRunner> runner;
+    try {
+      auto workerCfg = cfg;
+      workerCfg.worker_id = wid;
+      workerCfg.visible_devices = visibleDevices;
+      runner = runners::makeEmbeddingRunner(workerCfg);
+    } catch (const std::exception& e) {
+      TT_LOG_ERROR("[Worker {}] Could not build runner: {}", workerId, e.what());
       _exit(1);
     }
 
-    size_t wid = static_cast<size_t>(workerId);
-    std::string visibleDevices = tt::config::visibleDevicesForWorker(wid);
-    setenv("TT_VISIBLE_DEVICES", visibleDevices.c_str(), 1);
-
-    TT_LOG_INFO("[Worker {}] Started (PID {}, TT_VISIBLE_DEVICES={})", workerId,
-                getpid(), visibleDevices);
-
-    runners::EmbeddingRunner runner(visibleDevices, workerId);
-    if (!runner.warmup()) {
+    if (!runner->warmup()) {
       TT_LOG_ERROR("[Worker {}] Warmup failed!", workerId);
       _exit(1);
     }
@@ -282,7 +298,7 @@ struct EmbeddingService::Impl {
       TT_LOG_INFO("[Worker {}] Processing batch of {} requests", workerId,
                   batch.size());
 
-      auto responses = runner.run(batch);
+      auto responses = runner->run(batch);
       auto buf = embedding_codec::encodeResponses(batch, responses);
 
       if (!pipeWrite(writeFd, buf.data(), buf.size())) {
@@ -290,7 +306,7 @@ struct EmbeddingService::Impl {
       }
     }
 
-    runner.close();
+    runner->close();
     _exit(0);
   }
 
@@ -328,10 +344,6 @@ struct EmbeddingService::Impl {
 
     for (auto& w : workers) w->running = false;
     queueCv.notify_all();
-
-    size_t batchSize = tt::config::maxInFlightCount();
-    std::string batchStr = std::to_string(batchSize);
-    setenv("MAX_BATCH_SIZE", batchStr.c_str(), 1);
 
     for (auto& w : workers) {
       if (w->dispatchThread && w->dispatchThread->joinable())

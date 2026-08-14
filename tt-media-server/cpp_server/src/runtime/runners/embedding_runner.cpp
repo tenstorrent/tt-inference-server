@@ -64,11 +64,11 @@ void ensureSysPath() {
 }  // namespace
 
 struct EmbeddingRunner::Impl {
-  std::string device_id;
-  py::object runner;         // BGELargeENRunner instance
+  config::EmbeddingConfig config;
+  py::object runner;         // the configured Python runner instance
   py::object request_class;  // domain.text_embedding_request.TextEmbeddingRequest
 
-  explicit Impl(const std::string& devId) : device_id(devId) {}
+  explicit Impl(const config::EmbeddingConfig& cfg) : config(cfg) {}
 
   ~Impl() { release(); }
 
@@ -79,6 +79,29 @@ struct EmbeddingRunner::Impl {
     request_class = py::object();
     // The interpreter itself is never finalized: other components (and a
     // possible restart of this runner) may still need it.
+  }
+
+  // Python's ModelConfigs table is authoritative for max_batch_size, but the
+  // service needs the number before Python exists in order to cap batches, so
+  // the C++ table mirrors it. Compare the two as soon as Python is importable:
+  // a silent mismatch means oversized batches and an assertion inside the
+  // model later, which is far harder to read than failing here.
+  void checkPythonBatchSize() const {
+    const auto pythonBatch = py::module_::import("config.settings")
+                                 .attr("settings")
+                                 .attr("max_batch_size")
+                                 .cast<size_t>();
+    if (pythonBatch != config.max_batch_size) {
+      throw std::runtime_error(
+          "[EmbeddingRunner] max_batch_size mismatch: C++ config says " +
+          std::to_string(config.max_batch_size) + ", Python resolved " +
+          std::to_string(pythonBatch) +
+          ". The C++ table in settings.cpp has drifted from "
+          "config/constants.py, or MODEL/DEVICE reached Python with "
+          "unexpected values.");
+    }
+    TT_LOG_INFO("[EmbeddingRunner] max_batch_size={} (agrees with Python)",
+                pythonBatch);
   }
 
   bool initialize() {
@@ -97,21 +120,20 @@ struct EmbeddingRunner::Impl {
       try {
         ensureSysPath();
 
-        py::module_ runnerModule =
-            py::module_::import("tt_model_runners.embedding_runner");
-        TT_LOG_INFO(
-            "[EmbeddingRunner] Imported tt_model_runners.embedding_runner");
-
         request_class = py::module_::import("domain.text_embedding_request")
                             .attr("TextEmbeddingRequest");
 
-        // Model selection is still hardcoded in this phase; Phase 5 makes it
-        // config-driven.
-        runner = runnerModule.attr("BGELargeENRunner")(device_id);
-        TT_LOG_INFO(
-            "[EmbeddingRunner] Created BGELargeENRunner instance for device "
-            "{}",
-            device_id);
+        checkPythonBatchSize();
+
+        // Which class implements the model is Python's business: the fabric
+        // maps settings.model_runner (from the MODEL_RUNNER we exported) to a
+        // runner class, so onboarding a model needs no class name in C++.
+        runner = py::module_::import("tt_model_runners.runner_fabric")
+                     .attr("get_device_runner")(config.visible_devices);
+        TT_LOG_INFO("[EmbeddingRunner] Created {} for device {}",
+                    py::str(runner.attr("__class__").attr("__name__"))
+                        .cast<std::string>(),
+                    config.visible_devices);
 
         runner.attr("set_device")();
         TT_LOG_INFO("[EmbeddingRunner] set_device() completed");
@@ -124,6 +146,9 @@ struct EmbeddingRunner::Impl {
                     ok ? "success" : "failed");
       } catch (const py::error_already_set& e) {
         TT_LOG_ERROR("[EmbeddingRunner] Warmup failed:\n{}", e.what());
+        ok = false;
+      } catch (const std::exception& e) {
+        TT_LOG_ERROR("[EmbeddingRunner] Warmup failed: {}", e.what());
         ok = false;
       }
     }
@@ -181,28 +206,24 @@ struct EmbeddingRunner::Impl {
 
 // Public interface implementation
 
-EmbeddingRunner::EmbeddingRunner(const std::string& deviceId, int visibleDevice)
-    : device_id_(deviceId),
-      visible_device_(visibleDevice),
-      impl_(std::make_unique<Impl>(deviceId)) {
-  TT_LOG_INFO(
-      "[EmbeddingRunner] EmbeddingRunner created for device {} "
-      "visible_device={}",
-      deviceId, visibleDevice);
+EmbeddingRunner::EmbeddingRunner(const config::EmbeddingConfig& config)
+    : config_(config), impl_(std::make_unique<Impl>(config)) {
+  TT_LOG_INFO("[EmbeddingRunner] Created for model {} on device {} (worker {})",
+              config_.hf_model_id, config_.visible_devices, config_.worker_id);
 }
 
 EmbeddingRunner::~EmbeddingRunner() { close(); }
 
 bool EmbeddingRunner::warmup() {
-  TT_LOG_INFO(
-      "[EmbeddingRunner] Starting warmup for device {} visible_device={}",
-      device_id_, visible_device_);
+  TT_LOG_INFO("[EmbeddingRunner] Starting warmup for {} on device {}",
+              config_.hf_model_id, config_.visible_devices);
 
   if (!impl_->initialize()) {
     return false;
   }
 
-  TT_LOG_INFO("[EmbeddingRunner] Warmup complete for device {}", device_id_);
+  TT_LOG_INFO("[EmbeddingRunner] Warmup complete for device {}",
+              config_.visible_devices);
   return true;
 }
 
@@ -221,17 +242,5 @@ std::vector<domain::EmbeddingResponse> EmbeddingRunner::run(
 
   return impl_->runInference(requests);
 }
-
-// IRunner interface implementation
-void EmbeddingRunner::run() {
-  if (!warmup()) {
-    throw std::runtime_error("Failed to initialize EmbeddingRunner");
-  }
-  TT_LOG_INFO(
-      "[EmbeddingRunner] EmbeddingRunner ready for requests on device {}",
-      device_id_);
-}
-
-void EmbeddingRunner::stop() { close(); }
 
 }  // namespace tt::runners
