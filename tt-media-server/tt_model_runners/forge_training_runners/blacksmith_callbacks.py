@@ -65,9 +65,8 @@ class JobMetricsCallback(JobCallback):
             n_batches = len(trainer.train_dataloader)
         except TypeError:
             pass
-        msg = (
-            f"{self._epoch_step_label(trainer)} | Starting training"
-            + (f" ({n_batches} batches per epoch)" if n_batches is not None else "")
+        msg = f"{self._epoch_step_label(trainer)} | Starting training" + (
+            f" ({n_batches} batches per epoch)" if n_batches is not None else ""
         )
         self._logger.info(msg, extra={"log_type": "info", "step": trainer.global_step})
 
@@ -78,9 +77,8 @@ class JobMetricsCallback(JobCallback):
             n_batches = len(trainer.val_dataloader)
         except TypeError:
             pass
-        msg = (
-            f"{self._epoch_step_label(trainer)} | Starting validation"
-            + (f" ({n_batches} batches)" if n_batches is not None else "")
+        msg = f"{self._epoch_step_label(trainer)} | Starting validation" + (
+            f" ({n_batches} batches)" if n_batches is not None else ""
         )
         self._logger.info(msg, extra={"log_type": "info", "step": trainer.global_step})
 
