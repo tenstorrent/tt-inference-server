@@ -7,7 +7,12 @@ import tempfile
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from config.constants import JobTypes
+from config.constants import (
+    DEFAULT_VIDEO_INFERENCE_STEPS,
+    JobTypes,
+    MAX_VIDEO_INFERENCE_STEPS,
+    MIN_VIDEO_INFERENCE_STEPS,
+)
 from domain.video_generate_request import VideoGenerateRequest
 from domain.video_i2v_generate_request import (
     ImagePromptEntry,
@@ -424,6 +429,42 @@ class TestVideoGenerateRequestValidation:
         assert request.num_inference_steps == 30
         assert request.seed == 42
 
+    def test_default_inference_steps(self):
+        request = VideoGenerateRequest(prompt="A cat walking in the park")
+        assert request.num_inference_steps == DEFAULT_VIDEO_INFERENCE_STEPS
+
+    def test_min_inference_steps_accepted(self):
+        request = VideoGenerateRequest(
+            prompt="A cat walking in the park",
+            num_inference_steps=MIN_VIDEO_INFERENCE_STEPS,
+        )
+        assert request.num_inference_steps == MIN_VIDEO_INFERENCE_STEPS
+
+    def test_below_min_inference_steps_rejected(self):
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            VideoGenerateRequest(
+                prompt="A cat walking in the park",
+                num_inference_steps=MIN_VIDEO_INFERENCE_STEPS - 1,
+            )
+
+    def test_max_inference_steps_accepted(self):
+        request = VideoGenerateRequest(
+            prompt="A cat walking in the park",
+            num_inference_steps=MAX_VIDEO_INFERENCE_STEPS,
+        )
+        assert request.num_inference_steps == MAX_VIDEO_INFERENCE_STEPS
+
+    def test_above_max_inference_steps_rejected(self):
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            VideoGenerateRequest(
+                prompt="A cat walking in the park",
+                num_inference_steps=MAX_VIDEO_INFERENCE_STEPS + 1,
+            )
+
 
 class TestResponseContent:
     """Tests for response content structure"""
@@ -614,6 +655,25 @@ class TestVideoI2VGenerateRequestValidation:
         assert request.negative_prompt == "blurry"
         assert request.num_inference_steps == 30
         assert request.seed == 42
+
+    def test_inherits_min_inference_steps(self):
+        """I2V uses the same API floor as T2V; 4 must not 422."""
+        request = VideoI2VGenerateRequest(
+            prompt="A cat",
+            num_inference_steps=MIN_VIDEO_INFERENCE_STEPS,
+            image_prompts=[ImagePromptEntry(image=_tiny_png_base64(), frame_pos=0)],
+        )
+        assert request.num_inference_steps == MIN_VIDEO_INFERENCE_STEPS
+
+    def test_inherits_below_min_inference_steps_rejected(self):
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            VideoI2VGenerateRequest(
+                prompt="A cat",
+                num_inference_steps=MIN_VIDEO_INFERENCE_STEPS - 1,
+                image_prompts=[ImagePromptEntry(image=_tiny_png_base64(), frame_pos=0)],
+            )
 
     def test_valid_image_with_data_uri_prefix_accepted(self):
         """base64 image with 'data:image/png;base64,' prefix should pass."""

@@ -264,11 +264,6 @@
                 "P300X2"
               ]
             },
-            "release": {
-              "devices": [
-                "GALAXY"
-              ]
-            },
             "weekly": {
               "devices": [
                 "GALAXY",

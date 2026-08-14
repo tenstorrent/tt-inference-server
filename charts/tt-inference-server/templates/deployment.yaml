@@ -1,6 +1,7 @@
 {{- include "tt-inference-server.validateValues" . }}
 {{- $cfg := include "tt-inference-server.resolvedConfig" . | fromYaml }}
 {{- $engine := include "tt-inference-server.resolvedEngine" . }}
+{{- $ttCount := include "tt-inference-server.draDeviceCount" . }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -14,14 +15,8 @@ spec:
   selector:
     matchLabels:
       {{- include "tt-inference-server.selectorLabels" . | nindent 6 }}
-  # Must be Recreate (not RollingUpdate): hugepages mmap'd by the terminating
-  # pod are not freed until it fully exits; a replacement pod would fail to
-  # allocate hugepages (see issue #2801). Trade-off: causes brief downtime
-  # during upgrades — acceptable because the chart's hardcoded podAntiAffinity
-  # already requires the only eligible node to be free. Hardcoded here (not
-  # values-driven) so a future maintainer cannot revert it inadvertently.
   strategy:
-    type: Recreate
+    {{- toYaml $cfg.updateStrategy | nindent 4 }}
   template:
     metadata:
       labels:
@@ -42,6 +37,13 @@ spec:
       securityContext:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- if $ttCount }}
+      # DRA: each Pod gets its own ResourceClaim generated from the
+      # ResourceClaimTemplate, satisfied by the tt-operator DRA driver.
+      resourceClaims:
+        - name: tt
+          resourceClaimTemplateName: {{ include "tt-inference-server.fullname" . }}-tt
+      {{- end }}
       initContainers:
         - name: fix-cache-permissions
           image: busybox
@@ -49,11 +51,25 @@ spec:
           volumeMounts:
             - name: cache
               mountPath: /cache
+        # Scoped hugepages cleanup: claim requested here so the DRA driver injects
+        # /dev/tenstorrent/<N>; delete only THIS Pod's board files, not co-located Pods'.
         - name: cleanup-hugepages
           image: busybox
-          command: ["sh", "-c", "rm -f /dev/hugepages-1G/device_*_tenstorrent /dev/hugepages-1G/tenstorrent && echo 'hugepage cleanup done'"]
-          securityContext:
-            privileged: true
+          command:
+            - sh
+            - -c
+            - |
+              boards=$(ls /dev/tenstorrent 2>/dev/null)
+              echo "scoped hugepage cleanup for boards: [$boards]"
+              for n in $boards; do
+                rm -f /dev/hugepages-1G/device_${n}_*tenstorrent
+                if [ "$n" = "0" ]; then rm -f /dev/hugepages-1G/tenstorrent; fi
+              done
+          {{- if $ttCount }}
+          resources:
+            claims:
+              - name: tt
+          {{- end }}
           volumeMounts:
             - name: hugepages-1g
               mountPath: /dev/hugepages-1G
@@ -84,8 +100,6 @@ spec:
           volumeMounts:
             - name: cache
               mountPath: /home/container_app_user/cache_root
-            - name: tenstorrent
-              mountPath: /dev/tenstorrent
             - name: hugepages-1g
               mountPath: /dev/hugepages-1G
             {{- if .Values.hfCacheDir }}
@@ -93,12 +107,16 @@ spec:
               mountPath: /mnt/hf-cache
               readOnly: true
             {{- end }}
-          {{- with $cfg.resources }}
+          {{- if or $cfg.resources $ttCount }}
           resources:
+            {{- with $cfg.resources }}
             {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- if $ttCount }}
+            claims:
+              - name: tt
+            {{- end }}
           {{- end }}
-          securityContext:
-            privileged: true
           {{- if $cfg.probes.liveness.enabled }}
           livenessProbe:
             httpGet:
@@ -128,10 +146,6 @@ spec:
           hostPath:
             path: {{ include "tt-inference-server.cacheHostPath" . }}
             type: DirectoryOrCreate
-        - name: tenstorrent
-          hostPath:
-            path: /dev/tenstorrent
-            type: Directory
         - name: hugepages-1g
           hostPath:
             path: /dev/hugepages-1G
