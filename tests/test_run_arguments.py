@@ -469,9 +469,13 @@ class TestModelSpecCliArgsCompatibility:
         assert args.vllm_dir == "/opt/vllm"
         assert args.tools == "guidellm"
 
-        # Test defaults
-        with patch("sys.argv", ["run.py"] + base_args):
-            args = parse_arguments()
+        # Test defaults (unset env fallbacks so this host's TT_METAL_HOME /
+        # vllm_dir do not leak into argparse defaults).
+        with patch.dict(os.environ):
+            os.environ.pop("TT_METAL_HOME", None)
+            os.environ.pop("vllm_dir", None)
+            with patch("sys.argv", ["run.py"] + base_args):
+                args = parse_arguments()
 
         assert args.local_server is False
         assert args.docker_server is False

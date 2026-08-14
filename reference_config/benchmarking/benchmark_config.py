@@ -99,6 +99,7 @@ BENCHMARK_ISL_OSL_PAIRS = [
     (32768, 128),
     (65536, 128),
     (131072, 128),
+    (262144, 128),  # 256k — only emitted when isl+osl <= model max_context
 ]
 # Additional high-ISL sweep points appended only for remote SUPER_CLUSTER
 # endpoints, whose token budget is context*concurrency (see

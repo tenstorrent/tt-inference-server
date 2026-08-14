@@ -87,8 +87,11 @@ class AsyncLogHandler(logging.Handler):
         self._queue.put_nowait(record)
 
     def close(self):
-        _safe_stop_listener(self._listener)
-        if AsyncLogHandler._active_listener is self._listener:
+        # dictConfig teardown may close a handler before __init__ finishes
+        # (no _listener yet); tolerate that so logging.shutdown() is safe.
+        listener = getattr(self, "_listener", None)
+        _safe_stop_listener(listener)
+        if listener is not None and AsyncLogHandler._active_listener is listener:
             AsyncLogHandler._active_listener = None
         super().close()
 
