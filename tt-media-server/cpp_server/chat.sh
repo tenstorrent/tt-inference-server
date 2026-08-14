@@ -90,6 +90,6 @@ status=${PIPESTATUS[0]}
 
 echo
 if [ "$status" -ne 0 ]; then
-  echo "[chat.sh] curl exited with status $status (is the server up at ${HOST}:${PORT}?)" >&2
+  echo "[chat.sh] curl exited with status $status (is the server up?)" >&2
   exit "$status"
 fi
