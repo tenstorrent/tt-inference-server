@@ -293,7 +293,6 @@ class TrainerTrainingLoraRunner(BaseDeviceRunner):
             trainer.train_dataloader, trainer.val_dataloader = (
                 trainer._load_dataloaders()
             )
-            self._ensure_nonempty_train_dataloader(trainer, request)
             trainer.optimizer = trainer._load_optimizer()
 
             trainer.train()
@@ -323,35 +322,6 @@ class TrainerTrainingLoraRunner(BaseDeviceRunner):
 
         return [request._output_model_path]
 
-    def _ensure_nonempty_train_dataloader(
-        self, trainer, request: TrainingRequest
-    ) -> None:
-        try:
-            n_train = len(trainer.train_dataloader)
-        except TypeError:
-            return
-        if n_train == 0:
-            raise ValueError(
-                "Train dataloader is empty after filtering to "
-                f"max_length={request.dataset_max_sequence_length} with "
-                f"batch_size={request.batch_size} (drop_last=True). "
-                "Increase dataset_max_sequence_length or lower batch_size."
-            )
-        if trainer.val_dataloader is not None:
-            try:
-                n_val = len(trainer.val_dataloader)
-            except TypeError:
-                n_val = None
-            if n_val == 0:
-                self.logger.warning(
-                    "Validation dataloader is empty after filtering to "
-                    f"max_length={request.dataset_max_sequence_length} with "
-                    f"batch_size={request.batch_size} (drop_last=True). "
-                    "Validation will be skipped. Lower batch_size or add more "
-                    "val examples.",
-                    extra={"log_type": "info", "step": 0},
-                )
-
     def _validate(self, request: TrainingRequest) -> None:
         if request.device_type != self.settings.device:
             raise ValueError(
@@ -370,9 +340,6 @@ class TrainerTrainingLoraRunner(BaseDeviceRunner):
                 f"Unsupported dataset_loader '{request.dataset_loader}'; "
                 f"expected one of {sorted(DATASET_IDS)}"
             )
-        for name in ("steps_freq", "val_steps_freq"):
-            if getattr(request, name) < 1:
-                raise ValueError(f"'{name}' must be >= 1, got {getattr(request, name)}")
 
     def _logging_config(self) -> LoggingConfig:
         return LoggingConfig(

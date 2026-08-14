@@ -387,11 +387,7 @@ def _install_blacksmith_stubs():
             self.epoch = 0
 
         def _load_dataloaders(self):
-            train, val = MagicMock(), MagicMock()
-            # len() on a bare MagicMock is 0, which the runner treats as empty.
-            train.__len__.return_value = 1
-            val.__len__.return_value = 1
-            return train, val
+            return MagicMock(), MagicMock()
 
         def _load_optimizer(self):
             return MagicMock()
