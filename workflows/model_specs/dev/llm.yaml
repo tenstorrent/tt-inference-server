@@ -823,6 +823,71 @@ templates:
       tool_call_parser_name: deepseek_v3
 
 - weights:
+    - deepseek-ai/DeepSeek-V4-Flash-DSpark
+  impl: deepseek_v4_flash
+  inference_engine: VLLM
+  # The 43-layer bfloat4_b stack is ~84 GB, which does not fit one Blackhole, so the
+  # model splits itself one pipeline stage per chip. tt/model.py builds those stages as
+  # 1x1 submeshes at MeshCoordinate(0, i), so MESH_DEVICE has to be a single row on
+  # every device below. The mesh is spent on pipeline parallelism, which is why no
+  # entry sets data_parallel_size: the wrapper rejects tt_data_parallel != 1.
+  #
+  # The generator reads its checkpoint and its converted tile cache from
+  # DEEPSEEK_V4_HF_MODEL / DEEPSEEK_V4_CACHE_DIR rather than HF_MODEL / TT_CACHE_PATH.
+  # Those paths differ between a container and a --local-server run, so model_setup()
+  # in vllm-tt-metal/src/run_vllm_api_server.py derives them at startup instead.
+  device_model_specs:
+    - device: P150X8
+      max_concurrency: 32
+      max_context: 524288  # round_context({4, 128}, block 32) tiles exactly at 4096
+      default_impl: true
+      # The first run converts every expert weight to bfloat4_b, which takes far
+      # longer than a normal weight load.
+      tensor_cache_timeout: 7200.0
+      env_vars:
+        MESH_DEVICE: "(1, 8)"  # P150x8 is natively (2,4); the submeshes need one row
+        # An HCA layer's blocks are 4096/128 = 32 rows, so its 128-token sliding ring
+        # costs 4 blocks per session, and allocate_kv_cache refuses to start unless the
+        # pool holds the zero block plus every session's ring plus one working block
+        # each: 1 + 32*4 + 32 = 161. The plugin turns this budget into
+        # budget/block_size + max_concurrency blocks, so the 128K default buys only 64.
+        # The surplus is ring reservation, not per-user context (max_context stays 4096).
+        DEEPSEEK_V4_MAX_TOKENS_ALL_USERS: "655360"  # 160 + 32 = 192 blocks
+      vllm_args:
+        # min_tokens_per_block(compress_rates) = TILE_SIZE * max(rate) = 32 * 128, so
+        # a vLLM block has to span 4096 tokens for its block count to mean the same
+        # thing as the model's, which derives per-layer geometry from that figure.
+        block_size: "4096"
+      override_tt_config:
+        fabric_config: FABRIC_2D
+        num_command_queues: 2
+        # A submesh hosting both a CSA and an HCA layer captures one trace variant per
+        # (SDPA mode, window phase) pair -- up to five -- so the 50 MB default is far
+        # too small. Set DEEPSEEK_V4_POOL_EVERY_STEP=1 to collapse back to one family.
+        trace_region_size: 268435456  # 256 MB
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 32
+      max_context: 524288
+      default_impl: true
+      tensor_cache_timeout: 7200.0
+      env_vars:
+        MESH_DEVICE: "(1, 32)"
+        DEEPSEEK_V4_MAX_TOKENS_ALL_USERS: "655360"  # see the P150X8 entry above
+      vllm_args:
+        block_size: "4096"
+      override_tt_config:
+        fabric_config: FABRIC_2D
+        num_command_queues: 2
+        trace_region_size: 268435456  # 256 MB
+  # 167 GB of fp8 weights on disk, plus the bfloat4_b ttnn tile cache built from them.
+  min_disk_gb: 300
+  min_ram_gb: 64
+  status: EXPERIMENTAL
+  # The wrapper implements warmup_model_prefill; there is no separate prefill program,
+  # so one throwaway decode step captures every trace variant.
+  has_builtin_warmup: true
+
+- weights:
     - meta-llama/Llama-3.3-70B-Instruct
     - meta-llama/Llama-3.1-70B
     - meta-llama/Llama-3.1-70B-Instruct

@@ -689,9 +689,6 @@ def parse_arguments():
         args.device = infer_default_device(args.model, args.engine)
     args.tt_device = args.device
 
-    if not args.vllm_dir and args.tt_metal_home:
-        args.vllm_dir = str(Path(args.tt_metal_home).expanduser() / "vllm")
-
     # indirectly set additional flags for CI-mode
     if args.ci_mode:
         if "--limit-samples-mode" not in args:

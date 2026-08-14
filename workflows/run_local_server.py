@@ -159,12 +159,17 @@ def build_local_server_env(
     env["APP_DIR"] = str(app_dir)
     env["TT_METAL_HOME"] = str(tt_metal_home)
     env["PYTHON_ENV_DIR"] = str(python_env_dir)
-    env["vllm_dir"] = str(vllm_dir)
     pythonpath = _prepend_env_path(
         tt_metal_home,
         _prepend_env_path(app_dir, env.get("PYTHONPATH", "")),
     )
-    env["PYTHONPATH"] = _append_env_path(pythonpath, vllm_dir)
+    # Only put a vLLM source tree on the path when one is actually there. PYTHONPATH
+    # precedes site-packages, so a stale checkout would shadow the vllm package the
+    # plugin's install put in the venv.
+    if vllm_dir.exists():
+        env["vllm_dir"] = str(vllm_dir)
+        pythonpath = _append_env_path(pythonpath, vllm_dir)
+    env["PYTHONPATH"] = pythonpath
     env["LD_LIBRARY_PATH"] = _prepend_env_path(
         tt_metal_home / "build" / "lib", env.get("LD_LIBRARY_PATH", "")
     )

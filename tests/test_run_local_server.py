@@ -83,6 +83,7 @@ class TestRunLocalServer:
         python_bin_dir.mkdir(parents=True)
         build_lib_dir.mkdir(parents=True)
         (python_bin_dir / "python").write_text("")
+        (tt_metal_home / "vllm").mkdir()
 
         model_spec = self._make_model_spec()
         runtime_config = self._make_runtime_config(
@@ -260,6 +261,7 @@ class TestRunLocalServer:
         python_bin_dir.mkdir(parents=True)
         build_lib_dir.mkdir(parents=True)
         (python_bin_dir / "python").write_text("")
+        (tt_metal_home / "vllm").mkdir()
 
         cache_root = tmp_path / "cache-root"
         model_spec = self._make_model_spec()
@@ -328,6 +330,45 @@ class TestRunLocalServer:
         pythonpath_parts = env["PYTHONPATH"].split(os.pathsep)
         assert env["vllm_dir"] == str(vllm_dir.resolve())
         assert pythonpath_parts[-1] == str(vllm_dir.resolve())
+
+    def test_build_local_server_env_omits_absent_vllm_dir(self, tmp_path):
+        """No source tree -> nothing exported, so the installed vllm is not shadowed.
+
+        PYTHONPATH precedes site-packages, so appending a stale or missing checkout
+        would take priority over the vllm package the plugin's install puts in the
+        tt-metal venv.
+        """
+        repo_root = tmp_path / "repo"
+        entrypoint = repo_root / "vllm-tt-metal" / "src" / "run_vllm_api_server.py"
+        entrypoint.parent.mkdir(parents=True)
+        entrypoint.write_text("")
+
+        tt_metal_home = tmp_path / "tt-metal"
+        python_bin_dir = tt_metal_home / "python_env" / "bin"
+        build_lib_dir = tt_metal_home / "build" / "lib"
+        python_bin_dir.mkdir(parents=True)
+        build_lib_dir.mkdir(parents=True)
+        (python_bin_dir / "python").write_text("")
+
+        cache_root = tmp_path / "cache-root"
+        runtime_config = self._make_runtime_config(tt_metal_home)
+        setup_config = self._make_setup_config(cache_root)
+        json_fpath = repo_root / "runtime.json"
+        json_fpath.write_text("{}")
+
+        env = build_local_server_env(
+            self._make_model_spec(),
+            runtime_config,
+            json_fpath,
+            setup_config,
+            repo_root=repo_root,
+        )
+
+        assert "vllm_dir" not in env
+        pythonpath_parts = env["PYTHONPATH"].split(os.pathsep)
+        assert str(tt_metal_home / "vllm") not in pythonpath_parts
+        assert str(tt_metal_home) in pythonpath_parts
+        assert str(repo_root) in pythonpath_parts
 
     def test_build_local_server_env_uses_setup_host_default_cache_root(self, tmp_path):
         repo_root = tmp_path / "repo"

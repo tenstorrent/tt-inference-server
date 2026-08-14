@@ -410,6 +410,18 @@ def model_setup(model_spec_json):
         "HF_MODEL": hf_dir,
     }
 
+    # DeepSeek-V4-Flash reads its checkpoint and its converted bfloat4_b tile cache
+    # from its own env vars instead of HF_MODEL/TT_CACHE_PATH, and both paths differ
+    # between a container and a --local-server run, so they cannot be pinned in the
+    # model spec. Only fill them when absent, so an explicit override still wins.
+    if model_spec_json.get("impl", {}).get("impl_id") == "deepseek_v4_flash":
+        dynamic_env_vars["DEEPSEEK_V4_HF_MODEL"] = (
+            os.getenv("DEEPSEEK_V4_HF_MODEL") or hf_dir
+        )
+        dynamic_env_vars["DEEPSEEK_V4_CACHE_DIR"] = os.getenv(
+            "DEEPSEEK_V4_CACHE_DIR"
+        ) or os.getenv("TT_CACHE_PATH")
+
     # Set dynamic environment variables
     logger.info("setting dynamic runtime environment variables:")
     for key, value in dynamic_env_vars.items():
