@@ -56,9 +56,23 @@ class JobMetricsCallback(JobCallback):
     def on_backward_end(self, trainer, loss, *args, **kwargs):
         self._step_running_loss += loss.item()
 
+    def on_train_start(self, trainer, *args, **kwargs):
+        # `Trainer.train` fires this even when config is unset; skip in that case.
+        if trainer.config is None:
+            return
+        n_batches = None
+        try:
+            n_batches = len(trainer.train_dataloader)
+        except TypeError:
+            pass
+        msg = (
+            f"{self._epoch_step_label(trainer)} | Starting training"
+            + (f" ({n_batches} batches per epoch)" if n_batches is not None else "")
+        )
+        self._logger.info(msg, extra={"log_type": "info", "step": trainer.global_step})
+
     def on_validation_start(self, trainer, *args, **kwargs):
         self._val_batch = 0
-        # Surface the long first XLA/TT compile in job logs (tqdm stays on stdout).
         n_batches = None
         try:
             n_batches = len(trainer.val_dataloader)
@@ -67,7 +81,6 @@ class JobMetricsCallback(JobCallback):
         msg = (
             f"{self._epoch_step_label(trainer)} | Starting validation"
             + (f" ({n_batches} batches)" if n_batches is not None else "")
-            + "; first batch may take several minutes to compile"
         )
         self._logger.info(msg, extra={"log_type": "info", "step": trainer.global_step})
 

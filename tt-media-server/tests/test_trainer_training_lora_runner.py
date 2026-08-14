@@ -63,7 +63,9 @@ class _Loss:
         return self._value
 
 
-def _fake_trainer(grad_accum=1, steps_freq=1, num_epochs=1, val_batches=None):
+def _fake_trainer(
+    grad_accum=1, steps_freq=1, num_epochs=1, val_batches=None, train_batches=None
+):
     trainer = MagicMock()
     trainer.config.gradient_accumulation_steps = grad_accum
     trainer.config.metrics.steps_freq = steps_freq
@@ -71,6 +73,10 @@ def _fake_trainer(grad_accum=1, steps_freq=1, num_epochs=1, val_batches=None):
     trainer.global_step = 0
     trainer.epoch = 0
     trainer.optimizer.param_groups = [{"lr": 0.001}]
+    if train_batches is None:
+        trainer.train_dataloader.__len__.side_effect = TypeError()
+    else:
+        trainer.train_dataloader.__len__.return_value = train_batches
     if val_batches is None:
         trainer.val_dataloader.__len__.side_effect = TypeError()
     else:
@@ -510,6 +516,18 @@ class TestJobMetricsCallback:
             "Epoch 1/3 | Step 2 | train_loss: 2.000000",
         ]
 
+    def test_logs_train_batch_count_at_train_start(self):
+        request = _request()
+        callback = self._callback(request)
+        trainer = _fake_trainer(num_epochs=2, train_batches=42)
+
+        callback.on_train_start(trainer)
+
+        messages = [call.args[0] for call in callback._logger.info.call_args_list]
+        assert messages == [
+            "Epoch 1/2 | Step 0 | Starting training (42 batches per epoch)",
+        ]
+
     def test_logs_validation_batch_progress_without_loss(self):
         request = _request()
         callback = self._callback(request)
@@ -524,8 +542,7 @@ class TestJobMetricsCallback:
 
         messages = [call.args[0] for call in callback._logger.info.call_args_list]
         assert messages == [
-            "Epoch 1/2 | Step 10 | Starting validation (2 batches); "
-            "first batch may take several minutes to compile",
+            "Epoch 1/2 | Step 10 | Starting validation (2 batches)",
             "Epoch 1/2 | Step 10 | Validation batch 1/2",
             "Epoch 1/2 | Step 10 | Validation batch 2/2",
             "Epoch 1/2 | Step 10 | val_loss: 1.500000",
