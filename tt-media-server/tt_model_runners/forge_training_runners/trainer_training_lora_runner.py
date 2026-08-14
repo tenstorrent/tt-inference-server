@@ -328,7 +328,9 @@ class TrainerTrainingLoraRunner(BaseDeviceRunner):
 
         return [request._output_model_path]
 
-    def _ensure_nonempty_train_dataloader(self, trainer, request: TrainingRequest) -> None:
+    def _ensure_nonempty_train_dataloader(
+        self, trainer, request: TrainingRequest
+    ) -> None:
         try:
             n_train = len(trainer.train_dataloader)
         except TypeError:
@@ -382,9 +384,7 @@ class TrainerTrainingLoraRunner(BaseDeviceRunner):
     def _dataset_columns(self, path: str, file_type: str) -> Set[str]:
         """Read column names from the first row of a custom dataset file."""
         normalized = normalize_file_type(file_type)
-        raw_dataset = load_dataset(
-            normalized, data_files={"data": path}, split="data"
-        )
+        raw_dataset = load_dataset(normalized, data_files={"data": path}, split="data")
         if len(raw_dataset) == 0:
             raise ValueError(f"Dataset at {path!r} is empty")
         return set(raw_dataset[0].keys())
@@ -399,9 +399,7 @@ class TrainerTrainingLoraRunner(BaseDeviceRunner):
         train_columns = self._dataset_columns(
             request.train_dataset_path, request.file_type
         )
-        resolve_column_mapping(
-            request.template, request.column_mapping, train_columns
-        )
+        resolve_column_mapping(request.template, request.column_mapping, train_columns)
         if request.val_dataset_path:
             val_columns = self._dataset_columns(
                 request.val_dataset_path, request.file_type

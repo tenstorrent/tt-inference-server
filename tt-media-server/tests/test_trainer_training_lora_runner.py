@@ -535,8 +535,12 @@ class TestJobControlCallback:
 
         callback.on_error(_fake_trainer(), boom)
         assert callback.error is boom
-        error_messages = [call.args[0] for call in callback._logger.error.call_args_list]
-        assert any(msg.startswith("Job failed at step 0: boom") for msg in error_messages)
+        error_messages = [
+            call.args[0] for call in callback._logger.error.call_args_list
+        ]
+        assert any(
+            msg.startswith("Job failed at step 0: boom") for msg in error_messages
+        )
         assert any("Full traceback:" in msg for msg in error_messages)
 
 

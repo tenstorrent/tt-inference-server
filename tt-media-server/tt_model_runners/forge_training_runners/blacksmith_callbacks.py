@@ -79,9 +79,7 @@ class JobMetricsCallback(JobCallback):
             + (f" ({n_batches} batches)" if n_batches is not None else "")
             + "; first batch may take several minutes to compile"
         )
-        self._logger.info(
-            msg, extra={"log_type": "info", "step": trainer.global_step}
-        )
+        self._logger.info(msg, extra={"log_type": "info", "step": trainer.global_step})
 
     def on_validation_batch_end(self, trainer, batch, loss, *args, **kwargs):
         self._val_batch += 1

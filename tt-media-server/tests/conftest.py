@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import inspect
+import json
 import re
 import sys
 import types
@@ -197,6 +198,19 @@ for module in mock_modules:
             mock.SamplingParams = MagicMock()
             mock.sampling_params = MagicMock()
             mock.sampling_params.RequestOutputKind = MagicMock()
+        elif module == "datasets":
+
+            def _load_dataset(file_type, data_files=None, split=None):
+                path = data_files["data"]
+                with open(path) as handle:
+                    if str(path).endswith(".jsonl"):
+                        rows = [json.loads(line) for line in handle if line.strip()]
+                    else:
+                        data = json.load(handle)
+                        rows = data if isinstance(data, list) else [data]
+                return rows
+
+            mock.load_dataset = _load_dataset
 
         sys.modules[module] = mock
 
@@ -388,7 +402,11 @@ def _install_blacksmith_stubs():
             self.epoch = 0
 
         def _load_dataloaders(self):
-            return MagicMock(), MagicMock()
+            train, val = MagicMock(), MagicMock()
+            # len() on a bare MagicMock is 0, which the runner treats as empty.
+            train.__len__.return_value = 1
+            val.__len__.return_value = 1
+            return train, val
 
         def _load_optimizer(self):
             return MagicMock()
@@ -396,13 +414,68 @@ def _install_blacksmith_stubs():
         def train(self):
             pass
 
+    def normalize_file_type(file_type: str) -> str:
+        if file_type == "jsonl":
+            return "json"
+        return file_type
+
+    def resolve_column_mapping(template_name, column_mapping, dataset_columns):
+        template_keys = {
+            "alpaca": {
+                "required": {"instruction", "output"},
+                "optional": {"input"},
+            }
+        }
+        if template_name not in template_keys:
+            raise ValueError(
+                f"Selected template is unsupported:  {template_name}. "
+                f"You should use one of the available templates: {list(template_keys)}"
+            )
+        required_keys = template_keys[template_name]["required"]
+        optional_keys = template_keys[template_name]["optional"]
+        all_keys = required_keys.union(optional_keys)
+        resolved = column_mapping.copy() if column_mapping else {}
+        if resolved:
+            missing_keys = set(resolved.values()) - dataset_columns
+            if missing_keys:
+                raise ValueError(
+                    f"Column mapping refers to non-existent dataset columns: "
+                    f"{sorted(missing_keys)}. Dataset columns: {sorted(dataset_columns)}."
+                )
+            extra_keys = set(resolved.keys()) - all_keys
+            if extra_keys:
+                raise ValueError(
+                    f"Column mapping contains unsupported keys: {sorted(extra_keys)}. "
+                    f"Supported keys for template '{template_name}': {sorted(all_keys)}."
+                )
+        for key in required_keys.union(optional_keys):
+            if key in dataset_columns and key not in resolved:
+                resolved[key] = key
+        still_missing_required = required_keys - set(resolved.keys())
+        if still_missing_required:
+            raise ValueError(
+                f"Column mapping is missing required keys: "
+                f"{sorted(still_missing_required)}. "
+                f"Required keys for template '{template_name}': {sorted(required_keys)}."
+            )
+        return resolved
+
     def module(name, **attrs):
         stub = types.ModuleType(name)
+        stub.__path__ = []
         for key, value in attrs.items():
             setattr(stub, key, value)
         sys.modules[name] = stub
 
     module("blacksmith")
+    module("blacksmith.datasets")
+    module("blacksmith.datasets.torch")
+    module("blacksmith.datasets.torch.custom")
+    module(
+        "blacksmith.datasets.torch.custom.custom_dataset_utils",
+        normalize_file_type=normalize_file_type,
+        resolve_column_mapping=resolve_column_mapping,
+    )
     module("blacksmith.tools")
     module(
         "blacksmith.tools.configs",
