@@ -10,10 +10,10 @@
 #ifdef TT_TRANSPORT_WITH_KV_TABLE
 #include <exception>
 
-#include "tt-metalium/experimental/disaggregation/kv_chunk_address_table.hpp"
+#include "tt-metalium/internal/disaggregation/kv_chunk_address_table.hpp"
 // Protobuf import/export helpers (the build must also compile the matching
 // protobuf .cpp + generated .pb.cc and link protobuf — see the helper header).
-#include "experimental/disaggregation/kv_chunk_address_table_protobuf.hpp"
+#include "internal/disaggregation/kv_chunk_address_table_protobuf.hpp"
 #endif
 
 namespace tt::transport {
@@ -26,7 +26,7 @@ const KvTableConfig K_EMPTY_CONFIG{};
 
 #ifdef TT_TRANSPORT_WITH_KV_TABLE
 
-namespace dis = tt::tt_metal::experimental::disaggregation;
+namespace dis = tt::tt_metal::internal::disaggregation;
 
 // Holds the real table plus the caches the IKvTable reference-returning
 // accessors need (device groups translated to FabricNode once, config copied).

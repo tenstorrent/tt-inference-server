@@ -116,28 +116,6 @@ TEST(KvTableAdapter, LayerAndPositionRangesNarrowThePlan) {
   EXPECT_TRUE(buildHostPlan(table, "decode-A", req).empty());
 }
 
-// The plan's flattened locations feed KvCacheLayout: 2 devices x 2 channels = 4
-// regions, each spanning 2 dense chunks.
-TEST(KvTableAdapter, LocationsFeedKvCacheLayout) {
-  const auto table = makeReducedTable();
-  const auto plan = buildHostPlan(table, "decode-A", wholeSlot(0));
-
-  KvCacheLayout layout(plan.locations);
-  EXPECT_EQ(layout.numRegions(),
-            4u);  // (dev0,ch0)(dev0,ch1)(dev1,ch0)(dev1,ch1)
-  EXPECT_EQ(layout.totalBytes(), 4 * 2 * K_CHUNK_BYTES);
-
-  // First chunk of dev (1,0) ch0 sits at its region base; the +chunk address is
-  // one chunk in.
-  const LocalDeviceId dev = encodeDevice({1, 0});
-  const auto base = layout.offsetOf(dev, makeNocAddr(0, 0x1000));
-  const auto next =
-      layout.offsetOf(dev, makeNocAddr(0, 0x1000 + K_CHUNK_BYTES));
-  ASSERT_TRUE(base.has_value());
-  ASSERT_TRUE(next.has_value());
-  EXPECT_EQ(*next - *base, K_CHUNK_BYTES);
-}
-
 // Absent chunks are skipped (a sparser table than the request range).
 TEST(KvTableAdapter, SkipsAbsentChunks) {
   KvTableConfig cfg;

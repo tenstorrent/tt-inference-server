@@ -9,9 +9,10 @@
 //                    MooncakeMigrationExecutor → KvMigrationMultiHostSender,
 //                    then publishes the ack. (KvMigrationWorker owns the loop.)
 //
-//   --role decode  : registers its KV mirror as a Mooncake segment and runs
-//                    KvMigrationReceiverServer, answering the migration control
-//                    protocol (prepareMirror / drain) for inbound migrations.
+//   --role decode  : registers its KV bounce buffer as a Mooncake segment and
+//                    runs KvMigrationReceiverServer, answering the migration
+//                    control protocol (BounceReady / windowed drain) for
+//                    inbound migrations.
 //
 // This supersedes bringup_mooncake_worker (Kafka loop that only logged) and
 // tt_kv_migration_consumer (StubMigrationExecutor): it is the first binary that
@@ -22,10 +23,10 @@
 // DeviceMap comes from a localhost socket (--engine-handoff-port) or a
 // --device-map file; socket wins if both are set. Prefill and decode then swap
 // tables over the control channel (TABLE_EXCHANGE / #4295). TE/Mooncake moves
-// KV bytes only. MultiDeviceUmd uses the map, resolving each entry's ASIC
-// unique_id to the device index UMD open() expects; an empty map may use the
-// single-mesh placeholder, but a non-empty map with a missing/unresolvable
-// entry is fatal.
+// KV bytes only. buildDeviceIo uses the map, resolving each entry's ASIC
+// unique_id to the device index the DRISC open path expects; an empty map may
+// use the single-mesh placeholder, but a non-empty map with a
+// missing/unresolvable entry is fatal.
 // KV_MIGRATION_MODE=dry-run keeps discovery, control-table exchange, health,
 // and Kafka active without opening devices or moving KV data.
 
@@ -53,9 +54,12 @@
 #include "runtime/worker/kv_migration_worker.hpp"
 #include "runtime/worker/stub_migration_executor.hpp"
 #include "sockets/tcp_socket_transport.hpp"
+#include "transport/device_enumeration.hpp"
 #include "transport/device_map.hpp"  // DeviceMap (FabricNode -> UMD chip)
+#include "transport/drisc_device_io.hpp"
 #include "transport/engine_table_resolve.hpp"
 #include "transport/host_dram_storage_backend.hpp"
+#include "transport/kv_bounce_buffer.hpp"
 #include "transport/kv_migration_endpoints.hpp"
 #include "transport/kv_migration_multi_host_sender.hpp"
 #include "transport/kv_table_adapter.hpp"       // allHostLocations
@@ -64,9 +68,7 @@
 #include "transport/mooncake_kv_receiver.hpp"
 #include "transport/mooncake_migration_executor.hpp"
 #include "transport/mooncake_transfer_engine.hpp"
-#include "transport/multi_device_umd.hpp"
 #include "transport/transfer_types.hpp"
-#include "transport/umd_device_access.hpp"
 #include "transport/worker_health.hpp"
 #include "transport/worker_health_server.hpp"
 #include "utils/logger.hpp"
@@ -78,7 +80,7 @@ using namespace tt::transport;
 constexpr int K_IDLE_POLL_MS = 100;
 
 // TABLE_EXCHANGE uses kDefaultTableExchangeTimeout (large .pb blobs). Migrate
-// MirrorReady/Ack stay on the shorter channel receiveTimeout below.
+// BounceReady/Ack stay on the shorter channel receiveTimeout below.
 constexpr int K_MIGRATE_CONTROL_TIMEOUT_MS = 30000;
 
 // Default KV migration control port a decode binds when --control-port is
@@ -117,9 +119,19 @@ enum class MigrationMode { DEVICE, DRY_RUN };
 struct WorkerConfig {
   Role role = Role::PREFILL;
   MigrationMode migrationMode = MigrationMode::DEVICE;
-  std::string metadata_uri;     // Mooncake metadata service (or P2PHANDSHAKE).
-  std::string name;             // this worker's Mooncake server/segment name.
-  std::string host;             // this node's host tag in the table.
+  std::string metadata_uri;  // Mooncake metadata service (or P2PHANDSHAKE).
+  std::string name;          // this worker's Mooncake server/segment name.
+  std::string host;          // this node's host tag in the table.
+  // Mooncake data-plane wire transport: TCP (default) or RDMA. RDMA needs an
+  // RDMA NIC + libibverbs; the Mooncake build always compiles RDMA in. Set via
+  // --protocol or the MIGRATION_MOONCAKE_PROTOCOL env var (flag wins).
+  TransportProtocol protocol = TransportProtocol::TCP;
+  // Optional RDMA NIC allowlist (device names like "mlx5_0"). Empty (default)
+  // => auto-discover whatever NIC is present (single-NIC path). Set on a
+  // multi-NIC host to pin which NIC(s) the data plane uses, via repeatable
+  // --rdma-nic or the comma-separated MIGRATION_RDMA_NICS env (flag wins).
+  // Only used under --protocol rdma.
+  std::vector<std::string> rdma_nic_filter;
   std::string device_map_path;  // FabricNode->UMD file fallback; empty => empty
                                 // map (placeholder only if single-mesh).
                                 // Ignored when engine_handoff_port != 0.
@@ -181,12 +193,33 @@ void usage() {
          "  both:    [--health-port N] [--health-host HOST]  serve "
          "/healthz /readyz /metrics (0=off, default off; host default "
          "0.0.0.0)\n"
+         "  both:    [--protocol tcp|rdma]  Mooncake data-plane transport "
+         "(default tcp; rdma needs an RDMA NIC + libibverbs). Env fallback: "
+         "MIGRATION_MOONCAKE_PROTOCOL.\n"
+         "  both:    [--rdma-nic NAME]  (repeatable, rdma only) restrict RDMA "
+         "discovery to these NIC device name(s), e.g. mlx5_0. Default (none) = "
+         "auto-discover the present NIC (single-NIC path). Env fallback: "
+         "MIGRATION_RDMA_NICS (comma-separated).\n"
          "  Kafka (prefill) via env: KAFKA_BROKERS, "
          "KAFKA_MIGRATION_REQUEST_TOPIC, KAFKA_MIGRATION_ACK_TOPIC, "
          "KAFKA_GROUP_ID\n"
          "  worker mode via env: KV_MIGRATION_MODE=device|dry-run "
          "(default device; dry-run keeps discovery, table exchange, health, "
          "and Kafka but does not open devices or move KV data)\n";
+}
+
+// Parse "tcp"|"rdma" (case-sensitive, matching the e2e harness) into a
+// TransportProtocol. Returns false on an unrecognized value.
+bool parseProtocol(const std::string& v, TransportProtocol& out) {
+  if (v == "tcp") {
+    out = TransportProtocol::TCP;
+    return true;
+  }
+  if (v == "rdma") {
+    out = TransportProtocol::RDMA;
+    return true;
+  }
+  return false;
 }
 
 // Parse "NAME=host:port" into (logical name, endpoint).
@@ -240,6 +273,7 @@ bool parseConfig(int argc, char** argv, WorkerConfig& cfg) {
   }
 
   bool roleGiven = false;
+  bool protocolGiven = false;
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
     auto next = [&](std::string& dst) {
@@ -258,6 +292,22 @@ bool parseConfig(int argc, char** argv, WorkerConfig& cfg) {
         return false;
       }
       roleGiven = true;
+      continue;
+    }
+    if (a == "--protocol" && next(v)) {
+      if (!parseProtocol(v, cfg.protocol)) {
+        std::cerr << "--protocol must be tcp|rdma\n";
+        return false;
+      }
+      protocolGiven = true;
+      continue;
+    }
+    if (a == "--rdma-nic" && next(v)) {
+      if (v.empty()) {
+        std::cerr << "--rdma-nic needs a device name (e.g. mlx5_0)\n";
+        return false;
+      }
+      cfg.rdma_nic_filter.push_back(v);
       continue;
     }
     if (a == "--metadata" && next(cfg.metadata_uri)) continue;
@@ -335,6 +385,35 @@ bool parseConfig(int argc, char** argv, WorkerConfig& cfg) {
     std::cerr << "--metadata, --name and --host are required\n";
     return false;
   }
+  // Env fallback for the wire transport when --protocol was not passed (k8s
+  // deploys typically inject config via env). The flag always wins.
+  if (!protocolGiven) {
+    if (const char* p = std::getenv("MIGRATION_MOONCAKE_PROTOCOL")) {
+      if (*p != '\0' && !parseProtocol(p, cfg.protocol)) {
+        std::cerr << "MIGRATION_MOONCAKE_PROTOCOL must be tcp|rdma, got: " << p
+                  << "\n";
+        return false;
+      }
+    }
+  }
+  // Env fallback for the RDMA NIC filter (comma-separated device names) when no
+  // --rdma-nic flag was given. Blank entries are skipped; an all-blank value
+  // leaves the filter empty (== auto-discover).
+  if (cfg.rdma_nic_filter.empty()) {
+    if (const char* nics = std::getenv("MIGRATION_RDMA_NICS")) {
+      std::string list(nics);
+      std::size_t start = 0;
+      while (start <= list.size()) {
+        const std::size_t comma = list.find(',', start);
+        const std::size_t end =
+            (comma == std::string::npos) ? list.size() : comma;
+        std::string nic = list.substr(start, end - start);
+        if (!nic.empty()) cfg.rdma_nic_filter.push_back(nic);
+        if (comma == std::string::npos) break;
+        start = comma + 1;
+      }
+    }
+  }
   // Infer the role from the name prefix when --role was omitted (the deploy
   // names workers prefill-N / decode-N), so the common launch needs no --role.
   if (!roleGiven) {
@@ -384,27 +463,52 @@ std::shared_ptr<MooncakeTransferEngine> makeEngine(const WorkerConfig& cfg) {
   EngineConfig ec;
   ec.metadata_uri = cfg.metadata_uri;
   ec.local_server_name = cfg.name;
-  ec.protocol = TransportProtocol::TCP;
+  ec.protocol = cfg.protocol;
+  ec.rdma_nic_filter = cfg.rdma_nic_filter;
+  const char* proto = cfg.protocol == TransportProtocol::RDMA ? "rdma" : "tcp";
   if (!engine->init(ec)) {
-    TT_LOG_ERROR("[worker] engine init failed (metadata={})", cfg.metadata_uri);
+    TT_LOG_ERROR("[worker] engine init failed (metadata={}, protocol={})",
+                 cfg.metadata_uri, proto);
     return nullptr;
   }
+  TT_LOG_INFO("[worker] Mooncake engine up (protocol={})", proto);
   return engine;
 }
 
-// One UmdDeviceAccess per device this host owns in `table`.
+// One DRISC link per device this host owns in `table`. addDevice opens the
+// coexistence UMD handle, launches the per-chip DRISC service kernel, and (when
+// MIGRATION_IOVA_RESERVE_MB is set) reserves low IOVA — the composition-root
+// DRISC init.
 // - Non-empty deviceMap: the entry's value is a chip's 64-bit ASIC unique_id
 //   (the third device-map column), NOT a device index. It is resolved through
-//   the once-built unique_id -> index lookup into the 0-based index
-//   UmdDevice::open() expects; every local device must resolve (hard error if
-//   not).
+//   the once-built unique_id -> index lookup into the 0-based index addDevice()
+//   expects; every local device must resolve AND open (hard error if not).
 // - Empty deviceMap: single-mesh hosts may use the & 0xFFFF placeholder (which
-//   feeds the raw low 16 bits of the device id straight to open() as an index);
-//   a multi-mesh host with no map is a hard error (cross-mesh collision).
-std::unique_ptr<MultiDeviceUmd> buildDeviceIo(const IKvTable& table,
-                                              const std::string& host,
-                                              const DeviceMap& deviceMap) {
-  auto umd = std::make_unique<MultiDeviceUmd>();
+//   feeds the raw low 16 bits of the device id straight to addDevice() as an
+//   index); a multi-mesh host with no map is a hard error (cross-mesh
+//   collision).
+// Tears down the DRISC links (releasing their NOC mapping, which has no
+// per-region unmap) when it goes out of scope. Declared AFTER the receiver/
+// sender that own the NOC-mapped buffer, so it destructs BEFORE them: links
+// first, then the buffer is freed. This honors the "buffer must outlive the
+// links" invariant (DoublePinnedBuffer / registerHostRegion) on EVERY exit
+// path — `device` is constructed before the buffer owners (its registrar is
+// needed while they build) but must be destroyed after, which plain stack
+// ordering cannot express. Freeing the ~32 MiB (mmap-backed) buffer while the
+// links still map its VA is a teardown use-after-free.
+struct DriscLinkTeardown {
+  explicit DriscLinkTeardown(std::unique_ptr<DriscDeviceIo>& d) : device(d) {}
+  ~DriscLinkTeardown() { device.reset(); }
+  DriscLinkTeardown(const DriscLinkTeardown&) = delete;
+  DriscLinkTeardown& operator=(const DriscLinkTeardown&) = delete;
+
+  std::unique_ptr<DriscDeviceIo>& device;
+};
+
+std::unique_ptr<DriscDeviceIo> buildDeviceIo(const IKvTable& table,
+                                             const std::string& host,
+                                             const DeviceMap& deviceMap) {
+  auto io = std::make_unique<DriscDeviceIo>();
   std::optional<uint32_t> seenMesh;
   bool isMultiMesh = false;
   for (const auto& loc : allHostLocations(table, host)) {
@@ -429,13 +533,13 @@ std::unique_ptr<MultiDeviceUmd> buildDeviceIo(const IKvTable& table,
   // never needs it, so skip the enumeration cost there.
   const std::unordered_map<uint64_t, int> uniqueIdToIndex =
       deviceMap.empty() ? std::unordered_map<uint64_t, int>{}
-                        : enumerateUmdDevicesByUniqueId();
+                        : enumerateDevicesByUniqueId();
 
   // DRAM-channel count per opened device, for the channel-range check below.
   std::unordered_map<LocalDeviceId, uint32_t> channelsByDevice;
 
   for (const auto& loc : allHostLocations(table, host)) {
-    if (umd->hasDevice(loc.device)) continue;
+    if (io->hasDevice(loc.device)) continue;
     const auto mapped = deviceMap.umdChip(loc.device);
     int chip = 0;
     if (mapped) {
@@ -461,9 +565,14 @@ std::unique_ptr<MultiDeviceUmd> buildDeviceIo(const IKvTable& table,
           loc.device, loc.device >> 16, loc.device & 0xFFFFu, host);
       return nullptr;
     }
-    auto access = std::make_shared<UmdDeviceAccess>(chip);
-    channelsByDevice[loc.device] = access->numDramChannels();
-    umd->addDevice(loc.device, std::move(access));
+    if (!io->addDevice(loc.device, chip)) {
+      TT_LOG_ERROR(
+          "[worker] failed to open/launch DRISC on device {} (chip index {}) "
+          "for host '{}' — check MIGRATION_DRISC_SERVICE_ELF and HW",
+          loc.device, chip, host);
+      return nullptr;
+    }
+    channelsByDevice[loc.device] = io->numDramChannels(loc.device);
   }
 
   // Reject KV locations whose NoC channel is out of range for the opened
@@ -482,7 +591,7 @@ std::unique_ptr<MultiDeviceUmd> buildDeviceIo(const IKvTable& table,
       return nullptr;
     }
   }
-  return umd;
+  return io;
 }
 
 std::shared_ptr<tt::sockets::ISocketTransport> makeClientTransport(
@@ -776,7 +885,7 @@ int runPrefill(const WorkerConfig& cfg) {
     TT_LOG_ERROR("[worker] failed to resolve prefill table + device map");
     return 1;
   }
-  std::unique_ptr<MultiDeviceUmd> device;
+  std::unique_ptr<DriscDeviceIo> device;
   if (cfg.migrationMode == MigrationMode::DEVICE) {
     device = buildDeviceIo(*resolved->table, cfg.host, resolved->deviceMap);
     if (!device) {
@@ -851,13 +960,34 @@ int runPrefill(const WorkerConfig& cfg) {
   }
 
   std::unique_ptr<KvMigrationMultiHostSender> sender;
+  // Declared after `sender` so it destructs first: DRISC links (and their NOC
+  // map of the double-pinned staging) torn down before `sender` frees that
+  // staging, on every exit path below. `executor`/`worker` (which drive device
+  // I/O) are declared/constructed after this, so they destruct BEFORE it — no
+  // transfer touches the links after teardown. In dry-run `device` is null and
+  // this is a no-op. See DriscLinkTeardown.
+  DriscLinkTeardown linkTeardown(device);
   std::unique_ptr<tt::worker::IMigrationExecutor> executor;
   if (cfg.migrationMode == MigrationMode::DRY_RUN) {
     executor = std::make_unique<tt::worker::StubMigrationExecutor>();
   } else {
+    // DRISC device IO: the staging pool the sender builds is double-pinned —
+    // the same host buffer the engine ibv_reg_mr's is NOC-mapped for device DMA
+    // via this registrar, so device reads DMA straight into staging.
+    DriscDeviceIo* drisc = device.get();
+    DeviceMapFn deviceMap = [drisc](void* va, std::size_t bytes) {
+      drisc->registerHostRegion(va, bytes);
+    };
     sender = std::make_unique<KvMigrationMultiHostSender>(
         engine, *device, resolved->table, decodeTable, cfg.host,
-        connector.channels(), &health);
+        connector.channels(), std::move(deviceMap), &health);
+    if (!sender->registered()) {
+      TT_LOG_ERROR(
+          "[worker] prefill '{}' failed to register double-pinned staging; "
+          "aborting bring-up",
+          cfg.name);
+      return 1;
+    }
     executor = std::make_unique<MooncakeMigrationExecutor>(*sender);
   }
 
@@ -890,6 +1020,12 @@ int runPrefill(const WorkerConfig& cfg) {
   // refreshSegment so Mooncake WRITEs do not target a pre-restart address.
   // Same-host restarts can still heal sticky TCP without a metadata change;
   // the UP path still force-refreshes the data-plane segment.
+  //
+  // Metal coexistence: release the low-IOVA reservations now that DRISC setup +
+  // the double-pinned staging registration are done, so a co-resident model
+  // launched after us takes pcie_base. No-op unless MIGRATION_IOVA_RESERVE_MB.
+  // No-op in dry-run: no device was opened, so nothing to release.
+  if (device) device->releaseIovaReservations();
   health.setLifecycle(WorkerLifecycle::Ready);
   TT_LOG_INFO(
       "[worker] prefill '{}' READY: {}/{} decode channels connected, "
@@ -1057,7 +1193,7 @@ int runDecode(const WorkerConfig& cfg) {
     TT_LOG_ERROR("[worker] failed to resolve decode table + device map");
     return 1;
   }
-  std::unique_ptr<MultiDeviceUmd> device;
+  std::unique_ptr<DriscDeviceIo> device;
   std::unique_ptr<MooncakeKvReceiver> receiver;
   std::string segment;
   if (cfg.migrationMode == MigrationMode::DEVICE) {
@@ -1069,23 +1205,32 @@ int runDecode(const WorkerConfig& cfg) {
     }
 
     // Segment name the sender opens for the data plane. With a metadata service
-    // the mirror is registered under — and resolvable by — the worker's LOGICAL
-    // name (cfg.name): the same register-by-name / resolve-by-name discovery
-    // the bringup worker uses on main (PeerDiscoveryService), so the sender
-    // finds the peer through the metadata service instead of a hard-coded
-    // endpoint. Only P2PHANDSHAKE (no metadata registry to resolve a logical
-    // name) falls back to the engine's live IP:port. An explicit --segment
-    // always overrides.
+    // the bounce buffer is registered under — and resolvable by — the worker's
+    // LOGICAL name (cfg.name): the same register-by-name / resolve-by-name
+    // discovery the bringup worker uses on main (PeerDiscoveryService), so the
+    // sender finds the peer through the metadata service instead of a
+    // hard-coded endpoint. Only P2PHANDSHAKE (no metadata registry to resolve a
+    // logical name) falls back to the engine's live IP:port. An explicit
+    // --segment always overrides.
     segment = cfg.segment;
     if (segment.empty()) {
       segment = (cfg.metadata_uri == "P2PHANDSHAKE") ? engine->localServerName()
                                                      : cfg.name;
     }
-    receiver = std::make_unique<MooncakeKvReceiver>(
-        engine, *device, resolved->table, cfg.host, segment);
+    // The bounce buffer is registered as the Mooncake segment inside the bounce
+    // buffer receiver. It holds no table — it drains from the window
+    // descriptors. DRISC registrar: the bounce buffer is NOC-mapped
+    // (double-pinned) so drained windows DMA straight to device.
+    DriscDeviceIo* drisc = device.get();
+    DeviceMapFn deviceMap = [drisc](void* va, std::size_t bytes) {
+      drisc->registerHostRegion(va, bytes);
+    };
+    receiver = std::make_unique<MooncakeKvReceiver>(engine, *device, segment,
+                                                    defaultBounceGeometry(),
+                                                    std::move(deviceMap));
     if (!receiver->registered()) {
       TT_LOG_ERROR(
-          "[worker] decode '{}' failed to register mirror segment '{}'",
+          "[worker] decode '{}' failed to register bounce-buffer segment '{}'",
           cfg.name, segment);
       return 1;
     }
@@ -1095,6 +1240,11 @@ int runDecode(const WorkerConfig& cfg) {
         "Mooncake mirror registration are disabled",
         cfg.name);
   }
+  // Declared after `receiver` so it destructs first: DRISC links (and their
+  // NOC map of the bounce buffer) torn down before `receiver` frees that
+  // buffer, on every exit path below. In dry-run `device` is null and this is a
+  // no-op. See DriscLinkTeardown.
+  DriscLinkTeardown linkTeardown(device);
 
   // Control server stores peer prefill .pb on TABLE_EXCHANGE, replies with
   // this decode .pb, then serves migrate Begin/Done. Long receive timeout
@@ -1140,6 +1290,12 @@ int runDecode(const WorkerConfig& cfg) {
 
   // Control server listening and endpoint published: the decode worker has
   // finished its own bring-up, so flip it Ready.
+  //
+  // Metal coexistence: release the low-IOVA reservations now that DRISC setup +
+  // the bounce-buffer NOC-map are done, so a co-resident model launched after
+  // us takes pcie_base. No-op unless MIGRATION_IOVA_RESERVE_MB.
+  // No-op in dry-run: no device was opened, so nothing to release.
+  if (device) device->releaseIovaReservations();
   health.setLifecycle(WorkerLifecycle::Ready);
   TT_LOG_INFO(
       "[worker] decode '{}' READY: mode={} segment={} control_port={}",

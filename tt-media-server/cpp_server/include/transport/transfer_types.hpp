@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <limits>
 #include <string>
+#include <vector>
 
 namespace tt::transport {
 
@@ -14,8 +15,8 @@ namespace tt::transport {
  * @brief NOC address of a region in TT device DRAM.
  *
  * Encoded as `channel << 32 | local_addr`, matching the migration layer's
- * `noc_addr` convention. The UMD access wrapper (UmdDeviceAccess) reads/writes
- * device DRAM channels by this address.
+ * `noc_addr` convention. DriscDeviceIo reads/writes device DRAM channels by
+ * this address.
  */
 using NocAddr = uint64_t;
 
@@ -130,6 +131,13 @@ struct EngineConfig {
   std::string metadata_uri = "P2PHANDSHAKE";
   std::string local_server_name;
   TransportProtocol protocol = TransportProtocol::TCP;
+  /// Optional RDMA NIC allowlist (device names like "mlx5_0"). Empty (the
+  /// default) => Mooncake auto-discovers whatever NIC(s) are present, which is
+  /// the single-NIC path. Non-empty restricts RDMA topology discovery to
+  /// exactly these devices — set it on a multi-NIC host to pin which NIC(s) the
+  /// data plane uses (name one to force a single NIC, or several for multi-NIC
+  /// fan-out). Only consulted under the RDMA protocol; ignored for TCP.
+  std::vector<std::string> rdma_nic_filter;
 };
 
 }  // namespace tt::transport
