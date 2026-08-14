@@ -8,6 +8,7 @@ import io
 import os
 from abc import abstractmethod
 
+import numpy as np
 import ttnn
 from config.constants import (
     WAN22_NUM_FRAMES,
@@ -328,17 +329,24 @@ class TTMochi1Runner(TTDiTRunner):
     def run(self, requests: list[VideoGenerateRequest]):
         self.logger.debug(f"Device {self.device_id}: Running inference")
         request = requests[0]
+        # MochiPipeline.__call__ takes prompts/negative_prompts lists since the
+        # tt_dit pipeline refactor; num_frames/height/width/output_type moved to
+        # MochiPipelineConfig defaults (168 frames, 480x848).
         frames = self.pipeline(
-            prompt=request.prompt,
-            negative_prompt=request.negative_prompt,
+            prompts=[request.prompt],
+            negative_prompts=[request.negative_prompt or ""],
             num_inference_steps=request.num_inference_steps,
             guidance_scale=3.5,
-            num_frames=168,  # TODO: Parameterize output dimensions.
-            height=480,
-            width=848,
-            output_type="np",
             seed=int(request.seed or 0),
         )
+        # The pipeline returns PIL frames (or a tensor); the video exporter
+        # needs a (batch, frames, H, W, C) uint8 array.
+        if hasattr(frames, "cpu"):
+            frames = frames.cpu().numpy()
+        elif isinstance(frames, list):
+            frames = np.stack(
+                [np.stack([np.asarray(f) for f in video]) for video in frames]
+            )
         self.logger.debug(f"Device {self.device_id}: Inference completed")
         return frames
 

@@ -1,6 +1,6 @@
 {
   "schema_version": "0.1.0",
-  "release_version": "0.19.0",
+  "release_version": "0.20.0",
   "model_specs": {
     "openai/gpt-oss-20b": {
       "T3K": {
@@ -12943,9 +12943,9 @@
             "device_type": "P300X2",
             "device_model_spec": {
               "device": "P300X2",
-              "max_concurrency": 1,
+              "max_concurrency": 32,
               "max_context": 262144,
-              "max_tokens_all_users_override": null,
+              "max_tokens_all_users_override": 525312,
               "perf_targets_map": {},
               "default_impl": true,
               "perf_reference": [],
@@ -12953,26 +12953,28 @@
                 "model": "Qwen/Qwen3.6-27B",
                 "block_size": "64",
                 "max_model_len": "262144",
-                "max_num_seqs": "1",
+                "max_num_seqs": "32",
                 "max_num_batched_tokens": "262144",
                 "max-log-len": "32",
                 "seed": "9472",
-                "additional_config": "{\"tt\": {\"fabric_config\": \"FABRIC_1D\", \"trace_region_size\": 268435456}}",
-                "async_scheduling": true,
+                "additional_config": "{\"tt\": {\"fabric_config\": \"FABRIC_1D\", \"trace_region_size\": 1073741824, \"l1_small_size\": 24576, \"sample_on_device_mode\": \"decode_only\"}}",
                 "enable_auto_tool_choice": true,
                 "reasoning_parser": "qwen3",
                 "tool_call_parser": "qwen3_coder"
               },
               "override_tt_config": {
                 "fabric_config": "FABRIC_1D",
-                "trace_region_size": 268435456
+                "trace_region_size": 1073741824,
+                "l1_small_size": 24576,
+                "sample_on_device_mode": "decode_only"
               },
               "env_vars": {
                 "MESH_DEVICE": "(1, 4)",
                 "ARCH_NAME": "blackhole",
                 "TT_QWEN35_TEXT_VER": "qwen36_blackhole",
                 "HF_MODEL": "Qwen/Qwen3.6-27B",
-                "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
+                "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto",
+                "QWEN36_MAX_TOKENS_ALL_USERS": "525312"
               },
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
@@ -12990,23 +12992,122 @@
               "ARCH_NAME": "blackhole",
               "TT_QWEN35_TEXT_VER": "qwen36_blackhole",
               "HF_MODEL": "Qwen/Qwen3.6-27B",
-              "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
+              "TT_MESH_GRAPH_DESC_PATH": "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto",
+              "QWEN36_MAX_TOKENS_ALL_USERS": "525312"
             },
-            "tt_metal_commit": "c49bb76",
-            "vllm_commit": "6b4a3a7",
+            "tt_metal_commit": "de59f8a",
+            "vllm_commit": "03fa3af",
             "hf_weights_repo": "Qwen/Qwen3.6-27B",
             "param_count": 27,
             "min_disk_gb": 74,
             "min_ram_gb": 67.5,
             "model_type": "LLM",
             "repacked": 0,
-            "version": "0.18.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.18.0-c49bb76-6b4a3a7",
+            "version": "0.20.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.20.0-de59f8a-03fa3af",
             "status": "EXPERIMENTAL",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/c49bb76/models/demos/blackhole/qwen36",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/de59f8a/models/demos/blackhole/qwen36",
             "override_tt_config": {
               "fabric_config": "FABRIC_1D",
-              "trace_region_size": 268435456
+              "trace_region_size": 1073741824,
+              "l1_small_size": 24576,
+              "sample_on_device_mode": "decode_only"
+            },
+            "supported_modalities": [
+              "text"
+            ],
+            "subdevice_type": null,
+            "uses_tensor_model_cache": true,
+            "has_builtin_warmup": true,
+            "metadata": {
+              "reasoning_parser_name": "qwen3",
+              "tool_call_parser_name": "qwen3_coder"
+            },
+            "cli_args": {}
+          }
+        }
+      },
+      "P150X8": {
+        "vLLM": {
+          "qwen36_blackhole": {
+            "model_id": "id_qwen36-blackhole_Qwen3.6-27B_p150x8",
+            "impl": {
+              "impl_id": "qwen36_blackhole",
+              "impl_name": "qwen36-blackhole",
+              "repo_url": "https://github.com/tenstorrent/tt-metal",
+              "code_path": "models/demos/blackhole/qwen36"
+            },
+            "hf_model_repo": "Qwen/Qwen3.6-27B",
+            "model_name": "Qwen3.6-27B",
+            "inference_engine": "vLLM",
+            "device_type": "P150X8",
+            "device_model_spec": {
+              "device": "P150X8",
+              "max_concurrency": 32,
+              "max_context": 262144,
+              "max_tokens_all_users_override": 525312,
+              "perf_targets_map": {},
+              "default_impl": true,
+              "perf_reference": [],
+              "vllm_args": {
+                "model": "Qwen/Qwen3.6-27B",
+                "block_size": "64",
+                "max_model_len": "262144",
+                "max_num_seqs": "32",
+                "max_num_batched_tokens": "262144",
+                "max-log-len": "32",
+                "seed": "9472",
+                "additional_config": "{\"tt\": {\"fabric_config\": \"FABRIC_1D\", \"trace_region_size\": 1073741824, \"l1_small_size\": 24576, \"sample_on_device_mode\": \"decode_only\"}}",
+                "enable_auto_tool_choice": true,
+                "reasoning_parser": "qwen3",
+                "tool_call_parser": "qwen3_coder"
+              },
+              "override_tt_config": {
+                "fabric_config": "FABRIC_1D",
+                "trace_region_size": 1073741824,
+                "l1_small_size": 24576,
+                "sample_on_device_mode": "decode_only"
+              },
+              "env_vars": {
+                "MESH_DEVICE": "P150x8",
+                "ARCH_NAME": "blackhole",
+                "HF_MODEL": "Qwen/Qwen3.6-27B",
+                "QWEN36_MAX_TOKENS_ALL_USERS": "525312"
+              },
+              "tensor_cache_timeout": 3600.0,
+              "system_requirements": null,
+              "known_issues": [],
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
+            },
+            "system_requirements": null,
+            "env_vars": {
+              "VLLM_CONFIGURE_LOGGING": "1",
+              "VLLM_RPC_TIMEOUT": "900000",
+              "VLLM_TARGET_DEVICE": "tt",
+              "TORCHDYNAMO_DISABLE": "1",
+              "MESH_DEVICE": "P150x8",
+              "ARCH_NAME": "blackhole",
+              "HF_MODEL": "Qwen/Qwen3.6-27B",
+              "QWEN36_MAX_TOKENS_ALL_USERS": "525312"
+            },
+            "tt_metal_commit": "de59f8a",
+            "vllm_commit": "03fa3af",
+            "hf_weights_repo": "Qwen/Qwen3.6-27B",
+            "param_count": 27,
+            "min_disk_gb": 74,
+            "min_ram_gb": 67.5,
+            "model_type": "LLM",
+            "repacked": 0,
+            "version": "0.20.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.20.0-de59f8a-03fa3af",
+            "status": "EXPERIMENTAL",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/de59f8a/models/demos/blackhole/qwen36",
+            "override_tt_config": {
+              "fabric_config": "FABRIC_1D",
+              "trace_region_size": 1073741824,
+              "l1_small_size": 24576,
+              "sample_on_device_mode": "decode_only"
             },
             "supported_modalities": [
               "text"
@@ -23597,7 +23698,7 @@
               "MAX_BATCH_SIZE": "1",
               "DEFAULT_THROTTLE_LEVEL": "0"
             },
-            "tt_metal_commit": "2496be4",
+            "tt_metal_commit": "de59f8a",
             "vllm_commit": null,
             "hf_weights_repo": "Qwen/Qwen3-Embedding-4B",
             "param_count": 4,
@@ -23605,10 +23706,10 @@
             "min_ram_gb": 6,
             "model_type": "EMBEDDING",
             "repacked": 0,
-            "version": "0.12.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
+            "version": "0.20.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server-forge:0.20.0-de59f8a",
             "status": "EXPERIMENTAL",
-            "code_link": "https://github.com/tenstorrent/tt-xla/tree/main/tree/2496be4/integrations/vllm_plugin",
+            "code_link": "https://github.com/tenstorrent/tt-xla/tree/main/tree/de59f8a/integrations/vllm_plugin",
             "override_tt_config": {},
             "supported_modalities": [
               "text"
@@ -23724,7 +23825,7 @@
               "MAX_BATCH_SIZE": "1",
               "DEFAULT_THROTTLE_LEVEL": "0"
             },
-            "tt_metal_commit": "2496be4",
+            "tt_metal_commit": "de59f8a",
             "vllm_commit": null,
             "hf_weights_repo": "Qwen/Qwen3-Embedding-4B",
             "param_count": 4,
@@ -23732,10 +23833,10 @@
             "min_ram_gb": 6,
             "model_type": "EMBEDDING",
             "repacked": 0,
-            "version": "0.12.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
+            "version": "0.20.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server-forge:0.20.0-de59f8a",
             "status": "EXPERIMENTAL",
-            "code_link": "https://github.com/tenstorrent/tt-xla/tree/main/tree/2496be4/integrations/vllm_plugin",
+            "code_link": "https://github.com/tenstorrent/tt-xla/tree/main/tree/de59f8a/integrations/vllm_plugin",
             "override_tt_config": {},
             "supported_modalities": [
               "text"
@@ -23851,7 +23952,7 @@
               "MAX_BATCH_SIZE": "1",
               "DEFAULT_THROTTLE_LEVEL": "0"
             },
-            "tt_metal_commit": "2496be4",
+            "tt_metal_commit": "de59f8a",
             "vllm_commit": null,
             "hf_weights_repo": "Qwen/Qwen3-Embedding-4B",
             "param_count": 4,
@@ -23859,10 +23960,10 @@
             "min_ram_gb": 6,
             "model_type": "EMBEDDING",
             "repacked": 0,
-            "version": "0.12.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
+            "version": "0.20.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server-forge:0.20.0-de59f8a",
             "status": "EXPERIMENTAL",
-            "code_link": "https://github.com/tenstorrent/tt-xla/tree/main/tree/2496be4/integrations/vllm_plugin",
+            "code_link": "https://github.com/tenstorrent/tt-xla/tree/main/tree/de59f8a/integrations/vllm_plugin",
             "override_tt_config": {},
             "supported_modalities": [
               "text"
@@ -23976,7 +24077,7 @@
               "MAX_BATCH_SIZE": "1",
               "DEFAULT_THROTTLE_LEVEL": "0"
             },
-            "tt_metal_commit": "2496be4",
+            "tt_metal_commit": "de59f8a",
             "vllm_commit": null,
             "hf_weights_repo": "Qwen/Qwen3-Embedding-4B",
             "param_count": 4,
@@ -23984,10 +24085,419 @@
             "min_ram_gb": 6,
             "model_type": "EMBEDDING",
             "repacked": 0,
-            "version": "0.12.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673",
+            "version": "0.20.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server-forge:0.20.0-de59f8a",
             "status": "EXPERIMENTAL",
-            "code_link": "https://github.com/tenstorrent/tt-xla/tree/main/tree/2496be4/integrations/vllm_plugin",
+            "code_link": "https://github.com/tenstorrent/tt-xla/tree/main/tree/de59f8a/integrations/vllm_plugin",
+            "override_tt_config": {},
+            "supported_modalities": [
+              "text"
+            ],
+            "subdevice_type": null,
+            "uses_tensor_model_cache": true,
+            "has_builtin_warmup": false,
+            "metadata": {},
+            "cli_args": {}
+          }
+        }
+      },
+      "P300X2": {
+        "forge": {
+          "forge_vllm_plugin": {
+            "model_id": "id_forge-vllm-plugin_Qwen3-Embedding-4B_p300x2",
+            "impl": {
+              "impl_id": "forge_vllm_plugin",
+              "impl_name": "forge-vllm-plugin",
+              "repo_url": "https://github.com/tenstorrent/tt-xla/tree/main",
+              "code_path": "integrations/vllm_plugin"
+            },
+            "hf_model_repo": "Qwen/Qwen3-Embedding-4B",
+            "model_name": "Qwen3-Embedding-4B",
+            "inference_engine": "forge",
+            "device_type": "P300X2",
+            "device_model_spec": {
+              "device": "P300X2",
+              "max_concurrency": 4,
+              "max_context": 65536,
+              "max_tokens_all_users_override": null,
+              "perf_targets_map": {},
+              "default_impl": true,
+              "perf_reference": [
+                {
+                  "isl": null,
+                  "osl": null,
+                  "max_concurrency": 32,
+                  "num_prompts": null,
+                  "image_height": null,
+                  "image_width": null,
+                  "images_per_prompt": null,
+                  "task_type": "embedding",
+                  "theoretical_ttft_ms": null,
+                  "theoretical_tput_user": null,
+                  "targets": {
+                    "functional": {
+                      "ttft_ms": null,
+                      "tput_user": 600.0,
+                      "tput": null,
+                      "tolerance": 0.0
+                    },
+                    "complete": {
+                      "ttft_ms": null,
+                      "tput_user": 3000.0,
+                      "tput": null,
+                      "tolerance": 0.0
+                    },
+                    "target": {
+                      "ttft_ms": null,
+                      "tput_user": 6000.0,
+                      "tput": null,
+                      "tolerance": 0.0
+                    }
+                  },
+                  "target_peak_perf": {
+                    "customer_functional": 0.1,
+                    "customer_complete": 0.5,
+                    "customer_sellable": 0.8
+                  },
+                  "num_inference_steps": null,
+                  "structured_dataset": null,
+                  "structured_output_ratio": null
+                }
+              ],
+              "vllm_args": {
+                "model": "Qwen/Qwen3-Embedding-4B",
+                "block_size": "64",
+                "max_model_len": "65536",
+                "max_num_seqs": "4",
+                "max_num_batched_tokens": "65536",
+                "max-log-len": "32",
+                "seed": "9472",
+                "additional_config": "{\"tt\": {}}"
+              },
+              "override_tt_config": {},
+              "env_vars": {
+                "MESH_DEVICE": "P300x2",
+                "ARCH_NAME": "blackhole",
+                "MODEL_RUNNER": "vllmforge_qwen_embedding",
+                "VLLM__MAX_NUM_BATCHED_TOKENS": "1024",
+                "VLLM__MAX_MODEL_LENGTH": "128",
+                "VLLM__MIN_CONTEXT_LENGTH": "32",
+                "VLLM__MAX_NUM_SEQS": "8",
+                "BENCHMARK_MAX_CONCURRENCY": "32",
+                "MAX_BATCH_SIZE": "8",
+                "TT_MESH_GRAPH_DESC_PATH": "/home/container_app_user/app/server/venv-worker/lib/python3.12/site-packages/pjrt_plugin_tt/tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_mesh_graph_descriptor.textproto",
+                "USE_DYNAMIC_BATCHER": "false",
+                "DEFAULT_THROTTLE_LEVEL": "0",
+                "TT_METAL_INSPECTOR_RPC": "0"
+              },
+              "tensor_cache_timeout": 3600.0,
+              "system_requirements": null,
+              "known_issues": [],
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
+            },
+            "system_requirements": null,
+            "env_vars": {
+              "MESH_DEVICE": "P300x2",
+              "ARCH_NAME": "blackhole",
+              "MODEL_RUNNER": "vllmforge_qwen_embedding",
+              "VLLM__MAX_NUM_BATCHED_TOKENS": "1024",
+              "VLLM__MAX_MODEL_LENGTH": "128",
+              "VLLM__MIN_CONTEXT_LENGTH": "32",
+              "VLLM__MAX_NUM_SEQS": "8",
+              "BENCHMARK_MAX_CONCURRENCY": "32",
+              "MAX_BATCH_SIZE": "8",
+              "TT_MESH_GRAPH_DESC_PATH": "/home/container_app_user/app/server/venv-worker/lib/python3.12/site-packages/pjrt_plugin_tt/tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_mesh_graph_descriptor.textproto",
+              "USE_DYNAMIC_BATCHER": "false",
+              "DEFAULT_THROTTLE_LEVEL": "0",
+              "TT_METAL_INSPECTOR_RPC": "0"
+            },
+            "tt_metal_commit": "de59f8a",
+            "vllm_commit": null,
+            "hf_weights_repo": "Qwen/Qwen3-Embedding-4B",
+            "param_count": 4,
+            "min_disk_gb": 15,
+            "min_ram_gb": 6,
+            "model_type": "EMBEDDING",
+            "repacked": 0,
+            "version": "0.20.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server-forge:0.20.0-de59f8a",
+            "status": "EXPERIMENTAL",
+            "code_link": "https://github.com/tenstorrent/tt-xla/tree/main/tree/de59f8a/integrations/vllm_plugin",
+            "override_tt_config": {},
+            "supported_modalities": [
+              "text"
+            ],
+            "subdevice_type": null,
+            "uses_tensor_model_cache": true,
+            "has_builtin_warmup": false,
+            "metadata": {},
+            "cli_args": {}
+          }
+        }
+      }
+    },
+    "Qwen/Qwen3-Embedding-0.6B": {
+      "P300X2": {
+        "forge": {
+          "forge_vllm_plugin": {
+            "model_id": "id_forge-vllm-plugin_Qwen3-Embedding-0.6B_p300x2",
+            "impl": {
+              "impl_id": "forge_vllm_plugin",
+              "impl_name": "forge-vllm-plugin",
+              "repo_url": "https://github.com/tenstorrent/tt-xla/tree/main",
+              "code_path": "integrations/vllm_plugin"
+            },
+            "hf_model_repo": "Qwen/Qwen3-Embedding-0.6B",
+            "model_name": "Qwen3-Embedding-0.6B",
+            "inference_engine": "forge",
+            "device_type": "P300X2",
+            "device_model_spec": {
+              "device": "P300X2",
+              "max_concurrency": 4,
+              "max_context": 65536,
+              "max_tokens_all_users_override": null,
+              "perf_targets_map": {},
+              "default_impl": true,
+              "perf_reference": [
+                {
+                  "isl": null,
+                  "osl": null,
+                  "max_concurrency": 32,
+                  "num_prompts": null,
+                  "image_height": null,
+                  "image_width": null,
+                  "images_per_prompt": null,
+                  "task_type": "embedding",
+                  "theoretical_ttft_ms": null,
+                  "theoretical_tput_user": null,
+                  "targets": {
+                    "functional": {
+                      "ttft_ms": null,
+                      "tput_user": 600.0,
+                      "tput": null,
+                      "tolerance": 0.0
+                    },
+                    "complete": {
+                      "ttft_ms": null,
+                      "tput_user": 3000.0,
+                      "tput": null,
+                      "tolerance": 0.0
+                    },
+                    "target": {
+                      "ttft_ms": null,
+                      "tput_user": 6000.0,
+                      "tput": null,
+                      "tolerance": 0.0
+                    }
+                  },
+                  "target_peak_perf": {
+                    "customer_functional": 0.1,
+                    "customer_complete": 0.5,
+                    "customer_sellable": 0.8
+                  },
+                  "num_inference_steps": null,
+                  "structured_dataset": null,
+                  "structured_output_ratio": null
+                }
+              ],
+              "vllm_args": {
+                "model": "Qwen/Qwen3-Embedding-0.6B",
+                "block_size": "64",
+                "max_model_len": "65536",
+                "max_num_seqs": "4",
+                "max_num_batched_tokens": "65536",
+                "max-log-len": "32",
+                "seed": "9472",
+                "additional_config": "{\"tt\": {}}"
+              },
+              "override_tt_config": {},
+              "env_vars": {
+                "MESH_DEVICE": "P300x2",
+                "ARCH_NAME": "blackhole",
+                "MODEL_RUNNER": "vllmforge_qwen_embedding_0_6b",
+                "VLLM__MAX_NUM_BATCHED_TOKENS": "1024",
+                "VLLM__MAX_MODEL_LENGTH": "128",
+                "VLLM__MIN_CONTEXT_LENGTH": "32",
+                "VLLM__MAX_NUM_SEQS": "8",
+                "BENCHMARK_MAX_CONCURRENCY": "32",
+                "MAX_BATCH_SIZE": "8",
+                "TT_MESH_GRAPH_DESC_PATH": "/home/container_app_user/app/server/venv-worker/lib/python3.12/site-packages/pjrt_plugin_tt/tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_mesh_graph_descriptor.textproto",
+                "USE_DYNAMIC_BATCHER": "false",
+                "DEFAULT_THROTTLE_LEVEL": "0",
+                "TT_METAL_INSPECTOR_RPC": "0"
+              },
+              "tensor_cache_timeout": 3600.0,
+              "system_requirements": null,
+              "known_issues": [],
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
+            },
+            "system_requirements": null,
+            "env_vars": {
+              "MESH_DEVICE": "P300x2",
+              "ARCH_NAME": "blackhole",
+              "MODEL_RUNNER": "vllmforge_qwen_embedding_0_6b",
+              "VLLM__MAX_NUM_BATCHED_TOKENS": "1024",
+              "VLLM__MAX_MODEL_LENGTH": "128",
+              "VLLM__MIN_CONTEXT_LENGTH": "32",
+              "VLLM__MAX_NUM_SEQS": "8",
+              "BENCHMARK_MAX_CONCURRENCY": "32",
+              "MAX_BATCH_SIZE": "8",
+              "TT_MESH_GRAPH_DESC_PATH": "/home/container_app_user/app/server/venv-worker/lib/python3.12/site-packages/pjrt_plugin_tt/tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_mesh_graph_descriptor.textproto",
+              "USE_DYNAMIC_BATCHER": "false",
+              "DEFAULT_THROTTLE_LEVEL": "0",
+              "TT_METAL_INSPECTOR_RPC": "0"
+            },
+            "tt_metal_commit": "de59f8a",
+            "vllm_commit": null,
+            "hf_weights_repo": "Qwen/Qwen3-Embedding-0.6B",
+            "param_count": 0,
+            "min_disk_gb": 15,
+            "min_ram_gb": 6,
+            "model_type": "EMBEDDING",
+            "repacked": 0,
+            "version": "0.20.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server-forge:0.20.0-de59f8a",
+            "status": "EXPERIMENTAL",
+            "code_link": "https://github.com/tenstorrent/tt-xla/tree/main/tree/de59f8a/integrations/vllm_plugin",
+            "override_tt_config": {},
+            "supported_modalities": [
+              "text"
+            ],
+            "subdevice_type": null,
+            "uses_tensor_model_cache": true,
+            "has_builtin_warmup": false,
+            "metadata": {},
+            "cli_args": {}
+          }
+        }
+      }
+    },
+    "BAAI/bge-m3": {
+      "P300X2": {
+        "forge": {
+          "forge_vllm_plugin": {
+            "model_id": "id_forge-vllm-plugin_bge-m3_p300x2",
+            "impl": {
+              "impl_id": "forge_vllm_plugin",
+              "impl_name": "forge-vllm-plugin",
+              "repo_url": "https://github.com/tenstorrent/tt-xla/tree/main",
+              "code_path": "integrations/vllm_plugin"
+            },
+            "hf_model_repo": "BAAI/bge-m3",
+            "model_name": "bge-m3",
+            "inference_engine": "forge",
+            "device_type": "P300X2",
+            "device_model_spec": {
+              "device": "P300X2",
+              "max_concurrency": 4,
+              "max_context": 65536,
+              "max_tokens_all_users_override": null,
+              "perf_targets_map": {},
+              "default_impl": true,
+              "perf_reference": [
+                {
+                  "isl": null,
+                  "osl": null,
+                  "max_concurrency": 32,
+                  "num_prompts": null,
+                  "image_height": null,
+                  "image_width": null,
+                  "images_per_prompt": null,
+                  "task_type": "embedding",
+                  "theoretical_ttft_ms": null,
+                  "theoretical_tput_user": null,
+                  "targets": {
+                    "functional": {
+                      "ttft_ms": null,
+                      "tput_user": 575.0,
+                      "tput": null,
+                      "tolerance": 0.0
+                    },
+                    "complete": {
+                      "ttft_ms": null,
+                      "tput_user": 2875.0,
+                      "tput": null,
+                      "tolerance": 0.0
+                    },
+                    "target": {
+                      "ttft_ms": null,
+                      "tput_user": 5750.0,
+                      "tput": null,
+                      "tolerance": 0.0
+                    }
+                  },
+                  "target_peak_perf": {
+                    "customer_functional": 0.1,
+                    "customer_complete": 0.5,
+                    "customer_sellable": 0.8
+                  },
+                  "num_inference_steps": null,
+                  "structured_dataset": null,
+                  "structured_output_ratio": null
+                }
+              ],
+              "vllm_args": {
+                "model": "BAAI/bge-m3",
+                "block_size": "64",
+                "max_model_len": "65536",
+                "max_num_seqs": "4",
+                "max_num_batched_tokens": "65536",
+                "max-log-len": "32",
+                "seed": "9472",
+                "additional_config": "{\"tt\": {}}"
+              },
+              "override_tt_config": {},
+              "env_vars": {
+                "MESH_DEVICE": "P300x2",
+                "ARCH_NAME": "blackhole",
+                "MODEL_RUNNER": "vllmforge_bge_m3",
+                "VLLM__MAX_NUM_BATCHED_TOKENS": "1024",
+                "VLLM__MAX_MODEL_LENGTH": "128",
+                "VLLM__MIN_CONTEXT_LENGTH": "32",
+                "VLLM__MAX_NUM_SEQS": "8",
+                "BENCHMARK_MAX_CONCURRENCY": "32",
+                "MAX_BATCH_SIZE": "8",
+                "TT_MESH_GRAPH_DESC_PATH": "/home/container_app_user/app/server/venv-worker/lib/python3.12/site-packages/pjrt_plugin_tt/tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_mesh_graph_descriptor.textproto",
+                "USE_DYNAMIC_BATCHER": "false",
+                "DEFAULT_THROTTLE_LEVEL": "0",
+                "TT_METAL_INSPECTOR_RPC": "0"
+              },
+              "tensor_cache_timeout": 3600.0,
+              "system_requirements": null,
+              "known_issues": [],
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
+            },
+            "system_requirements": null,
+            "env_vars": {
+              "MESH_DEVICE": "P300x2",
+              "ARCH_NAME": "blackhole",
+              "MODEL_RUNNER": "vllmforge_bge_m3",
+              "VLLM__MAX_NUM_BATCHED_TOKENS": "1024",
+              "VLLM__MAX_MODEL_LENGTH": "128",
+              "VLLM__MIN_CONTEXT_LENGTH": "32",
+              "VLLM__MAX_NUM_SEQS": "8",
+              "BENCHMARK_MAX_CONCURRENCY": "32",
+              "MAX_BATCH_SIZE": "8",
+              "TT_MESH_GRAPH_DESC_PATH": "/home/container_app_user/app/server/venv-worker/lib/python3.12/site-packages/pjrt_plugin_tt/tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_mesh_graph_descriptor.textproto",
+              "USE_DYNAMIC_BATCHER": "false",
+              "DEFAULT_THROTTLE_LEVEL": "0",
+              "TT_METAL_INSPECTOR_RPC": "0"
+            },
+            "tt_metal_commit": "de59f8a",
+            "vllm_commit": null,
+            "hf_weights_repo": "BAAI/bge-m3",
+            "param_count": null,
+            "min_disk_gb": 15,
+            "min_ram_gb": 6,
+            "model_type": "EMBEDDING",
+            "repacked": 0,
+            "version": "0.20.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server-forge:0.20.0-de59f8a",
+            "status": "EXPERIMENTAL",
+            "code_link": "https://github.com/tenstorrent/tt-xla/tree/main/tree/de59f8a/integrations/vllm_plugin",
             "override_tt_config": {},
             "supported_modalities": [
               "text"

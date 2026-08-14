@@ -6813,8 +6813,8 @@ models:
           forge_vllm_plugin:
             progressDeadlineSeconds: 5400
             image:
-              repository: ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge
-              tag: a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673
+              repository: ghcr.io/tenstorrent/tt-media-inference-server-forge
+              tag: 0.20.0-de59f8a
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -6847,8 +6847,8 @@ models:
           forge_vllm_plugin:
             progressDeadlineSeconds: 5400
             image:
-              repository: ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge
-              tag: a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673
+              repository: ghcr.io/tenstorrent/tt-media-inference-server-forge
+              tag: 0.20.0-de59f8a
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -6883,8 +6883,8 @@ models:
           forge_vllm_plugin:
             progressDeadlineSeconds: 5400
             image:
-              repository: ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge
-              tag: a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673
+              repository: ghcr.io/tenstorrent/tt-media-inference-server-forge
+              tag: 0.20.0-de59f8a
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -6919,8 +6919,8 @@ models:
           forge_vllm_plugin:
             progressDeadlineSeconds: 5400
             image:
-              repository: ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge
-              tag: a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673
+              repository: ghcr.io/tenstorrent/tt-media-inference-server-forge
+              tag: 0.20.0-de59f8a
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -6945,6 +6945,50 @@ models:
                 value: '1024'
               - name: VLLM__MAX_NUM_SEQS
                 value: '1'
+              - name: VLLM__MIN_CONTEXT_LENGTH
+                value: '32'
+      p300x2:
+        defaultImpl: forge_vllm_plugin
+        impls:
+          forge_vllm_plugin:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-media-inference-server-forge
+              tag: 0.20.0-de59f8a
+            probes:
+              liveness:
+                initialDelaySeconds: 2400
+                path: /tt-liveness
+              readiness:
+                initialDelaySeconds: 2400
+            resources:
+              requests:
+                memory: 6Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: BENCHMARK_MAX_CONCURRENCY
+                value: '32'
+              - name: DEFAULT_THROTTLE_LEVEL
+                value: '0'
+              - name: MAX_BATCH_SIZE
+                value: '8'
+              - name: MESH_DEVICE
+                value: P300x2
+              - name: MODEL_RUNNER
+                value: vllmforge_qwen_embedding
+              - name: TT_MESH_GRAPH_DESC_PATH
+                value: /home/container_app_user/app/server/venv-worker/lib/python3.12/site-packages/pjrt_plugin_tt/tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_mesh_graph_descriptor.textproto
+              - name: TT_METAL_INSPECTOR_RPC
+                value: '0'
+              - name: USE_DYNAMIC_BATCHER
+                value: 'false'
+              - name: VLLM__MAX_MODEL_LENGTH
+                value: '128'
+              - name: VLLM__MAX_NUM_BATCHED_TOKENS
+                value: '1024'
+              - name: VLLM__MAX_NUM_SEQS
+                value: '8'
               - name: VLLM__MIN_CONTEXT_LENGTH
                 value: '32'
     defaultEngine: forge
@@ -7719,7 +7763,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.18.0-c49bb76-6b4a3a7
+              tag: 0.20.0-de59f8a-03fa3af
             probes:
               liveness:
                 initialDelaySeconds: 2400
@@ -7735,6 +7779,8 @@ models:
                 value: Qwen/Qwen3.6-27B
               - name: MESH_DEVICE
                 value: (1, 4)
+              - name: QWEN36_MAX_TOKENS_ALL_USERS
+                value: '525312'
               - name: TORCHDYNAMO_DISABLE
                 value: '1'
               - name: TT_MESH_GRAPH_DESC_PATH
@@ -7747,4 +7793,131 @@ models:
                 value: '900000'
               - name: VLLM_TARGET_DEVICE
                 value: tt
+      p150x8:
+        defaultImpl: qwen36_blackhole
+        impls:
+          qwen36_blackhole:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+              tag: 0.20.0-de59f8a-03fa3af
+            probes:
+              liveness:
+                initialDelaySeconds: 2400
+              readiness:
+                initialDelaySeconds: 2400
+            resources:
+              requests:
+                memory: 67Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: HF_MODEL
+                value: Qwen/Qwen3.6-27B
+              - name: MESH_DEVICE
+                value: P150x8
+              - name: QWEN36_MAX_TOKENS_ALL_USERS
+                value: '525312'
+              - name: TORCHDYNAMO_DISABLE
+                value: '1'
+              - name: VLLM_CONFIGURE_LOGGING
+                value: '1'
+              - name: VLLM_RPC_TIMEOUT
+                value: '900000'
+              - name: VLLM_TARGET_DEVICE
+                value: tt
     defaultEngine: vllm
+  Qwen3-Embedding-0.6B:
+    forge:
+      p300x2:
+        defaultImpl: forge_vllm_plugin
+        impls:
+          forge_vllm_plugin:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-media-inference-server-forge
+              tag: 0.20.0-de59f8a
+            probes:
+              liveness:
+                initialDelaySeconds: 2400
+                path: /tt-liveness
+              readiness:
+                initialDelaySeconds: 2400
+            resources:
+              requests:
+                memory: 6Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: BENCHMARK_MAX_CONCURRENCY
+                value: '32'
+              - name: DEFAULT_THROTTLE_LEVEL
+                value: '0'
+              - name: MAX_BATCH_SIZE
+                value: '8'
+              - name: MESH_DEVICE
+                value: P300x2
+              - name: MODEL_RUNNER
+                value: vllmforge_qwen_embedding_0_6b
+              - name: TT_MESH_GRAPH_DESC_PATH
+                value: /home/container_app_user/app/server/venv-worker/lib/python3.12/site-packages/pjrt_plugin_tt/tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_mesh_graph_descriptor.textproto
+              - name: TT_METAL_INSPECTOR_RPC
+                value: '0'
+              - name: USE_DYNAMIC_BATCHER
+                value: 'false'
+              - name: VLLM__MAX_MODEL_LENGTH
+                value: '128'
+              - name: VLLM__MAX_NUM_BATCHED_TOKENS
+                value: '1024'
+              - name: VLLM__MAX_NUM_SEQS
+                value: '8'
+              - name: VLLM__MIN_CONTEXT_LENGTH
+                value: '32'
+    defaultEngine: forge
+  bge-m3:
+    forge:
+      p300x2:
+        defaultImpl: forge_vllm_plugin
+        impls:
+          forge_vllm_plugin:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-media-inference-server-forge
+              tag: 0.20.0-de59f8a
+            probes:
+              liveness:
+                initialDelaySeconds: 2400
+                path: /tt-liveness
+              readiness:
+                initialDelaySeconds: 2400
+            resources:
+              requests:
+                memory: 6Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: BENCHMARK_MAX_CONCURRENCY
+                value: '32'
+              - name: DEFAULT_THROTTLE_LEVEL
+                value: '0'
+              - name: MAX_BATCH_SIZE
+                value: '8'
+              - name: MESH_DEVICE
+                value: P300x2
+              - name: MODEL_RUNNER
+                value: vllmforge_bge_m3
+              - name: TT_MESH_GRAPH_DESC_PATH
+                value: /home/container_app_user/app/server/venv-worker/lib/python3.12/site-packages/pjrt_plugin_tt/tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_mesh_graph_descriptor.textproto
+              - name: TT_METAL_INSPECTOR_RPC
+                value: '0'
+              - name: USE_DYNAMIC_BATCHER
+                value: 'false'
+              - name: VLLM__MAX_MODEL_LENGTH
+                value: '128'
+              - name: VLLM__MAX_NUM_BATCHED_TOKENS
+                value: '1024'
+              - name: VLLM__MAX_NUM_SEQS
+                value: '8'
+              - name: VLLM__MIN_CONTEXT_LENGTH
+                value: '32'
+    defaultEngine: forge
