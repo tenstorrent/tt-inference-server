@@ -275,7 +275,7 @@ class TTMotifImage6BPreviewRunner(TTDiTRunner):
             raise
 
     def get_pipeline_device_params(self):
-        return {"l1_small_size": 32768, "trace_region_size": 31000000}
+        return {"l1_small_size": 32768, "trace_region_size": 50000000}
 
 
 # Runner for Qwen-Image and Qwen-Image-2512. Model weights from settings.model_weights_path determine the exact model variant.
