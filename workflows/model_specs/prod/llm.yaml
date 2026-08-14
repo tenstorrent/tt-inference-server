@@ -1189,6 +1189,81 @@ templates:
       # tool parser ships in vllm-tt-plugin as of tenstorrent/vllm #431; activated
       # by enable-auto-tool-choice in vllm_args above.
       tool_call_parser_name: gemma4
+# Base google/gemma-4-31B served by the repo-local agentic autoport at
+# models/autoports/google_gemma_4_31b (tt-metal branch
+# mvasiljevic/fast-models-fast/gemma4-31b), not by stock tt_transformers and not
+# by models/demos/gemma4. The autoport's vLLM adapter is registered from the
+# checkout's own bundle under models/autoports/vllm_bundles, which the TT plugin
+# picks up via EXTRA_MODELS_DIR before its built-in map; run_local_server sets
+# that variable from the resolved tt-metal checkout.
+#
+# UNVERIFIED THROUGH TTI. The serving parameters below are all measured directly
+# on QB2 (see the tt-metal branch's
+# models/autoports/google_gemma_4_31b/doc/comparison_autoport_vs_demos_p300x2.md
+# and host_runbook_qb2_p300x2.md), but this spec has not itself been exercised by
+# a TTI workflow or a tt-shield dispatch yet.
+- weights:
+    - google/gemma-4-31B
+  version: "0.19.0"
+  # tt_metal_commit is this autoport's branch head: the validated c49bb76
+  # predates models/autoports/google_gemma_4_31b and cannot contain it. The
+  # vLLM pin stays on the validated 6b4a3a7, which already carries the
+  # plugin EXTRA_MODELS_DIR bundle mechanism this autoport is selected
+  # through, so nothing diverges from the validated pair on the vLLM side.
+  tt_metal_commit: "e4297d3bc2f"
+  vllm_commit: "6b4a3a7"
+  impl: gemma4_31b_autoport
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P300X2  # QB2 (2x P300, 4-chip TP mesh)
+      max_concurrency: 32
+      # 113280 is the autoport's own hardware-verified ceiling, 2.3x the 49152
+      # the stock path reaches on the same board, because the autoport keeps the
+      # hybrid KV split (50 sliding layers at physical 1024 plus 10 full-attention
+      # layers) instead of allocating a full-length buffer for all 60 layers.
+      # Verified on QB2: pool allocates at 9740 blocks, identical to the original
+      # P150b probe, reporting 8.62x concurrency at 113280 tokens per request.
+      # The autoport refuses to serve a reduced max_model_len by design
+      # (tt/generator_vllm.py raises against doc/context_contract.json), so this
+      # value is not tunable downward here.
+      max_context: 113280
+      default_impl: true
+      env_vars:
+        # QB2's 4 Blackhole chips are driven as a P150x4 (1,4) mesh, same as the
+        # -it entry above: the custom p300_x2 descriptor lays the TP collectives
+        # over the wrong fabric links and corrupts decode logits.
+        MESH_DEVICE: "P150x4"
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+        # The autoport reads its model directory from this variable; the bundle's
+        # main_class is a full dotted path, so tt-metal on PYTHONPATH is enough
+        # to import it.
+        GEMMA4_31B_AUTOPORT_DIR: "models/autoports/google_gemma_4_31b"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 268435456
+        # The autoport's canonical path is fully traced split sampling on device
+        # for both prefill and decode, so "all" rather than the stock
+        # "decode_only". Host sampling is refused unless
+        # GEMMA4_31B_VLLM_HOST_SAMPLING_COMPAT=1, which is for logprob and
+        # determinism compatibility checks only and must not be set for perf runs.
+        sample_on_device_mode: all
+        trace_mode: all
+        enable_model_warmup: true
+      vllm_args:
+        # The autoport declares supports_async_decode, unlike models/demos/gemma4,
+        # so async scheduling is honored rather than disabled with a warning.
+        async-scheduling: true
+        # Deliberately no tool-call or reasoning parser and no
+        # default-chat-template-kwargs: this is the *base* checkpoint, whose
+        # tokenizer has chat_template=None. vLLM's chat warmup logs a
+        # ChatTemplateResolutionError for it (non-fatal). Chat-shaped evals need
+        # doc/vllm_integration/chat_template.jinja supplied explicitly, or raw
+        # completions.
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+
 - weights:
     - Qwen/Qwen3.6-27B
   version: "0.18.0"
