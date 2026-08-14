@@ -264,6 +264,11 @@ I2V_MODEL_NAMES = frozenset(
     }
 )
 
+# Client-facing video API bounds
+MIN_VIDEO_INFERENCE_STEPS = 4
+MAX_VIDEO_INFERENCE_STEPS = 50
+DEFAULT_VIDEO_INFERENCE_STEPS = 20
+
 INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_SDXL_EDIT: {ModelNames.STABLE_DIFFUSION_XL_INPAINTING},
     ModelRunners.TT_SDXL_IMAGE_TO_IMAGE: {ModelNames.STABLE_DIFFUSION_XL_IMG2IMG},
@@ -950,7 +955,6 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
         "max_batch_size": 1,
         "request_processing_timeout_seconds": 5000,
-        "num_inference_steps": 3,
     },
     (ModelRunners.TT_WAN_2_2_I2V_PRODIA, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),
@@ -958,7 +962,6 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
         "max_batch_size": 1,
         "request_processing_timeout_seconds": 5000,
-        "num_inference_steps": 3,
     },
     (ModelRunners.TT_WAN_2_2_I2V_ANISORA, DeviceTypes.BLACKHOLE_GALAXY): {
         "device_mesh_shape": (4, 8),
