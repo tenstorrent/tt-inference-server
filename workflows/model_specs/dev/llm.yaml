@@ -266,6 +266,17 @@ templates:
         # main_class is a full dotted path, so tt-metal on PYTHONPATH is enough
         # to import it.
         GEMMA4_31B_AUTOPORT_DIR: "models/autoports/google_gemma_4_31b"
+        # TTI's hang watchdog (TT_METAL_OPERATION_TIMEOUT_SECONDS=5.0, set by
+        # run_vllm_api_server.set_metal_timeout_env_vars) false-positives on this
+        # model's first-compile prefill. Shield run 31824560569 died in
+        # multichip_decoder's `ttnn.linear(activated, self.down_prefill)` with
+        # "TIMEOUT: device timeout in fetch queue wait" while the JIT cache was
+        # completely cold (0/636 hits) and engine init had already taken 73.48s
+        # against 3.80s warm. The same code, hardware class and benchmark shape
+        # run repeatedly without a hang once the cache is warm, so the 5s limit is
+        # too tight for a large first-compile prefill matmul rather than evidence
+        # of a wedged device.
+        DISABLE_METAL_OP_TIMEOUT: "1"
       override_tt_config:
         fabric_config: FABRIC_1D
         trace_region_size: 268435456
