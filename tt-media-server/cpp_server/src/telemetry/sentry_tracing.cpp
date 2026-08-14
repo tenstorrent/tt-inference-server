@@ -171,13 +171,13 @@ void init(const std::string& release, const std::string& instanceTag) {
   const std::string releaseOverride = tt::config::sentryRelease();
   const std::string effectiveRelease =
       releaseOverride.empty() ? release : releaseOverride;
-  const double sampleRate = tt::config::sentryTracesSampleRate();
 
+  // No traces_sample_rate: this server never starts a root trace, and the
+  // sampling decision inherited from traceparent always takes precedence.
   sentry_options_t* options = sentry_options_new();
   sentry_options_set_dsn(options, dsn.c_str());
   sentry_options_set_environment(options, environment.c_str());
   sentry_options_set_release(options, effectiveRelease.c_str());
-  sentry_options_set_traces_sample_rate(options, sampleRate);
   // Per-role SDK run directory: decode and prefill share a working
   // directory in local/disaggregated deployments.
   sentry_options_set_database_path(
@@ -198,10 +198,8 @@ void init(const std::string& release, const std::string& instanceTag) {
   if (gethostname(hostname, sizeof(hostname) - 1) == 0 && hostname[0] != '\0') {
     sentry_set_tag("server_name", hostname);
   }
-  TT_LOG_INFO(
-      "[Telemetry] Sentry tracing enabled (environment={}, release={}, "
-      "traces_sample_rate={})",
-      environment, effectiveRelease, sampleRate);
+  TT_LOG_INFO("[Telemetry] Sentry tracing enabled (environment={}, release={})",
+              environment, effectiveRelease);
 }
 
 void shutdown() {

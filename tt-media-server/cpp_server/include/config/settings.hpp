@@ -476,11 +476,6 @@ std::string sentryEnvironment();
  * telemetry::init(). From SENTRY_RELEASE. Default: defaults::SENTRY_RELEASE. */
 std::string sentryRelease();
 
-/** Head sample rate clamped to [0, 1]; the upstream sampling decision in
- * traceparent always wins. From SENTRY_TRACES_SAMPLE_RATE. Default:
- * defaults::SENTRY_TRACES_SAMPLE_RATE. */
-double sentryTracesSampleRate();
-
 /** Verbose Sentry SDK logging. From SENTRY_DEBUG. Default:
  * defaults::SENTRY_DEBUG. */
 bool sentryDebug();

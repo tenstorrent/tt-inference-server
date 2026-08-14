@@ -179,7 +179,6 @@ constexpr const char* SENTRY_DSN =
 constexpr const char* SENTRY_ENVIRONMENT = "development";
 // Empty = label events with the server version passed to telemetry::init().
 constexpr const char* SENTRY_RELEASE = "";
-constexpr double SENTRY_TRACES_SAMPLE_RATE = 1.0;
 constexpr bool SENTRY_DEBUG = false;
 
 // Text-to-speech scheduler defaults.

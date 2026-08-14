@@ -62,8 +62,10 @@ Configuration: env vars override the compiled-in defaults from
 | `SENTRY_DSN` | Sentry project DSN; empty disables tracing | shared `tt-inference-server` project DSN |
 | `SENTRY_ENVIRONMENT` | Sentry environment tag | `development` |
 | `SENTRY_RELEASE` | Release override | server version |
-| `SENTRY_TRACES_SAMPLE_RATE` | Transaction sample rate 0.0–1.0 | `1.0` |
 | `SENTRY_DEBUG` | `1` logs SDK activity to stderr | off |
+
+There is no sample-rate setting: the server never starts a root trace, so the
+sampling decision carried in the upstream `traceparent` always applies.
 
 The Dynamo frontend only injects `traceparent` towards the worker when its
 OTel layers are installed, which requires running it with

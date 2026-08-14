@@ -125,9 +125,10 @@ LLM_DEVICE_BACKEND, HF_TOKEN, and perf knobs (ROUTER_MODE, DYN_TOKENIZER,
 RAYON_NUM_THREADS, DYN_RUNTIME_*, RUST_LOG, DYN_TX_TRACE,
 DYN_ENABLE_ANTHROPIC_API) are read from the environment.
 
-Sentry distributed tracing: set SENTRY_DSN (plus optional SENTRY_ENVIRONMENT,
-SENTRY_RELEASE, SENTRY_TRACES_SAMPLE_RATE, SENTRY_DEBUG) to enable tracing in
-the cpp_server workers. The frontend runs with DYN_LOGGING_JSONL=1 (JSONL
+Sentry distributed tracing is on by default in the cpp_server workers (the
+team-project DSN is compiled in; SENTRY_ENVIRONMENT, SENTRY_RELEASE and
+SENTRY_DEBUG tune it). Export SENTRY_DSN= (empty) to disable it, or set a
+different DSN to redirect. The frontend runs with DYN_LOGGING_JSONL=1 (JSONL
 logs), which Dynamo requires to propagate traceparent to the workers; set
 DYN_LOGGING_JSONL=0 to get pretty logs back at the cost of trace propagation.
 
@@ -262,15 +263,14 @@ case "$HF_MODEL_ID" in
     *)         WORKER_MODEL_ENV+=(-e USE_DEEPSEEK_MD_FORMAT=1 -e BLAZE_SOCKET_DESCRIPTOR_PREFIX=deepseek) ;;
 esac
 
-# Sentry distributed tracing (opt-in via SENTRY_DSN) for cpp_server workers.
+# Sentry distributed tracing for cpp_server workers. On by default (the DSN
+# is compiled into the server); forward SENTRY_DSN even when set-but-empty so
+# `SENTRY_DSN= ./deploy.sh` disables tracing in the containers.
 SENTRY_ENV=()
-if [[ -n "${SENTRY_DSN:-}" ]]; then
-    SENTRY_ENV+=(-e SENTRY_DSN="$SENTRY_DSN")
-    [[ -n "${SENTRY_ENVIRONMENT:-}" ]]        && SENTRY_ENV+=(-e SENTRY_ENVIRONMENT="$SENTRY_ENVIRONMENT")
-    [[ -n "${SENTRY_RELEASE:-}" ]]            && SENTRY_ENV+=(-e SENTRY_RELEASE="$SENTRY_RELEASE")
-    [[ -n "${SENTRY_TRACES_SAMPLE_RATE:-}" ]] && SENTRY_ENV+=(-e SENTRY_TRACES_SAMPLE_RATE="$SENTRY_TRACES_SAMPLE_RATE")
-    [[ -n "${SENTRY_DEBUG:-}" ]]              && SENTRY_ENV+=(-e SENTRY_DEBUG="$SENTRY_DEBUG")
-fi
+[[ -n "${SENTRY_DSN+x}" ]]         && SENTRY_ENV+=(-e SENTRY_DSN="$SENTRY_DSN")
+[[ -n "${SENTRY_ENVIRONMENT:-}" ]] && SENTRY_ENV+=(-e SENTRY_ENVIRONMENT="$SENTRY_ENVIRONMENT")
+[[ -n "${SENTRY_RELEASE:-}" ]]     && SENTRY_ENV+=(-e SENTRY_RELEASE="$SENTRY_RELEASE")
+[[ -n "${SENTRY_DEBUG:-}" ]]       && SENTRY_ENV+=(-e SENTRY_DEBUG="$SENTRY_DEBUG")
 
 prefill_worker_name() {
     local idx="$1"
