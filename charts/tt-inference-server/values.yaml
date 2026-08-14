@@ -7947,6 +7947,8 @@ models:
                 value: '2'
               - name: MESH_DEVICE
                 value: (4, 8)
+              - name: MINIMAX_H3_FABRIC_TOPOLOGY
+                value: linear
               - name: MINIMAX_H3_MODEL_PATH
                 value: /mnt/hf-cache
               - name: MODEL_RUNNER

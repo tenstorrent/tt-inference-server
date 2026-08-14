@@ -119,6 +119,7 @@ templates:
   env_vars:
     MODEL_RUNNER: tt-minimax-h3-t2va
     MINIMAX_H3_MODEL_PATH: /mnt/hf-cache  # chart hfCacheDir read-only mount point
+    MINIMAX_H3_FABRIC_TOPOLOGY: linear  # default is ring; linear per current deployment
     TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache  # persistent cache volume
     USE_ASYNC_VIDEO: "true"
     MAX_QUEUE_SIZE: "2"
