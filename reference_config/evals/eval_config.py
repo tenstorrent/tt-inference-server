@@ -671,7 +671,7 @@ _eval_config_list = [
             EvalTask(
                 task_name="r1_gpqa_diamond",
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                max_concurrent=8,
+                max_concurrent=64,
                 # This vLLM server only exposes /v1/chat/completions; the legacy
                 # text /v1/completions endpoint returns 404. use_chat_api switches
                 # lm-eval's eval_class from "local-completions" to

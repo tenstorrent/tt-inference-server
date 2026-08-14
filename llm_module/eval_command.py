@@ -206,27 +206,13 @@ def build_eval_command(
         getattr(model_spec, "device_model_spec", None), "max_concurrency", None
     )
 
-    # --eval-max-concurrent (runtime override) replaces the per-task
-    # max_concurrent from the eval config when set; the device clamp below
-    # still applies so we never exceed the server's max_concurrency.
-    override_max_concurrent = (
-        getattr(runtime_config, "eval_max_concurrent", None) if runtime_config else None
-    )
-    base_max_concurrent = override_max_concurrent or task.max_concurrent
-    if override_max_concurrent:
-        logger.info(
-            f"Overriding {task.task_name} num_concurrent via "
-            f"--eval-max-concurrent: {task.max_concurrent} -> "
-            f"{override_max_concurrent}"
-        )
-
-    effective_max_concurrent = base_max_concurrent
+    effective_max_concurrent = task.max_concurrent
     if effective_max_concurrent and device_max_concurrency:
         effective_max_concurrent = min(effective_max_concurrent, device_max_concurrency)
-        if effective_max_concurrent != base_max_concurrent:
+        if effective_max_concurrent != task.max_concurrent:
             logger.info(
                 f"Clamping {task.task_name} num_concurrent: "
-                f"{base_max_concurrent} -> {effective_max_concurrent} "
+                f"{task.max_concurrent} -> {effective_max_concurrent} "
                 f"(device_model_spec.max_concurrency={device_max_concurrency})"
             )
 
