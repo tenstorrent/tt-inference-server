@@ -166,6 +166,7 @@ class TestVideoMatrixExpansion:
         "mochi-p150x4",
         "mochi-p150x8",
         "mochi-p300x2",
+        "minimax-h3-galaxy",
     }
 
     # Expected VideoGenerationLoadTest targets per expanded suite: the base
@@ -270,6 +271,15 @@ class TestVideoMatrixExpansion:
                 "VideoGenerationI2VTest",
                 "VideoGenerationI2VParamTest",
             ], f"{suite_id}: unexpected templates {templates}"
+
+    def test_minimax_suite_uses_v1_contract_and_media_checks(self):
+        suite = self._suite_map()["minimax-h3-galaxy"]
+        templates = [tc["template"] for tc in suite["test_cases"]]
+        assert templates == [
+            "MiniMaxH3CreateContractTest",
+            "MiniMaxH3LifecycleDeleteTest",
+            "MiniMaxH3VideoQualityTest",
+        ]
 
     def test_all_video_suites_single_device(self):
         for suite in self._suite_map().values():

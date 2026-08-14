@@ -4,9 +4,9 @@
 
 """Reference-driven quality evaluation for MiniMax-H3 text-to-video output.
 
-This evaluator uses the documented MiniMax V2 create/query/delete lifecycle,
-downloads each output immediately, and computes spatial, temporal, and optional
-CLIP metrics. When a matching reference is configured, the metrics are graded;
+This evaluator uses the inference server's V1 video job lifecycle, downloads
+each output immediately, and computes spatial, temporal, and optional CLIP
+metrics. When a matching reference is configured, the metrics are graded;
 otherwise the result is informational with ``accuracy_check=NA``.
 """
 
@@ -16,7 +16,6 @@ import argparse
 import asyncio
 import json
 import logging
-import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -37,6 +36,7 @@ from test_module._test_common import (
 from test_module._test_common.minimax_h3_client import (
     MiniMaxClientError,
     MiniMaxH3Client,
+    resolve_server_api_key,
 )
 from test_module._test_common.video_quality_metrics import (
     BatchedCLIPScorer,
@@ -50,16 +50,15 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 MODEL_NAME = "MiniMax-H3"
-RESOLUTION = "768P"
 DURATION_SECONDS = 5
 ASPECT_RATIO = "16:9"
 
 DEFAULT_SAMPLE_COUNT = 8
-DEFAULT_SAMPLES_PER_PROMPT = 3
+DEFAULT_SAMPLES_PER_PROMPT = 1
 DEFAULT_REQUEST_TIMEOUT_SECONDS = 60.0
-DEFAULT_DOWNLOAD_TIMEOUT_SECONDS = 300.0
+DEFAULT_DOWNLOAD_TIMEOUT_SECONDS = 600.0
 DEFAULT_POLL_INTERVAL_SECONDS = 5.0
-DEFAULT_POLL_TIMEOUT_SECONDS = 900.0
+DEFAULT_POLL_TIMEOUT_SECONDS = 1800.0
 DEFAULT_TEST_TIMEOUT_SECONDS = 7200
 DEFAULT_OUTPUT_DIR = Path("/tmp/minimax_h3_video_quality")
 ACCURACY_REFERENCE_PATH = Path(
@@ -107,16 +106,6 @@ T2V_PROMPT = VideoQualityPrompt(
 )
 
 
-def _resolve_api_key() -> str:
-    for env_name in ("MINIMAX_API_KEY", "MINIMAX_MOCK_API_KEY"):
-        value = os.getenv(env_name)
-        if value:
-            return value
-    raise RuntimeError(
-        "Set MINIMAX_API_KEY (real API) or MINIMAX_MOCK_API_KEY (mock API)"
-    )
-
-
 def _resolved_samples_per_prompt(requested: int | None) -> int:
     samples = requested if requested is not None else DEFAULT_SAMPLES_PER_PROMPT
     if samples < 1:
@@ -126,48 +115,47 @@ def _resolved_samples_per_prompt(requested: int | None) -> int:
 
 def _create_payload(prompt: str) -> dict[str, Any]:
     return {
-        "model": MODEL_NAME,
-        "content": [{"type": "text", "text": prompt}],
-        "resolution": RESOLUTION,
-        "duration": DURATION_SECONDS,
-        "ratio": ASPECT_RATIO,
+        "prompt": prompt,
+        "aspect_ratio": ASPECT_RATIO,
+        "duration_seconds": DURATION_SECONDS,
+        "seed": 0,
     }
 
 
-def _validate_succeeded_task(task: dict[str, Any], *, task_id: str) -> str:
-    if task.get("status") != "succeeded":
+def _validate_completed_task(
+    task: dict[str, Any],
+    *,
+    task_id: str,
+    prompt: str,
+) -> None:
+    if task.get("status") != "completed":
         raise MiniMaxClientError(
             f"task reached terminal status {task.get('status')!r}",
             task_id=task_id,
             response_body=json.dumps(task.get("error")),
         )
-    expected = {
-        "id": task_id,
-        "model": MODEL_NAME,
-        "resolution": RESOLUTION,
-        "duration": DURATION_SECONDS,
-        "ratio": ASPECT_RATIO,
-        "task_type": "generation",
-        "modality": "video",
-    }
+    if task.get("id") != task_id or task.get("job_type") != "video":
+        raise MiniMaxClientError(
+            f"completed video job metadata mismatch: {task!r}",
+            task_id=task_id,
+        )
+    request = task.get("request_parameters")
+    if not isinstance(request, dict):
+        raise MiniMaxClientError(
+            "completed video job has no request_parameters object",
+            task_id=task_id,
+        )
+    expected = _create_payload(prompt)
     mismatches = {
-        field: {"expected": value, "actual": task.get(field)}
+        field: {"expected": value, "actual": request.get(field)}
         for field, value in expected.items()
-        if task.get(field) != value
+        if request.get(field) != value
     }
     if mismatches:
         raise MiniMaxClientError(
-            f"succeeded task metadata mismatch: {mismatches}",
+            f"completed task request metadata mismatch: {mismatches}",
             task_id=task_id,
         )
-    content = task.get("content")
-    content_url = content.get("url") if isinstance(content, dict) else None
-    if not isinstance(content_url, str) or not content_url.strip():
-        raise MiniMaxClientError(
-            "succeeded task has no non-empty content.url",
-            task_id=task_id,
-        )
-    return content_url
 
 
 async def _evaluate_sample(
@@ -187,10 +175,8 @@ async def _evaluate_sample(
         "task_id": None,
         "generation_success": False,
         "analysis_success": False,
-        "cleanup_success": False,
     }
     task_id: str | None = None
-    terminal_status: str | None = None
 
     try:
         task_id = await client.create_video(_create_payload(prompt_case.prompt))
@@ -198,12 +184,15 @@ async def _evaluate_sample(
         terminal = await client.wait_for_terminal(task_id)
         result["observed_statuses"] = list(terminal.observed_statuses)
         result["task"] = terminal.task
-        terminal_status = str(terminal.task.get("status"))
 
-        content_url = _validate_succeeded_task(terminal.task, task_id=task_id)
+        _validate_completed_task(
+            terminal.task,
+            task_id=task_id,
+            prompt=prompt_case.prompt,
+        )
         result["generation_success"] = True
         video_path = output_dir / f"{prompt_case.id}_{sample_index}_{task_id}.mp4"
-        download = await client.download_video(content_url, video_path)
+        download = await client.download_video(task_id, video_path)
         result["video_path"] = str(download.path)
         result["bytes_downloaded"] = download.bytes_downloaded
         result["download_content_type"] = download.content_type
@@ -239,22 +228,6 @@ async def _evaluate_sample(
             "type": type(exc).__name__,
             "message": str(exc),
         }
-    finally:
-        if task_id is not None and terminal_status in {"succeeded", "failed"}:
-            try:
-                deletion = await client.delete_terminal_task(task_id)
-                result["cleanup_success"] = True
-                result["deletion"] = deletion
-            except MiniMaxClientError as exc:
-                result["cleanup_error"] = exc.to_dict()
-        elif task_id is not None:
-            result["cleanup_error"] = {
-                "type": "TaskNotTerminal",
-                "message": (
-                    "task record was not deleted because its terminal status "
-                    f"was not observed (last status={terminal_status!r})"
-                ),
-            }
     return result
 
 
@@ -449,10 +422,6 @@ def _aggregate_results(
         for metric in structural
         if isinstance(metric.get("mean_frame_delta"), (int, float))
     ]
-    cleanup_failure_count = sum(
-        bool(result.get("cleanup_error")) for result in detailed_results
-    )
-
     summary: dict[str, Any] = {
         "requested_count": requested_count,
         "generation_success_count": generation_success_count,
@@ -465,12 +434,16 @@ def _aggregate_results(
         "frozen_video_count": frozen_video_count,
         "black_video_count": black_video_count,
         "flat_video_count": flat_video_count,
-        "cleanup_failure_count": cleanup_failure_count,
         "average_clip": _mean(mean_clip_scores),
         "minimum_clip": min(minimum_clip_scores) if minimum_clip_scores else None,
         "average_motion": _mean(motion_values),
         "average_progression_margin": _mean(progression_margins),
     }
+    all_outputs_valid = (
+        requested_count > 0
+        and generation_success_count == requested_count
+        and valid_video_count == requested_count
+    )
 
     reference = _load_quality_reference(requested_count)
     if reference is not None:
@@ -480,12 +453,12 @@ def _aggregate_results(
             clip_enabled=clip_enabled,
         )
         accuracy_check = ReportCheckTypes.from_result(reference_passed)
-        success = bool(analyzed) and reference_passed
+        success = all_outputs_valid and reference_passed
         quality_status = "pass" if reference_passed else "fail"
     else:
         reference_checks = []
         accuracy_check = ReportCheckTypes.NA
-        success = bool(analyzed)
+        success = all_outputs_valid
         quality_status = "na"
 
     return {
@@ -512,7 +485,7 @@ async def run_video_quality_evaluation(
     poll_interval: float = DEFAULT_POLL_INTERVAL_SECONDS,
     poll_timeout: float = DEFAULT_POLL_TIMEOUT_SECONDS,
 ) -> dict[str, Any]:
-    """Generate, score, preserve, and clean up a MiniMax-H3 quality run."""
+    """Generate, score, and preserve a MiniMax-H3 quality run."""
 
     resolved_samples = _resolved_samples_per_prompt(samples_per_prompt)
     if sample_count < 2:
@@ -586,7 +559,7 @@ class MiniMaxH3VideoQualityTest(BaseTest):
 
         return await run_video_quality_evaluation(
             base_url=self.base_url,
-            api_key=_resolve_api_key(),
+            api_key=resolve_server_api_key(),
             output_dir=output_dir,
             samples_per_prompt=self.targets.get("samples_per_prompt"),
             sample_count=int(self.targets.get("sample_count", DEFAULT_SAMPLE_COUNT)),
@@ -688,7 +661,7 @@ def main(argv: list[str] | None = None) -> int:
         result = asyncio.run(
             run_video_quality_evaluation(
                 base_url=args.base_url,
-                api_key=_resolve_api_key(),
+                api_key=resolve_server_api_key(),
                 output_dir=args.output_dir,
                 samples_per_prompt=args.samples_per_prompt,
                 sample_count=args.sample_count,

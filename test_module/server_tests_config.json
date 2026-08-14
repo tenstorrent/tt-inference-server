@@ -36,7 +36,8 @@
         "VIDEO": [
             "Wan2.2-T2V-A14B-Diffusers",
             "Wan2.2-I2V-A14B-Diffusers",
-            "mochi-1-preview"
+            "mochi-1-preview",
+            "MiniMax-H3"
         ],
         "LLM": [
             "Qwen3-32B",
@@ -96,6 +97,7 @@
             "wan": "Wan video generation model tests",
             "wan_i2v": "Wan image-to-video generation model tests",
             "mochi": "Mochi video generation model tests",
+            "minimax_h3": "MiniMax-H3 text-to-video-and-audio tests",
             "mobilenetv2": "MobileNetV2 CNN model tests",
             "bge_m3": "BGE-M3 embedding model tests"
         }
@@ -230,6 +232,16 @@
                 "p150x4",
                 "p150x8",
                 "p300x2"
+            ]
+        },
+        "minimax_h3": {
+            "id_name": "minimax-h3",
+            "weights": [
+                "MiniMax-H3"
+            ],
+            "category": "VIDEO",
+            "compatible_devices": [
+                "galaxy"
             ]
         },
         "sdxl": {
@@ -860,6 +872,51 @@
                 "test_timeout": 3600,
                 "retry_attempts": 1,
                 "retry_delay": 60,
+                "break_on_failure": false,
+                "mock_mode": false
+            }
+        },
+        "MiniMaxH3CreateContractTest": {
+            "module": "test_module.load_param_tests.minimax_h3_create_contract_test",
+            "markers": [
+                "param",
+                "e2e"
+            ],
+            "test_config": {
+                "timeout": 300,
+                "retry_attempts": 0,
+                "retry_delay": 0,
+                "break_on_failure": false,
+                "mock_mode": false
+            }
+        },
+        "MiniMaxH3LifecycleDeleteTest": {
+            "module": "test_module.load_param_tests.minimax_h3_lifecycle_delete_test",
+            "markers": [
+                "e2e",
+                "slow",
+                "heavy"
+            ],
+            "test_config": {
+                "timeout": 2400,
+                "retry_attempts": 0,
+                "retry_delay": 0,
+                "break_on_failure": false,
+                "mock_mode": false
+            }
+        },
+        "MiniMaxH3VideoQualityTest": {
+            "module": "test_module.eval_tests.minimax_h3_video_quality_test",
+            "markers": [
+                "eval",
+                "e2e",
+                "slow",
+                "heavy"
+            ],
+            "test_config": {
+                "timeout": 2400,
+                "retry_attempts": 0,
+                "retry_delay": 0,
                 "break_on_failure": false,
                 "mock_mode": false
             }

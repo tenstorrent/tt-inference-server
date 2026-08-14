@@ -2,34 +2,36 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-"""Small async client for the documented MiniMax-H3 video V2 lifecycle."""
+"""Async client for the inference server's MiniMax-H3 video job API."""
 
 from __future__ import annotations
 
 import asyncio
 import json
+import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
 
 import aiohttp  # pyright: ignore[reportMissingImports]
 
-CREATE_PATH = "/v2/video_generation"
-QUERY_PATH = "/v2/query/video_generation/{task_id}"
-DELETE_PATH = "/v2/video_generation/{task_id}"
+CREATE_PATH = "/v1/videos/generations"
+QUERY_PATH = "/v1/videos/generations/{job_id}"
+DOWNLOAD_PATH = "/v1/videos/generations/{job_id}/download"
+CANCEL_PATH = "/v1/videos/generations/{job_id}/cancel"
 
 DOCUMENTED_STATUSES = frozenset(
-    {"queued", "running", "succeeded", "failed", "cancelled"}
+    {"queued", "in_progress", "completed", "failed", "cancelled", "cancelling"}
 )
-TERMINAL_STATUSES = frozenset({"succeeded", "failed", "cancelled"})
+TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled"})
 DOWNLOAD_CHUNK_BYTES = 1024 * 1024
 RESPONSE_EXCERPT_LENGTH = 500
+DEFAULT_API_KEY = "your-secret-key"
 
 
 class MiniMaxClientError(RuntimeError):
-    """Raised when the provider response violates the documented contract."""
+    """Raised when the inference server violates its video job contract."""
 
     def __init__(
         self,
@@ -60,7 +62,7 @@ class MiniMaxClientError(RuntimeError):
 
 @dataclass(frozen=True)
 class MiniMaxTerminalTask:
-    """Terminal query response plus the statuses observed while polling."""
+    """Terminal job metadata plus statuses observed while polling."""
 
     task_id: str
     task: dict[str, Any]
@@ -76,13 +78,18 @@ class MiniMaxDownload:
     content_type: str
 
 
-class MiniMaxH3Client:
-    """Create, poll, download, and delete MiniMax-H3 video tasks.
+def resolve_server_api_key() -> str:
+    """Resolve the literal bearer token used by the media server."""
 
-    API requests carry the Bearer token explicitly. Output downloads use a
-    separate unauthenticated session so a provider key is never forwarded to a
-    CDN named by ``content.url``.
-    """
+    for env_name in ("API_KEY", "MINIMAX_API_KEY", "MINIMAX_MOCK_API_KEY"):
+        value = os.getenv(env_name)
+        if value:
+            return value
+    return DEFAULT_API_KEY
+
+
+class MiniMaxH3Client:
+    """Create, poll, download, and cancel inference-server video jobs."""
 
     def __init__(
         self,
@@ -92,7 +99,7 @@ class MiniMaxH3Client:
         request_timeout: float = 60.0,
         download_timeout: float = 300.0,
         poll_interval: float = 5.0,
-        poll_timeout: float = 900.0,
+        poll_timeout: float = 1800.0,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
@@ -101,6 +108,14 @@ class MiniMaxH3Client:
         self.poll_interval = poll_interval
         self.poll_timeout = poll_timeout
         self._session: aiohttp.ClientSession | None = None
+
+    @property
+    def headers(self) -> dict[str, str]:
+        return {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}",
+        }
 
     async def __aenter__(self) -> "MiniMaxH3Client":
         timeout = aiohttp.ClientTimeout(total=self.request_timeout)
@@ -121,16 +136,16 @@ class MiniMaxH3Client:
             f"{self.base_url}{CREATE_PATH}",
             json_payload=payload,
         )
-        if status != 200:
+        if status != 202:
             raise MiniMaxClientError(
-                f"video task creation returned HTTP {status}",
+                f"video job creation returned HTTP {status}",
                 status_code=status,
                 response_body=_excerpt(response_text),
             )
-        task_id = data.get("task_id") if isinstance(data, dict) else None
+        task_id = data.get("id") if isinstance(data, dict) else None
         if not isinstance(task_id, str) or not task_id.strip():
             raise MiniMaxClientError(
-                "video task creation response has no non-empty task_id",
+                "video job creation response has no non-empty id",
                 status_code=status,
                 response_body=_excerpt(response_text),
             )
@@ -139,40 +154,38 @@ class MiniMaxH3Client:
     async def query_task(self, task_id: str) -> dict[str, Any]:
         status, data, response_text = await self._api_json_request(
             "GET",
-            f"{self.base_url}{QUERY_PATH.format(task_id=task_id)}",
+            f"{self.base_url}{QUERY_PATH.format(job_id=task_id)}",
         )
         if status != 200:
             raise MiniMaxClientError(
-                f"task query returned HTTP {status}",
+                f"video job query returned HTTP {status}",
                 status_code=status,
                 response_body=_excerpt(response_text),
                 task_id=task_id,
             )
-        task = data.get("task") if isinstance(data, dict) else None
-        if not isinstance(task, dict):
+        if not isinstance(data, dict):
             raise MiniMaxClientError(
-                "task query response has no task object",
+                "video job query response is not an object",
                 status_code=status,
                 response_body=_excerpt(response_text),
                 task_id=task_id,
             )
-        if task.get("id") != task_id:
+        if data.get("id") != task_id:
             raise MiniMaxClientError(
-                f"query returned task.id={task.get('id')!r}, expected {task_id!r}",
+                f"query returned id={data.get('id')!r}, expected {task_id!r}",
                 task_id=task_id,
             )
-        if task.get("status") not in DOCUMENTED_STATUSES:
+        if data.get("status") not in DOCUMENTED_STATUSES:
             raise MiniMaxClientError(
-                f"query returned undocumented status {task.get('status')!r}",
+                f"query returned unknown status {data.get('status')!r}",
                 task_id=task_id,
             )
-        return task
+        return data
 
     async def wait_for_terminal(self, task_id: str) -> MiniMaxTerminalTask:
         started = time.monotonic()
         observed: list[str] = []
         created_at: int | None = None
-        updated_at: int | None = None
 
         while time.monotonic() - started < self.poll_timeout:
             task = await self.query_task(task_id)
@@ -181,33 +194,25 @@ class MiniMaxH3Client:
                 observed.append(status)
 
             next_created_at = task.get("created_at")
-            next_updated_at = task.get("updated_at")
-            if not isinstance(next_created_at, int) or not isinstance(
-                next_updated_at, int
-            ):
+            if not isinstance(next_created_at, int):
                 raise MiniMaxClientError(
-                    "task timestamps must be Unix integers",
-                    task_id=task_id,
-                )
-            if next_created_at > next_updated_at:
-                raise MiniMaxClientError(
-                    "task created_at is later than updated_at",
+                    "video job created_at must be a Unix integer",
                     task_id=task_id,
                 )
             if created_at is not None and next_created_at != created_at:
                 raise MiniMaxClientError(
-                    "task created_at changed between polls",
-                    task_id=task_id,
-                )
-            if updated_at is not None and next_updated_at < updated_at:
-                raise MiniMaxClientError(
-                    "task updated_at moved backwards",
+                    "video job created_at changed between polls",
                     task_id=task_id,
                 )
             created_at = next_created_at
-            updated_at = next_updated_at
 
             if status in TERMINAL_STATUSES:
+                completed_at = task.get("completed_at")
+                if not isinstance(completed_at, int) or completed_at < created_at:
+                    raise MiniMaxClientError(
+                        "terminal video job has an invalid completed_at",
+                        task_id=task_id,
+                    )
                 return MiniMaxTerminalTask(
                     task_id=task_id,
                     task=task,
@@ -216,33 +221,34 @@ class MiniMaxH3Client:
             await asyncio.sleep(self.poll_interval)
 
         raise MiniMaxClientError(
-            f"task did not finish within {self.poll_timeout:.1f} seconds",
+            f"video job did not finish within {self.poll_timeout:.1f} seconds",
             task_id=task_id,
         )
 
     async def download_video(
-        self, content_url: str, destination: Path
+        self,
+        task_id: str,
+        destination: Path,
     ) -> MiniMaxDownload:
-        parsed = urlparse(content_url)
-        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-            raise MiniMaxClientError(
-                "content.url is not an absolute HTTP(S) URL",
-                response_body=content_url,
-            )
-
         destination.parent.mkdir(parents=True, exist_ok=True)
         timeout = aiohttp.ClientTimeout(total=self.download_timeout)
         total_bytes = 0
         first_bytes = b""
+        url = f"{self.base_url}{DOWNLOAD_PATH.format(job_id=task_id)}"
+
         try:
-            async with aiohttp.ClientSession(timeout=timeout) as session:  # noqa: SIM117
-                async with session.get(content_url) as response:
+            async with aiohttp.ClientSession(
+                timeout=timeout,
+                headers=self.headers,
+            ) as session:
+                async with session.get(url) as response:
                     if response.status != 200:
                         response_text = await response.text()
                         raise MiniMaxClientError(
                             f"video download returned HTTP {response.status}",
                             status_code=response.status,
                             response_body=_excerpt(response_text),
+                            task_id=task_id,
                         )
                     with destination.open("wb") as output:
                         async for chunk in response.content.iter_chunked(
@@ -255,53 +261,48 @@ class MiniMaxH3Client:
                             output.write(chunk)
                             total_bytes += len(chunk)
                     content_type = response.headers.get("Content-Type", "")
+        except MiniMaxClientError:
+            raise
         except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as exc:
-            if isinstance(exc, MiniMaxClientError):
-                raise
             raise MiniMaxClientError(
-                f"video download failed: {type(exc).__name__}: {exc}"
+                f"video download failed: {type(exc).__name__}: {exc}",
+                task_id=task_id,
             ) from exc
 
         if total_bytes == 0:
-            raise MiniMaxClientError("video download returned zero bytes")
+            raise MiniMaxClientError(
+                "video download returned zero bytes",
+                task_id=task_id,
+            )
         if b"ftyp" not in first_bytes:
-            raise MiniMaxClientError("downloaded output has no MP4 ftyp signature")
+            raise MiniMaxClientError(
+                "downloaded output has no MP4 ftyp signature",
+                task_id=task_id,
+            )
         return MiniMaxDownload(
             path=destination,
             bytes_downloaded=total_bytes,
             content_type=content_type,
         )
 
-    async def delete_terminal_task(self, task_id: str) -> dict[str, Any]:
+    async def cancel_task(self, task_id: str) -> dict[str, Any]:
         status, data, response_text = await self._api_json_request(
-            "DELETE",
-            f"{self.base_url}{DELETE_PATH.format(task_id=task_id)}",
+            "POST",
+            f"{self.base_url}{CANCEL_PATH.format(job_id=task_id)}",
         )
-        if status != 200:
+        if status != 200 or not isinstance(data, dict):
             raise MiniMaxClientError(
-                f"task deletion returned HTTP {status}",
+                f"video job cancellation returned HTTP {status}",
                 status_code=status,
                 response_body=_excerpt(response_text),
                 task_id=task_id,
             )
-        if not isinstance(data, dict):
+        if data.get("id") != task_id or data.get("status") not in {
+            "cancelled",
+            "cancelling",
+        }:
             raise MiniMaxClientError(
-                "task deletion response is not a JSON object",
-                task_id=task_id,
-            )
-        expected = {
-            "task_id": task_id,
-            "action": "deleted",
-            "status": "deleted",
-        }
-        mismatches = {
-            field: {"expected": value, "actual": data.get(field)}
-            for field, value in expected.items()
-            if data.get(field) != value
-        }
-        if mismatches:
-            raise MiniMaxClientError(
-                f"unexpected task deletion response: {mismatches}",
+                f"unexpected cancellation response: {data!r}",
                 task_id=task_id,
             )
         return data
@@ -318,16 +319,11 @@ class MiniMaxH3Client:
                 "MiniMaxH3Client must be used as an async context manager"
             )
 
-        headers = {
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.api_key}",
-        }
         try:
             async with self._session.request(
                 method,
                 url,
-                headers=headers,
+                headers=self.headers,
                 json=json_payload,
             ) as response:
                 response_text = await response.text()
@@ -352,8 +348,10 @@ def _excerpt(response_text: str) -> str:
 
 
 __all__ = [
+    "CREATE_PATH",
     "MiniMaxClientError",
     "MiniMaxDownload",
     "MiniMaxH3Client",
     "MiniMaxTerminalTask",
+    "resolve_server_api_key",
 ]

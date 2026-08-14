@@ -111,39 +111,60 @@ def probe_video(
     duration_tolerance: float = 0.5,
     ratio_tolerance: float = 0.03,
 ) -> dict[str, Any]:
-    """Use ffprobe to verify that a downloaded output is valid video media."""
+    """Verify downloaded video metadata with ffprobe or imageio-ffmpeg."""
 
     ffprobe = shutil.which("ffprobe")
-    if ffprobe is None:
-        raise MissingVideoQualityDependency("ffprobe is required for video metadata")
-
     try:
-        result = subprocess.run(
-            [
-                ffprobe,
-                "-v",
-                "error",
-                "-show_entries",
-                "stream=codec_type,codec_name,width,height,r_frame_rate,nb_frames",
-                "-show_entries",
-                "format=duration",
-                "-of",
-                "json",
-                str(video_path),
-            ],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        metadata = json.loads(result.stdout)
-        video_stream = next(
-            stream
-            for stream in metadata["streams"]
-            if stream.get("codec_type") == "video"
-        )
-        width = int(video_stream["width"])
-        height = int(video_stream["height"])
-        duration = float(metadata["format"]["duration"])
+        if ffprobe is not None:
+            result = subprocess.run(
+                [
+                    ffprobe,
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "stream=codec_type,codec_name,width,height,r_frame_rate,nb_frames",
+                    "-show_entries",
+                    "format=duration",
+                    "-of",
+                    "json",
+                    str(video_path),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            metadata = json.loads(result.stdout)
+            video_stream = next(
+                stream
+                for stream in metadata["streams"]
+                if stream.get("codec_type") == "video"
+            )
+            width = int(video_stream["width"])
+            height = int(video_stream["height"])
+            duration = float(metadata["format"]["duration"])
+        else:
+            try:
+                import imageio_ffmpeg  # pyright: ignore[reportMissingImports]
+            except ImportError as exc:
+                raise MissingVideoQualityDependency(
+                    "ffprobe or imageio-ffmpeg is required for video metadata"
+                ) from exc
+
+            reader = imageio_ffmpeg.read_frames(str(video_path), pix_fmt="rgb24")
+            try:
+                metadata = next(reader)
+            finally:
+                reader.close()
+            width, height = (int(value) for value in metadata["size"])
+            duration = float(metadata["duration"])
+            fps = metadata.get("fps")
+            video_stream = {
+                "codec_name": metadata.get("codec"),
+                "r_frame_rate": str(fps) if fps is not None else None,
+                "nb_frames": (
+                    round(duration * float(fps)) if fps is not None else None
+                ),
+            }
     except (
         KeyError,
         TypeError,
@@ -152,7 +173,7 @@ def probe_video(
         json.JSONDecodeError,
         subprocess.CalledProcessError,
     ) as exc:
-        raise ValueError(f"video is not decodable by ffprobe: {exc}") from exc
+        raise ValueError(f"video metadata could not be decoded: {exc}") from exc
 
     ratio_parts = expected_ratio.split(":", 1)
     if len(ratio_parts) != 2:
