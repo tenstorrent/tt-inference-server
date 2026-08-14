@@ -945,12 +945,12 @@ void DisaggregationService::handleStreamingRequest(
     // resolution.
     int decodeSkipTokens = decodePositionId - request.accumulated_think_tokens;
 
-    auto sent = socketService &&
-                socketService->sendPrefillRequest(
-                    request.task_id, registrationHashes, tokenIds, maxTokens,
-                    slotId, tt::utils::mapper::mapSamplingParams(request),
-                    decodePositionId, decodeSkipTokens,
-                    request.traceparentHeader);
+    auto sent =
+        socketService &&
+        socketService->sendPrefillRequest(
+            request.task_id, registrationHashes, tokenIds, maxTokens, slotId,
+            tt::utils::mapper::mapSamplingParams(request), decodePositionId,
+            decodeSkipTokens, request.traceparentHeader);
 
     if (!sent) {
       streamCallbacks.erase(request.task_id);

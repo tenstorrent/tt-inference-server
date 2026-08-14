@@ -370,19 +370,19 @@ void DynamoRequestHandler::handle(const GenerateRequest& dynReq,
   pipeline->runStreamingRequest(
       req, loop,
       [pipeline, req, sendChunk, signalDone, recvT, firstChunkSeen, probeId,
-       usage, dispatchStart, tx](services::LLMPipeline::SessionInfo,
-                                 std::shared_ptr<tt::domain::Session>
-                                     sessionPtr) {
+       usage, dispatchStart,
+       tx](services::LLMPipeline::SessionInfo,
+           std::shared_ptr<tt::domain::Session> sessionPtr) {
         services::LLMPipeline::StreamCallback cb = [pipeline, req, sessionPtr,
                                                     sendChunk, signalDone,
                                                     recvT, firstChunkSeen,
                                                     probeId,
                                                     tDispatch = *dispatchStart,
-                                                    usage, tx](
-                                                       const tt::domain::llm::
-                                                           LLMStreamChunk&
-                                                               chunk,
-                                                       bool isFinal) {
+                                                    usage,
+                                                    tx](const tt::domain::llm::
+                                                            LLMStreamChunk&
+                                                                chunk,
+                                                        bool isFinal) {
           bool expected = false;
           if (firstChunkSeen->compare_exchange_strong(expected, true)) {
             using SteadyClock = std::chrono::steady_clock;

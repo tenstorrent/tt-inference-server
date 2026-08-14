@@ -141,8 +141,7 @@ void Transaction::setData(const std::string& key, int64_t value) {
 std::string Transaction::traceparent() const {
   if (raw_ == nullptr || state_->finished.load()) return {};
   HeaderMap headers;
-  sentry_transaction_iter_headers(asTransaction(raw_), collectHeader,
-                                  &headers);
+  sentry_transaction_iter_headers(asTransaction(raw_), collectHeader, &headers);
   // The SDK emits `sentry-trace` as "<trace id>-<span id>[-<0|1>]"; reshape
   // it into the W3C form the receiving side expects.
   const auto it = headers.find("sentry-trace");

@@ -293,6 +293,12 @@ ENV ENVIRONMENT=development \
     CMAKE_PREFIX_PATH=/opt/tt-llm-engine:/opt/tt-llm-engine-src/tt-metal/build_Release/lib/cmake:/opt/tt-llm-engine-src/tt-metal/build_Release/_deps/nlohmann_json-build \
     TT_METAL_LOGS_PATH=${HOME_DIR}/logs
 
+# Sentry distributed tracing (issue #4778): DSN of the tt-inference-server
+# project in the tenstorrent-inc org. Enables Sentry transactions for Dynamo
+# generate requests carrying a W3C traceparent. Override or unset via -e at
+# deploy time (SENTRY_ENVIRONMENT/SENTRY_TRACES_SAMPLE_RATE tune it further).
+ENV SENTRY_DSN=https://7688bbd86bf4c5f4f0f1fa6970bac196@o1366617.ingest.us.sentry.io/4511909245288448
+
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     gosu \
