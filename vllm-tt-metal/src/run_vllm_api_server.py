@@ -360,6 +360,21 @@ def register_tt_models(impl_id=None):
     """
     impl_id = impl_id or "tt_transformers"
 
+    # Point the TT vLLM plugin at any model bundles the tt-metal checkout ships.
+    # The plugin registers every bundle under EXTRA_MODELS_DIR before its own
+    # built-in map, so a repo-local implementation (e.g.
+    # models/autoports/<model>) is selected without editing the plugin. The path
+    # is derived from TT_METAL_HOME rather than hardcoded so it resolves for both
+    # the container (where the image sets it) and a local checkout. An explicit
+    # caller-provided value always wins, and nothing is set when the directory is
+    # absent.
+    tt_metal_home = os.environ.get("TT_METAL_HOME")
+    if tt_metal_home and "EXTRA_MODELS_DIR" not in os.environ:
+        bundles_dir = Path(tt_metal_home) / "models" / "autoports" / "vllm_bundles"
+        if bundles_dir.is_dir():
+            os.environ["EXTRA_MODELS_DIR"] = str(bundles_dir)
+            logger.info(f"Set EXTRA_MODELS_DIR to {bundles_dir}")
+
     # Llama path selection based on impl_id
     if impl_id == "llama3_70b_galaxy":
         os.environ["TT_LLAMA_TEXT_VER"] = "llama3_70b_galaxy"

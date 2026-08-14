@@ -344,3 +344,47 @@ def test_ensure_weights_available_raises_when_unreachable_and_no_weights(
 
     with pytest.raises(RuntimeError):
         run_vllm_api_server_module.ensure_weights_available(_weights_spec())
+
+
+def test_register_tt_models_points_plugin_at_checkout_bundles(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    """A tt-metal checkout that ships vLLM bundles must be advertised to the TT
+    plugin, which registers everything under EXTRA_MODELS_DIR ahead of its
+    built-in model map. Without this a repo-local implementation is silently
+    replaced by the built-in one for the same architecture."""
+    bundles = tmp_path / "models" / "autoports" / "vllm_bundles"
+    bundles.mkdir(parents=True)
+    monkeypatch.setenv("TT_METAL_HOME", str(tmp_path))
+    monkeypatch.delenv("EXTRA_MODELS_DIR", raising=False)
+
+    run_vllm_api_server_module.register_tt_models()
+
+    assert os.environ["EXTRA_MODELS_DIR"] == str(bundles)
+
+
+def test_register_tt_models_keeps_explicit_extra_models_dir(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    """An explicitly supplied EXTRA_MODELS_DIR wins, so an operator can point at
+    bundles outside the checkout."""
+    bundles = tmp_path / "models" / "autoports" / "vllm_bundles"
+    bundles.mkdir(parents=True)
+    monkeypatch.setenv("TT_METAL_HOME", str(tmp_path))
+    monkeypatch.setenv("EXTRA_MODELS_DIR", "/somewhere/else")
+
+    run_vllm_api_server_module.register_tt_models()
+
+    assert os.environ["EXTRA_MODELS_DIR"] == "/somewhere/else"
+
+
+def test_register_tt_models_leaves_extra_models_dir_unset_without_bundles(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    """Checkouts without a bundles directory must be unaffected."""
+    monkeypatch.setenv("TT_METAL_HOME", str(tmp_path))
+    monkeypatch.delenv("EXTRA_MODELS_DIR", raising=False)
+
+    run_vllm_api_server_module.register_tt_models()
+
+    assert "EXTRA_MODELS_DIR" not in os.environ
