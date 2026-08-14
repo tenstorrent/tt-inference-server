@@ -420,6 +420,20 @@ std::string serialize(const Json::Value& v) {
   return Json::writeString(b, v);
 }
 
+/// Smallest key strictly greater than all keys sharing `prefix`.
+std::string prefixRangeEnd(const std::string& prefix) {
+  std::string end = prefix;
+  for (int i = static_cast<int>(end.size()) - 1; i >= 0; --i) {
+    const auto byte = static_cast<unsigned char>(end[static_cast<size_t>(i)]);
+    if (byte < 0xff) {
+      end[static_cast<size_t>(i)] = static_cast<char>(byte + 1);
+      end.resize(static_cast<size_t>(i) + 1);
+      return end;
+    }
+  }
+  return std::string("\x00", 1);
+}
+
 }  // namespace
 
 EtcdClient::EtcdClient(const std::string& endpoint, int timeoutMs)
@@ -516,6 +530,23 @@ void EtcdClient::deleteRange(const std::string& key) {
   body["key"] = base64Encode(key);
   httpPostJson(host_, port_, "/v3/kv/deleterange", serialize(body),
                timeout_ms_);
+}
+
+bool EtcdClient::hasKeysWithPrefix(const std::string& prefix) {
+  Json::Value body(Json::objectValue);
+  body["key"] = base64Encode(prefix);
+  body["range_end"] = base64Encode(prefixRangeEnd(prefix));
+  body["keys_only"] = true;
+  body["limit"] = 1;
+  auto resp = parseJson(
+      httpPostJson(host_, port_, "/v3/kv/range", serialize(body), timeout_ms_));
+  if (resp.isMember("kvs") && resp["kvs"].isArray()) {
+    return !resp["kvs"].empty();
+  }
+  if (resp.isMember("count")) {
+    return toInt64(resp["count"]) > 0;
+  }
+  return false;
 }
 
 }  // namespace tt::dynamo
