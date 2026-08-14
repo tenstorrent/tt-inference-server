@@ -290,7 +290,9 @@ class SDXLRunner:
             f"Loading LoRA lora_path={lora_path!r}, " f"lora_scale_unet={scale_unet}, lora_scale_clip={scale_clip}"
         )
         self.tt_sdxl.load_lora_weights(lora_path)
-        self.tt_sdxl.fuse_lora(lora_scale_unet=scale_unet, lora_scale_clip=scale_clip)
+        # tt-metal's fuse_lora takes (lora_scale, clip_scale); the lora_scale_unet /
+        # lora_scale_clip names above are the HTTP contract with the ComfyUI nodes.
+        self.tt_sdxl.fuse_lora(lora_scale=scale_unet, clip_scale=scale_clip)
 
         status = self.tt_sdxl.get_lora_status()
         applied = bool(status.get("unet") or status.get("text_encoder"))
