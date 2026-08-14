@@ -2,8 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-"""Callbacks bridging tt-blacksmith's ``Trainer`` to the fine-tuning job API.
-"""
+"""Callbacks bridging tt-blacksmith's ``Trainer`` to the fine-tuning job API."""
 
 import os
 import time
@@ -141,8 +140,7 @@ class JobMetricsCallback(JobCallback):
 
 
 class AdapterCheckpointCallback(JobCallback):
-    """Saves the LoRA adapter every ``save_interval`` optimizer steps.
-    """
+    """Saves the LoRA adapter every ``save_interval`` optimizer steps."""
 
     def __init__(self, logger, metrics: JobMetricsCallback):
         super().__init__(logger)
@@ -205,8 +203,7 @@ class AdapterCheckpointCallback(JobCallback):
 
 
 class JobControlCallback(JobCallback):
-    """Enforces ``max_steps`` and cancellation, and captures real failures.
-    """
+    """Enforces ``max_steps`` and cancellation, and captures real failures."""
 
     def _reset(self) -> None:
         self.error = None

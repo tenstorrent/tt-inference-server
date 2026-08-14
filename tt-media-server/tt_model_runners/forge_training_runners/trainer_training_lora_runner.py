@@ -2,8 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-"""LoRA fine-tuning runner backed by an external trainer class.
-"""
+"""LoRA fine-tuning runner backed by an external trainer class."""
 
 import math
 from dataclasses import dataclass
@@ -89,8 +88,7 @@ class JobLoraTrainer(LoraLLMTrainer):
         self._load_base_model(config)
 
     def _load_base_model(self, config) -> None:
-        """Load the shared base model, reusing the resident one where possible.
-        """
+        """Load the shared base model, reusing the resident one where possible."""
         if (
             getattr(self, "_base_model", None) is not None
             and getattr(self, "_base_model_dtype", None) == config.dtype
