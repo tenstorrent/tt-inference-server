@@ -106,3 +106,31 @@ templates:
       override_tt_config:
         trace_region_size: 30000000
   status: COMPLETE
+
+- weights:
+    - MiniMaxAI/MiniMax-H3  # basename -> MODEL=MiniMax-H3; weights are PRE-STAGED (mounted RO via hfCacheDir), not downloaded
+  version: "0.20.0"  # media image tag = 0.20.0-a01e40254062
+  tt_metal_commit: a01e402540629bb5cadd8642fbde1b83c06f6a05  # branch cglagovich/minimax-h3-linear; tt-shield build 94847719620
+  impl: tt_transformers
+  min_disk_gb: 400  # ~197 GB weights + ~157 GB DIT cache
+  min_ram_gb: 64
+  model_type: VIDEO
+  inference_engine: MEDIA
+  env_vars:
+    MODEL_RUNNER: tt-minimax-h3-t2va
+    MINIMAX_H3_MODEL_PATH: /mnt/hf-cache  # chart hfCacheDir read-only mount point
+    TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache  # persistent cache volume
+    USE_ASYNC_VIDEO: "true"
+    MAX_QUEUE_SIZE: "2"
+  device_model_specs:
+    - device: GALAXY
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+      # Device-level env_vars override the inferred ARCH_NAME/MESH_DEVICE
+      # (template-level env_vars lose to device_model_spec.env_vars). This
+      # galaxy is Blackhole, so force blackhole + the (4, 8) mesh.
+      env_vars:
+        ARCH_NAME: blackhole
+        MESH_DEVICE: "(4, 8)"
+  status: COMPLETE

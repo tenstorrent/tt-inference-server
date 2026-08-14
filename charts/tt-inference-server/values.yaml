@@ -7921,3 +7921,38 @@ models:
               - name: VLLM__MIN_CONTEXT_LENGTH
                 value: '32'
     defaultEngine: forge
+  MiniMax-H3:
+    media:
+      galaxy:
+        defaultImpl: tt_transformers
+        impls:
+          tt_transformers:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-media-inference-server
+              tag: 0.20.0-a01e40254062
+            probes:
+              liveness:
+                initialDelaySeconds: 2400
+                path: /tt-liveness
+              readiness:
+                initialDelaySeconds: 2400
+            resources:
+              requests:
+                memory: 64Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: MAX_QUEUE_SIZE
+                value: '2'
+              - name: MESH_DEVICE
+                value: (4, 8)
+              - name: MINIMAX_H3_MODEL_PATH
+                value: /mnt/hf-cache
+              - name: MODEL_RUNNER
+                value: tt-minimax-h3-t2va
+              - name: TT_DIT_CACHE_DIR
+                value: /home/container_app_user/cache_root/tt_dit_cache
+              - name: USE_ASYNC_VIDEO
+                value: 'true'
+    defaultEngine: media
