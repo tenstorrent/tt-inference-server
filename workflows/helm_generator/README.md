@@ -11,6 +11,13 @@ Run the generator after a model spec changes; it produces an updated
 `values.yaml` while preserving comments and any hand-tuned keys the operator
 has added.
 
+It also mirrors a second source: the DRA per-device board maps
+`deviceBoardCounts` and `deviceBoardNames` are generated from
+[`workflows/device_utils.py`](../device_utils.py)`:BOARD_TYPE_COUNT_TO_DEVICE`.
+Drift in either source (`model_spec.py` or `device_utils.py`) is caught by
+`tests/test_helm_generator/test_values_in_sync.py`, which regenerates and diffs
+the committed `values.yaml`.
+
 ## Schema produced
 
 ```yaml

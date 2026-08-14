@@ -15,10 +15,8 @@ from workflows.run_local_server import (
     build_local_server_env,
     generate_local_run_command,
     install_local_server_requirements,
-    install_vllm_tt_plugin_if_present,
     run_local_command,
     run_local_server,
-    vllm_tt_plugin_source_path,
 )
 from workflows.runtime_config import RuntimeConfig
 
@@ -109,7 +107,7 @@ class TestRunLocalServer:
         assert "--disable-trace-capture" in command
         assert env["TT_METAL_HOME"] == str(tt_metal_home)
         assert env["APP_DIR"] == str(repo_root)
-        assert env["vllm_dir"] == str(tt_metal_home / "vllm")
+        assert "vllm_dir" not in env
         assert process_name.startswith("tt-inference-server-local-")
 
     def test_install_local_server_requirements_uses_tt_metal_venv(self, tmp_path):
@@ -142,9 +140,16 @@ class TestRunLocalServer:
         assert str(requirements_path) in install_command
         assert run_command_mock.call_args_list[0].kwargs["check"] is True
 
-    def test_install_local_server_requirements_also_installs_plugin_when_present(
+    def test_install_local_server_requirements_does_not_install_vllm_or_plugin(
         self, tmp_path
     ):
+        """Only requirements.txt is installed here.
+
+        vLLM and vllm-tt-plugin are installed by the plugin repo's
+        docs/install-vllm-tt.sh, which owns the vLLM version pin and the
+        dependency overrides. Installing either from here risks a mismatched
+        pair; validate_setup probes that both are present instead.
+        """
         repo_root = tmp_path / "repo"
         requirements_path = repo_root / "vllm-tt-metal" / "requirements.txt"
         requirements_path.parent.mkdir(parents=True)
@@ -155,98 +160,17 @@ class TestRunLocalServer:
         python_bin_dir.mkdir(parents=True)
         (python_bin_dir / "python").write_text("")
 
-        # Stage a vllm checkout that ships the plugin source.
-        vllm_dir = tmp_path / "vllm"
-        plugin_dir = vllm_tt_plugin_source_path(vllm_dir)
-        plugin_dir.mkdir(parents=True)
-        (plugin_dir / "pyproject.toml").write_text(
-            "[project]\nname = 'vllm-tt-plugin'\n"
-        )
-
-        runtime_config = self._make_runtime_config(
-            tt_metal_home, vllm_dir=str(vllm_dir)
-        )
+        runtime_config = self._make_runtime_config(tt_metal_home)
 
         with patch("workflows.run_local_server.run_command") as run_command_mock, patch(
             "workflows.run_local_server.UV_EXEC", Path("/tmp/uv")
         ):
             install_local_server_requirements(runtime_config, repo_root=repo_root)
 
-        # Two calls: requirements.txt then plugin editable install.
-        assert run_command_mock.call_count == 2
-        plugin_command = run_command_mock.call_args_list[1].args[0]
-        assert "pip install" in plugin_command
-        assert "--no-deps" in plugin_command
-        assert " -e " in plugin_command
-        assert str(plugin_dir) in plugin_command
-        assert run_command_mock.call_args_list[1].kwargs["check"] is True
-
-    def test_install_vllm_tt_plugin_if_present_skips_when_dir_missing(self, tmp_path):
-        repo_root = tmp_path / "repo"
-        (repo_root / "vllm-tt-metal").mkdir(parents=True)
-
-        tt_metal_home = tmp_path / "tt-metal"
-        python_bin_dir = tt_metal_home / "python_env" / "bin"
-        python_bin_dir.mkdir(parents=True)
-        (python_bin_dir / "python").write_text("")
-
-        vllm_dir = tmp_path / "vllm"
-        vllm_dir.mkdir()
-        runtime_config = self._make_runtime_config(
-            tt_metal_home, vllm_dir=str(vllm_dir)
-        )
-
-        with patch("workflows.run_local_server.run_command") as run_command_mock:
-            result = install_vllm_tt_plugin_if_present(
-                runtime_config, repo_root=repo_root
-            )
-
-        assert result is False
-        run_command_mock.assert_not_called()
-
-    def test_install_vllm_tt_plugin_if_present_invokes_uv_pip_when_dir_exists(
-        self, tmp_path
-    ):
-        repo_root = tmp_path / "repo"
-        (repo_root / "vllm-tt-metal").mkdir(parents=True)
-
-        tt_metal_home = tmp_path / "tt-metal"
-        python_bin_dir = tt_metal_home / "python_env" / "bin"
-        python_bin_dir.mkdir(parents=True)
-        venv_python = python_bin_dir / "python"
-        venv_python.write_text("")
-
-        vllm_dir = tmp_path / "vllm"
-        plugin_dir = vllm_tt_plugin_source_path(vllm_dir)
-        plugin_dir.mkdir(parents=True)
-        (plugin_dir / "pyproject.toml").write_text(
-            "[project]\nname = 'vllm-tt-plugin'\n"
-        )
-
-        runtime_config = self._make_runtime_config(
-            tt_metal_home, vllm_dir=str(vllm_dir)
-        )
-
-        with patch("workflows.run_local_server.run_command") as run_command_mock, patch(
-            "workflows.run_local_server.UV_EXEC", Path("/tmp/uv")
-        ):
-            result = install_vllm_tt_plugin_if_present(
-                runtime_config, repo_root=repo_root
-            )
-
-        assert result is True
-        run_command_mock.assert_called_once()
-        install_command = run_command_mock.call_args.args[0]
-        assert str(Path("/tmp/uv")) in install_command
-        assert "pip install" in install_command
-        assert f"--python {venv_python}" in install_command
-        assert "--no-deps" in install_command
-        assert " -e " in install_command
-        # The plugin source path appears as an absolute path ending with the
-        # canonical plugins/vllm-tt-plugin suffix.
-        assert str(plugin_dir) in install_command
-        assert "plugins/vllm-tt-plugin" in install_command
-        assert run_command_mock.call_args.kwargs["check"] is True
+        assert run_command_mock.call_count == 1
+        install_command = run_command_mock.call_args_list[0].args[0]
+        assert str(requirements_path) in install_command
+        assert " -e " not in install_command
 
     def test_build_local_server_env_sets_expected_overrides(self, tmp_path):
         repo_root = tmp_path / "repo"
@@ -289,11 +213,11 @@ class TestRunLocalServer:
         pythonpath_parts = env["PYTHONPATH"].split(os.pathsep)
         assert str(tt_metal_home) in pythonpath_parts
         assert str(repo_root) in pythonpath_parts
-        assert env["vllm_dir"] == str(tt_metal_home / "vllm")
-        assert pythonpath_parts[-1] == str(tt_metal_home / "vllm")
+        assert "vllm_dir" not in env
+        assert str(tt_metal_home / "vllm") not in pythonpath_parts
         assert str(tt_metal_home / "build" / "lib") in env["LD_LIBRARY_PATH"]
 
-    def test_build_local_server_env_uses_explicit_vllm_dir(self, tmp_path):
+    def test_build_local_server_env_ignores_deprecated_vllm_dir(self, tmp_path):
         repo_root = tmp_path / "repo"
         entrypoint = repo_root / "vllm-tt-metal" / "src" / "run_vllm_api_server.py"
         entrypoint.parent.mkdir(parents=True)
@@ -324,10 +248,15 @@ class TestRunLocalServer:
             repo_root=repo_root,
         )
 
+        # --vllm-dir is deprecated and ignored: vLLM is an installed package in
+        # the tt-metal venv, not a source checkout, so neither the vllm_dir export
+        # nor the PYTHONPATH append survives.
         assert env["APP_DIR"] == str(repo_root)
+        assert "vllm_dir" not in env
         pythonpath_parts = env["PYTHONPATH"].split(os.pathsep)
-        assert env["vllm_dir"] == str(vllm_dir.resolve())
-        assert pythonpath_parts[-1] == str(vllm_dir.resolve())
+        assert str(vllm_dir.resolve()) not in pythonpath_parts
+        assert pythonpath_parts[0] == str(tt_metal_home.resolve())
+        assert pythonpath_parts[1] == str(repo_root)
 
     def test_build_local_server_env_uses_setup_host_default_cache_root(self, tmp_path):
         repo_root = tmp_path / "repo"
