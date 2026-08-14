@@ -28,11 +28,6 @@ from utils.adapter_merge_utils import MergeResult, merge_adapter
 MERGE_INFO_FILE_NAME = "merge_info.json"
 
 
-def _safe_dir_name(dir_name: str) -> str:
-    """Reduce `dir_name` to characters that are portable across filesystems."""
-    return re.sub(r"[^a-zA-Z0-9_.-]", "-", dir_name)
-
-
 class TrainingService(BaseJobService):
     def __init__(self):
         self.settings = get_settings()
@@ -125,10 +120,10 @@ class TrainingService(BaseJobService):
                 f"'{request.source_job_id}'"
             )
 
-        output_dir = os.path.join(
-            self._merged_models_root(),
-            self._merged_model_dir_name(request._task_id),
+        merged_model_dir_name = re.sub(
+            r"[^a-zA-Z0-9_.-]", "-", f"{self._model_name}-{request._task_id}"
         )
+        output_dir = os.path.join(self._merged_models_root(), merged_model_dir_name)
         request._adapter_path = adapter_path
         request._output_model_path = output_dir
 
@@ -182,15 +177,6 @@ class TrainingService(BaseJobService):
                 f"{result.output_dir}"
             )
             return result.output_dir
-
-    def _merged_model_dir_name(self, merge_id: str) -> str:
-        """Name a merged checkpoint `<model name>-<merge id>`.
-
-        The merge id alone keeps the directory unique; prefixing the model makes
-        the checkpoint recognizable on disk. The merge id stays the trailing
-        component so it is still recoverable from the path.
-        """
-        return _safe_dir_name(f"{self._model_name}-{merge_id}")
 
     def _merged_models_root(self) -> str:
         cache_root = os.getenv("CACHE_ROOT", ".")
