@@ -12,9 +12,9 @@
 // socket → DisaggregationService → resolvePrefillSession → SessionManager →
 // memory queue is working.
 //
-// NOTE: Cannot use TestServer here because its warmupTokenizers() sends an
-// HTTP chat completion request which throws in PREFILL_ONLY mode. Instead we
-// use PrefillTestServer which boots the stack without HTTP warmup.
+// NOTE: Cannot use TestServer here because its Dynamo chat ingress is rejected
+// in PREFILL_ONLY mode. Instead we use PrefillTestServer which boots the stack
+// without HTTP/Dynamo frontend traffic.
 
 #include <gtest/gtest.h>
 

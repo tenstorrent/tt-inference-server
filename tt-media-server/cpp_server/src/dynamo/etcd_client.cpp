@@ -518,4 +518,21 @@ void EtcdClient::deleteRange(const std::string& key) {
                timeout_ms_);
 }
 
+bool EtcdClient::hasKeysWithPrefix(const std::string& prefix) {
+  Json::Value body(Json::objectValue);
+  body["key"] = base64Encode(prefix);
+  body["range_end"] = base64Encode(prefixRangeEnd(prefix));
+  body["keys_only"] = true;
+  body["limit"] = 1;
+  auto resp = parseJson(
+      httpPostJson(host_, port_, "/v3/kv/range", serialize(body), timeout_ms_));
+  if (resp.isMember("kvs") && resp["kvs"].isArray()) {
+    return !resp["kvs"].empty();
+  }
+  if (resp.isMember("count")) {
+    return toInt64(resp["count"]) > 0;
+  }
+  return false;
+}
+
 }  // namespace tt::dynamo

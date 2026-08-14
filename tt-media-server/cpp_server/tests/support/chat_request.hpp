@@ -69,7 +69,8 @@ class ChatRequest {
     root["messages"] = std::move(msgs);
     if (maxTokens_) root["max_tokens"] = *maxTokens_;
     if (temperature_) root["temperature"] = *temperature_;
-    if (stream_) root["stream"] = true;
+    // Always emit stream so Dynamo does not default omitted → true.
+    root["stream"] = stream_;
 
     Json::StreamWriterBuilder w;
     w["indentation"] = "";
