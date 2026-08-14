@@ -38,8 +38,11 @@ def setup_sdxl_worker_environment(worker_id: int, config):
     """
     from device_specs import descriptor_path, get_board_spec
 
-    os.environ["TT_METAL_HOME"] = os.getcwd()
-    os.environ["PYTHONPATH"] = os.getcwd()
+    # After the relocation out of tt-metal, cwd is this server's directory, not a
+    # tt-metal checkout, so cwd is the wrong value for both of these. Respect what
+    # the launcher exported; fall back to cwd for pre-relocation behaviour.
+    os.environ.setdefault("TT_METAL_HOME", os.getcwd())
+    os.environ.setdefault("PYTHONPATH", os.getcwd())
 
     # Set device visibility EARLY (before any ttnn operations)
     device_ids_str = ",".join(map(str, config.device_ids))
@@ -60,8 +63,11 @@ def setup_wan_worker_environment(worker_id: int, config):
     """
     from device_specs import descriptor_path, get_board_spec
 
-    os.environ["TT_METAL_HOME"] = os.getcwd()
-    os.environ["PYTHONPATH"] = os.getcwd()
+    # After the relocation out of tt-metal, cwd is this server's directory, not a
+    # tt-metal checkout, so cwd is the wrong value for both of these. Respect what
+    # the launcher exported; fall back to cwd for pre-relocation behaviour.
+    os.environ.setdefault("TT_METAL_HOME", os.getcwd())
+    os.environ.setdefault("PYTHONPATH", os.getcwd())
 
     device_ids_str = ",".join(map(str, config.device_ids))
     os.environ["TT_VISIBLE_DEVICES"] = device_ids_str
@@ -79,8 +85,11 @@ def setup_sd35_worker_environment(worker_id: int, config):
     All 8 device IDs are made visible so the mesh device can be opened with
     the full 2x4 topology. No per-device isolation needed.
     """
-    os.environ["TT_METAL_HOME"] = os.getcwd()
-    os.environ["PYTHONPATH"] = os.getcwd()
+    # After the relocation out of tt-metal, cwd is this server's directory, not a
+    # tt-metal checkout, so cwd is the wrong value for both of these. Respect what
+    # the launcher exported; fall back to cwd for pre-relocation behaviour.
+    os.environ.setdefault("TT_METAL_HOME", os.getcwd())
+    os.environ.setdefault("PYTHONPATH", os.getcwd())
 
     # SD3.5 needs the full 2x4 mesh (all 8 chips: 4 PCIe L + 4 ethernet R).
     # Do NOT restrict TT_VISIBLE_DEVICES — let UMD discover the full topology.
