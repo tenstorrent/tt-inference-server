@@ -447,7 +447,7 @@
       "ci": {
         "weekly": {
           "devices": [
-            "GALAXY"
+            "BH_GALAXY"
           ]
         }
       }

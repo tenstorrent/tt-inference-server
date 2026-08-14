@@ -144,7 +144,7 @@
                 "minimax_h3"
             ],
             "devices": [
-                "galaxy"
+                "blackhole_galaxy"
             ],
             "num_of_devices": 1,
             "test_cases": [

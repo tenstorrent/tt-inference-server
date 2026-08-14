@@ -166,7 +166,7 @@ class TestVideoMatrixExpansion:
         "mochi-p150x4",
         "mochi-p150x8",
         "mochi-p300x2",
-        "minimax-h3-galaxy",
+        "minimax-h3-blackhole_galaxy",
     }
 
     # Expected VideoGenerationLoadTest targets per expanded suite: the base
@@ -273,7 +273,7 @@ class TestVideoMatrixExpansion:
             ], f"{suite_id}: unexpected templates {templates}"
 
     def test_minimax_suite_uses_v1_contract_and_media_checks(self):
-        suite = self._suite_map()["minimax-h3-galaxy"]
+        suite = self._suite_map()["minimax-h3-blackhole_galaxy"]
         templates = [tc["template"] for tc in suite["test_cases"]]
         assert templates == [
             "MiniMaxH3CreateContractTest",

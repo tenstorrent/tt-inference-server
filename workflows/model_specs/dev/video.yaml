@@ -253,11 +253,9 @@ templates:
       max_concurrency: 1
       max_context: 65536  # 64 * 1024
       default_impl: true
+  status: FUNCTIONAL
 
-# MiniMax-H3 t2va runs on one single-host 4x8 Blackhole Galaxy mesh. The
-# workflow device remains GALAXY to match the media-server ModelConfigs key;
-# the device-specific overrides below prevent the generic Galaxy defaults from
-# selecting Wormhole architecture/mesh settings.
+# MiniMax-H3 t2va runs on one single-host 4x8 Blackhole Galaxy mesh.
 - weights:
     - MiniMax-H3
   impl: tt_transformers
@@ -273,7 +271,7 @@ templates:
     # Line-cabled deployments set this to "linear"; omitted defaults to "ring".
     # MINIMAX_H3_FABRIC_TOPOLOGY: linear
   device_model_specs:
-    - device: GALAXY
+    - device: BLACKHOLE_GALAXY
       max_concurrency: 1
       max_context: 65536
       default_impl: true

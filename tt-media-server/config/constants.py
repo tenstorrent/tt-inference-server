@@ -976,7 +976,7 @@ ModelConfigs = {
         "request_processing_timeout_seconds": 5000,
     },
     # One device-id group -> one worker -> requests serialise on the mesh.
-    (ModelRunners.TT_MINIMAX_H3_T2VA, DeviceTypes.GALAXY): {
+    (ModelRunners.TT_MINIMAX_H3_T2VA, DeviceTypes.BLACKHOLE_GALAXY): {
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,

@@ -241,7 +241,7 @@
             ],
             "category": "VIDEO",
             "compatible_devices": [
-                "galaxy"
+                "blackhole_galaxy"
             ]
         },
         "sdxl": {
