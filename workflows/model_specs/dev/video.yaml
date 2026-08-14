@@ -237,3 +237,31 @@ templates:
       max_context: 65536  # 64 * 1024
       default_impl: true
   status: FUNCTIONAL
+
+# MiniMax-H3 t2va runs on one single-host 4x8 Blackhole Galaxy mesh. The
+# workflow device remains GALAXY to match the media-server ModelConfigs key;
+# the device-specific overrides below prevent the generic Galaxy defaults from
+# selecting Wormhole architecture/mesh settings.
+- weights:
+    - MiniMax-H3
+  impl: tt_transformers
+  hf_weights_repo: MiniMaxAI/MiniMax-H3
+  min_disk_gb: 220  # ~120 GB snapshot + ~68 GB persistent ttnn cache + overhead
+  model_type: VIDEO
+  inference_engine: MEDIA
+  env_vars:
+    MODEL_RUNNER: tt-minimax-h3-t2va
+    USE_ASYNC_VIDEO: "true"
+    MAX_QUEUE_SIZE: "2"
+    TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache
+    # Line-cabled deployments set this to "linear"; omitted defaults to "ring".
+    # MINIMAX_H3_FABRIC_TOPOLOGY: linear
+  device_model_specs:
+    - device: GALAXY
+      max_concurrency: 1
+      max_context: 65536
+      default_impl: true
+      env_vars:
+        ARCH_NAME: blackhole
+        MESH_DEVICE: "(4, 8)"
+  status: FUNCTIONAL

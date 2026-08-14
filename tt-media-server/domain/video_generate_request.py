@@ -24,7 +24,9 @@ class VideoGenerateRequest(BaseRequest):
     # rather than an enum so a per-model validator can reject with a message naming what it does
     # serve -- a 422 from pydantic on a shared field cannot say that.
     aspect_ratio: Optional[str] = Field(default=None, examples=["16:9", "9:16", "1:1"])
-    duration_seconds: Optional[int] = Field(default=None, ge=1, le=60, examples=[5, 10, 15])
+    duration_seconds: Optional[int] = Field(
+        default=None, ge=1, le=60, examples=[5, 10, 15]
+    )
 
     # Unknown fields are refused for MiniMax-H3 rather than ignored. Pydantic's default is to
     # drop them silently, which meant `{"resolution": "1080P", "model": "NotMiniMax", "duration": 9}`

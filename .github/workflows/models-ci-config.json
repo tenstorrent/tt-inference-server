@@ -403,6 +403,16 @@
         }
       }
     },
+    "MiniMax-H3": {
+      "inference_engine": "MEDIA",
+      "ci": {
+        "weekly": {
+          "devices": [
+            "GALAXY"
+          ]
+        }
+      }
+    },
     "bge-large-en-v1.5": {
       "inference_engine": "MEDIA",
       "ci": {
