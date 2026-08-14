@@ -6,7 +6,7 @@ from typing import Optional
 
 from config.settings import get_settings
 from domain.base_request import BaseRequest
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 
 class VideoGenerateRequest(BaseRequest):
@@ -25,6 +25,27 @@ class VideoGenerateRequest(BaseRequest):
     # serve -- a 422 from pydantic on a shared field cannot say that.
     aspect_ratio: Optional[str] = Field(default=None, examples=["16:9", "9:16", "1:1"])
     duration_seconds: Optional[int] = Field(default=None, ge=1, le=60, examples=[5, 10, 15])
+
+    # Unknown fields are refused for MiniMax-H3 rather than ignored. Pydantic's default is to
+    # drop them silently, which meant `{"resolution": "1080P", "model": "NotMiniMax", "duration": 9}`
+    # came back 202 with none of it applied -- the caller believes it asked for something it did
+    # not get, which is worse than an error. Scoped to H3 by runner rather than set as
+    # `extra="forbid"` on the class, because Wan clients share this model and may send fields this
+    # deployment does not read.
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_unknown_fields(cls, data):
+        if not isinstance(data, dict) or not _is_minimax_h3():
+            return data
+        unknown = sorted(set(data) - set(cls.model_fields))
+        if unknown:
+            known = ", ".join(sorted(cls.model_fields))
+            raise ValueError(
+                f"unknown field(s) for MiniMax-H3 t2va: {', '.join(unknown)}. "
+                f"This deployment reads: {known}. Note `duration` is not one of them -- the field "
+                "is `duration_seconds` -- and resolution is selected with `aspect_ratio`."
+            )
+        return data
 
     # Admission-time validation. The device worker validates too (it owns the shape it warmed),
     # but that happens after the request is queued, so the client would get a 202 and a failed job
@@ -49,8 +70,8 @@ class VideoGenerateRequest(BaseRequest):
 
         if value not in MINIMAX_H3_DURATIONS_S:
             raise ValueError(
-                "duration_seconds must be one of "
-                f"{', '.join(str(d) for d in MINIMAX_H3_DURATIONS_S)}; got {value}"
+                f"duration_seconds must be an integer from {min(MINIMAX_H3_DURATIONS_S)} to "
+                f"{max(MINIMAX_H3_DURATIONS_S)}; got {value}"
             )
         return value
 

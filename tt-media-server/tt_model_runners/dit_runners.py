@@ -1202,9 +1202,8 @@ class TTMiniMaxH3Runner(TTDiTRunner):
             seconds = MINIMAX_H3_DEFAULT_DURATION_S
         elif seconds not in MINIMAX_H3_DURATIONS_S:
             raise ValueError(
-                f"duration_seconds must be one of "
-                f"{', '.join(str(d) for d in MINIMAX_H3_DURATIONS_S)}; got {seconds}. "
-                "Only these land on a whole 17n + 5 frame count, and each is warmed separately."
+                f"duration_seconds must be an integer from {min(MINIMAX_H3_DURATIONS_S)} to "
+                f"{max(MINIMAX_H3_DURATIONS_S)}; got {seconds}"
             )
 
         height, width = resolve_canvas_size(*ratio)

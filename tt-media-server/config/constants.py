@@ -431,9 +431,12 @@ MINIMAX_H3_FRAME_OFFSET = 5
 MINIMAX_H3_ASPECT_RATIOS = ((21, 9), (16, 9), (4, 3), (1, 1), (3, 4), (9, 16))
 MINIMAX_H3_DEFAULT_ASPECT_RATIO = (16, 9)
 
-# Durations in seconds. The model's own bounds are 5..15 s; these are the three that land on a
-# whole 17n+5 frame count (124 / 243 / 362) without rounding a request into a different shape.
-MINIMAX_H3_DURATIONS_S = (5, 10, 15)
+# Durations in seconds: every integer the MiniMax API accepts. The frame count is not free --
+# the video VAE encodes in 17-frame chunks, so only `17n + 5` counts exist and `align_num_frames`
+# rounds a request UP to the next one. The served clip is therefore >= the requested duration,
+# by up to 0.67 s (13 s -> 13.667 s); 8 s is the only exact fit (192 frames). Rounding up rather
+# than down is deliberate: a caller asking for 10 s should never be handed 9.4 s.
+MINIMAX_H3_DURATIONS_S = tuple(range(4, 16))
 MINIMAX_H3_DEFAULT_DURATION_S = 5
 
 
