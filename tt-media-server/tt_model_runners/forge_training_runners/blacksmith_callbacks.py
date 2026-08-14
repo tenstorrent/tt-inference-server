@@ -3,10 +3,6 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 """Callbacks bridging tt-blacksmith's ``Trainer`` to the fine-tuning job API.
-
-``TrainerTrainingLoraRunner`` builds these once during warmup and reuses them for
-every job, so per-request state arrives through ``bind()`` rather than
-``__init__``.
 """
 
 import os
@@ -44,11 +40,6 @@ class JobCallback(Callback):
 
 class JobMetricsCallback(JobCallback):
     """Feeds train/validation losses to the job's metrics and logs.
-
-    blacksmith's ``TrainingLogger`` only writes to stdout and W&B, so job-scoped
-    reporting has to happen here. Loss accumulation mirrors blacksmith's own
-    ``MetricsCallback``: the logged value is the mean over the window of each
-    step's mean micro-batch loss.
 
     Progress (epoch/step, validation batch index) is logged every step so the
     job stream moves while tqdm stays on process stdout. Loss itself is only
@@ -151,10 +142,6 @@ class JobMetricsCallback(JobCallback):
 
 class AdapterCheckpointCallback(JobCallback):
     """Saves the LoRA adapter every ``save_interval`` optimizer steps.
-
-    Not blacksmith's ``CheckpointCallback``: that writes ``.pt`` files under
-    ``{project_dir}/checkpoints/``, while ``TrainingService.get_checkpoint_download_path``
-    requires ``{_output_model_path}/{checkpoint_id}`` to be a directory it can zip.
     """
 
     def __init__(self, logger, metrics: JobMetricsCallback):
@@ -219,10 +206,6 @@ class AdapterCheckpointCallback(JobCallback):
 
 class JobControlCallback(JobCallback):
     """Enforces ``max_steps`` and cancellation, and captures real failures.
-
-    The trainer only knows ``num_epochs`` and has no stop signal, and
-    ``Trainer._train_lifecycle`` swallows exceptions after notifying callbacks,
-    so a failure has to be stashed here for ``run()`` to re-raise.
     """
 
     def _reset(self) -> None:
