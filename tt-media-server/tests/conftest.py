@@ -338,12 +338,12 @@ for submodule, mock in submodules.items():
 
 
 def _install_blacksmith_stubs():
-    """Stand in for tt-blacksmith, which only ships in the forge worker image.
+    """Import shims for tt-blacksmith, which only ships in the forge worker image.
 
     These cannot be MagicMocks like the modules above: trainer_training_lora_runner
     subclasses LoraLLMTrainer and Callback at import time, and a MagicMock is not
-    a usable base class. The config stubs just record their kwargs, which is what
-    the config-mapping tests assert on.
+    a usable base class. Config stubs just record kwargs. Dataset helpers are
+    MagicMocks; tests assert they are called, not that blacksmith's logic is right.
     """
 
     torch_dtypes = {"torch.bfloat16": "bfloat16", "torch.float32": "float32"}
@@ -414,52 +414,6 @@ def _install_blacksmith_stubs():
         def train(self):
             pass
 
-    def normalize_file_type(file_type: str) -> str:
-        if file_type == "jsonl":
-            return "json"
-        return file_type
-
-    def resolve_column_mapping(template_name, column_mapping, dataset_columns):
-        template_keys = {
-            "alpaca": {
-                "required": {"instruction", "output"},
-                "optional": {"input"},
-            }
-        }
-        if template_name not in template_keys:
-            raise ValueError(
-                f"Selected template is unsupported:  {template_name}. "
-                f"You should use one of the available templates: {list(template_keys)}"
-            )
-        required_keys = template_keys[template_name]["required"]
-        optional_keys = template_keys[template_name]["optional"]
-        all_keys = required_keys.union(optional_keys)
-        resolved = column_mapping.copy() if column_mapping else {}
-        if resolved:
-            missing_keys = set(resolved.values()) - dataset_columns
-            if missing_keys:
-                raise ValueError(
-                    f"Column mapping refers to non-existent dataset columns: "
-                    f"{sorted(missing_keys)}. Dataset columns: {sorted(dataset_columns)}."
-                )
-            extra_keys = set(resolved.keys()) - all_keys
-            if extra_keys:
-                raise ValueError(
-                    f"Column mapping contains unsupported keys: {sorted(extra_keys)}. "
-                    f"Supported keys for template '{template_name}': {sorted(all_keys)}."
-                )
-        for key in required_keys.union(optional_keys):
-            if key in dataset_columns and key not in resolved:
-                resolved[key] = key
-        still_missing_required = required_keys - set(resolved.keys())
-        if still_missing_required:
-            raise ValueError(
-                f"Column mapping is missing required keys: "
-                f"{sorted(still_missing_required)}. "
-                f"Required keys for template '{template_name}': {sorted(required_keys)}."
-            )
-        return resolved
-
     def module(name, **attrs):
         stub = types.ModuleType(name)
         stub.__path__ = []
@@ -473,8 +427,8 @@ def _install_blacksmith_stubs():
     module("blacksmith.datasets.torch.custom")
     module(
         "blacksmith.datasets.torch.custom.custom_dataset_utils",
-        normalize_file_type=normalize_file_type,
-        resolve_column_mapping=resolve_column_mapping,
+        normalize_file_type=MagicMock(),
+        resolve_column_mapping=MagicMock(),
     )
     module("blacksmith.tools")
     module(

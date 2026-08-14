@@ -2,9 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-import json
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 from config.constants import DatasetLoaders, ModelNames, SupportedModels
@@ -52,22 +50,9 @@ def _request(**overrides):
     return request
 
 
-def _write_json_dataset(path: Path, rows: list[dict]) -> str:
-    path.write_text(json.dumps(rows))
-    return str(path)
-
-
 @pytest.fixture
 def runner():
     return _build_runner(_settings())
-
-
-@pytest.fixture
-def alpaca_train_path(tmp_path):
-    return _write_json_dataset(
-        tmp_path / "train.json",
-        [{"instruction": "Say hi", "input": "", "output": "Hello"}],
-    )
 
 
 class _Loss:
@@ -257,91 +242,84 @@ class TestValidate:
         with pytest.raises(ValueError, match="Unsupported dataset_loader"):
             runner._validate(_request(dataset_loader="nonexistent"))
 
-    def test_accepts_a_custom_dataset(self, runner, alpaca_train_path):
-        runner._validate(
-            _request(
-                dataset_loader=DatasetLoaders.CUSTOM.value,
-                train_dataset_path=alpaca_train_path,
-                file_type="json",
-                template="alpaca",
-            )
+    def test_calls_resolve_column_mapping_for_a_custom_dataset(self, runner):
+        request = _request(
+            dataset_loader=DatasetLoaders.CUSTOM.value,
+            train_dataset_path="/datasets/train.json",
+            file_type="json",
+            template="alpaca",
+            column_mapping={"instruction": "prompt"},
         )
+        columns = {"prompt", "response"}
+        with patch(f"{RUNNER_MODULE}.resolve_column_mapping") as resolve, patch.object(
+            runner, "_dataset_columns", return_value=columns
+        ) as dataset_columns:
+            runner._validate(request)
 
-    def test_accepts_a_custom_dataset_with_column_mapping(self, runner, tmp_path):
-        train_path = _write_json_dataset(
-            tmp_path / "mapped_train.json",
-            [{"prompt": "Say hi", "response": "Hello"}],
+        dataset_columns.assert_called_once_with("/datasets/train.json", "json")
+        resolve.assert_called_once_with("alpaca", request.column_mapping, columns)
+
+    def test_calls_resolve_column_mapping_for_the_val_dataset_too(self, runner):
+        request = _request(
+            dataset_loader=DatasetLoaders.CUSTOM.value,
+            train_dataset_path="/datasets/train.json",
+            val_dataset_path="/datasets/val.json",
+            file_type="json",
+            template="alpaca",
         )
-        runner._validate(
-            _request(
-                dataset_loader=DatasetLoaders.CUSTOM.value,
-                train_dataset_path=train_path,
-                file_type="json",
-                template="alpaca",
-                column_mapping={"instruction": "prompt", "output": "response"},
-            )
+        columns = {
+            "/datasets/train.json": {"instruction", "output"},
+            "/datasets/val.json": {"instruction", "output", "input"},
+        }
+        with patch(f"{RUNNER_MODULE}.resolve_column_mapping") as resolve, patch.object(
+            runner,
+            "_dataset_columns",
+            side_effect=lambda path, file_type: columns[path],
+        ):
+            runner._validate(request)
+
+        assert resolve.call_args_list == [
+            call("alpaca", None, columns["/datasets/train.json"]),
+            call("alpaca", None, columns["/datasets/val.json"]),
+        ]
+
+    def test_propagates_errors_from_resolve_column_mapping(self, runner):
+        request = _request(
+            dataset_loader=DatasetLoaders.CUSTOM.value,
+            train_dataset_path="/datasets/train.json",
+            file_type="json",
+            template="alpaca",
         )
+        with patch(
+            f"{RUNNER_MODULE}.resolve_column_mapping",
+            side_effect=ValueError("from blacksmith"),
+        ), patch.object(runner, "_dataset_columns", return_value={"instruction"}):
+            with pytest.raises(ValueError, match="from blacksmith"):
+                runner._validate(request)
 
-    def test_rejects_unsupported_template(self, runner, alpaca_train_path):
-        with pytest.raises(ValueError, match="unsupported"):
-            runner._validate(
-                _request(
-                    dataset_loader=DatasetLoaders.CUSTOM.value,
-                    train_dataset_path=alpaca_train_path,
-                    file_type="json",
-                    template="chat",
-                )
-            )
 
-    def test_rejects_missing_required_columns(self, runner, tmp_path):
-        train_path = _write_json_dataset(
-            tmp_path / "incomplete.json",
-            [{"instruction": "Say hi"}],
+class TestDatasetColumns:
+    def test_returns_keys_from_the_first_row(self, runner):
+        with patch(
+            f"{RUNNER_MODULE}.normalize_file_type", return_value="json"
+        ) as normalize, patch(
+            f"{RUNNER_MODULE}.load_dataset",
+            return_value=[{"instruction": "Say hi", "output": "Hello"}],
+        ) as load:
+            columns = runner._dataset_columns("/datasets/train.jsonl", "jsonl")
+
+        normalize.assert_called_once_with("jsonl")
+        load.assert_called_once_with(
+            "json", data_files={"data": "/datasets/train.jsonl"}, split="data"
         )
-        with pytest.raises(ValueError, match="missing required keys"):
-            runner._validate(
-                _request(
-                    dataset_loader=DatasetLoaders.CUSTOM.value,
-                    train_dataset_path=train_path,
-                    file_type="json",
-                    template="alpaca",
-                )
-            )
+        assert columns == {"instruction", "output"}
 
-    def test_rejects_column_mapping_to_missing_dataset_columns(
-        self, runner, alpaca_train_path
-    ):
-        with pytest.raises(ValueError, match="non-existent dataset columns"):
-            runner._validate(
-                _request(
-                    dataset_loader=DatasetLoaders.CUSTOM.value,
-                    train_dataset_path=alpaca_train_path,
-                    file_type="json",
-                    template="alpaca",
-                    column_mapping={
-                        "instruction": "prompt",
-                        "output": "response",
-                    },
-                )
-            )
-
-    def test_rejects_val_dataset_with_incompatible_columns(
-        self, runner, tmp_path, alpaca_train_path
-    ):
-        val_path = _write_json_dataset(
-            tmp_path / "val.json",
-            [{"text": "no alpaca columns here"}],
-        )
-        with pytest.raises(ValueError, match="missing required keys"):
-            runner._validate(
-                _request(
-                    dataset_loader=DatasetLoaders.CUSTOM.value,
-                    train_dataset_path=alpaca_train_path,
-                    val_dataset_path=val_path,
-                    file_type="json",
-                    template="alpaca",
-                )
-            )
+    def test_rejects_an_empty_dataset(self, runner):
+        with patch(f"{RUNNER_MODULE}.normalize_file_type", return_value="json"), patch(
+            f"{RUNNER_MODULE}.load_dataset", return_value=[]
+        ):
+            with pytest.raises(ValueError, match="empty"):
+                runner._dataset_columns("/datasets/train.json", "json")
 
 
 class TestTrainingRequest:
