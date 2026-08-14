@@ -3,7 +3,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import inspect
-import json
 import re
 import sys
 import types
@@ -198,19 +197,6 @@ for module in mock_modules:
             mock.SamplingParams = MagicMock()
             mock.sampling_params = MagicMock()
             mock.sampling_params.RequestOutputKind = MagicMock()
-        elif module == "datasets":
-
-            def _load_dataset(file_type, data_files=None, split=None):
-                path = data_files["data"]
-                with open(path) as handle:
-                    if str(path).endswith(".jsonl"):
-                        rows = [json.loads(line) for line in handle if line.strip()]
-                    else:
-                        data = json.load(handle)
-                        rows = data if isinstance(data, list) else [data]
-                return rows
-
-            mock.load_dataset = _load_dataset
 
         sys.modules[module] = mock
 
