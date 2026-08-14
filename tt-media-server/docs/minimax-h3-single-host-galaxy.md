@@ -112,6 +112,11 @@ export MINIMAX_H3_MODEL_PATH=/path_to/MiniMax-H3-diffusers
 export TT_DIT_CACHE_DIR=/path_to/tt_dit_cache
 
 export USE_ASYNC_VIDEO=true
+
+# Optional. Every `Settings` field is env-overridable; queue depth defaults to 5000, which is
+# effectively unbounded buffering. A small value keeps the accelerator fed without letting a
+# request sit for hours behind a queue.
+export MAX_QUEUE_SIZE=2
 ```
 
 Four of these bite if wrong:
@@ -215,7 +220,10 @@ ffmpeg -v error -i out.mp4 -map 0:v:0 -f rawvideo -y /dev/null -stats 2>&1 | tai
 | 3:4 | 768x1024 | 52.0 s | 121.7 s | 219.9 s |
 | 9:16 | 768x1344 | 69.1 s | 174.8 s | 324.2 s |
 
-Warm compute per request, measured 2026-08-13 on `9c96923d1bb`. Two things the numbers say: cost
+Warm compute per request, measured 2026-08-13 on `9c96923d1bb`. Durations `4`..`15` are all
+servable; 5 / 10 / 15 are shown because they are what was measured. End-to-end latency tracks these
+closely -- a warm request measured 72 s E2EL against 70 s of compute, so budget ~2 s of non-compute
+overhead plus any queue wait. Two things the numbers say: cost
 tracks pixel count and sequence length only -- equal-pixel ratios agree to within 0.6 %, so
 orientation is free -- and duration is superlinear, 2.92x the frames costing 4.67x at 1 MPix but
 3.67x at 0.59 MPix, because denoise carries a quadratic term while VAE and audio decode stay linear.
@@ -251,7 +259,8 @@ row drops to 0.0 s.
 | constraint | detail |
 |---|---|
 | `aspect_ratio` | One of `21:9`, `16:9`, `4:3`, `1:1`, `3:4`, `9:16`. Anything else is a 422 listing those. The model accepts 1:4..4:1, but only these are calibrated. Omitted gives `16:9`. |
-| `duration_seconds` | `5`, `10` or `15`. Anything else is a 422. Only these land on a whole `17n + 5` frame count (124 / 243 / 362) without rounding a request into a different shape. Omitted gives `5`. |
+| `duration_seconds` | Any integer `4`..`15` -- what the MiniMax API accepts. Anything else is a 422. Omitted gives `5`. The video VAE encodes in 17-frame chunks, so only `17n + 5` frame counts exist and a request rounds **up** to the next one: the clip is never shorter than asked, by at most 0.67 s (`13` -> 13.667 s). `8` is the only exact fit (192 frames). |
+| Unknown fields | Rejected, not ignored. `{"resolution": "1080P", "duration": 9}` is a 422 naming the fields this deployment reads -- silently dropping them would tell a caller it got something it did not. Note the field is `duration_seconds`, and resolution is chosen with `aspect_ratio`. |
 | Resolution | 768P throughout: short edge 768 from 16:9 to 9:16, area capped at ~1 MPix for wider (21:9 is 1536x672). Derived by the model's `resolve_canvas_size`, not settable directly. |
 | `num_inference_steps` | **Not accepted.** Sending it at any value -- including 50 -- is a 422. The deployment always runs 50: the AdaLN modulation table is precomputed per step count. |
 | Warmup | Nothing is warmed by default; the first request per shape compiles. See section 6. |
