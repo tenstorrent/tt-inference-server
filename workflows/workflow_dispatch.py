@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import shlex
 import sys
 from pathlib import Path
@@ -358,6 +359,12 @@ def _engine_run_argv(
     """
     argv = [
         str(run_workflows_py),
+        # run_workflows.py defaults to INFO, which hides the readiness probe's
+        # per-attempt logging entirely — a poll that can run for its full
+        # timeout then looks identical to a hang. Honour TT_WORKFLOW_LOG_LEVEL
+        # so CI can ask for DEBUG without a code change.
+        "--log-level",
+        os.environ.get("TT_WORKFLOW_LOG_LEVEL", "INFO"),
         "--model",
         model_spec.model_name,
         "--workflow",
