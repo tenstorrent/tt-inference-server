@@ -149,6 +149,7 @@ class ModelRunners(Enum):
     TT_XLA_VIT = "tt-xla-vit"
     TT_XLA_YOLOX_NANO = "tt-xla-yolox-nano"
     TRAINING_LORA = "training-lora"
+    TRAINER_TRAINING_LORA = "trainer-training-lora"
     TRAINING_GEMMA_LORA = "training-gemma-lora"
     LORA_SINGLE_CHIP = "lora-single-chip"
     MOCK = "mock"
@@ -232,6 +233,7 @@ MODEL_SERVICE_RUNNER_MAP = {
     ModelServices.TRAINING: {
         ModelRunners.TRAINING_GEMMA_LORA,
         ModelRunners.TRAINING_LORA,
+        ModelRunners.TRAINER_TRAINING_LORA,
     },
     ModelServices.TEXT_TO_SPEECH: {
         ModelRunners.TT_SPEECHT5_TTS,
@@ -458,6 +460,7 @@ class JobTypes(Enum):
 class DatasetLoaders(Enum):
     SST2 = "SST2"
     ALPACA = "Alpaca"
+    CUSTOM = "Custom"
 
 
 class TrainingTrainers(Enum):
@@ -467,7 +470,11 @@ class TrainingTrainers(Enum):
 
 class ModelDisplayNames(Enum):
     GEMMA_1_1_2B_IT = "Gemma 1.1 2B Instruct"
+    LLAMA_3_2_3B = "Llama 3.2 3B"
+    LLAMA_3_2_3B_INSTRUCT = "Llama 3.2 3B Instruct"
     LLAMA_3_1_8B = "Llama 3.1 8B"
+    LLAMA_3_1_8B_INSTRUCT = "Llama 3.1 8B Instruct"
+    QWEN_3_4B = "Qwen 3 4B"
     QWEN_3_8B = "Qwen 3 8B"
 
 
@@ -1493,6 +1500,18 @@ ModelConfigs = {
         "max_batch_size": 1,
     },
     (ModelRunners.TRAINING_LORA, DeviceTypes.P300): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_2.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TRAINER_TRAINING_LORA, DeviceTypes.P150): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TRAINER_TRAINING_LORA, DeviceTypes.P300): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_2.value,

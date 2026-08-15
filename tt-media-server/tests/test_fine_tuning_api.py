@@ -2,9 +2,10 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from config.constants import DatasetLoaders
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from open_ai_api.fine_tuning import router
@@ -26,6 +27,57 @@ def client(mock_service):
     app.dependency_overrides[get_api_key] = lambda: "test-key"
     app.dependency_overrides[get_org_id] = lambda: "test-org"
     return TestClient(app)
+
+
+class TestSubmitCustomDatasetJob:
+    @pytest.fixture
+    def submit(self, client, mock_service):
+        settings = MagicMock()
+        settings.device = "p150"
+        mock_service.create_job = AsyncMock(return_value={"id": "job-1"})
+
+        def _submit(**overrides):
+            body = {
+                "device_type": "p150",
+                "dataset_loader": DatasetLoaders.CUSTOM.value,
+            }
+            body.update(overrides)
+            with patch("open_ai_api.fine_tuning.get_settings", return_value=settings):
+                return client.post("/jobs", json=body)
+
+        return _submit
+
+    def test_accepts_a_custom_dataset_path_as_given(self, submit, mock_service):
+        response = submit(
+            train_dataset_path="/datasets/train.json",
+            file_type="json",
+            template="alpaca",
+        )
+
+        assert response.status_code == 201
+        request = mock_service.create_job.call_args.args[1]
+        assert request.train_dataset_path == "/datasets/train.json"
+        assert request.file_type == "json"
+        assert request.template == "alpaca"
+
+    def test_rejects_a_custom_dataset_without_a_path(self, submit):
+        assert submit(file_type="json", template="alpaca").status_code == 422
+
+    def test_rejects_a_custom_dataset_without_a_file_type(self, submit):
+        assert (
+            submit(
+                train_dataset_path="/datasets/train.json", template="alpaca"
+            ).status_code
+            == 422
+        )
+
+    def test_rejects_a_custom_dataset_without_a_template(self, submit):
+        assert (
+            submit(
+                train_dataset_path="/datasets/train.json", file_type="json"
+            ).status_code
+            == 422
+        )
 
 
 class TestGetCatalog:
