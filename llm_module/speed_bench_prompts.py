@@ -29,7 +29,9 @@ logger = logging.getLogger(__name__)
 
 SPEED_BENCH_DATASET = "nvidia/SPEED-Bench"
 TIERS = ("low_entropy", "mixed", "high_entropy")
-_SEPARATOR_TEXT = "\n\n--- Continue with the following related SPEED-Bench context ---\n\n"
+_SEPARATOR_TEXT = (
+    "\n\n--- Continue with the following related SPEED-Bench context ---\n\n"
+)
 
 
 def subset_for_length(length: int) -> str:
@@ -51,7 +53,9 @@ def load_subset_texts(subset: str, tier: str) -> List[str]:
     dataset = load_dataset(SPEED_BENCH_DATASET, name=subset, split="test")
     texts = [row["turns"][0] for row in dataset if row["category"] == tier]
     if not texts:
-        raise RuntimeError(f"{SPEED_BENCH_DATASET}:{subset} has no rows for category={tier}")
+        raise RuntimeError(
+            f"{SPEED_BENCH_DATASET}:{subset} has no rows for category={tier}"
+        )
     return texts
 
 
@@ -66,7 +70,9 @@ def render_ids(tokenizer, content: str) -> List[int]:
     return list(tokenizer.encode(rendered, add_special_tokens=False))
 
 
-def _source_ids(tokenizer, texts: Sequence[str], *, ordinal: int, minimum_tokens: int) -> List[int]:
+def _source_ids(
+    tokenizer, texts: Sequence[str], *, ordinal: int, minimum_tokens: int
+) -> List[int]:
     separator = tokenizer.encode(_SEPARATOR_TEXT, add_special_tokens=False)
     ids: List[int] = []
     index = ordinal % len(texts)
@@ -130,7 +136,9 @@ def exact_chat_content(tokenizer, source_ids: Sequence[int], target_length: int)
             actual, content = max(options, key=lambda item: item[0])
             if actual == target_length:
                 return content
-    raise RuntimeError(f"could not construct an exact {target_length}-token chat prompt")
+    raise RuntimeError(
+        f"could not construct an exact {target_length}-token chat prompt"
+    )
 
 
 def build_exact_prompts(
@@ -172,7 +180,9 @@ def write_speed_bench_prompt_file(
     """Write a ``vllm bench serve --dataset-name custom`` JSONL of exact-ISL prompts."""
     from transformers import AutoTokenizer
 
-    tokenizer = AutoTokenizer.from_pretrained(model, trust_remote_code=trust_remote_code)
+    tokenizer = AutoTokenizer.from_pretrained(
+        model, trust_remote_code=trust_remote_code
+    )
     prompts = build_exact_prompts(
         tokenizer=tokenizer, target_isl=target_isl, num_prompts=num_prompts
     )

@@ -1,5 +1,5 @@
 # additional inference server and client script requirements
 pyjwt==2.7.0
 requests==2.32.3
-# Required for the native DiffusionGemma architecture.
+# Image-wide vLLM 0.24 pin; 5.12.1 is required for native DiffusionGemma.
 transformers==5.12.1

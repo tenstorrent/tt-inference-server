@@ -105,11 +105,6 @@ def build_vllm_bench_serve_argv(
             ]
         )
 
-    # vLLM's openai-chat benchmark defaults to temperature=0.0, while
-    # DiffusionGemma's model-owned sampler accepts only the neutral value.
-    if "diffusiongemma" in server.model.lower():
-        cmd.extend(["--temperature", "1.0"])
-
     is_remote_base_url = uses_remote_base_url(
         server.url_with_port,
         server.is_remote,
@@ -175,7 +170,6 @@ class VLLMBenchDriver(LLMDriver):
         if raw is not None and server.output_block_size > 1:
             raw["tt_output_block_size"] = server.output_block_size
         return DriverResult(return_code=rc, raw=raw, raw_path=result_filename)
-
 
     @staticmethod
     def _maybe_speed_bench_prompts(

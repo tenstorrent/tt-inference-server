@@ -141,6 +141,7 @@ def test_diffusiongemma_gpqa_seed_wrapper_removes_adapter_seed():
         "model": "diffusiongemma",
         "temperature": 1.0,
     }
+    assert payload["seed"] == 42
 
 
 def test_eval_task_propagates_seed_to_server_by_default():

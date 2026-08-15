@@ -3,6 +3,8 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 import json
+import sys
+from types import SimpleNamespace
 
 from llm_module.speed_bench_prompts import (
     TIERS,
@@ -24,7 +26,9 @@ class _CharTokenizer:
         del skip_special_tokens
         return "".join(chr(i) for i in ids)
 
-    def apply_chat_template(self, messages, add_generation_prompt, enable_thinking, tokenize):
+    def apply_chat_template(
+        self, messages, add_generation_prompt, enable_thinking, tokenize
+    ):
         assert not tokenize
         assert add_generation_prompt and enable_thinking
         return f"<u>{messages[0]['content']}</u>"
@@ -80,9 +84,11 @@ def test_prompt_file_rows_are_custom_dataset_shape(tmp_path, monkeypatch):
             del model, trust_remote_code
             return _CharTokenizer()
 
-    import transformers
-
-    monkeypatch.setattr(transformers, "AutoTokenizer", _AutoTokenizer)
+    monkeypatch.setitem(
+        sys.modules,
+        "transformers",
+        SimpleNamespace(AutoTokenizer=_AutoTokenizer),
+    )
     out = module.write_speed_bench_prompt_file(
         output_path=tmp_path / "prompts.jsonl",
         model="google/diffusiongemma-26B-A4B-it",

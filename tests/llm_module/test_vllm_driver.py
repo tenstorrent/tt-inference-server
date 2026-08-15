@@ -87,26 +87,6 @@ def test_local_server_trusts_remote_code_when_spec_opts_in():
     assert cmd[cmd.index("--host") + 1] == "127.0.0.1"
 
 
-def test_diffusiongemma_benchmark_uses_random_dataset():
-    cmd, _ = build_vllm_bench_serve_argv(
-        vllm_binary="vllm",
-        config=_config(),
-        server=ServerConnection(
-            base_url="http://127.0.0.1",
-            service_port=8000,
-            model="google/diffusiongemma-26B-A4B-it",
-            is_remote=False,
-            tokenizer_trust_remote_code=True,
-        ),
-        result_filename=_result_path(),
-    )
-
-    assert cmd[cmd.index("--dataset-name") + 1] == "random"
-    assert cmd[cmd.index("--temperature") + 1] == "1.0"
-    assert "--dataset-path" not in cmd
-    assert "--sonnet-input-len" not in cmd
-
-
 def test_remote_server_passes_trust_remote_code_once():
     server = ServerConnection(
         base_url="https://console.tenstorrent.com:443",
@@ -146,8 +126,6 @@ def test_custom_dataset_path_switches_off_random():
     assert "--disable-shuffle" in cmd
     assert "--random-input-len" not in cmd
     assert "--random-output-len" not in cmd
-    # the DiffusionGemma neutral-temperature override still applies
-    assert cmd[cmd.index("--temperature") + 1] == "1.0"
 
 
 def test_without_custom_dataset_the_sweep_stays_random():

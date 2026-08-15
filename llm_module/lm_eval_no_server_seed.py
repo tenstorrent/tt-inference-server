@@ -11,8 +11,9 @@ from typing import Any
 
 def _drop_server_seed(payload: dict[str, Any]) -> dict[str, Any]:
     """Return a request payload with lm-eval's implicit seed removed."""
-    payload.pop("seed", None)
-    return payload
+    request_payload = dict(payload)
+    request_payload.pop("seed", None)
+    return request_payload
 
 
 def _patch_local_chat_completion() -> None:

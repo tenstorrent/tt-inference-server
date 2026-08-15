@@ -5272,15 +5272,18 @@ _eval_config_list = [
         tasks=[
             EvalTask(
                 # Official DiffusionGemma protocol: GPQA-Diamond 0-shot CoT with
-                # flexible extraction of the final "(X)" answer. The server-side
-                # chat template and diffusion_gemma reasoning parser expose the
-                # final answer through message.content.
+                # flexible extraction of the final "(X)" answer. Scored serving
+                # intentionally omits a reasoning parser so lm-eval receives the
+                # complete answer in message.content.
                 task_name="gpqa_diamond_cot_zeroshot",
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
                     gpu_reference_score=70.0,
-                    gpu_reference_score_ref="Internal DiffusionGemma GPU GPQA baseline",
+                    gpu_reference_score_ref=(
+                        "DiffusionGemma GPU GPQA baseline: "
+                        "https://github.com/tenstorrent/tt-shield/actions/runs/31434385185"
+                    ),
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["exact_match,flexible-extract"],
