@@ -333,7 +333,7 @@ templates:
       reasoning_parser_name: qwen3
       tool_call_parser_name: qwen3_coder
 
-# Vision (VLM) profile of the Qwen3.6-27B text spec in dev/llm.yaml. Only the fields
+# Vision (VLM) profile of the Qwen3.5-27B text spec in dev/llm.yaml. Only the fields
 # that differ from that text spec are vision-mode.
 - weights:
     - Qwen/Qwen3.5-27B
