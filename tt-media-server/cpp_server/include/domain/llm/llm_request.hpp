@@ -184,6 +184,12 @@ struct LLMRequest : BaseRequest {
   std::optional<std::string> previousResponseId;
   std::optional<std::string> responseId;
 
+  // W3C traceparent of the decode-side Sentry transaction (internal use
+  // only, not parsed from JSON). Set by the Dynamo request handler so the
+  // disaggregated decode -> prefill ZMQ hop continues the same trace.
+  // Empty when tracing is disabled or the request carried no traceparent.
+  std::string traceparentHeader;
+
   std::string toString() const {
     std::string promptInfo;
     if (auto* s = std::get_if<std::string>(&prompt)) {
