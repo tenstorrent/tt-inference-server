@@ -9,6 +9,7 @@
 `Qwen3-Embedding-4B` is also supported on hardware:
 
 - [WH Galaxy](Qwen3-Embedding-4B_galaxy.md)
+- [BH QuietBox 2](Qwen3-Embedding-4B_p300x2.md)
 - [N150](Qwen3-Embedding-4B_n150.md)
 - [N300](Qwen3-Embedding-4B_n300.md)
 

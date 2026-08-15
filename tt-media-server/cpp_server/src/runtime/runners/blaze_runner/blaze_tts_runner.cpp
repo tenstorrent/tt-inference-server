@@ -10,6 +10,7 @@
 #include <thread>
 #include <utility>
 
+#include "config/defaults.hpp"
 #include "runtime/worker/single_process_worker_metrics.hpp"
 #include "utils/logger.hpp"
 #include "utils/tts_prompt_compiler.hpp"
@@ -41,6 +42,7 @@ BlazeTtsRunner::BlazeTtsRunner(
       taskQueue(taskQueue),
       audioQueue(audioQueue),
       cancelQueue(cancelQueue),
+      voiceSampleCache(config::defaults::TTS_VOICE_SAMPLE_CACHE_SIZE),
       outputHangTimeout(this->config.outputHangTimeoutMs) {
   if (!this->scheduler) {
     throw std::invalid_argument("BlazeTtsRunner: scheduler must not be null");
@@ -218,20 +220,37 @@ void BlazeTtsRunner::drainTasks() {
 
 void BlazeTtsRunner::handleTask(ipc::tts::TtsIpcTask task) {
   if (!task.voiceWavPcm.empty()) {
-    sched::VoiceEncodeRequest request;
-    request.requestId = task.task_id;
-    request.wavPcm = std::move(task.voiceWavPcm);
-    if (!scheduler->enqueueVoiceEncode(std::move(request))) {
-      sendFinish(task.task_id, domain::tts::TtsFinishReason::Error,
-                 "TTS scheduler voice encoder queue is full");
+    if (voiceSampleCache.exists(task.voiceWavPcm)) {
+      try {
+        const auto cachedSpeechIds = voiceSampleCache.get(task.voiceWavPcm);
+        compilePromptTokens(task, cachedSpeechIds);
+      } catch (const std::exception& e) {
+        sendFinish(task.task_id, domain::tts::TtsFinishReason::Error, e.what());
+        return;
+      }
+    } else {
+      sched::VoiceEncodeRequest request;
+      request.requestId = task.task_id;
+      request.wavPcm = task.voiceWavPcm;
+      if (!scheduler->enqueueVoiceEncode(std::move(request))) {
+        sendFinish(task.task_id, domain::tts::TtsFinishReason::Error,
+                   "TTS scheduler voice encoder queue is full");
+        return;
+      }
+      pendingVoiceEncodes.emplace(task.task_id, std::move(task));
       return;
     }
-    const uint32_t taskId = task.task_id;
-    pendingVoiceEncodes.emplace(taskId, std::move(task));
-    return;
   }
 
   allocateTask(std::move(task));
+}
+
+void BlazeTtsRunner::compilePromptTokens(
+    ipc::tts::TtsIpcTask& task, const std::vector<uint32_t>& speechIds) {
+  const auto& tokenizer =
+      tt::utils::tts_tokenizer::tokenizerForPath(config.tokenizerPath);
+  task.promptTokens = tt::utils::tts_prompt_compiler::compilePromptTokens(
+      tokenizer, task.text, task.description, speechIds);
 }
 
 void BlazeTtsRunner::allocateTask(ipc::tts::TtsIpcTask task) {
@@ -299,10 +318,8 @@ void BlazeTtsRunner::handleVoiceEncodeResult(
   }
 
   try {
-    const auto& tokenizer =
-        tt::utils::tts_tokenizer::tokenizerForPath(config.tokenizerPath);
-    task.promptTokens = tt::utils::tts_prompt_compiler::compilePromptTokens(
-        tokenizer, task.text, task.description, result.speechIds);
+    voiceSampleCache.add(task.voiceWavPcm, result.speechIds);
+    compilePromptTokens(task, result.speechIds);
   } catch (const std::exception& e) {
     sendFinish(task.task_id, domain::tts::TtsFinishReason::Error, e.what());
     return;

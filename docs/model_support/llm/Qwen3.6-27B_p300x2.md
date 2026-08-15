@@ -6,6 +6,10 @@
 - [Search other llm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
+`Qwen3.6-27B` is also supported on hardware:
+
+- [BH LoudBox](Qwen3.6-27B_p150x8.md)
+
 ## Quickstart - Deploy Qwen3.6-27B Inference Server on BH QuietBox 2
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.

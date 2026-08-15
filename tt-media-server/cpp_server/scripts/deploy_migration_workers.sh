@@ -11,8 +11,7 @@
 #      worker runs on each --prefill-host and each --decode-host. Each worker's
 #      logical tag is used as its --name, --host, and --peer key. Prefill tags
 #      are used verbatim; decode hostnames are converted to tt-blaze's stable
-#      host-<crc32> table tags (opt out for testing with
-#      --non-hashed-decode-tags, which passes decode tags through verbatim).
+#      host-<crc32> table tags.
 #   3. Workers find each other through the discovery service (register-then-
 #      resolve) — a prefill resolves each decode tag to its routable host via the
 #      metadata service and dials its control channel. No MPI/collectives.
@@ -76,21 +75,26 @@ IMAGE_PULL_PARALLELISM="${IMAGE_PULL_PARALLELISM:-4}"
 # The KV tables the real worker migrates (see migration_deploy.conf). Required.
 PREFILL_TABLE="${PREFILL_TABLE:-}"
 DECODE_TABLE="${DECODE_TABLE:-}"
-# OPTIONAL FabricNode->UMD chip maps. DEVICE_MAP is a backward-compatible
-# fallback for either role-specific map.
-DEVICE_MAP="${DEVICE_MAP:-}"
+# OPTIONAL directory of per-host FabricNode->UMD chip maps
+# (<DEVICE_MAP_DIR>/<tag>.devmap). Unset => discovery-only e2e.
+DEVICE_MAP_DIR="${DEVICE_MAP_DIR:-}"
+# OPTIONAL single-file device maps per role (backport from main). When set they
+# override DEVICE_MAP_DIR resolution: every prefill worker mounts
+# PREFILL_DEVICE_MAP and every decode worker mounts DECODE_DEVICE_MAP.
 PREFILL_DEVICE_MAP="${PREFILL_DEVICE_MAP:-}"
 DECODE_DEVICE_MAP="${DECODE_DEVICE_MAP:-}"
-# A nonzero ENGINE_HANDOFF_PORT pushes the map over localhost after startup.
-# The default 0 mounts the map and passes it directly to the worker.
+# Mooncake wire transport passed through to the container launcher (which turns
+# them into --protocol / --rdma-nic). Unset => container uses its own defaults.
+PROTOCOL="${PROTOCOL:-}"
+RDMA_NICS="${RDMA_NICS:-}"
+# When DEVICE_MAP_DIR is set, deploy pushes each map over localhost
+# (engine_handoff_sender → --engine-handoff-port) after the worker starts with
+# its .pb file. 0 disables the socket path and passes --device-map as a file.
 ENGINE_HANDOFF_PORT="${ENGINE_HANDOFF_PORT:-}"
 HANDOFF_SENDER_BIN="${HANDOFF_SENDER_BIN:-}"
 # Optional table tag inputs (fabric_node_host), aligned with the host CSVs.
 # Prefill values are used verbatim. Decode values are hostnames hashed to the
 # table's host-<crc32> convention; empty => hash the corresponding decode host.
-# NON_HASHED_DECODE_TAGS is the testing-only escape hatch: when set, these tags
-# are used verbatim (no crc32) and take the place of DECODE_TAGS. Mutually
-# exclusive with DECODE_TAGS.
 PREFILL_TAGS="${PREFILL_TAGS:-}"
 DECODE_TAGS="${DECODE_TAGS:-}"
 NON_HASHED_DECODE_TAGS="${NON_HASHED_DECODE_TAGS:-}"
@@ -158,21 +162,16 @@ fabric_node_host, not on the CLI):
   --config FILE            config to source first (default ${DEFAULT_CONFIG})
   --prefill-table PATH     prefill source table (.pb)
   --decode-table PATH      cluster decode table (.pb), shared by all decodes
-  --prefill-device-map PATH
-                           OPTIONAL map file used by every prefill worker
-  --decode-device-map PATH OPTIONAL map file used by every decode worker
-  --device-map PATH        OPTIONAL shared fallback for either role-specific
-                           map. Maps contain 'mesh chip umd' per line and are
-                           mounted directly by default. Omit all maps for
-                           discovery-only
+  --device-map-dir DIR     OPTIONAL dir of per-host <tag>.devmap files ('mesh
+                           chip umd' per line). With --engine-handoff-port
+                           (default 18700 when this dir is set), deploy pushes
+                           each map over localhost after the worker loads its
+                           .pb; set --engine-handoff-port 0 for legacy
+                           --device-map file mode. Omit dir for discovery-only
   --prefill-tags CSV       table host tags per prefill host, used verbatim
                            (default prefill-<i>)
   --decode-tags CSV        owning hostnames per decode host, converted to
                            host-<crc32> tags (default: --decode-hosts values)
-  --non-hashed-decode-tags CSV
-                           TESTING ONLY: table host tags per decode host, used
-                           verbatim (skip host-<crc32> hashing). Mutually
-                           exclusive with --decode-tags
 
 Options:
   --image IMAGE            migration-worker Docker image (default ${WORKER_IMAGE})
@@ -240,12 +239,13 @@ parseArgs() {
       --config) CONFIG_FILE="$2"; shift 2 ;;
       --prefill-table) PREFILL_TABLE="$2"; shift 2 ;;
       --decode-table) DECODE_TABLE="$2"; shift 2 ;;
-      --device-map) DEVICE_MAP="$2"; shift 2 ;;
+      --device-map-dir) DEVICE_MAP_DIR="$2"; shift 2 ;;
       --prefill-device-map) PREFILL_DEVICE_MAP="$2"; shift 2 ;;
       --decode-device-map) DECODE_DEVICE_MAP="$2"; shift 2 ;;
       --prefill-tags) PREFILL_TAGS="$2"; shift 2 ;;
       --decode-tags) DECODE_TAGS="$2"; shift 2 ;;
-      --non-hashed-decode-tags) NON_HASHED_DECODE_TAGS="$2"; shift 2 ;;
+      --protocol) PROTOCOL="$2"; shift 2 ;;
+      --rdma-nics) RDMA_NICS="$2"; shift 2 ;;
       --handoff-sender) HANDOFF_SENDER_BIN="$2"; shift 2 ;;
       --engine-handoff-port) ENGINE_HANDOFF_PORT="$2"; shift 2 ;;
       --health-port) HEALTH_PORT="$2"; shift 2 ;;
@@ -314,6 +314,9 @@ validateArgs() {
       [[ -x "${HANDOFF_SENDER_BIN}" || -f "${HANDOFF_SENDER_BIN}" ]] || \
         die "engine_handoff_sender not found: ${HANDOFF_SENDER_BIN}"
     fi
+  elif [[ -n "${PREFILL_DEVICE_MAP}${DECODE_DEVICE_MAP}" ]]; then
+    # Per-role single-file maps: mount directly, no engine_handoff socket.
+    ENGINE_HANDOFF_PORT=0
   else
     ENGINE_HANDOFF_PORT=0
   fi
@@ -324,9 +327,6 @@ validateArgs() {
 # CSV -> count of non-empty fields.
 countHosts() { awk -F',' '{n=0; for(i=1;i<=NF;i++) if($i!="") n++; print n}' <<<"$1"; }
 
-# Hash a decode host to tt-blaze's stable host-<crc32> table tag. Kept in sync
-# with the make_test_table / decode-table producer so deploy tags match the
-# fabric_node_host values baked into the .pb.
 decodeTagForHost() {
   python3 - "$1" <<'PY'
 import sys
@@ -579,10 +579,17 @@ ${dockerCommand} --config \"\$config\" pull ${quotedImage}"
 
 addWorkerSlot() {
   local role="$1" host="$3" tag="$4" devmap="" table bindIp dockerCommand
-  if [[ "${role}" == "prefill" ]]; then
+  # Per-role single-file device maps (backport from main) take precedence over
+  # the tag-hashed <DEVICE_MAP_DIR>/<tag>.devmap layout when set.
+  if [[ "${role}" == "prefill" && -n "${PREFILL_DEVICE_MAP}" ]]; then
     devmap="${PREFILL_DEVICE_MAP}"
-  else
+    [[ -f "${devmap}" ]] || die "--prefill-device-map not found locally: ${devmap}"
+  elif [[ "${role}" == "decode" && -n "${DECODE_DEVICE_MAP}" ]]; then
     devmap="${DECODE_DEVICE_MAP}"
+    [[ -f "${devmap}" ]] || die "--decode-device-map not found locally: ${devmap}"
+  elif [[ -n "${DEVICE_MAP_DIR}" ]]; then
+    devmap="${DEVICE_MAP_DIR}/${tag}.devmap"
+    [[ -f "${devmap}" ]] || die "device map not found for tag '${tag}': ${devmap}"
   fi
   table="${DECODE_TABLE}"
   [[ "${role}" == "prefill" ]] && table="${PREFILL_TABLE}"
@@ -605,31 +612,20 @@ addWorkerSlot() {
 }
 
 # Map worker i of each role onto host i of that role's CSV (one worker per host)
-# and resolve its table tag. Prefill tags remain verbatim. Decode tags are
-# either:
-#   * hashed: each decode-tag input is the owning hostname and is converted to
-#     tt-blaze's host-<crc32> table tag (default; matches the fabric_node_host
-#     values baked into make_test_table's .pb output);
-#   * verbatim: --non-hashed-decode-tags supplies the fabric_node_host directly,
-#     bypassing the crc32 (testing-only escape hatch for pre-hashed tables).
+# and resolve its table tag. Prefill tags remain verbatim. Each decode tag input
+# is the owning hostname and is converted to tt-blaze's host-<crc32> table tag.
 initWorkerSlots() {
-  local -a prefill_hosts decode_hosts prefill_tags decode_tags
-  local -a non_hashed_decode_tags resolved_decode_tags
+  local -a prefill_hosts decode_hosts prefill_tags decode_tags resolved_decode_tags
   IFS=',' read -ra prefill_hosts <<<"${PREFILL_HOSTS}"
   IFS=',' read -ra decode_hosts <<<"${DECODE_HOSTS}"
   IFS=',' read -ra prefill_tags <<<"${PREFILL_TAGS}"
   IFS=',' read -ra decode_tags <<<"${DECODE_TAGS}"
-  IFS=',' read -ra non_hashed_decode_tags <<<"${NON_HASHED_DECODE_TAGS}"
   local i tag decodeHost
   # Decodes first so DECODE_TAG_LIST is complete before any prefill reads it.
   for (( i = 0; i < NUM_DECODE; i++ )); do
-    if [[ -n "${NON_HASHED_DECODE_TAGS}" ]]; then
-      tag="${non_hashed_decode_tags[$i]:-${decode_hosts[$i]}}"
-    else
-      decodeHost="${decode_tags[$i]:-${decode_hosts[$i]}}"
-      tag="$(decodeTagForHost "${decodeHost}")" || \
-        die "failed to hash decode tag hostname: ${decodeHost}"
-    fi
+    decodeHost="${decode_tags[$i]:-${decode_hosts[$i]}}"
+    tag="$(decodeTagForHost "${decodeHost}")" || \
+      die "failed to hash decode tag hostname: ${decodeHost}"
     resolved_decode_tags+=("${tag}")
     DECODE_TAG_LIST="${DECODE_TAG_LIST:+${DECODE_TAG_LIST},}${tag}"
   done
@@ -690,6 +686,52 @@ workerCmd() {
     --name "${container}"
     --network host
     --label "tt.migration.worker=${tag}"
+  )
+  # RDMA needs the userspace verbs char devices (/dev/infiniband/uverbs*,
+  # rdma_cm) exposed into the container and permission to pin memory regions
+  # (IPC_LOCK + unlimited memlock), otherwise libibverbs finds 0 HCAs and
+  # RdmaTransport aborts with "No available RNIC". Match tcp behaviour when
+  # PROTOCOL is empty/tcp so the tcp path stays unchanged.
+  # Tenstorrent hardware access: UMD (tt-metal driver) uses /dev/tenstorrent/*
+  # for PCIe control and needs a hugetlbfs mount for DMA-mapped host buffers.
+  # We bind-mount BOTH /dev/hugepages (2 MiB default hugetlbfs) and
+  # /dev/hugepages-1G (1 GiB) so UMD's SysmemManager can find a mount matching
+  # whichever hugepage size it requests. Mounting only /dev/hugepages-1G is not
+  # sufficient: UMD's find_hugepage_dir() walks /proc/mounts for a hugetlbfs
+  # entry at its requested page size, and when it can't find one it falls back
+  # to regular pages -- the exact "Sysmem (0x1000 bytes) using regular pages"
+  # warning that then causes DriscSocketLink to fail to reach RUNNING. Missing
+  # 2 MiB mount is silently ignored (skipped when /dev/hugepages is absent on
+  # the deploy host) so hosts without /dev/hugepages configured still work.
+  # Skip in dry-run so the mock/discovery-only path can still run on hosts
+  # without chips or hugepages configured.
+  if [[ "${MIGRATION_MODE}" == "device" ]]; then
+    cmd+=(
+      --device=/dev/tenstorrent
+      --mount "type=bind,source=/dev/hugepages-1G,target=/dev/hugepages-1G"
+    )
+    if [[ -d /dev/hugepages ]]; then
+      cmd+=(-v "/dev/hugepages:/dev/hugepages")
+    fi
+  fi
+  if [[ "${PROTOCOL}" == "rdma" ]]; then
+    cmd+=(
+      --device=/dev/infiniband
+      --cap-add=IPC_LOCK
+      --ulimit "memlock=-1:-1"
+    )
+    # Broadcom RoCE (bnxt_re): the distro's ibverbs-providers 39.0-1 ships a
+    # userspace plugin whose kernel uABI (v1) is too old for the modern bnxt_re
+    # kernel module (uABI v8), so libibverbs prints
+    #   "Driver bnxt_re does not support the kernel ABI of 8"
+    # and reports 0 HCAs. The hosts install a newer vendor build at
+    # /usr/local/lib/libbnxt_re-rdmav34.so; overlay it onto the container's
+    # provider path so libibverbs loads the ABI-compatible one instead.
+    local vendorBnxtRe="/usr/local/lib/libbnxt_re-rdmav34.so"
+    local containerBnxtRe="/usr/lib/x86_64-linux-gnu/libibverbs/libbnxt_re-rdmav34.so"
+    cmd+=(-v "${vendorBnxtRe}:${containerBnxtRe}:ro")
+  fi
+  cmd+=(
     -e "WORKER_ROLE=${role}"
     -e "WORKER_BIN=${WORKER_BIN}"
     -e "WORKER_TAG=${tag}"
@@ -701,6 +743,8 @@ workerCmd() {
     -e "KAFKA_BROKERS=${KAFKA_BROKERS}"
     -e "MC_TCP_BIND_ADDRESS=${bindIp}"
     -e "TT_LOG_LEVEL=${TT_LOG_LEVEL}"
+    -e "PROTOCOL=${PROTOCOL}"
+    -e "RDMA_NICS=${RDMA_NICS}"
     -v "${table}:${table}:ro"
   )
   if [[ "${MIGRATION_MODE}" == "device" ]]; then

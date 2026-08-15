@@ -83,8 +83,12 @@ ENV UV_HTTP_RETRIES=10
 # Build tt-metal - clone with minimal history, build, and clean
 # uv's cache grows to ~3G here and ~11G after the vLLM install; the builder stage is
 # discarded, but its layers still fill the container storage fs during image export.
-RUN /bin/bash -c "git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
+# A full-history clone of tt-metal has taken over an hour on CI, connection dropped ("fatal: early
+# EOF"). Only the pinned commit is needed, so fetch just that (matches the shallow
+# clone already used by tt-media-server/Dockerfile).
+RUN /bin/bash -c "git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
     && cd ${TT_METAL_HOME} \
+    && git fetch --depth 1 origin ${TT_METAL_COMMIT_SHA_OR_TAG} \
     && git checkout ${TT_METAL_COMMIT_SHA_OR_TAG} \
     && git submodule update --init --recursive \
     && bash ./build_metal.sh \

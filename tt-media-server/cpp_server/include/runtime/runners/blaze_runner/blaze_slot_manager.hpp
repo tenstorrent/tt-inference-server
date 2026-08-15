@@ -25,7 +25,7 @@ class SlotManager {
 
   SlotContext& getSlotContext(uint32_t slotId) { return slots[slotId]; }
 
-  std::string dumpSlotStates() const {
+  std::string dumpSlotStates(std::string_view schedulerDump) const {
     std::stringstream ss;
     for (size_t i = 0; i < slots.size(); ++i) {
       ss << "Slot " << i << ": " << toString(slots[i].state)
@@ -42,6 +42,8 @@ class SlotManager {
       ss << " specRejectsAtStart=" << slots[i].specRejectsAtStart << "\n";
       ss << " tokensGenerated=" << slots[i].tokensGenerated << "\n";
       ss << "----------------------------------------\n";
+      ss << "Scheduler internal dump:\n";
+      ss << schedulerDump << "\n";
     }
     return ss.str();
   }

@@ -113,9 +113,8 @@ std::vector<std::string> hostsForRequest(const IKvTable& table,
 std::vector<KvChunkLocation> allHostLocations(const IKvTable& table,
                                               const std::string& host) {
   // Walk the whole table (every slot/layer/position the config can hold), not a
-  // single request's range, so the layout — and thus the registered mirror
-  // segment — is the same for every migration. Mirrors forEachReplica's
-  // ordering so the packing is byte-identical to the per-request plan's.
+  // single request's range, so every local device this host owns is enumerated.
+  // Mirrors forEachReplica's ordering for a deterministic device set.
   const KvTableConfig& c = table.config();
   std::vector<KvChunkLocation> out;
   if (c.chunk_n_tokens == 0) return out;
