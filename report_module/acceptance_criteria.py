@@ -150,20 +150,33 @@ def task_failure_blockers(
     return blockers
 
 
-def fully_waived_task_types(categories: Iterable["CategoryResult"]) -> set:
+def fully_waived_task_types(
+    schema: ReportSchema, known_issues: Optional[Iterable[Any]] = None
+) -> set:
     """Task types whose every failure was waived, so their exit code is expected.
 
-    Spec tests only, as policy: other categories' non-zero exits always block.
-    ``waived`` also holds status-tier masking (#4830), which must not excuse a
-    task that exited non-zero.
+    Spec tests only, as policy: other categories' non-zero exits always block
+    (and ``CategoryResult.waived`` also holds #4830's status-tier masking, which
+    must never excuse one).
+
+    Deliberately walks the raw blocks rather than reading the Spec Tests
+    category: the category drops :data:`INFRA_TASK_TYPES` blocks, while the
+    task's exit code counts them, so "category clean apart from waivers" is a
+    strictly weaker claim than "every failure was waived". One unwaived
+    health/unit/stability/integration failure keeps the exit-code blocker.
     """
-    return {
-        SPEC_TESTS_TASK_TYPE
-        for category in categories
-        if category.name == CATEGORY_SPEC_TESTS
-        and category.waived
-        and not category.blockers
-    }
+    blocking = [
+        b
+        for b in schema.sections
+        if b.kind == KIND_SPEC_TESTS
+        and isinstance(b.data, Mapping)
+        and _block_test_status(b).is_blocking
+    ]
+    if not blocking:
+        return set()
+    if any(_spec_waiver(b, known_issues) is None for b in blocking):
+        return set()
+    return {SPEC_TESTS_TASK_TYPE}
 
 
 def _find_waiver(
@@ -502,9 +515,7 @@ def _failing_spec_cases(block: Block) -> List[str]:
     ]
 
 
-def _spec_waiver(
-    block: Block, known_issues: Optional[Iterable[Any]]
-) -> Optional[str]:
+def _spec_waiver(block: Block, known_issues: Optional[Iterable[Any]]) -> Optional[str]:
     """Waiver reason for this block, or None.
 
     Matches a waiver naming the suite, else only when every failing case is

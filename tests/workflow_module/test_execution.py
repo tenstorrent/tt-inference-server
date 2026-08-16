@@ -8,12 +8,15 @@ from __future__ import annotations
 
 import json
 
+from pathlib import Path
 from unittest.mock import MagicMock
 
-from report_module import ReportSchema
+from report_module import GenerateResult, ReportSchema
+from report_module.schema import Block
 from workflow_module.execution import (
     OrchestratorMetadata,
     TaskOutcome,
+    WorkflowExecution,
     WorkflowResult,
 )
 from workflow_module.workflows import ReleaseWorkflow
@@ -133,3 +136,119 @@ class TestInjectMetadata:
             "model_impl",
         ):
             assert absent not in schema.metadata
+
+
+# --- run() return code vs. spec-test waivers -------------------------------
+
+
+def _spec_block(title, task_type, status, **extra):
+    return Block(
+        kind="spec_tests",
+        title=title,
+        task_type=task_type,
+        data={"success": status == "pass", "status": status, "attempts": 1, **extra},
+    )
+
+
+def _waived_conformance():
+    """A failing VLLMParamConformanceTest suite whose only failing case is waived."""
+    return _spec_block(
+        "Vllm Chat Completions",
+        "functional",
+        "fail",
+        test_name="VLLMParamConformanceTest",
+        parameter_conformance_summary=[
+            {"test_case": "test_penalties", "status": "❌ FAIL"}
+        ],
+    )
+
+
+WAIVER = [
+    {"workflow_type": "SPEC_TESTS", "task_name": "test_penalties", "reason": "#3888"}
+]
+
+
+class _FakeWorkflow(WorkflowExecution):
+    """Drives the real acceptance + return-code path over a canned schema."""
+
+    name = "fake"
+
+    def __init__(self, blocks, outcomes, known_issues):
+        ctx = MagicMock()
+        ctx.service_port = 8000
+        ctx.output_path = "/tmp"
+        super().__init__(ctx)
+        self._blocks = blocks
+        self._outcomes = outcomes
+        self._known = known_issues
+
+    def prepare(self):
+        pass
+
+    def run_tasks(self):
+        return self._outcomes
+
+    def format_results(self):
+        return ReportSchema(metadata={"report_id": "r"}, sections=list(self._blocks))
+
+    def inject_metadata(self, schema):
+        pass
+
+    def generate_report(self, schema):
+        return GenerateResult(Path("r.md"), Path("r.json"), "")
+
+    def _known_issues(self):
+        return self._known
+
+    def _model_status(self):
+        return None
+
+
+class TestRunReturnCode:
+    """The third gate: a waived spec task must drop out of ``failed_tasks``,
+    but only when the waiver actually accounts for every failure."""
+
+    def test_waived_spec_task_returns_zero(self):
+        result = _FakeWorkflow(
+            [_waived_conformance()],
+            [TaskOutcome("spec_tests", 1, 1.0, "spec_tests")],
+            WAIVER,
+        ).run()
+        assert result.return_code == 0
+
+    def test_unwaived_infra_failure_in_same_task_returns_one(self):
+        # LoggerForkSafetyTest is invisible to the Spec Tests category
+        # (TASK_TYPE "unit"), so only the raw-block walk can catch it.
+        result = _FakeWorkflow(
+            [
+                _waived_conformance(),
+                _spec_block(
+                    "Logger Fork Safety",
+                    "unit",
+                    "fail",
+                    test_name="LoggerForkSafetyTest",
+                ),
+            ],
+            [TaskOutcome("spec_tests", 1, 1.0, "spec_tests")],
+            WAIVER,
+        ).run()
+        assert result.return_code == 1
+
+    def test_waiver_does_not_excuse_a_different_failed_task(self):
+        result = _FakeWorkflow(
+            [_waived_conformance()],
+            [
+                TaskOutcome("spec_tests", 1, 1.0, "spec_tests"),
+                TaskOutcome("evaluation", 1, 1.0, "evals"),
+            ],
+            WAIVER,
+        ).run()
+        assert result.return_code == 1
+
+    def test_unwaived_spec_failure_returns_one(self):
+        result = _FakeWorkflow(
+            [_waived_conformance()],
+            [TaskOutcome("spec_tests", 1, 1.0, "spec_tests")],
+            None,
+        ).run()
+        assert result.return_code == 1

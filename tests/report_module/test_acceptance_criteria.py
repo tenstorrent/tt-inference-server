@@ -616,8 +616,9 @@ def test_waived_spec_task_does_not_block_on_exit_code():
     # A waived suite still exits non-zero -- that is exactly what the waiver
     # covers -- so the task-level blocker must not re-block the run.
     schema = _schema(_spec_suite(["test_penalties"]))
-    _, _, cats = acceptance_criteria_check(schema, _waiver("test_penalties"))
-    waived_types = fully_waived_task_types(cats)
+    waivers = _waiver("test_penalties")
+    acceptance_criteria_check(schema, waivers)
+    waived_types = fully_waived_task_types(schema, waivers)
     assert "spec_tests" in waived_types
     blockers = task_failure_blockers(
         [("spec_tests", 1, True)], waived_task_types=waived_types
@@ -627,9 +628,9 @@ def test_waived_spec_task_does_not_block_on_exit_code():
 
 def test_unwaived_spec_task_still_blocks_on_exit_code():
     schema = _schema(_spec_suite(["test_n"]))
-    _, _, cats = acceptance_criteria_check(schema, _waiver("test_penalties"))
     blockers = task_failure_blockers(
-        [("spec_tests", 1, True)], waived_task_types=fully_waived_task_types(cats)
+        [("spec_tests", 1, True)],
+        waived_task_types=fully_waived_task_types(schema, _waiver("test_penalties")),
     )
     assert "task:spec_tests" in blockers
 
@@ -638,9 +639,9 @@ def test_crash_without_block_blocks_even_when_waived():
     # No report block means the suite never ran to completion; a waiver must
     # not launder that into a PASS.
     schema = _schema(_spec_suite(["test_penalties"]))
-    _, _, cats = acceptance_criteria_check(schema, _waiver("test_penalties"))
     blockers = task_failure_blockers(
-        [("spec_tests", 1, False)], waived_task_types=fully_waived_task_types(cats)
+        [("spec_tests", 1, False)],
+        waived_task_types=fully_waived_task_types(schema, _waiver("test_penalties")),
     )
     assert "task:spec_tests" in blockers
     assert "produced no report block" in blockers["task:spec_tests"]
@@ -650,8 +651,7 @@ def test_fully_waived_task_types_empty_when_category_has_blockers():
     # Partial coverage: one case waived, one not -> category still blocks, so
     # the task exit code must keep blocking too.
     schema = _schema(_spec_suite(["test_n", "test_logprobs"]))
-    _, _, cats = acceptance_criteria_check(schema, _waiver("test_n"))
-    assert fully_waived_task_types(cats) == set()
+    assert fully_waived_task_types(schema, _waiver("test_n")) == set()
 
 
 def test_status_tier_masked_evals_do_not_excuse_a_crashed_eval_task():
@@ -660,9 +660,78 @@ def test_status_tier_masked_evals_do_not_excuse_a_crashed_eval_task():
     # raised, so that must still block -- masking a score is not a licence to
     # ignore a crash.
     schema = _schema(_eval({"task_name": "ifeval", "accuracy_check": 3}))
-    _, _, cats = acceptance_criteria_check(schema, None, "EXPERIMENTAL")
-    assert fully_waived_task_types(cats) == set()
+    accepted, _, _ = acceptance_criteria_check(schema, None, "EXPERIMENTAL")
+    assert accepted is True
+    assert fully_waived_task_types(schema, None) == set()
     blockers = task_failure_blockers(
-        [("evaluation", 1, True)], waived_task_types=fully_waived_task_types(cats)
+        [("evaluation", 1, True)],
+        waived_task_types=fully_waived_task_types(schema, None),
     )
     assert "task:evaluation" in blockers
+
+
+def _infra_spec(test_name, task_type="unit", status="fail"):
+    """A spec block whose task_type INFRA_TASK_TYPES hides from the category."""
+    return Block(
+        kind="spec_tests",
+        title=test_name,
+        task_type=task_type,
+        data={
+            "success": False,
+            "status": status,
+            "attempts": 1,
+            "test_name": test_name,
+        },
+    )
+
+
+def test_unwaived_infra_spec_failure_keeps_exit_code_blocker():
+    # LoggerForkSafetyTest (TASK_TYPE="unit") is a prerequisite in every suite and
+    # is invisible to the Spec Tests category, but its failure is in the task's
+    # exit code. A waiver on a sibling functional case must not excuse it.
+    schema = _schema(
+        _spec_suite(["test_penalties"]), _infra_spec("LoggerForkSafetyTest")
+    )
+    waivers = _waiver("test_penalties")
+    accepted, blockers, _ = acceptance_criteria_check(schema, waivers)
+    assert accepted is True and blockers == {}  # category cannot see the infra block
+    assert fully_waived_task_types(schema, waivers) == set()
+    assert "task:spec_tests" in task_failure_blockers(
+        [("spec_tests", 1, True)],
+        waived_task_types=fully_waived_task_types(schema, waivers),
+    )
+
+
+def test_waived_infra_spec_failure_is_exempt():
+    # An infra failure named by its own waiver is covered like any other.
+    schema = _schema(
+        _spec_suite(["test_penalties"]), _infra_spec("LoggerForkSafetyTest")
+    )
+    waivers = _waiver("test_penalties") + _waiver("LoggerForkSafetyTest")
+    assert fully_waived_task_types(schema, waivers) == {"spec_tests"}
+
+
+def test_passing_infra_spec_block_does_not_defeat_the_exemption():
+    schema = _schema(
+        _spec_suite(["test_penalties"]),
+        _infra_spec("LoggerForkSafetyTest", status="pass"),
+    )
+    waivers = _waiver("test_penalties")
+    assert fully_waived_task_types(schema, waivers) == {"spec_tests"}
+
+
+def test_nameless_infra_block_is_not_waived_by_a_named_waiver():
+    # A block carrying no test_name (defensive: every BaseTest path sets one)
+    # must not match a waiver that names a task — a None suite name is not a
+    # wildcard. Only a workflow-wide waiver covers it.
+    nameless = Block(
+        kind="spec_tests",
+        title="Mystery",
+        task_type="infra",
+        data={"success": False, "status": "fail", "attempts": 1},
+    )
+    schema = _schema(_spec_suite(["test_penalties"]), nameless)
+    assert fully_waived_task_types(schema, _waiver("test_penalties")) == set()
+    assert fully_waived_task_types(
+        schema, _waiver("test_penalties") + _waiver(None)
+    ) == {"spec_tests"}
