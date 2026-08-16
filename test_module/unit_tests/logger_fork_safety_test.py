@@ -107,7 +107,16 @@ class LoggerForkSafetyTest(BaseTest):
 
             if result == "OK" and os.WIFEXITED(status) and os.WEXITSTATUS(status) == 0:
                 logger.info("Child logged without deadlock")
-                return {"success": True, "child_result": result}
+                # THROWAWAY (do not upstream): force this prerequisite to report
+                # FAIL so a release carries an unwaived infra spec-test failure
+                # alongside a waived functional one. TASK_TYPE "unit" is in
+                # INFRA_TASK_TYPES, so the Spec Tests category cannot see it and
+                # only the task exit code can.
+                return {
+                    "success": False,
+                    "child_result": result,
+                    "forced_failure": "throwaway CI demo — see PR #4882 review",
+                }
 
             killed = os.WIFSIGNALED(status)
             raise Exception(
