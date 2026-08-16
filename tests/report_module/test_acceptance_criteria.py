@@ -718,3 +718,20 @@ def test_passing_infra_spec_block_does_not_defeat_the_exemption():
     )
     waivers = _waiver("test_penalties")
     assert fully_waived_task_types(schema, waivers) == {"spec_tests"}
+
+
+def test_nameless_infra_block_is_not_waived_by_a_named_waiver():
+    # A block carrying no test_name (defensive: every BaseTest path sets one)
+    # must not match a waiver that names a task — a None suite name is not a
+    # wildcard. Only a workflow-wide waiver covers it.
+    nameless = Block(
+        kind="spec_tests",
+        title="Mystery",
+        task_type="infra",
+        data={"success": False, "status": "fail", "attempts": 1},
+    )
+    schema = _schema(_spec_suite(["test_penalties"]), nameless)
+    assert fully_waived_task_types(schema, _waiver("test_penalties")) == set()
+    assert fully_waived_task_types(
+        schema, _waiver("test_penalties") + _waiver(None)
+    ) == {"spec_tests"}
