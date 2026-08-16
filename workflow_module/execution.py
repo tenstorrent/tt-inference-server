@@ -364,12 +364,16 @@ class WorkflowExecution(ABC):
         self, schema: ReportSchema, task_outcomes: Sequence[TaskOutcome]
     ) -> Tuple[bool, dict, set]:
         model_status = self._model_status()
+        known_issues = self._known_issues()
         accepted, blockers, categories = acceptance_criteria_check(
-            schema, known_issues=self._known_issues(), model_status=model_status
+            schema, known_issues=known_issues, model_status=model_status
         )
-        waived_task_types = fully_waived_task_types(categories)
+        waived_task_types = fully_waived_task_types(schema, known_issues)
         crash_blockers = task_failure_blockers(
-            ((o.task_type, o.exit_code, o.block_kind is not None) for o in task_outcomes),
+            (
+                (o.task_type, o.exit_code, o.block_kind is not None)
+                for o in task_outcomes
+            ),
             waived_task_types=waived_task_types,
         )
         if crash_blockers:
