@@ -1238,17 +1238,26 @@ templates:
         # main_class is a full dotted path, so tt-metal on PYTHONPATH is enough
         # to import it.
         GEMMA4_31B_AUTOPORT_DIR: "models/autoports/google_gemma_4_31b"
-        # TTI's hang watchdog (TT_METAL_OPERATION_TIMEOUT_SECONDS=5.0, set by
-        # run_vllm_api_server.set_metal_timeout_env_vars) false-positives on this
+        # TTI's hang watchdog (run_vllm_api_server.set_metal_timeout_env_vars
+        # sets TT_METAL_OPERATION_TIMEOUT_SECONDS=5.0) false-positives on this
         # model's first-compile prefill. Shield run 31824560569 died in
         # multichip_decoder's `ttnn.linear(activated, self.down_prefill)` with
         # "TIMEOUT: device timeout in fetch queue wait" while the JIT cache was
         # completely cold (0/636 hits) and engine init had already taken 73.48s
-        # against 3.80s warm. The same code, hardware class and benchmark shape
-        # run repeatedly without a hang once the cache is warm, so the 5s limit is
-        # too tight for a large first-compile prefill matmul rather than evidence
-        # of a wedged device.
-        DISABLE_METAL_OP_TIMEOUT: "1"
+        # against 3.80s warm.
+        #
+        # Raise the threshold rather than disable the watchdog. Detection stays
+        # on -- a genuinely wedged device never completes, so it still trips and
+        # still runs tt-triage via TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE,
+        # which DISABLE_METAL_OP_TIMEOUT=1 would have suppressed entirely.
+        # set_runtime_env_vars applies spec env_vars after
+        # set_metal_timeout_env_vars, so this value wins while the triage hook
+        # stays wired. 120s matches the value tt-media-server already ships in
+        # scripts/sp_env_sample.sh. Measured locally on QB2 p300x2: a fully cold
+        # JIT cache (0/829 hits) completed the multichip prefill+decode layer
+        # bench with the stock 5.0s limit and no timeout, so the cold-compile
+        # cost that tripped CI is bounded, not unbounded.
+        TT_METAL_OPERATION_TIMEOUT_SECONDS: "120"
       override_tt_config:
         fabric_config: FABRIC_1D
         trace_region_size: 268435456
