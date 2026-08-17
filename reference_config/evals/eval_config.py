@@ -45,13 +45,21 @@ def _harbor_env_kwargs() -> Dict[str, Any]:
         )
     kwargs: Dict[str, Any] = {
         "namespace": os.getenv("HARBOR_K8S_NAMESPACE", "default"),
-        "image_mode": os.getenv("HARBOR_K8S_IMAGE_MODE", "prebuilt"),
+        "image_mode": os.getenv("HARBOR_K8S_IMAGE_MODE", "auto"),
     }
     passthrough = {
         "HARBOR_K8S_CONTEXT": "context",
         "HARBOR_K8S_IMAGE_REGISTRY": "image_registry",
         "HARBOR_K8S_IMAGE_PULL_SECRET": "image_pull_secret",
         "HARBOR_K8S_SERVICE_ACCOUNT": "service_account",
+        # Select the image build backend. BuildKit can be reached through a
+        # local Unix socket mounted into the runner pod, so both knobs belong
+        # in Harbor's environment kwargs rather than its container env.
+        "HARBOR_K8S_IMAGE_BUILDER": "image_builder",
+        "HARBOR_K8S_BUILDKIT_ADDRESS": "buildkit_address",
+        "HARBOR_K8S_PREBUILT_IMAGE_MIRROR_FAILURE_POLICY": (
+            "prebuilt_image_mirror_failure_policy"
+        ),
         # Opt-in compose execution strategy. "pods" runs each compose
         # service as a container of one ordinary pod (no privileged DinD),
         # but requires HARBOR_K8S_IMAGE_REGISTRY the cluster can pull from.
@@ -76,6 +84,17 @@ def _harbor_env_kwargs() -> Dict[str, Any]:
         if normalized not in {"true", "false"}:
             raise ValueError(f"{env_var} must be 'true' or 'false'")
         kwargs[kwarg] = normalized == "true"
+    prebuilt_image_mirrors = os.getenv("HARBOR_K8S_PREBUILT_IMAGE_MIRRORS")
+    if prebuilt_image_mirrors:
+        parsed_mirrors = json.loads(prebuilt_image_mirrors)
+        if not isinstance(parsed_mirrors, dict) or not all(
+            isinstance(key, str) and isinstance(value, str)
+            for key, value in parsed_mirrors.items()
+        ):
+            raise ValueError(
+                "HARBOR_K8S_PREBUILT_IMAGE_MIRRORS must be a JSON string map"
+            )
+        kwargs["prebuilt_image_mirrors"] = parsed_mirrors
     node_selector = os.getenv("HARBOR_K8S_NODE_SELECTOR")
     if node_selector:
         # JSON object, e.g. '{"tt-pool": "shield"}'
