@@ -42,13 +42,13 @@ def test_progress_deadline_seconds(vllm_spec):
     assert cfg.progress_deadline_seconds == expected
 
 
-def test_probes_initial_delay(vllm_spec):
+def test_probes_carry_no_timing_and_no_path_for_vllm(vllm_spec):
+    # vllm uses the default probe paths; the startupProbe owns the compile
+    # window, so no per-model probe timing is emitted.
     cfg = VllmMapper().map(vllm_spec).config
-    expected = int(vllm_spec.device_model_spec.tensor_cache_timeout * 2 / 3)
-    assert cfg.probes.liveness.initial_delay_seconds == expected
-    assert cfg.probes.readiness.initial_delay_seconds == expected
     assert cfg.probes.liveness.path is None
     assert cfg.probes.readiness.path is None
+    assert cfg.to_yaml_dict().get("probes") is None
 
 
 def test_env_list_sorted_and_includes_spec_env_vars(vllm_spec):
