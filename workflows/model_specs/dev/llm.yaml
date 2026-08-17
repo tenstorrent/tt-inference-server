@@ -322,6 +322,16 @@ templates:
         # checkout sits at a different absolute path in the container than in a
         # local tree.
         chat-template: ../../tt-metal/models/autoports/google_gemma_4_31b/doc/vllm_integration/chat_template.jinja
+        # vllm bench serve (upstream vLLM) no longer sends temperature==0, so the
+        # server-side default decides. This model is greedy-only on device --
+        # tt/generator_vllm.py::_require_semantic_greedy raises unless every slot
+        # has temperature<=0 or top_k==1 -- and the plugin does not implement the
+        # `greedy_only` sample_on_device_policy the adapter advertises, so a
+        # non-greedy request reaches the model and kills EngineCore. Declaring the
+        # greedy default here is the honest fix: greedy is the only mode this
+        # model supports, and it costs no benchmark fidelity because throughput is
+        # unaffected by the sampler. Same mechanism AFM-4.5B already uses.
+        override_generation_config: '{"temperature": 0.0, "top_k": 1}'
         # Deliberately still no tool-call or reasoning parser and no
         # default-chat-template-kwargs: those belong to the instruction-tuned
         # variant's contract, not this base checkpoint's.
