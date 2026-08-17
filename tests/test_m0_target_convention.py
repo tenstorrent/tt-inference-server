@@ -498,3 +498,34 @@ def test_without_an_override_the_default_ladder_still_derives_three_tiers():
     assert mid.targets["target"].ttft_ms == pytest.approx(TTFT_TARGET)
     assert mid.targets["functional"].ttft_ms == pytest.approx(TTFT_TARGET / 0.10)
     assert mid.targets["functional"].tput_user == pytest.approx(TPUT_USER_TARGET * 0.10)
+
+
+# --------------------------------------------------------------------------
+# The published prefix-cache thresholds govern, not the tooling's defaults
+# --------------------------------------------------------------------------
+
+#: RFP Appendix B.3. The benchmarking tool ships defaults of its own that
+#: currently carry the same numbers, but the tool's defaults are not the bar —
+#: if they were, editing a constant here would silently move a published
+#: requirement. This pins the two together so drift is a test failure rather
+#: than a Partner being graded against something the RFP does not say.
+PUBLISHED_PREFIX_CACHE_THRESHOLDS = {
+    "SLA_TTFT_P50_MAX_MS": 4_000.0,
+    "SLA_TTFT_P90_MAX_MS": 10_000.0,
+    "SLA_TTFT_P99_MAX_MS": 35_000.0,
+    "SLA_OUTPUT_SPEED_MIN_TPS_PER_USER": 45.0,
+    "SLA_HIT_RATE_MIN": 0.90,
+}
+
+
+@pytest.mark.parametrize(
+    "name,published", sorted(PUBLISHED_PREFIX_CACHE_THRESHOLDS.items())
+)
+def test_prefix_cache_thresholds_match_the_published_appendix(name, published):
+    from llm_module.parsers import aiperf_prefix_cache as pc
+
+    assert getattr(pc, name) == published, (
+        f"{name} is {getattr(pc, name)} but RFP Appendix B.3 publishes {published}. "
+        f"The Appendix governs: change it there first, or this bar moved without "
+        f"anyone being told."
+    )
