@@ -12,8 +12,12 @@ import json
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+from llm_module.eval_command import build_eval_command
+from llm_module.lm_eval_no_server_seed import _drop_server_seed
+from reference_config.evals.eval_config import EvalTask, _eval_config_map
 from test_module._test_common import ReportCheckTypes, TestStatus
 from test_module.llm_tests import llm_eval_tests as mod
+from workflows.workflow_types import EvalLimitMode
 
 _MOD = "test_module.llm_tests.llm_eval_tests"
 
@@ -67,6 +71,89 @@ def _ctx(max_context=131072):
     ctx.output_path = "/tmp/out"
     ctx.runtime_config = None
     return ctx
+
+
+def _diffusiongemma_eval_task(task_name):
+    tasks = _eval_config_map["google/diffusiongemma-26B-A4B-it"].tasks
+    return next(task for task in tasks if task.task_name == task_name)
+
+
+def _build_eval_test_command(task):
+    model_spec = SimpleNamespace(
+        model_id="diffusiongemma-26B-A4B-it",
+        model_name="diffusiongemma-26B-A4B-it",
+        hf_model_repo="google/diffusiongemma-26B-A4B-it",
+        device_model_spec=SimpleNamespace(
+            max_context=262144,
+            max_concurrency=1,
+            eval_max_retries=0,
+        ),
+    )
+    return build_eval_command(task, model_spec, "P300x2", "/tmp/evals", 8000)
+
+
+def _command_gen_kwargs(command):
+    raw = command[command.index("--gen_kwargs") + 1]
+    return dict(item.split("=", 1) for item in raw.split(","))
+
+
+# --- eval command and model-specific request contracts -----------------------
+
+
+class TestEvalCommand:
+    def test_diffusiongemma_keeps_harness_seed_out_of_server_requests(self):
+        task = _diffusiongemma_eval_task("gpqa_diamond_cot_zeroshot")
+        command = _build_eval_test_command(task)
+
+        gen_kwargs = _command_gen_kwargs(command)
+        assert gen_kwargs["do_sample"] == "true"
+        assert gen_kwargs["temperature"] == "1.0"
+        assert "seed" not in gen_kwargs
+        assert command[command.index("--seed") + 1] == "42"
+        assert command[1].endswith("llm_module/lm_eval_no_server_seed.py")
+
+    def test_eval_task_forwards_seed_by_default(self):
+        task = EvalTask(
+            task_name="seeded_sampling",
+            gen_kwargs={"do_sample": "true", "temperature": 1.0},
+        )
+        command = _build_eval_test_command(task)
+
+        assert _command_gen_kwargs(command)["seed"] == "42"
+        assert command[command.index("--seed") + 1] == "42"
+        assert command[0].endswith("/bin/lm_eval")
+
+    def test_seed_filter_does_not_mutate_the_request(self):
+        payload = {"model": "test-model", "seed": 42, "temperature": 1.0}
+
+        assert _drop_server_seed(payload) == {
+            "model": "test-model",
+            "temperature": 1.0,
+        }
+        assert payload["seed"] == 42
+
+
+class TestDiffusionGemmaEvalContract:
+    def test_gpqa_uses_canvas_aligned_model_owned_generation(self):
+        task = _diffusiongemma_eval_task("gpqa_diamond_cot_zeroshot")
+
+        assert task.gen_kwargs["max_gen_toks"] == (
+            task.model_kwargs["max_length"] - 2432
+        ) // 256 * 256
+        assert task.gen_kwargs["do_sample"] == "true"
+        assert task.gen_kwargs["temperature"] == 1.0
+        assert task.propagate_seed_to_gen_kwargs is False
+
+    def test_terminal_bench_is_bounded_to_single_request_execution(self):
+        task = _diffusiongemma_eval_task("terminal_bench_2_1")
+        config = task.agentic_eval_config
+
+        assert config.n_concurrent_trials == 1
+        assert config.n_attempts == 1
+        assert len(config.task_names_map[EvalLimitMode.CI_NIGHTLY]) == 3
+        assert config.agent_timeout_sec == 45 * 60
+        assert config.agent_kwargs["model_info"]["max_output_tokens"] == 4 * 1024
+        assert config.agent_kwargs["llm_kwargs"]["max_tokens"] == 4 * 1024
 
 
 # --- scoring -> Block (the copied logic) -------------------------------------
