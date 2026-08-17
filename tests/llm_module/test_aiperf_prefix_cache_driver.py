@@ -287,6 +287,140 @@ class TestParseServerMetrics:
         assert out["prefix_cache_hits_delta"] is None
 
 
+class TestPrefixCacheHitRateUnits:
+    """The two counter families do not share a unit and must not be mixed.
+
+    ``vllm:prefix_cache_*`` counts tokens (upstream: "in terms of number of
+    queried tokens"); ``tt_prefix_cache_*`` counts requests. A ratio built from
+    one family's hits and the other's queries is meaningless, and silently
+    scoring whichever family a deployment happens to expose would make the
+    12-point rubric line depend on the deployment rather than the
+    implementation. See llm-gauntlet#87.
+    """
+
+    def test_token_and_request_rates_are_reported_separately(self, tmp_path):
+        jsonl = tmp_path / "server_metrics_export.jsonl"
+        url = "http://worker-a:9000/metrics"
+        # Same run, both families present, and they disagree materially --
+        # which is the whole point: 0.90 of requests touched the cache while
+        # only 0.50 of prompt tokens were reused.
+        _write_jsonl(
+            jsonl,
+            [
+                {
+                    "endpoint_url": url,
+                    "metrics": {
+                        "vllm:prefix_cache_hits_total": [{"value": 0.0}],
+                        "vllm:prefix_cache_queries_total": [{"value": 0.0}],
+                        "tt_prefix_cache_hits_total": [{"value": 0.0}],
+                        "tt_prefix_cache_queries_total": [{"value": 0.0}],
+                    },
+                },
+                {
+                    "endpoint_url": url,
+                    "metrics": {
+                        "vllm:prefix_cache_hits_total": [{"value": 5_000.0}],
+                        "vllm:prefix_cache_queries_total": [{"value": 10_000.0}],
+                        "tt_prefix_cache_hits_total": [{"value": 90.0}],
+                        "tt_prefix_cache_queries_total": [{"value": 100.0}],
+                    },
+                },
+            ],
+        )
+        out = _parse_server_metrics_for_prefix_cache(tmp_path)
+        assert out["prefix_cache_hit_rate_tokens"] == 0.5
+        assert out["prefix_cache_hit_rate_requests"] == 0.9
+        # The scored figure is the token-level one, and it says so.
+        assert out["prefix_cache_hit_rate"] == 0.5
+        assert out["prefix_cache_hit_rate_unit"] == "tokens"
+
+    def test_hits_of_one_unit_are_never_divided_by_queries_of_the_other(self, tmp_path):
+        """The defect this guards: token hits over request queries gave 50.0."""
+        jsonl = tmp_path / "server_metrics_export.jsonl"
+        url = "http://worker-a:9000/metrics"
+        _write_jsonl(
+            jsonl,
+            [
+                {
+                    "endpoint_url": url,
+                    "metrics": {
+                        "vllm:prefix_cache_hits_total": [{"value": 0.0}],
+                        "tt_prefix_cache_queries_total": [{"value": 0.0}],
+                    },
+                },
+                {
+                    "endpoint_url": url,
+                    "metrics": {
+                        "vllm:prefix_cache_hits_total": [{"value": 5_000.0}],
+                        "tt_prefix_cache_queries_total": [{"value": 100.0}],
+                    },
+                },
+            ],
+        )
+        out = _parse_server_metrics_for_prefix_cache(tmp_path)
+        # Neither family is complete on its own, so nothing is reported --
+        # rather than 5000/100 = 50.0, a "hit rate" above 1.
+        assert out["prefix_cache_hit_rate"] is None
+        assert out["prefix_cache_hit_rate_tokens"] is None
+        assert out["prefix_cache_hit_rate_requests"] is None
+
+    def test_request_counters_alone_are_scored_but_flagged(self, tmp_path):
+        """A cpp_server / Dynamo deployment exposes only the request family."""
+        jsonl = tmp_path / "server_metrics_export.jsonl"
+        url = "http://worker-a:9000/metrics"
+        _write_jsonl(
+            jsonl,
+            [
+                {
+                    "endpoint_url": url,
+                    "metrics": {
+                        "tt_prefix_cache_hits_total": [{"value": 0.0}],
+                        "tt_prefix_cache_queries_total": [{"value": 0.0}],
+                    },
+                },
+                {
+                    "endpoint_url": url,
+                    "metrics": {
+                        "tt_prefix_cache_hits_total": [{"value": 75.0}],
+                        "tt_prefix_cache_queries_total": [{"value": 100.0}],
+                    },
+                },
+            ],
+        )
+        out = _parse_server_metrics_for_prefix_cache(tmp_path)
+        assert out["prefix_cache_hit_rate"] == 0.75
+        # Named, so a scorecard is never read against the wrong scale.
+        assert out["prefix_cache_hit_rate_unit"] == "requests"
+        assert out["prefix_cache_hit_rate_tokens"] is None
+
+    def test_token_counters_win_when_both_families_are_present(self, tmp_path):
+        """Milestone-0's stack (upstream vLLM + vllm-tt-plugin) emits tokens."""
+        jsonl = tmp_path / "server_metrics_export.jsonl"
+        url = "http://worker-a:9000/metrics"
+        _write_jsonl(
+            jsonl,
+            [
+                {
+                    "endpoint_url": url,
+                    "metrics": {
+                        "vllm:prefix_cache_hits": [{"value": 0.0}],
+                        "vllm:prefix_cache_queries": [{"value": 0.0}],
+                    },
+                },
+                {
+                    "endpoint_url": url,
+                    "metrics": {
+                        "vllm:prefix_cache_hits": [{"value": 1_200.0}],
+                        "vllm:prefix_cache_queries": [{"value": 2_000.0}],
+                    },
+                },
+            ],
+        )
+        out = _parse_server_metrics_for_prefix_cache(tmp_path)
+        assert out["prefix_cache_hit_rate"] == 0.6
+        assert out["prefix_cache_hit_rate_unit"] == "tokens"
+
+
 class TestParseServerMetricsByRole:
     def test_role_split_prefill_vs_decode(self, tmp_path):
         """Prefill and decode get their own denominators, never blended."""

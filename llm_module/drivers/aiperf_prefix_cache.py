@@ -44,24 +44,58 @@ from ._subprocess import load_json, run_command
 logger = logging.getLogger(__name__)
 
 # Prefix-cache counter names vary by backend and AIPerf version:
-#   * cpp_server (Tenstorrent worker) exposes ``tt_prefix_cache_*_total``.
 #   * vLLM exposes ``vllm:prefix_cache_*_total``.
+#   * cpp_server (Tenstorrent worker) exposes ``tt_prefix_cache_*_total``.
 #   * AIPerf 0.5 strips the canonical Prometheus ``_total`` suffix when it
 #     writes ``server_metrics_export.jsonl``; older builds / raw scrapes
 #     keep it.
-# We accept every spelling; ``_first_populated`` picks whichever series is
-# actually present in the scrape.
-PREFIX_CACHE_HITS_METRIC_ALIASES: Tuple[str, ...] = (
-    "tt_prefix_cache_hits_total",
-    "tt_prefix_cache_hits",
+#
+# THE TWO FAMILIES DO NOT SHARE A UNIT, so they are kept apart and are never
+# summed into one ratio:
+#
+#   * ``vllm:prefix_cache_{hits,queries}`` count TOKENS. Upstream documents
+#     them as "in terms of number of queried tokens" / "number of cached
+#     tokens" (vllm/v1/metrics/loggers.py), and PrefixCacheStats.queries as
+#     "the number of tokens that were queried" (vllm/v1/metrics/stats.py).
+#     This answers "how much of the prompt was reused?".
+#   * ``tt_prefix_cache_{hits,queries}`` count REQUESTS -- one query per
+#     request, so the ratio answers only "did this request hit the cache at
+#     all?". A request reusing one block scores the same as one reusing 99 %
+#     of its prompt.
+#
+# Mixing them produces a number with no meaning, and picking whichever
+# happens to be present makes the figure depend on the deployment rather than
+# on the implementation. Both are reported, each on its own denominator, and
+# the scored figure names its unit explicitly. See llm-gauntlet#87.
+PREFIX_CACHE_TOKEN_HITS_ALIASES: Tuple[str, ...] = (
     "vllm:prefix_cache_hits_total",
     "vllm:prefix_cache_hits",
 )
-PREFIX_CACHE_QUERIES_METRIC_ALIASES: Tuple[str, ...] = (
-    "tt_prefix_cache_queries_total",
-    "tt_prefix_cache_queries",
+PREFIX_CACHE_TOKEN_QUERIES_ALIASES: Tuple[str, ...] = (
     "vllm:prefix_cache_queries_total",
     "vllm:prefix_cache_queries",
+)
+PREFIX_CACHE_REQUEST_HITS_ALIASES: Tuple[str, ...] = (
+    "tt_prefix_cache_hits_total",
+    "tt_prefix_cache_hits",
+)
+PREFIX_CACHE_REQUEST_QUERIES_ALIASES: Tuple[str, ...] = (
+    "tt_prefix_cache_queries_total",
+    "tt_prefix_cache_queries",
+)
+
+# The unit the scored ``prefix_cache_hit_rate`` is taken from when both
+# families are present. Tokens measure reuse depth, which is what the rubric
+# line is for.
+PREFIX_CACHE_SCORED_UNIT = "tokens"
+
+# Retained for callers that only need "any prefix-cache counter name".
+# Not used to compute a ratio -- see the note above.
+PREFIX_CACHE_HITS_METRIC_ALIASES: Tuple[str, ...] = (
+    PREFIX_CACHE_REQUEST_HITS_ALIASES + PREFIX_CACHE_TOKEN_HITS_ALIASES
+)
+PREFIX_CACHE_QUERIES_METRIC_ALIASES: Tuple[str, ...] = (
+    PREFIX_CACHE_REQUEST_QUERIES_ALIASES + PREFIX_CACHE_TOKEN_QUERIES_ALIASES
 )
 
 
@@ -766,6 +800,9 @@ def _parse_server_metrics_for_prefix_cache(
     roles = ("prefill", "decode")
     out: Dict[str, Optional[float]] = {
         "prefix_cache_hit_rate": None,
+        "prefix_cache_hit_rate_unit": None,
+        "prefix_cache_hit_rate_tokens": None,
+        "prefix_cache_hit_rate_requests": None,
         "prefix_cache_hits_delta": None,
         "prefix_cache_queries_delta": None,
         "prefix_cache_hits_final": None,
@@ -810,13 +847,17 @@ def _parse_server_metrics_for_prefix_cache(
         for url, role in (endpoint_roles or {}).items()
         if url and role
     }
+    # Keyed by (unit, role): the role split must be taken from the same unit as
+    # the scored figure, and which unit that is is not known until every
+    # endpoint has been read.
     per_role = {
-        role: {
+        (unit, role): {
             "hits": 0.0,
             "queries": 0.0,
             "saw_hits": False,
             "saw_queries": False,
         }
+        for unit in ("tokens", "requests")
         for role in roles
     }
 
@@ -824,61 +865,112 @@ def _parse_server_metrics_for_prefix_cache(
     # workers so KV-routed multi-worker deployments aggregate correctly.
     # In parallel, accumulate per-role deltas keyed by endpoint_url so a
     # disaggregated prefill+decode deployment reports each cache separately.
-    hits_delta = 0.0
-    queries_delta = 0.0
-    hits_final = 0.0
-    queries_final = 0.0
-    saw_hits = False
-    saw_queries = False
+    # One accumulator per unit. A unit is only reported if BOTH of its own
+    # counters were seen, so a token hit count is never divided by a request
+    # query count.
+    units = {
+        "tokens": {
+            "hits_aliases": PREFIX_CACHE_TOKEN_HITS_ALIASES,
+            "queries_aliases": PREFIX_CACHE_TOKEN_QUERIES_ALIASES,
+            "hits_delta": 0.0,
+            "queries_delta": 0.0,
+            "hits_final": 0.0,
+            "queries_final": 0.0,
+            "saw_hits": False,
+            "saw_queries": False,
+        },
+        "requests": {
+            "hits_aliases": PREFIX_CACHE_REQUEST_HITS_ALIASES,
+            "queries_aliases": PREFIX_CACHE_REQUEST_QUERIES_ALIASES,
+            "hits_delta": 0.0,
+            "queries_delta": 0.0,
+            "hits_final": 0.0,
+            "queries_final": 0.0,
+            "saw_hits": False,
+            "saw_queries": False,
+        },
+    }
+
     for endpoint, series in by_endpoint.items():
         role = norm_roles.get(_normalize_metrics_url(endpoint)) if endpoint else None
-        role_acc = per_role.get(role) if role is not None else None
-        hits = _first_populated(series, PREFIX_CACHE_HITS_METRIC_ALIASES)
-        queries = _first_populated(series, PREFIX_CACHE_QUERIES_METRIC_ALIASES)
-        if hits:
-            delta = max(hits[-1] - hits[0], 0.0)
-            hits_delta += delta
-            hits_final += hits[-1]
-            saw_hits = True
-            if role_acc is not None:
-                role_acc["hits"] += delta
-                role_acc["saw_hits"] = True
-        if queries:
-            delta = max(queries[-1] - queries[0], 0.0)
-            queries_delta += delta
-            queries_final += queries[-1]
-            saw_queries = True
-            if role_acc is not None:
-                role_acc["queries"] += delta
-                role_acc["saw_queries"] = True
+        for unit_name, acc in units.items():
+            role_acc = per_role.get((unit_name, role)) if role is not None else None
+            hits = _first_populated(series, acc["hits_aliases"])
+            queries = _first_populated(series, acc["queries_aliases"])
+            if hits:
+                delta = max(hits[-1] - hits[0], 0.0)
+                acc["hits_delta"] += delta
+                acc["hits_final"] += hits[-1]
+                acc["saw_hits"] = True
+                if role_acc is not None:
+                    role_acc["hits"] += delta
+                    role_acc["saw_hits"] = True
+            if queries:
+                delta = max(queries[-1] - queries[0], 0.0)
+                acc["queries_delta"] += delta
+                acc["queries_final"] += queries[-1]
+                acc["saw_queries"] = True
+                if role_acc is not None:
+                    role_acc["queries"] += delta
+                    role_acc["saw_queries"] = True
 
-    if not saw_hits or not saw_queries:
+    complete = {
+        name: acc
+        for name, acc in units.items()
+        if acc["saw_hits"] and acc["saw_queries"]
+    }
+    if not complete:
         logger.warning(
-            "Prefix-cache counters (tt_prefix_cache_* / vllm:prefix_cache_*) "
-            "not present in %s. Hit rate unavailable for this run. Verify "
-            "AIPerf --server-metrics points at the worker /metrics endpoint.",
+            "Prefix-cache counters not present in %s, or only one side of a "
+            "pair was found. Hit rate unavailable for this run. The scored "
+            "figure needs vllm:prefix_cache_hits and "
+            "vllm:prefix_cache_queries (token-level); "
+            "tt_prefix_cache_hits/queries are request-level and are reported "
+            "separately. Verify AIPerf --server-metrics points at the worker "
+            "/metrics endpoint.",
             server_metrics_path,
         )
         return out
 
-    out["prefix_cache_hits_delta"] = hits_delta
-    out["prefix_cache_queries_delta"] = queries_delta
-    out["prefix_cache_hits_final"] = hits_final
-    out["prefix_cache_queries_final"] = queries_final
+    for name, acc in complete.items():
+        q = acc["queries_delta"]
+        out[f"prefix_cache_hit_rate_{name}"] = (acc["hits_delta"] / q) if q > 0 else 0.0
+
+    # The scored figure prefers tokens; it falls back to requests only when the
+    # token counters are absent, and always records which unit it used so a
+    # scorecard is never read against the wrong scale.
+    scored = PREFIX_CACHE_SCORED_UNIT if PREFIX_CACHE_SCORED_UNIT in complete else None
+    if scored is None:
+        scored = next(iter(complete))
+        logger.warning(
+            "Token-level prefix-cache counters (vllm:prefix_cache_*) absent in "
+            "%s; scoring the %s-level figure instead. These are different "
+            "quantities and the rubric's values are set for %s -- record the "
+            "substitution with the submission.",
+            server_metrics_path,
+            scored,
+            PREFIX_CACHE_SCORED_UNIT,
+        )
+    acc = complete[scored]
+    out["prefix_cache_hit_rate_unit"] = scored
+    out["prefix_cache_hits_delta"] = acc["hits_delta"]
+    out["prefix_cache_queries_delta"] = acc["queries_delta"]
+    out["prefix_cache_hits_final"] = acc["hits_final"]
+    out["prefix_cache_queries_final"] = acc["queries_final"]
     out["prefix_cache_hit_rate"] = (
-        (hits_delta / queries_delta) if queries_delta > 0 else 0.0
+        (acc["hits_delta"] / acc["queries_delta"]) if acc["queries_delta"] > 0 else 0.0
     )
 
     # Per-role rates: only populated for a role that had both counters on at
     # least one of its tagged endpoints. Each divides by its own denominator.
     for role in roles:
-        acc = per_role[role]
-        if acc["saw_hits"] and acc["saw_queries"]:
-            role_queries = acc["queries"]
-            out[f"prefix_cache_hits_delta_{role}"] = acc["hits"]
+        role_acc = per_role[(scored, role)]
+        if role_acc["saw_hits"] and role_acc["saw_queries"]:
+            role_queries = role_acc["queries"]
+            out[f"prefix_cache_hits_delta_{role}"] = role_acc["hits"]
             out[f"prefix_cache_queries_delta_{role}"] = role_queries
             out[f"prefix_cache_hit_rate_{role}"] = (
-                (acc["hits"] / role_queries) if role_queries > 0 else 0.0
+                (role_acc["hits"] / role_queries) if role_queries > 0 else 0.0
             )
     return out
 
