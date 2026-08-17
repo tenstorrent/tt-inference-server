@@ -118,12 +118,24 @@ ENV PYTHON_ENV_DIR="${APP_DIR}/server/venv-worker"
 # version (4.x). The app itself runs on the forge venv (transformers 5.x), which
 # cannot write a checkpoint the vLLM container (4.x) can load; the merge is run
 # here instead so the artifact is written by the version that serves it.
+#
+# transformers and peft are read from their sources of truth so this venv never
+# drifts from the versions that matter:
+#   - transformers <- tt-vllm-plugin/pyproject.toml (the version vLLM serves with)
+#   - peft         <- forge_runners/requirements.txt (the version that WROTE the
+#                     adapter, so the merge reads its config back with the same peft)
+# Bump either source and a rebuild picks it up.
 ENV ADAPTER_MERGE_VENV_DIR="${APP_DIR}/server/merge-venv"
 ENV ADAPTER_MERGE_PYTHON="${ADAPTER_MERGE_VENV_DIR}/bin/python"
+COPY "tt-vllm-plugin/pyproject.toml" "/tmp/tt-vllm-plugin-pyproject.toml"
 RUN python3.12 -m venv "${ADAPTER_MERGE_VENV_DIR}" \
     && "${ADAPTER_MERGE_VENV_DIR}/bin/pip" install --no-cache-dir --upgrade pip \
+    && TRANSFORMERS_SPEC="$(python3.12 -c "import re, tomllib; deps = tomllib.load(open('/tmp/tt-vllm-plugin-pyproject.toml', 'rb'))['project']['dependencies']; print(next(d for d in deps if re.match(r'transformers([=<>!~ ]|\$)', d)))")" \
+    && PEFT_SPEC="$(sed -nE 's/^[[:space:]]*(peft[^#[:space:]]*).*/\1/p' "${APP_DIR}/server/tt_model_runners/forge_runners/requirements.txt" | head -1)" \
+    && echo "Merge venv pins -> transformers (tt-vllm-plugin): ${TRANSFORMERS_SPEC} | peft (forge): ${PEFT_SPEC}" \
     && "${ADAPTER_MERGE_VENV_DIR}/bin/pip" install --no-cache-dir \
-        -r "${APP_DIR}/server/adapter_merge_requirements.txt"
+        -r "${APP_DIR}/server/adapter_merge_requirements.txt" \
+        "${TRANSFORMERS_SPEC}" "${PEFT_SPEC}"
 
 # spinup inference server
 WORKDIR "${APP_DIR}"
