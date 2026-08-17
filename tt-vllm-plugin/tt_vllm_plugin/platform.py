@@ -5,18 +5,28 @@ from typing import TYPE_CHECKING, Optional, Union
 
 import torch
 import vllm.envs as envs
-from vllm.inputs import ProcessorInputs, PromptType
 from vllm.logger import init_logger
 from vllm.platforms.interface import Platform, PlatformEnum
-from vllm.sampling_params import SamplingParams
 
 if TYPE_CHECKING:
     from vllm.config import ModelConfig, VllmConfig
+    from vllm.inputs import ProcessorInputs, PromptType
     from vllm.pooling_params import PoolingParams
+    from vllm.sampling_params import SamplingParams
 else:
+    # Deferred (not imported at module top level) to avoid a circular import
+    # during vLLM platform resolution: on newer vLLM, importing
+    # vllm.sampling_params / vllm.inputs here pulls in vllm.config, which imports
+    # current_platform from vllm.platforms while that module is still resolving
+    # this very platform class -> ImportError. These names are only needed as
+    # annotations plus one isinstance check in validate_request(), which imports
+    # SamplingParams locally at call time (well after vLLM has finished loading).
     ModelConfig = None
     VllmConfig = None
     PoolingParams = None
+    ProcessorInputs = None
+    PromptType = None
+    SamplingParams = None
 
 logger = init_logger("vllm.tt_vllm_plugin.platform")
 
@@ -200,6 +210,8 @@ class TTPlatform(Platform):
         processed_inputs: ProcessorInputs,
     ) -> None:
         """Raises if this request is unsupported on this platform"""
+
+        from vllm.sampling_params import SamplingParams
 
         if isinstance(params, SamplingParams):
             if params.n != 1:
