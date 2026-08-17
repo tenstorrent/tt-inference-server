@@ -195,8 +195,8 @@ def _f2_submission() -> Submission:
         model="google/gemma-4-31B-it",
         scaling_exponents={1: 0.956, 128: 0.916},
         once={
-            "agentic_eval": 1.09,
-            "standard_eval": 1.04,
+            "agentic_eval": 1.02,
+            "standard_eval": 1.01,
             "run_to_run_cov": 0.05,
             "contribution_quality": 3.0,
             "technical_assistance": 3.0,
@@ -210,8 +210,8 @@ def _f2_submission() -> Submission:
 @pytest.mark.parametrize(
     "key,fraction_,score_",
     [
-        ("agentic_eval", 0.6000, 7.20),
-        ("standard_eval", 0.2667, 2.67),
+        ("agentic_eval", 0.6667, 8.00),
+        ("standard_eval", 0.5000, 5.00),
         ("reproduced_first_attempt", 1.0000, 3.00),
         ("run_to_run_cov", 0.7692, 1.54),
         ("contribution_quality", 1.0000, 3.00),
@@ -228,7 +228,7 @@ def test_once_scored_lines_reproduce_appendix_f2(key, fraction_, score_):
 
 def test_f2_bonus_and_group_totals():
     card = score(_f2_submission())
-    assert round(card.group_score("quality"), 2) == 9.87
+    assert round(card.group_score("quality"), 2) == 13.00
     assert round(card.bonus_total, 2) == 13.87
 
 
@@ -243,8 +243,8 @@ F2_LINE_FRACTIONS = {
     "scaling_quality": 1.0000,
     "tput_user_median": 0.5000,
     "decode_throughput": 0.2000,
-    "agentic_eval": 0.6000,
-    "standard_eval": 0.2667,
+    "agentic_eval": 0.6667,
+    "standard_eval": 0.5000,
     "reproduced_first_attempt": 1.0000,
     "run_to_run_cov": 0.7692,
     "contribution_quality": 1.0000,
@@ -267,7 +267,7 @@ def _f2_card() -> Scorecard:
 
 @pytest.mark.parametrize(
     "group,expected",
-    [("prefill", 26.95), ("decode", 4.70), ("quality", 9.87), ("engineering", 9.04)],
+    [("prefill", 26.95), ("decode", 4.70), ("quality", 13.00), ("engineering", 9.04)],
 )
 def test_group_subtotals_reproduce_appendix_f2(group, expected):
     assert round(_f2_card().group_score(group), 2) == expected
@@ -275,9 +275,9 @@ def test_group_subtotals_reproduce_appendix_f2(group, expected):
 
 def test_core_bonus_and_overall_reproduce_appendix_f2():
     card = _f2_card()
-    assert round(card.core_total, 2) == 50.56
+    assert round(card.core_total, 2) == 53.69
     assert round(card.bonus_total, 2) == 13.87
-    assert round(card.overall, 2) == 64.43
+    assert round(card.overall, 2) == 67.56
 
 
 def test_totals_are_summed_at_full_precision_not_from_rounded_subtotals():
@@ -383,7 +383,9 @@ def test_a_line_failing_reproduction_scores_zero_not_a_reduced_score():
     assert line.score == 0.0
     assert "failed reproduction" in line.note
     # The scorecard still shows what it would have been, so the cost is visible.
-    assert "7.20" in line.note
+    # Derived from the baseline rather than hardcoded: the point is that the forgone
+    # score is stated, not that it is any particular number.
+    assert f"{baseline:.2f}" in line.note
 
 
 def test_a_waived_line_scores_zero_and_stays_in_the_denominator():

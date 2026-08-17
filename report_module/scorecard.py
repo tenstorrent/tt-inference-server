@@ -142,8 +142,14 @@ FIXED_RANGES: Dict[str, Tuple[float, float]] = {
     # every system cleared outright. See Appendix B.5.
     "tail_discipline": (1.25, 1.05),
     "scaling_quality": (2.0, 1.0),
-    "agentic_eval": (1.00, 1.15),
-    "standard_eval": (1.00, 1.15),
+    # Accuracy is a property of the model's weights, not the silicon, so a correct
+    # implementation scores about equal to the reference and an excellence value far
+    # above parity would be unreachable — those 22 points would be dead weight. The
+    # achievement is holding reference accuracy on a different compute class, then
+    # edging past it. Agentic sits higher because its task sets are smaller (89 tasks
+    # vs 198 samples) so an above-parity result needs more headroom to mean anything.
+    "agentic_eval": (1.00, 1.03),
+    "standard_eval": (1.00, 1.02),
     "run_to_run_cov": (0.15, 0.02),
     "contribution_quality": (0.0, 3.0),
     "technical_assistance": (12.0, 0.0),
