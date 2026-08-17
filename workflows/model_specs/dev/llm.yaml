@@ -1298,7 +1298,7 @@ templates:
         fabric_config: FABRIC_1D
     - device: P300X2  # BH QB2
       max_concurrency: 32
-      max_context: 32768  # 32 * 1024
+      max_context: 131072  # 128 * 1024
       default_impl: true
       env_vars:
         MESH_DEVICE: "P150x4"
