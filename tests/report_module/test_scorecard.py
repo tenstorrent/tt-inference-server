@@ -17,6 +17,7 @@ import pytest
 
 from report_module.scorecard import (
     CONCURRENCY_SHARES,
+    GROUPS,
     LINE_WEIGHTS,
     GradedPoint,
     LineScore,
@@ -35,16 +36,16 @@ from report_module.scorecard import (
 
 # (concurrency, input length, mean TTFT target ms, measured p99 ms)
 F3_P99 = [
-    (1, 128, 25.0, 24.0),
-    (1, 1024, 100.0, 105.0),
-    (1, 8192, 650.0, 760.0),
-    (1, 32768, 2800.0, 3400.0),
-    (1, 131072, 13000.0, 16500.0),
-    (128, 128, 700.0, 900.0),
-    (128, 1024, 3400.0, 4300.0),
-    (128, 8192, 22000.0, 29700.0),
-    (128, 32768, 88000.0, 119000.0),
-    (128, 131072, 350000.0, 478000.0),
+    (1, 128, 25.0, 21.0),
+    (1, 1024, 100.0, 90.0),
+    (1, 8192, 650.0, 620.0),
+    (1, 32768, 2800.0, 2800.0),
+    (1, 131072, 13000.0, 13650.0),
+    (128, 128, 700.0, 700.0),
+    (128, 1024, 3400.0, 3570.0),
+    (128, 8192, 22000.0, 24200.0),
+    (128, 32768, 88000.0, 101200.0),
+    (128, 131072, 350000.0, 420000.0),
 ]
 
 # Published per-point weights, F.3 step 1.
@@ -63,16 +64,16 @@ F3_WEIGHTS = {
 
 # Published per-point fractions for the p99 line, F.3 step 2.
 F3_P99_FRACTIONS = [
-    0.933,
-    0.833,
-    0.701,
-    0.651,
-    0.590,
-    0.571,
-    0.595,
-    0.500,
-    0.497,
-    0.483,
+    0.756,
+    0.667,
+    0.587,
+    0.519,
+    0.444,
+    0.519,
+    0.444,
+    0.370,
+    0.296,
+    0.222,
 ]
 
 
@@ -134,8 +135,8 @@ def test_p99_per_point_fractions_reproduce_appendix_f3():
 def test_p99_line_fraction_and_score_reproduce_appendix_f3():
     card = score(Submission(points=_f3_points()))
     line = card.lines["ttft_p99"]
-    assert round(line.fraction, 4) == 0.5649
-    assert round(line.score, 2) == 12.43
+    assert round(line.fraction, 4) == 0.3962
+    assert round(line.score, 2) == 8.72
 
 
 def test_every_point_is_judged_against_its_own_range():
@@ -148,8 +149,8 @@ def test_every_point_is_judged_against_its_own_range():
 def test_qualifying_and_excellence_are_derived_not_authored():
     card = score(Submission(points=_f3_points()))
     first = card.lines["ttft_p99"].points[0]
-    assert first.qualifying == pytest.approx(25.0 * 1.80)  # 45 ms
-    assert first.excellence == pytest.approx(45.0 * 0.50)  # 22.5 ms
+    assert first.qualifying == pytest.approx(25.0 * 1.35)  # 33.75 ms
+    assert first.excellence == pytest.approx(33.75 * 0.50)  # 16.875 ms
 
 
 # --------------------------------------------------------------------------
@@ -234,11 +235,11 @@ def test_f2_bonus_and_group_totals():
 # Every line fraction printed in F.2. The per-point ones are rolled up from F.3
 # rather than recomputed, which is exactly how F.2 presents them.
 F2_LINE_FRACTIONS = {
-    "ttft_p99": 0.5649,
+    "ttft_p99": 0.3962,
     "ttft_p90": 0.6054,
     "ttft_p50": 0.4879,
     "prefill_throughput": 0.4139,
-    "tail_discipline": 0.8307,
+    "tail_discipline": 0.5000,
     "scaling_quality": 1.0000,
     "tput_user_median": 0.5000,
     "decode_throughput": 0.2000,
@@ -266,7 +267,7 @@ def _f2_card() -> Scorecard:
 
 @pytest.mark.parametrize(
     "group,expected",
-    [("prefill", 31.99), ("decode", 4.70), ("quality", 9.87), ("engineering", 9.04)],
+    [("prefill", 26.95), ("decode", 4.70), ("quality", 9.87), ("engineering", 9.04)],
 )
 def test_group_subtotals_reproduce_appendix_f2(group, expected):
     assert round(_f2_card().group_score(group), 2) == expected
@@ -274,28 +275,29 @@ def test_group_subtotals_reproduce_appendix_f2(group, expected):
 
 def test_core_bonus_and_overall_reproduce_appendix_f2():
     card = _f2_card()
-    assert round(card.core_total, 2) == 55.59
+    assert round(card.core_total, 2) == 50.56
     assert round(card.bonus_total, 2) == 13.87
-    assert round(card.overall, 2) == 69.46
+    assert round(card.overall, 2) == 64.43
 
 
 def test_totals_are_summed_at_full_precision_not_from_rounded_subtotals():
-    """Where the published F.2 total came from, and why this differs by 0.01.
+    """Rounding is a display step. If it fed back into the arithmetic, a submission's
+    total would depend on how many decimals the scorecard happens to print, and the
+    error would compound with every line.
 
-    Adding the four rounded group subtotals (31.99 + 4.70 + 9.87 + 9.04) gives
-    55.60, which is what F.2 printed. Summing the unrounded scores gives 55.5939,
-    which rounds to 55.59. Rounding is a display step: letting it feed back into
-    the arithmetic makes a submission's total depend on how many decimals the
-    scorecard happens to show, and the error grows with every line. The RFP was
-    corrected to match this.
+    Asserted as an exact identity rather than against a worked example: whether the
+    rounded and unrounded sums visibly disagree depends on the numbers in play, so
+    an example that happens to agree would silently stop testing anything.
     """
     card = _f2_card()
-    from_rounded = sum(
-        round(card.group_score(g), 2)
-        for g in ("prefill", "decode", "quality", "engineering")
-    )
-    assert round(from_rounded, 2) == 55.60
-    assert round(card.core_total, 2) == 55.59
+    core_keys = [
+        k for g in ("prefill", "decode", "quality", "engineering") for k in GROUPS[g]
+    ]
+    assert card.core_total == sum(card.lines[k].score for k in core_keys)
+    for group in ("prefill", "decode", "quality", "engineering"):
+        assert card.group_score(group) == sum(
+            card.lines[k].score for k in GROUPS[group]
+        )
 
 
 def test_the_core_weights_sum_to_one_hundred_and_the_bonus_to_twenty():
@@ -311,8 +313,20 @@ def test_the_core_weights_sum_to_one_hundred_and_the_bonus_to_twenty():
 
 
 def test_prefill_dominates_the_core_score_as_the_rubric_intends():
+    """Prefill carries 55 of the 100 core points and must remain the largest single
+    contribution. Asserted as "largest group" rather than against a fixed share: the
+    share moves with whatever the example submission scores, but the ordering is the
+    design intent."""
     card = _f2_card()
-    assert card.group_score("prefill") / card.core_total > 0.55
+    scores = {
+        g: card.group_score(g) for g in ("prefill", "decode", "quality", "engineering")
+    }
+    assert max(scores, key=lambda g: scores[g]) == "prefill"
+    assert card.group_weight("prefill") == 55
+    assert (
+        card.group_weight("prefill")
+        > sum(card.group_weight(g) for g in ("decode", "quality")) / 2
+    )
 
 
 def test_lower_is_better_lines_need_no_special_case():

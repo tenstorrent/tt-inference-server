@@ -44,10 +44,21 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 # ---------------------------------------------------------------------------
 
 #: Qualifying value = that point's mean time-to-first-token target x this.
-#: The tail of a distribution always sits above its mean, so the higher
-#: percentiles are given progressively more room; a system whose 99th percentile
-#: merely matches its mean target is doing very well.
-TTFT_QUALIFYING_FACTORS = {"p50": 0.90, "p90": 1.30, "p99": 1.80}
+#:
+#: The gate targets the mean while the rubric scores percentiles, and a percentile
+#: of a latency distribution sits above its mean. Each factor is set to the ratio
+#: measured on Tenstorrent hardware (gpt-oss-120b release run, 16 points: median
+#: p50/mean 1.000, p99/mean 1.192) so that meeting the mean target scores zero,
+#: which is what requirements K.2 says every line must do.
+#:
+#: p99 is set at 1.35 rather than the observed 1.19 on purpose: tails widen under
+#: load and on a first-of-kind bring-up, and a qualifying value at the median
+#: observation would put the rubric's heaviest line out of reach of a system with
+#: an ordinary tail. p90 was not captured in that run and is interpolated.
+#:
+#: These must match RFP Appendix B.5. A Partner is told they can compute their own
+#: score from the published values; if these drift, that stops being true.
+TTFT_QUALIFYING_FACTORS = {"p50": 1.00, "p90": 1.12, "p99": 1.35}
 
 #: Excellence = qualifying x this. Full marks require twice the required
 #: performance, in whichever direction "twice" means for that line.
@@ -127,7 +138,9 @@ LINE_TITLES: Dict[str, str] = {
 
 #: Lines carrying explicit values rather than per-point derived ones.
 FIXED_RANGES: Dict[str, Tuple[float, float]] = {
-    "tail_discipline": (4.0, 1.5),
+    # Measured p99/p50 on real hardware runs ~1.19; 4.0 was a round guess that
+    # every system cleared outright. See Appendix B.5.
+    "tail_discipline": (1.25, 1.05),
     "scaling_quality": (2.0, 1.0),
     "agentic_eval": (1.00, 1.15),
     "standard_eval": (1.00, 1.15),
