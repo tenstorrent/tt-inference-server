@@ -150,8 +150,53 @@ costs nothing in ranking and absorbs run-to-run variance.
 | ---- | ------ |
 | Targets are **per-system**, never per-replica — a Partner's data-parallel choice must not move the bar | [device config](m0-blackhole-galaxy-device-config.md) (§5.4) |
 | **≥ 3 distinct input lengths at every graded concurrency**, or the scaling-quality fit is meaningless and `get_llm_configs` fails fast | [scaling-quality coverage](m0-scaling-quality-sweep-coverage.md) (§5.7) |
+| **Exactly two concurrency corners**, idle and loaded. Appendix B.5's per-point weights are defined as 25 % / 75 % over two levels, and `report_module.scorecard.point_weights` raises rather than invent a split for three | RFP B.5 |
 | A point with no target is reported as ungradable, never as a pass | RFP G.2.5 |
 | Exactly one point per model is the headline point; no waiver may be applied to it | RFP B.2, M.5 |
+
+### The two rules above interact, and the KV pool decides whether they can both hold
+
+`get_benchmark_max_concurrency` demotes a point's concurrency when the device KV-token pool
+cannot hold that many requests of that shape:
+
+```
+concurrency = min(max_tokens_all_users // (isl + osl), model_max_concurrency)
+```
+
+So a pool sized only for the shortest inputs quietly splits the loaded corner into a
+different level per input length — one input length each, which breaks the three-point rule
+*and* produces more than two levels. DeepSeek-V4-Flash hit exactly this: at a pool of
+1,056,768 the sweep demoted 32K→32, 64K→16, 128K→8, 256K→4, 512K→2.
+
+**Size the pool for `model_max_concurrency` requests at the longest graded input**, and
+check the whole sweep resolves to two levels before authoring targets:
+
+```bash
+MODEL_SPECS_ENV=dev ONLY_BENCHMARK_TARGETS=1 python -c "
+from collections import defaultdict
+from llm_module.benchmark_configs import get_llm_configs
+from report_module.scorecard import point_weights
+from workflows.model_spec import MODEL_SPECS
+from workflows.workflow_types import DeviceTypes
+s = next(s for s in MODEL_SPECS.values()
+         if s.device_model_spec.device == DeviceTypes.BLACKHOLE_GALAXY
+         and 'YOUR-MODEL' in s.hf_model_repo)
+c = get_llm_configs(s, DeviceTypes.BLACKHOLE_GALAXY)
+by = defaultdict(list)
+for x in c: by[x.max_concurrency].append(x.isl)
+print({k: len(v) for k, v in sorted(by.items())})
+print(sum(point_weights([(x.max_concurrency, x.isl) for x in c]).values()))
+"
+```
+
+Two levels, ≥3 input lengths each, weights summing to 1.0.
+
+### A full-context input cannot be swept
+
+`isl + osl` must be ≤ `max_context`. A power-of-two input equal to the context window leaves
+no room for output, and `get_benchmark_max_concurrency` responds by returning concurrency 1
+rather than rejecting the point — so the mistake surfaces as a mysterious extra concurrency
+level, not as an error. The largest usable input is `max_context − osl`.
 
 ---
 

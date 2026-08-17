@@ -35,8 +35,17 @@ M0_TIER = "functional"
 M0_STATUS = ModelStatusTypes.FUNCTIONAL
 M0_TOLERANCE = 0.10
 
-# The DeepSeek-V4-Flash-0731 mid point, downrated per the convention.
-TTFT_TARGET, TPUT_USER_TARGET, TPUT_TARGET = 2820.0, 25.0, 1603.0
+# The DeepSeek-V4-Flash-0731 reference point used throughout: ISL 8192 at the
+# LOADED corner. Input lengths are swept at both concurrency corners, so a point
+# is identified by (isl, concurrency) — isl alone is ambiguous.
+REF_ISL, REF_CONC = 8192, 64
+# Authored values at this point, to the 4 dp the reference file stores:
+# 8192 / (371835 * 0.50 / 64) * 1000 = 2820.0035 ms, and 25 t/s/u x 64.
+TTFT_TARGET, TPUT_USER_TARGET, TPUT_TARGET = 2820.0035, 25.0, 1600.0
+
+
+def _reference_point(points):
+    return next(p for p in points if p.isl == REF_ISL and p.max_concurrency == REF_CONC)
 
 
 def _cfg(tolerance: float = M0_TOLERANCE, tier: str = M0_TIER) -> BenchmarkTaskParams:
@@ -189,7 +198,7 @@ def test_a_single_tier_map_yields_one_tier_holding_the_value_verbatim():
     for point in points:
         assert set(point.targets) == {M0_TIER}
 
-    mid = next(p for p in points if p.isl == 8192)
+    mid = _reference_point(points)
     target = mid.targets[M0_TIER]
     assert (target.ttft_ms, target.tput_user, target.tput) == (
         TTFT_TARGET,
@@ -225,6 +234,74 @@ def test_the_device_override_beats_the_model_wide_ladder():
     for point in ref[DeviceTypes.BLACKHOLE_GALAXY]:
         assert set(point.targets) == {M0_TIER}
         assert point.targets[M0_TIER].ttft_ms != TTFT_TARGET / 0.10
+
+
+# --------------------------------------------------------------------------
+# The DeepSeek sweep shape
+# --------------------------------------------------------------------------
+
+DSV4 = "DeepSeek-V4-Flash-0731"
+MAX_CONTEXT, OSL = 1048576, 128
+#: 1K..512K by powers of two, then the context-saturating point. A full 2**20
+#: input cannot be swept: 2**20 + 128 exceeds max_context, so the top point is
+#: max_context - osl.
+EXPECTED_ISLS = [1024 * 2**i for i in range(10)] + [MAX_CONTEXT - OSL]
+
+
+def _dsv4_points():
+    return get_perf_reference_map(DSV4, {M0_TIER: 1.0})[DeviceTypes.BLACKHOLE_GALAXY]
+
+
+def test_the_sweep_covers_both_corners_at_every_input_length():
+    by_conc = {}
+    for p in _dsv4_points():
+        by_conc.setdefault(p.max_concurrency, []).append(p.isl)
+    assert sorted(by_conc) == [1, 64], "Appendix B.5 weights exactly two corners"
+    for conc, isls in by_conc.items():
+        assert sorted(isls) == EXPECTED_ISLS, conc
+
+
+def test_no_input_length_exceeds_the_context_window():
+    """A point whose isl+osl passes max_context cannot be served at all, and
+    get_benchmark_max_concurrency silently returns 1 rather than rejecting it."""
+    for p in _dsv4_points():
+        assert p.isl + p.osl <= MAX_CONTEXT, p.isl
+
+
+def test_ttft_targets_scale_linearly_with_input_length_at_each_corner():
+    """Prefill is compute-bound, so the target curve is linear in ISL. A point
+    off the line is an authoring slip, not a modelling choice."""
+    for conc in (1, 64):
+        pts = sorted(
+            (p for p in _dsv4_points() if p.max_concurrency == conc),
+            key=lambda p: p.isl,
+        )
+        rate = pts[0].isl / pts[0].targets[M0_TIER].ttft_ms
+        for p in pts:
+            assert p.isl / p.targets[M0_TIER].ttft_ms == pytest.approx(rate, rel=1e-3)
+
+
+def test_the_loaded_corner_is_exactly_64x_slower_than_the_idle_one():
+    """64 concurrent requests share one machine's fixed prefill capability."""
+    idle = {
+        p.isl: p.targets[M0_TIER].ttft_ms
+        for p in _dsv4_points()
+        if p.max_concurrency == 1
+    }
+    for p in _dsv4_points():
+        if p.max_concurrency == 64:
+            assert p.targets[M0_TIER].ttft_ms == pytest.approx(
+                idle[p.isl] * 64, rel=1e-3
+            )
+
+
+def test_aggregate_decode_target_is_per_user_times_concurrency():
+    """Measured ``tput`` is defined as tput_user x concurrency
+    (llm_module.parsers.base.decode_throughput), so the target must match that
+    definition or a system hitting interactivity exactly still misses the bar."""
+    for p in _dsv4_points():
+        t = p.targets[M0_TIER]
+        assert t.tput == pytest.approx(t.tput_user * p.max_concurrency)
 
 
 # --------------------------------------------------------------------------
@@ -351,7 +428,7 @@ def test_without_an_override_the_default_ladder_still_derives_three_tiers():
     ref = get_perf_reference_map(
         "DeepSeek-V4-Flash-0731", {"functional": 0.10, "complete": 0.50, "target": 1.0}
     )
-    mid = next(p for p in ref[DeviceTypes.BLACKHOLE_GALAXY] if p.isl == 8192)
+    mid = _reference_point(ref[DeviceTypes.BLACKHOLE_GALAXY])
     assert set(mid.targets) == {"functional", "complete", "target"}
     # Latency divided by the percentage, throughput multiplied by it.
     assert mid.targets["target"].ttft_ms == pytest.approx(TTFT_TARGET)
