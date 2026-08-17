@@ -2,6 +2,8 @@
 {{- $cfg := include "tt-inference-server.resolvedConfig" . | fromYaml }}
 {{- $engine := include "tt-inference-server.resolvedEngine" . }}
 {{- $ttCount := include "tt-inference-server.draDeviceCount" . }}
+{{- $startupPeriod := $cfg.probes.startup.periodSeconds | int }}
+{{- if le $startupPeriod 0 }}{{- fail "probes.startup.periodSeconds must be greater than 0 (it divides progressDeadlineSeconds to size the startupProbe budget)." }}{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -117,6 +119,20 @@ spec:
               - name: tt
             {{- end }}
           {{- end }}
+          # startupProbe owns the compile/warmup window: while it runs the kubelet
+          # suppresses liveness/readiness, then they take over immediately. The
+          # budget = failureThreshold × periodSeconds is derived from
+          # progressDeadlineSeconds so it always matches the max compile time; it
+          # flips to serving as soon as one poll succeeds, not after a fixed delay.
+          # Always rendered — disabling it would let liveness (initialDelaySeconds
+          # defaults to 0) kill the container mid-compile.
+          startupProbe:
+            httpGet:
+              path: {{ $cfg.probes.readiness.path | default "/health" }}
+              port: http
+            periodSeconds: {{ $startupPeriod }}
+            failureThreshold: {{ ceil (divf $cfg.progressDeadlineSeconds $startupPeriod) | int }}
+            timeoutSeconds: 5
           {{- if $cfg.probes.liveness.enabled }}
           livenessProbe:
             httpGet:
@@ -126,7 +142,6 @@ spec:
               path: {{ $cfg.probes.liveness.path }}
               {{- end }}
               port: http
-            initialDelaySeconds: {{ $cfg.probes.liveness.initialDelaySeconds }}
             periodSeconds: 30
             timeoutSeconds: 5
             failureThreshold: 3
@@ -136,7 +151,6 @@ spec:
             httpGet:
               path: {{ $cfg.probes.readiness.path }}
               port: http
-            initialDelaySeconds: {{ $cfg.probes.readiness.initialDelaySeconds }}
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 3

@@ -1164,6 +1164,23 @@ jobs:
               && { echo "::error::hostPath /dev/tenstorrent present for $device"; exit 1; } || true
           done
 
+      - name: Verify startupProbe budget derives from progressDeadlineSeconds
+        run: |
+          set -e
+          # startupProbe is always rendered and its failureThreshold is computed as
+          # ceil(progressDeadlineSeconds / periodSeconds) (periodSeconds default 15).
+          # model:device:expected-failureThreshold (pd 5400 -> 360, pd 7200 -> 480)
+          for triple in gpt-oss-20b:t3k:360 gpt-oss-120b:t3k:480; do
+            model="${triple%%:*}"; rest="${triple#*:}"; device="${rest%%:*}"; want="${rest##*:}"
+            echo "--- startupProbe: $model / $device (expect failureThreshold $want)"
+            RENDERED=$(helm template ttis charts/tt-inference-server \
+              --set model="$model" --set device="$device")
+            echo "$RENDERED" | grep -qE '^[[:space:]]*startupProbe:$' \
+              || { echo "::error::startupProbe missing for $model/$device"; exit 1; }
+            echo "$RENDERED" | grep -qE "^[[:space:]]*failureThreshold: ${want}\$" \
+              || { echo "::error::$model/$device startupProbe.failureThreshold must be $want"; exit 1; }
+          done
+
   ci-gate:
     name: CI Gate
     runs-on: ubuntu-latest
