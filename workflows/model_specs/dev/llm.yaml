@@ -237,22 +237,32 @@ templates:
       # Per-system max concurrent requests; sets the sweep's upper concurrency
       # corner (RFP Appendix B.0/B.1). Enforced per system regardless of the
       # operator's data-parallel choice — see get_perf_reference. Partner-tunable.
-      max_concurrency: 128
+      #
+      # 32, not the earlier placeholder 128: this is the expected max-num-seqs at
+      # full context for this model on a 32-chip Galaxy, and the graded targets in
+      # model_performance_reference.json are authored at it.
+      max_concurrency: 32
       # Full native context (256K). Unlike the QB2/P300X2 entry above there is no
       # hybrid-off ~49K pool cap here: a 32-chip Galaxy has the DRAM to hold the
       # full-length KV pool, so Milestone-0 runs at full context (readiness §5.4).
       # [Verify — Performance: confirm the hybrid-off KV pool fits Galaxy DRAM at
       # 262144 with prefill scratch headroom.]
       max_context: 262144  # 256 * 1024
-      # [TBD — Performance] Device KV-token pool for the concurrency sweep. Left
-      # unset, this defaults to max_context (262144), which lets only ISLs 128 and
-      # 1024 reach concurrency 128 — too few for the scaling-quality fit, which
-      # needs >=3 distinct input lengths at every graded concurrency level (RFP
-      # Appendix F.1; readiness §5.7). A 32-chip Galaxy has a far larger aggregate
-      # KV pool; set this to the measured value, and >= 278528 (=128*2176) so
-      # ISLs {128,1024,2048} all reach concurrency 128. get_llm_configs enforces
-      # this once blackhole_galaxy targets are authored (sweep/target work).
-      max_tokens_all_users_override: 32 * 256 * 1024
+      # Device KV-token pool for the concurrency sweep: 32 concurrent requests at
+      # the full 256K context. This is what lets the loaded corner reach
+      # concurrency 32 at EVERY graded input length, including the
+      # context-saturating one — 8,388,608 / (262,016 + 128) = 32 exactly.
+      #
+      # Written as an integer. It previously read `32 * 256 * 1024`, which YAML
+      # does not evaluate: the value loaded as the *string* '32 * 256 * 1024' and
+      # get_benchmark_max_concurrency raised TypeError on `str // int`. Nothing
+      # caught it because this model had no blackhole_galaxy targets, so the sweep
+      # never reached that code path.
+      #
+      # [TBD — Performance: replace with the measured 32-chip pool once available.
+      # If the real pool is smaller, the top graded input lengths must come down
+      # with it — see docs/rfp/m0-target-convention.md.]
+      max_tokens_all_users_override: 8388608  # 32 * 256 * 1024
       default_impl: true
       env_vars:
         # Fixed 4x8 2D torus mesh graph descriptor (RFP D.2). Not a partner choice.

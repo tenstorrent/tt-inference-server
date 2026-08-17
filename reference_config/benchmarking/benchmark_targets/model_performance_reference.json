@@ -1,4 +1,332 @@
 {
+    "gemma-4-31B-it": {
+        "blackhole_galaxy": [
+            {
+                "isl": 1024,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 32,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 8.3203,
+                        "tput_user": 35.0,
+                        "tput": 35.0
+                    }
+                },
+                "tolerance": 0.1
+            },
+            {
+                "isl": 2048,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 32,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 16.6407,
+                        "tput_user": 35.0,
+                        "tput": 35.0
+                    }
+                },
+                "tolerance": 0.1
+            },
+            {
+                "isl": 4096,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 32,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 33.2813,
+                        "tput_user": 35.0,
+                        "tput": 35.0
+                    }
+                },
+                "tolerance": 0.1
+            },
+            {
+                "isl": 8192,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 32,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 66.5627,
+                        "tput_user": 35.0,
+                        "tput": 35.0
+                    }
+                },
+                "tolerance": 0.1
+            },
+            {
+                "isl": 16384,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 32,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 133.1253,
+                        "tput_user": 35.0,
+                        "tput": 35.0
+                    }
+                },
+                "tolerance": 0.1
+            },
+            {
+                "isl": 32768,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 32,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 266.2507,
+                        "tput_user": 35.0,
+                        "tput": 35.0
+                    }
+                },
+                "tolerance": 0.1
+            },
+            {
+                "isl": 65536,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 32,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 532.5013,
+                        "tput_user": 35.0,
+                        "tput": 35.0
+                    }
+                },
+                "tolerance": 0.1
+            },
+            {
+                "isl": 131072,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 32,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 1065.0026,
+                        "tput_user": 35.0,
+                        "tput": 35.0
+                    }
+                },
+                "tolerance": 0.1
+            },
+            {
+                "isl": 262016,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 32,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 2128.9652,
+                        "tput_user": 35.0,
+                        "tput": 35.0
+                    }
+                },
+                "tolerance": 0.1
+            },
+            {
+                "isl": 1024,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 128,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 266.2507,
+                        "tput_user": 35.0,
+                        "tput": 1120.0
+                    }
+                },
+                "tolerance": 0.1
+            },
+            {
+                "isl": 2048,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 128,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 532.5013,
+                        "tput_user": 35.0,
+                        "tput": 1120.0
+                    }
+                },
+                "tolerance": 0.1
+            },
+            {
+                "isl": 4096,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 128,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 1065.0026,
+                        "tput_user": 35.0,
+                        "tput": 1120.0
+                    }
+                },
+                "tolerance": 0.1
+            },
+            {
+                "isl": 8192,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 128,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 2130.0052,
+                        "tput_user": 35.0,
+                        "tput": 1120.0
+                    }
+                },
+                "tolerance": 0.1
+            },
+            {
+                "isl": 16384,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 128,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 4260.0104,
+                        "tput_user": 35.0,
+                        "tput": 1120.0
+                    }
+                },
+                "tolerance": 0.1
+            },
+            {
+                "isl": 32768,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 128,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 8520.0208,
+                        "tput_user": 35.0,
+                        "tput": 1120.0
+                    }
+                },
+                "tolerance": 0.1
+            },
+            {
+                "isl": 65536,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 128,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 17040.0416,
+                        "tput_user": 35.0,
+                        "tput": 1120.0
+                    }
+                },
+                "tolerance": 0.1
+            },
+            {
+                "isl": 131072,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 128,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 34080.0832,
+                        "tput_user": 35.0,
+                        "tput": 1120.0
+                    }
+                },
+                "tolerance": 0.1
+            },
+            {
+                "isl": 262016,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 128,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 68126.8851,
+                        "tput_user": 35.0,
+                        "tput": 1120.0
+                    }
+                },
+                "tolerance": 0.1
+            }
+        ]
+    },
     "DeepSeek-V4-Flash-0731": {
         "blackhole_galaxy": [
             {

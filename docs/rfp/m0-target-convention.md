@@ -231,12 +231,20 @@ level, not as an error. The largest usable input is `max_context − osl`.
 
 ## 6. Known trap when adding a model
 
-**The reference-file key is case-sensitive and derived from the spec's weights.**
-`gemma-4-31B-it` is filed in the reference file as `gemma-4-31b-it` (lowercase `b`, matching
-the Forge dev spec and `tt-media-server`'s `ModelNames` constant), while the prod spec derives
-`gemma-4-31B-it`. Targets filed under the wrong spelling resolve to nothing. There is now a
-warning (tenstorrent#4884) but the result is still no targets. Settle the key before
-authoring.
+**The reference-file key is case-sensitive and derived from the spec's weights.** Two specs
+can differ only by case and each needs its own key. `gemma-4-31B-it` (upper `B`) is what the
+Milestone-0 `tt_transformers` spec derives; `gemma-4-31b-it` is what the **Forge** spec
+derives, matching `tt-media-server`'s `ModelNames` constant, and it owns the `p300x2` entry.
+Both keys exist and neither is renamed — renaming either moves targets off the spec that reads
+them. Targets under the wrong spelling resolve to nothing; there is a warning
+(tenstorrent#4884) but the result is still no targets. Check what your spec derives with
+`workflows.model_spec.model_weights_to_model_name(weights[0])` before authoring.
+
+**A pool written as an arithmetic expression is a string.** YAML does not evaluate
+`32 * 256 * 1024`; it loads as text and `get_benchmark_max_concurrency` raises
+`TypeError: unsupported operand type(s) for //: 'str' and 'int'`. That went unnoticed on the
+gemma spec because the model had no targets, so the sweep never reached the code path. Write
+the integer and put the arithmetic in a comment.
 
 `Mistral-Small-3.1-24B-Instruct-2503` also carries a stale `blackhole_galaxy` entry copied
 verbatim from its `p300x2` row. It is not a Milestone-0 model and that entry is not a starting

@@ -240,68 +240,94 @@ def test_the_device_override_beats_the_model_wide_ladder():
 # The DeepSeek sweep shape
 # --------------------------------------------------------------------------
 
-DSV4 = "DeepSeek-V4-Flash-0731"
-MAX_CONTEXT, OSL = 1048576, 128
-#: 1K..512K by powers of two, then the context-saturating point. A full 2**20
-#: input cannot be swept: 2**20 + 128 exceeds max_context, so the top point is
-#: max_context - osl.
-EXPECTED_ISLS = [1024 * 2**i for i in range(10)] + [MAX_CONTEXT - OSL]
+#: Each Milestone-0 model's authored sweep, as
+#: (reference key, max_context, loaded concurrency, top power-of-two exponent).
+#: Input lengths run 1K up by powers of two, then one context-saturating point at
+#: ``max_context - osl``: a power-of-two input equal to the context window leaves
+#: no room for output, and get_benchmark_max_concurrency answers that by silently
+#: returning concurrency 1 rather than rejecting the point.
+OSL = 128
+M0_SWEEPS = {
+    "DeepSeek-V4-Flash-0731": (1048576, 64, 10),
+    "gemma-4-31B-it": (262144, 32, 8),
+}
 
 
-def _dsv4_points():
-    return get_perf_reference_map(DSV4, {M0_TIER: 1.0})[DeviceTypes.BLACKHOLE_GALAXY]
+def _sweep_isls(max_context, n_powers):
+    return [1024 * 2**i for i in range(n_powers)] + [max_context - OSL]
 
 
-def test_the_sweep_covers_both_corners_at_every_input_length():
+def _points(key):
+    return get_perf_reference_map(key, {M0_TIER: 1.0})[DeviceTypes.BLACKHOLE_GALAXY]
+
+
+@pytest.mark.parametrize("key", sorted(M0_SWEEPS))
+def test_the_sweep_covers_both_corners_at_every_input_length(key):
+    max_context, loaded, n_powers = M0_SWEEPS[key]
     by_conc = {}
-    for p in _dsv4_points():
+    for p in _points(key):
         by_conc.setdefault(p.max_concurrency, []).append(p.isl)
-    assert sorted(by_conc) == [1, 64], "Appendix B.5 weights exactly two corners"
+    assert sorted(by_conc) == [1, loaded], "Appendix B.5 weights exactly two corners"
     for conc, isls in by_conc.items():
-        assert sorted(isls) == EXPECTED_ISLS, conc
+        assert sorted(isls) == _sweep_isls(max_context, n_powers), conc
 
 
-def test_no_input_length_exceeds_the_context_window():
-    """A point whose isl+osl passes max_context cannot be served at all, and
-    get_benchmark_max_concurrency silently returns 1 rather than rejecting it."""
-    for p in _dsv4_points():
-        assert p.isl + p.osl <= MAX_CONTEXT, p.isl
+@pytest.mark.parametrize("key", sorted(M0_SWEEPS))
+def test_no_input_length_exceeds_the_context_window(key):
+    max_context, _, _ = M0_SWEEPS[key]
+    for p in _points(key):
+        assert p.isl + p.osl <= max_context, (key, p.isl)
 
 
-def test_ttft_targets_scale_linearly_with_input_length_at_each_corner():
+@pytest.mark.parametrize("key", sorted(M0_SWEEPS))
+def test_ttft_targets_scale_linearly_with_input_length_at_each_corner(key):
     """Prefill is compute-bound, so the target curve is linear in ISL. A point
     off the line is an authoring slip, not a modelling choice."""
-    for conc in (1, 64):
+    _, loaded, _ = M0_SWEEPS[key]
+    for conc in (1, loaded):
         pts = sorted(
-            (p for p in _dsv4_points() if p.max_concurrency == conc),
-            key=lambda p: p.isl,
+            (p for p in _points(key) if p.max_concurrency == conc), key=lambda p: p.isl
         )
         rate = pts[0].isl / pts[0].targets[M0_TIER].ttft_ms
         for p in pts:
             assert p.isl / p.targets[M0_TIER].ttft_ms == pytest.approx(rate, rel=1e-3)
 
 
-def test_the_loaded_corner_is_exactly_64x_slower_than_the_idle_one():
-    """64 concurrent requests share one machine's fixed prefill capability."""
+@pytest.mark.parametrize("key", sorted(M0_SWEEPS))
+def test_the_loaded_corner_is_slower_by_exactly_the_concurrency_factor(key):
+    """The concurrent requests share one machine's fixed prefill capability."""
+    _, loaded, _ = M0_SWEEPS[key]
     idle = {
         p.isl: p.targets[M0_TIER].ttft_ms
-        for p in _dsv4_points()
+        for p in _points(key)
         if p.max_concurrency == 1
     }
-    for p in _dsv4_points():
-        if p.max_concurrency == 64:
+    for p in _points(key):
+        if p.max_concurrency == loaded:
             assert p.targets[M0_TIER].ttft_ms == pytest.approx(
-                idle[p.isl] * 64, rel=1e-3
+                idle[p.isl] * loaded, rel=1e-3
             )
 
 
-def test_aggregate_decode_target_is_per_user_times_concurrency():
+@pytest.mark.parametrize("key", sorted(M0_SWEEPS))
+def test_aggregate_decode_target_is_per_user_times_concurrency(key):
     """Measured ``tput`` is defined as tput_user x concurrency
     (llm_module.parsers.base.decode_throughput), so the target must match that
     definition or a system hitting interactivity exactly still misses the bar."""
-    for p in _dsv4_points():
+    for p in _points(key):
         t = p.targets[M0_TIER]
         assert t.tput == pytest.approx(t.tput_user * p.max_concurrency)
+
+
+def test_gemma_targets_are_filed_under_the_key_its_spec_derives():
+    """The tt_transformers Milestone-0 spec derives `gemma-4-31B-it` (upper B); the
+    Forge spec derives `gemma-4-31b-it` and owns the p300x2 entry. Targets under
+    the wrong spelling resolve to nothing (tenstorrent#4884), so both keys exist
+    and neither is renamed."""
+    from workflows.model_spec import model_performance_reference
+
+    assert "blackhole_galaxy" in model_performance_reference["gemma-4-31B-it"]
+    assert sorted(model_performance_reference["gemma-4-31b-it"]) == ["p300x2"]
 
 
 # --------------------------------------------------------------------------
