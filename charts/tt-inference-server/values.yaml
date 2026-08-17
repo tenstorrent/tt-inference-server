@@ -6007,10 +6007,7 @@ models:
               tag: 0.20.0-de59f8a
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -6757,11 +6754,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.20.0-de59f8a-03fa3af
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 67Gi
@@ -6795,10 +6787,7 @@ models:
               tag: 0.20.0-de59f8a
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -6842,10 +6831,7 @@ models:
               tag: 0.20.0-de59f8a
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
