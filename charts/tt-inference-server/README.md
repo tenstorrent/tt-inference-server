@@ -155,7 +155,7 @@ defaults                                              ← baseline for every mod
 
 1. Resolve the engine — `n300` is offered by both `vllm` and `forge`, so `models.Llama-3.1-8B-Instruct.defaultEngine` (`vllm`) is used. Pass `--set engine=forge` to pick the other.
 2. Resolve the impl — `models.Llama-3.1-8B-Instruct.vllm.n300.defaultImpl` (`tt_transformers`).
-3. Start from the full `defaults` block, then deep-merge `models.Llama-3.1-8B-Instruct.vllm.n300.impls.tt_transformers` on top — overriding `image.repository`, `image.tag`, `resources`, probe delays, and `env`.
+3. Start from the full `defaults` block, then deep-merge `models.Llama-3.1-8B-Instruct.vllm.n300.impls.tt_transformers` on top — overriding `image.repository`, `image.tag`, `resources`, `progressDeadlineSeconds`, and `env`.
 
 Any field the resolved impl block does not set falls back to `defaults`.
 
@@ -200,12 +200,13 @@ All fields under `defaults` apply to every model/engine/device/impl unless overr
 | `defaults.resources.requests.cpu` | `"6"` | CPU request. |
 | `defaults.resources.requests.memory` | `64Gi` | Memory request (often overridden per impl). |
 | `defaults.resources.requests.hugepages-1Gi` | `32Gi` | Hugepage request. |
+| `defaults.probes.startup.periodSeconds` | `15` | startupProbe poll interval (must be `> 0`). The startupProbe is always rendered — it owns the model compile/warmup window, and while it runs the kubelet suppresses liveness/readiness so a slow compile never triggers a restart. `failureThreshold` is not set here — the Deployment derives it as `ceil(progressDeadlineSeconds / periodSeconds)`, so the startup budget tracks the max compile time and the Pod flips to `1/1` as soon as one poll succeeds. |
 | `defaults.probes.liveness.enabled` | `true` | Enable liveness probe. |
-| `defaults.probes.liveness.path` | `/v1/models` | Liveness probe HTTP path. |
-| `defaults.probes.liveness.initialDelaySeconds` | `2400` | Liveness probe initial delay. Set high due to model load times. |
+| `defaults.probes.liveness.path` | `/v1/models` | Liveness probe HTTP path (`/tt-liveness` for non-vllm engines). |
+| `defaults.probes.liveness.initialDelaySeconds` | `0` | Liveness probe initial delay. `0` because the startupProbe gates the compile window. |
 | `defaults.probes.readiness.enabled` | `true` | Enable readiness probe. |
-| `defaults.probes.readiness.path` | `/health` | Readiness probe HTTP path. |
-| `defaults.probes.readiness.initialDelaySeconds` | `2400` | Readiness probe initial delay. |
+| `defaults.probes.readiness.path` | `/health` | Readiness probe HTTP path (also used by the startupProbe). |
+| `defaults.probes.readiness.initialDelaySeconds` | `0` | Readiness probe initial delay. `0` because the startupProbe gates the compile window. |
 | `defaults.nodeSelector` | `{}` | Node selector applied to the pod. |
 | `defaults.tolerations` | `[]` | Tolerations applied to the pod. |
 | `defaults.affinity` | `{}` | User-supplied affinity, applied as-is. v0.2 no longer injects a 1-Pod-per-Node `podAntiAffinity` — DRA prevents device collisions by allocation, so multiple Pods may run on one Node. |
