@@ -78,6 +78,24 @@ def test_synthesize_off_catalog_spec():
     assert spec.device_model_spec.max_concurrency == 16
 
 
+def test_synthesized_model_id_is_a_single_path_component():
+    """An HF org prefix must not turn model_id into a nested directory.
+
+    model_id names the runtime-spec JSON, the run log, and the per-eval output
+    dirs; a raw "org/model" silently writes into an "org/" subdirectory that
+    nothing has created, which fails the run before the workflow starts.
+    """
+    spec = TenstorrentModelSpecProvider().synthesize(
+        model_name="acme/tiny-llm",
+        hf_model_repo="acme/tiny-llm",
+        device="super_cluster",
+        max_context=8192,
+        max_concurrency=16,
+    )
+    assert "/" not in spec.model_id
+    assert spec.model_id.startswith("acme__tiny-llm")
+
+
 def test_requirements_provider_synthesizes_when_off_catalog(doc):
     provider = RequirementsModelSpecProvider(TenstorrentModelSpecProvider(), doc)
     # The document's model name is the HF repo path and is not a catalog name,
@@ -157,6 +175,45 @@ def test_eval_task_synthesized_with_neutral_defaults(doc, monkeypatch):
         "unit": "percent",
     }
     assert gpqa.priority == "must"
+
+
+def test_harness_concurrency_comes_from_the_document(doc, pack):
+    """The borrowed template's trial count must not decide this deployment's.
+
+    Which catalog model a harness template is borrowed from is decided by
+    EVAL_CONFIGS iteration order, so its n_concurrent_trials is arbitrary here
+    (Terminal-Bench 2 in particular borrows a serial, n=1 template). The
+    document states what the instance under test serves concurrently, so that
+    is what the harnesses run at.
+    """
+    harness_tasks = {
+        task.task_name: (task.agentic_eval_config or task.swebench_eval_config)
+        for task in pack.eval_config(doc.model.name).tasks
+        if (task.agentic_eval_config or task.swebench_eval_config) is not None
+    }
+    assert set(harness_tasks) == {"swe_bench_verified", "terminal_bench_2"}
+    for cfg in harness_tasks.values():
+        assert cfg.n_concurrent_trials == doc.deployment.max_concurrency_per_instance
+
+
+def test_harness_concurrency_falls_back_when_document_is_silent(doc):
+    """No maxConcurrencyPerInstance means nothing to override with."""
+    from dataclasses import replace
+
+    silent = replace(
+        doc, deployment=replace(doc.deployment, max_concurrency_per_instance=None)
+    )
+    pack = RequirementsTargetPack(silent, TenstorrentTargetPack())
+    task = next(
+        t
+        for t in pack.eval_config(silent.model.name).tasks
+        if t.task_name == "terminal_bench_2"
+    )
+    borrowed = pack._find_task_template("terminal_bench_2")
+    assert (
+        task.agentic_eval_config.n_concurrent_trials
+        == borrowed.agentic_eval_config.n_concurrent_trials
+    )
 
 
 def test_eval_task_synthesis_rejects_harness_backed_task(pack, monkeypatch):

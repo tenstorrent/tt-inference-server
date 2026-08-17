@@ -206,7 +206,47 @@ class RequirementsTargetPack:
             ),
             tolerance=ae.tolerance,
         )
-        return replace(template, score=new_score, priority=ae.priority)
+        return replace(
+            template,
+            score=new_score,
+            priority=ae.priority,
+            **self._harness_concurrency_overrides(template, task_name),
+        )
+
+    def _harness_concurrency_overrides(
+        self, template: Any, task_name: str
+    ) -> Mapping[str, Any]:
+        """Re-point a borrowed harness config at the document's concurrency.
+
+        The template is borrowed from whichever catalog model happens to define
+        the task, so its ``n_concurrent_trials`` describes *that* model's
+        deployment -- and which model is borrowed is decided by catalog
+        iteration order, so inheriting it would make the trial count arbitrary.
+        ``deployment.maxConcurrencyPerInstance`` is the document's own statement
+        of what the instance under test serves concurrently, so it is the
+        honest trial count here.
+
+        Deliberately unclamped: the document is authoritative about the
+        deployment. A trial count the host cannot afford is a property of the
+        document, not something to silently correct.
+        """
+        concurrency = self._doc.deployment.max_concurrency_per_instance
+        if not concurrency:
+            return {}
+        overrides = {}
+        for field_name in ("agentic_eval_config", "swebench_eval_config"):
+            cfg = getattr(template, field_name, None)
+            if cfg is None or cfg.n_concurrent_trials == concurrency:
+                continue
+            logger.info(
+                "Task %s: overriding borrowed n_concurrent_trials %s -> %s from "
+                "the requirements document's deployment.maxConcurrencyPerInstance.",
+                task_name,
+                cfg.n_concurrent_trials,
+                concurrency,
+            )
+            overrides[field_name] = replace(cfg, n_concurrent_trials=concurrency)
+        return overrides
 
     def _find_task_template(self, task_name: str) -> Optional[Any]:
         """Borrow a runnable EvalTask for ``task_name`` from the catalog.
