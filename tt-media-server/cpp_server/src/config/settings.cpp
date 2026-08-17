@@ -5,7 +5,6 @@
 
 #include <json/json.h>
 #include <unistd.h>
-
 #include <algorithm>
 #include <atomic>
 #include <cctype>
@@ -15,6 +14,8 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <fmt/format.h>
+#include <fmt/ranges.h>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
@@ -561,12 +562,7 @@ const std::vector<EmbeddingModelEntry>& embeddingModels() {
 }
 
 std::string joinNames(const std::vector<std::string>& names) {
-  std::string out;
-  for (const auto& n : names) {
-    if (!out.empty()) out += ", ";
-    out += n;
-  }
-  return out;
+  return fmt::format("{}", fmt::join(names, ", "));
 }
 
 const EmbeddingModelEntry& findEmbeddingModelOrThrow(
