@@ -1209,7 +1209,7 @@ templates:
   # predates models/autoports/google_gemma_4_31b and cannot contain it.
   # generate_code_link() builds the release report's link to the code under test
   # from this value, so it must track the branch head rather than lag it.
-  tt_metal_commit: "0688cce104e"
+  tt_metal_commit: "da5ec342a7d"
   # vllm_commit only feeds generate_docker_tag() (image naming); it selects no
   # code. Kept on 6b4a3a7 to match the four sibling prod entries that share it.
   # Note tt-shield now resolves vLLM from tenstorrent/vllm-tt-plugin rather than
