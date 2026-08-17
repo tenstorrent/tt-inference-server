@@ -1206,11 +1206,17 @@ templates:
     - google/gemma-4-31B
   version: "0.19.0"
   # tt_metal_commit is this autoport's branch head: the validated c49bb76
-  # predates models/autoports/google_gemma_4_31b and cannot contain it. The
-  # vLLM pin stays on the validated 6b4a3a7, which already carries the
-  # plugin EXTRA_MODELS_DIR bundle mechanism this autoport is selected
-  # through, so nothing diverges from the validated pair on the vLLM side.
-  tt_metal_commit: "e4297d3bc2f"
+  # predates models/autoports/google_gemma_4_31b and cannot contain it.
+  # generate_code_link() builds the release report's link to the code under test
+  # from this value, so it must track the branch head rather than lag it.
+  tt_metal_commit: "0688cce104e"
+  # vllm_commit only feeds generate_docker_tag() (image naming); it selects no
+  # code. Kept on 6b4a3a7 to match the four sibling prod entries that share it.
+  # Note tt-shield now resolves vLLM from tenstorrent/vllm-tt-plugin rather than
+  # tenstorrent/vllm (branch `main`, not `dev`); the EXTRA_MODELS_DIR bundle
+  # mechanism this autoport is selected through is present there
+  # (src/vllm_tt_plugin/platform.py::_iter_extra_model_bundles), so the
+  # migration does not change how this model is registered.
   vllm_commit: "6b4a3a7"
   impl: gemma4_31b_autoport
   inference_engine: VLLM
