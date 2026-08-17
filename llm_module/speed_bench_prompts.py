@@ -113,7 +113,9 @@ def exact_chat_content(tokenizer, source_ids: Sequence[int], target_length: int)
     # SentencePiece boundary effects can make the direct correction oscillate.
     # Pick the closest prompt below the target, then close the small residual
     # gap with ordinary natural-language tokens.
-    center = source_count
+    # The correction loop can overshoot past the usable source; keep the scan
+    # window anchored to counts candidate() can actually produce.
+    center = min(source_count, len(source_ids))
     bases: List[tuple[int, str]] = []
     for count in range(max(1, center - 128), min(len(source_ids), center + 128) + 1):
         content = candidate(count)
@@ -187,9 +189,13 @@ def write_speed_bench_prompt_file(
         tokenizer=tokenizer, target_isl=target_isl, num_prompts=num_prompts
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    with output_path.open("w") as handle:
+    # Write-then-rename so an interrupted build never leaves a partial file
+    # that a later sweep point would reuse.
+    staging_path = output_path.with_name(output_path.name + ".tmp")
+    with staging_path.open("w") as handle:
         for prompt in prompts:
             handle.write(json.dumps({"prompt": prompt}) + "\n")
+    staging_path.replace(output_path)
     logger.info(
         "wrote %d exact-%d-token SPEED-Bench prompts to %s",
         len(prompts),

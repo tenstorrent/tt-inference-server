@@ -187,13 +187,17 @@ class VLLMBenchDriver(LLMDriver):
         the 48-step cap. Prompt construction failures are fatal because silently
         switching to random input would produce mislabeled SPEED-Bench results.
         """
-        if "diffusiongemma" not in server.model.lower():
+        if server.output_block_size <= 1:
             return None
         from ..speed_bench_prompts import write_speed_bench_prompt_file
 
         prompts_path = context.output_dir / (
             f"speed_bench_prompts_isl-{config.isl}_n-{config.num_prompts}.jsonl"
         )
+        # The filename keys the content; sweep points differing only in
+        # osl/concurrency reuse the file instead of re-rendering it.
+        if prompts_path.exists():
+            return prompts_path
         try:
             return write_speed_bench_prompt_file(
                 output_path=prompts_path,

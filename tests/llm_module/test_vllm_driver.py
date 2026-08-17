@@ -149,6 +149,51 @@ def test_without_custom_dataset_the_sweep_stays_random():
     assert cmd[cmd.index("--random-input-len") + 1] == "128"
 
 
+def test_token_granular_models_skip_speed_bench_prompts(tmp_path):
+    server = ServerConnection(
+        base_url="http://127.0.0.1",
+        service_port=8000,
+        model="google/diffusiongemma-26B-A4B-it",
+    )
+
+    assert (
+        VLLMBenchDriver._maybe_speed_bench_prompts(
+            _config(),
+            server,
+            DriverContext(output_dir=tmp_path),
+        )
+        is None
+    )
+
+
+def test_existing_prompt_file_short_circuits_rebuild(monkeypatch, tmp_path):
+    from llm_module import speed_bench_prompts
+
+    def fail_rebuild(**_kwargs):
+        raise AssertionError("prompt file should be reused, not rebuilt")
+
+    monkeypatch.setattr(
+        speed_bench_prompts, "write_speed_bench_prompt_file", fail_rebuild
+    )
+    server = ServerConnection(
+        base_url="http://127.0.0.1",
+        service_port=8000,
+        model="google/diffusiongemma-26B-A4B-it",
+        output_block_size=256,
+    )
+    prompts_path = tmp_path / "speed_bench_prompts_isl-128_n-8.jsonl"
+    prompts_path.write_text('{"prompt": "existing"}\n')
+
+    assert (
+        VLLMBenchDriver._maybe_speed_bench_prompts(
+            _config(),
+            server,
+            DriverContext(output_dir=tmp_path),
+        )
+        == prompts_path
+    )
+
+
 def test_speed_bench_prompt_failure_does_not_fall_back_to_random(
     monkeypatch, tmp_path
 ):

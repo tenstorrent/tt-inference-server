@@ -267,11 +267,20 @@ class VLLMDiffusionGemmaParamConformanceTest(VLLMParamConformanceTest):
     REPORT_TASK_NAME = "vllm_diffusiongemma"
 
     def _extra_pytest_args(self) -> List[str]:
-        if self.ctx is None:
-            return []
-        device_spec = getattr(self.ctx.model_spec, "device_model_spec", None)
+        device_spec = (
+            getattr(self.ctx.model_spec, "device_model_spec", None)
+            if self.ctx is not None
+            else None
+        )
         max_context = getattr(device_spec, "max_context", None)
-        return ["--max-context", str(max_context)] if max_context is not None else []
+        if max_context is None:
+            # Without --max-context the context-admission gates pytest.skip,
+            # which would report a green suite with its regression gates off.
+            raise RuntimeError(
+                "vllm_diffusiongemma conformance requires "
+                "model_spec.device_model_spec.max_context"
+            )
+        return ["--max-context", str(max_context)]
 
 
 def run_vllm_param_conformance(

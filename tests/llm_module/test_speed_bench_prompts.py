@@ -34,6 +34,14 @@ class _CharTokenizer:
         return f"<u>{messages[0]['content']}</u>"
 
 
+class _ShrinkingTokenizer(_CharTokenizer):
+    """decode() loses every other token, so re-encoding shrinks the content."""
+
+    def decode(self, ids, skip_special_tokens=False):
+        del skip_special_tokens
+        return "".join(chr(i) for i in ids[::2])
+
+
 def _texts_for_tier(subset, tier):
     del subset
     # Long enough to cover any target after concatenation, distinct per tier.
@@ -54,6 +62,16 @@ def test_exact_chat_content_hits_target_exactly():
     for target in (64, 128, 500):
         content = exact_chat_content(tokenizer, source, target)
         assert len(render_ids(tokenizer, content)) == target
+
+
+def test_rescue_scan_survives_upward_correction_divergence():
+    # The correction loop overshoots far past len(source_ids) when decoding
+    # shrinks the source; the rescue scan must stay anchored to reachable
+    # counts instead of scanning an empty range.
+    tokenizer = _ShrinkingTokenizer()
+    source = tokenizer.encode("lorem ipsum dolor sit amet " * 16)
+    content = exact_chat_content(tokenizer, source, 300)
+    assert len(render_ids(tokenizer, content)) == 300
 
 
 def test_build_exact_prompts_cycles_tiers_and_hits_isl():
@@ -98,3 +116,4 @@ def test_prompt_file_rows_are_custom_dataset_shape(tmp_path, monkeypatch):
     rows = [json.loads(line) for line in out.read_text().splitlines()]
     assert len(rows) == 3
     assert all(set(row) == {"prompt"} for row in rows)
+    assert not (tmp_path / "prompts.jsonl.tmp").exists()

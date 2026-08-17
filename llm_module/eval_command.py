@@ -279,12 +279,17 @@ def build_eval_command(
         lm_eval_exec = task_venv_config.venv_path / "bin" / "lm_eval"
 
     lm_eval_prefix = [str(lm_eval_exec)]
-    if (
-        task.workflow_venv_type == WorkflowVenvType.EVALS_COMMON
-        and task.eval_class == "local-chat-completions"
-        and not getattr(task, "propagate_seed_to_gen_kwargs", True)
-    ):
-        # The pinned lm-eval adapter always copies its model seed into OpenAI
+    if not getattr(task, "propagate_seed_to_gen_kwargs", True):
+        if task.workflow_venv_type in [
+            WorkflowVenvType.EVALS_VISION,
+            WorkflowVenvType.EVALS_AUDIO,
+        ]:
+            raise ValueError(
+                f"propagate_seed_to_gen_kwargs=False on {task.task_name} needs "
+                "the lm-eval no-server-seed wrapper, which lmms-eval tasks "
+                "cannot use"
+            )
+        # The pinned lm-eval adapters always copy their model seed into OpenAI
         # payloads, independently of --gen_kwargs. Use the scoped wrapper so
         # --seed still controls harness RNGs without reaching the server.
         lm_eval_prefix = [

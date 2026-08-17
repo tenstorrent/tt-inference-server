@@ -304,6 +304,9 @@ def test_model_spec_can_disable_and_clear_inherited_metal_timeout(
     monkeypatch.setenv(
         "TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE", "stale-triage-command"
     )
+    # Registered with monkeypatch so the value set_runtime_env_vars writes
+    # into os.environ is removed again at teardown.
+    monkeypatch.setenv("DISABLE_METAL_OP_TIMEOUT", "0")
     model_spec = {
         "device_model_spec": {
             "env_vars": {

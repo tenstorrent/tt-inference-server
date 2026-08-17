@@ -9,15 +9,18 @@ orchestration, and the ``EvalsWorkflow`` LLM override.
 from __future__ import annotations
 
 import json
+import sys
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from llm_module.eval_command import build_eval_command
-from llm_module.lm_eval_no_server_seed import _drop_server_seed
+from llm_module.lm_eval_no_server_seed import _drop_server_seed, _patch_api_adapters
 from reference_config.evals.eval_config import EvalTask, _eval_config_map
 from test_module._test_common import ReportCheckTypes, TestStatus
 from test_module.llm_tests import llm_eval_tests as mod
-from workflows.workflow_types import EvalLimitMode
+from workflows.workflow_types import EvalLimitMode, WorkflowVenvType
 
 _MOD = "test_module.llm_tests.llm_eval_tests"
 
@@ -131,6 +134,52 @@ class TestEvalCommand:
             "temperature": 1.0,
         }
         assert payload["seed"] == 42
+
+    def test_completions_api_task_also_gets_no_server_seed_wrapper(self):
+        task = EvalTask(
+            task_name="model_owned_sampling",
+            gen_kwargs={"do_sample": "true", "temperature": 1.0},
+            propagate_seed_to_gen_kwargs=False,
+        )
+        command = _build_eval_test_command(task)
+
+        assert "seed" not in _command_gen_kwargs(command)
+        assert command[1].endswith("llm_module/lm_eval_no_server_seed.py")
+
+    def test_no_server_seed_rejects_lmms_eval_tasks(self, monkeypatch):
+        # build_eval_command exports OPENAI_API_BASE for vision tasks; keep the
+        # write registered with monkeypatch so it is restored at teardown.
+        monkeypatch.setenv("OPENAI_API_BASE", "restore-me")
+        task = EvalTask(
+            task_name="vision_task",
+            workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+            propagate_seed_to_gen_kwargs=False,
+        )
+
+        with pytest.raises(ValueError, match="no-server-seed"):
+            _build_eval_test_command(task)
+
+    def test_seed_patch_covers_both_api_adapters(self, monkeypatch):
+        class _Completions:
+            def _create_payload(self, *args, **kwargs):
+                return {"prompt": "p", "seed": 1234}
+
+        class _Chat(_Completions):
+            def _create_payload(self, *args, **kwargs):
+                return {"messages": [], "seed": 1234}
+
+        module = SimpleNamespace(
+            LocalCompletionsAPI=_Completions, LocalChatCompletion=_Chat
+        )
+        models_pkg = SimpleNamespace(openai_completions=module)
+        monkeypatch.setitem(sys.modules, "lm_eval", SimpleNamespace(models=models_pkg))
+        monkeypatch.setitem(sys.modules, "lm_eval.models", models_pkg)
+        monkeypatch.setitem(sys.modules, "lm_eval.models.openai_completions", module)
+
+        _patch_api_adapters()
+
+        assert "seed" not in _Completions()._create_payload()
+        assert "seed" not in _Chat()._create_payload()
 
 
 class TestDiffusionGemmaEvalContract:
