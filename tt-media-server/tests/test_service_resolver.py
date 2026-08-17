@@ -1,10 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
-from unittest.mock import Mock
 import sys
+from unittest.mock import Mock
+
 from config.constants import ModelServices
+
+_orig_model_services_scheduler = sys.modules.get("model_services.scheduler")
+_orig_model_services_image_service = sys.modules.get("model_services.image_service")
 
 # Mock ALL problematic modules BEFORE any imports
 sys.modules["ttnn"] = Mock()
@@ -26,8 +30,17 @@ mock_image_service.ImageService = MockImageService
 sys.modules["model_services.image_service"] = mock_image_service
 
 # Now we can safely import
-from resolver import service_resolver
 from model_services.base_service import BaseService
+from resolver import service_resolver
+
+for module_name, original_module in {
+    "model_services.scheduler": _orig_model_services_scheduler,
+    "model_services.image_service": _orig_model_services_image_service,
+}.items():
+    if original_module is not None:
+        sys.modules[module_name] = original_module
+    else:
+        sys.modules.pop(module_name, None)
 
 
 def setup_module(module):
@@ -43,6 +56,11 @@ def teardown_module(module):
 def test_service_resolver_returns_image_service(monkeypatch):
     # Mock the settings directly instead of environment variables
     monkeypatch.setattr("resolver.service_resolver.settings.model_service", "image")
+    monkeypatch.setitem(
+        service_resolver._SUPPORTED_MODEL_SERVICES,
+        ModelServices.IMAGE,
+        lambda: MockImageService(),
+    )
     # Reset singleton to ensure clean test
     service_resolver._service_holders = {}
 

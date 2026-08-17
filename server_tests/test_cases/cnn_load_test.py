@@ -1,12 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 import asyncio
 import logging
 import time
 
 import aiohttp
+
 from server_tests.base_test import BaseTest
 
 logger = logging.getLogger(__name__)
@@ -32,8 +33,8 @@ headers = {
 class CnnLoadTest(BaseTest):
     async def _run_specific_test_async(self):
         self.url = f"http://localhost:{self.service_port}/v1/cnn/search-image"
-        logger.info(self.targets)
-        devices = self.targets.get("num_of_devices", 1)
+        logger.info("CnnLoadTest targets: %s", self.targets)
+        num_concurrent_requests = self._get_num_concurrent_requests(default=1)
         cnn_target_time = self.targets.get("cnn_time", 5)  # in seconds
         response_format = self.targets.get("response_format", "json")
         top_k = self.targets.get("top_k", 3)
@@ -46,13 +47,13 @@ class CnnLoadTest(BaseTest):
         (
             requests_duration,
             average_duration,
-        ) = await self.test_concurrent_cnn(batch_size=devices)
+        ) = await self.test_concurrent_cnn(batch_size=num_concurrent_requests)
 
         return {
             "requests_duration": requests_duration,
             "average_duration": average_duration,
             "target_time": cnn_target_time,
-            "devices": devices,
+            "num_concurrent_requests": num_concurrent_requests,
             "success": requests_duration <= cnn_target_time,
         }
 

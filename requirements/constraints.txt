@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
+#
+# Shared pins enforced across all workflow venvs.
+#
+# A constraint here does NOT install the package; it only pins the version
+# *if* the package ends up being resolved (directly or transitively) in a
+# given venv. This keeps cross-venv versions aligned without forcing every
+# venv to depend on every package.
+#
+# Add a pin here only if:
+#   - it is used in multiple venvs, AND
+#   - we want all of them aligned on the same version.
+#
+# Per-venv requirements files reference this file with `-c constraints.txt`.
+
+pyjwt==2.7.0
+pillow==11.1
+open-clip-torch==2.26.1

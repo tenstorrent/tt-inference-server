@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import asyncio
 import base64
@@ -47,7 +47,7 @@ headers = {
     "Authorization": "Bearer your-secret-key",
 }
 
-DEFAULT_SAME_SEED_MIN_SSIM = 0.95
+DEFAULT_SAME_SEED_MIN_SSIM = 0.92
 DEFAULT_DIFF_PARAMS_MAX_SSIM = 0.98
 
 

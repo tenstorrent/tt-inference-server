@@ -1,0 +1,159 @@
+# tt-inference-server Helm Chart
+
+Deploys vLLM and media inference backends on Tenstorrent Galaxy hardware.
+
+**Chart version:** {{ .Version }} | **App version:** {{ .AppVersion }}
+
+---
+
+## Overview
+
+This chart creates a single `Deployment`, `Service`, `ConfigMap`, and `Secret` for one inference model on one Tenstorrent device. The chart ships with pre-validated configurations for every supported model and device combination. You select a model and device at install time; the chart merges your selection against a layered config system to produce the final Kubernetes resources.
+
+Two server types are supported:
+
+- **vllm** — large language models served via the vLLM OpenAI-compatible API
+- **media** — image/audio/video/embedding models served via the tt-media-inference-server API
+
+---
+
+## Quick Start
+
+Three values are required at install time:
+
+```bash
+helm install my-model ./charts/tt-inference-server \
+  --set model="Llama-3.1-8B-Instruct" \
+  --set device=galaxy \
+  --set hfToken="hf_xxx"
+```
+
+The chart will fail at render time if `model` or `device` is missing, or if the combination is not present in `values.yaml`.
+
+---
+
+## Chart Structure
+
+```
+charts/tt-inference-server/
+├── Chart.yaml               # Chart metadata, name, and versions
+├── values.yaml              # All configuration: required values, defaults, per-model overrides
+└── templates/
+    ├── _helpers.tpl         # Config resolution logic and name-generation helpers
+    ├── deployment.yaml      # Deployment with init containers and volume mounts
+    ├── configmap.yaml       # Non-secret environment config (model, device, cache paths)
+    ├── secret.yaml          # HF_TOKEN secret
+    └── service.yaml         # ClusterIP Service exposing the inference API
+```
+
+### templates/_helpers.tpl
+
+Contains the core logic for this chart:
+
+- **`tt-inference-server.validateValues`** — fails the render if `model` or `device` is missing, or if the `model`+`device` combination has no entry in the `models` map.
+- **`tt-inference-server.resolvedConfig`** — deep-merges `defaults` with the per-model/device config block and returns the final effective config as YAML (see [Configuration System](#configuration-system)).
+- **`tt-inference-server.image`** — assembles the container image string (`repository:tag`) from the resolved config.
+- **`tt-inference-server.cacheHostPath`** — returns `cache.hostPath` if set, otherwise generates `/opt/cache/<model>-<device>`.
+- Standard Helm name helpers: `tt-inference-server.name`, `tt-inference-server.fullname`, `tt-inference-server.labels`, `tt-inference-server.selectorLabels`.
+
+---
+
+## Configuration System
+
+Values are resolved through a three-level merge. Later levels win on any conflict.
+
+```
+defaults                          ← baseline for all models and devices
+  └── models.<name>               ← model-level fields (serverType)
+        └── models.<name>.<device> ← deepest override, wins on all conflicts
+```
+
+**Example:** for `model=Llama-3.1-8B-Instruct` and `device=galaxy`, the effective config is:
+
+1. Start with the full `defaults` block.
+2. Apply the `serverType: vllm` field from `models.Llama-3.1-8B-Instruct`.
+3. Deep-merge the `models.Llama-3.1-8B-Instruct.galaxy` block on top — overriding `image.repository`, `image.tag`, `resources`, and probe delays.
+
+Any field not overridden at the model/device level falls back to `defaults`.
+
+---
+
+{{ template "chart.valuesSection" . }}
+
+---
+
+{{ template "chart.supportedModelsSection" . }}
+
+---
+
+## Advanced Usage
+
+### Pre-downloaded Weights
+
+If model weights are already present on the node, set `hfCacheDir` to skip the download step:
+
+```bash
+helm install my-model ./charts/tt-inference-server \
+  --set model="Llama-3.1-8B-Instruct" \
+  --set device=galaxy \
+  --set hfCacheDir="/data/weights/Llama-3.1-8B-Instruct"
+```
+
+The host path is mounted read-only at `/mnt/hf-cache` inside the container. The chart sets `MODEL_WEIGHTS_DIR` (vLLM) or `MODEL_WEIGHTS_PATH` + `DOWNLOAD_WEIGHTS_FROM_SERVICE=false` (media) accordingly.
+
+### Extra Environment Variables
+
+Inject arbitrary environment variables via `defaults.extraEnv`. Each entry supports either a literal `value` or a `valueFrom` reference:
+
+```yaml
+# values override file
+defaults:
+  extraEnv:
+    - name: VLLM_WORKER_MULTIPROC_METHOD
+      value: "spawn"
+    - name: MY_SECRET
+      valueFrom:
+        secretKeyRef:
+          name: my-secret
+          key: my-key
+```
+
+Literal values are written into the ConfigMap. `valueFrom` entries are injected directly into the container spec and are not stored in the ConfigMap.
+
+### Custom Node Scheduling
+
+Pin inference pods to specific nodes using `defaults.nodeSelector`, `defaults.tolerations`, or `defaults.affinity`:
+
+```yaml
+defaults:
+  nodeSelector:
+    kubernetes.io/hostname: galaxy-node-01
+  tolerations:
+    - key: "tenstorrent.com/device"
+      operator: "Exists"
+      effect: "NoSchedule"
+```
+
+### Overriding the Cache Path
+
+By default, the cache volume is mounted from `/opt/cache/<model>-<device>` on the host. Override with:
+
+```bash
+helm install my-model ./charts/tt-inference-server \
+  --set model="Llama-3.1-8B-Instruct" \
+  --set device=galaxy \
+  --set hfToken="hf_xxx" \
+  --set cache.hostPath="/mnt/fast-nvme/cache"
+```
+
+---
+
+## Init Containers
+
+Each pod runs two init containers before the inference server starts:
+
+**`fix-cache-permissions`**
+Runs `chown -R 1000:1000 /cache` on the cache host path volume. The inference server runs as UID 1000 and requires write access to the cache directory, which may be created by root on the host.
+
+**`cleanup-hugepages`**
+Removes stale hugepage files left by previous runs (`/dev/hugepages-1G/device_*_tenstorrent` and `/dev/hugepages-1G/tenstorrent`). Runs privileged. Without this cleanup, the inference server may fail to acquire hugepages if a previous pod exited uncleanly.

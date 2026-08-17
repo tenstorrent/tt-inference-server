@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 from unittest.mock import MagicMock, patch
 
@@ -10,6 +10,7 @@ from tt_model_runners.runner_fabric import get_device_runner
 
 @patch("tt_model_runners.runner_fabric.settings")
 @patch("tt_model_runners.base_device_runner.get_settings")
+@patch("tt_model_runners.base_device_runner.setup_runner_environment")
 @pytest.mark.parametrize(
     "runner_name_param, expected_class_name",
     [
@@ -17,6 +18,7 @@ from tt_model_runners.runner_fabric import get_device_runner
     ],
 )
 def test_runner_creation_unique(
+    mock_setup_env,
     mock_get_settings,
     mock_runner_fabric_settings,
     runner_name_param,

@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
+#
+# Dependencies for the BENCHMARKS_VLLM workflow venv (Python 3.11).
+# Used by the BENCHMARKS_VLLM VenvConfig in workflows/workflow_venvs.py.
+#
+# vllm is pinned so the structured-output benchmark scripts fetched from
+# vllm-project/vllm@v<VLLM_PIN_VERSION>/benchmarks by
+# fetch_structured_output_scripts() match the installed runtime. Keep this
+# pin in sync with VLLM_PIN_VERSION in workflow_venvs.py.
+
+-c constraints.txt
+
+vllm==0.13.0
+torch
+# Extra deps required by benchmark_serving_structured_output.py; the
+# `vllm bench serve` CLI does not pull these in transitively.
+datasets
+pandas
+xgrammar

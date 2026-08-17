@@ -11,6 +11,7 @@
 - [WH Galaxy](mochi-1-preview_galaxy.md)
 - [BH LoudBox](mochi-1-preview_p150x8.md)
 - [BH 4xP150](mochi-1-preview_p150x4.md)
+- [BH QuietBox 2](mochi-1-preview_p300x2.md)
 
 ## Quickstart - Deploy mochi-1-preview Inference Server on WH LoudBox/QuietBox
 

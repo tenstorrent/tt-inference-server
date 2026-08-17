@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 from unittest.mock import MagicMock, patch
 
@@ -9,8 +9,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from open_ai_api.fine_tuning import router
 from resolver.service_resolver import service_resolver
-from security.org_id_checker import get_org_id
 from security.api_key_checker import get_api_key
+from security.org_id_checker import get_org_id
 
 
 @pytest.fixture

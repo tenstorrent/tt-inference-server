@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 """Mock video runner for testing the SHM IPC path without TTNN devices.
 
@@ -152,8 +152,19 @@ def _run_shm_bridge() -> None:
 
     input_shm = VideoShm(input_name, mode="input", is_shutdown=is_shutdown)
     output_shm = VideoShm(output_name, mode="output", is_shutdown=is_shutdown)
-    input_shm.open(create=True)
-    output_shm.open(create=True)
+    # Create-or-attach; symmetric on both sides under the new ownership model.
+    input_shm.open()
+    output_shm.open()
+    # Self-heal any gap left by a previous runner instance that crashed
+    # mid-read (on input) or mid-write (on output). Scoped to this
+    # process's own role, so safe to run with a live server peer.
+    in_repair = input_shm.recover(side="reader")
+    out_repair = output_shm.recover(side="writer")
+    if any(in_repair.values()) or any(out_repair.values()):
+        logger.warning(
+            f"Mock runner: crash-recovery repaired prior inconsistency: "
+            f"input={in_repair} output={out_repair}"
+        )
 
     pipeline = MockVideoPipeline()
     logger.info("Mock video SHM runner ready, waiting for requests...")

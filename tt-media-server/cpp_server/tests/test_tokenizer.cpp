@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 #include <gtest/gtest.h>
 
@@ -9,11 +9,12 @@
 #include <vector>
 
 #include "config/settings.hpp"
-#include "domain/chat_message.hpp"
+#include "domain/llm/chat_message.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 
 using namespace tt::utils::tokenizers;
 using namespace tt::domain;
+using namespace tt::domain::llm;
 
 // ---------------------------------------------------------------------------
 // Fixture: creates a tokenizer for the env-selected model (encode/decode tests)
@@ -248,6 +249,38 @@ TEST_F(DeepseekTokenizerTest, ApplyChatTemplateMatchesDeepSeekR10528Format) {
          "format.\n"
       << "  Expected length: " << expected.size() << "\n"
       << "  Actual length:   " << actual.size();
+}
+
+TEST_F(DeepseekTokenizerTest,
+       ApplyChatTemplateReasoningDisabledInjectsThinkBlock) {
+  std::vector<ChatMessage> messages = {
+      {"user", "Hello"},
+  };
+
+  const std::string expected =
+      "<｜begin▁of▁sentence｜><｜User｜>Hello<｜Assistant｜>"
+      "<think>\n</think>\n";
+
+  std::string actual =
+      tokenizer().applyChatTemplate(messages, true, std::nullopt, false);
+
+  EXPECT_EQ(actual, expected)
+      << "enable_reasoning=false should inject a closed <think> block after "
+         "the assistant tag.\n"
+      << "  Expected length: " << expected.size() << "\n"
+      << "  Actual length:   " << actual.size();
+}
+
+TEST_F(DeepseekTokenizerTest, ApplyChatTemplateReasoningEnabledNoThinkBlock) {
+  std::vector<ChatMessage> messages = {
+      {"user", "Hello"},
+  };
+
+  std::string actual =
+      tokenizer().applyChatTemplate(messages, true, std::nullopt, true);
+
+  EXPECT_EQ(actual.find("<think>"), std::string::npos)
+      << "enable_reasoning=true should not inject a <think> block";
 }
 
 TEST_F(DeepseekTokenizerTest,

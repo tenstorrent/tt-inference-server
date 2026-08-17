@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 import json
 import time
@@ -37,6 +37,18 @@ def _apply_chat_template(messages: list[dict]) -> str:
         add_generation_prompt=True,
         **settings.chat_template_kwargs,
     )
+
+
+def _normalize_message_content(content) -> str:
+    """Per OpenAI spec, chat message content is `str | list[ChatContentPart]`.
+    For text-only models, flatten the list form by joining text-type parts."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(
+            p.text for p in content if getattr(p, "type", None) == "text" and p.text
+        )
+    return ""
 
 
 def _count_tokens(text: str) -> int:
@@ -87,19 +99,33 @@ async def chat_completions(
     )
 
     # Convert chat messages to a prompt using the model's chat template
-    messages = [{"role": m.role, "content": m.content} for m in chat_request.messages]
+    messages = [
+        {"role": m.role, "content": _normalize_message_content(m.content)}
+        for m in chat_request.messages
+    ]
     prompt = _apply_chat_template(messages)
     prompt_tokens = _count_tokens(prompt)
 
-    # Reject prompts that exceed the model's context window
+    # Reject prompts that won't leave room for the requested output. vLLM requires
+    # `prompt + max_tokens <= max_model_len`; an exact-fit prompt (== max_model_len)
+    # would otherwise fail deeper in the engine as an HTTP 500.
     max_model_len = settings.vllm.max_model_length
-    if prompt_tokens > max_model_len:
+    # Default to 1 when max_tokens is unset; vLLM needs >= 1 output token. Pass
+    # explicit values through (incl. 0) so the check matches what the engine sees.
+    output_tokens_needed = (
+        chat_request.max_tokens if chat_request.max_tokens is not None else 1
+    )
+    if prompt_tokens + output_tokens_needed > max_model_len:
         logger.warning(
-            f"Rejected prompt: length ({prompt_tokens}) exceeds max model length ({max_model_len})"
+            f"Rejected prompt: length ({prompt_tokens}) + max_tokens "
+            f"({output_tokens_needed}) exceeds max model length ({max_model_len})"
         )
         raise HTTPException(
             status_code=400,
-            detail=f"Prompt length ({prompt_tokens}) exceeds max model length ({max_model_len})",
+            detail=(
+                f"Prompt length ({prompt_tokens}) + max_tokens "
+                f"({output_tokens_needed}) exceeds max model length ({max_model_len})"
+            ),
         )
 
     # Build an internal CompletionRequest to reuse the existing inference pipeline

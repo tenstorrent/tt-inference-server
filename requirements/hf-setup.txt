@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
+#
+# Dependencies for the HF_SETUP workflow venv.
+# Used by: setup_hf_setup() in workflows/workflow_venvs.py
+#
+# Modern huggingface_hub provides the `hf` CLI entrypoint we depend on.
+
+-c constraints.txt
+
+huggingface_hub>=1.0.0

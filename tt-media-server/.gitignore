@@ -1,3 +1,4 @@
 venv/
 cpp_server/build/
+prefill_gateway/build/
 model_store/

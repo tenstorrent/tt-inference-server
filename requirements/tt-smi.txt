@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
+#
+# Dependencies for the TT_SMI workflow venv.
+# Used by: setup_tt_smi() in workflows/workflow_venvs.py
+
+-c constraints.txt
+
+tt-smi==3.0.39

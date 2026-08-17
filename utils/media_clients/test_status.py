@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
+
+"""Per-call result objects emitted by the media client benchmark loops."""
 
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
@@ -20,7 +22,7 @@ class BaseTestStatus(ABC):
 
 
 class ImageGenerationTestStatus(BaseTestStatus):
-    """Test status for image generation models (SDXL, SD3.5, etc.)."""
+    """Test status for image generation models (SDXL, SD3.5, Flux, etc.)."""
 
     def __init__(
         self,
@@ -28,16 +30,12 @@ class ImageGenerationTestStatus(BaseTestStatus):
         elapsed: float,
         num_inference_steps: int = 0,
         inference_steps_per_second: float = 0,
-        ttft: Optional[float] = None,
-        tpups: Optional[float] = None,
         base64image: Optional[str] = None,
         prompt: Optional[str] = None,
     ):
         super().__init__(status, elapsed)
         self.num_inference_steps = num_inference_steps
         self.inference_steps_per_second = inference_steps_per_second
-        self.ttft = ttft
-        self.tpups = tpups
         self.base64image = base64image
         self.prompt = prompt
 
@@ -47,8 +45,6 @@ class ImageGenerationTestStatus(BaseTestStatus):
             "elapsed": self.elapsed,
             "num_inference_steps": self.num_inference_steps,
             "inference_steps_per_second": self.inference_steps_per_second,
-            "ttft": self.ttft,
-            "tpups": self.tpups,
             "base64image": self.base64image,
             "prompt": self.prompt,
         }
@@ -81,49 +77,23 @@ class AudioTestStatus(BaseTestStatus):
 
 
 class CnnGenerationTestStatus(BaseTestStatus):
-    """Test status for CNN models (RESNET, etc.)."""
+    """Test status for CNN models (ResNet, MobileNetV2, etc.)."""
 
-    def __init__(
-        self,
-        status: bool,
-        elapsed: float,
-        num_inference_steps: int = 0,
-        inference_steps_per_second: float = 0,
-        ttft: Optional[float] = None,
-        tpups: Optional[float] = None,
-        base64image: Optional[str] = None,
-        prompt: Optional[str] = None,
-    ):
+    def __init__(self, status: bool, elapsed: float):
         super().__init__(status, elapsed)
-        self.num_inference_steps = num_inference_steps
-        self.inference_steps_per_second = inference_steps_per_second
-        self.ttft = ttft
-        self.tpups = tpups
-        self.base64image = base64image
-        self.prompt = prompt
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
-            "status": self.status,
-            "elapsed": self.elapsed,
-            "num_inference_steps": self.num_inference_steps,
-            "inference_steps_per_second": self.inference_steps_per_second,
-            "ttft": self.ttft,
-            "tpups": self.tpups,
-            "base64image": self.base64image,
-            "prompt": self.prompt,
-        }
+        return {"status": self.status, "elapsed": self.elapsed}
 
 
 class EmbeddingTestStatus(BaseTestStatus):
     """Test status for embedding models."""
 
-    def __init__(self, status: bool, elapsed: float, ttft: Optional[float] = None):
+    def __init__(self, status: bool, elapsed: float):
         super().__init__(status, elapsed)
-        self.ttft = ttft
 
     def to_dict(self) -> Dict[str, Any]:
-        return {"status": self.status, "elapsed": self.elapsed, "ttft": self.ttft}
+        return {"status": self.status, "elapsed": self.elapsed}
 
 
 class TtsTestStatus(BaseTestStatus):
@@ -133,28 +103,19 @@ class TtsTestStatus(BaseTestStatus):
         self,
         status: bool,
         elapsed: float,
-        ttft_ms: Optional[float] = None,
+        latency: Optional[float] = None,
         rtr: Optional[float] = None,
-        text: Optional[str] = None,
-        audio_duration: Optional[float] = None,
-        reference_text: Optional[str] = None,
     ):
         super().__init__(status, elapsed)
-        self.ttft_ms = ttft_ms
+        self.latency = latency
         self.rtr = rtr
-        self.text = text
-        self.audio_duration = audio_duration
-        self.reference_text = reference_text
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "status": self.status,
             "elapsed": self.elapsed,
-            "ttft_ms": self.ttft_ms,
+            "latency": self.latency,
             "rtr": self.rtr,
-            "text": self.text,
-            "audio_duration": self.audio_duration,
-            "reference_text": self.reference_text,
         }
 
 
@@ -167,18 +128,14 @@ class VideoGenerationTestStatus(BaseTestStatus):
         elapsed: float,
         num_inference_steps: int = 0,
         inference_steps_per_second: float = 0,
-        ttft: Optional[float] = None,
         job_id: Optional[str] = None,
         video_path: Optional[str] = None,
-        prompt: Optional[str] = None,
     ):
         super().__init__(status, elapsed)
         self.num_inference_steps = num_inference_steps
         self.inference_steps_per_second = inference_steps_per_second
-        self.ttft = ttft
         self.job_id = job_id
         self.video_path = video_path
-        self.prompt = prompt
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -186,8 +143,6 @@ class VideoGenerationTestStatus(BaseTestStatus):
             "elapsed": self.elapsed,
             "num_inference_steps": self.num_inference_steps,
             "inference_steps_per_second": self.inference_steps_per_second,
-            "ttft": self.ttft,
             "job_id": self.job_id,
             "video_path": self.video_path,
-            "prompt": self.prompt,
         }

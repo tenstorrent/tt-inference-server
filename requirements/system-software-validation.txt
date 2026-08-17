@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
+#
+# Dependencies for the SYSTEM_SOFTWARE_VALIDATION workflow venv (Python 3.11).
+# Used by: setup_system_software_validation() in workflows/workflow_venvs.py
+
+-c constraints.txt
+
+packaging==25.0
+PyYAML

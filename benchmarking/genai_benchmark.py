@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: (c) 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: (c) 2025 Tenstorrent USA, Inc.
 #
 # genai_benchmark.py - In-container script for running genai-perf benchmarks
 # This script runs inside the nvcr.io/nvidia/tritonserver container

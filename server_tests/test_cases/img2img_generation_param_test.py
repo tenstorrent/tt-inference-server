@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import asyncio
 import json
@@ -106,9 +106,11 @@ class Img2ImgGenerationParamTest(BaseTest):
                     "error": f"Request {i + 1} failed: {data}",
                 }
 
-        # Verify test assertions
-        same_requests_match = response_data_list[0] == response_data_list[1]
-        guidance_scale_differs = response_data_list[0] != response_data_list[2]
+        images_0 = response_data_list[0].get("images")
+        images_1 = response_data_list[1].get("images")
+        images_2 = response_data_list[2].get("images")
+        same_requests_match = images_0 is not None and images_0 == images_1
+        guidance_scale_differs = images_0 is not None and images_0 != images_2
 
         logger.info(f"Same requests match: {same_requests_match}")
         logger.info(

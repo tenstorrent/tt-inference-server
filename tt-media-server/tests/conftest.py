@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 # SPDX-License-Identifier: Apache-2.0
 
@@ -17,6 +17,18 @@ if hasattr(np, "core"):
     sys.modules["numpy.core"] = np.core
 if hasattr(np, "_core"):
     sys.modules["numpy._core"] = np._core
+
+# Prefer the real PIL when it's installed. Tests that exercise actual image
+# decoding (e.g. tests/test_image_manager.py, _tiny_png_b64 in
+# tests/test_video_runner.py) would otherwise see a MagicMock for Image.new
+# and silently produce empty payloads that fail downstream validation.
+# The mock_modules loop below preserves the legacy mock fallback for envs
+# without Pillow installed, since `if module not in sys.modules` skips it.
+try:
+    import PIL  # noqa: F401
+    import PIL.Image  # noqa: F401
+except ImportError:
+    pass
 
 # Only then import pytest
 import pytest
@@ -508,7 +520,7 @@ class MockLogger:
 
 mock_logger = MockLogger()
 mock_logger_module = type("module", (), {})()
-mock_logger_module.TTLogger = lambda: mock_logger
+mock_logger_module.TTLogger = lambda *_args, **_kwargs: mock_logger
 sys.modules["utils.logger"] = mock_logger_module
 
 
@@ -551,6 +563,7 @@ runner_mocks = {
         ),
         "TTMochi1Runner": create_mock_runner_class("TTMochi1Runner"),
         "TTWan22Runner": create_mock_runner_class("TTWan22Runner"),
+        "TTWan22I2VRunner": create_mock_runner_class("TTWan22I2VRunner"),
     },
     "tt_model_runners.whisper_runner": {
         "TTWhisperRunner": create_mock_runner_class("TTWhisperRunner")

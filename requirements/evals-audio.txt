@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
+#
+# Dependencies for the EVALS_AUDIO workflow venv.
+# Used by: setup_evals_audio() in workflows/workflow_venvs.py
+#
+# Uses a TT-maintained fork of lmms-eval with whisper_tt model support.
+
+-c constraints.txt
+
+git+https://github.com/bgoelTT/lmms-eval.git@ben/samt/whisper-tt#egg=lmms-eval[audio]
+pyjwt
+pillow

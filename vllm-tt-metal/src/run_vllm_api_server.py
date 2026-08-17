@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import argparse
 import json
@@ -396,7 +396,7 @@ def model_setup(model_spec_json):
     hf_dir = create_model_symlink(symlinks_dir, model_dir_name, weights_dir)
 
     dynamic_env_vars = {
-        "VLLM_LOGGING_CONFIG": str(config_path),
+        "VLLM_LOGGING_CONFIG_PATH": str(config_path),
         "HF_MODEL": hf_dir,
     }
 

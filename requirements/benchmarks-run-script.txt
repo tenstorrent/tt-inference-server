@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
+#
+# Dependencies for the BENCHMARKS_RUN_SCRIPT workflow venv.
+# Used by: setup_benchmarks_run_script() in workflows/workflow_venvs.py
+
+-c constraints.txt
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+numpy
+scipy
+torch
+torchvision
+requests
+sentencepiece
+protobuf
+transformers
+datasets
+open-clip-torch
+pyjwt
+pillow

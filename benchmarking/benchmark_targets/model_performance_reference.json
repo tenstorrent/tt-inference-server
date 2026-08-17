@@ -953,9 +953,45 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 19.0,
-                        "tput_user": 106.0,
-                        "tput": 3435.0
+                        "ttft_ms": 2,
+                        "tput_user": 27.5,
+                        "tput": 27.5
+                    }
+                }
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 128,
+                "num_prompts": 256,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 256,
+                        "tput_user": 27.5,
+                        "tput": 3520
+                    }
+                }
+            }
+        ],
+        "p300x2": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 51.0,
+                        "tput_user": 27.0,
+                        "tput": 27.0
                     }
                 }
             }
@@ -4354,6 +4390,27 @@
             }
         ]
     },
+    "Falcon3-7B-Instruct": {
+        "p150": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 26.0,
+                        "tput_user": 43.0,
+                        "tput": 1328.0
+                    }
+                }
+            }
+        ]
+    },
     "Falcon3-10B-Base": {
         "t3k": [
             {
@@ -4648,25 +4705,6 @@
         ]
     },
     "gemma-3-4b-it": {
-        "n300": [
-            {
-                "isl": 128,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 8,
-                "task_type": "vlm",
-                "image_height": 896,
-                "image_width": 896,
-                "images_per_prompt": 1,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 133.0,
-                        "tput_user": 84.0,
-                        "tput": 2688.0
-                    }
-                }
-            }
-        ],
         "n150": [
             {
                 "isl": 128,
@@ -4679,9 +4717,28 @@
                 "images_per_prompt": 1,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 198.0,
+                        "ttft_ms": 202.0,
                         "tput_user": 42.0,
                         "tput": 1344.0
+                    }
+                }
+            }
+        ],
+        "n300": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "vlm",
+                "image_height": 896,
+                "image_width": 896,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 102.0,
+                        "tput_user": 78.0,
+                        "tput": 2688.0
                     }
                 }
             }
@@ -4698,14 +4755,51 @@
                 "images_per_prompt": 1,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 55.0,
-                        "tput_user": 340.0,
+                        "ttft_ms": 28.0,
+                        "tput_user": 50.0,
                         "tput": 10752.0
                     }
                 }
             }
         ],
-        "p100": [],
+        "p100": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "vlm",
+                "image_height": 896,
+                "image_width": 896,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 82.0,
+                        "tput_user": 65.0,
+                        "tput": 2091.0
+                    }
+                }
+            }
+        ],
+        "p150": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "vlm",
+                "image_height": 896,
+                "image_width": 896,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 76.0,
+                        "tput_user": 74.0,
+                        "tput": 2389.0
+                    }
+                }
+            }
+        ],
         "p150x8": [
             {
                 "isl": 128,
@@ -4781,25 +4875,6 @@
         ]
     },
     "gemma-3-27b-it": {
-        "galaxy": [
-            {
-                "isl": 128,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 8,
-                "task_type": "vlm",
-                "image_height": 896,
-                "image_width": 896,
-                "images_per_prompt": 1,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 235.0,
-                        "tput_user": 200.0,
-                        "tput": 3093.0
-                    }
-                }
-            }
-        ],
         "t3k": [
             {
                 "isl": 128,
@@ -4812,9 +4887,47 @@
                 "images_per_prompt": 1,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 828.0,
-                        "tput_user": 50.0,
+                        "ttft_ms": 76.0,
+                        "tput_user": 43.0,
                         "tput": 773.0
+                    }
+                }
+            }
+        ],
+        "galaxy": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "vlm",
+                "image_height": 896,
+                "image_width": 896,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 23.0,
+                        "tput_user": 154.0,
+                        "tput": 3093.0
+                    }
+                }
+            }
+        ],
+        "p300x2": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "vlm",
+                "image_height": 896,
+                "image_width": 896,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 66.0,
+                        "tput_user": 41.0,
+                        "tput": 687.0
                     }
                 }
             }
@@ -5047,6 +5160,25 @@
                     "theoretical": {
                         "ttft_ms": 17,
                         "tput_user": 61
+                    }
+                }
+            }
+        ],
+        "p150": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 13.0,
+                        "tput_user": 99.0,
+                        "tput": 2991.0
                     }
                 }
             }
@@ -5366,6 +5498,20 @@
                 }
             }
         ],
+        "p150": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 20,
+                "num_eval_runs": 100,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 12500,
+                        "tput_user": 0.08
+                    }
+                }
+            }
+        ],
         "p300x2": [
             {
                 "max_concurrency": 1,
@@ -5437,6 +5583,88 @@
                     }
                 }
             }
+        ],
+        "n300": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 20,
+                "num_eval_runs": 100,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
+        ],
+        "t3k": [
+            {
+                "max_concurrency": 4,
+                "num_inference_steps": 20,
+                "num_eval_runs": 100,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
+        ],
+        "galaxy": [
+            {
+                "max_concurrency": 32,
+                "num_inference_steps": 20,
+                "num_eval_runs": 100,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
+        ],
+        "p150": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 20,
+                "num_eval_runs": 100,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
+        ],
+        "p300x2": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 20,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
+        ],
+        "p150x8": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 20,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
         ]
     },
     "stable-diffusion-xl-1.0-inpainting-0.1": {
@@ -5445,6 +5673,88 @@
                 "max_concurrency": 1,
                 "num_inference_steps": 20,
                 "num_eval_runs": 100,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
+        ],
+        "n300": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 20,
+                "num_eval_runs": 100,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
+        ],
+        "t3k": [
+            {
+                "max_concurrency": 4,
+                "num_inference_steps": 20,
+                "num_eval_runs": 100,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
+        ],
+        "galaxy": [
+            {
+                "max_concurrency": 32,
+                "num_inference_steps": 20,
+                "num_eval_runs": 100,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
+        ],
+        "p150": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 20,
+                "num_eval_runs": 100,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
+        ],
+        "p300x2": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 20,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11000,
+                        "tput_user": 0.091
+                    }
+                }
+            }
+        ],
+        "p150x8": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 20,
                 "task_type": "image",
                 "targets": {
                     "theoretical": {
@@ -5674,7 +5984,7 @@
             {
                 "max_concurrency": 1,
                 "num_eval_runs": 2,
-                "task_type": "audio",
+                "task_type": "asr",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 800,
@@ -5690,7 +6000,7 @@
             {
                 "max_concurrency": 1,
                 "num_eval_runs": 2,
-                "task_type": "audio",
+                "task_type": "asr",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 800,
@@ -5706,7 +6016,7 @@
             {
                 "max_concurrency": 32,
                 "num_eval_runs": 2,
-                "task_type": "audio",
+                "task_type": "asr",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 800,
@@ -5722,13 +6032,29 @@
             {
                 "max_concurrency": 1,
                 "num_eval_runs": 2,
-                "task_type": "audio",
+                "task_type": "asr",
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 400.0,
+                        "ttft_ms": 2700.0,
                         "ttft_streaming_ms": null,
-                        "tput_user": 65.0,
-                        "rtr": 17.0,
+                        "tput_user": 47.0,
+                        "rtr": 11.5,
+                        "tolerance": 0.05
+                    }
+                }
+            }
+        ],
+        "p300x2": [
+            {
+                "max_concurrency": 1,
+                "num_eval_runs": 2,
+                "task_type": "asr",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 1900.0,
+                        "ttft_streaming_ms": null,
+                        "tput_user": 62.0,
+                        "rtr": 16.0,
                         "tolerance": 0.05
                     }
                 }
@@ -5740,7 +6066,7 @@
             {
                 "max_concurrency": 1,
                 "num_eval_runs": 2,
-                "task_type": "audio",
+                "task_type": "asr",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 400,
@@ -5756,7 +6082,7 @@
             {
                 "max_concurrency": 1,
                 "num_eval_runs": 2,
-                "task_type": "audio",
+                "task_type": "asr",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 400,
@@ -5772,13 +6098,45 @@
             {
                 "max_concurrency": 32,
                 "num_eval_runs": 2,
-                "task_type": "audio",
+                "task_type": "asr",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 400,
                         "ttft_streaming_ms": 450,
                         "tput_user": 131.10,
                         "rtr": 21.81,
+                        "tolerance": 0.05
+                    }
+                }
+            }
+        ],
+        "p150": [
+            {
+                "max_concurrency": 1,
+                "num_eval_runs": 2,
+                "task_type": "asr",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 1250.0,
+                        "ttft_streaming_ms": null,
+                        "tput_user": 130.0,
+                        "rtr": 25.0,
+                        "tolerance": 0.05
+                    }
+                }
+            }
+        ],
+        "p300x2": [
+            {
+                "max_concurrency": 1,
+                "num_eval_runs": 2,
+                "task_type": "asr",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 800.0,
+                        "ttft_streaming_ms": null,
+                        "tput_user": 380.0,
+                        "rtr": 38.0,
                         "tolerance": 0.05
                     }
                 }
@@ -5853,6 +6211,83 @@
         ]
     },
     "Wan2.2-T2V-A14B-Diffusers": {
+        "t3k": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "video",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 540000,
+                        "end_to_end_latency_ms": 971590,
+                        "inference_steps_per_second": 0.0412,
+                        "tput_user": 0.00103
+                    }
+                }
+            }
+        ],
+        "galaxy": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "video",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 330000,
+                        "end_to_end_latency_ms": 321490,
+                        "inference_steps_per_second": 0.1244,
+                        "tput_user": 0.00311
+                    }
+                }
+            }
+        ],
+        "p300x2": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "video",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 330000,
+                        "end_to_end_latency_ms": 321490,
+                        "inference_steps_per_second": 0.1244,
+                        "tput_user": 0.00311
+                    }
+                }
+            }
+        ],
+        "p150x8": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "video",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 330000,
+                        "end_to_end_latency_ms": 321490,
+                        "inference_steps_per_second": 0.1244,
+                        "tput_user": 0.00311
+                    }
+                }
+            }
+        ],
+        "p150x4": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "video",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 540000,
+                        "end_to_end_latency_ms": 971590,
+                        "inference_steps_per_second": 0.0412,
+                        "tput_user": 0.00103
+                    }
+                }
+            }
+        ]
+    },
+    "Wan2.2-I2V-A14B-Diffusers": {
         "t3k": [
             {
                 "max_concurrency": 1,
@@ -6321,8 +6756,8 @@
                 "task_type": "cnn",
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 50,
-                        "tput_user": 20
+                        "ttft_ms": 100,
+                        "tput_user": 12
                     }
                 }
             }
@@ -6334,8 +6769,8 @@
                 "task_type": "cnn",
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 50,
-                        "tput_user": 20
+                        "ttft_ms": 100,
+                        "tput_user": 12
                     }
                 }
             }
@@ -6346,7 +6781,7 @@
             {
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "text_to_speech",
+                "task_type": "tts",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 2000,
@@ -6359,7 +6794,7 @@
             {
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "text_to_speech",
+                "task_type": "tts",
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 180,

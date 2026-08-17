@@ -1,0 +1,72 @@
+{
+  "scenarios": {
+    "cpp_mock": {
+      "label": "C++ Server vLLM Bench (mock)",
+      "min_completed": 1000,
+      "max_failed": 0,
+      "max_mean_tpot_ms": 1,
+      "max_mean_ttft_ms": 150
+    },
+    "cpp_structured_json_object": {
+      "label": "C++ Server vLLM Bench (structured output - json_object)",
+      "min_completed": 1000,
+      "max_failed": 0,
+      "max_mean_tpot_ms": 5,
+      "max_mean_ttft_ms": 150
+    },
+    "cpp_structured_json_schema": {
+      "label": "C++ Server vLLM Bench (structured output - json_schema)",
+      "min_completed": 1000,
+      "max_failed": 0,
+      "max_mean_tpot_ms": 3,
+      "max_mean_ttft_ms": 250
+    },
+    "cpp_mock_pipeline": {
+      "label": "C++ Server vLLM Bench (mock_pipeline)",
+      "min_completed": 1000,
+      "max_failed": 0,
+      "max_mean_tpot_ms": 3,
+      "max_mean_ttft_ms": 395
+    },
+    "prefill_decode_split_tcp": {
+      "label": "C++ Server Prefill/Decode Split (TCP)",
+      "min_completed": 1000,
+      "max_failed": 0,
+      "max_mean_tpot_ms": 10,
+      "max_mean_ttft_ms": 650
+    },
+    "prefill_decode_split_zmq": {
+      "label": "C++ Server Prefill/Decode Split (ZMQ)",
+      "min_completed": 1000,
+      "max_failed": 0,
+      "max_mean_tpot_ms": 10,
+      "max_mean_ttft_ms": 650
+    },
+    "prefill_decode_split_runner": {
+      "label": "C++ Server Prefill/Decode Split (mock_prefill_runner)",
+      "min_completed": 1000,
+      "max_failed": 0,
+      "max_mean_tpot_ms": 10,
+      "max_mean_ttft_ms": 650
+    },
+    "gateway_split_tcp": {
+      "label": "C++ Server Gateway Split (TCP)",
+      "min_completed": 1000,
+      "max_failed": 0,
+      "max_mean_tpot_ms": 10,
+      "max_mean_ttft_ms": 2000
+    },
+    "gateway_split_zmq": {
+      "label": "C++ Server Gateway Split (ZMQ)",
+      "min_completed": 1000,
+      "max_failed": 0,
+      "max_mean_tpot_ms": 10,
+      "max_mean_ttft_ms": 650
+    },
+    "dynamo_frontend": {
+      "label": "Dynamo Frontend + cpp_server Integration",
+      "min_completed": 1000,
+      "max_failed": 0
+    }
+  }
+}

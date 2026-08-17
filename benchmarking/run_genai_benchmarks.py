@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: (c) 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: (c) 2025 Tenstorrent USA, Inc.
 #
 # run_genai_benchmarks.py - Host-side script for launching genai-perf benchmarks
 # This script runs on the host and launches a Docker container with the

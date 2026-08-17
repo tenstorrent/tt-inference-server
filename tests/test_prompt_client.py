@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 import logging
 from pathlib import Path
@@ -52,6 +52,9 @@ class _GeneratingCacheMonitor:
 
 
 class _ExistingCacheMonitor:
+    def __init__(self, tensor_cache_timeout: float = 5400.0):
+        self._tensor_cache_timeout = tensor_cache_timeout
+
     def get_cache_generation_status(self):
         return SimpleNamespace(
             is_generating=False,
@@ -66,6 +69,9 @@ class _ExistingCacheMonitor:
 
     def get_effective_timeout(self, default_timeout, cache_status=None):
         return float(default_timeout)
+
+    def get_tensor_cache_timeout(self):
+        return self._tensor_cache_timeout
 
 
 def test_wait_for_healthy_aborts_when_tensor_cache_stalls(monkeypatch):
@@ -111,5 +117,29 @@ def test_wait_for_healthy_logs_existing_tensor_cache_details(monkeypatch, caplog
 
     assert (
         "Existing tensor cache detected - tracking 4 file(s), 8.0 KB; "
-        "using standard timeout:=1200.0s" in caplog.text
+        "using startup timeout:=1200.0s" in caplog.text
+    )
+
+
+def test_wait_for_healthy_defaults_timeout_to_model_spec_budget(monkeypatch, caplog):
+    """Regression: warm tensor caches on multi-DP-engine Galaxy deployments
+    must honor the model-spec ``tensor_cache_timeout`` even when the server is
+    still bringing up KV caches; the legacy 1200s fallback was insufficient
+    (see incident: gpt-oss-120b on Galaxy data_parallel_size=4)."""
+
+    prompt_client = PromptClient(EnvironmentConfig())
+    prompt_client.cache_monitor = _ExistingCacheMonitor(tensor_cache_timeout=5400.0)
+
+    monkeypatch.setattr(
+        prompt_client_module.requests,
+        "get",
+        lambda *args, **kwargs: SimpleNamespace(status_code=200),
+    )
+
+    with caplog.at_level(logging.INFO):
+        assert prompt_client.wait_for_healthy(interval=1) is True
+
+    assert (
+        "Existing tensor cache detected - tracking 4 file(s), 8.0 KB; "
+        "using startup timeout:=5400.0s" in caplog.text
     )

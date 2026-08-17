@@ -18,6 +18,8 @@ silero_vad
 tqdm
 uvicorn
 whisperx==3.4.3
+torch==2.7.1+cpu
+torchaudio==2.7.1+cpu
 requests
 num2words
 

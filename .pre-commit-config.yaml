@@ -22,3 +22,9 @@ repos:
       language: system
       pass_filenames: false
       always_run: true
+
+- repo: https://github.com/espressif/check-copyright/
+  rev: v1.1.2
+  hooks:
+  - id: check-copyright
+    args: [ '--config', '.github/check-spdx.yml' ]

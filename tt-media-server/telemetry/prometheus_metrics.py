@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import os
 
@@ -15,25 +15,8 @@ from prometheus_client import (
 )
 from prometheus_client.multiprocess import MultiProcessCollector
 from prometheus_fastapi_instrumentator import Instrumentator, metrics
+from telemetry.multiprocess_setup import MULTIPROC_DIR
 from utils.logger import TTLogger
-
-
-# Set up multiprocess directory FIRST, before any other imports or class definitions
-def setup_multiprocess_dir():
-    """Setup multiprocess directory for Prometheus"""
-    multiproc_dir = "/tmp/prometheus_multiproc"
-    try:
-        os.makedirs(multiproc_dir, exist_ok=True)
-        os.environ["PROMETHEUS_MULTIPROC_DIR"] = multiproc_dir
-        return multiproc_dir
-    except Exception:
-        # Remove the env var if directory creation fails
-        os.environ.pop("PROMETHEUS_MULTIPROC_DIR", None)
-        return None
-
-
-# Call this immediately
-MULTIPROC_DIR = setup_multiprocess_dir()
 
 # System info
 system_info = Info("tt_media_server_info", "System information")

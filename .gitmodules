@@ -1,3 +1,5 @@
-[submodule "tt-media-server/cpp_server/tt-blaze"]
-	path = tt-media-server/cpp_server/tt-blaze
-	url = https://github.com/tenstorrent/tt-blaze.git
+[submodule "tt-media-server/cpp_server/tt-llm-engine"]
+	path = tt-media-server/cpp_server/tt-llm-engine
+	url = https://github.com/tenstorrent/tt-llm-engine.git
+	branch = main
+	ignore = dirty

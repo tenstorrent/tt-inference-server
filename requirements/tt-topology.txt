@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
+#
+# Dependencies for the TT_TOPOLOGY workflow venv.
+# Used by: setup_tt_topology() in workflows/workflow_venvs.py
+
+-c constraints.txt
+
+tt-topology==1.2.16

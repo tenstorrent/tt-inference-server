@@ -1,17 +1,17 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 import math
 
 from config.constants import (
-    MODEL_RUNNER_TO_MODEL_NAMES_MAP,
     DeviceTypes,
     ModelDisplayNames,
-    ModelRunners,
+    ModelNames,
     SupportedModels,
     TrainingOptimizers,
     TrainingTrainers,
 )
+
 from utils.dataset_loaders.dataset_resolver import AVAILABLE_DATASET_LOADERS
 
 TRAINING_CATALOG_DATA = {
@@ -25,30 +25,24 @@ TRAINING_CATALOG_DATA = {
 }
 
 
-def _build_models_catalog(model_runner: str):
+def _build_models_catalog(model: str):
     try:
-        runner_enum = ModelRunners(model_runner)
+        model_enum = ModelNames(model)
     except ValueError:
         return []
-    models = []
-    for model_name in MODEL_RUNNER_TO_MODEL_NAMES_MAP.get(runner_enum, set()):
-        try:
-            model_config = SupportedModels[model_name.name].value
-            display_name = ModelDisplayNames[model_name.name].value
-        except KeyError:
-            raise ValueError(
-                f"Model '{model_name.name}' for runner '{model_runner}' "
-                f"must have an entry in SupportedModels and ModelDisplayNames"
-            )
-        models.append(
-            {
-                "id": model_name.value,
-                "display_name": display_name,
-                "supported": True,
-                "model_config": model_config,
-            }
-        )
-    return models
+    try:
+        model_config = SupportedModels[model_enum.name].value
+        display_name = ModelDisplayNames[model_enum.name].value
+    except KeyError:
+        return []
+    return [
+        {
+            "id": model_enum.value,
+            "display_name": display_name,
+            "supported": True,
+            "model_config": model_config,
+        }
+    ]
 
 
 def _build_clusters_catalog(device: str, device_mesh_shape: tuple, num_workers: int):
@@ -77,9 +71,12 @@ def _build_clusters_catalog(device: str, device_mesh_shape: tuple, num_workers: 
 
 
 def build_training_catalog(
-    model_runner: str, device: str, device_mesh_shape: tuple, num_workers: int
+    device: str,
+    device_mesh_shape: tuple,
+    num_workers: int,
+    model: str = "",
 ):
-    models = _build_models_catalog(model_runner)
+    models = _build_models_catalog(model)
     clusters = _build_clusters_catalog(device, device_mesh_shape, num_workers)
 
     datasets = [

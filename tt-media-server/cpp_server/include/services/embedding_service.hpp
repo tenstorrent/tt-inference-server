@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+// SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 #pragma once
 
@@ -28,13 +28,14 @@ class EmbeddingService
 
   void start() override;
   void stop() override;
-  bool isModelReady() const;
+  bool isModelReady() const override;
 
  protected:
-  size_t currentQueueSize() const;
-  void postProcess(domain::EmbeddingResponse& response) const;
+  size_t currentQueueSize() const override;
+  void postProcess(domain::EmbeddingResponse& response) const override;
 
-  domain::EmbeddingResponse processRequest(domain::EmbeddingRequest request);
+  domain::EmbeddingResponse processRequest(
+      domain::EmbeddingRequest request) override;
 
  private:
   struct Impl;

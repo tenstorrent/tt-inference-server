@@ -1,11 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
-import pytest
-import aiohttp
 import asyncio
 import time
+
+import aiohttp
+import pytest
 
 API_URL = "http://localhost:9001/v1/images/generations"
 

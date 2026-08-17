@@ -1,0 +1,86 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+#
+# Standalone image for the PrefillGateway.
+#
+# The gateway is a stateless C++ router with no Tenstorrent / tt-metal / Python
+# dependencies. It deliberately ships separately from the cpp_server images so
+# it can run on hosts that are not doing model work.
+#
+# Build (from repo root):
+#   docker build -f tt-media-server/Dockerfile.gateway -t tt-prefill-gateway:dev .
+#
+# Run:
+#   docker run --rm --network host tt-prefill-gateway:dev \
+#       --decode-port=7100 \
+#       --prefill=10.0.0.1:7200 --prefill=10.0.0.2:7200
+#
+# ==============================================================================
+# BUILDER STAGE
+# ==============================================================================
+FROM ubuntu:22.04 AS builder
+
+LABEL maintainer="Tenstorrent <support@tenstorrent.com>"
+LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+# git + ca-certificates are required: prefill_gateway/CMakeLists.txt pulls
+# cereal, spdlog and googletest via FetchContent over HTTPS.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        cmake \
+        git \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+
+# The gateway reuses a small slice of cpp_server (socket framing + logger) at
+# build time only. We copy just the headers it consumes and the .cpp files
+# that prefill_gateway/CMakeLists.txt pulls in directly, instead of the whole
+# cpp_server tree, to keep the build context tiny.
+COPY tt-media-server/cpp_server/include       cpp_server/include
+COPY tt-media-server/cpp_server/src/sockets   cpp_server/src/sockets
+COPY tt-media-server/cpp_server/src/utils     cpp_server/src/utils
+
+COPY tt-media-server/prefill_gateway          prefill_gateway
+
+RUN cmake -S prefill_gateway -B /build \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCPP_SERVER_DIR=/src/cpp_server \
+    && cmake --build /build --target prefill_gateway -j"$(nproc)" \
+    && strip /build/prefill_gateway
+
+# ==============================================================================
+# RUNTIME STAGE
+# ==============================================================================
+FROM ubuntu:22.04 AS runtime
+
+LABEL maintainer="Tenstorrent <support@tenstorrent.com>"
+LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+# Gateway is statically structured but still dynamically links libstdc++/libc.
+# tini provides PID 1 signal handling so SIGTERM from `docker stop` reaches the
+# gateway cleanly (the gateway installs SIGINT/SIGTERM handlers itself).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        tini \
+    && rm -rf /var/lib/apt/lists/*
+
+ARG GATEWAY_UID=1000
+ARG GATEWAY_USERNAME=gateway
+RUN useradd --uid ${GATEWAY_UID} --shell /bin/bash --create-home ${GATEWAY_USERNAME}
+
+COPY --from=builder /build/prefill_gateway /usr/local/bin/prefill_gateway
+
+USER ${GATEWAY_USERNAME}
+WORKDIR /home/${GATEWAY_USERNAME}
+
+# Documented default port; the binary itself has no default and requires
+# --decode-port=<PORT> at runtime.
+EXPOSE 7100
+
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/prefill_gateway"]
+CMD ["--help"]

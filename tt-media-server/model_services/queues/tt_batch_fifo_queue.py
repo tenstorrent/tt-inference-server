@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 import multiprocessing
+import time
 from queue import Empty
 from typing import Any, List, Optional
-import time
 
 from model_services.queues.tt_queue_interface import TTQueueInterface
 

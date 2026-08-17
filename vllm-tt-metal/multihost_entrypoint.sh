@@ -1,6 +1,6 @@
 #!/bin/bash
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 #
 # Unified entrypoint for multi-host distributed inference.
 # Handles both Worker (sshd) and Controller (vLLM) roles.

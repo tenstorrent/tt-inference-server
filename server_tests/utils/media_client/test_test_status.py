@@ -1,13 +1,16 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import unittest
 
 from utils.media_clients.test_status import (
     AudioTestStatus,
     CnnGenerationTestStatus,
+    EmbeddingTestStatus,
     ImageGenerationTestStatus,
+    TtsTestStatus,
+    VideoGenerationTestStatus,
 )
 
 
@@ -20,8 +23,6 @@ class TestImageGenerationTestStatus(unittest.TestCase):
             elapsed=1.5,
             num_inference_steps=20,
             inference_steps_per_second=13.3,
-            ttft=0.5,
-            tpups=10.0,
             base64image="base64data",
             prompt="test prompt",
         )
@@ -35,8 +36,6 @@ class TestImageGenerationTestStatus(unittest.TestCase):
                 "elapsed": 1.5,
                 "num_inference_steps": 20,
                 "inference_steps_per_second": 13.3,
-                "ttft": 0.5,
-                "tpups": 10.0,
                 "base64image": "base64data",
                 "prompt": "test prompt",
             },
@@ -73,15 +72,33 @@ class TestCnnGenerationTestStatus(unittest.TestCase):
     """Tests for CnnGenerationTestStatus class."""
 
     def test_to_dict(self):
-        status = CnnGenerationTestStatus(
+        status = CnnGenerationTestStatus(status=True, elapsed=0.5)
+
+        result = status.to_dict()
+
+        self.assertEqual(result, {"status": True, "elapsed": 0.5})
+
+
+class TestEmbeddingTestStatus(unittest.TestCase):
+    """Tests for EmbeddingTestStatus class."""
+
+    def test_to_dict(self):
+        status = EmbeddingTestStatus(status=True, elapsed=0.42)
+
+        result = status.to_dict()
+
+        self.assertEqual(result, {"status": True, "elapsed": 0.42})
+
+
+class TestTtsTestStatus(unittest.TestCase):
+    """Tests for TtsTestStatus class."""
+
+    def test_to_dict(self):
+        status = TtsTestStatus(
             status=True,
-            elapsed=0.5,
-            num_inference_steps=50,
-            inference_steps_per_second=100.0,
-            ttft=0.1,
-            tpups=50.0,
-            base64image="cnn_base64",
-            prompt="image data",
+            elapsed=3.0,
+            latency=0.120,
+            rtr=1.5,
         )
 
         result = status.to_dict()
@@ -90,12 +107,41 @@ class TestCnnGenerationTestStatus(unittest.TestCase):
             result,
             {
                 "status": True,
-                "elapsed": 0.5,
+                "elapsed": 3.0,
+                "latency": 0.120,
+                "rtr": 1.5,
+            },
+        )
+
+
+class TestVideoGenerationTestStatus(unittest.TestCase):
+    """Tests for VideoGenerationTestStatus class.
+
+    The previous ``ttft`` field was never populated; ``elapsed`` (the
+    full request lifecycle including submit + poll loop + download) is
+    the only timing the API exposes today.
+    """
+
+    def test_to_dict(self):
+        status = VideoGenerationTestStatus(
+            status=True,
+            elapsed=10.0,
+            num_inference_steps=50,
+            inference_steps_per_second=5.0,
+            job_id="job-123",
+            video_path="/tmp/job-123.mp4",
+        )
+
+        result = status.to_dict()
+
+        self.assertEqual(
+            result,
+            {
+                "status": True,
+                "elapsed": 10.0,
                 "num_inference_steps": 50,
-                "inference_steps_per_second": 100.0,
-                "ttft": 0.1,
-                "tpups": 50.0,
-                "base64image": "cnn_base64",
-                "prompt": "image data",
+                "inference_steps_per_second": 5.0,
+                "job_id": "job-123",
+                "video_path": "/tmp/job-123.mp4",
             },
         )

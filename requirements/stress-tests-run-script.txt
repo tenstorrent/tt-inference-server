@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
+#
+# Dependencies for the STRESS_TESTS_RUN_SCRIPT and STRESS_TESTS workflow venvs.
+# Used by: setup_stress_tests_run_script() in workflows/workflow_venvs.py
+
+-c constraints.txt
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+torch
+numpy
+requests
+transformers
+datasets
+pyjwt
+pillow
+aiohttp

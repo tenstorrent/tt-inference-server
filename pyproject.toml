@@ -63,7 +63,19 @@ markers = [
     "distil_whisper: Distil Whisper model tests",
 ]
 
+[tool.coverage.run]
+# Files excluded from coverage instrumentation. Kept intentionally small;
+# only add a file here when its branches are integration-bound and unit
+# testing would require brittle sibling-test-file coordination.
+omit = [
+    "tt-media-server/config/settings.py",
+]
+
 [tool.coverage.report]
+# Mirror the `run.omit` list so the reported totals also skip these files.
+omit = [
+    "tt-media-server/config/settings.py",
+]
 exclude_lines = [
     "pragma: no cover",
     "@abstractmethod",

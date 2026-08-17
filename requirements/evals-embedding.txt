@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
+#
+# Dependencies for the EVALS_EMBEDDING workflow venv.
+# Used by: setup_evals_embedding() in workflows/workflow_venvs.py
+
+-c constraints.txt
+
+mteb>=2.6.6
+openai

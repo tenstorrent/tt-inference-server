@@ -54,7 +54,9 @@ class TTWorker(WorkerBase):
 
         # Initialized by init_device
         self.mesh_device = None
-        self.model_config.override_tt_config = {}
+        self.model_config.override_tt_config = getattr(
+            self.model_config, "plugin_config", {}
+        ).get("tt", {})
 
         # Runtime weight-update (co-located RL) state. The transport is owned by
         # a WeightTransferEngine (device-socket bridge); the worker owns the
