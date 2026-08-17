@@ -360,21 +360,6 @@ def register_tt_models(impl_id=None):
     """
     impl_id = impl_id or "tt_transformers"
 
-    # Point the TT vLLM plugin at any model bundles the tt-metal checkout ships.
-    # The plugin registers every bundle under EXTRA_MODELS_DIR before its own
-    # built-in map, so a repo-local implementation (e.g.
-    # models/autoports/<model>) is selected without editing the plugin. The path
-    # is derived from TT_METAL_HOME rather than hardcoded so it resolves for both
-    # the container (where the image sets it) and a local checkout. An explicit
-    # caller-provided value always wins, and nothing is set when the directory is
-    # absent.
-    tt_metal_home = os.environ.get("TT_METAL_HOME")
-    if tt_metal_home and "EXTRA_MODELS_DIR" not in os.environ:
-        bundles_dir = Path(tt_metal_home) / "models" / "autoports" / "vllm_bundles"
-        if bundles_dir.is_dir():
-            os.environ["EXTRA_MODELS_DIR"] = str(bundles_dir)
-            logger.info(f"Set EXTRA_MODELS_DIR to {bundles_dir}")
-
     # Llama path selection based on impl_id
     if impl_id == "llama3_70b_galaxy":
         os.environ["TT_LLAMA_TEXT_VER"] = "llama3_70b_galaxy"
@@ -690,43 +675,6 @@ def format_vllm_serve_command(argv) -> str:
     return " \\\n  ".join(command_lines)
 
 
-#: vLLM args whose value is a filesystem path that a model spec may express
-#: relative to the tt-metal checkout. A spec cannot hardcode an absolute path:
-#: the checkout lives at a different location in the container than in a local
-#: tree, and spec values are not variable-expanded.
-_REPO_RELATIVE_VLLM_ARG_NAMES = frozenset({"chat-template", "chat_template"})
-
-
-def resolve_repo_relative_vllm_args(vllm_args):
-    """Anchor repo-relative path args from the model spec to TT_METAL_HOME.
-
-    The server is launched from its own working directory, so a relative path in
-    a spec would otherwise resolve against the wrong root. Absolute values and
-    values that do not exist under the checkout are passed through untouched, so
-    a spec can still point at a file outside tt-metal.
-    """
-    tt_metal_home = os.environ.get("TT_METAL_HOME")
-    if not tt_metal_home:
-        return vllm_args
-
-    resolved = dict(vllm_args)
-    for arg_name, value in vllm_args.items():
-        if arg_name not in _REPO_RELATIVE_VLLM_ARG_NAMES:
-            continue
-        if not isinstance(value, str) or not value or Path(value).is_absolute():
-            continue
-        candidate = Path(tt_metal_home) / value
-        if candidate.exists():
-            resolved[arg_name] = str(candidate)
-            logger.info(f"Resolved vLLM --{arg_name} to {candidate}")
-        else:
-            logger.warning(
-                f"vLLM --{arg_name}={value} is relative but {candidate} does not "
-                "exist; passing the value through unchanged."
-            )
-    return resolved
-
-
 def set_vllm_sys_argv(args, remaining_sys_argv, default_vllm_args):
     # runpy uses sys.argv, rebuild it with the merged vLLM args.
     vllm_argv = [sys.argv[0]]
@@ -826,9 +774,7 @@ def main():
     set_metal_timeout_env_vars()
     set_runtime_env_vars(model_spec)
     runtime_settings(model_spec, no_auth=args.no_auth)
-    default_vllm_args = resolve_repo_relative_vllm_args(
-        model_spec["device_model_spec"]["vllm_args"]
-    )
+    default_vllm_args = model_spec["device_model_spec"]["vllm_args"]
     set_vllm_sys_argv(args, remaining_sys_argv, default_vllm_args)
 
     # Step 5: Start trace capture if needed

@@ -266,6 +266,14 @@ templates:
         # main_class is a full dotted path, so tt-metal on PYTHONPATH is enough
         # to import it.
         GEMMA4_31B_AUTOPORT_DIR: "models/autoports/google_gemma_4_31b"
+        # Point the TT vLLM plugin at the bundles this tt-metal checkout ships.
+        # The plugin registers every bundle under EXTRA_MODELS_DIR before its own
+        # built-in architecture map, so a repo-local implementation is selected
+        # with no change to tenstorrent/vllm-tt-plugin and no change to any
+        # tt-inference-server code -- this is data, not a patch. The path is
+        # cwd-relative because the server runs from vllm-tt-metal/src, the same
+        # convention the existing TT_MESH_GRAPH_DESC_PATH entries use.
+        EXTRA_MODELS_DIR: "../../tt-metal/models/autoports/vllm_bundles"
         # TTI's hang watchdog (run_vllm_api_server.set_metal_timeout_env_vars
         # sets TT_METAL_OPERATION_TIMEOUT_SECONDS=5.0) false-positives on this
         # model's first-compile prefill. Shield run 31824560569 died in
@@ -313,7 +321,7 @@ templates:
         # run_vllm_api_server.resolve_repo_relative_vllm_args, because the
         # checkout sits at a different absolute path in the container than in a
         # local tree.
-        chat-template: models/autoports/google_gemma_4_31b/doc/vllm_integration/chat_template.jinja
+        chat-template: ../../tt-metal/models/autoports/google_gemma_4_31b/doc/vllm_integration/chat_template.jinja
         # Deliberately still no tool-call or reasoning parser and no
         # default-chat-template-kwargs: those belong to the instruction-tuned
         # variant's contract, not this base checkpoint's.
