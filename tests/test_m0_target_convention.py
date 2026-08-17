@@ -214,11 +214,26 @@ def test_tolerance_is_read_from_the_reference_entry():
 
 
 def test_an_entry_without_a_tolerance_still_defaults_to_zero():
-    """No existing model's behaviour changes by adding the field."""
-    ref = get_perf_reference_map("Mistral-Small-3.1-24B-Instruct-2503", {"target": 1.0})
-    points = [p for p in ref[DeviceTypes.BLACKHOLE_GALAXY] if p.targets]
-    assert points
-    assert all(p.targets["target"].tolerance == 0.0 for p in points)
+    """No existing model's behaviour changes by adding the field.
+
+    Deliberately checks a model that is not part of Milestone-0: only the two RFP
+    models opt in to a tolerance, and every other entry in the reference file must
+    keep the previous behaviour of requiring the target to be beaten outright.
+    """
+    from workflows.model_spec import model_performance_reference
+
+    checked = 0
+    for model, devices in model_performance_reference.items():
+        if model in M0_SWEEPS:
+            continue
+        ref = get_perf_reference_map(model, {"target": 1.0})
+        for device, points in ref.items():
+            for point in points:
+                if not point.targets:
+                    continue
+                assert point.targets["target"].tolerance == 0.0, (model, device)
+                checked += 1
+    assert checked > 100, f"only {checked} targeted points checked"
 
 
 def test_the_device_override_beats_the_model_wide_ladder():
