@@ -86,7 +86,7 @@ Two dedicated dashboards are provisioned for this setup:
 
 A TTS deployment (`MODEL_SERVICE=tts`) is scraped by the plain
 `tt_media_server` job — point `SERVER_TARGET` at it like any other single
-server, and open the **TT Media Server — TTS (codec decode)** dashboard
+server, and open the **TT Media Server — TTS (decode + vocoder)** dashboard
 (uid `tt-media-server-tts`):
 
 ```bash
@@ -94,23 +94,64 @@ SERVER_TARGET=<tts-container-name>:8000 SERVER_SERVICE=cpp \
   docker compose -f monitoring/docker-compose.yml up -d
 ```
 
-Its headline metric is `tt_tts_codec_tokens_total` — cumulative acoustic /
-codec tokens emitted by the TTS decoder, labelled by `worker_id`, `device`
-(the worker's `DEVICE_IDS` group), `model_name` and `voice_source`. Throughput
-is `rate(tt_tts_codec_tokens_total[$__rate_interval])`, i.e. the autoregressive
-decode capacity that has to stay ahead of playback. Per-replica granularity
-comes from the scrape `instance` label.
+Speech generation is two stages, and the dashboard measures them separately so
+a slowdown can be pinned to one of them.
 
-The metric is published by the TTS worker process into its worker-metrics
-shared-memory slot (`MetricsLayout::TTS_RUNNER`, see
+**Stage 1 — codec-token decode.** `tt_tts_codec_tokens_total` is the cumulative
+count of acoustic / codec tokens emitted by the TTS decoder, labelled by
+`worker_id`, `device` (the worker's `DEVICE_IDS` group), `model_name` and
+`voice_source`. Throughput is
+`rate(tt_tts_codec_tokens_total[$__rate_interval])`, i.e. the autoregressive
+decode capacity that has to stay ahead of playback.
+
+**Stage 2 — vocoder / waveform reconstruction.**
+`tt_tts_audio_frames_total` is the cumulative count of PCM frames (samples per
+channel) the vocoder reconstructed from those tokens, labelled by `worker_id`,
+`device`, `model_name` and `batch`. Both units come from that one counter, so
+nothing can drift apart:
+
+| Quantity | Query |
+| --- | --- |
+| samples/s | `rate(tt_tts_audio_frames_total[$__rate_interval])` |
+| audio seconds/s (RTF) | `rate(tt_tts_audio_frames_total[$__rate_interval]) / scalar(max(tt_tts_audio_sample_rate_hz))` |
+
+The second is the real-time factor: **below 1.0 the vocoder cannot keep up with
+playback** even when the decoder can. `tt_tts_vocoder_chunks_total` (same
+labels) pairs with the frame counter to give mean frames per chunk, which tells
+apart "fewer chunks" from "shorter chunks" when audio throughput drops.
+
+**Separating the two.** Tokens per second of audio is a constant of the codec,
+so `rate(codec_tokens) / (rate(audio_frames) / sample_rate)` is flat while both
+stages keep pace — it rises when the vocoder falls behind a healthy decoder and
+falls when the decoder is starving. The two staleness clocks say the same thing
+at a glance: `tt_tts_last_vocode_age_seconds` rising while
+`tt_worker_last_output_age_seconds` stays flat is a vocoder stall; both rising
+together points upstream at token generation.
+
+Per-replica granularity comes from the scrape `instance` label. All of these are
+published by the TTS worker process into its worker-metrics shared-memory slot
+(`MetricsLayout::TTS_RUNNER`, see
 `cpp_server/include/runtime/worker/tts_metrics_layout.hpp`) and rendered on the
 main process's `/metrics` by `TtsWorkerMetricsRenderer`.
+
+#### Label caveats
 
 There is deliberately **no `voice` or `language` label**: the TTS API accepts
 only `text`, a free-form `description` and an optional voice WAV, so neither
 dimension exists to label by. `voice_source`
 (`default` / `description` / `voice_sample`) is the bounded stand-in until
 those fields are added to the request.
+
+`batch` (`1`, `2`, `3-4`, `5-8`, `9-16`, `17+`) is **derived, not reported**.
+The engine does not expose the batch its vocoder formed, so the runner counts
+the distinct streams whose chunks came out of one `drainAudioOutputs()` sweep —
+the engine vocodes a batch and pushes one chunk per stream in it, so a sweep
+observes one batch's worth. Under load a single batch can straddle two sweeps,
+which shows up as two smaller buckets rather than one larger one, so read the
+bucket as "at least this many streams were reconstructed together". Buckets
+rather than a raw count keep the label at 6 values instead of the 128 that
+`PM_MAX_USERS` would admit. Replace this with the real batch size if the engine
+starts reporting it.
 
 ### Docker Scrape Targets
 
@@ -159,7 +200,7 @@ monitoring/
         ├── tt_media_server_cpp.json          # C++ server dashboard, regular mode (latency, throughput, queue)
         ├── tt_media_server_cpp_prefill.json  # C++ disaggregated prefill node (role="prefill")
         ├── tt_media_server_cpp_decode.json   # C++ disaggregated decode node (role="decode")
-        ├── tt_media_server_cpp_tts.json      # C++ TTS server (MODEL_SERVICE=tts): codec-token throughput
+        ├── tt_media_server_cpp_tts.json      # C++ TTS server (MODEL_SERVICE=tts): codec-token + vocoder throughput
         ├── tt_media_server_python.json       # Python server dashboard (legacy, sunsetting)
         └── tt_prefill_gateway.json           # PrefillGateway routing, latency, registration-age dashboard
 ```

@@ -61,6 +61,11 @@ void SingleProcessWorkerMetrics::initialize(int workerId,
   if (layout == MetricsLayout::BLAZE_RUNNER) {
     shm_->storeScratch(workerId, sp_pipeline::SCRATCH_ACTIVE_REQUESTS, 0);
   }
+  if (layout == MetricsLayout::TTS_RUNNER) {
+    // Same reason as the heartbeats above: the vocode clock is its own cell,
+    // so it needs its own seed or last-vocode age reads as decades.
+    shm_->storeScratch(workerId, tts::SCRATCH_LAST_VOCODE_EPOCH_MS, nowMs());
+  }
 
   TT_LOG_INFO(
       "[SingleProcessWorkerMetrics] Worker {} attached to shm '{}' slot {}, "
@@ -115,6 +120,21 @@ void SingleProcessWorkerMetrics::onCodecToken(tts::VoiceSource source) {
   if (shm_ == nullptr || layout_ != MetricsLayout::TTS_RUNNER) return;
   shm_->fetchAddScratch(workerId_, tts::codecTokensIdx(source), 1);
   shm_->storeScratch(workerId_, tts::SCRATCH_LAST_OUTPUT_EPOCH_MS, nowMs());
+}
+
+void SingleProcessWorkerMetrics::onVocodedAudio(tts::BatchBucket bucket,
+                                                uint64_t frames,
+                                                uint64_t chunks) {
+  if (shm_ == nullptr || layout_ != MetricsLayout::TTS_RUNNER) return;
+  shm_->fetchAddScratch(workerId_, tts::audioFramesIdx(bucket), frames);
+  shm_->fetchAddScratch(workerId_, tts::vocoderChunksIdx(bucket), chunks);
+  shm_->storeScratch(workerId_, tts::SCRATCH_LAST_VOCODE_EPOCH_MS, nowMs());
+}
+
+void SingleProcessWorkerMetrics::publishAudioSampleRate(uint32_t sampleRateHz) {
+  if (shm_ == nullptr || layout_ != MetricsLayout::TTS_RUNNER) return;
+  shm_->storeScratch(workerId_, tts::SCRATCH_AUDIO_SAMPLE_RATE_HZ,
+                     static_cast<uint64_t>(sampleRateHz));
 }
 
 void SingleProcessWorkerMetrics::incrementActiveRequests() {

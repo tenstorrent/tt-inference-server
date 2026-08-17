@@ -177,6 +177,9 @@ class MockTtsScheduler final : public tts_scheduler::ITtsScheduler {
   }
 
   void enqueueAudio(const tts_scheduler::TtsSubmit& request) {
+    // The chunks below stand in for vocoder output, so audio throughput
+    // (tt_tts_audio_frames_total, 60 ms of audio per request at the default
+    // rate) is exercisable without hardware alongside the token counters.
     constexpr size_t kSamplesPerChunk = 960;  // 20 ms at 48 kHz.
     constexpr size_t kChunkCount = 3;
     // Codec tokens the mock "decodes" into each audio chunk. The real engine

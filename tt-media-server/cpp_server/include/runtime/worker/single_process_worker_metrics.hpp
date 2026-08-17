@@ -94,7 +94,19 @@ class SingleProcessWorkerMetrics {
   //                stamps the last-output heartbeat. Hot path: two relaxed
   //                atomics, no syscalls or allocations. Silently dropped when
   //                the worker has no shm attached or runs another layout.
+  //
+  // onVocodedAudio — called once per drainAudioOutputs() sweep that produced
+  //                  audio, with the sweep's total PCM frames, its chunk count
+  //                  and the batch bucket derived from how many distinct
+  //                  streams it covered. Bumps both cumulative counters for
+  //                  that bucket and stamps the last-vocode heartbeat.
+  //
+  // publishAudioSampleRate — published once at runner construction so the
+  //                  reader can turn frames into audio seconds.
   void onCodecToken(tts::VoiceSource source);
+  void onVocodedAudio(tts::BatchBucket bucket, uint64_t frames,
+                      uint64_t chunks);
+  void publishAudioSampleRate(uint32_t sampleRateHz);
 
   // ----- low-level layout-agnostic writers ----------------------------------
   void scratchStoreU64(size_t idx, uint64_t value);

@@ -74,6 +74,15 @@ BlazeTtsRunner::BlazeTtsRunner(
   for (uint32_t i = 0; i < slots.size(); ++i) {
     slots[i].slotId = i;
   }
+  vocodeSweepSlots.reserve(slots.size());
+
+  // The output sample rate is fixed for the runner's lifetime, and it is what
+  // turns the frame counter into audio seconds on the reader side. Safe here:
+  // SingleProcessWorkerMetrics::initialize() runs in startWorker() before any
+  // runner is constructed, and the call is a no-op on a non-TTS layout.
+  tt::worker::SingleProcessWorkerMetrics::instance().publishAudioSampleRate(
+      this->config.audioSampleRateHz);
+
   this->scheduler->start();
   lastOutputTime = std::chrono::steady_clock::now();
 }
@@ -166,11 +175,36 @@ void BlazeTtsRunner::drainTokenOutputs() {
 void BlazeTtsRunner::drainAudioOutputs() {
   sched::AudioOutput output;
   size_t drained = 0;
+  // Accumulated per sweep, not per chunk: the engine vocodes a batch of
+  // streams and pushes one AudioOut for each, so one sweep is one batch's
+  // worth of waveform reconstruction. Attributing the sweep's frames to the
+  // number of distinct streams it covered is what makes vocoder throughput
+  // readable per batch — the dimension that says whether reconstruction
+  // scales, as opposed to token generation.
+  uint64_t sweepFrames = 0;
+  uint64_t sweepChunks = 0;
+  vocodeSweepSlots.clear();
+
   while (drained < config.audioQueueCapacity &&
          scheduler->tryPopAudio(output)) {
-    handleAudioOutput(output);
+    const uint64_t frames = handleAudioOutput(output);
+    if (frames > 0) {
+      sweepFrames += frames;
+      ++sweepChunks;
+      if (std::find(vocodeSweepSlots.begin(), vocodeSweepSlots.end(),
+                    output.slotId) == vocodeSweepSlots.end()) {
+        vocodeSweepSlots.push_back(output.slotId);
+      }
+    }
     ++drained;
   }
+
+  if (sweepFrames > 0) {
+    tt::worker::SingleProcessWorkerMetrics::instance().onVocodedAudio(
+        tt::worker::tts::batchBucketOf(vocodeSweepSlots.size()), sweepFrames,
+        sweepChunks);
+  }
+
   if (drained < config.audioQueueCapacity) {
     for (const auto& slot : slots) {
       maybeFinalizeCompletedSlot(slot.slotId);
@@ -465,13 +499,21 @@ void BlazeTtsRunner::handleTokenOutput(const sched::TokenOutput& output) {
   }
 }
 
-void BlazeTtsRunner::handleAudioOutput(const sched::AudioOutput& output) {
+uint64_t BlazeTtsRunner::handleAudioOutput(const sched::AudioOutput& output) {
   lastOutputTime = std::chrono::steady_clock::now();
   if (shouldDropOutput(output.slotId, "audio")) {
-    return;
+    return 0;
   }
 
+  uint64_t frames = 0;
   if (!output.samplesBf16.empty()) {
+    // Frames, not sample words: samplesBf16 is interleaved across channels, so
+    // dividing by the channel count is what makes the counter mean "audio
+    // duration" independently of the output format. Engines that leave
+    // channels unset are treated as mono rather than dropped.
+    const uint16_t channels = output.channels > 0 ? output.channels : 1;
+    frames = static_cast<uint64_t>(output.samplesBf16.size()) / channels;
+
     ipc::tts::TtsAudioChunkMessage message;
     message.task_id = output.taskId;
     message.chunkIndex = output.chunkIndex;
@@ -491,6 +533,7 @@ void BlazeTtsRunner::handleAudioOutput(const sched::AudioOutput& output) {
       maybeFinalizeCompletedSlot(output.slotId);
     }
   }
+  return frames;
 }
 
 bool BlazeTtsRunner::sendFinish(uint32_t taskId,
