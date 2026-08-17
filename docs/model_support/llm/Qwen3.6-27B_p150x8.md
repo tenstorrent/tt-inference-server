@@ -1,16 +1,16 @@
-# Qwen3.6-27B Tenstorrent Support on BH QuietBox 2
+# Qwen3.6-27B Tenstorrent Support on BH LoudBox
 
 #### Useful links
 
-- [BH QuietBox 2 details](https://tenstorrent.com/hardware/tt-quietbox)
+- [BH LoudBox details](https://tenstorrent.com/hardware/tt-loudbox)
 - [Search other llm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
 `Qwen3.6-27B` is also supported on hardware:
 
-- [BH LoudBox](Qwen3.6-27B_p150x8.md)
+- [BH QuietBox 2](Qwen3.6-27B_p300x2.md)
 
-## Quickstart - Deploy Qwen3.6-27B Inference Server on BH QuietBox 2
+## Quickstart - Deploy Qwen3.6-27B Inference Server on BH LoudBox
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 
@@ -28,13 +28,13 @@ docker run \
   --volume volume_id_Qwen3.6-27B:/home/container_app_user/cache_root \
   ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.20.0-de59f8a-03fa3af \
   --model Qwen3.6-27B \
-  --tt-device p300x2
+  --tt-device p150x8
 ```
 
 **via run.py command**
 
 ```bash
-python3 run.py --model Qwen3.6-27B --device p300x2 --workflow server --docker-server
+python3 run.py --model Qwen3.6-27B --device p150x8 --workflow server --docker-server
 ```
 For details on the run.py command, see the [run.py CLI Options](../../workflows_user_guide.md#runpy-cli-options) section of the User Guide.
 

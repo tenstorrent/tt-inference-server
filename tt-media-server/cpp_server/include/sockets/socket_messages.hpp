@@ -48,6 +48,10 @@ struct PrefillRequestMessage {
   bool fastMode = false;
   int decodePositionId = 0;
   int decodeSkipTokens = 0;
+  // W3C traceparent of the decode-side Sentry transaction, so the prefill
+  // server's transaction joins the same distributed trace. Empty when
+  // tracing is disabled or the original request carried no trace context.
+  std::string traceparent;
 
   explicit PrefillRequestMessage(uint32_t taskId) : taskId(taskId) {}
 
@@ -62,7 +66,8 @@ struct PrefillRequestMessage {
     bool hasTopK = topK.has_value();
     int topKVal = topK.value_or(0);
     ar(taskId, registrationHashes, tokenIds, mt, sid, hasTemp, tempVal, hasTopP,
-       topPVal, hasTopK, topKVal, fastMode, decodePositionId, decodeSkipTokens);
+       topPVal, hasTopK, topKVal, fastMode, decodePositionId, decodeSkipTokens,
+       traceparent);
   }
 
   template <class Archive>
@@ -81,8 +86,9 @@ struct PrefillRequestMessage {
     bool fastMode;
     int decodePositionId;
     int decodeSkipTokens;
+    std::string traceparent;
     ar(tid, hashes, tids, mt, sid, hasTemp, tempVal, hasTopP, topPVal, hasTopK,
-       topKVal, fastMode, decodePositionId, decodeSkipTokens);
+       topKVal, fastMode, decodePositionId, decodeSkipTokens, traceparent);
     PrefillRequestMessage msg(tid);
     msg.registrationHashes = std::move(hashes);
     msg.tokenIds = std::move(tids);
@@ -96,6 +102,7 @@ struct PrefillRequestMessage {
     msg.fastMode = fastMode;
     msg.decodePositionId = decodePositionId;
     msg.decodeSkipTokens = decodeSkipTokens;
+    msg.traceparent = std::move(traceparent);
     return msg;
   }
 };

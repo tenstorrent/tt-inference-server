@@ -48,7 +48,6 @@ def _mapped(
     repository="ghcr.io/org/img",
     tag="1.0.0",
     progress=5400,
-    initial_delay=2400,
     liveness_path=None,
     memory="20Gi",
     env=(),
@@ -57,8 +56,8 @@ def _mapped(
         image=HelmImage(repository=repository, tag=tag),
         progress_deadline_seconds=progress,
         probes=HelmProbes(
-            liveness=HelmProbe(initial_delay_seconds=initial_delay, path=liveness_path),
-            readiness=HelmProbe(initial_delay_seconds=initial_delay),
+            liveness=HelmProbe(path=liveness_path),
+            readiness=HelmProbe(),
         ),
         resources=HelmResources(requests_memory=memory),
         env=[HelmEnvVar(name=k, value=v) for k, v in env],

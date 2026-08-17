@@ -170,6 +170,17 @@ constexpr uint32_t MOCK_PIPELINE_STAGES = 64;
 constexpr uint32_t MOCK_PREFILL_CHUNK_SIZE = 24;
 constexpr unsigned MOCK_DECODE_TOKEN_ID = 12345;
 
+// Sentry distributed tracing (issue #4778). The DSN is a client-side key,
+// not a secret: the tt-inference-server project in the tenstorrent-inc org.
+// Export SENTRY_DSN= (empty) to disable tracing entirely.
+constexpr const char* SENTRY_DSN =
+    "https://7688bbd86bf4c5f4f0f1fa6970bac196@o1366617.ingest.us.sentry.io/"
+    "4511909245288448";
+constexpr const char* SENTRY_ENVIRONMENT = "development";
+// Empty = label events with the server version passed to telemetry::init().
+constexpr const char* SENTRY_RELEASE = "";
+constexpr bool SENTRY_DEBUG = false;
+
 // Text-to-speech scheduler defaults.
 constexpr size_t TTS_MAX_BATCH_SIZE = 1;
 constexpr size_t TTS_AUDIO_QUEUE_CAPACITY = 1024;
