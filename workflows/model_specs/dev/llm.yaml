@@ -386,7 +386,17 @@ templates:
   status: FUNCTIONAL
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Milestone-0 stub: mistralai/Mistral-Small-4-119B-2603
+# mistralai/Mistral-Small-4-119B-2603 — NOT a Milestone-0 model.
+#
+# Dropped from the Milestone-0 RFP (2026-08-17); the RFP covers gemma-4-31B-it and
+# DeepSeek-V4-Flash-0731 only. The scaffold below is kept because it is real work
+# and the model may return in a later milestone, but it carries NO Milestone-0
+# grading configuration: no `perf_targets_map`, no blackhole_galaxy targets in
+# model_performance_reference.json, and `status: EXPERIMENTAL` rather than
+# FUNCTIONAL. Do not add them back by symmetry with the two graded specs —
+# see docs/rfp/m0-target-convention.md.
+#
+# Original scaffold notes follow.
 # Released, but no tt-metal serving path exists yet. Scaffold for the Partner to
 # complete per RFP F.2.3(a). It is a mistral3 MoE (128 experts / 4 active, 119B /
 # 6.5B activated) and multimodal; Milestone-0 is text-generation only (RFP A.4).
@@ -403,20 +413,6 @@ templates:
   inference_engine: VLLM
   device_model_specs:
     - device: BLACKHOLE_GALAXY  # M0 target: 32x P150, 4x8 2D torus (RFP D.1/D.2)
-      # Milestone-0 graded bar. ONE tier holding the published absolute target
-      # verbatim (perf_targets_map value 1.0), not the default
-      # functional 0.10 / complete 0.50 / target 1.0 ladder — the RFP states one
-      # number per point (Appendix B.2), so three bars in code would invite a
-      # Partner to look for two they cannot find.
-      #
-      # The tier name and `status` below MUST stay in step:
-      # ModelStatusTypes.required_target_tiers matches on tier NAME, and
-      # FUNCTIONAL enforces exactly ["functional"]. Renaming this tier to
-      # "target" while leaving status FUNCTIONAL computes the bar, reports it,
-      # and then ignores it — the gate goes silently inert. See
-      # docs/rfp/m0-target-convention.md.
-      perf_targets_map:
-        functional: 1.0
       # [TBD — Partner] per-system max concurrent requests (sweep upper corner).
       max_concurrency: 32
       # Full native context: Mistral Small 4 has a 256k context window (model
@@ -440,14 +436,7 @@ templates:
         # 6U-Galaxy default).
         fabric_config: FABRIC_1D_RING
       # [TBD — Partner] vllm_args and a metadata block with the parser names.
-  # Milestone-0: FUNCTIONAL, not EXPERIMENTAL. required_target_tiers is EMPTY at
-  # EXPERIMENTAL, and evals_enforced reuses the same signal, so an EXPERIMENTAL
-  # model can fail every performance target AND every accuracy eval and still be
-  # accepted. FUNCTIONAL enforces exactly ["functional"] — the single graded tier
-  # defined on the BLACKHOLE_GALAXY row above. Not TOP_PERF: that would claim
-  # near-peak optimisation, which Milestone-0 does not claim about a
-  # first-of-kind bring-up. See docs/rfp/m0-target-convention.md.
-  status: FUNCTIONAL
+  status: EXPERIMENTAL
 
 - weights:
     - google/gemma-4-12B-it

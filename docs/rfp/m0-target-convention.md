@@ -108,9 +108,15 @@ fails silently and in the safe-looking direction.
 ### `status: EXPERIMENTAL` disables more than performance
 
 `evals_enforced` reuses the same signal (`bool(required_target_tiers)`), so an `EXPERIMENTAL`
-model has **accuracy failures waived too**. Before #78 all three Milestone-0 models sat at
+model has **accuracy failures waived too**. Before #78 every Milestone-0 model sat at
 `EXPERIMENTAL`, meaning a submission could fail every performance target and every eval and
 still be accepted. `FUNCTIONAL` restores both.
+
+The RFP covers **two** models: `gemma-4-31B-it` and `DeepSeek-V4-Flash-0731`.
+`Mistral-Small-4-119B-2603` was dropped on 2026-08-17; its scaffold remains in the dev catalog
+but deliberately carries no `perf_targets_map`, no `blackhole_galaxy` targets, and
+`status: EXPERIMENTAL`. A test asserts that, so it cannot drift back into the graded set by
+someone making the three specs look alike.
 
 ---
 

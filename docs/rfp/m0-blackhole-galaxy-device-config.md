@@ -81,7 +81,7 @@ leave `MESH_DEVICE` to the operator.
 | ----- | ---- | ------ | ------------- |
 | `google/gemma-4-31B-it` | `tt_transformers` (real) | Working starting config: gemma-4 serves today; tool-call/reasoning/thinking preserved. | 262144 (256K, full) |
 | `deepseek-ai/DeepSeek-V4-Flash-0731` | `deepseek_v4_flash` (**stub impl**) | Greenfield scaffold, `[TBD — Partner]` on impl/parsers (no serving path exists, readiness §6.2). | 1048576 (1M native) |
-| `mistralai/Mistral-Small-4-119B-2603` | `tt_transformers` (placeholder) | Greenfield scaffold, `[TBD — Partner]` on impl/parsers. `mistral3` MoE, multimodal (text-only for M0). | 262144 (256K, full) |
+| ~~`mistralai/Mistral-Small-4-119B-2603`~~ | — | **Dropped from Milestone-0 on 2026-08-17.** The scaffold remains in the dev catalog but is not a graded model: no targets, no `perf_targets_map`, `status: EXPERIMENTAL`. | — |
 
 `deepseek_v4_flash` is a new stub `ImplSpec` (`workflows/model_spec.py`) whose
 `code_path` points at the expected tt-metal home so the catalog loads; the Partner

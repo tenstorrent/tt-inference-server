@@ -5,8 +5,8 @@
 """Tests for the Milestone-0 single-tier target configuration.
 
 See ``docs/rfp/m0-target-convention.md``. The thing being defended here is that
-the acceptance gate actually *bites*: before this configuration all three
-Milestone-0 models sat at ``EXPERIMENTAL``, which enforces no target tiers and —
+the acceptance gate actually *bites*: before this configuration every Milestone-0
+model sat at ``EXPERIMENTAL``, which enforces no target tiers and —
 because ``evals_enforced`` reuses the same signal — waives accuracy failures too.
 A submission could fail everything and still be accepted.
 
@@ -334,11 +334,14 @@ def test_gemma_targets_are_filed_under_the_key_its_spec_derives():
 # The dev catalog is actually configured this way
 # --------------------------------------------------------------------------
 
+#: The Milestone-0 models. Mistral-Small-4-119B-2603 was dropped from the RFP on
+#: 2026-08-17; its scaffold remains in the dev catalog but carries no Milestone-0
+#: grading configuration, which the last test in this section asserts.
 M0_WEIGHTS = (
     "google/gemma-4-31B-it",
     "deepseek-ai/DeepSeek-V4-Flash-0731",
-    "mistralai/Mistral-Small-4-119B-2603",
 )
+DROPPED_WEIGHTS = ("mistralai/Mistral-Small-4-119B-2603",)
 
 
 def _m0_templates():
@@ -448,6 +451,26 @@ def test_the_submission_assembler_finds_targets_under_either_tier_name(tier):
     assert points[0]["target_ttft_ms"] == TTFT_TARGET
     assert points[0]["target_tput_user"] == TPUT_USER_TARGET
     assert points[0]["target_decode_throughput"] == TPUT_TARGET
+
+
+@pytest.mark.parametrize("weights", DROPPED_WEIGHTS)
+def test_a_model_dropped_from_the_rfp_carries_no_grading_configuration(weights):
+    """A scaffold left in the catalog must not look graded. `status: FUNCTIONAL`
+    plus a `perf_targets_map` is the signature of a Milestone-0 model, and adding
+    it back by symmetry with the two real ones would put a model nobody is
+    grading into the gate."""
+    import yaml
+
+    from workflows.utils import get_repo_root_path
+
+    path = get_repo_root_path() / "workflows" / "model_specs" / "dev" / "llm.yaml"
+    templates = yaml.safe_load(path.read_text())["templates"]
+    for t in templates:
+        if t["weights"][0] != weights:
+            continue
+        assert t["status"] == "EXPERIMENTAL", weights
+        for row in t.get("device_model_specs") or []:
+            assert not row.get("perf_targets_map"), (weights, row["device"])
 
 
 def test_without_an_override_the_default_ladder_still_derives_three_tiers():
