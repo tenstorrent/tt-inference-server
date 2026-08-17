@@ -396,13 +396,18 @@ class RealTtsScheduler final : public tts_scheduler::ITtsScheduler {
     engine_tts::VoiceEncodeRequest engineRequest;
     engineRequest.requestId = static_cast<uint64_t>(request.requestId);
     engineRequest.wavPcm = std::move(request.wavPcm);
-    return impl->enqueueVoiceEncode(std::move(engineRequest));
+    // LOCAL UNBLOCK — do not commit. The tt-llm-engine fork this image builds
+    // against renamed the voice-encode methods to snake_case (matching the
+    // rest of TtsScheduler); restore the camelCase spelling once cpp_server
+    // and the engine agree again.
+    return impl->enqueue_voice_encode(std::move(engineRequest));
   }
 
   bool tryPopVoiceEncodeResult(
       tts_scheduler::VoiceEncodeResult& result) override {
     engine_tts::VoiceEncodeResult engineResult;
-    if (!impl->tryPopVoiceEncodeResult(engineResult)) {
+    // LOCAL UNBLOCK — see enqueue_voice_encode above.
+    if (!impl->try_pop_voice_encode_result(engineResult)) {
       return false;
     }
     result.requestId = static_cast<uint32_t>(engineResult.requestId);
@@ -452,6 +457,39 @@ class RealTtsScheduler final : public tts_scheduler::ITtsScheduler {
 };
 
 #if defined(TT_MEDIA_SERVER_HAS_TTS_SOCKET_PIPELINES)
+// Stand-in used when TTS_ENCODER_ENABLED=0. TtsScheduler always owns an
+// encoder (it dereferences it to build EncoderDriver and again on teardown),
+// so "disabled" cannot be expressed as a null pointer. This implementation
+// holds no socket and never reads /dev/shm, which is the whole point: the
+// server can come up against a speechlm+decoder-only deployment with no
+// encoder descriptor published.
+//
+// inject() throws rather than silently returning fake codes. EncoderDriver
+// catches it, answers that request with VoiceEncodeStatus::ERROR, and poisons
+// itself so every later voice request is failed without touching the encoder.
+// That is the intended outcome: a request needing reference-voice encoding
+// cannot be served here, and failing loudly beats emitting audio built from
+// invented FSQ codes.
+class DisabledEncoderPipeline final
+    : public engine_pipeline::EncoderPipelineInterface {
+ public:
+  void inject(const engine_pipeline::EncoderInject&) override {
+    throw std::runtime_error(
+        "TTS voice encoder is disabled (TTS_ENCODER_ENABLED=0); requests "
+        "carrying a reference voice sample cannot be served");
+  }
+
+  // Unreachable in practice — EncoderDriver only calls this after inject()
+  // returns. The sentinel is what the driver reads as "no result".
+  engine_pipeline::EncoderResult read_result() override {
+    return engine_pipeline::EncoderResult{.slot_id =
+                                              engine_pipeline::INVALID_SLOT};
+  }
+
+  void request_stop() override {}
+  void shutdown() override {}
+};
+
 std::unique_ptr<tts_scheduler::ITtsScheduler> makeRealTtsScheduler(
     const tt::config::TtsConfig& config) {
   TT_LOG_INFO("makeTtsScheduler: constructing real TtsScheduler");
@@ -459,9 +497,19 @@ std::unique_ptr<tts_scheduler::ITtsScheduler> makeRealTtsScheduler(
       config.speechlmSocketDescriptorPrefix,
       config.speechlmSocketDescriptorPrefix, config.connectTimeoutMs,
       std::make_unique<engine_pipeline::SpeechlmWireCodec>());
-  auto encoder = std::make_unique<engine_pipeline::EncoderSocketPipeline>(
-      config.encoderSocketDescriptorPrefix,
-      config.encoderSocketDescriptorPrefix, config.connectTimeoutMs);
+
+  std::unique_ptr<engine_pipeline::EncoderPipelineInterface> encoder;
+  if (config.encoderEnabled) {
+    encoder = std::make_unique<engine_pipeline::EncoderSocketPipeline>(
+        config.encoderSocketDescriptorPrefix,
+        config.encoderSocketDescriptorPrefix, config.connectTimeoutMs);
+  } else {
+    TT_LOG_WARN(
+        "makeTtsScheduler: TTS_ENCODER_ENABLED=0 — skipping encoder socket "
+        "connect; voice-sample requests will be rejected");
+    encoder = std::make_unique<DisabledEncoderPipeline>();
+  }
+
   auto decoder = std::make_unique<engine_pipeline::DecoderSocketPipeline>(
       config.decoderSocketDescriptorPrefix,
       config.decoderSocketDescriptorPrefix, config.connectTimeoutMs);

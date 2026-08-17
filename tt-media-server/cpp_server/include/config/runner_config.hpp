@@ -121,6 +121,11 @@ struct TtsConfig : RunnerConfigBase {
   uint32_t audioSampleRateHz = defaults::TTS_AUDIO_SAMPLE_RATE_HZ;
   uint16_t audioChannels = defaults::TTS_AUDIO_CHANNELS;
 
+  // When false the voice encoder pipeline is not constructed at all, so no
+  // encoder descriptor is read from /dev/shm. See
+  // defaults::TTS_ENCODER_ENABLED.
+  bool encoderEnabled = defaults::TTS_ENCODER_ENABLED;
+
   // Socket descriptor prefixes written by the model launcher into /dev/shm.
   std::string encoderSocketDescriptorPrefix =
       defaults::TTS_ENCODER_SOCKET_DESCRIPTOR_PREFIX;

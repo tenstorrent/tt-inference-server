@@ -4,6 +4,7 @@
 #include "runtime/runners/blaze_runner/blaze_scheduler_factory.hpp"
 
 #include <memory>
+#include <stdexcept>
 #include <utility>
 
 #include "config/settings.hpp"
@@ -148,7 +149,16 @@ std::unique_ptr<IDecodeScheduler> makeDecodeScheduler(
   if (config.specDecodeMode == "mtp") {
     managerParams.spec_decode_mode = ds::SpecDecodeMode::MTP;
   } else if (config.specDecodeMode == "dflash") {
-    managerParams.spec_decode_mode = ds::SpecDecodeMode::DFLASH;
+    // LOCAL UNBLOCK — do not commit. The tt-llm-engine fork this image is
+    // built against (nanicicTT/nanicic-TTS-llm-engine @
+    // nanicicTT/TTS_Scheduler) predates SpecDecodeMode::DFLASH; upstream
+    // tt-llm-engine has it, so
+    // `= ds::SpecDecodeMode::DFLASH;` belongs here and must be restored once
+    // the fork is rebased onto upstream. Throwing rather than falling through
+    // keeps a dflash config from silently degrading to SpecDecodeMode::NONE.
+    throw std::runtime_error(
+        "specDecodeMode=dflash is unsupported by this tt-llm-engine build: "
+        "SpecDecodeMode::DFLASH is missing from the engine's decode_types.hpp");
   }
   auto scheduler = std::make_unique<RealDecodeScheduler>(
       std::make_unique<ds::DecodeScheduler>(
