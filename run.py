@@ -37,6 +37,12 @@ from workflows.multihost_orchestrator import (
     is_multihost_deployment,
     setup_multihost_config,
 )
+from workflows.requirements_cli import (
+    add_requirements_argument,
+    apply_requirements,
+    register_requirements_providers,
+    requirements_mode_in_argv,
+)
 from workflows.run_docker_server import (
     collect_tt_triage_logs,
     format_docker_command,
@@ -102,6 +108,12 @@ def parse_arguments():
         valid_models.add(config.model_name)
 
     valid_impls = {config.impl.impl_name for _, config in MODEL_SPECS.items()}
+
+    # A requirements-driven run supplies the model from the document, which may
+    # name a model the catalog has never heard of, so the ``choices`` gate is
+    # dropped when --requirements-json is present.
+    requirements_mode = requirements_mode_in_argv()
+
     # required
     parser = argparse.ArgumentParser(
         description="A CLI for running workflows with optional docker, device, and workflow-args.",
@@ -112,11 +124,13 @@ def parse_arguments():
         "--model",
         required=False,
         default=None,
-        choices=valid_models,
+        choices=None if requirements_mode else valid_models,
         help="Model to run. Required for every workflow except prefill_decode, "
         "which serves a mock stack chosen by --served-model and only needs a "
-        "placeholder spec (auto-picked when --model is omitted).",
+        "placeholder spec (auto-picked when --model is omitted). Defaults from "
+        "the document when --requirements-json is given.",
     )
+    add_requirements_argument(parser)
     parser.add_argument(
         "--workflow",
         required=True,
@@ -686,6 +700,12 @@ def parse_arguments():
         )
     args.device = args.tt_device or args.device
 
+    # Before any model/device defaulting below: the document supplies both, and
+    # an off-catalog model would fail infer_default_device().
+    args.requirements_doc = None
+    if args.requirements_json:
+        apply_requirements(args, parser)
+
     if args.server_url and (args.docker_server or args.local_server):
         parser.error(
             "--server-url cannot be used together with --docker-server or --local-server. "
@@ -1016,12 +1036,25 @@ def resolve_runtime(args):
         model_spec = ModelSpec.from_json(args.runtime_model_spec_json)
         runtime_config = RuntimeConfig.from_args(args)
     else:
-        model_spec, resolved_impl, resolved_engine = get_runtime_model_spec(
-            model=args.model,
-            device=args.device,
-            engine=args.engine,
-            impl=args.impl,
-        )
+        try:
+            model_spec, resolved_impl, resolved_engine = get_runtime_model_spec(
+                model=args.model,
+                device=args.device,
+                engine=args.engine,
+                impl=args.impl,
+            )
+        except ValueError:
+            # A requirements document may name a model the catalog has no entry
+            # for; the registered provider synthesizes a spec from its context
+            # length + concurrency. Catalog models still resolve above, so
+            # non-requirements runs keep failing loudly.
+            if args.requirements_doc is None:
+                raise
+            from workflow_module.model_catalog import get_model_spec_provider
+
+            model_spec = get_model_spec_provider().resolve(args.model, args.device)
+            resolved_impl = model_spec.impl.impl_name
+            resolved_engine = model_spec.inference_engine
         if args.custom_weights:
             # With --host-weights-dir, point vLLM's --model at the container
             # mount so weights load offline (the label is not a real HF repo).
@@ -1063,6 +1096,11 @@ def handle_maintenance_args(args):
 def main():
     # step 00: handle maintenance args
     args = parse_arguments()
+    if args.requirements_doc is not None:
+        # Overlay the document before anything resolves a spec or looks up
+        # validation content; the dispatched child processes register it again
+        # from --requirements-json, which is forwarded in their argv.
+        register_requirements_providers(args.requirements_doc)
     handle_maintenance_args(args)
     # Export repo-root model_spec.json from pristine MODEL_SPECS
     repo_root = Path(__file__).resolve().parent

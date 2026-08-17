@@ -16,6 +16,7 @@ import logging
 import re
 from typing import List, Optional
 
+from utils.model_naming import slugify_model_id
 from workflow_module.model_catalog import ModelSpecProvider
 from workflows.model_spec import MODEL_SPECS, ModelSpec, get_runtime_model_spec
 
@@ -133,7 +134,13 @@ class TenstorrentModelSpecProvider(ModelSpecProvider):
             max_context=max_context,
             default_impl=True,
         )
-        model_id = f"{model_name}-{device_type.name.lower()}-requirements"
+        # An HF repo name carries the org as a path segment ("openai/gpt-oss-120b").
+        # model_id is used as a single filename/path component (runtime-spec
+        # JSON, run log, per-eval output dirs), so the org separator has to be
+        # escaped or every one of those turns into a nested directory.
+        model_id = (
+            f"{slugify_model_id(model_name)}-{device_type.name.lower()}-requirements"
+        )
         logger.warning(
             "Synthesizing off-catalog ModelSpec for model_name=%r hf_repo=%r "
             "device=%s (max_context=%d, max_concurrency=%d). No catalog "
