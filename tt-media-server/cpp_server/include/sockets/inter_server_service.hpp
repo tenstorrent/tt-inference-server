@@ -86,6 +86,8 @@ class InterServerService {
    *                 result of mapSamplingParams() so global overrides like
    *                 USE_FAST_MODE are honoured. Defaulted SamplingParams{}
    *                 means "use prefill-side defaults".
+   * @param traceparent W3C traceparent of the decode-side Sentry
+   *                 transaction (empty = tracing disabled).
    * @return true if sent successfully
    */
   bool sendPrefillRequest(uint32_t taskId,
@@ -94,7 +96,8 @@ class InterServerService {
                           std::optional<int> maxTokens = std::nullopt,
                           std::optional<uint32_t> slotId = std::nullopt,
                           const tt::domain::llm::SamplingParams& sampling = {},
-                          int decodePositionId = 0, int decodeSkipTokens = 0);
+                          int decodePositionId = 0, int decodeSkipTokens = 0,
+                          const std::string& traceparent = {});
 
   /**
    * @brief Send prefill result back to the decode server
