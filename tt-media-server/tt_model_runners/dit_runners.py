@@ -7,15 +7,18 @@ import base64
 import io
 import os
 from abc import abstractmethod
+from dataclasses import dataclass
 
 import numpy as np
 import ttnn
 from config.constants import (
+    MINIMAX_H3_NUM_FRAMES,
     WAN22_NUM_FRAMES,
     ModelRunners,
     ModelServices,
     SupportedModels,
     is_large_mesh,
+    minimax_h3_target_resolution,
     wan22_target_resolution,
 )
 from config.settings import get_settings
@@ -25,6 +28,7 @@ from domain.video_i2v_generate_request import ImagePromptEntry, VideoI2VGenerate
 from huggingface_hub import hf_hub_download
 from models.common.utility_functions import is_blackhole
 from models.tt_dit.pipelines.flux1.pipeline_flux1 import Flux1Pipeline
+from models.tt_dit.pipelines.minimax_h3.pipeline_minimax_h3 import MiniMaxH3Pipeline
 from models.tt_dit.pipelines.mochi.pipeline_mochi import MochiPipeline
 from models.tt_dit.pipelines.motif.pipeline_motif import MotifPipeline
 from models.tt_dit.pipelines.qwenimage.pipeline_qwenimage import (
@@ -61,6 +65,7 @@ dit_runner_log_map = {
     ModelRunners.TT_WAN_2_2_I2V_LIGHTNING.value: "Wan22-I2V-Lightning",
     ModelRunners.TT_QWEN_IMAGE.value: "Qwen-Image",
     ModelRunners.TT_QWEN_IMAGE_2512.value: "Qwen-Image-2512",
+    ModelRunners.TT_MINIMAX_H3.value: "MiniMax-H3",
     ModelRunners.SP_RUNNER.value: "SP-Runner",
 }
 
@@ -1138,3 +1143,117 @@ class TTWan22I2VLightningRunner(TTDiTRunner):
 
     def _build_warmup_video_request(self) -> VideoI2VGenerateRequest:
         return _wan22_i2v_warmup_request()
+
+
+# ---------------------------------------------------------------------------
+# MiniMax-H3 (text -> video + native stereo audio)
+#
+# H3 is the first video model here that also emits audio, so its runner returns
+# both streams (VideoWithAudio) and the exporter muxes the audio into the mp4
+# (utils/video_manager.export_to_mp4). Everything else mirrors the Wan/Mochi
+# DiT runner pattern and drives the upstream tt_dit MiniMax-H3 pipeline.
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class VideoWithAudio:
+    """Runner result carrying both streams.
+
+    ``export_to_mp4`` already special-cases an object exposing ``.frames``;
+    returning this (instead of a bare frame array) is how the audio reaches the
+    muxer without changing the video worker/service call sites.
+    """
+
+    frames: np.ndarray  # (T, H, W, 3) uint8  -- MiniMaxH3Output.frames
+    audio: np.ndarray  # (2, N) float32 [-1, 1] -- MiniMaxH3Output.audio (stereo)
+    sample_rate: int  # MiniMaxH3Output.sampling_rate (e.g. 32000)
+
+
+# Explicit parallel params for the small Blackhole meshes upstream does not yet
+# preset (its _PRESETS_BH covers only (4, 8) galaxy and (4, 32) quad). Values
+# from a validated 1x4 Blackhole run; (2, 2) mirrors the same factors and is
+# still to be validated on hardware. Remove an entry once it lands as a real
+# upstream _PRESETS_BH row and create_pipeline can resolve it from the mesh.
+_MINIMAX_H3_SMALL_MESH_PARAMS = {
+    (1, 4): dict(tp_axis=1, sp_axis=0, num_links=2, topology=None),
+    (2, 2): dict(tp_axis=1, sp_axis=0, num_links=2, topology=None),
+}
+
+
+def _minimax_h3_dit_device_params(mesh_shape: tuple) -> dict:
+    """Fabric / trace-region policy for MiniMax-H3, mirroring the Wan2.2 helper.
+
+    Blackhole uses RELAXED_INIT; large (galaxy-class) meshes get the bigger
+    trace region and the galaxy router config. Small meshes use plain FABRIC_1D.
+    """
+    device_params = _wan22_dit_device_params(mesh_shape)
+    if is_large_mesh(mesh_shape) and is_blackhole():
+        # H3's DiT trace is comparable to Wan2.2's; reuse the galaxy bump.
+        device_params["trace_region_size"] = WAN22_GALAXY_BH_TRACE_REGION_BYTES
+    return device_params
+
+
+def _minimax_h3_pipeline_args(request: VideoGenerateRequest, resolution) -> dict:
+    """Map an OpenAI-style VideoGenerateRequest onto the upstream __call__.
+
+    H3 is guidance-distilled (cfg=1), so there is no guidance_scale. An I2V/fl2va
+    variant would additionally decode request.image_prompts into ``image=`` /
+    ``last_image=`` (first-frame conditioning).
+    """
+    seed = int(request.seed) if request.seed is not None else 0
+    return dict(
+        prompt=request.prompt,
+        num_inference_steps=request.num_inference_steps,
+        num_frames=MINIMAX_H3_NUM_FRAMES,
+        height=resolution.height,
+        width=resolution.width,
+        seed=seed,
+    )
+
+
+class TTMiniMaxH3Runner(TTDiTRunner):
+    """MiniMax-H3 t2va (text -> video + native stereo audio) on the upstream pipeline."""
+
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
+        self.resolution = minimax_h3_target_resolution(self.settings.device_mesh_shape)
+
+    def create_pipeline(self):
+        mesh = tuple(self.settings.device_mesh_shape)
+        # {} on (4, 8) / (4, 32): let the upstream _PRESETS_BH pick the shape.
+        overrides = _MINIMAX_H3_SMALL_MESH_PARAMS.get(mesh, {})
+        try:
+            return MiniMaxH3Pipeline.create_pipeline(
+                mesh_device=self.ttnn_device,
+                weights_dir=self.settings.model_weights_path,
+                task="t2va",
+                **overrides,
+            )
+        except Exception as e:
+            log_exception_chain(
+                self.logger,
+                self.device_id,
+                "MiniMax-H3 pipeline creation failed",
+                e,
+            )
+            raise
+
+    def load_weights(self):
+        return False  # weights load during pipeline creation (as Wan/Mochi)
+
+    @log_execution_time(
+        f"{dit_runner_log_map[get_settings().model_runner]} inference",
+        TelemetryEvent.MODEL_INFERENCE,
+        os.environ.get("TT_VISIBLE_DEVICES"),
+    )
+    def run(self, requests: list[VideoGenerateRequest]):
+        self.logger.debug(f"Device {self.device_id}: Running inference")
+        out = self.pipeline(**_minimax_h3_pipeline_args(requests[0], self.resolution))
+        self.logger.debug(f"Device {self.device_id}: Inference completed")
+        # Return both streams so the exporter muxes the audio into the mp4.
+        return VideoWithAudio(
+            frames=out.frames, audio=out.audio, sample_rate=out.sampling_rate
+        )
+
+    def get_pipeline_device_params(self):
+        return _minimax_h3_dit_device_params(self.settings.device_mesh_shape)
