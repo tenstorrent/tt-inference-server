@@ -45,13 +45,18 @@ def _harbor_env_kwargs() -> Dict[str, Any]:
         )
     kwargs: Dict[str, Any] = {
         "namespace": os.getenv("HARBOR_K8S_NAMESPACE", "default"),
-        "image_mode": os.getenv("HARBOR_K8S_IMAGE_MODE", "prebuilt"),
+        "image_mode": os.getenv("HARBOR_K8S_IMAGE_MODE", "auto"),
     }
     passthrough = {
         "HARBOR_K8S_CONTEXT": "context",
         "HARBOR_K8S_IMAGE_REGISTRY": "image_registry",
         "HARBOR_K8S_IMAGE_PULL_SECRET": "image_pull_secret",
         "HARBOR_K8S_SERVICE_ACCOUNT": "service_account",
+        # Select the image build backend. BuildKit can be reached through a
+        # local Unix socket mounted into the runner pod, so both knobs belong
+        # in Harbor's environment kwargs rather than its container env.
+        "HARBOR_K8S_IMAGE_BUILDER": "image_builder",
+        "HARBOR_K8S_BUILDKIT_ADDRESS": "buildkit_address",
         # Opt-in compose execution strategy. "pods" runs each compose
         # service as a container of one ordinary pod (no privileged DinD),
         # but requires HARBOR_K8S_IMAGE_REGISTRY the cluster can pull from.
