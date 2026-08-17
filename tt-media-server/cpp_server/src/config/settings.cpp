@@ -4,7 +4,10 @@
 #include "config/settings.hpp"
 
 #include <json/json.h>
+#include <spdlog/fmt/fmt.h>
+#include <spdlog/fmt/ranges.h>
 #include <unistd.h>
+
 #include <algorithm>
 #include <atomic>
 #include <cctype>
@@ -14,8 +17,6 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
-#include <fmt/format.h>
-#include <fmt/ranges.h>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
@@ -550,12 +551,15 @@ constexpr ModelRunnerType kDefaultEmbeddingModel =
 
 const std::vector<EmbeddingModelEntry>& embeddingModels() {
   static const std::vector<EmbeddingModelEntry> kModels = {
-      {ModelRunnerType::TT_BGE_LARGE_EN, "BAAI/bge-large-en-v1.5",
+      {ModelRunnerType::TT_BGE_LARGE_EN,
+       "BAAI/bge-large-en-v1.5",
        "bge-large-en-v1.5",
        {{"n150", 8}, {"n300", 16}, {"t3k", 16}, {"galaxy", 8}}},
       // The mock needs no device and no Python. The "" device entry is
       // deliberate: CI runs it with nothing set.
-      {ModelRunnerType::EMBEDDING_MOCK, "BAAI/bge-large-en-v1.5", "",
+      {ModelRunnerType::EMBEDDING_MOCK,
+       "BAAI/bge-large-en-v1.5",
+       "",
        {{"", 8}, {"n150", 8}, {"n300", 16}, {"t3k", 16}, {"galaxy", 8}}},
   };
   return kModels;

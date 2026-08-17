@@ -76,9 +76,9 @@ int approximateTokenCount(const std::string& text, size_t maxSequenceLength) {
     }
   }
   const size_t withSpecials = words + 2;
-  return static_cast<int>(
-      maxSequenceLength > 0 ? std::min(withSpecials, maxSequenceLength)
-                            : withSpecials);
+  return static_cast<int>(maxSequenceLength > 0
+                              ? std::min(withSpecials, maxSequenceLength)
+                              : withSpecials);
 }
 
 }  // namespace
@@ -105,9 +105,9 @@ std::vector<domain::EmbeddingResponse> MockEmbeddingRunner::run(
   // in the layers above it: an oversized batch and an unknown model name both
   // raise on the Python side.
   if (requests.size() > config_.max_batch_size) {
-    const std::string error =
-        "Batch size " + std::to_string(requests.size()) + " exceeds max " +
-        std::to_string(config_.max_batch_size);
+    const std::string error = "Batch size " + std::to_string(requests.size()) +
+                              " exceeds max " +
+                              std::to_string(config_.max_batch_size);
     TT_LOG_ERROR("[MockEmbeddingRunner] {}", error);
     for (const auto& req : requests) {
       domain::EmbeddingResponse resp(req.task_id);

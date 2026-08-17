@@ -236,8 +236,8 @@ struct EmbeddingService::Impl {
       setenv("MODEL", cfg.python_model_name.c_str(), 1);
     }
     setenv("DEVICE", cfg.device.c_str(), 1);
-    const std::string clientRunner = tt::config::toClientRunnerName(
-        cfg.runner_type);
+    const std::string clientRunner =
+        tt::config::toClientRunnerName(cfg.runner_type);
     if (!clientRunner.empty()) {
       setenv("MODEL_RUNNER", clientRunner.c_str(), 1);
     }
@@ -255,7 +255,8 @@ struct EmbeddingService::Impl {
       workerCfg.visible_devices = visibleDevices;
       runner = runners::makeEmbeddingRunner(workerCfg);
     } catch (const std::exception& e) {
-      TT_LOG_ERROR("[Worker {}] Could not build runner: {}", workerId, e.what());
+      TT_LOG_ERROR("[Worker {}] Could not build runner: {}", workerId,
+                   e.what());
       _exit(1);
     }
 

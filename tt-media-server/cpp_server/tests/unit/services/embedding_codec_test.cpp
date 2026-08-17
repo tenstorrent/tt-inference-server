@@ -83,7 +83,8 @@ TEST(EmbeddingCodecTest, RoundTripSingleSuccess) {
   std::vector<EmbeddingRequest> batch{makeRequest(42, "hello world")};
   std::vector<EmbeddingResponse> responses{makeSuccess(42, vec, 12)};
 
-  auto decoded = codec::decodeResponses(codec::encodeResponses(batch, responses));
+  auto decoded =
+      codec::decodeResponses(codec::encodeResponses(batch, responses));
 
   ASSERT_EQ(decoded.size(), 1u);
   ASSERT_TRUE(decoded.count(42));
@@ -105,7 +106,8 @@ TEST(EmbeddingCodecTest, BatchPairsEachTaskIdWithItsOwnVector) {
                                     static_cast<int>(10 + i)));
   }
 
-  auto decoded = codec::decodeResponses(codec::encodeResponses(batch, responses));
+  auto decoded =
+      codec::decodeResponses(codec::encodeResponses(batch, responses));
 
   ASSERT_EQ(decoded.size(), kBatch);
   for (size_t i = 0; i < kBatch; ++i) {
@@ -122,7 +124,8 @@ TEST(EmbeddingCodecTest, ErrorEntryRoundTrip) {
   std::vector<EmbeddingRequest> batch{makeRequest(7, "boom")};
   std::vector<EmbeddingResponse> responses{makeError(7, "runner exploded")};
 
-  auto decoded = codec::decodeResponses(codec::encodeResponses(batch, responses));
+  auto decoded =
+      codec::decodeResponses(codec::encodeResponses(batch, responses));
 
   ASSERT_EQ(decoded.size(), 1u);
   const auto& r = decoded.at(7);
@@ -131,12 +134,14 @@ TEST(EmbeddingCodecTest, ErrorEntryRoundTrip) {
 }
 
 TEST(EmbeddingCodecTest, ShortResponseListFillsMissingTailWithErrors) {
-  std::vector<EmbeddingRequest> batch{
-      makeRequest(1, "a"), makeRequest(2, "b"), makeRequest(3, "c")};
+  std::vector<EmbeddingRequest> batch{makeRequest(1, "a"), makeRequest(2, "b"),
+                                      makeRequest(3, "c")};
   // Only the first request got a result from the runner.
-  std::vector<EmbeddingResponse> responses{makeSuccess(1, makeVector(16, 1), 3)};
+  std::vector<EmbeddingResponse> responses{
+      makeSuccess(1, makeVector(16, 1), 3)};
 
-  auto decoded = codec::decodeResponses(codec::encodeResponses(batch, responses));
+  auto decoded =
+      codec::decodeResponses(codec::encodeResponses(batch, responses));
 
   ASSERT_EQ(decoded.size(), 3u);
   EXPECT_TRUE(decoded.at(1).error.empty());
@@ -148,11 +153,11 @@ TEST(EmbeddingCodecTest, MixedSuccessAndErrorPreservesBoth) {
   std::vector<EmbeddingRequest> batch{
       makeRequest(10, "ok"), makeRequest(11, "fail"), makeRequest(12, "ok")};
   std::vector<EmbeddingResponse> responses{
-      makeSuccess(10, makeVector(64, 10), 5),
-      makeError(11, "tokenizer error"),
+      makeSuccess(10, makeVector(64, 10), 5), makeError(11, "tokenizer error"),
       makeSuccess(12, makeVector(64, 12), 9)};
 
-  auto decoded = codec::decodeResponses(codec::encodeResponses(batch, responses));
+  auto decoded =
+      codec::decodeResponses(codec::encodeResponses(batch, responses));
 
   ASSERT_EQ(decoded.size(), 3u);
   EXPECT_TRUE(decoded.at(10).error.empty());
@@ -170,7 +175,8 @@ TEST(EmbeddingCodecTest, EmptyEmbeddingVectorRoundTrips) {
   std::vector<EmbeddingRequest> batch{makeRequest(5, "x")};
   std::vector<EmbeddingResponse> responses{makeSuccess(5, {}, 1)};
 
-  auto decoded = codec::decodeResponses(codec::encodeResponses(batch, responses));
+  auto decoded =
+      codec::decodeResponses(codec::encodeResponses(batch, responses));
 
   ASSERT_EQ(decoded.size(), 1u);
   EXPECT_TRUE(decoded.at(5).error.empty());
@@ -188,7 +194,8 @@ TEST(EmbeddingCodecTest, LargeBatchWithRealisticDimsRoundTrips) {
     responses.push_back(makeSuccess(taskId, makeVector(1024, taskId), 384));
   }
 
-  auto decoded = codec::decodeResponses(codec::encodeResponses(batch, responses));
+  auto decoded =
+      codec::decodeResponses(codec::encodeResponses(batch, responses));
 
   ASSERT_EQ(decoded.size(), kBatch);
   for (const auto& [taskId, r] : decoded) {
@@ -202,8 +209,8 @@ TEST(EmbeddingCodecTest, LargeBatchWithRealisticDimsRoundTrips) {
 // the header comment — and is intentionally not exercised.)
 TEST(EmbeddingCodecTest, CountLargerThanBufferStopsAtCleanEntryBoundary) {
   std::vector<EmbeddingRequest> batch{makeRequest(1, "a"), makeRequest(2, "b")};
-  std::vector<EmbeddingResponse> responses{
-      makeSuccess(1, makeVector(8, 1), 3), makeSuccess(2, makeVector(8, 2), 4)};
+  std::vector<EmbeddingResponse> responses{makeSuccess(1, makeVector(8, 1), 3),
+                                           makeSuccess(2, makeVector(8, 2), 4)};
 
   auto buffer = codec::encodeResponses(batch, responses);
   // Inflate the declared count from 2 to 5 without adding entry bytes.

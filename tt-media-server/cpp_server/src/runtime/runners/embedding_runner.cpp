@@ -65,8 +65,9 @@ void ensureSysPath() {
 
 struct EmbeddingRunner::Impl {
   config::EmbeddingConfig config;
-  py::object runner;         // the configured Python runner instance
-  py::object request_class;  // domain.text_embedding_request.TextEmbeddingRequest
+  py::object runner;  // the configured Python runner instance
+  py::object
+      request_class;  // domain.text_embedding_request.TextEmbeddingRequest
 
   explicit Impl(const config::EmbeddingConfig& cfg) : config(cfg) {}
 
@@ -107,7 +108,7 @@ struct EmbeddingRunner::Impl {
   bool initialize() {
     // Boot the interpreter once per process. pybind11 leaves the GIL held
     // after initialization; release it at the end of warmup-time setup so
-    // every later entry point can acquire 
+    // every later entry point can acquire
     const bool ownsInterpreter = !Py_IsInitialized();
     if (ownsInterpreter) {
       py::initialize_interpreter();
