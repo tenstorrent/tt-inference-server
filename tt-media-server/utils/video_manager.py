@@ -61,12 +61,16 @@ class VideoManager:
             TT_VIDEO_EXPORT_CRF: 0–51, lower = better quality. Default 23.
             TT_VIDEO_EXPORT_PRESET: ultrafast … veryslow. Default medium.
         """
-        # Pull audio off a result object (e.g. VideoWithAudio) before it is
-        # collapsed to a bare frame array below. Explicit args take precedence.
+        # Pull audio (and the model's frame rate) off a result object (e.g.
+        # VideoWithAudio) before it is collapsed to a bare frame array below.
+        # Explicit args take precedence.
         if audio is None and hasattr(frames, "audio"):
             audio = frames.audio
             if sample_rate is None:
                 sample_rate = getattr(frames, "sample_rate", None)
+        _obj_fps = getattr(frames, "fps", None)
+        if _obj_fps:
+            fps = int(_obj_fps)
         if hasattr(frames, "frames"):
             frames = frames.frames
 

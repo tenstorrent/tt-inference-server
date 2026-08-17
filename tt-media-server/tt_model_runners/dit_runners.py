@@ -1164,9 +1164,10 @@ class VideoWithAudio:
     muxer without changing the video worker/service call sites.
     """
 
-    frames: np.ndarray  # (T, H, W, 3) uint8  -- MiniMaxH3Output.frames
-    audio: np.ndarray  # (2, N) float32 [-1, 1] -- MiniMaxH3Output.audio (stereo)
+    frames: np.ndarray  # (F, H, W, 3) uint8   -- from MiniMaxH3Output.video
+    audio: np.ndarray  # (2, N) float32 [-1, 1] -- from MiniMaxH3Output.audio (stereo)
     sample_rate: int  # MiniMaxH3Output.sampling_rate (e.g. 32000)
+    fps: int = 24  # MiniMaxH3Output.fps -- used by export_to_mp4 for the video rate
 
 
 # Explicit parallel params for the small Blackhole meshes upstream does not yet
@@ -1174,9 +1175,14 @@ class VideoWithAudio:
 # from a validated 1x4 Blackhole run; (2, 2) mirrors the same factors and is
 # still to be validated on hardware. Remove an entry once it lands as a real
 # upstream _PRESETS_BH row and create_pipeline can resolve it from the mesh.
+# tp_axis=1 puts TP across the 4-chip axis (mirrors the galaxy preset's TP=4 on
+# its 4-chip axis 0); sp_axis is the size-1/size-2 axis. topology MUST be non-None
+# -- upstream treats any None in (tp_axis, sp_axis, num_links, topology) as "use a
+# preset" and rejects the shape. A single QB2 is a physical line, so Linear (not
+# the galaxy's Ring, which needs a torus wrap link the box does not have).
 _MINIMAX_H3_SMALL_MESH_PARAMS = {
-    (1, 4): dict(tp_axis=1, sp_axis=0, num_links=2, topology=None),
-    (2, 2): dict(tp_axis=1, sp_axis=0, num_links=2, topology=None),
+    (1, 4): dict(tp_axis=1, sp_axis=0, num_links=2, topology=ttnn.Topology.Linear),
+    (2, 2): dict(tp_axis=1, sp_axis=0, num_links=2, topology=ttnn.Topology.Linear),
 }
 
 
@@ -1250,10 +1256,31 @@ class TTMiniMaxH3Runner(TTDiTRunner):
         self.logger.debug(f"Device {self.device_id}: Running inference")
         out = self.pipeline(**_minimax_h3_pipeline_args(requests[0], self.resolution))
         self.logger.debug(f"Device {self.device_id}: Inference completed")
-        # Return both streams so the exporter muxes the audio into the mp4.
-        return VideoWithAudio(
-            frames=out.frames, audio=out.audio, sample_rate=out.sampling_rate
+        # MiniMaxH3Output.video is (1, 3, F, H, W) float in [0, 1]; the exporter
+        # wants (F, H, W, 3) uint8 (channels-last). audio is (1, 2, samples) ->
+        # (2, samples). Return both so the exporter muxes the audio into the mp4.
+        frames = (
+            out.video[0]  # (3, F, H, W)
+            .permute(1, 2, 3, 0)  # (F, H, W, 3)
+            .clamp(0, 1)
+            .mul(255)
+            .round()
+            .to("cpu")
+            .numpy()
+            .astype(np.uint8)
         )
+        audio = out.audio[0].to("cpu").numpy()  # (2, samples)
+        # The device worker indexes the return per-request (``responses[i]``) and
+        # checks ``len(responses)``, so return a one-element sequence (batch=1),
+        # matching the Wan/Mochi runners' batch-axis return.
+        return [
+            VideoWithAudio(
+                frames=frames,
+                audio=audio,
+                sample_rate=out.sampling_rate,
+                fps=out.fps,
+            )
+        ]
 
     def get_pipeline_device_params(self):
         return _minimax_h3_dit_device_params(self.settings.device_mesh_shape)
