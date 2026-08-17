@@ -1371,6 +1371,260 @@ _eval_config_list = [
             # ),
         ],
     ),
+    # QB2 bring-up config for Qwen3.8-27B. Exists first of all because
+    # `--workflow release` hard-asserts `model_name in EVAL_CONFIGS` in
+    # workflows/validate_setup.py, so the dispatch dies at setup (after the docker
+    # build) without one.
+    #
+    # Task choice: r1_gpqa_diamond, copied from the google/gemma-4-31B-it config
+    # rather than the terminal_bench_2 task of the sibling Qwen3.6-27B config above.
+    #   * It runs on EVALS_COMMON (lm-eval), so it costs minutes rather than the
+    #     3-hour agent timeout the agentic suites carry -- the right size for a
+    #     first bring-up run.
+    #   * Qwen3.8-27B's own model card publishes GPQA Diamond = 89.2, so the
+    #     baseline is a real number for THIS checkpoint, nothing transplanted.
+    #   * The card's other headline numbers do NOT map onto the harness's tasks:
+    #     it reports Terminal Bench *2.1* = 73.0 while terminal_bench_2 runs the
+    #     terminal-bench/terminal-bench-2 dataset with agent terminus-2 (i.e. 2.0),
+    #     and it reports SWE-bench Pro 61.7 / QwenSWEBench 79.0 but nothing for
+    #     SWE-bench *Verified*, which is what swe_bench_verified runs. Neither is
+    #     a like-for-like reference, so neither task is configured here.
+    #
+    # Unlike gemma-4 this needs no enable_thinking override: Qwen3.8's chat
+    # template has thinking ON by default (card: "Thinking mode is on by default"),
+    # and its recommended thinking-mode sampling -- temperature 1.0 / top_p 0.95 /
+    # top_k 20 -- is exactly what gen_kwargs sets below.
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen3.8-27B",
+        tasks=[
+            EvalTask(
+                # R1-style zero-shot reasoning GPQA Diamond: the model emits
+                # reasoning then a final answer, and the task's own extractor
+                # scores exact_match,none. Do NOT switch to
+                # gpqa_diamond_generative_n_shot -- its 5-shot examples
+                # demonstrate bare "(C)" answers and suppress reasoning (that
+                # cost gemma-4 ~30 points).
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=89.2,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.8-27B",
+                    # NO gpu_reference_score: nobody has run this checkpoint on an
+                    # H100 reference server yet. Consequence, via
+                    # resolve_eval_reference() + compute_accuracy_check(): with no
+                    # GPU baseline the check falls back to
+                    # `accuracy >= published_score * (1 - tolerance)`, i.e. it must
+                    # score >= 84.74% on TT silicon. That is a STRICT bar and this
+                    # eval should be expected to FAIL on early runs -- published
+                    # numbers are consistently optimistic against a real serving
+                    # stack (gemma-4-31B publishes 84.3 but measured 83.33 on an
+                    # H100). At EXPERIMENTAL evals are informational
+                    # (ModelStatusTypes.evals_enforced is False), so a failure here
+                    # does not block acceptance; it becomes a real gate at
+                    # FUNCTIONAL and above. Replace this with a measured
+                    # gpu_reference_score before promoting the status.
+                    #
+                    # Also deliberately no mode_reference_scores: under --ci-mode
+                    # the subset score is therefore compared against the FULL-set
+                    # 89.2, and the ci-nightly doc_ids are harder than average (the
+                    # gemma-4 entry measures ~8 points lower on its subset than on
+                    # the full set), so expect CI-mode runs to read low until a
+                    # subset reference is measured.
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                # Use the chat endpoint so the server applies the chat template
+                # (which is what carries thinking mode); client-side
+                # apply_chat_template on /v1/completions would bypass it.
+                use_chat_api=True,
+                model_kwargs={
+                    # Matches the P300X2 spec's max_context (262144), not gemma's
+                    # 131072.
+                    "max_length": 262144,
+                },
+                gen_kwargs={
+                    # stream=false is REQUIRED: lm-eval's local-chat-completions
+                    # streaming parser raises KeyError 'message' on every response.
+                    "stream": "false",
+                    # 80K output budget: the value Qwen's own docs use for this
+                    # family (mirrored in the Qwen3.6-27B agent config above as
+                    # max_output_tokens=80*1024). Well clear of max_length so
+                    # prompt+output cannot exceed the context and 400 the server.
+                    "max_gen_toks": 80 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    # Qwen3.8 card, thinking mode: temp 1.0 / top_p 0.95 / top_k 20.
+                    "temperature": 1.0,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                # Reasoning eval served at low batch: samples run effectively
+                # sequentially and dominate CI runtime, so keep the CI subset small
+                # (same rationale as the gemma-4-31B-it entry).
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    # QB2 bring-up eval configs for the three branch-only models. All three follow the
+    # same pattern as the Qwen3.8-27B entry above: a single lm-eval (EVALS_COMMON)
+    # r1_gpqa_diamond task, scored against the number the model's OWN card publishes
+    # for GPQA Diamond, with no gpu_reference_score (nobody has run these on an H100).
+    # Rationale for one cheap task rather than the agentic suites: these models cannot
+    # serve yet without specific tt-metal / vllm-tt-plugin refs, so the first job of the
+    # eval is to prove the server answers at all -- not to spend a 3-hour agent timeout.
+    # Consequence of no GPU baseline: the bar is `published * (1 - 0.05)`, which is
+    # strict and expected to fail early. Informational at EXPERIMENTAL.
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen3.6-35B-A3B",
+        tasks=[
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    # Card reports "GPQA: 86.0". NOTE it is labelled plain "GPQA", not
+                    # "GPQA Diamond" as on the sibling Qwen3.6-27B card -- for Qwen
+                    # releases that column is conventionally Diamond, but this is an
+                    # assumption about the label, so treat a near-miss as unresolved
+                    # rather than as a regression.
+                    published_score=86.0,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-35B-A3B",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                model_kwargs={
+                    "max_length": 262144,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 80 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    # Card, thinking mode / general tasks: temperature 1.0, top_p 0.95,
+                    # top_k 20, presence_penalty 1.5. Thinking is on by default.
+                    # presence_penalty is deliberately NOT set here: lm-eval passes
+                    # gen_kwargs straight through, and a nonzero presence penalty on a
+                    # short exact-match answer can suppress the answer token itself.
+                    "temperature": 1.0,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="meta-models/Muse-Glimmer-30B",
+        tasks=[
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    # Card reports "GPQA Diamond (AA) | 83.5". The "(AA)" marks an
+                    # Artificial Analysis harness run, whose prompting/extraction is
+                    # NOT necessarily the same methodology as this lm-eval task, so the
+                    # baseline is weaker than a first-party number.
+                    published_score=83.5,
+                    published_score_ref="https://huggingface.co/meta-models/Muse-Glimmer-30B",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                model_kwargs={
+                    # Matches the conservative 32K max_context in the bring-up spec,
+                    # not the model's 131072+ capability.
+                    "max_length": 32768,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    # Must stay well below max_length (32768) minus the prompt.
+                    "max_gen_toks": 24 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    # Card: temperature 1.0, top_p 0.95, top_k 64 (note top_k 64, not
+                    # the 20 the Qwen models use).
+                    "temperature": 1.0,
+                    "top_k": 64,
+                    "top_p": 0.95,
+                },
+                # This model gates reasoning depth through a system-prompt "Reasoning
+                # strength" control (low/medium/high/xhigh) rather than a boolean
+                # thinking flag, so no enable_thinking equivalent is set. If scores come
+                # in far below 83.5, an explicit high/xhigh system prompt is the first
+                # thing to try -- the gemma-4 entries show a ~8-point swing from
+                # reasoning being suppressed.
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="google/diffusiongemma-26B-A4B-it",
+        tasks=[
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    # Card reports "GPQA Diamond | 73.2%".
+                    published_score=73.2,
+                    published_score_ref="https://huggingface.co/google/diffusiongemma-26B-A4B-it",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                model_kwargs={
+                    "max_length": 49152,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 32 * 1024,
+                    "until": [],
+                    # NO temperature / top_p / top_k on purpose. This is a diffusion
+                    # decoder: the card specifies a temperature SCHEDULE (linear decay
+                    # 0.8 -> 0.4) alongside diffusion-only controls (max 48 denoising
+                    # steps, 256-token canvas, entropy bound 0.1 / threshold 0.005),
+                    # none of which are expressible as OpenAI sampling params. The
+                    # schedule and those controls live server-side in the tt-metal
+                    # sampler, so pinning a single temperature here would OVERRIDE the
+                    # schedule with a fixed value and change what is being measured.
+                    # Leave them unset and let the server's own defaults apply.
+                    "do_sample": "true",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
     EvalConfig(
         hf_model_repo="arcee-ai/AFM-4.5B",
         tasks=[

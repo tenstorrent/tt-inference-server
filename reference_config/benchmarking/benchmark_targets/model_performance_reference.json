@@ -1,7 +1,8 @@
 {
-    "gemma-4-31b-it": {
+    "gemma-4-31B-it": {
         "p300x2": [
             {
+                "_comment": "Numbers unchanged; this key was RENAMED from 'gemma-4-31b-it' to the canonical HuggingFace casing 'gemma-4-31B-it' (google/gemma-4-31b-it 307-redirects to google/gemma-4-31B-it). Lookup is case-sensitive on the basename of weights[0], so the old lowercase key only ever matched the forge spec's non-canonical weight string at workflows/model_specs/dev/llm.yaml:1719 and left the vLLM spec (google/gemma-4-31B-it, used by both dev and prod) with zero targets and ungradable on every tier. Theoretical peak is a property of the model, the silicon and the dtype - not of the serving engine - so both specs must share this one entry: fix that forge weight string to the canonical casing rather than duplicating these numbers. Doing so also requires reconciling models-ci-config.json, which currently distinguishes its vLLM and FORGE rows for this model purely by that casing difference. The values themselves are ASSUMED, NOT VALIDATED: no t3k entry exists for this model to derive from, and these were authored for the forge bring-up. Replace with measured/derived roofline numbers before trusting a FUNCTIONAL+ verdict.",
                 "isl": 128,
                 "osl": 128,
                 "max_concurrency": 1,
@@ -15,6 +16,138 @@
                         "ttft_ms": 46,
                         "tput_user": 37,
                         "tput": 37
+                    }
+                }
+            }
+        ]
+    },
+    "gemma-4-26B-A4B-it": {
+        "p300x2": [
+            {
+                "_comment": "ASSUMED, NOT VALIDATED. No t3k entry exists for this model, so numbers are inferred from the closest same-size Gemma in this file: 'gemma-3-27b-it' t3k (ttft 76.0 / tput_user 43.0). LIKELY PESSIMISTIC BY A LARGE MARGIN: gemma-4-26B-A4B is a sparse MoE with ~4B active parameters (8 of 128 experts + 1 shared), so decode is bounded by ~4B of weight traffic, not by 27B dense - expect real tput_user well above this. 'tput' is set equal to 'tput_user' because max_concurrency is 1, where aggregate decode throughput is per-user throughput by definition. Replace with a proper roofline before trusting a FUNCTIONAL+ verdict.",
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 76.0,
+                        "tput_user": 43.0,
+                        "tput": 43.0
+                    }
+                }
+            }
+        ]
+    },
+    "Qwen3.6-27B": {
+        "p300x2": [
+            {
+                "_comment": "ASSUMED, NOT VALIDATED. No t3k entry exists for this model, so numbers are inferred from the closest same-size/type model in this file: 'Qwen3-32B' t3k (ttft 62.0 / tput_user 41.0). Two caveats: (1) t3k is 8 Wormhole chips while QB2 is 4 Blackhole chips, so this is a cross-architecture transplant; (2) Qwen3.6 is a hybrid Gated-DeltaNet/Gated-Attention model whose decode cost profile differs from dense Qwen3-32B. 'tput' is set equal to 'tput_user' because max_concurrency is 1 (aggregate decode throughput == per-user throughput); note the Qwen3-32B t3k entry's tput of 1332.0 is an aggregate figure that cannot hold at concurrency 1, which is why it was not copied. Replace with measured/derived numbers before trusting a FUNCTIONAL+ verdict.",
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 62.0,
+                        "tput_user": 41.0,
+                        "tput": 41.0
+                    }
+                }
+            }
+        ]
+    },
+    "Qwen3.6-35B-A3B": {
+        "p300x2": [
+            {
+                "_comment": "ASSUMED, NOT VALIDATED. No t3k entry exists for this model. Inferred from 'Qwen3-30B-A3B' t3k (ttft 36.0 / tput_user 44.0) — the closest analogue in this file by BOTH size class and sparsity: 30B-A3B vs 35B-A3B, i.e. near-identical ~3B active parameters, and decode is bounded by active-weight traffic rather than total parameters. Caveats: (1) t3k is 8 Wormhole chips, QB2 is 4 Blackhole chips, so this is a cross-architecture transplant; (2) Qwen3.6 interleaves Gated DeltaNet (recurrent, O(1) state) with Gated Attention layers, so its decode cost curve differs from a uniform-attention MoE. 'tput' equals 'tput_user' because max_concurrency is 1, where aggregate decode throughput is per-user throughput by definition. Replace with measured/derived numbers before trusting a FUNCTIONAL+ verdict.",
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 36.0,
+                        "tput_user": 44.0,
+                        "tput": 44.0
+                    }
+                }
+            }
+        ]
+    },
+    "Muse-Glimmer-30B": {
+        "p300x2": [
+            {
+                "_comment": "ASSUMED, NOT VALIDATED. No t3k entry exists for this model. Inferred from 'Qwen3-32B' t3k (ttft 62.0 / tput_user 41.0), the closest DENSE model of this size in the file: Muse-Glimmer is ~29.6B dense with all parameters active per token, so unlike the MoE entries nearby its decode is bounded by the full weight set. Caveats: (1) cross-architecture transplant from 8 Wormhole chips to 4 Blackhole chips; (2) Muse-Glimmer's GQA ratio is 16:1 (32 Q / 2 KV heads) against Qwen3-32B's, so KV traffic per token is lighter, which if anything makes this pessimistic. 'tput' equals 'tput_user' at max_concurrency 1 by definition. Replace with measured/derived numbers before trusting a FUNCTIONAL+ verdict.",
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 62.0,
+                        "tput_user": 41.0,
+                        "tput": 41.0
+                    }
+                }
+            }
+        ]
+    },
+    "diffusiongemma-26B-A4B-it": {
+        "p300x2": [
+            {
+                "_comment": "ASSUMED, NOT VALIDATED, AND THE METRICS MAY NOT EVEN BE THE RIGHT ONES. Numbers copied from the 'gemma-4-26B-A4B-it' p300x2 entry, whose text backbone this model reuses unchanged (tt-metal remaps model.decoder.* onto the gemma4 loader). The deeper problem is semantic, not numeric: this is NOT an autoregressive decoder. It denoises a 256-token canvas over up to 48 steps, so 'tokens per second per user' is not a per-token serial decode rate and TTFT is time to a whole first canvas, not to a first token. Comparing those against an autoregressive roofline is close to meaningless — treat any tier verdict here as noise until someone defines what theoretical peak means for block-diffusion decoding. Additional caveat: the reused gemma4 MoE backbone PCCs ~0.88 vs the HF reference on Blackhole (recorded as xfail against the 0.99 target), which is an accuracy risk, not a perf one. 'tput' equals 'tput_user' at max_concurrency 1.",
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 76.0,
+                        "tput_user": 43.0,
+                        "tput": 43.0
+                    }
+                }
+            }
+        ]
+    },
+    "Qwen3.8-27B": {
+        "p300x2": [
+            {
+                "_comment": "ASSUMED, NOT VALIDATED. Same derivation as the 'Qwen3.6-27B' entry (inferred from 'Qwen3-32B' t3k: ttft 62.0 / tput_user 41.0) because Qwen3.8-27B is the same parameter class and rides the same tt-metal code path (models/demos/blackhole/qwen36; its HF architectures string is 'Qwen3_5ForConditionalGeneration', already registered in vllm-tt-plugin). 'tput' equals 'tput_user' at max_concurrency 1 by definition. Doubly unvalidated: neither the numbers nor the assumption that the qwen36 implementation covers this checkpoint has been confirmed on hardware.",
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 62.0,
+                        "tput_user": 41.0,
+                        "tput": 41.0
                     }
                 }
             }

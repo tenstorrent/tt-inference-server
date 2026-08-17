@@ -225,6 +225,54 @@ templates:
       # by enable-auto-tool-choice in vllm_args above.
       tool_call_parser_name: gemma4
 
+# QB2 bring-up spec for the 26B-A4B MoE variant. tt-metal's models/demos/gemma4
+# covers this checkpoint (its README marks 26B-A4B green on T3K; QB2 / P150x4 is
+# listed only for 12B, so QB2 here is UNVALIDATED -- proving it is the point of the
+# bring-up run). The vLLM side needs no new registration: gemma-4 declares
+# 'Gemma4UnifiedForConditionalGeneration', already mapped to
+# models.demos.gemma4.tt.generator_vllm:Gemma4ForCausalLM by vllm-tt-plugin.
+# Kept as a template separate from the GPU reference entry further down, mirroring
+# how gpt-oss-120b splits its T3K/GALAXY and P300X2 templates.
+- weights:
+    - google/gemma-4-26B-A4B-it
+  impl: tt_transformers
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P300X2  # QB2 (2x P300, 4-chip TP mesh)
+      max_concurrency: 1
+      # ASSUMED: every setting in this entry is copied from the gemma-4-31B-it QB2
+      # entry above and is not tuned for this checkpoint. 26B-A4B has 30 layers to
+      # 31B's 60, so the hybrid-off KV ceiling that forced 49152 on 31B is roughly
+      # twice as generous here -- this context cap is deliberately conservative for
+      # a first bring-up and should be raised once a run succeeds.
+      max_context: 49152  # 48 * 1024
+      default_impl: true
+      env_vars:
+        # QB2's 4 Blackhole chips driven as a P150x4 (1,4) mesh -- the custom
+        # p300_x2 descriptor corrupted gemma4 decode logits (see the 31B entry).
+        MESH_DEVICE: "P150x4"
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+        GEMMA4_MAX_TOKENS_ALL_USERS: "49152"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 200000000
+        # Required on the TP mesh so token ids >= 65536 are reachable (host
+        # sampling only sees device 0's vocab shard).
+        sample_on_device_mode: decode_only
+      vllm_args:
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: gemma4
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    google/gemma-4-26B-A4B-it:
+      reasoning_parser_name: gemma4
+      tool_call_parser_name: gemma4
+
 - weights:
     - google/gemma-4-12B-it
   impl: tt_transformers
@@ -416,6 +464,198 @@ templates:
     Qwen/Qwen3.6-27B:
       reasoning_parser_name: qwen3
       tool_call_parser_name: qwen3_coder
+
+# QB2 bring-up spec for Qwen3.8-27B. UNVALIDATED ON HARDWARE -- the premise is that
+# the existing qwen36 implementation already covers this checkpoint:
+#   * models/demos/blackhole/qwen36 reads every model-specific value (hybrid layer
+#     dispatch via layer_types, DeltaNet head/conv dims, partial rotary factor,
+#     vocab, layer count) from the parsed HF config, and its README states the one
+#     code base adapts to each checkpoint (Qwen3.5-9B/27B, Qwen3.6-27B).
+#   * Qwen3.8-27B's HF config declares architectures ['Qwen3_5ForConditionalGeneration'],
+#     which vllm-tt-plugin already maps (as TTQwen3_5ForConditionalGeneration) to
+#     models.demos.blackhole.qwen36.tt.qwen36_vllm:Qwen36ForCausalLM. So no tt-metal
+#     or plugin change should be needed -- that is the hypothesis under test.
+# Declared text-only for bring-up even though the checkpoint ships a vision encoder,
+# matching how the Qwen3.6-27B spec above handles the same situation.
+- weights:
+    - Qwen/Qwen3.8-27B
+  impl: qwen36_blackhole
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+  device_model_specs:
+    - device: P300X2
+      # ASSUMED: concurrency, context and every tuning value below are copied from
+      # the Qwen3.6-27B P300X2 entry above and are not tuned for this checkpoint.
+      max_concurrency: 32
+      max_context: 262144
+      max_tokens_all_users_override: 525312
+      default_impl: true
+      env_vars:
+        TT_QWEN35_TEXT_VER: qwen36_blackhole
+        HF_MODEL: Qwen/Qwen3.8-27B
+        MESH_DEVICE: "(1, 4)"
+        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
+        QWEN36_MAX_TOKENS_ALL_USERS: "525312"
+      vllm_args:
+        enable_auto_tool_choice: true
+        reasoning_parser: qwen3
+        tool_call_parser: qwen3_coder
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 1073741824
+        l1_small_size: 24576
+        sample_on_device_mode: decode_only
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  metadata:
+    Qwen/Qwen3.8-27B:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: qwen3_coder
+
+# QB2 bring-up spec for Qwen3.6-35B-A3B (35B MoE, ~3B active: 256 experts, 8 routed
+# + 1 shared; 40 layers; hybrid Gated Attention + Gated DeltaNet; 262144 native ctx).
+#
+# ⚠️ NOT RUNNABLE against tt-metal main or vllm-tt-plugin main. Two prerequisites:
+#   1. tt-metal: MoE support lives on branch `kyamaguchi/qwen35moe-35b-a3b`
+#      (models/demos/blackhole/qwen36/tt/moe, tip a236ff055 as of 2026-08-05).
+#      Pass that as --tt-metal-git-ref.
+#   2. vLLM: the checkpoint declares architectures
+#      ['Qwen3_5MoeForConditionalGeneration'], so the plugin looks up
+#      'TTQwen3_5MoeForConditionalGeneration' — which is registered on NO
+#      vllm-tt-plugin branch (all 30 checked, 2026-08-17). Until a registration
+#      lands, the server aborts at startup with "No TT model architecture is
+#      registered". The one-line fix maps it to
+#      models.demos.blackhole.qwen36.tt.qwen36_vllm:Qwen36ForCausalLM.
+# Declared text-only for bring-up even though the checkpoint ships a vision encoder,
+# matching the Qwen3.6-27B spec.
+- weights:
+    - Qwen/Qwen3.6-35B-A3B
+  impl: qwen36_blackhole
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+  device_model_specs:
+    - device: P300X2
+      # ASSUMED: copied from the Qwen3.6-27B P300X2 entry and not tuned for this
+      # checkpoint. A 35B MoE has a larger weight footprint than the 27B but only
+      # ~3B active per token, so the KV/context ceiling here is a guess and the
+      # first thing to revisit if the server OOMs on load.
+      max_concurrency: 32
+      max_context: 262144
+      max_tokens_all_users_override: 525312
+      default_impl: true
+      env_vars:
+        TT_QWEN35_TEXT_VER: qwen36_blackhole
+        HF_MODEL: Qwen/Qwen3.6-35B-A3B
+        MESH_DEVICE: "(1, 4)"
+        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
+        QWEN36_MAX_TOKENS_ALL_USERS: "525312"
+      vllm_args:
+        enable_auto_tool_choice: true
+        reasoning_parser: qwen3
+        tool_call_parser: qwen3_coder
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 1073741824
+        l1_small_size: 24576
+        sample_on_device_mode: decode_only
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  metadata:
+    Qwen/Qwen3.6-35B-A3B:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: qwen3_coder
+
+# QB2 bring-up spec for Muse-Glimmer-30B (~29.6B dense, 52 layers, hidden 6656,
+# GQA 32 Q / 2 KV, head_dim 128, SwiGLU 19968, RoPE theta 500000, vocab 202048,
+# 131072+ ctx, plus a ~1.8B ViT-G/14 Perception Encoder).
+#
+# ⚠️ NOT RUNNABLE against tt-metal main or vllm-tt-plugin main. Two prerequisites:
+#   1. tt-metal: the port lives on branch `agentic-research/hous/muse-glimmer-30b`
+#      (models/autoports/meta_models_muse_glimmer_30b, tip 0dd37ce6e as of
+#      2026-08-16). Its readiness_vllm/ dir carries vllm_benchmark.json and
+#      vllm_ci_serving_result.json, so it HAS been served under vLLM before.
+#      Pass that branch as --tt-metal-git-ref.
+#   2. vLLM: declares architectures ['MuseGlimmerForConditionalGeneration'] ->
+#      'TTMuseGlimmerForConditionalGeneration', registered on NO vllm-tt-plugin
+#      branch (all 30 checked, 2026-08-17). The one-line fix maps it to
+#      models.autoports.meta_models_muse_glimmer_30b.tt.generator_vllm:MuseGlimmerForConditionalGeneration.
+# Text-only for bring-up; the Perception Encoder path is separate work.
+- weights:
+    - meta-models/Muse-Glimmer-30B
+  impl: muse_glimmer
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+  device_model_specs:
+    - device: P300X2
+      # ASSUMED: no reference configuration exists for this model on TT hardware.
+      # concurrency 1 and a conservative 32K context for first bring-up (the model
+      # supports 131072+); raise once it serves.
+      max_concurrency: 1
+      max_context: 32768  # 32 * 1024
+      default_impl: true
+      env_vars:
+        HF_MODEL: meta-models/Muse-Glimmer-30B
+        MESH_DEVICE: "P150x4"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 200000000
+        # Required on a TP mesh so token ids beyond device 0's vocab shard are
+        # reachable (vocab is 202048).
+        sample_on_device_mode: decode_only
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+
+# QB2 bring-up spec for DiffusionGemma 26B-A4B (25.2B total / 3.8B active MoE,
+# 128 experts + 1 shared, 30 layers, 262K vocab). NOT an autoregressive decoder: it
+# iteratively denoises a 256-token canvas with a block-diffusion sampler.
+#
+# ⚠️ NOT RUNNABLE against tt-metal main. Prerequisites:
+#   1. tt-metal: branch `diffusion-gemma-all` (tip f2a49978f) — carries demo/,
+#      kv_phase.py, memory_budget.py and tt/generator_vllm.py:DiffusionGemmaForCausalLM.
+#      main has only the foundation layer (no e2e generation).
+#   2. vLLM: declares architectures ['DiffusionGemmaForBlockDiffusion'] ->
+#      'TTDiffusionGemmaForBlockDiffusion'. This one DOES exist, on vllm-tt-plugin
+#      branch `zni/dg-47488-block-serving-024` (registers both …ForBlockDiffusion and
+#      …ForCausalLM) — not on main or stable. Pass it as --vllm-git-ref.
+# Reference: run 31919097339 passed a full `release` on QB2 with those two refs on
+# 2026-08-16, so this combination is known to work.
+- weights:
+    - google/diffusiongemma-26B-A4B-it
+  impl: diffusion_gemma
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+  device_model_specs:
+    - device: P300X2  # QB2 — the platform the tt-metal README targets for this model
+      # ASSUMED: settings mirror the gemma-4-26B-A4B-it QB2 entry, whose text
+      # backbone this model reuses unchanged. The diffusion decode path has its own
+      # memory profile (three-phase KV state machine + 256-token canvas, see
+      # kv_phase.py / memory_budget.py on the tt-metal branch), so these are a
+      # starting point, not a validated configuration.
+      max_concurrency: 1
+      max_context: 49152  # 48 * 1024
+      default_impl: true
+      env_vars:
+        MESH_DEVICE: "P150x4"
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+        GEMMA4_MAX_TOKENS_ALL_USERS: "49152"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 200000000
+        sample_on_device_mode: decode_only
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
 
 - weights:
     - Qwen/Qwen3-32B

@@ -307,6 +307,24 @@ qwen36_blackhole_b8_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/blackhole/qwen36",
 )
+# Muse-Glimmer-30B. NOTE the code_path is under models/autoports/, which is
+# auto-ported bring-up output rather than a hand-written demo, and it exists only on
+# the tt-metal branch `agentic-research/hous/muse-glimmer-30b` — not on main.
+muse_glimmer_impl = ImplSpec(
+    impl_id="muse_glimmer",
+    impl_name="muse-glimmer",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/autoports/meta_models_muse_glimmer_30b",
+)
+# DiffusionGemma 26B-A4B. Reuses the gemma4 MoE text backbone unchanged; the net-new
+# part is the block-diffusion decode loop. Exists on the tt-metal branch
+# `diffusion-gemma-all` (main carries only the foundation layer, no e2e demo).
+diffusion_gemma_impl = ImplSpec(
+    impl_id="diffusion_gemma",
+    impl_name="diffusion-gemma",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/experimental/diffusion_gemma",
+)
 
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "tt_transformers": tt_transformers_impl,
@@ -322,6 +340,8 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "qwen36_blackhole": qwen36_blackhole_impl,
     "training_lora": training_lora_impl,
     "qwen36_blackhole_b8": qwen36_blackhole_b8_impl,
+    "muse_glimmer": muse_glimmer_impl,
+    "diffusion_gemma": diffusion_gemma_impl,
 }
 
 
