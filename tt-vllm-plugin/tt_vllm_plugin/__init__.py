@@ -64,5 +64,18 @@ def register_models():
             "Qwen3-Embedding model may not be available. Ensure tt-metal is in Python path."
         )
 
+    # Register the TT device-socket weight-transfer backend so vLLM's native RL
+    # weight-sync API (--weight-transfer-config '{"backend": "device_socket"}')
+    # can construct it. Lazy (module-path) registration -- no ttnn import here.
+    # The co-located TT worker can also build the engine directly without this.
+    try:
+        from tt_vllm_plugin.weight_transfer import register_tt_weight_transfer_engine
+
+        register_tt_weight_transfer_engine()
+    except Exception as e:  # noqa: BLE001 - never block plugin load on this
+        import logging
+
+        logging.warning(f"Failed to register TT weight-transfer engine: {e}")
+
     # Add additional model registrations here as needed
     # ModelRegistry.register_model("AnotherModel", "path.to:ModelClass")

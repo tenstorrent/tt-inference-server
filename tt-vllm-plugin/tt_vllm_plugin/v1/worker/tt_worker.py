@@ -1,15 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
-import importlib.util
 import os
 import sys
 from contextlib import suppress
-from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Union
 
 import torch
 import torch.nn as nn
+import ttnn
 
 from vllm.config import VllmConfig
 from vllm.logger import init_logger
@@ -56,6 +55,13 @@ class TTWorker(WorkerBase):
         # Initialized by init_device
         self.mesh_device = None
         self.model_config.override_tt_config = {}
+
+        # Runtime weight-update (co-located RL) state. The transport is owned by
+        # a WeightTransferEngine (device-socket bridge); the worker owns the
+        # on-device apply + the authoritative weights-version counter. Both are
+        # inert unless the co-located RL control plane calls the hooks below.
+        self.weight_transfer_engine = None
+        self._weights_version = 0
 
         # Whether to use ttnn tracing for model execution
         override_tt_config = self.model_config.override_tt_config
@@ -159,165 +165,125 @@ class TTWorker(WorkerBase):
 
     # ---- Runtime weight update over a device socket (RL rollouts) ----
     #
-    # Invoked from the API server process via
-    # ``engine_client.collective_rpc("update_weights", kwargs=...)``. Runs on
-    # every worker in the (DP) group, but only the rank that actually owns the
-    # on-device model (DP rank 0 for TT) performs the update; other ranks
-    # no-op so the collective returns uniformly.
+    # These hooks implement vLLM's *native* RL weight-sync worker contract
+    # (``init_weight_transfer_engine`` / ``update_weights``), so the co-located
+    # trainer can drive updates through vLLM's own endpoints
+    # (``/init_weight_transfer_engine``, ``/update_weights``) + pause/resume
+    # instead of a bespoke control plane. Both are dispatched to every worker in
+    # the (DP) group via ``engine_client.collective_rpc(...)`` (which runs
+    # between engine steps, so a swap never interleaves an ``execute_model``);
+    # only the rank that owns the on-device model (DP rank 0 on TT) does work,
+    # other ranks no-op so the collective returns uniformly.
     #
-    # Transport: instead of reading a checkpoint from disk, the new weights
-    # stream in over a tt-metal Multi-Mesh device socket via tt-metal's
-    # ``WeightBridge`` (tt-train/sources/examples/grpo/utils/inference_bridge.py,
-    # introduced in tt-metal PR #45734). The training service
-    # (tt-training-service) owns a *separate* mesh and is the bridge *sender*
-    # (role="ttml"); this worker is the *receiver* (role="ttt").
+    # Transport is owned by a ``WeightTransferEngine`` -- here the TT
+    # ``device_socket`` backend, which wraps tt-metal's ``WeightBridge`` over a
+    # ``ttnn.MeshSocket`` (tt-train/.../grpo/utils/inference_bridge.py). The
+    # trainer (tt-training-service) owns a *separate* mesh and is the bridge
+    # *sender* (role="ttml"); this worker is the *receiver* (role="ttt").
+    # ``recv_state()`` yields a HF-keyed dict of on-device ``ttnn.Tensor``
+    # handles; this worker applies it via ``Generator.update_weights(hf_dict,
+    # hf_rope=...)`` -- an in-place ``ttnn.copy`` per weight that preserves each
+    # device buffer address so captured decode traces stay valid.
     #
-    # The bridge protocol is two-channel: a length-prefixed JSON manifest of
-    # ``(key, shape, dtype, layout)`` is sent over host MPI so the receiver
-    # knows what to allocate, then each tensor is streamed over a cached
-    # ``MeshSocket``. ``recv_state()`` returns a fully-materialized HF-keyed
-    # dict of on-device ``ttnn.Tensor`` handles which is then applied via
-    # ``Transformer.update_weights(hf_dict, hf_rope=...)`` -- an in-place
-    # ``ttnn.copy`` per weight that preserves each device buffer address so
-    # captured traces stay valid.
-    #
-    # Deployment prerequisites (outside this method, established at launch):
-    #   * Trainer and inference processes share ONE distributed context (MPI):
-    #     the bridge pins TTML_RANK=0 (sender) / TTT_RANK=1 (receiver) and
-    #     asserts the local rank matches the role. This is the crux of the
-    #     "separate server" problem -- the vLLM server process must join the
-    #     trainer's distributed context (e.g. co-launched via ``tt-run`` with
-    #     a shared MGD that connects the two meshes).
+    # Deployment prerequisites (established at launch, TT_COLOCATED_INFERENCE=1):
+    #   * Trainer + inference share ONE MPI world (co-launched via ``tt-run``);
+    #     the bridge pins TTML_RANK=0 (sender) / TTT_RANK=1 (receiver).
     #   * Fabric enabled (FABRIC_2D) before the mesh device is opened.
-    #   * Both submeshes have the same shape; weights are replicated,
-    #     DRAM-interleaved, TILE, bfloat16 (the bridge / update_weights
-    #     contract -- DDP-only on the trainer, no TP, for now).
-    #
-    # Phase-1 contract (tt-metal PR #45734): the model object returned by the
-    # loader is a ``Generator`` subclass that exposes
-    # ``update_weights(hf_state_dict, *, hf_rope=False)``. The Generator fans
-    # the dict out to each data-parallel replica's ``Transformer`` (re-homing
-    # onto each submesh for DP>1), which does the in-place ``ttnn.copy``.
+    #   * Weights replicated, DRAM-interleaved, TILE, bfloat16 (DDP-only on the
+    #     trainer, no TP, for now).
 
     def _owns_model(self) -> bool:
         runner = getattr(self, "model_runner", None)
         return runner is not None and getattr(runner, "model", None) is not None
 
-    # Pinned filename of tt-metal's weight bridge. The directory is pinned via
-    # additional_config / TT_WEIGHT_BRIDGE_DIR so an in-flight tt-metal PR can
-    # be pointed at without a code change here.
-    _BRIDGE_FILENAME = "inference_bridge.py"
+    def _colocated_rl_only(self, what: str) -> None:
+        """Fast-fail off the co-located RL path.
 
-    @classmethod
-    def _import_weight_bridge(cls, config_bridge_dir: Optional[str] = None):
-        """Import tt-metal's ``WeightBridge`` from ``inference_bridge.py``.
-
-        Loaded by file path via ``spec_from_file_location`` (not an installed
-        package) so it can't collide with the server's own ``utils`` package.
-        The directory is resolved from ``config_bridge_dir``
-        (additional_config['tt']['tt_weight_bridge_dir'], which survives the
-        EngineCore's curated env) first, then the ``TT_WEIGHT_BRIDGE_DIR`` env
-        var. Must resolve to the same module the trainer (sender) imports so
-        both ends speak the same wire protocol.
+        On a normal (non-colocated) server there is no trainer peer, so the
+        device-socket rendezvous would block forever. The native routes are
+        also only mounted on the RL path; this guards a stray/reachable call.
         """
-        bridge_dir = config_bridge_dir or os.getenv("TT_WEIGHT_BRIDGE_DIR")
-        if not bridge_dir:
-            raise ImportError(
-                "Weight-bridge directory not configured: set "
-                "additional_config['tt']['tt_weight_bridge_dir'] or "
-                f"TT_WEIGHT_BRIDGE_DIR to the directory containing {cls._BRIDGE_FILENAME}."
-            )
-
-        path = Path(bridge_dir) / cls._BRIDGE_FILENAME
-        if not path.is_file():
-            raise ImportError(
-                f"tt-metal's WeightBridge not found at {path}: point "
-                "additional_config['tt']['tt_weight_bridge_dir'] (or "
-                f"TT_WEIGHT_BRIDGE_DIR) at the directory containing {cls._BRIDGE_FILENAME}."
-            )
-
-        spec = importlib.util.spec_from_file_location(path.stem, path)
-        assert spec and spec.loader
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        return module
-
-    def _get_weight_bridge(self, sender_rank: int):
-        """Create (or reuse) the receiver-side ``WeightBridge`` (role='ttt').
-
-        The bridge owns the MeshSocket and the MPI handshake. ``connect()`` is
-        expensive (handshake + socket descriptor exchange), so it is created
-        and connected once and reused across updates. Recreated only if the
-        peer (trainer/sender) rank changes.
-        """
-        if self._weight_bridge is not None and self._weight_bridge_peer == sender_rank:
-            return self._weight_bridge
-
-        # Prefer the dir threaded through additional_config (survives the
-        # EngineCore's curated env, unlike a bare TT_WEIGHT_BRIDGE_DIR).
-        override_tt_config = getattr(self.model_config, "override_tt_config", None) or {}
-        config_bridge_dir = override_tt_config.get("tt_weight_bridge_dir")
-        weight_bridge = self._import_weight_bridge(config_bridge_dir)
-
-        # The bridge requires an initialized ttnn distributed context.
-        if not ttnn.distributed_context_is_initialized():
-            ttnn.init_distributed_context()
-
-        logger.info(
-            "Creating receiver WeightBridge (role='ttt', peer/sender_rank=%s)",
-            sender_rank,
-        )
-        bridge = weight_bridge.WeightBridge(
-            role="ttt",
-            peer_rank=sender_rank,
-            device=self.mesh_device,
-        )
-        # Blocks until the sender (trainer) also reaches connect().
-        bridge.connect()
-
-        self._weight_bridge = bridge
-        self._weight_bridge_peer = sender_rank
-        return bridge
-
-    def update_weights(
-        self,
-        sender_rank: int = 0,
-        hf_rope: bool = False,
-    ) -> dict:
-        """In-place replace on-device weights received over a device socket.
-
-        Uses tt-metal's ``WeightBridge`` to receive a full HF-keyed weight
-        dict streamed device-to-device from the training service's mesh, then
-        applies it via the model's ``update_weights(hf_dict, hf_rope=...)``.
-        No host roundtrip or disk read is involved.
-
-        Args:
-            sender_rank: Distributed-context (MPI) rank of the training process
-                that sends the weights (the bridge's TTML_RANK, default 0).
-            hf_rope: Forwarded to ``update_weights``. ``False`` (default) means
-                Q/K rows are already in this model's RoPE convention (correct
-                for the ttml -> tt-transformers Llama transfer).
-
-        Returns:
-            dict with ``rank``, ``updated`` (bool), and ``version``.
-        """
-        # Defense-in-depth: runtime weight update is a co-located RL-only path.
-        # On a normal (non-colocated) server there is no trainer peer, so the
-        # device-socket rendezvous in _get_weight_bridge().connect() would block
-        # forever. Fast-fail cleanly instead of hanging. (The route is not even
-        # mounted off the RL path; this guards a stray/ever-reachable call.)
         if os.getenv("TT_COLOCATED_INFERENCE") != "1":
             raise RuntimeError(
-                "Runtime weight update is only available on a co-located RL "
-                "inference server (TT_COLOCATED_INFERENCE=1); refusing to run "
-                "the device-socket weight bridge on a non-colocated server."
+                f"{what} is only available on a co-located RL inference server "
+                "(TT_COLOCATED_INFERENCE=1)."
             )
 
+    def _ensure_weight_transfer_engine(self):
+        """Lazily construct the TT ``device_socket`` weight-transfer engine.
+
+        Prefer the engine already attached by vLLM (from
+        ``--weight-transfer-config '{"backend": "device_socket"}'``); otherwise
+        build one directly so the native ``/update_weights`` path works without
+        threading a ``WeightTransferConfig`` through vLLM's CLI (whose
+        ``backend`` is a closed ``Literal["nccl", "ipc"]``).
+        """
+        if self.weight_transfer_engine is not None:
+            return self.weight_transfer_engine
+
+        from tt_vllm_plugin.weight_transfer.tt_device_socket_engine import (
+            TTDeviceSocketWeightTransferEngine,
+        )
+
+        config = getattr(self.vllm_config, "weight_transfer_config", None)
+        self.weight_transfer_engine = TTDeviceSocketWeightTransferEngine(
+            config, self.vllm_config.parallel_config
+        )
+        return self.weight_transfer_engine
+
+    def init_weight_transfer_engine(self, init_info: dict) -> dict:
+        """Native RL hook: stand up the device-socket transport.
+
+        Called once by the trainer (via ``/init_weight_transfer_engine`` ->
+        ``collective_rpc``) before the training loop. On TT this constructs +
+        connects the receiver ``WeightBridge`` (the MPI handshake + MeshSocket
+        descriptor exchange); it blocks until the trainer also reaches
+        ``connect()``. Non-owning DP ranks have no device model / mesh, so they
+        no-op and let the collective return uniformly.
+        """
+        self._colocated_rl_only("Weight transfer")
+        rank = self.vllm_config.parallel_config.data_parallel_rank
+        if not self._owns_model():
+            return {"rank": rank, "initialized": False}
+
+        engine = self._ensure_weight_transfer_engine()
+        # Prefer the bridge dir threaded through additional_config (survives the
+        # EngineCore's curated env, unlike a bare TT_WEIGHT_BRIDGE_DIR).
+        override_tt_config = getattr(self.model_config, "override_tt_config", None) or {}
+        engine.bind_runtime(
+            device=self.mesh_device,
+            bridge_dir=override_tt_config.get("tt_weight_bridge_dir"),
+        )
+        typed_init_info = engine.parse_init_info(init_info or {})
+        engine.init_transfer_engine(typed_init_info)
+        logger.info("Weight transfer engine initialized (rank %s)", rank)
+        return {"rank": rank, "initialized": True}
+
+    def update_weights(self, update_info: dict) -> dict:
+        """Native RL hook: in-place replace on-device weights over the bridge.
+
+        Signature matches vLLM's worker contract
+        (``update_weights(update_info: dict)``, dispatched via
+        ``collective_rpc``). Transport (``recv_state`` + barrier) is owned by
+        the ``WeightTransferEngine``; this worker owns the on-device apply
+        (``Generator.update_weights`` in-place ``ttnn.copy``), the decode-trace
+        release, and the authoritative weights-version counter.
+
+        Callers should quiesce inference first (vLLM ``/pause?mode=wait`` or the
+        legacy admission gate) so no request spans the version boundary.
+        """
+        self._colocated_rl_only("Runtime weight update")
         rank = self.vllm_config.parallel_config.data_parallel_rank
 
         if not self._owns_model():
             # Non-owning DP ranks have no device model; nothing to do.
             return {"rank": rank, "updated": False, "version": self._weights_version}
+
+        if self.weight_transfer_engine is None:
+            raise RuntimeError(
+                "update_weights called before init_weight_transfer_engine(); "
+                "the device-socket bridge has not been connected."
+            )
 
         model = self.model_runner.get_model()
         if not hasattr(model, "update_weights"):
@@ -325,9 +291,12 @@ class TTWorker(WorkerBase):
                 f"Model {type(model).__name__} does not implement "
                 "update_weights(hf_state_dict, hf_rope=...). Runtime weight "
                 "update requires the tt-metal Generator.update_weights "
-                "passthrough + Transformer.update_weights in-place API "
-                "(tt-metal PR #45734)."
+                "passthrough + Transformer.update_weights in-place API."
             )
+
+        typed_update_info = self.weight_transfer_engine.parse_update_info(
+            update_info or {}
+        )
 
         # Drop any captured decode trace before the transfer: recv_state()
         # allocates the full state dict as fresh device buffers, and doing that
@@ -338,60 +307,45 @@ class TTWorker(WorkerBase):
         if hasattr(model, "release_decode_traces"):
             model.release_decode_traces()
 
-        # 1. Receive the HF-keyed dict of on-device tensors over the bridge.
-        bridge = self._get_weight_bridge(sender_rank)
-        logger.info(
-            "Receiving weight update via WeightBridge from sender_rank=%s (rank %s)",
-            sender_rank,
-            rank,
+        # Apply callback handed to the engine's transport. Receives the HF-keyed
+        # dict of on-device ttnn tensors from recv_state(). An empty dict is the
+        # plumbing-test payload (SIM_PAYLOAD=empty): model.update_weights is
+        # strict (KeyError on missing keys), so no-op the apply while still
+        # bumping the version + running the barrier inside receive_weights().
+        applied = {"weights": False}
+
+        def _apply_ttnn_weights(hf_dict) -> None:
+            if hf_dict:
+                model.update_weights(hf_dict, hf_rope=typed_update_info.hf_rope)
+                applied["weights"] = True
+            else:
+                logger.info(
+                    "Received empty weight payload (plumbing test); skipping "
+                    "model.update_weights and applying a no-op version bump."
+                )
+
+        self.weight_transfer_engine.receive_weights(
+            typed_update_info,
+            load_weights=_apply_ttnn_weights,
         )
-        hf_dict = bridge.recv_state()
-
-        # 2. Apply in place (preserves device buffer addresses / traces).
-        #    An empty dict is the plumbing-test payload (SIM_PAYLOAD=empty):
-        #    update_weights is strict (KeyError on missing keys), so no-op it
-        #    while still bumping the version + running the barrier.
-        if hf_dict:
-            model.update_weights(hf_dict, hf_rope=hf_rope)
-            applied = True
-        else:
-            logger.info(
-                "Received empty weight payload (plumbing test); skipping "
-                "model.update_weights and applying a no-op version bump."
-            )
-            applied = False
-
-        # 3. Drop the received handles and fence so the sender can free its
-        #    source tensors before we touch the model again for inference.
-        del hf_dict
-        ttnn.synchronize_device(self.mesh_device)
-        bridge.barrier()
 
         # The worker owns the version counter (single source of truth).
         self._weights_version += 1
         logger.info(
             "Weight update complete; weights_version=%s weights_applied=%s",
             self._weights_version,
-            applied,
+            applied["weights"],
         )
-        # ``updated``: control-plane success; ``weights_applied``: real apply vs
-        # empty-payload plumbing no-op.
         return {
             "rank": rank,
             "updated": True,
-            "weights_applied": applied,
+            "weights_applied": applied["weights"],
             "version": self._weights_version,
         }
 
     def get_weights_version(self) -> int:
         """Return the current on-device weights/policy version."""
-        # Co-located RL-only control plane (see update_weights); fast-fail off
-        # the RL path so this is inert on a normal server.
-        if os.getenv("TT_COLOCATED_INFERENCE") != "1":
-            raise RuntimeError(
-                "Weights versioning is only available on a co-located RL "
-                "inference server (TT_COLOCATED_INFERENCE=1)."
-            )
+        self._colocated_rl_only("Weights versioning")
         return self._weights_version
 
     def get_kv_cache_spec(self) -> dict[str, KVCacheSpec]:

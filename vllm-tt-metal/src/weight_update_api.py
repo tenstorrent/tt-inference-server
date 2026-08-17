@@ -299,6 +299,34 @@ async def reset_prefix_cache(request: Request):
     return {"status": "ok"}
 
 
+def _mount_native_rl_routes(app) -> None:
+    """Mount vLLM's *native* RL weight-sync router on the given app.
+
+    vLLM only auto-mounts these routes (``/pause``, ``/resume``,
+    ``/init_weight_transfer_engine``, ``/update_weights``, ``/get_world_size``)
+    when ``VLLM_SERVER_DEV_MODE`` is set. We mount them explicitly on the
+    already-authed OpenAI app so the co-located trainer can drive updates
+    through the native control plane without flipping global dev mode.
+
+    These are the transport-agnostic counterparts of the legacy
+    ``/v1/internal/weights/*`` routes: ``/pause?mode=wait`` drains in-flight
+    requests in-engine (replacing the admission gate), ``/update_weights``
+    dispatches to ``TTWorker.update_weights(update_info)`` via ``collective_rpc``
+    (the TT device-socket engine), and ``/init_weight_transfer_engine`` connects
+    the bridge. Best-effort: never blocks startup if the vLLM build lacks them.
+    """
+    try:
+        from vllm.entrypoints.serve.rlhf.api_router import router as rlhf_router
+    except Exception as exc:  # noqa: BLE001 - older/other vLLM builds
+        logger.warning("Native RL weight-sync router unavailable: %s", exc)
+        return
+    app.include_router(rlhf_router)
+    logger.info(
+        "Mounted native vLLM RL weight-sync routes (/pause, /resume, "
+        "/init_weight_transfer_engine, /update_weights, /get_world_size)"
+    )
+
+
 def install() -> None:
     """Mount the weight-update router on the vLLM OpenAI API server FastAPI app.
 
@@ -344,6 +372,15 @@ def install() -> None:
             "Mounted TT weight-update routes under /v1/internal/weights "
             "(with weight-update admission gate)"
         )
+        # Also mount vLLM's native RL weight-sync routes on the same authed app.
+        # Once validated, the trainer can migrate to /pause + /update_weights +
+        # /resume and the legacy /v1/internal/weights/* router + admission gate
+        # above can be retired.
+        _mount_native_rl_routes(self)
+        # Surface sampled completion token_ids on /v1/completions so RL rollouts
+        # are token-native (no lossy detokenize/retokenize). See the block above;
+        # disable at a moment's notice with TT_RETURN_COMPLETION_TOKEN_IDS=0.
+        _patch_completion_response_token_ids()
 
     __init___with_weight_update._tt_weight_update_patched = True  # type: ignore[attr-defined]
     fastapi.FastAPI.__init__ = __init___with_weight_update
