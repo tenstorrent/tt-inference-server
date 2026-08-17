@@ -124,8 +124,8 @@ spec:
           # budget = failureThreshold × periodSeconds is derived from
           # progressDeadlineSeconds so it always matches the max compile time; it
           # flips to serving as soon as one poll succeeds, not after a fixed delay.
-          # Always rendered — disabling it would let liveness (initialDelaySeconds 0)
-          # kill the container mid-compile.
+          # Always rendered — disabling it would let liveness (initialDelaySeconds
+          # defaults to 0) kill the container mid-compile.
           startupProbe:
             httpGet:
               path: {{ $cfg.probes.readiness.path | default "/health" }}
@@ -142,7 +142,6 @@ spec:
               path: {{ $cfg.probes.liveness.path }}
               {{- end }}
               port: http
-            initialDelaySeconds: {{ $cfg.probes.liveness.initialDelaySeconds }}
             periodSeconds: 30
             timeoutSeconds: 5
             failureThreshold: 3
@@ -152,7 +151,6 @@ spec:
             httpGet:
               path: {{ $cfg.probes.readiness.path }}
               port: http
-            initialDelaySeconds: {{ $cfg.probes.readiness.initialDelaySeconds }}
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 3

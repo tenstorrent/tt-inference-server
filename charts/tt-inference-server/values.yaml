@@ -72,19 +72,15 @@ defaults:
     # Deployment as ceil(progressDeadlineSeconds / periodSeconds), so the budget
     # tracks the max compile time — no per-model initialDelaySeconds to hand-sync.
     # Always rendered (no enable toggle): disabling it would let liveness, whose
-    # initialDelaySeconds is 0, restart the container mid-compile.
+    # initialDelaySeconds defaults to 0, restart the container mid-compile.
     startup:
       periodSeconds: 15
     liveness:
       enabled: true
       path: /v1/models
-      # 0: startupProbe gates the compile window, so liveness starts immediately
-      # once startup succeeds.
-      initialDelaySeconds: 0
     readiness:
       enabled: true
       path: /health
-      initialDelaySeconds: 0
   nodeSelector: {}
   tolerations: []
   # User-supplied affinity, applied as-is. v0.2: the chart no longer injects a
