@@ -1252,6 +1252,19 @@ templates:
         # cwd-relative because the server runs from vllm-tt-metal/src, the same
         # convention the existing TT_MESH_GRAPH_DESC_PATH entries use.
         EXTRA_MODELS_DIR: "../../tt-metal/models/autoports/vllm_bundles"
+        # Route prefill SDPA above 1024 tokens through the bounded chunked path.
+        # With the upstream default (32768) a 2048-token prompt takes the direct
+        # ttnn.transformer.scaled_dot_product_attention branch, whose static
+        # circular buffers on the head_dim=512 (8,4) grid overrun the L1 still
+        # held by resident decode traces:
+        #   TT_THROW: Statically allocated circular buffers in program N clash
+        #   with L1 buffers on core range [0-0 - 7-3]. L1 buffer allocated at
+        #   1374912 and static circular buffer region ends at 1374976
+        # -- a 64-byte overlap, reproduced at benchmark sweep point 7
+        # (isl=2048). isl=1024 passes, so 1024 is the empirically safe ceiling
+        # for the direct path. The chunked branches are the ones already
+        # validated at the full 262,144 advertised context.
+        GEMMA4_PREFILL_SDPA_MAX_SEQ: "1024"
         # TTI's hang watchdog (run_vllm_api_server.set_metal_timeout_env_vars
         # sets TT_METAL_OPERATION_TIMEOUT_SECONDS=5.0) false-positives on this
         # model's first-compile prefill. Shield run 31824560569 died in
