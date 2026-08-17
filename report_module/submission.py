@@ -23,13 +23,13 @@ fitted scaling exponent per concurrency level, and — when a prefix-cache repor
 present — the two bonus figures named in
 :data:`report_module.prefix_cache_uplift.SCORED_FIELDS`.
 
-**Supplied** on the command line: the eval margins, contribution quality,
-assistance units and the reproduction outcome. These are deliberately not guessed.
-The rubric fixes each line's qualifying and excellence values, but how a set of
-per-task eval ratios becomes one margin is a scoring policy that is not expressed
-anywhere in this repository, and inventing an aggregation would invent published
-terms. The per-task ratios found in the reports are written to ``_evidence`` so
-whoever sets the margin can see the inputs they are setting it from.
+**Supplied** on the command line: contribution quality, assistance units and the
+reproduction outcome. These are deliberately not guessed.
+
+Accuracy is **not** among them. It is a pass/fail gate in Part I (requirements H.5)
+and carries no rubric line, so there is nothing to supply. The per-task eval ratios
+found in the reports are still written to ``_evidence``, because whoever adjudicates
+the gate should be able to see them without opening the run.
 
 ``run_to_run_cov`` is the one middle case: it is computed here, from repeat runs,
 under the definition in :data:`COV_DEFINITION`. That definition is this module's
@@ -351,8 +351,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "supplies the graded points, all of them supply run-to-run variation.",
     )
     parser.add_argument("--out", default="submission.json", help="Output path")
-    for line in ("agentic-eval", "standard-eval", "contribution-quality"):
-        parser.add_argument(f"--{line}", type=float, default=None)
+    parser.add_argument("--contribution-quality", type=float, default=None)
     parser.add_argument("--technical-assistance", type=float, default=None)
     parser.add_argument(
         "--run-to-run-cov",
@@ -371,8 +370,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parser.parse_args(argv)
 
     once = {
-        "agentic_eval": args.agentic_eval,
-        "standard_eval": args.standard_eval,
         "contribution_quality": args.contribution_quality,
         "technical_assistance": args.technical_assistance,
     }

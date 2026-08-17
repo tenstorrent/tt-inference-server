@@ -17,6 +17,7 @@ import pytest
 
 from report_module.scorecard import (
     CONCURRENCY_SHARES,
+    CORE_GROUPS,
     GROUPS,
     LINE_WEIGHTS,
     GradedPoint,
@@ -195,8 +196,6 @@ def _f2_submission() -> Submission:
         model="google/gemma-4-31B-it",
         scaling_exponents={1: 0.956, 128: 0.916},
         once={
-            "agentic_eval": 1.02,
-            "standard_eval": 1.01,
             "run_to_run_cov": 0.05,
             "contribution_quality": 3.0,
             "technical_assistance": 3.0,
@@ -210,8 +209,6 @@ def _f2_submission() -> Submission:
 @pytest.mark.parametrize(
     "key,fraction_,score_",
     [
-        ("agentic_eval", 0.6667, 8.00),
-        ("standard_eval", 0.5000, 5.00),
         ("reproduced_first_attempt", 1.0000, 3.00),
         ("run_to_run_cov", 0.7692, 1.54),
         ("contribution_quality", 1.0000, 3.00),
@@ -228,8 +225,10 @@ def test_once_scored_lines_reproduce_appendix_f2(key, fraction_, score_):
 
 def test_f2_bonus_and_group_totals():
     card = score(_f2_submission())
-    assert round(card.group_score("quality"), 2) == 13.00
     assert round(card.bonus_total, 2) == 13.87
+    # Accuracy is a pass/fail gate in Part I (requirements H.5) and carries no
+    # rubric line, so there is no group of points nobody can win.
+    assert "quality" not in GROUPS
 
 
 # Every line fraction printed in F.2. The per-point ones are rolled up from F.3
@@ -243,8 +242,6 @@ F2_LINE_FRACTIONS = {
     "scaling_quality": 1.0000,
     "tput_user_median": 0.5000,
     "decode_throughput": 0.2000,
-    "agentic_eval": 0.6667,
-    "standard_eval": 0.5000,
     "reproduced_first_attempt": 1.0000,
     "run_to_run_cov": 0.7692,
     "contribution_quality": 1.0000,
@@ -267,7 +264,7 @@ def _f2_card() -> Scorecard:
 
 @pytest.mark.parametrize(
     "group,expected",
-    [("prefill", 26.95), ("decode", 4.70), ("quality", 13.00), ("engineering", 9.04)],
+    [("prefill", 26.95), ("decode", 4.70), ("engineering", 9.04)],
 )
 def test_group_subtotals_reproduce_appendix_f2(group, expected):
     assert round(_f2_card().group_score(group), 2) == expected
@@ -275,9 +272,9 @@ def test_group_subtotals_reproduce_appendix_f2(group, expected):
 
 def test_core_bonus_and_overall_reproduce_appendix_f2():
     card = _f2_card()
-    assert round(card.core_total, 2) == 53.69
+    assert round(card.core_total, 2) == 40.69
     assert round(card.bonus_total, 2) == 13.87
-    assert round(card.overall, 2) == 67.56
+    assert round(card.overall, 2) == 54.56
 
 
 def test_totals_are_summed_at_full_precision_not_from_rounded_subtotals():
@@ -290,42 +287,34 @@ def test_totals_are_summed_at_full_precision_not_from_rounded_subtotals():
     an example that happens to agree would silently stop testing anything.
     """
     card = _f2_card()
-    core_keys = [
-        k for g in ("prefill", "decode", "quality", "engineering") for k in GROUPS[g]
-    ]
+    core_keys = [k for g in CORE_GROUPS for k in GROUPS[g]]
     assert card.core_total == sum(card.lines[k].score for k in core_keys)
-    for group in ("prefill", "decode", "quality", "engineering"):
+    for group in CORE_GROUPS:
         assert card.group_score(group) == sum(
             card.lines[k].score for k in GROUPS[group]
         )
 
 
-def test_the_core_weights_sum_to_one_hundred_and_the_bonus_to_twenty():
+def test_the_core_weights_sum_to_seventy_eight_and_the_bonus_to_twenty():
+    """78, not 100. Accuracy is a pass/fail gate in Part I (requirements H.5) and
+    carries no rubric line, so there is no group of points nobody can win."""
     card = _f2_card()
-    assert (
-        sum(
-            card.group_weight(g)
-            for g in ("prefill", "decode", "quality", "engineering")
-        )
-        == 100
-    )
+    assert sum(card.group_weight(g) for g in CORE_GROUPS) == 78
     assert card.group_weight("bonus") == 20
+    assert "quality" not in GROUPS
 
 
 def test_prefill_dominates_the_core_score_as_the_rubric_intends():
-    """Prefill carries 55 of the 100 core points and must remain the largest single
+    """Prefill carries 55 of the 78 core points and must remain the largest single
     contribution. Asserted as "largest group" rather than against a fixed share: the
     share moves with whatever the example submission scores, but the ordering is the
     design intent."""
     card = _f2_card()
-    scores = {
-        g: card.group_score(g) for g in ("prefill", "decode", "quality", "engineering")
-    }
+    scores = {g: card.group_score(g) for g in CORE_GROUPS}
     assert max(scores, key=lambda g: scores[g]) == "prefill"
     assert card.group_weight("prefill") == 55
-    assert (
-        card.group_weight("prefill")
-        > sum(card.group_weight(g) for g in ("decode", "quality")) / 2
+    assert card.group_weight("prefill") > sum(
+        card.group_weight(g) for g in ("decode", "engineering")
     )
 
 
@@ -375,11 +364,11 @@ def test_a_boolean_is_not_a_measurement():
 
 def test_a_line_failing_reproduction_scores_zero_not_a_reduced_score():
     sub = _f2_submission()
-    baseline = score(sub).lines["agentic_eval"].score
+    baseline = score(sub).lines["run_to_run_cov"].score
     assert baseline > 0
 
-    sub.failed_reproduction = ("agentic_eval",)
-    line = score(sub).lines["agentic_eval"]
+    sub.failed_reproduction = ("run_to_run_cov",)
+    line = score(sub).lines["run_to_run_cov"]
     assert line.score == 0.0
     assert "failed reproduction" in line.note
     # The scorecard still shows what it would have been, so the cost is visible.
@@ -391,18 +380,18 @@ def test_a_line_failing_reproduction_scores_zero_not_a_reduced_score():
 def test_a_waived_line_scores_zero_and_stays_in_the_denominator():
     """A waiver protects qualification; it must never improve rank."""
     sub = _f2_submission()
-    sub.waived = ("standard_eval",)
+    sub.waived = ("contribution_quality",)
     card = score(sub)
-    assert card.lines["standard_eval"].score == 0.0
-    # Weight 10 is still counted against the submission, not removed.
-    assert card.group_weight("quality") == 22
-    assert "never improves rank" in card.lines["standard_eval"].note
+    assert card.lines["contribution_quality"].score == 0.0
+    # The weight is still counted against the submission, not removed.
+    assert card.group_weight("engineering") == 10
+    assert "never improves rank" in card.lines["contribution_quality"].note
 
 
 def test_waiving_a_line_can_only_lower_the_overall():
     sub = _f2_submission()
     before = score(sub).overall
-    sub.waived = ("standard_eval",)
+    sub.waived = ("contribution_quality",)
     assert score(sub).overall < before
 
 
@@ -421,12 +410,13 @@ def test_unscoreable_lines_are_listed_separately_from_lines_that_scored_zero():
     """A line at qualifying and a line never measured both score 0, and differ."""
     sub = _f2_submission()
     sub.once["agentic_eval"] = 1.00  # exactly at qualifying -> a real zero
-    sub.once["standard_eval"] = None  # never measured
+    sub.once["run_to_run_cov"] = 0.15  # exactly at qualifying -> a real zero
+    sub.once["contribution_quality"] = None  # never measured
     card = score(sub)
-    assert card.lines["agentic_eval"].score == 0.0
-    assert card.lines["standard_eval"].score == 0.0
-    assert "agentic_eval" not in card.unscoreable
-    assert "standard_eval" in card.unscoreable
+    assert card.lines["run_to_run_cov"].score == 0.0
+    assert card.lines["contribution_quality"].score == 0.0
+    assert "run_to_run_cov" not in card.unscoreable
+    assert "contribution_quality" in card.unscoreable
 
 
 def test_a_point_missing_its_target_cannot_be_scored_and_is_reported():

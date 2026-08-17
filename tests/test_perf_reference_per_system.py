@@ -25,9 +25,7 @@ def _task(tput, tput_user=50.0, ttft_ms=100.0, max_concurrency=128):
         max_concurrency=max_concurrency,
         num_prompts=8,
         targets={
-            "target": PerformanceTarget(
-                ttft_ms=ttft_ms, tput_user=tput_user, tput=tput
-            )
+            "target": PerformanceTarget(ttft_ms=ttft_ms, tput_user=tput_user, tput=tput)
         },
     )
 

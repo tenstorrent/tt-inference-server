@@ -186,7 +186,7 @@ def test_find_report_errors_with_an_actionable_message(tmp_path):
 
 def test_build_produces_a_document_the_scorecard_can_score(tmp_path):
     run = _write(tmp_path, "run1", _sweep())
-    doc = build([run], partner="Acme", once={"agentic_eval": 1.05})
+    doc = build([run], partner="Acme", once={"contribution_quality": 2.0})
     assert doc["partner"] == "Acme"
     assert doc["model"] == "google/gemma-4-31B-it"
     assert len(doc["points"]) == 10
@@ -194,7 +194,7 @@ def test_build_produces_a_document_the_scorecard_can_score(tmp_path):
     # The real contract: it round-trips through the scorer without adjustment.
     card = score(submission_from_dict(doc))
     assert card.lines["ttft_p99"].fraction is not None
-    assert card.lines["agentic_eval"].fraction is not None
+    assert card.lines["contribution_quality"].fraction is not None
 
 
 def test_build_records_evidence_for_supplied_lines(tmp_path):

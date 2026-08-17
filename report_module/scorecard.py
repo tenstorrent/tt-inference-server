@@ -82,9 +82,6 @@ LINE_WEIGHTS: Dict[str, float] = {
     # Decode — 13
     "tput_user_median": 7,
     "decode_throughput": 6,
-    # Model quality — 22
-    "agentic_eval": 12,
-    "standard_eval": 10,
     # Engineering quality — 10
     "reproduced_first_attempt": 3,
     "run_to_run_cov": 2,
@@ -105,7 +102,6 @@ GROUPS: Dict[str, Tuple[str, ...]] = {
         "scaling_quality",
     ),
     "decode": ("tput_user_median", "decode_throughput"),
-    "quality": ("agentic_eval", "standard_eval"),
     "engineering": (
         "reproduced_first_attempt",
         "run_to_run_cov",
@@ -115,7 +111,12 @@ GROUPS: Dict[str, Tuple[str, ...]] = {
     "bonus": ("prefix_cache_hit_rate", "ttft_uplift"),
 }
 
-CORE_GROUPS = ("prefill", "decode", "quality", "engineering")
+# Accuracy is deliberately absent. It is a pass/fail gate in Part I (requirements
+# H.5) and is not scored: rewarding accuracy above the reference would invite
+# Partners to chase fractions of a point on a quantity that is a property of the
+# model's weights rather than of their implementation. Core is therefore 78, not 100,
+# and every point in it is winnable.
+CORE_GROUPS = ("prefill", "decode", "engineering")
 
 LINE_TITLES: Dict[str, str] = {
     "ttft_p99": "TTFT p99",
@@ -126,8 +127,6 @@ LINE_TITLES: Dict[str, str] = {
     "scaling_quality": "Scaling quality",
     "tput_user_median": "Tokens/s/user median",
     "decode_throughput": "Decode throughput",
-    "agentic_eval": "Agentic eval margin",
-    "standard_eval": "Standard eval margin",
     "reproduced_first_attempt": "Reproduced first attempt",
     "run_to_run_cov": "Coefficient of variation",
     "contribution_quality": "Contribution quality",
@@ -142,14 +141,6 @@ FIXED_RANGES: Dict[str, Tuple[float, float]] = {
     # every system cleared outright. See Appendix B.5.
     "tail_discipline": (1.25, 1.05),
     "scaling_quality": (2.0, 1.0),
-    # Accuracy is a property of the model's weights, not the silicon, so a correct
-    # implementation scores about equal to the reference and an excellence value far
-    # above parity would be unreachable — those 22 points would be dead weight. The
-    # achievement is holding reference accuracy on a different compute class, then
-    # edging past it. Agentic sits higher because its task sets are smaller (89 tasks
-    # vs 198 samples) so an above-parity result needs more headroom to mean anything.
-    "agentic_eval": (1.00, 1.03),
-    "standard_eval": (1.00, 1.02),
     "run_to_run_cov": (0.15, 0.02),
     "contribution_quality": (0.0, 3.0),
     "technical_assistance": (12.0, 0.0),
@@ -552,8 +543,6 @@ def score(submission: Submission) -> Scorecard:
     lines["scaling_quality"] = _score_scaling_quality(submission.scaling_exponents)
 
     for key in (
-        "agentic_eval",
-        "standard_eval",
         "run_to_run_cov",
         "contribution_quality",
         "technical_assistance",
