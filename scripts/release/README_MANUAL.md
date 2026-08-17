@@ -107,6 +107,28 @@ Script will take into account only models which are planned for the current rele
 
 Once the script is executed we need to verify which changes are being introduced into the production catalogue.
 
+## Check for shadowed duplicate blocks
+
+`promote_dev_spec_to_prod.py` keys its upsert on (impl, engine, weights, **device set**). When a promotion adds a device to an existing model, the device set changes, so the script appends a new block instead of replacing the old one. Both blocks then claim the same devices — MODEL_SPECS keeps the last one (so run.py is fine), but the docs generator renders the first, publishing a stale or internal image tag. This produced wrong quickstarts for Qwen3.6-27B and Qwen3-Embedding-4B at v0.20.0.
+
+ Run this immediately after promotion, before export_model_spec.py:
+```bash 
+ `PYTHONPATH=. python3 -c "
+ import collections
+ from workflows.model_spec import spec_templates
+ seen = collections.defaultdict(list)
+ for t in spec_templates:
+     for s in t.expand_to_specs():
+         seen[s.model_id].append(getattr(t, 'version', None))
+ dups = {k: v for k, v in seen.items() if len(v) > 1}
+ for k, v in sorted(dups.items()):
+     print('DUPLICATE', k, '<- versions', v)
+ assert not dups, 'promotion created shadowed duplicate blocks'
+ "`
+```
+ 
+ If it fails, delete the older block from workflows/model_specs/prod/<type>.yaml and re-run. len(MODEL_SPECS) must be unchanged afterwards — the deleted block was unreachable, so release_model_spec.json and values.yaml will show no diff.
+
 ## export_model_spec.py
 
 After changes in production catalogue have been added and committed, re-generate the Model Support docs and `README.md` table and `release_model_spec.json` file by running:
@@ -187,18 +209,52 @@ crane copy <src> <dst>
 
 #crane copy ghcr.io/tenstorrent/tt-shield/tt-media-inference-server:0.13.0-80180b9d7d07ea9fcc99f723d4d46fe7a0b233bd-e799052-76185610891 ghcr.io/tenstorrent/tt-media-inference-server:0.14.0-80180b9
 ```
+## Step 2: Re-bake the model catalogue into the copied image
 
-## Step 2: verification through the list model images
+ crane copy re-labels; it does not rebuild. The tt-shield image was built before promotion, so its baked /home/container_app_user/model_specs/model_spec.json is the prod catalogue from the previous release. Any model or device promoted in this release will be missing from it — the container crashes (No model spec found) or silently serves the old config. This affected v0.17.0 through v0.20.0.
+
+ Run this on the release branch, after export_model_spec.py, for each image you copied:
+```bash
+ REPO=<dest repo>; TAG=<dest tag>
+ Example:
+ REPO=ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+ TAG=0.17.0-8c48a10-f52987a
+
+ crane copy "$REPO@$(crane digest "$REPO:$TAG")" "$REPO:$TAG-precatalogfix"    # backup
+ AMD64=$(crane manifest "$REPO:$TAG" | python3 -c "import json,sys;m=json.load(sys.stdin);print([x['digest'] for x in m['manifests'] if x['platform']['architecture']=='amd64'][0])")
+
+ PYTHONPATH=. python3 -c "from scripts.build_docker_images import generate_model_specs_json; generate_model_specs_json()"
+ rm -rf /tmp/catalog && mkdir -p /tmp/catalog/home/container_app_user/model_specs
+ cp model_spec.json /tmp/catalog/home/container_app_user/model_specs/
+ tar --owner=1000 --group=1000 -C /tmp/catalog -cf /tmp/catalog-layer.tar home
+
+ crane append -b "$REPO@$AMD64" -f /tmp/catalog-layer.tar -t "$REPO:$TAG"
+```
+ Verification: the release_version inside the image must equal the release you are cutting. If it is one behind, the re-bake did not run.
+ ```bash
+ crane export "$REPO:$TAG" - | tar -xO home/container_app_user/model_specs/model_spec.json \
+  | python3 -c "import json,sys; print(json.load(sys.stdin)['release_version'])"
+```
+Note: this drops the buildkit attestation and changes the digest — the tag stays the same. Only applies to vLLM images; media/forge containers get their config from host env vars.
+
+## Step 3: verification through the list model images
 
 Run `python3 scripts/list_model_images.py` in order to confirm that docker image is trully present within the repository. This is a safeguard which ensures docker images are named properly.
 
 The full script path is: ```https://github.com/tenstorrent/tt-inference-server/blob/main/scripts/list_model_images.py```
 
-## Update Release Zoo
+## Step 4: tag stable branch with version value
 
-From the `tt-shield` Actions tab we need to run the `"Update Release Zoo"` action so the page on Models Dashboard is being refreshed.
-
-https://github.com/tenstorrent/tt-shield/actions/workflows/update-release-zoo.yml
+* we create a new tag for `stable` HEAD value with value `vx.x.x`
+  
+  `git tag vx.x.x`
+  
+  `git push origin vx.x.x`
+* we rename the `stable` branch to `vx.x.x` value, and afterwards we can delete the `stable`
+  
+  `git switch -c vx.x.x`
+  
+  `git push --set-upstream origin vx.x.x`
 
 ## Create post-release branch and PR
 
@@ -223,19 +279,6 @@ As a comment, at the top of the HTML body, within the commented section, add met
 <!-- 
 * NOTE: the release will process with `post-release-vx.x.x` branch which is now "stable" from `main`
 -->
-
-## Step 3: tag stable branch with version value
-
-* we create a new tag for `stable` HEAD value with value `vx.x.x`
-  
-  `git tag vx.x.x`
-  
-  `git push origin vx.x.x`
-* we rename the `stable` branch to `vx.x.x` value, and afterwards we can delete the `stable`
-  
-  `git switch -c vx.x.x`
-  
-  `git push --set-upstream origin vx.x.x`
 
 ## Create GitHub RELEASE Object
 
@@ -294,7 +337,12 @@ Once the workflow assets are downloaded, we can upload them to already created R
 
 At the end, we change the status of the Release Object to `Published` and mark the Release as the latest one.
 
-
 <!-- 
 Note: any hot-fixes to be applied on the RC branch should be based on the RC branch `<namett>/hot-fix-<fix-description>` and be PR back into `dev` via merge commit then `git cherry-pick` the changes back into RC branch. This ensures all future branches have the same commit SHAs and history is correct.
 -->
+
+## Update Release Zoo
+
+From the `tt-shield` Actions tab we need to run the `"Update Release Zoo"` action so the page on Models Dashboard is being refreshed.
+
+https://github.com/tenstorrent/tt-shield/actions/workflows/update-release-zoo.yml
