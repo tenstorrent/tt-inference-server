@@ -83,7 +83,7 @@ class TestAgenticWorkflowRunTasks:
         assert outcomes[0].exit_code == 1
         assert outcomes[0].block_kind is None
 
-    def test_failed_result_block_gives_failed_outcome(self):
+    def test_failed_result_block_is_deferred_to_acceptance_criteria(self):
         wf = self._make_workflow()
         block = _fake_block(success=False)
         with patch(
@@ -93,7 +93,7 @@ class TestAgenticWorkflowRunTasks:
             outcomes = wf.run_tasks()
 
         assert len(outcomes) == 1
-        assert outcomes[0].exit_code == 1
+        assert outcomes[0].exit_code == 0
         assert outcomes[0].block_kind == "evals"
 
     def test_runner_returns_empty_list_gives_failed_outcome(self):

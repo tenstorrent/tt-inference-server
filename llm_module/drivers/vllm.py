@@ -91,6 +91,9 @@ def build_vllm_bench_serve_argv(
                 "--custom-output-len",
                 str(config.osl),
                 "--disable-shuffle",
+                # The custom file contains raw chat content sized so the server's
+                # single template application reaches the requested ISL.
+                "--skip-chat-template",
             ]
         )
     else:
@@ -181,9 +184,8 @@ class VLLMBenchDriver(LLMDriver):
 
         DiffusionGemma denoises whole 256-token canvases and halts on entropy;
         random-token prompts never halt, so the sweep would only ever measure
-        the 48-step cap. Falls back to the random dataset with a loud warning
-        when the prompts cannot be built (offline host, gated tokenizer), so a
-        benchmark run still produces rows.
+        the 48-step cap. Prompt construction failures are fatal because silently
+        switching to random input would produce mislabeled SPEED-Bench results.
         """
         if "diffusiongemma" not in server.model.lower():
             return None
@@ -200,15 +202,12 @@ class VLLMBenchDriver(LLMDriver):
                 num_prompts=config.num_prompts,
                 trust_remote_code=server.tokenizer_trust_remote_code,
             )
-        except Exception as build_error:  # noqa: BLE001 - fail open to random
-            logger.warning(
-                "falling back to --dataset-name random for %s isl=%d: "
-                "SPEED-Bench prompt construction failed: %r",
-                server.model,
-                config.isl,
-                build_error,
-            )
-            return None
+        except Exception as build_error:
+            raise RuntimeError(
+                "SPEED-Bench prompt construction failed for "
+                f"{server.model} isl={config.isl}; refusing to run a mislabeled "
+                "random-input benchmark"
+            ) from build_error
 
 
 __all__ = ["VLLMBenchDriver", "build_vllm_bench_serve_argv"]

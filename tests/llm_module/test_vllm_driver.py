@@ -5,8 +5,10 @@
 import json
 from pathlib import Path
 
-from llm_module.config import LLMRunConfig, ServerConnection
-from llm_module.drivers.vllm import build_vllm_bench_serve_argv
+import pytest
+
+from llm_module.config import DriverContext, LLMRunConfig, ServerConnection
+from llm_module.drivers.vllm import VLLMBenchDriver, build_vllm_bench_serve_argv
 
 
 def _config():
@@ -124,6 +126,7 @@ def test_custom_dataset_path_switches_off_random():
     assert cmd[cmd.index("--dataset-path") + 1] == "/tmp/speed_bench_prompts.jsonl"
     assert cmd[cmd.index("--custom-output-len") + 1] == "128"
     assert "--disable-shuffle" in cmd
+    assert "--skip-chat-template" in cmd
     assert "--random-input-len" not in cmd
     assert "--random-output-len" not in cmd
 
@@ -144,3 +147,31 @@ def test_without_custom_dataset_the_sweep_stays_random():
 
     assert cmd[cmd.index("--dataset-name") + 1] == "random"
     assert cmd[cmd.index("--random-input-len") + 1] == "128"
+
+
+def test_speed_bench_prompt_failure_does_not_fall_back_to_random(
+    monkeypatch, tmp_path
+):
+    from llm_module import speed_bench_prompts
+
+    def fail_prompt_build(**_kwargs):
+        raise OSError("dataset unavailable")
+
+    monkeypatch.setattr(
+        speed_bench_prompts,
+        "write_speed_bench_prompt_file",
+        fail_prompt_build,
+    )
+    server = ServerConnection(
+        base_url="http://127.0.0.1",
+        service_port=8000,
+        model="google/diffusiongemma-26B-A4B-it",
+        output_block_size=256,
+    )
+
+    with pytest.raises(RuntimeError, match="refusing to run a mislabeled"):
+        VLLMBenchDriver._maybe_speed_bench_prompts(
+            _config(),
+            server,
+            DriverContext(output_dir=tmp_path),
+        )

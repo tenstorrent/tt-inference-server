@@ -60,7 +60,8 @@ class VLLMBenchParser(LLMResultParser):
                     "output_blocks_per_request": _round(blocks_per_request, 4),
                     "output_blocks_per_second": _round(
                         request_throughput * blocks_per_request
-                        if request_throughput is not None and blocks_per_request
+                        if request_throughput is not None
+                        and blocks_per_request is not None
                         else None,
                         4,
                     ),
@@ -71,7 +72,9 @@ class VLLMBenchParser(LLMResultParser):
                     # scheduling blocks that request emitted instead.
                     "mean_block_latency_ms": _round(
                         mean_e2el_ms / blocks_per_request
-                        if mean_e2el_ms is not None and blocks_per_request
+                        if mean_e2el_ms is not None
+                        and blocks_per_request is not None
+                        and blocks_per_request > 0
                         else None,
                         4,
                     ),
@@ -113,19 +116,39 @@ def _blocks_per_request(
     completed: float | None,
     output_block_size: int,
 ) -> float | None:
+    if completed is None or completed < 0 or not completed.is_integer():
+        return None
+    completed_count = int(completed)
+    if completed_count == 0:
+        return 0.0
+
     output_lens = raw.get("output_lens")
     if isinstance(output_lens, list) and output_lens:
         valid_lens = [_num(value) for value in output_lens]
         if all(value is not None and value >= 0 for value in valid_lens):
+            # vLLM detailed results include a zero-length entry for each failed
+            # request, while request_throughput and mean_e2el_ms use completed
+            # requests only. Remove exactly the excess zero entries so every
+            # derived metric uses the same statistical population.
+            excess = len(valid_lens) - completed_count
+            if excess < 0:
+                return None
+            completed_lens = []
+            for value in valid_lens:
+                if excess and value == 0:
+                    excess -= 1
+                    continue
+                completed_lens.append(value)
+            if excess or len(completed_lens) != completed_count:
+                return None
             return sum(
                 math.ceil(value / output_block_size) if value else 0
-                for value in valid_lens
-            ) / len(valid_lens)
+                for value in completed_lens
+            ) / completed_count
 
-    output_tokens = _per_request(raw.get("total_output_tokens"), completed)
-    if output_tokens is None or output_tokens <= 0:
-        return None
-    return float(math.ceil(output_tokens / output_block_size))
+    # Totals cannot recover mean(ceil(per-request tokens / block size)); using
+    # ceil(mean tokens / block size) produces biased block throughput/latency.
+    return None
 
 
 def _errors(value: Any) -> Optional[int]:
