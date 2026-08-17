@@ -21,12 +21,18 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from reference_config.evals.eval_config import TerminalBenchEvalConfig
+from workflows.workflow_venvs import HARBOR_REF, HARBOR_REPO
 
 
 def _config(**overrides) -> TerminalBenchEvalConfig:
     base = dict(dataset="terminal-bench/terminal-bench-2", agent="terminus-2")
     base.update(overrides)
     return TerminalBenchEvalConfig(**base)
+
+
+def test_harbor_checkout_uses_reachable_prebuilt_mirror_revision():
+    assert HARBOR_REPO == "https://github.com/dcvijeticTT/harbor.git"
+    assert HARBOR_REF == "a7f80f9baf674909b98da952e102b37b0a846b0d"
 
 
 def test_defaults_to_docker_with_no_env(monkeypatch):
@@ -50,6 +56,8 @@ def test_kubernetes_env_type_emits_namespace_and_image_mode(monkeypatch):
         "HARBOR_K8S_KUBECONFIG",
         "HARBOR_K8S_NODE_SELECTOR",
         "HARBOR_K8S_POD_LABELS",
+        "HARBOR_K8S_PREBUILT_IMAGE_MIRRORS",
+        "HARBOR_K8S_PREBUILT_IMAGE_MIRROR_FAILURE_POLICY",
         "HARBOR_K8S_REGISTRY_INSECURE",
         "HARBOR_K8S_SKIP_IMAGE_CHECK",
     ):
@@ -58,7 +66,7 @@ def test_kubernetes_env_type_emits_namespace_and_image_mode(monkeypatch):
     cfg = _config()
 
     assert cfg.environment_type == "kubernetes"
-    assert cfg.environment_kwargs == {"namespace": "default", "image_mode": "prebuilt"}
+    assert cfg.environment_kwargs == {"namespace": "default", "image_mode": "auto"}
 
 
 def test_in_cluster_run_omits_kubeconfig(monkeypatch):
@@ -73,7 +81,7 @@ def test_in_cluster_run_omits_kubeconfig(monkeypatch):
 
     assert cfg.environment_kwargs == {
         "namespace": "harbor-kube-env",
-        "image_mode": "prebuilt",
+        "image_mode": "auto",
         "node_selector": {"tt-pool": "shield"},
     }
     # Absent keys, not None values: harbor's KubernetesEnvironment treats a
@@ -84,22 +92,56 @@ def test_in_cluster_run_omits_kubeconfig(monkeypatch):
 
 def test_passthrough_vars_reach_kwargs(monkeypatch):
     monkeypatch.setenv("HARBOR_ENV_TYPE", "kubernetes")
-    monkeypatch.setenv("HARBOR_K8S_NAMESPACE", "harbor-kube-env")
-    monkeypatch.setenv("HARBOR_K8S_IMAGE_MODE", "build-and-push")
+    monkeypatch.setenv("HARBOR_K8S_NAMESPACE", "agentic-evals")
+    monkeypatch.setenv("HARBOR_K8S_IMAGE_MODE", "auto")
     monkeypatch.setenv("HARBOR_K8S_CONTEXT", "kix1")
-    monkeypatch.setenv("HARBOR_K8S_IMAGE_REGISTRY", "registry.local/harbor")
+    monkeypatch.setenv(
+        "HARBOR_K8S_IMAGE_REGISTRY",
+        "10.43.20.45:5000/harbor-builds",
+    )
     monkeypatch.setenv("HARBOR_K8S_IMAGE_PULL_SECRET", "regcred")
     monkeypatch.setenv("HARBOR_K8S_SERVICE_ACCOUNT", "harbor-task")
+    monkeypatch.setenv("HARBOR_K8S_IMAGE_BUILDER", "buildkit")
+    monkeypatch.setenv(
+        "HARBOR_K8S_BUILDKIT_ADDRESS",
+        "unix:///run/buildkit/buildkitd.sock",
+    )
+    monkeypatch.setenv("HARBOR_K8S_COMPOSE_STRATEGY", "pods")
+    monkeypatch.setenv(
+        "HARBOR_K8S_PREBUILT_IMAGE_MIRRORS",
+        '{"docker.io": "http://10.43.20.45:5000"}',
+    )
+    monkeypatch.setenv(
+        "HARBOR_K8S_PREBUILT_IMAGE_MIRROR_FAILURE_POLICY",
+        "fallback",
+    )
+    monkeypatch.setenv("HARBOR_K8S_NODE_SELECTOR", '{"tt-pool": "shield"}')
+    monkeypatch.setenv(
+        "HARBOR_K8S_POD_LABELS",
+        '{"ci-run-id": "123456789", "ci-workflow": "agentic"}',
+    )
 
     cfg = _config()
 
     assert cfg.environment_kwargs == {
-        "namespace": "harbor-kube-env",
-        "image_mode": "build-and-push",
+        "namespace": "agentic-evals",
+        "image_mode": "auto",
         "context": "kix1",
-        "image_registry": "registry.local/harbor",
+        "image_registry": "10.43.20.45:5000/harbor-builds",
         "image_pull_secret": "regcred",
         "service_account": "harbor-task",
+        "image_builder": "buildkit",
+        "buildkit_address": "unix:///run/buildkit/buildkitd.sock",
+        "compose_strategy": "pods",
+        "prebuilt_image_mirrors": {
+            "docker.io": "http://10.43.20.45:5000",
+        },
+        "prebuilt_image_mirror_failure_policy": "fallback",
+        "node_selector": {"tt-pool": "shield"},
+        "pod_labels": {
+            "ci-run-id": "123456789",
+            "ci-workflow": "agentic",
+        },
     }
 
 
@@ -119,6 +161,17 @@ def test_registry_boolean_flags_reject_invalid_values(monkeypatch):
     monkeypatch.setenv("HARBOR_K8S_REGISTRY_INSECURE", "sometimes")
 
     with pytest.raises(ValueError, match="HARBOR_K8S_REGISTRY_INSECURE"):
+        _config()
+
+
+def test_prebuilt_image_mirrors_must_be_a_json_string_map(monkeypatch):
+    monkeypatch.setenv("HARBOR_ENV_TYPE", "kubernetes")
+    monkeypatch.setenv(
+        "HARBOR_K8S_PREBUILT_IMAGE_MIRRORS",
+        '{"docker.io": 5000}',
+    )
+
+    with pytest.raises(ValueError, match="HARBOR_K8S_PREBUILT_IMAGE_MIRRORS"):
         _config()
 
 
@@ -170,7 +223,7 @@ def test_kubeconfig_path_is_never_a_kwarg(monkeypatch):
 
     cfg = _config()
 
-    assert cfg.environment_kwargs == {"namespace": "default", "image_mode": "prebuilt"}
+    assert cfg.environment_kwargs == {"namespace": "default", "image_mode": "auto"}
 
 
 def test_harbor_k8s_kubeconfig_is_rejected(monkeypatch):
