@@ -126,6 +126,25 @@ struct TtsConfig : RunnerConfigBase {
   // defaults::TTS_ENCODER_ENABLED.
   bool encoderEnabled = defaults::TTS_ENCODER_ENABLED;
 
+  // 0 = leave the engine's TtsSchedulerParams::max_new_tokens default alone.
+  // See defaults::TTS_MAX_NEW_TOKENS.
+  uint32_t maxNewTokens = defaults::TTS_MAX_NEW_TOKENS;
+
+  // Literal BOS token prepended to the compiled prompt; empty = none.
+  // Resolved in ttsEngineConfig(). See defaults::TTS_BOS_TOKEN.
+  std::string bosToken;
+
+  // "socket" (local shm) or "tcp" (remote codec behind a tts_socket_proxy).
+  // See defaults::TTS_ENCODER_TRANSPORT. Validated in ttsEngineConfig().
+  std::string encoderTransport = defaults::TTS_ENCODER_TRANSPORT;
+  std::string decoderTransport = defaults::TTS_DECODER_TRANSPORT;
+
+  // tts_socket_proxy endpoints; only read when the transport above is "tcp".
+  std::string encoderProxyHost = defaults::TTS_ENCODER_PROXY_HOST;
+  std::string decoderProxyHost = defaults::TTS_DECODER_PROXY_HOST;
+  uint16_t encoderProxyPort = defaults::TTS_PROXY_PORT;
+  uint16_t decoderProxyPort = defaults::TTS_PROXY_PORT;
+
   // Socket descriptor prefixes written by the model launcher into /dev/shm.
   std::string encoderSocketDescriptorPrefix =
       defaults::TTS_ENCODER_SOCKET_DESCRIPTOR_PREFIX;

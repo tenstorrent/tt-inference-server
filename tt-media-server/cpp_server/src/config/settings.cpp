@@ -580,6 +580,42 @@ TtsConfig ttsEngineConfig() {
     }
     cfg.tokenizerPath = envString(
         "TTS_TOKENIZER_PATH", tokenizerPath(ModelType::LLAMA_3_1_8B_INSTRUCT));
+
+    // Resolve the prompt-leading BOS. Explicit TTS_BOS_TOKEN wins; otherwise
+    // read bos_token from the tokenizer_config.json beside the tokenizer, the
+    // same source the LLM tokenizers use (llama_tokenizer.cpp:41). Auto-detect
+    // is best-effort: a missing or malformed config leaves bosToken empty and
+    // the prompt keeps its previous shape rather than failing startup.
+    if (!envBool("TTS_ADD_BOS_TOKEN", defaults::TTS_ADD_BOS_TOKEN)) {
+      cfg.bosToken.clear();
+    } else {
+      cfg.bosToken = envString("TTS_BOS_TOKEN", defaults::TTS_BOS_TOKEN);
+      if (cfg.bosToken.empty() && !cfg.tokenizerPath.empty()) {
+        const std::filesystem::path configPath =
+            std::filesystem::path(cfg.tokenizerPath).parent_path() /
+            "tokenizer_config.json";
+        try {
+          const auto tokenizerCfg =
+              utils::tokenizers::getTokenizerConfig(configPath.string());
+          if (tokenizerCfg.add_bos_token) {
+            cfg.bosToken = tokenizerCfg.bos_token;
+          }
+        } catch (const std::exception& e) {
+          TT_LOG_WARN(
+              "[Config] TTS BOS auto-detect failed ({}): {}; prompt will have "
+              "no leading BOS. Set TTS_BOS_TOKEN to fix.",
+              configPath.string(), e.what());
+        }
+      }
+    }
+    if (cfg.bosToken.empty()) {
+      TT_LOG_WARN(
+          "[Config] TTS prompt has no leading BOS; the reference compiler "
+          "prepends one (e.g. <|begin_of_text|>). Set TTS_BOS_TOKEN if this is "
+          "not intended.");
+    } else {
+      TT_LOG_INFO("[Config] TTS prompt BOS = '{}'", cfg.bosToken);
+    }
     cfg.voiceSampleRateHz = static_cast<uint32_t>(envUlong(
         "TTS_VOICE_SAMPLE_RATE_HZ", defaults::TTS_VOICE_SAMPLE_RATE_HZ));
     cfg.voiceChannels = static_cast<uint16_t>(
@@ -591,6 +627,45 @@ TtsConfig ttsEngineConfig() {
 
     cfg.encoderEnabled =
         envBool("TTS_ENCODER_ENABLED", defaults::TTS_ENCODER_ENABLED);
+    cfg.maxNewTokens = static_cast<uint32_t>(
+        envUlong("TTS_MAX_NEW_TOKENS", defaults::TTS_MAX_NEW_TOKENS));
+
+    // Transport selection. Reject anything other than socket/tcp up front —
+    // a typo here would otherwise silently fall back to shm and fail later
+    // with a confusing descriptor error.
+    auto readTransport = [](const char* var, const char* fallback) {
+      const std::string v = envStringLower(var, fallback);
+      if (v != "socket" && v != "tcp") {
+        throw std::runtime_error("[Config] Unknown " + std::string(var) + "='" +
+                                 v + "'; expected one of: socket, tcp");
+      }
+      return v;
+    };
+    cfg.encoderTransport =
+        readTransport("TTS_ENCODER_TRANSPORT", defaults::TTS_ENCODER_TRANSPORT);
+    cfg.decoderTransport =
+        readTransport("TTS_DECODER_TRANSPORT", defaults::TTS_DECODER_TRANSPORT);
+
+    cfg.encoderProxyHost =
+        envString("TTS_ENCODER_PROXY_HOST", defaults::TTS_ENCODER_PROXY_HOST);
+    cfg.decoderProxyHost =
+        envString("TTS_DECODER_PROXY_HOST", defaults::TTS_DECODER_PROXY_HOST);
+    cfg.encoderProxyPort = static_cast<uint16_t>(
+        envUlong("TTS_ENCODER_PROXY_PORT", defaults::TTS_PROXY_PORT));
+    cfg.decoderProxyPort = static_cast<uint16_t>(
+        envUlong("TTS_DECODER_PROXY_PORT", defaults::TTS_PROXY_PORT));
+
+    // A tcp transport with no host is a deployment mistake, not a default.
+    // Fail at config time with the variable name rather than at connect time.
+    if (cfg.encoderEnabled && cfg.encoderTransport == "tcp" &&
+        cfg.encoderProxyHost.empty()) {
+      throw std::runtime_error(
+          "[Config] TTS_ENCODER_TRANSPORT=tcp requires TTS_ENCODER_PROXY_HOST");
+    }
+    if (cfg.decoderTransport == "tcp" && cfg.decoderProxyHost.empty()) {
+      throw std::runtime_error(
+          "[Config] TTS_DECODER_TRANSPORT=tcp requires TTS_DECODER_PROXY_HOST");
+    }
     cfg.encoderSocketDescriptorPrefix =
         envString("TTS_ENCODER_SOCKET_DESCRIPTOR_PREFIX",
                   defaults::TTS_ENCODER_SOCKET_DESCRIPTOR_PREFIX);

@@ -183,6 +183,45 @@ constexpr uint16_t TTS_AUDIO_CHANNELS = 1;
 // (reference audio) requests then fail fast instead of hanging. Default true
 // preserves the full three-pipeline behaviour.
 constexpr bool TTS_ENCODER_ENABLED = true;
+
+// Hard cap on speech tokens generated per request. 0 keeps the engine's own
+// TtsSchedulerParams default (3000, roughly a minute of audio). Blaze samples
+// on device with top_k clamped to 32 and no repetition/frequency penalties, so
+// long prompts can degenerate into a repeated token and never emit
+// <|speech_end|>; this bounds that runaway to a predictable truncation.
+constexpr uint32_t TTS_MAX_NEW_TOKENS = 0;
+
+// Leading BOS for the TTS prompt. The reference compiler emits
+//   [BOS, <|bot|>, ...text..., <|speech_start|>]
+// but compilePromptString() starts at <|bot|> and Tokenizer::encode() does not
+// add special tokens, so the prompt was one token short of what the model was
+// trained on. Empty string = auto-detect bos_token from the
+// tokenizer_config.json sitting next to TTS_TOKENIZER_PATH; set TTS_BOS_TOKEN
+// to override the literal, or TTS_ADD_BOS_TOKEN=0 to restore the old no-BOS
+// behaviour.
+constexpr const char* TTS_BOS_TOKEN = "";
+constexpr bool TTS_ADD_BOS_TOKEN = true;
+
+// Transport for the TTS encoder / decoder pipelines: "socket" (tt-metal H2D/D2H
+// shared memory, descriptors under /dev/shm) or "tcp" (reach a remote
+// socket_encoder.py / socket_decoder.py through a tts_socket_proxy).
+//
+// TCP exists because tt-metal's H2D/D2H sockets are shared-memory only: when
+// blaze occupies every chip of the quad host there is no local chip left for
+// the codecs, so they run on another host behind a proxy that owns the shm hop
+// there. The speechlm pipeline is shm-only and is unaffected by these.
+// Default "socket" preserves the existing single-host behaviour.
+constexpr const char* TTS_ENCODER_TRANSPORT = "socket";
+constexpr const char* TTS_DECODER_TRANSPORT = "socket";
+
+// tts_socket_proxy endpoints, used only when the matching transport is "tcp".
+// Host has no default on purpose — an unset host with transport=tcp is a
+// configuration error and is rejected at startup rather than dialled blindly.
+// The port matches tt_llm_engine::pipeline::tts_proxy::kDefaultPort.
+constexpr const char* TTS_ENCODER_PROXY_HOST = "";
+constexpr const char* TTS_DECODER_PROXY_HOST = "";
+constexpr uint16_t TTS_PROXY_PORT = 5610;
+
 constexpr const char* TTS_ENCODER_SOCKET_DESCRIPTOR_PREFIX = "tts2_encoder";
 constexpr const char* TTS_SPEECHLM_SOCKET_DESCRIPTOR_PREFIX = "tts2_speechlm";
 constexpr const char* TTS_DECODER_SOCKET_DESCRIPTOR_PREFIX = "tts2_decoder";

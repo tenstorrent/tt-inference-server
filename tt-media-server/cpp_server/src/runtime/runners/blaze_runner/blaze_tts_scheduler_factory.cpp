@@ -43,6 +43,17 @@
 #include <tt_llm_engine/pipeline/speechlm_wire_codec.hpp>
 #endif
 
+// TCP encoder/decoder pipelines (tt-llm-engine 7a8c5199 and later). These live
+// in the engine's core library — pure POSIX sockets, no tt-metal — so they are
+// guarded separately from the shm socket pipelines above and are absent on
+// older engine pins.
+#if __has_include(<tt_llm_engine/pipeline/encoder_tcp_pipeline.hpp>) && \
+    __has_include(<tt_llm_engine/pipeline/decoder_tcp_pipeline.hpp>)
+#define TT_MEDIA_SERVER_HAS_TTS_TCP_PIPELINES 1
+#include <tt_llm_engine/pipeline/decoder_tcp_pipeline.hpp>
+#include <tt_llm_engine/pipeline/encoder_tcp_pipeline.hpp>
+#endif
+
 namespace tt::runners::blaze {
 
 namespace {
@@ -300,6 +311,27 @@ engine_tts::TtsSchedulerParams makeEngineTtsParams(
   params.speech_token_base = tt::utils::tts_tokenizer::tokenIdFor(
       tokenizer, tt::utils::tts_tokenizer::SPEECH_TOKEN_BASE);
   params.speech_vocab_size = CODEBOOK_SIZE;
+  if (config.maxNewTokens != 0) {
+    params.max_new_tokens = config.maxNewTokens;
+  }
+
+  // Log the resolved ids. The engine stops generation only on
+  // speech_end_token, so a wrong id here is indistinguishable at runtime from
+  // "the model never emits EOS": generation just runs to max_new_tokens, or
+  // stops at random points if the id collides with a token the model does
+  // emit. Printing it turns that into a one-line check against the tokenizer
+  // (python: tokenizer.convert_tokens_to_ids("<|speech_end|>")).
+  //
+  // Note the id is read from the full vocab (Tokenizer::getEncodedVocab
+  // indexes by id over GetVocabSize()), NOT from the tokenizer's
+  // special-token set — an added token with "special": false resolves here
+  // exactly the same as a special-flagged one. specialTokenIds_ is used only
+  // to strip tokens from decoded text.
+  TT_LOG_INFO(
+      "makeTtsScheduler: tokenizer ids — speech_end={} speech_token_base={} "
+      "vocab_size={} max_new_tokens={}",
+      params.speech_end_token, params.speech_token_base,
+      tokenizer.getEncodedVocab().size(), params.max_new_tokens);
   return params;
 }
 
@@ -499,20 +531,47 @@ std::unique_ptr<tts_scheduler::ITtsScheduler> makeRealTtsScheduler(
       std::make_unique<engine_pipeline::SpeechlmWireCodec>());
 
   std::unique_ptr<engine_pipeline::EncoderPipelineInterface> encoder;
-  if (config.encoderEnabled) {
+  if (!config.encoderEnabled) {
+    TT_LOG_WARN(
+        "makeTtsScheduler: TTS_ENCODER_ENABLED=0 — skipping encoder connect; "
+        "voice-sample requests will be rejected");
+    encoder = std::make_unique<DisabledEncoderPipeline>();
+  } else if (config.encoderTransport == "tcp") {
+#if defined(TT_MEDIA_SERVER_HAS_TTS_TCP_PIPELINES)
+    TT_LOG_INFO("makeTtsScheduler: encoder over TCP proxy at {}:{}",
+                config.encoderProxyHost, config.encoderProxyPort);
+    encoder = std::make_unique<engine_pipeline::EncoderTcpPipeline>(
+        config.encoderProxyHost, config.encoderProxyPort,
+        config.connectTimeoutMs);
+#else
+    throw std::runtime_error(
+        "TTS_ENCODER_TRANSPORT=tcp requires a tt-llm-engine with "
+        "encoder_tcp_pipeline.hpp (commit 7a8c5199 or later)");
+#endif
+  } else {
     encoder = std::make_unique<engine_pipeline::EncoderSocketPipeline>(
         config.encoderSocketDescriptorPrefix,
         config.encoderSocketDescriptorPrefix, config.connectTimeoutMs);
-  } else {
-    TT_LOG_WARN(
-        "makeTtsScheduler: TTS_ENCODER_ENABLED=0 — skipping encoder socket "
-        "connect; voice-sample requests will be rejected");
-    encoder = std::make_unique<DisabledEncoderPipeline>();
   }
 
-  auto decoder = std::make_unique<engine_pipeline::DecoderSocketPipeline>(
-      config.decoderSocketDescriptorPrefix,
-      config.decoderSocketDescriptorPrefix, config.connectTimeoutMs);
+  std::unique_ptr<engine_pipeline::DecoderPipelineInterface> decoder;
+  if (config.decoderTransport == "tcp") {
+#if defined(TT_MEDIA_SERVER_HAS_TTS_TCP_PIPELINES)
+    TT_LOG_INFO("makeTtsScheduler: decoder over TCP proxy at {}:{}",
+                config.decoderProxyHost, config.decoderProxyPort);
+    decoder = std::make_unique<engine_pipeline::DecoderTcpPipeline>(
+        config.decoderProxyHost, config.decoderProxyPort,
+        config.connectTimeoutMs);
+#else
+    throw std::runtime_error(
+        "TTS_DECODER_TRANSPORT=tcp requires a tt-llm-engine with "
+        "decoder_tcp_pipeline.hpp (commit 7a8c5199 or later)");
+#endif
+  } else {
+    decoder = std::make_unique<engine_pipeline::DecoderSocketPipeline>(
+        config.decoderSocketDescriptorPrefix,
+        config.decoderSocketDescriptorPrefix, config.connectTimeoutMs);
+  }
 
   auto scheduler = std::make_unique<engine_tts::TtsScheduler>(
       std::move(speechlm), std::move(encoder), std::move(decoder),

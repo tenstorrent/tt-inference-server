@@ -302,7 +302,8 @@ void BlazeTtsRunner::handleVoiceEncodeResult(
     const auto& tokenizer =
         tt::utils::tts_tokenizer::tokenizerForPath(config.tokenizerPath);
     task.promptTokens = tt::utils::tts_prompt_compiler::compilePromptTokens(
-        tokenizer, task.text, task.description, result.speechIds);
+        tokenizer, task.text, task.description, result.speechIds,
+        config.bosToken);
   } catch (const std::exception& e) {
     sendFinish(task.task_id, domain::tts::TtsFinishReason::Error, e.what());
     return;

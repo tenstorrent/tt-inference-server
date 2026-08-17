@@ -6,9 +6,11 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <sstream>
 #include <stdexcept>
 #include <utility>
 
+#include "utils/logger.hpp"
 #include "utils/tts_prompt_compiler.hpp"
 #include "utils/tts_tokenizer.hpp"
 
@@ -97,7 +99,18 @@ tt::domain::tts::TtsTask TtsRequestPreprocessor::process(
     const auto& tokenizer =
         tt::utils::tts_tokenizer::tokenizerForPath(config.tokenizerPath);
     task.promptTokens = tt::utils::tts_prompt_compiler::compilePromptTokens(
-        tokenizer, request.text, request.description);
+        tokenizer, request.text, request.description,
+        /*promptSpeechIds=*/{}, config.bosToken);
+
+    // Dump the compiled prompt so it can be diffed against the reference
+    // compiler without attaching a debugger or rebuilding: a missing BOS or a
+    // mis-tokenized template shows up here as a length/id mismatch.
+    std::ostringstream ids;
+    for (size_t i = 0; i < task.promptTokens.size(); ++i) {
+      ids << (i ? ", " : "") << task.promptTokens[i];
+    }
+    TT_LOG_DEBUG("[TtsPreprocessor] promptTokens={} bos='{}' ids=[{}]",
+                 task.promptTokens.size(), config.bosToken, ids.str());
   }
 
   return task;

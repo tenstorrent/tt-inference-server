@@ -62,10 +62,18 @@ inline void validatePromptInputs(
 
 inline std::string compilePromptString(
     const std::string& text, const std::optional<std::string>& description,
-    const std::vector<uint32_t>& promptSpeechIds = {}) {
+    const std::vector<uint32_t>& promptSpeechIds = {},
+    const std::string& bosToken = "") {
   validatePromptInputs(text, description);
 
   std::ostringstream prompt;
+  // Tokenizer::encode() calls tokenizers-cpp Encode(), which does NOT add
+  // special tokens, so BOS has to be part of the prompt string. Without it the
+  // model is decoded from a prefix it never saw in training — the reference
+  // compiler emits [BOS, <|bot|>, ...] and this produced [<|bot|>, ...].
+  if (!bosToken.empty()) {
+    prompt << bosToken;
+  }
   if (!promptSpeechIds.empty()) {
     prompt << tts_tokens::AUDIO_PROMPT_START_TOKEN;
     appendSpeechTokens(prompt, promptSpeechIds);
@@ -86,9 +94,10 @@ inline std::string compilePromptString(
 inline std::vector<uint32_t> compilePromptTokens(
     const tt::utils::tokenizers::Tokenizer& tokenizer, const std::string& text,
     const std::optional<std::string>& description,
-    const std::vector<uint32_t>& promptSpeechIds = {}) {
+    const std::vector<uint32_t>& promptSpeechIds = {},
+    const std::string& bosToken = "") {
   return tokenizer.encode(
-      compilePromptString(text, description, promptSpeechIds));
+      compilePromptString(text, description, promptSpeechIds, bosToken));
 }
 
 }  // namespace tt::utils::tts_prompt_compiler
