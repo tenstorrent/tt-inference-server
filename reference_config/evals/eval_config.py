@@ -4668,6 +4668,11 @@ _eval_config_list = [
     # google/gemma-4-31B -- the BASE checkpoint, served by the agentic autoport
     # at models/autoports/google_gemma_4_31b. Distinct from the -it entry above.
     #
+    # Required, not optional: workflows/validate_setup.py asserts
+    # `model_spec.model_name in EVAL_CONFIGS` for WorkflowType.RELEASE, so without
+    # an entry a `--workflow release` dispatch dies at setup right after the docker
+    # build.
+    #
     # This checkpoint is not instruction-tuned: its tokenizer has
     # chat_template=None. Task selection follows from that, and deliberately
     # differs from every -it entry in this file:
@@ -4675,23 +4680,40 @@ _eval_config_list = [
     #   * Few-shot completion tasks only, on the default local-completions
     #     eval_class with use_chat_api=False and apply_chat_template=False, so
     #     nothing depends on a chat template the checkpoint does not define.
-    #   * gpqa_diamond_generative_n_shot rather than r1_gpqa_diamond. The -it
-    #     entry rejects the n-shot variant precisely because its 5-shot examples
-    #     demonstrate bare "(C)" answers and suppress reasoning -- which is the
-    #     correct methodology for a base completion model.
+    #   * gpqa_diamond_generative_n_shot rather than r1_gpqa_diamond. Every
+    #     instruct/reasoning entry in this file carries the opposite instruction --
+    #     "Do NOT switch to gpqa_diamond_generative_n_shot, its 5-shot examples
+    #     demonstrate bare (C) answers and suppress reasoning (that cost gemma-4
+    #     ~30 points)". That guidance is correct *for a reasoning model*, and this
+    #     entry inverts it deliberately: a base checkpoint has no reasoning
+    #     training and no chat template to elicit a thought channel, so there is no
+    #     reasoning to suppress. The n-shot examples are what supply the answer
+    #     format a completion model needs. Using r1_gpqa_diamond here would score
+    #     the absence of a capability the checkpoint never had.
     #   * No ifeval / meta_ifeval. IFEval measures instruction following, which
     #     this checkpoint was never trained for; scoring it here would measure
     #     the absence of instruction tuning, not the correctness of the port.
     #   * Greedy generation, matching the autoport's greedy-only serving policy.
     #
-    # Every score is deliberately unreferenced (gpu_reference_score_ref="TBD",
-    # same pattern as Qwen/Qwen3-4B above). Google publishes benchmark numbers
-    # for the instruction-tuned Gemma 4 models only -- the base revision's HF
-    # API reports model-index: null -- so there is no honest published base
-    # figure to grade against, and back-filling one from our own measurement
-    # would make the check circular. These tasks therefore RUN and REPORT but
-    # do not gate. Establishing the references needs either a published base
-    # score or an H100/H200-class reference run.
+    # Every score is deliberately unreferenced -- both published_score and
+    # gpu_reference_score are None (same pattern as Qwen/Qwen3-4B above).
+    #
+    # This departs from the convention used by the other recent bring-ups, which
+    # set published_score from the checkpoint's own HF card and omit only
+    # gpu_reference_score. That is not available here: google/gemma-4-31B's HF API
+    # reports model-index: null and Google's card publishes benchmark numbers for
+    # the instruction-tuned models only. Transplanting an instruct figure onto a
+    # base checkpoint would be worse than no reference -- base models score far
+    # below their instruction-tuned siblings on these tasks -- and back-filling one
+    # from our own measurement would make the check circular.
+    #
+    # Consequence, via compute_accuracy_check(): with no gpu_reference_score the
+    # check falls back to the published ratio, and with no published_score either
+    # it returns ReportCheckTypes.NA. So these tasks RUN and REPORT but do not
+    # grade. Note that at EXPERIMENTAL this changes nothing about acceptance
+    # anyway, because ModelStatusTypes.evals_enforced is False; it becomes a real
+    # gate at FUNCTIONAL and above. Establishing a reference needs either a
+    # published base score or an H100/H200-class reference run.
     # =========================================================================
     EvalConfig(
         hf_model_repo="google/gemma-4-31B",
