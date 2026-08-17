@@ -4664,6 +4664,102 @@ _eval_config_list = [
             ),
         ],
     ),
+    # =========================================================================
+    # google/gemma-4-31B -- the BASE checkpoint, served by the agentic autoport
+    # at models/autoports/google_gemma_4_31b. Distinct from the -it entry above.
+    #
+    # This checkpoint is not instruction-tuned: its tokenizer has
+    # chat_template=None. Task selection follows from that, and deliberately
+    # differs from every -it entry in this file:
+    #
+    #   * Few-shot completion tasks only, on the default local-completions
+    #     eval_class with use_chat_api=False and apply_chat_template=False, so
+    #     nothing depends on a chat template the checkpoint does not define.
+    #   * gpqa_diamond_generative_n_shot rather than r1_gpqa_diamond. The -it
+    #     entry rejects the n-shot variant precisely because its 5-shot examples
+    #     demonstrate bare "(C)" answers and suppress reasoning -- which is the
+    #     correct methodology for a base completion model.
+    #   * No ifeval / meta_ifeval. IFEval measures instruction following, which
+    #     this checkpoint was never trained for; scoring it here would measure
+    #     the absence of instruction tuning, not the correctness of the port.
+    #   * Greedy generation, matching the autoport's greedy-only serving policy.
+    #
+    # Every score is deliberately unreferenced (gpu_reference_score_ref="TBD",
+    # same pattern as Qwen/Qwen3-4B above). Google publishes benchmark numbers
+    # for the instruction-tuned Gemma 4 models only -- the base revision's HF
+    # API reports model-index: null -- so there is no honest published base
+    # figure to grade against, and back-filling one from our own measurement
+    # would make the check circular. These tasks therefore RUN and REPORT but
+    # do not gate. Establishing the references needs either a published base
+    # score or an H100/H200-class reference run.
+    # =========================================================================
+    EvalConfig(
+        hf_model_repo="google/gemma-4-31B",
+        tasks=[
+            EvalTask(
+                task_name="mmlu_generative",
+                num_fewshot=5,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,get_response",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "timeout": "3600",
+                },
+                gen_kwargs={
+                    "stream": "False",
+                    "do_sample": "false",
+                    "max_gen_toks": 256,
+                },
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 0.000063,
+                    EvalLimitMode.CI_NIGHTLY: 0.15,
+                },
+            ),
+            EvalTask(
+                task_name="gpqa_diamond_generative_n_shot",
+                num_fewshot=5,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,flexible-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "timeout": "3600",
+                },
+                gen_kwargs={
+                    "stream": "False",
+                    "do_sample": "false",
+                    "max_gen_toks": 256,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
     EvalConfig(
         hf_model_repo="google/gemma-4-26B-A4B-it",
         tasks=[
