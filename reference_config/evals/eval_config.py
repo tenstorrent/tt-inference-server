@@ -57,6 +57,9 @@ def _harbor_env_kwargs() -> Dict[str, Any]:
         # in Harbor's environment kwargs rather than its container env.
         "HARBOR_K8S_IMAGE_BUILDER": "image_builder",
         "HARBOR_K8S_BUILDKIT_ADDRESS": "buildkit_address",
+        "HARBOR_K8S_PREBUILT_IMAGE_MIRROR_FAILURE_POLICY": (
+            "prebuilt_image_mirror_failure_policy"
+        ),
         # Opt-in compose execution strategy. "pods" runs each compose
         # service as a container of one ordinary pod (no privileged DinD),
         # but requires HARBOR_K8S_IMAGE_REGISTRY the cluster can pull from.
