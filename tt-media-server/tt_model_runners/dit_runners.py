@@ -1342,6 +1342,18 @@ class TTMiniMaxH3Runner(TTDiTRunner):
             self.logger.info(
                 f"Device {self.device_id}: enabled denoise trace-capture for mesh {mesh}"
             )
+        # Memory-tight small meshes: evict stages between phases (coresident=False) instead of keeping
+        # all three resident. Upstream defaults untuned shapes to coresident=True, which keeps the
+        # transformer resident AND accumulating its per-request cached buffers (the padded-sequence
+        # zero rows) across jobs -> a per-job DRAM leak that OOMs/wedges after ~10 back-to-back renders.
+        # Eviction drops those buffers each phase (cost: a ~1s per-shape rebuild). H3_CORESIDENT=1 forces
+        # the resident path back for A/B or on a roomier mesh.
+        if os.environ.get("H3_CORESIDENT", "0") != "1" and not is_large_mesh(mesh):
+            try:
+                pipe.coresident = False
+                self.logger.info(f"Device {self.device_id}: coresident=False (evict stages) for mesh {mesh}")
+            except Exception as e:
+                self.logger.debug(f"Device {self.device_id}: could not set coresident: {e}")
         return pipe
 
     def load_weights(self):
