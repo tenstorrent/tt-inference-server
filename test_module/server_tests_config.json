@@ -905,6 +905,35 @@
                 "mock_mode": false
             }
         },
+        "MiniMaxH3LifecycleDownloadTest": {
+            "module": "test_module.load_param_tests.minimax_h3_lifecycle_download_test",
+            "markers": [
+                "e2e",
+                "slow",
+                "heavy"
+            ],
+            "test_config": {
+                "timeout": 2400,
+                "retry_attempts": 0,
+                "retry_delay": 0,
+                "break_on_failure": false,
+                "mock_mode": false
+            }
+        },
+        "MiniMaxH3CancelLifecycleTest": {
+            "module": "test_module.load_param_tests.minimax_h3_cancel_lifecycle_test",
+            "markers": [
+                "e2e",
+                "slow"
+            ],
+            "test_config": {
+                "timeout": 600,
+                "retry_attempts": 0,
+                "retry_delay": 0,
+                "break_on_failure": false,
+                "mock_mode": false
+            }
+        },
         "MiniMaxH3VideoQualityTest": {
             "module": "test_module.eval_tests.minimax_h3_video_quality_test",
             "markers": [

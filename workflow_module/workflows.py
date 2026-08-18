@@ -505,16 +505,30 @@ class ReleaseWorkflow(WorkflowExecution):
         children = self.children
         outcomes: List[TaskOutcome] = []
         for child_name in children:
-            outcomes.extend(self._run_child(child_name))
+            child_outcomes = self._run_child(child_name)
+            outcomes.extend(child_outcomes)
+            if self._child_failed(child_outcomes):
+                self.logger.error(
+                    "Release child %s failed; skipping remaining children.",
+                    child_name,
+                )
+                break
         return outcomes
 
     def _run_llm_tasks(self) -> List[TaskOutcome]:
         outcomes: List[TaskOutcome] = []
         for child_name in self._llm_children():
             if child_name == "benchmarks":
-                outcomes.extend(self._run_llm_benchmark_children())
+                child_outcomes = self._run_llm_benchmark_children()
             else:
-                outcomes.extend(self._run_child(child_name))
+                child_outcomes = self._run_child(child_name)
+            outcomes.extend(child_outcomes)
+            if self._child_failed(child_outcomes):
+                self.logger.error(
+                    "Release child %s failed; skipping remaining children.",
+                    child_name,
+                )
+                break
         return outcomes
 
     def _run_llm_benchmark_children(self) -> List[TaskOutcome]:
@@ -523,44 +537,49 @@ class ReleaseWorkflow(WorkflowExecution):
         spec_decode = self.orchestrator_metadata.spec_decode
 
         if prefix_cache is None and spec_decode is None:
-            outcomes.extend(self._run_child("benchmarks"))
+            child_outcomes = self._run_child("benchmarks")
         else:
-            outcomes.extend(
-                self._run_child(
-                    "benchmarks",
-                    replace(
-                        self.orchestrator_metadata,
-                        prefix_cache=None,
-                        spec_decode=None,
-                    ),
-                )
+            child_outcomes = self._run_child(
+                "benchmarks",
+                replace(
+                    self.orchestrator_metadata,
+                    prefix_cache=None,
+                    spec_decode=None,
+                ),
             )
+        outcomes.extend(child_outcomes)
+        if self._child_failed(child_outcomes):
+            return outcomes
 
         if prefix_cache is not None:
-            outcomes.extend(
-                self._run_child(
-                    "benchmarks",
-                    replace(
-                        self.orchestrator_metadata,
-                        spec_decode=None,
-                        llm_bench=None,
-                    ),
-                    label="benchmarks:prefix_cache",
-                )
+            child_outcomes = self._run_child(
+                "benchmarks",
+                replace(
+                    self.orchestrator_metadata,
+                    spec_decode=None,
+                    llm_bench=None,
+                ),
+                label="benchmarks:prefix_cache",
             )
+            outcomes.extend(child_outcomes)
+            if self._child_failed(child_outcomes):
+                return outcomes
         if spec_decode is not None:
-            outcomes.extend(
-                self._run_child(
-                    "benchmarks",
-                    replace(
-                        self.orchestrator_metadata,
-                        prefix_cache=None,
-                        llm_bench=None,
-                    ),
-                    label="benchmarks:spec_decode",
-                )
+            child_outcomes = self._run_child(
+                "benchmarks",
+                replace(
+                    self.orchestrator_metadata,
+                    prefix_cache=None,
+                    llm_bench=None,
+                ),
+                label="benchmarks:spec_decode",
             )
+            outcomes.extend(child_outcomes)
         return outcomes
+
+    @staticmethod
+    def _child_failed(outcomes: Sequence[TaskOutcome]) -> bool:
+        return any(not outcome.succeeded for outcome in outcomes)
 
     def _run_child(
         self,
@@ -570,12 +589,25 @@ class ReleaseWorkflow(WorkflowExecution):
         label: Optional[str] = None,
     ) -> List[TaskOutcome]:
         child_cls = WORKFLOW_REGISTRY[child_name]
-        self.logger.info("--- release: %s ---", label or child_name)
+        child_label = label or child_name
+        self.logger.info("--- release: %s ---", child_label)
         child = child_cls(
             self.ctx,
             accumulator=self.accumulator,
             orchestrator_metadata=metadata or self.orchestrator_metadata,
         )
+        started = time.time()
+        try:
+            child.prepare()
+        except Exception as e:
+            elapsed = time.time() - started
+            self.logger.exception(
+                "Release child %s warmup/prepare failed after %.1fs: %s",
+                child_label,
+                elapsed,
+                e,
+            )
+            return [TaskOutcome(f"{child_label}:warmup", 1, elapsed, None)]
         return child.run_tasks()
 
     def _llm_children(self) -> Sequence[str]:

@@ -59,16 +59,10 @@ def _create_payload() -> dict[str, Any]:
     }
 
 
-def _validate_completed_job(task: dict[str, Any], *, task_id: str) -> None:
-    if task.get("status") != "completed":
-        raise MiniMaxClientError(
-            f"video job reached terminal status {task.get('status')!r}",
-            task_id=task_id,
-            response_body=json.dumps(task.get("error")),
-        )
+def _validate_job_metadata(task: dict[str, Any], *, task_id: str) -> None:
     if task.get("id") != task_id or task.get("job_type") != "video":
         raise MiniMaxClientError(
-            f"unexpected completed video job metadata: {task!r}",
+            f"unexpected video job metadata: {task!r}",
             task_id=task_id,
         )
     request = task.get("request_parameters")
@@ -93,6 +87,31 @@ def _validate_completed_job(task: dict[str, Any], *, task_id: str) -> None:
             f"completed video job request metadata mismatch: {mismatches}",
             task_id=task_id,
         )
+
+
+def _validate_completed_job(task: dict[str, Any], *, task_id: str) -> None:
+    if task.get("status") != "completed":
+        raise MiniMaxClientError(
+            f"video job reached terminal status {task.get('status')!r}",
+            task_id=task_id,
+            response_body=json.dumps(task.get("error")),
+        )
+    _validate_job_metadata(task, task_id=task_id)
+
+
+def _find_listed_task(
+    tasks: list[dict[str, Any]],
+    *,
+    task_id: str,
+) -> dict[str, Any]:
+    matches = [task for task in tasks if task.get("id") == task_id]
+    if len(matches) != 1:
+        raise MiniMaxClientError(
+            f"expected task {task_id!r} exactly once in job list; "
+            f"found {len(matches)} matches",
+            task_id=task_id,
+        )
+    return matches[0]
 
 
 def _ffmpeg_binary() -> str:
@@ -180,9 +199,30 @@ async def run_lifecycle_download(
         poll_timeout=poll_timeout,
     ) as client:
         task_id = await client.create_video(_create_payload())
+
+        initial_task = await client.query_task(task_id)
+        _validate_job_metadata(initial_task, task_id=task_id)
+        initial_jobs = await client.list_tasks()
+        initial_listed_task = _find_listed_task(initial_jobs, task_id=task_id)
+        _validate_job_metadata(initial_listed_task, task_id=task_id)
+
         terminal = await client.wait_for_terminal(task_id)
         _validate_completed_job(terminal.task, task_id=task_id)
+
+        completed_jobs = await client.list_tasks()
+        completed_listed_task = _find_listed_task(
+            completed_jobs,
+            task_id=task_id,
+        )
+        _validate_completed_job(completed_listed_task, task_id=task_id)
+
         download = await client.download_video(task_id, output_path)
+
+        final_task = await client.query_task(task_id)
+        _validate_completed_job(final_task, task_id=task_id)
+        final_jobs = await client.list_tasks()
+        final_listed_task = _find_listed_task(final_jobs, task_id=task_id)
+        _validate_completed_job(final_listed_task, task_id=task_id)
 
     video_metrics = await asyncio.to_thread(
         analyze_video_quality,
@@ -203,8 +243,13 @@ async def run_lifecycle_download(
         "task_name": "minimax_h3_lifecycle_download",
         "base_url": base_url.rstrip("/"),
         "task_id": task_id,
+        "initial_status": initial_task["status"],
+        "initial_listed_status": initial_listed_task["status"],
         "observed_statuses": list(terminal.observed_statuses),
         "task": terminal.task,
+        "completed_listed_status": completed_listed_task["status"],
+        "final_query_status": final_task["status"],
+        "final_listed_status": final_listed_task["status"],
         "video_path": str(download.path),
         "bytes_downloaded": download.bytes_downloaded,
         "download_content_type": download.content_type,
@@ -214,8 +259,8 @@ async def run_lifecycle_download(
     }
 
 
-class MiniMaxH3LifecycleDeleteTest(BaseTest):
-    """Legacy-named wrapper for the inference server's lifecycle/download API."""
+class MiniMaxH3LifecycleDownloadTest(BaseTest):
+    """Successful V1 create/query/list/download lifecycle."""
 
     KIND = "minimax_h3_lifecycle_download"
     TASK_TYPE = "functional"
@@ -266,13 +311,13 @@ class MiniMaxH3LifecycleDeleteTest(BaseTest):
         )
 
 
-def run_minimax_h3_lifecycle_delete(
+def run_minimax_h3_lifecycle_download(
     ctx: MediaContext,
     targets: dict[str, Any] | None = None,
 ) -> Block:
-    """Compatibility entry point for the renamed lifecycle/download behavior."""
+    """Run the successful V1 lifecycle/download behavior."""
 
-    return MiniMaxH3LifecycleDeleteTest(
+    return MiniMaxH3LifecycleDownloadTest(
         TestConfig(
             {
                 "timeout": DEFAULT_TEST_TIMEOUT_SECONDS,
@@ -284,6 +329,18 @@ def run_minimax_h3_lifecycle_delete(
         targets or {},
         ctx=ctx,
     ).run_tests()
+
+
+# Compatibility aliases for the original V2-oriented name. The V1 API has no
+# terminal-job deletion endpoint, so new callers should use the download names.
+MiniMaxH3LifecycleDeleteTest = MiniMaxH3LifecycleDownloadTest
+
+
+def run_minimax_h3_lifecycle_delete(
+    ctx: MediaContext,
+    targets: dict[str, Any] | None = None,
+) -> Block:
+    return run_minimax_h3_lifecycle_download(ctx, targets)
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -352,8 +409,10 @@ def main(argv: list[str] | None = None) -> int:
 
 __all__ = [
     "MiniMaxH3LifecycleDeleteTest",
+    "MiniMaxH3LifecycleDownloadTest",
     "run_lifecycle_download",
     "run_minimax_h3_lifecycle_delete",
+    "run_minimax_h3_lifecycle_download",
 ]
 
 

@@ -18,6 +18,7 @@ import aiohttp  # pyright: ignore[reportMissingImports]
 
 CREATE_PATH = "/v1/videos/generations"
 QUERY_PATH = "/v1/videos/generations/{job_id}"
+LIST_PATH = "/v1/videos/jobs"
 DOWNLOAD_PATH = "/v1/videos/generations/{job_id}/download"
 CANCEL_PATH = "/v1/videos/generations/{job_id}/cancel"
 
@@ -180,6 +181,44 @@ class MiniMaxH3Client:
                 f"query returned unknown status {data.get('status')!r}",
                 task_id=task_id,
             )
+        return data
+
+    async def list_tasks(self) -> list[dict[str, Any]]:
+        """List V1 jobs and validate the shared public metadata shape."""
+
+        status, data, response_text = await self._api_json_request(
+            "GET",
+            f"{self.base_url}{LIST_PATH}",
+        )
+        if status != 200:
+            raise MiniMaxClientError(
+                f"video job list returned HTTP {status}",
+                status_code=status,
+                response_body=_excerpt(response_text),
+            )
+        if not isinstance(data, list):
+            raise MiniMaxClientError(
+                "video job list response is not an array",
+                status_code=status,
+                response_body=_excerpt(response_text),
+            )
+
+        for index, task in enumerate(data):
+            if not isinstance(task, dict):
+                raise MiniMaxClientError(
+                    f"video job list item {index} is not an object",
+                    response_body=_excerpt(response_text),
+                )
+            if not isinstance(task.get("id"), str) or not task["id"]:
+                raise MiniMaxClientError(
+                    f"video job list item {index} has no non-empty id"
+                )
+            if task.get("status") not in DOCUMENTED_STATUSES:
+                raise MiniMaxClientError(
+                    f"video job list item {index} has unknown status "
+                    f"{task.get('status')!r}",
+                    task_id=task["id"],
+                )
         return data
 
     async def wait_for_terminal(self, task_id: str) -> MiniMaxTerminalTask:
@@ -349,6 +388,7 @@ def _excerpt(response_text: str) -> str:
 
 __all__ = [
     "CREATE_PATH",
+    "LIST_PATH",
     "MiniMaxClientError",
     "MiniMaxDownload",
     "MiniMaxH3Client",
