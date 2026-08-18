@@ -89,15 +89,10 @@ void registerEmbedding() {
         return std::make_shared<EmbeddingService>();
       });
 
-  utils::RunnerRegistry::instance().registerIpcRunner(
-      config::ModelService::EMBEDDING, config::ModelRunnerType::MOCK,
-      [](const config::RunnerConfig& /*cfg*/,
-         ipc::IResultQueue* /*resultQueue*/, ipc::ITaskQueue* /*taskQueue*/,
-         ipc::ICancelQueue* /*cancelQueue*/)
-          -> std::unique_ptr<runners::IRunner> {
-        TT_LOG_INFO("[RunnerRegistry] Creating Embedding runner");
-        return std::make_unique<runners::EmbeddingRunner>("device_0", 0);
-      });
+  // No runner registration here: EmbeddingService builds its runner directly
+  // in the forked worker via runners::makeEmbeddingRunner(), which selects the
+  // implementation from cfg.runner_type. The registry entry that used to sit
+  // here was never reached.
 
   api::RouteRegistry::instance().registerRoute(config::ModelService::EMBEDDING,
                                                "POST", "/v1/embeddings",

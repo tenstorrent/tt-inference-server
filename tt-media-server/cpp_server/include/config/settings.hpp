@@ -453,6 +453,12 @@ ImageConfig imageEngineConfig();
  * Implemented in src/config/settings.cpp. */
 TtsConfig ttsEngineConfig();
 
+/** Build EmbeddingConfig from environment variables. Reads MODEL_RUNNER_TYPE
+ * (selects the model) and DEVICE (selects its per-device batch size); throws
+ * with the valid values listed if either is unusable. Implemented in
+ * src/config/settings.cpp. */
+EmbeddingConfig embeddingEngineConfig();
+
 /** Build the runner config used by a fork/exec worker for the active service.
  * Media configs receive the worker's DEVICE_IDS group as visible_devices. */
 RunnerConfig workerRunnerConfig(size_t workerIndex);
