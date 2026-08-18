@@ -186,9 +186,10 @@ class TestDiffusionGemmaEvalContract:
     def test_gpqa_uses_canvas_aligned_model_owned_generation(self):
         task = _diffusiongemma_eval_task("gpqa_diamond_cot_zeroshot")
 
-        assert task.gen_kwargs["max_gen_toks"] == (
-            task.model_kwargs["max_length"] - 2432
-        ) // 256 * 256
+        assert (
+            task.gen_kwargs["max_gen_toks"]
+            == (task.model_kwargs["max_length"] - 2432) // 256 * 256
+        )
         assert task.gen_kwargs["do_sample"] == "true"
         assert task.gen_kwargs["temperature"] == 1.0
         assert task.propagate_seed_to_gen_kwargs is False

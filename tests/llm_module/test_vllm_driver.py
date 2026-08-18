@@ -194,9 +194,7 @@ def test_existing_prompt_file_short_circuits_rebuild(monkeypatch, tmp_path):
     )
 
 
-def test_speed_bench_prompt_failure_does_not_fall_back_to_random(
-    monkeypatch, tmp_path
-):
+def test_speed_bench_prompt_failure_does_not_fall_back_to_random(monkeypatch, tmp_path):
     from llm_module import speed_bench_prompts
 
     def fail_prompt_build(**_kwargs):

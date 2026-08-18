@@ -141,10 +141,13 @@ def _blocks_per_request(
                 completed_lens.append(value)
             if excess or len(completed_lens) != completed_count:
                 return None
-            return sum(
-                math.ceil(value / output_block_size) if value else 0
-                for value in completed_lens
-            ) / completed_count
+            return (
+                sum(
+                    math.ceil(value / output_block_size) if value else 0
+                    for value in completed_lens
+                )
+                / completed_count
+            )
 
     # Totals cannot recover mean(ceil(per-request tokens / block size)); using
     # ceil(mean tokens / block size) produces biased block throughput/latency.
