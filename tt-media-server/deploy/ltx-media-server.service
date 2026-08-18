@@ -1,0 +1,26 @@
+[Unit]
+Description=LTX-2.3-Fast media server (tt-media-server, Galaxy)
+After=network-online.target
+Wants=network-online.target
+# Circuit breaker: if it keeps failing fast (e.g. device needs a manual tt-smi -r),
+# stop auto-restarting after 5 starts in 30 min so a human can intervene.
+StartLimitIntervalSec=1800
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=rsalman
+Group=rsalman
+Environment=HOME=/home/rsalman
+WorkingDirectory=/home/rsalman/tt-metal/tt-inference-server/tt-media-server
+ExecStart=/home/rsalman/tt-metal/tt-inference-server/tt-media-server/start_ltx_fast.sh
+Restart=on-failure
+RestartSec=10
+# A wedged-device teardown can hang; give it 30s then SIGKILL the whole tree.
+TimeoutStopSec=30
+KillMode=mixed
+StandardOutput=append:/home/rsalman/ltx-media-server.log
+StandardError=append:/home/rsalman/ltx-media-server.log
+
+[Install]
+WantedBy=multi-user.target
