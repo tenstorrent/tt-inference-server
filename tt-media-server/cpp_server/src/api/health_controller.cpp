@@ -51,7 +51,11 @@ void HealthController::health(
   bool socketHealthy = true;
   if (socket_) {
     response["socket_status"] = socket_->getStatus();
-    socketHealthy = socket_->isConnected();
+    // Under Dynamo routing, ZMQ is only for slot reservation and may connect
+    // after this process is already serving Dynamo traffic. Treat an enabled
+    // socket as healthy rather than requiring a live peer.
+    socketHealthy = tt::config::dynamoRoutingEnabled() ? socket_->isEnabled()
+                                                       : socket_->isConnected();
   }
 
   if (hasReadyWorkers && hasAliveWorkers && socketHealthy) {
@@ -124,7 +128,11 @@ void HealthController::ready(
     }
     response["worker_info"] = workerInfo;
 
-    callback(drogon::HttpResponse::newHttpJsonResponse(response));
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(response);
+    if (!status.modelReady) {
+      resp->setStatusCode(drogon::k503ServiceUnavailable);
+    }
+    callback(resp);
   } catch (const std::exception& e) {
     Json::Value response;
     response["status"] = "alive";
@@ -169,7 +177,8 @@ void HealthController::setMaxSessionCount(
     }
 
     const auto& countValue = (*json)["max_session_count"];
-    if (!countValue.isUInt64() && !countValue.isInt64()) {
+    if ((!countValue.isUInt64() && !countValue.isInt64()) ||
+        (countValue.isInt64() && countValue.asInt64() < 0)) {
       Json::Value response;
       response["error"] = "max_session_count must be a non-negative integer";
       auto resp = drogon::HttpResponse::newHttpJsonResponse(response);

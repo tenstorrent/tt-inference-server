@@ -16,6 +16,7 @@ from workflows.workflow_types import DeviceTypes
         (DeviceTypes.T3K, "t3k"),
         (DeviceTypes.N150, "n150"),
         (DeviceTypes.N300, "n300"),
+        (DeviceTypes.P300, "p300"),
         (DeviceTypes.P300X2, "p300x2"),
         (DeviceTypes.DUAL_GALAXY, "dual_galaxy"),
     ],

@@ -5,8 +5,6 @@
 
 #include <utility>
 
-#include "config/settings.hpp"
-#include "utils/concurrent_queue.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::api {
@@ -24,11 +22,7 @@ StreamingResponseWriter::StreamingResponseWriter(
     : ResponseWriter(std::move(params)),
       loop(loop),
       includeUsage(includeUsage),
-      formatter(std::move(formatter)) {
-  if (config::enableAccumulatedStreaming()) {
-    sseBatchQueue = std::make_shared<tt::utils::ConcurrentQueue<std::string>>();
-  }
-}
+      formatter(std::move(formatter)) {}
 
 std::shared_ptr<StreamingResponseWriter> StreamingResponseWriter::create(
     trantor::EventLoop* loop, ResponseWriterParams params, bool includeUsage) {
@@ -48,45 +42,16 @@ std::shared_ptr<StreamingResponseWriter> StreamingResponseWriter::create(
 
 void StreamingResponseWriter::sendSse(const std::string& sse,
                                       std::function<void()> onDisconnect) {
-  if (!sseBatchQueue) {
-    loop->queueInLoop([streamPtr = this->streamPtr,
-                       earlyBuffer = this->earlyBuffer, sse,
-                       onDisconnect = std::move(onDisconnect)]() {
-      if (*streamPtr) {
-        bool ok = (*streamPtr)->send(sse);
-        if (!ok && onDisconnect) onDisconnect();
-      } else if (earlyBuffer) {
-        earlyBuffer->push_back(sse);
-      }
-    });
-    return;
-  }
-  sseBatchQueue->push(sse);
-  if (sseBatchQueue->size() >= config::maxAccumulatedTokens()) {
-    auto accumulated = sseBatchQueue->drain();
-    std::string batch;
-    for (auto& s : accumulated) batch.append(s);
-    loop->queueInLoop(
-        [streamPtr = this->streamPtr, earlyBuffer = this->earlyBuffer,
-         batch = std::move(batch), onDisconnect = std::move(onDisconnect)]() {
-          if (*streamPtr) {
-            bool ok = (*streamPtr)->send(batch);
-            if (!ok && onDisconnect) onDisconnect();
-          } else if (earlyBuffer) {
-            earlyBuffer->push_back(batch);
-          }
-        });
-  }
-}
-
-void StreamingResponseWriter::flushAccumulated() {
-  if (!sseBatchQueue) return;
-  auto accumulated = sseBatchQueue->drain();
-  if (!accumulated.empty()) {
-    std::string batch;
-    for (auto& s : accumulated) batch.append(s);
-    if (*streamPtr) (*streamPtr)->send(batch);
-  }
+  loop->queueInLoop([streamPtr = this->streamPtr,
+                     earlyBuffer = this->earlyBuffer, sse,
+                     onDisconnect = std::move(onDisconnect)]() {
+    if (*streamPtr) {
+      bool ok = (*streamPtr)->send(sse);
+      if (!ok && onDisconnect) onDisconnect();
+    } else if (earlyBuffer) {
+      earlyBuffer->push_back(sse);
+    }
+  });
 }
 
 void StreamingResponseWriter::handleTokenChunk(const LLMStreamChunk& chunk) {
@@ -122,7 +87,6 @@ void StreamingResponseWriter::finalize() {
   loop->queueInLoop([self]() {
     if (!self->done.exchange(true) && *self->streamPtr) {
       self->stopHeartbeat();
-      self->flushAccumulated();
 
       auto usage = self->buildUsage();
       auto finalSse = self->formatter->formatFinalEvents(

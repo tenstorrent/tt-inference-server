@@ -9,6 +9,7 @@
 `Motif-Image-6B-Preview` is also supported on hardware:
 
 - [BH LoudBox](Motif-Image-6B-Preview_p150x8.md)
+- [BH QuietBox 2](Motif-Image-6B-Preview_p300x2.md)
 - [WH LoudBox/QuietBox](Motif-Image-6B-Preview_t3k.md)
 
 ## Quickstart - Deploy Motif-Image-6B-Preview Inference Server on WH Galaxy

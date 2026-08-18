@@ -10,7 +10,7 @@
 #include <thread>
 #include <vector>
 
-#include "config/defaults.hpp"
+#include "config/settings.hpp"
 #include "profiling/tracy.hpp"
 
 namespace tt::utils {
@@ -66,9 +66,12 @@ class ThreadPool {
 };
 
 /** Process-wide pool for HTTP controllers to offload service dispatch off the
- *  Drogon I/O loop. */
+ *  Drogon I/O loop. Size comes from `tt::config::callbackPoolThreads()`, which
+ *  auto-scales to `max(numWorkers(), CALLBACK_POOL_THREADS_MIN)` when the
+ *  `CALLBACK_POOL_THREADS` env var is unset or 0. The pool is created lazily
+ *  on first request, so env-driven settings are already populated by then. */
 inline ThreadPool& controllerCallbackPool() {
-  static ThreadPool pool(tt::config::defaults::CALLBACK_POOL_THREADS);
+  static ThreadPool pool(tt::config::callbackPoolThreads());
   return pool;
 }
 

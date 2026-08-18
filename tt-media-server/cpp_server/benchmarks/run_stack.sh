@@ -1,0 +1,365 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+#
+# run_stack.sh — bring up the Dynamo frontend + cpp_server (mock_scheduler) for
+# the prefill/decode test suite, without any tt-shield image. Frontend runs from
+# a host ai-dynamo venv; etcd runs as the public quay image (or a local no-docker
+# etcd); workers run as the locally-built Blaze binary with the mock_scheduler
+# backend (real Blaze prefill and decode schedulers). The binary must be built
+# with --blaze; otherwise the mock_scheduler LLM runner factory isn't compiled
+# in and the worker aborts at startup with "No runner registered for the
+# requested service".
+#
+#   ./run_stack.sh up                      # direct cpp_server socket split
+#   DYNAMO_ROUTING=1 ./run_stack.sh up
+#                                          # Dynamo decode/prefill routing split
+#   ./run_stack.sh down                    # tear everything down
+#
+# This local mock stack supports the direct cpp_server split and Dynamo routing.
+# Use dynamo_frontend/deploy.sh when PrefillGateway is part of the test.
+#
+# Logs -> /tmp/tt_decode.log + /tmp/tt_prefill.log ; frontend -> /tmp/tt_frontend.log.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CPP_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+REPO_DIR="$(cd "${CPP_DIR}/../.." && pwd)"
+BIN="${CPP_DIR}/build/tt_media_server_cpp"
+
+LOG_PREFIX="run_stack"
+source "${REPO_DIR}/scripts/lib_dynamo_stack.sh"
+DYN_VENV="${DYN_VENV:-${REPO_DIR}/dynamo-mock-backend/.venv}"
+
+export DOCKER_API_VERSION="${DOCKER_API_VERSION:-1.43}"
+
+MODEL="${MODEL:-moonshotai/Kimi-K2.6}"
+MODEL_NAME="${MODEL_NAME:-tt-cpp-server}"
+HTTP_PORT="${HTTP_PORT:-8080}"
+SERVER_PORT="${SERVER_PORT:-8001}"       # decode/regular REST + Dynamo worker server
+PREFILL_PORT="${PREFILL_PORT:-8002}"     # prefill REST
+SOCKET_PORT="${SOCKET_PORT:-9000}"       # decode<->prefill inter-server socket
+MAX_TOKENS_TO_PREFILL_ON_DECODE="${MAX_TOKENS_TO_PREFILL_ON_DECODE:-1000}"
+DYNAMO_ROUTING="${DYNAMO_ROUTING:-0}"
+DYNAMO_ROUTING_NAMESPACE="${DYNAMO_ROUTING_NAMESPACE:-dynamo}"
+ETCD_NAME="${ETCD_NAME:-etcd}"
+PIDFILE="/tmp/tt_stack.pids"
+
+FRONTEND_LOG="/tmp/tt_frontend.log"
+DECODE_LOG="/tmp/tt_decode.log"
+PREFILL_LOG="/tmp/tt_prefill.log"
+
+teardown() {
+    log "tearing down"
+    set +e                            # cleanup is best-effort; never abort on a dead pid
+    local pids=""
+    [[ -f "${PIDFILE}" ]] && pids="$(tr '\n' ' ' < "${PIDFILE}")"
+    # also sweep stray workers/frontend (orphaned --worker children, prior runs)
+    for p in $(ls /proc 2>/dev/null | grep -E '^[0-9]+$'); do
+        [[ "$p" == "$$" ]] && continue
+        [[ -r "/proc/$p/cmdline" ]] || continue
+        local c; c=$(tr '\0' ' ' < "/proc/$p/cmdline" 2>/dev/null) || continue
+        case "$c" in *"${BIN}"*|*"-m dynamo.frontend"*) pids="$pids $p" ;; esac
+    done
+    pids="$(echo "${pids}" | tr ' ' '\n' | grep -E '^[0-9]+$' | sort -u | tr '\n' ' ')"
+    if [[ -n "${pids// }" ]]; then
+        kill ${pids} 2>/dev/null || true
+        for _ in $(seq 1 12); do      # wait for graceful exit, else SIGKILL
+            local alive=""
+            for p in ${pids}; do kill -0 "$p" 2>/dev/null && alive="$alive $p"; done
+            [[ -z "${alive// }" ]] && break
+            sleep 0.5
+        done
+        for p in ${pids}; do kill -9 "$p" 2>/dev/null || true; done
+    fi
+    rm -f "${PIDFILE}"
+    # Worker IPC shm (boost/POSIX) is kernel-persistent and survives SIGKILL; a stale
+    # segment makes a fresh worker attach to a corrupt queue and hang. Remove the
+    # lowercase tt_* segments (NOT the uppercase TT_UMD_LOCK.* tt-metal locks).
+    rm -f /dev/shm/tt_* 2>/dev/null || true
+    # block until our ports are actually released (avoids relaunch bind races)
+    for _ in $(seq 1 30); do
+        ss -ltn 2>/dev/null | grep -qE ":(${HTTP_PORT}|${SERVER_PORT}|${PREFILL_PORT}|${SOCKET_PORT})[[:space:]]" || break
+        sleep 0.5
+    done
+    set -e
+    log "down"
+}
+
+# No-docker etcd: run the upstream etcd binary directly on 127.0.0.1:2379.
+# Auto-selected when the docker daemon is unreachable (e.g. inside an
+# unprivileged container) or when ETCD_LOCAL=1 is set. Mirrors the CI
+# no-docker etcd setup (etcd-io release binary + local single-node cluster).
+ETCD_LOCAL_DATA="${ETCD_LOCAL_DATA:-/tmp/tt_etcd_data}"
+ETCD_LOCAL_LOG="${ETCD_LOCAL_LOG:-/tmp/tt_etcd.log}"
+
+docker_available() {
+    command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1
+}
+
+ensure_etcd_local() {
+    ETCD_ENDPOINTS="http://127.0.0.1:2379"
+    if curl -fsS "${ETCD_ENDPOINTS}/health" >/dev/null 2>&1; then
+        log "reusing local etcd at ${ETCD_ENDPOINTS}"
+        return 0
+    fi
+    command -v etcd >/dev/null 2>&1 || die "etcd binary not found on PATH; install the etcd-io release binary (see CI) or start the docker daemon"
+    log "starting local etcd (no docker) at ${ETCD_ENDPOINTS}"
+    rm -rf "${ETCD_LOCAL_DATA}"
+    setsid nohup etcd \
+        --data-dir "${ETCD_LOCAL_DATA}" \
+        --advertise-client-urls http://127.0.0.1:2379 \
+        --listen-client-urls http://127.0.0.1:2379 \
+        --listen-peer-urls http://127.0.0.1:2380 \
+        --initial-advertise-peer-urls http://127.0.0.1:2380 \
+        --initial-cluster 'default=http://127.0.0.1:2380' \
+        > "${ETCD_LOCAL_LOG}" 2>&1 < /dev/null &
+    echo $! >> "${PIDFILE}"
+    for _ in $(seq 1 30); do
+        curl -fsS "${ETCD_ENDPOINTS}/health" >/dev/null 2>&1 && { log "etcd healthy at ${ETCD_ENDPOINTS}"; return 0; }
+        sleep 1
+    done
+    tail -n 50 "${ETCD_LOCAL_LOG}" >&2 2>/dev/null || true
+    die "local etcd never became healthy"
+}
+
+ensure_etcd() {
+    if [[ "${ETCD_LOCAL:-0}" == "1" ]] || ! docker_available; then
+        ensure_etcd_local
+        return 0
+    fi
+    if ! docker ps --format '{{.Names}}' | grep -qx "${ETCD_NAME}"; then
+        log "starting etcd"
+        docker rm -f "${ETCD_NAME}" >/dev/null 2>&1 || true
+        start_etcd "${ETCD_NAME}"
+    fi
+    wait_etcd_healthy "${ETCD_NAME}"
+    ETCD_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${ETCD_NAME}")
+    [[ -n "${ETCD_IP}" ]] || die "could not resolve etcd container IP"
+    ETCD_ENDPOINTS="http://${ETCD_IP}:2379"
+    log "etcd at ${ETCD_ENDPOINTS}"
+}
+
+# Dynamo registration env. Direct mode registers only the decode worker under
+# default/backend/generate. Dynamo routing mode registers decode and prefill
+# workers as separate Dynamo worker types under dynamo/{decode,prefill}/generate.
+worker_dynamo_env() {
+    local namespace="${1:-default}"
+    local component="${2:-backend}"
+    local worker_type="${3:-}"
+    local model_type="${4-Chat}"
+    echo "DYNAMO_ENDPOINT_ENABLED=1"
+    echo "DYNAMO_DISCOVERY_BACKEND=etcd"
+    echo "DYNAMO_ETCD_ENDPOINTS=${ETCD_ENDPOINTS}"
+    echo "DYNAMO_NAMESPACE=${namespace}"
+    echo "DYNAMO_COMPONENT=${component}"
+    echo "DYNAMO_ENDPOINT_NAME=generate"
+    [[ -n "${model_type}" ]] && echo "DYNAMO_MODEL_TYPE=${model_type}"
+    [[ -n "${worker_type}" ]] && echo "DYNAMO_WORKER_TYPE=${worker_type}"
+}
+
+worker_ipc_env() {
+    local ns="$1"
+    echo "TT_WARMUP_SIGNALS_QUEUE=tt_warmup_signals_${ns}"
+    echo "TT_TASK_QUEUE=tt_tasks_${ns}"
+    echo "TT_RESULT_QUEUE=tt_results_${ns}"
+    echo "TT_CANCEL_QUEUE=tt_cancels_${ns}"
+    echo "TT_MEMORY_REQUEST_QUEUE=tt_mem_requests_${ns}"
+    echo "TT_MEMORY_RESULT_QUEUE=tt_mem_results_${ns}"
+    echo "TT_WORKER_METRICS_SHM=/tt_worker_metrics_${ns}"
+}
+
+start_frontend() {
+    [[ -x "${DYN_VENV}/bin/python3" ]] || die "dynamo venv not found at ${DYN_VENV}"
+    "${DYN_VENV}/bin/python3" -c 'import dynamo.frontend' >/dev/null 2>&1 \
+        || die "dynamo.frontend not importable from ${DYN_VENV}; install ai-dynamo there or set DYN_VENV to a Dynamo venv"
+    log "frontend -> ${FRONTEND_LOG} (http :${HTTP_PORT})"
+    setsid nohup env \
+        DYN_DISCOVERY_BACKEND=etcd ETCD_ENDPOINTS="${ETCD_ENDPOINTS}" \
+        DYN_REQUEST_PLANE=tcp DYN_EVENT_PLANE=zmq \
+        DYN_REQUEST_PLANE_CODEC="${DYN_REQUEST_PLANE_CODEC:-json}" \
+        DYN_TOKENIZER="${DYN_TOKENIZER:-fastokens}" \
+        DYN_LOGGING_JSONL="${DYN_LOGGING_JSONL:-1}" \
+        "${DYN_VENV}/bin/python3" -m dynamo.frontend \
+            --http-port "${HTTP_PORT}" \
+            --router-mode "${ROUTER_MODE:-kv}" \
+            --model-name "${MODEL_NAME}" \
+            --model-path "${CPP_DIR}/tokenizers/${MODEL}" \
+        > "${FRONTEND_LOG}" 2>&1 < /dev/null &
+    echo $! >> "${PIDFILE}"
+}
+
+ensure_binary() {
+    local rebuild=0
+    if [[ ! -x "${BIN}" ]]; then
+        log "no binary; building with --blaze for mock_scheduler"
+        rebuild=1
+    elif [[ ! -f "${CPP_DIR}/build/CMakeCache.txt" ]] || \
+         ! grep -q '^ENABLE_BLAZE:BOOL=ON$' "${CPP_DIR}/build/CMakeCache.txt"; then
+        log "existing binary was not built with --blaze; rebuilding for mock_scheduler"
+        rebuild=1
+    else
+        local src
+        for src in \
+            "${CPP_DIR}/src/dynamo/worker_server.cpp" \
+            "${CPP_DIR}/src/dynamo/request_handler.cpp" \
+            "${CPP_DIR}/src/dynamo/transport_protocol.cpp" \
+            "${CPP_DIR}/src/dynamo/transport_server.cpp" \
+            "${CPP_DIR}/src/dynamo/discovery.cpp" \
+            "${CPP_DIR}/src/dynamo/etcd_client.cpp" \
+            "${CPP_DIR}/src/dynamo/llm_mapping.cpp" \
+            "${CPP_DIR}/src/dynamo/prefill_result_mapping.cpp" \
+            "${CPP_DIR}/src/services/disaggregation_service.cpp" \
+            "${CPP_DIR}/src/services/llm_pipeline.cpp" \
+            "${CPP_DIR}/src/services/decode_slot_reservation.cpp" \
+            "${CPP_DIR}/src/metrics/metrics.cpp" \
+            "${CPP_DIR}/src/utils/service_factory.cpp" \
+            "${CPP_DIR}/src/main.cpp" \
+            "${CPP_DIR}/include/dynamo/worker_server.hpp" \
+            "${CPP_DIR}/include/dynamo/request_handler.hpp" \
+            "${CPP_DIR}/include/dynamo/transport_protocol.hpp" \
+            "${CPP_DIR}/include/dynamo/transport_server.hpp" \
+            "${CPP_DIR}/include/dynamo/discovery.hpp" \
+            "${CPP_DIR}/include/dynamo/etcd_client.hpp" \
+            "${CPP_DIR}/include/dynamo/llm_mapping.hpp" \
+            "${CPP_DIR}/include/dynamo/prefill_result_mapping.hpp" \
+            "${CPP_DIR}/include/services/disaggregation_service.hpp" \
+            "${CPP_DIR}/include/services/llm_pipeline.hpp" \
+            "${CPP_DIR}/include/services/decode_slot_reservation.hpp" \
+            "${CPP_DIR}/include/metrics/metrics.hpp"; do
+            if [[ "${src}" -nt "${BIN}" ]]; then
+                log "source newer than binary: ${src#$CPP_DIR/}"
+                rebuild=1
+                break
+            fi
+        done
+    fi
+
+    if [[ "${rebuild}" == "1" ]]; then
+        (cd "${CPP_DIR}" && env -u TT_METAL_HOME ./build.sh --blaze)
+    fi
+}
+
+# start_worker <logfile> <rest-port> <env line>...
+start_worker() {
+    local logf="$1" port="$2"; shift 2
+    setsid nohup env "$@" TT_LOG_LEVEL="${TT_LOG_LEVEL:-debug}" \
+        MODEL="${MODEL}" MAX_SESSIONS_COUNT=128 \
+        "${BIN}" -p "${port}" > "${logf}" 2>&1 < /dev/null &
+    echo $! >> "${PIDFILE}"
+}
+
+wait_ready() {
+    log "waiting for /v1/models to list ${MODEL}"
+    for i in $(seq 1 40); do
+        if curl -s "http://127.0.0.1:${HTTP_PORT}/v1/models" 2>/dev/null | grep -q "${MODEL}"; then
+            log "/v1/models ready after ${i}s"
+            break
+        fi
+        sleep 1
+        if [[ "${i}" == "40" ]]; then
+            die "frontend never listed ${MODEL}; see ${FRONTEND_LOG} and worker logs"
+        fi
+    done
+
+    log "waiting for /v1/chat/completions route"
+    for i in $(seq 1 40); do
+        if grep -aq "chat endpoints enabled" "${FRONTEND_LOG}"; then
+            log "chat completions route ready after ${i}s"
+            break
+        fi
+        sleep 1
+        if [[ "${i}" == "40" ]]; then
+            die "frontend chat completions route did not become ready; see ${FRONTEND_LOG}"
+        fi
+    done
+
+    if [[ "${DYNAMO_ROUTING}" == "1" ]]; then
+        log "waiting for Dynamo router activation"
+        for i in $(seq 1 40); do
+            if grep -aq "Prefill router activated successfully" "${FRONTEND_LOG}"; then
+                log "Dynamo router ready after ${i}s"
+                return 0
+            fi
+            sleep 1
+        done
+        die "Dynamo router did not finish activation; see ${FRONTEND_LOG}"
+    fi
+
+    log "ready"
+}
+
+wait_worker_healthy() {
+    local name="$1" port="$2" logf="$3"
+    log "waiting for ${name} worker health on :${port}"
+    for i in $(seq 1 40); do
+        local body
+        body="$(curl -s "http://127.0.0.1:${port}/health" 2>/dev/null || true)"
+        if [[ "${body}" == *'"status":"healthy"'* ]]; then
+            log "${name} healthy after ${i}s"
+            return 0
+        fi
+        if [[ "${body}" == *'"no workers are alive"'* ]]; then
+            die "${name} has no live workers; see ${logf}"
+        fi
+        sleep 1
+    done
+    die "${name} did not become healthy; see ${logf}"
+}
+
+up() {
+    ensure_binary
+    teardown
+    : > "${PIDFILE}"
+    ensure_etcd
+
+    if [[ "${DYNAMO_ROUTING}" == "1" ]]; then
+        log "Dynamo routing: decode :${SERVER_PORT} socket :${SOCKET_PORT}, prefill :${PREFILL_PORT}"
+        start_worker "${DECODE_LOG}" "${SERVER_PORT}" \
+            $(worker_dynamo_env "${DYNAMO_ROUTING_NAMESPACE}" decode decode Chat) \
+            $(worker_ipc_env dynamo_decode) \
+            LLM_MODE=decode LLM_DEVICE_BACKEND=mock_scheduler \
+            SOCKET_HOST=0.0.0.0 SOCKET_PORT="${SOCKET_PORT}" \
+            USE_PREFILL_GATEWAY=0 DYNAMO_ROUTING=1
+        wait_worker_healthy "decode" "${SERVER_PORT}" "${DECODE_LOG}"
+        start_worker "${PREFILL_LOG}" "${PREFILL_PORT}" \
+            $(worker_dynamo_env "${DYNAMO_ROUTING_NAMESPACE}" prefill prefill Prefill) \
+            $(worker_ipc_env dynamo_prefill) \
+            LLM_MODE=prefill LLM_DEVICE_BACKEND=mock_scheduler \
+            SOCKET_HOST=127.0.0.1 SOCKET_PORT="${SOCKET_PORT}" \
+            USE_PREFILL_GATEWAY=0 DYNAMO_ROUTING=1 \
+            DYNAMO_MODEL_INPUT=Tokens
+        wait_worker_healthy "prefill" "${PREFILL_PORT}" "${PREFILL_LOG}"
+    else
+        # Direct-mode /health requires the decode<->prefill socket to be
+        # connected, so start both workers before waiting on either.
+        log "direct cpp_server socket routing: decode :${SERVER_PORT} socket :${SOCKET_PORT}, prefill :${PREFILL_PORT}"
+        start_worker "${DECODE_LOG}" "${SERVER_PORT}" \
+            $(worker_dynamo_env) \
+            $(worker_ipc_env direct_decode) \
+            LLM_MODE=decode LLM_DEVICE_BACKEND=mock_scheduler \
+            SOCKET_HOST=0.0.0.0 SOCKET_PORT="${SOCKET_PORT}" \
+            MAX_TOKENS_TO_PREFILL_ON_DECODE="${MAX_TOKENS_TO_PREFILL_ON_DECODE}"
+        start_worker "${PREFILL_LOG}" "${PREFILL_PORT}" \
+            $(worker_ipc_env direct_prefill) \
+            LLM_MODE=prefill LLM_DEVICE_BACKEND=mock_scheduler \
+            SOCKET_HOST=127.0.0.1 SOCKET_PORT="${SOCKET_PORT}"
+        wait_worker_healthy "decode" "${SERVER_PORT}" "${DECODE_LOG}"
+        wait_worker_healthy "prefill" "${PREFILL_PORT}" "${PREFILL_LOG}"
+    fi
+    start_frontend
+    wait_ready
+    log "decode log: ${DECODE_LOG}  prefill log: ${PREFILL_LOG}"
+    log "frontend: http://127.0.0.1:${HTTP_PORT}  (model id: ${MODEL})"
+    log "pids: $(tr '\n' ' ' < "${PIDFILE}")"
+}
+
+[[ $# -eq 1 ]] || { echo "usage: $0 up | down" >&2; exit 1; }
+CMD="$1"
+
+case "${CMD}" in
+    up)   up ;;
+    down) teardown ;;
+    *)    die "unknown command: ${CMD}" ;;
+esac

@@ -205,12 +205,12 @@ bug or correlating an incident with a release.
 
 Response fields:
 
-| Field                          | Meaning                                                                |
-| ------------------------------ | ---------------------------------------------------------------------- |
-| `tt_inference_server.version`  | Semver of this server build (from `VERSION` file).                     |
-| `tt_inference_server.commit`   | Git commit of the `tt-inference-server` repo at build time.            |
-| `tt_blaze.commit`              | Git commit of the `tt-blaze` submodule used at build time.             |
-| `tt_metal.commit`              | Git commit of the `tt-metal` submodule (inside tt-blaze) at build time. |
+| Field                          | Meaning                                                                      |
+| ------------------------------ | -----------------------------------------------------------------------------|
+| `tt_inference_server.version`  | Semver of this server build (from `VERSION` file).                           |
+| `tt_inference_server.commit`   | Git commit of the `tt-inference-server` repo at build time.                  |
+| `tt_llm_engine.commit`         | Git commit of the `tt-llm-engine` submodule used at build time.              |
+| `tt_metal.commit`              | Git commit of the `tt-metal` submodule (inside tt-llm-engine) at build time. |
 
 **Example:**
 
@@ -220,7 +220,7 @@ Response fields:
     "version": "0.5.0",
     "commit": "56741604fa1e1d2cb8a..."
   },
-  "tt_blaze": {
+  "tt_llm_engine": {
     "commit": "8df8a38675123db7b56..."
   },
   "tt_metal": {
@@ -342,11 +342,14 @@ hardware takes a long time, so production deployments typically set
 `PM_CONNECT_TIMEOUT_MS` to several hours and `WARMUP_TIMEOUT_MS` to
 roughly an hour.
 
-| Variable                 | Default | Description                                                                                              |
-| ------------------------ | ------- | -------------------------------------------------------------------------------------------------------- |
-| `WARMUP_TIMEOUT_MS`      | `10000` | Max wait for the first token during runner warmup.                                                       |
-| `OUTPUT_HANG_TIMEOUT_MS` | `60000` | Max gap with no model output (while a request is in flight) before the worker self-terminates.           |
-| `PM_CONNECT_TIMEOUT_MS`  | `30000` | Pipeline manager connect timeout. Must be large enough to ride out runner startup.                       |
+| Variable                         | Default  | Description                                                                                                                                                                                  |
+| -------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `WARMUP_TIMEOUT_MS`              | `150000` | Max wait for the first token during runner warmup.                                                                                                                                           |
+| `OUTPUT_HANG_TIMEOUT_MS`         | `150000` | Max gap with no model output (while a request is in flight) before the worker self-terminates.                                                                                               |
+| `PM_CONNECT_TIMEOUT_MS`          | `30000`  | Pipeline manager connect timeout. Must be large enough to ride out runner startup.                                                                                                           |
+| `KV_MIGRATION_TIMEOUT_MS`        | `60000`  | Max age of an `IN_PROGRESS` KV migration before `RemoteKVManagerImpl`'s sweeper marks it `FAILED`. Bump to 300000–600000 (5–10 min) if a stuck migration worker should not fail-fast.        |
+| `KV_MIGRATION_SWEEP_INTERVAL_MS` | `5000`   | How often `RemoteKVManagerImpl`'s drain loop runs the timeout sweep. Worst-case observed latency for marking a stale migration `FAILED` is `KV_MIGRATION_TIMEOUT_MS + this`.                 |
+| `KV_MIGRATION_DRAIN_POLL_MS`     | `100`    | Per-iteration Kafka poll timeout for `RemoteKVManagerImpl`'s drain loop. Also caps how often the sweep clock is checked — lower values trade idle CPU for tighter shutdown/sweep responsiveness. |
 
 ### Shared memory and IPC
 

@@ -7,17 +7,25 @@ import tempfile
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from config.constants import JobTypes
+from config.constants import (
+    DEFAULT_VIDEO_INFERENCE_STEPS,
+    JobTypes,
+    MAX_VIDEO_INFERENCE_STEPS,
+    MIN_VIDEO_INFERENCE_STEPS,
+)
 from domain.video_generate_request import VideoGenerateRequest
 from domain.video_i2v_generate_request import (
     ImagePromptEntry,
     VideoI2VGenerateRequest,
 )
+from fastapi import HTTPException
 from open_ai_api.video import (
+    _is_i2v_only_deployment,
     cancel_video_job,
     download_video_content,
     get_jobs_metadata,
     get_video_metadata,
+    reject_text_to_video_on_i2v_deployment,
     submit_generate_video_i2v_request,
     submit_generate_video_request,
 )
@@ -41,6 +49,74 @@ def _tiny_png_base64() -> str:
     a generated image would end up as an empty bytes buffer.
     """
     return _TINY_PNG_BASE64
+
+
+class TestRejectTextToVideoOnI2VDeployment:
+    """``POST /generations`` must not reach the worker on an I2V-only deploy."""
+
+    @patch("open_ai_api.video._is_i2v_only_deployment", return_value=True)
+    def test_i2v_deployment_rejects_text_only(self, _mock_i2v):
+        with pytest.raises(HTTPException) as exc_info:
+            reject_text_to_video_on_i2v_deployment()
+
+        assert exc_info.value.status_code == 422
+
+    @patch("open_ai_api.video._is_i2v_only_deployment", return_value=True)
+    def test_rejection_points_at_the_i2v_endpoint(self, _mock_i2v):
+        with pytest.raises(HTTPException) as exc_info:
+            reject_text_to_video_on_i2v_deployment()
+
+        assert "/generations/i2v" in exc_info.value.detail
+
+    @patch("open_ai_api.video._is_i2v_only_deployment", return_value=False)
+    def test_t2v_deployment_allows_text_only(self, _mock_i2v):
+        assert reject_text_to_video_on_i2v_deployment() is None
+
+
+class TestIsI2VOnlyDeployment:
+    """Deployment detection: runner first, MODEL only as a fallback.
+
+    Patch through ``open_ai_api.video.settings``, not ``config.settings``: other
+    test modules replace ``sys.modules["config.settings"]`` with a Mock at import
+    time and never restore it, so patching there would only touch the Mock while
+    the code under test keeps its reference to the real settings object.
+    """
+
+    @patch("open_ai_api.video.settings.model_runner", "tt-wan2.2-i2v")
+    def test_i2v_runner_is_detected(self):
+        assert _is_i2v_only_deployment() is True
+
+    @patch("open_ai_api.video.settings.model_runner", "tt-wan2.2")
+    def test_t2v_runner_is_not_i2v(self):
+        with patch.dict(os.environ, {}, clear=True):
+            assert _is_i2v_only_deployment() is False
+
+    @patch("open_ai_api.video.settings.model_runner", "tt-wan2.2")
+    def test_t2v_runner_ignores_a_contradictory_model_env(self):
+        """The runner is 1:1 with its model, so a stale MODEL must not win."""
+        with patch.dict(os.environ, {"MODEL": "Wan2.2-I2V-A14B-Diffusers"}):
+            assert _is_i2v_only_deployment() is False
+
+    @patch("open_ai_api.video.settings.model_runner", "not-a-runner")
+    def test_unknown_runner_is_not_i2v(self):
+        with patch.dict(os.environ, {"MODEL": "Wan2.2-I2V-A14B-Diffusers"}):
+            assert _is_i2v_only_deployment() is False
+
+    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
+    def test_proxy_runner_falls_back_to_model_env(self):
+        """SP_RUNNER serves either T2V or I2V, so MODEL disambiguates it."""
+        with patch.dict(os.environ, {"MODEL": "Wan2.2-I2V-A14B-Diffusers"}):
+            assert _is_i2v_only_deployment() is True
+
+    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
+    def test_proxy_runner_with_t2v_model_is_not_i2v(self):
+        with patch.dict(os.environ, {"MODEL": "Wan2.2-T2V-A14B-Diffusers"}):
+            assert _is_i2v_only_deployment() is False
+
+    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
+    def test_unknown_model_env_is_not_i2v(self):
+        with patch.dict(os.environ, {"MODEL": "not-a-model"}):
+            assert _is_i2v_only_deployment() is False
 
 
 class TestSubmitGenerateVideoRequest:
@@ -353,6 +429,42 @@ class TestVideoGenerateRequestValidation:
         assert request.num_inference_steps == 30
         assert request.seed == 42
 
+    def test_default_inference_steps(self):
+        request = VideoGenerateRequest(prompt="A cat walking in the park")
+        assert request.num_inference_steps == DEFAULT_VIDEO_INFERENCE_STEPS
+
+    def test_min_inference_steps_accepted(self):
+        request = VideoGenerateRequest(
+            prompt="A cat walking in the park",
+            num_inference_steps=MIN_VIDEO_INFERENCE_STEPS,
+        )
+        assert request.num_inference_steps == MIN_VIDEO_INFERENCE_STEPS
+
+    def test_below_min_inference_steps_rejected(self):
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            VideoGenerateRequest(
+                prompt="A cat walking in the park",
+                num_inference_steps=MIN_VIDEO_INFERENCE_STEPS - 1,
+            )
+
+    def test_max_inference_steps_accepted(self):
+        request = VideoGenerateRequest(
+            prompt="A cat walking in the park",
+            num_inference_steps=MAX_VIDEO_INFERENCE_STEPS,
+        )
+        assert request.num_inference_steps == MAX_VIDEO_INFERENCE_STEPS
+
+    def test_above_max_inference_steps_rejected(self):
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            VideoGenerateRequest(
+                prompt="A cat walking in the park",
+                num_inference_steps=MAX_VIDEO_INFERENCE_STEPS + 1,
+            )
+
 
 class TestResponseContent:
     """Tests for response content structure"""
@@ -543,6 +655,57 @@ class TestVideoI2VGenerateRequestValidation:
         assert request.negative_prompt == "blurry"
         assert request.num_inference_steps == 30
         assert request.seed == 42
+
+    def test_inherits_min_inference_steps(self):
+        """I2V uses the same API floor as T2V; 4 must not 422."""
+        request = VideoI2VGenerateRequest(
+            prompt="A cat",
+            num_inference_steps=MIN_VIDEO_INFERENCE_STEPS,
+            image_prompts=[ImagePromptEntry(image=_tiny_png_base64(), frame_pos=0)],
+        )
+        assert request.num_inference_steps == MIN_VIDEO_INFERENCE_STEPS
+
+    def test_inherits_below_min_inference_steps_rejected(self):
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            VideoI2VGenerateRequest(
+                prompt="A cat",
+                num_inference_steps=MIN_VIDEO_INFERENCE_STEPS - 1,
+                image_prompts=[ImagePromptEntry(image=_tiny_png_base64(), frame_pos=0)],
+            )
+
+    def test_valid_image_with_data_uri_prefix_accepted(self):
+        """base64 image with 'data:image/png;base64,' prefix should pass."""
+        prefixed = "data:image/png;base64," + _tiny_png_base64()
+        entry = ImagePromptEntry(image=prefixed, frame_pos=0)
+        assert entry.image == prefixed
+
+    def test_invalid_base64_rejected(self):
+        """Garbage string that isn't valid base64 should fail validation."""
+        from pydantic import ValidationError
+
+        with pytest.raises(
+            ValidationError, match="could not be decoded to a valid PIL image"
+        ):
+            ImagePromptEntry(image="not-a-real-image!!!", frame_pos=0)
+
+    def test_valid_base64_non_image_rejected(self):
+        """Valid base64 encoding of non-image bytes should fail validation."""
+        import base64
+
+        from pydantic import ValidationError
+
+        fake = base64.b64encode(b"hello world this is not an image").decode()
+        with pytest.raises(
+            ValidationError, match="could not be decoded to a valid PIL image"
+        ):
+            ImagePromptEntry(image=fake, frame_pos=0)
+
+    def test_raw_base64_png_accepted(self):
+        """Raw base64 PNG without data URI prefix should pass."""
+        entry = ImagePromptEntry(image=_tiny_png_base64(), frame_pos=0)
+        assert entry.frame_pos == 0
 
 
 if __name__ == "__main__":

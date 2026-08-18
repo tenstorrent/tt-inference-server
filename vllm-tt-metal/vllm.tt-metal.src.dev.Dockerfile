@@ -29,7 +29,7 @@ ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
     CONFIG=Release \
     TT_METAL_ENV=dev \
     VLLM_TARGET_DEVICE="tt" \
-    vllm_dir=${HOME_DIR}/vllm \
+    vllm_tt_plugin_dir=${HOME_DIR}/vllm-tt-plugin \
     TT_SMI_DIR=${HOME_DIR}/tt-smi \
     LOGURU_LEVEL=INFO \
     # Rust build dependencies, for backward compatibility with tt-metal 
@@ -76,28 +76,39 @@ RUN /bin/bash -c "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
     && . ${CARGO_HOME}/env \
     && rustup update"
 
+# download.pytorch.org intermittently returns 503 during dependency installs;
+# raise uv's HTTP retry count (default 3) for every uv invocation in create_venv.sh.
+ENV UV_HTTP_RETRIES=10
+
 # Build tt-metal - clone with minimal history, build, and clean
-RUN /bin/bash -c "git clone https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
+# uv's cache grows to ~3G here and ~11G after the vLLM install; the builder stage is
+# discarded, but its layers still fill the container storage fs during image export.
+# A full-history clone of tt-metal has taken over an hour on CI, connection dropped ("fatal: early
+# EOF"). Only the pinned commit is needed, so fetch just that (matches the shallow
+# clone already used by tt-media-server/Dockerfile).
+RUN /bin/bash -c "git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
     && cd ${TT_METAL_HOME} \
+    && git fetch --depth 1 origin ${TT_METAL_COMMIT_SHA_OR_TAG} \
     && git checkout ${TT_METAL_COMMIT_SHA_OR_TAG} \
     && git submodule update --init --recursive \
     && bash ./build_metal.sh \
-    && CXX=clang++-17 CC=clang-17 bash ./create_venv.sh \
+    && ( for i in 1 2 3 4 5; do CXX=clang++-17 CC=clang-17 bash ./create_venv.sh && exit 0; echo 'create_venv.sh failed, retrying in 30s'; sleep 30; done; exit 1 ) \
     && source ${PYTHON_ENV_DIR}/bin/activate \
     && if [ -f 'models/demos/qwen25_vl/requirements.txt' ]; then uv pip install -r models/demos/qwen25_vl/requirements.txt; fi \
-    && rm -rf ${TT_METAL_HOME}/.git"
+    && rm -rf ${TT_METAL_HOME}/.git \
+    && { uv cache clean || echo 'WARN: uv cache clean failed'; true; }"
 
-# Build vllm - clone with minimal history and clean
-# Use uv pip to match tt-metal's package manager (see tt-metal commit 29d59d1)
-# Use --index-strategy unsafe-best-match to allow uv to find packages across all indexes
-RUN /bin/bash -c "git clone https://github.com/tenstorrent/vllm.git ${vllm_dir} \
-    && cd ${vllm_dir} \
+# Build vllm-tt-plugin - clone with minimal history and clean.
+# The plugin owns the vLLM version pin and its dependency overrides, so the
+# install is delegated to its own docs/install-vllm-tt.sh rather than restated here
+RUN /bin/bash -c "git clone https://github.com/tenstorrent/vllm-tt-plugin.git ${vllm_tt_plugin_dir} \
+    && cd ${vllm_tt_plugin_dir} \
     && git checkout ${TT_VLLM_COMMIT_SHA_OR_TAG} \
     && source ${PYTHON_ENV_DIR}/bin/activate \
     && uv pip install --upgrade pip \
-    && VLLM_TARGET_DEVICE=empty uv pip install --index-strategy unsafe-best-match -e . --extra-index-url https://download.pytorch.org/whl/cpu \
-    && if [ -d plugins/vllm-tt-plugin ]; then uv pip install --index-strategy unsafe-best-match -e 'plugins/vllm-tt-plugin[runtime]' --extra-index-url https://download.pytorch.org/whl/cpu; fi \
-    && rm -rf ${vllm_dir}/.git"
+    && source docs/install-vllm-tt.sh \
+    && rm -rf ${vllm_tt_plugin_dir}/.git \
+    && { uv cache clean || echo 'WARN: uv cache clean failed'; true; }"
 
 # Build tt-smi in separate venv to avoid conflicts with tt-metal venv
 RUN /bin/bash -c "git clone https://github.com/tenstorrent/tt-smi.git ${TT_SMI_DIR} \
@@ -136,7 +147,7 @@ ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
     CONFIG=Release \
     TT_METAL_ENV=dev \
     VLLM_TARGET_DEVICE="tt" \
-    vllm_dir=${HOME_DIR}/vllm \
+    vllm_tt_plugin_dir=${HOME_DIR}/vllm-tt-plugin \
     TT_SMI_DIR=${HOME_DIR}/tt-smi \
     LOGURU_LEVEL=INFO \
     TT_METAL_LOGS_PATH=${HOME_DIR}/logs
@@ -176,9 +187,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     ${TT_METAL_HOME} ${TT_METAL_HOME}
 
-# Copy complete vllm installation  
+# Copy the vllm-tt-plugin source tree. This is the editable-install target, so it
+# must land at the same absolute path as in the builder or the .pth link breaks.
+# vLLM itself needs no COPY of its own: it is a regular (non-editable) install
+# inside ${PYTHON_ENV_DIR}/site-packages, already copied with TT_METAL_HOME above.
 COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
-    ${vllm_dir} ${vllm_dir}
+    ${vllm_tt_plugin_dir} ${vllm_tt_plugin_dir}
 
 # Copy complete tt-smi installation  
 COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \

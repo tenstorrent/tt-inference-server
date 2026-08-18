@@ -269,6 +269,13 @@ class HostSetupManager:
                 "tokenizer_format": "tokenizer_config.json",
                 "params_format": "config.json",
             },
+            {
+                "format_name": "diffusers",
+                "weights_format": "**/*.safetensors",
+                "tokenizer_format": "tokenizer.json",
+                "params_format": "model_index.json",
+                "tokenizer_optional": True,
+            },
         ]
 
         # Check each format
@@ -281,7 +288,11 @@ class HostSetupManager:
             logger.info(f"has_tokenizer: {has_tokenizer}")
             logger.info(f"has_params: {has_params}")
 
-            if has_weights and has_tokenizer and has_params:
+            if (
+                has_weights
+                and (has_tokenizer or fmt.get("tokenizer_optional"))
+                and has_params
+            ):
                 self.setup_config.model_weights_format = fmt["format_name"]
                 logger.info(f"Detected {fmt['format_name']} model format")
                 logger.info(
@@ -578,9 +589,9 @@ class HostSetupManager:
             / "weights"
             / self.model_spec.model_name
         )
-        if self.check_model_weights_dir(host_weights_dir):
-            logger.info("Weights already exist in host volume, skipping download")
-            return
+        # Always run `hf download`; it resumes partial downloads and skips files
+        # already present. weights_complete only gates the offline fallback below.
+        weights_complete = self.check_model_weights_dir(host_weights_dir)
         host_weights_dir.mkdir(parents=True, exist_ok=True)
         cmd = [
             str(hf_exec),
@@ -594,7 +605,13 @@ class HostSetupManager:
         logger.info(f"Downloading model to host volume: {hf_repo}")
         logger.info(f"Command: {shlex.join(cmd)}")
         result = subprocess.run(cmd)
-        assert result.returncode == 0, f"⛔ Error during: {' '.join(cmd)}"
+        if result.returncode != 0 and weights_complete:
+            logger.warning(
+                f"Could not reach Hugging Face to verify weights; "
+                f"using existing weights at {host_weights_dir}"
+            )
+        else:
+            assert result.returncode == 0, f"⛔ Error during: {' '.join(cmd)}"
         logger.info(f"✅ Using weights directory: {host_weights_dir}")
 
     def setup_weights_local(self):

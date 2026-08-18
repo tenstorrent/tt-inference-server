@@ -56,42 +56,26 @@ class WorkflowConfig:
 
 WORKFLOW_BENCHMARKS_CONFIG = WorkflowConfig(
     workflow_type=WorkflowType.BENCHMARKS,
-    run_script_path=get_repo_root_path() / "benchmarking" / "run_benchmarks.py",
+    run_script_path=get_repo_root_path() / "run_workflows.py",
     workflow_run_script_venv_type=WorkflowVenvType.BENCHMARKS_RUN_SCRIPT,
 )
 
-WORKFLOW_BENCHMARKS_AIPERF_CONFIG = WorkflowConfig(
-    workflow_type=WorkflowType.BENCHMARKS,
-    run_script_path=get_repo_root_path() / "benchmarking" / "run_aiperf_benchmarks.py",
-    workflow_run_script_venv_type=WorkflowVenvType.BENCHMARKS_AIPERF,
-    # Use default name="benchmarks" (same as vLLM and GenAI-Perf) for unified output directory
-)
-WORKFLOW_BENCHMARKS_GUIDELLM_CONFIG = WorkflowConfig(
-    workflow_type=WorkflowType.BENCHMARKS,
-    run_script_path=get_repo_root_path()
-    / "benchmarking"
-    / "run_guidellm_benchmarks.py",
-    workflow_run_script_venv_type=WorkflowVenvType.BENCHMARKS_GUIDELLM,
-    # Use default name="benchmarks" for unified output directory across tools.
-)
 WORKFLOW_EVALS_CONFIG = WorkflowConfig(
     workflow_type=WorkflowType.EVALS,
-    run_script_path=get_repo_root_path() / "evals" / "run_evals.py",
+    run_script_path=get_repo_root_path() / "run_workflows.py",
     workflow_run_script_venv_type=WorkflowVenvType.EVALS_RUN_SCRIPT,
 )
 WORKFLOW_STRESS_TESTS_CONFIG = WorkflowConfig(
     workflow_type=WorkflowType.STRESS_TESTS,
-    run_script_path=get_repo_root_path() / "stress_tests" / "run_stress_tests.py",
+    run_script_path=get_repo_root_path()
+    / "test_module"
+    / "stress_tests"
+    / "run_stress_tests.py",
     workflow_run_script_venv_type=WorkflowVenvType.STRESS_TESTS_RUN_SCRIPT,
-)
-WORKFLOW_TESTS_CONFIG = WorkflowConfig(
-    workflow_type=WorkflowType.TESTS,
-    run_script_path=get_repo_root_path() / "server_tests" / "run_tests.py",
-    workflow_run_script_venv_type=WorkflowVenvType.TESTS_RUN_SCRIPT,
 )
 WORKFLOW_SPEC_TESTS_CONFIG = WorkflowConfig(
     workflow_type=WorkflowType.SPEC_TESTS,
-    run_script_path=get_repo_root_path() / "server_tests" / "run_spec_tests.py",
+    run_script_path=get_repo_root_path() / "run_workflows.py",
     workflow_run_script_venv_type=WorkflowVenvType.TESTS_RUN_SCRIPT,
 )
 WORKFLOW_SERVER_CONFIG = WorkflowConfig(
@@ -103,21 +87,13 @@ WORKFLOW_SERVER_CONFIG = WorkflowConfig(
     workflow_run_script_venv_type=None,
 )
 
-WORKFLOW_REPORT_CONFIG = WorkflowConfig(
-    workflow_type=WorkflowType.REPORTS,
-    run_script_path=get_repo_root_path() / "workflows" / "run_reports.py",
-    workflow_run_script_venv_type=WorkflowVenvType.REPORTS_RUN_SCRIPT,
-)
-
 # Define WorkflowConfig instances in a list
 workflow_config_list = [
     WORKFLOW_BENCHMARKS_CONFIG,
     WORKFLOW_EVALS_CONFIG,
     WORKFLOW_STRESS_TESTS_CONFIG,
-    WORKFLOW_TESTS_CONFIG,
     WORKFLOW_SERVER_CONFIG,
     WORKFLOW_SPEC_TESTS_CONFIG,
-    WORKFLOW_REPORT_CONFIG,
 ]
 
 # Generate a dictionary keyed by the workflow name for each WorkflowConfig instance

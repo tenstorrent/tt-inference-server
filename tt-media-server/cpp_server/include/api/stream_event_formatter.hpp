@@ -9,8 +9,6 @@
 
 #include "api/response_writer/response_writer.hpp"
 #include "domain/llm/llm_response.hpp"
-#include "domain/llm/sampling_params.hpp"
-#include "domain/responses_request.hpp"
 
 namespace tt::api {
 
@@ -18,7 +16,7 @@ using namespace tt::domain::llm;
 
 /**
  * Strategy interface that converts LLM stream callbacks into SSE frames for a
- * specific OpenAI-compatible protocol (chat completions, responses, ...).
+ * specific OpenAI-compatible protocol (chat completions, ...).
  *
  * The writer owns one formatter per request and calls these hooks in this
  * order: formatInitialEvents -> formatTokenEvents (N times) ->
@@ -65,47 +63,6 @@ class ChatCompletionEventFormatter final : public StreamEventFormatter {
                                 const std::string& accumulatedText,
                                 const std::optional<std::string>& finishReason,
                                 bool includeUsage) override;
-};
-
-/** Responses API SSE: emits `response.created`, `response.output_text.delta`,
- *  `response.completed` / `response.incomplete`, etc. No `[DONE]` terminator.
- */
-class ResponsesEventFormatter final : public StreamEventFormatter {
- public:
-  ResponsesEventFormatter(std::shared_ptr<domain::ResponsesRequest> request,
-                          tt::domain::llm::SamplingParams samplingParams);
-
-  std::string formatInitialEvents(
-      const ResponseWriterParams& params,
-      const std::optional<CompletionUsage>& initialUsage) override;
-
-  std::string formatTokenEvents(const ResponseWriterParams& params,
-                                const LLMStreamChunk& chunk,
-                                const std::optional<CompletionUsage>& usage,
-                                int currentTokens,
-                                const std::string& accumulatedText) override;
-
-  std::string formatFinalEvents(const ResponseWriterParams& params,
-                                const CompletionUsage& usage,
-                                const std::string& accumulatedText,
-                                const std::optional<std::string>& finishReason,
-                                bool includeUsage) override;
-
- private:
-  std::shared_ptr<domain::ResponsesRequest> request_;
-  tt::domain::llm::SamplingParams sampling_params_;
-
-  static constexpr int kOutputIndex = 0;
-  static constexpr int kContentIndex = 0;
-  static constexpr const char* kItemId = "msg_0";
-
-  int sequence_number_ = 0;
-
-  std::string formatEvent(const std::string& eventName,
-                          const Json::Value& payload);
-  std::string buildResponseObjectJson(
-      int64_t createdAt, const std::string& status, const Json::Value& output,
-      const std::optional<CompletionUsage>& usage) const;
 };
 
 }  // namespace tt::api

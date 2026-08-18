@@ -19,7 +19,7 @@ namespace tt::domain::llm {
 struct PrefillRequest {
   uint32_t task_id;
   std::string prompt;
-  std::vector<int64_t> token_ids;
+  std::vector<uint32_t> token_ids;
   std::optional<int> max_tokens;
 
   explicit PrefillRequest(uint32_t taskId) : task_id(taskId) {}

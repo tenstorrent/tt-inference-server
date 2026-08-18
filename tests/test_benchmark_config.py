@@ -5,6 +5,7 @@
 
 import importlib
 import sys
+from dataclasses import replace
 from typing import Iterable, List, Optional, Set, Tuple
 
 import pytest
@@ -31,14 +32,14 @@ def _find_model_id(
 
 
 def _import_benchmark_config(monkeypatch):
-    # benchmark_config builds BENCHMARK_CONFIGS at import-time and optionally
-    # skips sweeps based on ONLY_BENCHMARK_TARGETS. We want sweeps enabled here.
+    # benchmark_config optionally skips sweeps based on ONLY_BENCHMARK_TARGETS.
+    # We want sweeps enabled here.
     #
     # NOTE: bool(os.getenv("ONLY_BENCHMARK_TARGETS")) treats any non-empty string
     # as True (including "0"), so we must *unset* the env var.
     monkeypatch.delenv("ONLY_BENCHMARK_TARGETS", raising=False)
 
-    module_name = "benchmarking.benchmark_config"
+    module_name = "reference_config.benchmarking.benchmark_config"
     if module_name in sys.modules:
         return importlib.reload(sys.modules[module_name])
     return importlib.import_module(module_name)
@@ -82,9 +83,7 @@ def test_benchmark_configs_selected_models_print_sweeps(
     model_id = _find_model_id(
         model_name=model_name, device=device, impl_name="tt-transformers"
     )
-    assert model_id in benchmark_config.BENCHMARK_CONFIGS
-
-    config = benchmark_config.BENCHMARK_CONFIGS[model_id]
+    config = benchmark_config.get_benchmark_config(MODEL_SPECS[model_id])
     assert config.model_id == model_id
     assert len(config.tasks) == 3  # perf_reference + sweeps + structured_output
 
@@ -175,7 +174,7 @@ def test_select_smoke_test_benchmark_config(
         model_name=model_name, device=device, impl_name="tt-transformers"
     )
 
-    config = benchmark_config.BENCHMARK_CONFIGS[model_id]
+    config = benchmark_config.get_benchmark_config(MODEL_SPECS[model_id])
     smoke_config = benchmark_config.select_smoke_test_benchmark_config(config, device)
 
     assert smoke_config.model_id == config.model_id
@@ -224,6 +223,45 @@ def test_select_smoke_test_benchmark_config_adds_smoke_pair_without_targets(
     assert getattr(smoke_sweep_params[0], "task_type", "text") == "text"
 
 
+def test_get_benchmark_config_uses_runtime_spec_even_when_model_id_collides(
+    monkeypatch,
+):
+    benchmark_config = _import_benchmark_config(monkeypatch)
+
+    source_id = _find_model_id(
+        model_name="Qwen3-8B", device=DeviceTypes.N150, impl_name="tt-transformers"
+    )
+    source_spec = MODEL_SPECS[source_id]
+    runtime_spec = replace(
+        source_spec,
+        device_model_spec=replace(
+            source_spec.device_model_spec,
+            max_context=256,
+            max_concurrency=32,
+        ),
+    )
+
+    config = benchmark_config.get_benchmark_config(runtime_spec)
+
+    assert config.model_id == source_id
+    assert len(config.tasks) == 3
+    assert runtime_spec.device_type in config.tasks[0].param_map
+    assert config.tasks[0].param_map[runtime_spec.device_type]
+
+    sweep_task = config.tasks[1]
+    sweep_params = sweep_task.param_map[runtime_spec.device_type]
+    assert [
+        p.max_concurrency
+        for p in sweep_params
+        if p.isl == 128 and p.osl == 128 and getattr(p, "task_type", "text") == "text"
+    ] == [1]
+    assert not [
+        p
+        for p in sweep_params
+        if p.isl == 128 and p.osl == 1024 and getattr(p, "task_type", "text") == "text"
+    ]
+
+
 def test_select_smoke_test_benchmark_config_skips_non_text_sweeps(monkeypatch):
     benchmark_config = _import_benchmark_config(monkeypatch)
 
@@ -241,3 +279,98 @@ def test_select_smoke_test_benchmark_config_skips_non_text_sweeps(monkeypatch):
     )
 
     assert smoke_config.tasks == []
+
+
+def test_get_num_prompts_min_floor(monkeypatch):
+    benchmark_config = _import_benchmark_config(monkeypatch)
+
+    # High-ISL point: base is 1x concurrency (=64); the floor raises it to 256.
+    assert benchmark_config.get_num_prompts(245760, 128, 64) == 64
+    assert benchmark_config.get_num_prompts(245760, 128, 64, min_num_prompts=256) == 256
+
+    # Low-ISL point: base is 8x concurrency (=512), already above the floor.
+    assert benchmark_config.get_num_prompts(128, 128, 64) == 512
+    assert benchmark_config.get_num_prompts(128, 128, 64, min_num_prompts=256) == 512
+
+    # The floor never lowers a base count that already exceeds it.
+    assert (
+        benchmark_config.get_num_prompts(245760, 128, 512, min_num_prompts=256) == 512
+    )
+
+
+def _make_super_cluster_runtime_spec():
+    source_id = _find_model_id(
+        model_name="Qwen3-8B", device=DeviceTypes.N150, impl_name="tt-transformers"
+    )
+    source_spec = MODEL_SPECS[source_id]
+    return source_id, replace(
+        source_spec,
+        device_type=DeviceTypes.SUPER_CLUSTER,
+        device_model_spec=replace(
+            source_spec.device_model_spec,
+            device=DeviceTypes.SUPER_CLUSTER,
+            max_context=262144,  # 256K, matching Kimi's SUPER_CLUSTER spec
+            max_concurrency=64,
+        ),
+    )
+
+
+def test_super_cluster_sweep_enforces_min_num_prompts(monkeypatch):
+    benchmark_config = _import_benchmark_config(monkeypatch)
+
+    _, runtime_spec = _make_super_cluster_runtime_spec()
+    config = benchmark_config.get_benchmark_config(runtime_spec)
+
+    sweep_params = config.tasks[1].param_map[DeviceTypes.SUPER_CLUSTER]
+    text_params = [p for p in sweep_params if getattr(p, "task_type", "text") == "text"]
+    assert text_params
+
+    floor = benchmark_config.SUPER_CLUSTER_MIN_NUM_PROMPTS
+
+    for p in text_params:
+        # A sweep point must never issue fewer prompts than its concurrency.
+        assert p.num_prompts >= p.max_concurrency
+        # Multi-user points must honor the SUPER_CLUSTER floor.
+        if p.max_concurrency > 1:
+            assert p.num_prompts >= floor
+
+    # Single-user latency points use the normal length-based count (1-8);
+    # applying the throughput floor here would waste 256 serial requests.
+    single_user = [p for p in text_params if p.max_concurrency == 1]
+    assert single_user
+    for p in single_user:
+        assert p.num_prompts == benchmark_config.get_num_prompts(p.isl, p.osl, 1)
+        assert p.num_prompts < floor
+
+    # The high-ISL extension points must be present and respect the floor
+    # (their base 1x concurrency count would otherwise fall well below it).
+    high_isl = [p for p in text_params if p.isl >= 196608 and p.max_concurrency > 1]
+    assert high_isl
+    for p in high_isl:
+        assert p.num_prompts >= floor
+
+
+def test_non_super_cluster_sweep_has_no_min_num_prompts_floor(monkeypatch):
+    benchmark_config = _import_benchmark_config(monkeypatch)
+
+    model_id = _find_model_id(
+        model_name="Qwen3-8B", device=DeviceTypes.N150, impl_name="tt-transformers"
+    )
+    config = benchmark_config.get_benchmark_config(MODEL_SPECS[model_id])
+
+    sweep_params = config.tasks[1].param_map[DeviceTypes.N150]
+    text_params = [p for p in sweep_params if getattr(p, "task_type", "text") == "text"]
+    assert text_params
+
+    # num_prompts must match the unfloored helper for a non-SUPER_CLUSTER device.
+    for p in text_params:
+        assert p.num_prompts == benchmark_config.get_num_prompts(
+            p.isl, p.osl, p.max_concurrency
+        )
+
+    # At least one point falls below the SUPER_CLUSTER floor (e.g. the
+    # concurrency=1 sweep points), proving the floor is not applied here.
+    assert any(
+        p.num_prompts < benchmark_config.SUPER_CLUSTER_MIN_NUM_PROMPTS
+        for p in text_params
+    )

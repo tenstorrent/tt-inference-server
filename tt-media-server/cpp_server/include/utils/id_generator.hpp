@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <random>
 
 namespace tt::utils {
 
@@ -26,6 +27,23 @@ class TaskIDGenerator {
   static uint32_t generate() {
     static std::atomic<uint32_t> counter{0};
     return ++counter;
+  }
+};
+
+/**
+ * Generates unique 64-bit migration IDs using a thread-local PRNG.
+ * Used to correlate prefill requests with their results across the
+ * inter-server socket.
+ */
+class MigrationIDGenerator {
+ public:
+  static uint64_t generate() {
+    thread_local std::mt19937_64 gen = []() {
+      std::random_device rd;
+      return std::mt19937_64(rd());
+    }();
+    thread_local std::uniform_int_distribution<uint64_t> dist;
+    return dist(gen);
   }
 };
 

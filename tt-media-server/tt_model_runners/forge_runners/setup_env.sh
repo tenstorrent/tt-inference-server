@@ -41,6 +41,9 @@ fi
 if [ -f "tt_model_runners/forge_runners/requirements.txt" ]; then
     # Dissable pip's package cache, reducing disk usage during installation and Docker size
     pip install --no-cache-dir -r tt_model_runners/forge_runners/requirements.txt
+    if [ -f "tt_model_runners/forge_runners/requirements-no-build-isolation.txt" ]; then
+        pip install --no-cache-dir --no-deps --no-build-isolation -r tt_model_runners/forge_runners/requirements-no-build-isolation.txt
+    fi
     tt-forge-install
 fi
 

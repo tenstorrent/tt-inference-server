@@ -23,42 +23,42 @@ class SocketTransportState {
                            std::chrono::milliseconds(100),
                        std::chrono::milliseconds reconnectMaxDelay =
                            std::chrono::milliseconds(5000))
-      : reconnectInitialDelay_(reconnectInitialDelay),
-        reconnectMaxDelay_(reconnectMaxDelay) {}
+      : reconnectInitialDelay(reconnectInitialDelay),
+        reconnectMaxDelay(reconnectMaxDelay) {}
 
-  bool isConnectedState() const { return connected_; }
+  bool isConnectedState() const { return connected; }
 
-  std::string getStatusString() const {
-    if (!running_) {
+  std::string getStatusString(bool connected) const {
+    if (!running) {
       return "stopped";
     }
-    if (connected_) {
-      return mode_ == Mode::SERVER ? "server:connected" : "client:connected";
+    if (connected) {
+      return mode == Mode::SERVER ? "server:connected" : "client:connected";
     }
-    return mode_ == Mode::SERVER ? "server:waiting" : "client:connecting";
+    return mode == Mode::SERVER ? "server:waiting" : "client:connecting";
   }
 
   const char* modeName() const {
-    return mode_ == Mode::SERVER ? "server" : "client";
+    return mode == Mode::SERVER ? "server" : "client";
   }
 
-  void markDisconnected() { connected_ = false; }
+  void markDisconnected() { connected = false; }
 
   void setConnectionLostCallbackCommon(std::function<void()> callback) {
-    std::lock_guard<std::mutex> lock(callbackMutex_);
-    connectionLostCallback_ = std::move(callback);
+    std::lock_guard<std::mutex> lock(callbackMutex);
+    connectionLostCallback = std::move(callback);
   }
 
   void setConnectionEstablishedCallbackCommon(std::function<void()> callback) {
-    std::lock_guard<std::mutex> lock(callbackMutex_);
-    connectionEstablishedCallback_ = std::move(callback);
+    std::lock_guard<std::mutex> lock(callbackMutex);
+    connectionEstablishedCallback = std::move(callback);
   }
 
   void notifyConnectionLost() {
     std::function<void()> callback;
     {
-      std::lock_guard<std::mutex> lock(callbackMutex_);
-      callback = connectionLostCallback_;
+      std::lock_guard<std::mutex> lock(callbackMutex);
+      callback = connectionLostCallback;
     }
     if (callback) {
       callback();
@@ -68,8 +68,8 @@ class SocketTransportState {
   void notifyConnectionEstablished() {
     std::function<void()> callback;
     {
-      std::lock_guard<std::mutex> lock(callbackMutex_);
-      callback = connectionEstablishedCallback_;
+      std::lock_guard<std::mutex> lock(callbackMutex);
+      callback = connectionEstablishedCallback;
     }
     if (callback) {
       callback();
@@ -78,20 +78,20 @@ class SocketTransportState {
 
   void setReconnectBackoffCommon(std::chrono::milliseconds initialDelay,
                                  std::chrono::milliseconds maxDelay) {
-    reconnectInitialDelay_ = initialDelay;
-    reconnectMaxDelay_ = maxDelay;
+    reconnectInitialDelay = initialDelay;
+    reconnectMaxDelay = maxDelay;
   }
 
-  Mode mode_{Mode::CLIENT};
-  std::atomic<bool> running_{false};
-  std::atomic<bool> connected_{false};
-  std::chrono::milliseconds reconnectInitialDelay_;
-  std::chrono::milliseconds reconnectMaxDelay_;
+  Mode mode{Mode::CLIENT};
+  std::atomic<bool> running{false};
+  std::atomic<bool> connected{false};
+  std::chrono::milliseconds reconnectInitialDelay;
+  std::chrono::milliseconds reconnectMaxDelay;
 
  private:
-  mutable std::mutex callbackMutex_;
-  std::function<void()> connectionLostCallback_;
-  std::function<void()> connectionEstablishedCallback_;
+  mutable std::mutex callbackMutex;
+  std::function<void()> connectionLostCallback;
+  std::function<void()> connectionEstablishedCallback;
 };
 
 }  // namespace tt::sockets

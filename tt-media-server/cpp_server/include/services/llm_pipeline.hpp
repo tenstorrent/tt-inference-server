@@ -4,9 +4,9 @@
 #pragma once
 
 #include <cstdint>
+#include <exception>
 #include <functional>
 #include <memory>
-#include <optional>
 #include <string>
 #include <vector>
 
@@ -15,6 +15,10 @@
 
 namespace trantor {
 class EventLoop;
+}
+
+namespace tt::domain {
+class Session;
 }
 
 namespace tt::services {
@@ -34,8 +38,8 @@ namespace tt::services {
  * management, and dispatch to either the in-process LLMService or the
  * disaggregated prefill path.
  *
- * Both `LLMController` (HTTP /v1/chat/completions, /v1/responses) and
- * `tt::dynamo::DynamoEndpoint` (TCP `generate`) drive the same pipeline so
+ * Both `LLMController` (HTTP /v1/chat/completions) and
+ * `tt::dynamo::DynamoWorkerServer` (TCP `generate`) drive the same pipeline so
  * Dynamo requests benefit from the same session/prefix-cache reuse and
  * disaggregation routing as HTTP traffic.
  *
@@ -57,6 +61,24 @@ class LLMPipeline {
   struct SessionInfo {
     bool validSessionFound = false;
     std::vector<uint64_t> registrationHashes;
+  };
+
+  using StreamCallback =
+      std::function<void(const tt::domain::llm::LLMStreamChunk&, bool)>;
+  using StreamCallbackFactory = std::function<StreamCallback(
+      SessionInfo, std::shared_ptr<tt::domain::Session>)>;
+
+  struct GenerationHandlers {
+    std::function<void(SessionInfo)> onSessionResolved;
+    std::function<void()> onPreProcessed;
+    std::function<void()> onDispatchSucceeded;
+    std::function<void(const std::exception&,
+                       std::shared_ptr<tt::domain::Session>)>
+        onPreProcessError;
+    std::function<void(const std::exception&,
+                       std::shared_ptr<tt::domain::Session>)>
+        onDispatchError;
+    std::function<void(const SessionError&)> onSessionError;
   };
 
   LLMPipeline(std::shared_ptr<LLMService> service,
@@ -86,14 +108,32 @@ class LLMPipeline {
                       std::function<void()> cancelFn = nullptr) const;
 
   /**
+   * Shared HTTP/Dynamo orchestration: resolve, preprocess, build the frontend
+   * stream callback, and dispatch generation.
+   */
+  void runStreamingRequest(std::shared_ptr<tt::domain::llm::LLMRequest> req,
+                           trantor::EventLoop* loop,
+                           StreamCallbackFactory makeStreamCallback,
+                           GenerationHandlers handlers,
+                           std::function<void()> cancelFn = nullptr) const;
+
+  /**
    * Submit `request` to the appropriate streaming producer based on
    * `LLM_MODE` (REGULAR vs DECODE_ONLY) and the prefill-on-decode heuristic.
-   * Caller must invoke `service->preProcess(req)` (or set `skipPreProcess`
-   * upstream) before calling this. Throws on unsupported mode or queue/dispatch
-   * failures.
+   * Prefer `runStreamingRequest` from frontend code; direct callers must
+   * preprocess first or arrange an equivalent skip upstream.
+   * Throws on unsupported mode or queue/dispatch failures.
    */
   void dispatchGeneration(
       tt::domain::llm::LLMRequest& request, SessionInfo sessionInfo,
+      const std::function<void(const tt::domain::llm::LLMStreamChunk&, bool)>&
+          cb) const;
+
+  /// Submit a request that already resolved routing/session state outside the
+  /// normal pipeline flow, such as a Dynamo-routed decode request carrying a
+  /// prefill result.
+  void submitResolvedStreamingRequest(
+      tt::domain::llm::LLMRequest& request,
       const std::function<void(const tt::domain::llm::LLMStreamChunk&, bool)>&
           cb) const;
 
@@ -105,8 +145,15 @@ class LLMPipeline {
   }
 
  private:
-  bool shouldDoPrefillOnDecode(const tt::domain::llm::LLMRequest& request,
-                               bool validSessionFound) const;
+  bool shouldDoPrefillOnDecode(
+      const tt::domain::llm::LLMRequest& request) const;
+
+  // Decide, given the uncached delta size, whether prefill runs locally on the
+  // decode device (true) or is sent to the prefill server (false). Shared by
+  // session resolution and dispatch so the slot-copy decision and the actual
+  // prefill routing stay consistent.
+  bool willPrefillOnDecode(const tt::domain::llm::LLMRequest& request,
+                           size_t deltaTokens) const;
 
   std::shared_ptr<LLMService> service_;
   std::shared_ptr<SessionManager> sessionManager_;

@@ -1,8 +1,8 @@
-# gemma-3-1b-it Tenstorrent Support on N150/N300
+# gemma-3-1b-it Tenstorrent Support on N150
 
 #### Useful links
 
-- [N150/N300 details](https://tenstorrent.com/hardware/wormhole)
+- [N150 details](https://tenstorrent.com/hardware/wormhole)
 - [Search other llm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 

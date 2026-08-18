@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import atexit
+import json
 import logging
 import os
 import shlex
@@ -144,6 +145,7 @@ def get_media_server_docker_env_vars(model_spec):
 
     env_vars = {
         "CACHE_ROOT": "/home/container_app_user/cache_root",  # TODO: remove this
+        "HF_HOME": "/home/container_app_user/cache_root/huggingface",  # Keep HF weight cache on the persistent cache_root volume
         "MODEL": model_spec.model_name,
         "DEVICE": model_spec.device_type.name.lower(),
     }
@@ -176,10 +178,7 @@ def ensure_docker_image(image_name):
         logger=logger,
     )
     if return_code != 0:
-        err_str = "⛔ Docker image does not exist locally."
-        if "-release-" in image_name:
-            err_str += " You are running in release mode, use '--dev-mode' CLI argto run the dev image."
-        logger.error(err_str)
+        logger.error("⛔ Docker image does not exist locally.")
         return False
     logger.info("✅ Docker Image available locally. See SHA and built timestamp above.")
     return True
@@ -216,6 +215,75 @@ def format_docker_command(docker_command):
             lines.append(quoted)
             i += 1
     return " \\\n  ".join(lines)
+
+
+# run_vllm_api_server consumes these either as its own wrapper args (parse_known_args), or as flags that the orchestrator manages (port, host). Passing them via --vllm-override-args would change wrapper behavior.
+# Reject them so the override channel stays genuinely vLLM-only.
+_RESERVED_WRAPPER_FLAGS = {
+    "model",
+    "tt-device",
+    "device",
+    "engine",
+    "impl",
+    "no-auth",
+    "disable-trace-capture",
+    "service-port",
+    "port",
+    "host",
+}
+
+
+def _vllm_override_cli_args(vllm_override_args) -> List[str]:
+    """Render --vllm-override-args (a JSON object string) into vLLM passthrough CLI flags for the docker-server container.
+
+    run_vllm_api_server parses known wrapper args and forwards the rest straight to ``vllm serve`` (parse_known_args).
+    Keys that collide with run_vllm_api_server's own wrapper flags are rejected.
+
+    Args:
+        vllm_override_args: JSON string of vLLM overrides
+
+    Returns:
+        List of vLLM passthrough CLI flags
+    """
+    if not vllm_override_args:
+        return []
+    try:
+        overrides = json.loads(vllm_override_args)
+    except (TypeError, ValueError):
+        logger.warning(
+            f"Ignoring malformed --vllm-override-args: {vllm_override_args!r}"
+        )
+        return []
+    if not isinstance(overrides, dict):
+        logger.warning(
+            f"--vllm-override-args must be a JSON object, got: {vllm_override_args!r}"
+        )
+        return []
+    cli_args: List[str] = []
+    for key, value in overrides.items():
+        normalized_key = key.replace("_", "-")
+        if normalized_key in _RESERVED_WRAPPER_FLAGS:
+            logger.warning(
+                "Ignoring reserved run_vllm_api_server wrapper flag in "
+                f"--vllm-override-args: {key!r}"
+            )
+            continue
+        flag = f"--{normalized_key}"
+        if value is None or value is False:
+            # No CLI flag is emitted for false/null, so the vLLM default applies.
+            # There's no safe generic "--no-<flag>" form (only BooleanOptionalAction flags have one).
+            logger.warning(
+                f"--vllm-override-args: {key!r}={value!r} emits no flag "
+                "(false/null are not forwarded); vLLM's default applies."
+            )
+            continue
+        if value is True:
+            cli_args.append(flag)
+        elif isinstance(value, (dict, list)):
+            cli_args += [flag, json.dumps(value)]
+        else:
+            cli_args += [flag, str(value)]
+    return cli_args
 
 
 def generate_docker_run_command(
@@ -323,6 +391,11 @@ def generate_docker_run_command(
             docker_env_vars["TT_CACHE_PATH"] = (
                 setup_config.container_tt_metal_cache_dir / device_cache_dir
             )
+        # CI: persist tt-triage logs to the cache_root volume via a dedicated var,
+        # leaving TT_METAL_LOGS_PATH (tt-metal's Inspector/watcher logs) on the
+        # writable ephemeral default rather than the host-owned volume. See #4255.
+        if runtime_config.ci_mode:
+            docker_env_vars["TT_TRIAGE_LOGS_PATH"] = f"{setup_config.cache_root}/logs"
 
     if (
         model_spec.inference_engine == InferenceEngine.FORGE.value
@@ -366,8 +439,7 @@ def generate_docker_run_command(
 
         # fmt: off
         docker_command += [
-            "--mount", f"type=bind,src={repo_root_path}/benchmarking,dst={user_home_path}/app/benchmarking",
-            "--mount", f"type=bind,src={repo_root_path}/evals,dst={user_home_path}/app/evals",
+            "--mount", f"type=bind,src={repo_root_path}/reference_config,dst={user_home_path}/app/reference_config",
             "--mount", f"type=bind,src={repo_root_path}/utils,dst={user_home_path}/app/utils",
             "--mount", f"type=bind,src={repo_root_path}/tests,dst={user_home_path}/app/tests",
         ]
@@ -379,6 +451,7 @@ def generate_docker_run_command(
                 ModelType.VIDEO,
                 ModelType.TEXT_TO_SPEECH,
                 ModelType.AUDIO,
+                ModelType.TRAINING,
             )
         ):
             docker_command += _media_server_dev_mounts(
@@ -410,6 +483,11 @@ def generate_docker_run_command(
             docker_command.append("--disable-trace-capture")
         if runtime_config.service_port and str(runtime_config.service_port) != "8000":
             docker_command.extend(["--service-port", str(runtime_config.service_port)])
+        # Forward explicit vLLM overrides (e.g. --enable-auto-tool-choice /
+        # --tool-call-parser) as passthrough args. run_vllm_api_server forwards
+        # unrecognized args straight to `vllm serve`, so this honors overrides in
+        # normal (non-dev) deployments without mounting the whole runtime spec.
+        docker_command += _vllm_override_cli_args(runtime_config.vllm_override_args)
     if runtime_config.interactive:
         docker_command.extend(["bash", "-c", "sleep infinity"])
 
@@ -464,7 +542,7 @@ def run_docker_command(
         logger.error(f"Docker logs are streamed to: {docker_log_file_path}")
         raise RuntimeError("Docker container failed to start.")
 
-    skip_workflows = {WorkflowType.SERVER, WorkflowType.REPORTS}
+    skip_workflows = {WorkflowType.SERVER}
     if WorkflowType.from_string(runtime_config.workflow) not in skip_workflows:
 
         def teardown_docker():
@@ -752,7 +830,7 @@ def run_multihost_with_monitoring(
     logger.info(f"Workers: {'  '.join(worker_status)}")
 
     # Handle workflow-specific behavior (similar to single-node run_docker_command)
-    skip_workflows = {WorkflowType.SERVER, WorkflowType.REPORTS}
+    skip_workflows = {WorkflowType.SERVER}
     if WorkflowType.from_string(runtime_config.workflow) not in skip_workflows:
         # For release/benchmarks/evals/tests: register cleanup and return immediately
 

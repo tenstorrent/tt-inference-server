@@ -25,7 +25,9 @@ import tempfile
 import threading
 import time
 from concurrent.futures import Future as CFuture
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 
+from config.constants import CANARY_DEEP_TASK_ID, CANARY_TASK_ID, CANARY_TASK_IDS
 from ipc.video_shm import (
     MAX_IMAGE_PATH_LEN,
     SP_WARMUP_TASK_ID,
@@ -104,6 +106,8 @@ class SPRunner(BaseDeviceRunner):
         # to _pending and the same lock guards both maps so cleanup is atomic.
         self._pending_image_paths: dict[str, str] = {}
         self._pending_lock = threading.Lock()
+        # Serialises every write into the input ring; see _write_request_locked.
+        self._input_write_lock = threading.Lock()
 
         self._drainer: threading.Thread | None = None
         self._drainer_lock = threading.Lock()
@@ -227,6 +231,110 @@ class SPRunner(BaseDeviceRunner):
     def load_weights(self):
         return True
 
+    @staticmethod
+    def _build_canary_request(task_id: str) -> VideoRequest:
+        """Reserved zero-cost VideoRequest for the canary round-trip.
+
+        The body is empty for both shallow and deep probes — the pipeline keys
+        off ``task_id`` to decide whether to run a bare collective or replay its
+        compiled warmup forward, so the server never has to know the shape.
+        """
+        return VideoRequest(
+            task_id=task_id,
+            prompt="",
+            negative_prompt="",
+            num_inference_steps=0,
+            seed=0,
+            height=0,
+            width=0,
+            num_frames=0,
+            guidance_scale=0.0,
+            guidance_scale_2=0.0,
+            image_path="",
+        )
+
+    def _round_trip_canary(
+        self, task_id: str, timeout_s: float
+    ) -> VideoResponse | None:
+        """Write the canary probe and read its ack within a single ``timeout_s`` budget.
+
+        Routes through the same future/drainer machinery real requests use: the
+        drainer thread owns every output-ring read and demultiplexes responses to
+        ``_pending`` futures by ``task_id``. The canary MUST NOT read the ring
+        itself — a second reader would race the drainer and one of them would
+        miss the ack. Returns ``None`` on ring-full, timeout, or a probe that is
+        already in flight (all treated as a miss by the caller).
+        """
+        fut: CFuture = CFuture()
+        with self._pending_lock:
+            if task_id in self._pending:
+                self.logger.warning(
+                    f"{self._log_id} canary probe: {task_id!r} already in flight; "
+                    "treating as miss"
+                )
+                return None
+            self._pending[task_id] = fut
+
+        try:
+            deadline = time.monotonic() + timeout_s
+            wrote = self._write_request_locked(
+                self._build_canary_request(task_id), timeout_s
+            )
+            if not wrote:
+                self.logger.warning(
+                    f"{self._log_id} canary probe: input ring full; treating as miss"
+                )
+                return None
+            # Start the drainer if no real request has yet (an idle server still
+            # needs the ack routed to our future instead of nobody reading it).
+            self._ensure_drainer()
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return None
+            return fut.result(timeout=remaining)
+        except FuturesTimeoutError:
+            return None
+        finally:
+            with self._pending_lock:
+                self._pending.pop(task_id, None)
+
+    def health_check(self, deep: bool = False) -> bool:
+        """End-to-end liveness probe for the multihost video pipeline.
+
+        Round-trips a reserved canary ``VideoRequest`` over the SAME
+        single-writer SHM input ring real requests use, and waits for the
+        pipeline's ack. ``video_runner`` handles ``CANARY_TASK_ID`` by
+        broadcasting to all ranks and running a bare MPI collective
+        (``skip=False``), so a wedged sub-rank fails this probe — unlike the
+        warmup ping, which short-circuits the collective and cannot see it.
+
+        When ``deep`` is set the probe uses ``CANARY_DEEP_TASK_ID``: the pipeline
+        replays its compiled warmup forward across all ranks, so the ack also
+        proves the device can still compute (not just that hosts are looping).
+        Deep probes get the larger ``canary_deep_probe_timeout_seconds`` budget
+        since a real forward is seconds, not the ~ms of a barrier.
+        """
+        if self._input_shm is None or self._output_shm is None:
+            self.logger.error(f"{self._log_id} health_check called before set_device()")
+            return False
+
+        task_id = CANARY_DEEP_TASK_ID if deep else CANARY_TASK_ID
+        timeout_s = (
+            self.settings.canary_deep_probe_timeout_seconds
+            if deep
+            else self.settings.canary_probe_timeout_seconds
+        )
+        try:
+            resp = self._round_trip_canary(task_id, timeout_s)
+        except Exception:
+            self.logger.exception(f"{self._log_id} canary probe: probe failed")
+            return False
+
+        if resp is None:
+            return False
+        self._try_unlink(resp.file_path)
+        return resp.status != VideoStatus.ERROR
+
     async def _await_ping_ack_with_heartbeat(
         self, timeout_s: float
     ) -> VideoResponse | None:
@@ -261,6 +369,20 @@ class SPRunner(BaseDeviceRunner):
                 return None
 
             if resp is not None:
+                # A leftover canary ack can only be stale here: this session's
+                # canary monitor starts only AFTER warmup flips the worker ready.
+                # The one-shot drain in set_device() races with canary requests
+                # still queued in the input ring from a prior session, which the
+                # peer answers into the output ring after the drain. Discarding
+                # them (instead of failing as "desynced") keeps the warmup
+                # handshake robust across restarts; the deadline still bounds us.
+                if resp.task_id in CANARY_TASK_IDS:
+                    self.logger.warning(
+                        f"{self._log_id} warmup: discarding stale canary ack "
+                        f"left by a prior session, still awaiting warmup ack"
+                    )
+                    self._try_unlink(resp.file_path)
+                    continue
                 return resp
 
             elapsed = time.monotonic() - start_t
@@ -340,7 +462,7 @@ class SPRunner(BaseDeviceRunner):
             # Short timeout: if write blocks, ring is degenerately full and
             # we'd rather fail fast and let the orchestrator restart us than
             # silently hang the worker for an hour.
-            wrote = await asyncio.to_thread(self._input_shm.write_request, ping, 5.0)
+            wrote = await asyncio.to_thread(self._write_request_locked, ping, 5.0)
             if not wrote:
                 self.logger.error(
                     f"{self._log_id} warmup: write_request timed out "
@@ -412,14 +534,35 @@ class SPRunner(BaseDeviceRunner):
                 fut = self._pending.get(resp.task_id)
 
             if fut is None:
-                self.logger.warning(
-                    f"[SP] orphan response task_id={resp.task_id!r}; unlinking"
+                # Reserved control acks (canary / warmup) are routinely orphaned:
+                # a probe that timed out leaves its future popped, and stale acks
+                # from a prior session get flushed on recovery. Log those at debug
+                # so recovery doesn't drown the logs; a real UUID orphan is unusual
+                # and stays at warning.
+                #
+                # Do NOT unlink the video file_path here. A late/orphan video
+                # response can still name an mp4 the API is about to serve.
+                is_control = (
+                    resp.task_id in CANARY_TASK_IDS or resp.task_id == SP_WARMUP_TASK_ID
                 )
-                self._try_unlink(resp.file_path)
+                log = self.logger.debug if is_control else self.logger.warning
+                log(
+                    f"[SP] orphan response task_id={resp.task_id!r} "
+                    f"file_path={resp.file_path!r}; leaving video file in place"
+                )
+                self._pop_and_unlink_image_path(resp.task_id)
                 continue
 
             if fut.done():
-                self._try_unlink(resp.file_path)
+                # Duplicate delivery after the future was already resolved.
+                # Same no-unlink rule for the video path; side-file may still
+                # be deferred from a timeout that raced this duplicate.
+                self.logger.warning(
+                    f"[SP] duplicate response for already-handled "
+                    f"task_id={resp.task_id!r} file_path={resp.file_path!r}; "
+                    f"leaving video file in place"
+                )
+                self._pop_and_unlink_image_path(resp.task_id)
                 continue
 
             fut.set_result(resp)
@@ -438,9 +581,10 @@ class SPRunner(BaseDeviceRunner):
           * On any failure before the SHM write completes, the side-file is
             unlinked here and ``_pending_image_paths`` is left untouched.
           * Once the SHM write succeeds, the side-file path is parked under
-            ``_pending_image_paths[task_id]`` and ownership transfers to
-            :meth:`_run_async`'s ``finally`` (or to ``close_device`` on
-            shutdown).
+            ``_pending_image_paths[task_id]``. Ownership then transfers to
+            :meth:`_run_async` (unlink after peer response), the drainer's
+            orphan/duplicate path (late response after timeout), or
+            ``close_device`` on shutdown — never unlinked on bare timeout.
         """
         task_id = request._task_id
         image_path = self._write_image_side_file(request, task_id)
@@ -456,7 +600,7 @@ class SPRunner(BaseDeviceRunner):
             self._pending[task_id] = fut
 
         try:
-            self._input_shm.write_request(
+            self._write_request_locked(
                 self._build_video_req(request, task_id, image_path)
             )
         except Exception:
@@ -498,7 +642,8 @@ class SPRunner(BaseDeviceRunner):
             with self._pending_lock:
                 self._pending.pop(task_id, None)
             # If the response arrives after this, the drainer will see no
-            # entry in _pending and treat it as an orphan (unlink + warn).
+            # entry in _pending and treat it as an orphan. The I2V side-file
+            # is intentionally NOT unlinked here — see ``_run_async``.
             raise TimeoutError(
                 f"REQUEST_TIMEOUT: response exceeded {timeout_s}s for task {task_id}"
             )
@@ -533,17 +678,27 @@ class SPRunner(BaseDeviceRunner):
         input ring stays primed across batch boundaries. The drainer thread
         demultiplexes responses by ``task_id``, so the N concurrent calls do
         not need to share completion order.
+
+        I2V side-file cleanup:
+          * After a peer response (success or ERROR): unlink immediately —
+            the peer has already opened/failed the side-file.
+          * On timeout / cancel: keep the side-file parked in
+            ``_pending_image_paths``. The peer may still be about to read it;
+            unlinking here races into ``side-file unreadable`` ERROR orphans
+            that surface as HTTP 500s. Cleanup then happens when the late
+            orphan/duplicate response arrives, or on ``close_device``.
         """
         request = requests[0]
         task_id = self.submit(request)
+        keepSideFile = False
         try:
             mp4_path = await self.await_result(task_id)
+        except (TimeoutError, asyncio.CancelledError):
+            keepSideFile = True
+            raise
         finally:
-            # Reliable I2V side-file cleanup on every exit (success, error,
-            # timeout, asyncio.CancelledError). The runner peer has finished
-            # with the file by the time the response (or error / timeout)
-            # surfaces, so unlinking here is always safe.
-            self._pop_and_unlink_image_path(task_id)
+            if not keepSideFile:
+                self._pop_and_unlink_image_path(task_id)
         # List so device_worker's responses[i] matches one path per request.
         return [mp4_path]
 
@@ -561,8 +716,10 @@ class SPRunner(BaseDeviceRunner):
     def _pop_and_unlink_image_path(self, task_id: str) -> None:
         """Remove and unlink the I2V side-file for ``task_id`` (if any).
 
-        Idempotent: callable from success / error / timeout / shutdown paths
-        without coordinating who "owns" the cleanup.
+        Idempotent: callable from success / peer-ERROR / orphan / shutdown
+        paths without coordinating who "owns" the cleanup. Must NOT be
+        called on the timeout/cancel path before the peer has responded —
+        that races the peer into a missing side-file.
         """
         with self._pending_lock:
             path = self._pending_image_paths.pop(task_id, "")
@@ -631,6 +788,22 @@ class SPRunner(BaseDeviceRunner):
                 pass
             raise
         return final_path
+
+    def _write_request_locked(
+        self, request: VideoRequest, timeout_s: float | None = None
+    ) -> bool:
+        """Serialise writes into the single-writer input ring.
+
+        ``VideoShm.write_request`` claims a slot by reading ``widx``, filling it,
+        then bumping ``widx``, with no internal locking — the ring assumes one
+        writer per side. Two concurrent writers would claim the same slot, clobber
+        each other's payload and advance ``widx`` only once, silently dropping a
+        request and desyncing the ring. Canary probes run off the worker thread
+        (and the dynamic-batch worker probes from an executor thread), so a probe
+        write can overlap a real submit; this lock restores the invariant.
+        """
+        with self._input_write_lock:
+            return self._input_shm.write_request(request, timeout_s)
 
     @staticmethod
     def _try_unlink(path: str) -> None:

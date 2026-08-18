@@ -2,19 +2,25 @@
 #
 # SPDX-FileCopyrightText: © 2024 Tenstorrent USA, Inc.
 
+from __future__ import annotations
+
 import logging
 import json
 import time
-from typing import List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, List, Optional, Tuple, Union
 from pathlib import Path
 
 import requests
 import jwt
-from transformers import AutoTokenizer
 
-from utils.prompt_generation import generate_prompts
 from utils.prompt_configs import PromptConfig, EnvironmentConfig
 from utils.cache_monitor import CacheMonitor, get_environment_cache_dir
+
+if TYPE_CHECKING:
+    # transformers lives in the heavy ML venv; keep it out of the import path so
+    # the lightweight health-check/cache logic here can be imported (and tested)
+    # without it. Only used for type annotations.
+    from transformers import AutoTokenizer
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -131,7 +137,9 @@ class PromptClient:
             include_v1: If True, append /v1 for OpenAI-compatible endpoints.
                        If False, return root URL for vLLM-specific endpoints.
         """
-        base = f"{self.env_config.deploy_url}:{self.env_config.service_port}"
+        from utils.url_helpers import build_base_url
+
+        base = build_base_url(self.env_config.deploy_url, self.env_config.service_port)
         return f"{base}/v1" if include_v1 else base
 
     def _get_api_completions_url(self) -> str:
@@ -379,6 +387,10 @@ class PromptClient:
         # Check service health before starting
         if not self.wait_for_healthy(timeout=timeout):
             raise RuntimeError("vLLM did not start correctly!")
+
+        # Deferred import: prompt_generation pulls in torch/transformers (the
+        # heavy ML venv), which this module must not require just to be imported.
+        from utils.prompt_generation import generate_prompts
 
         # Import image generation only if needed
         if image_resolutions:

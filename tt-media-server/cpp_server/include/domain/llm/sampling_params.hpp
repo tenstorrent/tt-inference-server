@@ -6,16 +6,9 @@
 #include <iostream>
 #include <memory>
 #include <optional>
-#include <string>
 #include <vector>
 
-#include "config/types.hpp"
-#include "domain/tool_calls/tool.hpp"
-#include "domain/tool_calls/tool_choice.hpp"
-
 namespace tt::domain::llm {
-
-using tt::config::ResponseFormatType;
 
 /**
  * Sampling parameters aligned with OpenAI-compatible completion request.
@@ -48,28 +41,6 @@ struct SamplingParams {
   std::optional<int> prompt_logprobs;
   std::optional<int> truncate_prompt_tokens;
   bool fast_mode = false;
-
-  ResponseFormatType response_format_type = ResponseFormatType::TEXT;
-  std::optional<std::string> json_schema_str;
-
-  std::optional<std::vector<tool_calls::Tool>> tools;
-  std::optional<tool_calls::ToolChoice> tool_choice;
-
-  bool hasGuidedDecoding() const {
-    if (response_format_type != ResponseFormatType::TEXT) {
-      return true;
-    }
-    if (tool_choice.has_value() && tools.has_value()) {
-      if (tool_choice->type == "function" &&
-          tool_choice->function.has_value()) {
-        return true;
-      }
-      if (tool_choice->type == "required") {
-        return true;
-      }
-    }
-    return false;
-  }
 
   void serialize(std::ostream& os) const;
   static std::unique_ptr<SamplingParams> deserialize(std::istream& is);

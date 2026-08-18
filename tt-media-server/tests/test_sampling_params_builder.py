@@ -96,7 +96,11 @@ class TestBuildSamplingParamsRequestValues:
             kwargs = mock_sp.call_args.kwargs
             assert kwargs["max_tokens"] == 100
 
-    def test_seed_from_request(self):
+    def test_seed_is_dropped(self):
+        # The Forge sampling-params builder intentionally drops the per-request
+        # seed (forces seed=None): the Forge device sampler ignores it
+        # (tenstorrent/tt-xla#4539) and a non-None seed forces the ~5x-slower
+        # seeded sampling path (#4338). So even an explicit request seed is dropped.
         with patch("utils.sampling_params_builder.SamplingParams") as mock_sp:
             from utils.sampling_params_builder import build_sampling_params
 
@@ -104,7 +108,7 @@ class TestBuildSamplingParamsRequestValues:
             build_sampling_params(request)
 
             kwargs = mock_sp.call_args.kwargs
-            assert kwargs["seed"] == 42
+            assert kwargs["seed"] is None
 
     def test_presence_penalty_from_request(self):
         with patch("utils.sampling_params_builder.SamplingParams") as mock_sp:

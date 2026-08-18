@@ -71,6 +71,11 @@ KafkaProducer::KafkaProducer(KafkaProducerConfig config)
 KafkaProducer::~KafkaProducer() = default;
 
 bool KafkaProducer::send(std::string_view payload, std::string* errorMessage) {
+  return send(payload, RD_KAFKA_PARTITION_UA, errorMessage);
+}
+
+bool KafkaProducer::send(std::string_view payload, int32_t partition,
+                         std::string* errorMessage) {
   if (!impl_ || !impl_->kafka_handle || !impl_->topic_handle) {
     if (errorMessage) {
       *errorMessage = "Kafka producer not initialized";
@@ -78,12 +83,13 @@ bool KafkaProducer::send(std::string_view payload, std::string* errorMessage) {
     return false;
   }
 
-  if (rd_kafka_produce(impl_->topic_handle, RD_KAFKA_PARTITION_UA,
-                       RD_KAFKA_MSG_F_COPY, const_cast<char*>(payload.data()),
-                       payload.size(), nullptr, 0, nullptr) != 0) {
+  if (rd_kafka_produce(impl_->topic_handle, partition, RD_KAFKA_MSG_F_COPY,
+                       const_cast<char*>(payload.data()), payload.size(),
+                       nullptr, 0, nullptr) != 0) {
     std::string err = rd_kafka_err2str(rd_kafka_last_error());
 
-    TT_LOG_ERROR("[Kafka] rd_kafka_produce failed: {}", err);
+    TT_LOG_ERROR("[Kafka] rd_kafka_produce (partition={}) failed: {}",
+                 partition, err);
     if (errorMessage) {
       *errorMessage = std::move(err);
     }

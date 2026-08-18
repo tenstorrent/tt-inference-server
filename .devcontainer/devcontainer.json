@@ -1,0 +1,32 @@
+{
+    "name": "TT-Inference-Server Dev Container",
+    "build": {
+      "dockerfile": "Dockerfile"
+    },
+    "initializeCommand": "bash \"${localWorkspaceFolder}/.devcontainer/check-workspace-path.sh\" \"${localWorkspaceFolder}\"",
+    "workspaceMount": "source=${localWorkspaceFolder},target=${localWorkspaceFolder},type=bind",
+    "workspaceFolder": "${localWorkspaceFolder}",
+    "runArgs": [
+      "--device=/dev/tenstorrent",
+      "-v", "/dev/shm:/dev/shm",
+      "--ipc=host"
+    ],
+    "mounts": [
+      "source=/dev/hugepages-1G,target=/dev/hugepages-1G,type=bind",
+      "source=${localWorkspaceFolder}/../..,target=${localWorkspaceFolder}/../..,type=bind"
+    ],
+    "forwardPorts": [8000, 9000],
+    "containerEnv": {
+      "TT_METAL_HOME": "${localWorkspaceFolder}/tt-media-server/cpp_server/tt-llm-engine/tt-metal",
+      "LD_LIBRARY_PATH": "${localWorkspaceFolder}/tt-media-server/cpp_server/tt-llm-engine/tt-metal/build/lib:${localWorkspaceFolder}/tt-media-server/cpp_server/build-full:${containerEnv:LD_LIBRARY_PATH}"
+    },
+    "postCreateCommand": "bash .devcontainer/install-dependencies.sh",
+    "customizations": {
+      "vscode": {
+        "extensions": [
+          "ms-vscode.cpptools",
+          "ms-vscode.cmake-tools"
+        ]
+      }
+    }
+  }

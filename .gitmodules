@@ -3,3 +3,6 @@
 	url = https://github.com/tenstorrent/tt-llm-engine.git
 	branch = main
 	ignore = dirty
+[submodule "tt-media-server/cpp_server/third_party/Mooncake"]
+	path = tt-media-server/cpp_server/third_party/Mooncake
+	url = git@github.com:kvcache-ai/Mooncake.git

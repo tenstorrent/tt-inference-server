@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     model_weights_path: str = ""
     training_model: Optional[str] = None
     chat_template_kwargs: dict = {}  # extra kwargs passed to apply_chat_template
+    tokenizer_type: str = ""  # AutoTokenizer tokenizer_type
     preprocessing_model_weights_path: str = ""
     trace_region_size: int = 34541598
     download_weights_from_service: bool = True
@@ -85,6 +86,29 @@ class Settings(BaseSettings):
     # hour because cold-start WAN with weight load + first compile across a
     # 4×32 Galaxy mesh can take tens of minutes. Set higher on slower stacks.
     sp_warmup_timeout_seconds: float = 6000.0
+
+    # Canary monitor settings (see health_monitoring/).
+    canary_enabled: bool = True
+    # When False, monitor observes only (logs/metrics); set True to gate /health with 503.
+    canary_gate_readiness: bool = False
+    # Seconds of idle before a probe fires.
+    canary_wait_seconds: float = 5.0
+    # Per-probe round-trip deadline; a timeout counts as one miss.
+    canary_probe_timeout_seconds: float = 3.0
+    # Monitor loop cadence.
+    canary_tick_seconds: float = 1.0
+    # Consecutive misses before the model is declared Dead.
+    canary_dead_misses: int = 3
+    # Startup grace period after is_ready before the first probe fires.
+    # For multihost pipelines set this >= sp_warmup_timeout_seconds.
+    canary_startup_grace_seconds: float = 30.0
+    # When True, every Nth probe replays the compiled warmup forward to certify device liveness.
+    # Off by default: consumes device cycles and requires the warmup shape to avoid recompiles.
+    canary_deep_probe_enabled: bool = False
+    # Run a deep probe every Nth idle probe; the rest are cheap host collectives.
+    canary_deep_every_n: int = 3
+    # Deadline for deep probes; must be much larger than canary_probe_timeout_seconds.
+    canary_deep_probe_timeout_seconds: float = 60.0
 
     # Job management settings
     max_jobs: int = 10000
@@ -125,6 +149,16 @@ class Settings(BaseSettings):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+
+        # CI / the v2 orchestrator pass DEVICE as "blackhole_galaxy"
+        # (device_type.name.lower()), but the media-server DeviceTypes value is the
+        # short form "bh-galaxy". Canonicalize once here so every consumer of
+        # settings.device (config overrides, runner_utils mesh/grid setup, telemetry)
+        # sees the enum value; any other device string passes through unchanged.
+        if self.device:
+            self.device = {"blackhole_galaxy": "bh-galaxy"}.get(
+                self.device, self.device
+            )
 
         self.sdxl_image_resolution = tuple(self.sdxl_image_resolution)
         if self.sdxl_image_resolution not in SDXL_VALID_IMAGE_RESOLUTIONS:
@@ -184,6 +218,20 @@ class Settings(BaseSettings):
                     supported_model = getattr(SupportedModels, model_name.name, None)
                     if supported_model:
                         self.model_weights_path = supported_model.value
+
+        # Honor a pre-mounted weights dir (e.g. --host-hf-cache / --host-weights-dir
+        # bind mount), the same way the vLLM server does, so the media runner loads
+        # weights locally instead of re-downloading by repo id. (#4107)
+        model_weights_dir = os.environ.get("MODEL_WEIGHTS_DIR")
+        if (
+            model_weights_dir
+            and os.path.isdir(model_weights_dir)
+            and any(os.scandir(model_weights_dir))
+        ):
+            self.model_weights_path = model_weights_dir
+            logger.info(
+                f"Using pre-mounted weights from MODEL_WEIGHTS_DIR: {model_weights_dir}"
+            )
 
         # use throttling overrides until we confirm is no-throttling a stable approach
         self._set_throttling_overrides()
@@ -284,11 +332,13 @@ class Settings(BaseSettings):
             ModelRunners.TT_QWEN_IMAGE.value,
             ModelRunners.TT_MOCHI_1.value,
             ModelRunners.TT_WAN_2_2.value,
+            ModelRunners.TT_WAN_2_2_T2V_PRODIA.value,
             ModelRunners.TT_WAN_2_2_I2V.value,
             ModelRunners.TT_WAN_2_2_I2V_PRODIA.value,
             ModelRunners.TT_WAN_2_2_I2V_ANISORA.value,
             ModelRunners.TT_WAN_2_2_I2V_DISTILL.value,
             ModelRunners.TT_WAN_2_2_I2V_LORA.value,
+            ModelRunners.TT_WAN_2_2_I2V_LIGHTNING.value,
         ]:
             self.default_throttle_level = None
 

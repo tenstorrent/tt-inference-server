@@ -10,7 +10,7 @@ from workflows.model_spec import (
     DeviceModelSpec,
     ImplSpec,
     ModelSpec,
-    ModelSpecTemplate,
+    ProdModelSpecTemplate,
 )
 from workflows.workflow_types import DeviceTypes, InferenceEngine
 
@@ -43,10 +43,11 @@ def _make_template(
     template_env_vars=None,
     device_env_vars=None,
     min_ram_gb=None,
-) -> ModelSpecTemplate:
-    return ModelSpecTemplate(
+) -> ProdModelSpecTemplate:
+    return ProdModelSpecTemplate(
         weights=list(weights),
         impl=impl,
+        version="0.12.0",
         tt_metal_commit="abc1234",
         vllm_commit="def5678"
         if inference_engine == InferenceEngine.VLLM.value

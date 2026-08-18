@@ -53,13 +53,13 @@ class ForgeRunner(BaseDeviceRunner):
             # Use cpu
             # self.dtype = None # Use same dtype on CPU and device
             self.device = torch.device("cpu")
-            self.model = self.loader.load_model(self.dtype)
+            self.model = self.loader.load_model(dtype_override=self.dtype)
             self.compiled_model = self.model.to(self.device)
         else:
             # Use TT device
             xr.set_device_type("TT")
             self.device = xm.xla_device()
-            self.model = self.loader.load_model(self.dtype)
+            self.model = self.loader.load_model(dtype_override=self.dtype)
             self.logger.info("## Compiling model ##")
             torch_xla.set_custom_compile_options(
                 {
@@ -212,17 +212,27 @@ class ForgeRunner(BaseDeviceRunner):
         self.logger.info(f"Top 1 class label: {top1_class_label}")
         self.logger.info(f"Top 1 class probability: {top1_class_probability}")
 
+        # Detection models (e.g. YOLOX) provide boxes + numeric
+        # scores.
+        boxes = raw_predictions.get("boxes")
+        scores = raw_predictions.get("scores")
+
         predictions = []
-        for label, probability, index in zip(
-            raw_predictions["labels"],
-            raw_predictions["probabilities"],
-            raw_predictions["indices"],
+        for i, (label, probability, index) in enumerate(
+            zip(
+                raw_predictions["labels"],
+                raw_predictions["probabilities"],
+                raw_predictions["indices"],
+            )
         ):
             prob = float(probability.rstrip("%"))
             if prob >= min_confidence:
-                predictions.append(
-                    {"label": label, "probability": prob, "index": index}
-                )
+                pred = {"label": label, "probability": prob, "index": index}
+                if boxes is not None and i < len(boxes):
+                    pred["box"] = boxes[i]
+                if scores is not None and i < len(scores):
+                    pred["score"] = scores[i]
+                predictions.append(pred)
 
         return predictions, top1_class_label, top1_class_probability
 
@@ -252,12 +262,17 @@ class ForgeRunner(BaseDeviceRunner):
             return f"{top1_class_label},{top1_class_probability},{','.join(parts)}"
 
         self.logger.info("Formatting response in JSON format")
+        output = {
+            "labels": [p["label"] for p in predictions],
+            "probabilities": [f"{p['probability']:.4f}%" for p in predictions],
+            "indices": [p["index"] for p in predictions],
+        }
+        # Include detection boxes + numeric scores when available (e.g. YOLOX).
+        if any("box" in p for p in predictions):
+            output["boxes"] = [p.get("box") for p in predictions]
+            output["scores"] = [p.get("score") for p in predictions]
         return ImageClassificationResult(
             top1_class_label=top1_class_label,
             top1_class_probability=top1_class_probability,
-            output={
-                "labels": [p["label"] for p in predictions],
-                "probabilities": [f"{p['probability']:.4f}%" for p in predictions],
-                "indices": [p["index"] for p in predictions],
-            },
+            output=output,
         )

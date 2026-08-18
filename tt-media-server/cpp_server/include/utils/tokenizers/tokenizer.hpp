@@ -16,15 +16,13 @@
 
 #include "config/types.hpp"
 #include "domain/llm/chat_message.hpp"
-#include "domain/tool_calls/tool.hpp"
 
 namespace tt::utils::tokenizers {
 
 using namespace tt::domain::llm;
 
 // Matches tt_llm_engine EMPTY_TOKEN: disables thinking-phase token matching.
-constexpr int64_t kNoThinkTokenId =
-    static_cast<int64_t>(std::numeric_limits<uint32_t>::max());
+constexpr uint32_t kNoTokenId = std::numeric_limits<uint32_t>::max();
 
 /**
  * Parsed tokenizer_config.json (Hugging Face format).
@@ -85,7 +83,7 @@ class Tokenizer {
    * Encode text to token IDs.
    * @throws std::runtime_error if tokenizer not loaded.
    */
-  std::vector<int> encode(const std::string& text) const;
+  std::vector<uint32_t> encode(const std::string& text) const;
 
   /**
    * Decode token IDs to text.
@@ -94,14 +92,14 @@ class Tokenizer {
    *   before decoding. If false, all tokens are decoded as-is.
    * @throws std::runtime_error if tokenizer not loaded.
    */
-  std::string decode(const std::vector<int>& tokenIds,
+  std::string decode(const std::vector<uint32_t>& tokenIds,
                      bool skipSpecialTokens = true) const;
 
   /** Check if tokenizer is loaded and ready. */
   bool isLoaded() const;
 
   virtual std::string modelName() const = 0;
-  virtual std::vector<int64_t> stopTokenIds() const = 0;
+  virtual std::vector<uint32_t> stopTokenIds() const = 0;
 
   /**
    * Token id sequence that ends an assistant generation prompt in the
@@ -118,7 +116,7 @@ class Tokenizer {
    * Returns an empty vector when the tokenizer does not expose a stable
    * assistant marker; callers must then treat every request as fresh.
    */
-  virtual std::vector<int> assistantHeaderSequence() const { return {}; }
+  virtual std::vector<uint32_t> assistantHeaderSequence() const { return {}; }
 
   /**
    * Apply the model-specific chat template to a list of messages.
@@ -129,10 +127,7 @@ class Tokenizer {
    */
   virtual std::string applyChatTemplate(
       const std::vector<tt::domain::llm::ChatMessage>& messages,
-      bool addGenerationPrompt = true,
-      const std::optional<std::vector<tt::domain::tool_calls::Tool>>& tools =
-          std::nullopt,
-      bool enableReasoning = true,
+      bool addGenerationPrompt = true, bool enableReasoning = true,
       bool skipApplyChatTemplate = false) const = 0;
 
   /**
@@ -149,7 +144,7 @@ class Tokenizer {
      * token is part of an incomplete multi-byte UTF-8 sequence still being
      * buffered.
      */
-    std::string step(int tokenId);
+    std::string step(uint32_t tokenId);
 
     /**
      * Flush any remaining buffered tokens (call on final token).
@@ -160,7 +155,7 @@ class Tokenizer {
 
    private:
     const Tokenizer& tokenizer_;
-    std::vector<int> pending_;
+    std::vector<uint32_t> pending_;
     bool skipSpecialTokens_;
   };
 
@@ -172,13 +167,14 @@ class Tokenizer {
  protected:
   std::unique_ptr<::tokenizers::Tokenizer> tok_;
   TokenizerConfig cfg_;
-  std::unordered_set<int> specialTokenIds_;
+  std::unordered_set<uint32_t> specialTokenIds_;
 };
 
 /**
  * Factory: create a Tokenizer for the given model, loading from path.
  * DEEPSEEK_R1_0528 -> DeepseekTokenizer
  * LLAMA_3_1_8B_INSTRUCT -> LlamaTokenizer
+ * KIMI_K2_6 -> DeepseekTokenizer (temporary behavior)
  */
 std::unique_ptr<Tokenizer> createTokenizer(config::ModelType model,
                                            const std::string& path);
@@ -191,9 +187,9 @@ std::string tokenizerDirForModel(config::ModelType model);
 
 /**
  * Active tokenizer for the calling thread, auto-initialized from
- * LLM_DEVICE_BACKEND on first access (per thread). Each thread gets its own
- * instance so encode/decode are race-free without locking. The reference is
- * only valid on the calling thread; do not capture it for cross-thread use.
+ * MODEL on first access (per thread). Each thread gets its own instance so
+ * encode/decode are race-free without locking. The reference is only valid on
+ * the calling thread; do not capture it for cross-thread use.
  *
  * Instantiation parses tokenizer.json synchronously and is expensive on
  * large vocabs. For model-level constants used on the request hot path
@@ -208,15 +204,16 @@ const Tokenizer& activeTokenizer();
  */
 struct StaticTokenizerInfo {
   std::string_view modelName;
-  std::vector<int64_t> stopTokenIds;
-  std::vector<int> assistantHeaderSequence;
-  int64_t thinkStartTokenId = kNoThinkTokenId;
-  int64_t thinkEndTokenId = kNoThinkTokenId;
+  std::vector<uint32_t> stopTokenIds;
+  uint32_t eosTokenId = kNoTokenId;
+  std::vector<uint32_t> assistantHeaderSequence;
+  uint32_t thinkStartTokenId = kNoTokenId;
+  uint32_t thinkEndTokenId = kNoTokenId;
 };
 
 /** Per-model thinking marker token IDs (O(1), no tokenizer.json parse). */
-std::pair<int64_t, int64_t> thinkTokenIdsFor(config::ModelType model);
-std::pair<int64_t, int64_t> thinkTokenIds();
+std::pair<uint32_t, uint32_t> thinkTokenIdsFor(config::ModelType model);
+std::pair<uint32_t, uint32_t> thinkTokenIds();
 
 /**
  * Static constants for `model`. Throws std::invalid_argument if no entry

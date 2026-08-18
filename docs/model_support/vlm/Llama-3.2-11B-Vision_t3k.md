@@ -15,7 +15,7 @@ To use non-default weights, replace `Llama-3.2-11B-Vision` in commands below.
 
 `Llama-3.2-11B-Vision` is also supported on hardware:
 
-- [N150/N300](Llama-3.2-11B-Vision_n150.md)
+- [N300](Llama-3.2-11B-Vision_n300.md)
 
 ## Quickstart - Deploy Llama-3.2-11B-Vision Inference Server on WH LoudBox/QuietBox
 

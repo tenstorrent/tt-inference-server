@@ -87,11 +87,46 @@ std::string renderLastUserTurn(const std::vector<ChatMessage>& messages,
                                bool hasPriorTurn);
 
 /**
+ * Per-block information for prefix caching, including hash and accumulated
+ * thinking token count up to and including that block.
+ */
+struct BlockHashInfo {
+  uint64_t hash;
+  uint32_t
+      accumulatedThinkTokens;  // Thinking content tokens (excluding markers)
+};
+
+/**
+ * Convert a vector of hashes to BlockHashInfo with zero think token counts.
+ * Used for backward compatibility and cross-server communication where think
+ * token counts are not available.
+ */
+inline std::vector<BlockHashInfo> hashesToBlockInfos(
+    const std::vector<uint64_t>& hashes) {
+  std::vector<BlockHashInfo> result;
+  result.reserve(hashes.size());
+  for (uint64_t h : hashes) {
+    result.push_back({h, 0});
+  }
+  return result;
+}
+
+/**
  * Routing information computed from conversation messages for prefix caching.
  * Used by the controller to determine session lookup and registration.
  */
 struct PrefixCachingInfo {
-  std::vector<uint64_t> hashes;  // Per-block prefix cache hashes
+  std::vector<BlockHashInfo> blocks;  // Per-block hash and think token info
+
+  // Backward-compat accessor: extract just the hashes
+  std::vector<uint64_t> hashes() const {
+    std::vector<uint64_t> result;
+    result.reserve(blocks.size());
+    for (const auto& b : blocks) {
+      result.push_back(b.hash);
+    }
+    return result;
+  }
 };
 
 // ---------------------------------------------------------------------------
@@ -104,7 +139,7 @@ struct PrefixCachingInfo {
  * representation of the int sequence so two callers produce matching hashes
  * iff the underlying token ids are identical.
  */
-uint64_t hashTokenPrefix(std::span<const int> tokens);
+uint64_t hashTokenPrefix(std::span<const uint32_t> tokens);
 
 /**
  * Compute prefix caching routing information from a tokenized prompt.
@@ -114,12 +149,12 @@ uint64_t hashTokenPrefix(std::span<const int> tokens);
  * @return Complete routing information for prefix caching (per-block hashes).
  */
 PrefixCachingInfo computePrefixCachingInfoFromTokens(
-    std::span<const int> tokens);
+    std::span<const uint32_t> tokens);
 
 /**
  * Compute per-block KV cache hashes using vLLM's prefix caching approach.
  *
- * Tokens are divided into blocks of `kvCacheBlockSize` (from config). Each
+ * Tokens are divided into blocks of `prefixCacheBlockSize` (from config). Each
  * block's hash is computed as `xxh64(block_tokens, seed=parent_hash)`, where
  * `parent_hash` is the hash of the previous block (0 for the first block).
  * This chaining ensures that two sequences sharing a common prefix produce
@@ -128,10 +163,36 @@ PrefixCachingInfo computePrefixCachingInfoFromTokens(
  * Only FULL blocks are hashed — any trailing partial block is ignored (it
  * hasn't been committed to the KV cache yet).
  *
- * @param tokens Full token-id sequence.
+ * @param tokens Token-id sequence to hash.
+ * @param parentHash Optional seed hash from a prior block. When non-zero,
+ *        hashing uses standard block size (not first block size) and chains
+ *        from this seed. Use `hashes.back()` from a prior call to continue.
  * @return Vector of per-block hashes (one per full block). Empty if the
  *         sequence is shorter than one block.
  */
-std::vector<uint64_t> getPrefixCacheHashesByBlocks(std::span<const int> tokens);
+std::vector<uint64_t> getPrefixCacheHashesByBlocks(
+    std::span<const uint32_t> tokens, uint64_t parentHash = 0);
+
+/**
+ * Compute per-block KV cache hashes, filtering out thinking tokens.
+ *
+ * Thinking tokens (content between thinkStartId and thinkEndId markers) are
+ * excluded from the hash computation but their count is tracked. The markers
+ * themselves are also excluded from both the hash and the count.
+ *
+ * Uses the same marker state machine as session tracking to classify tokens as
+ * thinking or non-thinking.
+ *
+ * @param tokens Token-id sequence to hash.
+ * @param thinkStartId Token ID for <|begin_think|> (kNoThinkTokenId to disable)
+ * @param thinkEndId Token ID for <|end_think|>
+ * @param parentHash Optional seed hash from a prior block.
+ * @param parentThinkCount Accumulated think tokens from prior blocks.
+ * @return Vector of BlockHashInfo (one per full block of non-thinking tokens).
+ */
+std::vector<BlockHashInfo> getPrefixCacheHashesByBlocksWithThinking(
+    std::span<const uint32_t> tokens, uint32_t thinkStartId,
+    uint32_t thinkEndId, uint64_t parentHash = 0,
+    uint32_t parentThinkCount = 0);
 
 }  // namespace tt::utils

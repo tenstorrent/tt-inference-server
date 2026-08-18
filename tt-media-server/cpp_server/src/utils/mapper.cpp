@@ -11,8 +11,7 @@
 namespace tt::utils::mapper {
 
 std::vector<uint32_t> mergeStopTokenIds(const std::vector<int>& requestStops) {
-  const auto& modelStops =
-      tt::utils::tokenizers::activeTokenizer().stopTokenIds();
+  const auto& modelStops = tt::utils::tokenizers::staticInfo().stopTokenIds;
   std::vector<uint32_t> merged;
   merged.reserve(requestStops.size() + modelStops.size());
   for (auto id : requestStops) merged.push_back(static_cast<uint32_t>(id));
@@ -44,14 +43,6 @@ tt::domain::llm::SamplingParams mapSamplingParams(
   params.prompt_logprobs = request.prompt_logprobs;
   params.truncate_prompt_tokens = request.truncate_prompt_tokens;
   params.fast_mode = config::useFastMode() || request.fast_mode;
-
-  if (request.response_format.has_value()) {
-    params.response_format_type = request.response_format->type;
-    params.json_schema_str = request.response_format->json_schema_str;
-  }
-
-  params.tools = request.tools;
-  params.tool_choice = request.tool_choice;
 
   return params;
 }

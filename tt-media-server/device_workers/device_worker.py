@@ -7,10 +7,47 @@ import threading
 from multiprocessing import Queue
 from typing import Any
 
-from config.constants import SHUTDOWN_SIGNAL
+from config.constants import SHUTDOWN_SIGNAL, CanaryProbeRequest
 from config.settings import settings
 from device_workers.worker_utils import initialize_device_worker
 from utils.logger import TTLogger
+
+
+def _run_canary_probe(
+    device_runner: Any,
+    probe: CanaryProbeRequest,
+    worker_id: str,
+    result_queue: Any,
+    logger: Any,
+) -> None:
+    """Dispatch a canary health-check off-thread and echo the result on its task_id.
+
+    ``health_check`` blocks until the pipeline acks or the probe budget expires
+    (``canary_probe_timeout_seconds``, or the much larger deep-probe budget).
+    Running it inline would stall the worker for that whole budget: in the main
+    loop it delays picking up a real request that lands mid-probe, and inside
+    ``_continuous_fan_out`` it freezes the event loop driving in-flight videos.
+    The monitor keeps at most one probe per tier in flight, so this spawns at
+    most one thread per probe.
+
+    A raised ``health_check`` is converted to a ``False`` result (not an
+    ``error_queue`` entry) so a probe miss does not inflate the worker's
+    error_count / restart accounting.
+    """
+
+    def _probe() -> None:
+        try:
+            is_alive = bool(device_runner.health_check(deep=probe.deep))
+        except Exception as e:
+            logger.warning(f"Worker {worker_id} canary health_check raised: {e}")
+            is_alive = False
+        result_queue.put((worker_id, probe._task_id, is_alive))
+
+    threading.Thread(
+        target=_probe,
+        name=f"canary-probe-{probe._task_id}",
+        daemon=True,
+    ).start()
 
 
 async def _continuous_fan_out(
@@ -21,6 +58,7 @@ async def _continuous_fan_out(
     error_queue: Any,
     task_queue: Any,
     max_inflight: int,
+    logger: Any,
 ) -> bool:
     """Keep up to *max_inflight* requests in flight against *device_runner*.
 
@@ -42,6 +80,11 @@ async def _continuous_fan_out(
         inflight[task] = req
 
     for req in initial_requests:
+        # A canary batched alongside real work (monitor check→submit race) is
+        # dispatched off-thread; _run_async would AttributeError on its empty body.
+        if isinstance(req, CanaryProbeRequest):
+            _run_canary_probe(device_runner, req, worker_id, result_queue, logger)
+            continue
         schedule(req)
 
     while inflight:
@@ -88,6 +131,15 @@ async def _continuous_fan_out(
             if new_req == SHUTDOWN_SIGNAL:
                 shutdown_seen = True
                 break
+            # A canary can only land here via the monitor's check→submit race
+            # (it normally probes only when idle). Dispatch it off-thread rather
+            # than scheduling it through _run_async, which would AttributeError on
+            # a CanaryProbeRequest (it carries no prompt/shape fields).
+            if isinstance(new_req, CanaryProbeRequest):
+                _run_canary_probe(
+                    device_runner, new_req, worker_id, result_queue, logger
+                )
+                continue
             schedule(new_req)
 
     return shutdown_seen
@@ -141,6 +193,14 @@ def device_worker(
             logger.info(f"Worker {worker_id} shutting down")
             loop.close()
             break
+
+        # Canary-monitor probe: the monitor only submits a probe when idle, so
+        # it normally arrives as its own singleton batch.
+        if isinstance(requests[0], CanaryProbeRequest):
+            _run_canary_probe(
+                device_runner, requests[0], worker_id, result_queue, logger
+            )
+            continue
 
         logger.info(f"Worker {worker_id} processing tasks: {requests.__len__()}")
         responses = None
@@ -216,6 +276,7 @@ def device_worker(
                             error_queue=error_queue,
                             task_queue=task_queue,
                             max_inflight=settings.max_batch_size,
+                            logger=logger,
                         )
                     )
                     successful = True

@@ -12,10 +12,10 @@
 #include "config/settings.hpp"
 #include "config/types.hpp"
 #include "ipc/media_payload_ipc.hpp"
-#include "runtime/runners/blaze_prefill_runner/blaze_prefill_runner.hpp"
+#include "runtime/runners/blaze_runner/blaze_tts_runner.hpp"
+#include "runtime/runners/blaze_runner/blaze_tts_scheduler_factory.hpp"
 #include "runtime/runners/embedding_runner.hpp"
 #include "runtime/runners/image_ipc_runner.hpp"
-#include "runtime/runners/llm_runner.hpp"
 #include "runtime/runners/runner_registry.hpp"
 #include "runtime/runners/sdxl/sdxl_edit_runner.hpp"
 #include "runtime/runners/sdxl/sdxl_generate_runner.hpp"
@@ -25,10 +25,13 @@
 #include "services/image_service.hpp"
 #include "services/llm_service.hpp"
 #include "services/service_registry.hpp"
+#include "services/tts_service.hpp"
 #include "utils/logger.hpp"
 
 #ifdef ENABLE_BLAZE
-#include "runtime/runners/blaze_runner/blaze_runner.hpp"
+#include "runtime/runners/blaze_runner/blaze_decode_runner.hpp"
+#include "runtime/runners/blaze_runner/blaze_prefill_runner.hpp"
+#include "runtime/runners/blaze_runner/blaze_scheduler_factory.hpp"
 #endif
 
 namespace tt::services {
@@ -43,46 +46,23 @@ void registerLLM() {
         return std::make_shared<LLMService>();
       });
 
-  auto& runners = utils::RunnerRegistry::instance();
-
-  // MOCK and LLAMA share LLMRunner; the inner IModelRunner is picked from
-  // cfg.runner_type in llm_runner/model_runner.cpp.
-  auto llmFactory =
-      [](const config::RunnerConfig& cfg, ipc::IResultQueue* resultQueue,
-         ipc::ITaskQueue* taskQueue,
-         ipc::ICancelQueue* cancelQueue) -> std::unique_ptr<runners::IRunner> {
-    const auto& llm = std::get<config::LLMConfig>(cfg);
-    TT_LOG_INFO("[RunnerRegistry] Creating LLM runner ({})",
-                config::toString(llm.runner_type));
-    return std::make_unique<runners::LLMRunner>(llm, resultQueue, taskQueue,
-                                                cancelQueue);
-  };
-  runners.registerIpcRunner(config::ModelService::LLM,
-                            config::ModelRunnerType::MOCK, llmFactory);
-  runners.registerIpcRunner(config::ModelService::LLM,
-                            config::ModelRunnerType::LLAMA, llmFactory);
-
-  // Disaggregated prefill is independent of ENABLE_BLAZE.
-  runners.registerIpcRunner(
-      config::ModelService::LLM, config::ModelRunnerType::PREFILL,
-      [](const config::RunnerConfig& cfg, ipc::IResultQueue* resultQueue,
-         ipc::ITaskQueue* taskQueue, ipc::ICancelQueue* /*cancelQueue*/)
-          -> std::unique_ptr<runners::IRunner> {
-        TT_LOG_INFO("[RunnerRegistry] Creating Blaze Prefill runner");
-        const auto& llm = std::get<config::LLMConfig>(cfg);
-        return std::make_unique<runners::BlazePrefillRunner>(llm, resultQueue,
-                                                             taskQueue);
-      });
-
 #ifdef ENABLE_BLAZE
+  auto& runners = utils::RunnerRegistry::instance();
   auto blazeFactory =
       [](const config::RunnerConfig& cfg, ipc::IResultQueue* resultQueue,
          ipc::ITaskQueue* taskQueue,
          ipc::ICancelQueue* cancelQueue) -> std::unique_ptr<runners::IRunner> {
     TT_LOG_INFO("[RunnerRegistry] Creating Blaze runner (pipeline_manager)");
-    const auto& llm = std::get<config::LLMConfig>(cfg);
-    return std::make_unique<runners::blaze::BlazeRunner>(
-        llm, resultQueue, taskQueue, cancelQueue);
+    const auto& llm = std::get<config::BlazeConfig>(cfg);
+    if (config::llmMode() != config::LLMMode::PREFILL_ONLY) {
+      return std::make_unique<runners::blaze::BlazeDecodeRunner>(
+          llm, runners::blaze::makeDecodeScheduler(llm), resultQueue, taskQueue,
+          cancelQueue);
+    } else {
+      return std::make_unique<runners::blaze::BlazePrefillRunner>(
+          llm, runners::blaze::makePrefillScheduler(llm), resultQueue,
+          taskQueue, cancelQueue);
+    }
   };
   runners.registerIpcRunner(config::ModelService::LLM,
                             config::ModelRunnerType::PIPELINE_MANAGER,
@@ -90,16 +70,15 @@ void registerLLM() {
   runners.registerIpcRunner(config::ModelService::LLM,
                             config::ModelRunnerType::MOCK_PIPELINE,
                             blazeFactory);
+  runners.registerIpcRunner(config::ModelService::LLM,
+                            config::ModelRunnerType::MOCK_SCHEDULER,
+                            blazeFactory);
 #endif
 
   auto& routes = api::RouteRegistry::instance();
   routes.registerRoute(config::ModelService::LLM, "POST",
                        "/v1/chat/completions",
                        "OpenAI-compatible chat completions");
-  routes.registerRoute(config::ModelService::LLM, "POST", "/v1/responses",
-                       "OpenAI-compatible Responses API");
-  routes.registerRoute(config::ModelService::LLM, "GET", "/v1/models",
-                       "List models");
 }
 
 void registerEmbedding() {
@@ -216,6 +195,55 @@ void registerImage() {
   }
 }
 
+void registerTts() {
+  if (!config::isTtsService()) return;
+
+  const auto cfg = config::ttsEngineConfig();
+  auto& runners = utils::RunnerRegistry::instance();
+  runners.registerTtsIpcRunner(
+      config::ModelService::TTS, config::ModelRunnerType::TT_TTS,
+      [](const config::RunnerConfig& runnerCfg,
+         ipc::tts::TtsTaskQueue* taskQueue,
+         ipc::tts::TtsAudioChunkQueue* audioQueue,
+         ipc::ICancelQueue* cancelQueue) -> std::unique_ptr<runners::IRunner> {
+        TT_LOG_INFO("[RunnerRegistry] Creating Blaze TTS IPC runner");
+        auto ttsCfg = std::get<config::TtsConfig>(runnerCfg);
+        return std::make_unique<runners::blaze::BlazeTtsRunner>(
+            ttsCfg, runners::blaze::makeTtsScheduler(ttsCfg), taskQueue,
+            audioQueue, cancelQueue);
+      });
+  runners.registerTtsIpcRunner(
+      config::ModelService::TTS, config::ModelRunnerType::MOCK_SCHEDULER,
+      [](const config::RunnerConfig& runnerCfg,
+         ipc::tts::TtsTaskQueue* taskQueue,
+         ipc::tts::TtsAudioChunkQueue* audioQueue,
+         ipc::ICancelQueue* cancelQueue) -> std::unique_ptr<runners::IRunner> {
+        TT_LOG_INFO("[RunnerRegistry] Creating mock TTS IPC runner");
+        auto ttsCfg = std::get<config::TtsConfig>(runnerCfg);
+        return std::make_unique<runners::blaze::BlazeTtsRunner>(
+            ttsCfg, runners::blaze::makeMockTtsScheduler(ttsCfg), taskQueue,
+            audioQueue, cancelQueue);
+      });
+
+  ServiceRegistry::instance().registerService(
+      config::ModelService::TTS, [cfg]() -> std::shared_ptr<IService> {
+        const size_t configuredWorkers = config::numWorkers();
+        TT_LOG_INFO(
+            "[RegisterTts] Creating worker-backed TTS service with {} "
+            "worker process(es)",
+            configuredWorkers);
+        auto queueManager = std::make_unique<tt::ipc::tts::TtsQueueSet>(
+            static_cast<int>(configuredWorkers), cfg);
+        return std::make_shared<TtsService>(
+            cfg, std::make_unique<tt::worker::WorkerManager>(configuredWorkers),
+            std::move(queueManager));
+      });
+
+  auto& routes = api::RouteRegistry::instance();
+  routes.registerRoute(config::ModelService::TTS, "POST", "/v1/audio/speech",
+                       "Text-to-speech audio generation");
+}
+
 void registerAlwaysExemptRoutes() {
   auto& routes = api::RouteRegistry::instance();
   routes.registerAlwaysExempt("/health");
@@ -238,6 +266,7 @@ void registerBuiltinModelServices() {
     registerLLM();
     registerEmbedding();
     registerImage();
+    registerTts();
     registerAlwaysExemptRoutes();
   });
 }

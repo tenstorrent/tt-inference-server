@@ -3,28 +3,70 @@
 
 #include "dynamo/discovery.hpp"
 
+#include <blake3.h>
 #include <json/json.h>
 
 #include <algorithm>
+#include <array>
+#include <cstdint>
+#include <exception>
 #include <filesystem>
+#include <fstream>
 #include <memory>
-#include <stdexcept>
 #include <string>
 
 #include "config/settings.hpp"
 #include "dynamo/etcd_client.hpp"
+#include "dynamo/kube_client.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::dynamo {
 
 namespace {
 
-constexpr int K_CONTEXT_LENGTH = 131072;
-
-/// Frontend reads the checksum but doesn't validate it for routing — it's
-/// used only for cache invalidation.
+/// Used only when a referenced file is missing/unreadable. The frontend
+/// blake3-validates every file it fetches from the MDC, so for files that
+/// exist we must publish their real digest (see fileChecksum); an all-zero
+/// placeholder makes the frontend reject the model with a "checksum mismatch".
 constexpr const char* K_BLAKE3_PLACEHOLDER =
     "blake3:0000000000000000000000000000000000000000000000000000000000000000";
+
+/// Compute the BLAKE3-256 digest of a file's bytes, formatted as the
+/// `blake3:<64 hex chars>` string the Dynamo frontend expects in an MDC. On
+/// any read failure, fall back to the placeholder so registration still
+/// succeeds for files the frontend won't actually fetch.
+std::string fileChecksum(const std::string& path) {
+  std::ifstream f(path, std::ios::binary);
+  if (!f) {
+    TT_LOG_WARN(
+        "[DynamoDiscovery] cannot open {} for checksum; using placeholder",
+        path);
+    return K_BLAKE3_PLACEHOLDER;
+  }
+
+  blake3_hasher hasher;
+  blake3_hasher_init(&hasher);
+  std::array<char, 64 * 1024> buf{};
+  while (f) {
+    f.read(buf.data(), static_cast<std::streamsize>(buf.size()));
+    const std::streamsize n = f.gcount();
+    if (n > 0) {
+      blake3_hasher_update(&hasher, buf.data(), static_cast<size_t>(n));
+    }
+  }
+
+  std::array<uint8_t, BLAKE3_OUT_LEN> out{};
+  blake3_hasher_finalize(&hasher, out.data(), out.size());
+
+  static constexpr char kHex[] = "0123456789abcdef";
+  std::string result = "blake3:";
+  result.reserve(result.size() + out.size() * 2);
+  for (uint8_t byte : out) {
+    result += kHex[(byte >> 4) & 0xF];
+    result += kHex[byte & 0xF];
+  }
+  return result;
+}
 
 /// Dynamo's slug validator rejects anything outside [a-z0-9_-]. HuggingFace
 /// model ids have `/` and uppercase, so map them to `-` and lowercase.
@@ -74,6 +116,69 @@ Json::Value buildInstanceJson(const DiscoveryConfig& c) {
   return instance;
 }
 
+/// Dynamo frontend parser names advertised in the MDC runtime_config.
+struct RuntimeParsers {
+  const char* reasoning = nullptr;
+  const char* tool_call = nullptr;
+};
+
+/// Read HuggingFace `model_type` from config.json (empty if
+/// missing/unreadable).
+std::string readModelType(const std::string& configPath) {
+  std::ifstream f(configPath);
+  if (!f) {
+    return {};
+  }
+  Json::Value cfg;
+  Json::CharReaderBuilder builder;
+  std::string errs;
+  if (!Json::parseFromStream(builder, f, &cfg, &errs) ||
+      !cfg.isMember("model_type") || !cfg["model_type"].isString()) {
+    return {};
+  }
+  return cfg["model_type"].asString();
+}
+
+/// Map HF model_type (from tokenizers/<model>/config.json) to Dynamo parsers.
+RuntimeParsers runtimeParsersForModelType(const std::string& modelType) {
+  if (modelType == "kimi_k25") {
+    return {"kimi_k25", "kimi_k2"};
+  }
+  if (modelType == "llama") {
+    return {nullptr, nullptr};
+  }
+  if (modelType == "gpt_oss") {
+    return {"gpt_oss", "harmony"};
+  }
+  if (modelType == "minimax_m2") {
+    return {"basic", "minimax_m2"};
+  }
+  if (modelType == "minimax_m3_vl") {
+    return {"minimax_m3", "minimax_m3"};
+  }
+  if (modelType == "glm_moe_dsa") {
+    return {"glm45", "glm47"};
+  }
+  if (modelType == "deepseek_v4") {
+    return {"deepseek_v4", "deepseek_v4"};
+  }
+  // deepseek_v3 and unknown types default to DeepSeek R1 reasoning.
+  return {"deepseek_r1", nullptr};
+}
+
+RuntimeParsers runtimeParsersForModelPath(const std::string& modelPath) {
+  return runtimeParsersForModelType(readModelType(modelPath + "/config.json"));
+}
+
+void setRuntimeParserField(Json::Value& runtime, const char* field,
+                           const char* value) {
+  if (value != nullptr) {
+    runtime[field] = value;
+  } else {
+    runtime[field] = Json::Value::null;
+  }
+}
+
 /// Build the Model Descriptor Card JSON the frontend uses to tokenize and
 /// list the model. Paths point at the same files cpp_server itself loads so
 /// the frontend tokenization matches exactly.
@@ -88,7 +193,7 @@ Json::Value buildMdcJson(const DiscoveryConfig& c) {
   Json::Value card(Json::objectValue);
   card["display_name"] = c.model_name;
   card["slug"] = sanitizeSlug(c.model_name);
-  card["source_path"] = c.model_path;
+  card["source_path"] = c.model_name;
 
   const std::string configPath = c.model_path + "/config.json";
   const std::string tokenizerJsonPath = c.model_path + "/tokenizer.json";
@@ -96,13 +201,27 @@ Json::Value buildMdcJson(const DiscoveryConfig& c) {
   const std::string tokenizerConfigPath =
       c.model_path + "/tokenizer_config.json";
   const std::string chatTemplatePath = c.model_path + "/chat_template.jinja";
+  const std::string genConfigPath = c.model_path + "/generation_config.json";
 
   Json::Value modelInfo(Json::objectValue);
   Json::Value hfConfig(Json::objectValue);
   hfConfig["path"] = configPath;
-  hfConfig["checksum"] = K_BLAKE3_PLACEHOLDER;
+  hfConfig["checksum"] = fileChecksum(configPath);
   modelInfo["hf_config_json"] = std::move(hfConfig);
   card["model_info"] = std::move(modelInfo);
+
+  // generation_config.json carries eos_token_id / sampling defaults. Models
+  // like MiniMax omit eos_token_id from config.json, and the frontend hard-
+  // fails to load them without it. Publish it only when present so models that
+  // carry eos_token_id in config.json (DeepSeek, gpt-oss) are unaffected.
+  if (std::filesystem::exists(genConfigPath)) {
+    Json::Value genConfig(Json::objectValue);
+    Json::Value hfGenConfig(Json::objectValue);
+    hfGenConfig["path"] = genConfigPath;
+    hfGenConfig["checksum"] = fileChecksum(genConfigPath);
+    genConfig["hf_generation_config_json"] = std::move(hfGenConfig);
+    card["gen_config"] = std::move(genConfig);
+  }
 
   Json::Value tokenizer(Json::objectValue);
   Json::Value tokFile(Json::objectValue);
@@ -110,11 +229,11 @@ Json::Value buildMdcJson(const DiscoveryConfig& c) {
                            !std::filesystem::exists(tokenizerJsonPath);
   if (hasTiktoken) {
     tokFile["path"] = tiktokenModelPath;
-    tokFile["checksum"] = K_BLAKE3_PLACEHOLDER;
+    tokFile["checksum"] = fileChecksum(tiktokenModelPath);
     tokenizer["tik_token_model"] = std::move(tokFile);
   } else {
     tokFile["path"] = tokenizerJsonPath;
-    tokFile["checksum"] = K_BLAKE3_PLACEHOLDER;
+    tokFile["checksum"] = fileChecksum(tokenizerJsonPath);
     tokenizer["hf_tokenizer_json"] = std::move(tokFile);
   }
   card["tokenizer"] = std::move(tokenizer);
@@ -125,7 +244,7 @@ Json::Value buildMdcJson(const DiscoveryConfig& c) {
     hfChatTemplate["is_custom"] = false;
     Json::Value jinjaFile(Json::objectValue);
     jinjaFile["path"] = chatTemplatePath;
-    jinjaFile["checksum"] = K_BLAKE3_PLACEHOLDER;
+    jinjaFile["checksum"] = fileChecksum(chatTemplatePath);
     hfChatTemplate["file"] = std::move(jinjaFile);
     chatTemplateFile["hf_chat_template_jinja"] = std::move(hfChatTemplate);
     card["chat_template_file"] = std::move(chatTemplateFile);
@@ -134,23 +253,38 @@ Json::Value buildMdcJson(const DiscoveryConfig& c) {
   Json::Value promptFormatter(Json::objectValue);
   Json::Value hfTokCfg(Json::objectValue);
   hfTokCfg["path"] = tokenizerConfigPath;
-  hfTokCfg["checksum"] = K_BLAKE3_PLACEHOLDER;
+  hfTokCfg["checksum"] = fileChecksum(tokenizerConfigPath);
   promptFormatter["hf_tokenizer_config_json"] = std::move(hfTokCfg);
   card["prompt_formatter"] = std::move(promptFormatter);
 
-  card["context_length"] = K_CONTEXT_LENGTH;
+  card["context_length"] = static_cast<int>(tt::config::maxContextLength());
   card["kv_cache_block_size"] =
-      static_cast<int>(tt::config::kvCacheBlockSize());
+      static_cast<int>(tt::config::prefixCacheBlockSize());
   card["migration_limit"] = 0;
-  card["model_type"] = "Chat";
-  card["model_input"] = "Tokens";
+  card["model_type"] = c.model_type;
+  card["model_input"] = c.model_input;
+  if (!c.worker_type.empty()) {
+    card["worker_type"] = c.worker_type;
+  }
+  if (!c.needs.empty()) {
+    Json::Value needs(Json::arrayValue);
+    for (const auto& alternative : c.needs) {
+      Json::Value inner(Json::arrayValue);
+      for (const auto& workerType : alternative) {
+        inner.append(workerType);
+      }
+      needs.append(std::move(inner));
+    }
+    card["needs"] = std::move(needs);
+  }
 
   Json::Value runtime(Json::objectValue);
   runtime["total_kv_blocks"] = Json::Value::null;
   runtime["max_num_seqs"] = Json::Value::null;
   runtime["max_num_batched_tokens"] = Json::Value::null;
-  runtime["tool_call_parser"] = Json::Value::null;
-  runtime["reasoning_parser"] = "deepseek_r1";
+  const RuntimeParsers parsers = runtimeParsersForModelPath(c.model_path);
+  setRuntimeParserField(runtime, "reasoning_parser", parsers.reasoning);
+  setRuntimeParserField(runtime, "tool_call_parser", parsers.tool_call);
   runtime["exclude_tools_when_tool_choice_none"] = true;
   runtime["data_parallel_start_rank"] = 0;
   runtime["data_parallel_size"] = 1;
@@ -256,10 +390,86 @@ class EtcdDiscoveryRegistration : public DiscoveryRegistration {
   int64_t leaseId = 0;
 };
 
+// ---------------------------------------------------------------------------
+// Kubernetes backend
+// ---------------------------------------------------------------------------
+
+class KubernetesDiscoveryRegistration : public DiscoveryRegistration {
+ public:
+  explicit KubernetesDiscoveryRegistration(DiscoveryConfig config)
+      : cfg(std::move(config)) {
+    if (cfg.pod_name.empty()) {
+      throw std::runtime_error(
+          "[KubernetesDiscoveryRegistration] POD_NAME is required (downward "
+          "API) for the kubernetes discovery backend");
+    }
+    if (cfg.pod_uid.empty()) {
+      throw std::runtime_error(
+          "[KubernetesDiscoveryRegistration] POD_UID is required (downward "
+          "API) for the kubernetes discovery backend");
+    }
+    if (cfg.pod_namespace.empty()) {
+      throw std::runtime_error(
+          "[KubernetesDiscoveryRegistration] namespace is required for the "
+          "kubernetes discovery backend: set POD_NAMESPACE (downward API) or "
+          "ensure the ServiceAccount namespace file is mounted");
+    }
+    if (cfg.cr_name.empty()) {
+      cfg.cr_name = cfg.pod_name;  // pod mode: one CR per pod.
+    }
+    KubeClientConfig kc;
+    kc.api_server = cfg.kube_api_server;
+    kc.token_path = cfg.kube_token_path;
+    kc.validate_cert = cfg.kube_validate_cert;
+    client = std::make_unique<KubeClient>(std::move(kc));
+  }
+
+  void registerSelf() override {
+    apply();
+    TT_LOG_INFO(
+        "[KubernetesDiscoveryRegistration] Applied CR name={} namespace={} "
+        "model={} api server={}",
+        cfg.cr_name, cfg.pod_namespace, cfg.model_name, cfg.kube_api_server);
+  }
+
+  void unregisterSelf() override {
+    try {
+      client->deleteCr(cfg.pod_namespace, cfg.cr_name);
+      TT_LOG_INFO("[KubernetesDiscoveryRegistration] Deleted CR name={} ns={}",
+                  cfg.cr_name, cfg.pod_namespace);
+    } catch (const std::exception& e) {
+      TT_LOG_WARN(
+          "[KubernetesDiscoveryRegistration] delete failed (name={}): {}",
+          cfg.cr_name, e.what());
+    }
+  }
+
+ private:
+  void apply() {
+    client->applyCr(
+        cfg.pod_namespace, cfg.cr_name,
+        buildDynamoWorkerMetadataCr(cfg.cr_name, cfg.pod_name, cfg.pod_uid,
+                                    instanceKey(cfg), buildInstanceJson(cfg),
+                                    buildMdcJson(cfg)));
+  }
+
+  DiscoveryConfig cfg;
+  std::unique_ptr<KubeClient> client;
+};
+
 }  // namespace
 
 std::unique_ptr<DiscoveryRegistration> DiscoveryRegistration::create(
     const DiscoveryConfig& config) {
+  switch (config.backend) {
+    case DiscoveryBackend::KUBERNETES:
+      return std::make_unique<KubernetesDiscoveryRegistration>(config);
+    case DiscoveryBackend::ETCD:
+      return std::make_unique<EtcdDiscoveryRegistration>(config);
+  }
+  // Fallback for an unspecified/out-of-range backend value. config.backend
+  // defaults to ETCD, so etcd is also the "not set" default. No `default:` case
+  // above, so adding a new DiscoveryBackend triggers a -Wswitch warning here.
   return std::make_unique<EtcdDiscoveryRegistration>(config);
 }
 

@@ -16,7 +16,8 @@ To use non-default weights, replace `stable-diffusion-xl-base-1.0` in commands b
 `stable-diffusion-xl-base-1.0` is also supported on hardware:
 
 - [WH Galaxy](stable-diffusion-xl-base-1.0_galaxy.md)
-- [N150/N300](stable-diffusion-xl-base-1.0_n150.md)
+- [N150](stable-diffusion-xl-base-1.0_n150.md)
+- [N300](stable-diffusion-xl-base-1.0_n300.md)
 
 ## Quickstart - Deploy stable-diffusion-xl-base-1.0 Inference Server on WH LoudBox/QuietBox
 

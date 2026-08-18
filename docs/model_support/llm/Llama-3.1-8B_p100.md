@@ -1,4 +1,4 @@
-# Llama-3.1-8B Tenstorrent Support on P100/P150
+# Llama-3.1-8B Tenstorrent Support on P100
 
 Supported weights variants for this model implementation are:
 
@@ -9,7 +9,7 @@ To use non-default weights, replace `Llama-3.1-8B` in commands below.
 
 #### Useful links
 
-- [P100/P150 details](https://tenstorrent.com/hardware/blackhole)
+- [P100 details](https://tenstorrent.com/hardware/blackhole)
 - [Search other llm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
@@ -18,9 +18,12 @@ To use non-default weights, replace `Llama-3.1-8B` in commands below.
 - [WH Galaxy](Llama-3.1-8B_galaxy.md)
 - [BH LoudBox](Llama-3.1-8B_p150x8.md)
 - [BH 4xP150](Llama-3.1-8B_p150x4.md)
+- [BH P300](Llama-3.1-8B_p300.md)
 - [BH QuietBox 2](Llama-3.1-8B_p300x2.md)
+- [P150](Llama-3.1-8B_p150.md)
 - [WH LoudBox/QuietBox](Llama-3.1-8B_t3k.md)
-- [N150/N300](Llama-3.1-8B_n150.md)
+- [N150](Llama-3.1-8B_n150.md)
+- [N300](Llama-3.1-8B_n300.md)
 
 ## Quickstart - Deploy Llama-3.1-8B Inference Server on p100
 
@@ -38,7 +41,7 @@ docker run \
   --device /dev/tenstorrent \
   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
   --volume volume_id_Llama-3.1-8B:/home/container_app_user/cache_root \
-  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-55fd115-aa4ae1e \
+  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.18.0-c49bb76-6b4a3a7 \
   --model Llama-3.1-8B \
   --tt-device p100
 ```
@@ -58,47 +61,7 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Model Status | 🛠️ Experimental |
 | Max Batch Size | 32 |
 | Max Context Length | 65536 |
-| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/55fd115/models/tt_transformers) |
-| tt-metal Commit | `55fd115` |
-| vLLM Commit | `aa4ae1e` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-55fd115-aa4ae1e` |
-
----
-
-## P150 Configuration
-
-### Quickstart - Deploy on p150
-
-**docker run command**
-
-```bash
-docker run \
-  --env "HF_TOKEN=$HF_TOKEN" \
-  --ipc host \
-  --publish 8000:8000 \
-  --device /dev/tenstorrent \
-  --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
-  --volume volume_id_Llama-3.1-8B:/home/container_app_user/cache_root \
-  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-55fd115-aa4ae1e \
-  --model Llama-3.1-8B \
-  --tt-device p150
-```
-
-**via run.py command**
-
-```bash
-python3 run.py --model Llama-3.1-8B --device p150 --workflow server --docker-server
-```
-
-### Model Parameters
-
-| Parameter | Value |
-|-----------|-------|
-| Weights | [meta-llama/Llama-3.1-8B](https://huggingface.co/meta-llama/Llama-3.1-8B), [meta-llama/Llama-3.1-8B-Instruct](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct) |
-| Model Status | 🛠️ Experimental |
-| Max Batch Size | 32 |
-| Max Context Length | 65536 |
-| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/55fd115/models/tt_transformers) |
-| tt-metal Commit | `55fd115` |
-| vLLM Commit | `aa4ae1e` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-55fd115-aa4ae1e` |
+| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/c49bb76/models/tt_transformers) |
+| tt-metal Commit | `c49bb76` |
+| vLLM Commit | `6b4a3a7` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.18.0-c49bb76-6b4a3a7` |

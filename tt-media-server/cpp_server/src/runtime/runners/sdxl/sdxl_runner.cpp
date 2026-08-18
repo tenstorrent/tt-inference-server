@@ -43,7 +43,9 @@ void setupRunnerEnvironment(const config::ImageConfig& config) {
   if (!config.visible_devices.empty()) {
     setenv("TT_VISIBLE_DEVICES", config.visible_devices.c_str(), 1);
   }
-  if (config.is_galaxy) {
+  if (config.device == "bh-galaxy") {
+    setenv("TT_METAL_CORE_GRID_OVERRIDE_TODEPRECATE", "10,9", 1);
+  } else if (config.device == "galaxy") {
     setenv("TT_METAL_CORE_GRID_OVERRIDE_TODEPRECATE", "7,7", 1);
   }
 }

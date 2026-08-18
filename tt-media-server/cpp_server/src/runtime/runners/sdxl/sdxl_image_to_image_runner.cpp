@@ -76,14 +76,14 @@ py::object SDXLImageToImageRunner::preprocessImage(
   py::object pilImg = pil.attr("open")(buf);
   py::object converted = pilImg.attr("convert")("RGB");
   converted = converted.attr("resize")(
-      py::make_tuple(config_.image_width, config_.image_height),
+      py::make_tuple(config_.imageWidth, config_.imageHeight),
       pil.attr("Resampling").attr("LANCZOS"));
 
   py::object processor =
       tt_sdxl().attr("torch_pipeline").attr("image_processor");
   py::dict kwargs;
-  kwargs["height"] = config_.image_height;
-  kwargs["width"] = config_.image_width;
+  kwargs["height"] = config_.imageHeight;
+  kwargs["width"] = config_.imageWidth;
   kwargs["crops_coords"] = py::none();
   kwargs["resize_mode"] = py::str("default");
   py::object tensor = processor.attr("preprocess")(converted, **kwargs);

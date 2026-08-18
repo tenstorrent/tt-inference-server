@@ -43,6 +43,8 @@ drogon_found() {
 
 APT_PKGS=(
     libjsoncpp-dev uuid-dev zlib1g-dev libssl-dev libboost-all-dev
+    # sentry-native's curl transport (distributed tracing export)
+    libcurl4-openssl-dev
 )
 if [ "${RUNTIME_ONLY}" = 0 ]; then
     APT_PKGS+=(build-essential cmake g++ pkg-config curl git wget gnupg ca-certificates ccache)
@@ -52,8 +54,17 @@ elif ! drogon_found 2>/dev/null; then
     APT_PKGS+=(build-essential cmake g++ pkg-config curl git)
 fi
 if [ "${INSTALL_KAFKA}" = 1 ]; then
-    APT_PKGS+=(librdkafka-dev)
-    echo "Kafka deps: will install librdkafka-dev (for KAFKA_ENABLED=ON builds)"
+    # librdkafka-dev depends on librdkafka1 + librdkafka++1 on Ubuntu/Debian,
+    # but list them explicitly so minimal base images that prune transitive
+    # deps still end up with a working C++ runtime. CMakeLists.txt:1134-1136
+    # requires both -lrdkafka and -lrdkafka++ plus the librdkafka/ headers.
+    if [ "${RUNTIME_ONLY}" = 1 ]; then
+        APT_PKGS+=(librdkafka1 librdkafka++1)
+        echo "Kafka deps: will install librdkafka1 + librdkafka++1 (runtime)"
+    else
+        APT_PKGS+=(librdkafka-dev librdkafka1 librdkafka++1)
+        echo "Kafka deps: will install librdkafka-dev + runtime libs (for KAFKA_ENABLED=ON builds)"
+    fi
 fi
 
 $SUDO apt-get update -qq
@@ -103,6 +114,12 @@ fi
 if [ "${RUNTIME_ONLY}" = 0 ] && { ! command -v clang-format-20 >/dev/null 2>&1 || ! command -v clang-tidy-20 >/dev/null 2>&1; }; then
     install_llvm_apt_repo
     $SUDO apt-get install -y --no-install-recommends clang-format-20 clang-tidy-20
+fi
+
+# Install a newer g++ than Ubuntu 22.04's default 11.4. tt-llm-engine uses
+# g++-12 
+if [ "${RUNTIME_ONLY}" = 0 ] && ! command -v g++-12 >/dev/null 2>&1; then
+    $SUDO apt-get install -y --no-install-recommends g++-12
 fi
 $SUDO rm -rf /var/lib/apt/lists/*
 

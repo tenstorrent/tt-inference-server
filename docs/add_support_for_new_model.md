@@ -202,7 +202,7 @@ EvalTask(
 
 ## Step 4: Add Performance Targets
 
-The performance targets are all in https://github.com/tenstorrent/tt-inference-server/blob/main/benchmarking/benchmark_targets/model_performance_reference.json, each model has list of benchmark targets. For example LLMs specify points on ISL/OSL/concurrency curve. The theoretical targets are then checked against those measured points. In the example below for `Llama-3.3-70B-Instruct` for `galaxy` there are 2 points: ISL=128,OSL=128,concurrency=1 and ISL=2048,OSL=128,concurrency=1. These then become the checkpoints for the performance pass fail in Models CI.
+The performance targets are all in https://github.com/tenstorrent/tt-inference-server/blob/main/reference_config/benchmarking/benchmark_targets/model_performance_reference.json, each model has list of benchmark targets. For example LLMs specify points on ISL/OSL/concurrency curve. The theoretical targets are then checked against those measured points. In the example below for `Llama-3.3-70B-Instruct` for `galaxy` there are 2 points: ISL=128,OSL=128,concurrency=1 and ISL=2048,OSL=128,concurrency=1. These then become the checkpoints for the performance pass fail in Models CI.
 
 ```json
 "Llama-3.3-70B-Instruct": {

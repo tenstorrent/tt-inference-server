@@ -4,7 +4,6 @@
 #pragma once
 
 #include <atomic>
-#include <condition_variable>
 #include <deque>
 #include <functional>
 #include <future>
@@ -18,6 +17,7 @@
 
 #include "sockets/i_socket_transport.hpp"
 #include "sockets/socket_transport_state.hpp"
+#include "sockets/zmq_send_queue.hpp"
 
 // Forward-declare ZMQ types to avoid leaking zmq.hpp into every TU.
 namespace zmq {
@@ -52,6 +52,7 @@ class ZmqSocketTransport : public ISocketTransport,
   std::string getStatus() const override;
 
   bool sendRawData(std::span<const uint8_t> data) override;
+  bool sendRawData(std::vector<uint8_t>&& data) override;
   std::vector<uint8_t> receiveRawData() override;
 
   void setConnectionLostCallback(std::function<void()> callback) override;
@@ -77,33 +78,32 @@ class ZmqSocketTransport : public ISocketTransport,
   void failPendingSends();
   void enqueueReceivedMessage(std::vector<uint8_t> data);
 
-  // Transport-specific send/receive halves. Only ioThread_ calls these methods;
-  // no other thread touches socket_.
-  bool sendAsRouter(const std::vector<uint8_t>& data);
-  bool sendAsDealer(const std::vector<uint8_t>& data);
+  // Transport-specific send/receive halves. Only ioThread calls these methods;
+  // no other thread touches socket.
+  bool sendAsRouter(std::vector<uint8_t>&& data);
+  bool sendAsDealer(std::vector<uint8_t>&& data);
   std::vector<uint8_t> receiveAsRouter();
   std::vector<uint8_t> receiveAsDealer();
 
-  std::string endpoint_;
+  std::string endpoint;
 
-  std::unique_ptr<zmq::context_t> context_;
-  std::unique_ptr<zmq::socket_t> socket_;
+  std::unique_ptr<zmq::context_t> context;
+  std::unique_ptr<zmq::socket_t> socket;
 
-  std::atomic<bool> ioActive_{false};
-  std::atomic<bool> monitorActive_{false};
+  std::atomic<bool> ioActive{false};
+  std::atomic<bool> monitorActive{false};
 
-  std::jthread ioThread_;
-  std::jthread monitorThread_;
+  std::jthread ioThread;
+  std::jthread monitorThread;
 
   std::vector<uint8_t>
-      peerId_;  // ROUTER stores the connected DEALER's identity.
+      peerId;  // ROUTER stores the connected DEALER's identity.
+  std::atomic<bool> routerPeerReady{false};
 
-  std::mutex sendMutex_;
-  std::condition_variable sendCv_;
-  std::deque<std::shared_ptr<SendRequest>> pendingSends_;
+  ZmqSendQueue<SendRequest> sendQueue;
 
-  std::mutex receiveMutex_;
-  std::deque<std::vector<uint8_t>> receivedMessages_;
+  std::mutex receiveMutex;
+  std::deque<std::vector<uint8_t>> receivedMessages;
 };
 
 }  // namespace tt::sockets

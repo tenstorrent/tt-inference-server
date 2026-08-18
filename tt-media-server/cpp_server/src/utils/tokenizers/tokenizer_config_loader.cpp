@@ -7,6 +7,7 @@
 #include <sstream>
 
 #include "config/settings.hpp"
+#include "utils/logger.hpp"
 #include "utils/tokenizers/tokenizer.hpp"
 
 namespace tt::utils::tokenizers {
@@ -70,15 +71,25 @@ static TokenizerConfig loadAndValidate(const std::string& path) {
     throw std::runtime_error(
         "[TokenizerUtil] Failed to load tokenizer config: " + path);
   }
+  // A tokenizer with no bos/eos token has nothing to add, even if the flag is
+  // set (which it is by default for add_bos_token). Some models legitimately
+  // ship no bos_token — e.g. GLM opens turns with [gMASK]<sop> in its chat
+  // template rather than a BOS token. HF treats a missing token as "don't add
+  // one"; mirror that (disable the flag with a warning) instead of aborting, so
+  // such models load. The tokenizers already no-op on an empty token string.
   if (cfg.add_bos_token && cfg.bos_token.empty()) {
-    throw std::runtime_error(
-        "[TokenizerUtil] add_bos_token is true but bos_token is missing in "
-        "tokenizer_config.json");
+    TT_LOG_WARN(
+        "[TokenizerUtil] add_bos_token set but no bos_token in {}; disabling "
+        "bos prepend",
+        path);
+    cfg.add_bos_token = false;
   }
   if (cfg.add_eos_token && cfg.eos_token.empty()) {
-    throw std::runtime_error(
-        "[TokenizerUtil] add_eos_token is true but eos_token is missing in "
-        "tokenizer_config.json");
+    TT_LOG_WARN(
+        "[TokenizerUtil] add_eos_token set but no eos_token in {}; disabling "
+        "eos append",
+        path);
+    cfg.add_eos_token = false;
   }
   return cfg;
 }

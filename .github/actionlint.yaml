@@ -1,0 +1,4 @@
+self-hosted-runner:
+  labels:
+    - tt-ubuntu-2204-large-stable
+    - tt-ubuntu-2204-xlarge-stable

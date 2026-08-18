@@ -6,12 +6,14 @@
 #include <cstdint>
 #include <iostream>
 
+#include "domain/llm/llm_error_reason.hpp"
+
 namespace tt::ipc {
 
 struct SharedToken {
   uint32_t token_index = 0;
   uint32_t flags = 0;
-  uint64_t token_id = 0;
+  uint32_t token_id = 0;
   uint32_t task_id = 0;
   uint32_t spec_accepts = 0;
   uint32_t spec_rejects = 0;
@@ -20,11 +22,13 @@ struct SharedToken {
   static constexpr uint32_t FLAG_ERROR = 2;
   static constexpr uint32_t FLAG_DONE = 4;
   static constexpr uint32_t FLAG_ABORT = 8;
+  static constexpr uint32_t FLAG_TIMEOUT = 16;
 
   bool isFinal() const { return flags & FLAG_FINAL; }
   bool isError() const { return flags & FLAG_ERROR; }
   bool isDone() const { return flags & FLAG_DONE; }
   bool isAbort() const { return flags & FLAG_ABORT; }
+  bool isTimeout() const { return flags & FLAG_TIMEOUT; }
 
   void serialize(std::ostream& os) const {
     os.write(reinterpret_cast<const char*>(&token_index), sizeof(token_index));
@@ -51,6 +55,12 @@ struct SharedToken {
     return token;
   }
 };
+
+inline tt::domain::llm::LLMErrorReason errorReasonFromToken(
+    const SharedToken& token) {
+  return token.isTimeout() ? tt::domain::llm::LLMErrorReason::TIMEOUT
+                           : tt::domain::llm::LLMErrorReason::GENERIC;
+}
 
 /**
  * Abstract interface for a token result queue (worker -> main process).

@@ -7,6 +7,8 @@
 #include <string>
 #include <string_view>
 
+#include "messaging/i_kafka_producer.hpp"
+
 namespace tt::messaging {
 
 struct KafkaProducerConfig {
@@ -14,10 +16,10 @@ struct KafkaProducerConfig {
   std::string topic;
 };
 
-class KafkaProducer {
+class KafkaProducer : public IKafkaProducer {
  public:
   explicit KafkaProducer(KafkaProducerConfig config);
-  ~KafkaProducer();
+  ~KafkaProducer() override;
 
   KafkaProducer(const KafkaProducer&) = delete;
   KafkaProducer& operator=(const KafkaProducer&) = delete;
@@ -39,7 +41,20 @@ class KafkaProducer {
    *       this function returns. Use flush() or destructor for guaranteed
    * delivery.
    */
-  bool send(std::string_view payload, std::string* errorMessage = nullptr);
+  bool send(std::string_view payload,
+            std::string* errorMessage = nullptr) override;
+
+  /**
+   * Sends a message to a specific partition of the configured Kafka topic.
+   *
+   * @param payload Message content to send.
+   * @param partition Target partition index (0-based). Must exist on the
+   *   topic or the send will fail.
+   * @param errorMessage Optional output parameter for error details.
+   */
+  bool send(std::string_view payload, int32_t partition,
+            std::string* errorMessage = nullptr) override;
+
   /**
    * Flushes queued messages and waits for delivery.
    *
@@ -47,7 +62,8 @@ class KafkaProducer {
    * @param errorMessage Optional output parameter for error details.
    * @return true when all queued messages are delivered before timeout.
    */
-  bool flush(int timeoutMs = 10 * 1000, std::string* errorMessage = nullptr);
+  bool flush(int timeoutMs = 10 * 1000,
+             std::string* errorMessage = nullptr) override;
 
  private:
   struct Impl;

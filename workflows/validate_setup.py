@@ -7,9 +7,9 @@ import os
 import stat
 from pathlib import Path
 
-from benchmarking.benchmark_config import BENCHMARK_CONFIGS
-from evals.eval_config import EVAL_CONFIGS
-from server_tests.test_config import TEST_CONFIGS
+from reference_config.benchmarking.benchmark_config import get_benchmark_config
+from workflows.workflow_dispatch import can_dispatch_to_engine
+from reference_config.evals.eval_config import EVAL_CONFIGS
 from workflows.model_spec import MODEL_SPECS
 from workflows.utils import (
     MIN_SUPPORTED_IMAGE_VERSION,
@@ -31,6 +31,25 @@ from workflows.workflow_types import (
 from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger("run_log")
+
+
+def _uses_external_runtime_model_spec(runtime_config) -> bool:
+    return bool(runtime_config.runtime_model_spec_json)
+
+
+def _swarmone_license_available() -> bool:
+    """Whether a SwarmOne swo-bench license can be resolved.
+
+    Mirrors swo-bench's own resolution order (env var, then the config file);
+    the key itself is never read into run.py, only its presence is checked.
+    """
+    if os.environ.get("SWO_LICENSE_KEY"):
+        return True
+    key_file = Path.home() / ".swarmone" / "license.key"
+    try:
+        return key_file.is_file() and bool(key_file.read_text().strip())
+    except OSError:
+        return False
 
 
 def _check_image_version_supported(model_spec):
@@ -78,13 +97,20 @@ def validate_runtime_args(model_spec, runtime_config):
 
     model_id = model_spec.model_id
 
-    # Check if the model_id exists in MODEL_SPECS (this validates device support)
-    if model_id not in MODEL_SPECS:
+    # Built-in catalog runs must resolve to MODEL_SPECS. Explicit
+    # --runtime-model-spec-json runs use that JSON as the source of truth.
+    if model_id not in MODEL_SPECS and not _uses_external_runtime_model_spec(args):
         raise ValueError(
             f"model:={runtime_config.model} does not support device:={runtime_config.device}"
         )
 
-    _check_image_version_supported(model_spec)
+    # The image-version contract only matters when run.py actually launches the
+    # vLLM docker image. Client-side / external-server runs (no --docker-server)
+    # — including the v2-routed prefill_decode / prefix-cache / spec-decode
+    # workflows that bring up or target their own server — never emit a docker
+    # command, so the pinned image version is irrelevant and must not gate them.
+    if args.docker_server:
+        _check_image_version_supported(model_spec)
 
     assert not (args.docker_server and args.local_server), (
         "Cannot run --docker-server and --local-server"
@@ -94,21 +120,65 @@ def validate_runtime_args(model_spec, runtime_config):
         assert model_spec.model_name in EVAL_CONFIGS, (
             f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
         )
-    if workflow_type == WorkflowType.BENCHMARKS:
+    if (
+        workflow_type == WorkflowType.BENCHMARKS
+        and not getattr(args, "prefix_cache", False)
+        and not getattr(args, "spec_decode", False)
+        and not can_dispatch_to_engine(model_spec, runtime_config)
+    ):
         if os.getenv("OVERRIDE_BENCHMARKS"):
             logger.warning("OVERRIDE_BENCHMARKS is active, using override benchmarks")
-        assert model_spec.model_id in BENCHMARK_CONFIGS, (
-            f"Model:={model_spec.model_name} not found in BENCHMARKS_CONFIGS"
+        get_benchmark_config(model_spec)
+    if workflow_type == WorkflowType.AGENTIC_TRACES or (
+        workflow_type == WorkflowType.RELEASE and getattr(args, "agentic_traces", False)
+    ):
+        # Fail here rather than after the multi-minute InferenceX clone + install
+        # that the AGENTIC_TRACES venv setup performs -- and, for a release run,
+        # rather than after the evals and benchmarks that precede the child.
+        from reference_config.agentic_traces.agentic_traces_config import (
+            TraceSource,
+            default_run_specs,
+            get_agentic_traces_config,
         )
+
+        agentic_traces_config = get_agentic_traces_config(model_spec)
+        assert agentic_traces_config is not None, (
+            f"Model:={model_spec.model_name} (model_id={model_spec.model_id}) has "
+            "no AGENTIC_TRACES_CONFIGS entry. Add one to "
+            "reference_config/agentic_traces/agentic_traces_config.py, including "
+            "the InferenceX git ref to pin."
+        )
+
+        # A SwarmOne run needs a swo-bench license; require it up front (like
+        # HF_TOKEN) rather than failing minutes into the run inside the driver.
+        # Only when SwarmOne will actually run, though: it is an opt-in source,
+        # so a model that merely has a SwarmOne run configured still runs its
+        # plain sweep (InferenceX only) without a license.
+        sources_arg = getattr(args, "agentic_traces_sources", None)
+        if sources_arg:
+            selected = {
+                part.strip().lower().replace("-", "_")
+                for part in sources_arg.split(",")
+                if part.strip()
+            }
+            swarmone_will_run = TraceSource.SWARMONE.value in selected
+        else:
+            swarmone_will_run = any(
+                run.trace_source is TraceSource.SWARMONE
+                for run in default_run_specs(agentic_traces_config)
+            )
+        if swarmone_will_run and not _swarmone_license_available():
+            raise ValueError(
+                "⛔ The swarmone agentic-traces source requires a SwarmOne "
+                "license. Set the SWO_LICENSE_KEY environment variable or write "
+                "the key to ~/.swarmone/license.key. Request a key from "
+                "benb@swarmone.ai. To run without SwarmOne, drop "
+                "`--agentic-traces-sources swarmone`."
+            )
+
     if workflow_type == WorkflowType.STRESS_TESTS:
         pass  # Model support already validated via MODEL_SPECS check
 
-    if workflow_type == WorkflowType.TESTS:
-        assert model_spec.model_name in TEST_CONFIGS, (
-            f"Model:={model_spec.model_name} not found in TEST_CONFIGS"
-        )
-    if workflow_type == WorkflowType.REPORTS:
-        pass
     if workflow_type == WorkflowType.SERVER:
         if not (args.docker_server or args.local_server):
             raise ValueError(
@@ -131,16 +201,13 @@ def validate_runtime_args(model_spec, runtime_config):
                 )
 
     if workflow_type == WorkflowType.RELEASE:
-        # NOTE: fail fast for models without both defined evals and benchmarks
-        # today this will stop models defined in MODEL_SPECS
-        # but not in EVAL_CONFIGS or BENCHMARK_CONFIGS, e.g. non-instruct models
-        # a run_*.log fill will be made for the failed combination indicating this
+        # NOTE: fail fast for models without both defined evals and generated
+        # benchmark tasks. A run_*.log file will be made for failed combinations.
         assert model_spec.model_name in EVAL_CONFIGS, (
             f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
         )
-        assert model_spec.model_id in BENCHMARK_CONFIGS, (
-            f"Model:={model_spec.model_name} not found in BENCHMARKS_CONFIGS"
-        )
+        if not can_dispatch_to_engine(model_spec, runtime_config):
+            get_benchmark_config(model_spec)
 
     if DeviceTypes.from_string(args.device) == DeviceTypes.GPU:
         if args.docker_server or args.local_server:
@@ -196,44 +263,24 @@ def _validate_local_vllm_installation(runtime_config):
 
 
 def _validate_local_vllm_tt_plugin(runtime_config, venv_python: Path):
-    """Ensure the vllm-tt-plugin package is installed and registered when the
-    user's vLLM checkout requires it.
+    """Ensure the vllm-tt-plugin package is installed and registers the TT platform.
 
-    Since tenstorrent/vllm commit a072e40a6 (2026-05-04, "Extract TT backend
-    into plugin package (Phase 1)") the TT platform lives in a separate
-    editable package at ``$VLLM_DIR/plugins/vllm-tt-plugin``. Without that
-    package installed, ``vllm/platforms/tt.py`` raises
-    ``ModuleNotFoundError: No module named 'vllm_tt_plugin'`` when
-    ``vllm serve`` starts up.
+    The TT platform lives in https://github.com/tenstorrent/vllm-tt-plugin, a
+    standalone repository installed into the tt-metal venv by its own
+    ``docs/install-vllm-tt.sh`` (which installs upstream vLLM first, then the
+    plugin). Without it, vLLM starts with no ``tt`` platform registered.
 
-    When the plugin source directory exists in the vLLM checkout this helper
-    will:
+    The probe runs unconditionally: it only needs the *installed* package, and
+    there is no plugin source tree inside the vLLM checkout to key off. An
+    earlier version gated this on ``$VLLM_DIR/plugins/vllm-tt-plugin`` existing
+    -- the layout back when the plugin shipped inside the fork -- which meant
+    validation silently no-opped for every standalone-plugin setup, i.e. in
+    exactly the case it was meant to catch.
 
-    1. Editable-install it into the tt-metal venv (idempotent, mirrors the
-       dev Dockerfile behaviour added by tt-inference-server PR #3370).
-    2. Run a strict in-process check that ``import vllm_tt_plugin`` works AND
-       that the ``tt`` entry is registered under the ``vllm.platform_plugins``
-       entry-point group.
-
-    When the plugin source is absent (older vLLM checkouts that still ship
-    TT support inside vllm core) both steps are skipped.
+    Installing is deliberately not attempted here: the plugin's install script
+    owns the vLLM version pin and its dependency overrides, so installing the
+    plugin alone risks pairing it with an incompatible vLLM.
     """
-    # Local import to avoid a module-level circular dependency:
-    # workflows.run_local_server -> workflows.setup_host -> workflows.validate_setup
-    from workflows.run_local_server import (  # noqa: PLC0415
-        install_vllm_tt_plugin_if_present,
-        vllm_tt_plugin_source_path,
-    )
-
-    plugin_path = vllm_tt_plugin_source_path(_get_local_vllm_dir(runtime_config))
-    if not (plugin_path / "pyproject.toml").exists():
-        logger.info(
-            f"Skipping vllm-tt-plugin validation: source not present at {plugin_path}"
-        )
-        return
-
-    install_vllm_tt_plugin_if_present(runtime_config)
-
     check_script = (
         "import vllm_tt_plugin; "
         "from importlib.metadata import entry_points; "
@@ -248,26 +295,18 @@ def _validate_local_vllm_tt_plugin(runtime_config, venv_python: Path):
             "`vllm_tt_plugin` Python package (the TT platform plugin) "
             "to be installed in the tt-metal python environment and to register "
             "the `tt` entry under the `vllm.platform_plugins` entry-point group.\n"
-            f"Plugin source detected at: {plugin_path}\n"
-            "Auto-install via this validator failed or the entry point did not "
-            "register. Re-install the plugin by running the canonical script "
-            f"from the vLLM repo: `cd {_get_local_vllm_dir(runtime_config)} && "
-            "bash tt_metal/install-vllm-tt.sh`\n"
+            "Install it into the tt-metal python environment with:\n"
+            "  git clone https://github.com/tenstorrent/vllm-tt-plugin.git\n"
+            "  cd vllm-tt-plugin && source docs/install-vllm-tt.sh\n"
+            "That script installs upstream vLLM (VLLM_TARGET_DEVICE=empty) plus "
+            "the plugin; run it with the tt-metal venv activated. Verify with:\n"
+            f"  {venv_python} -c 'import vllm_tt_plugin, ttnn; print(\"ok\")'\n"
             "See vllm-tt-metal/README.md for the full local installation steps."
         )
     logger.info(
         f"✅ validated vllm-tt-plugin install and `tt` platform_plugins entry "
         f"point registration with: {venv_python}"
     )
-
-
-def _get_local_vllm_dir(runtime_config) -> Path:
-    """Resolve $VLLM_DIR the same way workflows.run_local_server does."""
-    tt_metal_home = Path(runtime_config.tt_metal_home).expanduser().resolve()
-    vllm_dir = getattr(runtime_config, "vllm_dir", None)
-    if vllm_dir:
-        return Path(vllm_dir).expanduser().resolve()
-    return (tt_metal_home / "vllm").resolve()
 
 
 def validate_local_setup(model_spec, runtime_config, json_fpath):
@@ -481,21 +520,18 @@ def validate_local_server_paths(args):
         raise ValueError(f"⛔ --tt-metal-home is not a directory: {tt_metal_home}")
 
     python_env_dir = _get_local_server_python_env_dir(args)
-    vllm_dir = (
-        Path(args.vllm_dir).expanduser().resolve()
-        if getattr(args, "vllm_dir", None)
-        else (tt_metal_home / "vllm").resolve()
-    )
     venv_python = python_env_dir / "bin" / "python"
     build_lib_dir = tt_metal_home / "build" / "lib"
     entrypoint_path = (
         get_repo_root_path() / "vllm-tt-metal" / "src" / "run_vllm_api_server.py"
     )
 
+    # No vLLM source dir is required: vLLM is an installed package in the tt-metal
+    # venv, not a checkout. That it imports -- and that vllm-tt-plugin registers the
+    # `tt` platform -- is checked by _validate_local_vllm_installation later.
     required_paths = [
         ("python venv interpreter", venv_python),
         ("tt-metal build/lib", build_lib_dir),
-        ("vLLM source dir", vllm_dir),
         ("local server entrypoint", entrypoint_path),
     ]
     for label, path in required_paths:

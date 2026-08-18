@@ -18,15 +18,11 @@ int ResponseWriter::noteToken(const LLMChoice& choice) {
     specRejects.store(choice.spec_rejects);
   }
 
-  if (choice.text.empty() && !choice.reasoning.has_value() &&
-      !choice.tool_calls.has_value()) {
+  if (choice.text.empty() && !choice.tool_calls.has_value()) {
     return completionTokens.load();
   }
 
   const int current = completionTokens.fetch_add(1) + 1;
-  if (choice.reasoning.has_value()) {
-    reasoningTokens.fetch_add(1);
-  }
   auto now = std::chrono::high_resolution_clock::now();
   if (!firstTokenTime.has_value()) {
     firstTokenTime = now;
@@ -36,16 +32,22 @@ int ResponseWriter::noteToken(const LLMChoice& choice) {
   return current;
 }
 
+void ResponseWriter::observeCachedTokens(const LLMStreamChunk& chunk) {
+  if (chunk.cached_prompt_tokens.has_value()) {
+    cachedTokensOverride.store(*chunk.cached_prompt_tokens);
+  }
+}
+
 CompletionUsage ResponseWriter::buildUsage() const {
   const int tokens = completionTokens.load();
-  const int reasoning = reasoningTokens.load();
   const int totalTokens = params.promptTokenCount + tokens;
 
   PromptTokensDetails promptDetails;
-  promptDetails.cached_tokens = params.cachedTokenCount;
+  const int cachedOverride = cachedTokensOverride.load();
+  promptDetails.cached_tokens =
+      cachedOverride >= 0 ? cachedOverride : params.cachedTokenCount;
 
   CompletionTokensDetails completionDetails;
-  completionDetails.reasoning_tokens = reasoning;
   completionDetails.accepted_prediction_tokens =
       static_cast<int>(specAccepts.load());
   completionDetails.rejected_prediction_tokens =

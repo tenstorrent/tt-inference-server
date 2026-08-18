@@ -19,19 +19,11 @@ namespace tt::domain::llm {
 struct ChatCompletionMessage {
   std::string role = "assistant";
   std::string content;
-  std::optional<std::string> reasoning;
-  std::optional<Json::Value> tool_calls;
 
   Json::Value toJson() const {
     Json::Value json;
     json["role"] = role;
     json["content"] = content;
-    if (reasoning.has_value()) {
-      json["reasoning"] = reasoning.value();
-    }
-    if (tool_calls.has_value()) {
-      json["tool_calls"] = tool_calls.value();
-    }
     return json;
   }
 };
@@ -101,8 +93,6 @@ struct ChatCompletionResponse {
       ChatCompletionChoice chatChoice;
       chatChoice.index = choice.index;
       chatChoice.message.content = choice.text;
-      chatChoice.message.reasoning = choice.reasoning;
-      chatChoice.message.tool_calls = choice.tool_calls;
       chatChoice.finish_reason = choice.finish_reason.value_or("stop");
       response.choices.push_back(std::move(chatChoice));
     }
@@ -117,8 +107,6 @@ struct ChatCompletionResponse {
 struct ChatCompletionDelta {
   std::optional<std::string> role;
   std::optional<std::string> content;
-  std::optional<std::string> reasoning;   // Reasoning content for DeepSeek R1
-  std::optional<Json::Value> tool_calls;  // Tool call deltas
 
   Json::Value toJson() const {
     Json::Value json;
@@ -127,12 +115,6 @@ struct ChatCompletionDelta {
     }
     if (content.has_value()) {
       json["content"] = content.value();
-    }
-    if (reasoning.has_value()) {
-      json["reasoning"] = reasoning.value();
-    }
-    if (tool_calls.has_value()) {
-      json["tool_calls"] = tool_calls.value();
     }
     return json;
   }
@@ -246,16 +228,6 @@ struct ChatCompletionStreamChunk {
     ChatCompletionStreamChoice choice;
     choice.index = completionChoice.index;
     choice.delta.content = completionChoice.text;
-
-    // Include reasoning content if present (DeepSeek R1 style)
-    if (completionChoice.reasoning.has_value()) {
-      choice.delta.reasoning = completionChoice.reasoning;
-    }
-
-    // Include tool call deltas if present
-    if (completionChoice.tool_calls.has_value()) {
-      choice.delta.tool_calls = completionChoice.tool_calls;
-    }
 
     if (completionChoice.finish_reason.has_value()) {
       const std::string& reason = completionChoice.finish_reason.value();

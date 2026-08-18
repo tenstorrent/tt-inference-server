@@ -18,10 +18,12 @@ DEVICE_TO_MESH_STR = {
     "P300X2": "P300x2",
     "T3K": "T3K",
     "GALAXY": "TG",
+    "BLACKHOLE_GALAXY": "BH-Galaxy",
     "GALAXY_T3K": "T3K",
     "DUAL_GALAXY": "(8,8)",
     "QUAD_GALAXY": "(8,16)",
     "GPU": "GPU",
+    "SUPER_CLUSTER": "Super-Cluster",
 }
 
 

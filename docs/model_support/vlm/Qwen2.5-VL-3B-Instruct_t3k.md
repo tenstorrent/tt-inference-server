@@ -8,7 +8,8 @@
 
 `Qwen2.5-VL-3B-Instruct` is also supported on hardware:
 
-- [N150/N300](Qwen2.5-VL-3B-Instruct_n150.md)
+- [N150](Qwen2.5-VL-3B-Instruct_n150.md)
+- [N300](Qwen2.5-VL-3B-Instruct_n300.md)
 
 ## Quickstart - Deploy Qwen2.5-VL-3B-Instruct Inference Server on WH LoudBox/QuietBox
 

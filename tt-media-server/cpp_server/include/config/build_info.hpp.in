@@ -13,7 +13,7 @@ namespace tt::config {
 
 inline constexpr std::string_view kInferenceServerVersion = "@TT_INFERENCE_SERVER_VERSION@";
 inline constexpr std::string_view kInferenceServerCommit  = "@TT_INFERENCE_SERVER_COMMIT@";
-inline constexpr std::string_view kTtBlazeCommit          = "@TT_BLAZE_COMMIT@";
+inline constexpr std::string_view kTtLlmEngineCommit      = "@TT_LLM_ENGINE_COMMIT@";
 inline constexpr std::string_view kTtMetalCommit          = "@TT_METAL_COMMIT@";
 
 }  // namespace tt::config

@@ -240,14 +240,14 @@ if [ "$build" = true ]; then
             echo "Fetched full repository history."
         fi
         git checkout ${RESOLVED_TT_METAL_COMMIT}
-        # note: this will break if commit is before the new tt-metal Dockerfile was introduced
-        # in this case simply build the tt-metal dockerfile from temp_docker_build_dir
-        # then re run this script with the image built locally
-        docker build \
-            -t local/tt-metal/tt-metalium/${OS_VERSION}:${TT_METAL_COMMIT_SHA_OR_TAG} \
-            --build-arg UBUNTU_VERSION=${UBUNTU_VERSION} \
-            --target ci-build \
-            -f dockerfile/Dockerfile .
+        # tt-metal's Dockerfile uses Docker Buildx Bake — plain `docker build` is not
+        # supported because the cmake/zstd/openmpi tool layers are FROM scratch stubs
+        # that Bake overrides with pre-built images (see dockerfile/docker-bake.hcl).
+        UBUNTU_VERSION=${UBUNTU_VERSION} docker buildx bake \
+            -f dockerfile/docker-bake.hcl \
+            --set "ci-build.tags=local/tt-metal/tt-metalium/${OS_VERSION}:${TT_METAL_COMMIT_SHA_OR_TAG}" \
+            --load \
+            ci-build
         cd "$repo_root"
         rm -rf "${tt_metal_build_dir}"
     fi

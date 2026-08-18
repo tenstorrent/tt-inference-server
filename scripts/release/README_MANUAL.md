@@ -48,13 +48,14 @@ git checkout -b stable
 
 ## Step 1: update `models-ci-config.json`
 
-Within the `models-ci-config.json` file, update which models and devices should belong to the upcoming release.
+Within the `models-ci-config.json` file, update which models and devices should belong to the upcoming release. 
+Remove all the entries from the release list, which are not going to be actually released.
 
 ## Step 2: update `VERSION` file
 
 Bump the version of the `VERSION` file (major/minor/patch syntax).
 
-## run `release.yml` using the default arguments
+## during the release cycle run `release.yml` using the default arguments
 
 From  the `tt-shield` repository, run the `release.yml` using the default arguments:
 
@@ -62,16 +63,13 @@ From  the `tt-shield` repository, run the `release.yml` using the default argume
 
 `tt-inference-server ref`: stable
 
-`vllm ref`: dev
+`vllm ref`: stable
 
 `Workflow`: release
 
 Once we are satisfied with release results we will progress with further phases.
-Otherwise, we will repeat release workflow multiple times, until corrections are implemented in the relevant repositories.
 
-Record relevant commit shas from the final release workflow run and its Summary output. 
-
-For specific run, open the web page ```https://github.com/tenstorrent/tt-shield/actions/runs/<runId>```
+Record relevant commit shas from the final release workflow run and its Summary output. For specific run, open the web page ```https://github.com/tenstorrent/tt-shield/actions/runs/<runId>```
 
 Examples of the commits can be found inside the `Build Results Artifact` section:
 
@@ -82,29 +80,79 @@ Examples of the commits can be found inside the `Build Results Artifact` section
 `vllm-commit`: "6a6sg72e"
 
 
-## Update model_spec.py
+## Promote development specification to production
 
-For specific model/device combination update manually relevant commit sha references for tt-metal and vllm commit fields (if applicable) in `model_spec.py` file.
+Ensure that all changes (in terms of arguments and properties for a specific model) are being set or cherry-picked from the main branch within the model_specs development catalogue:
 
-After changes have been added, re-generate the Model Support docs and `README.md` table and `release_model_spec.json` file by running:
+`https://github.com/tenstorrent/tt-inference-server/tree/main/workflows/model_specs/dev`
+
+Once we have everything set in development catalogue on the stable branch, we need to promote such changes from development to a production catalogue.
+
+We need to promote the following arguments to the script:
+- `--version` : example `0.17.0`
+  
+- `--tt-metal-commit` : example `b4bd581`
+  
+-  `--vllm-commit` example `f52987a` - this argument is mandatory only for llm models
+
+Production catalogue is being maintained at:
+
+`https://github.com/tenstorrent/tt-inference-server/tree/main/workflows/model_specs/prod`
+
+Script that will execute this promotion automatically is:
+
+`python3  scripts/release/promote_dev_spec_to_prod.py --version 0.17.0  --tt-metal-commit b4bd581 --vllm-commit 1234567`
+
+Script will take into account only models which are planned for the current release (have defined `release` job in `models-ci-config.json`)
+
+Once the script is executed we need to verify which changes are being introduced into the production catalogue.
+
+## Check for shadowed duplicate blocks
+
+`promote_dev_spec_to_prod.py` keys its upsert on (impl, engine, weights, **device set**). When a promotion adds a device to an existing model, the device set changes, so the script appends a new block instead of replacing the old one. Both blocks then claim the same devices — MODEL_SPECS keeps the last one (so run.py is fine), but the docs generator renders the first, publishing a stale or internal image tag. This produced wrong quickstarts for Qwen3.6-27B and Qwen3-Embedding-4B at v0.20.0.
+
+ Run this immediately after promotion, before export_model_spec.py:
+```bash 
+ `PYTHONPATH=. python3 -c "
+ import collections
+ from workflows.model_spec import spec_templates
+ seen = collections.defaultdict(list)
+ for t in spec_templates:
+     for s in t.expand_to_specs():
+         seen[s.model_id].append(getattr(t, 'version', None))
+ dups = {k: v for k, v in seen.items() if len(v) > 1}
+ for k, v in sorted(dups.items()):
+     print('DUPLICATE', k, '<- versions', v)
+ assert not dups, 'promotion created shadowed duplicate blocks'
+ "`
+```
+ 
+ If it fails, delete the older block from workflows/model_specs/prod/<type>.yaml and re-run. len(MODEL_SPECS) must be unchanged afterwards — the deleted block was unreachable, so release_model_spec.json and values.yaml will show no diff.
+
+## export_model_spec.py
+
+After changes in production catalogue have been added and committed, re-generate the Model Support docs and `README.md` table and `release_model_spec.json` file by running:
 
 ```bash
-python3 scripts/release/update_model_spec.py --output-only --output-json release_model_spec.json
+python3 scripts/release/export_model_spec.py
 ```
 
-Execution of this script might produce changes in models which are not in the scope of this release.
+`export_model_spec.py` will retrieve entries from the  "prod" catalogue.
 
-Using the Claude, we need to revert all changes that happenned in `release_model_spec.json`  for models out of scope. All modifications should be tracked using the `git diff` command.
+Verify that this script will not produce changes in models which are not in the scope of this release. In case it did, revert all changes that happenned in `release_model_spec.json` for models out of scope. All modifications should be tracked using the `git diff` command.
 
-Prompt example for Claude: `There are lot of changes in release_model_spec.json file. Please revert all the changes to the previous state, for all the models that are not in the scope for the current release. Changes needs to be reverted (back to HEAD) for all other models that are not in scope and their device variants, new models that were added out of scope, new device variants that were added out of scope.  Scope includes: (e.g. Qwen3-VL-32B-Instruct on T3K device; Wan2.2-T2V-A14B-Diffusers on P300X2,  FLUX.1-dev on p300x2 device, Qwen3-32B on p300x2 and Llama-3.1-8B-Instruct.)`
-
-Afterwards, `git push` the changes for this json file.
+Afterwards, `git add/commit/push` the changes for the `release_model_spec.json` file.
 
 Additionally, `git add/commit/push` only untracked/modified docs files in `docs/model_support/`, but also only for models in the current scope.
 
+If we want to use only one of the two outputs we can run the following:
+ 
+`python3 scripts/release/export_model_spec.py --docs-only   # docs + README, no JSON`
+
+`python3 scripts/release/export_model_spec.py --json-only   # release_model_spec.json only`
+
 #### outputs
 
-- `workflows/model_spec.py`: manual updates as a result of a Models CI runs
 - `release_model_spec.json`: all model specs fully expanded from the ModelSpecTemplates in `workflows/model_spec.py`
 - `release_logs/release_models_diff.md`: summary of diff with links to specific Models CI runs (THIS WILL NOT BE GENERATED!!!)
 - `README.md` in case that we are adding new group of devices (very rare change)
@@ -112,6 +160,25 @@ Additionally, `git add/commit/push` only untracked/modified docs files in `docs/
 - `docs/model_support/`: regenerated model support documentation (model type pages, individual model pages)
 - `docs/model_support/{type}/README.md`: model/device STATUS changes are also noted here
 
+## Generate new values.yml
+
+Once we have new set of production data and values we can run the python script which will re-generate the values.yml.
+
+`python -m venv .venv`
+
+`source .venv/bin/activate`
+
+`pip install -r requirements-dev.txt`
+
+`python -m workflows.helm_generator`
+
+`deactivate`
+
+In case when we have new device definitions and support for new models the general README file should be changed as well.
+
+`helm-docs --chart-search-root=charts/tt-inference-server --template-files=_supportedModels.gotmpl --template-files=README.md.gotmpl`
+
+Afterwards we will push all those changes to the stable branch.
 
 ## Generate docker images as release artifacts
 
@@ -142,12 +209,52 @@ crane copy <src> <dst>
 
 #crane copy ghcr.io/tenstorrent/tt-shield/tt-media-inference-server:0.13.0-80180b9d7d07ea9fcc99f723d4d46fe7a0b233bd-e799052-76185610891 ghcr.io/tenstorrent/tt-media-inference-server:0.14.0-80180b9
 ```
+## Step 2: Re-bake the model catalogue into the copied image
 
-## Step 2: verification through the list model images
+ crane copy re-labels; it does not rebuild. The tt-shield image was built before promotion, so its baked /home/container_app_user/model_specs/model_spec.json is the prod catalogue from the previous release. Any model or device promoted in this release will be missing from it — the container crashes (No model spec found) or silently serves the old config. This affected v0.17.0 through v0.20.0.
+
+ Run this on the release branch, after export_model_spec.py, for each image you copied:
+```bash
+ REPO=<dest repo>; TAG=<dest tag>
+ Example:
+ REPO=ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+ TAG=0.17.0-8c48a10-f52987a
+
+ crane copy "$REPO@$(crane digest "$REPO:$TAG")" "$REPO:$TAG-precatalogfix"    # backup
+ AMD64=$(crane manifest "$REPO:$TAG" | python3 -c "import json,sys;m=json.load(sys.stdin);print([x['digest'] for x in m['manifests'] if x['platform']['architecture']=='amd64'][0])")
+
+ PYTHONPATH=. python3 -c "from scripts.build_docker_images import generate_model_specs_json; generate_model_specs_json()"
+ rm -rf /tmp/catalog && mkdir -p /tmp/catalog/home/container_app_user/model_specs
+ cp model_spec.json /tmp/catalog/home/container_app_user/model_specs/
+ tar --owner=1000 --group=1000 -C /tmp/catalog -cf /tmp/catalog-layer.tar home
+
+ crane append -b "$REPO@$AMD64" -f /tmp/catalog-layer.tar -t "$REPO:$TAG"
+```
+ Verification: the release_version inside the image must equal the release you are cutting. If it is one behind, the re-bake did not run.
+ ```bash
+ crane export "$REPO:$TAG" - | tar -xO home/container_app_user/model_specs/model_spec.json \
+  | python3 -c "import json,sys; print(json.load(sys.stdin)['release_version'])"
+```
+Note: this drops the buildkit attestation and changes the digest — the tag stays the same. Only applies to vLLM images; media/forge containers get their config from host env vars.
+
+## Step 3: verification through the list model images
 
 Run `python3 scripts/list_model_images.py` in order to confirm that docker image is trully present within the repository. This is a safeguard which ensures docker images are named properly.
 
 The full script path is: ```https://github.com/tenstorrent/tt-inference-server/blob/main/scripts/list_model_images.py```
+
+## Step 4: tag stable branch with version value
+
+* we create a new tag for `stable` HEAD value with value `vx.x.x`
+  
+  `git tag vx.x.x`
+  
+  `git push origin vx.x.x`
+* we rename the `stable` branch to `vx.x.x` value, and afterwards we can delete the `stable`
+  
+  `git switch -c vx.x.x`
+  
+  `git push --set-upstream origin vx.x.x`
 
 ## Create post-release branch and PR
 
@@ -173,19 +280,6 @@ As a comment, at the top of the HTML body, within the commented section, add met
 * NOTE: the release will process with `post-release-vx.x.x` branch which is now "stable" from `main`
 -->
 
-## Step 3: tag stable branch with version value
-
-* we create a new tag for `stable` HEAD value with value `vx.x.x`
-  
-  `git tag vx.x.x`
-  
-  `git push origin vx.x.x`
-* we rename the `stable` branch to `vx.x.x` value, and afterwards we can delete the `stable`
-  
-  `git switch -c vx.x.x`
-  
-  `git push --set-upstream origin vx.x.x`
-
 ## Create GitHub RELEASE Object
 
 We need to create new Draft Release Object `vx.x.x` targeting the given tag created in the previous step.
@@ -201,16 +295,54 @@ Release Notes must be added describing new supported engine features.
 * we add repository paths towards the docker images
 * add notes for changes to model support and performance (if possible use `release_logs/release_models_diff.md`)
 
-## Step 3: Upload assets to Release Object
+## Step 3: Downloading workflow artifacts and assets upload to Release Object
 
- Using the Claude we need to download all the workflow_logs from a given tt-shield runId job. Of course we should consider only models which are in the scope for the release. Afterwards, we zip them as `vx.xx.x-release_artifacts.zip` and upload that artifact to release object as an Asset.
- Prompt for claude: 
- 
- `From the following job https://github.com/tenstorrent/tt-shield/actions/runs/{job_id}  take worklfow logs only from the models in scope {...} and create a new zip file named vx.x.x-release_artifacts.zip with the same structure like the zip from previous release that you can analyze in terms of the files and structure how they should be packed. The package to examine locally: v0.13.0-release_artifacts.zip; The file to create: v0.14.0-release_artifacts.zip`
+ We need to download all the workflow_logs from a given tt-shield runId job. Of course we should consider only models which are in the scope for the release. Afterwards, we zip them as `vx.xx.x-release_artifacts.zip` and upload that artifact to release object as an Asset.
+
+To do so we can use the script currently implemented in the tt-shield repository:
+Once we clone the tt-shield repository, we can find the script at this path:
+`.github/scripts/release_tools/build_release_artifact/build_release_artifacts.py`
+
+As input properties we need to pass:
+- runId of the release job that contains our workflow logs uploaded
+- version of the release
+
+By default the script reads the model/device combinations to package from the
+`release` entries in `.github/workflows/models-ci-config.json` (the same release
+list `promote_dev_spec_to_prod.py` consumes), so the models no longer need to be
+listed by hand:
+
+```bash
+python3 build_release_artifacts.py \
+        --run-id 26592936143 \
+        --version v0.15.0 \
+        --output-dir .
+```
+
+To override the scope — e.g. to rebuild a single model, or to package models
+that are not in the release list — pass one or more `--model MODEL=dev1,dev2`
+flags instead:
+
+```bash
+python3 build_release_artifacts.py \
+        --run-id 26592936143 \
+        --version v0.15.0 \
+        --model speecht5_tts=p150,p300x2 \
+        --output-dir .
+```
+
+Once the workflow assets are downloaded, we can upload them to already created Release Object.
+
+## Step 4: Release Object publishing
 
 At the end, we change the status of the Release Object to `Published` and mark the Release as the latest one.
-
 
 <!-- 
 Note: any hot-fixes to be applied on the RC branch should be based on the RC branch `<namett>/hot-fix-<fix-description>` and be PR back into `dev` via merge commit then `git cherry-pick` the changes back into RC branch. This ensures all future branches have the same commit SHAs and history is correct.
 -->
+
+## Update Release Zoo
+
+From the `tt-shield` Actions tab we need to run the `"Update Release Zoo"` action so the page on Models Dashboard is being refreshed.
+
+https://github.com/tenstorrent/tt-shield/actions/workflows/update-release-zoo.yml

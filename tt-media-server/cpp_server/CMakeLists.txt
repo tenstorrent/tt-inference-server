@@ -2,7 +2,24 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 cmake_minimum_required(VERSION 3.24)
-project(tt_media_server_cpp CXX)
+# C and ASM are enabled for the BLAKE3 C library (FetchContent below), whose
+# optimized SIMD paths compile .c and .S sources. Enabling them on the
+# top-level project ensures CMake detects the C/ASM toolchain up front instead
+# of failing once BLAKE3's subdirectory pulls them in.
+project(tt_media_server_cpp CXX C ASM)
+
+# Mooncake's limit_jobs.cmake (included only when ENABLE_MOONCAKE=ON, via the
+# add_subdirectory below) declares ninja "compile_pool"/"link_pool" through the
+# JOB_POOLS global property AND sets CMAKE_JOB_POOL_COMPILE/LINK as cached FORCE
+# vars. The cache vars persist across reconfigures but the (non-cached) JOB_POOLS
+# property does not. Reusing a Mooncake-enabled build dir with ENABLE_MOONCAKE=OFF
+# would otherwise leave every target referencing an undeclared pool ->
+# "ninja: unknown pool name 'compile_pool'". Clear the leaked cache vars before any
+# target is created (CMAKE_JOB_POOL_* is captured at target-creation time); when
+# Mooncake is enabled, limit_jobs.cmake re-declares both pool and var in time for
+# the heavy targets, which are all defined after the add_subdirectory.
+unset(CMAKE_JOB_POOL_COMPILE CACHE)
+unset(CMAKE_JOB_POOL_LINK CACHE)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -83,6 +100,16 @@ FetchContent_Declare(googletest
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
+# Google Benchmark for microbenchmarks
+FetchContent_Declare(googlebenchmark
+    GIT_REPOSITORY https://github.com/google/benchmark.git
+    GIT_TAG        v1.9.1
+    GIT_SHALLOW    TRUE
+)
+set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+set(BENCHMARK_ENABLE_GTEST_TESTS OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(googlebenchmark)
+
 # GCC 12's libstdc++ still uses the C++17-deprecated std::get_temporary_buffer
 # inside std::stable_sort, which gtest.cc triggers when sorting TestInfo*.
 # Silence on the googletest targets only — keep -Wdeprecated-declarations active
@@ -104,27 +131,20 @@ FetchContent_MakeAvailable(xxhash)
 add_library(xxhash_lib INTERFACE)
 target_include_directories(xxhash_lib INTERFACE ${xxhash_SOURCE_DIR})
 
-# xgrammar for structured output / guided decoding (JSON schema constrained generation)
-FetchContent_Declare(xgrammar
-    GIT_REPOSITORY https://github.com/mlc-ai/xgrammar.git
-    GIT_TAG        v0.1.33
+# BLAKE3 (official C library). The Dynamo frontend blake3-validates every file
+# it fetches from a Model Descriptor Card (config.json, tokenizer, chat
+# template, tokenizer_config); a placeholder/zero checksum makes it reject the
+# model and the backend never becomes routable. We hash those files at
+# registration time in src/dynamo/discovery.cpp. SOURCE_SUBDIR points at the
+# repo's c/ project, which enables the C/ASM languages it needs in its own scope.
+FetchContent_Declare(
+    blake3
+    GIT_REPOSITORY https://github.com/BLAKE3-team/BLAKE3.git
+    GIT_TAG        1.5.4
     GIT_SHALLOW    TRUE
+    SOURCE_SUBDIR  c
 )
-FetchContent_GetProperties(xgrammar)
-if(NOT xgrammar_POPULATED)
-    FetchContent_Populate(xgrammar)
-    # xgrammar ships cmake/config.cmake that forces PYTHON_BINDINGS=ON; override it
-    # in the source tree so its CMakeLists.txt picks up our settings.
-    file(WRITE "${xgrammar_SOURCE_DIR}/cmake/config.cmake"
-        "set(XGRAMMAR_BUILD_PYTHON_BINDINGS OFF)\n"
-        "set(XGRAMMAR_BUILD_CXX_TESTS OFF)\n"
-        "set(XGRAMMAR_ENABLE_CPPTRACE OFF)\n"
-        "set(XGRAMMAR_ENABLE_COVERAGE OFF)\n"
-        "set(XGRAMMAR_ENABLE_INTERNAL_CHECK OFF)\n"
-    )
-    add_subdirectory(${xgrammar_SOURCE_DIR} ${xgrammar_BINARY_DIR})
-    target_compile_options(xgrammar PRIVATE -Wno-deprecated-declarations -fno-lto)
-endif()
+FetchContent_MakeAvailable(blake3)
 
 # Import fmt from tt-metal for spdlog
 if(TT_METAL_HOME AND EXISTS "${TT_METAL_HOME}/build_Release/lib/cmake/fmt")
@@ -201,15 +221,116 @@ FetchContent_MakeAvailable(cppzmq)
 
 # Option to enable tt-llm-engine (formerly tt-blaze pipeline_manager)
 option(ENABLE_BLAZE "Enable tt-llm-engine support" OFF)
+set(TT_LLM_ENGINE_SOURCE_DIR "" CACHE PATH
+    "Optional tt-llm-engine source checkout to build directly when ENABLE_BLAZE=ON")
+if(NOT TT_LLM_ENGINE_SOURCE_DIR AND DEFINED ENV{TT_LLM_ENGINE_SOURCE_DIR})
+    set(TT_LLM_ENGINE_SOURCE_DIR "$ENV{TT_LLM_ENGINE_SOURCE_DIR}" CACHE PATH
+        "Optional tt-llm-engine source checkout to build directly when ENABLE_BLAZE=ON" FORCE)
+endif()
+# Real shmem migration (MigrationLayerClientAdapter + migration_client static lib).
+# mock_pipeline CI builds use --blaze only; disaggregated pipeline_manager runs
+# need --blaze-with-migration (implies ENABLE_BLAZE).
+option(ENABLE_BLAZE_MIGRATION "Build real shmem migration client (requires ENABLE_BLAZE)" OFF)
+if(ENABLE_BLAZE_MIGRATION AND NOT ENABLE_BLAZE)
+    message(FATAL_ERROR "ENABLE_BLAZE_MIGRATION=ON requires ENABLE_BLAZE=ON (use build.sh --blaze-with-migration)")
+endif()
 
 if(ENABLE_BLAZE)
-    # tt-llm-engine (Core-only at compile time when TT::Metalium is not in scope;
-    # the Full target adds SocketPipeline support when Metalium is available).
-    set(DS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-    add_subdirectory(tt-llm-engine)
-    message(STATUS "tt-llm-engine: ENABLED")
+    # Prefer a pre-built tt-llm-engine discovered via find_package — this is
+    # the path used by the Docker build, which pulls /opt/tt-llm-engine out
+    # of the tt-llm-engine builder image and sets CMAKE_PREFIX_PATH so the
+    # package is locatable. If TT_LLM_ENGINE_SOURCE_DIR is explicitly set,
+    # build that checkout instead (useful for testing scheduler branches).
+    set(_TT_LLM_ENGINE_FROM_EXPLICIT_SOURCE OFF)
+    if(TT_LLM_ENGINE_SOURCE_DIR)
+        if(NOT EXISTS "${TT_LLM_ENGINE_SOURCE_DIR}/CMakeLists.txt")
+            message(FATAL_ERROR
+                "TT_LLM_ENGINE_SOURCE_DIR is set to '${TT_LLM_ENGINE_SOURCE_DIR}', "
+                "but no CMakeLists.txt was found there.")
+        endif()
+        set(DS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+        set(_tt_saved_cxx_flags "${CMAKE_CXX_FLAGS}")
+        string(APPEND CMAKE_CXX_FLAGS " -Wno-c++11-narrowing")
+        add_subdirectory("${TT_LLM_ENGINE_SOURCE_DIR}"
+                         "${CMAKE_CURRENT_BINARY_DIR}/tt-llm-engine")
+        set(CMAKE_CXX_FLAGS "${_tt_saved_cxx_flags}")
+        set(_TT_LLM_ENGINE_FROM_EXPLICIT_SOURCE ON)
+        message(STATUS "tt-llm-engine: building from TT_LLM_ENGINE_SOURCE_DIR=${TT_LLM_ENGINE_SOURCE_DIR}")
+    else()
+        find_package(tt-llm-engine CONFIG QUIET)
+    endif()
+    if(_TT_LLM_ENGINE_FROM_EXPLICIT_SOURCE)
+        # Target aliases are provided by the source checkout's CMakeLists.txt.
+    elseif(tt-llm-engine_FOUND)
+        message(STATUS "tt-llm-engine: using pre-built package at ${tt-llm-engine_DIR}")
+    elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/CMakeLists.txt")
+        # Legacy path — local dev with the submodule checked out under cpp_server/.
+        # The narrowing-warning flag is only needed when we actually compile
+        # tt-llm-engine from source; the find_package path consumes a prebuilt
+        # .so so the warning is irrelevant there.
+        set(DS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+        # tt-llm-engine has C++11 braced-init narrowing that GCC only warns on, but
+        # the tt-metal clang-20 toolchain rejects as a hard error. Downgrade it to a
+        # warning for the sub-build only; restore our stricter flags afterwards.
+        set(_tt_saved_cxx_flags "${CMAKE_CXX_FLAGS}")
+        string(APPEND CMAKE_CXX_FLAGS " -Wno-c++11-narrowing")
+        add_subdirectory(tt-llm-engine)
+        set(CMAKE_CXX_FLAGS "${_tt_saved_cxx_flags}")
+        message(STATUS "tt-llm-engine: building from in-tree submodule (legacy path)")
+    else()
+        message(FATAL_ERROR
+            "ENABLE_BLAZE=ON but tt-llm-engine is neither installed "
+            "(find_package failed) nor present in source tree at "
+            "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine. "
+            "Either ensure the prebuilt image's /opt/tt-llm-engine is on "
+            "CMAKE_PREFIX_PATH, or initialize the tt-llm-engine submodule.")
+    endif()
 else()
     message(STATUS "tt-llm-engine: DISABLED (use -DENABLE_BLAZE=ON to enable)")
+endif()
+
+# Mooncake Transfer Engine (TCP + RDMA) is vendored as a top-level git submodule
+# at third_party/Mooncake (pinned to release v0.3.11.post1) and built directly
+# here via its standalone mooncake-transfer-engine project. It is independent of
+# tt-llm-engine. RDMA (libibverbs) is always compiled in -- the standalone build
+# has no library-level toggle to disable it.
+#
+# System dependencies are assumed to already be installed (provision them once
+# with third_party/Mooncake/dependencies.sh): libibverbs-dev, libnuma-dev,
+# libgoogle-glog-dev, libgflags-dev, libjsoncpp-dev, libyaml-cpp-dev, and an
+# installed yalantinglibs (resolved via find_package(yalantinglibs CONFIG)).
+option(ENABLE_MOONCAKE "Build the Mooncake Transfer Engine transport (third_party/Mooncake)" OFF)
+if(ENABLE_MOONCAKE)
+    set(_mooncake_root "${CMAKE_CURRENT_SOURCE_DIR}/third_party/Mooncake")
+    if(NOT EXISTS "${_mooncake_root}/mooncake-transfer-engine/CMakeLists.txt")
+        message(FATAL_ERROR
+            "ENABLE_MOONCAKE=ON but third_party/Mooncake is not checked out. Run: "
+            "git submodule update --init --recursive "
+            "tt-media-server/cpp_server/third_party/Mooncake")
+    endif()
+    # Build only the Transfer Engine -- not the store, Python/Rust bindings,
+    # examples, benchmarks or Mooncake's own unit tests. Use the HTTP metadata
+    # server (no etcd/redis).
+    set(USE_TCP           ON  CACHE BOOL "" FORCE)
+    set(USE_HTTP          ON  CACHE BOOL "" FORCE)
+    set(USE_ETCD          OFF CACHE BOOL "" FORCE)
+    set(USE_REDIS         OFF CACHE BOOL "" FORCE)
+    set(WITH_RUST_EXAMPLE OFF CACHE BOOL "" FORCE)
+    set(BUILD_UNIT_TESTS  OFF CACHE BOOL "" FORCE)
+    set(BUILD_EXAMPLES    OFF CACHE BOOL "" FORCE)
+    set(BUILD_BENCHMARK   OFF CACHE BOOL "" FORCE)
+    # Mooncake's source has C++11 braced-init narrowing (e.g. int -> uint16_t in
+    # tcp_transport.cpp) that GCC (its usual compiler) only warns on, but the
+    # tt-metal clang-20 toolchain rejects as a hard error. Downgrade it to a
+    # warning for the sub-build only; restore our stricter flags afterwards.
+    set(_tt_saved_cxx_flags "${CMAKE_CXX_FLAGS}")
+    string(APPEND CMAKE_CXX_FLAGS " -Wno-c++11-narrowing")
+    add_subdirectory("${_mooncake_root}/mooncake-transfer-engine"
+                     "${CMAKE_CURRENT_BINARY_DIR}/mooncake-transfer-engine")
+    set(CMAKE_CXX_FLAGS "${_tt_saved_cxx_flags}")
+    message(STATUS "Mooncake transport: ENABLED (third_party/Mooncake, RDMA always on)")
+else()
+    message(STATUS "Mooncake transport: DISABLED (use -DENABLE_MOONCAKE=ON to enable)")
 endif()
 
 # Option for Tracy support
@@ -256,6 +377,27 @@ FetchContent_Declare(
     GIT_SUBMODULES ""
 )
 FetchContent_MakeAvailable(prometheus-cpp)
+
+# Sentry (distributed request tracing — issue #4778). A generate request
+# reaching this server carries a W3C `traceparent` injected by the Dynamo
+# frontend; the server continues that trace with one transaction per role
+# (decode/prefill). Backend "none": tracing/event transport only, no crash
+# handler, so the server's own signal handling and fork+execv worker
+# lifecycle stay untouched. Transport "curl" needs libcurl dev headers
+# (install_dependencies.sh). Runtime opt-in via SENTRY_DSN.
+set(SENTRY_BACKEND "none" CACHE STRING "" FORCE)
+set(SENTRY_TRANSPORT "curl" CACHE STRING "" FORCE)
+set(SENTRY_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(SENTRY_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(SENTRY_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    sentry-native
+    GIT_REPOSITORY https://github.com/getsentry/sentry-native.git
+    GIT_TAG        0.16.3
+    GIT_SHALLOW    ON
+    GIT_SUBMODULES ""
+)
+FetchContent_MakeAvailable(sentry-native)
 
 # stb_image_write: in-memory PNG/JPEG encoder used by image_codec.
 FetchContent_Declare(
@@ -337,15 +479,8 @@ else()
     endif()
 endif()
 
-# LLM runner static library (sources under include/runtime/runners/llm_runner/,
-# src/runtime/runners/llm_runner/; C++ namespace tt::runners::llm_engine)
+# LLM runner static library (C++ namespace tt::runners::llm_engine)
 set(LLM_RUNNER_LIB_SOURCES
-    src/runtime/runners/llm_runner/block_manager.cpp
-    src/runtime/runners/llm_runner/hash.cpp
-    src/runtime/runners/llm_runner.cpp
-    src/runtime/runners/llm_runner/model_runner.cpp
-    src/runtime/runners/llm_runner/mock_model_runner.cpp
-    src/runtime/runners/schedulers/scheduler.cpp
     src/domain/llm/sequence.cpp
     src/domain/llm/sampling_params.cpp
     src/utils/logger.cpp
@@ -356,12 +491,6 @@ set(LLM_RUNNER_LIB_SOURCES
     src/utils/tokenizers/llama_tokenizer.cpp
     src/utils/tokenizers/tokenizer_config_loader.cpp
     src/services/memory_services/memory_manager.cpp
-    src/runtime/runners/blaze_prefill_runner/blaze_prefill_runner.cpp
-    src/runtime/runners/blaze_prefill_runner/i_blaze_prefill_model_runner.cpp
-    src/runtime/runners/blaze_prefill_runner/blaze_prefill_model_runner.cpp
-    src/runtime/runners/guided_decoder_manager.cpp
-    src/services/deepseek_tool_call_parser.cpp
-    src/services/json_tool_call_parser.cpp
     src/services/service_registry.cpp
     src/runtime/runners/runner_registry.cpp
     src/api/route_registry.cpp
@@ -370,56 +499,92 @@ set(LLM_RUNNER_LIB_SOURCES
 # Add tt-llm-engine-dependent sources only when ENABLE_BLAZE is ON
 if(ENABLE_BLAZE)
     list(APPEND LLM_RUNNER_LIB_SOURCES
-        src/runtime/runners/blaze_runner/blaze_runner.cpp
+        src/runtime/runners/blaze_runner/blaze_decode_runner.cpp
+        src/runtime/runners/blaze_runner/blaze_prefill_runner.cpp
+        src/runtime/runners/blaze_runner/blaze_scheduler_factory.cpp
     )
     message(STATUS "llm_runner_lib: including tt-llm-engine-dependent sources (ENABLE_BLAZE=ON)")
 endif()
 
-# Add socket backend when tt-metal is available
-if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
-    list(APPEND LLM_RUNNER_LIB_SOURCES
-        src/runtime/runners/llama_model_runner.cpp
-    )
-    message(STATUS "llm_runner_lib: building with tt-metal socket integration")
-else()
-    message(STATUS "llm_runner_lib: building without tt-metal (tt-metal not found)")
-endif()
 add_library(llm_runner_lib ${LLM_RUNNER_LIB_SOURCES})
 target_include_directories(llm_runner_lib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${TT_METAL_INCLUDE_DIRS}
 )
-# Link tokenizers_cpp, JsonCpp, xgrammar (guided decoding), and xxhash (stable hashing)
-target_link_libraries(llm_runner_lib PUBLIC tokenizers_cpp JsonCpp::JsonCpp xgrammar xxhash_lib)
+# Link tokenizers_cpp, JsonCpp, and xxhash (stable hashing)
+target_link_libraries(llm_runner_lib PUBLIC tokenizers_cpp JsonCpp::JsonCpp xxhash_lib)
 
 # Link tt-llm-engine when ENABLE_BLAZE is ON: prefer Full (SocketPipeline + TT::Metalium),
 # fall back to Core (mock pipeline only).
 if(ENABLE_BLAZE)
     if(TARGET TtLlmEngine::Full)
         target_link_libraries(llm_runner_lib PUBLIC TtLlmEngine::Full)
+        target_compile_definitions(llm_runner_lib PUBLIC TT_MEDIA_SERVER_TTS_FULL_PIPELINES)
         message(STATUS "Linking llm_runner_lib against TtLlmEngine::Full")
     elseif(TARGET TtLlmEngine::Core)
         target_link_libraries(llm_runner_lib PUBLIC TtLlmEngine::Core)
         message(STATUS "Linking llm_runner_lib against TtLlmEngine::Core")
     endif()
     target_compile_definitions(llm_runner_lib PUBLIC ENABLE_BLAZE)
+    # Detect where the tt-llm-engine source tree lives. Two layouts are supported:
+    #   1. Monolithic flow (main's Dockerfile.blaze): cpp_server/tt-llm-engine/ —
+    #      cloned in-tree during the Docker build.
+    #   2. Slim flow (v2 Dockerfile.blaze): /opt/tt-llm-engine-src/ — COPY'd from
+    #      the prebuilt tt-llm-engine image's source tree.
+    # Both layouts expose the same subdirectories (src/, disaggregation/, tt-metal/),
+    # so a single root variable lets every consumer-of-engine-source path adapt.
+    if(TT_LLM_ENGINE_SOURCE_DIR AND EXISTS "${TT_LLM_ENGINE_SOURCE_DIR}/CMakeLists.txt")
+        set(_TT_LLM_ENGINE_ROOT "${TT_LLM_ENGINE_SOURCE_DIR}")
+        message(STATUS "tt-llm-engine source: explicit checkout at ${_TT_LLM_ENGINE_ROOT}")
+    elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/CMakeLists.txt")
+        set(_TT_LLM_ENGINE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine")
+        message(STATUS "tt-llm-engine source: in-tree at ${_TT_LLM_ENGINE_ROOT}")
+    elseif(EXISTS "/opt/tt-llm-engine-src/CMakeLists.txt")
+        set(_TT_LLM_ENGINE_ROOT "/opt/tt-llm-engine-src")
+        message(STATUS "tt-llm-engine source: slim engine image at ${_TT_LLM_ENGINE_ROOT}")
+    else()
+        message(FATAL_ERROR
+            "ENABLE_BLAZE=ON but tt-llm-engine source not found. Expected either "
+            "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/ (in-tree clone, monolithic flow) "
+            "or /opt/tt-llm-engine-src/ (slim engine image flow).")
+    endif()
+
+    # Header-only MigrationClientInterface implementations (MigrationLayerClientAdapter,
+    # MockMigrationClient) live under the engine's src tree rather than its public
+    # include tree; blaze_utils.hpp instantiates them, so expose that path.
+    target_include_directories(llm_runner_lib PUBLIC
+        ${_TT_LLM_ENGINE_ROOT}/src)
+
+    if(ENABLE_BLAZE_MIGRATION)
+        target_compile_definitions(llm_runner_lib PUBLIC ENABLE_BLAZE_MIGRATION)
+        # MigrationLayerClientAdapter forwards to migration_worker::MigrationLayerClient,
+        # whose implementation lives in the disaggregation/migration project. That
+        # project is a standalone CMake project() (own CPM cache + find_package(MPI)),
+        # so it can't be add_subdirectory'd here. Its client is lightweight though
+        # (just POSIX shmem queues), so we compile the two needed translation units
+        # directly into a small static lib and link it in. There is a single concrete
+        # implementation (no mock/real .so swap), so static linking is sufficient for
+        # both Core and LD_PRELOAD'd Full runs.
+        set(_MIG_DIR ${_TT_LLM_ENGINE_ROOT}/disaggregation/migration)
+        set(_MIG_TT_STL "${_TT_LLM_ENGINE_ROOT}/tt-metal/tt_stl")
+        add_library(migration_client STATIC
+            ${_MIG_DIR}/src/migration_client.cpp
+            ${_MIG_DIR}/src/file_lock_guard.cpp)
+        set_target_properties(migration_client PROPERTIES POSITION_INDEPENDENT_CODE ON)
+        target_include_directories(migration_client PUBLIC
+            ${_MIG_DIR}/include
+            ${_MIG_DIR}/src/worker
+            ${_TT_LLM_ENGINE_ROOT}/src/common
+            ${TT_METAL_INCLUDE_DIRS}
+            ${_MIG_TT_STL})
+        target_link_libraries(migration_client PUBLIC spdlog::spdlog PRIVATE rt)
+        target_link_libraries(llm_runner_lib PUBLIC migration_client)
+        message(STATUS "Blaze migration client: ENABLED (ENABLE_BLAZE_MIGRATION=ON)")
+    else()
+        message(STATUS "Blaze migration client: DISABLED (use build.sh --blaze-with-migration for pipeline_manager shmem migration)")
+    endif()
 else()
     message(STATUS "Skipping tt-llm-engine linking (ENABLE_BLAZE=OFF)")
-endif()
-if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
-    target_compile_definitions(llm_runner_lib PUBLIC USE_METAL_CPP_LIB)
-    # Find tt_metal library directory
-    set(_tt_metal_lib_dir "")
-    if(EXISTS "${TT_METAL_HOME}/build_Release/lib/libtt_metal.so")
-        set(_tt_metal_lib_dir "${TT_METAL_HOME}/build_Release/lib")
-    elseif(EXISTS "${TT_METAL_HOME}/build/lib/libtt_metal.so")
-        set(_tt_metal_lib_dir "${TT_METAL_HOME}/build/lib")
-    endif()
-    if(_tt_metal_lib_dir)
-        target_link_directories(llm_runner_lib PUBLIC "${_tt_metal_lib_dir}")
-        target_link_libraries(llm_runner_lib PUBLIC tt_metal tt_stl fmt)
-    endif()
-    target_link_libraries(llm_runner_lib PUBLIC pybind11::embed)
 endif()
 if(USE_EXTERNAL_FMT)
     target_link_libraries(llm_runner_lib PUBLIC Boost::boost spdlog::spdlog fmt::fmt)
@@ -451,133 +616,599 @@ if(SANITIZE_ADDRESS)
     target_link_options(llm_runner_lib PUBLIC -fsanitize=address)
 endif()
 
+# Transport layer (#3890). Models the Transfer Engine's two mechanisms at the
+# cpp_server level:
+#   - storage  : IStorageBackend + a host-DRAM backend;
+#   - transport: the Mooncake Transfer Engine wrapper (TCP/RDMA).
+# Device DRAM is moved by the migrators' IDeviceIo (DriscDeviceIo), not a storage
+# backend. Self-contained without Mooncake/tt-metal deps, so this builds in every
+# configuration; the real backends land behind the pimpls.
+add_library(transport_lib
+    src/transport/host_dram_storage_backend.cpp
+    src/transport/mooncake_transfer_engine.cpp
+    src/transport/worker_health.cpp
+    src/transport/worker_health_server.cpp
+    # DRISC NOC-DMA device I/O: the migration data plane's IDeviceIo (and
+    # enumerateDevicesByUniqueId). Real impl under USE_METAL_CPP_LIB (wraps the
+    # disaggregation DriscSocketLink, added to this target in the coexistence
+    # block below); no-op fallback otherwise, so this TU builds in every
+    # configuration.
+    src/transport/drisc_device_io.cpp
+    src/transport/kv_table_adapter.cpp
+    src/transport/kv_chunk_address_table_adapter.cpp
+    src/transport/kv_control_message.cpp
+    src/transport/kv_control_channel.cpp
+    # Shared staging pool (double-pinned host buffers), used by the bounce sender.
+    src/transport/kv_staging_pool.cpp
+    # RDMA-over-host (the KV data plane): a small double-pinned bounce buffer; the
+    # sender streams a slot through it a window at a time (windowed + credit-
+    # based, pipelined).
+    src/transport/kv_bounce_buffer.cpp
+    # Phase B3: one host buffer pinned for BOTH transports — engine ibv_reg_mr
+    # (NIC) + device NOC-map (DRISC). Dependency-free (device map is injected).
+    src/transport/double_pinned_buffer.cpp
+    src/transport/mooncake_kv_receiver.cpp
+    src/transport/mooncake_kv_sender.cpp
+    src/transport/kv_migration_orchestrator.cpp
+    # Bounce n->m fan-out across the decode hosts a slot spans.
+    src/transport/kv_migration_multi_host_sender.cpp
+    # The real IMigrationExecutor: bridges the Kafka trigger (tt::worker /
+    # tt::services, header-only here) to the multi-host data plane.
+    src/transport/mooncake_migration_executor.cpp
+    # Endpoint wiring: resolution -> live control channels (prefill connector +
+    # decode receiver server). Socket transport is injected, so no src/sockets
+    # link dependency leaks into transport_lib.
+    src/transport/kv_migration_endpoints.cpp
+    # Table provisioning: load a worker's own .pb + exchange tables over
+    # the control channel (the prefill side obtains the decode table).
+    src/transport/kv_table_provisioning.cpp
+    # Engine -> worker handoff: the engine (authority) ships the device-built
+    # table + device map (FabricNode -> ASIC id) to the worker. Our own contract,
+    # not the disaggregation shmem client.
+    src/transport/engine_table_handoff.cpp
+    src/transport/device_map_io.cpp
+    src/transport/engine_table_resolve.cpp
+    src/utils/logger.cpp
+)
+target_include_directories(transport_lib PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${prometheus-cpp_SOURCE_DIR}/core/include
+)
+# worker_health.cpp owns a Prometheus registry for the worker's /metrics surface.
+target_link_libraries(transport_lib PUBLIC spdlog::spdlog prometheus-cpp::core)
+if(USE_EXTERNAL_FMT)
+    target_link_libraries(transport_lib PUBLIC fmt::fmt)
+endif()
+# Coexistence device-DRAM path for DRISC. Uses the coexistence UmdDevice from
+# tt-llm-engine/disaggregation (raw UMD Cluster, NO start_device / NO
+# CHIP_IN_USE flock / NO dispatch firmware) to open the chip, so the migration
+# worker shares device DRAM with a live inference engine. We compile the sources
+# it needs directly (device_io.cpp + tt-metal's metal_soc_descriptor.cpp) and
+# link UMD — NOT libtt_metal (which would take exclusive chip ownership and
+# JIT-build dispatch kernels). Requires a BUILT tt-metal (UMD .so + yaml-cpp); a
+# headers-only / unbuilt tree leaves USE_METAL_CPP_LIB undefined so
+# drisc_device_io.cpp uses its no-op fallback and transport_lib still builds in
+# every configuration.
+if(TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS)
+    set(_TTM_BUILD "")
+    if(EXISTS "${TT_METAL_HOME}/build_Release/lib")
+        set(_TTM_BUILD "${TT_METAL_HOME}/build_Release")
+    elseif(EXISTS "${TT_METAL_HOME}/build/lib")
+        set(_TTM_BUILD "${TT_METAL_HOME}/build")
+    endif()
+
+    # UMD + support libs the coexistence device path resolves against (no libtt_metal).
+    find_library(_KV_UMD_LIB   tt-umd   PATHS "${_TTM_BUILD}/lib"                 NO_DEFAULT_PATH)
+    find_library(_KV_TTSTL_LIB tt_stl   PATHS "${_TTM_BUILD}/tt_stl"              NO_DEFAULT_PATH)
+    find_library(_KV_TRACY_LIB tracy    PATHS "${_TTM_BUILD}/lib"                 NO_DEFAULT_PATH)
+    find_library(_KV_YAML_LIB  yaml-cpp PATHS "${_TTM_BUILD}/_deps/yaml-cpp-build" NO_DEFAULT_PATH)
+
+    if(_TTM_BUILD AND _KV_UMD_LIB AND _KV_TTSTL_LIB AND _KV_TRACY_LIB AND _KV_YAML_LIB AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/disaggregation/migration/src/worker/device_io.cpp")
+        target_compile_definitions(transport_lib PUBLIC USE_METAL_CPP_LIB)
+        target_include_directories(transport_lib PUBLIC ${TT_METAL_INCLUDE_DIRS})
+
+        # device_io.cpp (UmdDevice) + metal_soc_descriptor.cpp compiled directly.
+        # Plus the DRISC socket backend: drisc_device_io.cpp (the DRISC-RISC
+        # device-DRAM<->host NOC-DMA mover) and the MultiDevice reader/writer TUs
+        # its factories construct. This enables DriscDeviceIo (the migration data
+        # plane's IDeviceIo) over the coexistence UMD path (raw Cluster, no
+        # libtt_metal). The DRISC service kernel is a RUNTIME ELF
+        # (MIGRATION_DRISC_SERVICE_ELF), not a link dep.
+        set(_KV_MIG "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/disaggregation/migration")
+        target_sources(transport_lib PRIVATE
+            ${_KV_MIG}/src/worker/device_io.cpp
+            ${_KV_MIG}/src/worker/drisc_device_io.cpp
+            ${_KV_MIG}/utils/stall_timer.cpp
+            ${_KV_MIG}/src/multi_device_reader.cpp
+            ${_KV_MIG}/src/multi_device_writer.cpp
+            ${TT_METAL_HOME}/tt_metal/llrt/metal_soc_descriptor.cpp
+            # FabricNodeId operator==/hash the MultiDevice reader/writer need.
+            # Compiled directly (as with metal_soc_descriptor.cpp) so a non-blaze
+            # coexistence build resolves them without linking libtt_metal.
+            ${TT_METAL_HOME}/tt_metal/fabric/fabric_types.cpp)
+        target_compile_definitions(transport_lib PUBLIC TT_TRANSPORT_WITH_DRISC)
+        # Third-party TUs: silence tt-metal/UMD header warnings (we're not -Werror,
+        # but keep the log clean) without relaxing diagnostics on our own code.
+        set_source_files_properties(
+            ${_KV_MIG}/src/worker/device_io.cpp
+            ${_KV_MIG}/src/worker/drisc_device_io.cpp
+            ${_KV_MIG}/utils/stall_timer.cpp
+            ${_KV_MIG}/src/multi_device_reader.cpp
+            ${_KV_MIG}/src/multi_device_writer.cpp
+            ${TT_METAL_HOME}/tt_metal/llrt/metal_soc_descriptor.cpp
+            ${TT_METAL_HOME}/tt_metal/fabric/fabric_types.cpp
+            PROPERTIES COMPILE_OPTIONS "-w")
+
+        # device_io.hpp + the tt-metal-internal headers metal_soc_descriptor.cpp
+        # needs (mirrors the migration device target's include set). cpmcache
+        # globs match how tt-metal vendored these deps.
+        file(GLOB _KV_NLOHMANN "${TT_METAL_HOME}/.cpmcache/nlohmann_json/*/include")
+        file(GLOB _KV_REFLECT  "${TT_METAL_HOME}/.cpmcache/reflect/f*")
+        file(GLOB _KV_TASKFLOW "${TT_METAL_HOME}/.cpmcache/taskflow/5*")
+        file(GLOB _KV_YAMLINC  "${TT_METAL_HOME}/.cpmcache/yaml-cpp/*/include")
+        target_include_directories(transport_lib SYSTEM PRIVATE
+            "${_KV_MIG}"
+            "${_KV_MIG}/include"
+            "${TT_METAL_HOME}/tt_metal/impl"
+            "${TT_METAL_HOME}/tt_metal/impl/debug"
+            "${TT_METAL_HOME}/tt_metal/impl/profiler"
+            "${TT_METAL_HOME}/tt_metal/llrt"
+            "${TT_METAL_HOME}/tt_metal/common"
+            "${TT_METAL_HOME}/tt_metal/third_party/umd/src/firmware/riscv"
+            "${_TTM_BUILD}/tt_metal/impl"
+            ${_KV_NLOHMANN} ${_KV_REFLECT} ${_KV_TASKFLOW} ${_KV_YAMLINC})
+
+        # Full-path .so links propagate rpath to the e2e executables automatically.
+        target_link_libraries(transport_lib PUBLIC
+            ${_KV_UMD_LIB} ${_KV_TTSTL_LIB} ${_KV_TRACY_LIB} ${_KV_YAML_LIB})
+        if(USE_EXTERNAL_FMT)
+            target_link_libraries(transport_lib PUBLIC fmt::fmt)
+        endif()
+        message(STATUS "transport_lib: coexistence UMD device IO enabled (UmdDevice; libtt_metal NOT linked)")
+    else()
+        message(STATUS "transport_lib: tt-metal headers found but built UMD libs missing — device IO falls back to no-op (set TT_METAL_HOME to a BUILT tree)")
+    endif()
+endif()
+# Real Mooncake transport (mooncake_transfer_engine.cpp) is compiled against the
+# Mooncake Transfer Engine when it is part of the build (ENABLE_MOONCAKE builds
+# the `transfer_engine` target from third_party/Mooncake); otherwise it falls
+# back to a no-op (see the TT_TRANSPORT_WITH_MOONCAKE guard in that file).
+if(TARGET transfer_engine)
+    target_compile_definitions(transport_lib PUBLIC TT_TRANSPORT_WITH_MOONCAKE)
+    target_include_directories(transport_lib PUBLIC
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/Mooncake/mooncake-transfer-engine/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/Mooncake/mooncake-common/include")
+    target_link_libraries(transport_lib PUBLIC transfer_engine)
+    message(STATUS "transport_lib: building with Mooncake transport")
+endif()
+# Real KvChunkAddressTable adapter (kv_chunk_address_table_adapter.cpp). OFF by
+# default — the file then compiles its no-op fallback and callers use the
+# InMemoryKvTable. When ON, it wraps the real disaggregation table loaded from
+# protobuf.
+#
+# Rather than build tt-llm-engine's standalone `migration` CMake project (its own
+# project()/CPM/find_package(MPI), only buildable via an ExternalProject inside a
+# test-gated block), we mirror the lightweight migration_client pattern used
+# above: compile the exact translation units the adapter needs directly into a
+# small cpp_server-owned static lib. The table impl is the metal-free synthetic
+# stub (same public API as tt-metal's, only read_device_chunk() throws — the
+# adapter never calls it), so this needs NO libtt_metal, NO MPI, NO MPI test
+# harness — only tt-metal headers + protobuf. Requires TT_METAL_HOME (tt-metal
+# headers); see TT_METAL_API_FOUND above.
+option(ENABLE_KV_TABLE "Build the real KvChunkAddressTable adapter (tt-metal + protobuf)" OFF)
+if(ENABLE_KV_TABLE)
+    if(NOT (TT_METAL_API_FOUND AND TT_METAL_INCLUDE_DIRS))
+        message(FATAL_ERROR
+            "ENABLE_KV_TABLE=ON requires tt-metal headers, but TT_METAL_API_FOUND "
+            "is OFF. Set TT_METAL_HOME to a tt-metal checkout/build (e.g. "
+            "tt-llm-engine/tt-metal) so tt_metal/api is on the include path.")
+    endif()
+    # tt-metal's spdlog headers (pulled in transitively by the table headers)
+    # require external fmt; a BUILT tt-metal provides both that fmt and the
+    # protobuf runtime this path links. With external fmt, spdlog::spdlog carries
+    # SPDLOG_FMT_EXTERNAL PUBLIC, so the adapter TU in transport_lib compiles
+    # against the same fmt without any extra per-target define.
+    if(NOT USE_EXTERNAL_FMT)
+        message(FATAL_ERROR
+            "ENABLE_KV_TABLE=ON requires a BUILT tt-metal that provides fmt "
+            "(USE_EXTERNAL_FMT). Build tt-metal so "
+            "${TT_METAL_HOME}/build_Release/lib/cmake/fmt exists.")
+    endif()
+
+    # Protobuf: prefer tt-metal's vendored build (matches the .proto's runtime),
+    # fall back to the system package. protobuf_generate_cpp uses the matching
+    # protoc, so generation + link stay self-consistent either way.
+    find_package(Protobuf QUIET
+        HINTS "${TT_METAL_HOME}/build_Release/_deps/protobuf-build"
+              "${TT_METAL_HOME}/build_Release/_deps/protobuf-build/lib/cmake/protobuf"
+              "${TT_METAL_HOME}/build/_deps/protobuf-build")
+    if(NOT Protobuf_FOUND)
+        find_package(Protobuf REQUIRED)
+        message(STATUS "ENABLE_KV_TABLE: protobuf from system package (${Protobuf_VERSION})")
+    else()
+        message(STATUS "ENABLE_KV_TABLE: protobuf from tt-metal build (${Protobuf_VERSION})")
+    endif()
+
+    set(_KV_MIG_DIR "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/disaggregation/migration")
+    set(_KV_TTM "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine/tt-metal")
+    set(_KV_PROTO_FILE
+        "${_KV_TTM}/tt_metal/impl/internal/disaggregation/protobuf/kv_chunk_address_table.proto")
+    protobuf_generate_cpp(_KV_PROTO_SRCS _KV_PROTO_HDRS "${_KV_PROTO_FILE}")
+
+    # tt-metal sources #include "protobuf/kv_chunk_address_table.pb.h"; stage the
+    # generated header under a protobuf/ subdir to match that include path.
+    set(_KV_PROTO_INC "${CMAKE_CURRENT_BINARY_DIR}/kv_table_proto_include")
+    file(MAKE_DIRECTORY "${_KV_PROTO_INC}/protobuf")
+    add_custom_command(
+        OUTPUT "${_KV_PROTO_INC}/protobuf/kv_chunk_address_table.pb.h"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_BINARY_DIR}/kv_chunk_address_table.pb.h"
+            "${_KV_PROTO_INC}/protobuf/kv_chunk_address_table.pb.h"
+        DEPENDS ${_KV_PROTO_HDRS}
+        COMMENT "Staging kv_chunk_address_table.pb.h under protobuf/ include alias")
+
+    add_library(kv_table_lib STATIC
+        ${_KV_MIG_DIR}/src/kv_chunk_address_table_synthetic.cpp
+        ${_KV_MIG_DIR}/src/fabric_types_shim.cpp
+        ${_KV_TTM}/tt_metal/impl/internal/disaggregation/kv_chunk_address_table_protobuf.cpp
+        ${_KV_PROTO_SRCS}
+        "${_KV_PROTO_INC}/protobuf/kv_chunk_address_table.pb.h"
+    )
+    set_target_properties(kv_table_lib PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    # Every source here is generated (protobuf) or tt-metal third-party — none of it
+    # is cpp_server code we lint. Clear the per-target CXX_CLANG_TIDY so --clang-tidy
+    # builds don't flag protobuf's snake_case identifiers as naming violations. This
+    # mirrors the -w below, which only silences the compiler (not clang-tidy).
+    set_target_properties(kv_table_lib PROPERTIES CXX_CLANG_TIDY "")
+    target_include_directories(kv_table_lib PUBLIC
+        ${TT_METAL_INCLUDE_DIRS}
+        "${_KV_TTM}/tt_metal/impl"          # internal/disaggregation/...protobuf.hpp
+        ${CMAKE_CURRENT_BINARY_DIR}          # generated kv_chunk_address_table.pb.h
+        ${_KV_PROTO_INC}                     # protobuf/ alias
+    )
+    # tt-metal's spdlog headers expect external fmt; PRIVATE so the define stays
+    # on kv_table_lib's own sources and does not leak onto transport_lib's other
+    # TUs (which use cpp_server's spdlog). fmt::fmt provides the symbols.
+    target_compile_definitions(kv_table_lib PRIVATE SPDLOG_FMT_EXTERNAL)
+    target_link_libraries(kv_table_lib PUBLIC protobuf::libprotobuf fmt::fmt)
+    # tt-metal headers trip -Wall/-Wpedantic (deprecated tt::stl, etc.); these are
+    # third-party sources, so silence rather than gate cpp_server's warnings on them.
+    target_compile_options(kv_table_lib PRIVATE -w)
+
+    target_link_libraries(transport_lib PUBLIC kv_table_lib)
+    target_compile_definitions(transport_lib PUBLIC TT_TRANSPORT_WITH_KV_TABLE)
+    message(STATUS "transport_lib: building with real KvChunkAddressTable (ENABLE_KV_TABLE=ON)")
+endif()
+
+target_compile_features(transport_lib PUBLIC cxx_std_20)
+target_compile_options(transport_lib PRIVATE -Wall -Wextra -Wpedantic)
+
+# #4294 production worker entry point is defined later, inside the
+# KAFKA_ENABLED block, because it links kv_migration_worker for the Kafka
+# request loop. See `if(KAFKA_ENABLED)` further down.
+if(TARGET transfer_engine)
+    # Real KV-cache migration (table-addressed bounce-buffer data plane +
+    # orchestration over a
+    # TCP control channel). Self-contained TCP control transport, links only
+    # transport_lib. host mode runs with no hardware; device mode needs --blaze;
+    # real-table (--table <pb>) needs -DENABLE_KV_TABLE=ON.
+    add_executable(transport_kv_migration_e2e
+        tests/e2e/transport_kv_migration_e2e.cpp)
+    # GTest::gtest (not gtest_main): the binary has a custom main() that dispatches
+    # --role sender|receiver workers before falling through to RUN_ALL_TESTS.
+    target_link_libraries(transport_kv_migration_e2e PRIVATE transport_lib GTest::gtest)
+    target_include_directories(transport_kv_migration_e2e PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    # --trigger kafka: drive the migration through the unified worker's data path
+    # (KvMigrationWorker + MooncakeMigrationExecutor). Only when Kafka is built;
+    # the default cli trigger links none of it.
+    if(KAFKA_ENABLED)
+        target_link_libraries(transport_kv_migration_e2e PRIVATE
+            messaging kv_migration_worker)
+        target_compile_definitions(transport_kv_migration_e2e PRIVATE
+            TT_E2E_WITH_KAFKA)
+        message(STATUS "transport_kv_migration_e2e: Kafka trigger ENABLED")
+    endif()
+    message(STATUS "transport_kv_migration_e2e: ENABLED (real KV migration harness)")
+
+    # Standalone seed/verify helper for the production mooncake_kv_migration_
+    # worker (which moves real KV and does no seed/verify of its own). --mode
+    # seed writes the known pattern into prefill source DRAM before a migration;
+    # --mode verify reads decode dest DRAM back after and compares. Reuses the
+    # real tables + device map + the harness's pattern, so it byte-checks a
+    # Kafka-triggered worker migration. Links only transport_lib.
+    add_executable(kv_seed_verify
+        tests/e2e/kv_seed_verify.cpp)
+    target_link_libraries(kv_seed_verify PRIVATE transport_lib)
+    target_include_directories(kv_seed_verify PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    if(USE_EXTERNAL_FMT)
+        target_link_libraries(kv_seed_verify PRIVATE spdlog::spdlog fmt::fmt)
+    else()
+        target_link_libraries(kv_seed_verify PRIVATE spdlog::spdlog)
+    endif()
+    target_compile_options(kv_seed_verify PRIVATE -Wall -Wextra -Wpedantic)
+    message(STATUS "kv_seed_verify: ENABLED (seed/verify helper for unified worker)")
+endif()
+
 # Unit tests (link llm_runner_lib)
 enable_testing()
-add_executable(scheduler_test tests/scheduler_test.cpp)
-target_link_libraries(scheduler_test PRIVATE llm_runner_lib GTest::gtest_main)
-target_include_directories(scheduler_test PRIVATE
+
+# Transport layer placeholder smoke test (also forces transport_lib to link).
+add_executable(transport_test tests/unit/transport/transport_test.cpp)
+target_link_libraries(transport_test PRIVATE transport_lib GTest::gtest_main)
+target_include_directories(transport_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-add_executable(llm_runner_test tests/llm_runner_test.cpp)
-target_link_libraries(llm_runner_test PRIVATE llm_runner_lib GTest::gtest_main)
-target_include_directories(llm_runner_test PRIVATE
+# Worker health / readiness HTTP server. Host-only, runs in any build config.
+add_executable(worker_health_server_test
+    tests/unit/transport/worker_health_server_test.cpp)
+target_link_libraries(worker_health_server_test PRIVATE transport_lib GTest::gtest_main)
+target_include_directories(worker_health_server_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-if(ENABLE_BLAZE)
-    add_executable(blaze_runner_test
-        tests/blaze_runner_test.cpp
-        src/runtime/worker/single_process_worker_metrics.cpp
-        src/runtime/worker/worker_metrics_shm.cpp
-    )
-    target_link_libraries(blaze_runner_test PRIVATE llm_runner_lib GTest::gtest_main)
-    target_include_directories(blaze_runner_test PRIVATE
+# Table -> KvChunkLocation adapter (host/slot/position filtering + device-group
+# fan-out). Host-only, runs in any build config.
+add_executable(kv_table_adapter_test
+    tests/unit/transport/kv_table_adapter_test.cpp)
+target_link_libraries(kv_table_adapter_test PRIVATE transport_lib GTest::gtest_main)
+target_include_directories(kv_table_adapter_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+# Control-plane message codec + channel (table exchange, request, bounce segment
+# name, done-marker, ack). Host-only loopback, runs in any build config.
+add_executable(kv_control_channel_test
+    tests/unit/transport/kv_control_channel_test.cpp)
+target_link_libraries(kv_control_channel_test PRIVATE transport_lib GTest::gtest_main)
+target_include_directories(kv_control_channel_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+
+# RDMA-over-host (Phase A): bounce-buffer geometry/allocator + wire codec.
+add_executable(kv_bounce_buffer_test
+    tests/unit/transport/kv_bounce_buffer_test.cpp)
+target_link_libraries(kv_bounce_buffer_test PRIVATE transport_lib GTest::gtest_main)
+target_include_directories(kv_bounce_buffer_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+# RDMA-over-host (Phase A): bounce data plane (sender -> bounce buffer -> receiver ->
+# device), single- and multi-window; in-memory fakes, host-only.
+add_executable(mooncake_kv_migration_test
+    tests/unit/transport/mooncake_kv_migration_test.cpp)
+target_link_libraries(mooncake_kv_migration_test PRIVATE transport_lib GTest::gtest_main)
+target_include_directories(mooncake_kv_migration_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+# RDMA-over-host (Phase A): bounce orchestration end to end over a loopback
+# channel (BounceReady -> WindowReady/WindowAck* -> DoneMarker/Ack).
+add_executable(kv_migration_orchestrator_test
+    tests/unit/transport/kv_migration_orchestrator_test.cpp)
+target_link_libraries(kv_migration_orchestrator_test PRIVATE transport_lib GTest::gtest_main)
+target_include_directories(kv_migration_orchestrator_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+# RDMA-over-host (Phase B): DriscDeviceIo build/link + no-hardware graceful
+# degradation (the DRISC data path itself is the Phase B6 HW gate). Linking this
+# also verifies the DRISC TUs resolve with no undefined symbols.
+add_executable(drisc_device_io_test
+    tests/unit/transport/drisc_device_io_test.cpp)
+target_link_libraries(drisc_device_io_test PRIVATE transport_lib GTest::gtest_main)
+target_include_directories(drisc_device_io_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+# RDMA-over-host (Phase B3): the double-pinned buffer (engine ibv_reg_mr + device
+# NOC-map on one aligned arena) + KvStagingPool adoption, with a recording device
+# map (no HW).
+add_executable(double_pinned_buffer_test
+    tests/unit/transport/double_pinned_buffer_test.cpp)
+target_link_libraries(double_pinned_buffer_test PRIVATE transport_lib GTest::gtest_main)
+target_include_directories(double_pinned_buffer_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+# Mooncake-backed IMigrationExecutor: async dispatch, exactly-once terminal
+# callback, services->transport request passthrough, and (via the orchestrator
+# loopback in the same suite) driving the real multi-host data plane.
+add_executable(mooncake_migration_executor_test
+    tests/unit/transport/mooncake_migration_executor_test.cpp)
+target_link_libraries(mooncake_migration_executor_test PRIVATE transport_lib GTest::gtest_main)
+target_include_directories(mooncake_migration_executor_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+# Endpoint wiring: control-channel connector (prefill) + receiver server (decode)
+# over a loopback fake transport, end to end through the multi-host data plane.
+add_executable(kv_migration_endpoints_test
+    tests/unit/transport/kv_migration_endpoints_test.cpp)
+target_link_libraries(kv_migration_endpoints_test PRIVATE transport_lib GTest::gtest_main)
+target_include_directories(kv_migration_endpoints_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+# Engine->worker table+devmap handoff: serialize/parse + send/receive over a
+# loopback fake. The real-table case is gated on ENABLE_KV_TABLE and only runs
+# when the KV_TABLE_DECODE_PB env var points at a real table (else it SKIPs);
+# no table path is baked into the build.
+add_executable(engine_table_handoff_test
+    tests/unit/transport/engine_table_handoff_test.cpp)
+target_link_libraries(engine_table_handoff_test PRIVATE transport_lib GTest::gtest_main)
+target_include_directories(engine_table_handoff_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+# resolveEngineTables + device_map_io + localhost TCP send-then-close.
+# Compiles tcp_socket_transport.cpp for the real loopback case.
+add_executable(engine_table_resolve_test
+    tests/unit/transport/engine_table_resolve_test.cpp
+    src/sockets/tcp_socket_transport.cpp)
+target_link_libraries(engine_table_resolve_test PRIVATE transport_lib GTest::gtest_main)
+target_include_directories(engine_table_resolve_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/unit/transport
+)
+
+# Host-local bridge: push DeviceMap only to a listening migration worker via
+# sendEngineHandoff (worker loads .pb from disk). No Metal / ENABLE_KV_TABLE.
+# Compiles tcp_socket_transport.cpp directly (transport_lib stays socket-decoupled).
+add_executable(engine_handoff_sender
+    src/engine_handoff_sender_main.cpp
+    src/sockets/tcp_socket_transport.cpp)
+target_link_libraries(engine_handoff_sender PRIVATE transport_lib)
+target_include_directories(engine_handoff_sender PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+if(USE_EXTERNAL_FMT)
+    target_link_libraries(engine_handoff_sender PRIVATE spdlog::spdlog fmt::fmt)
+else()
+    target_link_libraries(engine_handoff_sender PRIVATE spdlog::spdlog)
+endif()
+target_compile_options(engine_handoff_sender PRIVATE -Wall -Wextra -Wpedantic)
+
+# Real-table adapter test: loads an actual serialized KvChunkAddressTable (.pb)
+# and checks real NoC addresses resolve. Only built when ENABLE_KV_TABLE=ON
+# (otherwise the adapter is the no-op fallback). Reads the KV_TABLE_PB env var
+# for the table path; SKIPs when it is unset or the file is absent (no table
+# path is baked into the build).
+if(ENABLE_KV_TABLE)
+    add_executable(kv_chunk_address_table_adapter_test
+        tests/unit/transport/kv_chunk_address_table_adapter_test.cpp)
+    target_link_libraries(kv_chunk_address_table_adapter_test PRIVATE transport_lib GTest::gtest_main)
+    target_include_directories(kv_chunk_address_table_adapter_test PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
 endif()
 
-add_executable(sequence_test tests/sequence_test.cpp)
-target_link_libraries(sequence_test PRIVATE llm_runner_lib GTest::gtest_main)
-target_include_directories(sequence_test PRIVATE
+add_executable(dynamo_protocol_test
+    tests/unit/dynamo/dynamo_protocol_test.cpp
+    src/dynamo/transport_protocol.cpp
+    src/utils/logger.cpp
+)
+target_link_libraries(dynamo_protocol_test PRIVATE
+    Drogon::Drogon
+    JsonCpp::JsonCpp
+    spdlog::spdlog
+    GTest::gtest_main)
+target_include_directories(dynamo_protocol_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-add_executable(lockfree_queue_test tests/lockfree_queue_test.cpp)
+add_executable(kube_discovery_test
+    tests/unit/dynamo/kube_discovery_test.cpp
+    src/dynamo/kube_client.cpp
+    src/utils/logger.cpp
+)
+target_link_libraries(kube_discovery_test PRIVATE
+    Drogon::Drogon
+    JsonCpp::JsonCpp
+    spdlog::spdlog
+    GTest::gtest_main)
+target_include_directories(kube_discovery_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+if(ENABLE_BLAZE)
+    add_executable(blaze_decode_runner_test
+        tests/integration/runners/blaze_decode_runner_test.cpp
+        src/runtime/worker/single_process_worker_metrics.cpp
+        src/runtime/worker/worker_metrics_shm.cpp
+    )
+    target_link_libraries(blaze_decode_runner_test PRIVATE llm_runner_lib GTest::gtest_main)
+    target_include_directories(blaze_decode_runner_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    add_executable(blaze_prefill_runner_test
+        tests/integration/runners/blaze_prefill_runner_test.cpp
+        src/runtime/worker/single_process_worker_metrics.cpp
+        src/runtime/worker/worker_metrics_shm.cpp
+    )
+    target_link_libraries(blaze_prefill_runner_test PRIVATE llm_runner_lib GTest::gtest_main)
+    target_include_directories(blaze_prefill_runner_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    add_executable(blaze_tts_runner_test
+        tests/integration/runners/blaze_tts_runner_test.cpp
+        src/runtime/runners/blaze_runner/blaze_tts_runner.cpp
+        src/runtime/worker/single_process_worker_metrics.cpp
+        src/runtime/worker/worker_metrics_shm.cpp
+    )
+    target_link_libraries(blaze_tts_runner_test PRIVATE llm_runner_lib GTest::gtest_main)
+    target_include_directories(blaze_tts_runner_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    add_executable(mock_schedulers_test
+        tests/unit/runners/mock_schedulers_test.cpp
+    )
+    target_link_libraries(mock_schedulers_test PRIVATE llm_runner_lib GTest::gtest_main)
+    target_include_directories(mock_schedulers_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+endif()
+
+add_executable(sequence_test tests/unit/model/sequence_test.cpp)
+target_link_libraries(sequence_test PRIVATE
+    llm_runner_lib
+    cereal::cereal
+    GTest::gtest_main)
+target_include_directories(sequence_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${cereal_SOURCE_DIR}/include
+)
+
+add_executable(lockfree_queue_test tests/unit/data_structures/lockfree_queue_test.cpp)
 target_link_libraries(lockfree_queue_test PRIVATE GTest::gtest_main)
 target_include_directories(lockfree_queue_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-# Tokenizer test
-add_executable(test_tokenizer tests/test_tokenizer.cpp)
-target_link_libraries(test_tokenizer PRIVATE llm_runner_lib GTest::gtest_main)
+add_executable(tokenizer_test tests/unit/model/tokenizer_test.cpp)
+target_link_libraries(tokenizer_test PRIVATE llm_runner_lib GTest::gtest_main)
 
-add_executable(conversation_hasher_test tests/conversation_hasher_test.cpp)
+add_executable(tts_prompt_compiler_test tests/unit/model/tts_prompt_compiler_test.cpp)
+target_link_libraries(tts_prompt_compiler_test PRIVATE llm_runner_lib GTest::gtest_main)
+
+add_executable(voice_sample_cache_test tests/unit/utils/voice_sample_cache_test.cpp)
+target_link_libraries(voice_sample_cache_test PRIVATE xxhash_lib GTest::gtest_main)
+target_include_directories(voice_sample_cache_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+add_executable(conversation_hasher_test tests/unit/model/conversation_hasher_test.cpp)
 target_link_libraries(conversation_hasher_test PRIVATE llm_runner_lib GTest::gtest_main)
 
-add_executable(cancel_queue_test tests/cancel_queue_test.cpp)
+add_executable(cancel_queue_test tests/unit/data_structures/cancel_queue_test.cpp)
 target_link_libraries(cancel_queue_test PRIVATE llm_runner_lib GTest::gtest_main)
 target_include_directories(cancel_queue_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-add_executable(cancellation_test tests/cancellation_test.cpp)
-target_link_libraries(cancellation_test PRIVATE llm_runner_lib GTest::gtest_main)
-target_include_directories(cancellation_test PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
-add_executable(structured_output_test tests/structured_output_test.cpp)
-target_link_libraries(structured_output_test PRIVATE llm_runner_lib GTest::gtest_main)
-target_include_directories(structured_output_test PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
-# Tool call parser test
-add_executable(test_tool_call_parser tests/test_tool_call_parser.cpp)
-target_link_libraries(test_tool_call_parser PRIVATE
-    llm_runner_lib
-    ${CMAKE_THREAD_LIBS_INIT}
-)
-target_include_directories(test_tool_call_parser PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
-# Chat template with tools test (supports both DeepSeek and Llama tokenizers)
-add_executable(test_chat_template_tools tests/test_chat_template_tools.cpp)
-target_link_libraries(test_chat_template_tools PRIVATE
-    llm_runner_lib
-    ${CMAKE_THREAD_LIBS_INIT}
-)
-target_include_directories(test_chat_template_tools PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-target_compile_definitions(test_chat_template_tools PRIVATE
-    TOKENIZER_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tokenizers"
-)
-
-# Chat completion request test
-add_executable(test_chat_completion_request tests/test_chat_completion_request.cpp)
-target_link_libraries(test_chat_completion_request PRIVATE
-    llm_runner_lib
-    ${CMAKE_THREAD_LIBS_INIT}
-)
-target_include_directories(test_chat_completion_request PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
-# Image generate request parsing test
-add_executable(test_image_generate_request tests/test_image_generate_request.cpp)
-target_link_libraries(test_image_generate_request PRIVATE
+add_executable(image_generate_request_test tests/unit/api/image_generate_request_test.cpp)
+target_link_libraries(image_generate_request_test PRIVATE
     JsonCpp::JsonCpp
     GTest::gtest_main
 )
-target_include_directories(test_image_generate_request PRIVATE
+target_include_directories(image_generate_request_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-add_executable(media_payload_ipc_test tests/media_payload_ipc_test.cpp)
+add_executable(media_payload_ipc_test tests/integration/sessions/media_payload_ipc_test.cpp)
 target_link_libraries(media_payload_ipc_test PRIVATE llm_runner_lib GTest::gtest_main)
 target_include_directories(media_payload_ipc_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-# Reasoning parser test
-add_executable(test_reasoning_parser
-    tests/test_reasoning_parser.cpp
-    src/services/reasoning_parser.cpp
-)
-target_link_libraries(test_reasoning_parser PRIVATE
-    llm_runner_lib
-    ${CMAKE_THREAD_LIBS_INIT}
-)
-target_include_directories(test_reasoning_parser PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
 add_executable(worker_metrics_shm_test
-    tests/worker_metrics_shm_test.cpp
+    tests/unit/workers/worker_metrics_shm_test.cpp
     src/runtime/worker/worker_metrics_shm.cpp
 )
 target_link_libraries(worker_metrics_shm_test PRIVATE llm_runner_lib GTest::gtest_main)
@@ -586,30 +1217,74 @@ target_include_directories(worker_metrics_shm_test PRIVATE
 )
 
 add_executable(model_service_registry_test
-    tests/model_service_registry_test.cpp
+    tests/unit/services/model_service_registry_test.cpp
     src/services/service_container.cpp
 )
 target_link_libraries(model_service_registry_test PRIVATE llm_runner_lib GTest::gtest_main)
 
-add_executable(concurrent_map_test tests/concurrent_map_test.cpp)
+add_executable(health_controller_test
+    tests/unit/api/health_controller_test.cpp
+    src/api/health_controller.cpp
+    src/services/service_container.cpp
+)
+target_link_libraries(health_controller_test PRIVATE
+    llm_runner_lib
+    Drogon::Drogon
+    cereal::cereal
+    JsonCpp::JsonCpp
+    GTest::gtest_main)
+target_include_directories(health_controller_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+add_executable(concurrent_map_test tests/unit/data_structures/concurrent_map_test.cpp)
 target_link_libraries(concurrent_map_test PRIVATE GTest::gtest_main)
 target_include_directories(concurrent_map_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
 add_executable(session_test
-    tests/session_test.cpp
+    tests/unit/services/session_test.cpp
     src/domain/session.cpp
 )
-target_link_libraries(session_test PRIVATE JsonCpp::JsonCpp GTest::gtest_main)
+target_link_libraries(session_test PRIVATE llm_runner_lib GTest::gtest_main)
 target_include_directories(session_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-add_executable(session_manager_test
-    tests/session_manager_test.cpp
+add_executable(prefix_cache_router_test
+    tests/unit/services/prefix_cache_router_test.cpp
     src/domain/session.cpp
+    src/domain/prefix_cache/prefix_index.cpp
+    src/domain/prefix_cache/block_matcher.cpp
+    src/domain/prefix_cache/response_id_index.cpp
+    src/services/prefix_cache_router.cpp
+    src/metrics/metrics.cpp
+)
+target_link_libraries(prefix_cache_router_test PRIVATE
+    llm_runner_lib Drogon::Drogon prometheus-cpp::core GTest::gtest_main)
+target_include_directories(prefix_cache_router_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${prometheus-cpp_SOURCE_DIR}/core/include
+)
+
+add_executable(mock_remote_kv_manager_test
+    tests/unit/services/mock_remote_kv_manager_test.cpp
+    src/services/mock_remote_kv_manager.cpp
+)
+target_link_libraries(mock_remote_kv_manager_test PRIVATE GTest::gtest_main)
+target_include_directories(mock_remote_kv_manager_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+add_executable(session_manager_test
+    tests/integration/sessions/session_manager_test.cpp
+    src/domain/session.cpp
+    src/domain/prefix_cache/prefix_index.cpp
+    src/domain/prefix_cache/block_matcher.cpp
+    src/domain/prefix_cache/response_id_index.cpp
     src/services/session_manager.cpp
+    src/services/prefix_cache_router.cpp
     src/metrics/metrics.cpp
 )
 target_link_libraries(session_manager_test PRIVATE
@@ -620,7 +1295,7 @@ target_include_directories(session_manager_test PRIVATE
 )
 
 add_executable(worker_manager_test
-    tests/worker_manager_test.cpp
+    tests/unit/workers/worker_manager_test.cpp
     src/runtime/worker/process_liveness.cpp
 )
 target_link_libraries(worker_manager_test PRIVATE
@@ -633,13 +1308,14 @@ target_include_directories(worker_manager_test PRIVATE
 # Pulls in the same translation units that the main server links so the
 # real LLMService can be constructed without forking workers.
 add_executable(llm_service_test
-    tests/llm_service_test.cpp
+    tests/integration/sessions/llm_service_test.cpp
     src/services/llm_service.cpp
     src/services/embedding_service.cpp
     src/services/image_service.cpp
+    src/services/tts_service.cpp
+    src/services/tts_request_preprocessor.cpp
     src/services/media_worker_scheduler.cpp
     src/services/model_service_registration.cpp
-    src/services/reasoning_parser.cpp
     src/runtime/worker/worker_manager.cpp
     src/runtime/worker/process_liveness.cpp
     src/runtime/worker/single_process_worker.cpp
@@ -648,10 +1324,13 @@ add_executable(llm_service_test
     src/utils/ipc_runner_factory.cpp
     src/utils/mapper.cpp
     src/utils/image_codec.cpp
+    src/utils/audio_codec.cpp
     src/runtime/runners/embedding_runner.cpp
     src/runtime/runners/sdxl/sdxl_runner.cpp
     src/runtime/runners/media_ipc_runner.cpp
     src/runtime/runners/image_ipc_runner.cpp
+    src/runtime/runners/blaze_runner/blaze_tts_runner.cpp
+    src/runtime/runners/blaze_runner/blaze_tts_scheduler_factory.cpp
     src/runtime/runners/sdxl/sdxl_generate_runner.cpp
     src/runtime/runners/sdxl/sdxl_image_to_image_runner.cpp
     src/runtime/runners/sdxl/sdxl_edit_runner.cpp
@@ -670,15 +1349,23 @@ target_include_directories(llm_service_test PRIVATE
     ${prometheus-cpp_SOURCE_DIR}/core/include
 )
 
-add_executable(main_integration_test
-    tests/integration/main_integration_test.cpp
+# Common server-stack sources shared by every integration-test executable.
+# Each integration binary boots the full stack in-process and differs only by
+# its test-entry .cpp (and the MODEL it pins), so the source list is shared here
+# rather than duplicated per target.
+set(INTEGRATION_TEST_COMMON_SOURCES
     src/services/llm_service.cpp
     src/services/embedding_service.cpp
     src/services/model_service_registration.cpp
-    src/services/reasoning_parser.cpp
     src/services/session_manager.cpp
+    src/services/prefix_cache_router.cpp
+    src/services/session_resolution.cpp
+    src/services/decode_slot_reservation.cpp
     src/services/memory_services/memory_manager.cpp
     src/domain/session.cpp
+    src/domain/prefix_cache/prefix_index.cpp
+    src/domain/prefix_cache/block_matcher.cpp
+    src/domain/prefix_cache/response_id_index.cpp
     src/runtime/worker/worker_manager.cpp
     src/runtime/worker/process_liveness.cpp
     src/runtime/worker/single_process_worker.cpp
@@ -692,30 +1379,43 @@ add_executable(main_integration_test
     src/runtime/runners/sdxl/sdxl_runner.cpp
     src/runtime/runners/media_ipc_runner.cpp
     src/runtime/runners/image_ipc_runner.cpp
+    src/runtime/runners/blaze_runner/blaze_tts_runner.cpp
+    src/runtime/runners/blaze_runner/blaze_tts_scheduler_factory.cpp
     src/runtime/runners/sdxl/sdxl_generate_runner.cpp
     src/runtime/runners/sdxl/sdxl_image_to_image_runner.cpp
     src/runtime/runners/sdxl/sdxl_edit_runner.cpp
     src/runtime/runners/sdxl/sdxl_python_helpers.cpp
     src/services/image_service.cpp
+    src/services/tts_service.cpp
+    src/services/tts_request_preprocessor.cpp
     src/services/media_worker_scheduler.cpp
     src/utils/image_codec.cpp
+    src/utils/audio_codec.cpp
     src/metrics/metrics.cpp
     src/profiling/tracy.cpp
     src/api/llm_controller.cpp
+    src/api/tts_controller.cpp
     src/api/stream_event_formatter.cpp
     src/api/health_controller.cpp
     src/api/response_writer/response_writer.cpp
     src/api/response_writer/non_stream_response_writer.cpp
     src/api/response_writer/streaming_response_writer.cpp
+    src/api/response_writer/streaming_wav_response_writer.cpp
     src/api/route_registry.cpp
     src/services/service_container.cpp
+    src/services/disaggregation_contract_mapping.cpp
     src/services/disaggregation_service.cpp
     src/services/llm_pipeline.cpp
+    src/dynamo/etcd_client.cpp
     src/sockets/inter_server_service.cpp
     src/sockets/socket_manager.cpp
-    src/sockets/tcp_socket_transport.cpp
     src/sockets/zmq_socket_transport.cpp
-    src/sockets/socket_transport_factory.cpp
+    src/telemetry/sentry_tracing.cpp
+)
+
+add_executable(main_integration_test
+    tests/integration/server/main_integration_test.cpp
+    ${INTEGRATION_TEST_COMMON_SOURCES}
 )
 target_link_libraries(main_integration_test PRIVATE
     llm_runner_lib
@@ -724,6 +1424,8 @@ target_link_libraries(main_integration_test PRIVATE
     prometheus-cpp::core
     pybind11::embed
     stb_image_write
+    xxhash_lib
+    sentry
     GTest::gtest_main)
 if(ZMQ_FOUND AND TARGET PkgConfig::ZMQ)
     target_link_libraries(main_integration_test PRIVATE PkgConfig::ZMQ)
@@ -739,69 +1441,56 @@ target_include_directories(main_integration_test PRIVATE
     ${prometheus-cpp_SOURCE_DIR}/core/include
 )
 
-add_executable(tool_calling_integration_test
-    tests/integration/tool_calling_integration_test.cpp
-    src/services/llm_service.cpp
-    src/services/embedding_service.cpp
-    src/services/model_service_registration.cpp
-    src/services/reasoning_parser.cpp
-    src/services/session_manager.cpp
-    src/services/memory_services/memory_manager.cpp
-    src/domain/session.cpp
-    src/runtime/worker/worker_manager.cpp
-    src/runtime/worker/process_liveness.cpp
-    src/runtime/worker/single_process_worker.cpp
-    src/runtime/worker/single_process_worker_metrics.cpp
-    src/runtime/worker/worker_metrics_shm.cpp
-    src/utils/ipc_runner_factory.cpp
-    src/utils/mapper.cpp
-    src/utils/conversation_hasher.cpp
-    src/utils/service_factory.cpp
-    src/runtime/runners/embedding_runner.cpp
-    src/runtime/runners/sdxl/sdxl_runner.cpp
-    src/runtime/runners/media_ipc_runner.cpp
-    src/runtime/runners/image_ipc_runner.cpp
-    src/runtime/runners/sdxl/sdxl_generate_runner.cpp
-    src/runtime/runners/sdxl/sdxl_image_to_image_runner.cpp
-    src/runtime/runners/sdxl/sdxl_edit_runner.cpp
-    src/runtime/runners/sdxl/sdxl_python_helpers.cpp
-    src/services/image_service.cpp
-    src/services/media_worker_scheduler.cpp
-    src/utils/image_codec.cpp
-    src/metrics/metrics.cpp
-    src/profiling/tracy.cpp
-    src/api/llm_controller.cpp
-    src/api/stream_event_formatter.cpp
-    src/api/health_controller.cpp
-    src/api/response_writer/response_writer.cpp
-    src/api/response_writer/non_stream_response_writer.cpp
-    src/api/response_writer/streaming_response_writer.cpp
-    src/api/route_registry.cpp
-    src/services/service_container.cpp
-    src/services/disaggregation_service.cpp
-    src/services/llm_pipeline.cpp
-    src/sockets/inter_server_service.cpp
-    src/sockets/socket_manager.cpp
-    src/sockets/tcp_socket_transport.cpp
-    src/sockets/zmq_socket_transport.cpp
-    src/sockets/socket_transport_factory.cpp
+add_executable(prefill_integration_test
+    tests/integration/server/prefill_integration_test.cpp
+    ${INTEGRATION_TEST_COMMON_SOURCES}
 )
-target_link_libraries(tool_calling_integration_test PRIVATE
+target_link_libraries(prefill_integration_test PRIVATE
     llm_runner_lib
     Drogon::Drogon
     cereal::cereal
     prometheus-cpp::core
     pybind11::embed
     stb_image_write
+    xxhash_lib
+    sentry
     GTest::gtest_main)
 if(ZMQ_FOUND AND TARGET PkgConfig::ZMQ)
-    target_link_libraries(tool_calling_integration_test PRIVATE PkgConfig::ZMQ)
+    target_link_libraries(prefill_integration_test PRIVATE PkgConfig::ZMQ)
 elseif(TARGET libzmq-static)
-    target_link_libraries(tool_calling_integration_test PRIVATE libzmq-static)
+    target_link_libraries(prefill_integration_test PRIVATE libzmq-static)
 elseif(TARGET libzmq)
-    target_link_libraries(tool_calling_integration_test PRIVATE libzmq)
+    target_link_libraries(prefill_integration_test PRIVATE libzmq)
 endif()
-target_include_directories(tool_calling_integration_test PRIVATE
+target_include_directories(prefill_integration_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${cppzmq_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    ${prometheus-cpp_SOURCE_DIR}/core/include
+)
+
+add_executable(disaggregated_e2e_test
+    tests/e2e/disaggregated_e2e_test.cpp
+    ${INTEGRATION_TEST_COMMON_SOURCES}
+)
+target_link_libraries(disaggregated_e2e_test PRIVATE
+    llm_runner_lib
+    Drogon::Drogon
+    cereal::cereal
+    prometheus-cpp::core
+    pybind11::embed
+    stb_image_write
+    xxhash_lib
+    sentry
+    GTest::gtest_main)
+if(ZMQ_FOUND AND TARGET PkgConfig::ZMQ)
+    target_link_libraries(disaggregated_e2e_test PRIVATE PkgConfig::ZMQ)
+elseif(TARGET libzmq-static)
+    target_link_libraries(disaggregated_e2e_test PRIVATE libzmq-static)
+elseif(TARGET libzmq)
+    target_link_libraries(disaggregated_e2e_test PRIVATE libzmq)
+endif()
+target_include_directories(disaggregated_e2e_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${cppzmq_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/tests
@@ -815,57 +1504,125 @@ include(GoogleTest)
 # ctest entry would invoke the binary once per test, paying that boot cost six
 # times AND exposing a racy teardown. Run all six tests in a single process.
 add_test(NAME MainIntegrationTest COMMAND main_integration_test)
-add_test(NAME ToolCallingIntegrationTest COMMAND tool_calling_integration_test)
-set_tests_properties(ToolCallingIntegrationTest PROPERTIES TIMEOUT 120)
-# Locally the suite finishes in ~5s; cap well above that so a wedged TEST_F
-# fails with ctest's captured stdout instead of hanging the job indefinitely.
-set_tests_properties(MainIntegrationTest PROPERTIES TIMEOUT 120)
-gtest_discover_tests(scheduler_test)
-gtest_discover_tests(llm_runner_test)
+add_test(NAME PrefillIntegrationTest COMMAND prefill_integration_test)
+add_test(NAME DisaggregatedE2ETest COMMAND disaggregated_e2e_test)
+# Only built under Mooncake (TARGET transfer_engine); register its host+builtin
+# gtest round trip when present.
+if(TARGET transport_kv_migration_e2e)
+    add_test(NAME TransportKvMigrationE2E COMMAND transport_kv_migration_e2e)
+endif()
+# Integration tests boot the full server stack and share ports/resources.
+# Prevent parallel execution via RESOURCE_LOCK.
+set_tests_properties(MainIntegrationTest PrefillIntegrationTest DisaggregatedE2ETest PROPERTIES
+    TIMEOUT 120
+    RESOURCE_LOCK integration_server
+)
+gtest_discover_tests(transport_test)
+gtest_discover_tests(dynamo_protocol_test)
+gtest_discover_tests(kube_discovery_test)
+gtest_discover_tests(worker_health_server_test)
+gtest_discover_tests(kv_table_adapter_test)
+gtest_discover_tests(kv_control_channel_test)
+gtest_discover_tests(kv_bounce_buffer_test)
+gtest_discover_tests(mooncake_kv_migration_test)
+gtest_discover_tests(kv_migration_orchestrator_test)
+gtest_discover_tests(drisc_device_io_test)
+gtest_discover_tests(double_pinned_buffer_test)
+gtest_discover_tests(mooncake_migration_executor_test)
+gtest_discover_tests(kv_migration_endpoints_test)
+gtest_discover_tests(engine_table_handoff_test)
+gtest_discover_tests(engine_table_resolve_test)
+if(ENABLE_KV_TABLE)
+    gtest_discover_tests(kv_chunk_address_table_adapter_test)
+endif()
 if(ENABLE_BLAZE)
-    gtest_discover_tests(blaze_runner_test)
+    gtest_discover_tests(blaze_decode_runner_test)
+    gtest_discover_tests(blaze_prefill_runner_test)
+    gtest_discover_tests(blaze_tts_runner_test)
+    gtest_discover_tests(mock_schedulers_test)
 endif()
 gtest_discover_tests(sequence_test)
 gtest_discover_tests(lockfree_queue_test)
-gtest_discover_tests(test_tokenizer)
+gtest_discover_tests(tokenizer_test)
+gtest_discover_tests(tts_prompt_compiler_test)
+gtest_discover_tests(voice_sample_cache_test)
 gtest_discover_tests(conversation_hasher_test)
 gtest_discover_tests(cancel_queue_test)
-gtest_discover_tests(cancellation_test)
-gtest_discover_tests(structured_output_test)
 gtest_discover_tests(worker_metrics_shm_test)
 gtest_discover_tests(concurrent_map_test)
 gtest_discover_tests(session_test)
+gtest_discover_tests(prefix_cache_router_test)
 gtest_discover_tests(session_manager_test)
 gtest_discover_tests(worker_manager_test)
 gtest_discover_tests(llm_service_test)
 gtest_discover_tests(model_service_registry_test)
-gtest_discover_tests(test_image_generate_request)
+gtest_discover_tests(health_controller_test)
+gtest_discover_tests(image_generate_request_test)
 gtest_discover_tests(media_payload_ipc_test)
 
-# Register tool call tests
-add_test(NAME ChatCompletionRequest COMMAND test_chat_completion_request)
-add_test(NAME ToolCallParser COMMAND test_tool_call_parser)
-add_test(NAME ChatTemplateTools COMMAND test_chat_template_tools)
-add_test(NAME ReasoningParser COMMAND test_reasoning_parser)
-
-# IPC smoke test (2-process, Boost.Interprocess queue + scheduler)
-add_executable(ipc_scheduler_smoke_test tests/ipc_scheduler_smoke_test.cpp)
-target_link_libraries(ipc_scheduler_smoke_test PRIVATE llm_runner_lib)
-target_include_directories(ipc_scheduler_smoke_test PRIVATE
+add_executable(apply_delta_prompt_test tests/unit/model/apply_delta_prompt_test.cpp)
+target_link_libraries(apply_delta_prompt_test PRIVATE GTest::gtest_main llm_runner_lib)
+target_include_directories(apply_delta_prompt_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
-add_test(NAME IpcSchedulerSmoke COMMAND ipc_scheduler_smoke_test)
+add_test(NAME ApplyDeltaPrompt COMMAND apply_delta_prompt_test)
 
 # Cancellation E2E test (starts mock server, runs Python tests, stops server)
 add_test(NAME CancellationE2E
-    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_e2e_with_server.sh
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/e2e/scripts/run_e2e_with_server.sh
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
 set_tests_properties(CancellationE2E PROPERTIES TIMEOUT 120)
 
+# Prefix cache E2E test (requires external Dynamo server)
+add_executable(prefix_cache_e2e_test tests/e2e/prefix_cache_e2e_test.cpp)
+target_link_libraries(prefix_cache_e2e_test PRIVATE
+    JsonCpp::JsonCpp
+    GTest::gtest_main
+)
+target_include_directories(prefix_cache_e2e_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+# DYNAMO_ROUTING=1 big-ISL routing E2E test (requires external Dynamo server
+# fronting one prefill + one decode worker, both DYNAMO_ROUTING=1). Reuses the
+# DynamoClient / SSE-parsing helpers from dynamo_test_helpers.hpp.
+add_executable(dynamo_routing_big_isl_test
+    tests/e2e/dynamo_routing_big_isl_test.cpp)
+target_link_libraries(dynamo_routing_big_isl_test PRIVATE
+    JsonCpp::JsonCpp
+    GTest::gtest
+)
+target_include_directories(dynamo_routing_big_isl_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/e2e
+)
+
 # Tokenizer benchmark
 add_executable(tokenizer_benchmark benchmarks/tokenizer_benchmark.cpp)
 target_link_libraries(tokenizer_benchmark PRIVATE llm_runner_lib)
+target_include_directories(tokenizer_benchmark PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests
+)
+
+# Prefix cache router microbenchmark (Google Benchmark)
+add_executable(prefix_cache_router_benchmark
+    benchmarks/prefix_cache_router_benchmark.cpp
+    src/domain/session.cpp
+    src/domain/prefix_cache/prefix_index.cpp
+    src/domain/prefix_cache/block_matcher.cpp
+    src/domain/prefix_cache/response_id_index.cpp
+    src/services/prefix_cache_router.cpp
+    src/metrics/metrics.cpp
+)
+target_link_libraries(prefix_cache_router_benchmark PRIVATE
+    llm_runner_lib Drogon::Drogon prometheus-cpp::core benchmark::benchmark benchmark::benchmark_main)
+target_include_directories(prefix_cache_router_benchmark PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${prometheus-cpp_SOURCE_DIR}/core/include
+)
+add_test(NAME PrefixCacheRouterBenchmark COMMAND prefix_cache_router_benchmark --benchmark_min_time=0.1s)
 
 # Kafka messaging support (optional)
 if(KAFKA_ENABLED)
@@ -882,6 +1639,9 @@ if(KAFKA_ENABLED)
     add_library(messaging
         src/messaging/kafka_producer.cpp
         src/messaging/kafka_consumer.cpp
+        src/messaging/migration_message.cpp
+        src/services/remote_kv_manager_impl.cpp
+        src/utils/logger.cpp
     )
     target_include_directories(messaging PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -891,7 +1651,67 @@ if(KAFKA_ENABLED)
         ${RDKAFKA_LIB}
         ${RDKAFKACPP_LIB}
         spdlog::spdlog
+        JsonCpp::JsonCpp
     )
+
+    # RemoteKVManagerAdapter - bridges IRemoteKVManager to MigrationClientInterface
+    # Only built when ENABLE_BLAZE is ON (requires tt-llm-engine headers)
+    # Note: disaggregation/migration/include is needed for migration_client.hpp
+    # which migration_client_interface.hpp includes for event types.
+    if(ENABLE_BLAZE)
+        # CompositeMigrationClient joins the Kafka RemoteKVManagerAdapter (burst
+        # path) with the shmem/mock MigrationLayerClient (migrate/loopback
+        # path) behind a single MigrationClientInterface so the PrefillScheduler
+        # can still service ALLOCATE(migrate_from_slot) prefix-cache copies —
+        # the Kafka adapter intentionally throws on that entry point, so
+        # composing is what makes PREFILL_USE_REMOTE_KV_MANAGER safe.
+        add_library(remote_kv_adapter
+            src/services/remote_kv_manager_adapter.cpp
+            src/services/composite_migration_client.cpp
+        )
+        target_include_directories(remote_kv_adapter PUBLIC
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+        )
+        target_link_libraries(remote_kv_adapter PUBLIC
+            messaging
+            spdlog::spdlog
+        )
+        if(TARGET TtLlmEngine::Full)
+            target_link_libraries(remote_kv_adapter PUBLIC TtLlmEngine::Full)
+        else()
+            target_link_libraries(remote_kv_adapter PUBLIC TtLlmEngine::Core)
+        endif()
+        message(STATUS "remote_kv_adapter: ENABLED (ENABLE_BLAZE=ON)")
+
+        # Wire the Kafka-backed RemoteKVManagerAdapter into the PrefillScheduler factory (blaze_utils.hpp)
+        target_link_libraries(llm_runner_lib PUBLIC remote_kv_adapter)
+        target_compile_definitions(llm_runner_lib PUBLIC KAFKA_ENABLED)
+        message(STATUS
+            "llm_runner_lib: PREFILL_USE_REMOTE_KV_MANAGER path ENABLED "
+            "(linked against remote_kv_adapter, KAFKA_ENABLED define set)")
+
+        # Unit test for CompositeMigrationClient. Uses two in-process
+        # FakeBackends (defined inline in the test) so it does not need
+        # Kafka or shmem; the whole point is to pin down the composite's
+        # routing / fan-out behavior in isolation. gtest_discover_tests
+        # registers each TEST() case with ctest individually so the PR
+        # gate picks them up (unlike some sibling Kafka unit tests in
+        # this file that are only built, not ctest-registered — a
+        # pre-existing gap that should be closed separately).
+        add_executable(composite_migration_client_test
+            tests/unit/services/composite_migration_client_test.cpp
+        )
+        target_link_libraries(composite_migration_client_test PRIVATE
+            remote_kv_adapter
+            GTest::gtest_main
+        )
+        target_include_directories(composite_migration_client_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+        )
+        gtest_discover_tests(composite_migration_client_test)
+    else()
+        message(STATUS "remote_kv_adapter: DISABLED (requires ENABLE_BLAZE=ON)")
+    endif()
 
     # Migration worker library (for consumer instances)
     add_library(migration_worker
@@ -905,6 +1725,114 @@ if(KAFKA_ENABLED)
         spdlog::spdlog
         JsonCpp::JsonCpp
     )
+    # Unit test for migration_message JSON (de)serialization.
+    add_executable(migration_message_test
+        tests/unit/messaging/migration_message_test.cpp
+    )
+    target_link_libraries(migration_message_test PRIVATE
+        messaging
+        GTest::gtest_main
+    )
+    target_include_directories(migration_message_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    # Unit test for RemoteKVManagerImpl (uses in-process fake producer/consumer).
+    add_executable(remote_kv_manager_impl_test
+        tests/unit/services/remote_kv_manager_impl_test.cpp
+    )
+    target_link_libraries(remote_kv_manager_impl_test PRIVATE
+        messaging
+        GTest::gtest_main
+    )
+    target_include_directories(remote_kv_manager_impl_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    # KV migration worker library
+    add_library(kv_migration_worker
+        src/runtime/worker/kv_migration_worker.cpp
+        src/runtime/worker/stub_migration_executor.cpp
+    )
+    target_include_directories(kv_migration_worker PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_link_libraries(kv_migration_worker PUBLIC
+        messaging
+        spdlog::spdlog
+    )
+
+    # #4294 production worker entry point: combines Mooncake bring-up
+    # (transport_lib) with the Kafka request/ack loop (kv_migration_worker).
+    # Gated on `transfer_engine` since the Mooncake transport is what makes
+    # the bring-up meaningful; without it the binary would have nothing to
+    # publish/discover and would only exercise dry-run request logging.
+    if(TARGET transfer_engine)
+        # Unified Kafka->migration worker: one --role prefill|decode binary that
+        # drives the real data plane on a Kafka trigger. Compiles
+        # tcp_socket_transport.cpp directly for the control channels (the
+        # connector + receiver server take an injected ISocketTransport, so
+        # transport_lib stays socket-decoupled).
+        add_executable(mooncake_kv_migration_worker
+            src/mooncake_kv_migration_worker_main.cpp
+            src/sockets/tcp_socket_transport.cpp)
+        target_link_libraries(mooncake_kv_migration_worker PRIVATE
+            transport_lib
+            messaging
+            kv_migration_worker)
+        target_include_directories(mooncake_kv_migration_worker PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include)
+        if(USE_EXTERNAL_FMT)
+            target_link_libraries(mooncake_kv_migration_worker PRIVATE
+                spdlog::spdlog fmt::fmt)
+        else()
+            target_link_libraries(mooncake_kv_migration_worker PRIVATE spdlog::spdlog)
+        endif()
+        target_compile_options(mooncake_kv_migration_worker PRIVATE
+            -Wall -Wextra -Wpedantic)
+        message(STATUS "mooncake_kv_migration_worker: ENABLED (unified Kafka->migration worker)")
+    else()
+        message(STATUS "mooncake_kv_migration_worker: SKIPPED (requires Mooncake transfer_engine target)")
+    endif()
+
+    # Unit test for KvMigrationWorker (uses in-process fake Kafka + mock executor).
+    add_executable(kv_migration_worker_test
+        tests/unit/workers/kv_migration_worker_test.cpp
+    )
+    target_link_libraries(kv_migration_worker_test PRIVATE
+        kv_migration_worker
+        messaging
+        GTest::gtest_main
+    )
+    target_include_directories(kv_migration_worker_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    add_executable(remote_kv_manager_kafka_test
+        tests/integration/remote_kv_manager_kafka_test.cpp
+    )
+    target_link_libraries(remote_kv_manager_kafka_test PRIVATE
+        kv_migration_worker
+        messaging
+        GTest::gtest_main
+    )
+    target_include_directories(remote_kv_manager_kafka_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    # E2E test: real RemoteKVManagerImpl driven against a scriptable
+    # MockMigrationWorker over a real Kafka broker (scripts/dev-kafka.sh up).
+    # Not registered with add_test() -- opt-in, run manually.
+    add_executable(remote_kv_manager_e2e_test
+        tests/e2e/remote_kv_manager_e2e_test.cpp
+    )
+    target_link_libraries(remote_kv_manager_e2e_test PRIVATE
+        messaging
+        GTest::gtest_main
+    )
+    target_include_directories(remote_kv_manager_e2e_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
 else()
     message(STATUS "Kafka support disabled (use -DKAFKA_ENABLED=ON to enable)")
 endif()
@@ -914,18 +1842,23 @@ set(SOURCES
     src/main.cpp
     src/profiling/tracy.cpp
     src/api/llm_controller.cpp
+    src/api/tts_controller.cpp
     src/api/stream_event_formatter.cpp
     src/api/response_writer/response_writer.cpp
     src/api/response_writer/streaming_response_writer.cpp
+    src/api/response_writer/streaming_wav_response_writer.cpp
     src/api/response_writer/non_stream_response_writer.cpp
     src/api/health_controller.cpp
     src/api/info_controller.cpp
     src/api/openapi.cpp
     src/services/llm_service.cpp
-    src/services/reasoning_parser.cpp
-    src/services/deepseek_tool_call_parser.cpp
-    src/services/json_tool_call_parser.cpp
+    src/domain/prefix_cache/prefix_index.cpp
+    src/domain/prefix_cache/block_matcher.cpp
+    src/domain/prefix_cache/response_id_index.cpp
     src/services/session_manager.cpp
+    src/services/prefix_cache_router.cpp
+    src/services/session_resolution.cpp
+    src/services/decode_slot_reservation.cpp
     src/domain/session.cpp
     src/runtime/worker/single_process_worker.cpp
     src/runtime/worker/worker_manager.cpp
@@ -942,19 +1875,23 @@ set(SOURCES
     src/runtime/runners/sdxl/sdxl_runner.cpp
     src/runtime/runners/media_ipc_runner.cpp
     src/runtime/runners/image_ipc_runner.cpp
+    src/runtime/runners/blaze_runner/blaze_tts_runner.cpp
+    src/runtime/runners/blaze_runner/blaze_tts_scheduler_factory.cpp
     src/runtime/runners/sdxl/sdxl_generate_runner.cpp
     src/runtime/runners/sdxl/sdxl_image_to_image_runner.cpp
     src/runtime/runners/sdxl/sdxl_edit_runner.cpp
     src/runtime/runners/sdxl/sdxl_python_helpers.cpp
     src/services/image_service.cpp
+    src/services/tts_service.cpp
+    src/services/tts_request_preprocessor.cpp
     src/services/media_worker_scheduler.cpp
     src/utils/image_codec.cpp
+    src/utils/audio_codec.cpp
+    src/services/disaggregation_contract_mapping.cpp
     src/services/disaggregation_service.cpp
     src/services/llm_pipeline.cpp
     src/sockets/socket_manager.cpp
-    src/sockets/tcp_socket_transport.cpp
     src/sockets/zmq_socket_transport.cpp
-    src/sockets/socket_transport_factory.cpp
     src/sockets/inter_server_service.cpp
     src/metrics/metrics.cpp
     src/api/metrics_controller.cpp
@@ -962,10 +1899,16 @@ set(SOURCES
     src/runtime/worker/worker_metrics_shm.cpp
     src/runtime/worker/worker_metrics_aggregator.cpp
     src/runtime/worker/blaze_worker_metrics_renderer.cpp
-    src/dynamo/dynamo_protocol.cpp
+    src/dynamo/transport_protocol.cpp
+    src/dynamo/llm_mapping.cpp
+    src/dynamo/prefill_result_mapping.cpp
     src/dynamo/discovery.cpp
     src/dynamo/etcd_client.cpp
-    src/dynamo/dynamo_endpoint.cpp
+    src/dynamo/kube_client.cpp
+    src/dynamo/worker_server.cpp
+    src/dynamo/transport_server.cpp
+    src/dynamo/request_handler.cpp
+    src/telemetry/sentry_tracing.cpp
 )
 
 # Create executable
@@ -1003,6 +1946,8 @@ if(USE_EXTERNAL_FMT)
 else()
     target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon llm_runner_lib cereal::cereal spdlog::spdlog prometheus-cpp::core)
 endif()
+# Sentry distributed tracing
+target_link_libraries(${PROJECT_NAME} PRIVATE sentry)
 
 # Link ZeroMQ
 if(ZMQ_FOUND AND TARGET PkgConfig::ZMQ)
@@ -1026,6 +1971,9 @@ target_link_libraries(${PROJECT_NAME} PRIVATE pybind11::embed)
 
 # Tokenizer (requires Rust) and tokenizer_config (JsonCpp)
 target_link_libraries(${PROJECT_NAME} PRIVATE tokenizers_cpp JsonCpp::JsonCpp)
+
+# BLAKE3 for Dynamo MDC file checksums (src/dynamo/discovery.cpp)
+target_link_libraries(${PROJECT_NAME} PRIVATE blake3)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE stb_image_write)
 
@@ -1064,49 +2012,15 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
 endif()
 
 
-# Consumer executable (separate Drogon instance for Kafka consumption)
-if(KAFKA_ENABLED)
-    add_executable(tt_consumer
-        src/consumer_main.cpp
-    )
-    target_include_directories(tt_consumer PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-    )
-    target_link_libraries(tt_consumer PRIVATE
-        Drogon::Drogon
-        llm_runner_lib
-        migration_worker
-        messaging
-    )
-    if(USE_EXTERNAL_FMT)
-        target_link_libraries(tt_consumer PRIVATE spdlog::spdlog fmt::fmt)
-    else()
-        target_link_libraries(tt_consumer PRIVATE spdlog::spdlog)
-    endif()
-    target_compile_options(tt_consumer PRIVATE
-        -Wall
-        -Wextra
-        -Wpedantic
-    )
-endif()
-
 # AddressSanitizer for executables (must be after all add_executable calls)
 if(SANITIZE_ADDRESS)
     set(ASAN_FLAGS -fsanitize=address -fno-omit-frame-pointer -g)
     set(ASAN_TARGETS
         ${PROJECT_NAME}
-        scheduler_test
-        llm_runner_test
         sequence_test
         lockfree_queue_test
-        ipc_scheduler_smoke_test
         cancel_queue_test
-        cancellation_test
-        structured_output_test
     )
-    if(KAFKA_ENABLED)
-        list(APPEND ASAN_TARGETS tt_consumer)
-    endif()
     foreach(target IN LISTS ASAN_TARGETS)
         target_compile_options(${target} PRIVATE ${ASAN_FLAGS})
         target_link_options(${target} PRIVATE -fsanitize=address)

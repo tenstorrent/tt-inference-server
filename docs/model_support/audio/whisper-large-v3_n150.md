@@ -1,4 +1,4 @@
-# whisper-large-v3 Tenstorrent Support on N150/N300
+# whisper-large-v3 Tenstorrent Support on N150
 
 Supported weights variants for this model implementation are:
 
@@ -9,14 +9,17 @@ To use non-default weights, replace `whisper-large-v3` in commands below.
 
 #### Useful links
 
-- [N150/N300 details](https://tenstorrent.com/hardware/wormhole)
+- [N150 details](https://tenstorrent.com/hardware/wormhole)
 - [Search other audio models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
 `whisper-large-v3` is also supported on hardware:
 
 - [WH Galaxy](whisper-large-v3_galaxy.md)
+- [BH QuietBox 2](whisper-large-v3_p300x2.md)
+- [P150](whisper-large-v3_p150.md)
 - [WH LoudBox/QuietBox](whisper-large-v3_t3k.md)
+- [N300](whisper-large-v3_n300.md)
 
 ## Quickstart - Deploy whisper-large-v3 Inference Server on n150
 
@@ -38,29 +41,6 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Weights | [openai/whisper-large-v3](https://huggingface.co/openai/whisper-large-v3), [distil-whisper/distil-large-v3](https://huggingface.co/distil-whisper/distil-large-v3) |
 | Model Status | 🟢 Complete |
 | Max Batch Size | 1 |
-| Implementation Code | [whisper](https://github.com/tenstorrent/tt-metal/tree/bac8b34/models/demos/whisper) |
-| tt-metal Commit | `bac8b34` |
-| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.11.1-bac8b34` |
-
----
-
-## N300 Configuration
-
-### Quickstart - Deploy on n300
-
-**via run.py command**
-
-```bash
-python3 run.py --model whisper-large-v3 --device n300 --workflow server --docker-server
-```
-
-### Model Parameters
-
-| Parameter | Value |
-|-----------|-------|
-| Weights | [openai/whisper-large-v3](https://huggingface.co/openai/whisper-large-v3), [distil-whisper/distil-large-v3](https://huggingface.co/distil-whisper/distil-large-v3) |
-| Model Status | 🟢 Complete |
-| Max Batch Size | 1 |
-| Implementation Code | [whisper](https://github.com/tenstorrent/tt-metal/tree/bac8b34/models/demos/whisper) |
-| tt-metal Commit | `bac8b34` |
-| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.11.1-bac8b34` |
+| Implementation Code | [whisper](https://github.com/tenstorrent/tt-metal/tree/8c48a10/models/demos/whisper) |
+| tt-metal Commit | `8c48a10` |
+| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.17.0-8c48a10` |
