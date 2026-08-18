@@ -72,6 +72,20 @@ jobs:
     env:
       PYTHONPATH: ${{ github.workspace }}
     steps:
+      # Refuse to run from anywhere but the sanctioned release branches. Runs
+      # first (before checkout) so a wrong branch (e.g. main) fails immediately.
+      - name: "Guard: allowed release branch only"
+        env:
+          REF: ${{ github.ref_name }}
+        run: |
+          case "$REF" in
+            stable | vcankovic/stable-automated-release-pipeline | vcankovic/automated-release-pipeline)
+              echo "Branch '$REF' is allowed — proceeding." ;;
+            *)
+              echo "::error::Release automation may only run from 'stable', 'vcankovic/stable-automated-release-pipeline', or 'vcankovic/automated-release-pipeline'. Refusing to run on '$REF'."
+              exit 1 ;;
+          esac
+
       - name: Checkout
         uses: actions/checkout@v5
         with:
