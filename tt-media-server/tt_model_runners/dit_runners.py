@@ -1333,7 +1333,11 @@ class TTMiniMaxH3Runner(TTDiTRunner):
             raise
         # Upstream auto-enables denoise trace-capture only for the quad galaxy; enable it for our
         # small mesh too (eager denoise is host-dispatch-bound). First gen per (shape, steps) captures.
-        if getattr(pipe, "trace_denoise", None) is False and not is_large_mesh(mesh):
+        if (
+            os.environ.get("H3_TRACE_DENOISE", "0") == "1"
+            and getattr(pipe, "trace_denoise", None) is False
+            and not is_large_mesh(mesh)
+        ):
             pipe.trace_denoise = True
             self.logger.info(
                 f"Device {self.device_id}: enabled denoise trace-capture for mesh {mesh}"
