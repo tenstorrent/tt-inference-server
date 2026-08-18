@@ -72,10 +72,10 @@ class RecordingTtsScheduler final : public sched::ITtsScheduler {
  */
 class TokenEmittingTtsScheduler final : public sched::ITtsScheduler {
  public:
-  static constexpr uint32_t kCodecTokens = 5;
+  static constexpr uint32_t K_CODEC_TOKENS = 5;
   /** Tokens the runner counts per request: the codec tokens plus the terminal
    *  one, which the engine stamps on a real token rather than a sentinel. */
-  static constexpr uint32_t kCountedTokens = kCodecTokens + 1;
+  static constexpr uint32_t K_COUNTED_TOKENS = K_CODEC_TOKENS + 1;
 
   void start() override {}
   void stop() override {}
@@ -99,7 +99,7 @@ class TokenEmittingTtsScheduler final : public sched::ITtsScheduler {
     response.slotId = request.slotId;
     responses.push_back(response);
 
-    for (uint32_t i = 0; i < kCodecTokens; ++i) {
+    for (uint32_t i = 0; i < K_CODEC_TOKENS; ++i) {
       tokens.push_back({.requestId = request.requestId,
                         .taskId = request.taskId,
                         .slotId = request.slotId,
@@ -109,7 +109,7 @@ class TokenEmittingTtsScheduler final : public sched::ITtsScheduler {
     tokens.push_back({.requestId = request.requestId,
                       .taskId = request.taskId,
                       .slotId = request.slotId,
-                      .tokenId = kCodecTokens,
+                      .tokenId = K_CODEC_TOKENS,
                       .final = true});
 
     sched::AudioOutput audioOut;
@@ -162,15 +162,16 @@ class TokenEmittingTtsScheduler final : public sched::ITtsScheduler {
  */
 class BatchedAudioTtsScheduler final : public sched::ITtsScheduler {
  public:
-  static constexpr size_t kStreams = 2;
-  static constexpr size_t kChunksPerStream = 2;
-  static constexpr size_t kFramesPerChunk = 240;
+  static constexpr size_t K_STREAMS = 2;
+  static constexpr size_t K_CHUNKS_PER_STREAM = 2;
+  static constexpr size_t K_FRAMES_PER_CHUNK = 240;
   // Deliberately stereo: samplesBf16 is interleaved, so the runner has to
   // divide by the channel count to arrive at frames.
-  static constexpr uint16_t kChannels = 2;
+  static constexpr uint16_t K_CHANNELS = 2;
 
-  static constexpr uint64_t kExpectedChunks = kStreams * kChunksPerStream;
-  static constexpr uint64_t kExpectedFrames = kExpectedChunks * kFramesPerChunk;
+  static constexpr uint64_t K_EXPECTED_CHUNKS = K_STREAMS * K_CHUNKS_PER_STREAM;
+  static constexpr uint64_t K_EXPECTED_FRAMES =
+      K_EXPECTED_CHUNKS * K_FRAMES_PER_CHUNK;
 
   void start() override {}
   void stop() override {}
@@ -201,19 +202,19 @@ class BatchedAudioTtsScheduler final : public sched::ITtsScheduler {
                             .tokenId = 0,
                             .final = true});
 
-    for (size_t chunk = 0; chunk < kChunksPerStream; ++chunk) {
+    for (size_t chunk = 0; chunk < K_CHUNKS_PER_STREAM; ++chunk) {
       sched::AudioOutput audioOut;
       audioOut.requestId = request.requestId;
       audioOut.taskId = request.taskId;
       audioOut.slotId = request.slotId;
       audioOut.chunkIndex = static_cast<uint32_t>(chunk);
-      audioOut.channels = kChannels;
-      audioOut.samplesBf16.assign(kFramesPerChunk * kChannels, 0);
-      audioOut.last = chunk == kChunksPerStream - 1;
+      audioOut.channels = K_CHANNELS;
+      audioOut.samplesBf16.assign(K_FRAMES_PER_CHUNK * K_CHANNELS, 0);
+      audioOut.last = chunk == K_CHUNKS_PER_STREAM - 1;
       stagedAudio.push_back(std::move(audioOut));
     }
 
-    if (++submits == kStreams) {
+    if (++submits == K_STREAMS) {
       for (auto& token : stagedTokens) tokens.push_back(std::move(token));
       for (auto& chunk : stagedAudio) audio.push_back(std::move(chunk));
       stagedTokens.clear();
@@ -366,7 +367,7 @@ TEST(BlazeTtsRunnerIntegrationTest, PublishesCodecTokensPerVoiceSource) {
   taskQueue.shutdown();
   runnerThread.join();
 
-  const uint32_t expected = TokenEmittingTtsScheduler::kCountedTokens;
+  const uint32_t expected = TokenEmittingTtsScheduler::K_COUNTED_TOKENS;
   EXPECT_EQ(shm->loadScratch(0, tts_layout::codecTokensIdx(
                                     tts_layout::VoiceSource::Default)),
             expected);
@@ -395,7 +396,7 @@ TEST(BlazeTtsRunnerIntegrationTest, PublishesVocodedAudioPerBatchBucket) {
       0, tt::worker::MetricsLayout::TTS_RUNNER);
 
   config::TtsConfig config;
-  config.maxUsers = Scheduler::kStreams;
+  config.maxUsers = Scheduler::K_STREAMS;
   config.taskQueueCapacity = 4;
   config.audioQueueCapacity = 16;
   config.audioSampleRateHz = 24000;
@@ -422,10 +423,10 @@ TEST(BlazeTtsRunnerIntegrationTest, PublishesVocodedAudioPerBatchBucket) {
   // attributed to the two-stream bucket and no other bucket is touched.
   EXPECT_EQ(shm->loadScratch(
                 0, tts_layout::audioFramesIdx(tts_layout::BatchBucket::B2)),
-            Scheduler::kExpectedFrames);
+            Scheduler::K_EXPECTED_FRAMES);
   EXPECT_EQ(shm->loadScratch(
                 0, tts_layout::vocoderChunksIdx(tts_layout::BatchBucket::B2)),
-            Scheduler::kExpectedChunks);
+            Scheduler::K_EXPECTED_CHUNKS);
   EXPECT_EQ(shm->loadScratch(
                 0, tts_layout::audioFramesIdx(tts_layout::BatchBucket::B1)),
             0u);

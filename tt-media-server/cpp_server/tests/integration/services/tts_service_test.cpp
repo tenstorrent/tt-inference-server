@@ -43,22 +43,23 @@ namespace {
 
 namespace tts_domain = tt::domain::tts;
 
-constexpr size_t kWorkerCount = 1;
+constexpr size_t K_WORKER_COUNT = 1;
 
 // Worker-side conditioning timings planted on the terminal message. Exact and
 // distinct so the microsecond-to-second conversion is pinned by value, not just
 // asserted to have happened.
-constexpr uint32_t kVoiceEncodeUs = 250000;
-constexpr double kVoiceEncodeSeconds = 0.25;
-constexpr uint32_t kPromptCompileUs = 1500;
-constexpr double kPromptCompileSeconds = 0.0015;
+constexpr uint32_t K_VOICE_ENCODE_US = 250000;
+constexpr double K_VOICE_ENCODE_SECONDS = 0.25;
+constexpr uint32_t K_PROMPT_COMPILE_US = 1500;
+constexpr double K_PROMPT_COMPILE_SECONDS = 0.0015;
 
 // Exposition series the TTS dashboard queries. Spelled out rather than derived
 // from the production label helpers so renaming a stage fails here.
-constexpr const char* kConditioningCount = "tt_tts_conditioning_seconds_count";
-constexpr const char* kConditioningSum = "tt_tts_conditioning_seconds_sum";
-constexpr const char* kRequestCount = "tt_tts_request_duration_seconds_count";
-constexpr const char* kRequestSum = "tt_tts_request_duration_seconds_sum";
+constexpr const char* K_CONDITIONING_COUNT =
+    "tt_tts_conditioning_seconds_count";
+constexpr const char* K_CONDITIONING_SUM = "tt_tts_conditioning_seconds_sum";
+constexpr const char* K_REQUEST_COUNT = "tt_tts_request_duration_seconds_count";
+constexpr const char* K_REQUEST_SUM = "tt_tts_request_duration_seconds_sum";
 
 /**
  * Env the TTS stack reads once and caches. MODEL_SERVICE decides which IPC
@@ -116,19 +117,19 @@ struct MetricsSnapshot {
         tt::metrics::ServerMetrics::instance().renderText();
     MetricsSnapshot snapshot;
     snapshot.textConditioning =
-        metricValue(text, kConditioningCount, "stage=\"text_conditioning\"");
-    snapshot.voiceNormalization =
-        metricValue(text, kConditioningCount, "stage=\"voice_normalization\"");
+        metricValue(text, K_CONDITIONING_COUNT, "stage=\"text_conditioning\"");
+    snapshot.voiceNormalization = metricValue(text, K_CONDITIONING_COUNT,
+                                              "stage=\"voice_normalization\"");
     snapshot.voiceEncode =
-        metricValue(text, kConditioningCount, "stage=\"voice_encode\"");
+        metricValue(text, K_CONDITIONING_COUNT, "stage=\"voice_encode\"");
     snapshot.promptCompile =
-        metricValue(text, kConditioningCount, "stage=\"prompt_compile\"");
+        metricValue(text, K_CONDITIONING_COUNT, "stage=\"prompt_compile\"");
     snapshot.voiceEncodeSeconds =
-        metricValue(text, kConditioningSum, "stage=\"voice_encode\"");
+        metricValue(text, K_CONDITIONING_SUM, "stage=\"voice_encode\"");
     snapshot.promptCompileSeconds =
-        metricValue(text, kConditioningSum, "stage=\"prompt_compile\"");
-    snapshot.requests = metricValue(text, kRequestCount, "model_name=");
-    snapshot.requestSeconds = metricValue(text, kRequestSum, "model_name=");
+        metricValue(text, K_CONDITIONING_SUM, "stage=\"prompt_compile\"");
+    snapshot.requests = metricValue(text, K_REQUEST_COUNT, "model_name=");
+    snapshot.requestSeconds = metricValue(text, K_REQUEST_SUM, "model_name=");
     return snapshot;
   }
 };
@@ -156,13 +157,13 @@ class FinishSignal {
 
   std::optional<tts_domain::TtsFinishReason> wait() {
     std::unique_lock<std::mutex> lock(mutex);
-    signalled.wait_for(lock, kTimeout,
+    signalled.wait_for(lock, K_TIMEOUT,
                        [this] { return finishReason.has_value(); });
     return finishReason;
   }
 
  private:
-  static constexpr std::chrono::seconds kTimeout{5};
+  static constexpr std::chrono::seconds K_TIMEOUT{5};
 
   std::mutex mutex;
   std::condition_variable signalled;
@@ -184,7 +185,7 @@ tts_domain::TtsRequest voiceSampleRequest(uint32_t taskId) {
 
 class TtsServiceMetricsTest : public ::testing::Test {
  protected:
-  static constexpr std::chrono::seconds kReadyTimeout{10};
+  static constexpr std::chrono::seconds K_READY_TIMEOUT{10};
 
   void SetUp() override {
     config::TtsConfig config;
@@ -195,18 +196,18 @@ class TtsServiceMetricsTest : public ::testing::Test {
     config.tokenizerPath.clear();
 
     auto queues = std::make_unique<tt::ipc::tts::TtsQueueSet>(
-        static_cast<int>(kWorkerCount), config);
+        static_cast<int>(K_WORKER_COUNT), config);
     // The test plays the worker on this queue, pushing the terminal messages a
     // real BlazeTtsRunner would send with its conditioning timings attached.
     audioQueue = queues->audioQueues.front().get();
     service = std::make_unique<TtsService>(
-        config, std::make_unique<tt::worker::WorkerManager>(kWorkerCount),
+        config, std::make_unique<tt::worker::WorkerManager>(K_WORKER_COUNT),
         std::move(queues));
     service->start();
 
     // generate() is gated on isModelReady(), which flips once the stand-in
     // worker subprocess (see main below) has signalled warmup.
-    const auto deadline = std::chrono::steady_clock::now() + kReadyTimeout;
+    const auto deadline = std::chrono::steady_clock::now() + K_READY_TIMEOUT;
     while (!service->isModelReady() &&
            std::chrono::steady_clock::now() < deadline) {
       std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -257,7 +258,7 @@ TEST_F(TtsServiceMetricsTest, ObservesMainAndWorkerConditioningStages) {
   const auto before = MetricsSnapshot::read();
 
   auto signal = submitVoiceRequest(1);
-  pushTerminalMessage(1, kVoiceEncodeUs, kPromptCompileUs);
+  pushTerminalMessage(1, K_VOICE_ENCODE_US, K_PROMPT_COMPILE_US);
   ASSERT_EQ(signal->wait(), tts_domain::TtsFinishReason::Completed);
 
   const auto after = MetricsSnapshot::read();
@@ -271,9 +272,9 @@ TEST_F(TtsServiceMetricsTest, ObservesMainAndWorkerConditioningStages) {
   EXPECT_EQ(after.voiceEncode - before.voiceEncode, 1.0);
   EXPECT_EQ(after.promptCompile - before.promptCompile, 1.0);
   EXPECT_NEAR(after.voiceEncodeSeconds - before.voiceEncodeSeconds,
-              kVoiceEncodeSeconds, 1e-9);
+              K_VOICE_ENCODE_SECONDS, 1e-9);
   EXPECT_NEAR(after.promptCompileSeconds - before.promptCompileSeconds,
-              kPromptCompileSeconds, 1e-9);
+              K_PROMPT_COMPILE_SECONDS, 1e-9);
 
   // The denominator that makes conditioning readable as a share of engine time.
   EXPECT_EQ(after.requests - before.requests, 1.0);
@@ -314,7 +315,7 @@ TEST_F(TtsServiceMetricsTest, IgnoresTerminalMessageForCancelledRequest) {
   // The worker does not learn about a cancel it has already raced past, so its
   // terminal message still arrives, timings and all. A client abort ends the
   // request at an arbitrary point, so none of it describes engine time.
-  pushTerminalMessage(1, kVoiceEncodeUs, kPromptCompileUs);
+  pushTerminalMessage(1, K_VOICE_ENCODE_US, K_PROMPT_COMPILE_US);
   runBarrierRequest(2);
 
   const auto after = MetricsSnapshot::read();
@@ -332,13 +333,13 @@ TEST_F(TtsServiceMetricsTest, ObservesAFinishedRequestOnlyOnce) {
   const auto before = MetricsSnapshot::read();
 
   auto signal = submitVoiceRequest(1);
-  pushTerminalMessage(1, kVoiceEncodeUs, kPromptCompileUs);
+  pushTerminalMessage(1, K_VOICE_ENCODE_US, K_PROMPT_COMPILE_US);
   ASSERT_EQ(signal->wait(), tts_domain::TtsFinishReason::Completed);
 
   // A second terminal message for the same task — a worker retry, or a replay
   // out of the audio queue — finds no in-flight entry and must not observe the
   // request again; double counting here would inflate every conditioning share.
-  pushTerminalMessage(1, kVoiceEncodeUs, kPromptCompileUs);
+  pushTerminalMessage(1, K_VOICE_ENCODE_US, K_PROMPT_COMPILE_US);
   runBarrierRequest(2);
 
   const auto after = MetricsSnapshot::read();
@@ -349,7 +350,7 @@ TEST_F(TtsServiceMetricsTest, ObservesAFinishedRequestOnlyOnce) {
   // The barrier ran neither worker stage, so these see only the first request.
   EXPECT_EQ(after.voiceEncode - before.voiceEncode, 1.0);
   EXPECT_NEAR(after.voiceEncodeSeconds - before.voiceEncodeSeconds,
-              kVoiceEncodeSeconds, 1e-9);
+              K_VOICE_ENCODE_SECONDS, 1e-9);
 }
 
 }  // namespace
