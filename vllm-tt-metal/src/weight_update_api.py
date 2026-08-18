@@ -186,12 +186,13 @@ def _engine_client(request: Request):
 async def _apply_weight_update(engine_client: Any, body: WeightUpdateRequest) -> list:
     """Run the worker-side weight swap and return the raw per-worker results."""
     try:
+        # Matches the reshaped worker contract update_weights(update_info: dict).
+        # sender_rank belongs to init_weight_transfer_engine(init_info), not here;
+        # this route therefore requires a prior /init_weight_transfer_engine (native
+        # path) to have stood up the device-socket bridge.
         results = await engine_client.collective_rpc(
             "update_weights",
-            kwargs={
-                "sender_rank": body.sender_rank,
-                "hf_rope": body.hf_rope,
-            },
+            kwargs={"update_info": {"hf_rope": body.hf_rope}},
         )
     except NotImplementedError as exc:
         raise HTTPException(status_code=501, detail=str(exc))
@@ -377,10 +378,11 @@ def install() -> None:
         # /resume and the legacy /v1/internal/weights/* router + admission gate
         # above can be retired.
         _mount_native_rl_routes(self)
-        # Surface sampled completion token_ids on /v1/completions so RL rollouts
-        # are token-native (no lossy detokenize/retokenize). See the block above;
-        # disable at a moment's notice with TT_RETURN_COMPLETION_TOKEN_IDS=0.
-        _patch_completion_response_token_ids()
+        # NOTE: token-native rollouts (sampled completion token_ids on
+        # /v1/completions) are handled by vLLM itself at the pinned commit --
+        # the trainer sets ``return_token_ids: true`` and the stock serving layer
+        # populates ``CompletionResponseChoice.token_ids`` from
+        # ``output.token_ids`` (independent of logprobs). No monkeypatch needed.
 
     __init___with_weight_update._tt_weight_update_patched = True  # type: ignore[attr-defined]
     fastapi.FastAPI.__init__ = __init___with_weight_update

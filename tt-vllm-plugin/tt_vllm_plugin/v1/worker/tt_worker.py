@@ -12,7 +12,7 @@ import ttnn
 
 from vllm.config import VllmConfig
 from vllm.logger import init_logger
-from vllm.utils import STR_DTYPE_TO_TORCH_DTYPE
+from vllm.utils.torch_utils import STR_DTYPE_TO_TORCH_DTYPE
 from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheConfig, KVCacheSpec
 from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.worker.worker_base import WorkerBase
@@ -557,7 +557,6 @@ class TTWorker(WorkerBase):
                 req_ids=[],
                 req_id_to_index={},
                 sampled_token_ids=[],
-                spec_token_ids=None,
                 logprobs=None,
                 prompt_logprobs_dict={},
                 pooler_output=[],

@@ -35,9 +35,14 @@ def _method_accepts_param(method, param_name: str) -> bool:
 
 class TTModelLoader(BaseModelLoader):
     def load_model(
-        self, vllm_config: VllmConfig, model_config: ModelConfig
+        self, vllm_config: VllmConfig, model_config: ModelConfig, prefix: str = ""
     ) -> nn.Module:
-        """Load a model with the given configurations."""
+        """Load a model with the given configurations.
+
+        ``prefix`` is accepted to match vLLM 7678b70's
+        ``BaseModelLoader.load_model(self, vllm_config, model_config, prefix="")``
+        signature; it is unused by the TT loader.
+        """
 
         logger.info("Loading model on TT platform...")
 

@@ -10,9 +10,9 @@ import torch.nn as nn
 
 from vllm.config import VllmConfig
 from vllm.logger import init_logger
-from vllm.multimodal.inputs import MultiModalKwargs
+from vllm.multimodal.inputs import MultiModalKwargsItems as MultiModalKwargs
 from vllm.sequence import IntermediateTensors
-from vllm.utils import LayerBlockType, cdiv
+from vllm.utils.math_utils import cdiv
 from vllm.v1.kv_cache_interface import AttentionSpec, KVCacheConfig
 from vllm.v1.outputs import (
     EMPTY_MODEL_RUNNER_OUTPUT,
@@ -196,7 +196,7 @@ class TTModelRunner:
         )
         dtype = kv_cache_spec.dtype
         num_layers = model_config.get_num_layers_by_block_type(
-            self.parallel_config, LayerBlockType.attention
+            self.parallel_config, "attention"
         )
 
         # Allocate KV cache tensors.
@@ -285,17 +285,19 @@ class TTModelRunner:
             req_state = self.requests[req_id]
             num_computed_tokens = req_data.num_computed_tokens[i]
             new_block_ids = req_data.new_block_ids[i]
-            resumed_from_preemption = req_data.resumed_from_preemption[i]
+            resumed_from_preemption = req_id in req_data.resumed_req_ids
 
             # Update the cached states.
             req_state.num_computed_tokens = num_computed_tokens
             if not resumed_from_preemption:
-                # Append the new blocks to the existing block IDs.
-                for block_ids, new_ids in zip(req_state.block_ids, new_block_ids):
-                    block_ids.extend(new_ids)
+                if new_block_ids is not None:
+                    # Append the new blocks to the existing block IDs.
+                    for block_ids, new_ids in zip(req_state.block_ids, new_block_ids):
+                        block_ids.extend(new_ids)
             else:
                 # The request is resumed from preemption.
                 # Replace the existing block IDs with the new ones.
+                assert new_block_ids is not None
                 req_state.block_ids = new_block_ids
 
             req_index = self.input_batch.req_id_to_index.get(req_id)
@@ -308,7 +310,8 @@ class TTModelRunner:
 
             # Update the persistent batch.
             self.input_batch.num_computed_tokens_cpu[req_index] = num_computed_tokens
-            self.input_batch.block_table.append_row(new_block_ids, req_index)
+            if new_block_ids is not None:
+                self.input_batch.block_table.append_row(new_block_ids, req_index)
 
         # Add the new or resumed requests to the persistent batch.
         # The smaller empty indices are filled first.
@@ -1394,7 +1397,6 @@ class TTModelRunner:
             req_ids=self.input_batch.req_ids,
             req_id_to_index=self.input_batch.req_id_to_index,
             sampled_token_ids=sampled_token_ids.tolist(),
-            spec_token_ids=None,
             logprobs=None,
             prompt_logprobs_dict=prompt_logprobs_dict,
             pooler_output=[],
