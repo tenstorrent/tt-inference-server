@@ -128,14 +128,8 @@ ENV PYTHON_ENV_DIR="${APP_DIR}/server/venv-worker"
 ENV ADAPTER_MERGE_VENV_DIR="${APP_DIR}/server/merge-venv"
 ENV ADAPTER_MERGE_PYTHON="${ADAPTER_MERGE_VENV_DIR}/bin/python"
 COPY "tt-vllm-plugin/pyproject.toml" "/tmp/tt-vllm-plugin-pyproject.toml"
-RUN python3.12 -m venv "${ADAPTER_MERGE_VENV_DIR}" \
-    && "${ADAPTER_MERGE_VENV_DIR}/bin/pip" install --no-cache-dir --upgrade pip \
-    && TRANSFORMERS_SPEC="$(python3.12 -c "import re, tomllib; deps = tomllib.load(open('/tmp/tt-vllm-plugin-pyproject.toml', 'rb'))['project']['dependencies']; print(next(d for d in deps if re.match(r'transformers([=<>!~ ]|\$)', d)))")" \
-    && PEFT_SPEC="$(sed -nE 's/^[[:space:]]*(peft[^#[:space:]]*).*/\1/p' "${APP_DIR}/server/tt_model_runners/forge_runners/requirements.txt" | head -1)" \
-    && echo "Merge venv pins -> transformers (tt-vllm-plugin): ${TRANSFORMERS_SPEC} | peft (forge): ${PEFT_SPEC}" \
-    && "${ADAPTER_MERGE_VENV_DIR}/bin/pip" install --no-cache-dir \
-        -r "${APP_DIR}/server/adapter_merge_requirements.txt" \
-        "${TRANSFORMERS_SPEC}" "${PEFT_SPEC}"
+RUN bash "${APP_DIR}/server/scripts/build_merge_venv.sh" \
+    "${ADAPTER_MERGE_VENV_DIR}" "/tmp/tt-vllm-plugin-pyproject.toml"
 
 # spinup inference server
 WORKDIR "${APP_DIR}"

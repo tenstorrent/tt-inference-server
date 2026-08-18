@@ -23,7 +23,7 @@ from config.settings import get_settings
 from domain.adapter_merge_request import AdapterMergeRequest
 from domain.training_request import TrainingRequest
 from typing import Optional
-from utils.adapter_merge_utils import MergeResult, run_merge_subprocess
+from utils.adapter_merge_utils import run_merge_subprocess
 
 
 MERGE_INFO_FILE_NAME = "merge_info.json"
@@ -162,7 +162,7 @@ class TrainingService(BaseJobService):
             self.logger.info(f"Starting adapter merge for job {request._task_id}")
             loop = asyncio.get_running_loop()
             try:
-                result = await loop.run_in_executor(
+                await loop.run_in_executor(
                     None,
                     functools.partial(
                         run_merge_subprocess,
@@ -178,12 +178,12 @@ class TrainingService(BaseJobService):
                 raise
             # Written last, in the parent, so its presence marks the checkpoint
             # fully complete and records provenance for `list_merged_checkpoints`.
-            self._write_merge_info(request, result)
+            self._write_merge_info(request)
             self.logger.info(
                 f"Completed adapter merge for job {request._task_id}: "
-                f"{result.output_dir}"
+                f"{request._output_model_path}"
             )
-            return result.output_dir
+            return request._output_model_path
 
     def _merge_python_executable(self) -> str:
         """Interpreter that runs the merge: the transformers-4.x merge venv.
@@ -215,19 +215,14 @@ class TrainingService(BaseJobService):
                 f"Refusing to delete path outside merged-models root: {path!r}"
             )
 
-    def _write_merge_info(
-        self, request: AdapterMergeRequest, result: MergeResult
-    ) -> None:
+    def _write_merge_info(self, request: AdapterMergeRequest) -> None:
         info = {
             "merge_id": request._task_id,
             "model": self._base_model_hf_repo_id,
-            # Pins which base revision the merged checkpoint inherited its
-            # config and tokenizer from.
-            "base_revision": result.base_revision,
             "source_job_id": request.source_job_id,
             "checkpoint_id": request.checkpoint_id,
             "created_at": time.time(),
         }
-        info_path = os.path.join(result.output_dir, MERGE_INFO_FILE_NAME)
+        info_path = os.path.join(request._output_model_path, MERGE_INFO_FILE_NAME)
         with open(info_path, "w") as f:
             json.dump(info, f)

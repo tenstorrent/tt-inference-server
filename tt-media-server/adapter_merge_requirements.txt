@@ -1,0 +1,16 @@
+# Dependencies for the LoRA adapter -> base model merge
+# (utils/adapter_merge_utils.py), installed into a dedicated CPU-only venv.
+#
+# NOTE: `transformers` and `peft` are deliberately NOT pinned here; the
+# Dockerfile injects them from their sources of truth so this venv never drifts:
+#   - transformers  <- tt-vllm-plugin/pyproject.toml (the version vLLM serves with)
+#   - peft          <- forge_runners/requirements.txt (the version that WROTE the
+#                      adapter, so its adapter_config.json is read back by the
+#                      same peft that produced it)
+# The load-test gate then reloads the merged result under that transformers
+# before it is marked servable.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
+accelerate
+huggingface_hub
+colorama
