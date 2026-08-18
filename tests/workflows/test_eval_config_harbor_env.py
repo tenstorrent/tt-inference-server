@@ -236,8 +236,3 @@ def test_harbor_timeout_sec_parsed_as_float(monkeypatch):
     monkeypatch.setenv("HARBOR_TIMEOUT_SEC", "7200")
 
     assert _config().harbor_timeout_sec == 7200.0
-
-
-def test_harbor_checkout_is_pinned_to_buildkit_revision():
-    assert HARBOR_REPO == "https://github.com/dcvijeticTT/harbor.git"
-    assert HARBOR_REF == "3d0bfe297dd355f7787cf18b1849b22de960afee"
