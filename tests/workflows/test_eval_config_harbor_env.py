@@ -32,7 +32,7 @@ def _config(**overrides) -> TerminalBenchEvalConfig:
 
 def test_harbor_checkout_uses_reachable_prebuilt_mirror_revision():
     assert HARBOR_REPO == "https://github.com/dcvijeticTT/harbor.git"
-    assert HARBOR_REF == "c2de0b7a5e47c2863014da346ff7c30879a4204c"
+    assert HARBOR_REF == "a7f80f9baf674909b98da952e102b37b0a846b0d"
 
 
 def test_defaults_to_docker_with_no_env(monkeypatch):
