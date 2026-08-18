@@ -4389,6 +4389,10 @@ _eval_config_list = [
                     agent_kwargs={
                         "parser_name": "json",
                         "temperature": 1.0,
+                        # First-class terminus-2 constructor arg, forwarded to
+                        # LiteLLM explicitly -- do NOT put it in llm_kwargs or
+                        # LiteLLM() gets it twice (TypeError: multiple values).
+                        "reasoning_effort": "high",
                         "model_info": {
                             # The agent sends ~max_input + max_output per
                             # request; keep the sum below max_context (131072)
@@ -4401,9 +4405,15 @@ _eval_config_list = [
                             "max_output_tokens": 32 * 1024,
                         },
                         "llm_kwargs": {
-                            "reasoning_effort": "high",
                             "max_tokens": 32 * 1024,
                             "timeout": 60 * 60,
+                            # litellm merges extra_body verbatim into the
+                            # request body, so this survives drop_params --
+                            # the constructor arg above is silently dropped
+                            # for openai-provider models litellm doesn't
+                            # recognize as reasoning-capable, and never
+                            # reaches the server.
+                            "extra_body": {"reasoning_effort": "high"},
                         },
                     },
                     task_names_map={
@@ -4426,7 +4436,7 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=12.8,  # no public tau3-banking score for gpt-oss-120b
                     published_score_ref="https://artificialanalysis.ai/evaluations/tau3-banking?models=gpt-oss-120b",
-                    gpu_reference_score=12.8,  # TODO: MEASURE THIS https://github.com/tenstorrent/tt-inference-server/issues/1322
+                    gpu_reference_score=7.2,  # TODO: MEASURE THIS https://github.com/tenstorrent/tt-inference-server/issues/1322
                     gpu_reference_score_ref="TBD",
                     score_func=score_task_single_key,
                     score_func_kwargs={
@@ -4451,6 +4461,16 @@ _eval_config_list = [
                     agent_kwargs={
                         "tau2_trial_index": 0,
                         "temperature": 1.0,
+                        # First-class Tau3LLMAgent constructor arg, forwarded
+                        # as --reasoning-effort into the runner's litellm args
+                        # (env fallback: TAU3_AGENT_REASONING_EFFORT).
+                        "reasoning_effort": "high",
+                        # The runner sets litellm.drop_params=True, which
+                        # silently drops reasoning_effort for openai-provider
+                        # models litellm doesn't recognize as reasoning-capable.
+                        # extra_body is merged verbatim into the request body,
+                        # so this actually reaches the server.
+                        "llm_args_json": '{"extra_body": {"reasoning_effort": "high"}}',
                         "max_steps": 200,
                         # Default is 120s; a single reasoning user-sim turn under
                         # load can exceed that and trip an MCP request timeout.
@@ -4467,6 +4487,16 @@ _eval_config_list = [
                     # substitutes those from the launching shell env.
                     environment_env={
                         "TAU2_USER_MODEL": "openai/openai/gpt-oss-120b",
+                        # Default is "low" (task-template docker-compose).
+                        "TAU2_USER_REASONING_EFFORT": "high",
+                        # tau2's llm_utils sets litellm.drop_params=True, which
+                        # silently drops reasoning_effort for openai-provider
+                        # models litellm doesn't recognize as reasoning-capable.
+                        # This override REPLACES the env-derived user llm args
+                        # (server.py _build_user_llm_args), so it must carry the
+                        # effort itself; extra_body is merged verbatim into the
+                        # request body and actually reaches the server.
+                        "TAU2_USER_LLM_ARGS_JSON": '{"reasoning_effort": "high", "extra_body": {"reasoning_effort": "high"}}',
                     },
                     verifier_env={
                         "TAU2_NL_ASSERTIONS_MODEL": "openai/openai/gpt-oss-120b",
@@ -4484,51 +4514,51 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 3,
                 },
             ),
-            EvalTask(
-                task_name="swe_bench_verified",
-                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
-                score=EvalTaskScore(
-                    published_score=62.4,  # SWE-bench Verified (reasoning high)
-                    published_score_ref="https://cdn.openai.com/pdf/419b6906-9da6-406c-a19d-1bb078ac7637/oai_gpt-oss_model_card.pdf",
-                    gpu_reference_score=62.4,  # TODO: MEASURE THIS https://github.com/tenstorrent/tt-inference-server/issues/1322
-                    gpu_reference_score_ref="DUMMY VALUE",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": ["accuracy"],
-                        "unit": "percent",
-                    },
-                ),
-                swebench_eval_config=SWEbenchEvalConfig(
-                    dataset_name="SWE-bench/SWE-bench_Verified",
-                    sweagent_subset="verified",
-                    dataset_split="test",
-                    agent_backend="mini-swe-agent",
-                    n_concurrent_trials=38,
-                    max_workers=24,
-                    n_tasks=None,
-                    temperature=1.0,
-                    top_p=1.0,
-                    # max_context is 131072; input + output budgets must sum
-                    # strictly below it (see terminal_bench_2_1 note above).
-                    max_input_tokens=96 * 1024,
-                    max_output_tokens=32 * 1024,
-                    completion_kwargs={
-                        "reasoning_effort": "high",
-                    },
-                    instance_ids_map={
-                        EvalLimitMode.CI_NIGHTLY: [
-                            "django__django-12143",
-                            "pytest-dev__pytest-5262",
-                            "django__django-14672",
-                            "sympy__sympy-13551",
-                            "sphinx-doc__sphinx-9281",
-                        ],
-                    },
-                ),
-                limit_samples_map={
-                    EvalLimitMode.SMOKE_TEST: 5,
-                },
-            ),
+            # EvalTask(
+            #     task_name="swe_bench_verified",
+            #     workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+            #     score=EvalTaskScore(
+            #         published_score=62.4,  # SWE-bench Verified (reasoning high)
+            #         published_score_ref="https://cdn.openai.com/pdf/419b6906-9da6-406c-a19d-1bb078ac7637/oai_gpt-oss_model_card.pdf",
+            #         gpu_reference_score=62.4,  # TODO: MEASURE THIS https://github.com/tenstorrent/tt-inference-server/issues/1322
+            #         gpu_reference_score_ref="DUMMY VALUE",
+            #         score_func=score_task_single_key,
+            #         score_func_kwargs={
+            #             "result_keys": ["accuracy"],
+            #             "unit": "percent",
+            #         },
+            #     ),
+            #     swebench_eval_config=SWEbenchEvalConfig(
+            #         dataset_name="SWE-bench/SWE-bench_Verified",
+            #         sweagent_subset="verified",
+            #         dataset_split="test",
+            #         agent_backend="mini-swe-agent",
+            #         n_concurrent_trials=38,
+            #         max_workers=24,
+            #         n_tasks=None,
+            #         temperature=1.0,
+            #         top_p=1.0,
+            #         # max_context is 131072; input + output budgets must sum
+            #         # strictly below it (see terminal_bench_2_1 note above).
+            #         max_input_tokens=96 * 1024,
+            #         max_output_tokens=32 * 1024,
+            #         completion_kwargs={
+            #             "reasoning_effort": "high",
+            #         },
+            #         instance_ids_map={
+            #             EvalLimitMode.CI_NIGHTLY: [
+            #                 "django__django-12143",
+            #                 "pytest-dev__pytest-5262",
+            #                 "django__django-14672",
+            #                 "sympy__sympy-13551",
+            #                 "sphinx-doc__sphinx-9281",
+            #             ],
+            #         },
+            #     ),
+            #     limit_samples_map={
+            #         EvalLimitMode.SMOKE_TEST: 5,
+            #     },
+            # ),
         ],
     ),
     EvalConfig(

@@ -177,7 +177,7 @@ def run_llm_agentic_eval(ctx: MediaContext) -> List[Block]:
         logger.info(
             "Task %s done: accuracy=%s",
             task.task_name,
-            blocks[-1].data.get("accuracy"),
+            blocks[-1].data.get("score"),
         )
 
     accept_blocks(blocks, envelope=sweep_envelope(ctx))
