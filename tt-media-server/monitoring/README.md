@@ -97,17 +97,26 @@ SERVER_TARGET=<tts-container-name>:8000 SERVER_SERVICE=cpp \
 Speech generation is a pipeline, and the dashboard measures its stages
 separately so a slowdown can be pinned to one of them.
 
-**Stage 0 — conditioning and text normalization.**
+**Stage 0 — conditioning.**
 `tt_tts_conditioning_seconds` is a summary (exact quantiles, 60 s window) of
 time spent *preparing* a request rather than synthesizing it, labelled by
 `stage`:
 
 | `stage` | Process | Runs when |
 | --- | --- | --- |
-| `text_normalization` | main | request has no voice sample — tokenizer lookup + prompt compilation |
-| `voice_normalization` | main | request has a voice sample — validation, downmix to mono, resample |
+| `text_conditioning` | main | request has **no** voice sample — tokenizer lookup + prompt compilation |
+| `voice_normalization` | main | request **has** a voice sample — validation, downmix to mono, resample |
 | `voice_encode` | worker | voice-sample requests, encoding the reference WAV into speech IDs on device |
 | `prompt_compile` | worker | voice-sample requests, prompt compilation once speech IDs exist |
+
+The stages are named for the conditioning they build, not for the individual
+steps inside them, and the two paths are disjoint: a request either has a voice
+sample or it does not. `text_conditioning` is the whole text-only path — prompt
+compilation included — which is why prompt compilation is broken out as its own
+`prompt_compile` stage only on the voice path, where it happens later, in the
+worker, and only once the speech IDs exist. So the two never co-occur on one
+request, and `prompt_compile` timings are always worker-side and always
+post-encode, never blended with the cheap main-process compile.
 
 p50/p99 per stage come straight off the summary
 (`tt_tts_conditioning_seconds{stage="...", quantile="0.99"}`). The headline is
@@ -115,7 +124,7 @@ its **share of engine time**:
 
 ```promql
 sum(rate(tt_tts_conditioning_seconds_sum[$__rate_interval]))
-  / rate(tt_tts_request_duration_seconds_sum[$__rate_interval])
+  / sum(rate(tt_tts_request_duration_seconds_sum[$__rate_interval]))
 ```
 
 Short utterances can be dominated by preprocessing rather than synthesis: the
@@ -123,6 +132,18 @@ fixed cost of normalizing and conditioning stops being amortized once there is
 little audio to generate, and this ratio is where that shows up. Use the
 `_sum` series for it — quantiles cannot be summed or averaged. Mean per-request
 cost is `rate(_sum) / rate(_count)`.
+
+Both sides have to be aggregated the same way or the division silently returns
+nothing: the conditioning series carries a `stage` label that the request-duration
+series does not, and Prometheus only pairs samples whose label sets match
+exactly. Collapsing both to a label-less scalar with `sum()` is what makes them
+divisible. Per stage, keep `stage` on the left and reduce the denominator to a
+true scalar instead:
+
+```promql
+sum by (stage) (rate(tt_tts_conditioning_seconds_sum[$__rate_interval]))
+  / scalar(sum(rate(tt_tts_request_duration_seconds_sum[$__rate_interval])))
+```
 
 Two things to know when reading it. **A stage that did not run is not
 observed**, rather than observed as zero — so `voice_encode` goes silent on a
@@ -132,6 +153,21 @@ the request rate means the cache has stopped absorbing repeats. **Only requests
 that reached a terminal event are counted** in either the numerator or the
 denominator; a client cancellation ends a request at an arbitrary point, so it
 is excluded from both rather than skewing the share.
+
+**Warmup pollutes `text_conditioning`.** The tokenizer is cached in a
+`thread_local` map (`tokenizerForPath`), and the cache fill happens *inside* the
+measured window — the clock in `TtsService::generate` starts before
+`prepareTask`. So the first request on each Drogon IO thread pays a full
+tokenizer load from disk, and with N IO threads (`--threads`, defaulting to
+`hardware_concurrency`) you get N outliers of hundreds of milliseconds against a
+steady state that is sub-millisecond. Because the summary window is 60 s, those
+outliers own the stage's p95/p99 for the first minute of any deployment: a
+`text_conditioning` p99 of 400 ms read off a freshly started server is the
+tokenizer load, not the cost of preparing a text-only request. Give the server a minute and
+more requests than it has IO threads before trusting that stage's quantiles, or
+warm the tokenizer per thread at startup to keep the load out of the window
+entirely. The worker-side `prompt_compile` stage fills the same per-thread cache
+and carries the same one-time cost on its first compile.
 
 The worker-process stages are timed in `BlazeTtsRunner` and travel to the main
 process as microsecond fields on the request's terminal audio IPC message —
@@ -189,9 +225,15 @@ those fields are added to the request.
 The engine does not expose the batch its vocoder formed, so the runner counts
 the distinct streams whose chunks came out of one `drainAudioOutputs()` sweep —
 the engine vocodes a batch and pushes one chunk per stream in it, so a sweep
-observes one batch's worth. Under load a single batch can straddle two sweeps,
-which shows up as two smaller buckets rather than one larger one, so read the
-bucket as "at least this many streams were reconstructed together". Buckets
+observes one batch's worth. The proxy errs in both directions. Under load a
+single batch can straddle two sweeps, which shows up as two smaller buckets
+rather than one larger one; conversely the runner sleeps 1 ms between sweeps, so
+two batches that finish inside that gap are drained together and counted as one
+larger batch. Over-counting is the flattering error — frames credited to a batch
+bigger than the engine actually formed make reconstruction look like it scales
+with batch size better than it does, which is the one question the label exists
+to answer. Read a bucket as approximate rather than as a bound in either
+direction, and trust a shift in the distribution over any single bucket. Buckets
 rather than a raw count keep the label at 6 values instead of the 128 that
 `PM_MAX_USERS` would admit. Replace this with the real batch size if the engine
 starts reporting it.

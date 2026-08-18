@@ -3,29 +3,13 @@
 
 #include "runtime/worker/tts_worker_metrics_renderer.hpp"
 
-#include <chrono>
 #include <string>
 
 #include "config/settings.hpp"
 #include "runtime/worker/tts_metrics_layout.hpp"
+#include "runtime/worker/worker_metrics_clock.hpp"
 
 namespace tt::worker {
-
-namespace {
-
-uint64_t nowMs() {
-  return static_cast<uint64_t>(
-      std::chrono::duration_cast<std::chrono::milliseconds>(
-          std::chrono::steady_clock::now().time_since_epoch())
-          .count());
-}
-
-double ageSeconds(uint64_t lastEpochMs, uint64_t nowEpochMs) {
-  if (lastEpochMs == 0 || lastEpochMs > nowEpochMs) return 0.0;
-  return static_cast<double>(nowEpochMs - lastEpochMs) / 1000.0;
-}
-
-}  // namespace
 
 void TtsWorkerMetricsRenderer::prebuildGauges(prometheus::Registry& registry,
                                               int workerId) {

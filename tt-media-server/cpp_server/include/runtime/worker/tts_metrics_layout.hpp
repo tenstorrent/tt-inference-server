@@ -70,18 +70,18 @@ inline const char* voiceSourceLabel(VoiceSource source) {
 }
 
 /**
- * Vocoder batch size, bucketed. The vocoder stage turns generated acoustic
- * tokens back into PCM, and how many streams it reconstructs together is what
- * decides whether waveform reconstruction keeps up — so the audio counters are
- * attributed per bucket rather than only per worker.
+ * Vocoder batch size, bucketed. The engine does not report the batch it formed
+ * (`engine_tts::AudioOut` carries only uid / chunk_index / samples_bf16), so
+ * the runner derives it: the number of distinct slots whose chunks came out of
+ * one drainAudioOutputs() sweep. The engine pushes one AudioOut per stream in
+ * a batch, so a sweep observes one batch's worth.
  *
- * The engine does not report the batch it formed (`engine_tts::AudioOut`
- * carries only uid / chunk_index / samples_bf16), so the runner derives it: the
- * number of distinct slots whose chunks came out of one drainAudioOutputs()
- * sweep. The engine vocodes a batch and pushes one AudioOut per stream in it,
- * so a sweep observes one batch's worth. It is a proxy, not ground truth — a
- * batch can straddle two sweeps under load, which shows up as two smaller
- * buckets rather than one larger one.
+ * That derivation errs in both directions, which is what the label means and
+ * does not mean. A batch can straddle two sweeps under load and show up as two
+ * smaller buckets; conversely two batches finishing inside step()'s 1 ms sleep
+ * are drained together and show up as one larger one. Over-counting is the
+ * flattering direction — it makes reconstruction look like it scales with
+ * batch better than it does.
  *
  * Buckets rather than a raw count keep the label bounded at 6 values
  * regardless of TTS_MAX_BATCH_SIZE / PM_MAX_USERS (which alone would admit
@@ -139,9 +139,8 @@ inline size_t audioFramesIdx(BatchBucket bucket) {
 }
 
 /**
- * Cumulative audio chunks emitted, same bucketing. Paired with the frame
- * counter it gives mean frames-per-chunk, which separates "fewer chunks" from
- * "shorter chunks" when audio throughput drops.
+ * Cumulative audio chunks emitted, same bucketing. Exists to pair with the
+ * frame counter for mean frames per chunk.
  */
 constexpr size_t VOCODER_CHUNKS_BASE = 11;
 
@@ -150,18 +149,16 @@ inline size_t vocoderChunksIdx(BatchBucket bucket) {
 }
 
 /**
- * Output sample rate the runner is configured to emit, published once at
- * runner construction. Lets the reader convert frames to audio seconds
- * without reaching into config, and makes the rate visible in its own right.
+ * Output sample rate the runner is configured to emit, published once at runner
+ * construction so the reader can convert frames to audio seconds without
+ * reaching into worker config.
  */
 constexpr size_t SCRATCH_AUDIO_SAMPLE_RATE_HZ = 17;
 
 /**
- * Epoch ms of the last vocoded chunk, distinct from
- * SCRATCH_LAST_OUTPUT_EPOCH_MS (last codec token). Two separate staleness
- * clocks are what localize a stall: tokens still advancing while this one ages
- * means the vocoder is the bottleneck, both ageing together points upstream at
- * token generation.
+ * Epoch ms of the last vocoded chunk. Deliberately its own cell rather than
+ * sharing SCRATCH_LAST_OUTPUT_EPOCH_MS (last codec token): two independent
+ * staleness clocks are what localize a stall to one stage.
  */
 constexpr size_t SCRATCH_LAST_VOCODE_EPOCH_MS = 18;
 

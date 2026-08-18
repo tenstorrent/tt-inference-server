@@ -79,7 +79,7 @@ class TtsService : public IService {
     StreamCallback callback;
     std::chrono::steady_clock::time_point submittedAt;
     tt::metrics::TtsConditioningStage conditioningStage =
-        tt::metrics::TtsConditioningStage::TextNormalization;
+        tt::metrics::TtsConditioningStage::TextConditioning;
     double conditioningSeconds = 0.0;
   };
 

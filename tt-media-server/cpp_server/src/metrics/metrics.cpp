@@ -38,8 +38,8 @@ static const std::array<std::string, 5> K_PRECREATED_FINISH_REASONS = {
 
 const char* ttsConditioningStageLabel(TtsConditioningStage stage) {
   switch (stage) {
-    case TtsConditioningStage::TextNormalization:
-      return "text_normalization";
+    case TtsConditioningStage::TextConditioning:
+      return "text_conditioning";
     case TtsConditioningStage::VoiceNormalization:
       return "voice_normalization";
     case TtsConditioningStage::VoiceEncode:
@@ -211,26 +211,30 @@ ServerMetrics::ServerMetrics() {
   // ----- TTS conditioning (preprocessing vs synthesis) ---------------------
   // Pre-created per stage so a stage that has not run yet still exposes a
   // series, and so no label map is built on the request path.
-  tts_conditioning_family_ =
+  auto* conditioningFamily =
       &prometheus::BuildSummary()
            .Name("tt_tts_conditioning_seconds")
            .Help(
                "Time spent preparing a TTS request rather than synthesizing "
-               "it: normalizing text and preparing voice/speaker conditioning. "
-               "Labelled by stage (text_normalization, voice_normalization, "
-               "voice_encode, prompt_compile). Short utterances can be "
+               "it: building the conditioning from text or from a voice "
+               "sample. Labelled by stage (text_conditioning, "
+               "voice_normalization, voice_encode, prompt_compile); the two "
+               "paths are disjoint, and text_conditioning covers the whole "
+               "text-only path including its prompt compilation, so it never "
+               "runs alongside prompt_compile. Short utterances can be "
                "dominated by this rather than by audio generation; its share "
                "of engine time is sum(rate(tt_tts_conditioning_seconds_sum)) / "
-               "rate(tt_tts_request_duration_seconds_sum). Only stages that "
+               "sum(rate(tt_tts_request_duration_seconds_sum)) — both sides "
+               "aggregated, since the stage label would otherwise stop the two "
+               "series from pairing at all. Only stages that "
                "actually ran are observed, so voice_encode is silent on a "
                "voice-sample cache hit rather than reporting zero.")
            .Register(*registry_);
   for (size_t i = 0; i < TTS_CONDITIONING_STAGE_COUNT; ++i) {
     auto stageLabels = modelLabel;
-    stageLabels.emplace(
-        "stage",
-        ttsConditioningStageLabel(static_cast<TtsConditioningStage>(i)));
-    tts_conditioning_[i] = &tts_conditioning_family_->Add(
+    stageLabels.emplace("stage", ttsConditioningStageLabel(
+                                     static_cast<TtsConditioningStage>(i)));
+    tts_conditioning_[i] = &conditioningFamily->Add(
         stageLabels, K_LATENCY_QUANTILES, std::chrono::seconds{60}, 5);
   }
 

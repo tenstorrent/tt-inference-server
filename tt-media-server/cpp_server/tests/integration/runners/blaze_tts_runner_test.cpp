@@ -519,7 +519,7 @@ TEST(TtsConditioningMetricsTest, ExposesPerStageQuantilesAndShareDenominator) {
   auto& serverMetrics = tt::metrics::ServerMetrics::instance();
   using Stage = tt::metrics::TtsConditioningStage;
 
-  serverMetrics.onTtsConditioning(Stage::TextNormalization, 0.002);
+  serverMetrics.onTtsConditioning(Stage::TextConditioning, 0.002);
   serverMetrics.onTtsConditioning(Stage::VoiceNormalization, 0.010);
   serverMetrics.onTtsConditioning(Stage::VoiceEncode, 0.250);
   serverMetrics.onTtsConditioning(Stage::PromptCompile, 0.001);
@@ -529,7 +529,7 @@ TEST(TtsConditioningMetricsTest, ExposesPerStageQuantilesAndShareDenominator) {
 
   // Each stage the spec asks about is its own series, so preprocessing can be
   // attributed rather than just totalled.
-  EXPECT_NE(text.find("stage=\"text_normalization\""), std::string::npos);
+  EXPECT_NE(text.find("stage=\"text_conditioning\""), std::string::npos);
   EXPECT_NE(text.find("stage=\"voice_normalization\""), std::string::npos);
   EXPECT_NE(text.find("stage=\"voice_encode\""), std::string::npos);
   EXPECT_NE(text.find("stage=\"prompt_compile\""), std::string::npos);

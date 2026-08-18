@@ -188,12 +188,9 @@ void BlazeTtsRunner::drainTokenOutputs() {
 void BlazeTtsRunner::drainAudioOutputs() {
   sched::AudioOutput output;
   size_t drained = 0;
-  // Accumulated per sweep, not per chunk: the engine vocodes a batch of
-  // streams and pushes one AudioOut for each, so one sweep is one batch's
-  // worth of waveform reconstruction. Attributing the sweep's frames to the
-  // number of distinct streams it covered is what makes vocoder throughput
-  // readable per batch — the dimension that says whether reconstruction
-  // scales, as opposed to token generation.
+  // Accumulated per sweep, not per chunk: one sweep is one vocode batch's
+  // worth of output, so the sweep's frames are attributed to the number of
+  // distinct streams it covered (see BatchBucket).
   uint64_t sweepFrames = 0;
   uint64_t sweepChunks = 0;
   vocodeSweepSlots.clear();
@@ -513,21 +510,19 @@ void BlazeTtsRunner::handleTokenOutput(const sched::TokenOutput& output) {
       "tokenId={} final={}",
       output.taskId, output.slotId, output.tokenId, output.final);
 
-  // Every drained TokenOutput is one acoustic/codec token off the decoder,
-  // terminal one included (the engine stamps is_complete on a real token, not
-  // on a synthetic sentinel). Counting them here — the single point where the
-  // runner observes the token stream — is what makes codec-token throughput
-  // (`rate(tt_tts_codec_tokens_total[...])`) observable.
-  if (auto* slot = findSlot(output.slotId)) {
-    tt::worker::SingleProcessWorkerMetrics::instance().onCodecToken(
-        slot->voiceSource);
+  // Every drained TokenOutput is one codec token off the decoder, terminal one
+  // included: the engine stamps is_complete on a real token, not on a synthetic
+  // sentinel. This is the single point where the runner sees the token stream.
+  auto* slot = findSlot(output.slotId);
+  if (slot == nullptr) {
+    return;
   }
+  tt::worker::SingleProcessWorkerMetrics::instance().onCodecToken(
+      slot->voiceSource);
 
   if (output.final) {
-    if (auto* slot = findSlot(output.slotId)) {
-      slot->completionPending = true;
-      maybeFinalizeCompletedSlot(output.slotId);
-    }
+    slot->completionPending = true;
+    maybeFinalizeCompletedSlot(output.slotId);
   }
 }
 

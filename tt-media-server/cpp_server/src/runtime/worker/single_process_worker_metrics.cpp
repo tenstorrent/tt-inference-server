@@ -5,12 +5,12 @@
 
 #include <unistd.h>
 
-#include <chrono>
 #include <cstdint>
 
 #include "config/settings.hpp"
 #include "runtime/worker/blaze_metrics_layout.hpp"
 #include "runtime/worker/tts_metrics_layout.hpp"
+#include "runtime/worker/worker_metrics_clock.hpp"
 #include "runtime/worker/worker_metrics_shm.hpp"
 #include "utils/logger.hpp"
 
@@ -74,10 +74,8 @@ void SingleProcessWorkerMetrics::initialize(int workerId,
 }
 
 uint64_t SingleProcessWorkerMetrics::nowMs() {
-  return static_cast<uint64_t>(
-      std::chrono::duration_cast<std::chrono::milliseconds>(
-          std::chrono::steady_clock::now().time_since_epoch())
-          .count());
+  // Same clock the renderers read these stamps back with.
+  return tt::worker::nowMs();
 }
 
 size_t SingleProcessWorkerMetrics::stepEpochIdx() const {

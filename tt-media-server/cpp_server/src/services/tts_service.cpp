@@ -142,13 +142,15 @@ bool TtsService::generate(domain::tts::TtsRequest request,
   // The request clock starts before conditioning, so conditioning is measured
   // inside the request duration and their ratio is a true fraction. Which
   // main-process stage runs is decided by the same condition the preprocessor
-  // branches on: a voice sample means PCM normalization, otherwise text
-  // normalization and prompt compilation.
+  // branches on: a voice sample means PCM normalization, otherwise the
+  // text-only path — tokenizer lookup and prompt compilation, both covered by
+  // TextConditioning. Prompt compilation is timed separately, as PromptCompile,
+  // only on the voice path, where it runs in the worker after the encode.
   const auto submittedAt = std::chrono::steady_clock::now();
   const auto conditioningStage =
       request.voiceSample.has_value()
           ? tt::metrics::TtsConditioningStage::VoiceNormalization
-          : tt::metrics::TtsConditioningStage::TextNormalization;
+          : tt::metrics::TtsConditioningStage::TextConditioning;
   auto task = prepareTask(request);
   const double conditioningSeconds = secondsSince(submittedAt);
 

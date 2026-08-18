@@ -27,36 +27,19 @@ namespace tt::worker {
  *   - tt_tts_audio_sample_rate_hz{worker_id}
  *   - tt_tts_last_vocode_age_seconds{worker_id}
  *
- * The audio series measure the vocoder stage — generated acoustic tokens
- * reconstructed back into PCM. Both units follow from the one frame counter,
- * so nothing can drift:
- *   samples/s       rate(tt_tts_audio_frames_total[...])
- *   audio seconds/s rate(tt_tts_audio_frames_total[...])
- *                     / tt_tts_audio_sample_rate_hz
- * The second is the real-time factor: below 1.0 the vocoder cannot keep up
- * with playback. Reading it against rate(tt_tts_codec_tokens_total[...]) is
- * what separates a waveform-reconstruction bottleneck from a token-generation
- * one — tokens per audio second is a codec constant, so the two rates track
- * each other until one stage stalls.
+ * The `_total` series are cumulative counts exported as gauges: the shm
+ * transport publishes an absolute value per scrape that the renderer Set()s,
+ * and prometheus-cpp counters cannot be set. Each is monotonic for the worker's
+ * lifetime, so rate() is well behaved and reads a worker restart as a reset.
  *
- * The codec-token series is the cumulative count of acoustic tokens the TTS
- * decoder emitted on that worker; throughput is
- * `rate(tt_tts_codec_tokens_total[$__rate_interval])`. It carries the same
- * `_total` naming as the other shm-backed cumulative series and is likewise
- * exported as a gauge, because the shm transport publishes an absolute value
- * per scrape that the renderer Set()s (prometheus-cpp counters cannot be set).
- * The value is monotonic for the worker's lifetime, so rate() is well behaved
- * and treats a worker restart as a counter reset.
+ * `device` is the worker's DEVICE_IDS group (its TT_VISIBLE_DEVICES value).
+ * There is deliberately no `voice` or `language` label — the TTS API exposes
+ * neither dimension, and `voice_source` is the bounded stand-in. `batch` is
+ * derived, not reported by the engine; see BatchBucket in
+ * tts_metrics_layout.hpp for what it does and does not mean.
  *
- * `device` is the worker's DEVICE_IDS group (its TT_VISIBLE_DEVICES value) —
- * the per-device granularity. There is no `voice` or `language` label: the
- * TTS API accepts only text, a free-form description and an optional voice
- * WAV, so neither dimension exists to label by; `voice_source` is the bounded
- * stand-in.
- *
- * `batch` is the bucketed vocode batch size derived by the runner, since the
- * engine does not report the batch it formed — see BatchBucket in
- * tts_metrics_layout.hpp for what the number does and does not mean.
+ * What these series answer, and the queries for it, are in
+ * monitoring/README.md.
  */
 class TtsWorkerMetricsRenderer : public IWorkerMetricsRenderer {
  public:

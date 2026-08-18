@@ -15,7 +15,7 @@
       }
     ]
   },
-  "description": "TTS server (MODEL_SERVICE=tts) — the stages of speech generation measured separately so a slowdown can be pinned to one of them: request conditioning (text normalization and voice/speaker preparation), autoregressive codec-token decode, and vocoder waveform reconstruction. Conditioning carries p50/p99 per stage and a share-of-engine-time reading, because short utterances can be dominated by preprocessing rather than by synthesis.",
+  "description": "TTS server (MODEL_SERVICE=tts) — the stages of speech generation measured separately so a slowdown can be pinned to one of them: request conditioning (built from the request text, or from a voice sample), autoregressive codec-token decode, and vocoder waveform reconstruction. Conditioning carries p50/p99 per stage and a share-of-engine-time reading, because short utterances can be dominated by preprocessing rather than by synthesis.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -180,7 +180,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Fraction of total request time spent preparing the request rather than synthesizing it, summed over all stages. This is the headline: when it climbs, requests are being spent on preprocessing, which is what happens as utterances get shorter — the fixed cost of normalization and conditioning stops being amortized over enough audio. Time-weighted from the _sum series, because quantiles cannot be summed.",
+      "description": "Fraction of total request time spent preparing the request rather than synthesizing it, summed over all stages. This is the headline: when it climbs, requests are being spent on preprocessing, which is what happens as utterances get shorter — the fixed cost of conditioning stops being amortized over enough audio. Time-weighted from the _sum series, because quantiles cannot be summed.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -231,7 +231,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(rate(tt_tts_conditioning_seconds_sum{stage=~\"$stage\"}[$__rate_interval])) / rate(tt_tts_request_duration_seconds_sum[$__rate_interval])",
+          "expr": "sum(rate(tt_tts_conditioning_seconds_sum{stage=~\"$stage\"}[$__rate_interval])) / sum(rate(tt_tts_request_duration_seconds_sum[$__rate_interval]))",
           "legendFormat": "Share",
           "refId": "A"
         }
@@ -420,7 +420,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Per-stage tail latency. The four stages are distinct work: text_normalization and voice_normalization run in the main process, while voice_encode (encoding a reference WAV into speech IDs on device) and prompt_compile run in the worker and reach here on the request's terminal IPC message. voice_encode is normally the largest and is absent entirely on a voice-sample cache hit.",
+      "description": "Per-stage tail latency. The four stages are disjoint work on two mutually exclusive paths. No voice sample: text_conditioning, in the main process, covering that path end to end — tokenizer lookup and prompt compilation both. With a voice sample: voice_normalization in the main process, then voice_encode (encoding the reference WAV into speech IDs on device) and prompt_compile in the worker, reaching here on the request's terminal IPC message. text_conditioning and prompt_compile never both run for one request, so prompt_compile is always the worker-side, post-encode compile. voice_encode is normally the largest and is absent entirely on a voice-sample cache hit.",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -564,7 +564,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "rate(tt_tts_conditioning_seconds_sum{stage=~\"$stage\"}[$__rate_interval]) / rate(tt_tts_request_duration_seconds_sum[$__rate_interval])",
+          "expr": "sum by (stage) (rate(tt_tts_conditioning_seconds_sum{stage=~\"$stage\"}[$__rate_interval])) / scalar(sum(rate(tt_tts_request_duration_seconds_sum[$__rate_interval])))",
           "legendFormat": "{{stage}}",
           "refId": "A"
         }
@@ -1455,7 +1455,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Vocoder throughput split by how many streams were reconstructed together. This is the panel that answers whether waveform reconstruction scales with batch: if per-sweep throughput is flat from batch 1 to batch 8, batching is buying nothing and the vocoder is the ceiling. The batch size is derived by the runner (distinct streams per drain sweep), not reported by the engine — a batch split across two sweeps appears as two smaller buckets.",
+      "description": "Vocoder throughput split by how many streams were reconstructed together. This is the panel that answers whether waveform reconstruction scales with batch: if per-sweep throughput is flat from batch 1 to batch 8, batching is buying nothing and the vocoder is the ceiling. The batch size is derived by the runner (distinct streams per drain sweep), not reported by the engine, and it errs both ways: a batch split across two sweeps appears as two smaller buckets, while two batches finishing inside the runner's 1 ms sleep are drained together and appear as one larger one. The over-count is the flattering direction — it makes reconstruction look like it scales with batch better than it does — so read a shift in the distribution rather than any single bucket.",
       "fieldConfig": {
         "defaults": {
           "custom": {

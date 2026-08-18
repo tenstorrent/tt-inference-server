@@ -9,15 +9,17 @@
 namespace tt::metrics {
 
 /**
- * A stage of TTS request preparation — normalizing text, or preparing the
- * voice / speaker conditioning — as opposed to synthesis itself. Short
- * utterances can be dominated by these rather than by generating audio, which
- * is only visible if they are timed apart from the request as a whole.
+ * A stage of TTS request preparation — building conditioning from text, or
+ * from a voice sample — as opposed to synthesis itself. Short utterances can
+ * be dominated by these rather than by generating audio, which is only visible
+ * if they are timed apart from the request as a whole.
  *
  * The four stages are where that work actually happens, and which ones run
  * depends on the request:
- *   TextNormalization  main process, requests with no voice sample: tokenizer
- *                      lookup + prompt compilation.
+ *   TextConditioning   main process, requests with no voice sample: tokenizer
+ *                      lookup + prompt compilation. Named for its input, not
+ *                      for one of its steps — it covers that whole path, which
+ *                      is why PromptCompile does not also fire on it.
  *   VoiceNormalization main process, requests with a voice sample: validation,
  *                      downmix to mono, resample to the encoder's rate.
  *   VoiceEncode        worker process, voice-sample requests only: encoding the
@@ -34,7 +36,7 @@ namespace tt::metrics {
  * Values are array indices; append-only, never renumber.
  */
 enum class TtsConditioningStage : uint8_t {
-  TextNormalization = 0,
+  TextConditioning = 0,
   VoiceNormalization = 1,
   VoiceEncode = 2,
   PromptCompile = 3,

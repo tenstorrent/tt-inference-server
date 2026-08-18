@@ -145,12 +145,10 @@ class ServerMetrics {
 
   /**
    * Record a finished TTS request's total time, from service entry (before any
-   * conditioning) through delivery of its terminal event. This is the
-   * denominator that makes conditioning readable as a share of engine time:
-   *   sum(rate(tt_tts_conditioning_seconds_sum))
-   *     / rate(tt_tts_request_duration_seconds_sum)
-   * Conditioning is measured inside this interval, so the ratio is a true
-   * fraction. Same direct-write rationale as onTtsConditioning().
+   * conditioning) through delivery of its terminal event. Conditioning is
+   * measured inside this interval, which is what lets it be read as a share of
+   * engine time rather than an unrelated number.
+   * Same direct-write rationale as onTtsConditioning().
    */
   void onTtsRequestDuration(double seconds);
 
@@ -251,7 +249,8 @@ class ServerMetrics {
   prometheus::Histogram* request_generation_tokens_{nullptr};
 
   // --- TTS conditioning summaries (one per stage, plus the denominator) ---
-  prometheus::Family<prometheus::Summary>* tts_conditioning_family_{nullptr};
+  // The family itself is not kept: every stage series is pre-created in the
+  // constructor, so nothing on the request path ever has to Add() a label set.
   std::array<prometheus::Summary*, TTS_CONDITIONING_STAGE_COUNT>
       tts_conditioning_{};
   prometheus::Summary* tts_request_duration_seconds_{nullptr};
