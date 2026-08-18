@@ -175,7 +175,7 @@ Set per release, typically via `--set`.
 | `hfCacheDir` | no | `""` | Host path to a pre-downloaded HuggingFace weights directory. Mounted read-only at `/mnt/hf-cache`; skips download at startup. |
 | `hugepages.enabled` | no | `true` | Whether Tenstorrent boards need 1Gi hugepages. Set `false` on IOMMU + KMD 1.29.0+ clusters to drop the `hugepages-1Gi` request/limit, the `/dev/hugepages-1G` volume + mounts, and the `cleanup-hugepages` initContainer. |
 | `podMonitor.enabled` | no | `false` | Emit a `PodMonitor` scraping the server's `/metrics`. Requires the Prometheus Operator CRDs (`monitoring.coreos.com`); leave `false` on clusters without them. |
-| `podMonitor.labels` | no | `{}` | Extra labels on the `PodMonitor`. Set the label your Prometheus's `podMonitorSelector` matches (e.g. `release: kube-prometheus-stack`). |
+| `podMonitor.labels` | no | `{release: prometheus}` | Labels on the `PodMonitor`; must match your Prometheus's `podMonitorSelector` or it won't be scraped. The default matches tt-telemetry's chart and the kube-prometheus-stack convention (`podMonitorSelector` defaults to `release: <the stack's release name>`); override when yours is named differently. |
 | `podMonitor.interval` | no | `30s` | Scrape interval. |
 | `podMonitor.path` | no | `/metrics` | Metrics HTTP path (scraped on the `http` port). |
 | `cache.hostPath` | no | `""` | Override the host path used for the ttnn cache volume. Defaults to `/opt/cache/<model>-<device>-<impl>`. |
@@ -581,11 +581,10 @@ helm install my-model ./charts/tt-inference-server \
   --set model="Llama-3.1-8B-Instruct" \
   --set device=galaxy \
   --set hfToken="hf_xxx" \
-  --set podMonitor.enabled=true \
-  --set podMonitor.labels.release=kube-prometheus-stack
+  --set podMonitor.enabled=true
 ```
 
-The label must match your Prometheus's `podMonitorSelector` (e.g. `release: kube-prometheus-stack`) or it won't be scraped; see the [Values Reference](#values-reference) for the other `podMonitor.*` options and the Prometheus Operator CRD requirement.
+`podMonitor.labels` defaults to `release: prometheus`, matching tt-telemetry's chart and a kube-prometheus-stack installed under the release name `prometheus`. If your Prometheus release is named differently, override it (`--set podMonitor.labels.release=<release-name>`) or the `PodMonitor` won't be scraped; see the [Values Reference](#values-reference) for the other `podMonitor.*` options and the Prometheus Operator CRD requirement.
 
 The chart ships no Grafana dashboard (metrics differ per engine). For vLLM, import the [official vLLM dashboard](https://docs.vllm.ai/en/stable/examples/online_serving/prometheus_grafana/) ([JSON](https://github.com/vllm-project/vllm/tree/main/examples/observability/prometheus_grafana)) via Grafana → Import, pointed at your Prometheus. For media-server / forge, build panels in Grafana Explore from the scraped metrics.
 

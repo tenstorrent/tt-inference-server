@@ -41,9 +41,13 @@ hugepages:
 # CRDs (monitoring.coreos.com), and rendering one without them fails at install.
 podMonitor:
   enabled: false
-  # Set the label your Prometheus's podMonitorSelector matches (e.g.
-  # release: kube-prometheus-stack), or the PodMonitor won't be scraped.
-  labels: {}
+  # Labels added to the PodMonitor so your Prometheus's podMonitorSelector
+  # matches it, or it won't be scraped. The default matches tt-telemetry's chart
+  # and the kube-prometheus-stack convention (its podMonitorSelector defaults to
+  # release: <the stack's own release name>). Override when your Prometheus was
+  # installed under a different release name.
+  labels:
+    release: prometheus
   interval: 30s
   path: /metrics
 
