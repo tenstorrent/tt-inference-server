@@ -1119,10 +1119,15 @@ if(ENABLE_BLAZE)
         src/runtime/runners/blaze_runner/blaze_tts_runner.cpp
         src/runtime/worker/single_process_worker_metrics.cpp
         src/runtime/worker/worker_metrics_shm.cpp
+        src/metrics/metrics.cpp
     )
-    target_link_libraries(blaze_tts_runner_test PRIVATE llm_runner_lib GTest::gtest_main)
+    # prometheus-cpp: the TTS conditioning metrics assert on ServerMetrics'
+    # rendered exposition text, so this target reaches the metrics registry.
+    target_link_libraries(blaze_tts_runner_test PRIVATE
+        llm_runner_lib prometheus-cpp::core GTest::gtest_main)
     target_include_directories(blaze_tts_runner_test PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${prometheus-cpp_SOURCE_DIR}/core/include
     )
 
     add_executable(mock_schedulers_test

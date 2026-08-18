@@ -6,6 +6,8 @@
 #include <algorithm>
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
+#include <limits>
 #include <stdexcept>
 #include <thread>
 #include <utility>
@@ -28,6 +30,17 @@ sched::GenerationParams toSchedulerGeneration(
   out.ignoreEos = generation.ignoreEos;
   out.stopTokens = generation.stopTokenIds;
   return out;
+}
+
+/** Microseconds elapsed since `start`, saturating at uint32 (~71 min) so a
+ *  pathological stall cannot wrap the IPC field into a small value. */
+uint32_t elapsedUsSince(std::chrono::steady_clock::time_point start) {
+  const auto us = std::chrono::duration_cast<std::chrono::microseconds>(
+                      std::chrono::steady_clock::now() - start)
+                      .count();
+  if (us <= 0) return 0;
+  return static_cast<uint32_t>(
+      std::min<int64_t>(us, std::numeric_limits<uint32_t>::max()));
 }
 
 /** Bounded metrics dimension for "which voice produced these tokens". A
@@ -270,7 +283,12 @@ void BlazeTtsRunner::handleTask(ipc::tts::TtsIpcTask task) {
     if (voiceSampleCache.exists(task.voiceWavPcm)) {
       try {
         const auto cachedSpeechIds = voiceSampleCache.get(task.voiceWavPcm);
+        // Cache hit: no voice encode runs, so its timing stays 0 and the main
+        // process reports no voice_encode sample for this request at all.
+        const auto compileStart = std::chrono::steady_clock::now();
         compilePromptTokens(task, cachedSpeechIds);
+        conditioningByTask[task.task_id].promptCompileUs =
+            elapsedUsSince(compileStart);
       } catch (const std::exception& e) {
         sendFinish(task.task_id, domain::tts::TtsFinishReason::Error, e.what());
         return;
@@ -279,11 +297,16 @@ void BlazeTtsRunner::handleTask(ipc::tts::TtsIpcTask task) {
       sched::VoiceEncodeRequest request;
       request.requestId = task.task_id;
       request.wavPcm = task.voiceWavPcm;
+      // Stamped before the enqueue so the measurement covers the queue wait as
+      // well as the device work — from the request's point of view both are
+      // time spent preparing speaker conditioning.
+      const auto encodeStart = std::chrono::steady_clock::now();
       if (!scheduler->enqueueVoiceEncode(std::move(request))) {
         sendFinish(task.task_id, domain::tts::TtsFinishReason::Error,
                    "TTS scheduler voice encoder queue is full");
         return;
       }
+      conditioningByTask[task.task_id].voiceEncodeStart = encodeStart;
       pendingVoiceEncodes.emplace(task.task_id, std::move(task));
       return;
     }
@@ -352,6 +375,12 @@ void BlazeTtsRunner::handleVoiceEncodeResult(
   auto task = std::move(pending->second);
   pendingVoiceEncodes.erase(pending);
 
+  if (auto timing = conditioningByTask.find(task.task_id);
+      timing != conditioningByTask.end()) {
+    timing->second.voiceEncodeUs =
+        elapsedUsSince(timing->second.voiceEncodeStart);
+  }
+
   switch (result.status) {
     case sched::VoiceEncodeStatus::Completed:
       break;
@@ -366,7 +395,10 @@ void BlazeTtsRunner::handleVoiceEncodeResult(
 
   try {
     voiceSampleCache.add(task.voiceWavPcm, result.speechIds);
+    const auto compileStart = std::chrono::steady_clock::now();
     compilePromptTokens(task, result.speechIds);
+    conditioningByTask[task.task_id].promptCompileUs =
+        elapsedUsSince(compileStart);
   } catch (const std::exception& e) {
     sendFinish(task.task_id, domain::tts::TtsFinishReason::Error, e.what());
     return;
@@ -543,6 +575,17 @@ bool BlazeTtsRunner::sendFinish(uint32_t taskId,
   PendingTerminalMessage terminal{
       ipc::tts::TtsAudioChunkMessage::finish(taskId, reason, std::move(error)),
       slotIdToEvict};
+
+  // Hand this task's worker-side conditioning timings to the main process and
+  // drop the bookkeeping. Erasing here — rather than on any of the individual
+  // terminal paths — is what keeps the map bounded: every task reaches exactly
+  // one sendFinish, whether it completed, errored, or was cancelled.
+  if (auto timing = conditioningByTask.find(taskId);
+      timing != conditioningByTask.end()) {
+    terminal.message.voiceEncodeUs = timing->second.voiceEncodeUs;
+    terminal.message.promptCompileUs = timing->second.promptCompileUs;
+    conditioningByTask.erase(timing);
+  }
 
   if (slotIdToEvict.has_value()) {
     if (auto* slot = findSlot(*slotIdToEvict)) {

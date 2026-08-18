@@ -64,6 +64,14 @@ class BlazeTtsRunner : public IRunner {
     std::optional<uint32_t> slotIdToEvict;
   };
 
+  /** Worker-side conditioning timings for one in-flight task, accumulated as
+   *  its stages complete and drained onto the task's terminal message. */
+  struct ConditioningTiming {
+    std::chrono::steady_clock::time_point voiceEncodeStart{};
+    uint32_t voiceEncodeUs = 0;
+    uint32_t promptCompileUs = 0;
+  };
+
   void run() override;
   void step();
   void shutdownScheduler();
@@ -118,6 +126,11 @@ class BlazeTtsRunner : public IRunner {
   utils::VoiceSampleCache voiceSampleCache;
   std::unordered_map<uint32_t, ipc::tts::TtsIpcTask> pendingAllocations;
   std::deque<PendingTerminalMessage> pendingTerminalMessages;
+  // Conditioning timings keyed by task_id, written as each stage finishes and
+  // erased in sendFinish(). Every task ends in exactly one sendFinish — that is
+  // also the single point where the timings are handed to the main process — so
+  // the map drains itself and cannot accumulate abandoned entries.
+  std::unordered_map<uint32_t, ConditioningTiming> conditioningByTask;
   // Distinct slots seen in the current drainAudioOutputs() sweep, which is the
   // runner's proxy for the batch the vocoder reconstructed together (see
   // tts_metrics_layout.hpp). Reserved to maxUsers once so the step thread never

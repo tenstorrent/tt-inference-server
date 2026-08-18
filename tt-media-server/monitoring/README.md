@@ -86,16 +86,58 @@ Two dedicated dashboards are provisioned for this setup:
 
 A TTS deployment (`MODEL_SERVICE=tts`) is scraped by the plain
 `tt_media_server` job — point `SERVER_TARGET` at it like any other single
-server, and open the **TT Media Server — TTS (decode + vocoder)** dashboard
-(uid `tt-media-server-tts`):
+server, and open the **TT Media Server — TTS (decode + vocoder + conditioning)**
+dashboard (uid `tt-media-server-tts`):
 
 ```bash
 SERVER_TARGET=<tts-container-name>:8000 SERVER_SERVICE=cpp \
   docker compose -f monitoring/docker-compose.yml up -d
 ```
 
-Speech generation is two stages, and the dashboard measures them separately so
-a slowdown can be pinned to one of them.
+Speech generation is a pipeline, and the dashboard measures its stages
+separately so a slowdown can be pinned to one of them.
+
+**Stage 0 — conditioning and text normalization.**
+`tt_tts_conditioning_seconds` is a summary (exact quantiles, 60 s window) of
+time spent *preparing* a request rather than synthesizing it, labelled by
+`stage`:
+
+| `stage` | Process | Runs when |
+| --- | --- | --- |
+| `text_normalization` | main | request has no voice sample — tokenizer lookup + prompt compilation |
+| `voice_normalization` | main | request has a voice sample — validation, downmix to mono, resample |
+| `voice_encode` | worker | voice-sample requests, encoding the reference WAV into speech IDs on device |
+| `prompt_compile` | worker | voice-sample requests, prompt compilation once speech IDs exist |
+
+p50/p99 per stage come straight off the summary
+(`tt_tts_conditioning_seconds{stage="...", quantile="0.99"}`). The headline is
+its **share of engine time**:
+
+```promql
+sum(rate(tt_tts_conditioning_seconds_sum[$__rate_interval]))
+  / rate(tt_tts_request_duration_seconds_sum[$__rate_interval])
+```
+
+Short utterances can be dominated by preprocessing rather than synthesis: the
+fixed cost of normalizing and conditioning stops being amortized once there is
+little audio to generate, and this ratio is where that shows up. Use the
+`_sum` series for it — quantiles cannot be summed or averaged. Mean per-request
+cost is `rate(_sum) / rate(_count)`.
+
+Two things to know when reading it. **A stage that did not run is not
+observed**, rather than observed as zero — so `voice_encode` goes silent on a
+voice-sample cache hit instead of dragging its own quantiles toward zero, and
+`rate(tt_tts_conditioning_seconds_count{stage="voice_encode"})` climbing toward
+the request rate means the cache has stopped absorbing repeats. **Only requests
+that reached a terminal event are counted** in either the numerator or the
+denominator; a client cancellation ends a request at an arbitrary point, so it
+is excluded from both rather than skewing the share.
+
+The worker-process stages are timed in `BlazeTtsRunner` and travel to the main
+process as microsecond fields on the request's terminal audio IPC message —
+which is the one message per request the main process sees exactly once, and is
+therefore what lets cross-process work land in a real quantile summary rather
+than in bucketed shared-memory counters.
 
 **Stage 1 — codec-token decode.** `tt_tts_codec_tokens_total` is the cumulative
 count of acoustic / codec tokens emitted by the TTS decoder, labelled by
@@ -120,7 +162,8 @@ playback** even when the decoder can. `tt_tts_vocoder_chunks_total` (same
 labels) pairs with the frame counter to give mean frames per chunk, which tells
 apart "fewer chunks" from "shorter chunks" when audio throughput drops.
 
-**Separating the two.** Tokens per second of audio is a constant of the codec,
+**Separating decode from vocoding.** Tokens per second of audio is a constant
+of the codec,
 so `rate(codec_tokens) / (rate(audio_frames) / sample_rate)` is flat while both
 stages keep pace — it rises when the vocoder falls behind a healthy decoder and
 falls when the decoder is starving. The two staleness clocks say the same thing
@@ -200,7 +243,7 @@ monitoring/
         ├── tt_media_server_cpp.json          # C++ server dashboard, regular mode (latency, throughput, queue)
         ├── tt_media_server_cpp_prefill.json  # C++ disaggregated prefill node (role="prefill")
         ├── tt_media_server_cpp_decode.json   # C++ disaggregated decode node (role="decode")
-        ├── tt_media_server_cpp_tts.json      # C++ TTS server (MODEL_SERVICE=tts): codec-token + vocoder throughput
+        ├── tt_media_server_cpp_tts.json      # C++ TTS server (MODEL_SERVICE=tts): conditioning, codec-token + vocoder throughput
         ├── tt_media_server_python.json       # Python server dashboard (legacy, sunsetting)
         └── tt_prefill_gateway.json           # PrefillGateway routing, latency, registration-age dashboard
 ```

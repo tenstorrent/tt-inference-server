@@ -36,6 +36,20 @@ static const prometheus::Histogram::BucketBoundaries K_GEN_TOKEN_BUCKETS{
 static const std::array<std::string, 5> K_PRECREATED_FINISH_REASONS = {
     "stop", "length", "tool_calls", "abort", "error"};
 
+const char* ttsConditioningStageLabel(TtsConditioningStage stage) {
+  switch (stage) {
+    case TtsConditioningStage::TextNormalization:
+      return "text_normalization";
+    case TtsConditioningStage::VoiceNormalization:
+      return "voice_normalization";
+    case TtsConditioningStage::VoiceEncode:
+      return "voice_encode";
+    case TtsConditioningStage::PromptCompile:
+      return "prompt_compile";
+  }
+  return "unknown";
+}
+
 ServerMetrics::ServerMetrics() {
   model_name_ = tt::config::runnerType();
   registry_ = std::make_shared<prometheus::Registry>();
@@ -194,6 +208,44 @@ ServerMetrics::ServerMetrics() {
            .Register(*registry_)
            .Add(modelLabel, K_GEN_TOKEN_BUCKETS);
 
+  // ----- TTS conditioning (preprocessing vs synthesis) ---------------------
+  // Pre-created per stage so a stage that has not run yet still exposes a
+  // series, and so no label map is built on the request path.
+  tts_conditioning_family_ =
+      &prometheus::BuildSummary()
+           .Name("tt_tts_conditioning_seconds")
+           .Help(
+               "Time spent preparing a TTS request rather than synthesizing "
+               "it: normalizing text and preparing voice/speaker conditioning. "
+               "Labelled by stage (text_normalization, voice_normalization, "
+               "voice_encode, prompt_compile). Short utterances can be "
+               "dominated by this rather than by audio generation; its share "
+               "of engine time is sum(rate(tt_tts_conditioning_seconds_sum)) / "
+               "rate(tt_tts_request_duration_seconds_sum). Only stages that "
+               "actually ran are observed, so voice_encode is silent on a "
+               "voice-sample cache hit rather than reporting zero.")
+           .Register(*registry_);
+  for (size_t i = 0; i < TTS_CONDITIONING_STAGE_COUNT; ++i) {
+    auto stageLabels = modelLabel;
+    stageLabels.emplace(
+        "stage",
+        ttsConditioningStageLabel(static_cast<TtsConditioningStage>(i)));
+    tts_conditioning_[i] = &tts_conditioning_family_->Add(
+        stageLabels, K_LATENCY_QUANTILES, std::chrono::seconds{60}, 5);
+  }
+
+  tts_request_duration_seconds_ =
+      &prometheus::BuildSummary()
+           .Name("tt_tts_request_duration_seconds")
+           .Help(
+               "Total time for a finished TTS request, from service entry "
+               "(before any conditioning) through delivery of its terminal "
+               "event. Conditioning is measured inside this interval, so it is "
+               "the denominator for conditioning's share of engine time. Only "
+               "requests the engine ran to a terminal event are observed.")
+           .Register(*registry_)
+           .Add(modelLabel, K_LATENCY_QUANTILES, std::chrono::seconds{60}, 5);
+
   // ----- start background metrics thread ----------------------------------
   running_ = true;
   metrics_thread_ = std::thread(&ServerMetrics::metricsLoop, this);
@@ -275,6 +327,21 @@ void ServerMetrics::onPrefixCacheLookup(uint32_t promptTokens,
                                         uint32_t matchedTokens) {
   if (promptTokens > 0) prefix_cache_queries_total_->Increment(promptTokens);
   if (matchedTokens > 0) prefix_cache_hits_total_->Increment(matchedTokens);
+}
+
+void ServerMetrics::onTtsConditioning(TtsConditioningStage stage,
+                                      double seconds) {
+  const auto index = static_cast<size_t>(stage);
+  if (index >= tts_conditioning_.size() ||
+      tts_conditioning_[index] == nullptr) {
+    return;
+  }
+  tts_conditioning_[index]->Observe(seconds);
+}
+
+void ServerMetrics::onTtsRequestDuration(double seconds) {
+  if (tts_request_duration_seconds_ == nullptr) return;
+  tts_request_duration_seconds_->Observe(seconds);
 }
 
 // -----------------------------------------------------------------------------

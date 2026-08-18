@@ -15,7 +15,7 @@
       }
     ]
   },
-  "description": "TTS server (MODEL_SERVICE=tts) — the two stages of speech generation, measured separately so a slowdown can be pinned to one of them: autoregressive codec-token decode, and vocoder waveform reconstruction (audio seconds produced per wall second). Both are broken out per device, replica and model; decode additionally by voice source, vocoding by batch size.",
+  "description": "TTS server (MODEL_SERVICE=tts) — the stages of speech generation measured separately so a slowdown can be pinned to one of them: request conditioning (text normalization and voice/speaker preparation), autoregressive codec-token decode, and vocoder waveform reconstruction. Conditioning carries p50/p99 per stage and a share-of-engine-time reading, because short utterances can be dominated by preprocessing rather than by synthesis.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -29,7 +29,8 @@
     "inference",
     "tts",
     "audio",
-    "vocoder"
+    "vocoder",
+    "conditioning"
   ],
   "templating": {
     "list": [
@@ -116,6 +117,34 @@
         },
         "options": [],
         "sort": 1
+      },
+      {
+        "name": "stage",
+        "label": "Conditioning stage",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "type": "query",
+        "query": {
+          "query": "label_values(tt_tts_conditioning_seconds_sum, stage)",
+          "refId": "stage"
+        },
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": [],
+        "sort": 1
       }
     ]
   },
@@ -125,9 +154,9 @@
   },
   "timepicker": {},
   "timezone": "browser",
-  "title": "TT Media Server — TTS (decode + vocoder)",
+  "title": "TT Media Server — TTS (decode + vocoder + conditioning)",
   "uid": "tt-media-server-tts",
-  "version": 2,
+  "version": 3,
   "panels": [
     {
       "collapsed": false,
@@ -140,6 +169,531 @@
         "w": 24,
         "x": 0,
         "y": 0
+      },
+      "id": 26,
+      "panels": [],
+      "title": "Conditioning & Text Normalization",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Fraction of total request time spent preparing the request rather than synthesizing it, summed over all stages. This is the headline: when it climbs, requests are being spent on preprocessing, which is what happens as utterances get shorter — the fixed cost of normalization and conditioning stops being amortized over enough audio. Time-weighted from the _sum series, because quantiles cannot be summed.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.15
+              },
+              {
+                "color": "red",
+                "value": 0.4
+              }
+            ]
+          },
+          "unit": "percentunit",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 6,
+        "x": 0,
+        "y": 1
+      },
+      "id": 27,
+      "options": {
+        "colorMode": "background_solid",
+        "graphMode": "area",
+        "textMode": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(tt_tts_conditioning_seconds_sum{stage=~\"$stage\"}[$__rate_interval])) / rate(tt_tts_request_duration_seconds_sum[$__rate_interval])",
+          "legendFormat": "Share",
+          "refId": "A"
+        }
+      ],
+      "title": "Conditioning Share of Engine Time",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "99th percentile conditioning latency across the selected stages — the tail a request can pay before synthesis even starts.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.05
+              },
+              {
+                "color": "red",
+                "value": 0.25
+              }
+            ]
+          },
+          "unit": "s",
+          "decimals": 3
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 6,
+        "x": 6,
+        "y": 1
+      },
+      "id": 28,
+      "options": {
+        "colorMode": "background_solid",
+        "graphMode": "area",
+        "textMode": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max(tt_tts_conditioning_seconds{stage=~\"$stage\", quantile=\"0.99\"})",
+          "legendFormat": "p99",
+          "refId": "A"
+        }
+      ],
+      "title": "Conditioning p99",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Median conditioning latency across the selected stages. Read against p99 to see whether preprocessing cost is uniform or spiky — a wide gap usually means a cold voice-sample cache on some requests.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "s",
+          "decimals": 3
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 6,
+        "x": 12,
+        "y": 1
+      },
+      "id": 29,
+      "options": {
+        "colorMode": "background_solid",
+        "graphMode": "area",
+        "textMode": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max(tt_tts_conditioning_seconds{stage=~\"$stage\", quantile=\"0.5\"})",
+          "legendFormat": "p50",
+          "refId": "A"
+        }
+      ],
+      "title": "Conditioning p50",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Median total request time, from service entry through the terminal event. The denominator the share above divides into, shown so a high share can be read as either slow conditioning or a very short request.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "unit": "s",
+          "decimals": 3
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 6,
+        "x": 18,
+        "y": 1
+      },
+      "id": 30,
+      "options": {
+        "colorMode": "background_solid",
+        "graphMode": "area",
+        "textMode": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max(tt_tts_request_duration_seconds{quantile=\"0.5\"})",
+          "legendFormat": "p50",
+          "refId": "A"
+        }
+      ],
+      "title": "Request Duration p50",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Per-stage tail latency. The four stages are distinct work: text_normalization and voice_normalization run in the main process, while voice_encode (encoding a reference WAV into speech IDs on device) and prompt_compile run in the worker and reach here on the request's terminal IPC message. voice_encode is normally the largest and is absent entirely on a voice-sample cache hit.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "showPoints": "never"
+          },
+          "unit": "s",
+          "decimals": 3
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 4
+      },
+      "id": 31,
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "tt_tts_conditioning_seconds{stage=~\"$stage\", quantile=\"0.99\"}",
+          "legendFormat": "{{stage}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Conditioning p99 by Stage",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Per-stage median latency. Comparing this with the p99 panel beside it shows which stage contributes the tail rather than the typical cost.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "showPoints": "never"
+          },
+          "unit": "s",
+          "decimals": 3
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 4
+      },
+      "id": 32,
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "tt_tts_conditioning_seconds{stage=~\"$stage\", quantile=\"0.5\"}",
+          "legendFormat": "{{stage}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Conditioning p50 by Stage",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Each stage's own share of request time, stacked so the total is the headline share. This is where 'short utterances are dominated by preprocessing' becomes visible per stage rather than in aggregate.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 40,
+            "lineWidth": 2,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          },
+          "unit": "percentunit",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 12
+      },
+      "id": 33,
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "rate(tt_tts_conditioning_seconds_sum{stage=~\"$stage\"}[$__rate_interval]) / rate(tt_tts_request_duration_seconds_sum[$__rate_interval])",
+          "legendFormat": "{{stage}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Share of Engine Time by Stage",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Mean seconds per observation, rate(_sum)/rate(_count). Unlike the quantiles this is safe to compare across stages and reconstructs the per-request cost that the share panel expresses as a fraction. A stage with no observations in the window simply has no line — which is how a warm voice-sample cache reads.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "showPoints": "never"
+          },
+          "unit": "s",
+          "decimals": 4
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 12
+      },
+      "id": 34,
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "rate(tt_tts_conditioning_seconds_sum{stage=~\"$stage\"}[$__rate_interval]) / rate(tt_tts_conditioning_seconds_count{stage=~\"$stage\"}[$__rate_interval])",
+          "legendFormat": "{{stage}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Mean Conditioning per Request by Stage",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "How often each stage actually runs. Reading this next to the latency panels separates 'this stage got slower' from 'this stage started running on more requests' — a voice_encode rate climbing toward the request rate means the voice-sample cache has stopped absorbing repeats.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "showPoints": "never"
+          },
+          "unit": "short",
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 20
+      },
+      "id": 35,
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "rate(tt_tts_conditioning_seconds_count{stage=~\"$stage\"}[$__rate_interval])",
+          "legendFormat": "{{stage}}",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "rate(tt_tts_request_duration_seconds_count[$__rate_interval])",
+          "legendFormat": "requests/s",
+          "refId": "B"
+        }
+      ],
+      "title": "Conditioning Observations/s by Stage",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 28
       },
       "id": 1,
       "panels": [],
@@ -183,7 +737,7 @@
         "h": 3,
         "w": 6,
         "x": 0,
-        "y": 1
+        "y": 29
       },
       "id": 2,
       "options": {
@@ -239,7 +793,7 @@
         "h": 3,
         "w": 6,
         "x": 6,
-        "y": 1
+        "y": 29
       },
       "id": 3,
       "options": {
@@ -295,7 +849,7 @@
         "h": 3,
         "w": 6,
         "x": 12,
-        "y": 1
+        "y": 29
       },
       "id": 4,
       "options": {
@@ -355,7 +909,7 @@
         "h": 3,
         "w": 6,
         "x": 18,
-        "y": 1
+        "y": 29
       },
       "id": 5,
       "options": {
@@ -405,7 +959,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 4
+        "y": 32
       },
       "id": 6,
       "options": {
@@ -460,7 +1014,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 4
+        "y": 32
       },
       "id": 7,
       "options": {
@@ -511,7 +1065,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 12
+        "y": 40
       },
       "id": 8,
       "options": {
@@ -559,7 +1113,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 20
+        "y": 48
       },
       "id": 9,
       "options": {
@@ -606,7 +1160,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 28
+        "y": 56
       },
       "id": 14,
       "panels": [],
@@ -650,7 +1204,7 @@
         "h": 3,
         "w": 6,
         "x": 0,
-        "y": 29
+        "y": 57
       },
       "id": 15,
       "options": {
@@ -706,7 +1260,7 @@
         "h": 3,
         "w": 6,
         "x": 6,
-        "y": 29
+        "y": 57
       },
       "id": 16,
       "options": {
@@ -762,7 +1316,7 @@
         "h": 3,
         "w": 6,
         "x": 12,
-        "y": 29
+        "y": 57
       },
       "id": 17,
       "options": {
@@ -818,7 +1372,7 @@
         "h": 3,
         "w": 6,
         "x": 18,
-        "y": 29
+        "y": 57
       },
       "id": 18,
       "options": {
@@ -868,7 +1422,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 32
+        "y": 60
       },
       "id": 19,
       "options": {
@@ -919,7 +1473,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 32
+        "y": 60
       },
       "id": 20,
       "options": {
@@ -970,7 +1524,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 40
+        "y": 68
       },
       "id": 21,
       "options": {
@@ -1021,7 +1575,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 40
+        "y": 68
       },
       "id": 22,
       "options": {
@@ -1072,7 +1626,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 48
+        "y": 76
       },
       "id": 23,
       "options": {
@@ -1117,7 +1671,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 56
+        "y": 84
       },
       "id": 24,
       "options": {
@@ -1154,7 +1708,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 64
+        "y": 92
       },
       "id": 10,
       "panels": [],
@@ -1184,7 +1738,7 @@
         "h": 7,
         "w": 6,
         "x": 0,
-        "y": 65
+        "y": 93
       },
       "id": 11,
       "options": {
@@ -1235,7 +1789,7 @@
         "h": 7,
         "w": 6,
         "x": 6,
-        "y": 65
+        "y": 93
       },
       "id": 25,
       "options": {
@@ -1286,7 +1840,7 @@
         "h": 7,
         "w": 6,
         "x": 12,
-        "y": 65
+        "y": 93
       },
       "id": 12,
       "options": {
@@ -1337,7 +1891,7 @@
         "h": 7,
         "w": 6,
         "x": 18,
-        "y": 65
+        "y": 93
       },
       "id": 13,
       "options": {

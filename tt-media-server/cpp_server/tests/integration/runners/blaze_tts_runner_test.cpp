@@ -11,6 +11,8 @@
 #include <chrono>
 #include <deque>
 #include <memory>
+#include <optional>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <utility>
@@ -18,6 +20,7 @@
 
 #include "config/settings.hpp"
 #include "ipc/in_memory/in_memory_cancel_queue.hpp"
+#include "metrics/metrics.hpp"
 #include "runtime/worker/single_process_worker_metrics.hpp"
 #include "runtime/worker/tts_metrics_layout.hpp"
 #include "runtime/worker/worker_metrics_shm.hpp"
@@ -259,6 +262,23 @@ std::string uniqueQueueName(const char* prefix) {
          "_" + std::to_string(++sequence);
 }
 
+/** Like waitForFinish, but hands back the terminal message so its worker-side
+ *  conditioning timings can be inspected. */
+std::optional<ipc::tts::TtsAudioChunkMessage> waitForFinishMessage(
+    ipc::tts::TtsAudioChunkQueue& audioQueue, uint32_t taskId) {
+  const auto deadline =
+      std::chrono::steady_clock::now() + std::chrono::seconds(2);
+  while (std::chrono::steady_clock::now() < deadline) {
+    ipc::tts::TtsAudioChunkMessage message;
+    if (audioQueue.tryPop(message) && message.task_id == taskId &&
+        message.isFinal()) {
+      return message;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  return std::nullopt;
+}
+
 bool waitForFinish(ipc::tts::TtsAudioChunkQueue& audioQueue, uint32_t taskId) {
   const auto deadline =
       std::chrono::steady_clock::now() + std::chrono::seconds(2);
@@ -421,6 +441,110 @@ TEST(BlazeTtsRunnerIntegrationTest, PublishesVocodedAudioPerBatchBucket) {
 
   taskQueue.remove();
   audioQueue.remove();
+}
+
+TEST(BlazeTtsRunnerIntegrationTest, ReportsWorkerConditioningTimings) {
+  config::TtsConfig config;
+  config.maxUsers = 1;
+  config.taskQueueCapacity = 1;
+  config.audioQueueCapacity = 4;
+  config.tokenizerPath.clear();
+
+  ipc::tts::TtsTaskQueue taskQueue(uniqueQueueName("tts_task"), 4);
+  ipc::tts::TtsAudioChunkQueue audioQueue(uniqueQueueName("tts_audio"), 4);
+  ipc::in_memory::CancelQueue cancelQueue;
+  auto scheduler = std::make_unique<RecordingTtsScheduler>();
+  auto* schedulerPtr = scheduler.get();
+  BlazeTtsRunner runner(config, std::move(scheduler), &taskQueue, &audioQueue,
+                        &cancelQueue);
+  std::thread runnerThread([&runner] { runner.start(); });
+
+  const std::vector<int16_t> samples = {1, 2, 3, 4};
+
+  // First request encodes the voice sample on the "device", so the encode
+  // duration rides back on the terminal message. It arrives even though this
+  // task then fails for want of a tokenizer, which is the point: the timings
+  // are drained in sendFinish, so no terminal path loses them.
+  taskQueue.push({.task_id = 1, .text = "first", .voiceWavPcm = samples});
+  const auto first = waitForFinishMessage(audioQueue, 1);
+  ASSERT_TRUE(first.has_value());
+  EXPECT_GT(first->voiceEncodeUs, 0u);
+
+  // Second request hits the voice-sample cache, so no encode runs and the
+  // stage reports 0 — which the main process reads as "did not run" and skips,
+  // rather than observing a zero-length voice encode that would drag the
+  // stage's quantiles toward zero.
+  taskQueue.push({.task_id = 2, .text = "second", .voiceWavPcm = samples});
+  const auto second = waitForFinishMessage(audioQueue, 2);
+  ASSERT_TRUE(second.has_value());
+  EXPECT_EQ(second->voiceEncodeUs, 0u);
+  EXPECT_EQ(schedulerPtr->voiceEncodeCalls.load(), 1u);
+
+  taskQueue.shutdown();
+  runnerThread.join();
+  taskQueue.remove();
+  audioQueue.remove();
+}
+
+TEST(TtsIpcMessageTest, RoundTripsWorkerConditioningTimings) {
+  auto message = ipc::tts::TtsAudioChunkMessage::finish(
+      42, domain::tts::TtsFinishReason::Completed);
+  message.voiceEncodeUs = 123456;
+  message.promptCompileUs = 789;
+  message.samplesBf16 = {1, 2, 3};
+  message.error = "boom";
+
+  // The queue transports these messages through serialize/deserialize, so the
+  // timings only reach the main process if the wire format round-trips them.
+  std::stringstream buffer;
+  message.serialize(buffer);
+  const auto decoded = ipc::tts::TtsAudioChunkMessage::deserialize(buffer);
+
+  EXPECT_EQ(decoded.task_id, 42u);
+  EXPECT_TRUE(decoded.isFinal());
+  EXPECT_EQ(decoded.voiceEncodeUs, 123456u);
+  EXPECT_EQ(decoded.promptCompileUs, 789u);
+  EXPECT_EQ(decoded.samplesBf16, message.samplesBf16);
+  EXPECT_EQ(decoded.error, "boom");
+}
+
+TEST(TtsIpcMessageTest, DefaultsConditioningTimingsToNotRun) {
+  const auto chunk = ipc::tts::TtsAudioChunkMessage::fromDomainChunk(
+      7, domain::tts::TtsAudioChunk{});
+  EXPECT_EQ(chunk.voiceEncodeUs, 0u);
+  EXPECT_EQ(chunk.promptCompileUs, 0u);
+}
+
+TEST(TtsConditioningMetricsTest, ExposesPerStageQuantilesAndShareDenominator) {
+  auto& serverMetrics = tt::metrics::ServerMetrics::instance();
+  using Stage = tt::metrics::TtsConditioningStage;
+
+  serverMetrics.onTtsConditioning(Stage::TextNormalization, 0.002);
+  serverMetrics.onTtsConditioning(Stage::VoiceNormalization, 0.010);
+  serverMetrics.onTtsConditioning(Stage::VoiceEncode, 0.250);
+  serverMetrics.onTtsConditioning(Stage::PromptCompile, 0.001);
+  serverMetrics.onTtsRequestDuration(1.5);
+
+  const std::string text = serverMetrics.renderText();
+
+  // Each stage the spec asks about is its own series, so preprocessing can be
+  // attributed rather than just totalled.
+  EXPECT_NE(text.find("stage=\"text_normalization\""), std::string::npos);
+  EXPECT_NE(text.find("stage=\"voice_normalization\""), std::string::npos);
+  EXPECT_NE(text.find("stage=\"voice_encode\""), std::string::npos);
+  EXPECT_NE(text.find("stage=\"prompt_compile\""), std::string::npos);
+
+  // p50/p99 come from the summary itself, not from a bucket approximation.
+  EXPECT_NE(text.find("tt_tts_conditioning_seconds{"), std::string::npos);
+  EXPECT_NE(text.find("quantile="), std::string::npos);
+
+  // The _sum pair is what the percent-of-engine-time ratio divides, so both
+  // halves have to exist for that query to return anything.
+  EXPECT_NE(text.find("tt_tts_conditioning_seconds_sum"), std::string::npos);
+  EXPECT_NE(text.find("tt_tts_request_duration_seconds_sum"),
+            std::string::npos);
+  EXPECT_NE(text.find("tt_tts_request_duration_seconds_count"),
+            std::string::npos);
 }
 
 TEST(TtsMetricsLayoutTest, BucketsBatchSizesAndKeepsCellsDisjoint) {
