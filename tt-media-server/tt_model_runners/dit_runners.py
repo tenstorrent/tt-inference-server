@@ -1207,29 +1207,111 @@ def _minimax_h3_pipeline_args(request: VideoGenerateRequest, resolution) -> dict
     ``last_image=`` (first-frame conditioning).
     """
     seed = int(request.seed) if request.seed is not None else 0
+
+    # Output geometry: an explicit request overrides the mesh default, clamped to the H3 envelope
+    # (short edge <= 768, long edge <= 1344, snapped to /32; duration on the 17n+5 grid, <= ~15 s).
+    def _snap32(x):
+        return max(32, int(round(float(x) / 32.0)) * 32)
+
+    def _snap_len(n):
+        n = max(22, int(n))  # 17n+5 grid, n>=1 -> 22 frames minimum
+        k = max(1, round((n - 5) / 17.0))
+        return min(17 * k + 5, 362)  # ~15 s cap
+
+    w = _snap32(request.width) if getattr(request, "width", None) else resolution.width
+    h = _snap32(request.height) if getattr(request, "height", None) else resolution.height
+    lo, hi = min(w, h), max(w, h)
+    lo, hi = min(lo, 768), min(hi, 1344)
+    w, h = (lo, hi) if w <= h else (hi, lo)
+
+    nf_default = int(os.environ.get("H3_NUM_FRAMES", MINIMAX_H3_NUM_FRAMES))
+    num_frames = _snap_len(request.num_frames) if getattr(request, "num_frames", None) else nf_default
+
+    # Cap pixel*frame load and downscale resolution to fit (keeping duration), like the legacy
+    # max_load. On the 1x4 this is set by DRAM *fragmentation*: a large (~63M, 10s@512) decode
+    # fragments the free space so the NEXT large clip OOMs; clips in the ~42M zone run back-to-back
+    # indefinitely. So 5s stays full-res, 10s renders ~415^2. Raise H3_MAX_LOAD on a roomier mesh.
+    max_load = int(os.environ.get("H3_MAX_LOAD", "42000000"))
+    load = w * h * num_frames
+    if load > max_load:
+        scale = (max_load / load) ** 0.5
+        w = max(256, int(w * scale) // 32 * 32)
+        h = max(256, int(h * scale) // 32 * 32)
+
     return dict(
         prompt=request.prompt,
         num_inference_steps=request.num_inference_steps,
-        num_frames=MINIMAX_H3_NUM_FRAMES,
-        height=resolution.height,
-        width=resolution.width,
+        num_frames=num_frames,
+        height=h,
+        width=w,
         seed=seed,
     )
 
 
+# Per-step progress: the media-server job API is coarse and the upstream pipeline exposes no
+# callback, but its denoise loop calls module-level build_row_timesteps once per step. Wrap it to
+# publish {phase, step, total} to a file keyed by the job id (the bot reads it for a live bar).
+_H3_PROGRESS_DIR = os.environ.get("H3_PROGRESS_DIR", "/tmp/h3-progress")
+_h3_progress = {"key": None, "step": 0, "total": 0}
+
+
+def _h3_write_progress(phase: str) -> None:
+    key = _h3_progress["key"]
+    if not key:
+        return
+    try:
+        import json
+
+        os.makedirs(_H3_PROGRESS_DIR, exist_ok=True)
+        path = os.path.join(_H3_PROGRESS_DIR, f"{key}.json")
+        tmp = f"{path}.tmp"
+        with open(tmp, "w") as f:
+            f.write(
+                json.dumps(
+                    {"phase": phase, "step": _h3_progress["step"], "total": _h3_progress["total"]}
+                )
+            )
+        os.replace(tmp, path)
+    except Exception:
+        pass
+
+
+def _h3_install_progress_hook() -> None:
+    from models.tt_dit.pipelines.minimax_h3 import pipeline_minimax_h3 as _pm
+
+    if getattr(_pm, "_brt_progress_wrapped", False):
+        return
+    _orig = _pm.build_row_timesteps
+
+    def _wrapped(*args, **kwargs):
+        _h3_progress["step"] += 1
+        _h3_write_progress("denoising")
+        return _orig(*args, **kwargs)
+
+    _pm.build_row_timesteps = _wrapped
+    _pm._brt_progress_wrapped = True
+
+
+_h3_install_progress_hook()
+
+
 class TTMiniMaxH3Runner(TTDiTRunner):
-    """MiniMax-H3 t2va (text -> video + native stereo audio) on the upstream pipeline."""
+    """MiniMax-H3 on the upstream pipeline. One runner serves both t2va (text -> video+audio) and
+    fl2va (keyframe -> video+audio): /generations/i2v routes here with image_prompts, which run()
+    decodes into the pipeline's image=/last_image=. (Kept out of I2V_MODEL_RUNNERS so t2v isn't
+    rejected.)"""
 
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.resolution = minimax_h3_target_resolution(self.settings.device_mesh_shape)
+        self.image_manager = ImageManager()
 
     def create_pipeline(self):
         mesh = tuple(self.settings.device_mesh_shape)
         # {} on (4, 8) / (4, 32): let the upstream _PRESETS_BH pick the shape.
         overrides = _MINIMAX_H3_SMALL_MESH_PARAMS.get(mesh, {})
         try:
-            return MiniMaxH3Pipeline.create_pipeline(
+            pipe = MiniMaxH3Pipeline.create_pipeline(
                 mesh_device=self.ttnn_device,
                 weights_dir=self.settings.model_weights_path,
                 task="t2va",
@@ -1243,6 +1325,14 @@ class TTMiniMaxH3Runner(TTDiTRunner):
                 e,
             )
             raise
+        # Upstream auto-enables denoise trace-capture only for the quad galaxy; enable it for our
+        # small mesh too (eager denoise is host-dispatch-bound). First gen per (shape, steps) captures.
+        if getattr(pipe, "trace_denoise", None) is False and not is_large_mesh(mesh):
+            pipe.trace_denoise = True
+            self.logger.info(
+                f"Device {self.device_id}: enabled denoise trace-capture for mesh {mesh}"
+            )
+        return pipe
 
     def load_weights(self):
         return False  # weights load during pipeline creation (as Wan/Mochi)
@@ -1254,14 +1344,39 @@ class TTMiniMaxH3Runner(TTDiTRunner):
     )
     def run(self, requests: list[VideoGenerateRequest]):
         self.logger.debug(f"Device {self.device_id}: Running inference")
-        out = self.pipeline(**_minimax_h3_pipeline_args(requests[0], self.resolution))
-        self.logger.debug(f"Device {self.device_id}: Inference completed")
-        # MiniMaxH3Output.video is (1, 3, F, H, W) float in [0, 1]; the exporter
-        # wants (F, H, W, 3) uint8 (channels-last). audio is (1, 2, samples) ->
-        # (2, samples). Return both so the exporter muxes the audio into the mp4.
+        req = requests[0]
+        # Arm per-step progress for this job (key == API job id == request._task_id).
+        _h3_progress["key"] = getattr(req, "_task_id", None)
+        _h3_progress["step"] = 0
+        _h3_progress["total"] = int(getattr(req, "num_inference_steps", None) or 8)
+        _h3_write_progress("starting")
+
+        args = _minimax_h3_pipeline_args(req, self.resolution)
+        # fl2va: /generations/i2v routes here with image_prompts; decode the first (and optional
+        # last) keyframe into image=/last_image=. Absent -> plain t2va.
+        image_prompts = getattr(req, "image_prompts", None)
+        if image_prompts:
+            tgt = (args["width"], args["height"])
+            entries = sorted(image_prompts, key=lambda e: e.frame_pos)
+            args["image"] = self.image_manager.base64_to_pil_image(
+                entries[0].image, target_size=tgt, target_mode="RGB"
+            )
+            if len(entries) > 1 and entries[-1].frame_pos >= args["num_frames"] - 1:
+                args["last_image"] = self.image_manager.base64_to_pil_image(
+                    entries[-1].image, target_size=tgt, target_mode="RGB"
+                )
+
+        try:
+            out = self.pipeline(**args)
+            _h3_progress["step"] = _h3_progress["total"]
+            _h3_write_progress("decoding")
+        finally:
+            self.logger.debug(f"Device {self.device_id}: Inference completed")
+        # MiniMaxH3Output.video is (1, 3, F, H, W) float in [0, 1] -> (F, H, W, 3) uint8; audio is
+        # (1, 2, samples) -> (2, samples). Return both so the exporter muxes the audio into the mp4.
         frames = (
-            out.video[0]  # (3, F, H, W)
-            .permute(1, 2, 3, 0)  # (F, H, W, 3)
+            out.video[0]
+            .permute(1, 2, 3, 0)
             .clamp(0, 1)
             .mul(255)
             .round()
@@ -1269,10 +1384,11 @@ class TTMiniMaxH3Runner(TTDiTRunner):
             .numpy()
             .astype(np.uint8)
         )
-        audio = out.audio[0].to("cpu").numpy()  # (2, samples)
-        # The device worker indexes the return per-request (``responses[i]``) and
-        # checks ``len(responses)``, so return a one-element sequence (batch=1),
-        # matching the Wan/Mochi runners' batch-axis return.
+        audio = out.audio[0].to("cpu").numpy()
+        # Free per-shape device state so a different-shape next job doesn't OOM the tight mesh.
+        self._release_per_shape_state()
+        # Device worker indexes the return per-request (responses[i]) and checks len(responses),
+        # so return a one-element sequence (batch=1), like the Wan/Mochi runners.
         return [
             VideoWithAudio(
                 frames=frames,
@@ -1281,6 +1397,32 @@ class TTMiniMaxH3Runner(TTDiTRunner):
                 fps=out.fps,
             )
         ]
+
+    def _release_per_shape_state(self) -> None:
+        """Drop per-(H, W, frames) device buffers between renders so varying geometry doesn't OOM.
+
+        Best-effort: the denoise trace (re-captured cheaply) and the VAE's per-shape decoder cache
+        (rebuilt in ~1 s), then force reclaim. Resident text/DiT weights are untouched.
+        """
+        pipe = self.pipeline
+        try:
+            pipe.release_traces()
+        except Exception as e:
+            self.logger.debug(f"Device {self.device_id}: release_traces skipped: {e}")
+        try:
+            vae = getattr(pipe, "_vae", None)
+            decoders = getattr(vae, "_decoders", None)
+            if decoders:
+                decoders.clear()
+        except Exception as e:
+            self.logger.debug(f"Device {self.device_id}: vae decoder clear skipped: {e}")
+        try:
+            import gc
+
+            gc.collect()
+            ttnn.synchronize_device(self.ttnn_device)
+        except Exception as e:
+            self.logger.debug(f"Device {self.device_id}: reclaim skipped: {e}")
 
     def get_pipeline_device_params(self):
         return _minimax_h3_dit_device_params(self.settings.device_mesh_shape)
