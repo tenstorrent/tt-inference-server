@@ -14,17 +14,22 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from config.constants import ModelNames, SupportedModels
-from utils.adapter_merge_utils import MergeResult
 
 BASE_REPO = SupportedModels.LLAMA_3_1_8B.value
-BASE_REVISION = "d04e592bb4f6aa9cfee91e2e20afa771667e1d4b"
 
 
-def fake_merge_adapter(base_model_name, adapter_path, output_dir, dtype_str=None):
+def fake_run_merge_subprocess(
+    base_model_name,
+    adapter_path,
+    output_dir,
+    *,
+    python_executable=None,
+    cwd=None,
+    dtype_str="torch.bfloat16",
+):
     os.makedirs(output_dir, exist_ok=True)
     with open(os.path.join(output_dir, "config.json"), "w") as f:
         json.dump({"base_model": base_model_name}, f)
-    return MergeResult(output_dir=output_dir, base_revision=BASE_REVISION)
 
 
 class FakeJobManager:
@@ -74,9 +79,12 @@ async def test_adapter_merge_workflow_end_to_end(tmp_path, monkeypatch):
                 "model_services.base_job_service.get_job_manager", return_value=fake_jm
             )
         )
-        # Route the heavy merge to the importable stub (survives the spawn).
+        # Route the heavy merge (normally a 4.x-venv subprocess) to a stub.
         stack.enter_context(
-            patch("model_services.training_service.merge_adapter", fake_merge_adapter)
+            patch(
+                "model_services.training_service.run_merge_subprocess",
+                fake_run_merge_subprocess,
+            )
         )
 
         from domain.adapter_merge_request import AdapterMergeRequest
@@ -106,6 +114,5 @@ async def test_adapter_merge_workflow_end_to_end(tmp_path, monkeypatch):
     info = json.load(open(os.path.join(output_dir, MERGE_INFO_FILE_NAME)))
     assert info["merge_id"] == request._task_id
     assert info["model"] == BASE_REPO
-    assert info["base_revision"] == BASE_REVISION
     assert info["source_job_id"] == "train-1"
     assert info["checkpoint_id"] == "ckpt-100"

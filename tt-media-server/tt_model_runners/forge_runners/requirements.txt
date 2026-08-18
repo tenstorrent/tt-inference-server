@@ -15,7 +15,10 @@ transformers
 mistral-common[image]>=1.11.7 # mistral's tokenizer
 
 datasets # model training
-peft # model training
+# Pinned (not bare) so the adapter_config.json schema this writes is
+# deterministic and the transformers-4.x merge venv can install the exact same
+# peft — guaranteeing the merge reads back an adapter its writer produced.
+peft==0.20.0 # model training
 
 # yolox requirements
 thop
