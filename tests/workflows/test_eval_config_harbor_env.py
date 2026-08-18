@@ -30,6 +30,11 @@ def _config(**overrides) -> TerminalBenchEvalConfig:
     return TerminalBenchEvalConfig(**base)
 
 
+def test_harbor_checkout_uses_reachable_prebuilt_mirror_revision():
+    assert HARBOR_REPO == "https://github.com/dcvijeticTT/harbor.git"
+    assert HARBOR_REF == "5c316ad138de9c940ada448f25bfa8dc96e313bc"
+
+
 def test_defaults_to_docker_with_no_env(monkeypatch):
     for var in ("HARBOR_ENV_TYPE", "HARBOR_K8S_NAMESPACE", "HARBOR_TIMEOUT_SEC"):
         monkeypatch.delenv(var, raising=False)
@@ -51,6 +56,7 @@ def test_kubernetes_env_type_emits_namespace_and_image_mode(monkeypatch):
         "HARBOR_K8S_KUBECONFIG",
         "HARBOR_K8S_NODE_SELECTOR",
         "HARBOR_K8S_POD_LABELS",
+        "HARBOR_K8S_PREBUILT_IMAGE_MIRRORS",
         "HARBOR_K8S_REGISTRY_INSECURE",
         "HARBOR_K8S_SKIP_IMAGE_CHECK",
     ):
@@ -100,6 +106,10 @@ def test_passthrough_vars_reach_kwargs(monkeypatch):
         "unix:///run/buildkit/buildkitd.sock",
     )
     monkeypatch.setenv("HARBOR_K8S_COMPOSE_STRATEGY", "pods")
+    monkeypatch.setenv(
+        "HARBOR_K8S_PREBUILT_IMAGE_MIRRORS",
+        '{"docker.io": "http://10.43.20.45:5000"}',
+    )
     monkeypatch.setenv("HARBOR_K8S_NODE_SELECTOR", '{"tt-pool": "shield"}')
     monkeypatch.setenv(
         "HARBOR_K8S_POD_LABELS",
@@ -118,6 +128,9 @@ def test_passthrough_vars_reach_kwargs(monkeypatch):
         "image_builder": "buildkit",
         "buildkit_address": "unix:///run/buildkit/buildkitd.sock",
         "compose_strategy": "pods",
+        "prebuilt_image_mirrors": {
+            "docker.io": "http://10.43.20.45:5000",
+        },
         "node_selector": {"tt-pool": "shield"},
         "pod_labels": {
             "ci-run-id": "123456789",
@@ -142,6 +155,17 @@ def test_registry_boolean_flags_reject_invalid_values(monkeypatch):
     monkeypatch.setenv("HARBOR_K8S_REGISTRY_INSECURE", "sometimes")
 
     with pytest.raises(ValueError, match="HARBOR_K8S_REGISTRY_INSECURE"):
+        _config()
+
+
+def test_prebuilt_image_mirrors_must_be_a_json_string_map(monkeypatch):
+    monkeypatch.setenv("HARBOR_ENV_TYPE", "kubernetes")
+    monkeypatch.setenv(
+        "HARBOR_K8S_PREBUILT_IMAGE_MIRRORS",
+        '{"docker.io": 5000}',
+    )
+
+    with pytest.raises(ValueError, match="HARBOR_K8S_PREBUILT_IMAGE_MIRRORS"):
         _config()
 
 

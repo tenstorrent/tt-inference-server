@@ -81,6 +81,17 @@ def _harbor_env_kwargs() -> Dict[str, Any]:
         if normalized not in {"true", "false"}:
             raise ValueError(f"{env_var} must be 'true' or 'false'")
         kwargs[kwarg] = normalized == "true"
+    prebuilt_image_mirrors = os.getenv("HARBOR_K8S_PREBUILT_IMAGE_MIRRORS")
+    if prebuilt_image_mirrors:
+        parsed_mirrors = json.loads(prebuilt_image_mirrors)
+        if not isinstance(parsed_mirrors, dict) or not all(
+            isinstance(key, str) and isinstance(value, str)
+            for key, value in parsed_mirrors.items()
+        ):
+            raise ValueError(
+                "HARBOR_K8S_PREBUILT_IMAGE_MIRRORS must be a JSON string map"
+            )
+        kwargs["prebuilt_image_mirrors"] = parsed_mirrors
     node_selector = os.getenv("HARBOR_K8S_NODE_SELECTOR")
     if node_selector:
         # JSON object, e.g. '{"tt-pool": "shield"}'
