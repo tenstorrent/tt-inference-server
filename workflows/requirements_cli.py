@@ -19,7 +19,7 @@ import argparse
 import logging
 import sys
 from pathlib import Path
-from typing import Any, Optional, Sequence
+from typing import Any, Sequence
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +58,9 @@ def requirements_mode_in_argv(argv: Sequence[str] | None = None) -> bool:
 
 def add_requirements_argument(parser: argparse.ArgumentParser) -> None:
     """Register ``--requirements-json`` on ``parser``."""
-    parser.add_argument(REQUIREMENTS_FLAG, type=str, default=None, help=REQUIREMENTS_HELP)
+    parser.add_argument(
+        REQUIREMENTS_FLAG, type=str, default=None, help=REQUIREMENTS_HELP
+    )
 
 
 def apply_requirements(
