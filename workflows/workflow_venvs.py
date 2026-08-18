@@ -35,7 +35,7 @@ REQUIREMENTS_DIR = get_repo_root_path() / "requirements"
 # used to schedule agentic-eval trial pods on our clusters. Temporary: revert to
 # harbor-framework/harbor at a release tag once the environment lands upstream.
 HARBOR_REPO = "https://github.com/dcvijeticTT/harbor.git"
-HARBOR_REF = "5c316ad138de9c940ada448f25bfa8dc96e313bc"
+HARBOR_REF = "ca1cb83832d6481d2441d63d080a5643e6ab9a2d"
 
 
 def checkout_pinned_repo(dest: Path, repo: str, ref: str) -> bool:
