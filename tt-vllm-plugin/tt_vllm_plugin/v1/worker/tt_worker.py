@@ -54,9 +54,16 @@ class TTWorker(WorkerBase):
 
         # Initialized by init_device
         self.mesh_device = None
-        self.model_config.override_tt_config = getattr(
-            self.model_config, "plugin_config", {}
-        ).get("tt", {})
+        # Prefer the tt override threaded through additional_config (upstream
+        # vLLM channel that survives the EngineCore's curated env); fall back to
+        # the fork-only model_config.plugin_config so the TT vLLM fork still works.
+        additional_config = getattr(self.vllm_config, "additional_config", None) or {}
+        tt_override = additional_config.get("tt")
+        if not isinstance(tt_override, dict) or not tt_override:
+            tt_override = (getattr(self.model_config, "plugin_config", None) or {}).get(
+                "tt", {}
+            )
+        self.model_config.override_tt_config = tt_override
 
         # Runtime weight-update (co-located RL) state. The transport is owned by
         # a WeightTransferEngine (device-socket bridge); the worker owns the

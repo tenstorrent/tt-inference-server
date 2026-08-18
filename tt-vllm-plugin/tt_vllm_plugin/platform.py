@@ -110,9 +110,14 @@ class TTPlatform(Platform):
         # TODO move this to tt_model_runner when request validation
         # stops depending on vllm_config
 
-        override_tt_config = getattr(vllm_config.model_config, "plugin_config", {}).get(
-            "tt", {}
-        )
+        # Prefer the tt override threaded through additional_config (upstream
+        # vLLM channel); fall back to the fork-only model_config.plugin_config.
+        additional_config = getattr(vllm_config, "additional_config", None) or {}
+        override_tt_config = additional_config.get("tt")
+        if not isinstance(override_tt_config, dict) or not override_tt_config:
+            override_tt_config = getattr(
+                vllm_config.model_config, "plugin_config", {}
+            ).get("tt", {})
         if (
             override_tt_config is not None
             and "sample_on_device_mode" in override_tt_config

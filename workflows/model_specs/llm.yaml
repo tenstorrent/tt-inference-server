@@ -798,8 +798,8 @@ templates:
     - meta-llama/Llama-3.2-1B-Instruct
   impl: tt_transformers
   version: "0.11.1"
-  tt_metal_commit: 84b4c53
-  vllm_commit: 222ee06
+  tt_metal_commit: 80180b9  
+  vllm_commit: 7678b70  
   inference_engine: VLLM
   device_model_specs:
     - device: N150

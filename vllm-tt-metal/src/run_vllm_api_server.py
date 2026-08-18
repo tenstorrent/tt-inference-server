@@ -733,6 +733,51 @@ def set_vllm_sys_argv(args, remaining_sys_argv, default_vllm_args):
     logger.info(f"vLLM command:\n{format_vllm_serve_command(sys.argv)}")
 
 
+def absorb_plugin_config_into_additional_config(default_vllm_args):
+    """Translate the fork-only ``plugin_config`` into ``additional_config['tt']``.
+
+    ``model_spec.py`` serializes the general ``override_tt_config`` as
+    ``plugin_config = json.dumps({"tt": {...}})``. That flag only exists in the
+    TT vLLM fork; upstream vLLM rejects ``--plugin_config``. Upstream's supported
+    channel is ``--additional-config``, so we pop ``plugin_config`` here and
+    fold its inner ``tt`` dict into ``additional_config['tt']``. Only pre-seeds
+    keys so the ``inject_*`` functions (called afterwards) always win. Tolerates
+    a JSON string, a dict, or empty/missing/unparseable input (no-op, and the
+    ``--plugin_config`` flag is never forwarded).
+    """
+    raw = default_vllm_args.pop("plugin_config", None)
+    if raw is None:
+        raw = default_vllm_args.pop("plugin-config", None)
+    else:
+        default_vllm_args.pop("plugin-config", None)
+    if raw is None:
+        return
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except (TypeError, ValueError):
+            return
+    if not isinstance(raw, dict):
+        return
+    tt_override = raw.get("tt")
+    if not isinstance(tt_override, dict) or not tt_override:
+        return
+    additional = default_vllm_args.get("additional_config")
+    if not isinstance(additional, dict):
+        additional = {}
+    tt_cfg = additional.get("tt")
+    if not isinstance(tt_cfg, dict):
+        tt_cfg = {}
+    for key, value in tt_override.items():
+        tt_cfg.setdefault(key, value)
+    additional["tt"] = tt_cfg
+    default_vllm_args["additional_config"] = additional
+    logger.info(
+        f"Absorbed plugin_config into additional_config['tt']: {tt_override} "
+        "(routed through upstream --additional-config)"
+    )
+
+
 def inject_tt_data_parallel(default_vllm_args):
     """Route ``TT_DATA_PARALLEL`` into ``additional_config['tt']['tt_data_parallel']``.
 
@@ -829,6 +874,7 @@ def main():
     set_runtime_env_vars(model_spec)
     runtime_settings(model_spec, no_auth=args.no_auth)
     default_vllm_args = model_spec["device_model_spec"]["vllm_args"]
+    absorb_plugin_config_into_additional_config(default_vllm_args)
     inject_tt_data_parallel(default_vllm_args)
     inject_tt_weight_bridge_dir(default_vllm_args)
     set_vllm_sys_argv(args, remaining_sys_argv, default_vllm_args)
