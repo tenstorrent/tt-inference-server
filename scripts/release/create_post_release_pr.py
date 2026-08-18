@@ -337,8 +337,15 @@ def render_table(rows) -> str:
     return "\n".join(lines)
 
 
-def render_body(version: str, rows) -> str:
+def render_body(version: str, run_id, rows) -> str:
     return (
+        # Machine-readable metadata block (parsed by downstream tooling); keep
+        # it first, before the Summary. run_id = tt-shield Release run id,
+        # version = the release version with a leading 'v'.
+        "<!--\n"
+        f"metadata:run_id={run_id or ''}\n"
+        f"metadata:version=v{version}\n"
+        "-->\n\n"
         "# Summary of Changes\n\n"
         "<!-- Fill in the summary of changes manually. -->\n"
         "- placeholder\n\n\n"
@@ -493,7 +500,7 @@ def main() -> None:
     rows = build_rows(
         new_blocks, old_blocks, combos, jobs, args.tt_shield_repo, args.tt_shield_run_id
     )
-    body = render_body(version, rows)
+    body = render_body(version, args.tt_shield_run_id, rows)
 
     print(f"Version:      {version}", file=sys.stderr)
     print(f"Title:        {title}", file=sys.stderr)
