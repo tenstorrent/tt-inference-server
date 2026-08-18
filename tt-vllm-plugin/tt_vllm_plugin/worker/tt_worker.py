@@ -370,6 +370,34 @@ def get_mesh_grid(dp_rank=0):
     return mesh_grid
 
 
+def _maybe_join_shared_distributed_context() -> bool:
+    """Join an externally-launched ttnn distributed context when co-located.
+
+    When the inference server is co-launched with a trainer under a single
+    ``tt-run`` (one MPI world + an MGD that fabric-connects the two meshes),
+    set ``TT_COLOCATED_INFERENCE=1``. We then initialize/join the shared ttnn
+    distributed context (idempotent) so ``open_mesh_device`` opens only this
+    rank's bound submesh (rank -> mesh via the rank-binding) instead of
+    grabbing every visible device, and so it can later create a
+    ``MeshSocket`` / ``WeightBridge`` to the peer (trainer) mesh for runtime
+    weight updates. Returns True when co-located.
+    """
+    if os.environ.get("TT_COLOCATED_INFERENCE") != "1":
+        return False
+    try:
+        if not ttnn.distributed_context_is_initialized():
+            ttnn.init_distributed_context()
+    except AttributeError:
+        # Older ttnn without the standalone context API; the launcher
+        # (tt-run) has already initialized it, so this is a no-op.
+        logger.warning(
+            "ttnn distributed-context API unavailable; assuming the launcher "
+            "(tt-run) already initialized the shared context."
+        )
+    logger.info("Co-located inference: joined shared ttnn distributed context.")
+    return True
+
+
 def open_mesh_device(override_tt_config, trace_mode, dp_rank=0, model_config=None):
     assert dp_rank == 0, "open_mesh_device must run on DP rank 0"
 
@@ -377,7 +405,7 @@ def open_mesh_device(override_tt_config, trace_mode, dp_rank=0, model_config=Non
     # launcher's shared distributed context BEFORE any device enumeration / open
     # so this rank sees only its bound submesh (and can socket-rendezvous with
     # the trainer). Must precede get_mesh_grid(), which may enumerate devices.
-    colocated = _maybe_join_shared_distributed_context()
+    _maybe_join_shared_distributed_context()
 
     mesh_grid = get_mesh_grid(dp_rank)
 
