@@ -59,8 +59,9 @@ class PrefixCacheRouterTest : public ::testing::Test {
   }
 
   void registerBlocks(const std::string& sessionId,
-                      const std::vector<tt::utils::BlockHashInfo>& blocks) {
-    router->registerPrefixHash(sessionId, blocks);
+                      const std::vector<tt::utils::BlockHashInfo>& blocks,
+                      bool clearBeingGenerated = false) {
+    router->registerPrefixHash(sessionId, blocks, clearBeingGenerated);
   }
 
   void releaseSession(const std::string& sessionId) {
@@ -483,7 +484,7 @@ TEST_F(PrefixCacheRouterTest, GetSlot_BusyCandidate_CopiesFromSourceSlot) {
   auto threePrompt = makeThreeBlockPrompt();
   auto threeBlockInfos = router->computeBlockInfos(threePrompt);
   auto sessionId = addSession(22u);
-  registerBlocks(sessionId, threeBlockInfos);
+  registerBlocks(sessionId, threeBlockInfos, /*clearBeingGenerated=*/true);
   ASSERT_TRUE(
       router->tryAcquireByPrefixHash(threeBlockInfos, nullptr)->sessionFound);
 

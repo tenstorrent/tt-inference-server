@@ -21,6 +21,7 @@
 #include "services/session_resolution.hpp"
 #include "sockets/inter_server_service.hpp"
 #include "sockets/socket_messages.hpp"
+#include "telemetry/sentry_tracing.hpp"
 #include "utils/conversation_hasher.hpp"
 #include "utils/id_generator.hpp"
 #include "utils/logger.hpp"
@@ -256,6 +257,25 @@ void DisaggregationService::handlePrefillRequest(
     callback(prefillResult);
     return;
   }
+
+  // Continue the decode-side trace: this transaction shows the ZMQ prefill
+  // hop as its own service node in the same distributed trace. Inert when
+  // the decode side had no trace context to forward.
+  auto tx = std::make_shared<tt::telemetry::Transaction>(
+      tt::telemetry::startTransaction("prefill/generate", "llm.prefill",
+                                      message.traceparent));
+  tx->setTag("llm.mode", "prefill");
+  tx->setData("tokens.prompt", static_cast<int64_t>(message.tokenIds.size()));
+  callback = [tx, inner = std::move(callback)](
+                 const tt::sockets::PrefillResultMessage& result) {
+    if (result.error) {
+      tx->finishError(result.generatedText.empty() ? "prefill error"
+                                                   : result.generatedText);
+    } else {
+      tx->finish();
+    }
+    inner(result);
+  };
 
   auto request = std::make_shared<LLMRequest>(message.taskId);
   request->max_tokens = 1;
@@ -925,11 +945,12 @@ void DisaggregationService::handleStreamingRequest(
     // resolution.
     int decodeSkipTokens = decodePositionId - request.accumulated_think_tokens;
 
-    auto sent = socketService &&
-                socketService->sendPrefillRequest(
-                    request.task_id, registrationHashes, tokenIds, maxTokens,
-                    slotId, tt::utils::mapper::mapSamplingParams(request),
-                    decodePositionId, decodeSkipTokens);
+    auto sent =
+        socketService &&
+        socketService->sendPrefillRequest(
+            request.task_id, registrationHashes, tokenIds, maxTokens, slotId,
+            tt::utils::mapper::mapSamplingParams(request), decodePositionId,
+            decodeSkipTokens, request.traceparentHeader);
 
     if (!sent) {
       streamCallbacks.erase(request.task_id);

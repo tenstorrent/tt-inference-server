@@ -708,8 +708,10 @@ void SessionManager::shrinkResidentPrefixToMatchedTokens(
 
 void SessionManager::registerPrefixHash(
     const std::string& sessionId,
-    const std::vector<utils::BlockHashInfo>& blockInfos) {
-  prefixCacheRouter->registerPrefixHash(sessionId, blockInfos);
+    const std::vector<utils::BlockHashInfo>& blockInfos,
+    bool clearBeingGenerated) {
+  prefixCacheRouter->registerPrefixHash(sessionId, blockInfos,
+                                        clearBeingGenerated);
 }
 
 std::optional<SessionManager::AcquiredSession>
