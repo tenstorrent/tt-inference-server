@@ -486,28 +486,6 @@ templates:
         TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
       override_tt_config:
         fabric_config: FABRIC_1D
-    - device: GALAXY
-      max_concurrency: 128  # 32 * 4
-      max_context: 131072  # 128 * 1024
-      default_impl: false
-      override_tt_config:
-        trace_region_size: 66147328
-        sample_on_device_mode: decode_only
-      vllm_args:
-        data_parallel_size: 4
-      env_vars:
-        TT_MM_THROTTLE_PERF: 5
-    - device: BLACKHOLE_GALAXY
-      max_concurrency: 128  # 32 * 4
-      max_context: 131072  # 128 * 1024
-      default_impl: false
-      override_tt_config:
-        trace_region_size: 66147328
-        sample_on_device_mode: decode_only
-      vllm_args:
-        data_parallel_size: 4
-      env_vars:
-        TT_MM_THROTTLE_PERF: 5
   status: FUNCTIONAL
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
