@@ -26,7 +26,6 @@ from domain.video_i2v_generate_request import ImagePromptEntry, VideoI2VGenerate
 from huggingface_hub import hf_hub_download
 from models.common.utility_functions import is_blackhole
 from models.tt_dit.pipelines.flux1.pipeline_flux1 import Flux1Pipeline
-from models.tt_dit.pipelines.ltx.pipeline_ltx_distilled import LTXDistilledPipeline
 from models.tt_dit.pipelines.mochi.pipeline_mochi import MochiPipeline
 from models.tt_dit.pipelines.motif.pipeline_motif import MotifPipeline
 from models.tt_dit.pipelines.qwenimage.pipeline_qwenimage import (
@@ -40,7 +39,6 @@ from models.tt_dit.pipelines.wan.pipeline_wan_i2v import (
     ImagePrompt,
     WanPipelineI2V,
 )
-from models.tt_dit.utils.ltx import default_ltx_gemma
 from PIL import Image
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
@@ -1085,9 +1083,43 @@ class TTLTX23DistilledRunner(TTDiTRunner):
 
     def __init__(self, device_id: str):
         super().__init__(device_id)
+        # Set for the duration of warmup() so run() can tell the trace-capture
+        # generation apart from a real request. See _discard_warmup_output.
+        self._warming_up = False
+
+    async def warmup(self) -> bool:
+        self._warming_up = True
+        try:
+            return await super().warmup()
+        finally:
+            self._warming_up = False
+
+    def _discard_warmup_output(self, path: str) -> None:
+        """Delete the warmup generation's MP4.
+
+        create_pipeline() compiles kernels untraced; the traces themselves are
+        captured lazily on the first traced generate(), which is the run() that
+        TTDiTRunner.warmup() issues. That gen exists only for its side effects --
+        no job owns its output and VideoManager never reclaims it -- so without
+        this, every server start would orphan a ~1080p MP4 in TT_VIDEO_OUTPUT_DIR.
+        """
+        try:
+            Path(path).unlink(missing_ok=True)
+        except OSError as e:
+            # Never fail warmup over cleanup; a leaked file is the lesser problem.
+            self.logger.warning(
+                f"Device {self.device_id}: could not remove warmup output {path}: {e}"
+            )
 
     def create_pipeline(self):
         try:
+            # Imported lazily (as the Prodia runners do) so the LTX pipeline and
+            # its deps are not pulled in for every other runner in this module.
+            from models.tt_dit.pipelines.ltx.pipeline_ltx_distilled import (
+                LTXDistilledPipeline,
+            )
+            from models.tt_dit.utils.ltx import default_ltx_gemma
+
             return LTXDistilledPipeline.create_pipeline(
                 mesh_device=self.ttnn_device,
                 checkpoint_name=self.settings.model_weights_path,
@@ -1098,7 +1130,6 @@ class TTLTX23DistilledRunner(TTDiTRunner):
                 dynamic_load=LTX_DYNAMIC_LOAD,
                 topology=ttnn.Topology.Ring,
                 is_fsdp=False,
-                run_warmup=LTX_TRACED,
                 traced=LTX_TRACED,
                 num_frames=LTX_NUM_FRAMES,
                 height=LTX_HEIGHT,
@@ -1138,6 +1169,8 @@ class TTLTX23DistilledRunner(TTDiTRunner):
             fps=LTX_FPS,
         )
         self.logger.debug(f"Device {self.device_id}: LTX inference completed")
+        if self._warming_up:
+            self._discard_warmup_output(result_path)
         return [result_path]
 
     def get_pipeline_device_params(self):
