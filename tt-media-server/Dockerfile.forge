@@ -114,6 +114,23 @@ USER ${CONTAINER_APP_USERNAME}
 ENV TT_METAL_HOME="${APP_DIR}/server/venv-worker/lib/python3.12/site-packages/pjrt_plugin_tt/tt-metal"
 ENV PYTHON_ENV_DIR="${APP_DIR}/server/venv-worker"
 
+# Dedicated CPU venv for merging LoRA adapters under the *inference* transformers
+# version (4.x). The app itself runs on the forge venv (transformers 5.x), which
+# cannot write a checkpoint the vLLM container (4.x) can load; the merge is run
+# here instead so the artifact is written by the version that serves it.
+#
+# transformers and peft are read from their sources of truth so this venv never
+# drifts from the versions that matter:
+#   - transformers <- tt-vllm-plugin/pyproject.toml (the version vLLM serves with)
+#   - peft         <- forge_runners/requirements.txt (the version that WROTE the
+#                     adapter, so the merge reads its config back with the same peft)
+# Bump either source and a rebuild picks it up.
+ENV ADAPTER_MERGE_VENV_DIR="${APP_DIR}/server/merge-venv"
+ENV ADAPTER_MERGE_PYTHON="${ADAPTER_MERGE_VENV_DIR}/bin/python"
+COPY "tt-vllm-plugin/pyproject.toml" "/tmp/tt-vllm-plugin-pyproject.toml"
+RUN bash "${APP_DIR}/server/scripts/build_merge_venv.sh" \
+    "${ADAPTER_MERGE_VENV_DIR}" "/tmp/tt-vllm-plugin-pyproject.toml"
+
 # spinup inference server
 WORKDIR "${APP_DIR}"
 EXPOSE 8000
