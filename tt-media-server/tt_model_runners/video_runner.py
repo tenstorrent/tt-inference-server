@@ -155,6 +155,7 @@ def _attach_mpi_comm():
 def _create_dit_runner(model_runner: str, rank: int):
     """Create the appropriate DiT runner (lazy import to avoid loading ttnn globally)."""
     from tt_model_runners.dit_runners import (
+        TTLtx23DistilledRunner,
         TTMochi1Runner,
         TTWan22I2VAniSoraRunner,
         TTWan22I2VDistillRunner,
@@ -176,6 +177,7 @@ def _create_dit_runner(model_runner: str, rank: int):
         ModelRunners.TT_WAN_2_2_I2V_DISTILL.value: TTWan22I2VDistillRunner,
         ModelRunners.TT_WAN_2_2_I2V_LORA.value: TTWan22I2VLoRARunner,
         ModelRunners.TT_WAN_2_2_I2V_LIGHTNING.value: TTWan22I2VLightningRunner,
+        ModelRunners.TT_LTX_2_3.value: TTLtx23DistilledRunner,
     }
     runner_class = runner_map.get(model_runner)
     if not runner_class:

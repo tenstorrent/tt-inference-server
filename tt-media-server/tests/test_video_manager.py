@@ -2,7 +2,9 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+import os
 import subprocess
+import wave
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -12,7 +14,16 @@ from utils.video_manager import (
     _normalize_channels,
     _normalize_dtype_single,
     _normalize_shape,
+    _write_temp_wav,
 )
+
+
+def _mock_ffmpeg_ok():
+    """A Popen mock that behaves like a successful streaming ffmpeg run."""
+    proc = MagicMock()
+    proc.wait.return_value = 0
+    proc.stderr.read.return_value = b""
+    return proc
 
 
 @pytest.fixture
@@ -260,3 +271,33 @@ class TestEnsureFaststart:
         VideoManager.ensure_faststart("/tmp/in.mp4", "/tmp/out.mp4")
         actual_timeout = proc.communicate.call_args[1]["timeout"]
         assert actual_timeout == _FFMPEG_REMUX_TIMEOUT_S
+
+
+class TestStreamPlanarToFfmpeg:
+    """A wrong plane_order silently color-swaps the video, so pin the RGB→gbrp map."""
+
+    @patch("utils.video_manager.subprocess.Popen")
+    def test_writes_planes_in_order(self, mock_popen):
+        proc = _mock_ffmpeg_ok()
+        mock_popen.return_value = proc
+        # plane c filled with value c so the written order is verifiable.
+        arr = np.stack([np.full((1, 2, 2), c, dtype=np.uint8) for c in range(3)])
+        VideoManager._stream_planar_to_ffmpeg(["ffmpeg"], arr, t_frames=1, plane_order=(1, 2, 0))
+        written = [call.args[0].flat[0] for call in proc.stdin.write.call_args_list]
+        assert written == [1, 2, 0]
+
+
+class TestWriteTempWav:
+    """_write_temp_wav silently mangles audio if the channel/dtype handling breaks."""
+
+    def test_channels_first_float_stereo(self):
+        # (2, N) float → transposed to (N, 2) and scaled to int16.
+        path = _write_temp_wav(np.full((2, 100), 0.5, dtype=np.float32), 16000)
+        try:
+            with wave.open(path, "rb") as w:
+                assert w.getnchannels() == 2
+                assert w.getnframes() == 100
+                samples = np.frombuffer(w.readframes(100), dtype=np.int16)
+            assert np.all(np.abs(samples.astype(int) - 16383) <= 1)
+        finally:
+            os.remove(path)
