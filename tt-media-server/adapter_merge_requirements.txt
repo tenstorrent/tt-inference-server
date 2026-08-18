@@ -12,5 +12,4 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch
 accelerate
-huggingface_hub
 colorama
