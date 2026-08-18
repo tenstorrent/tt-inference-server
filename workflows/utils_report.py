@@ -108,6 +108,11 @@ class BenchmarkTaskParams:
     image_width: int = None
     images_per_prompt: int = 0
     task_type: str = "text"
+    # When set, this entry describes the device running with this
+    # data_parallel_size, and its targets are already expressed for the WHOLE
+    # device. get_perf_reference() uses such an entry as-is: no subdevice
+    # remap, no data-parallel scaling.
+    data_parallel: int = None
     theoretical_ttft_ms: float = None
     theoretical_tput_user: float = None
     targets: Dict[str, PerformanceTarget] = field(default_factory=dict)

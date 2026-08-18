@@ -431,6 +431,24 @@ templates:
         VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
       vllm_args:
         data_parallel_size: 4
+        # The json_object grammar is compiled with any_whitespace=True by
+        # default, so an unbounded whitespace run is grammar-legal: the model
+        # can lock into emitting whitespace (p -> 1.0 within ~10 tokens), never
+        # emit the closing '}', and be truncated at max_tokens -- leaving
+        # content that does not parse as JSON. Disabling it makes whitespace an
+        # illegal continuation, so the closing brace is forced. Costs nothing at
+        # inference time; it only changes which tokens the grammar mask permits.
+        # backend must be explicit: the validator rejects this under "auto".
+        structured-outputs-config: '{"backend": "xgrammar", "disable_any_whitespace": true}'
+        enable_auto_tool_choice: true
+        reasoning_parser: qwen3
+        tool_call_parser: hermes
+        # The Qwen3 template defaults enable_thinking=true. With a reasoning
+        # parser active that makes plain requests burn max_tokens inside
+        # <think> and return content=None, and lets a stop string fire inside
+        # the reasoning. Request-level chat_template_kwargs still win, so
+        # callers that want thinking just ask for it.
+        default_chat_template_kwargs: '{"enable_thinking": false}'
       override_tt_config:
         dispatch_core_axis: col
         sample_on_device_mode: all
