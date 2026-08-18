@@ -67,10 +67,6 @@ inline std::string compilePromptString(
   validatePromptInputs(text, description);
 
   std::ostringstream prompt;
-  // Tokenizer::encode() calls tokenizers-cpp Encode(), which does NOT add
-  // special tokens, so BOS has to be part of the prompt string. Without it the
-  // model is decoded from a prefix it never saw in training — the reference
-  // compiler emits [BOS, <|bot|>, ...] and this produced [<|bot|>, ...].
   if (!bosToken.empty()) {
     prompt << bosToken;
   }

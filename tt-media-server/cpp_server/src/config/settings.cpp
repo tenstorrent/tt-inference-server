@@ -583,12 +583,6 @@ TtsConfig ttsEngineConfig() {
 
     // Resolve the prompt-leading BOS from the tokenizer_config.json beside the
     // tokenizer, the same source the LLM tokenizers use
-    // (llama_tokenizer.cpp:41). That file is the authority on both halves of
-    // the question — it carries bos_token and add_bos_token — so a model
-    // trained without a leading BOS says so there rather than needing a
-    // server-side override. Best-effort by design: a missing or malformed
-    // config leaves bosToken empty and the prompt keeps its previous
-    // (BOS-less) shape instead of failing startup.
     if (!cfg.tokenizerPath.empty()) {
       const std::filesystem::path configPath =
           std::filesystem::path(cfg.tokenizerPath).parent_path() /

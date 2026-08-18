@@ -70,8 +70,6 @@ TEST(TtsPromptCompilerTest, OmitsBosWhenEmpty) {
             "<|bot|>hello<|speech_start|>");
 }
 
-// BOS leads the whole prompt — ahead of the audio/voice prompt blocks, not
-// just ahead of <|bot|>. The reference compiler emits [BOS, ...] first.
 TEST(TtsPromptCompilerTest, BosPrecedesAudioAndVoicePromptBlocks) {
   const std::vector<uint32_t> speechIds = {12, 34};
   EXPECT_EQ(compiler::compilePromptString("hello", std::string("calm voice"),
