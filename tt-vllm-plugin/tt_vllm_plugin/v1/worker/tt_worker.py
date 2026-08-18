@@ -2,7 +2,6 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 import os
-import sys
 from contextlib import suppress
 from typing import TYPE_CHECKING, Optional, Union
 
@@ -13,7 +12,12 @@ import ttnn
 from vllm.config import VllmConfig
 from vllm.logger import init_logger
 from vllm.utils.torch_utils import STR_DTYPE_TO_TORCH_DTYPE
-from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheConfig, KVCacheSpec
+from vllm.v1.kv_cache_interface import (
+    FullAttentionSpec,
+    KVCacheConfig,
+    KVCacheSpec,
+    MLAAttentionSpec,
+)
 from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.worker.worker_base import WorkerBase
 
@@ -392,12 +396,15 @@ class TTWorker(WorkerBase):
             else STR_DTYPE_TO_TORCH_DTYPE[cache_config.cache_dtype]
         )
 
-        attn_spec = FullAttentionSpec(
+        # MLA is expressed via the MLAAttentionSpec subclass; AttentionSpec no
+        # longer carries a use_mla flag. Pick the class by MLA-ness so the
+        # dummy spec's page-size accounting stays correct for MLA models.
+        attn_spec_cls = MLAAttentionSpec if model_config.use_mla else FullAttentionSpec
+        attn_spec = attn_spec_cls(
             block_size=cache_config.block_size,
             num_kv_heads=total_num_kv_heads,
             head_size=head_size,
             dtype=dtype,
-            use_mla=model_config.use_mla,
             sliding_window=model_config.get_sliding_window(),
         )
         kv_cache_spec: dict[str, KVCacheSpec] = {"foo": attn_spec}
