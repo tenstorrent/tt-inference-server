@@ -1216,7 +1216,13 @@ def _minimax_h3_pipeline_args(request: VideoGenerateRequest, resolution) -> dict
     def _snap_len(n):
         n = max(22, int(n))  # 17n+5 grid, n>=1 -> 22 frames minimum
         k = max(1, round((n - 5) / 17.0))
-        return min(17 * k + 5, 362)  # ~15 s cap
+        # Hard duration ceiling. On the 1x4, clips beyond ~5 s (124f) OOM unreliably: the VAE decode
+        # buffer scales with FRAME COUNT (not resolution), so downscaling the picture doesn't save a
+        # 10 s clip -- it needs a ~79 MB contiguous DRAM block the fragmented free space can't provide.
+        # Default 124 (~5.2 s) is the proven-robust max; H3_MAX_FRAMES raises it on a roomier mesh /
+        # after bf8 frees DRAM. Legacy allowed ~15 s; that needs more DRAM headroom, not a bigger cap.
+        cap = int(os.environ.get("H3_MAX_FRAMES", "124"))
+        return min(17 * k + 5, cap)
 
     w = _snap32(request.width) if getattr(request, "width", None) else resolution.width
     h = _snap32(request.height) if getattr(request, "height", None) else resolution.height
