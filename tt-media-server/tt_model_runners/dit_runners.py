@@ -7,15 +7,18 @@ import base64
 import io
 import os
 from abc import abstractmethod
+from dataclasses import dataclass
 
 import numpy as np
 import ttnn
 from config.constants import (
+    MINIMAX_H3_NUM_FRAMES,
     WAN22_NUM_FRAMES,
     ModelRunners,
     ModelServices,
     SupportedModels,
     is_large_mesh,
+    minimax_h3_target_resolution,
     wan22_target_resolution,
 )
 from config.settings import get_settings
@@ -25,6 +28,7 @@ from domain.video_i2v_generate_request import ImagePromptEntry, VideoI2VGenerate
 from huggingface_hub import hf_hub_download
 from models.common.utility_functions import is_blackhole
 from models.tt_dit.pipelines.flux1.pipeline_flux1 import Flux1Pipeline
+from models.tt_dit.pipelines.minimax_h3.pipeline_minimax_h3 import MiniMaxH3Pipeline
 from models.tt_dit.pipelines.mochi.pipeline_mochi import MochiPipeline
 from models.tt_dit.pipelines.motif.pipeline_motif import MotifPipeline
 from models.tt_dit.pipelines.qwenimage.pipeline_qwenimage import (
@@ -61,6 +65,7 @@ dit_runner_log_map = {
     ModelRunners.TT_WAN_2_2_I2V_LIGHTNING.value: "Wan22-I2V-Lightning",
     ModelRunners.TT_QWEN_IMAGE.value: "Qwen-Image",
     ModelRunners.TT_QWEN_IMAGE_2512.value: "Qwen-Image-2512",
+    ModelRunners.TT_MINIMAX_H3.value: "MiniMax-H3",
     ModelRunners.SP_RUNNER.value: "SP-Runner",
 }
 
@@ -1138,3 +1143,292 @@ class TTWan22I2VLightningRunner(TTDiTRunner):
 
     def _build_warmup_video_request(self) -> VideoI2VGenerateRequest:
         return _wan22_i2v_warmup_request()
+
+
+# ---------------------------------------------------------------------------
+# MiniMax-H3 (text -> video + native stereo audio)
+#
+# H3 is the first video model here that also emits audio, so its runner returns
+# both streams (VideoWithAudio) and the exporter muxes the audio into the mp4
+# (utils/video_manager.export_to_mp4). Everything else mirrors the Wan/Mochi
+# DiT runner pattern and drives the upstream tt_dit MiniMax-H3 pipeline.
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class VideoWithAudio:
+    """Runner result carrying both streams.
+
+    ``export_to_mp4`` already special-cases an object exposing ``.frames``;
+    returning this (instead of a bare frame array) is how the audio reaches the
+    muxer without changing the video worker/service call sites.
+    """
+
+    frames: np.ndarray  # (F, H, W, 3) uint8   -- from MiniMaxH3Output.video
+    audio: np.ndarray  # (2, N) float32 [-1, 1] -- from MiniMaxH3Output.audio (stereo)
+    sample_rate: int  # MiniMaxH3Output.sampling_rate (e.g. 32000)
+    fps: int = 24  # MiniMaxH3Output.fps -- used by export_to_mp4 for the video rate
+
+
+# Explicit parallel params for the small Blackhole meshes upstream does not yet
+# preset (its _PRESETS_BH covers only (4, 8) galaxy and (4, 32) quad). Values
+# from a validated 1x4 Blackhole run; (2, 2) mirrors the same factors and is
+# still to be validated on hardware. Remove an entry once it lands as a real
+# upstream _PRESETS_BH row and create_pipeline can resolve it from the mesh.
+# tp_axis=1 puts TP across the 4-chip axis (mirrors the galaxy preset's TP=4 on
+# its 4-chip axis 0); sp_axis is the size-1/size-2 axis. topology MUST be non-None
+# -- upstream treats any None in (tp_axis, sp_axis, num_links, topology) as "use a
+# preset" and rejects the shape. A single QB2 is a physical line, so Linear (not
+# the galaxy's Ring, which needs a torus wrap link the box does not have).
+_MINIMAX_H3_SMALL_MESH_PARAMS = {
+    (1, 4): dict(tp_axis=1, sp_axis=0, num_links=2, topology=ttnn.Topology.Linear),
+    (2, 2): dict(tp_axis=1, sp_axis=0, num_links=2, topology=ttnn.Topology.Linear),
+}
+
+
+def _minimax_h3_dit_device_params(mesh_shape: tuple) -> dict:
+    """Fabric / trace-region policy for MiniMax-H3, mirroring the Wan2.2 helper.
+
+    Blackhole uses RELAXED_INIT; large (galaxy-class) meshes get the bigger
+    trace region and the galaxy router config. Small meshes use plain FABRIC_1D.
+    """
+    device_params = _wan22_dit_device_params(mesh_shape)
+    if is_large_mesh(mesh_shape) and is_blackhole():
+        # H3's DiT trace is comparable to Wan2.2's; reuse the galaxy bump.
+        device_params["trace_region_size"] = WAN22_GALAXY_BH_TRACE_REGION_BYTES
+    return device_params
+
+
+def _minimax_h3_pipeline_args(request: VideoGenerateRequest, resolution) -> dict:
+    """Map an OpenAI-style VideoGenerateRequest onto the upstream __call__.
+
+    H3 is guidance-distilled (cfg=1), so there is no guidance_scale. An I2V/fl2va
+    variant would additionally decode request.image_prompts into ``image=`` /
+    ``last_image=`` (first-frame conditioning).
+    """
+    seed = int(request.seed) if request.seed is not None else 0
+
+    # Output geometry: an explicit request overrides the mesh default, clamped to the H3 envelope
+    # (short edge <= 768, long edge <= 1344, snapped to /32; duration on the 17n+5 grid, <= ~15 s).
+    def _snap32(x):
+        return max(32, int(round(float(x) / 32.0)) * 32)
+
+    def _snap_len(n):
+        n = max(22, int(n))  # 17n+5 grid, n>=1 -> 22 frames minimum
+        k = max(1, round((n - 5) / 17.0))
+        # Hard duration ceiling. On the 1x4, clips beyond ~5 s (124f) OOM unreliably: the VAE decode
+        # buffer scales with FRAME COUNT (not resolution), so downscaling the picture doesn't save a
+        # 10 s clip -- it needs a ~79 MB contiguous DRAM block the fragmented free space can't provide.
+        # Default 124 (~5.2 s) is the proven-robust max; H3_MAX_FRAMES raises it on a roomier mesh /
+        # after bf8 frees DRAM. Legacy allowed ~15 s; that needs more DRAM headroom, not a bigger cap.
+        cap = int(os.environ.get("H3_MAX_FRAMES", "124"))
+        return min(17 * k + 5, cap)
+
+    w = _snap32(request.width) if getattr(request, "width", None) else resolution.width
+    h = _snap32(request.height) if getattr(request, "height", None) else resolution.height
+    lo, hi = min(w, h), max(w, h)
+    lo, hi = min(lo, 768), min(hi, 1344)
+    w, h = (lo, hi) if w <= h else (hi, lo)
+
+    nf_default = int(os.environ.get("H3_NUM_FRAMES", MINIMAX_H3_NUM_FRAMES))
+    num_frames = _snap_len(request.num_frames) if getattr(request, "num_frames", None) else nf_default
+
+    # Cap pixel*frame load and downscale resolution to fit (keeping duration), like the legacy
+    # max_load. On the 1x4 this is set by DRAM *fragmentation*: a large (~63M, 10s@512) decode
+    # fragments the free space so the NEXT large clip OOMs; clips in the ~42M zone run back-to-back
+    # indefinitely. So 5s stays full-res, 10s renders ~415^2. Raise H3_MAX_LOAD on a roomier mesh.
+    max_load = int(os.environ.get("H3_MAX_LOAD", "42000000"))
+    load = w * h * num_frames
+    if load > max_load:
+        scale = (max_load / load) ** 0.5
+        w = max(256, int(w * scale) // 32 * 32)
+        h = max(256, int(h * scale) // 32 * 32)
+
+    return dict(
+        prompt=request.prompt,
+        num_inference_steps=request.num_inference_steps,
+        num_frames=num_frames,
+        height=h,
+        width=w,
+        seed=seed,
+    )
+
+
+# Per-step progress: the media-server job API is coarse and the upstream pipeline exposes no
+# callback, but its denoise loop calls module-level build_row_timesteps once per step. Wrap it to
+# publish {phase, step, total} to a file keyed by the job id (the bot reads it for a live bar).
+_H3_PROGRESS_DIR = os.environ.get("H3_PROGRESS_DIR", "/tmp/h3-progress")
+_h3_progress = {"key": None, "step": 0, "total": 0}
+
+
+def _h3_write_progress(phase: str) -> None:
+    key = _h3_progress["key"]
+    if not key:
+        return
+    try:
+        import json
+
+        os.makedirs(_H3_PROGRESS_DIR, exist_ok=True)
+        path = os.path.join(_H3_PROGRESS_DIR, f"{key}.json")
+        tmp = f"{path}.tmp"
+        with open(tmp, "w") as f:
+            f.write(
+                json.dumps(
+                    {"phase": phase, "step": _h3_progress["step"], "total": _h3_progress["total"]}
+                )
+            )
+        os.replace(tmp, path)
+    except Exception:
+        pass
+
+
+def _h3_install_progress_hook() -> None:
+    from models.tt_dit.pipelines.minimax_h3 import pipeline_minimax_h3 as _pm
+
+    if getattr(_pm, "_brt_progress_wrapped", False):
+        return
+    _orig = _pm.build_row_timesteps
+
+    def _wrapped(*args, **kwargs):
+        _h3_progress["step"] += 1
+        _h3_write_progress("denoising")
+        return _orig(*args, **kwargs)
+
+    _pm.build_row_timesteps = _wrapped
+    _pm._brt_progress_wrapped = True
+
+
+_h3_install_progress_hook()
+
+
+class TTMiniMaxH3Runner(TTDiTRunner):
+    """MiniMax-H3 on the upstream pipeline. One runner serves both t2va (text -> video+audio) and
+    fl2va (keyframe -> video+audio): /generations/i2v routes here with image_prompts, which run()
+    decodes into the pipeline's image=/last_image=. (Kept out of I2V_MODEL_RUNNERS so t2v isn't
+    rejected.)"""
+
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
+        self.resolution = minimax_h3_target_resolution(self.settings.device_mesh_shape)
+        self.image_manager = ImageManager()
+
+    def create_pipeline(self):
+        mesh = tuple(self.settings.device_mesh_shape)
+        # {} on (4, 8) / (4, 32): let the upstream _PRESETS_BH pick the shape.
+        overrides = _MINIMAX_H3_SMALL_MESH_PARAMS.get(mesh, {})
+        try:
+            pipe = MiniMaxH3Pipeline.create_pipeline(
+                mesh_device=self.ttnn_device,
+                weights_dir=self.settings.model_weights_path,
+                task="t2va",
+                **overrides,
+            )
+        except Exception as e:
+            log_exception_chain(
+                self.logger,
+                self.device_id,
+                "MiniMax-H3 pipeline creation failed",
+                e,
+            )
+            raise
+        # Upstream auto-enables denoise trace-capture only for the quad galaxy; enable it for our
+        # small mesh too (eager denoise is host-dispatch-bound). First gen per (shape, steps) captures.
+        if getattr(pipe, "trace_denoise", None) is False and not is_large_mesh(mesh):
+            pipe.trace_denoise = True
+            self.logger.info(
+                f"Device {self.device_id}: enabled denoise trace-capture for mesh {mesh}"
+            )
+        return pipe
+
+    def load_weights(self):
+        return False  # weights load during pipeline creation (as Wan/Mochi)
+
+    @log_execution_time(
+        f"{dit_runner_log_map[get_settings().model_runner]} inference",
+        TelemetryEvent.MODEL_INFERENCE,
+        os.environ.get("TT_VISIBLE_DEVICES"),
+    )
+    def run(self, requests: list[VideoGenerateRequest]):
+        self.logger.debug(f"Device {self.device_id}: Running inference")
+        req = requests[0]
+        # Arm per-step progress for this job (key == API job id == request._task_id).
+        _h3_progress["key"] = getattr(req, "_task_id", None)
+        _h3_progress["step"] = 0
+        _h3_progress["total"] = int(getattr(req, "num_inference_steps", None) or 8)
+        _h3_write_progress("starting")
+
+        args = _minimax_h3_pipeline_args(req, self.resolution)
+        # fl2va: /generations/i2v routes here with image_prompts; decode the first (and optional
+        # last) keyframe into image=/last_image=. Absent -> plain t2va.
+        image_prompts = getattr(req, "image_prompts", None)
+        if image_prompts:
+            tgt = (args["width"], args["height"])
+            entries = sorted(image_prompts, key=lambda e: e.frame_pos)
+            args["image"] = self.image_manager.base64_to_pil_image(
+                entries[0].image, target_size=tgt, target_mode="RGB"
+            )
+            if len(entries) > 1 and entries[-1].frame_pos >= args["num_frames"] - 1:
+                args["last_image"] = self.image_manager.base64_to_pil_image(
+                    entries[-1].image, target_size=tgt, target_mode="RGB"
+                )
+
+        try:
+            out = self.pipeline(**args)
+            _h3_progress["step"] = _h3_progress["total"]
+            _h3_write_progress("decoding")
+        finally:
+            self.logger.debug(f"Device {self.device_id}: Inference completed")
+        # MiniMaxH3Output.video is (1, 3, F, H, W) float in [0, 1] -> (F, H, W, 3) uint8; audio is
+        # (1, 2, samples) -> (2, samples). Return both so the exporter muxes the audio into the mp4.
+        frames = (
+            out.video[0]
+            .permute(1, 2, 3, 0)
+            .clamp(0, 1)
+            .mul(255)
+            .round()
+            .to("cpu")
+            .numpy()
+            .astype(np.uint8)
+        )
+        audio = out.audio[0].to("cpu").numpy()
+        # Free per-shape device state so a different-shape next job doesn't OOM the tight mesh.
+        self._release_per_shape_state()
+        # Device worker indexes the return per-request (responses[i]) and checks len(responses),
+        # so return a one-element sequence (batch=1), like the Wan/Mochi runners.
+        return [
+            VideoWithAudio(
+                frames=frames,
+                audio=audio,
+                sample_rate=out.sampling_rate,
+                fps=out.fps,
+            )
+        ]
+
+    def _release_per_shape_state(self) -> None:
+        """Drop per-(H, W, frames) device buffers between renders so varying geometry doesn't OOM.
+
+        Best-effort: the denoise trace (re-captured cheaply) and the VAE's per-shape decoder cache
+        (rebuilt in ~1 s), then force reclaim. Resident text/DiT weights are untouched.
+        """
+        pipe = self.pipeline
+        try:
+            pipe.release_traces()
+        except Exception as e:
+            self.logger.debug(f"Device {self.device_id}: release_traces skipped: {e}")
+        try:
+            vae = getattr(pipe, "_vae", None)
+            decoders = getattr(vae, "_decoders", None)
+            if decoders:
+                decoders.clear()
+        except Exception as e:
+            self.logger.debug(f"Device {self.device_id}: vae decoder clear skipped: {e}")
+        try:
+            import gc
+
+            gc.collect()
+            ttnn.synchronize_device(self.ttnn_device)
+        except Exception as e:
+            self.logger.debug(f"Device {self.device_id}: reclaim skipped: {e}")
+
+    def get_pipeline_device_params(self):
+        return _minimax_h3_dit_device_params(self.settings.device_mesh_shape)

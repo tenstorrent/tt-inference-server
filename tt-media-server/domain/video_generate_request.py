@@ -25,3 +25,9 @@ class VideoGenerateRequest(BaseRequest):
         le=MAX_VIDEO_INFERENCE_STEPS,
     )
     seed: Optional[int] = None
+    # Optional output geometry. Additive/backward-compatible: models that fix their own
+    # resolution/duration (Wan, Mochi) ignore these; the MiniMax-H3 runner honors them (clamped to
+    # the model's envelope). width/height are pixels (snapped /32); num_frames is on the 17n+5 grid.
+    width: Optional[int] = Field(default=None, gt=0)
+    height: Optional[int] = Field(default=None, gt=0)
+    num_frames: Optional[int] = Field(default=None, gt=0)

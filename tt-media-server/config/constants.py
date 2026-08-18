@@ -27,6 +27,7 @@ class SupportedModels(Enum):
     WAN_2_2_I2V_DISTILL = "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
     WAN_2_2_I2V_LORA = "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
     WAN_2_2_I2V_LIGHTNING = "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
+    MINIMAX_H3 = "MiniMaxAI/MiniMax-H3"
     DISTIL_WHISPER_LARGE_V3 = "distil-whisper/distil-large-v3"
     OPENAI_WHISPER_LARGE_V3 = "openai/whisper-large-v3"
     PYANNOTE_SPEAKER_DIARIZATION = "pyannote/speaker-diarization-3.0"
@@ -76,6 +77,7 @@ class ModelNames(Enum):
     WAN_2_2_I2V_DISTILL = "Wan2.2-I2V-Distill-LightX2V"
     WAN_2_2_I2V_LORA = "Wan2.2-I2V-LoRA"
     WAN_2_2_I2V_LIGHTNING = "Wan2.2-I2V-Lightning"
+    MINIMAX_H3 = "MiniMax-H3"
     DISTIL_WHISPER_LARGE_V3 = "distil-large-v3"
     OPENAI_WHISPER_LARGE_V3 = "whisper-large-v3"
     MICROSOFT_RESNET_50 = "resnet-50"
@@ -127,6 +129,7 @@ class ModelRunners(Enum):
     TT_WAN_2_2_I2V_DISTILL = "tt-wan2.2-i2v-distill"
     TT_WAN_2_2_I2V_LORA = "tt-wan2.2-i2v-lora"
     TT_WAN_2_2_I2V_LIGHTNING = "tt-wan2.2-i2v-lightning"
+    TT_MINIMAX_H3 = "tt-minimax-h3"
     TT_WHISPER = "tt-whisper"
     VLLMForge = "vllm_forge"
     TT_YOLOV4 = "tt-yolov4"
@@ -228,6 +231,7 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_WAN_2_2_I2V_DISTILL,
         ModelRunners.TT_WAN_2_2_I2V_LORA,
         ModelRunners.TT_WAN_2_2_I2V_LIGHTNING,
+        ModelRunners.TT_MINIMAX_H3,
         ModelRunners.SP_RUNNER,
     },
     ModelServices.TRAINING: {
@@ -290,6 +294,7 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_WAN_2_2_I2V_DISTILL: {ModelNames.WAN_2_2_I2V_DISTILL},
     ModelRunners.TT_WAN_2_2_I2V_LORA: {ModelNames.WAN_2_2_I2V_LORA},
     ModelRunners.TT_WAN_2_2_I2V_LIGHTNING: {ModelNames.WAN_2_2_I2V_LIGHTNING},
+    ModelRunners.TT_MINIMAX_H3: {ModelNames.MINIMAX_H3},
     ModelRunners.SP_RUNNER: {
         ModelNames.WAN_2_2,
         ModelNames.WAN_2_2_T2V_PRODIA,
@@ -437,6 +442,22 @@ def wan22_target_resolution(mesh_shape: Tuple[int, int]) -> Resolution:
     if is_large_mesh(mesh_shape):
         return WAN22_RESOLUTION_LARGE_MESH
     return WAN22_RESOLUTION_SMALL_MESH
+
+
+# --- MiniMax-H3 (text -> video + native stereo audio) inference shape policy ---
+# H3 runs on a 17n+5 temporal grid; 124 frames is ~5s @ 24fps, the default
+# short-clip length. Small Blackhole meshes (P150X4 (1,4), P300X2 (2,2)) run the
+# native short-edge-512 tier; Galaxy-class meshes ((4,8) / (4,32)) go larger.
+MINIMAX_H3_NUM_FRAMES = 124
+MINIMAX_H3_RESOLUTION_LARGE_MESH = Resolution(height=768, width=1344)
+MINIMAX_H3_RESOLUTION_SMALL_MESH = Resolution(height=512, width=512)
+
+
+def minimax_h3_target_resolution(mesh_shape: Tuple[int, int]) -> Resolution:
+    """Resolve MiniMax-H3 target resolution from a (rows, cols) mesh shape."""
+    if is_large_mesh(mesh_shape):
+        return MINIMAX_H3_RESOLUTION_LARGE_MESH
+    return MINIMAX_H3_RESOLUTION_SMALL_MESH
 
 
 AUDIO_RESPONSE_FORMATS = frozenset(e.value for e in AudioResponseFormat)
@@ -1492,6 +1513,33 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
         "max_batch_size": 1,
         "request_processing_timeout_seconds": 1500,
+    },
+    # MiniMax-H3 (text -> video + native stereo audio). 1-to-many Blackhole:
+    # single QB2 (1,4) and QuietBox GE (2,2) run the small-mesh tier; Galaxy
+    # (4,8) is the upstream-tuned large-mesh preset. The runner supplies explicit
+    # tp/sp/num_links for the small meshes upstream does not yet preset.
+    (ModelRunners.TT_MINIMAX_H3, DeviceTypes.P150X4): {
+        "device_mesh_shape": (1, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
+        "max_batch_size": 1,
+        "download_weights_from_service": False,
+        "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_MINIMAX_H3, DeviceTypes.P300X2): {
+        "device_mesh_shape": (2, 2),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
+        "max_batch_size": 1,
+        "download_weights_from_service": False,
+        "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_MINIMAX_H3, DeviceTypes.GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 5000,
     },
     (ModelRunners.TRAINING_LORA, DeviceTypes.P150): {
         "device_mesh_shape": (1, 1),
