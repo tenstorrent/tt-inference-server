@@ -29,8 +29,15 @@ import json
 import re
 import subprocess
 import sys
+import time
 
 DEFAULT_REPO = "tenstorrent/tt-shield"
+
+# Job-log downloads (gh api .../jobs/<id>/logs) 302-redirect to blob storage and
+# occasionally fail transiently. Retry a few times with linear backoff before
+# giving up, so a one-off hiccup does not silently drop an image.
+LOG_FETCH_ATTEMPTS = 4
+LOG_FETCH_BACKOFF_SECONDS = 3
 
 # Build-job caller segment  ->  engine family. Order does not matter; matched by
 # exact segment equality so build-forge-media / build-blaze-media never collide
@@ -61,14 +68,14 @@ def run_gh(args: list[str], binary: bool = False):
 
 
 def list_jobs(repo: str, run_id: str) -> list[dict]:
-    """All jobs of a run as [{id, name}, ...]."""
+    """All jobs of a run as [{id, name, conclusion}, ...]."""
     out = run_gh(
         [
             "api",
             "--paginate",
             f"repos/{repo}/actions/runs/{run_id}/jobs?per_page=100",
             "--jq",
-            ".jobs[] | {id, name}",
+            ".jobs[] | {id, name, conclusion}",
         ]
     )
     return [json.loads(line) for line in out.splitlines() if line.strip()]
@@ -86,12 +93,32 @@ def job_family(job_name: str) -> str | None:
     return None
 
 
-def job_log(repo: str, job_id: int) -> str | None:
-    """Download a job's log via gh (which follows the log redirect), or None."""
-    try:
-        return run_gh(["api", f"repos/{repo}/actions/jobs/{job_id}/logs"])
-    except SystemExit:
-        return None
+def job_log(repo: str, job_id: int) -> tuple[str | None, str | None]:
+    """Download a job's log via gh, retrying transient failures.
+
+    Returns (log_text, None) on success, or (None, error_message) if every
+    attempt failed. Never silently returns an empty result — a persistent
+    failure is reported so the caller can fail loudly.
+    """
+    last_err = ""
+    for attempt in range(1, LOG_FETCH_ATTEMPTS + 1):
+        proc = subprocess.run(
+            ["gh", "api", f"repos/{repo}/actions/jobs/{job_id}/logs"],
+            capture_output=True,
+        )
+        if proc.returncode == 0:
+            return proc.stdout.decode(errors="replace"), None
+        last_err = (
+            proc.stderr.decode(errors="replace").strip() or f"exit {proc.returncode}"
+        )
+        print(
+            f"WARNING: log fetch for job {job_id} failed "
+            f"(attempt {attempt}/{LOG_FETCH_ATTEMPTS}): {last_err}",
+            file=sys.stderr,
+        )
+        if attempt < LOG_FETCH_ATTEMPTS:
+            time.sleep(LOG_FETCH_BACKOFF_SECONDS * attempt)
+    return None, last_err
 
 
 def extract_dev_image_tag(log_text: str) -> str | None:
@@ -101,17 +128,41 @@ def extract_dev_image_tag(log_text: str) -> str | None:
 
 
 def resolve_source_images(repo: str, run_id: str) -> dict[str, dict]:
-    """Return {family: {"image": tag|None, "build_job": name|None, "job_id": id|None}}."""
+    """Resolve each family's source dev image from the run's build jobs.
+
+    Returns {family: {image, build_job, job_id, conclusion, log_fetch_error}}.
+    `image` is None when: no build job matched, the build job did not succeed,
+    or (an error condition) the log could not be fetched / held no tag.
+    `log_fetch_error` is set only when the log download failed after retries.
+    """
     result = {
-        fam: {"image": None, "build_job": None, "job_id": None} for fam in FAMILIES
+        fam: {
+            "image": None,
+            "build_job": None,
+            "job_id": None,
+            "conclusion": None,
+            "log_fetch_error": None,
+        }
+        for fam in FAMILIES
     }
     for job in list_jobs(repo, run_id):
         fam = job_family(job.get("name", ""))
-        if fam is None or result[fam]["image"] is not None:
+        # First matching build job per family wins; skip non-build jobs and
+        # families already handled.
+        if fam is None or result[fam]["job_id"] is not None:
             continue
-        log = job_log(repo, job["id"])
-        tag = extract_dev_image_tag(log) if log else None
-        result[fam] = {"image": tag, "build_job": job.get("name"), "job_id": job["id"]}
+        result[fam]["build_job"] = job.get("name")
+        result[fam]["job_id"] = job["id"]
+        result[fam]["conclusion"] = job.get("conclusion")
+        # Only a successful build produces a publishable image; don't spend
+        # retries downloading logs for skipped/failed/cancelled builds.
+        if job.get("conclusion") != "success":
+            continue
+        log, err = job_log(repo, job["id"])
+        if log is None:
+            result[fam]["log_fetch_error"] = err
+            continue
+        result[fam]["image"] = extract_dev_image_tag(log)
     return result
 
 
@@ -144,14 +195,41 @@ def main() -> None:
                 indent=2,
             )
         )
-        return
+    else:
+        print(f"Repo:   {args.repo}")
+        print(f"Run:    {args.run_id}")
+        print("Source dev images by engine family:")
+        for fam in FAMILIES:
+            image = result[fam]["image"]
+            print(f"  {fam:6s}: {image if image else 'None'}")
 
-    print(f"Repo:   {args.repo}")
-    print(f"Run:    {args.run_id}")
-    print("Source dev images by engine family:")
+    # Fail loudly: a build job that SUCCEEDED but produced no resolvable image is
+    # an error (log fetch failed after retries, or the tag was missing from the
+    # log) — never let that pass as a silent "None". Families with no build job,
+    # or a skipped/failed/cancelled build, legitimately have no image.
+    errors = []
     for fam in FAMILIES:
-        image = result[fam]["image"]
-        print(f"  {fam:6s}: {image if image else 'None'}")
+        r = result[fam]
+        if r["job_id"] is None or r["image"] or r["conclusion"] != "success":
+            continue
+        reason = (
+            f"log fetch failed after {LOG_FETCH_ATTEMPTS} attempts ({r['log_fetch_error']})"
+            if r["log_fetch_error"]
+            else "no dev image tag found in the job log"
+        )
+        errors.append(
+            f"{fam}: build job '{r['build_job']}' (id {r['job_id']}) succeeded "
+            f"but no image could be resolved — {reason}."
+        )
+
+    if errors:
+        print(
+            "\nERROR: could not resolve source image(s) for successful build job(s):",
+            file=sys.stderr,
+        )
+        for e in errors:
+            print(f"  - {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
