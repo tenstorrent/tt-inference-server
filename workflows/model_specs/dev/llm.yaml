@@ -296,7 +296,7 @@ templates:
       # by enable-auto-tool-choice in vllm_args above.
       tool_call_parser_name: gemma4
 
-# DiffusionGemma model implementation: tenstorrent/tt-metal#52120.
+# DiffusionGemma model implementation: tenstorrent/tt-metal#52955.
 # Block-granular vLLM support: tenstorrent/tt-metal#47488.
 - weights:
     - google/diffusiongemma-26B-A4B-it
