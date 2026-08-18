@@ -158,13 +158,22 @@
                     }
                 },
                 {
-                    "template": "MiniMaxH3LifecycleDeleteTest",
+                    "template": "MiniMaxH3LifecycleDownloadTest",
                     "enabled": true,
-                    "description": "Generate and validate MiniMax-H3 video plus non-silent audio",
+                    "description": "Validate successful MiniMax-H3 create, query, list, download, video, and audio lifecycle",
                     "targets": {
                         "poll_timeout": 1800,
                         "download_timeout": 600,
                         "sample_count": 8
+                    }
+                },
+                {
+                    "template": "MiniMaxH3CancelLifecycleTest",
+                    "enabled": true,
+                    "description": "Create and cancel a MiniMax-H3 job, then verify query and list state",
+                    "targets": {
+                        "poll_timeout": 300,
+                        "poll_interval": 1
                     }
                 },
                 {

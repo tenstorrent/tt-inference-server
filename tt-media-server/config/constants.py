@@ -924,7 +924,7 @@ ModelConfigs = {
     },
     # One device-id group -> one worker -> requests serialise on the mesh.
     (ModelRunners.TT_MINIMAX_H3_T2VA, DeviceTypes.BLACKHOLE_GALAXY): {
-        "device_mesh_shape": (4, 8),
+        "device_mesh_shape": (16, 2),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
         "max_batch_size": 1,
