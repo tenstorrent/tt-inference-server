@@ -41,8 +41,7 @@ def cosine(a: list, b: list) -> float:
     return dot / (na * nb)
 
 
-def post_embedding(url: str, api_key: str, text: str, timeout: float,
-                   model: str):
+def post_embedding(url: str, api_key: str, text: str, timeout: float, model: str):
     body = json.dumps({"input": text, "model": model}).encode()
     req = urllib.request.Request(
         f"{url}/v1/embeddings",
@@ -60,8 +59,9 @@ def run_sequential(prompts, args, failures):
     print("=== phase 1: sequential, vs embedding_single goldens ===")
     for p in prompts:
         try:
-            vec, tokens = post_embedding(args.url, args.api_key, p["text"],
-                                         args.timeout, args.model)
+            vec, tokens = post_embedding(
+                args.url, args.api_key, p["text"], args.timeout, args.model
+            )
         except (urllib.error.URLError, urllib.error.HTTPError) as e:
             failures.append(f"sequential {p['id']}: request failed: {e}")
             print(f"FAIL {p['id']:>18}: {e}")
@@ -82,8 +82,10 @@ def run_sequential(prompts, args, failures):
 
         status = "FAIL" if problems else "ok"
         exact = "bit-exact" if bit_exact else f"cos={cos:.8f}"
-        print(f"{status:>4} {p['id']:>18}: {exact} tokens={tokens}"
-              + (f"  [{'; '.join(problems)}]" if problems else ""))
+        print(
+            f"{status:>4} {p['id']:>18}: {exact} tokens={tokens}"
+            + (f"  [{'; '.join(problems)}]" if problems else "")
+        )
         if problems:
             failures.append(f"sequential {p['id']}: {'; '.join(problems)}")
 
@@ -98,8 +100,9 @@ def run_concurrent(prompts, args, failures):
     def worker(p):
         barrier.wait()
         try:
-            vec, _ = post_embedding(args.url, args.api_key, p["text"],
-                                    args.timeout, args.model)
+            vec, _ = post_embedding(
+                args.url, args.api_key, p["text"], args.timeout, args.model
+            )
             return p, vec, None
         except (urllib.error.URLError, urllib.error.HTTPError) as e:
             return p, None, str(e)
@@ -117,50 +120,77 @@ def run_concurrent(prompts, args, failures):
         # its own batch) or the batched golden (shared a batch); padding
         # differences make small deviations from either legitimate.
         cos_single = cosine(vec, p["embedding_single"])
-        cos_batched = cosine(vec, p["embedding_batched"]) \
-            if "embedding_batched" in p else cos_single
+        cos_batched = (
+            cosine(vec, p["embedding_batched"])
+            if "embedding_batched" in p
+            else cos_single
+        )
         best_cos = max(cos_single, cos_batched)
 
         problems = []
         if best_cos < args.concurrent_threshold:
             problems.append(
                 f"cos {best_cos:.6f} < {args.concurrent_threshold} (single "
-                f"{cos_single:.6f}, batched {cos_batched:.6f})")
+                f"{cos_single:.6f}, batched {cos_batched:.6f})"
+            )
 
         status = "FAIL" if problems else "ok"
-        print(f"{status:>4} {p['id']:>18}: cos_single={cos_single:.6f} "
-              f"cos_batched={cos_batched:.6f}"
-              + (f"  [{'; '.join(problems)}]" if problems else ""))
+        print(
+            f"{status:>4} {p['id']:>18}: cos_single={cos_single:.6f} "
+            f"cos_batched={cos_batched:.6f}"
+            + (f"  [{'; '.join(problems)}]" if problems else "")
+        )
         if problems:
             failures.append(f"concurrent {p['id']}: {'; '.join(problems)}")
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    parser.add_argument("--golden", required=True,
-                        help="Path to the golden JSON captured by "
-                             "capture_embedding_golden.py")
-    parser.add_argument("--url", default="http://localhost:8000",
-                        help="Base URL of the running server")
-    parser.add_argument("--api-key", default="your-secret-key",
-                        help="Bearer token (OPENAI_API_KEY of the server)")
-    parser.add_argument("--threshold", type=float, default=0.999,
-                        help="Minimum cosine similarity, sequential phase "
-                             "(single requests reproduce goldens bit-exactly, "
-                             "so this only leaves headroom for future stacks)")
-    parser.add_argument("--concurrent-threshold", type=float, default=0.9985,
-                        help="Minimum cosine similarity, concurrent phase. "
-                             "Looser than sequential because arbitrary batch "
-                             "compositions pad differently than the golden "
-                             "capture did; the measured single-vs-batched "
-                             "floor for BGE on n150 is 0.99857")
-    parser.add_argument("--require-bit-exact", action="store_true",
-                        help="Sequential phase must match goldens byte for "
-                             "byte (the current server achieves this)")
-    parser.add_argument("--burst", type=int, default=0,
-                        help="Concurrent burst size; 0 = min(8, #prompts). "
-                             "Values above the model's max_batch_size "
-                             "reproduce the MAX_IN_FLIGHT_COUNT overflow")
+    parser.add_argument(
+        "--golden",
+        required=True,
+        help="Path to the golden JSON captured by capture_embedding_golden.py",
+    )
+    parser.add_argument(
+        "--url", default="http://localhost:8000", help="Base URL of the running server"
+    )
+    parser.add_argument(
+        "--api-key",
+        default="your-secret-key",
+        help="Bearer token (OPENAI_API_KEY of the server)",
+    )
+    parser.add_argument(
+        "--threshold",
+        type=float,
+        default=0.999,
+        help="Minimum cosine similarity, sequential phase "
+        "(single requests reproduce goldens bit-exactly, "
+        "so this only leaves headroom for future stacks)",
+    )
+    parser.add_argument(
+        "--concurrent-threshold",
+        type=float,
+        default=0.9985,
+        help="Minimum cosine similarity, concurrent phase. "
+        "Looser than sequential because arbitrary batch "
+        "compositions pad differently than the golden "
+        "capture did; the measured single-vs-batched "
+        "floor for BGE on n150 is 0.99857",
+    )
+    parser.add_argument(
+        "--require-bit-exact",
+        action="store_true",
+        help="Sequential phase must match goldens byte for "
+        "byte (the current server achieves this)",
+    )
+    parser.add_argument(
+        "--burst",
+        type=int,
+        default=0,
+        help="Concurrent burst size; 0 = min(8, #prompts). "
+        "Values above the model's max_batch_size "
+        "reproduce the MAX_IN_FLIGHT_COUNT overflow",
+    )
     parser.add_argument("--timeout", type=float, default=60.0)
     args = parser.parse_args()
 
@@ -170,9 +200,11 @@ def main() -> int:
     meta = golden.get("metadata", {})
     args.model = meta.get("model", "unknown")
     print(f"golden: {args.golden}")
-    print(f"model={meta.get('model')} device={meta.get('device')} "
-          f"tt_metal_commit={meta.get('tt_metal_commit')} "
-          f"prompts={len(prompts)}")
+    print(
+        f"model={meta.get('model')} device={meta.get('device')} "
+        f"tt_metal_commit={meta.get('tt_metal_commit')} "
+        f"prompts={len(prompts)}"
+    )
 
     failures: list = []
     run_sequential(prompts, args, failures)

@@ -546,7 +546,7 @@ struct EmbeddingModelEntry {
   std::vector<std::pair<std::string_view, size_t>> batch_by_device;
 };
 
-constexpr ModelRunnerType kDefaultEmbeddingModel =
+constexpr ModelRunnerType DEFAULT_EMBEDDING_MODEL =
     ModelRunnerType::TT_BGE_LARGE_EN;
 
 const std::vector<EmbeddingModelEntry>& embeddingModels() {
@@ -695,7 +695,7 @@ TtsConfig ttsEngineConfig() {
 EmbeddingConfig embeddingEngineConfig() {
   static const EmbeddingConfig cached = [] {
     const std::string runner =
-        envStringLower("MODEL_RUNNER_TYPE", toString(kDefaultEmbeddingModel));
+        envStringLower("MODEL_RUNNER_TYPE", toString(DEFAULT_EMBEDDING_MODEL));
     const EmbeddingModelEntry& model = findEmbeddingModelOrThrow(runner);
 
     EmbeddingConfig cfg;

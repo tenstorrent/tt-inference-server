@@ -74,18 +74,33 @@ def _repeat_to_token_count(hf_tokenizer, target: int) -> str:
 def build_prompts(hf_tokenizer) -> list[dict]:
     prompts = [
         {"id": "single_token", "text": "cat"},
-        {"id": "short_sentence", "text": "The quick brown fox jumps over the lazy dog."},
-        {"id": "exact_384", "text": _repeat_to_token_count(hf_tokenizer, MAX_MODEL_LEN)},
+        {
+            "id": "short_sentence",
+            "text": "The quick brown fox jumps over the lazy dog.",
+        },
+        {
+            "id": "exact_384",
+            "text": _repeat_to_token_count(hf_tokenizer, MAX_MODEL_LEN),
+        },
         {"id": "over_limit_600", "text": " ".join(["hello"] * 600)},
         {
             "id": "non_ascii",
             "text": "Beograd je glavni grad Srbije. Летње вече на Дунаву. 東京は日本の首都です。",
         },
         {"id": "question", "text": "What is the capital of France?"},
-        {"id": "passage", "text": "Paris is the capital and most populous city of France."},
+        {
+            "id": "passage",
+            "text": "Paris is the capital and most populous city of France.",
+        },
         {"id": "numbers", "text": "In 2024, revenue grew by 17.5% to $3.2 billion."},
-        {"id": "code_like", "text": "def embed(text): return model.forward(tokenize(text))"},
-        {"id": "negation", "text": "The delivery did not arrive on time and the customer was unhappy."},
+        {
+            "id": "code_like",
+            "text": "def embed(text): return model.forward(tokenize(text))",
+        },
+        {
+            "id": "negation",
+            "text": "The delivery did not arrive on time and the customer was unhappy.",
+        },
     ]
     for p in prompts:
         p["untruncated_tokens"] = len(
@@ -165,12 +180,16 @@ def main() -> int:
         json.dump(golden, f)
 
     print(f"[golden] wrote {OUTPUT_PATH}")
-    print(f"[golden] dim={golden['metadata']['embedding_dim']} "
-          f"warmup_pcc={golden['metadata']['warmup_pcc']} "
-          f"determinism_max_abs_diff={max_diff}")
+    print(
+        f"[golden] dim={golden['metadata']['embedding_dim']} "
+        f"warmup_pcc={golden['metadata']['warmup_pcc']} "
+        f"determinism_max_abs_diff={max_diff}"
+    )
     for p in prompts:
-        print(f"[golden]   {p['id']}: untruncated={p['untruncated_tokens']} "
-              f"served_tokens={p['token_count']}")
+        print(
+            f"[golden]   {p['id']}: untruncated={p['untruncated_tokens']} "
+            f"served_tokens={p['token_count']}"
+        )
     print("[golden] SUCCESS")
     return 0
 

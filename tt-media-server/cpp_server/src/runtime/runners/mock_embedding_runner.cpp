@@ -16,8 +16,8 @@ namespace {
 // The mock's own shape. These are not config: nothing else in the server needs
 // them, and the mock is a plumbing stand-in rather than a stand-in for a
 // specific model. They match BGE-large so responses look plausible to clients.
-constexpr size_t kEmbeddingDim = 1024;
-constexpr size_t kMaxSequenceLength = 384;
+constexpr size_t EMBEDDING_DIM = 1024;
+constexpr size_t MAX_SEQUENCE_LENGTH = 384;
 
 // FNV-1a. Spelled out rather than using std::hash so the vectors are
 // reproducible across standard-library implementations and machines - tests
@@ -88,7 +88,7 @@ MockEmbeddingRunner::MockEmbeddingRunner(const config::EmbeddingConfig& config)
   TT_LOG_INFO(
       "[MockEmbeddingRunner] Created for model {} (dim={}, max_batch_size={}) "
       "- no Python, no device",
-      config_.hf_model_id, kEmbeddingDim, config_.max_batch_size);
+      config_.hf_model_id, EMBEDDING_DIM, config_.max_batch_size);
 }
 
 bool MockEmbeddingRunner::warmup() {
@@ -125,8 +125,8 @@ std::vector<domain::EmbeddingResponse> MockEmbeddingRunner::run(
       responses.push_back(std::move(resp));
       continue;
     }
-    resp.embedding = deterministicVector(req.input, kEmbeddingDim);
-    resp.total_tokens = approximateTokenCount(req.input, kMaxSequenceLength);
+    resp.embedding = deterministicVector(req.input, EMBEDDING_DIM);
+    resp.total_tokens = approximateTokenCount(req.input, MAX_SEQUENCE_LENGTH);
     responses.push_back(std::move(resp));
   }
 
