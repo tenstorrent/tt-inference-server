@@ -113,18 +113,19 @@ Once the script is executed we need to verify which changes are being introduced
 
  Run this immediately after promotion, before export_model_spec.py:
 ```bash 
- `PYTHONPATH=. python3 -c "
- import collections
- from workflows.model_spec import spec_templates
- seen = collections.defaultdict(list)
- for t in spec_templates:
-     for s in t.expand_to_specs():
-         seen[s.model_id].append(getattr(t, 'version', None))
- dups = {k: v for k, v in seen.items() if len(v) > 1}
- for k, v in sorted(dups.items()):
-     print('DUPLICATE', k, '<- versions', v)
- assert not dups, 'promotion created shadowed duplicate blocks'
- "`
+MODEL_SPECS_ENV=prod PYTHONPATH=. python3 -c "
+import collections
+from workflows.model_spec import spec_templates
+seen = collections.defaultdict(list)
+for t in spec_templates:
+    for s in t.expand_to_specs():
+        seen[s.model_id].append(getattr(t, 'version', None))
+dups = {k: v for k, v in seen.items() if len(v) > 1}
+for k, v in sorted(dups.items()):
+    print('DUPLICATE', k, '<- versions', v)
+assert not dups, 'promotion created shadowed duplicate blocks'
+print('OK: no duplicate model+device records')
+"
 ```
  
  If it fails, delete the older block from workflows/model_specs/prod/<type>.yaml and re-run. len(MODEL_SPECS) must be unchanged afterwards — the deleted block was unreachable, so release_model_spec.json and values.yaml will show no diff.
