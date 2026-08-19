@@ -3938,6 +3938,336 @@ _eval_config_list = [
             # ),
         ],
     ),
+    # Generated autoport Qwen3-Coder-30B-A3B-Instruct.
+    #
+    # The two coding tasks (mbpp_instruct, humaneval_instruct) have their task
+    # list, venv, chat template, batch size and gen_kwargs copied verbatim from
+    # the Qwen/Qwen2.5-Coder-32B-Instruct EvalConfig above (the closest existing
+    # code-instruct model in this catalog).
+    #
+    # The four instruction-following / graduate-QA tasks that follow them are
+    # two deliberately-kept pairs (meta_* and generic); the block comment inside
+    # the task list explains why both are present and why the meta_* pair cannot
+    # be read as an accuracy measurement of this model.
+    #
+    # No published or GPU reference score is set for ANY task here: Qwen
+    # publishes no MBPP/HumanEval/IFEval/GPQA number for this model, and no GPU
+    # reference run exists yet. Inheriting another model's numbers was rejected.
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen3-Coder-30B-A3B-Instruct",
+        tasks=[
+            EvalTask(
+                task_name="mbpp_instruct",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                allow_code_execution=True,
+                score=EvalTaskScore(
+                    # Qwen publishes only agentic-coding numbers for this model
+                    # (SWE-bench Verified etc.), no MBPP/HumanEval score, so the
+                    # published reference is left unset rather than invented.
+                    published_score=None,
+                    published_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "pass_at_1,extract_code",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                apply_chat_template=True,
+                # batch_size deliberately left at the EvalTask default of 1.
+                # The Qwen2.5-Coder-32B entry this was copied from sets 16, and
+                # that is what stalled the first release run. lm-eval's
+                # api_models creates ONE asyncio task per batch and gates them
+                # with Semaphore(num_concurrent), so prompts in flight is
+                # num_concurrent * batch_size = 32 * 16 = 512 against a 32-slot
+                # server -- a 16x oversubscription. Each request's
+                # ClientTimeout(total=...) clock starts when it is issued, so it
+                # runs while ~496 other prompts are still queued, and requests
+                # time out and retry even though the server is healthy and
+                # making progress. EvalTask's own docstring says batch_size
+                # should stay 1 when max_concurrent is set; this entry now
+                # follows it. 1 * 32 = exactly the server's configured width.
+                gen_kwargs={
+                    # max_gen_toks raised 256 -> 2048 relative to the
+                    # Qwen2.5-Coder-32B entry this was copied from. Measured,
+                    # not guessed: at 256 the first release run scored
+                    # mbpp_instruct 27.6%, because the task pre-fills the
+                    # assistant turn with an opening ```python fence and the
+                    # `extract_code` filter needs the CLOSING fence to extract
+                    # anything. This model writes a docstring plus its own
+                    # asserts, so 336/500 completions were still mid-block at
+                    # the 256-token ceiling and filtered to the empty string.
+                    # Of the 164 that did close the fence, 138 passed (84.1%).
+                    # The 27.6% measured the token ceiling, not the model.
+                    # This raises a GENERATION ceiling; it does not cap context.
+                    "max_gen_toks": "2048",
+                    "do_sample": "false",
+                    "stream": "false",
+                },
+                # lm-eval's api_models defaults max_length to 2048, which would
+                # leave zero prompt budget beside max_gen_toks=2048. Pinned to
+                # the model's real context (doc/context_contract.json) so the
+                # client never truncates below what the server serves.
+                model_kwargs={
+                    "max_length": 262144,
+                    # Per-request HTTP timeout. lm-eval defaults to
+                    # 1800 s. Per-step decode cost on this port
+                    # tracks the CONFIGURED slot count, not the
+                    # active one (doc/optimized_vllm/README.md: 229 ms
+                    # /step at 1 live row of 32, 269 ms at 32 live),
+                    # so a correct 2048-token answer legitimately
+                    # takes ~9 min at full occupancy. 7200 s gives a
+                    # slow-but-correct response room to finish
+                    # instead of being retried. This raises a client
+                    # patience limit; it caps nothing.
+                    "timeout": 7200,
+                },
+            ),
+            EvalTask(
+                task_name="humaneval_instruct",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                allow_code_execution=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "pass@1,create_test",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                apply_chat_template=True,
+                # batch_size deliberately left at the EvalTask default of 1.
+                # The Qwen2.5-Coder-32B entry this was copied from sets 16, and
+                # that is what stalled the first release run. lm-eval's
+                # api_models creates ONE asyncio task per batch and gates them
+                # with Semaphore(num_concurrent), so prompts in flight is
+                # num_concurrent * batch_size = 32 * 16 = 512 against a 32-slot
+                # server -- a 16x oversubscription. Each request's
+                # ClientTimeout(total=...) clock starts when it is issued, so it
+                # runs while ~496 other prompts are still queued, and requests
+                # time out and retry even though the server is healthy and
+                # making progress. EvalTask's own docstring says batch_size
+                # should stay 1 when max_concurrent is set; this entry now
+                # follows it. 1 * 32 = exactly the server's configured width.
+                gen_kwargs={
+                    # max_gen_toks raised 256 -> 2048 relative to the
+                    # Qwen2.5-Coder-32B entry this was copied from. Measured,
+                    # not guessed: at 256 the first release run scored
+                    # mbpp_instruct 27.6%, because the task pre-fills the
+                    # assistant turn with an opening ```python fence and the
+                    # `extract_code` filter needs the CLOSING fence to extract
+                    # anything. This model writes a docstring plus its own
+                    # asserts, so 336/500 completions were still mid-block at
+                    # the 256-token ceiling and filtered to the empty string.
+                    # Of the 164 that did close the fence, 138 passed (84.1%).
+                    # The 27.6% measured the token ceiling, not the model.
+                    # This raises a GENERATION ceiling; it does not cap context.
+                    "max_gen_toks": "2048",
+                    "do_sample": "false",
+                    "stream": "false",
+                },
+                # lm-eval's api_models defaults max_length to 2048, which would
+                # leave zero prompt budget beside max_gen_toks=2048. Pinned to
+                # the model's real context (doc/context_contract.json) so the
+                # client never truncates below what the server serves.
+                model_kwargs={
+                    "max_length": 262144,
+                    # Per-request HTTP timeout. lm-eval defaults to
+                    # 1800 s. Per-step decode cost on this port
+                    # tracks the CONFIGURED slot count, not the
+                    # active one (doc/optimized_vllm/README.md: 229 ms
+                    # /step at 1 live row of 32, 269 ms at 32 live),
+                    # so a correct 2048-token answer legitimately
+                    # takes ~9 min at full occupancy. 7200 s gives a
+                    # slow-but-correct response room to finish
+                    # instead of being retried. This raises a client
+                    # patience limit; it caps nothing.
+                    "timeout": 7200,
+                },
+            ),
+            # --- Instruction-following and graduate-QA gates -----------------
+            #
+            # FOUR tasks are registered below, deliberately, as TWO pairs
+            # measuring the SAME two capabilities. This is not redundancy; the
+            # two pairs are not interchangeable and the difference is the point.
+            #
+            #   pair A: meta_ifeval / meta_gpqa_cot  (Meta's harness variants)
+            #   pair B: ifeval     / gpqa_diamond_cot_zeroshot  (generic)
+            #
+            # The `meta_*` tasks use workflow_venv_type=EVALS_META,
+            # include_path="work_dir" and apply_chat_template=False. That
+            # combination is not incidental: Meta's harness embeds Llama-3
+            # prompt formatting (the <|start_header_id|>… role scaffold and a
+            # forced leading BOS, see EvalTask._infer_data above) directly into
+            # the task definition, and therefore switches the client chat
+            # template OFF so the two do not stack. Pointed at a Qwen model
+            # that means every prompt arrives Llama-formatted with no Qwen chat
+            # template applied. A low meta_* score on this model therefore
+            # measures PROMPT-FORMAT MISMATCH, not model quality, and must not
+            # be read as an accuracy regression of the autoport.
+            #
+            # The generic pair (used by non-Llama models already in this
+            # catalog: `ifeval` by arcee-ai/AFM-4.5B, `gpqa_diamond_cot_zeroshot`
+            # by zai-org/GLM-5.2) runs in EVALS_COMMON with
+            # apply_chat_template=True, so the server applies Qwen's own chat
+            # template. That is the technically correct measurement of these
+            # two capabilities for this model.
+            #
+            # Both pairs are registered so that the stage's literal requirement
+            # (meta_ifeval + meta_gpqa_cot) is satisfied while the measurement
+            # that is actually valid for a Qwen model is also present and the
+            # distinction is visible in the release report, rather than one
+            # variant being silently chosen because it was convenient.
+            #
+            # Llama's published_score / gpu_reference_score values were NOT
+            # copied across with the task definitions: those are Llama-3.3-70B's
+            # numbers and attaching them to this model would manufacture a false
+            # reference. They are None here, as ~10 other entries in this file
+            # already do. Consequence: these four rows grade as ungraded /
+            # no-reference in the release report. That is correct and intended.
+            # -----------------------------------------------------------------
+            #
+            # pair A, task 1 of 2 -- Llama-formatted; see caveat above.
+            EvalTask(
+                task_name="meta_ifeval",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    # Llama's 92.1 / 91.35 deliberately not inherited.
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                            "inst_level_strict_acc,none",
+                            "prompt_level_loose_acc,none",
+                            "inst_level_loose_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            # pair A, task 2 of 2 -- Llama-formatted; see caveat above.
+            EvalTask(
+                task_name="meta_gpqa_cot",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    # Llama's 50.5 / 60.04 deliberately not inherited.
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,strict-match",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            # pair B, task 1 of 2 -- model-agnostic; Qwen chat template applied.
+            # Shape follows arcee-ai/AFM-4.5B's `ifeval` entry.
+            EvalTask(
+                task_name="ifeval",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                apply_chat_template=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                            "inst_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                # Same reasoning as the code tasks above: lm-eval's api_models
+                # default of max_length=2048 / max_gen_toks=256 is far below
+                # what this model serves, and IFEval prompts routinely ask for
+                # long-form answers whose constraints can only be satisfied if
+                # the answer is allowed to finish. Both ceilings raised, never
+                # lowered; max_length pinned to the context contract.
+                gen_kwargs={
+                    "max_gen_toks": "2048",
+                    "do_sample": "false",
+                    "stream": "false",
+                },
+                model_kwargs={
+                    "max_length": 262144,
+                    # Per-request HTTP timeout. lm-eval defaults to
+                    # 1800 s. Per-step decode cost on this port
+                    # tracks the CONFIGURED slot count, not the
+                    # active one (doc/optimized_vllm/README.md: 229 ms
+                    # /step at 1 live row of 32, 269 ms at 32 live),
+                    # so a correct 2048-token answer legitimately
+                    # takes ~9 min at full occupancy. 7200 s gives a
+                    # slow-but-correct response room to finish
+                    # instead of being retried. This raises a client
+                    # patience limit; it caps nothing.
+                    "timeout": 7200,
+                },
+            ),
+            # pair B, task 2 of 2 -- model-agnostic; Qwen chat template applied.
+            # Shape follows zai-org/GLM-5.2's `gpqa_diamond_cot_zeroshot` entry,
+            # minus GLM-specific reasoning/`until`/200K-generation settings,
+            # which do not apply to this non-reasoning coder model.
+            EvalTask(
+                task_name="gpqa_diamond_cot_zeroshot",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                apply_chat_template=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,flexible-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                # Chain-of-thought: the answer only scores if the reasoning is
+                # allowed to run to the final "Answer: X". 4096 rather than the
+                # 2048 used elsewhere for that reason. Raised, never lowered.
+                gen_kwargs={
+                    "max_gen_toks": "4096",
+                    "do_sample": "false",
+                    "stream": "false",
+                },
+                model_kwargs={
+                    "max_length": 262144,
+                    # Per-request HTTP timeout. lm-eval defaults to
+                    # 1800 s. Per-step decode cost on this port
+                    # tracks the CONFIGURED slot count, not the
+                    # active one (doc/optimized_vllm/README.md: 229 ms
+                    # /step at 1 live row of 32, 269 ms at 32 live),
+                    # so a correct 2048-token answer legitimately
+                    # takes ~9 min at full occupancy. 7200 s gives a
+                    # slow-but-correct response room to finish
+                    # instead of being retried. This raises a client
+                    # patience limit; it caps nothing.
+                    "timeout": 7200,
+                },
+            ),
+        ],
+    ),
     EvalConfig(
         hf_model_repo="BAAI/bge-large-en-v1.5",
         tasks=[

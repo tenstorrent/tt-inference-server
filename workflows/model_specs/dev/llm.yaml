@@ -1758,3 +1758,62 @@ templates:
       remote_api_model: zai-org/GLM-5.2
       reasoning_parser_name: glm45
       tool_call_parser_name: glm47
+
+# =============================================================================
+# Qwen3-Coder-30B-A3B-Instruct — generated autoport (models/autoports/
+# qwen_qwen3_coder_30b_a3b_instruct), NOT tt_transformers. Dev-only entry used
+# for the TTI release handoff of the autoport bring-up on 1x4 Blackhole P300_X2.
+# max_context is the full HF-advertised 262144 recorded in the autoport's
+# doc/context_contract.json (capability_reduction: false) — do not cap it.
+# override_tt_config / env_vars mirror the measured, shipped serving config in
+# doc/optimized_vllm/README.md.
+# =============================================================================
+- weights:
+    - Qwen/Qwen3-Coder-30B-A3B-Instruct
+  impl: qwen3_coder_30b_a3b_autoport
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P300X2  # QB2 (2x P300, 4-chip 1x4 mesh)
+      max_concurrency: 32
+      max_context: 262144  # 256 * 1024; doc/context_contract.json
+      default_impl: true
+      env_vars:
+        MESH_DEVICE: "P150x4"
+      override_tt_config:
+        trace_region_size: 50331648  # 48 MB; shipped optimized_vllm config
+        fabric_config: FABRIC_1D_RING
+      # meta_ifeval / meta_gpqa_cot cannot execute for ANY non-Llama model.
+      # workflow_venvs.py:444 builds the dataset name by concatenation --
+      # config["evals_dataset"] = f"{_model_name}-evals" -- giving
+      # "Qwen/Qwen3-Coder-30B-A3B-Instruct-evals", and prepare_meta_eval.py
+      # (:280-287) accepts only names in the Llama-3.1/3.2 Evals collection, so
+      # it raises ValueError. That step runs with check=False, so
+      # workflow_venvs.py:456 only logs "...continuing...", the per-model
+      # work_dir stays empty, and lm-eval later exits 1 with "Tasks were not
+      # found". Structural and permanent here; nothing model-side can fix it.
+      # Reproducer and full root-cause write-up: tt-metal
+      # models/autoports/qwen_qwen3_coder_30b_a3b_instruct/doc/tti_release/
+      # RUN_NOTES.md, "Finding 2".
+      # UPSTREAM ISSUE: NOT YET FILED -- pending filing by the project owner
+      # against tenstorrent/tt-inference-server. Replace the marker in each
+      # reason string with the issue URL once it exists; no issue number is
+      # invented here.
+      known_issues:
+        - workflow_type: EVALS
+          task_name: meta_ifeval
+          reason: "Structural TTI limitation, not a model result: workflow_venvs.py:444 builds evals_dataset as f'{model_name}-evals' and prepare_meta_eval.py:280-287 accepts only the Llama-3.1/3.2 Evals collection, so this task cannot execute for any non-Llama model. Root cause and reproducer: tt-metal models/autoports/qwen_qwen3_coder_30b_a3b_instruct/doc/tti_release/RUN_NOTES.md, Finding 2. Upstream issue NOT YET FILED - pending filing by the project owner. Generic 'ifeval' is registered alongside and does measure this model."
+        - workflow_type: EVALS
+          task_name: meta_gpqa_cot
+          reason: "Structural TTI limitation, not a model result: identical cause to meta_ifeval - workflow_venvs.py:444 builds evals_dataset as f'{model_name}-evals' and prepare_meta_eval.py:280-287 accepts only the Llama-3.1/3.2 Evals collection, so this task cannot execute for any non-Llama model. Root cause and reproducer: tt-metal models/autoports/qwen_qwen3_coder_30b_a3b_instruct/doc/tti_release/RUN_NOTES.md, Finding 2. Upstream issue NOT YET FILED - pending filing by the project owner. Generic 'gpqa_diamond_cot_zeroshot' is registered alongside and does measure this model."
+  status: EXPERIMENTAL
+  # ModelSpec.infer_param_count takes the LAST "<n>B" in the repo name, so
+  # "...-30B-A3B-Instruct" infers 3B and derives far too small a disk/RAM
+  # minimum. Pin them here for the real 30.5B bf16 checkpoint (the values the
+  # 30B formula would give: 30*2+20 and 30*2.5).
+  min_disk_gb: 80
+  min_ram_gb: 75
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    Qwen/Qwen3-Coder-30B-A3B-Instruct:
+      tool_call_parser_name: qwen3_coder

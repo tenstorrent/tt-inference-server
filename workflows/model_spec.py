@@ -308,6 +308,15 @@ qwen36_blackhole_b8_impl = ImplSpec(
     code_path="models/demos/blackhole/qwen36",
 )
 
+# Generated autoport implementation for Qwen3-Coder-30B-A3B-Instruct. This is a
+# standalone TTNN model bundle under models/autoports/, not tt-transformers.
+qwen3_coder_30b_a3b_autoport_impl = ImplSpec(
+    impl_id="qwen3_coder_30b_a3b_autoport",
+    impl_name="qwen3-coder-30b-a3b-autoport",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/autoports/qwen_qwen3_coder_30b_a3b_instruct",
+)
+
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "tt_transformers": tt_transformers_impl,
     "llama3_70b_galaxy": llama3_70b_galaxy_impl,
@@ -322,6 +331,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "qwen36_blackhole": qwen36_blackhole_impl,
     "training_lora": training_lora_impl,
     "qwen36_blackhole_b8": qwen36_blackhole_b8_impl,
+    "qwen3_coder_30b_a3b_autoport": qwen3_coder_30b_a3b_autoport_impl,
 }
 
 
