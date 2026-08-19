@@ -144,6 +144,19 @@ class TestScheduler:
 
         assert scheduler.logger is not None
 
+    def test_start_queues_uses_max_queue_size(self):
+        """task_queue capacity must come from settings.max_queue_size."""
+        with patch(
+            "model_services.scheduler.get_task_queue"
+        ) as mockGetTaskQueue, patch("model_services.scheduler.get_queue"), patch(
+            "model_services.scheduler.Queue"
+        ), patch("model_services.scheduler.TTLogger", return_value=mock_logger):
+            mockGetTaskQueue.return_value = create_mock_queue()
+            Scheduler()
+
+        mockGetTaskQueue.assert_called_once()
+        assert mockGetTaskQueue.call_args.kwargs["size"] == mock_settings.max_queue_size
+
     def test_check_is_model_ready_when_not_ready(self, scheduler):
         """Test check_is_model_ready when model is not ready"""
         scheduler.is_ready = False
