@@ -111,9 +111,9 @@ BENCHMARK_ISL_OSL_PAIRS = [
 # NOTE: To support future models with larger context lengths, add near-max ISL-OSL
 # pairs here; they will be automatically filtered by the per-model context cap.
 SUPER_CLUSTER_EXTRA_ISL_OSL_PAIRS = [
-    (128, 256000-128),
+    (128, 256000 - 128),
     (196608, 128),  # 192K
-    (256000-128, 128),  # 240K
+    (256000 - 128, 128),  # 240K
 ]
 # Remote SUPER_CLUSTER endpoints serve high-ISL sweep points at full
 # concurrency, but get_num_prompts scales prompts as a small multiple of

@@ -72,8 +72,7 @@ def _filter_agentic_tasks_by_benchmark(agentic: list, selection: str) -> list:
     selected = [
         t
         for t in agentic
-        if t.task_name in exacts
-        or any(t.task_name.startswith(p) for p in prefixes)
+        if t.task_name in exacts or any(t.task_name.startswith(p) for p in prefixes)
     ]
     if not selected:
         available = [t.task_name for t in agentic]

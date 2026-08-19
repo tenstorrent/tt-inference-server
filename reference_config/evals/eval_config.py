@@ -798,7 +798,7 @@ _eval_config_list = [
                         # tail emits malformed tool-call arguments (~2% of calls
                         # measured against the served endpoint) and one bad
                         # parse aborts the whole trial.
-
+                        #
                         # Must stay a JSON *string*: agent_kwargs are written
                         # verbatim into the harbor config file, and the adapter
                         # shlex.quotes this value onto the container command

@@ -93,11 +93,7 @@ class AgenticTracesRunSpec:
     slice_duration: float = 1.0
     max_context_length: Optional[int] = None
     tokenizer_trust_remote_code: Optional[bool] = None
-    # False matches ``vllm bench serve``: stream for TTFT/ITL, count ISL/OSL
-    # with the local tokenizer. True would read ``usage`` off the wire, but TT
-    # streaming endpoints typically ignore ``stream_options.include_usage`` and
-    # AIPerf then drops token-count metrics instead of falling back.
-    use_server_token_count: bool = False
+    use_server_token_count: bool = True
     gpu_telemetry: bool = False
     # SwarmOne (``swo-bench replay``) knobs. Ignored by the InferenceX/AIPerf
     # driver, so they can stay at their defaults on ``inferencex_agentx`` specs.
@@ -252,13 +248,13 @@ class AgenticTracesModeSettings:
             )
 
 
-# Reference full-length run. Profiling matches the inferencex-agentx-mvp
-# scenario default (1 hour). The trace pool is all 393 eligible traces.
+# Reference full-length run: the shape validated by hand before this workflow
+# existed (1h profiling, all 393 eligible traces).
 #
-# 14 requests/lane reproduces the warmup depth of the hand-validated run,
-# which used the superseded 600s time-bounded warmup: it issued 109 warmup
-# wire requests across 8 lanes (13.6/lane) in 583.7s. Re-measure and re-pin
-# this if the trace corpus or the server's warmup latency changes materially.
+# 14 requests/lane reproduces the warmup depth of that validated run, which
+# used the superseded 600s time-bounded warmup: it issued 109 warmup wire
+# requests across 8 lanes (13.6/lane) in 583.7s. Re-measure and re-pin this if
+# the trace corpus or the server's warmup latency changes materially.
 FULL_MODE_SETTINGS = AgenticTracesModeSettings(
     benchmark_duration=3600,
     warmup_requests_per_lane=14,
@@ -379,7 +375,6 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
                 trace_source=TraceSource.INFERENCEX_AGENTX,
                 public_dataset="semianalysis_cc_traces_weka_062126_256k",
                 concurrency=64,
-                use_server_token_count=True,
             ),
             # SwarmOne swo-bench replay of the recorded Kimi Claude-Code
             # SWE-bench sessions. FULL replays all three tasks (sympy-bugfix,

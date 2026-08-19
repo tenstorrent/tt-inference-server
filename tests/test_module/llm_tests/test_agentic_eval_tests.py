@@ -814,7 +814,10 @@ class TestAgenticRunTimestamp:
 
     def test_terminal_bench_config_stamps_job_folder(self):
         cfg = build_terminal_bench_config(
-            _terminal_task(), _server(), _driver_context(), n_tasks=1,
+            _terminal_task(),
+            _server(),
+            _driver_context(),
+            n_tasks=1,
             run_stamp=self.STAMP,
         )
         # jobs_dir stays the shared agentic/ parent; the job folder is stamped.
@@ -826,7 +829,10 @@ class TestAgenticRunTimestamp:
 
     def test_swebench_config_stamps_output_dir(self):
         cfg = build_swebench_config(
-            _swebench_task(), _server(), _driver_context(), n_tasks=1,
+            _swebench_task(),
+            _server(),
+            _driver_context(),
+            n_tasks=1,
             run_stamp=self.STAMP,
         )
         assert cfg.output_dir == Path(

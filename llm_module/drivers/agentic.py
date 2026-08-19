@@ -327,9 +327,7 @@ def _agentic_output_dir(
     # Stamp the per-task folder so a re-run into the same logs dir gets a fresh
     # folder; the harnesses (harbor job, sweagent output) refuse to start in an
     # existing one.
-    task_dir = (
-        task.task_name if not run_stamp else f"{task.task_name}_{run_stamp}"
-    )
+    task_dir = task.task_name if not run_stamp else f"{task.task_name}_{run_stamp}"
     if release_layout:
         # release run: group all agentic results under a single top-level
         # ``agentic/`` dir (sibling of ``llm/`` / ``prefix_cache/``) so the
