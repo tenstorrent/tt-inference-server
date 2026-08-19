@@ -248,6 +248,70 @@ templates:
     # to collect GPU reference eval scores for GPQA-Diamond, Terminal-Bench 2.0,
     # and SWE-Bench Verified. Dev-only; no tt_metal_commit/version pin needed
     # (the bring-your-own-server path builds no tt-metal docker image).
+    # WH T3K (1x8 = 8x n300, ~96 GB). Metal policy (generator_trace 31B/T3K):
+    # unbounded through 16k, auto-bounded + multi-chunk (2048) from 32k. Measured
+    # batch-1 on a real T3K: 4k TTFT 8.5 s / 15.7 tok/s, 32k 55 s / 14.8 tok/s,
+    # 128k 188 s / 12.9 tok/s, 256k 564 s / 10.1 tok/s (all PASS). Served context
+    # is held at 128k: metal Direct reached 256k, but the vLLM paged pool plus
+    # trace regions have not been validated that high on WH.
+    - device: T3K
+      # Decode batch ceiling 32, same as the Blackhole specs. max_context is the
+      # whole-device KV pool (it sets both max_model_len and
+      # max_tokens_all_users), so raising concurrency partitions that fixed pool
+      # rather than multiplying it — 32 concurrent users share max_context
+      # tokens. Wormhole's 12 GB per ASIC therefore constrains max_context
+      # below, not max_concurrency here.
+      max_concurrency: 32
+      max_context: 131072  # 128 * 1024
+      default_impl: true
+      env_vars:
+        MESH_DEVICE: "T3K"
+        # Ring is a Blackhole >=8-device default only; WH must stay Linear
+        # (models/demos/gemma4/tt/ccl.py default_ccl_topology).
+        GEMMA4_CCL_TOPOLOGY: "linear"
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+        GEMMA4_MAX_TOKENS_ALL_USERS: "131072"
+        GEMMA4_VLLM_SINGLE_CHUNK: "0"
+        GEMMA4_CHUNKED_PREFILL_TRACE: "1"
+        # KNOWN BAD ON WORMHOLE — concurrent decode returns nondeterministic
+        # garbage. Measured on T3K 12B (distinct arithmetic prompts, temp 0,
+        # 3 repeats): every request completes, but correctness swings run to run
+        # — async OFF gave 4/4, 0/4, 0/4 at concurrency 4 and 1/8, 8/8, 8/8 at
+        # concurrency 8; async ON gave 4/4, 0/4, 0/4 and 0/8, 8/8, 3/8. Only
+        # concurrency 1 is stable. So max_concurrency: 32 below is the BH-parity
+        # target, NOT a verified-good setting on Wormhole yet.
+        #
+        # async decode is pinned OFF here as a precaution, not as a proven fix:
+        # across those repeats it was never worse than ON and was the only
+        # config with a clean 3/3 at concurrency 1, but n=3 cannot separate it
+        # from the underlying corruption. The BH async mitigations (async-ahead
+        # merge, preempt gen accounting, page-table -1 pad) are BH-validated
+        # only. Revisit both this flag and max_concurrency once the concurrent
+        # decode corruption is root-caused on WH.
+        GEMMA4_SUPPORTS_ASYNC_DECODE: "0"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        # WH cannot afford the BH 512 MB trace region; 90 MB matches the other
+        # T3K LLM specs and the raised gemma4 WH demo default. Note this only
+        # fits the default {B=1, B=max} decode-trace warmup — capturing every
+        # power-of-two bucket overflows it (mesh_trace.cpp TT_FATAL).
+        trace_region_size: 90000000
+        # On-device decode sampling is required on a TP mesh so token ids
+        # >= 65536 are reachable (host sampling only sees device 0's shard).
+        sample_on_device_mode: decode_only
+      vllm_args:
+        # No async_scheduling on WH: the platform disables it anyway once the
+        # model reports supports_async_decode=False (see GEMMA4_SUPPORTS_ASYNC_DECODE
+        # above), so requesting it only produces a startup warning.
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: gemma4
+        # Token-chunked prefill (tenstorrent/vllm#448). Must equal the chunk the
+        # metal policy resolves for this (model, device) — 2048 on every WH board.
+        enable_chunked_prefill: true
+        max_num_batched_tokens: 2048
+        long_prefill_token_threshold: 2048
     - device: GPU
       max_concurrency: 32
       max_context: 204800  # 200 * 1024; native ctx is 256K but a single H100 NVL (94GB, bf16 KV) caps servable ctx at ~205K (KV cache = 210,605 tokens)
@@ -351,6 +415,134 @@ templates:
     # to collect GPU reference eval scores for GPQA-Diamond, Terminal-Bench 2.0,
     # and SWE-Bench Verified. Dev-only; no tt_metal_commit/version pin needed
     # (the bring-your-own-server path builds no tt-metal docker image).
+    # WH T3K (1x8 = 8x n300, ~96 GB). Metal policy (generator_trace 12B/T3K):
+    # unbounded through 8k, auto-bounded + multi-chunk (2048) above that. Measured
+    # batch-1 on a real T3K: 4k TTFT 9.9 s / 24.0 tok/s, 32k 49 s / 22.5 tok/s,
+    # 128k 163 s / 19.1 tok/s, 256k 468 s / 14.3 tok/s — the full HF ISL PASSES.
+    - device: T3K
+      # Decode batch ceiling 32, same as the Blackhole specs. max_context is the
+      # whole-device KV pool (it sets both max_model_len and
+      # max_tokens_all_users), so raising concurrency partitions that fixed pool
+      # rather than multiplying it — 32 concurrent users share max_context
+      # tokens. Wormhole's 12 GB per ASIC therefore constrains max_context
+      # below, not max_concurrency here.
+      max_concurrency: 32
+      max_context: 262144  # 256 * 1024 — full HF ISL, measured PASS
+      default_impl: true
+      env_vars:
+        MESH_DEVICE: "T3K"
+        # Ring is a Blackhole >=8-device default only; WH must stay Linear
+        # (models/demos/gemma4/tt/ccl.py default_ccl_topology).
+        GEMMA4_CCL_TOPOLOGY: "linear"
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+        GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
+        GEMMA4_VLLM_SINGLE_CHUNK: "0"
+        GEMMA4_CHUNKED_PREFILL_TRACE: "1"
+        # KNOWN BAD ON WORMHOLE — concurrent decode returns nondeterministic
+        # garbage. Measured on T3K 12B (distinct arithmetic prompts, temp 0,
+        # 3 repeats): every request completes, but correctness swings run to run
+        # — async OFF gave 4/4, 0/4, 0/4 at concurrency 4 and 1/8, 8/8, 8/8 at
+        # concurrency 8; async ON gave 4/4, 0/4, 0/4 and 0/8, 8/8, 3/8. Only
+        # concurrency 1 is stable. So max_concurrency: 32 below is the BH-parity
+        # target, NOT a verified-good setting on Wormhole yet.
+        #
+        # async decode is pinned OFF here as a precaution, not as a proven fix:
+        # across those repeats it was never worse than ON and was the only
+        # config with a clean 3/3 at concurrency 1, but n=3 cannot separate it
+        # from the underlying corruption. The BH async mitigations (async-ahead
+        # merge, preempt gen accounting, page-table -1 pad) are BH-validated
+        # only. Revisit both this flag and max_concurrency once the concurrent
+        # decode corruption is root-caused on WH.
+        GEMMA4_SUPPORTS_ASYNC_DECODE: "0"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        # WH cannot afford the BH 512 MB trace region; 90 MB matches the other
+        # T3K LLM specs and the raised gemma4 WH demo default. Note this only
+        # fits the default {B=1, B=max} decode-trace warmup — capturing every
+        # power-of-two bucket overflows it (mesh_trace.cpp TT_FATAL).
+        trace_region_size: 90000000
+        # On-device decode sampling is required on a TP mesh so token ids
+        # >= 65536 are reachable (host sampling only sees device 0's shard).
+        sample_on_device_mode: decode_only
+      vllm_args:
+        # No async_scheduling on WH: the platform disables it anyway once the
+        # model reports supports_async_decode=False (see GEMMA4_SUPPORTS_ASYNC_DECODE
+        # above), so requesting it only produces a startup warning.
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: gemma4
+        # Token-chunked prefill (tenstorrent/vllm#448). Must equal the chunk the
+        # metal policy resolves for this (model, device) — 2048 on every WH board.
+        enable_chunked_prefill: true
+        max_num_batched_tokens: 2048
+        long_prefill_token_threshold: 2048
+    # WH N300 (1x2 = one n300 card, 24 GB). 12B is the only Gemma4 variant that
+    # fits a single WH card — 26B-A4B and 31B OOM here even at 4k. Measured
+    # batch-1: 4k TTFT 11.4 s / 12.0 tok/s, 32k 60 s / 12.7 tok/s, 64k 99 s /
+    # 12.3 tok/s, 128k 171 s / 11.7 tok/s. 256k OOMs on KV allocation, so 128k
+    # is the ceiling here (unlike T3K).
+    - device: N300
+      # Decode batch ceiling 32, same as the Blackhole specs. max_context is the
+      # whole-device KV pool (it sets both max_model_len and
+      # max_tokens_all_users), so raising concurrency partitions that fixed pool
+      # rather than multiplying it — 32 concurrent users share max_context
+      # tokens. Wormhole's 12 GB per ASIC therefore constrains max_context
+      # below, not max_concurrency here.
+      max_concurrency: 32
+      max_context: 131072  # 128 * 1024 — 256k OOMs on a 24 GB card
+      default_impl: true
+      env_vars:
+        MESH_DEVICE: "N300"
+        # Ring is a Blackhole >=8-device default only; WH must stay Linear
+        # (models/demos/gemma4/tt/ccl.py default_ccl_topology).
+        GEMMA4_CCL_TOPOLOGY: "linear"
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+        GEMMA4_MAX_TOKENS_ALL_USERS: "131072"
+        GEMMA4_VLLM_SINGLE_CHUNK: "0"
+        GEMMA4_CHUNKED_PREFILL_TRACE: "1"
+        # KNOWN BAD ON WORMHOLE — concurrent decode returns nondeterministic
+        # garbage. Measured on T3K 12B (distinct arithmetic prompts, temp 0,
+        # 3 repeats): every request completes, but correctness swings run to run
+        # — async OFF gave 4/4, 0/4, 0/4 at concurrency 4 and 1/8, 8/8, 8/8 at
+        # concurrency 8; async ON gave 4/4, 0/4, 0/4 and 0/8, 8/8, 3/8. Only
+        # concurrency 1 is stable. So max_concurrency: 32 below is the BH-parity
+        # target, NOT a verified-good setting on Wormhole yet.
+        #
+        # async decode is pinned OFF here as a precaution, not as a proven fix:
+        # across those repeats it was never worse than ON and was the only
+        # config with a clean 3/3 at concurrency 1, but n=3 cannot separate it
+        # from the underlying corruption. The BH async mitigations (async-ahead
+        # merge, preempt gen accounting, page-table -1 pad) are BH-validated
+        # only. Revisit both this flag and max_concurrency once the concurrent
+        # decode corruption is root-caused on WH.
+        GEMMA4_SUPPORTS_ASYNC_DECODE: "0"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        # WH cannot afford the BH 512 MB trace region; 90 MB matches the other
+        # T3K LLM specs and the raised gemma4 WH demo default. Note this only
+        # fits the default {B=1, B=max} decode-trace warmup — capturing every
+        # power-of-two bucket overflows it (mesh_trace.cpp TT_FATAL).
+        trace_region_size: 90000000
+        # NO sample_on_device_mode here (unlike every other Gemma4 spec):
+        # Gemma4's vocab is 262144, and on-device sampling needs the per-device
+        # shard to fit ttnn topk's 64k width. TP=2 shards to 131072, so
+        # Gemma4Model never builds a SamplingGenerator and requesting
+        # decode_only killed the engine on the "self.sampling is not None"
+        # assert. Host sampling all-gathers the full vocab and is correct here.
+      vllm_args:
+        # No async_scheduling on WH: the platform disables it anyway once the
+        # model reports supports_async_decode=False (see GEMMA4_SUPPORTS_ASYNC_DECODE
+        # above), so requesting it only produces a startup warning.
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: gemma4
+        # Token-chunked prefill (tenstorrent/vllm#448). Must equal the chunk the
+        # metal policy resolves for this (model, device) — 2048 on every WH board.
+        enable_chunked_prefill: true
+        max_num_batched_tokens: 2048
+        long_prefill_token_threshold: 2048
     - device: GPU
       max_concurrency: 32
       max_context: 204800  # 200 * 1024; native ctx is 256K but a single H100 NVL caps ~205K
@@ -1457,6 +1649,69 @@ templates:
         enable_chunked_prefill: true
         max_num_batched_tokens: 4096
         long_prefill_token_threshold: 4096
+    # WH T3K (1x8 = 8x n300, ~96 GB). Metal policy (generator_trace 26B-A4B/T3K):
+    # bounded + multi-chunk (2048) above 16k. 4k / 32k / 128k all PASS, but MoE
+    # prefill on Wormhole is far slower than the dense 31B — TTFT 60 s @4k,
+    # 449 s @32k and 1506 s @128k (vs 31B's 55 s @32k). Serve 32k: 128k is
+    # functional but a ~25 min TTFT is not a usable release target.
+    - device: T3K
+      # Decode batch ceiling 32, same as the Blackhole specs. max_context is the
+      # whole-device KV pool (it sets both max_model_len and
+      # max_tokens_all_users), so raising concurrency partitions that fixed pool
+      # rather than multiplying it — 32 concurrent users share max_context
+      # tokens. Wormhole's 12 GB per ASIC therefore constrains max_context
+      # below, not max_concurrency here.
+      max_concurrency: 32
+      max_context: 32768  # 32 * 1024
+      default_impl: true
+      env_vars:
+        MESH_DEVICE: "T3K"
+        # Ring is a Blackhole >=8-device default only; WH must stay Linear
+        # (models/demos/gemma4/tt/ccl.py default_ccl_topology).
+        GEMMA4_CCL_TOPOLOGY: "linear"
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+        GEMMA4_MAX_TOKENS_ALL_USERS: "32768"
+        GEMMA4_VLLM_SINGLE_CHUNK: "0"
+        GEMMA4_CHUNKED_PREFILL_TRACE: "1"
+        # KNOWN BAD ON WORMHOLE — concurrent decode returns nondeterministic
+        # garbage. Measured on T3K 12B (distinct arithmetic prompts, temp 0,
+        # 3 repeats): every request completes, but correctness swings run to run
+        # — async OFF gave 4/4, 0/4, 0/4 at concurrency 4 and 1/8, 8/8, 8/8 at
+        # concurrency 8; async ON gave 4/4, 0/4, 0/4 and 0/8, 8/8, 3/8. Only
+        # concurrency 1 is stable. So max_concurrency: 32 below is the BH-parity
+        # target, NOT a verified-good setting on Wormhole yet.
+        #
+        # async decode is pinned OFF here as a precaution, not as a proven fix:
+        # across those repeats it was never worse than ON and was the only
+        # config with a clean 3/3 at concurrency 1, but n=3 cannot separate it
+        # from the underlying corruption. The BH async mitigations (async-ahead
+        # merge, preempt gen accounting, page-table -1 pad) are BH-validated
+        # only. Revisit both this flag and max_concurrency once the concurrent
+        # decode corruption is root-caused on WH.
+        GEMMA4_SUPPORTS_ASYNC_DECODE: "0"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        # WH cannot afford the BH 512 MB trace region; 90 MB matches the other
+        # T3K LLM specs and the raised gemma4 WH demo default. Note this only
+        # fits the default {B=1, B=max} decode-trace warmup — capturing every
+        # power-of-two bucket overflows it (mesh_trace.cpp TT_FATAL).
+        trace_region_size: 90000000
+        # On-device decode sampling is required on a TP mesh so token ids
+        # >= 65536 are reachable (host sampling only sees device 0's shard).
+        sample_on_device_mode: decode_only
+      vllm_args:
+        # No async_scheduling on WH: the platform disables it anyway once the
+        # model reports supports_async_decode=False (see GEMMA4_SUPPORTS_ASYNC_DECODE
+        # above), so requesting it only produces a startup warning.
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: gemma4
+        # Token-chunked prefill (tenstorrent/vllm#448). Must equal the chunk the
+        # metal policy resolves for this (model, device) — 2048 on every WH board.
+        enable_chunked_prefill: true
+        max_num_batched_tokens: 2048
+        long_prefill_token_threshold: 2048
     - device: GPU
       max_concurrency: 32
       max_context: 131072  # 128 * 1024
