@@ -7,7 +7,6 @@ import json
 import os
 import re
 import shutil
-import sys
 import time
 from multiprocessing import Manager
 
@@ -145,18 +144,15 @@ class TrainingService(BaseJobService):
 
     async def run_adapter_merge(self, request: AdapterMergeRequest) -> str:
         """
-        The merge runs in a dedicated transformers-4.x venv (see
-        `_merge_python_executable`) launched as a subprocess, rather than in this
-        API process, so that:
+        The merge runs in a dedicated virtual environment, 
+        launched as a subprocess so that:
           - the checkpoint is written by the same major `transformers` version
-            that the vLLM inference container serves it with (no cross-version
-            load risk), and a load-test gate in the child reloads the result to
-            prove it before completion;
+            that the vLLM inference container serves it.
           - the large base-model memory footprint is fully reclaimed by the OS
             when the process exits, and
           - a crash or OOM in the merge cannot take down the API process.
-        Merges are serialized via a lock to allow only one merge at a time
-        and to bound peak host memory usage.
+          - merges are serialized via a lock to allow only one merge at a time
+            and to bound peak host memory usage.
         """
         async with self._adapter_merge_lock:
             self.logger.info(f"Starting adapter merge for job {request._task_id}")
@@ -169,8 +165,6 @@ class TrainingService(BaseJobService):
                         self._base_model_hf_repo_id,
                         request._adapter_path,
                         request._output_model_path,
-                        python_executable=self._merge_python_executable(),
-                        cwd=self._app_root(),
                     ),
                 )
             except Exception:
@@ -184,20 +178,6 @@ class TrainingService(BaseJobService):
                 f"{request._output_model_path}"
             )
             return request._output_model_path
-
-    def _merge_python_executable(self) -> str:
-        """Interpreter that runs the merge: the transformers-4.x merge venv.
-
-        Falls back to the current interpreter when `ADAPTER_MERGE_PYTHON` is
-        unset (e.g. local dev), so the merge still runs, just under whatever
-        `transformers` this process has.
-        """
-        return os.getenv("ADAPTER_MERGE_PYTHON", sys.executable)
-
-    def _app_root(self) -> str:
-        """Server dir holding the `utils` package, used as the child's cwd so
-        `python -m utils.adapter_merge_utils` resolves."""
-        return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
     def _merged_models_root(self) -> str:
         cache_root = os.getenv("CACHE_ROOT", ".")

@@ -22,8 +22,6 @@ forge_requirements="${server_dir}/tt_model_runners/forge_runners/requirements.tx
 merge_requirements="${server_dir}/adapter_merge_requirements.txt"
 
 # Grab the exact pin string out of each source file:
-#   "transformers==4.55.0"   (quoted TOML dependency) -> transformers==4.55.0
-#   peft==0.20.0 # comment   (requirements line)      -> peft==0.20.0
 transformers_spec="$(grep -oE '"transformers[^"]*"' "${plugin_pyproject}" | tr -d '"' | head -1)"
 peft_spec="$(grep -oE '^peft[^ #]*' "${forge_requirements}" | head -1)"
 

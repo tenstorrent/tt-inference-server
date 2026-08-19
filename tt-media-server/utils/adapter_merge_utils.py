@@ -5,23 +5,36 @@
 """Merge a LoRA adapter into its base model, producing a servable checkpoint.
 
 This runs under the *inference* transformers version, in a dedicated venv (see
-`scripts/build_merge_venv.sh`). Because the merge and the vLLM container share
-that version, `save_pretrained` writes a config, tokenizer and weights the
-server can load natively -- there is no need to copy metadata from the base
-model. A load-test gate reloads the result to prove it is servable.
-
-`run_merge_subprocess` launches this module as a CLI in the merge venv; the API
-process itself never imports transformers/peft.
+`scripts/build_merge_venv.sh`). 
 """
 
 import argparse
 import gc
 import os
 import subprocess
+import sys
+from typing import Optional
 
 from utils.logger import TTLogger
 
 logger = TTLogger()
+
+
+def _merge_venv_python() -> str:
+    """Interpreter that runs the merge.
+
+    Falls back to the current interpreter when `ADAPTER_MERGE_PYTHON` is unset
+    (e.g. local dev), so the merge still runs, just under whatever `transformers`
+    this process has.
+    """
+    return os.getenv("ADAPTER_MERGE_PYTHON", sys.executable)
+
+
+def _app_root() -> str:
+    """Dir from which `python -m utils.adapter_merge_utils` resolves, used as the
+    child's cwd. Derived from *this* module's location so it stays correct
+    regardless of which caller launches the subprocess."""
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def _resolve_dtype(dtype_str: str):
@@ -100,17 +113,16 @@ def run_merge_subprocess(
     adapter_path: str,
     output_dir: str,
     *,
-    python_executable: str,
-    cwd: str,
+    python_executable: Optional[str] = None,
+    cwd: Optional[str] = None,
     dtype_str: str = "torch.bfloat16",
 ) -> None:
     """Run `merge_adapter` in the merge venv (a separate interpreter).
-
-    The child runs under `python_executable` -- the transformers-4.x merge venv
-    -- so the checkpoint is written by the version that serves it, its memory is
-    reclaimed on exit, and a crash cannot take down the API process. Raises if
-    the merge fails; the output lands at the `output_dir` the caller passed in.
     """
+    if python_executable is None:
+        python_executable = _merge_venv_python()
+    if cwd is None:
+        cwd = _app_root()
     cmd = [
         python_executable,
         "-m",
@@ -125,7 +137,7 @@ def run_merge_subprocess(
         dtype_str,
     ]
     # Point PYTHONPATH only at the app dir so the child imports the merge venv's
-    # transformers/peft, and drop TT_METAL_HOME so the forge (5.x) site-packages
+    # transformers/peft, and drop TT_METAL_HOME so the forge site-packages
     # can't leak back onto the path.
     env = {**os.environ, "PYTHONPATH": cwd}
     env.pop("TT_METAL_HOME", None)
