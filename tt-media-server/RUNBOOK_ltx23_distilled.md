@@ -79,7 +79,9 @@ JOB=$(curl -s -X POST localhost:$PORT/v1/videos/generations -H "$AUTH" \
 curl -s -H "$AUTH" localhost:$PORT/v1/videos/generations/$JOB          # poll until "completed"
 curl -s -H "$AUTH" -o out.mp4 localhost:$PORT/v1/videos/generations/$JOB/download
 ```
-`/health` and `/v1/models` need no key; `/generations` does. Browser UI: `/docs`.
+`/health` and `/v1/models` need no key; `/generations` does. The browser UI at
+`/docs` (plus `/redoc`, `/openapi.json`) is **off** under the default
+`ENVIRONMENT=production`; start with `ENVIRONMENT=development` to enable it.
 
 ## Gotchas
 - **Only one process owns the chips** (`CHIP_IN_USE` lock) — stop any other server first.

@@ -402,8 +402,11 @@ def get_jobs_metadata(
     return JSONResponse(content=job_data)
 
 
-@log_execution_time("Downloading video content", TelemetryEvent.DOWNLOAD_RESULT, None)
+# Order matters: router.get() registers whatever function it receives and returns
+# it unchanged, so a decorator applied *above* it wraps a copy the router never
+# sees. log_execution_time must sit below to be part of the served handler.
 @router.get("/generations/{job_id}/download")
+@log_execution_time("Downloading video content", TelemetryEvent.DOWNLOAD_RESULT, None)
 def download_video_content(
     job_id: str,
     request: Request,
