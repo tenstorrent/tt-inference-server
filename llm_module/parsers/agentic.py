@@ -12,7 +12,7 @@ from typing import Any, Dict, Mapping, Optional, Union
 
 from reference_config.evals.eval_config import accept_eval_score, resolve_eval_reference
 from report_module.schema import Block
-from workflows.workflow_types import ReportCheckTypes
+from workflow_module.engine_types import ReportCheckTypes
 
 from .base import LLMResultParser
 

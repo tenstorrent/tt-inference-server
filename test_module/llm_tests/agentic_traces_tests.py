@@ -53,7 +53,7 @@ from reference_config.agentic_traces.agentic_traces_config import (
     resolve_run_specs,
 )
 from workflow_module import accept_blocks
-from workflows.workflow_types import AgenticTracesMode
+from workflow_module.engine_types import AgenticTracesMode
 
 from ..context import MediaContext
 
