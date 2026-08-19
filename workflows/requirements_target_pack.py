@@ -490,9 +490,18 @@ class RequirementsTargetPack(TargetPack):
                 )
         return config
 
-    # --- agentic traces (delegated) ---
+    # --- agentic traces (delegated, with template fallback) ---
     def agentic_traces_config(self, model_spec: Any) -> Optional[Any]:
-        return self._delegate.agentic_traces_config(model_spec)
+        # The document has no agentic-traces section, so content comes from the
+        # catalog; for an off-catalog (synthesized) spec, borrow the Kimi
+        # K2.7-Code template rather than refusing to run.
+        from reference_config.agentic_traces.agentic_traces_config import (
+            get_agentic_traces_config_or_template,
+        )
+
+        return self._delegate.agentic_traces_config(
+            model_spec
+        ) or get_agentic_traces_config_or_template(model_spec)
 
     def resolve_agentic_run_specs(
         self,

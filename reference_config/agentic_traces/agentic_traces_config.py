@@ -20,12 +20,15 @@ config, and in ``tests/reference_config/test_agentic_traces_config.py``.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field, replace
 from typing import Dict, List, Optional, Tuple
 
 from llm_module.agentic_traces.schema import TraceSource
 from workflows.utils import map_configs_by_attr
 from workflows.workflow_types import AgenticTracesMode
+
+logger = logging.getLogger(__name__)
 
 # The InferenceX ``inferencex-agentx-mvp`` scenario rejects a profiling window
 # shorter than this (see its scenario definition in the InferenceX repo:
@@ -399,6 +402,47 @@ def get_agentic_traces_config(model_spec) -> Optional[AgenticTracesConfig]:
     return AGENTIC_TRACES_CONFIGS.get(model_id)
 
 
+# impl_id stamped on specs synthesized from a requirements document for
+# off-catalog models (see workflows/model_spec_provider.py). Such a model can
+# never have an AGENTIC_TRACES_CONFIGS entry, so the strict lookup above would
+# always refuse it.
+_REQUIREMENTS_SYNTHESIZED_IMPL_ID = "requirements_synthesized"
+
+# Template borrowed for requirements-synthesized specs: the Kimi K2.7-Code
+# config, currently the only onboarded one. Its default sweep is the
+# InferenceX Weka replay (SwarmOne is opt-in, so no swo-bench license is
+# needed); the InferenceX pin and mode settings carry over unchanged.
+_REQUIREMENTS_TEMPLATE_MODEL_ID = "id_tt-transformers_Kimi-K2.7-Code_super_cluster"
+
+
+def get_agentic_traces_config_or_template(model_spec) -> Optional[AgenticTracesConfig]:
+    """Config for ``model_spec``, borrowing a template for synthesized specs.
+
+    Strict catalog lookup first. When the model has no entry AND the spec was
+    synthesized from a requirements document (off-catalog model), returns the
+    Kimi K2.7-Code config retargeted at the synthesized ``model_id`` — the
+    traces are recorded traffic replayed against whatever server is under
+    test, so the run shape is not model-specific. Catalog models without an
+    entry still get ``None`` (refuse to run), unchanged.
+    """
+    config = get_agentic_traces_config(model_spec)
+    if config is not None:
+        return config
+    impl_id = getattr(getattr(model_spec, "impl", None), "impl_id", None)
+    if impl_id != _REQUIREMENTS_SYNTHESIZED_IMPL_ID:
+        return None
+    template = AGENTIC_TRACES_CONFIGS.get(_REQUIREMENTS_TEMPLATE_MODEL_ID)
+    if template is None:
+        return None
+    logger.warning(
+        "No agentic-traces config for model_id=%r; borrowing the %r template "
+        "(requirements-synthesized spec).",
+        getattr(model_spec, "model_id", None),
+        _REQUIREMENTS_TEMPLATE_MODEL_ID,
+    )
+    return replace(template, model_id=model_spec.model_id)
+
+
 def default_run_specs(
     config: AgenticTracesConfig,
 ) -> Tuple[AgenticTracesRunSpec, ...]:
@@ -463,5 +507,6 @@ __all__ = [
     "default_run_specs",
     "for_model_ids",
     "get_agentic_traces_config",
+    "get_agentic_traces_config_or_template",
     "resolve_run_specs",
 ]

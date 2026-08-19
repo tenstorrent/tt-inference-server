@@ -379,3 +379,74 @@ def test_target_pack_delegates_unspecified_content(pack):
     assert pack.extra_spec_metadata_fields() == (
         TenstorrentTargetPack().extra_spec_metadata_fields()
     )
+
+
+# --- agentic traces: template fallback for off-catalog models ----------------
+
+_KIMI_TEMPLATE_MODEL_ID = "id_tt-transformers_Kimi-K2.7-Code_super_cluster"
+
+
+def _synthesized_spec():
+    return TenstorrentModelSpecProvider().synthesize(
+        model_name="acme/tiny-llm",
+        hf_model_repo="acme/tiny-llm",
+        device="super_cluster",
+        max_context=8192,
+        max_concurrency=16,
+    )
+
+
+def test_agentic_traces_borrows_kimi_template_for_synthesized_spec():
+    from reference_config.agentic_traces.agentic_traces_config import (
+        AGENTIC_TRACES_CONFIGS,
+        get_agentic_traces_config,
+        get_agentic_traces_config_or_template,
+    )
+
+    spec = _synthesized_spec()
+    # Strict lookup still refuses: the synthesized model_id has no entry.
+    assert get_agentic_traces_config(spec) is None
+
+    config = get_agentic_traces_config_or_template(spec)
+    template = AGENTIC_TRACES_CONFIGS[_KIMI_TEMPLATE_MODEL_ID]
+    assert config is not None
+    assert config.model_id == spec.model_id  # retargeted, not Kimi's id
+    assert config.runs == template.runs
+    assert config.inferencex_git_ref == template.inferencex_git_ref
+
+
+def test_agentic_traces_template_fallback_leaves_catalog_models_strict():
+    from types import SimpleNamespace
+
+    from reference_config.agentic_traces.agentic_traces_config import (
+        get_agentic_traces_config_or_template,
+    )
+
+    # A non-synthesized spec with no catalog entry still gets None.
+    spec = SimpleNamespace(
+        model_id="id_tt-transformers_Some-Model_t3k",
+        impl=SimpleNamespace(impl_id="tt-transformers"),
+    )
+    assert get_agentic_traces_config_or_template(spec) is None
+
+
+def test_agentic_traces_template_fallback_preserves_own_entry():
+    from types import SimpleNamespace
+
+    from reference_config.agentic_traces.agentic_traces_config import (
+        AGENTIC_TRACES_CONFIGS,
+        get_agentic_traces_config_or_template,
+    )
+
+    spec = SimpleNamespace(model_id=_KIMI_TEMPLATE_MODEL_ID, impl=None)
+    assert (
+        get_agentic_traces_config_or_template(spec)
+        is AGENTIC_TRACES_CONFIGS[_KIMI_TEMPLATE_MODEL_ID]
+    )
+
+
+def test_requirements_pack_agentic_traces_config_uses_template(pack):
+    spec = _synthesized_spec()
+    config = pack.agentic_traces_config(spec)
+    assert config is not None
+    assert config.model_id == spec.model_id
