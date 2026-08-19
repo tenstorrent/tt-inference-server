@@ -105,6 +105,43 @@ class TestBuildTargetChecks:
         assert checks["target"]["tput_check"] == ReportCheckTypes.NA
         assert checks["target"]["tput_user_check"] == ReportCheckTypes.NA
 
+    def test_grades_requirements_slo_metrics(self):
+        # SLO targets (tpot/e2el, lower-is-better) from a requirements doc.
+        targets = {
+            "target": PerformanceTarget(tpot_ms=20.0, e2el_ms=20000.0, goodput=99.0)
+        }
+        record = _record(tpot=15.0)
+        record.update({"mean_e2el_ms": 5000.0, "goodput": 100.0})
+        checks, verdict = build_target_checks(targets, record)
+        assert checks["target"]["tpot_check"] == ReportCheckTypes.PASS
+        assert checks["target"]["e2el_check"] == ReportCheckTypes.PASS
+        assert checks["target"]["goodput_check"] == ReportCheckTypes.PASS
+        assert verdict == ReportCheckTypes.PASS
+
+    def test_slo_metric_failure_fails_verdict(self):
+        targets = {"target": PerformanceTarget(tpot_ms=20.0)}
+        checks, verdict = build_target_checks(targets, _record(tpot=50.0))
+        assert checks["target"]["tpot_check"] == ReportCheckTypes.FAIL
+        assert verdict == ReportCheckTypes.FAIL
+
+
+class TestPriorityStamping:
+    def test_should_priority_is_stamped_onto_block(self):
+        cfg = LLMRunConfig(
+            isl=128,
+            osl=128,
+            max_concurrency=1,
+            num_prompts=8,
+            targets={"target": PerformanceTarget(ttft_ms=89.0)},
+            priority="should",
+        )
+        block = apply_target_checks(_block(), cfg)
+        assert block.data["priority"] == "should"
+
+    def test_absent_priority_leaves_block_unstamped(self):
+        block = apply_target_checks(_block(), _cfg(TARGETS))
+        assert "priority" not in block.data
+
 
 class TestApplyTargetChecks:
     def test_graded_block_carries_checks_and_a_per_config_title(self):

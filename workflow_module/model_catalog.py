@@ -80,6 +80,25 @@ class ModelSpecProvider(Protocol):
         """
         ...
 
+    def synthesize(
+        self,
+        *,
+        model_name: str,
+        hf_model_repo: str,
+        device: str,
+        max_context: int,
+        max_concurrency: int,
+    ) -> ModelSpecLike:
+        """Build a minimal spec for a model that is not in the catalog.
+
+        Used by requirements-driven runs so an off-catalog model can still be
+        validated: the requirements document supplies the HF repo, context
+        length, and per-instance concurrency, which is enough to drive a
+        benchmark sweep against an already-running server. Raises ``ValueError``
+        when ``device`` is unknown.
+        """
+        ...
+
 
 _provider: Optional[ModelSpecProvider] = None
 

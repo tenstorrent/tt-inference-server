@@ -33,6 +33,9 @@ class LLMRunConfig:
     max_concurrency: int
     num_prompts: int
     targets: dict = field(default_factory=dict, compare=False)
+    # Acceptance severity ("must"/"should") for this sweep point, propagated
+    # from the benchmark params to the emitted block. None => default (must).
+    priority: Optional[str] = field(default=None, compare=False)
 
 
 @dataclass(frozen=True)

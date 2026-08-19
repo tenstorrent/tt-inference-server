@@ -17,6 +17,13 @@ class PerformanceTarget:
     ttft_ms: float = None
     tput_user: float = None
     tput: float = None
+    # Optional latency/quality targets. Populated by requirements-driven runs
+    # from a scenario's SLOs (tpot/e2el, lower-is-better) and scalar targets
+    # (goodput, higher-is-better). Left None for catalog perf references, where
+    # they grade as NA (see llm_module/target_checks.py).
+    tpot_ms: float = None
+    e2el_ms: float = None
+    goodput: float = None
     tolerance: float = 0.0
 
 
@@ -128,6 +135,12 @@ class BenchmarkTaskParams:
     # outputs; None means run with --no-structured-output (the baseline).
     structured_dataset: str = None
     structured_output_ratio: float = None
+
+    # Acceptance severity for this sweep point ("must"/"should"), set by
+    # requirements-driven runs. None means the default (must) — a failing
+    # target blocks acceptance. Carried onto the emitted benchmark block so
+    # acceptance can downgrade "should" failures to informational.
+    priority: str = None
 
     def __post_init__(self):
         self._infer_data()

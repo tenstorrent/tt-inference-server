@@ -25,6 +25,11 @@ _METRIC_SPECS: Tuple[Tuple[str, str, bool], ...] = (
     ("ttft", "ttft_ms", True),
     ("tput_user", "tput_user", False),
     ("tput", "tput", False),
+    # Extra metrics graded only when a target defines them (requirements-driven
+    # SLOs/scalar targets); catalog perf references leave them None -> NA.
+    ("tpot", "tpot_ms", True),
+    ("e2el", "e2el_ms", True),
+    ("goodput", "goodput", False),
 )
 
 TIER_ORDER: Tuple[str, ...] = ("functional", "complete", "target")
@@ -38,14 +43,17 @@ def _measured(record: Mapping[str, Any]) -> Dict[str, Optional[float]]:
     mean TPOT the way v1's summary report did (``1000 / mean_tpot_ms``).
     """
     ttft = _as_float(record.get("mean_ttft_ms"))
+    tpot = _as_float(record.get("mean_tpot_ms"))
     tput_user = _as_float(record.get("tput_user"))
     if tput_user is None:
-        tpot = _as_float(record.get("mean_tpot_ms"))
         tput_user = 1000.0 / tpot if tpot else None
     return {
         "ttft": ttft,
         "tput_user": tput_user,
         "tput": _as_float(record.get("tps_decode_throughput")),
+        "tpot": tpot,
+        "e2el": _as_float(record.get("mean_e2el_ms")),
+        "goodput": _as_float(record.get("goodput")),
     }
 
 
@@ -134,6 +142,11 @@ def apply_target_checks(block: Block, config: Any) -> Block:
 
     targets = getattr(config, "targets", None) or {}
     data = dict(block.data)
+    # Carry the sweep point's acceptance severity onto the block so acceptance
+    # can treat a "should" target failure as informational. Absent => must.
+    priority = getattr(config, "priority", None)
+    if priority is not None:
+        data["priority"] = priority
     if not targets:
         logger.warning(
             "No perf targets for sweep point isl=%s osl=%s max_concurrency=%s; "
