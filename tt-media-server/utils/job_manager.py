@@ -16,8 +16,13 @@ from typing import Any, Callable, Dict, Optional
 from config.constants import JobTypes
 from config.settings import get_settings
 from domain.base_request import BaseRequest
+from fastapi import HTTPException
+from fastapi.status import HTTP_429_TOO_MANY_REQUESTS, HTTP_503_SERVICE_UNAVAILABLE
 
 from utils.logger import TTLogger
+
+TASK_QUEUE_FULL_DETAIL = "Task queue is full. Please try again later."
+MAX_JOBS_REACHED_DETAIL = "Maximum job limit reached"
 
 
 class JobStatus(str, Enum):
@@ -144,8 +149,7 @@ class JobManager:
     ) -> dict:
         """Create job, start processing in background, and return initial job metadata."""
         with self._jobs_lock:
-            if len(self._jobs) >= self._settings.max_jobs:
-                raise Exception("Maximum job limit reached")
+            self._enforceAdmissionLimits()
             job = Job(
                 id=job_id,
                 job_type=job_type.value,
@@ -193,6 +197,20 @@ class JobManager:
         job._task = asyncio.create_task(self._process_job(job, request, task_function))
 
         return job.to_public_dict()
+
+    def _enforceAdmissionLimits(self) -> None:
+        """Reject new work when outstanding jobs or stored records are full."""
+        activeCount = sum(1 for job in self._jobs.values() if not job.is_terminal())
+        if activeCount >= self._settings.max_queue_size:
+            raise HTTPException(
+                status_code=HTTP_429_TOO_MANY_REQUESTS,
+                detail=TASK_QUEUE_FULL_DETAIL,
+            )
+        if len(self._jobs) >= self._settings.max_jobs:
+            raise HTTPException(
+                status_code=HTTP_503_SERVICE_UNAVAILABLE,
+                detail=MAX_JOBS_REACHED_DETAIL,
+            )
 
     def _get_job_if_authorized(
         self, job_id: str, org_id: Optional[str] = None
