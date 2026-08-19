@@ -150,6 +150,61 @@ audio_chunks_per_request = Histogram(
     buckets=(1, 2, 4, 8, 16, 32, 64, 128, float("inf")),
 )
 
+# VAD gates when inference starts and ends, so a timeout here is delay, not a
+# non-event: `outcome` keeps failed runs visible without skewing the ok quantiles.
+audio_vad_duration = Histogram(
+    "tt_media_server_audio_vad_seconds",
+    "Wall time to identify speech and endpoint boundaries",
+    ["model_type", "outcome"],
+    buckets=(
+        0.005,
+        0.01,
+        0.025,
+        0.05,
+        0.1,
+        0.25,
+        0.5,
+        1.0,
+        2.5,
+        5.0,
+        10.0,
+        30.0,
+        float("inf"),
+    ),
+)
+
+# CPU consumed by the VAD worker process, not the caller's wall clock. Divide by
+# audio_vad_seconds for utilisation: >1 means the model went multi-threaded.
+audio_vad_cpu_duration = Histogram(
+    "tt_media_server_audio_vad_cpu_seconds",
+    "CPU time consumed by the VAD worker process for one request",
+    ["model_type"],
+    buckets=(
+        0.005,
+        0.01,
+        0.025,
+        0.05,
+        0.1,
+        0.25,
+        0.5,
+        1.0,
+        2.5,
+        5.0,
+        10.0,
+        30.0,
+        float("inf"),
+    ),
+)
+
+# Endpoint count. A collapse toward 1, or a jump into the hundreds, is the
+# signature of bad endpointing that a duration alone will not show.
+audio_vad_segments = Histogram(
+    "tt_media_server_audio_vad_segments",
+    "Speech segments returned by VAD for one request",
+    ["model_type"],
+    buckets=(0, 1, 2, 4, 8, 16, 32, 64, 128, 256, float("inf")),
+)
+
 # Model inference metrics
 model_inference_duration = Histogram(
     "tt_media_server_model_inference_duration_seconds",

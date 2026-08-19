@@ -23,6 +23,9 @@ from telemetry.telemetry_client import (
     audio_chunking_duration,
     audio_chunks_per_request,
     audio_input_preparation_duration,
+    audio_vad_cpu_duration,
+    audio_vad_duration,
+    audio_vad_segments,
 )
 
 from utils.decorators import log_execution_time
@@ -99,6 +102,28 @@ class AudioVenvWorker:
 
     def is_running(self) -> bool:
         return self._proc is not None and self._proc.poll() is None
+
+    def cpu_seconds(self) -> Optional[float]:
+        """CPU time this worker has used so far, or None if unreadable.
+
+        Read from /proc rather than rusage: the worker is persistent, so a
+        per-call delta on this is attributable to that call, whereas
+        RUSAGE_CHILDREN would fold in every other child of the process.
+        """
+        proc = self._proc
+        if proc is None or proc.poll() is not None:
+            return None
+
+        try:
+            with open(f"/proc/{proc.pid}/stat") as stat_file:
+                stat = stat_file.read()
+            # comm can itself contain spaces and parens, so split after the last ')'.
+            fields = stat[stat.rindex(")") + 2 :].split()
+            utime, stime = int(fields[11]), int(fields[12])
+        except (OSError, ValueError, IndexError):
+            return None
+
+        return (utime + stime) / os.sysconf("SC_CLK_TCK")
 
     def start(self) -> None:
         """Spawn the worker and block until it signals ready.
@@ -636,15 +661,37 @@ class AudioManager:
 
         self._logger.info("Applying VAD via audio venv worker...")
 
-        segments = self._audio_venv_worker.run(
+        worker = self._audio_venv_worker
+        cpu_before = worker.cpu_seconds()
+        start = time.perf_counter()
+        segments = worker.run(
             mode="vad",
             audio_array=audio_array,
             timeout_seconds=self._VAD_TIMEOUT_SECONDS,
         )
+        elapsed = time.perf_counter() - start
+        cpu_after = worker.cpu_seconds()
+
+        audio_vad_duration.labels(
+            model_type=settings.model_runner,
+            outcome="ok" if segments is not None else "failed",
+        ).observe(elapsed)
+
+        # A respawn or a killed worker resets the counter, so a negative delta is
+        # not this call's compute and is dropped rather than clamped to zero.
+        if cpu_before is not None and cpu_after is not None:
+            cpu_used = cpu_after - cpu_before
+            if cpu_used >= 0:
+                audio_vad_cpu_duration.labels(model_type=settings.model_runner).observe(
+                    cpu_used
+                )
 
         if segments is None:
             return None
 
+        audio_vad_segments.labels(model_type=settings.model_runner).observe(
+            len(segments)
+        )
         self._logger.info(f"VAD detected {len(segments)} speech segments")
         return segments
 

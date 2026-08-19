@@ -5,8 +5,9 @@
 import io
 import json
 import os
+import subprocess
 import wave
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import numpy as np
 import pytest
@@ -741,3 +742,133 @@ def test_chunking_mode_label_falls_back_when_diarization_yields_nothing():
         _histogram_count("tt_media_server_audio_chunking_seconds", diarization_labels)
         == diarization_before
     )
+
+
+def _vad_manager(segments, cpu_before=1.0, cpu_after=1.5):
+    """Manager whose VAD worker returns `segments` and reports fixed CPU."""
+    manager = AudioManager()
+    manager._vad_model = True
+    worker = Mock()
+    worker.run = Mock(return_value=segments)
+    worker.cpu_seconds = Mock(side_effect=[cpu_before, cpu_after])
+    manager._audio_venv_worker = worker
+    return manager
+
+
+@patch("utils.audio_manager.settings", new=DummySettings())
+def test_vad_metrics_recorded_on_success():
+    """Duration is tagged ok, and the segment count is observed."""
+    ok = {"model_type": "tt-whisper", "outcome": "ok"}
+    plain = {"model_type": "tt-whisper"}
+    duration_before = _histogram_count("tt_media_server_audio_vad_seconds", ok)
+    segments_before = _histogram_sum("tt_media_server_audio_vad_segments", plain)
+
+    manager = _vad_manager([{"start": 0.0, "end": 1.0}, {"start": 2.0, "end": 3.0}])
+    manager._apply_vad(np.zeros(16000, dtype=np.float32))
+
+    assert (
+        _histogram_count("tt_media_server_audio_vad_seconds", ok) == duration_before + 1
+    )
+    assert (
+        _histogram_sum("tt_media_server_audio_vad_segments", plain)
+        == segments_before + 2
+    )
+
+
+@patch("utils.audio_manager.settings", new=DummySettings())
+def test_vad_cpu_delta_is_observed():
+    """CPU is the worker's own delta, not the caller's wall clock."""
+    plain = {"model_type": "tt-whisper"}
+    before = _histogram_sum("tt_media_server_audio_vad_cpu_seconds", plain)
+
+    manager = _vad_manager([], cpu_before=2.0, cpu_after=2.75)
+    manager._apply_vad(np.zeros(16000, dtype=np.float32))
+
+    delta = _histogram_sum("tt_media_server_audio_vad_cpu_seconds", plain) - before
+    assert delta == pytest.approx(0.75)
+
+
+@patch("utils.audio_manager.settings", new=DummySettings())
+def test_vad_failure_is_timed_but_tagged_failed():
+    """A VAD timeout is real added delay, so it must not vanish from the metric."""
+    failed = {"model_type": "tt-whisper", "outcome": "failed"}
+    ok = {"model_type": "tt-whisper", "outcome": "ok"}
+    failed_before = _histogram_count("tt_media_server_audio_vad_seconds", failed)
+    ok_before = _histogram_count("tt_media_server_audio_vad_seconds", ok)
+    segments_before = _histogram_count(
+        "tt_media_server_audio_vad_segments", {"model_type": "tt-whisper"}
+    )
+
+    manager = _vad_manager(None)
+    assert manager._apply_vad(np.zeros(16000, dtype=np.float32)) is None
+
+    assert (
+        _histogram_count("tt_media_server_audio_vad_seconds", failed)
+        == failed_before + 1
+    )
+    assert _histogram_count("tt_media_server_audio_vad_seconds", ok) == ok_before
+    # No segments were produced, so nothing is observed for the endpoint count.
+    assert (
+        _histogram_count(
+            "tt_media_server_audio_vad_segments", {"model_type": "tt-whisper"}
+        )
+        == segments_before
+    )
+
+
+@patch("utils.audio_manager.settings", new=DummySettings())
+def test_vad_skipped_entirely_records_nothing():
+    """No VAD model means no work done, so no observation."""
+    labels = {"model_type": "tt-whisper", "outcome": "ok"}
+    before = _histogram_count("tt_media_server_audio_vad_seconds", labels)
+
+    manager = AudioManager()
+    manager._vad_model = None
+    manager._audio_venv_worker = None
+
+    assert manager._apply_vad(np.zeros(16000, dtype=np.float32)) is None
+    assert _histogram_count("tt_media_server_audio_vad_seconds", labels) == before
+
+
+@patch("utils.audio_manager.settings", new=DummySettings())
+def test_vad_cpu_not_observed_when_counter_resets():
+    """A respawn resets the counter; a negative delta is not this call's compute."""
+    plain = {"model_type": "tt-whisper"}
+    before = _histogram_count("tt_media_server_audio_vad_cpu_seconds", plain)
+
+    manager = _vad_manager([], cpu_before=9.0, cpu_after=0.2)
+    manager._apply_vad(np.zeros(16000, dtype=np.float32))
+
+    assert _histogram_count("tt_media_server_audio_vad_cpu_seconds", plain) == before
+
+
+@patch("utils.audio_manager.settings", new=DummySettings())
+def test_vad_cpu_not_observed_when_proc_unreadable():
+    """cpu_seconds returning None must not be arithmetic'd into an observation."""
+    plain = {"model_type": "tt-whisper"}
+    before = _histogram_count("tt_media_server_audio_vad_cpu_seconds", plain)
+
+    manager = _vad_manager([], cpu_before=None, cpu_after=None)
+    manager._apply_vad(np.zeros(16000, dtype=np.float32))
+
+    assert _histogram_count("tt_media_server_audio_vad_cpu_seconds", plain) == before
+
+
+def test_cpu_seconds_measures_a_real_subprocess():
+    """Exercises the /proc parsing against a real CPU-bound child."""
+    worker = AudioVenvWorker(logger=Mock())
+    worker._proc = subprocess.Popen(
+        ["/usr/bin/python3", "-c", "x=0\nfor i in range(8_000_000): x+=i"]
+    )
+    try:
+        assert worker.cpu_seconds() is not None
+        worker._proc.wait(timeout=60)
+    finally:
+        if worker._proc.poll() is None:
+            worker._proc.kill()
+
+
+def test_cpu_seconds_returns_none_without_a_process():
+    worker = AudioVenvWorker(logger=Mock())
+    worker._proc = None
+    assert worker.cpu_seconds() is None
