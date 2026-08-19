@@ -280,6 +280,87 @@ class TestDownloadVideoContent:
         finally:
             os.unlink(tmp_path)
 
+    def test_download_deletes_faststart_temp_file(self):
+        """The per-request faststart copy must not survive the response.
+
+        Regression test: this endpoint used to create the temp copy with
+        delete=False and never remove it, leaking a full-size MP4 per download.
+        """
+        import asyncio
+
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
+            tmp.write(b"fake video content")
+            tmp_path = tmp.name
+
+        created: list[str] = []
+
+        def fake_faststart(src_path, dst_path):
+            # Stand in for the real remux: leave real bytes at the temp path.
+            with open(dst_path, "wb") as fh:
+                fh.write(b"faststart output")
+            created.append(dst_path)
+
+        try:
+            mock_service = MagicMock()
+            mock_service.get_job_result_path = MagicMock(return_value=tmp_path)
+
+            with patch("open_ai_api.video.VideoManager") as mock_video_manager:
+                mock_video_manager.ensure_faststart.side_effect = fake_faststart
+
+                response = download_video_content(
+                    job_id="job_123",
+                    request=MagicMock(),
+                    service=mock_service,
+                    api_key="test_key",
+                )
+
+            assert len(created) == 1
+            faststart_path = created[0]
+            # Served from the remuxed copy, which still exists until the response ends.
+            assert response.path == faststart_path
+            assert os.path.exists(faststart_path)
+
+            # The cleanup rides on the response as a background task.
+            assert response.background is not None
+            asyncio.run(response.background())
+            assert not os.path.exists(faststart_path)
+        finally:
+            os.unlink(tmp_path)
+
+    def test_download_removes_stub_when_faststart_fails(self):
+        """A failed remux must not leave its empty stub file behind."""
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
+            tmp.write(b"fake video content")
+            tmp_path = tmp.name
+
+        created: list[str] = []
+
+        def failing_faststart(src_path, dst_path):
+            created.append(dst_path)
+            raise RuntimeError("ffmpeg unavailable")
+
+        try:
+            mock_service = MagicMock()
+            mock_service.get_job_result_path = MagicMock(return_value=tmp_path)
+
+            with patch("open_ai_api.video.VideoManager") as mock_video_manager:
+                mock_video_manager.ensure_faststart.side_effect = failing_faststart
+
+                response = download_video_content(
+                    job_id="job_123",
+                    request=MagicMock(),
+                    service=mock_service,
+                    api_key="test_key",
+                )
+
+            # Falls back to the original file, and the stub is already gone.
+            assert response.path == tmp_path
+            assert response.background is None
+            assert len(created) == 1
+            assert not os.path.exists(created[0])
+        finally:
+            os.unlink(tmp_path)
+
     def test_download_video_content_with_faststart(self):
         """Test video download with faststart processing"""
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:

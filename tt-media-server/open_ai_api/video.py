@@ -37,6 +37,7 @@ from model_services.base_job_service import BaseJobService
 from pydantic import ValidationError
 from resolver.service_resolver import service_resolver
 from security.api_key_checker import get_api_key
+from starlette.background import BackgroundTask
 from telemetry.telemetry_client import TelemetryEvent
 from utils.decorators import log_execution_time
 from utils.video_manager import VideoManager
@@ -56,6 +57,14 @@ _OPENAPI_IMAGE_PLACEHOLDER = (
 _MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 _UPLOAD_READ_CHUNK = 64 * 1024
 _ALLOWED_IMAGE_CONTENT_TYPES = frozenset({"image/png", "image/jpeg", "image/webp"})
+
+
+def _unlink_quietly(path: str) -> None:
+    """Best-effort delete of a served temp file; never fail a response over cleanup."""
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
 
 
 def _validate_image_content_type(upload: UploadFile) -> None:
@@ -399,14 +408,21 @@ def download_video_content(
     ):
         raise HTTPException(status_code=404, detail="Video content not available")
 
-    # Create a faststart temp file before serving
+    # Remux to a faststart copy so the MP4 streams before it is fully fetched.
+    # The copy is per-request and disposable: it must be deleted once the response
+    # is sent, or every download leaks a full-size file into the temp dir.
     with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
         faststart_path = tmp.name
     try:
         VideoManager.ensure_faststart(file_path, faststart_path)
         serve_path = faststart_path
+        cleanup = BackgroundTask(_unlink_quietly, faststart_path)
     except Exception:
+        # Remux failed -- serve the original and drop the stub we just created,
+        # which would otherwise be an orphaned empty file.
+        _unlink_quietly(faststart_path)
         serve_path = file_path
+        cleanup = None
 
     return FileResponse(
         serve_path,
@@ -415,6 +431,7 @@ def download_video_content(
         headers={
             "Content-Disposition": f"attachment; filename={os.path.basename(file_path)}"
         },
+        background=cleanup,
     )
 
 
