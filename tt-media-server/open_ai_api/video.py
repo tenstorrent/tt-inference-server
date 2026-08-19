@@ -34,6 +34,7 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse, JSONResponse
 from model_services.base_job_service import BaseJobService
+from pydantic import ValidationError
 from resolver.service_resolver import service_resolver
 from security.api_key_checker import get_api_key
 from telemetry.telemetry_client import TelemetryEvent
@@ -311,13 +312,25 @@ async def submit_generate_video_i2v_upload(
     _validate_image_content_type(image)
     image_bytes = await _read_capped_upload(image)
     image_b64 = base64.b64encode(image_bytes).decode("ascii")
-    request = VideoI2VGenerateRequest(
-        prompt=prompt,
-        negative_prompt=negative_prompt,
-        num_inference_steps=num_inference_steps,
-        seed=seed,
-        image_prompts=[ImagePromptEntry(image=image_b64, frame_pos=frame_pos)],
-    )
+    # A file with an allowed image content-type but non-decodable bytes fails the
+    # ImagePromptEntry image validator during this manual construction. Unlike the
+    # JSON /i2v path (where FastAPI parses the body and returns 422), that error
+    # would surface as an unhandled 500 here — so translate it to a 422.
+    try:
+        request = VideoI2VGenerateRequest(
+            prompt=prompt,
+            negative_prompt=negative_prompt,
+            num_inference_steps=num_inference_steps,
+            seed=seed,
+            image_prompts=[ImagePromptEntry(image=image_b64, frame_pos=frame_pos)],
+        )
+    except ValidationError as e:
+        # e.errors() embeds the original ValueError in each entry's ``ctx``, which
+        # HTTPException's plain JSONResponse can't serialize (it would 500 while
+        # rendering the 422). Drop ctx/url so the detail is JSON-safe.
+        raise HTTPException(
+            status_code=422, detail=e.errors(include_url=False, include_context=False)
+        )
     return await _submit_video_request(request, service)
 
 

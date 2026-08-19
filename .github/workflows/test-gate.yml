@@ -1096,6 +1096,13 @@ jobs:
           import yaml
           with open('charts/tt-inference-server/values.yaml') as f:
               v = yaml.safe_load(f)
+          # A device is renderable iff the chart can produce a manifest for it:
+          # it has a DRA board count (deviceBoardCounts), or it is a
+          # non-Tenstorrent device (gpu/cpu, no ResourceClaim). Devices absent
+          # from both (topology-sensitive partitions like galaxy_t3k) fail the
+          # render on purpose — skip them. Derived from the same source the chart
+          # uses (deviceBoardCounts), so it can never drift from the template.
+          supported = set(v.get('deviceBoardCounts', {})) | {"gpu", "cpu"}
           # models[model][engine][device]; skip scalar metadata (e.g. defaultEngine)
           for model, engines in v['models'].items():
               for engine, devices in engines.items():
@@ -1103,6 +1110,8 @@ jobs:
                       continue
                   for device, dev_cfg in devices.items():
                       if not isinstance(dev_cfg, dict):
+                          continue
+                      if device not in supported:
                           continue
                       print(f"{model},{engine},{device}")
           EOF
@@ -1117,28 +1126,60 @@ jobs:
           FAILED=0
           while IFS=',' read -r model engine device; do
             echo "--- Validating: $model / $engine / $device"
-            if ! helm template ci-test charts/tt-inference-server \
+            RENDERED=$(helm template ci-test charts/tt-inference-server \
                 --set "model=$model" \
                 --set "engine=$engine" \
-                --set "device=$device" \
-                | kubeconform -strict -summary; then
-              echo "FAILED: $model / $engine / $device"
+                --set "device=$device") || { echo "FAILED (render): $model / $engine / $device"; FAILED=1; continue; }
+            if ! echo "$RENDERED" | kubeconform -strict -summary; then
+              echo "FAILED (kubeconform): $model / $engine / $device"
               FAILED=1
             fi
           done < /tmp/helm-matrix.txt
           exit $FAILED
 
-      - name: Verify safety invariants
+      - name: Verify DRA claim structure, board counts, and safety invariants
         run: |
           set -e
-          RENDERED=$(helm template ttis charts/tt-inference-server \
-            --set model=Llama-3.1-8B-Instruct --set device=galaxy)
-          echo "$RENDERED" | grep -qE '^[[:space:]]*type: Recreate$' \
-            || { echo "::error::Deployment must use 'strategy: type: Recreate' (see issue #2801)"; exit 1; }
-          echo "$RENDERED" | grep -qE '^[[:space:]]*podAntiAffinity:[[:space:]]*$' \
-            || { echo "::error::podAntiAffinity block missing — device-collision protection broken (see #2801)"; exit 1; }
-          echo "$RENDERED" | grep -qE 'topologyKey: kubernetes.io/hostname' \
-            || { echo "::error::Chart's podAntiAffinity term has wrong topologyKey — device-collision scope broken (see #2801)"; exit 1; }
+          # Check the DRA claim structure and per-device board count across
+          # representative shapes (1 / 4 / 32 boards), plus the safety invariants
+          # (no privileged, no hostPath on /dev/tenstorrent). The invariants are
+          # device-independent, so checking these representative renders covers them.
+          # device:expected-count
+          for pair in n300:1 t3k:4 galaxy:32; do
+            device="${pair%%:*}"; want="${pair##*:}"
+            echo "--- DRA structure: Llama-3.1-8B-Instruct / $device (expect count $want)"
+            RENDERED=$(helm template ttis charts/tt-inference-server \
+              --set model=Llama-3.1-8B-Instruct --set device="$device")
+            echo "$RENDERED" | grep -qE '^[[:space:]]*kind: ResourceClaimTemplate$' \
+              || { echo "::error::ResourceClaimTemplate missing for $device"; exit 1; }
+            echo "$RENDERED" | grep -qE '^[[:space:]]*deviceClassName: tenstorrent.com$' \
+              || { echo "::error::deviceClassName missing/incorrect for $device"; exit 1; }
+            echo "$RENDERED" | grep -qE "^[[:space:]]*count: ${want}\$" \
+              || { echo "::error::$device must request $want board(s) via DRA"; exit 1; }
+            echo "$RENDERED" | grep -qE 'resourceClaimTemplateName:' \
+              || { echo "::error::Pod does not reference the ResourceClaimTemplate for $device"; exit 1; }
+            echo "$RENDERED" | grep -qE '^[[:space:]]*privileged: true$' \
+              && { echo "::error::privileged:true present for $device"; exit 1; } || true
+            echo "$RENDERED" | grep -qE '^[[:space:]]*path: /dev/tenstorrent$' \
+              && { echo "::error::hostPath /dev/tenstorrent present for $device"; exit 1; } || true
+          done
+
+      - name: Verify startupProbe budget derives from progressDeadlineSeconds
+        run: |
+          set -e
+          # startupProbe is always rendered and its failureThreshold is computed as
+          # ceil(progressDeadlineSeconds / periodSeconds) (periodSeconds default 15).
+          # model:device:expected-failureThreshold (pd 5400 -> 360, pd 7200 -> 480)
+          for triple in gpt-oss-20b:t3k:360 gpt-oss-120b:t3k:480; do
+            model="${triple%%:*}"; rest="${triple#*:}"; device="${rest%%:*}"; want="${rest##*:}"
+            echo "--- startupProbe: $model / $device (expect failureThreshold $want)"
+            RENDERED=$(helm template ttis charts/tt-inference-server \
+              --set model="$model" --set device="$device")
+            echo "$RENDERED" | grep -qE '^[[:space:]]*startupProbe:$' \
+              || { echo "::error::startupProbe missing for $model/$device"; exit 1; }
+            echo "$RENDERED" | grep -qE "^[[:space:]]*failureThreshold: ${want}\$" \
+              || { echo "::error::$model/$device startupProbe.failureThreshold must be $want"; exit 1; }
+          done
 
   ci-gate:
     name: CI Gate

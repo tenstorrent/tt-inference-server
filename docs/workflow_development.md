@@ -125,10 +125,10 @@ process-global accumulator, runs acceptance, and generates the report.
 
 ```python
 WORKFLOW_REGISTRY = {
-    "evals":      EvalsWorkflow,       # task_types = (EVALUATION,)
+    "evals": EvalsWorkflow,  # task_types = (EVALUATION,)
     "benchmarks": BenchmarksWorkflow,  # task_types = (BENCHMARK,)
-    "spec_tests": SpecTestsWorkflow,   # task_types = (SPEC_TESTS,)
-    "release":    ReleaseWorkflow,     # composes the three above
+    "spec_tests": SpecTestsWorkflow,  # task_types = (SPEC_TESTS,)
+    "release": ReleaseWorkflow,  # composes the three above
 }
 ```
 

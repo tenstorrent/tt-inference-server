@@ -18,6 +18,7 @@
 #include "ipc/tts_ipc.hpp"
 #include "runtime/runners/blaze_runner/tts_scheduler_interface.hpp"
 #include "runtime/runners/ipc_runner.hpp"
+#include "utils/voice_sample_cache.hpp"
 
 namespace tt::runners::blaze {
 
@@ -84,6 +85,8 @@ class BlazeTtsRunner : public IRunner {
   void handleStopAck(const tts_scheduler::SchedulerResponse& response);
   void handleEvictAck(const tts_scheduler::SchedulerResponse& response);
 
+  void compilePromptTokens(ipc::tts::TtsIpcTask& task,
+                           const std::vector<uint32_t>& speechIds);
   void allocateTask(ipc::tts::TtsIpcTask task);
   bool sendFinish(uint32_t taskId, domain::tts::TtsFinishReason reason,
                   std::string error = {},
@@ -104,6 +107,7 @@ class BlazeTtsRunner : public IRunner {
   ipc::ICancelQueue* cancelQueue;
   std::vector<SlotContext> slots;
   std::unordered_map<uint32_t, ipc::tts::TtsIpcTask> pendingVoiceEncodes;
+  utils::VoiceSampleCache voiceSampleCache;
   std::unordered_map<uint32_t, ipc::tts::TtsIpcTask> pendingAllocations;
   std::deque<PendingTerminalMessage> pendingTerminalMessages;
   std::vector<uint32_t> deferredStopSlots;
