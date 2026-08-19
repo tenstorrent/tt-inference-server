@@ -767,8 +767,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=18.1,
                     published_score_ref="https://artificialanalysis.ai/evaluations/tau3-banking?models=kimi-k2-7-code",
-                    gpu_reference_score=11.3,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4271#issuecomment-4950368694",
+                    gpu_reference_score=15.4,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4271#issuecomment-5302604603",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
