@@ -22,32 +22,28 @@ on:
       version:
         description: "Release version for the run title, e.g. 0.18.0 (must match the VERSION file, which stays the source of truth)"
         required: true
-        default: "0.18.0"
         type: string
       tt-metal-commit:
         description: "tt-metal commit SHA pinned into the promoted prod specs"
         required: true
-        default: "c49bb76"
         type: string
       vllm-commit:
         description: "vLLM commit SHA (needed for LLM / VLLM models)"
         required: false
-        default: "6b4a3a7"
         type: string
       tt-shield-run-id:
-        description: "tt-shield Release run ID (reserved for the later artifact step; NOT used by the four commands here)"
-        required: false
-        default: "29037835062"
+        description: "tt-shield Release run ID"
+        required: true
         type: string
       tag-suffix:
-        description: "Suffix appended to the commit message & tag. Keep '-temp' while testing; clear it for a real release."
+        description: "Suffix appended to the commit message & tag. Empty for a real release; set e.g. '-temp' while testing."
         required: false
-        default: "-temp"
+        default: ""
         type: string
       post-release-suffix:
-        description: "Suffix for the post-release branch (post-release-v<version><suffix>). Keep '-test' while testing; clear it for a real release."
+        description: "Suffix for the post-release branch (post-release-v<version><suffix>). Empty for a real release; set e.g. '-test' while testing."
         required: false
-        default: "-test"
+        default: ""
         type: string
 
 # The pipeline commits generated files + a tag to the branch and opens a draft PR.
@@ -118,7 +114,6 @@ jobs:
 
       - name: Resolve inputs
         env:
-          EVENT_NAME: ${{ github.event_name }}
           IN_VERSION: ${{ github.event.inputs.version }}
           IN_TT_METAL_COMMIT: ${{ github.event.inputs['tt-metal-commit'] }}
           IN_VLLM_COMMIT: ${{ github.event.inputs['vllm-commit'] }}
@@ -137,21 +132,20 @@ jobs:
             echo "::error::version input ('$IN_VERSION') does not match the VERSION file ('$RELEASE_VERSION'). Update the input or the VERSION file so they agree."
             exit 1
           fi
+          if [ -z "$IN_TT_SHIELD_RUN_ID" ]; then
+            echo "::error::tt-shield-run-id is required"; exit 1
+          fi
           {
             echo "RELEASE_VERSION=${RELEASE_VERSION}"
-            echo "TT_METAL_COMMIT=${IN_TT_METAL_COMMIT:-c49bb76}"
-            echo "VLLM_COMMIT=${IN_VLLM_COMMIT:-6b4a3a7}"
-            echo "TT_SHIELD_RUN_ID=${IN_TT_SHIELD_RUN_ID:-29037835062}"
+            echo "TT_METAL_COMMIT=${IN_TT_METAL_COMMIT}"
+            echo "VLLM_COMMIT=${IN_VLLM_COMMIT}"
+            echo "TT_SHIELD_RUN_ID=${IN_TT_SHIELD_RUN_ID}"
           } >> "$GITHUB_ENV"
-          # Suffixes: on dispatch use the inputs verbatim (may be empty for a
-          # real release); on push default to the testing suffixes.
-          if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
-            echo "TAG_SUFFIX=${IN_TAG_SUFFIX}" >> "$GITHUB_ENV"
-            echo "POST_RELEASE_SUFFIX=${IN_POST_RELEASE_SUFFIX}" >> "$GITHUB_ENV"
-          else
-            echo "TAG_SUFFIX=-temp" >> "$GITHUB_ENV"
-            echo "POST_RELEASE_SUFFIX=-test" >> "$GITHUB_ENV"
-          fi
+          # Suffixes: use the dispatch inputs verbatim (empty = real release).
+          {
+            echo "TAG_SUFFIX=${IN_TAG_SUFFIX}"
+            echo "POST_RELEASE_SUFFIX=${IN_POST_RELEASE_SUFFIX}"
+          } >> "$GITHUB_ENV"
 
       - name: Show effective parameters
         run: |
