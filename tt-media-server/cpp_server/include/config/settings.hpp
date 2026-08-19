@@ -453,12 +453,38 @@ ImageConfig imageEngineConfig();
  * Implemented in src/config/settings.cpp. */
 TtsConfig ttsEngineConfig();
 
+/** Build EmbeddingConfig from environment variables. Reads MODEL_RUNNER_TYPE
+ * (selects the model) and DEVICE (selects its per-device batch size); throws
+ * with the valid values listed if either is unusable. Implemented in
+ * src/config/settings.cpp. */
+EmbeddingConfig embeddingEngineConfig();
+
 /** Build the runner config used by a fork/exec worker for the active service.
  * Media configs receive the worker's DEVICE_IDS group as visible_devices. */
 RunnerConfig workerRunnerConfig(size_t workerIndex);
 
 /** Model from MODEL. Default: defaults::MODEL. */
 Model model();
+
+// ---------------------------------------------------------------------------
+// Sentry distributed tracing (issue #4778)
+// ---------------------------------------------------------------------------
+
+/** Sentry DSN. From SENTRY_DSN; export it empty to disable tracing. Default:
+ * defaults::SENTRY_DSN (the shared tt-inference-server project). */
+std::string sentryDsn();
+
+/** Environment tag on every transaction. From SENTRY_ENVIRONMENT. Default:
+ * defaults::SENTRY_ENVIRONMENT. */
+std::string sentryEnvironment();
+
+/** Release tag override; empty = use the server version passed to
+ * telemetry::init(). From SENTRY_RELEASE. Default: defaults::SENTRY_RELEASE. */
+std::string sentryRelease();
+
+/** Verbose Sentry SDK logging. From SENTRY_DEBUG. Default:
+ * defaults::SENTRY_DEBUG. */
+bool sentryDebug();
 
 // ---------------------------------------------------------------------------
 // Mooncake KV Migration configuration.

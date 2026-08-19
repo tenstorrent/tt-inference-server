@@ -49,6 +49,51 @@ class FakeJobManager:
         return self._result_path
 
 
+@pytest.fixture
+def merge_service(tmp_path, monkeypatch):
+    """A TrainingService wired to a FakeJobManager, with heavy init patched out."""
+    monkeypatch.setenv("CACHE_ROOT", str(tmp_path))
+    settings = MagicMock()
+    settings.training_model = ModelNames.LLAMA_3_1_8B.value
+    settings.download_weights_from_service = False
+    fake_jm = FakeJobManager(checkpoints=[], result_path=None)
+    with ExitStack() as stack:
+        stack.enter_context(
+            patch("model_services.training_service.get_settings", return_value=settings)
+        )
+        stack.enter_context(patch("model_services.base_service.get_scheduler"))
+        stack.enter_context(patch("model_services.base_service.TTLogger"))
+        stack.enter_context(patch("model_services.base_service.HuggingFaceUtils"))
+        stack.enter_context(patch("model_services.base_service.settings", settings))
+        stack.enter_context(patch("model_services.base_job_service.settings", settings))
+        stack.enter_context(
+            patch(
+                "model_services.base_job_service.get_job_manager", return_value=fake_jm
+            )
+        )
+        from model_services.training_service import TrainingService
+
+        yield TrainingService(), fake_jm
+
+
+def test_is_within_dir(tmp_path):
+    from model_services.training_service import TrainingService
+
+    base = str(tmp_path)
+    assert TrainingService._is_within_dir(base, str(tmp_path / "a" / "b")) is True
+    assert TrainingService._is_within_dir(base, str(tmp_path / ".." / "evil")) is False
+    assert TrainingService._is_within_dir(base, "/etc") is False
+    assert TrainingService._is_within_dir(base, base) is False
+
+
+def test_get_checkpoint_download_path_rejects_traversal(merge_service, tmp_path):
+    service, fake_jm = merge_service
+    # The malicious id is even allowlisted, yet the containment guard rejects it.
+    fake_jm._checkpoints = [{"id": "../../evil"}]
+    fake_jm._result_path = str(tmp_path / "adapters" / "train-1")
+    assert service.get_checkpoint_download_path("train-1", "../../evil") is None
+
+
 @pytest.mark.asyncio
 async def test_adapter_merge_workflow_end_to_end(tmp_path, monkeypatch):
     monkeypatch.setenv("CACHE_ROOT", str(tmp_path))

@@ -47,6 +47,7 @@ generated_modules
 unzipped_tti/
 db.sqlite3
 **/generated/inspector/
+**/generated/fabric/
 
 
 # secrets

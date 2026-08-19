@@ -18,8 +18,10 @@
 #include "utils/conversation_hasher.hpp"
 
 namespace tt::services {
-class SessionManager;  // friend: owns the locked state transitions below
-}
+class SessionManager;     // friend: owns the locked state transitions below
+class PrefixCacheRouter;  // friend: sets being_generated_ via
+                          // registerPrefixHash
+}  // namespace tt::services
 
 namespace tt::domain {
 
@@ -99,6 +101,8 @@ class Session {
     if (blocks < committed_blocks_) committed_blocks_ = blocks;
   }
 
+  bool isBeingGenerated() const { return being_generated_; }
+
   void setCancelFn(std::function<void()> fn) { cancelFn_ = std::move(fn); }
   std::function<void()> takeCancelFn() {
     return std::exchange(cancelFn_, nullptr);
@@ -172,6 +176,7 @@ class Session {
   // eviction data race. Each returns false (state unchanged) if its
   // precondition is not met.
   friend class tt::services::SessionManager;
+  friend class tt::services::PrefixCacheRouter;
   bool markPrepared();   // IDLE           -> PREPARED
   bool markInFlight();   // IDLE/PREPARED  -> IN_FLIGHT
   bool clearInFlight();  // IN_FLIGHT      -> IDLE, also clears cancelFn
@@ -186,6 +191,8 @@ class Session {
   SessionState state_{SessionState::IDLE};
   uint32_t committed_blocks_{
       0};  // resident prefix block count (see committedBlocks)
+  bool being_generated_{true};  // true until first registerPrefixHash via
+                                // initTokenAccumulator completes
   std::chrono::system_clock::time_point last_activity_time_;
   std::function<void()> cancelFn_;
   std::function<void()>

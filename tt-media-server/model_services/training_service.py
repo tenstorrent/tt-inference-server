@@ -7,7 +7,6 @@ import json
 import os
 import re
 import shutil
-import sys
 import time
 from multiprocessing import Manager
 
@@ -49,7 +48,7 @@ class TrainingService(BaseJobService):
         org_id: Optional[str] = None,
     ) -> dict:
         request.device_type = self.settings.device
-        adapter_path = os.path.join(TRAINING_STORE_ADAPTERS_DIR, request._task_id)
+        adapter_path = os.path.join(self._adapters_root(), request._task_id)
         os.makedirs(adapter_path, exist_ok=True)
         request._output_model_path = adapter_path
         self.logger.info(f"Generated output path: {request._output_model_path}")
@@ -105,6 +104,14 @@ class TrainingService(BaseJobService):
         if not result_path:
             return None
         checkpoint_path = os.path.join(result_path, checkpoint_id)
+
+        # `checkpoint_id` is a user-supplied URL segment, so
+        # confirm the resolved path stays strictly inside the job's result dir
+        if not self._is_within_dir(result_path, checkpoint_path):
+            self.logger.warning(
+                f"Rejecting checkpoint path outside job dir: {checkpoint_id!r}"
+            )
+            return None
         if os.path.isdir(checkpoint_path):
             return checkpoint_path
         return None
@@ -145,18 +152,15 @@ class TrainingService(BaseJobService):
 
     async def run_adapter_merge(self, request: AdapterMergeRequest) -> str:
         """
-        The merge runs in a dedicated transformers-4.x venv (see
-        `_merge_python_executable`) launched as a subprocess, rather than in this
-        API process, so that:
+        The merge runs in a dedicated virtual environment,
+        launched as a subprocess so that:
           - the checkpoint is written by the same major `transformers` version
-            that the vLLM inference container serves it with (no cross-version
-            load risk), and a load-test gate in the child reloads the result to
-            prove it before completion;
+            that the vLLM inference container serves it.
           - the large base-model memory footprint is fully reclaimed by the OS
             when the process exits, and
           - a crash or OOM in the merge cannot take down the API process.
-        Merges are serialized via a lock to allow only one merge at a time
-        and to bound peak host memory usage.
+          - merges are serialized via a lock to allow only one merge at a time
+            and to bound peak host memory usage.
         """
         async with self._adapter_merge_lock:
             self.logger.info(f"Starting adapter merge for job {request._task_id}")
@@ -169,8 +173,6 @@ class TrainingService(BaseJobService):
                         self._base_model_hf_repo_id,
                         request._adapter_path,
                         request._output_model_path,
-                        python_executable=self._merge_python_executable(),
-                        cwd=self._app_root(),
                     ),
                 )
             except Exception:
@@ -185,31 +187,30 @@ class TrainingService(BaseJobService):
             )
             return request._output_model_path
 
-    def _merge_python_executable(self) -> str:
-        """Interpreter that runs the merge: the transformers-4.x merge venv.
+    def _cache_root(self) -> str:
+        return os.getenv("CACHE_ROOT", ".")
 
-        Falls back to the current interpreter when `ADAPTER_MERGE_PYTHON` is
-        unset (e.g. local dev), so the merge still runs, just under whatever
-        `transformers` this process has.
-        """
-        return os.getenv("ADAPTER_MERGE_PYTHON", sys.executable)
-
-    def _app_root(self) -> str:
-        """Server dir holding the `utils` package, used as the child's cwd so
-        `python -m utils.adapter_merge_utils` resolves."""
-        return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    def _adapters_root(self) -> str:
+        return os.path.join(self._cache_root(), TRAINING_STORE_ADAPTERS_DIR)
 
     def _merged_models_root(self) -> str:
-        cache_root = os.getenv("CACHE_ROOT", ".")
-        return os.path.join(cache_root, TRAINING_STORE_MERGED_MODELS_DIR)
+        return os.path.join(self._cache_root(), TRAINING_STORE_MERGED_MODELS_DIR)
+
+    @staticmethod
+    def _is_within_dir(base: str, path: str) -> bool:
+        """True if `path` resolves to a location strictly inside `base`.
+        Rejects traversal and absolute-path escapes when
+        `path` was built from untrusted input.
+        """
+        base = os.path.realpath(base)
+        target = os.path.realpath(path)
+        return target != base and os.path.commonpath([base, target]) == base
 
     def _safe_rmtree_under_root(self, path: str) -> None:
         """Delete `path` only if it resolves to a location strictly inside the
         merged-models root."""
-        root = os.path.realpath(self._merged_models_root())
-        target = os.path.realpath(path)
-        if target != root and os.path.commonpath([root, target]) == root:
-            shutil.rmtree(target, ignore_errors=True)
+        if self._is_within_dir(self._merged_models_root(), path):
+            shutil.rmtree(os.path.realpath(path), ignore_errors=True)
         else:
             self.logger.error(
                 f"Refusing to delete path outside merged-models root: {path!r}"

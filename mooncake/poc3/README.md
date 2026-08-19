@@ -25,7 +25,7 @@ The naive way to guess the tier is "fast read = DRAM, slow read = disk". That's
 unreliable. Instead:
 
 ```python
-replicas = store.get_replica_desc(key)   # same list the read path uses
+replicas = store.get_replica_desc(key)  # same list the read path uses
 # classify by replica type + endpoint, mirroring Mooncake's SelectBestReplica
 ```
 

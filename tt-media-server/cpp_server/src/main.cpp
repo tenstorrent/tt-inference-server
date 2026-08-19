@@ -21,6 +21,7 @@
 
 #include "api/error_response.hpp"
 #include "api/route_registry.hpp"
+#include "config/build_info.hpp"
 #include "config/defaults.hpp"
 #include "config/settings.hpp"
 #include "dynamo/worker_server.hpp"
@@ -34,6 +35,7 @@
 #include "services/llm_pipeline.hpp"
 #include "services/llm_service.hpp"
 #include "services/service_container.hpp"
+#include "telemetry/sentry_tracing.hpp"
 #include "utils/logger.hpp"
 #include "utils/service_factory.hpp"
 
@@ -221,6 +223,12 @@ int main(int argc, char* argv[]) {
     TT_LOG_ERROR("[Main] Service start failed: {}", e.what());
     return 1;
   }
+
+  // Sentry distributed tracing (no-op without SENTRY_DSN). Initialized after
+  // the service fork+execv'd its workers so the SDK runs only in this node
+  // process; workers are never instrumented.
+  tt::telemetry::init(std::string(tt::config::kInferenceServerVersion),
+                      tt::config::logInstanceTag());
 
   // Wire the aggregator now that the WorkerManager exists. Workers may still
   // be attaching to the segment; renderers tolerate empty/UNKNOWN slots.
@@ -453,6 +461,8 @@ int main(int argc, char* argv[]) {
     dynamoWorkerServer->stop();
     dynamoWorkerServer.reset();
   }
+
+  tt::telemetry::shutdown();
 
   // `shm`'s destructor runs on scope exit and handles munmap + shm_unlink.
   TT_LOG_INFO("[Main] Server shutdown complete (graceful)");
