@@ -1,4 +1,4 @@
-name: Release Automation (promote specs, docs & helm)
+name: Release Automation (promote specs, docs & docker images)
 
 run-name: ${{ inputs.version && format('Release automation v{0}', inputs.version) || 'Release automation (push)' }}
 
@@ -20,15 +20,15 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release version for the run title, e.g. 0.18.0 (must match the VERSION file, which stays the source of truth)"
+        description: "Release version for the run title, e.g. 0.21.0 - must match the VERSION"
         required: true
         type: string
       tt-metal-commit:
-        description: "tt-metal commit SHA pinned into the promoted prod specs"
+        description: "tt-metal commit SHA pinned into the prod catalogue"
         required: true
         type: string
       vllm-commit:
-        description: "vLLM commit SHA (needed for LLM / VLLM models)"
+        description: "vLLM commit SHA (needed for LLM models)"
         required: false
         type: string
       tt-shield-run-id:
@@ -41,7 +41,7 @@ on:
         default: ""
         type: string
       post-release-suffix:
-        description: "Suffix for the post-release branch (post-release-v<version><suffix>). Empty for a real release; set e.g. '-test' while testing."
+        description: "Suffix for the post-release branch. Empty for a real release; set e.g. '-test' while testing."
         required: false
         default: ""
         type: string
