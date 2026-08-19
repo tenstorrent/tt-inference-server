@@ -48,6 +48,13 @@ non-200 **while the process stays alive** — which `Restart=on-failure` cannot 
 
 Watch a (re)start with `journalctl -fu ltx-media-server` or `tail -f` on the log above.
 
+**Job records survive restarts.** `ENABLE_JOB_PERSISTENCE=true` with an absolute
+`JOB_DATABASE_PATH` keeps jobs in SQLite; on boot the server logs
+`Restored N job(s) from database`. Without it jobs live only in memory, so every
+restart turns every outstanding job id into a permanent 404 and clients poll dead
+ids forever. Note this also makes `job_retention_seconds` (24h) effective: completed
+jobs and their MP4s are now actually deleted on schedule.
+
 ### Manual / one-off
 ```bash
 cd <repo>/tt-inference-server/tt-media-server
