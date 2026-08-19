@@ -341,6 +341,31 @@ templates:
       tool_call_parser_name: hermes
 
 - weights:
+    - Qwen/Qwen3-4B
+  impl: tt_transformers
+  system_requirements:
+    firmware:
+      specifier: ">=19.2.0"
+      mode: STRICT
+    kmd:
+      specifier: ">=2.5.0"
+      mode: STRICT
+  inference_engine: VLLM
+  device_model_specs:
+    # A single P300 card is a two-chip P150x2 mesh.
+    - device: P300
+      max_concurrency: 32
+      max_context: 40960
+      default_impl: true
+      env_vars:
+        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_mesh_graph_descriptor.textproto"
+  status: EXPERIMENTAL
+  metadata:
+    Qwen/Qwen3-4B:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: hermes
+
+- weights:
     - Qwen/Qwen3-8B
   impl: tt_transformers
   system_requirements:
