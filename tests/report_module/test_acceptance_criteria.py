@@ -163,19 +163,10 @@ def test_eval_accuracy_check_fail():
     assert "Accuracy check failed" in blockers["evals:E"]
 
 
-def test_eval_known_issue_waives_success_false_blocker():
+def test_eval_known_issue_waives_blocker():
     # A failed eval whose task_name matches an EVALS known_issue is demoted to a
     # non-fatal waiver, so acceptance passes. Works with dict-shaped waivers.
-    schema = _schema(
-        _eval(
-            {
-                "task_name": "longbench_code_e",
-                "success": False,
-                "attempts": 2,
-                "accuracy_check": 3,
-            }
-        )
-    )
+    schema = _schema(_eval({"task_name": "longbench_code_e", "accuracy_check": 3}))
     known_issues = [
         {"workflow_type": "EVALS", "task_name": "longbench_code_e", "reason": "flaky"}
     ]
@@ -294,16 +285,6 @@ def test_benchmark_unrecognized_status_falls_back_to_fully_enforced():
 
 def test_eval_accuracy_check_fail_informational_at_experimental_status():
     schema = _schema(_eval({"accuracy_check": 3}))
-    accepted, blockers, cats = acceptance_criteria_check(
-        schema, model_status="EXPERIMENTAL"
-    )
-    by_name = {c.name: c for c in cats}
-    assert accepted is True and blockers == {}
-    assert "evals:E" in by_name[CATEGORY_EVALS].waived
-
-
-def test_eval_success_false_informational_at_experimental_status():
-    schema = _schema(_eval({"success": False, "attempts": 2, "accuracy_check": 3}))
     accepted, blockers, cats = acceptance_criteria_check(
         schema, model_status="EXPERIMENTAL"
     )

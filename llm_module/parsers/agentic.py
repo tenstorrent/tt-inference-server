@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-import math
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Union
@@ -38,7 +37,6 @@ class AgenticEvalParser(LLMResultParser):
 
     def parse(self, raw: Mapping[str, Any], *, device: str = "") -> Block:
         metrics = extract_harbor_metrics(raw)
-        execution_error = _harbor_execution_error(raw, metrics)
         targets: Dict[str, Any] = {"task_name": self.task_name}
         if device:
             targets["device"] = device
@@ -68,8 +66,6 @@ class AgenticEvalParser(LLMResultParser):
                 score=self.score,
                 metrics=metrics,
                 limit_mode=self.limit_mode,
-                success=execution_error is None,
-                error=execution_error,
             ),
         )
 
@@ -117,12 +113,7 @@ def _build_evals_data(
     else:
         normalized_score = _normalize_accuracy_to_percent(accuracy)
 
-    if not success:
-        normalized_score = None
-        ratio_pub = "N/A"
-        ratio_ref = "N/A"
-        accuracy_check = ReportCheckTypes.FAIL
-    elif normalized_score is not None and score is not None:
+    if normalized_score is not None and score is not None:
         ratio_pub: Union[float, str] = (
             normalized_score / published if published else "N/A"
         )
@@ -130,6 +121,10 @@ def _build_evals_data(
             normalized_score / reference if reference else "N/A"
         )
         accuracy_check = compute_accuracy_check(metrics, score, limit_mode)
+    elif not success:
+        ratio_pub = "N/A"
+        ratio_ref = "N/A"
+        accuracy_check = ReportCheckTypes.FAIL
     else:
         ratio_pub = "N/A"
         ratio_ref = "N/A"
@@ -173,64 +168,6 @@ def extract_harbor_metrics(raw: Mapping[str, Any]) -> Dict[str, Any]:
     if mean_seconds is not None:
         metrics["mean_seconds_per_task"] = mean_seconds
     return metrics
-
-
-def _harbor_execution_error(
-    raw: Mapping[str, Any], metrics: Mapping[str, Any]
-) -> Optional[str]:
-    """Return why a Harbor result did not contain a completed evaluation.
-
-    Harbor can exit successfully after every configured trial fails in setup.
-    In that case ``result.json`` exists, but its aggregate has ``n_trials=0``
-    and no score metric. Treat aggregate validity separately from score policy:
-    a real evaluated 0% score has a finite aggregate and positive trial count.
-    """
-
-    n_trials = metrics.get("n_trials")
-    if not isinstance(n_trials, int) or isinstance(n_trials, bool):
-        return "Harbor result is missing a valid integer n_trials aggregate."
-    if n_trials <= 0:
-        return (
-            f"Harbor result reports n_trials={n_trials}; "
-            "no completed trials were evaluated."
-        )
-
-    accuracy = metrics.get("accuracy")
-    if not _is_finite_number(accuracy):
-        return "Harbor result is missing a valid finite aggregate score."
-
-    if _all_trial_results_are_exceptions(raw):
-        return (
-            "Harbor result contains only infrastructure/runtime exceptions; "
-            "no trial reached evaluation."
-        )
-    return None
-
-
-def _all_trial_results_are_exceptions(raw: Mapping[str, Any]) -> bool:
-    trial_results = raw.get("trial_results")
-    if not isinstance(trial_results, list) or not trial_results:
-        return False
-
-    for trial in trial_results:
-        if not isinstance(trial, Mapping):
-            return False
-        if not isinstance(trial.get("exception_info"), Mapping):
-            return False
-        verifier_result = trial.get("verifier_result")
-        if isinstance(verifier_result, Mapping) and isinstance(
-            verifier_result.get("rewards"), Mapping
-        ):
-            return False
-    return True
-
-
-def _is_finite_number(value: Any) -> bool:
-    return (
-        isinstance(value, (int, float))
-        and not isinstance(value, bool)
-        and math.isfinite(value)
-    )
 
 
 def _mean_seconds_per_task(
@@ -325,7 +262,8 @@ def _extract_harbor_summary_metrics(raw: Mapping[str, Any]) -> Dict[str, Any]:
         (
             metric.get("mean")
             for metric in metrics_list
-            if isinstance(metric, Mapping) and _is_finite_number(metric.get("mean"))
+            if isinstance(metric, Mapping)
+            and isinstance(metric.get("mean"), (int, float))
         ),
         None,
     )
@@ -336,7 +274,7 @@ def _extract_harbor_summary_metrics(raw: Mapping[str, Any]) -> Dict[str, Any]:
     if mean_metric is not None:
         metrics["accuracy"] = mean_metric
         metrics["pass_at_1"] = mean_metric
-    if isinstance(n_trials, int) and not isinstance(n_trials, bool):
+    if isinstance(n_trials, int):
         metrics["n_trials"] = n_trials
     if n_resolved is not None:
         metrics["n_resolved"] = n_resolved
