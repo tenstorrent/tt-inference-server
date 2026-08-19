@@ -94,6 +94,7 @@ defaults:
 # DRA boardName per device — the tt-dra-driver `boardName` attribute a ResourceClaim selects (CEL) for each device shape.
 # Generated from workflows/device_utils.py:BOARD_TYPE_COUNT_TO_DEVICE; consumed by tt-inference-server.draBoardName.
 deviceBoardNames:
+  blackhole_galaxy: galaxy-blackhole
   galaxy: galaxy-wormhole
   n150: n150
   n150x4: n150
@@ -105,10 +106,8 @@ deviceBoardNames:
   p300: p300
   p300x2: p300
   t3k: n300
-
-# DRA board count per device — number of Tenstorrent boards a ResourceClaim requests for each device shape.
-# Generated from workflows/device_utils.py:BOARD_TYPE_COUNT_TO_DEVICE; consumed by tt-inference-server.draDeviceCount.
 deviceBoardCounts:
+  blackhole_galaxy: 32
   galaxy: 32
   n150: 1
   n150x4: 4
@@ -120,13 +119,6 @@ deviceBoardCounts:
   p300: 1
   p300x2: 2
   t3k: 4
-
-# ---------------------------------------------------------------------------
-# Per-model configuration — keyed by model -> engine -> device -> impl.
-# Populated by `python -m workflows.helm_generator` from the
-# ModelSpec catalog. Hand edits to leaf values are preserved across re-runs;
-# the generator only overwrites the keys it owns.
-# ---------------------------------------------------------------------------
 models:
   gpt-oss-20b:
     vllm:
@@ -634,7 +626,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.11.1-bac8b34-7c6685a
+              tag: 0.21.0-de59f8a-c127c17
             resources:
               requests:
                 memory: 80Gi
@@ -657,7 +649,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.9.0-e95ffa5-48eba14
+              tag: 0.21.0-de59f8a-c127c17
             resources:
               requests:
                 memory: 80Gi
@@ -685,7 +677,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.9.0-e95ffa5-48eba14
+              tag: 0.21.0-de59f8a-c127c17
             resources:
               requests:
                 memory: 80Gi
@@ -713,7 +705,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.9.0-e95ffa5-48eba14
+              tag: 0.21.0-de59f8a-c127c17
             resources:
               requests:
                 memory: 80Gi
@@ -782,6 +774,57 @@ models:
                 value: P300x2
               - name: TORCHDYNAMO_DISABLE
                 value: '1'
+              - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
+                value: '1'
+              - name: VLLM_CONFIGURE_LOGGING
+                value: '1'
+              - name: VLLM_RPC_TIMEOUT
+                value: '900000'
+              - name: VLLM_TARGET_DEVICE
+                value: tt
+      blackhole_galaxy:
+        defaultImpl: qwen3_32b_galaxy
+        impls:
+          qwen3_32b_galaxy:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+              tag: 0.21.0-de59f8a-c127c17
+            resources:
+              requests:
+                memory: 80Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: MESH_DEVICE
+                value: BH-Galaxy
+              - name: TORCHDYNAMO_DISABLE
+                value: '1'
+              - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
+                value: '1'
+              - name: VLLM_CONFIGURE_LOGGING
+                value: '1'
+              - name: VLLM_RPC_TIMEOUT
+                value: '900000'
+              - name: VLLM_TARGET_DEVICE
+                value: tt
+          tt_transformers:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+              tag: 0.21.0-de59f8a-c127c17
+            resources:
+              requests:
+                memory: 80Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: MESH_DEVICE
+                value: BH-Galaxy
+              - name: TORCHDYNAMO_DISABLE
+                value: '1'
+              - name: TT_MM_THROTTLE_PERF
+                value: '5'
               - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
                 value: '1'
               - name: VLLM_CONFIGURE_LOGGING
