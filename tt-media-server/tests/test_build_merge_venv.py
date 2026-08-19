@@ -73,57 +73,6 @@ def test_peft_spec_missing_interpreter_raises():
         bmv.peft_spec("/nonexistent/python")
 
 
-def test_peft_spec_rejects_option_like_interpreter():
-    with pytest.raises(ValueError, match="option-like interpreter"):
-        bmv.peft_spec("--foo")
-
-
-@pytest.mark.parametrize(
-    "spec",
-    [
-        "transformers==4.55.0",
-        "peft==0.20.0",
-        "transformers[torch]==4.55.0",
-        "transformers>=4.5,<5",
-    ],
-)
-def test_validated_spec_accepts_plain_requirements(spec):
-    assert bmv._validated_spec(spec) == spec
-
-
-@pytest.mark.parametrize(
-    "spec",
-    [
-        "--index-url=http://evil",  # pip option injection
-        "transformers==4.55.0; rm -rf /",  # shell metacharacters
-        "transformers 4.55.0",  # whitespace
-        'transformers=="4.55.0"',  # quotes
-        "transformers",  # unpinned (no specifier)
-    ],
-)
-def test_validated_spec_rejects_unsafe_specs(spec):
-    with pytest.raises(ValueError, match="unrecognized package spec"):
-        bmv._validated_spec(spec)
-
-
-@pytest.mark.parametrize("bad", ["-rf", "--foo", ""])
-def test_validated_path_rejects_option_like(bad):
-    with pytest.raises(ValueError, match="option-like"):
-        bmv._validated_path(bad, "venv dir")
-
-
-def test_build_venv_rejects_option_like_venv_dir(monkeypatch):
-    monkeypatch.setattr(bmv.subprocess, "run", lambda *a, **k: None)
-    with pytest.raises(ValueError, match="option-like venv dir"):
-        bmv.build_venv("--evil", ["transformers==4.55.0"], requirements="/reqs.txt")
-
-
-def test_build_venv_rejects_unsafe_spec(monkeypatch):
-    monkeypatch.setattr(bmv.subprocess, "run", lambda *a, **k: None)
-    with pytest.raises(ValueError, match="unrecognized package spec"):
-        bmv.build_venv("/tmp/merge-venv", ["--index-url=http://evil"], requirements="/reqs.txt")
-
-
 def test_default_forge_python_uses_python_env_dir(monkeypatch):
     monkeypatch.setenv("PYTHON_ENV_DIR", "/opt/venv-worker")
     assert bmv.default_forge_python() == "/opt/venv-worker/bin/python"

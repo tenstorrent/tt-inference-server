@@ -21,7 +21,6 @@ Usage:
 
 import argparse
 import os
-import re
 import subprocess
 import sys
 import tomllib
@@ -29,31 +28,6 @@ import tomllib
 # This script lives in <tt-media-server>/scripts, so its parent is the app root.
 SERVER_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_REQUIREMENTS = os.path.join(SERVER_DIR, "adapter_merge_requirements.txt")
-
-# A plain "name[extras]<specifier>" requirement (e.g. transformers==4.55.0). No
-# whitespace, quotes, or shell metacharacters are allowed. Every string we hand
-# to pip is matched against this so a value derived from a file or the CLI can
-# never smuggle extra options or metacharacters into the install command.
-_SPEC_RE = re.compile(
-    r"[A-Za-z0-9][A-Za-z0-9._-]*"  # package name
-    r"(?:\[[A-Za-z0-9._,-]+\])?"  # optional extras
-    r"[=<>!~][=<>!~A-Za-z0-9.,*]+"  # version specifier
-)
-
-
-def _validated_spec(spec: str) -> str:
-    """Return `spec` if it is a plain pinned requirement, else raise ValueError."""
-    if not _SPEC_RE.fullmatch(spec):
-        raise ValueError(f"Refusing to install unrecognized package spec: {spec!r}")
-    return spec
-
-
-def _validated_path(path: str, kind: str) -> str:
-    """Return `path` unless it is option-like (leading '-'), which a subprocess
-    could misread as a flag; raise ValueError in that case."""
-    if not path or path.startswith("-"):
-        raise ValueError(f"Refusing to use option-like {kind}: {path!r}")
-    return path
 
 
 def transformers_spec(pyproject_path: str) -> str:
@@ -72,7 +46,6 @@ def transformers_spec(pyproject_path: str) -> str:
 def peft_spec(forge_python: str) -> str:
     """Return the peft spec pinned to the version installed in the forge venv
     (the env that wrote the adapter), e.g. ``peft==0.20.0``."""
-    forge_python = _validated_path(forge_python, "interpreter")
     try:
         result = subprocess.run(
             [
@@ -104,16 +77,7 @@ def default_forge_python() -> str:
 
 
 def build_venv(venv_dir: str, specs, requirements: str = DEFAULT_REQUIREMENTS) -> None:
-    """Create `venv_dir` and install `requirements` pinned to `specs`.
-
-    All variable arguments are validated before reaching pip/venv: `venv_dir`
-    and `requirements` must not be option-like, and every spec must be a plain
-    pinned requirement. The commands themselves run without a shell.
-    """
-    venv_dir = _validated_path(venv_dir, "venv dir")
-    requirements = _validated_path(requirements, "requirements path")
-    specs = [_validated_spec(spec) for spec in specs]
-
+    """Create `venv_dir` and install `requirements` pinned to `specs`."""
     subprocess.run([sys.executable, "-m", "venv", venv_dir], check=True)
     pip = os.path.join(venv_dir, "bin", "pip")
     subprocess.run([pip, "install", "--no-cache-dir", "--upgrade", "pip"], check=True)
