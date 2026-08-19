@@ -21,6 +21,7 @@ std::unique_ptr<IEmbeddingRunner> makeEmbeddingRunner(
     case config::ModelRunnerType::EMBEDDING_MOCK:
       return std::make_unique<MockEmbeddingRunner>(cfg);
     case config::ModelRunnerType::TT_BGE_LARGE_EN:
+    case config::ModelRunnerType::TT_BGE_M3:
       return std::make_unique<EmbeddingRunner>(cfg);
     default:
       throw std::runtime_error(

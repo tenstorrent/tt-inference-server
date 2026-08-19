@@ -555,6 +555,10 @@ const std::vector<EmbeddingModelEntry>& embeddingModels() {
        "BAAI/bge-large-en-v1.5",
        "bge-large-en-v1.5",
        {{"n150", 8}, {"n300", 16}, {"t3k", 16}, {"galaxy", 8}}},
+      {ModelRunnerType::TT_BGE_M3,
+       "BAAI/bge-m3",
+       "bge-m3",
+       {{"n150", 32}, {"n300", 32}, {"t3k", 32}, {"galaxy", 32}}},
       // The mock needs no device and no Python. The "" device entry is
       // deliberate: CI runs it with nothing set.
       {ModelRunnerType::EMBEDDING_MOCK,
