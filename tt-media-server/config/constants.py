@@ -981,7 +981,7 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
         "max_batch_size": 1,
-        # "download_weights_from_service": False,
+        "download_weights_from_service": True,
         "request_processing_timeout_seconds": 5000,
     },
     (ModelRunners.TT_WAN_2_2, DeviceTypes.P150X4): {
