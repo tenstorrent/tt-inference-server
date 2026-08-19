@@ -60,6 +60,16 @@ class ServerConnection:
     # ``decode=``) so the prefix-cache driver reports each cache separately
     # instead of blending them. A tuple keeps this frozen dataclass hashable.
     prefix_cache_metrics_urls: Tuple[str, ...] = ()
+    # Worker Prometheus ``/metrics`` endpoints holding the
+    # ``vllm:spec_decode_*`` counters, scraped directly by the spec-decode
+    # driver (before/after each AIPerf run) instead of the load target.
+    # Same Dynamo motivation as ``prefix_cache_metrics_urls``: the frontend
+    # is spec-decode-unaware and does not aggregate the worker counters.
+    # Each entry is a URL, ``host:port``, or ``host:port/metrics``;
+    # repeatable for multi-worker (KV-routed) deployments, with before/after
+    # deltas summed across endpoints. Empty scrapes the load target in
+    # ``base_url`` (the pre-flag behavior).
+    spec_decode_metrics_urls: Tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.tokenizer:
