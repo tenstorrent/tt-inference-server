@@ -559,6 +559,12 @@ const std::vector<EmbeddingModelEntry>& embeddingModels() {
        "BAAI/bge-m3",
        "bge-m3",
        {{"n150", 32}, {"n300", 32}, {"t3k", 32}, {"galaxy", 32}}},
+      // Galaxy batch 1: ModelConfigs has no max_batch_size key there, so
+      // Python resolves the Settings default (1); max_num_seqs=1 keeps it.
+      {ModelRunnerType::TT_QWEN_EMBEDDING_8B,
+       "Qwen/Qwen3-Embedding-8B",
+       "Qwen3-Embedding-8B",
+       {{"n150", 1}, {"n300", 2}, {"t3k", 2}, {"galaxy", 1}}},
       // The mock needs no device and no Python. The "" device entry is
       // deliberate: CI runs it with nothing set.
       {ModelRunnerType::EMBEDDING_MOCK,
