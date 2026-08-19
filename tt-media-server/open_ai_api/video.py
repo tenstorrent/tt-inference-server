@@ -40,6 +40,7 @@ from security.api_key_checker import get_api_key, get_org_id
 from starlette.background import BackgroundTask
 from telemetry.telemetry_client import TelemetryEvent
 from utils.decorators import log_execution_time
+from utils.job_manager import JobLimitReached
 from utils.video_manager import VideoManager
 
 router = APIRouter()
@@ -203,7 +204,14 @@ async def _submit_video_request(
     try:
         service.scheduler.check_is_model_ready()
     except Exception:
-        raise HTTPException(status_code=405, detail="Model is not ready")
+        # 503, not 405: the model is warming or wedged, which is temporary. A 405
+        # says the *method* is wrong, so load balancers and clients treat it as a
+        # permanent client error and never retry.
+        raise HTTPException(
+            status_code=503,
+            detail="Model is not ready",
+            headers={"Retry-After": "30"},
+        )
 
     try:
         # Synchronous mode: process and return video directly
@@ -247,6 +255,11 @@ async def _submit_video_request(
         return JSONResponse(content=job_data, status_code=202)
     except HTTPException:
         raise
+    except JobLimitReached as e:
+        # Capacity, not malfunction -- tell the client to come back.
+        raise HTTPException(
+            status_code=429, detail=str(e), headers={"Retry-After": "60"}
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -389,8 +402,11 @@ def get_jobs_metadata(
     return JSONResponse(content=job_data)
 
 
-@log_execution_time("Downloading video content", TelemetryEvent.DOWNLOAD_RESULT, None)
+# Order matters: router.get() registers whatever function it receives and returns
+# it unchanged, so a decorator applied *above* it wraps a copy the router never
+# sees. log_execution_time must sit below to be part of the served handler.
 @router.get("/generations/{job_id}/download")
+@log_execution_time("Downloading video content", TelemetryEvent.DOWNLOAD_RESULT, None)
 def download_video_content(
     job_id: str,
     request: Request,
