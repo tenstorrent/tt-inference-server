@@ -46,7 +46,7 @@
     "Qwen3.6-27B": {
         "p300x2": [
             {
-                "_comment": "ASSUMED, NOT VALIDATED. No t3k entry exists for this model, so numbers are inferred from the closest same-size/type model in this file: 'Qwen3-32B' t3k (ttft 62.0 / tput_user 41.0). Two caveats: (1) t3k is 8 Wormhole chips while QB2 is 4 Blackhole chips, so this is a cross-architecture transplant; (2) Qwen3.6 is a hybrid Gated-DeltaNet/Gated-Attention model whose decode cost profile differs from dense Qwen3-32B. 'tput' is set equal to 'tput_user' because max_concurrency is 1 (aggregate decode throughput == per-user throughput); note the Qwen3-32B t3k entry's tput of 1332.0 is an aggregate figure that cannot hold at concurrency 1, which is why it was not copied. Replace with measured/derived numbers before trusting a FUNCTIONAL+ verdict.",
+                "_comment": "Decode targets are the CUSTOMER STRETCH values from 'QB2 Model Support Requirements' Rev 0.20 (Google Sheets 1IE0aZrEyEnt2a_hFe7YkTnxQqlmW-VNgT0Sgprkml68, tab 'qwen3.6-27b', owner ahousman@tenstorrent.com), row PF3: decode throughput \u2265 30 t/s/user with stretch \u2265 50. The stretch is used as the 100% 'target' tier, so the default tier map (functional 10% / complete 50% / target 100%) puts complete at 25 t/s/user and functional at 5. 'tput' equals 'tput_user' because max_concurrency is 1, where aggregate decode throughput is per-user throughput by definition. The sheet's own roofline check bounds this at ~76 t/s/user (2048 GB/s over ~27 GB FP8 weights) and notes BF16 caps ~34-38, so the 50 t/s/user target REQUIRES FP8 weights. ttft_ms 62.0 is UNCHANGED and still ASSUMED (inferred from 'Qwen3-32B' t3k): the customer set no TTFT target at ISL 128. Their prefill target PF1 is input-token throughput (ITT \u2265 13K t/s, stretch \u2265 26K) measured at ISL 32K-128K, and PF2 is a warm-cache latency bound (TTFT \u2264 1 s on a ~1K append over a 128K prefix). Dividing 128 tokens by the ITT stretch would yield a ~5 ms target, which is meaningless at this ISL where fixed overhead dominates. PF1/PF2/PF7 also define ISL 32K/128K and batch-32 operating points that are not encoded here.",
                 "isl": 128,
                 "osl": 128,
                 "max_concurrency": 1,
@@ -58,8 +58,8 @@
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 62.0,
-                        "tput_user": 41.0,
-                        "tput": 41.0
+                        "tput_user": 50.0,
+                        "tput": 50.0
                     }
                 }
             }
