@@ -451,10 +451,9 @@ class AudioResponseFormat(Enum):
 
 
 class AudioInputFormat(Enum):
-    """ASR workflow: container formats accepted on the transcription path.
+    """Container formats accepted on the transcription path.
 
-    UNKNOWN covers input that matches no known header, which is rejected during
-    conversion but still needs a name to be reported under.
+    UNKNOWN matches no known header: rejected, but still needs a metric label.
     """
 
     WAV = "wav"

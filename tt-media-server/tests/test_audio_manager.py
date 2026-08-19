@@ -619,3 +619,125 @@ def test_apply_diarization_with_vad_falls_back_to_vad_when_diarization_empty():
     mockWarning.assert_any_call(
         "Diarization returned no segments - falling back to VAD-only mode"
     )
+
+
+def _histogram_count(name, labels):
+    """Observation count, or zero if the series does not exist yet."""
+    from prometheus_client import REGISTRY
+
+    value = REGISTRY.get_sample_value(f"{name}_count", labels)
+    return 0 if value is None else value
+
+
+def _histogram_sum(name, labels):
+    from prometheus_client import REGISTRY
+
+    value = REGISTRY.get_sample_value(f"{name}_sum", labels)
+    return 0 if value is None else value
+
+
+def _vad_only_manager():
+    """VAD-only manager with stubbed models."""
+    manager = AudioManager()
+    manager._vad_model = True
+    manager._diarization_model = None
+    manager._apply_vad = lambda _audio: [
+        {"start": 0.0, "end": 1.0},
+        {"start": 2.0, "end": 3.0},
+    ]
+    return manager
+
+
+@patch("utils.audio_manager.settings", new=DummySettings())
+def test_chunking_metrics_recorded_for_vad_only_mode():
+    """Observed once per request, tagged with the mode actually used."""
+    labels = {"model_type": "tt-whisper", "mode": "vad_only"}
+    duration_before = _histogram_count("tt_media_server_audio_chunking_seconds", labels)
+    count_before = _histogram_count("tt_media_server_audio_chunks_per_request", labels)
+
+    manager = _vad_only_manager()
+    chunks = manager.apply_diarization_with_vad(
+        np.zeros(16000 * 4, dtype=np.float32), enable_diarization=False
+    )
+
+    assert (
+        _histogram_count("tt_media_server_audio_chunking_seconds", labels)
+        == duration_before + 1
+    )
+    assert (
+        _histogram_count("tt_media_server_audio_chunks_per_request", labels)
+        == count_before + 1
+    )
+    assert len(chunks) >= 1
+
+
+@patch("utils.audio_manager.settings", new=DummySettings())
+def test_chunks_per_request_observes_actual_chunk_count():
+    """The observed value is the chunk count; ms/chunk derives from it."""
+    labels = {"model_type": "tt-whisper", "mode": "vad_only"}
+    sum_before = _histogram_sum("tt_media_server_audio_chunks_per_request", labels)
+
+    manager = _vad_only_manager()
+    chunks = manager.apply_diarization_with_vad(
+        np.zeros(16000 * 4, dtype=np.float32), enable_diarization=False
+    )
+
+    delta = (
+        _histogram_sum("tt_media_server_audio_chunks_per_request", labels) - sum_before
+    )
+    assert delta == len(chunks)
+
+
+@patch("utils.audio_manager.settings", new=DummySettings())
+def test_chunking_mode_label_reports_diarization_when_it_runs():
+    """A successful diarization run is tagged `diarization`."""
+    labels = {"model_type": "tt-whisper", "mode": "diarization"}
+    before = _histogram_count("tt_media_server_audio_chunking_seconds", labels)
+
+    manager = AudioManager()
+    manager._vad_model = True
+    manager._diarization_model = True
+    manager._apply_vad = lambda _audio: [{"start": 0.0, "end": 1.0}]
+    manager._apply_diarization = lambda _audio: [
+        {"start": 0.0, "end": 1.0, "text": "", "speaker": "SPEAKER_00"}
+    ]
+
+    manager.apply_diarization_with_vad(
+        np.zeros(16000 * 4, dtype=np.float32), enable_diarization=True
+    )
+
+    assert (
+        _histogram_count("tt_media_server_audio_chunking_seconds", labels) == before + 1
+    )
+
+
+@patch("utils.audio_manager.settings", new=DummySettings())
+def test_chunking_mode_label_falls_back_when_diarization_yields_nothing():
+    """Empty diarization degrades to vad_only, and the label follows."""
+    diarization_labels = {"model_type": "tt-whisper", "mode": "diarization"}
+    fallback_labels = {"model_type": "tt-whisper", "mode": "vad_only"}
+    diarization_before = _histogram_count(
+        "tt_media_server_audio_chunking_seconds", diarization_labels
+    )
+    fallback_before = _histogram_count(
+        "tt_media_server_audio_chunking_seconds", fallback_labels
+    )
+
+    manager = AudioManager()
+    manager._vad_model = True
+    manager._diarization_model = True
+    manager._apply_vad = lambda _audio: [{"start": 0.0, "end": 1.0}]
+    manager._apply_diarization = lambda _audio: []
+
+    manager.apply_diarization_with_vad(
+        np.zeros(16000 * 4, dtype=np.float32), enable_diarization=True
+    )
+
+    assert (
+        _histogram_count("tt_media_server_audio_chunking_seconds", fallback_labels)
+        == fallback_before + 1
+    )
+    assert (
+        _histogram_count("tt_media_server_audio_chunking_seconds", diarization_labels)
+        == diarization_before
+    )

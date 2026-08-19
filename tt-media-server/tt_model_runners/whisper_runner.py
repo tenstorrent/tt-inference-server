@@ -4,6 +4,7 @@
 
 import asyncio
 import os
+import time
 from typing import List, Optional, Union
 
 import numpy as np
@@ -28,7 +29,10 @@ from models.demos.audio.whisper.tt.whisper_generator import (
     WhisperGenerator,
 )
 from models.demos.utils.common_demo_utils import get_mesh_mappers
-from telemetry.telemetry_client import TelemetryEvent
+from telemetry.telemetry_client import (
+    TelemetryEvent,
+    audio_chunk_preparation_duration,
+)
 from transformers import (
     AutoFeatureExtractor,
     AutoProcessor,
@@ -343,6 +347,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
         chunk_count = 0
 
         for i, segment in enumerate(request._segments):
+            chunk_prep_start = time.perf_counter()
             start_time = segment["start"]
             end_time = segment["end"]
             speaker = segment.get("speaker", f"SPEAKER_{i:02d}")
@@ -361,6 +366,11 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
             self.logger.info(
                 f"Device {self.device_id}: Processing segment {i + 1}/{len(request._segments)}: {start_time:.2f}s-{end_time:.2f}s, speaker: {speaker}"
             )
+
+            # Past the empty-chunk `continue`: skipped chunks feed no inference.
+            audio_chunk_preparation_duration.labels(
+                model_type=self.settings.model_runner
+            ).observe(time.perf_counter() - chunk_prep_start)
 
             async_generator = await self._execute_pipeline(
                 segment_audio,

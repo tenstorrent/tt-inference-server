@@ -19,7 +19,11 @@ import numpy as np
 from config.constants import AudioInputFormat, SupportedModels
 from config.settings import settings
 from domain.audio_text_response import AudioTextResponse, AudioTextSegment
-from telemetry.telemetry_client import audio_input_preparation_duration
+from telemetry.telemetry_client import (
+    audio_chunking_duration,
+    audio_chunks_per_request,
+    audio_input_preparation_duration,
+)
 
 from utils.decorators import log_execution_time
 from utils.ffmpeg_utils import decode_to_wav as ffmpeg_decode_to_wav
@@ -440,9 +444,20 @@ class AudioManager:
 
         normalized_segments = self._normalize_speaker_ids(vad_segments)
 
+        # Merge only: VAD and diarization are inference, not chunking.
+        chunking_start = time.perf_counter()
         whisper_chunks = self._merge_vad_segments_by_speaker_and_duration(
             normalized_segments
         )
+        chunking_elapsed = time.perf_counter() - chunking_start
+
+        mode = "diarization" if enable_diarization else "vad_only"
+        audio_chunking_duration.labels(
+            model_type=settings.model_runner, mode=mode
+        ).observe(chunking_elapsed)
+        audio_chunks_per_request.labels(
+            model_type=settings.model_runner, mode=mode
+        ).observe(len(whisper_chunks))
 
         if enable_diarization:
             self._logger.info(

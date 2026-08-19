@@ -102,6 +102,54 @@ audio_input_preparation_duration = Histogram(
     ),
 )
 
+# Segment-merge step only, observed once per request; microsecond floor.
+audio_chunking_duration = Histogram(
+    "tt_media_server_audio_chunking_seconds",
+    "Time to merge VAD/diarization segments into inference-sized audio chunks",
+    ["model_type", "mode"],
+    buckets=(
+        0.00001,
+        0.00005,
+        0.0001,
+        0.0005,
+        0.001,
+        0.005,
+        0.01,
+        0.05,
+        0.1,
+        0.5,
+        float("inf"),
+    ),
+)
+
+# One observation per chunk, so ms/chunk and p50/p99 read straight off this.
+audio_chunk_preparation_duration = Histogram(
+    "tt_media_server_audio_chunk_preparation_seconds",
+    "Time to slice and prepare a single audio chunk for inference",
+    ["model_type"],
+    buckets=(
+        0.000005,
+        0.00001,
+        0.00005,
+        0.0001,
+        0.0005,
+        0.001,
+        0.005,
+        0.01,
+        0.05,
+        0.1,
+        float("inf"),
+    ),
+)
+
+# Chunk fan-out; divides audio_chunking_seconds down to a per-chunk cost.
+audio_chunks_per_request = Histogram(
+    "tt_media_server_audio_chunks_per_request",
+    "Number of inference chunks produced for one audio request",
+    ["model_type", "mode"],
+    buckets=(1, 2, 4, 8, 16, 32, 64, 128, float("inf")),
+)
+
 # Model inference metrics
 model_inference_duration = Histogram(
     "tt_media_server_model_inference_duration_seconds",
