@@ -398,6 +398,7 @@ jobs:
       #       A family is copied only if it is in the release AND a source image
       #       was built. Nothing is executed (dry-run). -----
       - name: "crane copy preparation (dry-run)"
+        id: crane-plan
         env:
           SRC_VLLM: ${{ steps.image-mapping.outputs.vllm_source }}
           DST_VLLM: ${{ steps.image-mapping.outputs.vllm_dest }}
@@ -415,6 +416,7 @@ jobs:
           in_release() { for f in $RELEASE_FAMS; do [ "$f" = "$1" ] && return 0; done; return 1; }
 
           copy_cmds=""
+          promoted=""   # just the destination images that will be published
           for fam in vllm media forge; do
             case "$fam" in
               vllm)  src="$SRC_VLLM";  dst="$DST_VLLM";;
@@ -429,8 +431,18 @@ jobs:
               cmd="crane copy ${src} ${dst}"
               echo "${cmd}"
               copy_cmds="${copy_cmds}${cmd}"$'\n'
+              promoted="${promoted}${dst}"$'\n'
             fi
           done
+
+          # Single source of truth for the publish list: expose the destination
+          # images (release-scoped + source built) so the PR step can list them
+          # under 'Images Promoted from Models CI'.
+          {
+            echo "promoted_images<<PROMOTED_EOF"
+            printf '%s' "$promoted"
+            echo "PROMOTED_EOF"
+          } >> "$GITHUB_OUTPUT"
 
           {
             echo "## crane copy simulation — release-scoped (v${RELEASE_VERSION}, DRY-RUN)"
@@ -526,9 +538,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TMP_VCANKOVIC_SHIELD_CRANE_PAT: ${{ secrets.TMP_VCANKOVIC_SHIELD_CRANE_PAT }}
+          # Release-scoped publish list from the crane-plan step; rendered under
+          # 'Images Promoted from Models CI' in the PR body.
+          PROMOTED_IMAGES: ${{ steps.crane-plan.outputs.promoted_images }}
         run: |
           cp "${RUNNER_TEMP}/create_post_release_pr.py" scripts/release/create_post_release_pr.py
           python3 scripts/release/create_post_release_pr.py \
             --tt-shield-run-id "${TT_SHIELD_RUN_ID}" \
             --head-branch "${POST_RELEASE_BRANCH}" \
-            --base main
+            --base main \
+            --promoted-images "${PROMOTED_IMAGES}"

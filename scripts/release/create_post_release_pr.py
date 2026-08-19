@@ -13,7 +13,7 @@ The body has four sections:
   # Summary of Changes           -> header + placeholder (filled in manually)
   # SW versions recommended ...   -> static (tt-smi / Firmware / tt-kmd)
   # Model Spec Release Updates    -> AUTO-GENERATED table (the tricky part)
-  # Release Artifacts Summary     -> header + placeholder (filled in manually)
+  # Release Artifacts Summary     -> auto-listed promoted images + Total (from --promoted-images)
 
 The "Model Spec Release Updates" table has one row per (model, device) release
 combo taken from ``.github/workflows/models-ci-config.json`` (the ``ci.release``
@@ -337,7 +337,20 @@ def render_table(rows) -> str:
     return "\n".join(lines)
 
 
-def render_body(version: str, run_id, rows) -> str:
+def _promoted_section(promoted_images) -> str:
+    """Render the 'Images Promoted from Models CI' section: one bullet per
+    destination image (https://-prefixed) followed by '**Total:** N'."""
+    lines = ["## Images Promoted from Models CI", ""]
+    for img in promoted_images:
+        url = img if img.startswith(("http://", "https://")) else f"https://{img}"
+        lines.append(f"- {url}")
+    if promoted_images:
+        lines.append("")
+    lines.append(f"**Total:** {len(promoted_images)}")
+    return "\n".join(lines) + "\n"
+
+
+def render_body(version: str, run_id, rows, promoted_images) -> str:
     return (
         # Machine-readable metadata block (parsed by downstream tooling); keep
         # it first, before the Summary. run_id = tt-shield Release run id,
@@ -353,9 +366,7 @@ def render_body(version: str, run_id, rows) -> str:
         + "\n"
         + render_table(rows)
         + "\n\n\n# Release Artifacts Summary\n\n"
-        "## Images Promoted from Models CI\n\n"
-        "<!-- Add promoted image paths manually. -->\n\n"
-        "**Total:** \n"
+        + _promoted_section(promoted_images)
     )
 
 
@@ -458,7 +469,19 @@ def main() -> None:
     ap.add_argument(
         "--output", type=Path, default=None, help="Also write the body to this file"
     )
+    ap.add_argument(
+        "--promoted-images",
+        default="",
+        help="Whitespace/newline-separated destination image URLs to list under "
+        "'Images Promoted from Models CI' (the release-scoped publish plan).",
+    )
     args = ap.parse_args()
+
+    # Destination images actually published (already release-scoped upstream);
+    # split on any whitespace/newlines and drop blanks / None sentinels.
+    promoted_images = [
+        img for img in args.promoted_images.split() if img and img != "None"
+    ]
 
     version = args.version or read_version(args.version_file)
     head_branch = args.head_branch or current_branch()
@@ -500,7 +523,7 @@ def main() -> None:
     rows = build_rows(
         new_blocks, old_blocks, combos, jobs, args.tt_shield_repo, args.tt_shield_run_id
     )
-    body = render_body(version, args.tt_shield_run_id, rows)
+    body = render_body(version, args.tt_shield_run_id, rows, promoted_images)
 
     print(f"Version:      {version}", file=sys.stderr)
     print(f"Title:        {title}", file=sys.stderr)
