@@ -58,6 +58,15 @@ class ServerConnection:
     # reports each cache's hit rate separately instead of blending them. A
     # tuple keeps this frozen dataclass hashable.
     prefix_cache_metrics_urls: Tuple[str, ...] = ()
+    # Worker ``/metrics`` endpoints carrying the acceptance counters
+    # (``tt_worker_spec_{accepts,rejects}_total``) for the spec-decode
+    # benchmark. Same reason as the prefix-cache tuple above: in a Dynamo
+    # deployment the load target is the frontend, which exposes neither
+    # acceptance dialect, so the worker has to be scraped directly. Accepts a
+    # full URL, ``host:port``, or ``host:port/metrics``; repeatable for
+    # multi-worker deployments, whose counters are pooled before the rate is
+    # computed. Empty falls back to ``$TT_SPEC_DECODE_METRICS_URL``.
+    spec_decode_metrics_urls: Tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.tokenizer:

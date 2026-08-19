@@ -562,6 +562,18 @@ def parse_arguments():
         "Requires --workflow benchmarks.",
     )
     spec_decode_group.add_argument(
+        "--spec-decode-metrics-url",
+        type=str,
+        action="append",
+        default=None,
+        metavar="URL",
+        help="Worker /metrics endpoint with the tt_worker_spec_* acceptance "
+        "counters. Accepts a full URL, host:port, or host:port/metrics. Repeatable "
+        "for multi-worker deployments (counters are pooled). Without it the scrape "
+        "hits the load target, which in a Dynamo deployment exposes no acceptance "
+        "counters at all and reports acceptance_rate=0.",
+    )
+    spec_decode_group.add_argument(
         "--spec-decode-preset",
         type=str,
         choices=["ci", "full"],

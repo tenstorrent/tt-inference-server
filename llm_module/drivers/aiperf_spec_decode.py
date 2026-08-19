@@ -41,13 +41,23 @@ import sys
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from ..config import DriverContext, ServerConnection
 from ..spec_decode import SpecDecodeRun
 from ..spec_decode.metrics import (
+    METRICS_URL_ENV,
+    configured_metrics_urls,
     fetch_prometheus_counters,
     scrape_spec_decode_metrics,
+    scrape_worker_metrics,
+)
+from ..spec_decode.metrics import configured_block_size
+from ..spec_decode.worker_log import (
+    WORKER_LOG_ENV,
+    scrape_worker_log_metrics,
+    snapshot_worker_log,
+    worker_log_path,
 )
 from ._subprocess import load_json, run_command
 
@@ -165,6 +175,29 @@ class AIPerfSpecDecodeDriver:
             logger.warning("Could not snapshot /metrics at %s: %s", url, exc)
             before = {}
 
+        # The worker's own endpoint, where a Dynamo deployment's acceptance
+        # actually lives (the frontend at `url` has no acceptance counters in
+        # either dialect). Snapshotted per endpoint so each one deltas against
+        # its own baseline.
+        worker_metrics_urls = configured_metrics_urls(
+            getattr(server, "spec_decode_metrics_urls", ())
+        )
+        worker_before: Dict[str, Dict[str, float]] = {}
+        for worker_url in worker_metrics_urls:
+            try:
+                worker_before[worker_url] = fetch_prometheus_counters(worker_url)
+            except Exception as exc:  # noqa: BLE001 -- scrape is best-effort
+                logger.warning(
+                    "Could not snapshot worker metrics at %s: %s", worker_url, exc
+                )
+                worker_before[worker_url] = {}
+
+        # Second acceptance source for servers that count acceptance in their log
+        # instead of on /metrics (tt-llm-engine). Snapshotted here, in the same
+        # breath as the counters, so both windows cover exactly this run.
+        accept_log = worker_log_path()
+        accept_log_offset = snapshot_worker_log(accept_log)
+
         cmd = _build_aiperf_cmd(
             run=spec_run,
             venv_python=self.venv_python,
@@ -220,7 +253,15 @@ class AIPerfSpecDecodeDriver:
             )
             return SpecDecodeDriverResult(return_code=1, payload=None, raw_path=None)
 
-        spec_decode_metrics = _scrape_acceptance_metrics(url, before, spec_run)
+        spec_decode_metrics = _scrape_acceptance_metrics(
+            url,
+            before,
+            spec_run,
+            worker_metrics_urls=worker_metrics_urls,
+            worker_before=worker_before,
+            accept_log=accept_log,
+            accept_log_offset=accept_log_offset,
+        )
 
         payload = _build_payload(
             run=spec_run,
@@ -413,15 +454,63 @@ def _scrape_acceptance_metrics(
     url: str,
     before: Dict[str, float],
     spec_run: SpecDecodeRun,
+    *,
+    worker_metrics_urls: Sequence[str] = (),
+    worker_before: Optional[Dict[str, Dict[str, float]]] = None,
+    accept_log: Optional[Path] = None,
+    accept_log_offset: int = 0,
 ) -> Optional[Dict[str, Any]]:
-    """Delta-scrape the spec-decode counters; ``None`` when unavailable.
+    """Delta-scrape the acceptance counters; ``None`` when nothing measured them.
 
-    Servers without speculative decoding (or without a ``/metrics``
-    endpoint at all) simply yield no acceptance block — the baseline
+    Three sources, most authoritative first:
+
+    1. The WORKER's ``/metrics`` (``--spec-decode-metrics-url`` /
+       ``$TT_SPEC_DECODE_METRICS_URL``) -- ``tt_worker_spec_{accepts,rejects}_total``
+       in a cpp_server deployment. Tried first because it is explicitly
+       configured: someone naming an endpoint means "acceptance is there".
+    2. The load target's ``/metrics`` -- vLLM's ``vllm:spec_decode_*``, which the
+       OpenAI-API server exposes on the same URL that serves traffic.
+    3. The worker LOG (``$TT_SPEC_DECODE_WORKER_LOG``), for deployments where the
+       worker's metrics port is not reachable from the benchmark host.
+
+    A source only wins IF IT ACTUALLY REPORTED DRAFT TOKENS. A 200 response
+    carrying no acceptance series is not evidence that speculation was off -- a
+    Dynamo frontend answers exactly that way in front of a worker that is
+    speculating happily -- so an empty scrape falls through to the next source
+    rather than being published as ``acceptance_rate = 0.0``.
+
+    Servers with no source at all still yield no acceptance block: the baseline
     phase is the common case.
     """
+    if worker_metrics_urls:
+        try:
+            from_worker = scrape_worker_metrics(
+                worker_metrics_urls,
+                worker_before or {},
+                block_size=configured_block_size(),
+            )
+        except Exception as exc:  # noqa: BLE001 -- scrape is best-effort
+            logger.warning(
+                "Could not scrape worker metrics %s for %s: %s",
+                list(worker_metrics_urls),
+                spec_run.slug,
+                exc,
+            )
+        else:
+            if from_worker.get("draft_tokens"):
+                return from_worker
+            logger.warning(
+                "[spec-decode] %s: %s answered but reported no speculative tokens "
+                "in this run's window.",
+                spec_run.slug,
+                list(worker_metrics_urls),
+            )
+
+    prometheus: Optional[Dict[str, Any]] = None
     try:
-        return scrape_spec_decode_metrics(url, before)
+        prometheus = scrape_spec_decode_metrics(
+            url, before, block_size=configured_block_size()
+        )
     except Exception as exc:  # noqa: BLE001 -- scrape is best-effort
         logger.warning(
             "Could not scrape /metrics at %s for %s: %s",
@@ -429,7 +518,50 @@ def _scrape_acceptance_metrics(
             spec_run.slug,
             exc,
         )
-        return None
+    if prometheus and prometheus.get("draft_tokens"):
+        prometheus.setdefault("source", "prometheus")
+        return prometheus
+
+    if accept_log is None:
+        if prometheus is not None:
+            logger.warning(
+                "[spec-decode] %s: %s/metrics exposes no acceptance counters "
+                "(neither vllm:spec_decode_* nor tt_worker_spec_*), so acceptance "
+                "is reported as 0. Point %s at the worker's /metrics, or %s at its "
+                "log, to measure it.",
+                spec_run.slug,
+                url,
+                METRICS_URL_ENV,
+                WORKER_LOG_ENV,
+            )
+        return prometheus
+
+    try:
+        from_log = scrape_worker_log_metrics(
+            accept_log,
+            accept_log_offset,
+            block_size=configured_block_size(),
+        )
+    except Exception as exc:  # noqa: BLE001 -- scrape is best-effort
+        logger.warning(
+            "Could not read acceptance from %s for %s: %s",
+            accept_log,
+            spec_run.slug,
+            exc,
+        )
+        return prometheus
+
+    if not from_log.get("turns"):
+        # The log is configured but recorded nothing in this window: the worker
+        # is not speculating, is writing elsewhere, or the run never reached it.
+        logger.warning(
+            "[spec-decode] %s: no acceptance lines in %s for this run's window; "
+            "reporting whatever /metrics gave.",
+            spec_run.slug,
+            accept_log,
+        )
+        return prometheus
+    return from_log
 
 
 def _build_payload(
@@ -486,6 +618,24 @@ def _log_run_summary(
 ) -> None:
     rate = (spec_decode_metrics or {}).get("acceptance_rate")
     rate_str = f"{rate:.3f}" if isinstance(rate, (int, float)) else "n/a"
+    # WHERE the rate came from, always. A bare 0.000 cannot distinguish "the
+    # drafter won nothing" from "nothing published a counter", and that
+    # ambiguity has already cost one debugging session.
+    source = (spec_decode_metrics or {}).get("source")
+    if isinstance(rate, (int, float)) and not (spec_decode_metrics or {}).get(
+        "draft_tokens"
+    ):
+        rate_str += " (no draft tokens measured)"
+    elif source:
+        rate_str += f" (via {source})"
+
+    # Accepted length next to the rate: it is the headline spec-decode number
+    # (1.0 = every proposal rejected, block_size = perfect), and reading it
+    # should not require opening the report.
+    length = (spec_decode_metrics or {}).get("mean_accepted_length")
+    if isinstance(length, (int, float)):
+        estimate = (spec_decode_metrics or {}).get("mean_accepted_length_is_estimate")
+        rate_str += f" accept_len={length:.2f}{' (est)' if estimate else ''}"
     logger.info("=" * 80)
     logger.info(
         "[spec-decode] %s acceptance_rate=%s "

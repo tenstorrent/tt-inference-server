@@ -26,7 +26,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Sequence
 
 from llm_module import ServerConnection
 from llm_module.config import DriverContext
@@ -55,6 +55,7 @@ def run_spec_decode(
     preset: str = "full",
     warmup_requests: int = DEFAULT_WARMUP_REQUESTS,
     auth_token: str = "",
+    metrics_urls: Sequence[str] = (),
     venv_python: Optional[Path] = None,
     output_subdir: str = "spec_decode",
     inter_run_sleep_s: float = 2.0,
@@ -80,6 +81,13 @@ def run_spec_decode(
     auth_token:
         Bearer token sent to the inference server (JWT, OPENAI_API_KEY).
         Empty string disables auth.
+    metrics_urls:
+        Worker ``/metrics`` endpoints carrying the acceptance counters
+        (``--spec-decode-metrics-url``). Needed wherever the load target is
+        not the process that speculates -- a Dynamo frontend exposes no
+        acceptance counters, so without this the report shows
+        ``acceptance_rate = 0`` for a perfectly healthy drafter. Empty falls
+        back to ``$TT_SPEC_DECODE_METRICS_URL``.
     venv_python:
         Python interpreter that has ``aiperf`` installed. Falls back to
         ``sys.executable``.
@@ -136,6 +144,7 @@ def run_spec_decode(
         tokenizer=model_repo,
         auth_token=auth_token,
         tokenizer_trust_remote_code=tokenizer_trust_remote_code,
+        spec_decode_metrics_urls=tuple(metrics_urls or ()),
     )
     context = DriverContext(output_dir=output_root, device=device_label)
 

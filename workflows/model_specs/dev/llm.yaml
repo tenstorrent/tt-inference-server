@@ -1425,7 +1425,7 @@ templates:
   inference_engine: MEDIA
   device_model_specs:
     - device: SUPER_CLUSTER
-      max_concurrency: 38
+      max_concurrency: 1  # dflash: clamped to blaze --n-slots
       max_context: 131072  # 128 * 1024
       default_impl: true
   status: EXPERIMENTAL

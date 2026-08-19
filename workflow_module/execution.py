@@ -113,6 +113,9 @@ class SpecDecodeOptions:
     preset: str = "full"
     warmup_requests: int = 4
     auth_token: str = ""
+    # Worker /metrics endpoints with the tt_worker_spec_* acceptance counters
+    # (--spec-decode-metrics-url). A tuple keeps this frozen dataclass hashable.
+    metrics_urls: Tuple[str, ...] = ()
     venv_python: Optional[str] = None
 
 

@@ -447,6 +447,9 @@ def _forward_spec_decode(cmd, runtime_config) -> None:
         return
     cmd.append("--spec-decode")
     cmd.extend(["--spec-decode-preset", runtime_config.spec_decode_preset])
+    # action="append" (a list): one flag per URL, never the stringified list.
+    for metrics_url in getattr(runtime_config, "spec_decode_metrics_url", None) or []:
+        _extend_if_set(cmd, "--spec-decode-metrics-url", metrics_url)
     _extend_if_set(
         cmd, "--spec-decode-warmup-requests", runtime_config.spec_decode_warmup_requests
     )
@@ -531,6 +534,9 @@ def _build_spec_decode_cmd(
     )
     cmd.append("--spec-decode")
     cmd.extend(["--spec-decode-preset", runtime_config.spec_decode_preset])
+    # action="append" (a list): one flag per URL, never the stringified list.
+    for metrics_url in getattr(runtime_config, "spec_decode_metrics_url", None) or []:
+        _extend_if_set(cmd, "--spec-decode-metrics-url", metrics_url)
     _extend_if_set(
         cmd, "--spec-decode-warmup-requests", runtime_config.spec_decode_warmup_requests
     )
