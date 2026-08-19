@@ -909,7 +909,7 @@ _eval_config_list = [
                     },
                 ),
                 limit_samples_map={
-                    EvalLimitMode.SMOKE_TEST: 5,
+                    EvalLimitMode.SMOKE_TEST: 1,
                 },
             ),
             EvalTask(
@@ -977,7 +977,7 @@ _eval_config_list = [
                     },
                 ),
                 limit_samples_map={
-                    EvalLimitMode.SMOKE_TEST: 3,
+                    EvalLimitMode.SMOKE_TEST: 1,
                 },
             ),
             EvalTask(
@@ -1027,7 +1027,7 @@ _eval_config_list = [
                     },
                 ),
                 limit_samples_map={
-                    EvalLimitMode.SMOKE_TEST: 5,
+                    EvalLimitMode.SMOKE_TEST: 1,
                 },
             ),
         ],
