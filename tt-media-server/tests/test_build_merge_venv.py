@@ -121,7 +121,9 @@ def test_build_venv_rejects_option_like_venv_dir(monkeypatch):
 def test_build_venv_rejects_unsafe_spec(monkeypatch):
     monkeypatch.setattr(bmv.subprocess, "run", lambda *a, **k: None)
     with pytest.raises(ValueError, match="unrecognized package spec"):
-        bmv.build_venv("/tmp/merge-venv", ["--index-url=http://evil"], requirements="/reqs.txt")
+        bmv.build_venv(
+            "/tmp/merge-venv", ["--index-url=http://evil"], requirements="/reqs.txt"
+        )
 
 
 def test_default_forge_python_uses_python_env_dir(monkeypatch):
