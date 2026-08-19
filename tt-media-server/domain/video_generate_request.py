@@ -65,7 +65,7 @@ class VideoGenerateRequest(BaseRequest):
     def _validate_aspect_ratio(cls, value):
         if value is None or not _is_minimax_h3():
             return value
-        from config.constants import minimax_h3_parse_aspect_ratio
+        from tt_model_runners.minimax_h3_policy import minimax_h3_parse_aspect_ratio
 
         minimax_h3_parse_aspect_ratio(value)  # raises with the supported list
         return value
@@ -75,7 +75,7 @@ class VideoGenerateRequest(BaseRequest):
     def _validate_duration_seconds(cls, value):
         if value is None or not _is_minimax_h3():
             return value
-        from config.constants import MINIMAX_H3_DURATIONS_S
+        from tt_model_runners.minimax_h3_policy import MINIMAX_H3_DURATIONS_S
 
         if value not in MINIMAX_H3_DURATIONS_S:
             raise ValueError(
@@ -92,7 +92,7 @@ class VideoGenerateRequest(BaseRequest):
         # served at the deployment's 50.
         if value is None or not _is_minimax_h3():
             return value
-        from config.constants import MINIMAX_H3_NUM_INFERENCE_STEPS
+        from tt_model_runners.minimax_h3_policy import MINIMAX_H3_NUM_INFERENCE_STEPS
 
         raise ValueError(
             "num_inference_steps is not accepted for MiniMax-H3 t2va; omit it. This deployment "

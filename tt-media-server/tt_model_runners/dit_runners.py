@@ -13,21 +13,11 @@ from pathlib import Path
 import numpy as np
 import ttnn
 from config.constants import (
-    MINIMAX_H3_FPS,
-    MINIMAX_H3_NUM_FRAMES,
-    MINIMAX_H3_NUM_INFERENCE_STEPS,
-    MINIMAX_H3_RESOLUTION,
     WAN22_NUM_FRAMES,
     ModelRunners,
     ModelServices,
     SupportedModels,
     is_large_mesh,
-    MINIMAX_H3_DEFAULT_ASPECT_RATIO,
-    MINIMAX_H3_DEFAULT_DURATION_S,
-    MINIMAX_H3_DURATIONS_S,
-    MINIMAX_H3_ASPECT_RATIOS,
-    minimax_h3_frames_are_aligned,
-    minimax_h3_parse_aspect_ratio,
     wan22_target_resolution,
 )
 from config.settings import get_settings
@@ -54,6 +44,15 @@ from models.tt_dit.pipelines.wan.pipeline_wan_i2v import (
 from PIL import Image
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
+from tt_model_runners.minimax_h3_policy import (
+    MINIMAX_H3_ASPECT_RATIOS,
+    MINIMAX_H3_DEFAULT_ASPECT_RATIO,
+    MINIMAX_H3_DEFAULT_DURATION_S,
+    MINIMAX_H3_DURATIONS_S,
+    MINIMAX_H3_NUM_INFERENCE_STEPS,
+    minimax_h3_frames_are_aligned,
+    minimax_h3_parse_aspect_ratio,
+)
 from utils.decorators import log_execution_time
 from utils.image_manager import ImageManager
 from utils.logger import log_exception_chain
@@ -1377,10 +1376,6 @@ class TTMiniMaxH3Runner(TTDiTRunner):
     inside the request rather than fail, which is worse than a clear error.
     """
 
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
-        self.resolution = MINIMAX_H3_RESOLUTION
-
     def _weights_dir(self) -> str | None:
         """A local snapshot directory, or None to let the pipeline read its own env var.
 
@@ -1509,6 +1504,7 @@ class TTMiniMaxH3Runner(TTDiTRunner):
     def _warmup_shapes(self) -> list[tuple[int, int, int]]:
         """`(height, width, num_frames)` per shape to warm, from MINIMAX_H3_WARM_SHAPES."""
         from models.tt_dit.pipelines.minimax_h3.packing import (
+            MINIMAX_H3_FPS,
             align_num_frames,
             resolve_canvas_size,
         )
@@ -1556,6 +1552,7 @@ class TTMiniMaxH3Runner(TTDiTRunner):
         quietly serving a neighbouring shape returns a video the caller did not ask for.
         """
         from models.tt_dit.pipelines.minimax_h3.packing import (
+            MINIMAX_H3_FPS,
             align_num_frames,
             resolve_canvas_size,
         )
