@@ -170,6 +170,33 @@ jobs:
             --tt-metal-commit "${TT_METAL_COMMIT}" \
             --vllm-commit "${VLLM_COMMIT}"
 
+      # ----- Step 1b: fail if promotion produced a shadowed duplicate model_id.
+      #       promote_dev_spec_to_prod.py keys its upsert on the device SET, so
+      #       adding a device appends a new prod block instead of replacing the
+      #       old one; both then expand to the same model_id and the docs
+      #       generator renders the dead one (hit Qwen3.6-27B / Qwen3-Embedding-4B
+      #       at v0.20.0). Inspect the just-promoted PROD catalogue directly (the
+      #       JSON export dedupes via a {model_id: spec} dict and would hide it). -----
+      - name: "Step 1b — assert promotion produced no shadowed duplicates"
+        env:
+          MODEL_SPECS_ENV: prod
+        run: |
+          python3 - <<'PY'
+          import collections, sys
+          from workflows.model_spec import spec_templates
+          seen = collections.defaultdict(list)
+          for t in spec_templates:
+              for s in t.expand_to_specs():
+                  seen[s.model_id].append(getattr(t, "version", None))
+          dups = {k: v for k, v in seen.items() if len(v) > 1}
+          for k, v in sorted(dups.items()):
+              print(f"::error::duplicate model_id {k} produced by prod templates {v} - "
+                    "the older block is unreachable and will be rendered into the docs")
+          if dups:
+              sys.exit(f"{len(dups)} shadowed duplicate model_id(s) in the prod catalogue")
+          print(f"OK - {len(seen)} unique model_ids, no duplicates")
+          PY
+
       # ----- Step 2: regenerate model-support docs + release_model_spec.json ----
       - name: "Step 2 — export model spec (docs + JSON)"
         run: python3 scripts/release/export_model_spec.py
