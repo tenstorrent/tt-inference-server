@@ -5,7 +5,7 @@
 """Merge a LoRA adapter into its base model, producing a servable checkpoint.
 
 This runs under the *inference* transformers version, in a dedicated venv (see
-`scripts/build_merge_venv.sh`).
+`scripts/build_merge_venv.py`).
 """
 
 import argparse

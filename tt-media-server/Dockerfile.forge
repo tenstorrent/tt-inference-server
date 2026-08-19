@@ -119,7 +119,7 @@ ENV PYTHON_ENV_DIR="${APP_DIR}/server/venv-worker"
 ENV ADAPTER_MERGE_VENV_DIR="${APP_DIR}/server/merge-venv"
 ENV ADAPTER_MERGE_PYTHON="${ADAPTER_MERGE_VENV_DIR}/bin/python"
 COPY "tt-vllm-plugin/pyproject.toml" "/tmp/tt-vllm-plugin-pyproject.toml"
-RUN bash "${APP_DIR}/server/scripts/build_merge_venv.sh" \
+RUN python3.12 "${APP_DIR}/server/scripts/build_merge_venv.py" \
     "${ADAPTER_MERGE_VENV_DIR}" "/tmp/tt-vllm-plugin-pyproject.toml"
 
 # spinup inference server
