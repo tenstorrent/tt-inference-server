@@ -6,8 +6,11 @@ import asyncio
 import base64
 import io
 import os
+import uuid
 from abc import abstractmethod
+from pathlib import Path
 
+import numpy as np
 import ttnn
 from config.constants import (
     WAN22_NUM_FRAMES,
@@ -58,6 +61,7 @@ dit_runner_log_map = {
     ModelRunners.TT_WAN_2_2_I2V_DISTILL.value: "Wan22-I2V-Distill",
     ModelRunners.TT_WAN_2_2_I2V_LORA.value: "Wan22-I2V-LoRA",
     ModelRunners.TT_WAN_2_2_I2V_LIGHTNING.value: "Wan22-I2V-Lightning",
+    ModelRunners.TT_LTX_2_3_DISTILLED.value: "LTX-2.3-distilled",
     ModelRunners.TT_QWEN_IMAGE.value: "Qwen-Image",
     ModelRunners.TT_QWEN_IMAGE_2512.value: "Qwen-Image-2512",
     ModelRunners.SP_RUNNER.value: "SP-Runner",
@@ -328,17 +332,24 @@ class TTMochi1Runner(TTDiTRunner):
     def run(self, requests: list[VideoGenerateRequest]):
         self.logger.debug(f"Device {self.device_id}: Running inference")
         request = requests[0]
+        # MochiPipeline.__call__ takes prompts/negative_prompts lists since the
+        # tt_dit pipeline refactor; num_frames/height/width/output_type moved to
+        # MochiPipelineConfig defaults (168 frames, 480x848).
         frames = self.pipeline(
-            prompt=request.prompt,
-            negative_prompt=request.negative_prompt,
+            prompts=[request.prompt],
+            negative_prompts=[request.negative_prompt or ""],
             num_inference_steps=request.num_inference_steps,
             guidance_scale=3.5,
-            num_frames=168,  # TODO: Parameterize output dimensions.
-            height=480,
-            width=848,
-            output_type="np",
             seed=int(request.seed or 0),
         )
+        # The pipeline returns PIL frames (or a tensor); the video exporter
+        # needs a (batch, frames, H, W, C) uint8 array.
+        if hasattr(frames, "cpu"):
+            frames = frames.cpu().numpy()
+        elif isinstance(frames, list):
+            frames = np.stack(
+                [np.stack([np.asarray(f) for f in video]) for video in frames]
+            )
         self.logger.debug(f"Device {self.device_id}: Inference completed")
         return frames
 
@@ -1040,6 +1051,145 @@ class TTWan22I2VLoRARunner(TTDiTRunner):
 
     def _build_warmup_video_request(self) -> VideoI2VGenerateRequest:
         return _wan22_i2v_warmup_request("A golden retriever running on a sandy beach")
+
+
+# ---------------------------------------------------------------------------
+# LTX-2.3 distilled text->audio-video
+# ---------------------------------------------------------------------------
+
+# Proven-good 1080p ~6s AV generation shape for the (4, 8) Galaxy ring config
+# (validated on-device). H/W must be %64 and (num_frames-1)%8 == 0.
+LTX_NUM_FRAMES = 145
+LTX_HEIGHT = 1088
+LTX_WIDTH = 1920
+LTX_FPS = 24
+# (4, 8) BH Galaxy ring defaults (mirrors LTXPipeline.create_pipeline's own 4x8
+# device_configs entry): dynamic_load off, Ring topology, 2 links.
+LTX_DYNAMIC_LOAD = False
+# Trace + reserve L1_SMALL for the traced two-stage decode / audio vocoder.
+# Mirrors ``_ring_trace`` in models/tt_dit/tests/models/ltx/ltx_mesh_params.py:
+# without l1_small_size the vocoder OOMs ("bank size is 0 B"); the two stage
+# traces need the larger region.
+LTX_TRACED = True
+LTX_L1_SMALL_SIZE = 32768
+LTX_TRACE_REGION_BYTES = 500_000_000
+
+# Reuse the default TT_VIDEO_OUTPUT_DIR convention (VideoManager writes here too)
+# so the served-file lifecycle in open_ai_api/video.py is identical to the frame
+# runners: run() returns a filesystem path, VideoService.post_process passes a
+# str straight through, and the API streams it back with FileResponse.
+LTX_VIDEO_OUTPUT_DIR = Path(os.environ.get("TT_VIDEO_OUTPUT_DIR", "/tmp/videos"))
+
+
+class TTLTX23DistilledRunner(TTDiTRunner):
+    """LTX-2.3 distilled text->audio-video runner (Galaxy, ring topology).
+
+    Unlike the Wan runners, the LTX distilled pipeline's ``generate()`` encodes
+    the MP4 (h264 video + aac audio) itself and returns the on-disk path, so
+    ``run()`` returns ``[path]`` rather than a raw frame array.
+    """
+
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
+        # Set for the duration of warmup() so run() can tell the trace-capture
+        # generation apart from a real request. See _discard_warmup_output.
+        self._warming_up = False
+
+    async def warmup(self) -> bool:
+        self._warming_up = True
+        try:
+            return await super().warmup()
+        finally:
+            self._warming_up = False
+
+    def _discard_warmup_output(self, path: str) -> None:
+        """Delete the warmup generation's MP4.
+
+        create_pipeline() compiles kernels untraced; the traces themselves are
+        captured lazily on the first traced generate(), which is the run() that
+        TTDiTRunner.warmup() issues. That gen exists only for its side effects --
+        no job owns its output and VideoManager never reclaims it -- so without
+        this, every server start would orphan a ~1080p MP4 in TT_VIDEO_OUTPUT_DIR.
+        """
+        try:
+            Path(path).unlink(missing_ok=True)
+        except OSError as e:
+            # Never fail warmup over cleanup; a leaked file is the lesser problem.
+            self.logger.warning(
+                f"Device {self.device_id}: could not remove warmup output {path}: {e}"
+            )
+
+    def create_pipeline(self):
+        try:
+            # Imported lazily (as the Prodia runners do) so the LTX pipeline and
+            # its deps are not pulled in for every other runner in this module.
+            from models.tt_dit.pipelines.ltx.pipeline_ltx_distilled import (
+                LTXDistilledPipeline,
+            )
+            from models.tt_dit.utils.ltx import default_ltx_gemma
+
+            return LTXDistilledPipeline.create_pipeline(
+                mesh_device=self.ttnn_device,
+                checkpoint_name=self.settings.model_weights_path,
+                gemma_path=default_ltx_gemma(),
+                sp_axis=1,
+                tp_axis=0,
+                num_links=2,
+                dynamic_load=LTX_DYNAMIC_LOAD,
+                topology=ttnn.Topology.Ring,
+                is_fsdp=False,
+                traced=LTX_TRACED,
+                num_frames=LTX_NUM_FRAMES,
+                height=LTX_HEIGHT,
+                width=LTX_WIDTH,
+                image_conditioning=False,
+            )
+        except Exception as e:
+            log_exception_chain(
+                self.logger,
+                self.device_id,
+                "LTX-2.3 distilled pipeline creation failed",
+                e,
+            )
+            raise
+
+    def load_weights(self):
+        return False
+
+    @log_execution_time(
+        f"{dit_runner_log_map.get(get_settings().model_runner, 'LTX-2.3-distilled')} inference",
+        TelemetryEvent.MODEL_INFERENCE,
+        os.environ.get("TT_VISIBLE_DEVICES"),
+    )
+    def run(self, requests: list[VideoGenerateRequest]):
+        self.logger.debug(f"Device {self.device_id}: Running LTX inference")
+        request = requests[0]
+        LTX_VIDEO_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        output_path = str(LTX_VIDEO_OUTPUT_DIR / f"{uuid.uuid4()}.mp4")
+        # generate() writes the AV MP4 to output_path and returns that path.
+        result_path = self.pipeline.generate(
+            request.prompt,
+            output_path=output_path,
+            num_frames=LTX_NUM_FRAMES,
+            height=LTX_HEIGHT,
+            width=LTX_WIDTH,
+            seed=int(request.seed or 0),
+            fps=LTX_FPS,
+        )
+        self.logger.debug(f"Device {self.device_id}: LTX inference completed")
+        if self._warming_up:
+            self._discard_warmup_output(result_path)
+        return [result_path]
+
+    def get_pipeline_device_params(self):
+        # Start from the shared Wan2.2 ring/fabric defaults (FABRIC_1D_RING +
+        # RELAXED_INIT + 8k router payload for the BH Galaxy mesh), then apply the
+        # LTX-specific L1_SMALL reservation and the larger traced-decode region.
+        device_params = _wan22_dit_device_params(self.settings.device_mesh_shape)
+        device_params["l1_small_size"] = LTX_L1_SMALL_SIZE
+        if LTX_TRACED:
+            device_params["trace_region_size"] = LTX_TRACE_REGION_BYTES
+        return device_params
 
 
 class TTWan22I2VLightningRunner(TTDiTRunner):

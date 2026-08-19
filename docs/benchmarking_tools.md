@@ -47,7 +47,7 @@ Server-side benchmarking using vLLM's built-in `benchmark_serving.py` script.
 **Metrics provided:**
 - TTFT (mean only)
 - TPOT (mean only)
-- Throughput (decode, prefill, user-level)
+- Throughput (input, output, total, user-level)
 - E2EL (mean only)
 - Request throughput
 
@@ -56,7 +56,9 @@ Server-side benchmarking using vLLM's built-in `benchmark_serving.py` script.
 {
   "mean_ttft_ms": 73.2,
   "mean_tpot_ms": 38.2,
-  "tps_decode_throughput": 26.1,
+  "tps_input_throughput": 73.9,
+  "tps_output_throughput": 26.1,
+  "tps_total_throughput": 100.0,
   "mean_e2el_ms": 4930.4
 }
 ```
@@ -262,7 +264,7 @@ python run.py --model gemma-3-4b-it --device n300 --workflow reports
 
 Stacks all three tools for direct comparison:
 
-| Source | ISL | OSL | Concur | TTFT (ms) | TPOT (ms) | Tput Decode (TPS) |
+| Source | ISL | OSL | Concur | TTFT (ms) | TPOT (ms) | Tput Output (TPS) |
 |--------|-----|-----|--------|-----------|-----------|-------------------|
 | vLLM | 128 | 128 | 1 | 73.2 | 38.2 | 26.1 |
 | aiperf | 128 | 128 | 1 | 93.5 | 40.2 | 25.1 |
@@ -356,8 +358,9 @@ python run.py --model gemma-3-4b-it --device n300 --workflow benchmarks \
 | **ITL** | Inter-Token Latency - same as TPOT | ms |
 | **E2EL** | End-to-End Latency - total request duration | ms |
 | **Tput User** | User-level throughput (single request) | tokens/sec |
-| **Tput Decode** | Decode throughput (all concurrent requests) | tokens/sec |
-| **Tput Prefill** | Prefill/prompt processing throughput | tokens/sec |
+| **Tput Input** | Input (prefill) token throughput, all concurrent requests | tokens/sec |
+| **Tput Output** | Output (decode) token throughput, all concurrent requests | tokens/sec |
+| **Tput Total** | Input + output token throughput, all concurrent requests | tokens/sec |
 | **Req Tput** | Request throughput | requests/sec |
 
 ### Percentile Statistics (AIPerf only)
@@ -494,7 +497,7 @@ python run.py --model gemma-3-4b-it --device n300 --workflow reports
 
 ### Text Benchmark Comparison (ISL=128, OSL=128, Concurrency=1)
 
-| Source | TTFT (ms) | TPOT (ms) | Tput Decode (TPS) | E2EL (ms) | Req Tput (RPS) |
+| Source | TTFT (ms) | TPOT (ms) | Tput Output (TPS) | E2EL (ms) | Req Tput (RPS) |
 |--------|-----------|-----------|-------------------|-----------|----------------|
 | vLLM | 73.2 | 38.2 | 26.1 | 4930.4 | 0.203 |
 | aiperf | 93.5 | 40.2 | 25.1 | 5180.3 | 0.194 |

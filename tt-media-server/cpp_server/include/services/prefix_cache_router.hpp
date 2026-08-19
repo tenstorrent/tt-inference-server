@@ -121,7 +121,8 @@ class PrefixCacheRouter {
       const std::string& previousResponseId, std::function<void()> cancelFn);
 
   void registerPrefixHash(const std::string& sessionId,
-                          const std::vector<utils::BlockHashInfo>& blockInfos);
+                          const std::vector<utils::BlockHashInfo>& blockInfos,
+                          bool clearBeingGenerated = false);
 
   void registerResponseId(const std::string& sessionId,
                           const std::string& responseId);

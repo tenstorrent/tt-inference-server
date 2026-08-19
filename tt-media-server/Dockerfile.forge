@@ -58,6 +58,7 @@ RUN apt-get update && apt-get install -y \
     unzip \
     zip \
     curl \
+    libcurl4-openssl-dev \
     iputils-ping \
     rsync \
     && rm -rf /var/lib/apt/lists/* \

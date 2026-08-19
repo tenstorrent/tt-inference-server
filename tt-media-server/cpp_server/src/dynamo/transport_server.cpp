@@ -136,9 +136,11 @@ void DynamoTransportServer::process_request(
 
   trantor::EventLoop* loop = loop_pool_->getNextLoop();
   loop->queueInLoop([this, body = std::move(twoPart.body),
-                     connInfo = std::move(connInfo), id = ctrl.id]() mutable {
+                     headers = msg.headers, connInfo = std::move(connInfo),
+                     id = ctrl.id]() mutable {
     try {
       GenerateRequest genReq = parse_generate_request(body);
+      genReq.headers = std::move(headers);
       TT_LOG_DEBUG(
           "[DynamoTransportServer] Request id={} input_tokens={} max_tokens={} "
           "address={}",
@@ -146,6 +148,10 @@ void DynamoTransportServer::process_request(
           genReq.max_tokens.has_value() ? std::to_string(*genReq.max_tokens)
                                         : "None",
           connInfo.address);
+      for (const auto& [name, value] : genReq.headers) {
+        TT_LOG_DEBUG("[DynamoTransportServer] Request id={} header {}={}", id,
+                     name, value);
+      }
       handler_(genReq, connInfo);
     } catch (const std::exception& e) {
       TT_LOG_ERROR("[DynamoTransportServer] request dispatch failed id={}: {}",

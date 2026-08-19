@@ -92,6 +92,8 @@ enum class ModelRunnerType {
   TT_SDXL_IMAGE_TO_IMAGE,
   TT_SDXL_EDIT,
   TT_TTS,
+  TT_BGE_LARGE_EN,
+  EMBEDDING_MOCK,
 };
 
 enum class Model {
@@ -150,6 +152,10 @@ inline std::string toString(ModelRunnerType m) {
       return "tt_sdxl_edit";
     case ModelRunnerType::TT_TTS:
       return "tt_tts";
+    case ModelRunnerType::TT_BGE_LARGE_EN:
+      return "tt_bge_large_en";
+    case ModelRunnerType::EMBEDDING_MOCK:
+      return "embedding_mock";
   }
   return "unknown";
 }
@@ -165,10 +171,13 @@ inline std::string toClientRunnerName(ModelRunnerType m) {
       return "tt-sdxl-edit";
     case ModelRunnerType::TT_TTS:
       return "tt-tts";
+    case ModelRunnerType::TT_BGE_LARGE_EN:
+      return "bge_large_en_v1_5";
     case ModelRunnerType::MOCK:
     case ModelRunnerType::MOCK_PIPELINE:
     case ModelRunnerType::MOCK_SCHEDULER:
     case ModelRunnerType::PIPELINE_MANAGER:
+    case ModelRunnerType::EMBEDDING_MOCK:
       return "";
   }
   return "";

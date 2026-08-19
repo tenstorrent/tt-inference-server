@@ -110,6 +110,8 @@ RUN apt-get update -qq \
         libgoogle-glog0v5 \
         libhwloc15 \
         libibverbs1 \
+        ibverbs-providers \
+        rdma-core \
         libjsoncpp25 \
         libnl-3-200 \
         libnl-route-3-200 \
@@ -126,10 +128,16 @@ RUN apt-get update -qq \
 ENV WORKER_BIN=/usr/local/bin/mooncake_kv_migration_worker \
     TT_METAL_HOME=/opt/tt-metal-runtime \
     TT_METAL_RUNTIME_ROOT=/opt/tt-metal-runtime \
-    LD_LIBRARY_PATH=/usr/local/lib
+    LD_LIBRARY_PATH=/usr/local/lib \
+    MIGRATION_DRISC_SERVICE_ELF=/opt/tt-migration-worker/drisc/drisc_service.elf
 
 COPY --from=builder /out/bin/mooncake_kv_migration_worker /usr/local/bin/mooncake_kv_migration_worker
 COPY --from=builder /out/lib/ /usr/local/lib/
+# DRISC service kernel ELF used by DriscDeviceIo (device mode). Comes pre-built
+# from the tt-llm-engine base image (tt-llm-engine owns the dram_risc_socket
+# sources + SFPI toolchain, so it also produces the ELF). Path is baked into
+# MIGRATION_DRISC_SERVICE_ELF above; overridable at runtime.
+COPY --from=engine /opt/tt-llm-engine-src/dram_risc_socket/kernel/drisc_service.elf /opt/tt-migration-worker/drisc/drisc_service.elf
 COPY --from=engine /opt/tt-llm-engine-src/tt-metal/tt_metal/soc_descriptors /opt/tt-metal-runtime/tt_metal/soc_descriptors
 COPY --from=builder /src/cpp_server/tests/e2e/scripts/migration_worker_launch.sh /usr/local/bin/migration_worker_launch.sh
 
