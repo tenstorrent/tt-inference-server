@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import shutil
+from functools import lru_cache
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -34,6 +35,68 @@ def _resolve_auth_token(server: ServerConnection) -> str:
     return (
         server.auth_token or os.getenv("OPENAI_API_KEY") or os.getenv("API_KEY") or ""
     )
+
+
+@lru_cache(maxsize=None)
+def _chat_template_defined(name: str) -> bool:
+    """Whether ``name``'s tokenizer defines a chat template, from local files only.
+
+    Mirrors the check ``utils.prompt_generation.template_prompt`` already makes. A
+    template may live in ``tokenizer_config.json`` or, since transformers v4.43,
+    in a standalone ``chat_template.jinja``; loading the tokenizer resolves either.
+
+    ``local_files_only=True`` keeps this off the network: the served checkpoint is
+    already on the host (the server just loaded it), and a probe that downloads a
+    tokenizer merely to inspect it could stall or fail for remote-endpoint runs.
+    Any failure returns ``True`` so unknown capability keeps the historical
+    chat-endpoint behaviour instead of silently moving every model to
+    ``/v1/completions``.
+    """
+    try:
+        from transformers import AutoTokenizer
+
+        tokenizer = AutoTokenizer.from_pretrained(
+            name, local_files_only=True, trust_remote_code=True
+        )
+    except Exception as exc:  # noqa: BLE001 - any failure means "unknown"
+        logger.warning(
+            "Could not load tokenizer %s locally to check for a chat template (%s); "
+            "assuming one exists and using the chat endpoint.",
+            name,
+            exc,
+        )
+        return True
+    return bool(getattr(tokenizer, "chat_template", None))
+
+
+def tokenizer_defines_chat_template(server: ServerConnection) -> bool:
+    """Whether the served checkpoint's tokenizer defines a chat template."""
+    name = server.tokenizer or server.model
+    if not name:
+        return True
+    return _chat_template_defined(name)
+
+
+def _endpoint_args(server: ServerConnection) -> List[str]:
+    """Pick the benchmark endpoint from the tokenizer's chat capability.
+
+    ``vllm bench serve`` fails its pre-flight probe with ``Bad Request`` when it
+    posts to ``/v1/chat/completions`` against a server whose tokenizer defines no
+    chat template -- the server raises ``ChatTemplateResolutionError`` because, as
+    of transformers v4.44, there is no implicit default template. Base
+    checkpoints are the models this affects; they are also the ones for which
+    ``/v1/completions`` is the semantically correct endpoint, since wrapping a
+    completion model in an invented chat template changes the measured prompt.
+    """
+    if tokenizer_defines_chat_template(server):
+        return ["--backend", "openai-chat", "--endpoint", "/v1/chat/completions"]
+
+    logger.info(
+        "Tokenizer for %s defines no chat template; benchmarking against "
+        "/v1/completions instead of /v1/chat/completions.",
+        server.tokenizer or server.model,
+    )
+    return ["--backend", "vllm", "--endpoint", "/v1/completions"]
 
 
 def build_vllm_bench_serve_argv(
@@ -58,10 +121,7 @@ def build_vllm_bench_serve_argv(
         vllm_binary,
         "bench",
         "serve",
-        "--backend",
-        "openai-chat",
-        "--endpoint",
-        "/v1/chat/completions",
+        *_endpoint_args(server),
         "--model",
         server.model,
         "--dataset-name",

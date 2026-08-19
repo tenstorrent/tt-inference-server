@@ -5,6 +5,7 @@
 from pathlib import Path
 
 from llm_module.config import LLMRunConfig, ServerConnection
+from llm_module.drivers import vllm as vllm_driver
 from llm_module.drivers.vllm import build_vllm_bench_serve_argv
 
 
@@ -62,3 +63,55 @@ def test_local_server_uses_host_port_and_truncation():
     assert '"truncate_prompt_tokens": "128"' in cmd[cmd.index("--extra-body") + 1]
     header_values = cmd[cmd.index("--header") + 1 :]
     assert header_values == ["Accept-Encoding=identity"]
+
+
+def test_chat_endpoint_used_when_tokenizer_defines_a_chat_template(monkeypatch):
+    monkeypatch.setattr(vllm_driver, "tokenizer_defines_chat_template", lambda s: True)
+    server = ServerConnection(
+        base_url="http://127.0.0.1",
+        service_port=8000,
+        model="google/gemma-4-31B-it",
+        is_remote=False,
+    )
+    cmd, _ = build_vllm_bench_serve_argv(
+        vllm_binary="vllm",
+        config=_config(),
+        server=server,
+        result_filename=_result_path(),
+    )
+
+    assert cmd[cmd.index("--backend") + 1] == "openai-chat"
+    assert cmd[cmd.index("--endpoint") + 1] == "/v1/chat/completions"
+
+
+def test_completions_endpoint_used_when_tokenizer_has_no_chat_template(monkeypatch):
+    """A base checkpoint has no chat template, so the chat endpoint would fail its
+    pre-flight probe with Bad Request (ChatTemplateResolutionError server-side)."""
+    monkeypatch.setattr(vllm_driver, "tokenizer_defines_chat_template", lambda s: False)
+    server = ServerConnection(
+        base_url="http://127.0.0.1",
+        service_port=8000,
+        model="google/gemma-4-31B",
+        is_remote=False,
+    )
+    cmd, _ = build_vllm_bench_serve_argv(
+        vllm_binary="vllm",
+        config=_config(),
+        server=server,
+        result_filename=_result_path(),
+    )
+
+    assert cmd[cmd.index("--backend") + 1] == "vllm"
+    assert cmd[cmd.index("--endpoint") + 1] == "/v1/completions"
+    assert "openai-chat" not in cmd
+
+
+def test_unloadable_tokenizer_keeps_the_chat_endpoint():
+    """Unknown capability must not silently move every model to /v1/completions."""
+    server = ServerConnection(
+        base_url="http://127.0.0.1",
+        service_port=8000,
+        model="definitely-not-a-real-org/definitely-not-a-real-model",
+        is_remote=False,
+    )
+    assert vllm_driver.tokenizer_defines_chat_template(server) is True
