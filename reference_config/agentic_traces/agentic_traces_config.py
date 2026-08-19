@@ -253,14 +253,14 @@ class AgenticTracesModeSettings:
 
 
 # Reference full-length run. Profiling matches the inferencex-agentx-mvp
-# scenario default (30 min). The trace pool is all 393 eligible traces.
+# scenario default (1 hour). The trace pool is all 393 eligible traces.
 #
 # 14 requests/lane reproduces the warmup depth of the hand-validated run,
 # which used the superseded 600s time-bounded warmup: it issued 109 warmup
 # wire requests across 8 lanes (13.6/lane) in 583.7s. Re-measure and re-pin
 # this if the trace corpus or the server's warmup latency changes materially.
 FULL_MODE_SETTINGS = AgenticTracesModeSettings(
-    benchmark_duration=1800,
+    benchmark_duration=3600,
     warmup_requests_per_lane=14,
     warmup_grace_period=1800,
     num_dataset_entries=393,
@@ -379,7 +379,7 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
                 trace_source=TraceSource.INFERENCEX_AGENTX,
                 public_dataset="semianalysis_cc_traces_weka_062126_256k",
                 concurrency=64,
-                use_server_token_count=False,
+                use_server_token_count=True,
             ),
             # SwarmOne swo-bench replay of the recorded Kimi Claude-Code
             # SWE-bench sessions. FULL replays all three tasks (sympy-bugfix,
