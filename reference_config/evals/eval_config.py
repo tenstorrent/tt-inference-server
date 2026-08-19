@@ -677,10 +677,11 @@ _eval_config_list = [
                 # lm-eval's eval_class from "local-completions" to
                 # "local-chat-completions" so requests go to the right route.
                 use_chat_api=True,
+                capture_reasoning=True,
                 score=EvalTaskScore(
                     published_score=89.6,
                     published_score_ref="https://artificialanalysis.ai/evaluations/gpqa-diamond?models=kimi-k2-7-code",
-                    gpu_reference_score=85.3,
+                    gpu_reference_score=89.8,
                     gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4271#issuecomment-4841263402",
                     score_func=score_task_single_key,
                     score_func_kwargs={
@@ -691,14 +692,14 @@ _eval_config_list = [
                     },
                 ),
                 model_kwargs={
-                    "max_length": 256 * 1024,
+                    "max_length": 256 * 1000,
                     # Per-request HTTP timeout (lm-eval default 1800s). Long
                     # reasoning generations on the shared console can exceed
                     # 30min under load, so allow up to 2h before giving up.
                     "timeout": 7200,
                 },
                 gen_kwargs={
-                    "max_gen_toks": 256 * 1024,
+                    "max_gen_toks": 256 * 1000,
                     "until": ["[EOS]"],
                     "do_sample": "true",
                     "temperature": 1.0,
@@ -727,7 +728,7 @@ _eval_config_list = [
                 agentic_eval_config=TerminalBenchEvalConfig(
                     dataset="terminal-bench/terminal-bench-2-1",
                     agent="terminus-2",
-                    n_concurrent_trials=4,
+                    n_concurrent_trials=64,
                     n_attempts=1,
                     n_tasks=89,
                     override_cpus=16,
@@ -737,7 +738,7 @@ _eval_config_list = [
                         "parser_name": "json",
                         "temperature": 1.0,
                         "model_info": {
-                            "max_input_tokens": 256 * 1024,
+                            "max_input_tokens": 256 * 1000,
                             "max_output_tokens": 64 * 1024,
                         },
                         "llm_kwargs": {
@@ -766,8 +767,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=18.1,
                     published_score_ref="https://artificialanalysis.ai/evaluations/tau3-banking?models=kimi-k2-7-code",
-                    gpu_reference_score=11.3,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4271#issuecomment-4950368694",
+                    gpu_reference_score=15.4,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4271#issuecomment-5302604603",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
@@ -782,7 +783,7 @@ _eval_config_list = [
                     task_names=["sierra-research/tau3-bench__tau3-banking_knowledge-*"],
                     # A single served instance is shared by the agent,
                     # the simulated user, and the Natural Language verifier.
-                    n_concurrent_trials=4,
+                    n_concurrent_trials=32,
                     n_attempts=1,
                     n_tasks=97,
                     override_cpus=4,
@@ -791,6 +792,18 @@ _eval_config_list = [
                     agent_kwargs={
                         "tau2_trial_index": 0,
                         "temperature": 1.0,
+                        # The adapter's build_llm_args() sets only temperature,
+                        # so without this the agent samples at top_p=1.0 while
+                        # every other Kimi task clamps to 0.95. The untruncated
+                        # tail emits malformed tool-call arguments (~2% of calls
+                        # measured against the served endpoint) and one bad
+                        # parse aborts the whole trial.
+                        #
+                        # Must stay a JSON *string*: agent_kwargs are written
+                        # verbatim into the harbor config file, and the adapter
+                        # shlex.quotes this value onto the container command
+                        # line, which fails with TypeError on a dict.
+                        "llm_args_json": '{"top_p": 0.95}',
                         "max_steps": 200,
                         # Default is 120s; a single reasoning user-sim turn under
                         # load can exceed that and trip an MCP request timeout.
@@ -844,12 +857,12 @@ _eval_config_list = [
                     sweagent_subset="verified",
                     dataset_split="test",
                     agent_backend="mini-swe-agent",
-                    n_concurrent_trials=6,
+                    n_concurrent_trials=64,
                     max_workers=24,
                     n_tasks=None,
                     temperature=1.0,
                     top_p=0.95,
-                    max_input_tokens=256 * 1024,
+                    max_input_tokens=256 * 1000,
                     max_output_tokens=64 * 1024,
                     instance_ids_map={
                         EvalLimitMode.CI_NIGHTLY: [

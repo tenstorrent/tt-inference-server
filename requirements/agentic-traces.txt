@@ -51,4 +51,9 @@ blobfile
 # this is a normal PyPI package, so it installs here rather than via a git
 # checkout. A SwarmOne license (SWO_LICENSE_KEY / ~/.swarmone/license.key) is
 # required at run time, checked up front in run.py.
-swo-bench==3.1.2
+#
+# Deliberately unpinned: SwarmOne keeps only the latest release on PyPI and
+# deletes the previous ones, so a version pin stops resolving the moment they
+# publish again. The installed version is recorded per run (swo_bench_version
+# in the payload) instead.
+swo-bench
