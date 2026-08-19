@@ -21,9 +21,10 @@ from resolver.service_resolver import service_resolver
 from telemetry.prometheus_metrics import PrometheusMetrics
 from utils.job_manager import get_job_manager
 
+# Honour ENVIRONMENT. This used to be overridden to "development" unconditionally,
+# which meant /docs, /redoc and /openapi.json were served on every deployment
+# regardless of configuration -- including public ones.
 env = os.getenv("ENVIRONMENT", "production")
-# TODO load proper development later
-env = "development"
 
 
 @asynccontextmanager
