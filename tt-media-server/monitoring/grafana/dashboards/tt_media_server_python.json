@@ -1786,6 +1786,157 @@
       "transformations": [
         { "id": "organize", "options": { "excludeByName": { "Time": true, "Value": true, "__name__": true, "job": true, "instance": true } } }
       ]
+    },
+    { "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 83 }, "id": 800, "panels": [], "title": "ASR Per-Chunk Latency (Whisper streaming only)", "type": "row" },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Time from chunk hand-off to the first emitted item. Bundles log-mel extraction (~2ms, constant because Whisper pads every chunk to a 30s frame), the encoder pass and the first decode step: tt-metal's WhisperGenerator fuses all three, so they cannot be separated. Unaffected by consumer backpressure.",
+      "fieldConfig": { "defaults": { "custom": { "scaleDistribution": { "type": "log", "log": 10 } }, "unit": "s" } },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 84 },
+      "id": 30,
+      "options": {
+        "calculate": false,
+        "color": { "scheme": "Spectral", "mode": "scheme", "exponent": 0.5, "steps": 64, "reverse": false },
+        "legend": { "show": true },
+        "tooltip": { "show": true, "yHistogram": false },
+        "yAxis": { "axisPlacement": "left", "unit": "s" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum by (le) (rate(tt_media_server_audio_chunk_first_token_seconds_bucket{service=~\"$service\",model_type=~\"$model_type\"}[$__rate_interval]))",
+          "format": "heatmap",
+          "legendFormat": "{{le}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Chunk First-Item Latency Heatmap",
+      "type": "heatmap"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Wall time to transcribe one chunk end to end. The streaming loop yields to its consumer inside this span, so a slow client inflates this without inflating the first-item metric.",
+      "fieldConfig": { "defaults": { "custom": { "scaleDistribution": { "type": "log", "log": 10 } }, "unit": "s" } },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 84 },
+      "id": 31,
+      "options": {
+        "calculate": false,
+        "color": { "scheme": "Spectral", "mode": "scheme", "exponent": 0.5, "steps": 64, "reverse": false },
+        "legend": { "show": true },
+        "tooltip": { "show": true, "yHistogram": false },
+        "yAxis": { "axisPlacement": "left", "unit": "s" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum by (le) (rate(tt_media_server_audio_chunk_processing_seconds_bucket{service=~\"$service\",model_type=~\"$model_type\"}[$__rate_interval]))",
+          "format": "heatmap",
+          "legendFormat": "{{le}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Chunk Processing Latency Heatmap",
+      "type": "heatmap"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Quantiles of both per-chunk spans. First-item is contained in processing by construction, so the first-item lines should always sit below their processing counterparts.",
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 0 }, "unit": "s" } },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 93 },
+      "id": 32,
+      "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(tt_media_server_audio_chunk_first_token_seconds_bucket{service=~\"$service\",model_type=~\"$model_type\"}[5m])))",
+          "legendFormat": "first-item p50",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_audio_chunk_first_token_seconds_bucket{service=~\"$service\",model_type=~\"$model_type\"}[5m])))",
+          "legendFormat": "first-item p95",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(tt_media_server_audio_chunk_processing_seconds_bucket{service=~\"$service\",model_type=~\"$model_type\"}[5m])))",
+          "legendFormat": "processing p50",
+          "refId": "C"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_audio_chunk_processing_seconds_bucket{service=~\"$service\",model_type=~\"$model_type\"}[5m])))",
+          "legendFormat": "processing p95",
+          "refId": "D"
+        }
+      ],
+      "title": "Per-Chunk Latency Quantiles",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Mean seconds per chunk, derived from _sum / _count rather than quantiles, alongside chunk fan-out. Fan-out is the multiplier that makes per-chunk cost matter: every chunk pays a full 30s-frame encoder pass regardless of how short it is, so a heavily diarized request does many times the encoder work of the same audio in fewer chunks.",
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 0 } } },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 93 },
+      "id": 33,
+      "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum(rate(tt_media_server_audio_chunk_processing_seconds_sum{service=~\"$service\",model_type=~\"$model_type\"}[5m])) / sum(rate(tt_media_server_audio_chunk_processing_seconds_count{service=~\"$service\",model_type=~\"$model_type\"}[5m]))",
+          "legendFormat": "mean seconds per chunk",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum(rate(tt_media_server_audio_chunks_per_request_sum{service=~\"$service\",model_type=~\"$model_type\"}[5m])) / sum(rate(tt_media_server_audio_chunks_per_request_count{service=~\"$service\",model_type=~\"$model_type\"}[5m]))",
+          "legendFormat": "mean chunks per request",
+          "refId": "B"
+        }
+      ],
+      "title": "Mean Cost per Chunk and Chunk Fan-out",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Cumulative observation count at or below each bucket boundary over the selected range. Buckets are cumulative, so the smallest `le` with a non-zero count is the real lower bound of the distribution: everything below it is wasted resolution and the floor can be raised to it.",
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 101 },
+      "id": 34,
+      "options": { "showHeader": true, "sortBy": [{ "displayName": "le", "desc": false }] },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum by (le) (increase(tt_media_server_audio_chunk_first_token_seconds_bucket{service=~\"$service\",model_type=~\"$model_type\"}[$__range]))",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "{{le}}",
+          "refId": "A"
+        }
+      ],
+      "title": "First-Item Bucket Occupancy (set the floor from this)",
+      "type": "table"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Cumulative observation count at or below each bucket boundary over the selected range. Read the top boundary the same way: if the largest finite bucket already holds every observation, the ceiling can be lowered.",
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 101 },
+      "id": 35,
+      "options": { "showHeader": true, "sortBy": [{ "displayName": "le", "desc": false }] },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum by (le) (increase(tt_media_server_audio_chunk_processing_seconds_bucket{service=~\"$service\",model_type=~\"$model_type\"}[$__range]))",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "{{le}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Processing Bucket Occupancy (set the floor from this)",
+      "type": "table"
     }
   ],
   "refresh": "5s",

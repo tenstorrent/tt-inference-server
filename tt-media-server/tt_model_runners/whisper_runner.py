@@ -31,7 +31,8 @@ from models.demos.audio.whisper.tt.whisper_generator import (
 from models.demos.utils.common_demo_utils import get_mesh_mappers
 from telemetry.telemetry_client import (
     TelemetryEvent,
-    audio_chunk_preparation_duration,
+    audio_chunk_first_token_duration,
+    audio_chunk_processing_duration,
 )
 from transformers import (
     AutoFeatureExtractor,
@@ -347,7 +348,6 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
         chunk_count = 0
 
         for i, segment in enumerate(request._segments):
-            chunk_prep_start = time.perf_counter()
             start_time = segment["start"]
             end_time = segment["end"]
             speaker = segment.get("speaker", f"SPEAKER_{i:02d}")
@@ -367,11 +367,10 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 f"Device {self.device_id}: Processing segment {i + 1}/{len(request._segments)}: {start_time:.2f}s-{end_time:.2f}s, speaker: {speaker}"
             )
 
-            # Past the empty-chunk `continue`: skipped chunks feed no inference.
-            audio_chunk_preparation_duration.labels(
-                model_type=self.settings.model_runner
-            ).observe(time.perf_counter() - chunk_prep_start)
-
+            # `_execute_pipeline` only builds the async generator; the log-mel
+            # extraction and the device passes are deferred to the first pull
+            # below, so the clock has to start here and stop inside the loop.
+            chunk_start = time.perf_counter()
             async_generator = await self._execute_pipeline(
                 segment_audio,
                 request.stream,
@@ -381,9 +380,18 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
 
             segment_prefix = f"[{speaker}] "
             first_token = True
+            first_item_observed = False
             segment_text_parts = []
 
             async for partial_result in async_generator:
+                # Ahead of the is_final check: a chunk whose only item is the
+                # final marker still paid the extraction and encode cost.
+                if not first_item_observed:
+                    audio_chunk_first_token_duration.labels(
+                        model_type=self.settings.model_runner
+                    ).observe(time.perf_counter() - chunk_start)
+                    first_item_observed = True
+
                 text_part, start, end = TextUtils.extract_text(partial_result)
                 # Check is_final flag
                 if isinstance(partial_result, tuple) and len(partial_result) >= 4:
@@ -415,6 +423,13 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                     }
 
                 segment_text_parts.append(text_part)
+
+            # Reached on both generator exhaustion and the is_final `break`. The
+            # span covers the `yield`s above, so it is wall time per chunk and
+            # includes any consumer backpressure, not compute alone.
+            audio_chunk_processing_duration.labels(
+                model_type=self.settings.model_runner
+            ).observe(time.perf_counter() - chunk_start)
 
             # Build segment data for final result
             segment_result = TextUtils.concatenate_chunks(segment_text_parts)

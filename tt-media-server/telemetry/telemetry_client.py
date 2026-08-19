@@ -122,22 +122,68 @@ audio_chunking_duration = Histogram(
     ),
 )
 
-# One observation per chunk, so ms/chunk and p50/p99 read straight off this.
-audio_chunk_preparation_duration = Histogram(
-    "tt_media_server_audio_chunk_preparation_seconds",
-    "Time to slice and prepare a single audio chunk for inference",
+# Closest available proxy for per-chunk input preparation: tt-metal's
+# WhisperGenerator fuses log-mel extraction with the encoder pass and the first
+# decode step, so this bundles all three and cannot separate them from here.
+#
+# Buckets are fitted to measured data (whisper-large-v3, one p300c chip, ~8s
+# chunks, VAD-only): mean 0.45s with 84% of observations in 0.25-0.5s, so the
+# grid is dense there and sparse outside. Nothing landed below 0.25s, but the
+# floor keeps headroom for distil-large-v3, whose shorter decode should sit
+# lower. Encoder cost is fixed because every chunk is padded to a 30s frame, so
+# this barely moves with chunk length.
+audio_chunk_first_token_duration = Histogram(
+    "tt_media_server_audio_chunk_first_token_seconds",
+    "Time from chunk hand-off until the first item is emitted for that chunk",
     ["model_type"],
     buckets=(
-        0.000005,
-        0.00001,
-        0.00005,
-        0.0001,
-        0.0005,
-        0.001,
-        0.005,
-        0.01,
-        0.05,
         0.1,
+        0.2,
+        0.3,
+        0.4,
+        0.5,
+        0.65,
+        0.8,
+        1.0,
+        1.5,
+        2.5,
+        5.0,
+        10.0,
+        30.0,
+        float("inf"),
+    ),
+)
+
+# One observation per chunk, so ms/chunk and p50/p99 read straight off this.
+# Wall time, not compute: the streaming loop yields to its consumer inside this
+# span, so a slow client shows up here but not in the first-item histogram.
+#
+# Measured mean is 1.4s for ~8s chunks, with 87% of observations in 1.0-2.5s;
+# the grid is dense there. Unlike the first-item span this does scale with chunk
+# length, because decode step count follows the transcribed content, so the
+# lower buckets carry the short-chunk (diarized) case.
+#
+# 1.75 splits what was otherwise a single bucket holding over half the
+# observations, with p90 sitting on its 2.0 boundary: without it every quantile
+# from p50 to p90 resolves to the same interpolation across one wide bucket.
+audio_chunk_processing_duration = Histogram(
+    "tt_media_server_audio_chunk_processing_seconds",
+    "Wall time to transcribe a single audio chunk end to end",
+    ["model_type"],
+    buckets=(
+        0.25,
+        0.5,
+        0.75,
+        1.0,
+        1.25,
+        1.5,
+        1.75,
+        2.0,
+        2.5,
+        3.5,
+        5.0,
+        10.0,
+        30.0,
         float("inf"),
     ),
 )

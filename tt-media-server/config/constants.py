@@ -453,7 +453,7 @@ class AudioResponseFormat(Enum):
 class AudioInputFormat(Enum):
     """Container formats accepted on the transcription path.
 
-    UNKNOWN matches no known header: rejected, but still needs a metric label.
+    UNKNOWN matches no known header and is rejected.
     """
 
     WAV = "wav"
