@@ -569,6 +569,45 @@ templates:
       reasoning_parser_name: qwen3
       tool_call_parser_name: qwen3_coder
 
+# QB2 spec for the base google/gemma-4-31B agentic autoport (60 layers, hybrid KV:
+# 50 sliding + 10 full-attention, TP4 on a 1x4 mesh). The port lives on tt-metal
+# branch `mvasiljevic/fast-models-fast/gemma4-31b`; pass it as --tt-metal-git-ref.
+# Values are measured on QB2, not assumed.
+- weights:
+    - google/gemma-4-31B
+  impl: gemma4_31b_autoport
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+  device_model_specs:
+    - device: P300X2  # QB2 (2x P300, 4-chip TP mesh)
+      max_concurrency: 32
+      # The generator asserts against doc/context_contract.json; not tunable down.
+      max_context: 113280
+      default_impl: true
+      env_vars:
+        MESH_DEVICE: "P150x4"
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+        GEMMA4_31B_AUTOPORT_DIR: "models/autoports/google_gemma_4_31b"
+        # Registers the checkout's vLLM bundle ahead of the plugin's built-in map.
+        # Without it the arch resolves to models/demos/gemma4.
+        EXTRA_MODELS_DIR: "../../tt-metal/models/autoports/vllm_bundles"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 268435456
+        sample_on_device_mode: all
+      vllm_args:
+        # This base checkpoint defines no chat template, so the benchmark driver's
+        # /v1/chat/completions probe returns 400 and measures nothing (run
+        # 32245795692: 0/17 sweep points). Passthrough template, not an instruct
+        # format. Drop once fix/benchmark-completions-endpoint-for-base-models lands.
+        chat-template: ../../tt-metal/models/autoports/google_gemma_4_31b/doc/vllm_integration/chat_template.jinja
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+
 # QB2 bring-up spec for Muse-Glimmer-30B (~29.6B dense, 52 layers, hidden 6656,
 # GQA 32 Q / 2 KV, head_dim 128, SwiGLU 19968, RoPE theta 500000, vocab 202048,
 # 131072+ ctx, plus a ~1.8B ViT-G/14 Perception Encoder).
