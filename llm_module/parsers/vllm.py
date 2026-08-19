@@ -40,7 +40,9 @@ class VLLMBenchParser(LLMResultParser):
             "p99_ttft": _round(raw.get("p99_ttft_ms"), 4),
             "mean_tpot_ms": _round(raw.get("mean_tpot_ms"), 4),
             "mean_e2el_ms": _round(raw.get("mean_e2el_ms"), 4),
-            "tps_decode_throughput": _round(raw.get("output_throughput"), 4),
+            "tps_input_throughput": _input_throughput(raw),
+            "tps_output_throughput": _round(raw.get("output_throughput"), 4),
+            "tps_total_throughput": _total_throughput(raw),
             "request_throughput": _round(raw.get("request_throughput"), 4),
             "error_request_count": _errors(raw.get("failed")),
         }
@@ -91,6 +93,40 @@ def _num(value: Any) -> Optional[float]:
         if isinstance(value, (int, float)) and not isinstance(value, bool)
         else None
     )
+
+
+def _input_throughput(raw: Mapping[str, Any]) -> Optional[float]:
+    """Input (prefill) tokens per second over the benchmark window.
+
+    vLLM reports no input throughput of its own, but its two throughputs
+    share one duration, so their difference is exactly the input rate.
+    """
+    total = _num(raw.get("total_token_throughput"))
+    output = _num(raw.get("output_throughput"))
+    if total is not None and output is not None:
+        return round(total - output, 4)
+    duration = _num(raw.get("duration"))
+    tokens = _num(raw.get("total_input_tokens"))
+    if tokens is not None and duration:
+        return round(tokens / duration, 4)
+    return None
+
+
+def _total_throughput(raw: Mapping[str, Any]) -> Optional[float]:
+    """Input + output tokens per second over the benchmark window.
+
+    Prefer vLLM's own ``total_token_throughput``; when it is missing,
+    recompute it the same way vLLM does from the token totals.
+    """
+    total = _num(raw.get("total_token_throughput"))
+    if total is not None:
+        return round(total, 4)
+    duration = _num(raw.get("duration"))
+    input_tokens = _num(raw.get("total_input_tokens"))
+    output_tokens = _num(raw.get("total_output_tokens"))
+    if input_tokens is not None and output_tokens is not None and duration:
+        return round((input_tokens + output_tokens) / duration, 4)
+    return None
 
 
 def _num_int(value: Any) -> Optional[int]:

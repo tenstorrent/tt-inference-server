@@ -16,6 +16,8 @@ import pytest
 
 from llm_module import DriverContext, ServerConnection
 from llm_module.drivers.agentic import (
+    SWEbenchAgenticDriver,
+    TerminalBenchAgenticDriver,
     build_swebench_config,
     build_terminal_bench_config,
     resolve_instance_ids,
@@ -33,7 +35,11 @@ from llm_module.parsers.agentic import (
     compute_accuracy_check,
     extract_harbor_metrics,
 )
-from test_module.llm_tests.agentic_eval_tests import _select_agentic_tasks
+from test_module.llm_tests.agentic_eval_tests import (
+    _filter_agentic_tasks_by_benchmark,
+    _parse_agentic_benchmark,
+    _select_agentic_tasks,
+)
 from workflows.workflow_types import EvalLimitMode, ReportCheckTypes, WorkflowVenvType
 
 
@@ -746,6 +752,141 @@ class TestSelectAgenticTasks:
         ctx = self._ctx_with_tasks([t_agentic, t_other])
 
         assert _select_agentic_tasks(ctx) == [t_agentic]
+
+
+class TestAgenticBenchmarkSelection:
+    def _ctx(self, tasks, agentic_benchmark):
+        ctx = MagicMock()
+        ctx.all_params.tasks = tasks
+        ctx.model_spec.model_name = "test-llm"
+        ctx.runtime_config = SimpleNamespace(agentic_benchmark=agentic_benchmark)
+        return ctx
+
+    def _tasks(self):
+        return [
+            _terminal_task(task_name="terminal_bench_2"),
+            _terminal_task(task_name="terminal_bench_2_1"),
+            _terminal_task(task_name="tau3_bench_banking"),
+            _swebench_task(task_name="swe_bench_verified"),
+        ]
+
+    def test_parse_aliases(self):
+        prefixes, exacts = _parse_agentic_benchmark("tau3,tb2.0,swebench")
+        assert "tau3_bench_" in prefixes
+        assert "swe_bench_" in prefixes
+        assert "terminal_bench_2" in exacts
+
+    def test_parse_all_and_blank_yield_no_matchers(self):
+        assert _parse_agentic_benchmark("all") == ([], set())
+        assert _parse_agentic_benchmark("  ") == ([], set())
+
+    def test_tb20_excludes_tb21(self):
+        tasks = self._tasks()
+        ctx = self._ctx(tasks, "tb2.0")
+        selected = _select_agentic_tasks(ctx)
+        assert [t.task_name for t in selected] == ["terminal_bench_2"]
+
+    def test_tb21_selects_only_21(self):
+        ctx = self._ctx(self._tasks(), "tb2.1")
+        assert [t.task_name for t in _select_agentic_tasks(ctx)] == [
+            "terminal_bench_2_1"
+        ]
+
+    def test_tau3_prefix_selects_family(self):
+        ctx = self._ctx(self._tasks(), "tau3")
+        assert [t.task_name for t in _select_agentic_tasks(ctx)] == [
+            "tau3_bench_banking"
+        ]
+
+    def test_swebench_prefix(self):
+        ctx = self._ctx(self._tasks(), "swebench")
+        assert [t.task_name for t in _select_agentic_tasks(ctx)] == [
+            "swe_bench_verified"
+        ]
+
+    def test_comma_separated_union(self):
+        ctx = self._ctx(self._tasks(), "tau3,swebench")
+        assert [t.task_name for t in _select_agentic_tasks(ctx)] == [
+            "tau3_bench_banking",
+            "swe_bench_verified",
+        ]
+
+    def test_raw_task_name_accepted(self):
+        ctx = self._ctx(self._tasks(), "swe_bench_verified")
+        assert [t.task_name for t in _select_agentic_tasks(ctx)] == [
+            "swe_bench_verified"
+        ]
+
+    def test_all_returns_everything(self):
+        tasks = self._tasks()
+        ctx = self._ctx(tasks, "all")
+        assert _select_agentic_tasks(ctx) == tasks
+
+    def test_no_match_raises(self):
+        ctx = self._ctx(self._tasks(), "does_not_exist")
+        with pytest.raises(RuntimeError, match="matched no EVALS_AGENTIC tasks"):
+            _select_agentic_tasks(ctx)
+
+    def test_filter_direct(self):
+        tasks = self._tasks()
+        selected = _filter_agentic_tasks_by_benchmark(tasks, "tb2.1")
+        assert [t.task_name for t in selected] == ["terminal_bench_2_1"]
+
+
+class TestAgenticRunTimestamp:
+    """The harnesses (harbor job, sweagent output) refuse to start a new run in
+    an existing folder, so each run stamps its per-task folder to stay
+    collision-free; the driver's result_path must point at the stamped folder."""
+
+    STAMP = "20260813T120000"
+
+    def test_terminal_bench_config_stamps_job_folder(self):
+        cfg = build_terminal_bench_config(
+            _terminal_task(),
+            _server(),
+            _driver_context(),
+            n_tasks=1,
+            run_stamp=self.STAMP,
+        )
+        # jobs_dir stays the shared agentic/ parent; the job folder is stamped.
+        assert cfg.jobs_dir == Path("/tmp/out/eval_Qwen__Qwen3.6-27B/agentic")
+        assert cfg.task_name == f"terminal_bench_2_{self.STAMP}"
+        assert cfg.jobs_dir / cfg.task_name == Path(
+            f"/tmp/out/eval_Qwen__Qwen3.6-27B/agentic/terminal_bench_2_{self.STAMP}"
+        )
+
+    def test_swebench_config_stamps_output_dir(self):
+        cfg = build_swebench_config(
+            _swebench_task(),
+            _server(),
+            _driver_context(),
+            n_tasks=1,
+            run_stamp=self.STAMP,
+        )
+        assert cfg.output_dir == Path(
+            f"/tmp/out/eval_Qwen__Qwen3.6-27B/agentic/swe_bench_verified_{self.STAMP}"
+        )
+
+    def test_terminal_driver_result_path_matches_stamped_folder(self):
+        driver = TerminalBenchAgenticDriver(_terminal_task())
+        driver._run_stamp = self.STAMP
+        assert driver.result_path(_server(), _driver_context()) == Path(
+            f"/tmp/out/eval_Qwen__Qwen3.6-27B/agentic/terminal_bench_2_{self.STAMP}/result.json"
+        )
+
+    def test_swebench_driver_result_path_matches_stamped_folder(self):
+        driver = SWEbenchAgenticDriver(_swebench_task())
+        driver._run_stamp = self.STAMP
+        assert driver.result_path(_server(), _driver_context()) == Path(
+            f"/tmp/out/eval_Qwen__Qwen3.6-27B/agentic/swe_bench_verified_{self.STAMP}/result.json"
+        )
+
+    def test_no_stamp_preserves_legacy_layout(self):
+        cfg = build_terminal_bench_config(
+            _terminal_task(), _server(), _driver_context(), n_tasks=1
+        )
+        assert cfg.task_name == "terminal_bench_2"
+        assert cfg.jobs_dir == Path("/tmp/out/eval_Qwen__Qwen3.6-27B/agentic")
 
 
 class TestAgenticBridge:

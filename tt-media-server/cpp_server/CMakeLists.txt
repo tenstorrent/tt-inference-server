@@ -1201,6 +1201,15 @@ target_include_directories(image_generate_request_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+add_executable(embedding_codec_test tests/unit/services/embedding_codec_test.cpp)
+target_link_libraries(embedding_codec_test PRIVATE
+    JsonCpp::JsonCpp
+    GTest::gtest_main
+)
+target_include_directories(embedding_codec_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 add_executable(media_payload_ipc_test tests/integration/sessions/media_payload_ipc_test.cpp)
 target_link_libraries(media_payload_ipc_test PRIVATE llm_runner_lib GTest::gtest_main)
 target_include_directories(media_payload_ipc_test PRIVATE
@@ -1326,6 +1335,8 @@ add_executable(llm_service_test
     src/utils/image_codec.cpp
     src/utils/audio_codec.cpp
     src/runtime/runners/embedding_runner.cpp
+    src/runtime/runners/mock_embedding_runner.cpp
+    src/runtime/runners/embedding_runner_factory.cpp
     src/runtime/runners/sdxl/sdxl_runner.cpp
     src/runtime/runners/media_ipc_runner.cpp
     src/runtime/runners/image_ipc_runner.cpp
@@ -1376,6 +1387,8 @@ set(INTEGRATION_TEST_COMMON_SOURCES
     src/utils/conversation_hasher.cpp
     src/utils/service_factory.cpp
     src/runtime/runners/embedding_runner.cpp
+    src/runtime/runners/mock_embedding_runner.cpp
+    src/runtime/runners/embedding_runner_factory.cpp
     src/runtime/runners/sdxl/sdxl_runner.cpp
     src/runtime/runners/media_ipc_runner.cpp
     src/runtime/runners/image_ipc_runner.cpp
@@ -1558,6 +1571,7 @@ gtest_discover_tests(llm_service_test)
 gtest_discover_tests(model_service_registry_test)
 gtest_discover_tests(health_controller_test)
 gtest_discover_tests(image_generate_request_test)
+gtest_discover_tests(embedding_codec_test)
 gtest_discover_tests(media_payload_ipc_test)
 
 add_executable(apply_delta_prompt_test tests/unit/model/apply_delta_prompt_test.cpp)
@@ -1870,6 +1884,8 @@ set(SOURCES
     src/utils/mapper.cpp
     src/api/embedding_controller.cpp
     src/runtime/runners/embedding_runner.cpp
+    src/runtime/runners/mock_embedding_runner.cpp
+    src/runtime/runners/embedding_runner_factory.cpp
     src/services/embedding_service.cpp
     src/api/image_controller.cpp
     src/runtime/runners/sdxl/sdxl_runner.cpp

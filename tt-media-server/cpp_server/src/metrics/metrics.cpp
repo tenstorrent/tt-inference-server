@@ -200,7 +200,10 @@ ServerMetrics::ServerMetrics() {
 }
 
 ServerMetrics::~ServerMetrics() {
-  running_ = false;
+  {
+    std::lock_guard<std::mutex> lock(event_queue_mutex_);
+    running_ = false;
+  }
   event_queue_cv_.notify_all();
   if (metrics_thread_.joinable()) metrics_thread_.join();
 }

@@ -181,8 +181,35 @@ def test_vllm_derives_isl_osl_and_maps_percentiles():
     # vLLM's "median" maps to p50; p99 carried through
     assert data["p50_ttft"] == pytest.approx(300.1)
     assert data["p99_ttft"] == pytest.approx(1200.9)
-    assert data["tps_decode_throughput"] == pytest.approx(480.0)
+    # throughput is reported as input / output / total, never "decode"
+    assert "tps_decode_throughput" not in data
+    assert data["tps_output_throughput"] == pytest.approx(480.0)
+    assert data["tps_total_throughput"] == pytest.approx(900.0)
+    # input rate = total - output (vLLM derives both over one duration)
+    assert data["tps_input_throughput"] == pytest.approx(420.0)
     assert data["error_request_count"] is None
+
+
+def test_vllm_throughputs_fall_back_to_token_totals():
+    # Older vLLM dumps may lack total_token_throughput; recompute it (and
+    # the input rate) from tokens/duration the same way vLLM derives it.
+    raw = {
+        "total_input_tokens": 262144,
+        "total_output_tokens": 131072,
+        "output_throughput": 480.0,
+        "duration": 655.36,
+    }
+    data = VLLMBenchParser().parse(raw, device="N150").data
+    assert data["tps_input_throughput"] == pytest.approx(400.0, abs=1e-3)
+    assert data["tps_output_throughput"] == pytest.approx(480.0)
+    assert data["tps_total_throughput"] == pytest.approx(600.0, abs=1e-3)
+
+
+def test_vllm_throughputs_are_none_without_duration_or_totals():
+    raw = {"total_input_tokens": 262144, "output_throughput": 480.0}
+    data = VLLMBenchParser().parse(raw, device="N150").data
+    assert data["tps_input_throughput"] is None
+    assert data["tps_total_throughput"] is None
 
 
 def _parse_vllm_block_metrics(
@@ -356,6 +383,9 @@ def test_canonical_keys_have_display_names():
     assert display_name("mean_ttft_ms") == "TTFT (ms)"
     assert display_name("mean_tpot_ms") == "TPOT (ms)"
     assert display_name("tput_user") == "Tput User (TPS)"
+    assert display_name("tps_input_throughput") == "Tput Input (TPS)"
+    assert display_name("tps_output_throughput") == "Tput Output (TPS)"
+    assert display_name("tps_total_throughput") == "Tput Total (TPS)"
     assert display_name("error_request_count") == "Errors"
     assert display_name("input_sequence_length") == "ISL"
 
