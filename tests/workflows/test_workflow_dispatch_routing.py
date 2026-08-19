@@ -32,6 +32,7 @@ def _rc(workflow="benchmarks", **kw):
         spec_decode=False,
         spec_decode_preset="full",
         spec_decode_warmup_requests=None,
+        spec_decode_metrics_url=None,
         agentic_traces_mode="full",
         agentic_traces_sources=None,
         agentic_traces_duration=None,
@@ -576,6 +577,7 @@ def test_release_forwards_prefix_cache_and_spec_decode_flags(monkeypatch, tmp_pa
         spec_decode=True,
         spec_decode_preset="ci",
         spec_decode_warmup_requests=2,
+        spec_decode_metrics_url=["worker-a:9000"],
     )
     _patch_engine_dispatch(monkeypatch, tmp_path)
 
@@ -595,6 +597,29 @@ def test_release_forwards_prefix_cache_and_spec_decode_flags(monkeypatch, tmp_pa
     assert "--spec-decode" in argv
     assert argv[argv.index("--spec-decode-preset") + 1] == "ci"
     assert argv[argv.index("--spec-decode-warmup-requests") + 1] == "2"
+    assert argv[argv.index("--spec-decode-metrics-url") + 1] == "worker-a:9000"
+
+
+def test_spec_decode_forwards_each_metrics_url_separately(monkeypatch, tmp_path):
+    """Stringifying the list would forward a bogus "['http://...']" URL."""
+    spec = _spec(ModelType.LLM, name="Kimi-K2.7-Code")
+    rc = _rc(
+        workflow="benchmarks",
+        spec_decode=True,
+        spec_decode_metrics_url=["worker-a:9000", "worker-b:9000/metrics"],
+    )
+    monkeypatch.setattr(
+        workflow_dispatch, "get_default_workflow_root_log_dir", lambda: tmp_path
+    )
+
+    argv = workflow_dispatch.build_engine_commands(spec, rc, "/tmp/spec.json")[0].argv
+
+    forwarded = [
+        argv[i + 1]
+        for i, token in enumerate(argv)
+        if token == "--spec-decode-metrics-url"
+    ]
+    assert forwarded == ["worker-a:9000", "worker-b:9000/metrics"]
 
 
 def test_release_forwards_agentic_traces_flags(monkeypatch, tmp_path):

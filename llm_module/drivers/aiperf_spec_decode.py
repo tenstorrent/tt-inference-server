@@ -16,6 +16,13 @@ merges the per-run deltas (acceptance rate, mean accepted length,
 per-position acceptance) into the aiperf summary payload the parser
 turns into a single :class:`report_module.schema.Block`.
 
+The counters are scraped from the load target by default. In a Dynamo
+deployment the load target is the spec-decode-unaware frontend, which does
+not aggregate the workers' counters — ``--spec-decode-metrics-url``
+(``ServerConnection.spec_decode_metrics_urls``) points the scrape at the
+worker ``/metrics`` endpoint(s) instead, summing deltas across endpoints
+for multi-worker deployments, while load stays on the frontend.
+
 The driver is intentionally not a subclass of
 :class:`llm_module.drivers.base.LLMDriver` -- ``LLMDriver`` is bound to
 :class:`llm_module.config.LLMRunConfig` (isl / osl / max_concurrency /
@@ -41,15 +48,18 @@ import sys
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from ..config import DriverContext, ServerConnection
 from ..spec_decode import SpecDecodeRun
 from ..spec_decode.metrics import (
     fetch_prometheus_counters,
+    fetch_prometheus_counters_multi,
     scrape_spec_decode_metrics,
+    scrape_spec_decode_metrics_multi,
 )
 from ._subprocess import load_json, run_command
+from .aiperf_prefix_cache import _normalize_metrics_url
 
 logger = logging.getLogger(__name__)
 
@@ -159,11 +169,20 @@ class AIPerfSpecDecodeDriver:
         artifact_dir.mkdir(parents=True, exist_ok=True)
 
         url = server.url_with_port
-        try:
-            before = fetch_prometheus_counters(url)
-        except Exception as exc:  # noqa: BLE001 -- scrape is best-effort
-            logger.warning("Could not snapshot /metrics at %s: %s", url, exc)
-            before = {}
+        # --spec-decode-metrics-url redirects the counter scrape to the
+        # worker /metrics endpoint(s); load still targets the frontend. In a
+        # Dynamo deployment the frontend is spec-decode-unaware and does not
+        # aggregate the workers' vllm:spec_decode_* counters, so without the
+        # flag the acceptance columns come back 0/null there.
+        metrics_urls = _worker_metrics_urls(server)
+        if metrics_urls:
+            logger.info(
+                "[spec-decode] scraping spec-decode counters from worker "
+                "/metrics endpoint(s) %s (load stays on %s)",
+                list(metrics_urls),
+                url,
+            )
+        before = _snapshot_counters(url, metrics_urls)
 
         cmd = _build_aiperf_cmd(
             run=spec_run,
@@ -220,7 +239,9 @@ class AIPerfSpecDecodeDriver:
             )
             return SpecDecodeDriverResult(return_code=1, payload=None, raw_path=None)
 
-        spec_decode_metrics = _scrape_acceptance_metrics(url, before, spec_run)
+        spec_decode_metrics = _scrape_acceptance_metrics(
+            url, before, spec_run, metrics_urls
+        )
 
         payload = _build_payload(
             run=spec_run,
@@ -409,10 +430,41 @@ def _parse_aiperf_output(artifact_dir: Path) -> Dict[str, Any]:
     }
 
 
+def _worker_metrics_urls(server: ServerConnection) -> Tuple[str, ...]:
+    """Normalized worker ``/metrics`` URLs from ``--spec-decode-metrics-url``.
+
+    Empty when the flag is unset, meaning the driver falls back to scraping
+    the load target (``server.url_with_port``) — the pre-flag behavior.
+    """
+    return tuple(
+        _normalize_metrics_url(entry)
+        for entry in server.spec_decode_metrics_urls
+        if entry and entry.strip()
+    )
+
+
+def _snapshot_counters(url: str, metrics_urls: Tuple[str, ...]) -> Dict[str, float]:
+    """Best-effort before-snapshot of the spec-decode counters.
+
+    Scrapes the worker endpoint(s) when ``metrics_urls`` is set (merged by
+    summing per series), otherwise the load target. Returns ``{}`` when the
+    scrape fails outright, matching the historical single-endpoint behavior.
+    """
+    try:
+        if metrics_urls:
+            return fetch_prometheus_counters_multi(metrics_urls)
+        return fetch_prometheus_counters(url)
+    except Exception as exc:  # noqa: BLE001 -- scrape is best-effort
+        target = list(metrics_urls) if metrics_urls else url
+        logger.warning("Could not snapshot /metrics at %s: %s", target, exc)
+        return {}
+
+
 def _scrape_acceptance_metrics(
     url: str,
     before: Dict[str, float],
     spec_run: SpecDecodeRun,
+    metrics_urls: Tuple[str, ...] = (),
 ) -> Optional[Dict[str, Any]]:
     """Delta-scrape the spec-decode counters; ``None`` when unavailable.
 
@@ -421,11 +473,13 @@ def _scrape_acceptance_metrics(
     phase is the common case.
     """
     try:
+        if metrics_urls:
+            return scrape_spec_decode_metrics_multi(metrics_urls, before)
         return scrape_spec_decode_metrics(url, before)
     except Exception as exc:  # noqa: BLE001 -- scrape is best-effort
         logger.warning(
             "Could not scrape /metrics at %s for %s: %s",
-            url,
+            list(metrics_urls) if metrics_urls else url,
             spec_run.slug,
             exc,
         )

@@ -368,6 +368,7 @@ def _build_spec_decode_options(
         preset=args.spec_decode_preset,
         warmup_requests=args.spec_decode_warmup_requests,
         auth_token=_resolve_auth_token(args),
+        metrics_urls=tuple(getattr(args, "spec_decode_metrics_url", None) or ()),
         venv_python=_release_venv_python(args, WorkflowVenvType.SPEC_DECODE),
     )
 

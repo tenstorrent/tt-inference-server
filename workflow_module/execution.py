@@ -113,6 +113,12 @@ class SpecDecodeOptions:
     preset: str = "full"
     warmup_requests: int = 4
     auth_token: str = ""
+    # Worker /metrics endpoints holding the vllm:spec_decode_* counters,
+    # scraped by the driver before/after each AIPerf run, independent of
+    # the load target. Repeatable for multi-worker deployments (deltas are
+    # summed across endpoints). Empty scrapes the load target, which in a
+    # Dynamo deployment is the spec-decode-unaware frontend.
+    metrics_urls: Tuple[str, ...] = ()
     venv_python: Optional[str] = None
 
 
