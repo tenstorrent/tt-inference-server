@@ -239,3 +239,41 @@ class ModelType(IntEnum):
             ModelType.TRAINING: "training",
         }
         return task_types[self]
+
+
+class WorkflowVenvType(IntEnum):
+    """Named tool-environment keys.
+
+    The *keys* are engine-generic (a standalone framework needs named tool
+    environments); the *content* — what each environment installs and where
+    it lives — is adapter business behind
+    :class:`workflow_module.venv_provisioner.VenvProvisioner`.
+    """
+
+    SYSTEM_SOFTWARE_VALIDATION = auto()
+    STRESS_TESTS_RUN_SCRIPT = auto()
+    STRESS_TESTS = auto()
+    EVALS_RUN_SCRIPT = auto()
+    TESTS_RUN_SCRIPT = auto()
+    BENCHMARKS_RUN_SCRIPT = auto()
+    REPORTS_RUN_SCRIPT = auto()
+    WORKFLOW_RUN_SCRIPT = auto()
+    PREFIX_CACHE = auto()
+    AGENTIC_TRACES = auto()
+    LLM_VLLM = auto()
+    LLM_GUIDELLM = auto()
+    LLM_AIPERF = auto()
+    SPEC_DECODE = auto()
+    EVALS_COMMON = auto()
+    EVALS_META = auto()
+    EVALS_VISION = auto()
+    EVALS_AUDIO = auto()
+    EVALS_EMBEDDING = auto()
+    EVALS_AGENTIC = auto()
+    BENCHMARKS_VLLM = auto()
+    BENCHMARKS_VLLM_FORGE = auto()
+    BENCHMARKS_GENAI_PERF = auto()
+    HF_SETUP = auto()
+    SERVER = auto()
+    TT_SMI = auto()
+    TT_TOPOLOGY = auto()

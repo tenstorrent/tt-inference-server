@@ -66,8 +66,14 @@ from workflow_module.model_catalog import (  # noqa: E402
 from workflow_module.server_lifecycle import (  # noqa: E402
     register_server_lifecycle,
 )
+from workflow_module.venv_provisioner import (  # noqa: E402
+    register_venv_provisioner,
+)
 from workflows.server_lifecycle_provider import (  # noqa: E402
     TenstorrentServerLifecycle,
+)
+from workflows.venv_provisioner_provider import (  # noqa: E402
+    TenstorrentVenvProvisioner,
 )
 
 logger = logging.getLogger("tt_workflow_runner")
@@ -529,6 +535,7 @@ def main() -> int:
     register_model_spec_provider(TenstorrentModelSpecProvider())
     register_device_catalog(TenstorrentDeviceCatalog())
     register_server_lifecycle(TenstorrentServerLifecycle())
+    register_venv_provisioner(TenstorrentVenvProvisioner())
     args = parse_args()
     logging.basicConfig(
         level=_LOG_LEVELS[args.log_level],
