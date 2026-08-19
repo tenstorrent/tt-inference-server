@@ -46,10 +46,14 @@ def test_transformers_spec_raises_when_no_dependencies(tmp_path):
         bmv.transformers_spec(str(path))
 
 
-def test_peft_spec_reads_real_version():
-    # This test venv has peft installed; pin should be peft==<real version>.
-    spec = bmv.peft_spec(sys.executable)
-    assert spec.startswith("peft==") and spec.split("==", 1)[1][0].isdigit()
+def test_peft_spec_pins_reported_version(monkeypatch):
+    class _Result:
+        returncode = 0
+        stdout = "0.20.0\n"
+        stderr = ""
+
+    monkeypatch.setattr(bmv.subprocess, "run", lambda *a, **k: _Result())
+    assert bmv.peft_spec("/any/python") == "peft==0.20.0"
 
 
 def test_peft_spec_missing_version_raises(monkeypatch):
