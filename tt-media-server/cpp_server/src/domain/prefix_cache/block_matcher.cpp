@@ -150,11 +150,20 @@ BlockMatcher::computeMatchedBlocksForSession(
 
 std::optional<Candidate> BlockMatcher::findSlotToCopyFrom(
     const std::vector<Candidate>& candidates,
-    std::function<uint32_t(const std::string& sessionId)> getCommittedBlocks) {
+    std::function<uint32_t(const std::string& sessionId)> getCommittedBlocks,
+    std::function<bool(const std::string& sessionId)> isCopyEligible) {
   const std::size_t minTokens = tt::config::minTokensToCopy();
 
   for (const auto& candidate : candidates) {
     if (candidate.matchedBlocks == 0) {
+      continue;
+    }
+
+    if (isCopyEligible && !isCopyEligible(candidate.sessionId)) {
+      TT_LOG_DEBUG(
+          "[BlockMatcher] findSlotToCopyFrom: candidate sessionId={} is not "
+          "copy-eligible, skipping",
+          candidate.sessionId);
       continue;
     }
 

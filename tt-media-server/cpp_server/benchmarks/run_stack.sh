@@ -180,6 +180,7 @@ start_frontend() {
         DYN_REQUEST_PLANE=tcp DYN_EVENT_PLANE=zmq \
         DYN_REQUEST_PLANE_CODEC="${DYN_REQUEST_PLANE_CODEC:-json}" \
         DYN_TOKENIZER="${DYN_TOKENIZER:-fastokens}" \
+        DYN_LOGGING_JSONL="${DYN_LOGGING_JSONL:-1}" \
         "${DYN_VENV}/bin/python3" -m dynamo.frontend \
             --http-port "${HTTP_PORT}" \
             --router-mode "${ROUTER_MODE:-kv}" \

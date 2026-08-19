@@ -1429,7 +1429,7 @@ templates:
       max_concurrency: 64
       max_context: 262144  # 256 * 1024;
       default_impl: true
-  status: EXPERIMENTAL
+  status: FUNCTIONAL
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
   metadata:

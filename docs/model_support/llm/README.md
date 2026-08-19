@@ -36,4 +36,4 @@ Models with EXPERIMENTAL status are under active development and may have stabil
 | [Qwen2.5-7B](Qwen2.5-7B_n300.md) | - | - | - | - | - | - | - | - | - | - | - | [🛠️ Experimental](Qwen2.5-7B_n300.md) |
 | [Qwen2.5-Coder-32B-Instruct](Qwen2.5-Coder-32B-Instruct_galaxy.md) | - | - | [🛠️ Experimental](Qwen2.5-Coder-32B-Instruct_galaxy.md) | - | - | - | - | - | - | [🛠️ Experimental](Qwen2.5-Coder-32B-Instruct_t3k.md) | - | - |
 | [Qwen3-4B](Qwen3-4B_n150.md) | - | - | - | - | - | - | - | - | - | - | [🛠️ Experimental](Qwen3-4B_n150.md) | [🛠️ Experimental](Qwen3-4B_n300.md) |
-| [Qwen3.6-27B](Qwen3.6-27B_p300x2.md) | - | - | - | - | - | - | [🛠️ Experimental](Qwen3.6-27B_p300x2.md) | - | - | - | - | - |
+| [Qwen3.6-27B](Qwen3.6-27B_p150x8.md) | - | - | - | [🛠️ Experimental](Qwen3.6-27B_p150x8.md) | - | - | [🛠️ Experimental](Qwen3.6-27B_p300x2.md) | - | - | - | - | - |

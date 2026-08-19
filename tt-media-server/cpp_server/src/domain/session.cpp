@@ -69,6 +69,7 @@ void Session::initTokenAccumulator(
   onComplete_ = std::move(onComplete);
   onNoHashes_ = std::move(onNoHashes);
   generatedTokens_.clear();
+  being_generated_ = true;
 
   // Initialize thinking token tracking
   auto [thinkStart, thinkEnd] = utils::tokenizers::thinkTokenIds();

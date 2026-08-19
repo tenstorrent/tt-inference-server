@@ -59,4 +59,24 @@ TEST(TtsPromptCompilerTest, TokenizesCompiledPromptString) {
       tokenizer.encode(prompt));
 }
 
+TEST(TtsPromptCompilerTest, PrependsBosWhenProvided) {
+  EXPECT_EQ(compiler::compilePromptString("hello", std::nullopt, {},
+                                          "<|begin_of_text|>"),
+            "<|begin_of_text|><|bot|>hello<|speech_start|>");
+}
+
+TEST(TtsPromptCompilerTest, OmitsBosWhenEmpty) {
+  EXPECT_EQ(compiler::compilePromptString("hello", std::nullopt, {}, ""),
+            "<|bot|>hello<|speech_start|>");
+}
+
+TEST(TtsPromptCompilerTest, BosPrecedesAudioAndVoicePromptBlocks) {
+  const std::vector<uint32_t> speechIds = {12, 34};
+  EXPECT_EQ(compiler::compilePromptString("hello", std::string("calm voice"),
+                                          speechIds, "<|begin_of_text|>"),
+            "<|begin_of_text|><|audio_prompt_start|><|s_12|><|s_34|>"
+            "<|audio_prompt_end|><|voice_prompt_start|>calm voice"
+            "<|voice_prompt_end|><|bot|>hello<|speech_start|>");
+}
+
 }  // namespace
