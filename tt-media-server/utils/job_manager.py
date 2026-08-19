@@ -17,7 +17,7 @@ from config.constants import JobTypes
 from config.settings import get_settings
 from domain.base_request import BaseRequest
 from fastapi import HTTPException
-from fastapi.status import HTTP_429_TOO_MANY_REQUESTS, HTTP_503_SERVICE_UNAVAILABLE
+from starlette.status import HTTP_429_TOO_MANY_REQUESTS, HTTP_503_SERVICE_UNAVAILABLE
 
 from utils.logger import TTLogger
 

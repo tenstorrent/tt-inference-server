@@ -358,6 +358,62 @@ class TestJobManager:
         assert jobData["id"] == "job-next"
 
     @pytest.mark.asyncio
+    async def test_ten_concurrent_submits_honor_max_queue_size(
+        self, job_manager, mock_request
+    ):
+        """Issue #4959: 10 concurrent jobs with max_queue_size=2 yield 8 x 429."""
+        from fastapi import HTTPException
+
+        job_manager._settings.max_queue_size = 2
+
+        async def blockingTask(req):
+            await asyncio.sleep(10)
+            return "videos/test-123.mp4"
+
+        async def submit(jobId):
+            return await job_manager.create_job(
+                job_id=jobId,
+                job_type=JobTypes.VIDEO,
+                model="test-model",
+                request=mock_request,
+                task_function=blockingTask,
+            )
+
+        results = await asyncio.gather(
+            *[submit(f"job-{i}") for i in range(10)],
+            return_exceptions=True,
+        )
+        accepted = [item for item in results if not isinstance(item, Exception)]
+        rejected = [item for item in results if isinstance(item, HTTPException)]
+        assert len(accepted) == 2
+        assert len(rejected) == 8
+        assert all(exc.status_code == 429 for exc in rejected)
+
+    @pytest.mark.asyncio
+    async def test_job_stays_queued_until_start_event(self, job_manager, mock_request):
+        """Issue #4959: in_progress waits for device dispatch, not task creation."""
+        startEvent = Event()
+
+        async def blockingTask(req):
+            await asyncio.sleep(10)
+            return "videos/test-123.mp4"
+
+        await job_manager.create_job(
+            job_id="job-wait",
+            job_type=JobTypes.VIDEO,
+            model="test-model",
+            request=mock_request,
+            task_function=blockingTask,
+            start_event=startEvent,
+        )
+        await asyncio.sleep(0.6)
+        assert job_manager.get_job_metadata("job-wait")["status"] == "queued"
+
+        startEvent.set()
+        await asyncio.sleep(0.6)
+        assert job_manager.get_job_metadata("job-wait")["status"] == "in_progress"
+
+    @pytest.mark.asyncio
     async def test_get_all_jobs_metadata_empty(self, job_manager):
         """Test get_all_jobs_metadata returns empty list when no jobs exist"""
         result = job_manager.get_all_jobs_metadata()
