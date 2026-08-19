@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -33,9 +34,12 @@ import time
 
 DEFAULT_REPO = "tenstorrent/tt-shield"
 
-# Job-log downloads (gh api .../jobs/<id>/logs) 302-redirect to blob storage and
-# occasionally fail transiently. Retry a few times with linear backoff before
-# giving up, so a one-off hiccup does not silently drop an image.
+# Job-log downloads (.../jobs/<id>/logs) 302-redirect to blob storage and can
+# fail transiently. Retry a few times with linear backoff before giving up, so
+# a one-off hiccup does not drop an image. Fetched with curl (not `gh api`):
+# newer gh refuses to emit logs containing ANSI escape sequences unless
+# --allow-escape-sequences is passed, a flag older gh lacks — curl has no such
+# guard, so this works the same locally and on the runner.
 LOG_FETCH_ATTEMPTS = 4
 LOG_FETCH_BACKOFF_SECONDS = 3
 
@@ -93,23 +97,55 @@ def job_family(job_name: str) -> str | None:
     return None
 
 
+def _gh_token() -> str | None:
+    """The token gh is configured to use (works locally and in CI where the
+    step sets GH_TOKEN), with env fallbacks. Used for the curl log download."""
+    proc = subprocess.run(["gh", "auth", "token"], capture_output=True)
+    if proc.returncode == 0:
+        tok = proc.stdout.decode(errors="replace").strip()
+        if tok:
+            return tok
+    for name in ("GH_TOKEN", "GITHUB_TOKEN", "GH_PAT"):
+        val = os.environ.get(name)
+        if val:
+            return val
+    return None
+
+
 def job_log(repo: str, job_id: int) -> tuple[str | None, str | None]:
-    """Download a job's log via gh, retrying transient failures.
+    """Download a job's log via curl, retrying transient failures.
 
     Returns (log_text, None) on success, or (None, error_message) if every
     attempt failed. Never silently returns an empty result — a persistent
-    failure is reported so the caller can fail loudly.
+    failure is reported so the caller can fail loudly. curl (not `gh api`) is
+    used to avoid gh's escape-sequence guard on log output; `curl -L` follows
+    the redirect to blob storage and drops the auth header cross-host.
     """
+    token = _gh_token()
+    if not token:
+        return None, "no GitHub token available (gh auth token / GH_TOKEN)"
+    url = f"https://api.github.com/repos/{repo}/actions/jobs/{job_id}/logs"
     last_err = ""
     for attempt in range(1, LOG_FETCH_ATTEMPTS + 1):
         proc = subprocess.run(
-            ["gh", "api", f"repos/{repo}/actions/jobs/{job_id}/logs"],
+            [
+                "curl",
+                "-fsSL",
+                "-H",
+                f"Authorization: Bearer {token}",
+                "-H",
+                "Accept: application/vnd.github+json",
+                "-H",
+                "X-GitHub-Api-Version: 2022-11-28",
+                url,
+            ],
             capture_output=True,
         )
         if proc.returncode == 0:
             return proc.stdout.decode(errors="replace"), None
         last_err = (
-            proc.stderr.decode(errors="replace").strip() or f"exit {proc.returncode}"
+            proc.stderr.decode(errors="replace").strip()
+            or f"curl exit {proc.returncode}"
         )
         print(
             f"WARNING: log fetch for job {job_id} failed "
