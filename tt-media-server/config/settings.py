@@ -60,6 +60,8 @@ class Settings(BaseSettings):
     sdxl_image_resolution: tuple = (1024, 1024)
 
     # Queue and batch settings
+    # Outstanding work (queued + running) before HTTP 429. Wired into
+    # Scheduler.task_queue capacity and JobManager admission.
     max_queue_size: int = 5000
     max_batch_size: int = 1
     max_batch_delay_time_ms: Optional[int] = None
@@ -111,6 +113,7 @@ class Settings(BaseSettings):
     canary_deep_probe_timeout_seconds: float = 60.0
 
     # Job management settings
+    # In-memory job-record cap, including completed jobs. HTTP 503 when full.
     max_jobs: int = 10000
     job_cleanup_interval_seconds: int = 300
     job_retention_seconds: int = 86400

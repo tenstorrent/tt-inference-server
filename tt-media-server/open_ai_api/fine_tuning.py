@@ -69,6 +69,8 @@ async def submit_fine_tuning_request(
     try:
         job_data = await service.create_job(JobTypes.TRAINING, request, org_id=org_id)
         return JSONResponse(content=job_data, status_code=201)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail={str(e)})
 
