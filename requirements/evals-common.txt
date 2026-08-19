@@ -16,7 +16,7 @@
 -c constraints.txt
 --extra-index-url https://download.pytorch.org/whl/cpu
 
-git+https://github.com/ipastalTT/lm-evaluation-harness.git@evals-common#egg=lm-eval[api,ifeval,math,sentencepiece,r1_evals,ruler,longbench,hf]
+git+https://github.com/tstescoTT/lm-evaluation-harness.git@evals-common#egg=lm-eval[api,ifeval,math,sentencepiece,r1_evals,ruler,longbench,hf]
 protobuf
 pyjwt
 pillow

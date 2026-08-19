@@ -1427,7 +1427,7 @@ templates:
   device_model_specs:
     - device: SUPER_CLUSTER
       max_concurrency: 64
-      max_context: 262144  # 256 * 1024;
+      max_context: 256000  # 256 * 1000;
       default_impl: true
   status: FUNCTIONAL
   env_vars:
