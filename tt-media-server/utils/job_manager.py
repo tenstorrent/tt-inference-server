@@ -20,6 +20,15 @@ from domain.base_request import BaseRequest
 from utils.logger import TTLogger
 
 
+class JobLimitReached(Exception):
+    """Raised when the in-flight job table is full.
+
+    Distinct from a generic failure so the API can answer 429 (retry later)
+    rather than 500 (we broke), which is the difference between a client backing
+    off and a client treating the deployment as faulty.
+    """
+
+
 class JobStatus(str, Enum):
     QUEUED = "queued"
     IN_PROGRESS = "in_progress"
@@ -145,7 +154,9 @@ class JobManager:
         """Create job, start processing in background, and return initial job metadata."""
         with self._jobs_lock:
             if len(self._jobs) >= self._settings.max_jobs:
-                raise Exception("Maximum job limit reached")
+                raise JobLimitReached(
+                    f"Maximum job limit reached ({self._settings.max_jobs})"
+                )
             job = Job(
                 id=job_id,
                 job_type=job_type.value,

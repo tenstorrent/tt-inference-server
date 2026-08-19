@@ -815,3 +815,41 @@ class TestVideoI2VGenerateRequestValidation:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+class TestErrorStatusCodes:
+    """Status codes must tell the client whether retrying is worthwhile."""
+
+    @pytest.mark.asyncio
+    async def test_model_not_ready_returns_503_not_405(self):
+        """405 says the method is wrong, so LBs treat it as permanent and stop retrying."""
+        from open_ai_api.video import _submit_video_request
+
+        mock_service = MagicMock()
+        mock_service.scheduler.check_is_model_ready.side_effect = RuntimeError("warming up")
+
+        with pytest.raises(HTTPException) as exc:
+            await _submit_video_request(
+                VideoGenerateRequest(prompt="A cat"), mock_service, org_id="test_org"
+            )
+        assert exc.value.status_code == 503
+        assert exc.value.headers.get("Retry-After")
+
+    @pytest.mark.asyncio
+    async def test_job_limit_returns_429_not_500(self):
+        """A full queue is capacity, not malfunction."""
+        from open_ai_api.video import _submit_video_request
+        from utils.job_manager import JobLimitReached
+
+        mock_service = MagicMock()
+        mock_service.scheduler.check_is_model_ready.return_value = None
+        mock_service.create_job = AsyncMock(side_effect=JobLimitReached("Maximum job limit reached (10000)"))
+
+        with patch("open_ai_api.video.settings") as mock_settings:
+            mock_settings.use_async_video = True
+            with pytest.raises(HTTPException) as exc:
+                await _submit_video_request(
+                    VideoGenerateRequest(prompt="A cat"), mock_service, org_id="test_org"
+                )
+        assert exc.value.status_code == 429
+        assert exc.value.headers.get("Retry-After")
