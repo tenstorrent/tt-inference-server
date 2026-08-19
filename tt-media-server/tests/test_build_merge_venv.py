@@ -14,7 +14,9 @@ from scripts import build_merge_venv as bmv
 
 def _write_pyproject(tmp_path, deps):
     # Single-quoted TOML literals so deps containing '"' (env markers) stay valid.
-    body = "[project]\ndependencies = [\n" + "".join(f"    '{d}',\n" for d in deps) + "]\n"
+    body = (
+        "[project]\ndependencies = [\n" + "".join(f"    '{d}',\n" for d in deps) + "]\n"
+    )
     path = tmp_path / "pyproject.toml"
     path.write_text(body)
     return str(path)
