@@ -482,6 +482,156 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # ----- Re-bake the model catalogue into the published vLLM image.
+      #       crane copy re-labels, it does not rebuild. The tt-shield source
+      #       image was built BEFORE this run promoted dev->prod, so its baked
+      #       /home/container_app_user/model_specs/model_spec.json holds the
+      #       PREVIOUS release's catalogue. Anything promoted in this release is
+      #       missing from it, so the container either dies with
+      #       "No model spec found" or silently serves the old config.
+      #       Affected v0.17.0 through v0.20.0 (gemma-4-31B-it, gpt-oss-120b,
+      #       Qwen3.6-27B, Llama-3.1-8B).
+      #       Appending the fresh catalogue as a new top layer leaves every other
+      #       layer byte-identical, so no model re-validation is needed.
+      #       vLLM only: media/forge containers take their config from host env
+      #       vars and bake no catalogue.
+      #       NOTE: must run AFTER the real vLLM `crane copy`. While that copy is
+      #       still a dry-run simulation the destination tag does not exist and
+      #       both steps below no-op with a warning.
+      - name: "Re-bake model catalogue into the published vLLM image"
+        env:
+          DST_VLLM: ${{ steps.image-mapping.outputs.vllm_dest }}
+          SRC_VLLM: ${{ steps.image-mapping.outputs.vllm_source }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DST_VLLM}" ] || [ "${DST_VLLM}" = "None" ]; then
+            echo "No vLLM image published this release - nothing to re-bake."
+            exit 0
+          fi
+          if ! crane manifest "${DST_VLLM}" >/dev/null 2>&1; then
+            echo "::warning::${DST_VLLM} not in the registry (crane copy still a dry-run) - skipping re-bake."
+            exit 0
+          fi
+
+          REPO="${DST_VLLM%%:*}"
+
+          # The published tag is an OCI index (amd64 image + buildkit
+          # attestation); crane append needs a single image.
+          AMD64=$(crane manifest "${DST_VLLM}" | python3 -c "import json,sys; m=json.load(sys.stdin); print([x['digest'] for x in m['manifests'] if x['platform']['architecture']=='amd64'][0] if 'manifests' in m else '')")
+          if [ -z "${AMD64}" ]; then
+            echo "::error::could not resolve an amd64 manifest for ${DST_VLLM}"; exit 1
+          fi
+          echo "amd64 base: ${REPO}@${AMD64}"
+
+          # Generate from the promoted prod/ catalogue in this workspace.
+          python3 -c "from scripts.build_docker_images import generate_model_specs_json; generate_model_specs_json()"
+
+          BAKED_VER=$(python3 -c "import json; print(json.load(open('model_spec.json'))['release_version'])")
+          if [ "${BAKED_VER}" != "${RELEASE_VERSION}" ]; then
+            echo "::error::generated catalogue says ${BAKED_VER}, expected ${RELEASE_VERSION} - wrong branch or VERSION not bumped"
+            exit 1
+          fi
+
+          # Pack at the exact path + ownership the image uses
+          # (uid/gid 1000 = container_app_user) so the new layer masks the stale file.
+          rm -rf /tmp/catalog
+          mkdir -p /tmp/catalog/home/container_app_user/model_specs
+          cp model_spec.json /tmp/catalog/home/container_app_user/model_specs/
+          tar --owner=1000 --group=1000 -C /tmp/catalog -cf /tmp/catalog-layer.tar home
+
+          crane append -b "${REPO}@${AMD64}" -f /tmp/catalog-layer.tar -t "${DST_VLLM}"
+          NEW_DIGEST=$(crane digest "${DST_VLLM}")
+          echo "Re-baked ${DST_VLLM} -> ${NEW_DIGEST}"
+
+          {
+            echo "## Model catalogue re-baked into the published vLLM image"
+            echo
+            echo "- image: \`${DST_VLLM}\`"
+            echo "- catalogue release_version: \`${BAKED_VER}\`"
+            echo "- new digest: \`${NEW_DIGEST}\`"
+            echo "- rollback: \`crane copy ${SRC_VLLM} ${DST_VLLM}\`"
+            echo
+            echo "> Tag unchanged; the digest changes and the buildkit attestation is dropped."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # ----- The gate: fail the release if the published image cannot resolve
+      #       every spec that points at it. Catches both known causes above and
+      #       any future one.
+      - name: "Verify published vLLM image resolves every spec pinned to it"
+        env:
+          DST_VLLM: ${{ steps.image-mapping.outputs.vllm_dest }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DST_VLLM}" ] || [ "${DST_VLLM}" = "None" ]; then
+            echo "No vLLM image published this release - nothing to verify."
+            exit 0
+          fi
+          if ! crane manifest "${DST_VLLM}" >/dev/null 2>&1; then
+            echo "::warning::${DST_VLLM} not in the registry - skipping verification."
+            exit 0
+          fi
+          python3 - <<'PY'
+          import io, json, os, subprocess, sys, tarfile
+
+          dst = os.environ["DST_VLLM"]
+          expected = os.environ["RELEASE_VERSION"]
+          repo = dst.rsplit(":", 1)[0]
+
+          def sh(args):
+              p = subprocess.run(args, capture_output=True)
+              if p.returncode:
+                  sys.exit(p.stderr.decode(errors="replace")[:300])
+              return p.stdout
+
+          idx = json.loads(sh(["crane", "manifest", dst]))
+          ref = dst
+          if "manifests" in idx:
+              ref = repo + "@" + next(m["digest"] for m in idx["manifests"]
+                                      if m.get("platform", {}).get("architecture") == "amd64")
+
+          man = json.loads(sh(["crane", "manifest", ref]))
+          baked = None
+          for layer in reversed(man["layers"]):
+              if layer["size"] > 3_000_000:
+                  continue
+              try:
+                  with tarfile.open(
+                      fileobj=io.BytesIO(sh(["crane", "blob", f"{repo}@{layer['digest']}"])),
+                      mode="r:gz",
+                  ) as tf:
+                      m = next((m for m in tf.getmembers()
+                                if m.name.endswith("model_specs/model_spec.json")), None)
+                      if m is None:
+                          continue
+                      baked = json.load(tf.extractfile(m))
+              except Exception:
+                  continue
+              break
+
+          if baked is None:
+              sys.exit(f"::error::no baked model_spec.json found in {dst}")
+          if baked["release_version"] != expected:
+              sys.exit(f"::error::{dst} bakes catalogue v{baked['release_version']}, expected v{expected}")
+
+          catalog = baked["model_specs"]
+          published = json.load(open("release_model_spec.json"))["model_specs"]
+
+          missing = []
+          for hf, devices in published.items():
+              for dev, engines in devices.items():
+                  for spec in (s for impls in engines.values() for s in impls.values()):
+                      if spec.get("docker_image") != dst:
+                          continue
+                      if hf not in catalog or dev not in catalog[hf]:
+                          missing.append(f"{hf} [{dev}]")
+
+          for entry in missing:
+              print(f"::error::{entry} is pinned to {dst} but absent from its baked catalogue")
+          if missing:
+              sys.exit(f"{len(missing)} spec(s) unresolvable inside the published image")
+          print(f"OK - catalogue v{baked['release_version']}, every spec pinned to this image resolves")
+          PY
+
       # ===== TEMPORARY — REMOVE AFTER A SUCCESSFUL TEST RUN ==================
       # One REAL crane copy (actually pushes) of the media source image to a
       # throwaway tt-inference-server test repo, purely to confirm crane copy /
