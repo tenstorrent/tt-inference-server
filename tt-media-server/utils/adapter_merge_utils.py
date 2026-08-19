@@ -5,7 +5,7 @@
 """Merge a LoRA adapter into its base model, producing a servable checkpoint.
 
 This runs under the *inference* transformers version, in a dedicated venv (see
-`scripts/build_merge_venv.sh`). 
+`scripts/build_merge_venv.sh`).
 """
 
 import argparse
@@ -76,7 +76,9 @@ def merge_adapter(
     )
 
     logger.info(f"Merging LoRA adapter from {adapter_path}")
-    merged_model = PeftModel.from_pretrained(base_model, adapter_path).merge_and_unload()
+    merged_model = PeftModel.from_pretrained(
+        base_model, adapter_path
+    ).merge_and_unload()
 
     os.makedirs(output_dir, exist_ok=True)
     logger.info(f"Saving merged model to {output_dir}")
@@ -117,8 +119,7 @@ def run_merge_subprocess(
     cwd: Optional[str] = None,
     dtype_str: str = "torch.bfloat16",
 ) -> None:
-    """Run `merge_adapter` in the merge venv (a separate interpreter).
-    """
+    """Run `merge_adapter` in the merge venv (a separate interpreter)."""
     if python_executable is None:
         python_executable = _merge_venv_python()
     if cwd is None:
@@ -154,7 +155,9 @@ def run_merge_subprocess(
 def main() -> None:
     """CLI entrypoint, invoked as `python -m utils.adapter_merge_utils` in the
     merge venv (see `run_merge_subprocess`)."""
-    parser = argparse.ArgumentParser(description="Merge a LoRA adapter into its base model")
+    parser = argparse.ArgumentParser(
+        description="Merge a LoRA adapter into its base model"
+    )
     parser.add_argument("--base-model", required=True)
     parser.add_argument("--adapter-path", required=True)
     parser.add_argument("--output-dir", required=True)

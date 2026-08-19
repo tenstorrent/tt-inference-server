@@ -104,7 +104,7 @@ class TrainingService(BaseJobService):
         if not result_path:
             return None
         checkpoint_path = os.path.join(result_path, checkpoint_id)
-        
+
         # `checkpoint_id` is a user-supplied URL segment, so
         # confirm the resolved path stays strictly inside the job's result dir
         if not self._is_within_dir(result_path, checkpoint_path):
@@ -152,7 +152,7 @@ class TrainingService(BaseJobService):
 
     async def run_adapter_merge(self, request: AdapterMergeRequest) -> str:
         """
-        The merge runs in a dedicated virtual environment, 
+        The merge runs in a dedicated virtual environment,
         launched as a subprocess so that:
           - the checkpoint is written by the same major `transformers` version
             that the vLLM inference container serves it.

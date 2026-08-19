@@ -340,16 +340,16 @@ filter.exclude_markers(["slow", "heavy"])
 filter.include_prerequisites(True)
 
 # Get results
-tests = filter.get_tests()           # List of suite dicts
-flat = filter.get_flat_tests()       # Flat list of test dicts
-count = filter.get_test_count()      # Total test count
+tests = filter.get_tests()  # List of suite dicts
+flat = filter.get_flat_tests()  # Flat list of test dicts
+count = filter.get_test_count()  # Total test count
 
 # Utilities
-filter.print_summary()               # Print filtered test summary
-filter.reset()                       # Reset all filters
-filter.get_available_markers()       # Get marker definitions
-filter.get_all_devices()             # List all devices
-filter.get_all_models()              # List all models
+filter.print_summary()  # Print filtered test summary
+filter.reset()  # Reset all filters
+filter.get_available_markers()  # Get marker definitions
+filter.get_all_devices()  # List all devices
+filter.get_all_models()  # List all models
 ```
 
 ## CI/CD Integration
