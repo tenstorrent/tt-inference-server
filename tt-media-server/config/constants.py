@@ -928,7 +928,7 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
         "max_batch_size": 1,
-        "download_weights_from_service": False,
+        # "download_weights_from_service": False,
         "request_processing_timeout_seconds": 5000,
         "num_inference_steps": MINIMAX_H3_NUM_INFERENCE_STEPS,
     },
