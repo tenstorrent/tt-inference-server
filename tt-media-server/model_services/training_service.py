@@ -48,7 +48,7 @@ class TrainingService(BaseJobService):
         org_id: Optional[str] = None,
     ) -> dict:
         request.device_type = self.settings.device
-        adapter_path = os.path.join(TRAINING_STORE_ADAPTERS_DIR, request._task_id)
+        adapter_path = os.path.join(self._adapters_root(), request._task_id)
         os.makedirs(adapter_path, exist_ok=True)
         request._output_model_path = adapter_path
         self.logger.info(f"Generated output path: {request._output_model_path}")
@@ -104,6 +104,14 @@ class TrainingService(BaseJobService):
         if not result_path:
             return None
         checkpoint_path = os.path.join(result_path, checkpoint_id)
+        
+        # `checkpoint_id` is a user-supplied URL segment, so
+        # confirm the resolved path stays strictly inside the job's result dir
+        if not self._is_within_dir(result_path, checkpoint_path):
+            self.logger.warning(
+                f"Rejecting checkpoint path outside job dir: {checkpoint_id!r}"
+            )
+            return None
         if os.path.isdir(checkpoint_path):
             return checkpoint_path
         return None
@@ -179,17 +187,30 @@ class TrainingService(BaseJobService):
             )
             return request._output_model_path
 
+    def _cache_root(self) -> str:
+        return os.getenv("CACHE_ROOT", ".")
+
+    def _adapters_root(self) -> str:
+        return os.path.join(self._cache_root(), TRAINING_STORE_ADAPTERS_DIR)
+
     def _merged_models_root(self) -> str:
-        cache_root = os.getenv("CACHE_ROOT", ".")
-        return os.path.join(cache_root, TRAINING_STORE_MERGED_MODELS_DIR)
+        return os.path.join(self._cache_root(), TRAINING_STORE_MERGED_MODELS_DIR)
+
+    @staticmethod
+    def _is_within_dir(base: str, path: str) -> bool:
+        """True if `path` resolves to a location strictly inside `base`.
+        Rejects traversal and absolute-path escapes when
+        `path` was built from untrusted input.
+        """
+        base = os.path.realpath(base)
+        target = os.path.realpath(path)
+        return target != base and os.path.commonpath([base, target]) == base
 
     def _safe_rmtree_under_root(self, path: str) -> None:
         """Delete `path` only if it resolves to a location strictly inside the
         merged-models root."""
-        root = os.path.realpath(self._merged_models_root())
-        target = os.path.realpath(path)
-        if target != root and os.path.commonpath([root, target]) == root:
-            shutil.rmtree(target, ignore_errors=True)
+        if self._is_within_dir(self._merged_models_root(), path):
+            shutil.rmtree(os.path.realpath(path), ignore_errors=True)
         else:
             self.logger.error(
                 f"Refusing to delete path outside merged-models root: {path!r}"
