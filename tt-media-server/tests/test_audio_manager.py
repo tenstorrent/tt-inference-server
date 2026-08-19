@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 import numpy as np
 import pytest
+from config.constants import AudioInputFormat
 
 # audio_manager no longer imports torch/whisperx at module load time; those
 # packages live in the separate audio_venv and are only invoked through the
@@ -25,6 +26,7 @@ class DummySettings:
     max_audio_duration_with_preprocessing_seconds = 120
     audio_chunk_duration_seconds = 10
     model_service = "AUDIO"
+    model_runner = "tt-whisper"
     preprocessing_model_weights_path = None
 
 
@@ -64,6 +66,31 @@ def test_to_audio_array_invalid_type():
     manager = AudioManager()
     with pytest.raises(ValueError):
         manager.to_audio_array(123, False)
+
+
+@pytest.mark.parametrize(
+    "audio_bytes, expected",
+    [
+        (generate_dummy_wav_bytes(), AudioInputFormat.WAV),
+        (b"ID3\x04\x00\x00\x00\x00\x00\x00", AudioInputFormat.MP3),
+        (b"\xff\xfb\x90\x00", AudioInputFormat.MP3),
+        (b"\xff\xf3\x90\x00", AudioInputFormat.MP3),
+        (b"\xff\xf2\x90\x00", AudioInputFormat.MP3),
+        (b"OggS\x00\x02\x00\x00", AudioInputFormat.UNKNOWN),
+        (b"RIFF\x00\x00\x00\x00AVI ", AudioInputFormat.UNKNOWN),
+        (b"", AudioInputFormat.UNKNOWN),
+        (b"RIFF", AudioInputFormat.UNKNOWN),
+    ],
+)
+def test_detect_audio_format(audio_bytes, expected):
+    assert AudioManager._detect_audio_format(audio_bytes) is expected
+
+
+@patch("utils.audio_manager.settings", new=DummySettings())
+def test_convert_to_audio_array_rejects_unknown_format():
+    manager = AudioManager()
+    with pytest.raises(ValueError, match="Unsupported audio format"):
+        manager._convert_to_audio_array(b"OggS\x00\x02", AudioInputFormat.UNKNOWN)
 
 
 @patch("utils.audio_manager.settings", new=DummySettings())

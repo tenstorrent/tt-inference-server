@@ -78,6 +78,30 @@ post_processing_duration = Histogram(
     ["model_type", "post_processing_enabled"],
 )
 
+# Buckets are calibrated against measured WAV decode
+audio_input_preparation_duration = Histogram(
+    "tt_media_server_audio_input_preparation_seconds",
+    "Time to decode, resample and prepare submitted audio for inference",
+    ["model_type", "format"],
+    buckets=(
+        0.0002,
+        0.0005,
+        0.001,
+        0.002,
+        0.005,
+        0.01,
+        0.02,
+        0.05,
+        0.1,
+        0.25,
+        0.5,
+        1.0,
+        2.5,
+        5.0,
+        float("inf"),
+    ),
+)
+
 # Model inference metrics
 model_inference_duration = Histogram(
     "tt_media_server_model_inference_duration_seconds",

@@ -10,14 +10,16 @@ import selectors
 import struct
 import subprocess
 import tempfile
+import time
 import uuid
 from pathlib import Path
 from typing import List, Optional
 
 import numpy as np
-from config.constants import SupportedModels
+from config.constants import AudioInputFormat, SupportedModels
 from config.settings import settings
 from domain.audio_text_response import AudioTextResponse, AudioTextSegment
+from telemetry.telemetry_client import audio_input_preparation_duration
 
 from utils.decorators import log_execution_time
 from utils.ffmpeg_utils import decode_to_wav as ffmpeg_decode_to_wav
@@ -335,6 +337,7 @@ class AudioManager:
 
     def to_audio_array(self, file, should_preprocess):
         """Convert audio file (base64 string or raw bytes) to numpy array for audio model inference."""
+        start = time.perf_counter()
         try:
             if isinstance(file, str):
                 # Base64-encoded string
@@ -348,12 +351,21 @@ class AudioManager:
                 )
                 raise ValueError(f"Unsupported file input type: {type(file).__name__}")
 
+            audio_format = self._detect_audio_format(audio_bytes)
             self._validate_file_size(audio_bytes)
-            audio_array = self._convert_to_audio_array(audio_bytes)
-            return self._validate_and_truncate_duration(audio_array, should_preprocess)
+            audio_array = self._convert_to_audio_array(audio_bytes, audio_format)
+            prepared = self._validate_and_truncate_duration(
+                audio_array, should_preprocess
+            )
         except Exception as e:
             self._logger.error(f"Failed to decode audio data: {e}")
             raise ValueError(f"Failed to process audio data: {str(e)}")
+
+        # Observed only on success
+        audio_input_preparation_duration.labels(
+            model_type=settings.model_runner, format=audio_format.value
+        ).observe(time.perf_counter() - start)
+        return prepared
 
     @log_execution_time("Applying VAD and optional diarization")
     def apply_diarization_with_vad(self, audio_array, enable_diarization):
@@ -660,30 +672,38 @@ class AudioManager:
                 f"Audio file too large: {len(audio_bytes)} bytes. Maximum allowed: {settings.max_audio_size_bytes} bytes"
             )
 
-    @log_execution_time("Converting to audio array")
-    def _convert_to_audio_array(self, audio_bytes):
-        """Convert audio file bytes (WAV/MP3) to numpy array."""
-
-        # Detect file format based on headers
+    @staticmethod
+    def _detect_audio_format(audio_bytes):
+        """Identify the container format from the file header."""
         if (
             len(audio_bytes) >= 12
             and audio_bytes[:4] == b"RIFF"
             and audio_bytes[8:12] == b"WAVE"
         ):
-            self._logger.info("Processing WAV file format")
-            return self._decode_wav_file(audio_bytes)
-        elif len(audio_bytes) >= 3 and (
+            return AudioInputFormat.WAV
+        if len(audio_bytes) >= 3 and (
             audio_bytes[:3] == b"ID3"
             or audio_bytes[:2] == b"\xff\xfb"
             or audio_bytes[:2] == b"\xff\xf3"
             or audio_bytes[:2] == b"\xff\xf2"
         ):
+            return AudioInputFormat.MP3
+        return AudioInputFormat.UNKNOWN
+
+    @log_execution_time("Converting to audio array")
+    def _convert_to_audio_array(self, audio_bytes, audio_format):
+        """Convert audio file bytes (WAV/MP3) to numpy array."""
+        if audio_format is AudioInputFormat.WAV:
+            self._logger.info("Processing WAV file format")
+            return self._decode_wav_file(audio_bytes)
+        if audio_format is AudioInputFormat.MP3:
             self._logger.info("Processing MP3 file format")
-            return self._decode_audio_file(audio_bytes, "MP3")
-        else:
-            raise ValueError(
-                "Unsupported audio format. Only WAV and MP3 files are supported."
+            return self._decode_audio_file(
+                audio_bytes, AudioInputFormat.MP3.value.upper()
             )
+        raise ValueError(
+            "Unsupported audio format. Only WAV and MP3 files are supported."
+        )
 
     @log_execution_time("Decoding WAV file")
     def _decode_wav_file(self, audio_bytes):

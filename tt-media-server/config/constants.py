@@ -450,6 +450,18 @@ class AudioResponseFormat(Enum):
     OGG = "ogg"
 
 
+class AudioInputFormat(Enum):
+    """ASR workflow: container formats accepted on the transcription path.
+
+    UNKNOWN covers input that matches no known header, which is rejected during
+    conversion but still needs a name to be reported under.
+    """
+
+    WAV = "wav"
+    MP3 = "mp3"
+    UNKNOWN = "unknown"
+
+
 SDXL_VALID_IMAGE_RESOLUTIONS = frozenset({(1024, 1024), (512, 512)})
 
 
