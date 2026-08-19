@@ -11,3 +11,5 @@ Models with status: TOP_PERF, COMPLETE, or FUNCTIONAL.
 | Model Name | [BH QuietBox 2](https://tenstorrent.com/hardware/tt-quietbox) | [P150](https://tenstorrent.com/hardware/blackhole) | [N150](https://tenstorrent.com/hardware/wormhole) | [N300](https://tenstorrent.com/hardware/wormhole) |
 | --- | --- | --- | --- | --- |
 | [speecht5_tts](speecht5_tts_p300x2.md) | [🛠️ Experimental](speecht5_tts_p300x2.md) | [🛠️ Experimental](speecht5_tts_p150.md) | [🟢 Complete](speecht5_tts_n150.md) | [🟢 Complete](speecht5_tts_n300.md) |
+| [Qwen3-TTS-12Hz-1.7B-Base](Qwen3-TTS-12Hz-1.7B-Base_n150.md) | — | — | [🔵 Functional](Qwen3-TTS-12Hz-1.7B-Base_n150.md) | [🔵 Functional](Qwen3-TTS-12Hz-1.7B-Base_n300.md) |
+| [Qwen3-TTS-12Hz-0.6B-Base](Qwen3-TTS-12Hz-0.6B-Base_n150.md) | — | — | [🔵 Functional](Qwen3-TTS-12Hz-0.6B-Base_n150.md) | [🔵 Functional](Qwen3-TTS-12Hz-0.6B-Base_n300.md) |

@@ -372,6 +372,28 @@
         }
       }
     },
+    "Qwen3-TTS-12Hz-1.7B-Base": {
+      "inference_engine": "MEDIA",
+      "ci": {
+        "nightly": {
+          "devices": [
+            "N150",
+            "N300"
+          ]
+        }
+      }
+    },
+    "Qwen3-TTS-12Hz-0.6B-Base": {
+      "inference_engine": "MEDIA",
+      "ci": {
+        "nightly": {
+          "devices": [
+            "N150",
+            "N300"
+          ]
+        }
+      }
+    },
     "bge-m3": {
       "implementations": [
         {
