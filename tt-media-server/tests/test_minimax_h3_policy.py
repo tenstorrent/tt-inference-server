@@ -15,7 +15,9 @@ from tt_model_runners.minimax_h3_policy import (
 
 
 class TestParseAspectRatio:
-    @pytest.mark.parametrize("text,expected", [("16:9", (16, 9)), ("9:16", (9, 16)), ("1:1", (1, 1))])
+    @pytest.mark.parametrize(
+        "text,expected", [("16:9", (16, 9)), ("9:16", (9, 16)), ("1:1", (1, 1))]
+    )
     def test_published_ratios(self, text, expected):
         assert minimax_h3_parse_aspect_ratio(text) == expected
 

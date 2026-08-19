@@ -1453,7 +1453,9 @@ class TTMiniMaxH3Runner(TTDiTRunner):
             )
             raise
         except Exception as e:
-            log_exception_chain(self.logger, self.device_id, "Exception during model loading", e)
+            log_exception_chain(
+                self.logger, self.device_id, "Exception during model loading", e
+            )
             raise
 
         # Nothing is warmed by default. All 18 published working points are servable, and warming
@@ -1530,7 +1532,9 @@ class TTMiniMaxH3Runner(TTDiTRunner):
                 continue
             ratio_text, _, seconds_text = entry.partition("@")
             ratio = minimax_h3_parse_aspect_ratio(ratio_text)
-            seconds = int(seconds_text) if seconds_text else MINIMAX_H3_DEFAULT_DURATION_S
+            seconds = (
+                int(seconds_text) if seconds_text else MINIMAX_H3_DEFAULT_DURATION_S
+            )
             if seconds not in MINIMAX_H3_DURATIONS_S:
                 raise ValueError(
                     f"MINIMAX_H3_WARM_SHAPES entry {entry!r}: duration must be one of "
@@ -1577,7 +1581,9 @@ class TTMiniMaxH3Runner(TTDiTRunner):
         if not minimax_h3_frames_are_aligned(num_frames):
             # Unreachable via the duration allow-list; kept so a future edit to it cannot smuggle
             # a frame count the VAE's 17-frame chunking would reject deep inside packing.
-            raise ValueError(f"num_frames must be 17n + 5; {seconds} s resolved to {num_frames}")
+            raise ValueError(
+                f"num_frames must be 17n + 5; {seconds} s resolved to {num_frames}"
+            )
         return height, width, num_frames
 
     def _validate(self, request: VideoGenerateRequest) -> None:
