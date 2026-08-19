@@ -304,7 +304,7 @@ crane copy "$REPO:$TAG-precatalogfix" "$REPO:$TAG"
 ```
 
 
- Verification: the release_version inside the image must equal the release you are cutting. If it is one behind, the re-bake did not run.
+ **13. Verification** the release_version inside the image must equal the release you are cutting. If it is one behind, the re-bake did not run.
  ```bash
  crane export "$REPO:$TAG" - | tar -xO home/container_app_user/model_specs/model_spec.json \
   | python3 -c "import json,sys; print(json.load(sys.stdin)['release_version'])"
