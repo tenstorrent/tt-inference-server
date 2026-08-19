@@ -136,11 +136,14 @@ class TestSubmitGenerateVideoRequest:
             request=request,
             service=mock_service,
             api_key="test_key",
+            org_id="test_org",
         )
 
         assert response.status_code == 202
         assert response.body is not None
-        mock_service.create_job.assert_called_once_with(JobTypes.VIDEO, request)
+        mock_service.create_job.assert_called_once_with(
+            JobTypes.VIDEO, request, org_id="test_org"
+        )
 
     @pytest.mark.asyncio
     async def test_submit_generate_video_request_failure(self):
@@ -157,6 +160,7 @@ class TestSubmitGenerateVideoRequest:
                 request=request,
                 service=mock_service,
                 api_key="test_key",
+                org_id="test_org",
             )
 
         assert exc_info.value.status_code == 500
@@ -182,10 +186,11 @@ class TestGetVideoMetadata:
             job_id="job_123",
             service=mock_service,
             api_key="test_key",
+            org_id="test_org",
         )
 
         assert response.status_code == 200
-        mock_service.get_job_metadata.assert_called_once_with("job_123")
+        mock_service.get_job_metadata.assert_called_once_with("job_123", org_id="test_org")
 
     def test_get_video_metadata_not_found(self):
         """Test video metadata retrieval when job not found"""
@@ -197,6 +202,7 @@ class TestGetVideoMetadata:
                 job_id="non_existent_job",
                 service=mock_service,
                 api_key="test_key",
+                org_id="test_org",
             )
 
         assert exc_info.value.status_code == 404
@@ -220,6 +226,7 @@ class TestGetJobsMetadata:
         response = get_jobs_metadata(
             service=mock_service,
             api_key="test_key",
+            org_id="test_org",
         )
 
         assert response.status_code == 200
@@ -234,6 +241,7 @@ class TestGetJobsMetadata:
             get_jobs_metadata(
                 service=mock_service,
                 api_key="test_key",
+                org_id="test_org",
             )
 
         assert exc_info.value.status_code == 404
@@ -267,11 +275,97 @@ class TestDownloadVideoContent:
                     request=mock_request,
                     service=mock_service,
                     api_key="test_key",
+                    org_id="test_org",
                 )
 
                 assert response.path == tmp_path
                 assert response.media_type == "video/mp4"
-                mock_service.get_job_result_path.assert_called_once_with("job_123")
+                mock_service.get_job_result_path.assert_called_once_with(
+                    "job_123", org_id="test_org"
+                )
+        finally:
+            os.unlink(tmp_path)
+
+    def test_download_deletes_faststart_temp_file(self):
+        """The per-request faststart copy must not survive the response.
+
+        Regression test: this endpoint used to create the temp copy with
+        delete=False and never remove it, leaking a full-size MP4 per download.
+        """
+        import asyncio
+
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
+            tmp.write(b"fake video content")
+            tmp_path = tmp.name
+
+        created: list[str] = []
+
+        def fake_faststart(src_path, dst_path):
+            # Stand in for the real remux: leave real bytes at the temp path.
+            with open(dst_path, "wb") as fh:
+                fh.write(b"faststart output")
+            created.append(dst_path)
+
+        try:
+            mock_service = MagicMock()
+            mock_service.get_job_result_path = MagicMock(return_value=tmp_path)
+
+            with patch("open_ai_api.video.VideoManager") as mock_video_manager:
+                mock_video_manager.ensure_faststart.side_effect = fake_faststart
+
+                response = download_video_content(
+                    job_id="job_123",
+                    request=MagicMock(),
+                    service=mock_service,
+                    api_key="test_key",
+                    org_id="test_org",
+                )
+
+            assert len(created) == 1
+            faststart_path = created[0]
+            # Served from the remuxed copy, which still exists until the response ends.
+            assert response.path == faststart_path
+            assert os.path.exists(faststart_path)
+
+            # The cleanup rides on the response as a background task.
+            assert response.background is not None
+            asyncio.run(response.background())
+            assert not os.path.exists(faststart_path)
+        finally:
+            os.unlink(tmp_path)
+
+    def test_download_removes_stub_when_faststart_fails(self):
+        """A failed remux must not leave its empty stub file behind."""
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
+            tmp.write(b"fake video content")
+            tmp_path = tmp.name
+
+        created: list[str] = []
+
+        def failing_faststart(src_path, dst_path):
+            created.append(dst_path)
+            raise RuntimeError("ffmpeg unavailable")
+
+        try:
+            mock_service = MagicMock()
+            mock_service.get_job_result_path = MagicMock(return_value=tmp_path)
+
+            with patch("open_ai_api.video.VideoManager") as mock_video_manager:
+                mock_video_manager.ensure_faststart.side_effect = failing_faststart
+
+                response = download_video_content(
+                    job_id="job_123",
+                    request=MagicMock(),
+                    service=mock_service,
+                    api_key="test_key",
+                    org_id="test_org",
+                )
+
+            # Falls back to the original file, and the stub is already gone.
+            assert response.path == tmp_path
+            assert response.background is None
+            assert len(created) == 1
+            assert not os.path.exists(created[0])
         finally:
             os.unlink(tmp_path)
 
@@ -296,6 +390,7 @@ class TestDownloadVideoContent:
                     request=mock_request,
                     service=mock_service,
                     api_key="test_key",
+                    org_id="test_org",
                 )
 
                 # Should still return FileResponse
@@ -317,6 +412,7 @@ class TestDownloadVideoContent:
                 request=mock_request,
                 service=mock_service,
                 api_key="test_key",
+                org_id="test_org",
             )
 
         assert exc_info.value.status_code == 404
@@ -337,6 +433,7 @@ class TestDownloadVideoContent:
                 request=mock_request,
                 service=mock_service,
                 api_key="test_key",
+                org_id="test_org",
             )
 
         assert exc_info.value.status_code == 404
@@ -357,6 +454,7 @@ class TestDownloadVideoContent:
                 request=mock_request,
                 service=mock_service,
                 api_key="test_key",
+                org_id="test_org",
             )
 
         assert exc_info.value.status_code == 404
@@ -382,10 +480,11 @@ class TestCancelVideoJob:
             job_id="job_123",
             service=mock_service,
             api_key="test_key",
+            org_id="test_org",
         )
 
         assert response.status_code == 200
-        mock_service.cancel_job.assert_called_once_with("job_123")
+        mock_service.cancel_job.assert_called_once_with("job_123", org_id="test_org")
 
     def test_cancel_video_job_not_found(self):
         """Test video job cancellation when job not found"""
@@ -397,6 +496,7 @@ class TestCancelVideoJob:
                 job_id="non_existent_job",
                 service=mock_service,
                 api_key="test_key",
+                org_id="test_org",
             )
 
         assert exc_info.value.status_code == 404
@@ -444,6 +544,7 @@ class TestResponseContent:
             job_id="job_123",
             service=mock_service,
             api_key="test_key",
+            org_id="test_org",
         )
 
         # JSONResponse body contains the serialized content
@@ -483,10 +584,13 @@ class TestSubmitGenerateVideoI2VRequest:
             request=request,
             service=mock_service,
             api_key="test_key",
+            org_id="test_org",
         )
 
         assert response.status_code == 202
-        mock_service.create_job.assert_called_once_with(JobTypes.VIDEO, request)
+        mock_service.create_job.assert_called_once_with(
+            JobTypes.VIDEO, request, org_id="test_org"
+        )
 
     @pytest.mark.asyncio
     async def test_submit_i2v_request_multiple_image_prompts(self):
@@ -510,6 +614,7 @@ class TestSubmitGenerateVideoI2VRequest:
             request=request,
             service=mock_service,
             api_key="test_key",
+            org_id="test_org",
         )
 
         args, _ = mock_service.create_job.call_args
