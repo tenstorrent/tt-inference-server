@@ -288,7 +288,7 @@ templates:
         # merge, preempt gen accounting, page-table -1 pad) are BH-validated
         # only. Revisit both this flag and max_concurrency once the concurrent
         # decode corruption is root-caused on WH.
-        GEMMA4_SUPPORTS_ASYNC_DECODE: "1"
+        GEMMA4_SUPPORTS_ASYNC_DECODE: "0"
       override_tt_config:
         fabric_config: FABRIC_1D
         # WH cannot afford the BH 512 MB trace region; 90 MB matches the other
@@ -300,8 +300,14 @@ templates:
         # >= 65536 are reachable (host sampling only sees device 0's shard).
         sample_on_device_mode: decode_only
       vllm_args:
-        # Overlap host schedule with device decode (metal supports_async_decode; #51186).
-        async_scheduling: true
+        # No async_scheduling on Wormhole. Measured on T3K 12B at max_num_seqs 32:
+        # async ON gives 32/32 correct on only 4 of 6 reps (30/32 on the other two,
+        # degenerate repetition) at 377-389 tok/s aggregate, while async OFF gives
+        # 32/32 on four consecutive reps at 363-383 tok/s. Identical throughput,
+        # strictly worse correctness — so it is pure downside here. The platform
+        # also disables it automatically once the model reports
+        # supports_async_decode=False (GEMMA4_SUPPORTS_ASYNC_DECODE=0 above).
+        # Re-enable together with that env once the WH async path is fixed.
         enable-auto-tool-choice: true
         tool-call-parser: gemma4
         default-chat-template-kwargs: '{"enable_thinking": true}'
@@ -452,7 +458,7 @@ templates:
         # merge, preempt gen accounting, page-table -1 pad) are BH-validated
         # only. Revisit both this flag and max_concurrency once the concurrent
         # decode corruption is root-caused on WH.
-        GEMMA4_SUPPORTS_ASYNC_DECODE: "1"
+        GEMMA4_SUPPORTS_ASYNC_DECODE: "0"
       override_tt_config:
         fabric_config: FABRIC_1D
         # WH cannot afford the BH 512 MB trace region; 90 MB matches the other
@@ -464,8 +470,14 @@ templates:
         # >= 65536 are reachable (host sampling only sees device 0's shard).
         sample_on_device_mode: decode_only
       vllm_args:
-        # Overlap host schedule with device decode (metal supports_async_decode; #51186).
-        async_scheduling: true
+        # No async_scheduling on Wormhole. Measured on T3K 12B at max_num_seqs 32:
+        # async ON gives 32/32 correct on only 4 of 6 reps (30/32 on the other two,
+        # degenerate repetition) at 377-389 tok/s aggregate, while async OFF gives
+        # 32/32 on four consecutive reps at 363-383 tok/s. Identical throughput,
+        # strictly worse correctness — so it is pure downside here. The platform
+        # also disables it automatically once the model reports
+        # supports_async_decode=False (GEMMA4_SUPPORTS_ASYNC_DECODE=0 above).
+        # Re-enable together with that env once the WH async path is fixed.
         enable-auto-tool-choice: true
         tool-call-parser: gemma4
         default-chat-template-kwargs: '{"enable_thinking": true}'
@@ -514,7 +526,7 @@ templates:
         # merge, preempt gen accounting, page-table -1 pad) are BH-validated
         # only. Revisit both this flag and max_concurrency once the concurrent
         # decode corruption is root-caused on WH.
-        GEMMA4_SUPPORTS_ASYNC_DECODE: "1"
+        GEMMA4_SUPPORTS_ASYNC_DECODE: "0"
       override_tt_config:
         fabric_config: FABRIC_1D
         # WH cannot afford the BH 512 MB trace region; 90 MB matches the other
@@ -529,8 +541,14 @@ templates:
         # decode_only killed the engine on the "self.sampling is not None"
         # assert. Host sampling all-gathers the full vocab and is correct here.
       vllm_args:
-        # Overlap host schedule with device decode (metal supports_async_decode; #51186).
-        async_scheduling: true
+        # No async_scheduling on Wormhole. Measured on T3K 12B at max_num_seqs 32:
+        # async ON gives 32/32 correct on only 4 of 6 reps (30/32 on the other two,
+        # degenerate repetition) at 377-389 tok/s aggregate, while async OFF gives
+        # 32/32 on four consecutive reps at 363-383 tok/s. Identical throughput,
+        # strictly worse correctness — so it is pure downside here. The platform
+        # also disables it automatically once the model reports
+        # supports_async_decode=False (GEMMA4_SUPPORTS_ASYNC_DECODE=0 above).
+        # Re-enable together with that env once the WH async path is fixed.
         enable-auto-tool-choice: true
         tool-call-parser: gemma4
         default-chat-template-kwargs: '{"enable_thinking": true}'
@@ -1685,7 +1703,7 @@ templates:
         # merge, preempt gen accounting, page-table -1 pad) are BH-validated
         # only. Revisit both this flag and max_concurrency once the concurrent
         # decode corruption is root-caused on WH.
-        GEMMA4_SUPPORTS_ASYNC_DECODE: "1"
+        GEMMA4_SUPPORTS_ASYNC_DECODE: "0"
       override_tt_config:
         fabric_config: FABRIC_1D
         # WH cannot afford the BH 512 MB trace region; 90 MB matches the other
@@ -1697,8 +1715,14 @@ templates:
         # >= 65536 are reachable (host sampling only sees device 0's shard).
         sample_on_device_mode: decode_only
       vllm_args:
-        # Overlap host schedule with device decode (metal supports_async_decode; #51186).
-        async_scheduling: true
+        # No async_scheduling on Wormhole. Measured on T3K 12B at max_num_seqs 32:
+        # async ON gives 32/32 correct on only 4 of 6 reps (30/32 on the other two,
+        # degenerate repetition) at 377-389 tok/s aggregate, while async OFF gives
+        # 32/32 on four consecutive reps at 363-383 tok/s. Identical throughput,
+        # strictly worse correctness — so it is pure downside here. The platform
+        # also disables it automatically once the model reports
+        # supports_async_decode=False (GEMMA4_SUPPORTS_ASYNC_DECODE=0 above).
+        # Re-enable together with that env once the WH async path is fixed.
         enable-auto-tool-choice: true
         tool-call-parser: gemma4
         default-chat-template-kwargs: '{"enable_thinking": true}'
