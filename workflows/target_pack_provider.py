@@ -113,3 +113,10 @@ class TenstorrentTargetPack:
             / "eval_targets"
             / "model_accuracy_reference.json"
         )
+
+    # --- report metadata ---
+    def extra_spec_metadata_fields(self):
+        return (
+            ("tt_metal_commit", "tt_metal_commit"),
+            ("vllm_commit", "vllm_commit"),
+        )
