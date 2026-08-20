@@ -3,17 +3,22 @@ name: Release Automation (promote specs, docs & docker images)
 run-name: ${{ inputs.version && format('Release automation v{0}', inputs.version) || 'Release automation (push)' }}
 
 # ---------------------------------------------------------------------------
-# Automates the release pipeline:
+# Automates the release pipeline (dispatch-only). In order:
+#   - Guard: only the sanctioned release branch may run.
+#   - Validate inputs: version == VERSION file; vllm-commit present when the
+#     release ships vLLM; tt-metal/vllm commits match the tt-shield run.
 #   1. promote_dev_spec_to_prod.py  (dev -> prod model specs, release-scoped)
+#   1b. assert no shadowed duplicate model_id in the promoted prod catalogue
 #   2. export_model_spec.py         (docs/model_support + release_model_spec.json)
 #   3. python -m workflows.helm_generator  (charts/.../values.yaml)
 #   4. helm-docs                    (chart README / supported-models docs)
-# then, from the runner:
-#   git add . && git commit -m "v<version><suffix>" && git push
-#   git tag v<version><suffix> && git push origin v<version><suffix>
-# finally:
-#   create branch post-release-v<version><post-suffix> off main, carrying this
-#   branch's VERSION + models-ci-config.json onto it, re-run all 4 steps from above and push it.
+#   - commit + push the generated files to the release branch, then tag.
+#   - build the release-artifacts zip from the tt-shield run (upload artifact).
+#   - resolve tt-shield source images -> map to release images -> crane copy
+#     (publish) -> re-bake the prod catalogue into the vLLM image -> verify.
+#   - create post-release-v<version> off main (carry VERSION + models-ci-config,
+#     re-run the 4 generators) and open a draft PR to main.
+# Suffixes (tag-suffix / post-release-suffix) mark testing artifacts; empty = real release.
 # ---------------------------------------------------------------------------
 
 on:
@@ -165,7 +170,7 @@ jobs:
           echo "version          = ${RELEASE_VERSION}"
           echo "tt-metal-commit  = ${TT_METAL_COMMIT}"
           echo "vllm-commit      = ${VLLM_COMMIT}"
-          echo "tt-shield-run-id = ${TT_SHIELD_RUN_ID}  (not used here)"
+          echo "tt-shield-run-id = ${TT_SHIELD_RUN_ID}"
           echo "commit/tag       = v${RELEASE_VERSION}${TAG_SUFFIX}"
           echo "post-release br  = post-release-v${RELEASE_VERSION}${POST_RELEASE_SUFFIX} (from main)"
 
