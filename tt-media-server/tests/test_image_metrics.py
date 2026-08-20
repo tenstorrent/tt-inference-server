@@ -193,6 +193,43 @@ class TestImageStageRecorder:
             )
             assert count == 1, f"missing conditioning series for {encoder}"
 
+    def test_accumulates_nested_encoders_when_cfg_encodes_twice(self, monkeypatch):
+        """SD3.5 / Motif encode_cfg runs clip+t5 for the prompt, then again for the negative."""
+        clock = {"t": 0.0}
+        monkeypatch.setattr("telemetry.image_metrics._now", lambda: clock["t"])
+
+        recorder = ImageStageRecorder(
+            "recorder-cfg", "0", sampler="euler-solver", batch=1
+        )
+        clock["t"] = 0.0
+        recorder(SectionStart("encoder"))
+        recorder(SectionStart("clip_encoding"))
+        clock["t"] = 0.10
+        recorder(SectionEnd("clip_encoding"))
+        recorder(SectionStart("t5_encoding"))
+        clock["t"] = 0.40
+        recorder(SectionEnd("t5_encoding"))
+        recorder(SectionStart("clip_encoding"))
+        clock["t"] = 0.52
+        recorder(SectionEnd("clip_encoding"))
+        recorder(SectionStart("t5_encoding"))
+        clock["t"] = 0.82
+        recorder(SectionEnd("t5_encoding"))
+        recorder(SectionEnd("encoder"))
+
+        assert recorder.conditioning_seconds["clip"] == pytest.approx(0.22)
+        assert recorder.conditioning_seconds["t5"] == pytest.approx(0.60)
+        assert recorder.conditioning_seconds["all"] == pytest.approx(0.82)
+
+        recorder.flush([FakeImage()])
+        assert sample(
+            "tt_media_server_image_conditioning_duration_seconds_sum",
+            model_type="recorder-cfg",
+            device_id="0",
+            encoder="clip",
+            batch="1",
+        ) == pytest.approx(0.22)
+
     def test_maps_the_qwen_encoder_span(self):
         model_type = "recorder-qwen"
         recorder = ImageStageRecorder(model_type, "0", sampler="euler-solver", batch=1)

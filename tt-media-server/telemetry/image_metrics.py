@@ -227,7 +227,10 @@ class ImageStageRecorder:
         elif _DENOISE_STEP_RE.match(name):
             self.step_seconds.append(seconds)
         elif name in _CONDITIONING_SECTIONS:
-            self.conditioning_seconds[_CONDITIONING_SECTIONS[name]] = seconds
+            encoder = _CONDITIONING_SECTIONS[name]
+            self.conditioning_seconds[encoder] = (
+                self.conditioning_seconds.get(encoder, 0.0) + seconds
+            )
 
     # -- export ---------------------------------------------------------------
     def flush(self, images: Any = None, resolution: str | None = None) -> None:
