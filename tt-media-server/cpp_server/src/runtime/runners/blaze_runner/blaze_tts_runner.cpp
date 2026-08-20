@@ -317,7 +317,7 @@ void BlazeTtsRunner::compilePromptTokens(
   const auto& tokenizer =
       tt::utils::tts_tokenizer::tokenizerForPath(config.tokenizerPath);
   task.promptTokens = tt::utils::tts_prompt_compiler::compilePromptTokens(
-      tokenizer, task.text, task.description, speechIds);
+      tokenizer, task.text, task.description, speechIds, config.bosToken);
 }
 
 void BlazeTtsRunner::allocateTask(ipc::tts::TtsIpcTask task) {

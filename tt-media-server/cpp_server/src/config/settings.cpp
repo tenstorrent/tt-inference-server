@@ -68,6 +68,8 @@ std::string resolveBlazeSocketDescriptorPrefix() {
       return "glm";
     case ModelType::DEEPSEEK_V4_PRO:
       return "deepseek";
+    case ModelType::GEMMA_4_31B_IT:
+      return "gemma";
   }
   throw std::runtime_error("Unsupported model type for Blaze socket prefix");
 }
@@ -89,6 +91,8 @@ uint32_t resolveBlazeNumberOfPipelineStages() {
     case ModelType::GLM_5_1:
     case ModelType::GLM_5_2:
       return 80;
+    case ModelType::GEMMA_4_31B_IT:
+      return 62;
     default:
       return defaults::BLAZE_NUMBER_OF_PIPELINE_STAGES;
   }
@@ -668,6 +672,33 @@ TtsConfig ttsEngineConfig() {
     }
     cfg.tokenizerPath = envString(
         "TTS_TOKENIZER_PATH", tokenizerPath(ModelType::LLAMA_3_1_8B_INSTRUCT));
+
+    // Resolve the prompt-leading BOS from the tokenizer_config.json beside the
+    // tokenizer, the same source the LLM tokenizers use
+    if (!cfg.tokenizerPath.empty()) {
+      const std::filesystem::path configPath =
+          std::filesystem::path(cfg.tokenizerPath).parent_path() /
+          "tokenizer_config.json";
+      try {
+        const auto tokenizerCfg =
+            utils::tokenizers::getTokenizerConfig(configPath.string());
+        if (tokenizerCfg.add_bos_token) {
+          cfg.bosToken = tokenizerCfg.bos_token;
+        }
+      } catch (const std::exception& e) {
+        TT_LOG_WARN("[Config] TTS BOS lookup failed ({}): {}",
+                    configPath.string(), e.what());
+      }
+    }
+    if (cfg.bosToken.empty()) {
+      TT_LOG_WARN(
+          "[Config] TTS prompt has no leading BOS; the reference compiler "
+          "prepends one (e.g. <|begin_of_text|>). Check bos_token / "
+          "add_bos_token in the tokenizer_config.json next to {}",
+          cfg.tokenizerPath);
+    } else {
+      TT_LOG_INFO("[Config] TTS prompt BOS = '{}'", cfg.bosToken);
+    }
     cfg.voiceSampleRateHz = static_cast<uint32_t>(envUlong(
         "TTS_VOICE_SAMPLE_RATE_HZ", defaults::TTS_VOICE_SAMPLE_RATE_HZ));
     cfg.voiceChannels = static_cast<uint16_t>(
@@ -748,6 +779,7 @@ ModelType modelType() {
     if (m == "zai-org/GLM-5.1") return ModelType::GLM_5_1;
     if (m == "zai-org/GLM-5.2") return ModelType::GLM_5_2;
     if (m == "deepseek-ai/DeepSeek-V4-Pro") return ModelType::DEEPSEEK_V4_PRO;
+    if (m == "google/gemma-4-31B-it") return ModelType::GEMMA_4_31B_IT;
     return ModelType::DEEPSEEK_R1_0528;
   }();
   return cached;

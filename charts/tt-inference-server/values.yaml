@@ -29,6 +29,13 @@ cache:
 # (tt-media-server) env vars are set so each server picks up the name it reads.
 hfCacheDir: ""
 
+# Tenstorrent boards need 1Gi hugepages unless the cluster runs IOMMU + KMD
+# 1.29.0+, where they aren't required. When disabled, the chart drops the
+# hugepages-1Gi request/limit, the /dev/hugepages-1G volume + mounts, and the
+# cleanup-hugepages initContainer.
+hugepages:
+  enabled: true
+
 # ---------------------------------------------------------------------------
 # Defaults — merged with (and overridden by) per-model config below.
 # ---------------------------------------------------------------------------

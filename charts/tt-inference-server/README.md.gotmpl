@@ -173,6 +173,7 @@ Set per release, typically via `--set`.
 | `impl` | no | `""` | Pin the implementation when a device offers more than one. Defaults to `models.<model>.<engine>.<device>.defaultImpl`. |
 | `hfToken` | yes* | `""` | HuggingFace token. Injected as `HF_TOKEN`. Required unless weights are pre-downloaded via `hfCacheDir`. |
 | `hfCacheDir` | no | `""` | Host path to a pre-downloaded HuggingFace weights directory. Mounted read-only at `/mnt/hf-cache`; skips download at startup. |
+| `hugepages.enabled` | no | `true` | Whether Tenstorrent boards need 1Gi hugepages. Set `false` on IOMMU + KMD 1.29.0+ clusters to drop the `hugepages-1Gi` request/limit, the `/dev/hugepages-1G` volume + mounts, and the `cleanup-hugepages` initContainer. |
 | `cache.hostPath` | no | `""` | Override the host path used for the ttnn cache volume. Defaults to `/opt/cache/<model>-<device>-<impl>`. |
 | `nameOverride` | no | `""` | Overrides the chart name component in resource names. |
 | `fullnameOverride` | no | `""` | Fully overrides the resource name prefix. |
@@ -196,10 +197,10 @@ All fields under `defaults` apply to every model/engine/device/impl unless overr
 | `defaults.service.port` | `8000` | Service port. |
 | `defaults.service.targetPort` | `8000` | Container target port. |
 | `defaults.service.annotations` | `{}` | Annotations applied to the Service. |
-| `defaults.resources.limits.hugepages-1Gi` | `32Gi` | Hugepage limit. (`cpu` and `memory` limits are unset by default.) |
+| `defaults.resources.limits.hugepages-1Gi` | `32Gi` | Hugepage limit. Dropped when `hugepages.enabled=false`. (`cpu` and `memory` limits are unset by default.) |
 | `defaults.resources.requests.cpu` | `"6"` | CPU request. |
 | `defaults.resources.requests.memory` | `64Gi` | Memory request (often overridden per impl). |
-| `defaults.resources.requests.hugepages-1Gi` | `32Gi` | Hugepage request. |
+| `defaults.resources.requests.hugepages-1Gi` | `32Gi` | Hugepage request. Dropped when `hugepages.enabled=false`. |
 | `defaults.probes.startup.periodSeconds` | `15` | startupProbe poll interval (must be `> 0`). The startupProbe is always rendered — it owns the model compile/warmup window, and while it runs the kubelet suppresses liveness/readiness so a slow compile never triggers a restart. `failureThreshold` is not set here — the Deployment derives it as `ceil(progressDeadlineSeconds / periodSeconds)`, so the startup budget tracks the max compile time and the Pod flips to `1/1` as soon as one poll succeeds. |
 | `defaults.probes.liveness.enabled` | `true` | Enable liveness probe. |
 | `defaults.probes.liveness.path` | `/v1/models` | Liveness probe HTTP path (`/tt-liveness` for non-vllm engines). |
@@ -282,12 +283,13 @@ helm install my-model ./charts/tt-inference-server \
 
 ## Init Containers
 
-Each pod runs two init containers before the inference server starts:
+`fix-cache-permissions` always runs before the inference server starts;
+`cleanup-hugepages` runs only when `hugepages.enabled` (the default).
 
 **`fix-cache-permissions`**
 Runs `chown -R 1000:1000 /cache` on the cache host path volume. The inference server runs as UID 1000 and requires write access to the cache directory, which may be created by root on the host.
 
-**`cleanup-hugepages`**
+**`cleanup-hugepages`** (only when `hugepages.enabled`)
 Removes stale hugepage files left by previous runs, **scoped to this Pod's
 DRA-allocated board(s)** only. The init container requests the same
 `ResourceClaim` as the main container, so the DRA driver injects its
