@@ -19,6 +19,8 @@ caller should surface.
 
 from __future__ import annotations
 
+import os
+
 import logging
 import time
 from dataclasses import dataclass, field
@@ -61,7 +63,10 @@ class LLMPerformanceRunner:
         *,
         inter_run_sleep_s: float = 2.0,
         capture_trace_timeout_s: float = 1200.0,
-        wait_healthy_timeout_s: float = 1200.0,
+        # A first start on a node pays an HF weight download plus weight conversion
+        # inside this window: measured 7m46s + ~17m for a 31B model on P300X2, so
+        # 1200 s fits only a second run. Override with TT_WAIT_HEALTHY_TIMEOUT_S.
+        wait_healthy_timeout_s: float = float(os.getenv("TT_WAIT_HEALTHY_TIMEOUT_S", 2400.0)),
     ) -> None:
         self.driver = driver
         self.server_controller = server_controller

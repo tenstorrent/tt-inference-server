@@ -569,6 +569,41 @@ templates:
       reasoning_parser_name: qwen3
       tool_call_parser_name: qwen3_coder
 
+# google/gemma-4-31B-it served by the agentic autoport rather than tt_transformers.
+# Mirrors the tt_transformers entry above. Five deviations, all required:
+# impl; default_impl false (that entry owns the default -- select this one with
+# --impl gemma4-31b-autoport); EXTRA_MODELS_DIR + GEMMA4_31B_AUTOPORT_DIR, without
+# which the arch resolves to models/demos/gemma4; sample_on_device_mode all,
+# because decode_only routes prefill to host sampling, which the autoport gates
+# behind a logprob-compatibility env var rather than supporting as a serving mode;
+# and no vllm_args, because that entry's tool-call and reasoning parsers are what
+# killed its own release run 32132213868 ("Gemma4ToolParser.__init__() takes 2
+# positional arguments but 3 were given").
+# Needs tt-metal branch `mvasiljevic/gemma4-31b-it-weights`.
+- weights:
+    - google/gemma-4-31B-it
+  impl: gemma4_31b_autoport
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 1
+      max_context: 49152
+      default_impl: false
+      env_vars:
+        MESH_DEVICE: P150x4
+        GEMMA4_PAGE_BLOCK_SIZE: '64'
+        GEMMA4_MAX_TOKENS_ALL_USERS: '49152'
+        GEMMA4_31B_AUTOPORT_DIR: models/autoports/google_gemma_4_31b
+        EXTRA_MODELS_DIR: ../../tt-metal/models/autoports/vllm_bundles
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 200000000
+        sample_on_device_mode: all
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+
 # QB2 bring-up spec for Muse-Glimmer-30B (~29.6B dense, 52 layers, hidden 6656,
 # GQA 32 Q / 2 KV, head_dim 128, SwiGLU 19968, RoPE theta 500000, vocab 202048,
 # 131072+ ctx, plus a ~1.8B ViT-G/14 Perception Encoder).

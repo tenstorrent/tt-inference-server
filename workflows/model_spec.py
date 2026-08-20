@@ -316,6 +316,14 @@ muse_glimmer_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/autoports/meta_models_muse_glimmer_30b",
 )
+# Gemma 4 31B agentic autoport. Like muse_glimmer, code_path is under
+# models/autoports/ and exists only on a tt-metal branch, not on main.
+gemma4_31b_autoport_impl = ImplSpec(
+    impl_id="gemma4_31b_autoport",
+    impl_name="gemma4-31b-autoport",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/autoports/google_gemma_4_31b",
+)
 # DiffusionGemma 26B-A4B. Reuses the gemma4 MoE text backbone unchanged; the net-new
 # part is the block-diffusion decode loop. Exists on the tt-metal branch
 # `diffusion-gemma-all` (main carries only the foundation layer, no e2e demo).
@@ -341,6 +349,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "training_lora": training_lora_impl,
     "qwen36_blackhole_b8": qwen36_blackhole_b8_impl,
     "muse_glimmer": muse_glimmer_impl,
+    "gemma4_31b_autoport": gemma4_31b_autoport_impl,
     "diffusion_gemma": diffusion_gemma_impl,
 }
 
