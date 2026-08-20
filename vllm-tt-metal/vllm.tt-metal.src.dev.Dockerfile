@@ -103,9 +103,7 @@ RUN /bin/bash -c "git clone --depth 1 https://github.com/tenstorrent-metal/tt-me
 # install is delegated to its own docs/install-vllm-tt.sh rather than restated here
 RUN /bin/bash -c "git clone https://github.com/tenstorrent/vllm-tt-plugin.git ${vllm_tt_plugin_dir} \
     && cd ${vllm_tt_plugin_dir} \
-    && (git checkout '${TT_VLLM_COMMIT_SHA_OR_TAG}' \
-        || { git fetch --depth 1 origin '${TT_VLLM_COMMIT_SHA_OR_TAG}' \
-             && git checkout --detach FETCH_HEAD; }) \
+    && git checkout ${TT_VLLM_COMMIT_SHA_OR_TAG} \
     && source ${PYTHON_ENV_DIR}/bin/activate \
     && uv pip install --upgrade pip \
     && source docs/install-vllm-tt.sh \
