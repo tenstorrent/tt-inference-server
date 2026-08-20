@@ -354,11 +354,13 @@ templates:
   device_model_specs:
     # A single P300 card is a two-chip P150x2 mesh.
     - device: P300
-      max_concurrency: 32
+      max_concurrency: 16
       max_context: 40960
       default_impl: true
       env_vars:
         TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_mesh_graph_descriptor.textproto"
+      override_tt_config:
+        trace_region_size: 402653184  # 384 MiB for retained multi-shape trace captures
   status: EXPERIMENTAL
   metadata:
     Qwen/Qwen3-4B:
