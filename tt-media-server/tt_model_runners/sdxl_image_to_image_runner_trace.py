@@ -139,15 +139,13 @@ class TTSDXLImageToImageRunner(BaseSDXLRunner):
 
         self.logger.info(f"Device {self.device_id}: Generating input tensors...")
 
-        tt_latents, tt_prompt_embeds, tt_add_text_embeds = (
-            self._generate_input_tensors(
-                torch_image=images,
-                all_prompt_embeds_torch=all_prompt_embeds_torch,
-                torch_add_text_embeds=torch_add_text_embeds,
-                start_latent_seed=requests[0].seed,
-                timesteps=requests[0].timesteps,
-                sigmas=requests[0].sigmas,
-            )
+        tt_latents, tt_prompt_embeds, tt_add_text_embeds = self._generate_input_tensors(
+            torch_image=images,
+            all_prompt_embeds_torch=all_prompt_embeds_torch,
+            torch_add_text_embeds=torch_add_text_embeds,
+            start_latent_seed=requests[0].seed,
+            timesteps=requests[0].timesteps,
+            sigmas=requests[0].sigmas,
         )
 
         self.logger.debug(f"Device {self.device_id}: Preparing input tensors...")
