@@ -461,6 +461,18 @@
             "compatible_devices": [
                 "blackhole_galaxy"
             ]
+        },
+        "qwen3_tts": {
+            "id_name": "qwen3-tts",
+            "weights": [
+                "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+                "Qwen/Qwen3-TTS-12Hz-0.6B-Base"
+            ],
+            "category": "TTS",
+            "compatible_devices": [
+                "n150",
+                "n300"
+            ]
         }
     },
     "hardware_defaults": {
