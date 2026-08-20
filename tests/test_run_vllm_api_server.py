@@ -273,9 +273,9 @@ def test_vllm_dockerfile_checks_out_supplied_standalone_plugin_ref():
     dockerfile = VLLM_DOCKERFILE_PATH.read_text()
 
     assert "git clone https://github.com/tenstorrent/vllm-tt-plugin.git" in dockerfile
-    assert "git checkout '${TT_VLLM_COMMIT_SHA_OR_TAG}'" in dockerfile
-    assert "git ls-remote origin" in dockerfile
-    assert 'git fetch --depth 1 origin \\"\\${resolved_sha}\\"' in dockerfile
+    assert "git checkout ${TT_VLLM_COMMIT_SHA_OR_TAG}" in dockerfile
+    assert "git ls-remote origin" not in dockerfile
+    assert "git fetch --depth 1 origin" not in dockerfile
     assert "source docs/install-vllm-tt.sh" in dockerfile
     assert "git clone https://github.com/tenstorrent/vllm.git" not in dockerfile
 
