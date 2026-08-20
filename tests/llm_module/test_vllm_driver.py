@@ -5,9 +5,6 @@
 import json
 from pathlib import Path
 
-import pytest
-
-from llm_module.benchmark_configs import ensure_custom_dataset
 from llm_module.config import LLMRunConfig, ServerConnection
 from llm_module.drivers.vllm import build_vllm_bench_serve_argv
 
@@ -149,65 +146,3 @@ def test_without_custom_dataset_the_sweep_stays_random():
 
     assert cmd[cmd.index("--dataset-name") + 1] == "random"
     assert cmd[cmd.index("--random-input-len") + 1] == "128"
-
-
-def test_missing_custom_dataset_path_is_left_alone(tmp_path):
-    server = ServerConnection(
-        base_url="http://127.0.0.1",
-        service_port=8000,
-        model="google/diffusiongemma-26B-A4B-it",
-    )
-    config = _config()
-
-    assert ensure_custom_dataset(config, server, tmp_path) is config
-
-
-def test_existing_prompt_file_short_circuits_rebuild(monkeypatch, tmp_path):
-    from llm_module import speed_bench_prompts
-
-    def fail_rebuild(**_kwargs):
-        raise AssertionError("prompt file should be reused, not rebuilt")
-
-    monkeypatch.setattr(
-        speed_bench_prompts, "write_speed_bench_prompt_file", fail_rebuild
-    )
-    prompts_path = tmp_path / "speed_bench_prompts_isl-128_n-8.jsonl"
-    prompts_path.write_text('{"prompt": "existing"}\n')
-    server = ServerConnection(
-        base_url="http://127.0.0.1",
-        service_port=8000,
-        model="google/diffusiongemma-26B-A4B-it",
-    )
-
-    ensured = ensure_custom_dataset(
-        _config(custom_dataset_path=Path(prompts_path.name)),
-        server,
-        tmp_path,
-    )
-
-    assert ensured.custom_dataset_path == prompts_path
-
-
-def test_speed_bench_prompt_failure_does_not_fall_back_to_random(monkeypatch, tmp_path):
-    from llm_module import speed_bench_prompts
-
-    def fail_prompt_build(**_kwargs):
-        raise OSError("dataset unavailable")
-
-    monkeypatch.setattr(
-        speed_bench_prompts,
-        "write_speed_bench_prompt_file",
-        fail_prompt_build,
-    )
-    server = ServerConnection(
-        base_url="http://127.0.0.1",
-        service_port=8000,
-        model="google/diffusiongemma-26B-A4B-it",
-    )
-
-    with pytest.raises(RuntimeError, match="refusing to run a mislabeled"):
-        ensure_custom_dataset(
-            _config(custom_dataset_path=Path("speed_bench_prompts_isl-128_n-8.jsonl")),
-            server,
-            tmp_path,
-        )

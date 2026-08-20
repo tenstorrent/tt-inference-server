@@ -22,7 +22,6 @@ from typing import List, Optional, Tuple
 
 from utils.url_helpers import uses_remote_base_url
 
-from ..benchmark_configs import ensure_custom_dataset
 from ..config import DriverContext, LLMRunConfig, ServerConnection
 from ..parsers.vllm import VLLMBenchParser
 from ._subprocess import load_json, run_command, safe_filename_part
@@ -151,7 +150,6 @@ class VLLMBenchDriver(LLMDriver):
             f"_maxcon-{config.max_concurrency}_n-{config.num_prompts}.json"
         )
 
-        config = ensure_custom_dataset(config, server, context.output_dir)
         cmd, auth_token = build_vllm_bench_serve_argv(
             vllm_binary=self.vllm_binary,
             config=config,
