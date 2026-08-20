@@ -264,11 +264,6 @@
                 "P300X2"
               ]
             },
-            "release": {
-              "devices": [
-                "GALAXY"
-              ]
-            },
             "weekly": {
               "devices": [
                 "GALAXY",
@@ -320,11 +315,6 @@
       "inference_engine": "vLLM",
       "ci": {
         "nightly": {
-          "devices": [
-            "P300X2"
-          ]
-        },
-        "release": {
           "devices": [
             "P300X2"
           ]
@@ -407,6 +397,11 @@
       "inference_engine": "MEDIA",
       "ci": {
         "weekly": {
+          "devices": [
+            "BH_GALAXY"
+          ]
+        },
+        "release": {
           "devices": [
             "BH_GALAXY"
           ]
