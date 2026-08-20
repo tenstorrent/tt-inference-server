@@ -98,20 +98,15 @@ class XttsV2Runner(BaseMetalDeviceRunner):
         return hf_hub_download(repo_id="coqui/XTTS-v2", filename=DEFAULT_VOICE_HF_FILE)
 
     def _load_reference_audio(self):
-        """Load the reference voice clip as (tensor, sample_rate).
+        """Load the reference voice clip as (waveform, sample_rate).
 
-        Supports a serialized torch tensor (.pt, assumed 22050 Hz) or any
-        soundfile-readable audio file (.wav etc.), downmixed to mono."""
-        ref_path = self._resolve_reference_audio_path()
-        if ref_path.endswith(".pt") or ref_path.endswith(".pth"):
-            ref_audio = torch.load(ref_path, map_location="cpu", weights_only=True)
-            sample_rate = 22050
-        else:
-            data, sample_rate = sf.read(ref_path, dtype="float32")
-            if data.ndim > 1:
-                data = data.mean(axis=1)  # downmix to mono
-            ref_audio = torch.from_numpy(data)
-        return ref_audio, sample_rate
+        Delegates to the model's own loader rather than reimplementing it: that one covers
+        wav/flac/ogg plus every .pt shape people actually have (a bare tensor, a (tensor, sr)
+        tuple, a HuggingFace audio dict), and it returns the clip's REAL sample rate instead of
+        assuming one — assuming it makes a 44.1 kHz clip clone at the wrong pitch, silently."""
+        from models.experimental.xtts_v2.frontend import load_reference_audio
+
+        return load_reference_audio(self._resolve_reference_audio_path())
 
     @log_execution_time(
         "XTTS-v2 warmup",
