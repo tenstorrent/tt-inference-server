@@ -435,7 +435,7 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "$datasource" },
-      "description": "Seconds since the last successful generation. Rising without bound means the pipeline stopped producing \u2014 catches a wedged runner that never returns an error.",
+      "description": "Seconds since the last successful generation while idle. 0 while video_generations_in_progress > 0 so a 20-minute job does not go yellow at 15 minutes. Rising without bound after in-flight drops to 0 means the pipeline stopped producing \u2014 a wedged runner that never returns an error.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -443,7 +443,8 @@
             "mode": "absolute",
             "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 900}, {"color": "red", "value": 3600}]
           },
-          "unit": "s"
+          "unit": "s",
+          "noValue": "n/a"
         }
       },
       "gridPos": { "h": 4, "w": 4, "x": 20, "y": 24 },
@@ -457,7 +458,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "$datasource" },
-          "expr": "time() - max(tt_media_server_video_last_generation_timestamp{service=~\"$service\",model_type=~\"$model_type\",status=\"success\"})",
+          "expr": "(0 * (sum(tt_media_server_video_generations_in_progress{service=~\"$service\",model_type=~\"$model_type\"}) > 0)) or (time() - max(tt_media_server_video_last_generation_timestamp{service=~\"$service\",model_type=~\"$model_type\",status=\"success\"}))",
           "refId": "A",
           "legendFormat": "age"
         }

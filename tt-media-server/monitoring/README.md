@@ -132,7 +132,7 @@ answer *how long*; these answer *how much video, how fast*:
 | `video_output_size_bytes`, `video_output_frames` | what the client actually got back |
 | `video_requested_inference_steps`, `video_conditioning_images` | what clients are asking for |
 | `video_generations_in_progress` | live concurrency, split by request type |
-| `video_last_generation_timestamp` | freshness — alert on `time() - <this>` to catch a pipeline that stopped producing |
+| `video_last_generation_timestamp` | freshness — Since Last Success is 0 while a generation is in flight, then `time() - this` once idle |
 | `video_encode_*` | ffmpeg mp4 encode cost |
 
 Three things to know when reading these:
