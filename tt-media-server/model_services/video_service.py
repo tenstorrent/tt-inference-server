@@ -3,10 +3,12 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import asyncio
+import os
 import time
 from typing import Optional
 
 import numpy as np
+from config.constants import video_executed_inference_steps
 from config.settings import settings
 from domain.base_request import BaseRequest
 from domain.video_generate_request import VideoGenerateRequest
@@ -177,11 +179,17 @@ class VideoService(BaseJobService):
         video into a 500.
         """
         try:
+            requested_steps = getattr(request, "num_inference_steps", None)
             stats = VideoGenerationStats(
                 request_type=request_type,
                 duration_seconds=elapsed,
                 status=status,
-                num_inference_steps=getattr(request, "num_inference_steps", None),
+                num_inference_steps=requested_steps,
+                executed_inference_steps=video_executed_inference_steps(
+                    requested_steps,
+                    settings.model_runner,
+                    os.getenv("MODEL"),
+                ),
                 conditioning_images=len(getattr(request, "image_prompts", None) or []),
                 width=probe.width if probe else None,
                 height=probe.height if probe else None,

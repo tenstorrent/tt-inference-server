@@ -4,7 +4,7 @@
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import NamedTuple, Tuple
+from typing import NamedTuple, Optional, Tuple
 
 
 class SupportedModels(Enum):
@@ -274,6 +274,53 @@ I2V_MODEL_NAMES = frozenset(
 MIN_VIDEO_INFERENCE_STEPS = 4
 MAX_VIDEO_INFERENCE_STEPS = 50
 DEFAULT_VIDEO_INFERENCE_STEPS = 20
+
+# Pipelines that ignore the client's num_inference_steps. Keep these as the
+# values passed into the runner (dit_runners Distill / Lightning / AniSora).
+WAN22_DISTILL_NUM_STEPS = 4
+WAN22_LIGHTNING_NUM_STEPS = 4
+WAN22_ANISORA_NUM_STEPS = 8
+
+VIDEO_FORCED_INFERENCE_STEPS_BY_RUNNER = {
+    ModelRunners.TT_WAN_2_2_I2V_DISTILL: WAN22_DISTILL_NUM_STEPS,
+    ModelRunners.TT_WAN_2_2_I2V_LIGHTNING: WAN22_LIGHTNING_NUM_STEPS,
+    ModelRunners.TT_WAN_2_2_I2V_ANISORA: WAN22_ANISORA_NUM_STEPS,
+}
+VIDEO_FORCED_INFERENCE_STEPS_BY_MODEL = {
+    ModelNames.WAN_2_2_I2V_DISTILL: WAN22_DISTILL_NUM_STEPS,
+    ModelNames.WAN_2_2_I2V_LIGHTNING: WAN22_LIGHTNING_NUM_STEPS,
+    ModelNames.WAN_2_2_I2V_ANISORA: WAN22_ANISORA_NUM_STEPS,
+}
+
+
+def video_executed_inference_steps(
+    requested: Optional[int],
+    model_runner: Optional[str] = None,
+    model_name: Optional[str] = None,
+) -> Optional[int]:
+    """Return the denoise steps the pipeline actually runs.
+
+    Distill, Lightning, and AniSora ignore ``num_inference_steps``; SP_RUNNER
+    serving those weights is identified by ``MODEL``, not by the runner name.
+    """
+    if model_runner:
+        try:
+            forced = VIDEO_FORCED_INFERENCE_STEPS_BY_RUNNER.get(
+                ModelRunners(model_runner)
+            )
+        except ValueError:
+            forced = None
+        if forced is not None:
+            return forced
+    if model_name:
+        try:
+            forced = VIDEO_FORCED_INFERENCE_STEPS_BY_MODEL.get(ModelNames(model_name))
+        except ValueError:
+            forced = None
+        if forced is not None:
+            return forced
+    return requested
+
 
 INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_SDXL_EDIT: {ModelNames.STABLE_DIFFUSION_XL_INPAINTING},

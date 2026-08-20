@@ -518,6 +518,102 @@ class TestConditioningImages:
         )
 
 
+class TestExecutedVsRequestedSteps:
+    """Denoise totals must use steps the pipeline ran, not the client ask.
+
+    Distill and Lightning always run 4; AniSora always runs 8. The API default
+    is 20, so treating the request as executed would make steps/sec 5× too high.
+    """
+
+    def test_helper_honors_client_on_wan_t2v(self):
+        from config.constants import ModelRunners, video_executed_inference_steps
+
+        assert video_executed_inference_steps(20, ModelRunners.TT_WAN_2_2.value) == 20
+
+    def test_helper_forces_distill_and_lightning_to_4(self):
+        from config.constants import (
+            ModelRunners,
+            WAN22_DISTILL_NUM_STEPS,
+            WAN22_LIGHTNING_NUM_STEPS,
+            video_executed_inference_steps,
+        )
+
+        assert (
+            video_executed_inference_steps(
+                20, ModelRunners.TT_WAN_2_2_I2V_DISTILL.value
+            )
+            == WAN22_DISTILL_NUM_STEPS
+        )
+        assert (
+            video_executed_inference_steps(
+                20, ModelRunners.TT_WAN_2_2_I2V_LIGHTNING.value
+            )
+            == WAN22_LIGHTNING_NUM_STEPS
+        )
+
+    def test_helper_forces_anisora_to_8(self):
+        from config.constants import (
+            ModelRunners,
+            WAN22_ANISORA_NUM_STEPS,
+            video_executed_inference_steps,
+        )
+
+        assert (
+            video_executed_inference_steps(
+                20, ModelRunners.TT_WAN_2_2_I2V_ANISORA.value
+            )
+            == WAN22_ANISORA_NUM_STEPS
+        )
+
+    def test_helper_sp_runner_uses_model_name(self):
+        from config.constants import (
+            ModelNames,
+            ModelRunners,
+            WAN22_LIGHTNING_NUM_STEPS,
+            video_executed_inference_steps,
+        )
+
+        assert (
+            video_executed_inference_steps(
+                20,
+                ModelRunners.SP_RUNNER.value,
+                ModelNames.WAN_2_2_I2V_LIGHTNING.value,
+            )
+            == WAN22_LIGHTNING_NUM_STEPS
+        )
+
+    def test_recorder_counts_distill_executed_steps(self):
+        from config.constants import ModelRunners, WAN22_DISTILL_NUM_STEPS
+
+        model = ModelRunners.TT_WAN_2_2_I2V_DISTILL.value
+        make_client(model).record_video_generation(
+            VideoGenerationStats(
+                request_type=VIDEO_REQUEST_TYPE_I2V,
+                duration_seconds=40.0,
+                num_inference_steps=20,
+            )
+        )
+        assert (
+            sample(
+                "tt_media_server_video_requested_inference_steps_sum",
+                model_type=model,
+                request_type=VIDEO_REQUEST_TYPE_I2V,
+            )
+            == 20.0
+        )
+        assert sample(
+            "tt_media_server_video_denoise_steps_total",
+            model_type=model,
+            request_type=VIDEO_REQUEST_TYPE_I2V,
+        ) == float(WAN22_DISTILL_NUM_STEPS)
+        assert sample(
+            "tt_media_server_video_step_duration_seconds_sum",
+            model_type=model,
+            request_type=VIDEO_REQUEST_TYPE_I2V,
+            resolution=VIDEO_UNKNOWN_LABEL,
+        ) == pytest.approx(40.0 / WAN22_DISTILL_NUM_STEPS)
+
+
 class TestRecordVideoEncode:
     """ffmpeg encode accounting."""
 
@@ -820,3 +916,37 @@ class TestProcessRequestGauge:
             )
             == 1.0
         )
+
+    async def test_success_records_distill_executed_steps(
+        self, monkeypatch, video_service, tmp_path
+    ):
+        from config.constants import ModelRunners, WAN22_DISTILL_NUM_STEPS
+        from domain.video_generate_request import VideoGenerateRequest
+
+        model = "test_video_distill_steps_path"
+        monkeypatch.setattr(
+            video_service.settings,
+            "model_runner",
+            ModelRunners.TT_WAN_2_2_I2V_DISTILL.value,
+        )
+        monkeypatch.delenv("MODEL", raising=False)
+        mp4 = write_mp4(tmp_path / "distill.mp4", num_frames=8, width=64, height=32)
+        service = self._service(monkeypatch, video_service, model, mp4)
+
+        await service.process_request(
+            VideoGenerateRequest(prompt="a fox", num_inference_steps=20)
+        )
+
+        assert (
+            sample(
+                "tt_media_server_video_requested_inference_steps_sum",
+                model_type=model,
+                request_type=VIDEO_REQUEST_TYPE_T2V,
+            )
+            == 20.0
+        )
+        assert sample(
+            "tt_media_server_video_denoise_steps_total",
+            model_type=model,
+            request_type=VIDEO_REQUEST_TYPE_T2V,
+        ) == float(WAN22_DISTILL_NUM_STEPS)

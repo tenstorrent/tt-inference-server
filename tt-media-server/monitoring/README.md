@@ -125,9 +125,9 @@ answer *how long*; these answer *how much video, how fast*:
 | `video_generation_total{request_type,status}` | throughput and outcome, split t2v / i2v; `status` is `success` / `failure` / `cancelled` |
 | `video_generation_duration_seconds{resolution,status}` | end-to-end latency; filter `status="success"` for latency, `"failure"` for time-to-failure |
 | `video_frames_generated_total`, `video_content_seconds_total` | fleet output rate (frames/sec, video-seconds/sec) |
-| `video_denoise_steps_total` | denoise steps **executed** (success only) — the steps/sec denominator |
+| `video_denoise_steps_total` | denoise steps **executed** (success only) — Distill/Lightning run 4, AniSora 8, even when the client asked for 20 |
 | `video_frames_per_second`, `video_pixels_per_second` | per-generation throughput; pixels/sec makes 480p and 720p comparable |
-| `video_step_duration_seconds` | mean wall-clock seconds per denoise step |
+| `video_step_duration_seconds` | mean wall-clock seconds per **executed** denoise step |
 | `video_realtime_factor` | wall seconds per second of playable video (1.0 = realtime) |
 | `video_output_size_bytes`, `video_output_frames` | what the client actually got back |
 | `video_requested_inference_steps`, `video_conditioning_images` | what clients are asking for |
@@ -142,6 +142,10 @@ Three things to know when reading these:
   sides of the Success Rate panel. Executed steps, frames, and throughput are
   recorded for successful generations only — a request that timed out or was
   cancelled after 6s of a 300s budget did not run its steps that fast.
+  Distill, Lightning, and AniSora ignore `num_inference_steps`; executed
+  steps come from those pipelines, not from the request. The Success Rate
+  panel is empty (not 0% or 100%) when no success/failure completed in the
+  last hour.
 
 * **Frame count and resolution come from probing the produced mp4** (PyAV, in
   `utils.video_manager.probe_video`). On a multihost `sp_runner` deployment the

@@ -10,6 +10,7 @@ from queue import Queue
 from threading import Thread
 from typing import Optional
 
+from config.constants import video_executed_inference_steps
 from config.settings import get_settings
 from prometheus_client import Counter, Gauge, Histogram
 from utils.logger import TTLogger
@@ -479,12 +480,17 @@ class VideoGenerationStats:
     throughput histogram.
 
     ``status`` is one of ``VIDEO_STATUS_SUCCESS`` / ``_FAILURE`` / ``_CANCELLED``.
+    ``num_inference_steps`` is what the client asked for;
+    ``executed_inference_steps`` is what the pipeline ran (Distill/Lightning/AniSora
+    ignore the client). If executed is left unset, the recorder resolves it from
+    the runner name.
     """
 
     request_type: str
     duration_seconds: float
     status: str = VIDEO_STATUS_SUCCESS
     num_inference_steps: Optional[int] = None
+    executed_inference_steps: Optional[int] = None
     conditioning_images: int = 0
     width: Optional[int] = None
     height: Optional[int] = None
@@ -704,20 +710,29 @@ class TelemetryClient:
             video_requested_inference_steps.labels(
                 model_type=model_type, request_type=request_type
             ).observe(stats.num_inference_steps)
-            # Executed steps and per-step latency are success-only: a request
-            # that timed out (or was cancelled) after 6s of a 300s budget did
-            # not run 16 steps in 0.4s each, and letting that land here would
-            # drag every step-time quantile toward zero.
-            if succeeded:
-                video_denoise_steps_counter.labels(
-                    model_type=model_type, request_type=request_type
-                ).inc(stats.num_inference_steps)
-                if duration and duration > 0:
-                    video_step_duration.labels(
-                        model_type=model_type,
-                        request_type=request_type,
-                        resolution=resolution,
-                    ).observe(duration / stats.num_inference_steps)
+
+        # Executed steps are a separate field: Distill / Lightning / AniSora
+        # ignore the client's num_inference_steps. Fall back to the runner map
+        # when the caller left executed unset (direct recorder tests).
+        executed_steps = stats.executed_inference_steps
+        if executed_steps is None:
+            executed_steps = video_executed_inference_steps(
+                stats.num_inference_steps, model_type
+            )
+        # Executed steps and per-step latency are success-only: a request
+        # that timed out (or was cancelled) after 6s of a 300s budget did
+        # not run 16 steps in 0.4s each, and letting that land here would
+        # drag every step-time quantile toward zero.
+        if succeeded and executed_steps:
+            video_denoise_steps_counter.labels(
+                model_type=model_type, request_type=request_type
+            ).inc(executed_steps)
+            if duration and duration > 0:
+                video_step_duration.labels(
+                    model_type=model_type,
+                    request_type=request_type,
+                    resolution=resolution,
+                ).observe(duration / executed_steps)
 
         if stats.conditioning_images:
             video_conditioning_images.labels(model_type=model_type).observe(

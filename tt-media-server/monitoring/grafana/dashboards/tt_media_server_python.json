@@ -309,16 +309,17 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "$datasource" },
-      "description": "Share of finished generations that produced a video over the last 5m. Failures are timeouts and runner/peer errors, not HTTP 4xx. Cancelled generations are excluded from both sides of the ratio — /cancel traffic is a client action, not a reliability signal.",
+      "description": "Share of finished generations that produced a video over the last 1h. Failures are timeouts and runner/peer errors, not HTTP 4xx. Cancelled generations are excluded from both sides of the ratio \u2014 /cancel traffic is a client action, not a reliability signal. Empty (not 0% or 100%) when no success/failure completed in the window, including non-video model_type filters.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
           "thresholds": {
             "mode": "absolute",
-            "steps": [{"color": "red", "value": null}, {"color": "yellow", "value": 95}, {"color": "green", "value": 99}]
+            "steps": [{"color": "transparent", "value": null}, {"color": "red", "value": 0}, {"color": "yellow", "value": 95}, {"color": "green", "value": 99}]
           },
           "unit": "percent",
-          "decimals": 1
+          "decimals": 1,
+          "noValue": "n/a"
         }
       },
       "gridPos": { "h": 4, "w": 4, "x": 4, "y": 24 },
@@ -332,7 +333,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "$datasource" },
-          "expr": "(100 * sum(rate(tt_media_server_video_generation_total{service=~\"$service\",model_type=~\"$model_type\",status=\"success\"}[5m])) / clamp_min(sum(rate(tt_media_server_video_generation_total{service=~\"$service\",model_type=~\"$model_type\",status=~\"success|failure\"}[5m])), 1e-9)) or vector(100)",
+          "expr": "(100 * sum(increase(tt_media_server_video_generation_total{service=~\"$service\",model_type=~\"$model_type\",status=\"success\"}[1h])) / sum(increase(tt_media_server_video_generation_total{service=~\"$service\",model_type=~\"$model_type\",status=~\"success|failure\"}[1h]))) and (sum(increase(tt_media_server_video_generation_total{service=~\"$service\",model_type=~\"$model_type\",status=~\"success|failure\"}[1h])) > 0)",
           "refId": "A",
           "legendFormat": "success %"
         }

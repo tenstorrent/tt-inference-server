@@ -13,6 +13,9 @@ from pathlib import Path
 import numpy as np
 import ttnn
 from config.constants import (
+    WAN22_ANISORA_NUM_STEPS,
+    WAN22_DISTILL_NUM_STEPS,
+    WAN22_LIGHTNING_NUM_STEPS,
     WAN22_NUM_FRAMES,
     ModelRunners,
     ModelServices,
@@ -402,12 +405,9 @@ WAN_ANISORA_FAST_ENCODE_FLAGS = {
 # default OOMs during warmup).
 WAN22_ANISORA_BH_TRACE_REGION_BYTES = 200_000_000
 WAN22_ANISORA_GUIDANCE_SCALE = 3.5
-# Fixed step count (mirrors the distill forcing 4): AniSora always runs 8 steps,
-# the validated good-quality / low-latency point (~9.3s traced). The client's
-# num_inference_steps is ignored, same as the distill runner.
-WAN22_ANISORA_NUM_STEPS = 8
+# AniSora / Lightning / Distill step counts live in config.constants
+# (WAN22_*_NUM_STEPS) so telemetry can use the same values.
 
-WAN22_LIGHTNING_NUM_STEPS = 4
 WAN22_LIGHTNING_BOUNDARY_RATIO = 0.875
 WAN22_LIGHTNING_FLOW_SHIFT = 5.0
 
@@ -951,7 +951,7 @@ class TTWan22I2VDistillRunner(TTDiTRunner):
         seed = int(request.seed) if request.seed is not None else 0
         pipeline_args = {
             "prompts": [request.prompt],
-            "num_inference_steps": 4,
+            "num_inference_steps": WAN22_DISTILL_NUM_STEPS,
             "guidance_scale": 1.0,
             "guidance_scale_2": 1.0,
             "seed": seed,
