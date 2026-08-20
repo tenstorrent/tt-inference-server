@@ -463,6 +463,44 @@ class TestRecordImageRun:
                 batch="1",
             ) == pytest.approx(expected_sum)
 
+    def test_missing_engine_is_filled_from_known_stages(self):
+        model_type = "record-engine-fallback"
+        record_image_run(
+            model_type=model_type,
+            device_id="0",
+            resolution="1024x1024",
+            sampler="euler-solver",
+            batch=1,
+            denoise_seconds=4.0,
+            vae_seconds=1.0,
+            conditioning_seconds={"all": 0.5, "clip": 0.2},
+        )
+        shape = shape_labels(model_type)
+        assert (
+            sample("tt_media_server_image_engine_duration_seconds_count", **shape) == 1
+        )
+        assert sample(
+            "tt_media_server_image_engine_duration_seconds_sum", **shape
+        ) == pytest.approx(5.5)
+
+    def test_explicit_engine_is_not_replaced_by_stage_sum(self):
+        model_type = "record-engine-kept"
+        record_image_run(
+            model_type=model_type,
+            device_id="0",
+            resolution="1024x1024",
+            sampler="euler-solver",
+            batch=1,
+            engine_seconds=10.0,
+            denoise_seconds=4.0,
+            vae_seconds=1.0,
+            conditioning_seconds={"all": 0.5},
+        )
+        shape = shape_labels(model_type)
+        assert sample(
+            "tt_media_server_image_engine_duration_seconds_sum", **shape
+        ) == pytest.approx(10.0)
+
     def test_absent_stages_produce_no_series(self):
         model_type = "record-sparse"
         record_image_run(
@@ -572,6 +610,18 @@ class TestSdxlSectionTimings:
         assert timings.denoise_seconds == 4.0
         assert timings.vae_seconds is None
 
+    def test_missing_image_gen_span_falls_back_to_wall_clock(self, profiler, monkeypatch):
+        clock = {"t": 0.0}
+        monkeypatch.setattr("telemetry.image_metrics._now", lambda: clock["t"])
+        with SdxlSectionTimings() as timings:
+            clock["t"] = 5.0
+            profiler.times["denoising_loop"] = [4.0]
+            profiler.times["vae_decode"] = [1.0]
+
+        assert timings.engine_seconds == pytest.approx(5.0)
+        assert timings.denoise_seconds == 4.0
+        assert timings.vae_seconds == 1.0
+
     def test_takes_the_last_span_when_several_were_recorded(self, profiler):
         with SdxlSectionTimings() as timings:
             profiler.times["denoising_loop"] = [1.0, 2.0, 3.0]
@@ -592,11 +642,13 @@ class TestSdxlSectionTimings:
             with SdxlSectionTimings():
                 raise ValueError("must propagate")
 
-    def test_no_tt_metal_means_no_readings_and_no_crash(self):
+    def test_no_tt_metal_falls_back_to_wall_clock_for_engine(self, monkeypatch):
         for key in ("models.common.utility_functions", "models.common", "models"):
             sys.modules.pop(key, None)
+        clock = {"t": 1.0}
+        monkeypatch.setattr("telemetry.image_metrics._now", lambda: clock["t"])
         with SdxlSectionTimings() as timings:
-            pass
+            clock["t"] = 3.5
+        assert timings.engine_seconds == pytest.approx(2.5)
         assert timings.denoise_seconds is None
         assert timings.vae_seconds is None
-        assert timings.engine_seconds is None

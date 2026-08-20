@@ -294,6 +294,10 @@ def record_image_run(
     ``step_seconds`` is per-step latency when the pipeline reports it.
     ``step_count`` only advances the completed-steps counter; the mean of the
     loop is not written into the per-step histogram.
+
+    If ``engine_seconds`` is omitted, it is filled from denoise + VAE +
+    ``encoder="all"`` so Grafana's conditioning-as-%-of-engine cannot divide
+    by an empty denominator.
     """
     batch = str(batch)
     denoise_labels = dict(
@@ -310,6 +314,9 @@ def record_image_run(
         batch=batch,
     )
 
+    engine_seconds = _resolve_engine_seconds(
+        engine_seconds, denoise_seconds, vae_seconds, conditioning_seconds
+    )
     if engine_seconds is not None:
         engine_duration.labels(**shape_labels).observe(engine_seconds)
 
@@ -348,6 +355,27 @@ def _now() -> float:
     return time.perf_counter()
 
 
+def _resolve_engine_seconds(
+    engine_seconds: float | None,
+    denoise_seconds: float | None,
+    vae_seconds: float | None,
+    conditioning_seconds: dict[str, float] | None,
+) -> float | None:
+    if engine_seconds is not None:
+        return engine_seconds
+    parts = []
+    if denoise_seconds is not None:
+        parts.append(denoise_seconds)
+    if vae_seconds is not None:
+        parts.append(vae_seconds)
+    all_cond = (conditioning_seconds or {}).get("all")
+    if all_cond is not None:
+        parts.append(all_cond)
+    if not parts:
+        return None
+    return sum(parts)
+
+
 class SdxlSectionTimings:
     """Read tt-metal's profiler spans around one ``generate_images()`` call.
 
@@ -361,7 +389,9 @@ class SdxlSectionTimings:
 
     Process-global state is safe here because image runners run one ``run()`` at
     a time per device-worker process; only ``sp_runner`` fans out concurrently
-    and it is not an image runner. An unreachable profiler leaves ``None``.
+    and it is not an image runner. An unreachable profiler, or a missing
+    ``image_gen`` span, falls back to wall clock of this context so engine
+    time is never absent while conditioning is exported.
     """
 
     DENOISE = "denoising_loop"
@@ -373,6 +403,7 @@ class SdxlSectionTimings:
         self.denoise_seconds: float | None = None
         self.vae_seconds: float | None = None
         self.engine_seconds: float | None = None
+        self._wall_start: float | None = None
 
     @staticmethod
     def _profiler() -> Any:
@@ -383,6 +414,7 @@ class SdxlSectionTimings:
         return profiler
 
     def __enter__(self) -> "SdxlSectionTimings":
+        self._wall_start = _now()
         profiler = self._profiler()
         if profiler is None:
             return self
@@ -396,15 +428,23 @@ class SdxlSectionTimings:
     def __exit__(self, exc_type, exc, tb) -> bool:
         if exc_type is not None:
             return False  # Failed run: report nothing rather than a bogus timing.
+        wall_seconds = None
+        if self._wall_start is not None:
+            wall_seconds = _now() - self._wall_start
         profiler = self._profiler()
         if profiler is None:
+            self.engine_seconds = wall_seconds
             return False
         try:
             self.denoise_seconds = self._last(profiler, self.DENOISE)
             self.vae_seconds = self._last(profiler, self.VAE)
             self.engine_seconds = self._last(profiler, self.ENGINE)
+            if self.engine_seconds is None:
+                self.engine_seconds = wall_seconds
         except Exception as exc:  # pragma: no cover
             logger.debug(f"Could not read tt-metal profiler spans: {exc}")
+            if self.engine_seconds is None:
+                self.engine_seconds = wall_seconds
         return False
 
     @staticmethod
