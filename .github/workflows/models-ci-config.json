@@ -264,11 +264,11 @@
                 "P300X2"
               ]
             },
-            "release": {
-              "devices": [
-                "GALAXY"
-              ]
-            },
+            // "release": {
+            //   "devices": [
+            //     "GALAXY"
+            //   ]
+            // },
             "weekly": {
               "devices": [
                 "GALAXY",
