@@ -1938,6 +1938,367 @@
       "title": "Processing Bucket Occupancy (set the floor from this)",
       "type": "table"
     }
+    ,
+    { "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 109 }, "id": 810, "panels": [], "title": "ASR Stage Throughput (Whisper feature extraction and encoder)", "type": "row" },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Audio seconds consumed per wall-clock second per stage. Above 1.0 the stage keeps pace with live audio. Feature extraction is the preprocessing ceiling and normally sits well above the encoder — convergence means preprocessing has become the limit. The combined line is front-end capacity: audio seconds over extraction plus encoder time.\n\nEffective throughput, not utilisation: short chunks are padded to the 30s frame, so encoder cost is fixed per chunk and this falls with chunk length. A drop can mean fan-out rose, not that the device slowed — read against Chunk Fan-out above.",
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 0, "thresholdsStyle": { "mode": "line" } }, "unit": "none", "decimals": 1, "thresholds": { "mode": "absolute", "steps": [{ "color": "text", "value": null }, { "color": "green", "value": 1 }] } } },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 110 },
+      "id": 36,
+      "options": { "legend": { "calcs": ["mean", "min"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum(rate(tt_media_server_audio_feature_extraction_input_seconds_total{service=~\"$service\",model_type=~\"$model_type\"}[$__rate_interval])) / sum(rate(tt_media_server_audio_feature_extraction_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\"}[$__rate_interval]))",
+          "legendFormat": "feature extraction",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum(rate(tt_media_server_audio_encoder_input_seconds_total{service=~\"$service\",model_type=~\"$model_type\",trace_hit=\"true\"}[$__rate_interval])) / sum(rate(tt_media_server_audio_encoder_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",trace_hit=\"true\"}[$__rate_interval]))",
+          "legendFormat": "encoder",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum(rate(tt_media_server_audio_encoder_input_seconds_total{service=~\"$service\",model_type=~\"$model_type\",trace_hit=\"true\"}[$__rate_interval])) / (sum(rate(tt_media_server_audio_feature_extraction_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\"}[$__rate_interval])) + sum(rate(tt_media_server_audio_encoder_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",trace_hit=\"true\"}[$__rate_interval])))",
+          "legendFormat": "combined front-end",
+          "refId": "C"
+        }
+      ],
+      "title": "Stage Throughput (audio seconds/s, 1.0 = real time)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Batch: a larger batch amortises one encoder pass over more audio, so throughput should rise with it — a flat line means batching buys nothing. Device: divergence on the same model is the fleet-capacity signal. Both exclude the trace-capture call.",
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 0 }, "unit": "none", "decimals": 1 } },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 110 },
+      "id": 37,
+      "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum by (batch) (rate(tt_media_server_audio_encoder_input_seconds_total{service=~\"$service\",model_type=~\"$model_type\",trace_hit=\"true\"}[$__rate_interval])) / sum by (batch) (rate(tt_media_server_audio_encoder_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",trace_hit=\"true\"}[$__rate_interval]))",
+          "legendFormat": "batch {{batch}}",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum by (device_id) (rate(tt_media_server_audio_encoder_input_seconds_total{service=~\"$service\",model_type=~\"$model_type\",trace_hit=\"true\"}[$__rate_interval])) / sum by (device_id) (rate(tt_media_server_audio_encoder_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",trace_hit=\"true\"}[$__rate_interval]))",
+          "legendFormat": "device {{device_id}}",
+          "refId": "B"
+        }
+      ],
+      "title": "Encoder Throughput by Batch and Device",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Per-batch wall time in each stage. Extraction is host CPU over fixed-size frames, so it should be near-flat — a rising p95 points at host contention, not the model. The encoder spans device preprocessing, the encoder stack and the synchronize.",
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 0 }, "unit": "s" } },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 119 },
+      "id": 38,
+      "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(tt_media_server_audio_feature_extraction_duration_seconds_bucket{service=~\"$service\",model_type=~\"$model_type\"}[5m])))",
+          "legendFormat": "extraction p50",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_audio_feature_extraction_duration_seconds_bucket{service=~\"$service\",model_type=~\"$model_type\"}[5m])))",
+          "legendFormat": "extraction p95",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(tt_media_server_audio_encoder_duration_seconds_bucket{service=~\"$service\",model_type=~\"$model_type\",trace_hit=\"true\"}[5m])))",
+          "legendFormat": "encoder p50",
+          "refId": "C"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_audio_encoder_duration_seconds_bucket{service=~\"$service\",model_type=~\"$model_type\",trace_hit=\"true\"}[5m])))",
+          "legendFormat": "encoder p95",
+          "refId": "D"
+        }
+      ],
+      "title": "Stage Latency Quantiles",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Mean encoder time by trace_hit. trace_hit=\"false\" is the trace-capture call: it runs the encoder twice, so every other panel filters it out. Kept visible for its rate — a steady stream of captures means the batch bucket keeps changing and traces are thrown away rather than replayed.",
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 0 }, "unit": "s" }, "overrides": [{ "matcher": { "id": "byName", "options": "capture calls/s" }, "properties": [{ "id": "unit", "value": "reqps" }, { "id": "custom.axisPlacement", "value": "right" }] }] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 119 },
+      "id": 39,
+      "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum by (trace_hit) (rate(tt_media_server_audio_encoder_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\"}[5m])) / sum by (trace_hit) (rate(tt_media_server_audio_encoder_duration_seconds_count{service=~\"$service\",model_type=~\"$model_type\"}[5m]))",
+          "legendFormat": "mean encoder s (trace_hit={{trace_hit}})",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum(rate(tt_media_server_audio_encoder_duration_seconds_count{service=~\"$service\",model_type=~\"$model_type\",trace_hit=\"false\"}[5m]))",
+          "legendFormat": "capture calls/s",
+          "refId": "B"
+        }
+      ],
+      "title": "Trace-Capture Overhead (excluded from the panels above)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Cumulative count at or below each bucket boundary. The smallest `le` with a non-zero count is the real lower bound — everything below is wasted resolution; if the largest finite bucket holds everything, the ceiling can come down. Re-read after any change to chunk length or device count.",
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 127 },
+      "id": 40,
+      "options": { "showHeader": true, "sortBy": [{ "displayName": "le", "desc": false }] },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum by (le) (increase(tt_media_server_audio_feature_extraction_duration_seconds_bucket{service=~\"$service\",model_type=~\"$model_type\"}[$__range]))",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "extraction {{le}}",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum by (le) (increase(tt_media_server_audio_encoder_duration_seconds_bucket{service=~\"$service\",model_type=~\"$model_type\"}[$__range]))",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "encoder {{le}}",
+          "refId": "B"
+        }
+      ],
+      "title": "Stage Duration Bucket Occupancy (set the buckets from this)",
+      "type": "table"
+    }
+
+    ,
+    { "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 135 }, "id": 820, "panels": [], "title": "ASR VAD Overhead", "type": "row" },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Wall time to find speech and endpoint boundaries, per request. VAD gates when inference starts, so this is pure added latency ahead of the encoder — compare it against Chunk First-Item Latency to see which dominates. Quantiles cover successful runs only; a timeout shows up as delay under outcome=\"failed\", not as a non-event.",
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 0 }, "unit": "s" } },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 136 },
+      "id": 41,
+      "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(tt_media_server_audio_vad_seconds_bucket{service=~\"$service\",model_type=~\"$model_type\",outcome=\"ok\"}[5m])))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_audio_vad_seconds_bucket{service=~\"$service\",model_type=~\"$model_type\",outcome=\"ok\"}[5m])))",
+          "legendFormat": "p95",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum by (outcome) (rate(tt_media_server_audio_vad_seconds_sum{service=~\"$service\",model_type=~\"$model_type\"}[5m])) / sum by (outcome) (rate(tt_media_server_audio_vad_seconds_count{service=~\"$service\",model_type=~\"$model_type\"}[5m]))",
+          "legendFormat": "mean ({{outcome}})",
+          "refId": "C"
+        }
+      ],
+      "title": "VAD Latency",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "CPU consumed by the VAD worker process divided by its wall time — cores in use, not the caller's clock. Above 1.0 the model went multi-threaded; well below 1.0 with a high latency means the worker was waiting, not computing. Mean CPU seconds per request is the number to multiply by request rate when sizing host cores.",
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 0, "thresholdsStyle": { "mode": "line" } }, "unit": "none", "decimals": 2, "thresholds": { "mode": "absolute", "steps": [{ "color": "text", "value": null }, { "color": "orange", "value": 1 }] } }, "overrides": [{ "matcher": { "id": "byName", "options": "mean CPU seconds" }, "properties": [{ "id": "unit", "value": "s" }, { "id": "custom.axisPlacement", "value": "right" }] }] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 136 },
+      "id": 42,
+      "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum(rate(tt_media_server_audio_vad_cpu_seconds_sum{service=~\"$service\",model_type=~\"$model_type\"}[5m])) / sum(rate(tt_media_server_audio_vad_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",outcome=\"ok\"}[5m]))",
+          "legendFormat": "cores in use",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum(rate(tt_media_server_audio_vad_cpu_seconds_sum{service=~\"$service\",model_type=~\"$model_type\"}[5m])) / sum(rate(tt_media_server_audio_vad_cpu_seconds_count{service=~\"$service\",model_type=~\"$model_type\"}[5m]))",
+          "legendFormat": "mean CPU seconds",
+          "refId": "B"
+        }
+      ],
+      "title": "VAD CPU Utilisation",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Speech segments returned per request. This is the endpointing-health signal a duration alone will not show: a collapse toward 1 means VAD stopped splitting and the whole request becomes one long chunk, a jump into the hundreds means it is fragmenting and every fragment pays a full encoder frame. Read against Chunk Fan-out above, which is what these segments merge into.",
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 0 }, "unit": "short" } },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 144 },
+      "id": 43,
+      "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum(rate(tt_media_server_audio_vad_segments_sum{service=~\"$service\",model_type=~\"$model_type\"}[5m])) / sum(rate(tt_media_server_audio_vad_segments_count{service=~\"$service\",model_type=~\"$model_type\"}[5m]))",
+          "legendFormat": "mean segments",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_audio_vad_segments_bucket{service=~\"$service\",model_type=~\"$model_type\"}[5m])))",
+          "legendFormat": "p95 segments",
+          "refId": "B"
+        }
+      ],
+      "title": "VAD Segments per Request",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Share of VAD calls that returned nothing, against the call rate. A failure is not a dropped request — the caller falls back to one segment spanning the whole audio, so the cost lands downstream as one oversized chunk. Any sustained non-zero share means the audio venv worker is timing out or respawning.",
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10 }, "unit": "percentunit", "min": 0 }, "overrides": [{ "matcher": { "id": "byName", "options": "VAD calls/s" }, "properties": [{ "id": "unit", "value": "reqps" }, { "id": "custom.axisPlacement", "value": "right" }] }] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 144 },
+      "id": 44,
+      "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum(rate(tt_media_server_audio_vad_seconds_count{service=~\"$service\",model_type=~\"$model_type\",outcome=\"failed\"}[5m])) / clamp_min(sum(rate(tt_media_server_audio_vad_seconds_count{service=~\"$service\",model_type=~\"$model_type\"}[5m])), 0.0001)",
+          "legendFormat": "failure share",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum(rate(tt_media_server_audio_vad_seconds_count{service=~\"$service\",model_type=~\"$model_type\"}[5m]))",
+          "legendFormat": "VAD calls/s",
+          "refId": "B"
+        }
+      ],
+      "title": "VAD Failure Share",
+      "type": "timeseries"
+    }
+
+    ,
+    { "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 152 }, "id": 830, "panels": [], "title": "ASR Input Preparation and Chunking", "type": "row" },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Time to base64-decode, container-decode, resample and length-check submitted audio, before VAD sees it. Split by container: mp3 carries a real decode cost that wav does not, so a shift in the format mix moves this without anything regressing. Observed on success only — rejected uploads (unknown header, oversize) never reach it, so the call rate here is accepted requests, not offered load.",
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 0 }, "unit": "s" }, "overrides": [{ "matcher": { "id": "byName", "options": "accepted/s" }, "properties": [{ "id": "unit", "value": "reqps" }, { "id": "custom.axisPlacement", "value": "right" }] }] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 153 },
+      "id": 45,
+      "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_audio_input_preparation_seconds_bucket{service=~\"$service\",model_type=~\"$model_type\"}[5m])))",
+          "legendFormat": "p95",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum by (format) (rate(tt_media_server_audio_input_preparation_seconds_sum{service=~\"$service\",model_type=~\"$model_type\"}[5m])) / sum by (format) (rate(tt_media_server_audio_input_preparation_seconds_count{service=~\"$service\",model_type=~\"$model_type\"}[5m]))",
+          "legendFormat": "mean ({{format}})",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum(rate(tt_media_server_audio_input_preparation_seconds_count{service=~\"$service\",model_type=~\"$model_type\"}[5m]))",
+          "legendFormat": "accepted/s",
+          "refId": "C"
+        }
+      ],
+      "title": "Input Preparation Latency by Format",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "The segment-merge step only — VAD and diarization are inference and live in the row above, so this is pure host arithmetic and should stay in the microseconds. Per-chunk cost divides it by the chunks produced, which is the number to watch if merging ever stops being free. diarization mode merges within speaker boundaries and so does more work than vad_only.",
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 0 }, "unit": "s" } },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 153 },
+      "id": 46,
+      "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum by (mode) (rate(tt_media_server_audio_chunking_seconds_sum{service=~\"$service\",model_type=~\"$model_type\"}[5m])) / sum by (mode) (rate(tt_media_server_audio_chunking_seconds_count{service=~\"$service\",model_type=~\"$model_type\"}[5m]))",
+          "legendFormat": "mean per request ({{mode}})",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum by (mode) (rate(tt_media_server_audio_chunking_seconds_sum{service=~\"$service\",model_type=~\"$model_type\"}[5m])) / sum by (mode) (rate(tt_media_server_audio_chunks_per_request_sum{service=~\"$service\",model_type=~\"$model_type\"}[5m]))",
+          "legendFormat": "per chunk produced ({{mode}})",
+          "refId": "B"
+        }
+      ],
+      "title": "Chunking Latency by Mode",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Chunk fan-out split by mode, the multiplier on every per-chunk cost downstream: each chunk pays a full 30s encoder frame however short it is. diarization should sit above vad_only because speaker changes force a chunk boundary that duration alone would not. A rise here with flat VAD segment counts means merging is splitting more, not that the audio changed.",
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 0 }, "unit": "short" } },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 161 },
+      "id": 47,
+      "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum by (mode) (rate(tt_media_server_audio_chunks_per_request_sum{service=~\"$service\",model_type=~\"$model_type\"}[5m])) / sum by (mode) (rate(tt_media_server_audio_chunks_per_request_count{service=~\"$service\",model_type=~\"$model_type\"}[5m]))",
+          "legendFormat": "mean ({{mode}})",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.95, sum by (le, mode) (rate(tt_media_server_audio_chunks_per_request_bucket{service=~\"$service\",model_type=~\"$model_type\"}[5m])))",
+          "legendFormat": "p95 ({{mode}})",
+          "refId": "B"
+        }
+      ],
+      "title": "Chunks per Request by Mode",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Mean host-side seconds per request for the three stages that run before the device is touched, stacked. All three are observed once per request, so the heights are directly comparable and the total is the fixed latency floor no device speed-up can remove. VAD normally dominates by orders of magnitude; if input preparation ever rivals it, look at the format mix.",
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 25, "stacking": { "mode": "normal", "group": "A" } }, "unit": "s" } },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 161 },
+      "id": 48,
+      "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum(rate(tt_media_server_audio_input_preparation_seconds_sum{service=~\"$service\",model_type=~\"$model_type\"}[5m])) / sum(rate(tt_media_server_audio_input_preparation_seconds_count{service=~\"$service\",model_type=~\"$model_type\"}[5m]))",
+          "legendFormat": "input preparation",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum(rate(tt_media_server_audio_vad_seconds_sum{service=~\"$service\",model_type=~\"$model_type\"}[5m])) / sum(rate(tt_media_server_audio_vad_seconds_count{service=~\"$service\",model_type=~\"$model_type\"}[5m]))",
+          "legendFormat": "VAD",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum(rate(tt_media_server_audio_chunking_seconds_sum{service=~\"$service\",model_type=~\"$model_type\"}[5m])) / sum(rate(tt_media_server_audio_chunking_seconds_count{service=~\"$service\",model_type=~\"$model_type\"}[5m]))",
+          "legendFormat": "chunking",
+          "refId": "C"
+        }
+      ],
+      "title": "Host-Side Front-End Cost per Request",
+      "type": "timeseries"
+    }
+
   ],
   "refresh": "5s",
   "schemaVersion": 38,

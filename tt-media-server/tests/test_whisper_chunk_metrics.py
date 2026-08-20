@@ -58,10 +58,14 @@ def _pin_real_collectors():
 
 @pytest.fixture
 def whisper_module():
-    saved_modules = {name: sys.modules.get(name) for name in _AUDIO_STUBS}
-    saved_modules["tt_model_runners.whisper_runner"] = sys.modules.get(
-        "tt_model_runners.whisper_runner"
-    )
+    # Every tt_model_runners entry goes, not just whisper_runner: other modules
+    # park a Mock at `tt_model_runners.base_device_runner`, reached through the
+    # base class, and re-importing over that yields a Mock TTWhisperRunner.
+    saved_modules = {
+        name: sys.modules.get(name)
+        for name in list(_AUDIO_STUBS)
+        + [name for name in sys.modules if name.startswith("tt_model_runners")]
+    }
     telemetry_module, saved_attrs = _pin_real_collectors()
 
     for name in _AUDIO_STUBS:
@@ -79,7 +83,9 @@ def whisper_module():
         )
         sys.modules[name] = stub
 
-    sys.modules.pop("tt_model_runners.whisper_runner", None)
+    for name in list(sys.modules):
+        if name.startswith("tt_model_runners"):
+            sys.modules.pop(name, None)
     try:
         yield importlib.import_module("tt_model_runners.whisper_runner")
     finally:
@@ -88,6 +94,9 @@ def whisper_module():
                 setattr(telemetry_module, attr, previous)
             else:
                 delattr(telemetry_module, attr)
+        for name in list(sys.modules):
+            if name.startswith("tt_model_runners"):
+                sys.modules.pop(name, None)
         for name, module in saved_modules.items():
             if module is None:
                 sys.modules.pop(name, None)

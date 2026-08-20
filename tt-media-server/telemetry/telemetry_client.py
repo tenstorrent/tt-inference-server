@@ -251,6 +251,91 @@ audio_vad_segments = Histogram(
     buckets=(0, 1, 2, 4, 8, 16, 32, 64, 128, 256, float("inf")),
 )
 
+# --- Feature extraction and encoder throughput ------------------------------
+#
+# Stage timings come from tt-metal's `PerfMetrics` (tt-metal #53717). Throughput
+# is a counter pair rather than a ready-made rate, so it aggregates across
+# workers and survives scrape gaps:
+#
+#     audio-seconds/s = rate(<stage>_input_seconds_total) / rate(<stage>_duration_seconds_sum)
+#
+# `_input_seconds_total` is accounted server-side, not read off
+# PerfMetrics.total_audio_s, which sums raw submitted durations: the extractor
+# truncates each item to one 30s frame, so a longer submission would inflate
+# both throughputs by the truncation ratio.
+#
+# These are *effective* audio throughput, not device utilisation: a short chunk
+# is padded up to the frame, so encoder cost is fixed per chunk and throughput
+# falls roughly linearly with chunk length.
+audio_feature_extraction_input_seconds = Counter(
+    "tt_media_server_audio_feature_extraction_input_seconds_total",
+    "Audio duration converted into acoustic features",
+    ["model_type", "device_id", "sample_rate", "channels", "batch"],
+)
+
+# Host-side log-mel over a batch already padded to fixed frames, so near-constant
+# per item: measured ~2ms per chunk. Dense from 1ms to 100ms, a decade of
+# headroom above for a host that starves the extractor.
+audio_feature_extraction_duration = Histogram(
+    "tt_media_server_audio_feature_extraction_duration_seconds",
+    "Wall time spent extracting acoustic features for one batch",
+    ["model_type", "device_id", "sample_rate", "channels", "batch"],
+    buckets=(
+        0.001,
+        0.0025,
+        0.005,
+        0.01,
+        0.02,
+        0.03,
+        0.05,
+        0.075,
+        0.1,
+        0.25,
+        0.5,
+        1.0,
+        2.5,
+        float("inf"),
+    ),
+)
+
+# `trace_hit="false"` is the call that captures the encoder trace for a batch
+# bucket: it runs the encoder eagerly and again under capture, so its duration is
+# a one-off outlier. Labelled rather than dropped, so the cost stays visible
+# while steady-state panels filter on trace_hit="true".
+audio_encoder_input_seconds = Counter(
+    "tt_media_server_audio_encoder_input_seconds_total",
+    "Audio duration processed by the acoustic encoder",
+    ["model_type", "device_id", "model_name", "language", "batch", "trace_hit"],
+)
+
+# Encoder input preprocessing, the encoder stack, and the synchronize that makes
+# its result observable — compute, not enqueue. Bounded above by the chunk
+# first-item span (mean 0.45s including first decode), so the grid is dense from
+# 10ms to 500ms with room to 10s for trace-capture calls.
+audio_encoder_duration = Histogram(
+    "tt_media_server_audio_encoder_duration_seconds",
+    "Wall time spent in the acoustic encoder for one batch",
+    ["model_type", "device_id", "model_name", "language", "batch", "trace_hit"],
+    buckets=(
+        0.01,
+        0.025,
+        0.05,
+        0.075,
+        0.1,
+        0.15,
+        0.2,
+        0.3,
+        0.4,
+        0.5,
+        0.75,
+        1.0,
+        2.5,
+        5.0,
+        10.0,
+        float("inf"),
+    ),
+)
+
 # Model inference metrics
 model_inference_duration = Histogram(
     "tt_media_server_model_inference_duration_seconds",
