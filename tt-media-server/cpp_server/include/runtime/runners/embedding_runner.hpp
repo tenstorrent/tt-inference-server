@@ -7,59 +7,42 @@
 #include <string>
 #include <vector>
 
+#include "config/runner_config.hpp"
 #include "domain/embedding_request.hpp"
 #include "domain/embedding_response.hpp"
-#include "runtime/runners/ipc_runner.hpp"
+#include "runtime/runners/i_embedding_runner.hpp"
 
 namespace tt::runners {
 
 /**
- * Embedding runner that calls Python BGELargeENRunner.
+ * Embedding runner that calls a Python model runner in-process.
  *
- * Uses Python C API to instantiate and call the BGELargeENRunner class
- * from tt_model_runners/embedding_runner.py.
+ * Uses pybind11 (embedded interpreter). The runner class is resolved by
+ * Python's tt_model_runners/runner_fabric.py from the MODEL_RUNNER env var
+ * the worker exports. Python errors are captured with full tracebacks and
+ * surfaced as per-request error responses rather than swallowed.
  */
-class EmbeddingRunner : public IRunner {
+class EmbeddingRunner : public IEmbeddingRunner {
  public:
-  /** @param device_id e.g. "device_0". @param visible_device TT device index
-   * (1-based) for logging. */
-  EmbeddingRunner(const std::string& deviceId, int visibleDevice = 0);
+  explicit EmbeddingRunner(const config::EmbeddingConfig& config);
   ~EmbeddingRunner() override;
 
   // Prevent copying
   EmbeddingRunner(const EmbeddingRunner&) = delete;
   EmbeddingRunner& operator=(const EmbeddingRunner&) = delete;
 
-  /**
-   * Initialize Python, import modules, create BGELargeENRunner instance,
-   * and call warmup().
-   */
+  /** Import the Python module, construct the runner, initialize the TTNN
+   * device, and run the model's warmup. */
   bool warmup() override;
 
-  /**
-   * Clean up Python objects and optionally finalize interpreter.
-   */
-  void close();
-
-  /**
-   * Run embedding inference by calling runner.run(requests).
-   */
   std::vector<domain::EmbeddingResponse> run(
-      const std::vector<domain::EmbeddingRequest>& requests);
+      const std::vector<domain::EmbeddingRequest>& requests) override;
 
-  // IRunner interface implementation
-  void run() override;
-  void stop() override;
-  const char* runnerType() const override { return "EmbeddingRunner"; }
-
-  /**
-   * Get the device ID.
-   */
-  const std::string& deviceId() const { return device_id_; }
+  /** Drop the Python objects. The interpreter itself is left running. */
+  void close() override;
 
  private:
-  std::string device_id_;
-  int visible_device_;
+  config::EmbeddingConfig config_;
   struct Impl;
   std::unique_ptr<Impl> impl_;
 };

@@ -378,6 +378,27 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(prometheus-cpp)
 
+# Sentry (distributed request tracing — issue #4778). A generate request
+# reaching this server carries a W3C `traceparent` injected by the Dynamo
+# frontend; the server continues that trace with one transaction per role
+# (decode/prefill). Backend "none": tracing/event transport only, no crash
+# handler, so the server's own signal handling and fork+execv worker
+# lifecycle stay untouched. Transport "curl" needs libcurl dev headers
+# (install_dependencies.sh). Runtime opt-in via SENTRY_DSN.
+set(SENTRY_BACKEND "none" CACHE STRING "" FORCE)
+set(SENTRY_TRANSPORT "curl" CACHE STRING "" FORCE)
+set(SENTRY_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(SENTRY_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(SENTRY_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    sentry-native
+    GIT_REPOSITORY https://github.com/getsentry/sentry-native.git
+    GIT_TAG        0.16.3
+    GIT_SHALLOW    ON
+    GIT_SUBMODULES ""
+)
+FetchContent_MakeAvailable(sentry-native)
+
 # stb_image_write: in-memory PNG/JPEG encoder used by image_codec.
 FetchContent_Declare(
     stb
@@ -1180,6 +1201,15 @@ target_include_directories(image_generate_request_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+add_executable(embedding_codec_test tests/unit/services/embedding_codec_test.cpp)
+target_link_libraries(embedding_codec_test PRIVATE
+    JsonCpp::JsonCpp
+    GTest::gtest_main
+)
+target_include_directories(embedding_codec_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 add_executable(media_payload_ipc_test tests/integration/sessions/media_payload_ipc_test.cpp)
 target_link_libraries(media_payload_ipc_test PRIVATE llm_runner_lib GTest::gtest_main)
 target_include_directories(media_payload_ipc_test PRIVATE
@@ -1305,6 +1335,8 @@ add_executable(llm_service_test
     src/utils/image_codec.cpp
     src/utils/audio_codec.cpp
     src/runtime/runners/embedding_runner.cpp
+    src/runtime/runners/mock_embedding_runner.cpp
+    src/runtime/runners/embedding_runner_factory.cpp
     src/runtime/runners/sdxl/sdxl_runner.cpp
     src/runtime/runners/media_ipc_runner.cpp
     src/runtime/runners/image_ipc_runner.cpp
@@ -1355,6 +1387,8 @@ set(INTEGRATION_TEST_COMMON_SOURCES
     src/utils/conversation_hasher.cpp
     src/utils/service_factory.cpp
     src/runtime/runners/embedding_runner.cpp
+    src/runtime/runners/mock_embedding_runner.cpp
+    src/runtime/runners/embedding_runner_factory.cpp
     src/runtime/runners/sdxl/sdxl_runner.cpp
     src/runtime/runners/media_ipc_runner.cpp
     src/runtime/runners/image_ipc_runner.cpp
@@ -1389,6 +1423,7 @@ set(INTEGRATION_TEST_COMMON_SOURCES
     src/sockets/inter_server_service.cpp
     src/sockets/socket_manager.cpp
     src/sockets/zmq_socket_transport.cpp
+    src/telemetry/sentry_tracing.cpp
 )
 
 add_executable(main_integration_test
@@ -1403,6 +1438,7 @@ target_link_libraries(main_integration_test PRIVATE
     pybind11::embed
     stb_image_write
     xxhash_lib
+    sentry
     GTest::gtest_main)
 if(ZMQ_FOUND AND TARGET PkgConfig::ZMQ)
     target_link_libraries(main_integration_test PRIVATE PkgConfig::ZMQ)
@@ -1430,6 +1466,7 @@ target_link_libraries(prefill_integration_test PRIVATE
     pybind11::embed
     stb_image_write
     xxhash_lib
+    sentry
     GTest::gtest_main)
 if(ZMQ_FOUND AND TARGET PkgConfig::ZMQ)
     target_link_libraries(prefill_integration_test PRIVATE PkgConfig::ZMQ)
@@ -1457,6 +1494,7 @@ target_link_libraries(disaggregated_e2e_test PRIVATE
     pybind11::embed
     stb_image_write
     xxhash_lib
+    sentry
     GTest::gtest_main)
 if(ZMQ_FOUND AND TARGET PkgConfig::ZMQ)
     target_link_libraries(disaggregated_e2e_test PRIVATE PkgConfig::ZMQ)
@@ -1533,6 +1571,7 @@ gtest_discover_tests(llm_service_test)
 gtest_discover_tests(model_service_registry_test)
 gtest_discover_tests(health_controller_test)
 gtest_discover_tests(image_generate_request_test)
+gtest_discover_tests(embedding_codec_test)
 gtest_discover_tests(media_payload_ipc_test)
 
 add_executable(apply_delta_prompt_test tests/unit/model/apply_delta_prompt_test.cpp)
@@ -1845,6 +1884,8 @@ set(SOURCES
     src/utils/mapper.cpp
     src/api/embedding_controller.cpp
     src/runtime/runners/embedding_runner.cpp
+    src/runtime/runners/mock_embedding_runner.cpp
+    src/runtime/runners/embedding_runner_factory.cpp
     src/services/embedding_service.cpp
     src/api/image_controller.cpp
     src/runtime/runners/sdxl/sdxl_runner.cpp
@@ -1883,6 +1924,7 @@ set(SOURCES
     src/dynamo/worker_server.cpp
     src/dynamo/transport_server.cpp
     src/dynamo/request_handler.cpp
+    src/telemetry/sentry_tracing.cpp
 )
 
 # Create executable
@@ -1920,6 +1962,8 @@ if(USE_EXTERNAL_FMT)
 else()
     target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon llm_runner_lib cereal::cereal spdlog::spdlog prometheus-cpp::core)
 endif()
+# Sentry distributed tracing
+target_link_libraries(${PROJECT_NAME} PRIVATE sentry)
 
 # Link ZeroMQ
 if(ZMQ_FOUND AND TARGET PkgConfig::ZMQ)
