@@ -53,14 +53,13 @@ def short_uuid():
 # from MODEL+DEVICE — it expects each as its own env var. The tables below
 # mirror tt-media-server/config/constants.py::ModelConfigs and must be kept
 # in sync until the C++ binary learns to derive them itself.
+#
+# Temporary: this branch leaves the map empty so SDXL uses the Python uvicorn
+# server (no SERVER_MODE=cpp) for tt-shield CI comparison against cpp_server.
 
 _SDXL_DEVICE_IDS_32 = ",".join(f"({i})" for i in range(32))
 
-_CPP_SDXL_RUNNER_BY_MODEL_NAME = {
-    "stable-diffusion-xl-base-1.0": "tt_sdxl_generate",
-    "stable-diffusion-xl-base-1.0-img-2-img": "tt_sdxl_image_to_image",
-    "stable-diffusion-xl-1.0-inpainting-0.1": "tt_sdxl_edit",
-}
+_CPP_SDXL_RUNNER_BY_MODEL_NAME = {}
 
 # device.name.lower() -> (device_mesh_shape_csv, is_galaxy, device_ids)
 _CPP_SDXL_DEVICE_DEFAULTS = {
