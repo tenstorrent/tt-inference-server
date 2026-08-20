@@ -142,9 +142,9 @@ class PrometheusMetrics:
                     mp_families = list(mp_registry.collect())
                     covered = {metric.name for metric in mp_families}
 
-                    mp_metrics = generate_latest(
-                        _StaticRegistry(mp_families)
-                    ).decode("utf-8")
+                    mp_metrics = generate_latest(_StaticRegistry(mp_families)).decode(
+                        "utf-8"
+                    )
                     default_metrics = generate_latest(
                         _ExcludingRegistry(REGISTRY, covered)
                     ).decode("utf-8")
