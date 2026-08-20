@@ -131,3 +131,22 @@ templates:
       env_vars:
         TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_mesh_graph_descriptor.textproto"
   status: EXPERIMENTAL
+
+- weights:
+    - Qwen/Qwen3-TTS-12Hz-1.7B-Base
+    - Qwen/Qwen3-TTS-12Hz-0.6B-Base
+  impl: qwen3_tts
+  min_disk_gb: 25
+  min_ram_gb: 16
+  model_type: TEXT_TO_SPEECH
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: N150
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+    - device: N300
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+  status: FUNCTIONAL

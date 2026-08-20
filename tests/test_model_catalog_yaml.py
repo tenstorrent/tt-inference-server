@@ -34,6 +34,7 @@ def test_impl_registry_is_populated():
     # impl_id of each registry entry must match its key
     for impl_id, impl in _IMPL_REGISTRY.items():
         assert impl.impl_id == impl_id
+    assert _IMPL_REGISTRY["qwen3_tts"].code_path == "models/demos/qwen3_tts"
 
 
 def test_build_system_requirements_full():

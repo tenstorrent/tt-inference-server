@@ -2,11 +2,16 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
-# IMPORTANT: telemetry.multiprocess_setup MUST be the very first project
-# import. It sets PROMETHEUS_MULTIPROC_DIR before any other module gets a
-# chance to import prometheus_client and instantiate Counter/Histogram
-# objects. If this import is moved or removed, multiprocess metrics from
-# device/cpu workers will silently stop being collected.
+# Spawn before any Process: fork after parent imports ttnn leaks trace
+# capture state into Qwen3-TTS init_server_context.
+import multiprocessing as _mp
+
+if _mp.get_start_method(allow_none=True) != "spawn":
+    _mp.set_start_method("spawn", force=True)
+
+# IMPORTANT: telemetry.multiprocess_setup MUST be the first *project* import
+# after the spawn fix. It sets PROMETHEUS_MULTIPROC_DIR before any other
+# module gets a chance to import prometheus_client.
 import telemetry.multiprocess_setup  # noqa: F401  (import for side effect)
 
 import os

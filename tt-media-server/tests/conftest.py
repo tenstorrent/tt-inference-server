@@ -710,6 +710,9 @@ runner_mocks = {
     "tt_model_runners.speecht5_runner": {
         "TTSpeechT5Runner": create_mock_runner_class("TTSpeechT5Runner")
     },
+    "tt_model_runners.qwen3_tts_runner": {
+        "TTQwen3TTSRunner": create_mock_runner_class("TTQwen3TTSRunner")
+    },
     "tt_model_runners.forge_runners": {},
     "tt_model_runners.forge_runners.runners": {
         "ForgeResnetRunner": create_mock_runner_class("ForgeResnetRunner"),
