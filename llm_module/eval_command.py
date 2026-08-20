@@ -279,6 +279,8 @@ def build_eval_command(
         lm_eval_exec = task_venv_config.venv_path / "bin" / "lm_eval"
 
     lm_eval_prefix = [str(lm_eval_exec)]
+    # TODO: remove this once diffusiongemma vLLM can ignore the seed gen kwarg
+    # https://github.com/tenstorrent/tt-inference-server/issues/4993
     if not getattr(task, "propagate_seed_to_gen_kwargs", True):
         if task.workflow_venv_type in [
             WorkflowVenvType.EVALS_VISION,
