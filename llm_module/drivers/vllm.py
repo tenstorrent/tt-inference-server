@@ -169,4 +169,5 @@ class VLLMBenchDriver(LLMDriver):
             raw["tt_output_block_size"] = config.output_block_size
         return DriverResult(return_code=rc, raw=raw, raw_path=result_filename)
 
+
 __all__ = ["VLLMBenchDriver", "build_vllm_bench_serve_argv"]
