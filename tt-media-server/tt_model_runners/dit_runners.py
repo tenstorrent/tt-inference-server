@@ -27,7 +27,10 @@ from domain.video_i2v_generate_request import ImagePromptEntry, VideoI2VGenerate
 from huggingface_hub import hf_hub_download
 from models.common.utility_functions import is_blackhole
 from models.tt_dit.pipelines.flux1.pipeline_flux1 import Flux1Pipeline
-from models.tt_dit.pipelines.minimax_h3.pipeline_minimax_h3 import MiniMaxH3Pipeline
+from models.tt_dit.pipelines.minimax_h3.pipeline_minimax_h3 import (
+    MiniMaxH3Pipeline,
+    resolve_mesh_preset,
+)
 from models.tt_dit.pipelines.mochi.pipeline_mochi import MochiPipeline
 from models.tt_dit.pipelines.motif.pipeline_motif import MotifPipeline
 from models.tt_dit.pipelines.qwenimage.pipeline_qwenimage import (
@@ -1305,54 +1308,34 @@ MINIMAX_H3_WARMUP_PROMPT = (
     "toward a rustle in the undergrowth, before trotting on through the low golden light."
 )
 
+# Reserved only for shapes whose preset enables `trace_denoise` (4x32); matches the model tests'
+# `_ring_8k_trace`.
+MINIMAX_H3_TRACE_REGION_BYTES = 150_000_000
 
-def minimax_h3_topology() -> ttnn.Topology:
-    """Collective topology for H3, from `MINIMAX_H3_FABRIC_TOPOLOGY` (`ring` default, or `linear`).
 
-    The fabric config and the *collectives the model issues* must agree, so this one value feeds
-    both `_minimax_h3_device_params` and the pipeline. Setting only the fabric to a line while the
-    model still issues ring collectives is what dies as
-    `TT_FATAL fabric.cpp:174 forwarding_direction.has_value()`.
+def _minimax_h3_device_params(mesh_shape: tuple) -> dict:
+    """Device params for MiniMax-H3 t2va, keyed on the mesh shape.
 
-    `linear` exists for deployments whose Galaxy is not cabled as a ring. It is slower: the H3
-    transformer takes its fused all-gather-matmul path only on Ring (`use_fused_agmm` in
-    `transformer_block_minimax_h3.py`, `attention_minimax_h3.py`, `token_refiner_minimax_h3.py`),
-    so `linear` silently falls back to unfused all-gather then matmul.
+    Everything here is derived from the pipeline's per-shape preset so the two can't disagree:
+    fabric follows topology (Ring -> FABRIC_1D_RING), and a `trace_region_size` is reserved when the
+    preset enables `trace_denoise` (the 4x32 quad) -- without it the pipeline's trace capture is
+    fatal. The region is only reserved, so a shape that does not trace pays nothing but address
+    space. `l1_small_size` is mandatory (a bare open fails as "bank size is 0 B").
     """
-    raw = (os.environ.get("MINIMAX_H3_FABRIC_TOPOLOGY") or "ring").strip().lower()
-    if raw == "ring":
-        return ttnn.Topology.Ring
-    if raw == "linear":
-        return ttnn.Topology.Linear
-    raise ValueError(
-        f"MINIMAX_H3_FABRIC_TOPOLOGY={raw!r} is not recognised; use 'ring' (default) or 'linear'"
-    )
-
-
-def _minimax_h3_device_params() -> dict:
-    """Device params for MiniMax-H3 t2va on the 4x8 Blackhole Galaxy.
-
-    Ring is the default because it is faster, but it is not the only option: a deployment whose
-    mesh is cabled as a line sets `MINIMAX_H3_FABRIC_TOPOLOGY=linear`, which switches the fabric
-    and the model's collectives together. See `minimax_h3_topology`.
-
-    `l1_small_size` is mandatory and its absence does not name itself: a bare open fails later
-    at `bank_manager.cpp:462` / "bank size is 0 B", which means *unallocated*, not too small.
-
-    No `trace_region_size`: the H3 denoise loop runs eagerly. The pipeline's per-step host round
-    trip through the torch scheduler cannot sit inside a captured trace, and the tracing work that
-    would have removed it was measured at roughly break-even, so it is not carried here.
-    """
+    preset = resolve_mesh_preset(mesh_shape)
     router_config = ttnn.FabricRouterConfig()
     router_config.max_packet_payload_size_bytes = 8192
-    ring = minimax_h3_topology() == ttnn.Topology.Ring
-    return {
+    ring = preset["topology"] == ttnn.Topology.Ring
+    params = {
         "fabric_config": (
             ttnn.FabricConfig.FABRIC_1D_RING if ring else ttnn.FabricConfig.FABRIC_1D
         ),
         "fabric_router_config": router_config,
         "l1_small_size": 65536,
     }
+    if preset.get("trace_denoise"):
+        params["trace_region_size"] = MINIMAX_H3_TRACE_REGION_BYTES
+    return params
 
 
 class TTMiniMaxH3Runner(TTDiTRunner):
@@ -1398,16 +1381,10 @@ class TTMiniMaxH3Runner(TTDiTRunner):
 
     def create_pipeline(self):
         try:
-            # Must match the fabric this runner opened the mesh with; both read the same env var.
-            topology = minimax_h3_topology()
-            self.logger.info(
-                f"Device {self.device_id}: MiniMax-H3 collectives on {topology} "
-                f"(MINIMAX_H3_FABRIC_TOPOLOGY={os.environ.get('MINIMAX_H3_FABRIC_TOPOLOGY') or 'ring (default)'})"
-            )
+            # No topology arg: the pipeline resolves it from its per-shape preset.
             return MiniMaxH3Pipeline.create_pipeline(
                 mesh_device=self.ttnn_device,
                 weights_dir=self._weights_dir(),
-                topology=topology,
             )
         except Exception as e:
             log_exception_chain(
@@ -1422,7 +1399,7 @@ class TTMiniMaxH3Runner(TTDiTRunner):
         return False
 
     def get_pipeline_device_params(self):
-        return _minimax_h3_device_params()
+        return _minimax_h3_device_params(self.settings.device_mesh_shape)
 
     async def warmup(self) -> bool:
         """Build the pipeline, then warm it at the exact shape and step count that will be served.

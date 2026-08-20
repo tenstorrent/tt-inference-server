@@ -27,6 +27,7 @@ class VideoGenerateRequest(BaseRequest):
     )
     seed: Optional[int] = None
 
+    # TODO: Make generic for all video models, and remove model specific logic
     # Output shape. Both are model-specific and both are optional: a model that serves one fixed
     # shape ignores them, and MiniMax-H3 t2va resolves them against its published working points
     # (see `minimax_h3_parse_aspect_ratio` / `MINIMAX_H3_DURATIONS_S`). Left as free-form here
@@ -37,6 +38,7 @@ class VideoGenerateRequest(BaseRequest):
         default=None, ge=1, le=60, examples=[5, 10, 15]
     )
 
+    # TODO: Make generic for all video models, and remove model specific logic
     # Unknown fields are refused for MiniMax-H3 rather than ignored. Pydantic's default is to
     # drop them silently, which meant `{"resolution": "1080P", "model": "NotMiniMax", "duration": 9}`
     # came back 202 with none of it applied -- the caller believes it asked for something it did
@@ -58,6 +60,7 @@ class VideoGenerateRequest(BaseRequest):
             )
         return data
 
+    # TODO: Make generic for all video models, and remove model specific logic
     # Admission-time validation. The device worker validates too (it owns the shape it warmed),
     # but that happens after the request is queued, so the client would get a 202 and a failed job
     # instead of a straight refusal. These run at parse time and surface as a 422 naming what is
@@ -72,6 +75,7 @@ class VideoGenerateRequest(BaseRequest):
         minimax_h3_parse_aspect_ratio(value)  # raises with the supported list
         return value
 
+    # TODO: Make generic for all video models, and remove model specific logic
     @field_validator("duration_seconds")
     @classmethod
     def _validate_duration_seconds(cls, value):
@@ -86,6 +90,7 @@ class VideoGenerateRequest(BaseRequest):
             )
         return value
 
+    # TODO: Make generic for all video models, and remove model specific logic
     @field_validator("num_inference_steps")
     @classmethod
     def _reject_steps_for_minimax_h3(cls, value):
@@ -102,6 +107,7 @@ class VideoGenerateRequest(BaseRequest):
         )
 
 
+# TODO: Remove model specific logic
 def _is_minimax_h3() -> bool:
     from config.constants import ModelRunners
 
