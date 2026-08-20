@@ -598,6 +598,15 @@ class TelemetryClient:
             self._record_single_base_request_duration(duration)
         elif event_name == TelemetryEvent.DOWNLOAD_RESULT:
             self._record_download_result(duration, status=status_str)
+        elif event_name == TelemetryEvent.VIDEO_GENERATION:
+            # Video generations carry a VideoGenerationStats payload and are
+            # dispatched straight to record_video_generation by
+            # _process_telemetry. Landing here means a caller used the generic
+            # entry point, where the payload would be silently dropped.
+            self.logger.warning(
+                "VIDEO_GENERATION needs VideoGenerationStats; "
+                "call record_video_generation_async instead"
+            )
         else:
             self.logger.warning(f"Unknown telemetry event: {event_name}")
 
