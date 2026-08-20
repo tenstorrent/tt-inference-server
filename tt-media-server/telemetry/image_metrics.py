@@ -125,6 +125,12 @@ def add_conditioning_seconds(
 
     ``all`` is the pipeline-level total used as % of engine; clip / t5 / qwen /
     image sit inside it and must not be added together with ``all``.
+
+    For runners that measure each encoder separately and have no span of their
+    own for the total, so ``all`` has to be built up from the parts -- i.e. the
+    SDXL path. **Not** for :class:`ImageStageRecorder`: tt_dit emits its own
+    ``encoder`` span for the total, so folding the nested spans in there too
+    would double-count ``all``.
     """
     store[encoder] = store.get(encoder, 0.0) + seconds
     if encoder != "all":
@@ -240,6 +246,11 @@ class ImageStageRecorder:
         elif _DENOISE_STEP_RE.match(name):
             self.step_seconds.append(seconds)
         elif name in _CONDITIONING_SECTIONS:
+            # Accumulate, not assign: under CFG the pipeline encodes the prompt
+            # and then the negative prompt, so the nested spans fire twice.
+            # Deliberately not add_conditioning_seconds() -- "encoder" is its
+            # own span here, so folding the nested ones into "all" would
+            # double-count it.
             encoder = _CONDITIONING_SECTIONS[name]
             self.conditioning_seconds[encoder] = (
                 self.conditioning_seconds.get(encoder, 0.0) + seconds

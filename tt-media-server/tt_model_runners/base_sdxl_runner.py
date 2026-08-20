@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import asyncio
+import inspect
 import os
 import time
 from abc import abstractmethod
@@ -276,17 +277,36 @@ class BaseSDXLRunner(BaseMetalDeviceRunner):
         return result
 
     def _generate_input_tensors(self, *args, **kwargs):
-        """Time VAE-encode of the input image on img2img / inpaint.
+        """Time image conditioning on img2img / inpaint.
 
         txt2img has no ``torch_image`` and is not counted as conditioning.
+
+        ``torch_image`` is the third *positional* parameter of the img2img
+        pipeline's ``generate_input_tensors``, so the argument is resolved
+        against the real signature rather than read out of ``kwargs`` -- a
+        positional call would otherwise silently stop counting.
         """
         start = time.perf_counter()
         result = self.tt_sdxl.generate_input_tensors(*args, **kwargs)
-        if not self._warming_up and kwargs.get("torch_image") is not None:
+        if not self._warming_up and self._has_image_conditioning(args, kwargs):
             add_conditioning_seconds(
                 self._conditioning_seconds, "image", time.perf_counter() - start
             )
         return result
+
+    def _has_image_conditioning(self, args, kwargs) -> bool:
+        """True when ``generate_input_tensors`` was given a ``torch_image``."""
+        if "torch_image" in kwargs:
+            return kwargs["torch_image"] is not None
+        if not args:
+            return False
+        try:
+            bound = inspect.signature(self.tt_sdxl.generate_input_tensors).bind_partial(
+                *args, **kwargs
+            )
+        except (TypeError, ValueError):
+            return False
+        return bound.arguments.get("torch_image") is not None
 
     def _ttnn_inference(self, tensors, prompts, needed_padding):
         images = []

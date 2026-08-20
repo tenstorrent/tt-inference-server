@@ -610,7 +610,9 @@ class TestSdxlSectionTimings:
         assert timings.denoise_seconds == 4.0
         assert timings.vae_seconds is None
 
-    def test_missing_image_gen_span_falls_back_to_wall_clock(self, profiler, monkeypatch):
+    def test_missing_image_gen_span_falls_back_to_wall_clock(
+        self, profiler, monkeypatch
+    ):
         clock = {"t": 0.0}
         monkeypatch.setattr("telemetry.image_metrics._now", lambda: clock["t"])
         with SdxlSectionTimings() as timings:
@@ -643,8 +645,10 @@ class TestSdxlSectionTimings:
                 raise ValueError("must propagate")
 
     def test_no_tt_metal_falls_back_to_wall_clock_for_engine(self, monkeypatch):
+        # Restore afterwards: on a box with tt-metal installed these are real
+        # modules, and dropping them would leak into every later test.
         for key in ("models.common.utility_functions", "models.common", "models"):
-            sys.modules.pop(key, None)
+            monkeypatch.delitem(sys.modules, key, raising=False)
         clock = {"t": 1.0}
         monkeypatch.setattr("telemetry.image_metrics._now", lambda: clock["t"])
         with SdxlSectionTimings() as timings:

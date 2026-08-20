@@ -443,7 +443,7 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "$datasource" },
-      "description": "Per-step denoising latency, p50 and p99, by resolution and batch. The reciprocal of p50 is the per-device step rate; a widening p50-p99 gap means some steps are stalling.",
+      "description": "Per-step denoising latency, p50 and p99, by resolution and batch. The reciprocal of p50 is the per-device step rate; a widening p50-p99 gap means some steps are stalling. Only the tt_dit models (SD3.5, Flux, Motif, Qwen-Image) report per-step timings; SDXL and Z-Image-Turbo report only a loop total, so they are absent here by design - use the denoise_duration_seconds panels for those.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -479,7 +479,7 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "$datasource" },
-      "description": "Heatmap of per-step denoising latency. Each row is a bucket; intensity = count. Shows bimodal step timing (e.g. first step paying a compile or cache cost) that quantiles hide.",
+      "description": "Heatmap of per-step denoising latency. Each row is a bucket; intensity = count. Shows bimodal step timing (e.g. first step paying a compile or cache cost) that quantiles hide. Only the tt_dit models (SD3.5, Flux, Motif, Qwen-Image) report per-step timings; SDXL and Z-Image-Turbo report only a loop total, so \"No data\" here means the runner cannot report it, not that the metric is broken.",
       "fieldConfig": {
         "defaults": {
           "custom": { "scaleDistribution": { "type": "linear" } },
