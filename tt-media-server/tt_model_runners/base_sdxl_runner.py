@@ -18,6 +18,7 @@ from models.demos.stable_diffusion_xl_base.tt.tt_sdxl_pipeline import (
 )
 from telemetry.image_metrics import (
     SdxlSectionTimings,
+    add_conditioning_seconds,
     record_image_run,
     resolution_of_images,
     sampler_name,
@@ -262,13 +263,29 @@ class BaseSDXLRunner(BaseMetalDeviceRunner):
         """Time tt_sdxl.encode_prompts().
 
         It drives both CLIP encoders in one call, so there is no per-encoder
-        breakdown to report -- only ``encoder="all"``.
+        breakdown to report -- only ``encoder="all"`` until image encode is
+        added by :meth:`_generate_input_tensors`.
         """
         self._conditioning_seconds = {}
         start = time.perf_counter()
         result = self.tt_sdxl.encode_prompts(*args, **kwargs)
         if not self._warming_up:
-            self._conditioning_seconds = {"all": time.perf_counter() - start}
+            add_conditioning_seconds(
+                self._conditioning_seconds, "all", time.perf_counter() - start
+            )
+        return result
+
+    def _generate_input_tensors(self, *args, **kwargs):
+        """Time VAE-encode of the input image on img2img / inpaint.
+
+        txt2img has no ``torch_image`` and is not counted as conditioning.
+        """
+        start = time.perf_counter()
+        result = self.tt_sdxl.generate_input_tensors(*args, **kwargs)
+        if not self._warming_up and kwargs.get("torch_image") is not None:
+            add_conditioning_seconds(
+                self._conditioning_seconds, "image", time.perf_counter() - start
+            )
         return result
 
     def _ttnn_inference(self, tensors, prompts, needed_padding):

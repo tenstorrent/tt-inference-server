@@ -144,7 +144,7 @@ class TTSDXLEditRunner(TTSDXLImageToImageRunner):
             tt_mask,
             tt_prompt_embeds,
             tt_add_text_embeds,
-        ) = self.tt_sdxl.generate_input_tensors(
+        ) = self._generate_input_tensors(
             torch_image=images,
             torch_masked_image=masked_images,
             torch_mask=masks,

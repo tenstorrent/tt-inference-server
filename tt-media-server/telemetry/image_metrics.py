@@ -118,6 +118,19 @@ _CONDITIONING_SECTIONS = {
 _DENOISE_STEP_RE = re.compile(r"^denoising_step_\d+$")
 
 
+def add_conditioning_seconds(
+    store: dict[str, float], encoder: str, seconds: float
+) -> None:
+    """Add one encoder span. Nested labels also increment ``all``.
+
+    ``all`` is the pipeline-level total used as % of engine; clip / t5 / qwen /
+    image sit inside it and must not be added together with ``all``.
+    """
+    store[encoder] = store.get(encoder, 0.0) + seconds
+    if encoder != "all":
+        store["all"] = store.get("all", 0.0) + seconds
+
+
 def format_resolution(width: Any, height: Any) -> str:
     """Render a ``WxH`` label value, or ``unknown`` if either side is missing."""
     try:

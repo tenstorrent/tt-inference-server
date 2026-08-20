@@ -95,7 +95,7 @@ class TTSDXLGenerateRunnerTrace(BaseSDXLRunner):
         )
 
         tt_latents, tt_prompt_embeds, tt_add_text_embeds = (
-            self.tt_sdxl.generate_input_tensors(
+            self._generate_input_tensors(
                 all_prompt_embeds_torch=all_prompt_embeds_torch,
                 torch_add_text_embeds=torch_add_text_embeds,
                 start_latent_seed=requests[0].seed,

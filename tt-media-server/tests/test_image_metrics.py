@@ -21,6 +21,7 @@ from prometheus_client import REGISTRY
 from telemetry.image_metrics import (
     ImageStageRecorder,
     SdxlSectionTimings,
+    add_conditioning_seconds,
     format_resolution,
     record_image_run,
     resolution_of_images,
@@ -144,6 +145,22 @@ class TestSamplerName:
     def test_unknown_when_the_pipeline_exposes_neither(self):
         assert sampler_name(object()) == "unknown"
         assert sampler_name(None) == "unknown"
+
+
+class TestAddConditioningSeconds:
+    def test_nested_image_encode_folds_into_all(self):
+        store = {}
+        add_conditioning_seconds(store, "all", 0.4)
+        add_conditioning_seconds(store, "image", 0.6)
+        assert store["image"] == pytest.approx(0.6)
+        assert store["all"] == pytest.approx(1.0)
+
+    def test_all_does_not_double_count_itself(self):
+        store = {}
+        add_conditioning_seconds(store, "all", 0.4)
+        add_conditioning_seconds(store, "all", 0.1)
+        assert store["all"] == pytest.approx(0.5)
+        assert list(store) == ["all"]
 
 
 class TestImageStageRecorder:
@@ -415,6 +432,36 @@ class TestRecordImageRun:
         assert (
             sample("tt_media_server_image_vae_pixels_total", **shape) == 2 * 512 * 512
         )
+
+    def test_image_encoder_is_exported_separately_from_all(self):
+        model_type = "record-image-enc"
+        record_image_run(
+            model_type=model_type,
+            device_id="0",
+            resolution="1024x1024",
+            sampler="euler-solver",
+            batch=1,
+            engine_seconds=5.0,
+            conditioning_seconds={"all": 1.0, "image": 0.6},
+        )
+        for encoder, expected_sum in (("all", 1.0), ("image", 0.6)):
+            assert (
+                sample(
+                    "tt_media_server_image_conditioning_duration_seconds_count",
+                    model_type=model_type,
+                    device_id="0",
+                    encoder=encoder,
+                    batch="1",
+                )
+                == 1
+            )
+            assert sample(
+                "tt_media_server_image_conditioning_duration_seconds_sum",
+                model_type=model_type,
+                device_id="0",
+                encoder=encoder,
+                batch="1",
+            ) == pytest.approx(expected_sum)
 
     def test_absent_stages_produce_no_series(self):
         model_type = "record-sparse"

@@ -581,7 +581,7 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "$datasource" },
-      "description": "Conditioning encode time per request, p50 and p99, in milliseconds. 'all' is the pipeline-level encoder span; clip / t5 / qwen are the individual encoders nested inside it, so do not add them to 'all'.",
+      "description": "Conditioning encode time per request, p50 and p99, in milliseconds. 'all' is the pipeline-level encoder span; clip / t5 / qwen / image are nested inside it, so do not add them to 'all'.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
