@@ -31,7 +31,9 @@
             "bge-m3"
         ],
         "TTS": [
-            "speecht5_tts"
+            "speecht5_tts",
+            "Qwen3-TTS-12Hz-1.7B-Base",
+            "Qwen3-TTS-12Hz-0.6B-Base"
         ],
         "VIDEO": [
             "Wan2.2-T2V-A14B-Diffusers",
@@ -92,6 +94,7 @@
             "bge": "BGE embedding model tests",
             "qwen3_emb": "Qwen3 embedding model tests",
             "speecht5": "SpeechT5 TTS model tests",
+            "qwen3_tts": "Qwen3-TTS model tests",
             "wan": "Wan video generation model tests",
             "wan_i2v": "Wan image-to-video generation model tests",
             "mochi": "Mochi video generation model tests",
@@ -363,6 +366,18 @@
             "compatible_devices": [
                 "n150",
                 "p150"
+            ]
+        },
+        "qwen3_tts": {
+            "id_name": "qwen3-tts",
+            "weights": [
+                "Qwen3-TTS-12Hz-1.7B-Base",
+                "Qwen3-TTS-12Hz-0.6B-Base"
+            ],
+            "category": "TTS",
+            "compatible_devices": [
+                "n150",
+                "n300"
             ]
         },
         "gpt_oss_20b": {
