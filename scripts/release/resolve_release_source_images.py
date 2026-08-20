@@ -202,6 +202,76 @@ def resolve_source_images(repo: str, run_id: str) -> dict[str, dict]:
     return result
 
 
+_HEX40_RE = re.compile(r"[0-9a-f]{40}")
+
+
+def _parse_tag_commits(image_ref: str | None) -> dict:
+    """Best-effort extract {tt_metal, vllm, version} from a tt-shield dev image
+    ref. Tag shapes:
+      vllm/media: <ver>-<ttmetal40>-<vllm|other>-<jobid>
+      forge:      <ttmetal40>_<other>_<jobid>   (underscores, no version)
+    Only the vLLM family's `vllm` slot is meaningful (media/forge's 3rd token is
+    a different commit and is never read by the validator)."""
+    if not image_ref or image_ref == "None":
+        return {}
+    tag = image_ref.rsplit(":", 1)[-1]
+    out: dict = {}
+    m = _HEX40_RE.search(tag)
+    if m:
+        out["tt_metal"] = m.group(0)
+        nxt = re.split(r"[-_]", tag[m.end() :].lstrip("-_"), maxsplit=1)[0]
+        if nxt:
+            out["vllm"] = nxt
+    head = tag.split("-", 1)[0]
+    if re.match(r"^\d+\.\d+", head):
+        out["version"] = head
+    return out
+
+
+def validate_expected(result: dict[str, dict], expect: dict[str, str]) -> list[str]:
+    """Mismatches between the expected inputs and the commits the tt-shield run
+    actually baked. `expect` keys: ttm, vllm, version. tt-metal is a prefix match
+    (input is short, embedded SHA is 40-char); vllm is a prefix either way."""
+    errors: list[str] = []
+    parsed = {fam: _parse_tag_commits(result[fam]["image"]) for fam in FAMILIES}
+
+    want = expect.get("ttm")
+    if want:
+        ttms = {fam: p["tt_metal"] for fam, p in parsed.items() if p.get("tt_metal")}
+        if not ttms:
+            errors.append(
+                f"tt-metal-commit '{want}': no built image found to verify against"
+            )
+        for fam, full in ttms.items():
+            if not full.startswith(want.lower()):
+                errors.append(
+                    f"tt-metal-commit '{want}' does not match the {fam} image (built {full[:12]}…)"
+                )
+
+    want = expect.get("vllm")
+    if want:
+        vref = result["vllm"]["image"]
+        got = (parsed["vllm"].get("vllm") or "").lower()
+        w = want.lower()
+        if not vref or vref == "None":
+            errors.append(
+                f"vllm-commit '{want}': no vLLM image was built to verify against"
+            )
+        elif not (got.startswith(w) or w.startswith(got)):
+            errors.append(
+                f"vllm-commit '{want}' does not match the vLLM image (built '{got}')"
+            )
+
+    want = expect.get("version")
+    if want:
+        for fam, p in parsed.items():
+            if p.get("version") and p["version"] != want:
+                errors.append(
+                    f"version '{want}' does not match the {fam} image version '{p['version']}'"
+                )
+    return errors
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(
         description="Resolve the vllm/media/forge source dev images built by a tt-shield Release run.",
@@ -214,9 +284,32 @@ def main() -> None:
     ap.add_argument(
         "--json", action="store_true", help="Emit JSON instead of human-readable text"
     )
+    ap.add_argument(
+        "--expect",
+        default=None,
+        help="Validate the run's built images against expected commits, e.g. "
+        "'ttm=<sha>,vllm=<sha>,version=<x>'. Empty values are ignored. Exits "
+        "non-zero on any mismatch (skips the JSON/text report).",
+    )
     args = ap.parse_args()
 
     result = resolve_source_images(args.repo, args.run_id)
+
+    if args.expect:
+        expect = {
+            k: v
+            for kv in args.expect.split(",")
+            if "=" in kv
+            for k, v in [kv.split("=", 1)]
+            if v.strip()
+        }
+        errs = validate_expected(result, expect)
+        for e in errs:
+            print(f"::error::{e}", file=sys.stderr)
+        if errs:
+            sys.exit(f"{len(errs)} commit mismatch(es) vs tt-shield run {args.run_id}")
+        print(f"OK - inputs match the tt-shield run's built images: {expect}")
+        return
 
     if args.json:
         # Compact {family: image|None} plus a detailed block for traceability.

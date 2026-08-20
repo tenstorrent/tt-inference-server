@@ -135,6 +135,19 @@ jobs:
           if [ -z "$IN_TT_SHIELD_RUN_ID" ]; then
             echo "::error::tt-shield-run-id is required"; exit 1
           fi
+          # If this release ships any vLLM model, vllm-commit is mandatory: an
+          # empty value would pin an empty vllm_commit in prod and produce a
+          # malformed image tag '<ver>-<ttm>-'. Derive the release engine
+          # families from the config (same rule the crane publish step uses).
+          RELEASE_FAMS=$(python3 -c "import json,sys; sys.path.insert(0,'.'); from workflows.workflow_types import InferenceEngine as E; c=json.load(open('.github/workflows/models-ci-config.json')); print(' '.join(sorted({E.from_string(i['inference_engine']).value.lower() for _n,e in c['models'].items() for i in e.get('implementations',[e]) if i.get('ci',{}).get('release')})))")
+          echo "Release engine families: ${RELEASE_FAMS:-<none>}"
+          case " ${RELEASE_FAMS} " in
+            *" vllm "*)
+              if [ -z "$IN_VLLM_COMMIT" ]; then
+                echo "::error::this release ships vLLM models (families: ${RELEASE_FAMS}) but vllm-commit is empty — provide it."
+                exit 1
+              fi ;;
+          esac
           {
             echo "RELEASE_VERSION=${RELEASE_VERSION}"
             echo "TT_METAL_COMMIT=${IN_TT_METAL_COMMIT}"
@@ -155,6 +168,18 @@ jobs:
           echo "tt-shield-run-id = ${TT_SHIELD_RUN_ID}  (not used here)"
           echo "commit/tag       = v${RELEASE_VERSION}${TAG_SUFFIX}"
           echo "post-release br  = post-release-v${RELEASE_VERSION}${POST_RELEASE_SUFFIX} (from main)"
+
+      # ----- Cross-check the hand-typed commits against what the tt-shield run
+      #       actually built, BEFORE any promote/commit/tag/publish. Fails fast on
+      #       a typo'd tt-metal-commit / vllm-commit (wrong pins + wrong image
+      #       tags). Empty vllm-commit is ignored here (guarded above by #8). -----
+      - name: "Validate input commits against the tt-shield run"
+        env:
+          GH_TOKEN: ${{ secrets.TMP_VCANKOVIC_SHIELD_CRANE_PAT }}
+        run: |
+          python3 scripts/release/resolve_release_source_images.py \
+            --run-id "${TT_SHIELD_RUN_ID}" \
+            --expect "ttm=${TT_METAL_COMMIT},vllm=${VLLM_COMMIT},version=${RELEASE_VERSION}"
 
       # ----- Step 1: promote dev model specs -> prod (release-scoped only) -----
       - name: "Step 1 — promote dev specs to prod"
