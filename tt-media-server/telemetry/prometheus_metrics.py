@@ -22,6 +22,38 @@ from utils.logger import TTLogger
 system_info = Info("tt_media_server_info", "System information")
 
 
+class _StaticRegistry:
+    """Renders an already-collected list of metric families.
+
+    Lets one ``collect()`` snapshot drive both the rendered output and the
+    exclusion set, so the two can never disagree.
+    """
+
+    def __init__(self, metrics):
+        self._metrics = metrics
+
+    def collect(self):
+        return iter(self._metrics)
+
+
+class _ExcludingRegistry:
+    """A registry view that hides the named metric families.
+
+    ``generate_latest`` accepts any object exposing ``collect()``. This wraps
+    the default registry so families already reported by
+    ``MultiProcessCollector`` are rendered once, not twice.
+    """
+
+    def __init__(self, registry, exclude):
+        self._registry = registry
+        self._exclude = exclude
+
+    def collect(self):
+        for metric in self._registry.collect():
+            if metric.name not in self._exclude:
+                yield metric
+
+
 class PrometheusMetrics:
     def __init__(self, app: FastAPI):
         self.app = app
@@ -92,21 +124,35 @@ class PrometheusMetrics:
         # Add custom metrics endpoint
         @self.app.get(self.settings.prometheus_endpoint)
         async def get_metrics():
-            metrics_data = None
             try:
                 if self.multiproc_dir and os.path.exists(self.multiproc_dir):
-                    # Get multiprocess metrics
+                    # In multiprocess mode every Counter/Gauge/Histogram/Summary
+                    # is mmap-backed, so MultiProcessCollector already reports the
+                    # cross-process aggregate for those families. The default
+                    # REGISTRY holds its own copy of them (this process's share
+                    # only) *plus* collectors multiprocess mode cannot provide:
+                    # process_*/python_* and Info metrics. Rendering both in full
+                    # printed every shared family twice, so subtract the overlap.
+                    # Collect once and render from that snapshot: MultiProcess-
+                    # Collector re-reads the mmap files on every collect(), so a
+                    # worker writing a new family between two passes would leave
+                    # it rendered by both registries (a duplicate) or by neither.
                     mp_registry = CollectorRegistry()
                     MultiProcessCollector(mp_registry)
-                    mp_metrics = generate_latest(mp_registry).decode("utf-8")
+                    mp_families = list(mp_registry.collect())
+                    covered = {metric.name for metric in mp_families}
 
-                    # Get default registry metrics
-                    default_metrics = generate_latest(REGISTRY).decode("utf-8")
+                    mp_metrics = generate_latest(
+                        _StaticRegistry(mp_families)
+                    ).decode("utf-8")
+                    default_metrics = generate_latest(
+                        _ExcludingRegistry(REGISTRY, covered)
+                    ).decode("utf-8")
 
-                    # Combine both (simple concatenation)
-                    combined_metrics = default_metrics + "\n" + mp_metrics
-
-                    metrics_data = combined_metrics.encode("utf-8")
+                    metrics_data = (default_metrics + mp_metrics).encode("utf-8")
+                else:
+                    # Single-process mode: the default registry is the whole story.
+                    metrics_data = generate_latest(REGISTRY)
             except Exception as e:
                 self.logger.error(f"Error generating metrics: {e}")
                 # Fallback to default registry
