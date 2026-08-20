@@ -7,10 +7,11 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 from pathlib import Path
 from typing import List, Optional
 
-from .config import LLMRunConfig
+from .config import LLMRunConfig, ServerConnection
 
 logger = logging.getLogger(__name__)
 
@@ -107,4 +108,36 @@ def get_llm_configs(
     return configs
 
 
-__all__ = ["get_llm_configs"]
+def ensure_custom_dataset(
+    config: LLMRunConfig,
+    server: ServerConnection,
+    output_dir: Path,
+) -> LLMRunConfig:
+    """Materialize a configured custom dataset and resolve its path."""
+    path = config.custom_dataset_path
+    if path is None:
+        return config
+    resolved = path if path.is_absolute() else output_dir / path
+    if not resolved.exists():
+        from .speed_bench_prompts import write_speed_bench_prompt_file
+
+        try:
+            write_speed_bench_prompt_file(
+                output_path=resolved,
+                model=server.model,
+                target_isl=config.isl,
+                num_prompts=config.num_prompts,
+                trust_remote_code=server.tokenizer_trust_remote_code,
+            )
+        except Exception as build_error:
+            raise RuntimeError(
+                "SPEED-Bench prompt construction failed for "
+                f"{server.model} isl={config.isl}; refusing to run a mislabeled "
+                "random-input benchmark"
+            ) from build_error
+    if resolved != path:
+        return replace(config, custom_dataset_path=resolved)
+    return config
+
+
+__all__ = ["ensure_custom_dataset", "get_llm_configs"]

@@ -16,13 +16,13 @@ import json
 import logging
 import os
 import shutil
-from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Tuple
 
 from utils.url_helpers import uses_remote_base_url
 
+from ..benchmark_configs import ensure_custom_dataset
 from ..config import DriverContext, LLMRunConfig, ServerConnection
 from ..parsers.vllm import VLLMBenchParser
 from ._subprocess import load_json, run_command, safe_filename_part
@@ -151,7 +151,7 @@ class VLLMBenchDriver(LLMDriver):
             f"_maxcon-{config.max_concurrency}_n-{config.num_prompts}.json"
         )
 
-        config = self._ensure_custom_dataset(config, server, context)
+        config = ensure_custom_dataset(config, server, context.output_dir)
         cmd, auth_token = build_vllm_bench_serve_argv(
             vllm_binary=self.vllm_binary,
             config=config,
@@ -168,37 +168,5 @@ class VLLMBenchDriver(LLMDriver):
         if raw is not None and config.output_block_size > 1:
             raw["tt_output_block_size"] = config.output_block_size
         return DriverResult(return_code=rc, raw=raw, raw_path=result_filename)
-
-    @staticmethod
-    def _ensure_custom_dataset(
-        config: LLMRunConfig,
-        server: ServerConnection,
-        context: DriverContext,
-    ) -> LLMRunConfig:
-        path = config.custom_dataset_path
-        if path is None:
-            return config
-        resolved = path if path.is_absolute() else context.output_dir / path
-        if not resolved.exists():
-            from ..speed_bench_prompts import write_speed_bench_prompt_file
-
-            try:
-                write_speed_bench_prompt_file(
-                    output_path=resolved,
-                    model=server.model,
-                    target_isl=config.isl,
-                    num_prompts=config.num_prompts,
-                    trust_remote_code=server.tokenizer_trust_remote_code,
-                )
-            except Exception as build_error:
-                raise RuntimeError(
-                    "SPEED-Bench prompt construction failed for "
-                    f"{server.model} isl={config.isl}; refusing to run a mislabeled "
-                    "random-input benchmark"
-                ) from build_error
-        if resolved != path:
-            return replace(config, custom_dataset_path=resolved)
-        return config
-
 
 __all__ = ["VLLMBenchDriver", "build_vllm_bench_serve_argv"]

@@ -7,8 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from llm_module.config import DriverContext, LLMRunConfig, ServerConnection
-from llm_module.drivers.vllm import VLLMBenchDriver, build_vllm_bench_serve_argv
+from llm_module.benchmark_configs import ensure_custom_dataset
+from llm_module.config import LLMRunConfig, ServerConnection
+from llm_module.drivers.vllm import build_vllm_bench_serve_argv
 
 
 def _config(**overrides):
@@ -158,12 +159,7 @@ def test_missing_custom_dataset_path_is_left_alone(tmp_path):
     )
     config = _config()
 
-    assert (
-        VLLMBenchDriver._ensure_custom_dataset(
-            config, server, DriverContext(output_dir=tmp_path)
-        )
-        is config
-    )
+    assert ensure_custom_dataset(config, server, tmp_path) is config
 
 
 def test_existing_prompt_file_short_circuits_rebuild(monkeypatch, tmp_path):
@@ -183,10 +179,10 @@ def test_existing_prompt_file_short_circuits_rebuild(monkeypatch, tmp_path):
         model="google/diffusiongemma-26B-A4B-it",
     )
 
-    ensured = VLLMBenchDriver._ensure_custom_dataset(
+    ensured = ensure_custom_dataset(
         _config(custom_dataset_path=Path(prompts_path.name)),
         server,
-        DriverContext(output_dir=tmp_path),
+        tmp_path,
     )
 
     assert ensured.custom_dataset_path == prompts_path
@@ -210,8 +206,8 @@ def test_speed_bench_prompt_failure_does_not_fall_back_to_random(monkeypatch, tm
     )
 
     with pytest.raises(RuntimeError, match="refusing to run a mislabeled"):
-        VLLMBenchDriver._ensure_custom_dataset(
+        ensure_custom_dataset(
             _config(custom_dataset_path=Path("speed_bench_prompts_isl-128_n-8.jsonl")),
             server,
-            DriverContext(output_dir=tmp_path),
+            tmp_path,
         )
