@@ -96,7 +96,10 @@ def run_llm_performance(
         driver=driver,
         server_controller=server_controller,
     )
-    configs = [ensure_custom_dataset(config, server, output_dir) for config in configs]
+    if driver.name == "vllm":
+        configs = [
+            ensure_custom_dataset(config, server, output_dir) for config in configs
+        ]
     result = runner.run(configs, server, context)
 
     if result.return_codes and not result.ok:
