@@ -335,14 +335,12 @@ templates:
         DG_DENOISE_SLIDING_WINDOW: "1"
         # Warm representative short lengths before capturing the shared program.
         DG_UPFRONT_PREFILL_WARMUP_LENS: "32,64,96"
-        # Mirrors override_tt_config.trace_region_size below: Metal exposes no
-        # getter for the reservation, so the model runtime needs the same value.
-        DG_TRACE_REGION_SIZE: &dg_trace_region_size 3758096384
+        DG_TRACE_REGION_SIZE: "3758096384"
       override_tt_config:
         sample_on_device_mode: all
         enable_model_warmup: true
         trace_mode: all
-        trace_region_size: *dg_trace_region_size
+        trace_region_size: 3758096384
       vllm_args:
         generation-config: vllm
         default-chat-template-kwargs: '{"enable_thinking": true}'
