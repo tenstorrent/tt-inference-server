@@ -33,7 +33,6 @@ from llm_module import (
     ServerConnection,
     ServerController,
 )
-from llm_module.benchmark_configs import ensure_custom_dataset
 from llm_module.runner import RunnerResult
 from workflow_module import accept_blocks
 
@@ -96,10 +95,6 @@ def run_llm_performance(
         driver=driver,
         server_controller=server_controller,
     )
-    if driver.name == "vllm":
-        configs = [
-            ensure_custom_dataset(config, server, output_dir) for config in configs
-        ]
     result = runner.run(configs, server, context)
 
     if result.return_codes and not result.ok:
