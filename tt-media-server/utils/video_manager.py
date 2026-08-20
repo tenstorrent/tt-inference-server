@@ -112,14 +112,21 @@ class VideoManager:
             self._write_wav(audio, sampling_rate, wav_path)
             self._run_ffmpeg(
                 [
-                    "ffmpeg", "-y",
-                    "-i", silent_path,
-                    "-i", wav_path,
-                    "-c:v", "copy",
-                    "-c:a", "aac",
-                    "-b:a", "192k",
+                    "ffmpeg",
+                    "-y",
+                    "-i",
+                    silent_path,
+                    "-i",
+                    wav_path,
+                    "-c:v",
+                    "copy",
+                    "-c:a",
+                    "aac",
+                    "-b:a",
+                    "192k",
                     "-shortest",
-                    "-movflags", "+faststart",
+                    "-movflags",
+                    "+faststart",
                     output_path,
                 ]
             )
@@ -145,7 +152,9 @@ class VideoManager:
         if samples.ndim == 3 and samples.shape[0] == 1:
             samples = samples[0]
         if samples.ndim != 2:
-            raise ValueError(f"expected audio shaped (channels, samples), got {samples.shape}")
+            raise ValueError(
+                f"expected audio shaped (channels, samples), got {samples.shape}"
+            )
 
         channels = samples.shape[0]
         # Clip before scaling; out-of-range would wrap to the opposite int16 rail.
