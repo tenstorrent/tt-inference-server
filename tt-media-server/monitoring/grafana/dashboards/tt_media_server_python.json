@@ -1787,7 +1787,7 @@
         { "id": "organize", "options": { "excludeByName": { "Time": true, "Value": true, "__name__": true, "job": true, "instance": true } } }
       ]
     },
-    { "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 83 }, "id": 800, "panels": [], "title": "ASR Per-Chunk Latency (Whisper streaming only)", "type": "row" },
+    { "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 83 }, "id": 800, "panels": [], "title": "ASR Per-Chunk Latency (streaming only)", "type": "row" },
     {
       "datasource": { "type": "prometheus", "uid": "$datasource" },
       "description": "Time from chunk hand-off to the first emitted item. Bundles log-mel extraction (~2ms, constant because Whisper pads every chunk to a 30s frame), the encoder pass and the first decode step: tt-metal's WhisperGenerator fuses all three, so they cannot be separated. Unaffected by consumer backpressure.",
@@ -1939,10 +1939,10 @@
       "type": "table"
     }
     ,
-    { "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 109 }, "id": 810, "panels": [], "title": "ASR Stage Throughput (Whisper feature extraction and encoder)", "type": "row" },
+    { "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 109 }, "id": 810, "panels": [], "title": "ASR Stage Throughput (feature extraction and encoder)", "type": "row" },
     {
       "datasource": { "type": "prometheus", "uid": "$datasource" },
-      "description": "Audio seconds consumed per wall-clock second per stage. Above 1.0 the stage keeps pace with live audio. Feature extraction is the preprocessing ceiling and normally sits well above the encoder — convergence means preprocessing has become the limit. The combined line is front-end capacity: audio seconds over extraction plus encoder time.\n\nEffective throughput, not utilisation: short chunks are padded to the 30s frame, so encoder cost is fixed per chunk and this falls with chunk length. A drop can mean fan-out rose, not that the device slowed — read against Chunk Fan-out above.",
+      "description": "Recorded by the ASR runner only; empty for other model types. Audio seconds consumed per wall-clock second per stage. Above 1.0 the stage keeps pace with live audio. Feature extraction is the preprocessing ceiling and normally sits well above the encoder — convergence means preprocessing has become the limit. The combined line is front-end capacity: audio seconds over extraction plus encoder time.\n\nEffective throughput, not utilisation: short chunks are padded to the 30s frame, so encoder cost is fixed per chunk and this falls with chunk length. A drop can mean fan-out rose, not that the device slowed — read against Chunk Fan-out above.",
       "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 0, "thresholdsStyle": { "mode": "line" } }, "unit": "none", "decimals": 1, "thresholds": { "mode": "absolute", "steps": [{ "color": "text", "value": null }, { "color": "green", "value": 1 }] } } },
       "gridPos": { "h": 9, "w": 12, "x": 0, "y": 110 },
       "id": 36,
