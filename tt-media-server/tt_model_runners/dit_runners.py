@@ -41,6 +41,7 @@ from models.tt_dit.pipelines.wan.pipeline_wan_i2v import (
     WanPipelineI2V,
 )
 from PIL import Image
+from telemetry.image_metrics import ImageStageRecorder, sampler_name
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
 from utils.decorators import log_execution_time
@@ -80,6 +81,8 @@ class TTDiTRunner(BaseMetalDeviceRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.pipeline = None
+        # Warmup calls run(); recording it would skew the stage metrics.
+        self._warming_up = False
 
     def _configure_fabric(self, updated_device_params):
         try:
@@ -163,18 +166,22 @@ class TTDiTRunner(BaseMetalDeviceRunner):
 
         # we use model_construct to create the request without validation
         # (warmup uses 2 inference steps which is below the normal minimum)
-        if self.settings.model_service == ModelServices.IMAGE.value:
-            self.run(
-                [
-                    ImageGenerateRequest.model_construct(
-                        prompt="Sunrise on a beach",
-                        negative_prompt="",
-                        num_inference_steps=2,
-                    )
-                ],
-            )
-        elif self.settings.model_service == ModelServices.VIDEO.value:
-            self.run([self._build_warmup_video_request()])
+        self._warming_up = True
+        try:
+            if self.settings.model_service == ModelServices.IMAGE.value:
+                self.run(
+                    [
+                        ImageGenerateRequest.model_construct(
+                            prompt="Sunrise on a beach",
+                            negative_prompt="",
+                            num_inference_steps=2,
+                        )
+                    ],
+                )
+            elif self.settings.model_service == ModelServices.VIDEO.value:
+                self.run([self._build_warmup_video_request()])
+        finally:
+            self._warming_up = False
 
         self.logger.info(f"Device {self.device_id}: Model warmup completed")
 
@@ -198,12 +205,26 @@ class TTDiTRunner(BaseMetalDeviceRunner):
     def run(self, requests: list[ImageGenerateRequest]):
         self.logger.debug(f"Device {self.device_id}: Running inference")
         request = requests[0]
+        # run_single_prompt is single-prompt by construction, hence batch=1.
+        recorder = (
+            None
+            if self._warming_up
+            else ImageStageRecorder(
+                model_type=self.settings.model_runner,
+                device_id=self.device_id,
+                sampler=sampler_name(self.pipeline),
+                batch=1,
+            )
+        )
         image = self.pipeline.run_single_prompt(
             prompt=request.prompt,
             negative_prompt=request.negative_prompt,
             num_inference_steps=request.num_inference_steps,
             seed=int(request.seed or 0),
+            on_event=recorder,
         )
+        if recorder is not None:
+            recorder.flush(image)
         self.logger.debug(f"Device {self.device_id}: Inference completed")
         return image
 

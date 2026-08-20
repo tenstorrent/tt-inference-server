@@ -130,7 +130,7 @@ class TTSDXLEditRunner(TTSDXLImageToImageRunner):
         self.logger.debug(f"Device {self.device_id}: Starting text encoding...")
         self.tt_sdxl.compile_text_encoding()
 
-        all_prompt_embeds_torch, torch_add_text_embeds = self.tt_sdxl.encode_prompts(
+        all_prompt_embeds_torch, torch_add_text_embeds = self._encode_prompts(
             prompts, negative_prompts, prompts_2, negative_prompt_2
         )
 

@@ -4,6 +4,7 @@
 
 import asyncio
 import os
+import time
 from abc import abstractmethod
 
 import ttnn
@@ -14,6 +15,12 @@ from models.demos.stable_diffusion_xl_base.tests.test_common import (
 )
 from models.demos.stable_diffusion_xl_base.tt.tt_sdxl_pipeline import (
     TtSDXLPipeline,
+)
+from telemetry.image_metrics import (
+    SdxlSectionTimings,
+    record_image_run,
+    resolution_of_images,
+    sampler_name,
 )
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
@@ -30,6 +37,10 @@ class BaseSDXLRunner(BaseMetalDeviceRunner):
         self.pipeline = None
         self._current_lora_path: str | None = None
         self._current_lora_scale: float | None = None
+        # Measured around encode_prompts(), flushed in _ttnn_inference().
+        self._conditioning_seconds: dict[str, float] = {}
+        # Warmup calls run(); recording it would skew the stage metrics.
+        self._warming_up = False
 
     def get_pipeline_device_params(self):
         device_params = {
@@ -119,6 +130,7 @@ class BaseSDXLRunner(BaseMetalDeviceRunner):
 
         warmup_inference_timeout = 1000
 
+        self._warming_up = True
         try:
             await asyncio.wait_for(
                 asyncio.to_thread(self._warmup_inference_block),
@@ -137,6 +149,8 @@ class BaseSDXLRunner(BaseMetalDeviceRunner):
                 e,
             )
             raise
+        finally:
+            self._warming_up = False
 
         self.logger.info(f"Device {self.device_id}: Model warmup completed")
 
@@ -244,12 +258,28 @@ class BaseSDXLRunner(BaseMetalDeviceRunner):
                     f"Failed to load LoRA adapter '{requested_path}': {e}"
                 ) from e
 
+    def _encode_prompts(self, *args, **kwargs):
+        """Time tt_sdxl.encode_prompts().
+
+        It drives both CLIP encoders in one call, so there is no per-encoder
+        breakdown to report -- only ``encoder="all"``.
+        """
+        self._conditioning_seconds = {}
+        start = time.perf_counter()
+        result = self.tt_sdxl.encode_prompts(*args, **kwargs)
+        if not self._warming_up:
+            self._conditioning_seconds = {"all": time.perf_counter() - start}
+        return result
+
     def _ttnn_inference(self, tensors, prompts, needed_padding):
         images = []
         self.logger.info(f"Device {self.device_id}: Starting ttnn inference...")
         self._prepare_input_tensors_for_iteration(tensors)
 
-        imgs = self.tt_sdxl.generate_images()
+        # generate_images() resets the step count when it returns, so read it now.
+        num_steps = getattr(self.tt_sdxl, "num_inference_steps", None)
+        with SdxlSectionTimings() as timings:
+            imgs = self.tt_sdxl.generate_images()
 
         for idx, img in enumerate(imgs):
             if idx >= self.batch_size - needed_padding:
@@ -259,7 +289,44 @@ class BaseSDXLRunner(BaseMetalDeviceRunner):
             img = self.pipeline.image_processor.postprocess(img, output_type="pil")[0]
             images.append(img)
 
+        self._record_image_stage_metrics(images, needed_padding, num_steps, timings)
+
         return images
+
+    def _record_image_stage_metrics(self, images, needed_padding, num_steps, timings):
+        """Export the stage metrics for one SDXL generation."""
+        if self._warming_up:
+            return
+        try:
+            conditioning = self._conditioning_seconds
+            self._conditioning_seconds = {}
+
+            resolution, image_count, pixels = resolution_of_images(images)
+            batch = max(self.batch_size - needed_padding, len(images), 1)
+
+            # image_gen covers denoising + VAE only; add conditioning back so
+            # the engine total matches tt_dit's "total" span.
+            engine_seconds = timings.engine_seconds
+            if engine_seconds is not None and "all" in conditioning:
+                engine_seconds += conditioning["all"]
+
+            record_image_run(
+                model_type=self.settings.model_runner,
+                device_id=self.device_id,
+                resolution=resolution,
+                sampler=sampler_name(self.pipeline),
+                batch=batch,
+                engine_seconds=engine_seconds,
+                denoise_seconds=timings.denoise_seconds,
+                step_count=num_steps,
+                vae_seconds=timings.vae_seconds,
+                conditioning_seconds=conditioning,
+                image_count=image_count,
+                pixels_per_image=pixels,
+            )
+        except Exception as exc:
+            # Never fail an inference that already succeeded.
+            self.logger.warning(f"Failed to record image stage metrics: {exc}")
 
     def is_request_batchable(self, request, batch=None):
         if len(batch or []) >= self.max_batch_size:

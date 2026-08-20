@@ -12,7 +12,7 @@
       }
     ]
   },
-  "description": "TT Media Server (Python) - request latency, pipeline stages, multihost video-gen breakdown, and per-process infrastructure. Transient asset; sunsets with the Python server (~4 months).",
+  "description": "TT Media Server (Python) - request latency, pipeline stages, image-generation stage breakdown (denoising / VAE decode / conditioning), multihost video-gen breakdown, and per-process infrastructure. Transient asset; sunsets with the Python server (~4 months).",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -273,6 +273,413 @@
     {
       "collapsed": false,
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
+      "id": 800,
+      "title": "Image Generation (denoising / VAE decode / conditioning)",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Completed denoising steps per second across all image models. This is the core generation capacity number: it moves with resolution, step count and batching.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 0.5 },
+              { "color": "green", "value": 2 }
+            ]
+          },
+          "unit": "cps",
+          "decimals": 2
+        }
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 24 },
+      "id": 30,
+      "options": { "colorMode": "background_solid", "graphMode": "area", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum(rate(tt_media_server_image_denoise_steps_total{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[$__rate_interval]))",
+          "legendFormat": "steps/s",
+          "refId": "A"
+        }
+      ],
+      "title": "Denoising Throughput (steps/s)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Images per second converted from latents to pixels by the VAE. Compare against denoising throughput: if this is the lower number, reconstruction is the limiter, not denoising.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] },
+          "unit": "cps",
+          "decimals": 3
+        }
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 24 },
+      "id": 31,
+      "options": { "colorMode": "background_solid", "graphMode": "area", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum(rate(tt_media_server_image_vae_images_total{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[$__rate_interval]))",
+          "legendFormat": "images/s",
+          "refId": "A"
+        }
+      ],
+      "title": "VAE Decode (images/s)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Megapixels per second out of the VAE. Resolution-independent view of reconstruction capacity - images/s alone makes a 512x512 model look faster than a 1024x1024 one at equal silicon cost.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "purple", "value": null }] },
+          "unit": "short",
+          "decimals": 2
+        }
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 24 },
+      "id": 32,
+      "options": { "colorMode": "background_solid", "graphMode": "area", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum(rate(tt_media_server_image_vae_pixels_total{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[$__rate_interval])) / 1e6",
+          "legendFormat": "MP/s",
+          "refId": "A"
+        }
+      ],
+      "title": "VAE Decode (megapixels/s)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Conditioning encode time as a share of total engine time. High values mean prompt encoding - not denoising - dominates, which is the usual signature of short/low-step image requests.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 20 },
+              { "color": "red", "value": 40 }
+            ]
+          },
+          "unit": "percent",
+          "decimals": 1,
+          "max": 100,
+          "min": 0
+        }
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 24 },
+      "id": 33,
+      "options": { "colorMode": "background_solid", "graphMode": "area", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "100 * sum(rate(tt_media_server_image_conditioning_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\",encoder=\"all\"}[5m])) / clamp_min(sum(rate(tt_media_server_image_engine_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[5m])), 0.000001)",
+          "legendFormat": "conditioning %",
+          "refId": "A"
+        }
+      ],
+      "title": "Conditioning % of Engine Time",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Denoising steps/s split by resolution and batch size. Doubling resolution should cut steps/s; batching should raise it. If batching does not raise it, the batch is not being formed.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 10, "lineWidth": 2, "drawStyle": "line", "showPoints": "never" },
+          "unit": "cps"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 29 },
+      "id": 34,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "mean", "max"], "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum by (resolution, batch) (rate(tt_media_server_image_denoise_steps_total{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[$__rate_interval]))",
+          "legendFormat": "{{resolution}} batch={{batch}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Denoising steps/s by resolution & batch",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Denoising steps/s split by device and sampler. Divergence between devices running the same model and sampler is a per-host problem; divergence between samplers is expected.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 10, "lineWidth": 2, "drawStyle": "line", "showPoints": "never" },
+          "unit": "cps"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 29 },
+      "id": 35,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "mean", "max"], "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum by (device_id, sampler, model_type) (rate(tt_media_server_image_denoise_steps_total{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[$__rate_interval]))",
+          "legendFormat": "{{model_type}} dev={{device_id}} {{sampler}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Denoising steps/s by device & sampler",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Per-step denoising latency, p50 and p99, by resolution and batch. The reciprocal of p50 is the per-device step rate; a widening p50-p99 gap means some steps are stalling.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 0, "lineWidth": 2, "drawStyle": "line", "showPoints": "never" },
+          "unit": "s"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byRegexp", "options": ".*p99.*" },
+            "properties": [{ "id": "custom.lineStyle", "value": { "dash": [10, 10], "fill": "dash" } }]
+          }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 37 },
+      "id": 36,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "max"], "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.50, sum by (le, resolution, batch) (rate(tt_media_server_image_denoise_step_duration_seconds_bucket{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[5m])))",
+          "legendFormat": "{{resolution}} batch={{batch}} p50",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.99, sum by (le, resolution, batch) (rate(tt_media_server_image_denoise_step_duration_seconds_bucket{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[5m])))",
+          "legendFormat": "{{resolution}} batch={{batch}} p99",
+          "refId": "B"
+        }
+      ],
+      "title": "Denoising step latency p50 / p99",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Heatmap of per-step denoising latency. Each row is a bucket; intensity = count. Shows bimodal step timing (e.g. first step paying a compile or cache cost) that quantiles hide.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "scaleDistribution": { "type": "linear" } },
+          "unit": "s"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 37 },
+      "id": 37,
+      "options": {
+        "calculate": false,
+        "color": { "scheme": "Spectral", "mode": "scheme", "exponent": 0.5, "steps": 64, "reverse": false },
+        "legend": { "show": true },
+        "tooltip": { "show": true, "yHistogram": false },
+        "yAxis": { "axisPlacement": "left", "unit": "s" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum by (le) (rate(tt_media_server_image_denoise_step_duration_seconds_bucket{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[$__rate_interval]))",
+          "format": "heatmap",
+          "legendFormat": "{{le}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Denoising step latency heatmap",
+      "type": "heatmap"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "VAE decode throughput per resolution and batch, in images/s and megapixels/s. Flat images/s while denoising steps/s climbs means the VAE has become the bottleneck.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 10, "lineWidth": 2, "drawStyle": "line", "showPoints": "never" },
+          "unit": "cps"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byRegexp", "options": ".*MP/s.*" },
+            "properties": [{ "id": "unit", "value": "short" }, { "id": "custom.axisPlacement", "value": "right" }]
+          }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 45 },
+      "id": 38,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "mean"], "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum by (resolution, batch) (rate(tt_media_server_image_vae_images_total{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[$__rate_interval]))",
+          "legendFormat": "{{resolution}} batch={{batch}} images/s",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum by (resolution) (rate(tt_media_server_image_vae_pixels_total{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[$__rate_interval])) / 1e6",
+          "legendFormat": "{{resolution}} MP/s",
+          "refId": "B"
+        }
+      ],
+      "title": "VAE decode throughput (images/s & MP/s)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "VAE decode latency p50/p99 per resolution and batch. Rising with batch means the decode is not amortising across the batch.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 0, "lineWidth": 2, "drawStyle": "line", "showPoints": "never" },
+          "unit": "s"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byRegexp", "options": ".*p99.*" },
+            "properties": [{ "id": "custom.lineStyle", "value": { "dash": [10, 10], "fill": "dash" } }]
+          }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 45 },
+      "id": 39,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "max"], "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.50, sum by (le, resolution, batch) (rate(tt_media_server_image_vae_decode_duration_seconds_bucket{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[5m])))",
+          "legendFormat": "{{resolution}} batch={{batch}} p50",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.99, sum by (le, resolution, batch) (rate(tt_media_server_image_vae_decode_duration_seconds_bucket{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[5m])))",
+          "legendFormat": "{{resolution}} batch={{batch}} p99",
+          "refId": "B"
+        }
+      ],
+      "title": "VAE decode latency p50 / p99",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Conditioning encode time per request, p50 and p99, in milliseconds. 'all' is the pipeline-level encoder span; clip / t5 / qwen are the individual encoders nested inside it, so do not add them to 'all'.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 0, "lineWidth": 2, "drawStyle": "line", "showPoints": "never" },
+          "unit": "ms"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byRegexp", "options": ".*p99.*" },
+            "properties": [{ "id": "custom.lineStyle", "value": { "dash": [10, 10], "fill": "dash" } }]
+          }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 53 },
+      "id": 40,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "max"], "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "1000 * histogram_quantile(0.50, sum by (le, encoder) (rate(tt_media_server_image_conditioning_duration_seconds_bucket{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[5m])))",
+          "legendFormat": "{{encoder}} p50",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "1000 * histogram_quantile(0.99, sum by (le, encoder) (rate(tt_media_server_image_conditioning_duration_seconds_bucket{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[5m])))",
+          "legendFormat": "{{encoder}} p99",
+          "refId": "B"
+        }
+      ],
+      "title": "Conditioning encoder time p50 / p99 (ms)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Conditioning encode time as a percent of engine time, per model. Climbing here on short requests is the signal that prompt encoding, not generation, is what the user is waiting for.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 20, "lineWidth": 2, "drawStyle": "line", "showPoints": "never" },
+          "unit": "percent",
+          "min": 0
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 53 },
+      "id": 41,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "mean", "max"], "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "100 * sum by (model_type) (rate(tt_media_server_image_conditioning_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\",encoder=\"all\"}[5m])) / clamp_min(sum by (model_type) (rate(tt_media_server_image_engine_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[5m])), 0.000001)",
+          "legendFormat": "{{model_type}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Conditioning share of engine time (%)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Where engine time goes: conditioning vs denoising vs VAE decode, as a percent of total engine time. Whichever band is widest is the thing to optimise. Bands will not sum to 100% on runners that cannot report every stage (Z-Image-Turbo reports only the total).",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 60, "lineWidth": 1, "drawStyle": "line", "stacking": { "mode": "normal" }, "showPoints": "never" },
+          "unit": "percent",
+          "min": 0
+        }
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 61 },
+      "id": 42,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "mean"], "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "100 * sum(rate(tt_media_server_image_conditioning_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\",encoder=\"all\"}[5m])) / clamp_min(sum(rate(tt_media_server_image_engine_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[5m])), 0.000001)",
+          "legendFormat": "conditioning",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "100 * sum(rate(tt_media_server_image_denoise_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[5m])) / clamp_min(sum(rate(tt_media_server_image_engine_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[5m])), 0.000001)",
+          "legendFormat": "denoising",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "100 * sum(rate(tt_media_server_image_vae_decode_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[5m])) / clamp_min(sum(rate(tt_media_server_image_engine_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[5m])), 0.000001)",
+          "legendFormat": "vae decode",
+          "refId": "C"
+        }
+      ],
+      "title": "Engine time split: conditioning vs denoising vs VAE decode (%)",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 69 },
       "id": 400,
       "title": "Multihost / Per-Device (video gen drill-down)",
       "type": "row"
@@ -287,7 +694,7 @@
           "unit": "s"
         }
       },
-      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 24 },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 70 },
       "id": 8,
       "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "max"], "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
@@ -311,7 +718,7 @@
           "unit": "reqps"
         }
       },
-      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 24 },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 70 },
       "id": 9,
       "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "mean"], "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
@@ -334,7 +741,7 @@
           "unit": "s"
         }
       },
-      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 33 },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 79 },
       "id": 10,
       "options": {
         "calculate": false,
@@ -371,7 +778,7 @@
           }
         ]
       },
-      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 33 },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 79 },
       "id": 11,
       "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "sum"], "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
@@ -403,7 +810,7 @@
           "unit": "s"
         }
       },
-      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 42 },
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 88 },
       "id": 12,
       "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
@@ -419,7 +826,7 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 49 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 95 },
       "id": 500,
       "title": "Lifecycle (warmup / model load / download)",
       "type": "row"
@@ -434,7 +841,7 @@
           "unit": "s"
         }
       },
-      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 50 },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 96 },
       "id": 13,
       "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["last", "max"], "showLegend": true } },
       "targets": [
@@ -463,7 +870,7 @@
           "custom": { "align": "auto", "displayMode": "color-text" }
         }
       },
-      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 50 },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 96 },
       "id": 14,
       "options": { "showHeader": true },
       "targets": [
@@ -493,7 +900,7 @@
           "custom": { "align": "auto", "displayMode": "color-text" }
         }
       },
-      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 50 },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 96 },
       "id": 15,
       "options": { "showHeader": true },
       "targets": [
@@ -524,7 +931,7 @@
           }
         ]
       },
-      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 57 },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 103 },
       "id": 16,
       "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "sum"], "showLegend": true } },
       "targets": [
@@ -548,7 +955,7 @@
           "unit": "s"
         }
       },
-      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 57 },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 103 },
       "id": 17,
       "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "max"], "showLegend": true } },
       "targets": [
@@ -564,7 +971,7 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 64 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 110 },
       "id": 600,
       "title": "Infrastructure (per-process, host-wide)",
       "type": "row"
@@ -579,7 +986,7 @@
           "unit": "percent"
         }
       },
-      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 65 },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 111 },
       "id": 18,
       "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
       "targets": [
@@ -603,7 +1010,7 @@
           "unit": "decmbytes"
         }
       },
-      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 65 },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 111 },
       "id": 19,
       "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
       "targets": [
@@ -627,7 +1034,7 @@
           "unit": "none"
         }
       },
-      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 65 },
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 111 },
       "id": 20,
       "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
       "targets": [
@@ -651,7 +1058,7 @@
           "unit": "none"
         }
       },
-      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 71 },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 117 },
       "id": 21,
       "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
       "targets": [
@@ -675,7 +1082,7 @@
           "unit": "none"
         }
       },
-      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 71 },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 117 },
       "id": 22,
       "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
       "targets": [
@@ -699,7 +1106,7 @@
           "unit": "ops"
         }
       },
-      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 71 },
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 117 },
       "id": 23,
       "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
       "targets": [
@@ -721,7 +1128,7 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 77 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 123 },
       "id": 700,
       "title": "System Info",
       "type": "row"
@@ -736,7 +1143,7 @@
           "custom": { "align": "auto", "displayMode": "auto" }
         }
       },
-      "gridPos": { "h": 5, "w": 24, "x": 0, "y": 78 },
+      "gridPos": { "h": 5, "w": 24, "x": 0, "y": 124 },
       "id": 24,
       "options": { "showHeader": true },
       "targets": [
@@ -757,7 +1164,7 @@
   ],
   "refresh": "5s",
   "schemaVersion": 38,
-  "tags": ["tenstorrent", "tt-media-server", "python", "video-gen"],
+  "tags": ["tenstorrent", "tt-media-server", "python", "video-gen", "image-gen"],
   "templating": {
     "list": [
       {
