@@ -11,10 +11,13 @@ instead of deltas.
 """
 
 import asyncio
+import importlib
+import sys
 from types import SimpleNamespace
 
 import numpy as np
 import pytest
+import telemetry.telemetry_client as telemetry_module
 from prometheus_client import REGISTRY
 from telemetry.telemetry_client import (
     VIDEO_REQUEST_TYPE_I2V,
@@ -51,6 +54,29 @@ def make_client(model_type: str) -> TelemetryClient:
         error=lambda *a, **k: None,
     )
     return client
+
+
+@pytest.fixture
+def video_service():
+    """``model_services.video_service`` bound to the real telemetry module.
+
+    Five device-worker / video-runner test modules install a ``Mock`` into
+    ``sys.modules["telemetry.telemetry_client"]`` at import time (see
+    tests/test_device_worker.py). If ``video_service`` happens to be first
+    imported while one of those mocks is installed, its module-level metric
+    objects and status constants are Mock attributes — assertions here would
+    compare a Mock to a str and quietly pass or fail for the wrong reason
+    (which is exactly what happened in a full-suite run). Rebinding the real
+    module and reloading makes these tests order-independent.
+
+    ``telemetry_module`` is captured at this file's import time, so the reload
+    re-uses the same module object and never re-registers its collectors.
+    """
+    sys.modules["telemetry.telemetry_client"] = telemetry_module
+    module = importlib.import_module("model_services.video_service")
+    if not isinstance(module.VIDEO_REQUEST_TYPE_T2V, str):
+        module = importlib.reload(module)
+    return module
 
 
 def sync_client(model_type: str) -> TelemetryClient:
@@ -544,19 +570,14 @@ class TestRecordVideoEncode:
 class TestClassifyRequest:
     """Request type comes from the payload, not the endpoint or the runner."""
 
-    @staticmethod
-    def _classify(request):
-        from model_services.video_service import VideoService
-
-        return VideoService._classify_request(request)
-
-    def test_text_only_request_is_t2v(self):
+    def test_text_only_request_is_t2v(self, video_service):
         from domain.video_generate_request import VideoGenerateRequest
 
         request = VideoGenerateRequest(prompt="a fox in the snow")
-        assert self._classify(request) == VIDEO_REQUEST_TYPE_T2V
+        classify = video_service.VideoService._classify_request
+        assert classify(request) == VIDEO_REQUEST_TYPE_T2V
 
-    def test_image_conditioned_request_is_i2v(self):
+    def test_image_conditioned_request_is_i2v(self, video_service):
         from domain.video_i2v_generate_request import (
             ImagePromptEntry,
             VideoI2VGenerateRequest,
@@ -570,7 +591,8 @@ class TestClassifyRequest:
             prompt="a fox turning to camera",
             image_prompts=[ImagePromptEntry(image=png, frame_pos=0)],
         )
-        assert self._classify(request) == VIDEO_REQUEST_TYPE_I2V
+        classify = video_service.VideoService._classify_request
+        assert classify(request) == VIDEO_REQUEST_TYPE_I2V
 
 
 class TestProbeVideo:
@@ -677,9 +699,8 @@ class TestProcessRequestGauge:
     GAUGE = "tt_media_server_video_generations_in_progress"
 
     @staticmethod
-    def _service(monkeypatch, model_type, outcome):
+    def _service(monkeypatch, module, model_type, outcome):
         """A VideoService with the heavy __init__ and the base pipeline stubbed."""
-        from model_services import video_service as module
         from model_services.base_service import BaseService
 
         async def pipeline(_self, _request):
@@ -709,11 +730,13 @@ class TestProcessRequestGauge:
             request_type=VIDEO_REQUEST_TYPE_T2V,
         )
 
-    async def test_cancellation_releases_gauge(self, monkeypatch):
+    async def test_cancellation_releases_gauge(self, monkeypatch, video_service):
         from domain.video_generate_request import VideoGenerateRequest
 
         model = "test_video_cancel_path"
-        service = self._service(monkeypatch, model, asyncio.CancelledError())
+        service = self._service(
+            monkeypatch, video_service, model, asyncio.CancelledError()
+        )
         before = self._gauge()
 
         with pytest.raises(asyncio.CancelledError):
@@ -730,11 +753,13 @@ class TestProcessRequestGauge:
             == 1.0
         )
 
-    async def test_failure_releases_gauge(self, monkeypatch):
+    async def test_failure_releases_gauge(self, monkeypatch, video_service):
         from domain.video_generate_request import VideoGenerateRequest
 
         model = "test_video_failure_path"
-        service = self._service(monkeypatch, model, RuntimeError("runner exploded"))
+        service = self._service(
+            monkeypatch, video_service, model, RuntimeError("runner exploded")
+        )
         before = self._gauge()
 
         with pytest.raises(RuntimeError):
@@ -751,12 +776,14 @@ class TestProcessRequestGauge:
             == 1.0
         )
 
-    async def test_success_probes_the_produced_mp4(self, monkeypatch, tmp_path):
+    async def test_success_probes_the_produced_mp4(
+        self, monkeypatch, video_service, tmp_path
+    ):
         from domain.video_generate_request import VideoGenerateRequest
 
         model = "test_video_success_path"
         mp4 = write_mp4(tmp_path / "out.mp4", num_frames=8, width=64, height=32)
-        service = self._service(monkeypatch, model, mp4)
+        service = self._service(monkeypatch, video_service, model, mp4)
         before = self._gauge()
 
         result = await service.process_request(
