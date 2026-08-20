@@ -777,9 +777,7 @@ def main():
     impl_id = model_spec.get("impl", {}).get("impl_id")
     register_tt_models(impl_id)
 
-    # Step 4: Set runtime environment variables and vLLM server args. Model env
-    # must be installed first because it may explicitly disable the generic
-    # five-second Metal operation timeout.
+    # Step 4: Set runtime environment variables and vLLM server args
     set_runtime_env_vars(model_spec)
     set_metal_timeout_env_vars()
     runtime_settings(model_spec, no_auth=args.no_auth)

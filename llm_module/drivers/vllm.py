@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import shutil
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -42,7 +43,6 @@ def build_vllm_bench_serve_argv(
     config: LLMRunConfig,
     server: ServerConnection,
     result_filename: Path,
-    custom_dataset_path: Optional[Path] = None,
 ) -> Tuple[List[str], str]:
     """Build the ``vllm bench serve`` argv list.
 
@@ -77,17 +77,13 @@ def build_vllm_bench_serve_argv(
         str(result_filename),
     ]
 
-    if custom_dataset_path is not None:
-        # Pre-built exact-ISL prompts (SPEED-Bench text for block-granular
-        # models): real language reaches the entropy halt, so the sweep
-        # reports serving behaviour instead of the 48-step worst case that
-        # random token salad pins every block to.
+    if config.custom_dataset_path is not None:
         cmd.extend(
             [
                 "--dataset-name",
                 "custom",
                 "--dataset-path",
-                str(custom_dataset_path),
+                str(config.custom_dataset_path),
                 "--custom-output-len",
                 str(config.osl),
                 "--disable-shuffle",
@@ -155,13 +151,12 @@ class VLLMBenchDriver(LLMDriver):
             f"_maxcon-{config.max_concurrency}_n-{config.num_prompts}.json"
         )
 
-        custom_dataset_path = self._maybe_speed_bench_prompts(config, server, context)
+        config = self._ensure_custom_dataset(config, server, context)
         cmd, auth_token = build_vllm_bench_serve_argv(
             vllm_binary=self.vllm_binary,
             config=config,
             server=server,
             result_filename=result_filename,
-            custom_dataset_path=custom_dataset_path,
         )
 
         env = dict(context.extra_env)
@@ -170,48 +165,40 @@ class VLLMBenchDriver(LLMDriver):
 
         rc = run_command(cmd, env=env, timeout_s=context.per_run_timeout_s)
         raw = load_json(result_filename) if rc == 0 else None
-        if raw is not None and server.output_block_size > 1:
-            raw["tt_output_block_size"] = server.output_block_size
+        if raw is not None and config.output_block_size > 1:
+            raw["tt_output_block_size"] = config.output_block_size
         return DriverResult(return_code=rc, raw=raw, raw_path=result_filename)
 
     @staticmethod
-    def _maybe_speed_bench_prompts(
+    def _ensure_custom_dataset(
         config: LLMRunConfig,
         server: ServerConnection,
         context: DriverContext,
-    ) -> Optional[Path]:
-        """Exact-ISL SPEED-Bench prompt file for block-granular sweeps.
+    ) -> LLMRunConfig:
+        path = config.custom_dataset_path
+        if path is None:
+            return config
+        resolved = path if path.is_absolute() else context.output_dir / path
+        if not resolved.exists():
+            from ..speed_bench_prompts import write_speed_bench_prompt_file
 
-        DiffusionGemma denoises whole 256-token canvases and halts on entropy;
-        random-token prompts never halt, so the sweep would only ever measure
-        the 48-step cap. Prompt construction failures are fatal because silently
-        switching to random input would produce mislabeled SPEED-Bench results.
-        """
-        if server.output_block_size <= 1:
-            return None
-        from ..speed_bench_prompts import write_speed_bench_prompt_file
-
-        prompts_path = context.output_dir / (
-            f"speed_bench_prompts_isl-{config.isl}_n-{config.num_prompts}.jsonl"
-        )
-        # The filename keys the content; sweep points differing only in
-        # osl/concurrency reuse the file instead of re-rendering it.
-        if prompts_path.exists():
-            return prompts_path
-        try:
-            return write_speed_bench_prompt_file(
-                output_path=prompts_path,
-                model=server.model,
-                target_isl=config.isl,
-                num_prompts=config.num_prompts,
-                trust_remote_code=server.tokenizer_trust_remote_code,
-            )
-        except Exception as build_error:
-            raise RuntimeError(
-                "SPEED-Bench prompt construction failed for "
-                f"{server.model} isl={config.isl}; refusing to run a mislabeled "
-                "random-input benchmark"
-            ) from build_error
+            try:
+                write_speed_bench_prompt_file(
+                    output_path=resolved,
+                    model=server.model,
+                    target_isl=config.isl,
+                    num_prompts=config.num_prompts,
+                    trust_remote_code=server.tokenizer_trust_remote_code,
+                )
+            except Exception as build_error:
+                raise RuntimeError(
+                    "SPEED-Bench prompt construction failed for "
+                    f"{server.model} isl={config.isl}; refusing to run a mislabeled "
+                    "random-input benchmark"
+                ) from build_error
+        if resolved != path:
+            return replace(config, custom_dataset_path=resolved)
+        return config
 
 
 __all__ = ["VLLMBenchDriver", "build_vllm_bench_serve_argv"]

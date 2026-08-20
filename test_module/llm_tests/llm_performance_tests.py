@@ -73,7 +73,6 @@ def run_llm_performance(
         auth_token=auth_token,
         is_remote=ctx.remote_server,
         tokenizer_trust_remote_code=tokenizer_trust_remote_code,
-        output_block_size=int(metadata.get("output_block_size", 1)),
     )
     output_dir = Path(ctx.output_path) / output_subdir
     device_label = ctx.device.name if hasattr(ctx.device, "name") else str(ctx.device)

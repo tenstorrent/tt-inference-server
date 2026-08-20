@@ -7,11 +7,14 @@ while VLM image/text perf is driven separately by the guidellm ``omni_modal_imag
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from reference_config.benchmarking.benchmark_config import get_benchmark_config
 from llm_module.benchmark_configs import get_llm_configs
-from workflows.model_spec import MODEL_SPECS
+from workflows.model_spec import MODEL_SPECS, load_templates_from_yaml
+from workflows.utils import get_repo_root_path
 from workflows.workflow_types import ModelType
 
 
@@ -138,6 +141,30 @@ def test_configs_stay_hashable_with_targets_attached():
     assert len({hash(c) for c in configs}) == len(
         {(c.isl, c.osl, c.max_concurrency, c.num_prompts) for c in configs}
     )
+
+
+def test_block_granular_spec_selects_custom_dataset_from_model_spec():
+    templates = load_templates_from_yaml(
+        get_repo_root_path() / "workflows" / "model_specs" / "dev" / "llm.yaml"
+    )
+    spec = next(
+        t for t in templates if t.weights == ["google/diffusiongemma-26B-A4B-it"]
+    ).expand_to_specs()[0]
+    configs = get_llm_configs(spec, spec.device_type)
+
+    assert configs
+    for config in configs:
+        assert config.output_block_size == 256
+        assert config.custom_dataset_path == Path(
+            f"speed_bench_prompts_isl-{config.isl}_n-{config.num_prompts}.jsonl"
+        )
+
+
+def test_token_granular_specs_keep_random_dataset():
+    spec, _ = _specs_with_text_targets()[0]
+    for config in get_llm_configs(spec, spec.device_type):
+        assert config.output_block_size == 1
+        assert config.custom_dataset_path is None
 
 
 if __name__ == "__main__":

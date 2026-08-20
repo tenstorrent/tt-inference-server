@@ -11,8 +11,10 @@ from llm_module.config import DriverContext, LLMRunConfig, ServerConnection
 from llm_module.drivers.vllm import VLLMBenchDriver, build_vllm_bench_serve_argv
 
 
-def _config():
-    return LLMRunConfig(isl=128, osl=128, max_concurrency=1, num_prompts=8)
+def _config(**overrides):
+    values = dict(isl=128, osl=128, max_concurrency=1, num_prompts=8)
+    values.update(overrides)
+    return LLMRunConfig(**values)
 
 
 def _result_path():
@@ -116,10 +118,9 @@ def test_custom_dataset_path_switches_off_random():
     )
     cmd, _ = build_vllm_bench_serve_argv(
         vllm_binary="vllm",
-        config=_config(),
+        config=_config(custom_dataset_path=Path("/tmp/speed_bench_prompts.jsonl")),
         server=server,
         result_filename=_result_path(),
-        custom_dataset_path=Path("/tmp/speed_bench_prompts.jsonl"),
     )
 
     assert cmd[cmd.index("--dataset-name") + 1] == "custom"
@@ -149,20 +150,19 @@ def test_without_custom_dataset_the_sweep_stays_random():
     assert cmd[cmd.index("--random-input-len") + 1] == "128"
 
 
-def test_token_granular_models_skip_speed_bench_prompts(tmp_path):
+def test_missing_custom_dataset_path_is_left_alone(tmp_path):
     server = ServerConnection(
         base_url="http://127.0.0.1",
         service_port=8000,
         model="google/diffusiongemma-26B-A4B-it",
     )
+    config = _config()
 
     assert (
-        VLLMBenchDriver._maybe_speed_bench_prompts(
-            _config(),
-            server,
-            DriverContext(output_dir=tmp_path),
+        VLLMBenchDriver._ensure_custom_dataset(
+            config, server, DriverContext(output_dir=tmp_path)
         )
-        is None
+        is config
     )
 
 
@@ -175,23 +175,21 @@ def test_existing_prompt_file_short_circuits_rebuild(monkeypatch, tmp_path):
     monkeypatch.setattr(
         speed_bench_prompts, "write_speed_bench_prompt_file", fail_rebuild
     )
+    prompts_path = tmp_path / "speed_bench_prompts_isl-128_n-8.jsonl"
+    prompts_path.write_text('{"prompt": "existing"}\n')
     server = ServerConnection(
         base_url="http://127.0.0.1",
         service_port=8000,
         model="google/diffusiongemma-26B-A4B-it",
-        output_block_size=256,
     )
-    prompts_path = tmp_path / "speed_bench_prompts_isl-128_n-8.jsonl"
-    prompts_path.write_text('{"prompt": "existing"}\n')
 
-    assert (
-        VLLMBenchDriver._maybe_speed_bench_prompts(
-            _config(),
-            server,
-            DriverContext(output_dir=tmp_path),
-        )
-        == prompts_path
+    ensured = VLLMBenchDriver._ensure_custom_dataset(
+        _config(custom_dataset_path=Path(prompts_path.name)),
+        server,
+        DriverContext(output_dir=tmp_path),
     )
+
+    assert ensured.custom_dataset_path == prompts_path
 
 
 def test_speed_bench_prompt_failure_does_not_fall_back_to_random(monkeypatch, tmp_path):
@@ -209,12 +207,11 @@ def test_speed_bench_prompt_failure_does_not_fall_back_to_random(monkeypatch, tm
         base_url="http://127.0.0.1",
         service_port=8000,
         model="google/diffusiongemma-26B-A4B-it",
-        output_block_size=256,
     )
 
     with pytest.raises(RuntimeError, match="refusing to run a mislabeled"):
-        VLLMBenchDriver._maybe_speed_bench_prompts(
-            _config(),
+        VLLMBenchDriver._ensure_custom_dataset(
+            _config(custom_dataset_path=Path("speed_bench_prompts_isl-128_n-8.jsonl")),
             server,
             DriverContext(output_dir=tmp_path),
         )

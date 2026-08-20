@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import List, Optional
 
 from .config import LLMRunConfig
@@ -66,6 +67,8 @@ def get_llm_configs(
         if params.targets
     }
 
+    metadata = getattr(model_spec, "metadata", None) or {}
+    output_block_size = int(metadata.get("output_block_size", 1) or 1)
     configs: List[LLMRunConfig] = []
     seen = set()
     for params in text_params:
@@ -83,6 +86,14 @@ def get_llm_configs(
                     targets_by_shape.get(
                         (params.isl, params.osl, params.max_concurrency), {}
                     )
+                ),
+                output_block_size=output_block_size,
+                custom_dataset_path=(
+                    Path(
+                        f"speed_bench_prompts_isl-{params.isl}_n-{params.num_prompts}.jsonl"
+                    )
+                    if output_block_size > 1
+                    else None
                 ),
             )
         )
