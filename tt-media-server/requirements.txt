@@ -23,3 +23,5 @@ tqdm
 uvicorn
 requests
 num2words
+# read/write audio files: imported by the speecht5 and xtts_v2 TTS runners
+soundfile
