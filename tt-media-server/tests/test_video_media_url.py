@@ -24,6 +24,7 @@ from open_ai_api.video import (
     _resolve_image_prompt_urls,
     submit_generate_video_i2v_request,
 )
+from utils.image_manager import ImageManager
 from utils.media_downloader import (
     MediaDownloadFetchError,
     MediaDownloadPolicyError,
@@ -137,6 +138,18 @@ class TestResolveImagePromptUrls:
             with pytest.raises(HTTPException) as exc_info:
                 await _resolve_image_prompt_urls(request)
         assert exc_info.value.status_code == 422
+
+
+class TestDecoderGuardsAgainstUnresolvedUrls:
+    """Runners must only ever see base64; a URL reaching the decoder means a
+    submit path skipped `_resolve_image_prompt_urls` — it must fail loudly."""
+
+    @pytest.mark.parametrize(
+        "value", ["https://host.example/a.png", "HTTP://host.example/a.png"]
+    )
+    def test_url_input_raises_a_clear_error(self, value):
+        with pytest.raises(ValueError, match="unresolved media URL"):
+            ImageManager().base64_to_pil_image(value)
 
 
 class TestSubmitPathResolvesUrls:

@@ -136,9 +136,10 @@ class Settings(BaseSettings):
     # Presigned S3/GCS GET URLs are plain https URLs: validation covers scheme
     # and hostname only, so query-string auth passes through untouched.
     media_url_download_enabled: bool = True
-    # Comma-separated exact hostnames (e.g. "bucket.s3.us-east-1.amazonaws.com").
-    # Empty allows any domain; set it on deployments reachable by untrusted
-    # clients — the allowlist is the SSRF guard, and it is checked again on
+    # Comma-separated hostnames, exact ("bucket.s3.us-east-1.amazonaws.com")
+    # or label-anchored wildcards ("*.s3.us-east-1.amazonaws.com"). REQUIRED
+    # for URL downloads: while empty, every URL-valued media field is refused
+    # with 400 — the allowlist is the SSRF guard, and it is checked again on
     # every redirect hop.
     media_url_allowed_domains: str = ""
     # 7,500,000 bytes base64-encode to exactly MAX_BASE64_IMAGE_LEN

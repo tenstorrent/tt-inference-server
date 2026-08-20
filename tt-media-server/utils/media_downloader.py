@@ -12,8 +12,14 @@ base64. Every remote fetch in the request path must go through
 Policy, following SGLang's ``download_remote_media`` with vLLM's error
 taxonomy on top:
 
-* http(s) only; the optional exact-hostname allowlist is normalized (IDNA,
-  case, IP literals) and checked on the initial URL and on every redirect hop.
+* http(s) only; the hostname allowlist is REQUIRED — with no
+  ``media_url_allowed_domains`` configured every URL-valued media field is
+  refused, so the SSRF surface only exists where an operator opened it.
+* Allowlist entries are exact hostnames, normalized (IDNA, case, IP
+  literals), or label-anchored wildcards: ``*.s3.amazonaws.com`` matches
+  ``bucket.s3.amazonaws.com`` at any subdomain depth but never the bare
+  suffix and never ``evil-s3.amazonaws.com`` (a ``.`` label boundary is
+  required). The check runs on the initial URL and on every redirect hop.
 * URLs are validated as ``httpx.URL`` — the same parser the client uses — so
   a validator/client parser mismatch cannot bypass the allowlist.
 * Redirects are followed manually (301/302/303/307/308, capped) so each
@@ -21,9 +27,11 @@ taxonomy on top:
 * One total deadline covers all hops and the body read; the body is streamed
   against the byte cap instead of buffered blindly. Callers can pass a shared
   ``deadline`` so one request's assets share a single budget. Known
-  limitation: a origin that trickles bytes just inside the per-read timeout
+  limitation: an origin that trickles bytes just inside the per-read timeout
   can stretch a hop somewhat past the deadline (checked between chunks;
   ``asyncio.timeout`` would close this but needs Python 3.11+).
+* Error and log text never carries the URL's query string — presigned query
+  parameters are short-lived credentials (``X-Amz-Signature``).
 
 Error taxonomy (mapped to HTTP statuses at the endpoint):
 
@@ -43,16 +51,12 @@ from typing import Optional
 
 import httpx
 from config.settings import settings
-from utils.logger import TTLogger
-
-logger = TTLogger()
 
 _REDIRECT_STATUS_CODES = frozenset({301, 302, 303, 307, 308})
 _READ_CHUNK_BYTES = 64 * 1024
 
 _shared_client: Optional[httpx.AsyncClient] = None
 _shared_client_loop: Optional[asyncio.AbstractEventLoop] = None
-_warned_open_allowlist = False
 
 
 class MediaDownloadError(Exception):
@@ -81,6 +85,15 @@ def is_media_url(value: str) -> bool:
     return value[:8].lower().startswith(("http://", "https://"))
 
 
+def redact_url(url: str) -> str:
+    """Strip the query string and fragment for error/log text.
+
+    Presigned URLs carry credentials in the query (``X-Amz-Signature``,
+    expiry); they must never land in HTTP error details or server logs.
+    """
+    return url.split("#", 1)[0].split("?", 1)[0]
+
+
 def _normalize_hostname(hostname: str) -> str:
     """Canonicalize a hostname for allowlist comparison.
 
@@ -100,18 +113,42 @@ def _normalize_hostname(hostname: str) -> str:
         raise MediaDownloadPolicyError(f"Invalid hostname {hostname!r}") from exc
 
 
-def _allowed_domains() -> frozenset:
+def _allowed_domains() -> "tuple[frozenset, frozenset]":
+    """Parse the allowlist into (exact hostnames, wildcard suffixes).
+
+    A ``*.suffix`` entry contributes its normalized suffix; anything else is
+    an exact hostname. A bare ``*`` is refused — "allow everything" must not
+    be expressible through the allowlist.
+    """
     raw = settings.media_url_allowed_domains or ""
+    exact = set()
+    suffixes = set()
     try:
-        return frozenset(
-            _normalize_hostname(domain) for domain in raw.split(",") if domain.strip()
-        )
+        for domain in raw.split(","):
+            domain = domain.strip()
+            if not domain:
+                continue
+            if domain == "*" or domain == "*.":
+                raise MediaDownloadPolicyError("bare '*' entries are not allowed")
+            if domain.startswith("*."):
+                suffixes.add(_normalize_hostname(domain[2:]))
+            else:
+                exact.add(_normalize_hostname(domain))
     except MediaDownloadPolicyError as exc:
         # A bad allowlist entry is operator error, not client error: raise the
         # base class so the endpoint surfaces 500 instead of blaming the caller.
         raise MediaDownloadError(
             f"Misconfigured media_url_allowed_domains: {exc}"
         ) from exc
+    return frozenset(exact), frozenset(suffixes)
+
+
+def _hostname_is_allowed(hostname: str, exact: frozenset, suffixes: frozenset) -> bool:
+    if hostname in exact:
+        return True
+    # Label-anchored: "bucket.s3.amazonaws.com".endswith(".s3.amazonaws.com")
+    # is True, "evil-s3.amazonaws.com" and the bare suffix are not.
+    return any(hostname.endswith("." + suffix) for suffix in suffixes)
 
 
 def check_media_url_policy(url: str) -> httpx.URL:
@@ -126,24 +163,31 @@ def check_media_url_policy(url: str) -> httpx.URL:
             "(media_url_download_enabled=false); send the asset inline."
         )
 
+    exact, suffixes = _allowed_domains()
+    if not exact and not suffixes:
+        raise MediaDownloadPolicyError(
+            "Media URL download requires media_url_allowed_domains to be "
+            "configured on this server; send the asset inline."
+        )
+
     try:
         parsed = httpx.URL(url)
     except httpx.InvalidURL as exc:
-        raise MediaDownloadPolicyError(f"Invalid media URL: {url!r}") from exc
+        raise MediaDownloadPolicyError(
+            f"Invalid media URL: {redact_url(url)!r}"
+        ) from exc
 
     if parsed.scheme not in ("http", "https") or not parsed.host:
         raise MediaDownloadPolicyError(
-            f"Media URL must be http(s) with a hostname, got: {url!r}"
+            f"Media URL must be http(s) with a hostname, got: {redact_url(url)!r}"
         )
 
-    allowed = _allowed_domains()
-    if allowed:
-        hostname = _normalize_hostname(parsed.host)
-        if hostname not in allowed:
-            # Do not echo the allowlist: it is deployment configuration.
-            raise MediaDownloadPolicyError(
-                f"Media URL domain {hostname!r} is not in the allowed domains list"
-            )
+    hostname = _normalize_hostname(parsed.host)
+    if not _hostname_is_allowed(hostname, exact, suffixes):
+        # Do not echo the allowlist: it is deployment configuration.
+        raise MediaDownloadPolicyError(
+            f"Media URL domain {hostname!r} is not in the allowed domains list"
+        )
     return parsed
 
 
@@ -166,20 +210,6 @@ def _get_shared_client() -> httpx.AsyncClient:
         _shared_client_loop = loop
     _shared_client.cookies.clear()
     return _shared_client
-
-
-def _warn_if_open_allowlist() -> None:
-    global _warned_open_allowlist
-    if _warned_open_allowlist:
-        return
-    if not _allowed_domains():
-        logger.warning(
-            "Media URL download is enabled with no media_url_allowed_domains; "
-            "any authenticated client can make this server fetch arbitrary "
-            "http(s) URLs (SSRF surface). Set an allowlist on deployments "
-            "reachable by untrusted clients."
-        )
-    _warned_open_allowlist = True
 
 
 async def download_media_url(
@@ -210,16 +240,18 @@ async def download_media_url(
         raise MediaDownloadError("media_url_timeout_seconds must be positive")
 
     current = check_media_url_policy(url)
-    _warn_if_open_allowlist()
     http_client = client if client is not None else _get_shared_client()
     if deadline is None:
         deadline = time.monotonic() + timeout_seconds
 
+    safe_url = redact_url(url)
     try:
         for redirect_count in range(max_redirects + 1):
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                raise MediaDownloadFetchError(f"Timed out downloading media URL: {url}")
+                raise MediaDownloadFetchError(
+                    f"Timed out downloading media URL: {safe_url}"
+                )
 
             async with http_client.stream(
                 "GET",
@@ -233,17 +265,17 @@ async def download_media_url(
                         raise MediaDownloadFetchError(
                             f"Media URL returned redirect HTTP "
                             f"{response.status_code} without a Location "
-                            f"header: {url}"
+                            f"header: {safe_url}"
                         )
                     if redirect_count == max_redirects:
                         raise MediaDownloadPolicyError(
-                            f"Media URL exceeded {max_redirects} redirects: {url}"
+                            f"Media URL exceeded {max_redirects} redirects: {safe_url}"
                         )
                     try:
                         target = str(current.join(location))
                     except httpx.InvalidURL as exc:
                         raise MediaDownloadPolicyError(
-                            f"Invalid redirect location {location!r}"
+                            f"Invalid redirect location {redact_url(location)!r}"
                         ) from exc
                     current = check_media_url_policy(target)
                     continue
@@ -251,7 +283,8 @@ async def download_media_url(
                 if response.status_code >= 400:
                     raise MediaDownloadFetchError(
                         f"Media URL returned HTTP {response.status_code} "
-                        f"(an expired presigned URL typically returns 403): {url}"
+                        f"(an expired presigned URL typically returns 403): "
+                        f"{safe_url}"
                     )
 
                 content_length = response.headers.get("content-length")
@@ -270,7 +303,7 @@ async def download_media_url(
                 async for chunk in response.aiter_bytes(_READ_CHUNK_BYTES):
                     if time.monotonic() > deadline:
                         raise MediaDownloadFetchError(
-                            f"Timed out downloading media URL: {url}"
+                            f"Timed out downloading media URL: {safe_url}"
                         )
                     if len(body) + len(chunk) > max_bytes:
                         raise MediaDownloadTooLargeError(
@@ -280,11 +313,11 @@ async def download_media_url(
                 return bytes(body)
     except httpx.TimeoutException as exc:
         raise MediaDownloadFetchError(
-            f"Timed out downloading media URL: {url}"
+            f"Timed out downloading media URL: {safe_url}"
         ) from exc
     except httpx.HTTPError as exc:
         raise MediaDownloadFetchError(
-            f"Failed to download media URL: {url} ({exc})"
+            f"Failed to download media URL: {safe_url} ({type(exc).__name__})"
         ) from exc
 
     raise AssertionError("unreachable: redirect loop must return or raise")

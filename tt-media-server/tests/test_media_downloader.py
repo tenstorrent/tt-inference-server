@@ -5,9 +5,9 @@
 """Policy matrix for utils/media_downloader.py (issue #4974).
 
 The downloader pulls client-supplied media (e.g. presigned S3 URLs) under a
-process-wide policy: http(s) only, optional exact-hostname allowlist checked
-on every redirect hop, a total deadline, and a streamed byte cap. Transports
-are faked so no test touches the network.
+process-wide policy: http(s) only, a REQUIRED hostname allowlist (exact or
+label-anchored wildcard) checked on every redirect hop, a total deadline, and
+a streamed byte cap. Transports are faked so no test touches the network.
 """
 
 import asyncio
@@ -55,9 +55,18 @@ def _client(handler) -> httpx.AsyncClient:
 
 @pytest.fixture
 def media_url_defaults(monkeypatch):
-    """Pin the media-URL settings so tests don't depend on env state."""
+    """Pin the media-URL settings so tests don't depend on env state.
+
+    The allowlist is required (deny-when-empty), so the default covers every
+    hostname the download tests use.
+    """
     monkeypatch.setattr(settings, "media_url_download_enabled", True, raising=False)
-    monkeypatch.setattr(settings, "media_url_allowed_domains", "", raising=False)
+    monkeypatch.setattr(
+        settings,
+        "media_url_allowed_domains",
+        "host.example,bucket.s3.amazonaws.com,allowed.example",
+        raising=False,
+    )
     monkeypatch.setattr(settings, "media_url_max_bytes", 1024 * 1024, raising=False)
     monkeypatch.setattr(settings, "media_url_timeout_seconds", 5.0, raising=False)
     monkeypatch.setattr(settings, "media_url_max_redirects", 5, raising=False)
@@ -100,8 +109,33 @@ class TestPolicy:
         )
         check_media_url_policy("https://bucket.s3.amazonaws.com/key")
 
-    def test_empty_allowlist_allows_any_domain(self, media_url_defaults):
-        check_media_url_policy("https://anything.example/x")
+    def test_empty_allowlist_denies_all_urls(self, media_url_defaults, monkeypatch):
+        # The allowlist is required: deny-when-empty, not allow-all.
+        monkeypatch.setattr(settings, "media_url_allowed_domains", "")
+        with pytest.raises(MediaDownloadPolicyError):
+            check_media_url_policy("https://anything.example/x")
+
+    def test_wildcard_matches_any_subdomain_depth(
+        self, media_url_defaults, monkeypatch
+    ):
+        monkeypatch.setattr(settings, "media_url_allowed_domains", "*.s3.amazonaws.com")
+        check_media_url_policy("https://bucket.s3.amazonaws.com/key")
+        check_media_url_policy("https://a.b.s3.amazonaws.com/key")
+
+    def test_wildcard_is_label_anchored(self, media_url_defaults, monkeypatch):
+        monkeypatch.setattr(settings, "media_url_allowed_domains", "*.s3.amazonaws.com")
+        # No '.' label boundary: a lookalike host must not match.
+        with pytest.raises(MediaDownloadPolicyError):
+            check_media_url_policy("https://evil-s3.amazonaws.com/key")
+        # The bare suffix itself must not match a '*.suffix' entry.
+        with pytest.raises(MediaDownloadPolicyError):
+            check_media_url_policy("https://s3.amazonaws.com/key")
+
+    def test_bare_star_entry_is_a_server_error(self, media_url_defaults, monkeypatch):
+        monkeypatch.setattr(settings, "media_url_allowed_domains", "*")
+        with pytest.raises(MediaDownloadError) as exc_info:
+            check_media_url_policy("https://host.example/x")
+        assert type(exc_info.value) is MediaDownloadError
 
     def test_disabled_rejects_urls(self, media_url_defaults, monkeypatch):
         monkeypatch.setattr(settings, "media_url_download_enabled", False)
@@ -187,6 +221,21 @@ class TestDownload:
         async with _client(handler) as client:
             with pytest.raises(MediaDownloadTooLargeError):
                 await download_media_url("https://host.example/x", client=client)
+
+    async def test_error_text_never_carries_the_query_string(self, media_url_defaults):
+        async def handler(request):
+            return httpx.Response(403, content=b"expired")
+
+        async with _client(handler) as client:
+            with pytest.raises(MediaDownloadFetchError) as exc_info:
+                await download_media_url(
+                    "https://bucket.s3.amazonaws.com/k.png?X-Amz-Signature=secret",
+                    client=client,
+                )
+        # Presigned query params are credentials; they must not leak into
+        # error details or logs.
+        assert "X-Amz-Signature" not in str(exc_info.value)
+        assert "secret" not in str(exc_info.value)
 
     async def test_origin_error_maps_to_fetch_error(self, media_url_defaults):
         async def handler(request):
