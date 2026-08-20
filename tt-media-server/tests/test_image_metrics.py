@@ -314,7 +314,7 @@ class TestImageStageRecorder:
 
 
 class TestRecordImageRun:
-    def test_step_count_fallback_spreads_the_loop_across_steps(self):
+    def test_step_count_does_not_fabricate_per_step_latency(self):
         model_type = "record-fallback"
         record_image_run(
             model_type=model_type,
@@ -328,14 +328,18 @@ class TestRecordImageRun:
         labels = denoise_labels(model_type)
         assert sample("tt_media_server_image_denoise_steps_total", **labels) == 20
         assert (
+            sample("tt_media_server_image_denoise_duration_seconds_count", **labels)
+            == 1
+        )
+        assert sample(
+            "tt_media_server_image_denoise_duration_seconds_sum", **labels
+        ) == pytest.approx(4.0)
+        assert (
             sample(
                 "tt_media_server_image_denoise_step_duration_seconds_count", **labels
             )
-            == 20
+            is None
         )
-        assert sample(
-            "tt_media_server_image_denoise_step_duration_seconds_sum", **labels
-        ) == pytest.approx(4.0)
 
     def test_step_count_without_a_loop_time_still_advances_the_counter(self):
         model_type = "record-stepsonly"
@@ -358,7 +362,7 @@ class TestRecordImageRun:
             is None
         )
 
-    def test_per_step_observations_win_over_the_fallback(self):
+    def test_per_step_observations_win_over_step_count(self):
         model_type = "record-perstep"
         record_image_run(
             model_type=model_type,

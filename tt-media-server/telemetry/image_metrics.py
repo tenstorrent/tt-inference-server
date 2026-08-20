@@ -278,9 +278,9 @@ def record_image_run(
 ) -> None:
     """Export one image run's stage timings.
 
-    ``step_seconds`` is per-step data when the pipeline reports it; ``step_count``
-    is the fallback for pipelines that only report the loop total, where per-step
-    latency becomes the loop mean.
+    ``step_seconds`` is per-step latency when the pipeline reports it.
+    ``step_count`` only advances the completed-steps counter; the mean of the
+    loop is not written into the per-step histogram.
     """
     batch = str(batch)
     denoise_labels = dict(
@@ -301,9 +301,6 @@ def record_image_run(
         engine_duration.labels(**shape_labels).observe(engine_seconds)
 
     steps = list(step_seconds or [])
-    if not steps and step_count and denoise_seconds is not None and step_count > 0:
-        steps = [denoise_seconds / step_count] * step_count
-
     if steps:
         counter = denoise_steps_total.labels(**denoise_labels)
         histogram = denoise_step_duration.labels(**denoise_labels)
