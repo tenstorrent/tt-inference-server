@@ -294,6 +294,12 @@ qwen36_blackhole_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/blackhole/qwen36",
 )
+diffusion_gemma_impl = ImplSpec(
+    impl_id="diffusion_gemma",
+    impl_name="diffusion-gemma",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/experimental/diffusion_gemma",
+)
 training_lora_impl = ImplSpec(
     impl_id="training_lora",
     impl_name="training-lora",
@@ -320,6 +326,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "tt_vllm_plugin": tt_vllm_plugin_impl,
     "sdxl_forge": sdxl_forge_impl,
     "qwen36_blackhole": qwen36_blackhole_impl,
+    "diffusion_gemma": diffusion_gemma_impl,
     "training_lora": training_lora_impl,
     "qwen36_blackhole_b8": qwen36_blackhole_b8_impl,
 }
