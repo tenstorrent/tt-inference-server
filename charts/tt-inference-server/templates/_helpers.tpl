@@ -31,6 +31,20 @@ Validate required values and that model/engine/device/impl resolves.
   {{- $available := keys $deviceEntry.impls | sortAlpha | join ", " }}
   {{- fail (printf "No impl '%s' for model '%s' on engine '%s' device '%s'. Available impls: %s" $impl .Values.model $engine .Values.device $available) }}
 {{- end }}
+
+{{/*
+Auth is a decision, not a default: the media/forge server guards its inference
+routes with a literal bearer key and falls back to a well-known built-in one
+when API_KEY is unset, which looks authenticated but is not. Fail closed and
+make the operator pick. (vLLM needs no such gate: it is open unless
+VLLM_API_KEY is set, and setting auth.apiKey is what sets it.)
+*/}}
+{{- $auth := .Values.auth | default dict }}
+{{- if or (eq $engine "media") (eq $engine "forge") }}
+  {{- if and (not (dig "apiKey" "" $auth)) (not (dig "disabled" false $auth)) }}
+    {{- fail (printf "engine '%s' authenticates its inference routes with a bearer key, and leaving it unset would silently use the server image's built-in default. Set auth.apiKey=<key> (stored in the release Secret as API_KEY), or auth.disabled=true to run without auth." $engine) }}
+  {{- end }}
+{{- end }}
 {{- end }}
 
 {{/*
@@ -144,6 +158,14 @@ with `with (include … | trim)`.
 {{- end }}
 {{- end }}
 {{- end }}
+
+{{/*
+In-container mount point of the cache volume. Single source for the ConfigMap's
+CACHE_ROOT, the container's volumeMount, and anything derived from it (HF_HOME).
+*/}}
+{{- define "tt-inference-server.cacheRoot" -}}
+/home/container_app_user/cache_root
+{{- end -}}
 
 {{/*
 Cache hostPath — defaults to /opt/cache/<model>-<device>-<impl>. Includes impl

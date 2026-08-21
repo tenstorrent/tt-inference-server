@@ -1126,10 +1126,14 @@ jobs:
           FAILED=0
           while IFS=',' read -r model engine device; do
             echo "--- Validating: $model / $engine / $device"
+            # auth.apiKey satisfies the chart's fail-closed auth check (media and
+            # forge engines require an explicit apiKey or auth.disabled) and
+            # renders the Secret's key branch so kubeconform sees it too.
             RENDERED=$(helm template ci-test charts/tt-inference-server \
                 --set "model=$model" \
                 --set "engine=$engine" \
-                --set "device=$device") || { echo "FAILED (render): $model / $engine / $device"; FAILED=1; continue; }
+                --set "device=$device" \
+                --set auth.apiKey=ci-render-key) || { echo "FAILED (render): $model / $engine / $device"; FAILED=1; continue; }
             if ! echo "$RENDERED" | kubeconform -strict -summary; then
               echo "FAILED (kubeconform): $model / $engine / $device"
               FAILED=1
@@ -1163,6 +1167,50 @@ jobs:
             echo "$RENDERED" | grep -qE '^[[:space:]]*path: /dev/tenstorrent$' \
               && { echo "::error::hostPath /dev/tenstorrent present for $device"; exit 1; } || true
           done
+
+      - name: Verify auth wiring and the HF cache location
+        run: |
+          set -e
+          # media/forge authenticate their inference routes with a literal bearer
+          # key and fall back to the image's built-in default when API_KEY is
+          # unset, so the chart fails closed until the operator picks. Render-level
+          # checks: the gate itself, both ways of satisfying it, the per-engine
+          # env name, and that the HF cache lands on the persistent volume.
+          echo "--- media/forge with neither auth.apiKey nor auth.disabled must fail"
+          if helm template ttis charts/tt-inference-server \
+              --set model=Qwen3-Embedding-4B --set device=n150 >/dev/null 2>&1; then
+            echo "::error::a forge row rendered with no auth values — the fail-closed auth check is gone"
+            exit 1
+          fi
+
+          echo "--- auth.apiKey -> API_KEY in the Secret (media/forge)"
+          helm template ttis charts/tt-inference-server \
+            --set model=Qwen3-Embedding-4B --set device=n150 --set auth.apiKey=k \
+            --show-only templates/secret.yaml | grep -qE '^[[:space:]]*API_KEY: "k"$' \
+            || { echo "::error::auth.apiKey did not land as API_KEY for a forge row"; exit 1; }
+
+          echo "--- auth.disabled -> NO_AUTH in the ConfigMap (media/forge)"
+          helm template ttis charts/tt-inference-server \
+            --set model=Qwen3-Embedding-4B --set device=n150 --set auth.disabled=true \
+            --show-only templates/configmap.yaml | grep -qE '^[[:space:]]*NO_AUTH: "1"$' \
+            || { echo "::error::auth.disabled did not set NO_AUTH for a forge row"; exit 1; }
+
+          echo "--- auth.apiKey -> VLLM_API_KEY in the Secret (vllm)"
+          helm template ttis charts/tt-inference-server \
+            --set model=Qwen3-8B --set device=n150 --set engine=vllm --set auth.apiKey=k \
+            --show-only templates/secret.yaml | grep -qE '^[[:space:]]*VLLM_API_KEY: "k"$' \
+            || { echo "::error::auth.apiKey did not land as VLLM_API_KEY for a vllm row"; exit 1; }
+
+          echo "--- HF_HOME points at the persistent cache volume (media/forge only)"
+          helm template ttis charts/tt-inference-server \
+            --set model=Qwen3-Embedding-4B --set device=n150 --set auth.disabled=true \
+            --show-only templates/configmap.yaml \
+            | grep -qE '^[[:space:]]*HF_HOME: "/home/container_app_user/cache_root/huggingface"$' \
+            || { echo "::error::HF_HOME must point into the cache volume, or weights are re-downloaded on every restart"; exit 1; }
+          helm template ttis charts/tt-inference-server \
+            --set model=Qwen3-8B --set device=n150 --set engine=vllm --set auth.apiKey=k \
+            | grep -qE '^[[:space:]]*HF_HOME:' \
+            && { echo "::error::HF_HOME set for a vllm row — those images own their weight location"; exit 1; } || true
 
       - name: Verify startupProbe budget derives from progressDeadlineSeconds
         run: |

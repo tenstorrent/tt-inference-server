@@ -29,6 +29,21 @@ cache:
 # (tt-media-server) env vars are set so each server picks up the name it reads.
 hfCacheDir: ""
 
+# Inference-route authentication. The media and forge servers check a literal
+# `Authorization: Bearer $API_KEY` on their inference routes (/health and
+# /v1/models stay open) and fall back to a well-known built-in key when API_KEY
+# is unset, so the chart requires an explicit choice for those engines: set
+# apiKey, or set disabled=true to run without auth (e.g. behind your own
+# gateway). vLLM is unauthenticated unless VLLM_API_KEY is set, which is where
+# apiKey lands for vllm engines. Mirrors run.py's API_KEY / --no-auth contract.
+auth:
+  # Bearer key clients must send. Rendered into the release Secret as API_KEY
+  # (media/forge) or VLLM_API_KEY (vllm).
+  apiKey: ""
+  # Run the server with authentication off (NO_AUTH=1). media/forge only; vLLM
+  # is already open when apiKey is unset.
+  disabled: false
+
 # Tenstorrent boards need 1Gi hugepages unless the cluster runs IOMMU + KMD
 # 1.29.0+, where they aren't required. When disabled, the chart drops the
 # hugepages-1Gi request/limit, the /dev/hugepages-1G volume + mounts, and the
