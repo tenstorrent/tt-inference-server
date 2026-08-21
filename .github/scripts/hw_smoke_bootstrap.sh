@@ -1,32 +1,15 @@
 #!/usr/bin/env bash
-# ---------------------------------------------------------------------------
-# Bootstrap a Tenstorrent hardware runner into a cluster the chart can run on.
+# Turns a bare Tenstorrent runner (ephemeral KVM VM, card passed through, tt-kmd
+# preloaded) into what helm_hw_smoke.sh needs: an RKE2 cluster with tt-operator
+# publishing devices. tt-k8s-driver-manager stays off — the runner's kmd is
+# already loaded, and reinstalling it costs two DKMS builds and a device churn
+# window per run. tt-telemetry / jobset / kubepmix are off as unused.
 #
-# The hardware smoke (.github/scripts/helm_hw_smoke.sh) assumes "tt-operator is
-# installed and publishing devices". On the shared TT runner pool that is not a
-# given: the runners are ephemeral KVM VMs with a card passed through and tt-kmd
-# preloaded, and nothing else. This script turns one into that assumption:
-#
-#   RKE2 single-node cluster (DRA is GA in the pinned k8s) ->
-#   tt-operator umbrella, NFD + tt-fabric-manager + tt-dra-driver only ->
-#   devices published in a ResourceSlice
-#
-# tt-k8s-driver-manager is deliberately OFF: the runner already has tt-kmd
-# loaded, and letting the manager reinstall it would add two DKMS builds and a
-# device churn window to every run for nothing this smoke asserts. Same for
-# tt-telemetry / jobset / kubepmix (kubepmix would also drag in cert-manager).
-#
-# THE PLUGIN RESTART, and why it is here rather than in the smoke: the DRA
-# kubelet plugin discovers boards through tt-fabric-manager's GetTopology and
-# publishes a ResourceSlice. If it comes up before TTFM has topology, it
-# publishes a slice with no devices and does not refresh it for the life of the
-# pod — claims then never allocate. In tt-operator's own integration-rke2 runs
-# this is visible as `dra-smoke` failing on 40 of 42 job instances; the two that
-# allocated are exactly the two where the plugin pod happened to (re)start ~45s
-# after the driver was up. Restarting the DaemonSet once TTFM is Ready makes
-# that ordering deliberate instead of lucky.
-#
-# Usage:  bash .github/scripts/hw_smoke_bootstrap.sh
+# The DRA kubelet plugin only discovers boards at startup, so one that comes up
+# before tt-fabric-manager has topology publishes a device-less ResourceSlice and
+# never refreshes it — hence the restart once TTFM is Ready. In tt-operator's own
+# integration-rke2 runs, dra-smoke fails on 40 of 42 jobs for exactly this, and
+# both that allocated are ones where the plugin happened to restart late.
 #
 # Knobs (all optional):
 #   RKE2_VERSION           pinned RKE2 release (k8s >= 1.34 needed: DRA GA)
@@ -38,7 +21,6 @@
 #                          ghcr.io anonymously.
 #   SKIP_CLUSTER=true      cluster + tt-operator are already there; only run the
 #                          preflight and the device-publication wait
-# ---------------------------------------------------------------------------
 set -euo pipefail
 
 RKE2_VERSION="${RKE2_VERSION:-v1.36.1+rke2r2}"
@@ -58,17 +40,12 @@ ok()   { printf 'OK   %s\n' "$*"; }
 warn() { printf '::warning::%s\n' "$*"; }
 fail() { printf '::error::%s\n' "$*" >&2; exit 1; }
 
-# Export a value to later workflow steps when running under Actions.
 export_env() {
   info "$1=$2"
   [ -n "${GITHUB_ENV:-}" ] && echo "$1=$2" >> "$GITHUB_ENV"
   return 0
 }
 
-# ---------------------------------------------------------------------------
-# Preflight — what this host actually is. Cheap, and it turns "the Pod stayed
-# Pending" into a one-line answer later.
-# ---------------------------------------------------------------------------
 log "preflight: the runner"
 [ -d /dev/tenstorrent ] || fail "no /dev/tenstorrent — this is not a Tenstorrent runner (or tt-kmd is not loaded)"
 DEV_COUNT="$(find /dev/tenstorrent -maxdepth 1 -type c | wc -l | tr -d ' ')"
@@ -97,8 +74,6 @@ info "1Gi hugepages: nr=$NR_HP free=$FREE_HP"
 if [ "$HUGEPAGES_NEEDED" = "true" ] && [ "$NR_HP" = "0" ]; then
   warn "the boards are in an identity IOMMU domain (hugepages required) but the host has no 1Gi hugepages — the chart will be installed with hugepages off and the device may fail to open"
 fi
-# The smoke asks the node, not this script, but exporting it keeps the decision
-# visible in the log and lets a caller override it per run.
 if [ "$HUGEPAGES_NEEDED" = "true" ] && [ "$NR_HP" != "0" ]; then
   export_env HW_SMOKE_HUGEPAGES true
 else
@@ -115,10 +90,7 @@ if [ "$SKIP_CLUSTER" = "true" ]; then
   info "SKIP_CLUSTER=true — leaving the cluster and tt-operator alone"
 else
 
-# ---------------------------------------------------------------------------
-# RKE2. Mirrors tt-operator's setup-rke2-cluster action (same runner pool, same
-# proxy traversal problem), minus cert-manager: nothing we install needs it.
-# ---------------------------------------------------------------------------
+# Mirrors tt-operator's setup-rke2-cluster action, minus cert-manager.
 log "install RKE2 $RKE2_VERSION"
 curl -sfL https://get.rke2.io -o /tmp/rke2-install.sh
 sudo -E INSTALL_RKE2_VERSION="$RKE2_VERSION" bash /tmp/rke2-install.sh
@@ -174,9 +146,6 @@ kubectl api-resources --api-group=resource.k8s.io 2>/dev/null | grep -q resource
   || fail "this cluster does not serve resource.k8s.io — DRA is not available (need k8s >= 1.34)"
 ok "cluster up, resource.k8s.io served"
 
-# ---------------------------------------------------------------------------
-# tt-operator: the DRA layer the chart consumes.
-# ---------------------------------------------------------------------------
 log "install tt-operator $TT_OPERATOR_VERSION (NFD + tt-fabric-manager + tt-dra-driver)"
 kubectl create namespace "$OPERATOR_NS" --dry-run=client -o yaml | kubectl apply -f -
 OP_SET=(
@@ -205,9 +174,6 @@ helm install "$RELEASE" "$TT_OPERATOR_CHART" --version "$TT_OPERATOR_VERSION" \
 
 fi  # SKIP_CLUSTER
 
-# ---------------------------------------------------------------------------
-# Devices published. See the header for why the plugin gets restarted.
-# ---------------------------------------------------------------------------
 log "wait for tt-fabric-manager, then republish the DRA slice"
 # The DaemonSets are created by the install above, but NFD has to label the node
 # before their pods are scheduled — poll for the objects rather than assume.

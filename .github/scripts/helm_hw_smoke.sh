@@ -1,69 +1,32 @@
 #!/usr/bin/env bash
-# ---------------------------------------------------------------------------
-# Hardware smoke — the chart's runtime assumptions, on real silicon.
+# Runs the chart on a Tenstorrent board (nightly / on-demand, see
+# .github/workflows/helm-hw-smoke.yml). Needs a cluster where tt-operator is
+# already publishing devices: hw_smoke_bootstrap.sh makes one out of a bare
+# runner, or point KUBECONFIG at a prepared cluster and run this alone.
 #
-# Third tier of the chart's CI (nightly / on-demand, see
-# .github/workflows/helm-hw-smoke.yml):
-#   render gate  (helm-chart-validate) -> the manifests are well-formed
-#   install gate (helm-install-kind)   -> a live API server accepts them, and the
-#                                         Pod stalls only for lack of a device
-#   THIS         (hardware smoke)      -> a real inference image, on a real board,
-#                                         actually serves
-#
-# Asserts only what the two cheaper tiers cannot:
-#   1. the DRA claim allocates and /dev/tenstorrent/<N> lands inside the real
-#      inference container (no privileged, no hostPath) — not a busybox probe
-#   2. the Pod reaches Ready inside the startupProbe budget without a restart,
-#      i.e. the computed compile window survives contact with real compile time
-#   3. the served API answers: /health, /v1/models, and one inference call
-#   4. `helm uninstall` releases the board — no Pod stuck Terminating
-#
-# NOT re-tested here: that the DRA driver can hand out devices at all
-# (tt-operator's dra-smoke owns that), the model x device matrix (the nightly
-# models-ci-config job), or anything render/install already covers.
-#
-# Preconditions: a cluster with tt-operator installed and its DRA layer already
-# publishing devices. .github/scripts/hw_smoke_bootstrap.sh creates exactly that
-# on a bare Tenstorrent runner; on a prepared cluster (e.g. a lab box running
-# k3s + tt-operator) point KUBECONFIG at it and run this script on its own.
-#
-# Usage:
 #   MODEL=Qwen3-Embedding-4B DEVICE=n150 bash .github/scripts/helm_hw_smoke.sh
 #
 # Knobs (all optional):
-#   MODEL / DEVICE / ENGINE / IMPL  chart selection (ENGINE/IMPL only when the
-#                                   row is ambiguous or an override is used)
+#   MODEL / DEVICE / ENGINE / IMPL  chart selection (ENGINE+IMPL are required for
+#                                   IMAGE_TAG and the *_REQUEST overrides, which
+#                                   address the values row by path)
 #   NAMESPACE / RELEASE             where to install
-#   IMAGE_TAG                       override the row's pinned image tag. Use only
-#                                   to separate "the chart is broken" from "the
-#                                   pinned image is stale" — never as the steady
-#                                   state, or the smoke stops guarding the pin.
-#                                   Needs ENGINE + IMPL set (the values path).
+#   IMAGE_TAG                       override the row's pinned tag, to tell "the
+#                                   chart is broken" from "the pin is stale".
+#                                   Never the steady state: the smoke guards
+#                                   that pin.
 #   HUGEPAGES                       true|false (default: probe the node)
-#   HF_TOKEN                        needed only for gated weights
-#   HF_CACHE_DIR                    host dir holding pre-downloaded weights
-#   PULL_SECRET                     name of an existing docker-registry secret
+#   HF_TOKEN                        gated weights only
+#   HF_CACHE_DIR                    host dir with pre-downloaded weights
+#   PULL_SECRET                     existing docker-registry secret to use
 #   API_PROBE                       chat|embeddings|models (default: from image)
-#   API_KEY                         bearer key to install with and then send.
-#                                   Default: a fresh random key per run. The
-#                                   chart's auth.apiKey carries it (API_KEY for
-#                                   media/forge, VLLM_API_KEY for vllm), so the
-#                                   smoke exercises the chart's own auth wiring
-#                                   rather than an image default — including the
-#                                   negative case, that an unauthenticated call
-#                                   is refused.
-#   INFER_MODEL_ID                  `model` field for the inference call. Default:
-#                                   the id from /v1/models, except that the media
-#                                   server reports a local snapshot path there
-#                                   while its runner only accepts the HF repo id,
-#                                   so an HF cache path is converted back to
-#                                   <org>/<name>.
-#   MAX_WAIT_SECONDS                how long we wait for Ready (default 2700).
-#                                   Independent of the chart's own budget; both
-#                                   are reported so a timeout is unambiguous.
-#   CPU_REQUEST / MEMORY_REQUEST    shrink the row's requests when the runner is
-#                                   smaller than the model's production ask
-# ---------------------------------------------------------------------------
+#   API_KEY                         bearer key to install via auth.apiKey and
+#                                   then send. Default: fresh random per run.
+#   INFER_MODEL_ID                  `model` for the inference call (default: the
+#                                   id from /v1/models, HF cache path converted)
+#   MAX_WAIT_SECONDS                Ready timeout (default 2700). Independent of
+#                                   the chart's budget; both get reported.
+#   CPU_REQUEST / MEMORY_REQUEST    shrink the row's requests on a small runner
 set -euo pipefail
 
 CHART="${CHART:-charts/tt-inference-server}"
@@ -116,10 +79,8 @@ diagnostics() {
   kubectl -n "$NAMESPACE" get events --sort-by=.lastTimestamp 2>/dev/null | tail -30 || true
 }
 
-# Seconds between two RFC3339 timestamps as k8s reports them.
 secs_between() { echo $(( $(date -d "$2" +%s) - $(date -d "$1" +%s) )); }
 
-# ---------------------------------------------------------------------------
 log "chart selection"
 HELM_SET=(--set "model=$MODEL" --set "device=$DEVICE")
 [ -n "$ENGINE" ]       && HELM_SET+=(--set "engine=$ENGINE")
@@ -128,9 +89,7 @@ HELM_SET=(--set "model=$MODEL" --set "device=$DEVICE")
 [ -n "$HF_CACHE_DIR" ] && HELM_SET+=(--set "hfCacheDir=$HF_CACHE_DIR")
 [ -n "$PULL_SECRET" ]  && HELM_SET+=(--set "defaults.image.pullSecrets[0].name=$PULL_SECRET")
 
-# hugepages: default to what the node can actually back. A board needs 1Gi pages
-# unless the host runs it through an IOMMU (see the chart's hugepages values), and
-# a runner with none would leave the Pod Pending for a reason unrelated to DRA.
+# A runner with no 1Gi pages would leave the Pod Pending unrelated to DRA.
 if [ -z "$HUGEPAGES" ]; then
   hp_alloc="$(kubectl get nodes -o jsonpath='{.items[0].status.allocatable.hugepages-1Gi}' 2>/dev/null || true)"
   case "${hp_alloc:-0}" in ""|0|0Gi|0Ki) HUGEPAGES=false ;; *) HUGEPAGES=true ;; esac
@@ -138,18 +97,16 @@ if [ -z "$HUGEPAGES" ]; then
 fi
 HELM_SET+=(--set "hugepages.enabled=$HUGEPAGES")
 
-# Auth is a required decision for media/forge rows (auth.apiKey or
-# auth.disabled), so pick a key per run and prove below that it is enforced.
-# Random rather than fixed: a fixed one would still pass if the chart quietly
-# stopped wiring it and the server fell back to its built-in default.
+# Random rather than fixed: a fixed key would still pass if the chart stopped
+# wiring it and the server fell back to its built-in default.
 if [ -z "$API_KEY" ]; then
   API_KEY="$(openssl rand -hex 16 2>/dev/null || head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
   [ -n "${GITHUB_ACTIONS:-}" ] && printf '::add-mask::%s\n' "$API_KEY"
 fi
 HELM_SET+=(--set "auth.apiKey=$API_KEY")
 
-# Per-row overrides go through a values file, not --set: the values path contains
-# the model name, and model names contain dots that --set reads as separators.
+# A values file, not --set: the path contains the model name, and model names
+# contain dots that --set reads as separators.
 if [ -n "$IMAGE_TAG" ] || [ -n "$CPU_REQUEST" ] || [ -n "$MEMORY_REQUEST" ]; then
   { [ -n "$ENGINE" ] && [ -n "$IMPL" ]; } \
     || fail "IMAGE_TAG / CPU_REQUEST / MEMORY_REQUEST address models.<model>.<engine>.<device>.impls.<impl>, so ENGINE and IMPL must be set explicitly"
@@ -184,11 +141,6 @@ WANT_BOARD="$(printf '%s\n' "$RENDERED" | awk -F'"' '/boardName ==/{print $(NF-1
 WANT_COUNT="$(printf '%s\n' "$RENDERED" | awk '$1=="count:"{print $2; exit}')"
 info "model=$MODEL device=$DEVICE image=$IMAGE_REF hugepages=$HUGEPAGES"
 
-# ---------------------------------------------------------------------------
-# Precondition — the DRA layer this smoke sits on top of. Asserted, not tested:
-# a missing DeviceClass or a device-less ResourceSlice is a cluster/driver
-# problem, and saying so up front keeps it from reading as a chart failure.
-# ---------------------------------------------------------------------------
 log "precondition: tt-operator's DRA layer is publishing devices"
 kubectl get deviceclass "$DEVICE_CLASS" >/dev/null 2>&1 \
   || fail "DeviceClass $DEVICE_CLASS not found — tt-operator (tt-dra-driver) is not installed on this cluster"
@@ -202,9 +154,6 @@ HAVE="$(kubectl get resourceslices \
   || fail "the DRA layer publishes ${HAVE:-0} board(s) of type $WANT_BOARD, the claim needs $WANT_COUNT — precondition unmet (fabric topology / tt-dra-driver), not a chart failure"
 ok "$HAVE $WANT_BOARD board(s) published in ResourceSlices"
 
-# ---------------------------------------------------------------------------
-# 1. Real image + DRA claim -> /dev/tenstorrent inside the container
-# ---------------------------------------------------------------------------
 log "install $RELEASE into namespace $NAMESPACE"
 helm install "$RELEASE" "$CHART" --namespace "$NAMESPACE" --create-namespace "${HELM_SET[@]}"
 INSTALLED_AT="$(date -u +%s)"
@@ -238,7 +187,6 @@ done
   || fail "ResourceClaim $CLAIM never allocated — the scheduler found no free $WANT_BOARD board for this Pod"
 ok "claim $CLAIM allocated: $DEVICES"
 
-# The point of the DRA path is that the device arrives without either of these.
 priv="$(kubectl -n "$NAMESPACE" get pod "$POD" -o jsonpath='{.spec.containers[0].securityContext.privileged}')"
 [ "${priv:-false}" != "true" ] || fail "the container runs privileged — the DRA path should not need it"
 hostpaths="$(kubectl -n "$NAMESPACE" get pod "$POD" \
@@ -270,9 +218,6 @@ injected="$(kubectl -n "$NAMESPACE" exec "$POD" -c inference-server -- \
 kubectl -n "$NAMESPACE" exec "$POD" -c inference-server -- ls -l /dev/tenstorrent || true
 ok "$injected /dev/tenstorrent device node(s) injected into the real inference container"
 
-# ---------------------------------------------------------------------------
-# 2. Ready inside the startupProbe budget, with no restart
-# ---------------------------------------------------------------------------
 log "Ready inside the compile window"
 ft="$(kubectl -n "$NAMESPACE" get pod "$POD" -o jsonpath='{.spec.containers[0].startupProbe.failureThreshold}')"
 ps="$(kubectl -n "$NAMESPACE" get pod "$POD" -o jsonpath='{.spec.containers[0].startupProbe.periodSeconds}')"
@@ -305,9 +250,6 @@ ok "Ready after ${COMPILE}s of compile/warmup (${TOTAL}s from helm install), 0 r
 [ "$PCT" -lt 80 ] \
   || warn "compile used ${PCT}% of the startupProbe budget (${COMPILE}s of ${BUDGET}s) — the window is close to too small for this row"
 
-# ---------------------------------------------------------------------------
-# 3. The served API answers
-# ---------------------------------------------------------------------------
 log "the served API answers"
 SVC="$(kubectl -n "$NAMESPACE" get svc -l app.kubernetes.io/instance="$RELEASE" \
   -o jsonpath='{.items[0].metadata.name}')"
@@ -326,8 +268,7 @@ ok "/health 200"
 AUTH=()
 [ -n "$API_KEY" ] && AUTH=(-H "Authorization: Bearer $API_KEY")
 
-# /v1/models is open on the media server but guarded by vLLM once VLLM_API_KEY
-# is set, so send the key here as well.
+# vLLM guards /v1/models once VLLM_API_KEY is set, so send the key here too.
 code="$(curl -s -o /tmp/hw-smoke-models.json -w '%{http_code}' \
   "${AUTH[@]+"${AUTH[@]}"}" "http://127.0.0.1:${LOCAL_PORT}/v1/models")"
 [ "$code" = "200" ] || fail "/v1/models returned $code"
@@ -336,11 +277,9 @@ SERVED_ID="$(python3 -c 'import json;d=json.load(open("/tmp/hw-smoke-models.json
   || fail "/v1/models returned 200 but listed no model: $(head -c 300 /tmp/hw-smoke-models.json)"
 ok "/v1/models 200, serving id=$SERVED_ID"
 
-# /v1/models advertises what the server calls itself; the inference route wants
-# what its runner recognises. On the media server those differ: it reports
-# settings.model_weights_path (an HF snapshot directory) unless SERVED_MODEL_NAME
-# is set, but the runner only accepts the HF repo id, so posting the advertised
-# id back gets "Model <path> is not supported by <Runner>". Convert the path.
+# The media server advertises settings.model_weights_path (an HF snapshot dir)
+# but its runner only accepts the HF repo id, so posting the advertised id back
+# gets "Model <path> is not supported by <Runner>". Convert the path.
 if [ -z "$INFER_MODEL_ID" ]; then
   case "$SERVED_ID" in
     *models--*/snapshots/*)
@@ -381,10 +320,8 @@ case "$API_PROBE" in
 esac
 
 if [ -n "$INFER_PATH" ]; then
-  # Negative first: with a key installed, an unauthenticated call must be
-  # refused. Without this, "200 with the key" would also pass on a server that
-  # ignores the key entirely — which is exactly the state the chart's auth
-  # values exist to prevent.
+  # Negative first: without this, "200 with the key" would also pass on a
+  # server that ignores the key entirely.
   if [ -n "$API_KEY" ]; then
     code="$(curl -s -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' \
       -d "$PAYLOAD" "http://127.0.0.1:${LOCAL_PORT}${INFER_PATH}")"
@@ -416,14 +353,9 @@ fi
 kill "$PF_PID" 2>/dev/null || true
 PF_PID=""
 
-# ---------------------------------------------------------------------------
-# 4. Uninstall releases the board
-#
-# The hazard: the kubelet cannot finish NodeUnprepareResources if the DRA plugin
-# is gone or wedged, and the Pod then sits in Terminating with the board still
-# held. `helm uninstall --wait` returning is not proof — poll until the Pod
-# object is really gone.
-# ---------------------------------------------------------------------------
+# 4. Uninstall releases the board. `helm uninstall --wait` returning is not
+# proof: if the DRA plugin is wedged the kubelet cannot finish
+# NodeUnprepareResources and the Pod sits in Terminating still holding it.
 log "uninstall releases the board"
 helm uninstall "$RELEASE" --namespace "$NAMESPACE" --wait
 gone=""
