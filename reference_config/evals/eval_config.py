@@ -204,6 +204,9 @@ class EvalTask:
     # LM_EVAL_PRESERVE_REASONING when this is True.
     capture_reasoning: bool = False
     gen_kwargs: Dict[str, str] = field(default_factory=lambda: {"stream": "False"})
+    # Keep the harness RNG seed (--seed) while allowing model-owned samplers to
+    # opt out of receiving it as an OpenAI request sampling parameter.
+    propagate_seed_to_gen_kwargs: bool = True
     model_kwargs: Dict[str, str] = field(default_factory=lambda: {})
     # Note: include_path is specified relative to the respective venv
     include_path: str = None
@@ -5273,6 +5276,123 @@ _eval_config_list = [
                 ),
                 limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="google/diffusiongemma-26B-A4B-it",
+        tasks=[
+            EvalTask(
+                # Official DiffusionGemma protocol: GPQA-Diamond 0-shot CoT with
+                # flexible extraction of the final "(X)" answer. Scored serving
+                # intentionally omits a reasoning parser so lm-eval receives the
+                # complete answer in message.content.
+                task_name="gpqa_diamond_cot_zeroshot",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=70.0,
+                    gpu_reference_score_ref=(
+                        "DiffusionGemma GPU GPQA baseline: "
+                        "https://github.com/tenstorrent/tt-shield/actions/runs/31434385185"
+                    ),
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,flexible-extract"],
+                        "unit": "percent",
+                    },
+                    # The shared gate accepts score/reference >= 1 - tolerance.
+                    # A 3-point margin on the 70% GPU baseline sets the boundary
+                    # at 67%; attainable GPQA scores are discrete, so the first
+                    # passing score is strictly greater than 67%.
+                    tolerance=3 / 70,
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                # GPQA prompts fit in a much smaller evaluation window than the
+                # model's 256K serving capacity. Keeping the eval budget at 16K
+                # avoids allocating context that the task cannot use.
+                model_kwargs={"max_length": 16384},
+                gen_kwargs={
+                    # local-chat-completions requires non-streamed responses.
+                    "stream": "false",
+                    # Override this lm-eval task's deterministic defaults. DG
+                    # samples on device and only accepts neutral API values.
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    # Leave room for the longest 2432-token GPQA prompt and emit
+                    # only whole 256-token diffusion canvases:
+                    # (16384 - 2432) // 256 * 256 = 13824.
+                    "max_gen_toks": 13824,
+                    "until": [],
+                },
+                propagate_seed_to_gen_kwargs=False,
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                },
+            ),
+            EvalTask(
+                task_name="terminal_bench_2_1",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2-1",
+                    agent="terminus-2",
+                    n_concurrent_trials=1,
+                    n_attempts=1,
+                    n_tasks=89,
+                    override_cpus=16,
+                    override_memory_mb=32 * 1024,
+                    # The selected tasks are estimated at 5-20 expert minutes.
+                    # DiffusionGemma is slower than the reference agents, but a
+                    # bounded 45-minute budget keeps a stuck trial from
+                    # consuming an entire nightly window.
+                    agent_timeout_sec=45 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            # The deterministic CI tasks have short
+                            # instructions and artifacts. Bound accumulated
+                            # tool history so an unproductive loop cannot grow
+                            # into a device-fatal long prefill.
+                            "max_input_tokens": 16 * 1024,
+                            "max_output_tokens": 4 * 1024,
+                        },
+                        "llm_kwargs": {
+                            # DiffusionGemma's model-owned sampler accepts only
+                            # the neutral vLLM sampling values.
+                            "top_p": 1.0,
+                            # Emit only whole 256-token diffusion canvases.
+                            "max_tokens": 4 * 1024,
+                            "timeout": 15 * 60,
+                        },
+                    },
+                    # Together these exercise OpenSSL/file verification, Git
+                    # recovery, and edit/compile/formal-proof loops without the
+                    # multi-hour build, cryptanalysis, or VM tasks.
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/fix-git",
+                            "terminal-bench/openssl-selfsigned-cert",
+                            "terminal-bench/prove-plus-comm",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 1,
                 },
             ),
         ],
