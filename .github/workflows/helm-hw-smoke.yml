@@ -13,15 +13,25 @@ name: Helm Chart Hardware Smoke
 # compile window, answers on /v1/..., and gives the board back on uninstall.
 # See .github/scripts/helm_hw_smoke.sh for the asserts themselves.
 #
-# Deliberately NOT per-PR: it holds a scarce board for the whole run, so it is
-# manual (workflow_dispatch) or opt-in on a PR by adding the `ci:hw-smoke`
-# label. Nothing here gates test-gate.yml.
+# Deliberately NOT per-PR: it holds a scarce board for the whole run. It runs
+# nightly, plus on demand — workflow_dispatch takes a ref, so a chart PR can be
+# validated on hardware before merge without a per-PR trigger. Nothing here
+# gates test-gate.yml.
 #
 # Preconditions this workflow creates for itself: the runner pool is bare (a KVM
 # VM with a card passed through and tt-kmd preloaded), so the first step stands
 # up RKE2 + tt-operator via .github/scripts/hw_smoke_bootstrap.sh.
 
 on:
+  # GitHub cron is UTC and does not observe DST. 20:17 UTC is 05:17 JST /
+  # ~21:17 CET — clear of this repo's other nightlies (02:00, 11:00, 23:00 UTC)
+  # and in the lull between the CET evening and the JST morning, when the shared
+  # Tenstorrent pool is least contended. Not on the hour: scheduled runs pile up
+  # at :00 and get delayed or dropped. Only the default branch's copy of this
+  # file is ever scheduled, so this starts firing once the PR lands.
+  schedule:
+    - cron: "17 20 * * *"
+
   workflow_dispatch:
     inputs:
       runner:
@@ -56,20 +66,13 @@ on:
       max-wait-seconds:
         description: How long to wait for Ready before failing.
         default: "2700"
-  pull_request:
-    branches: ["main"]
-    types: [opened, synchronize, reopened, labeled]
-    paths:
-      - "charts/**"
-      - ".github/scripts/helm_hw_smoke.sh"
-      - ".github/scripts/hw_smoke_bootstrap.sh"
-      - ".github/workflows/helm-hw-smoke.yml"
 
-# One board at a time per ref. A superseded PR run is cancelled; a manual run is
-# not, so an intentional dispatch never loses its board to a push.
+# One board at a time. Never cancel in flight: every run here is deliberate (a
+# nightly or a dispatch), and killing one mid-compile wastes the board's hour
+# and can leave a Pod terminating on a claim.
 concurrency:
-  group: helm-hw-smoke-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: helm-hw-smoke
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -77,10 +80,6 @@ permissions:
 jobs:
   hw-smoke:
     name: Hardware Smoke (${{ github.event.inputs.model || 'Qwen3-Embedding-4B' }} / ${{ github.event.inputs.device || 'n150' }})
-    # On a PR this needs the opt-in label; a dispatch is the opt-in.
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      contains(github.event.pull_request.labels.*.name, 'ci:hw-smoke')
     runs-on: ${{ github.event.inputs.runner || 'tt-ubuntu-2204-n150-stable' }}
     # Measured on a T3K lab box for the default row: ~13m wall clock end to end
     # (5GB image pull, 8GB weight download, 408s to Ready). Left generous because
