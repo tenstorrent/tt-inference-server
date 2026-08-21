@@ -311,6 +311,43 @@ crane copy "$REPO:$TAG-precatalogfix" "$REPO:$TAG"
 ```
 Note: this drops the buildkit attestation and changes the digest — the tag stays the same. Only applies to vLLM images; media/forge containers get their config from host env vars.
 
+
+## Rollback — bad published/re-baked vLLM release image
+
+`REPO=ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64`
+`TAG=0.21.0-de59f8a-c127c17     # the published tag`
+`SRC=ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64:0.21.0-<...>   # source that was copied`
+
+**Option 1** — undo the crane append (re-point tag to the un-baked copy):
+```bash
+crane copy "$SRC" "$REPO:$TAG"      # overwrites tag back to pre-append state
+crane digest "$REPO:$TAG"           # confirm digest changed
+```
+
+Option 2 — restore from the backup (if you snapshotted before re-bake):
+```bash
+crane copy "$REPO:$TAG-precatalogfix" "$REPO:$TAG"
+```
+
+Option 3 — fully unpublish (delete the tag):
+```bash
+crane delete "$REPO:$TAG"           # if GHCR rejects, use the API:
+PKG=tt-inference-server%2Fvllm-tt-metal-src-release-ubuntu-22.04-amd64
+VID=$(gh api "/orgs/tenstorrent/packages/container/$PKG/versions" --paginate \
+        --jq ".[] | select(.metadata.container.tags[]? == \"$TAG\") | .id")
+gh api --method DELETE "/orgs/tenstorrent/packages/container/$PKG/versions/$VID"
+```
+⚠️ Only if nothing pulled it yet — deleting a consumed tag breaks pullers; otherwise prefer Option 1/2 (overwrite).
+
+**Verify**
+```bash
+crane export "$REPO:$TAG" - | tar -xO home/container_app_user/model_specs/model_spec.json \
+  | python3 -c "import json,sys; print(json.load(sys.stdin)['release_version'])"
+```
+
+
+
+
 ## Step 3: verification through the list model images
 
 Run `python3 scripts/list_model_images.py` in order to confirm that docker image is trully present within the repository. This is a safeguard which ensures docker images are named properly.
