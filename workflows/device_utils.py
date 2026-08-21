@@ -85,8 +85,8 @@ def dra_device_board_counts() -> Dict[str, int]:
     )
 
 
-# Boards that carry two ASICs; every other board type is single-chip. Same split
-# tt-smi reporting needs (see _board_type_counts_from_tt_smi).
+# Boards that carry two ASICs; every other board type is single-chip. Matches the
+# tt-dra-driver chipCount table (docs.tenstorrent.com/tt-dra-driver, single-host).
 _TWO_CHIP_BOARD_TYPES = {"n300", "p300"}
 
 
@@ -163,7 +163,7 @@ def _get_tt_smi_board_type_counts() -> Dict[str, int]:
         raw_board_type = _normalize_board_type(board_info.get("board_type", ""))
         board_type = raw_board_type.split(" ", 1)[0]
         if board_type:
-            if board_type in {"n300", "p300"}:
+            if board_type in _TWO_CHIP_BOARD_TYPES:
                 # tt-smi reports per-chip entries (e.g., n300 L/R), so convert chip
                 # counts to board counts after collapsing L/R suffixes.
                 board_chip_counts[board_type] = board_chip_counts.get(board_type, 0) + 1

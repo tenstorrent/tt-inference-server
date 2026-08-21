@@ -1228,6 +1228,27 @@ jobs:
             | grep -q hugepages \
             && { echo "::error::hugepages.enabled=false left a hugepages reference"; exit 1; } || true
 
+          echo "--- contradictory auth values must fail"
+          if helm template ttis charts/tt-inference-server \
+              --set model=Qwen3-Embedding-4B --set device=n150 \
+              --set auth.apiKey=k --set auth.disabled=true >/dev/null 2>&1; then
+            echo "::error::auth.apiKey together with auth.disabled rendered instead of failing"
+            exit 1
+          fi
+
+          echo "--- sizing hugepages through resources must fail (request/limit must match)"
+          if helm template ttis charts/tt-inference-server \
+              --set model=Llama-3.1-8B-Instruct --set device=n150 \
+              --set defaults.resources.requests.hugepages-1Gi=64Gi >/dev/null 2>&1; then
+            echo "::error::resources.requests.hugepages-1Gi rendered instead of pointing at hugepages.size"
+            exit 1
+          fi
+
+          echo "--- a non-Tenstorrent device gets no hugepages plumbing at all"
+          helm template ttis charts/tt-inference-server \
+            --set model=Llama-3.1-8B-Instruct --set device=gpu | grep -qi hugepage \
+            && { echo "::error::a gpu row still references hugepages"; exit 1; } || true
+
       - name: Verify startupProbe budget derives from progressDeadlineSeconds
         run: |
           set -e

@@ -34,10 +34,10 @@ on:
           "the pinned image is stale". Leave empty normally.
         default: ""
       api-probe:
-        description: Inference call to make (chat, embeddings, or models to skip).
+        description: Inference call to make. auto picks from the resolved image.
         type: choice
-        default: embeddings
-        options: [embeddings, chat, models]
+        default: auto
+        options: [auto, embeddings, chat, models]
       max-wait-seconds:
         description: How long to wait for Ready before failing.
         default: "2700"
@@ -74,7 +74,8 @@ jobs:
           ENGINE: ${{ github.event.inputs.engine || 'forge' }}
           IMPL: ${{ github.event.inputs.impl || 'forge_vllm_plugin' }}
           IMAGE_TAG: ${{ github.event.inputs.image-tag }}
-          API_PROBE: ${{ github.event.inputs.api-probe || 'embeddings' }}
+          # Empty lets the script pick from the image; a value pins it.
+          API_PROBE: ${{ github.event.inputs.api-probe == 'auto' && '' || github.event.inputs.api-probe }}
           MAX_WAIT_SECONDS: ${{ github.event.inputs.max-wait-seconds || '2700' }}
           HUGEPAGES: ${{ env.HW_SMOKE_HUGEPAGES }}  # set by the bootstrap step
           HF_TOKEN: ${{ secrets.HF_TOKEN }}         # only gated weights need it

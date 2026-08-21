@@ -247,8 +247,14 @@ def set_device_chip_counts(doc: Any, counts: Mapping[str, int]) -> bool:
         doc["deviceChipCounts"] = desired
     else:
         keys = list(doc.keys())
-        pos = keys.index("models") if "models" in keys else len(keys)
-        models_comment = getattr(doc, "ca", None) and doc.ca.items.get("models")
+        # A key's leading comment is stored on the key before it, so inserting
+        # here strands whatever comment introduced the key we displace. Insert
+        # ahead of deviceBoardCounts (keeping the DRA maps together and the
+        # per-model banner on `models`) and re-attach its comment afterwards.
+        if "deviceBoardCounts" in keys:
+            pos = keys.index("deviceBoardCounts")
+        else:
+            pos = keys.index("models") if "models" in keys else len(keys)
         doc.insert(pos, "deviceChipCounts", desired)
         doc.yaml_set_comment_before_after_key(
             "deviceChipCounts",
@@ -259,8 +265,16 @@ def set_device_chip_counts(doc: Any, counts: Mapping[str, int]) -> bool:
                 "tt-inference-server.hugepagesSize."
             ),
         )
-        if models_comment is not None:
-            doc.ca.items["models"] = models_comment
+        if "deviceBoardCounts" in keys:
+            doc.yaml_set_comment_before_after_key(
+                "deviceBoardCounts",
+                before=(
+                    "\nDRA board count per device — number of Tenstorrent boards a "
+                    "ResourceClaim requests for each device shape.\nGenerated from "
+                    "workflows/device_utils.py:BOARD_TYPE_COUNT_TO_DEVICE; consumed "
+                    "by tt-inference-server.draDeviceCount."
+                ),
+            )
     return True
 
 
