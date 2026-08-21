@@ -43,7 +43,15 @@
             "Llama-3.1-8B-Instruct",
             "Llama-3.3-70B-Instruct",
             "gpt-oss-20b",
-            "Mistral-Small-3.1-24B-Instruct-2503"
+            "Mistral-Small-3.1-24B-Instruct-2503",
+            "gpt-oss-120b",
+            "Qwen3.6-27B",
+            "Qwen3.8-27B",
+            "Qwen3.6-35B-A3B",
+            "gemma-4-31B-it",
+            "gemma-4-26B-A4B-it",
+            "Muse-Glimmer-30B",
+            "diffusiongemma-26B-A4B-it"
         ]
     },
     "available_markers": {
@@ -435,6 +443,88 @@
             "category": "LLM",
             "compatible_devices": [
                 "blackhole_galaxy"
+            ]
+        },
+        "_comment_qb2_bringup": "The eight QB2 (P300X2) bring-up models. compatible_devices is deliberately p300x2-only even where the model spec also covers t3k/galaxy/gpu: this wiring exists so `--workflow release` on QB2 stops reporting a green spec_tests stage that ran zero tests. Widening a model to another device turns the conformance suite on for that platform's CI too, so add devices one at a time as they are validated. weights strings are model spec `model_name` values (TestFilter.filter_by_model matches on them), not HF repo ids.",
+        "gpt_oss_120b": {
+            "id_name": "gpt-oss-120b",
+            "weights": [
+                "gpt-oss-120b"
+            ],
+            "category": "LLM",
+            "compatible_devices": [
+                "p300x2"
+            ]
+        },
+        "qwen36_27b": {
+            "id_name": "qwen3.6-27b",
+            "weights": [
+                "Qwen3.6-27B"
+            ],
+            "category": "LLM",
+            "compatible_devices": [
+                "p300x2"
+            ]
+        },
+        "qwen38_27b": {
+            "id_name": "qwen3.8-27b",
+            "weights": [
+                "Qwen3.8-27B"
+            ],
+            "category": "LLM",
+            "compatible_devices": [
+                "p300x2"
+            ]
+        },
+        "qwen36_35b_a3b": {
+            "id_name": "qwen3.6-35b-a3b",
+            "weights": [
+                "Qwen3.6-35B-A3B"
+            ],
+            "category": "LLM",
+            "compatible_devices": [
+                "p300x2"
+            ]
+        },
+        "gemma4_31b_it": {
+            "_comment": "The tt-transformers spec's model_name. The forge-vllm-plugin P300X2 entry is a separate spec whose model_name is the lowercase `gemma-4-31b-it`, so it stays unwired until someone decides that impl should be graded here too.",
+            "id_name": "gemma-4-31b-it",
+            "weights": [
+                "gemma-4-31B-it"
+            ],
+            "category": "LLM",
+            "compatible_devices": [
+                "p300x2"
+            ]
+        },
+        "gemma4_26b_a4b_it": {
+            "id_name": "gemma-4-26b-a4b-it",
+            "weights": [
+                "gemma-4-26B-A4B-it"
+            ],
+            "category": "LLM",
+            "compatible_devices": [
+                "p300x2"
+            ]
+        },
+        "muse_glimmer_30b": {
+            "id_name": "muse-glimmer-30b",
+            "weights": [
+                "Muse-Glimmer-30B"
+            ],
+            "category": "LLM",
+            "compatible_devices": [
+                "p300x2"
+            ]
+        },
+        "diffusiongemma_26b_a4b_it": {
+            "id_name": "diffusiongemma-26b-a4b-it",
+            "weights": [
+                "diffusiongemma-26B-A4B-it"
+            ],
+            "category": "LLM",
+            "compatible_devices": [
+                "p300x2"
             ]
         }
     },

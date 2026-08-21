@@ -66,6 +66,47 @@
                     "description": "Qwen3-32B streaming reasoning/tool-call regressions"
                 }
             ]
+        },
+        {
+            "_comment": "QB2 (P300X2) bring-up models. Without an entry here run_spec_tests logs 'No spec test suites match' and returns rc=0 with no blocks, so `--workflow release` reports a spec_tests stage that passed without running anything. VLLMParamConformanceTest is model-agnostic (it drives /v1/chat/completions over HTTP and only needs the served model name), so no per-model test code is required. Expect real first-run failures on diffusiongemma-26B-A4B-it: its block-diffusion sampler is not an autoregressive decode loop, so n>1, stop sequences, logprobs and seed reproducibility may be genuinely inapplicable rather than broken -- classify those rows against the tt-metal branch behaviour instead of disabling the suite.",
+            "models": [
+                "gpt_oss_120b",
+                "qwen36_27b",
+                "qwen38_27b",
+                "qwen36_35b_a3b",
+                "gemma4_31b_it",
+                "gemma4_26b_a4b_it",
+                "muse_glimmer_30b",
+                "diffusiongemma_26b_a4b_it"
+            ],
+            "devices": [
+                "p300x2"
+            ],
+            "test_cases": [
+                {
+                    "template": "VLLMParamConformanceTest",
+                    "enabled": true,
+                    "description": "vLLM chat/completions parameter conformance"
+                }
+            ]
+        },
+        {
+            "_comment": "The streaming reasoning-boundary regression this suite reproduces lives in the shared qwen3 reasoning parser, which these three specs also select, so it applies beyond Qwen3-32B. Their tool parser differs (qwen3_coder vs the hermes parser the suite was written against), so a failure in the tool-call row needs classifying before it is called a model bug; the reasoning-leak rows are the ones that transfer directly.",
+            "models": [
+                "qwen36_27b",
+                "qwen38_27b",
+                "qwen36_35b_a3b"
+            ],
+            "devices": [
+                "p300x2"
+            ],
+            "test_cases": [
+                {
+                    "template": "VLLMQwen3StreamingParamConformanceTest",
+                    "enabled": true,
+                    "description": "qwen3 reasoning-parser streaming leak / tool-call regressions"
+                }
+            ]
         }
     ]
 }
