@@ -1,5 +1,20 @@
 {
   "models": {
+    "Devstral-2-123B-Instruct-2512": {
+      "inference_engine": "FORGE",
+      "ci": {
+        "nightly": {
+          "devices": [
+            "BH_GALAXY"
+          ]
+        }, 
+        "release": {
+          "devices": [
+            "BH_GALAXY"
+          ]
+        }
+      }
+    },
     "DeepSeek-R1-0528": {
       "inference_engine": "vLLM",
       "ci": {
