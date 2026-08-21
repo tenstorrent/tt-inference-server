@@ -20,10 +20,6 @@
 #                                   downloads (default: $HTTPS_PROXY with its
 #                                   host resolved to an IP, since the Pod's DNS
 #                                   cannot resolve the runner's proxy Service)
-#   HUGEPAGES_SIZE                  hugepages-1Gi request/limit when they are on
-#                                   (default: the node's allocatable). The chart
-#                                   asks for 32Gi regardless of board count,
-#                                   which no single-board host can schedule.
 #   HF_TOKEN                        gated weights only
 #   HF_CACHE_DIR                    host dir with pre-downloaded weights
 #   PULL_SECRET                     existing docker-registry secret to use
@@ -46,7 +42,6 @@ NAMESPACE="${NAMESPACE:-ttis-hw-smoke}"
 RELEASE="${RELEASE:-ttis-hw}"
 IMAGE_TAG="${IMAGE_TAG:-}"
 HUGEPAGES="${HUGEPAGES:-}"
-HUGEPAGES_SIZE="${HUGEPAGES_SIZE:-}"
 POD_PROXY="${POD_PROXY:-}"
 HF_TOKEN="${HF_TOKEN:-}"
 HF_CACHE_DIR="${HF_CACHE_DIR:-}"
@@ -107,13 +102,6 @@ if [ -z "$HUGEPAGES" ]; then
 fi
 HELM_SET+=(--set "hugepages.enabled=$HUGEPAGES")
 
-# The chart's 32Gi request is Galaxy-sized and fixed, so on a smaller host the
-# Pod is unschedulable for a reason that has nothing to do with what we assert.
-# Capacity adaptation, like CPU_REQUEST / MEMORY_REQUEST.
-if [ "$HUGEPAGES" = "true" ] && [ -z "$HUGEPAGES_SIZE" ]; then
-  HUGEPAGES_SIZE="$hp_alloc"
-fi
-
 # The Pod downloads weights from HuggingFace, and on a proxied runner it cannot
 # inherit the proxy: the host resolves the proxy Service through the outer
 # cluster's DNS, the Pod cannot. Resolve it to an IP, as tt-operator does for
@@ -142,19 +130,12 @@ HELM_SET+=(--set "auth.apiKey=$API_KEY")
 # A values file, not --set: the row path contains the model name (and model names
 # contain dots that --set reads as separators), and NO_PROXY contains commas.
 if [ -n "$IMAGE_TAG" ] || [ -n "$CPU_REQUEST" ] || [ -n "$MEMORY_REQUEST" ] \
-   || [ -n "$HUGEPAGES_SIZE" ] || [ -n "$POD_PROXY" ]; then
+   || [ -n "$POD_PROXY" ]; then
   OVERRIDES="$(mktemp /tmp/hw-smoke-overrides.XXXXXX)"
   : > "$OVERRIDES"
-  if [ -n "$HUGEPAGES_SIZE" ] || [ -n "$POD_PROXY" ]; then
+  if [ -n "$POD_PROXY" ]; then
     {
       echo "defaults:"
-      if [ -n "$HUGEPAGES_SIZE" ]; then
-        echo "  resources:"
-        echo "    requests:"
-        echo "      hugepages-1Gi: \"$HUGEPAGES_SIZE\""
-        echo "    limits:"
-        echo "      hugepages-1Gi: \"$HUGEPAGES_SIZE\""
-      fi
       if [ -n "$POD_PROXY" ]; then
         echo "  extraEnv:"
         echo "    - name: HTTPS_PROXY"

@@ -1209,6 +1209,26 @@ jobs:
             | grep -qE '^[[:space:]]*HF_HOME:' \
             && { echo "::error::HF_HOME set for a vllm row — those images own their weight location"; exit 1; } || true
 
+      - name: Verify hugepages are sized per device
+        run: |
+          set -e
+          # One 1Gi page per ASIC, from deviceChipCounts. device:expected
+          for pair in n150:1Gi n300:2Gi t3k:8Gi galaxy:32Gi; do
+            device="${pair%%:*}"; want="${pair##*:}"
+            helm template ttis charts/tt-inference-server \
+              --set model=Llama-3.1-8B-Instruct --set device="$device" \
+              | grep -qE "^[[:space:]]*hugepages-1Gi: ${want}\$" \
+              || { echo "::error::$device must request $want of hugepages"; exit 1; }
+          done
+          helm template ttis charts/tt-inference-server \
+            --set model=Llama-3.1-8B-Instruct --set device=n150 --set hugepages.size=4Gi \
+            | grep -qE '^[[:space:]]*hugepages-1Gi: 4Gi$' \
+            || { echo "::error::hugepages.size did not override the per-device size"; exit 1; }
+          helm template ttis charts/tt-inference-server \
+            --set model=Llama-3.1-8B-Instruct --set device=n150 --set hugepages.enabled=false \
+            | grep -q hugepages \
+            && { echo "::error::hugepages.enabled=false left a hugepages reference"; exit 1; } || true
+
       - name: Verify startupProbe budget derives from progressDeadlineSeconds
         run: |
           set -e

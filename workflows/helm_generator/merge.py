@@ -225,6 +225,45 @@ def set_device_board_counts(doc: Any, counts: Mapping[str, int]) -> bool:
     return True
 
 
+def set_device_chip_counts(doc: Any, counts: Mapping[str, int]) -> bool:
+    """Set/refresh the top-level `deviceChipCounts` map (device_key -> ASIC
+    count), inserted just before `models` for readability. Idempotent.
+
+    Returns True if the file changed.
+    """
+    from ruamel.yaml.comments import CommentedMap
+
+    desired = CommentedMap()
+    for key in sorted(counts):
+        desired[key] = int(counts[key])
+
+    existing = doc.get("deviceChipCounts")
+    if existing is not None and {k: int(v) for k, v in existing.items()} == {
+        k: int(v) for k, v in desired.items()
+    }:
+        return False
+
+    if "deviceChipCounts" in doc:
+        doc["deviceChipCounts"] = desired
+    else:
+        keys = list(doc.keys())
+        pos = keys.index("models") if "models" in keys else len(keys)
+        models_comment = getattr(doc, "ca", None) and doc.ca.items.get("models")
+        doc.insert(pos, "deviceChipCounts", desired)
+        doc.yaml_set_comment_before_after_key(
+            "deviceChipCounts",
+            before=(
+                "\nASIC count per device — tt-metal maps one 1Gi hugepage per ASIC, "
+                "so this sizes the\nhugepages request/limit. Generated from "
+                "workflows/device_utils.py:BOARD_TYPE_COUNT_TO_DEVICE;\nconsumed by "
+                "tt-inference-server.hugepagesSize."
+            ),
+        )
+        if models_comment is not None:
+            doc.ca.items["models"] = models_comment
+    return True
+
+
 def set_device_board_names(doc: Any, names: Mapping[str, str]) -> bool:
     """Set/refresh the top-level `deviceBoardNames` map (device_key -> tt-dra-driver
     `boardName`), inserted just before `models` for readability. Idempotent.

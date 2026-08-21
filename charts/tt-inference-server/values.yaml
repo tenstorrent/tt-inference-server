@@ -46,6 +46,9 @@ auth:
 # cleanup-hugepages initContainer.
 hugepages:
   enabled: true
+  # Request/limit when enabled. Empty means one 1Gi page per ASIC of the chosen
+  # device (deviceChipCounts) — e.g. 1Gi on an n150, 8Gi on a T3K.
+  size: ""
 
 # PodMonitor scraping the inference server's own /metrics (vLLM and media-server
 # expose it). Disabled by default: a PodMonitor needs the Prometheus Operator
@@ -90,15 +93,15 @@ defaults:
     port: 8000
     targetPort: 8000
     annotations: {}
+  # hugepages-1Gi is not listed here: it is sized from the device's ASIC count
+  # (see hugepages.size).
   resources:
     limits:
 #      cpu: "8"
 #      memory: 480Gi #~90% of RAM available on Galaxy servers
-      hugepages-1Gi: 32Gi
     requests:
       cpu: "6"
       memory: 64Gi
-      hugepages-1Gi: 32Gi
   probes:
     # startupProbe owns the model compile/warmup window; while it runs the kubelet
     # suppresses liveness/readiness. Its failureThreshold is computed in the
@@ -160,6 +163,22 @@ deviceBoardCounts:
 # ModelSpec catalog. Hand edits to leaf values are preserved across re-runs;
 # the generator only overwrites the keys it owns.
 # ---------------------------------------------------------------------------
+
+# ASIC count per device — tt-metal maps one 1Gi hugepage per ASIC, so this sizes the
+# hugepages request/limit. Generated from workflows/device_utils.py:BOARD_TYPE_COUNT_TO_DEVICE;
+# consumed by tt-inference-server.hugepagesSize.
+deviceChipCounts:
+  galaxy: 32
+  n150: 1
+  n150x4: 4
+  n300: 2
+  p100: 1
+  p150: 1
+  p150x4: 4
+  p150x8: 8
+  p300: 2
+  p300x2: 4
+  t3k: 8
 models:
   gpt-oss-20b:
     vllm:

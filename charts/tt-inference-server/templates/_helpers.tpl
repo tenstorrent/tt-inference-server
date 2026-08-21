@@ -157,6 +157,21 @@ with `with (include … | trim)`.
 {{- end }}
 {{- end }}
 
+{{/*
+hugepages-1Gi request/limit: hugepages.size when set, else one 1Gi page per ASIC
+of the device (deviceChipCounts). Empty for a device with no chip count (gpu/cpu,
+or a shape the map does not cover), which drops the request entirely.
+*/}}
+{{- define "tt-inference-server.hugepagesSize" -}}
+{{- $override := dig "size" "" (.Values.hugepages | default dict) -}}
+{{- if $override -}}
+{{- $override -}}
+{{- else -}}
+{{- $chips := index (.Values.deviceChipCounts | default dict) (.Values.device | lower) -}}
+{{- if $chips -}}{{- printf "%dGi" (int $chips) -}}{{- end -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "tt-inference-server.cacheRoot" -}}
 /home/container_app_user/cache_root
 {{- end -}}
