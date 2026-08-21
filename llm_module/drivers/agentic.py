@@ -148,10 +148,10 @@ def _agentic_venv_python() -> Optional[Path]:
     behavior.
     """
     try:
-        from workflows.workflow_types import WorkflowVenvType
-        from workflows.workflow_venvs import VENV_CONFIGS
+        from workflow_module.engine_types import WorkflowVenvType
+        from workflow_module.venv_provisioner import get_venv_provisioner
 
-        return VENV_CONFIGS[WorkflowVenvType.EVALS_AGENTIC].venv_python
+        return Path(get_venv_provisioner().venv_python(WorkflowVenvType.EVALS_AGENTIC))
     except Exception as e:  # pragma: no cover - defensive
         logger.warning("Could not resolve EVALS_AGENTIC venv python (%s).", e)
         return None
