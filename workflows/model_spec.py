@@ -10,7 +10,7 @@ import re
 import yaml
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Dict, Iterable, List, Optional, Tuple, Union
 
 from workflows.utils import (
     get_repo_root_path,
@@ -1258,8 +1258,9 @@ if _MODEL_SPECS_ENV not in _VALID_MODEL_SPECS_ENVS:
     )
 
 # One catalog file per model category. Load order determines spec_templates
-# order, which in turn determines MODEL_SPECS dict insertion order.
-_CATALOG_FILES = (
+# order, which in turn determines MODEL_SPECS dict insertion order. Release
+# resolution uses this same list so it cannot discover specs runtime ignores.
+MODEL_SPEC_CATALOG_FILES = (
     "llm.yaml",
     "vlm.yaml",
     "video.yaml",
@@ -1272,7 +1273,7 @@ _CATALOG_FILES = (
 
 spec_templates: List["ModelSpecTemplate"] = [
     template
-    for fname in _CATALOG_FILES
+    for fname in MODEL_SPEC_CATALOG_FILES
     for template in load_templates_from_yaml(
         _MODEL_SPECS_DIR / _MODEL_SPECS_ENV / fname
     )
@@ -1409,6 +1410,104 @@ IMAGE_PINNED_MODEL_SPECS: List[ModelSpec] = [
 ]
 
 
+def resolve_model_spec(
+    specs: Iterable[ModelSpec],
+    *,
+    model: str,
+    device: Union[str, DeviceTypes],
+    engine: Optional[Union[str, InferenceEngine]] = None,
+    impl: Optional[str] = None,
+    catalog_name: str = "catalog",
+) -> ModelSpec:
+    """Resolve one model request from an explicit set of expanded specs."""
+    if not isinstance(model, str) or not model:
+        raise ValueError(
+            f"Model selector must be a non-empty string for {catalog_name}"
+        )
+    model_name = Path(model).name
+    try:
+        device_type = (
+            device
+            if isinstance(device, DeviceTypes)
+            else DeviceTypes.from_string(device)
+        )
+    except (AttributeError, ValueError) as exc:
+        raise ValueError(f"Invalid device {device!r} for {catalog_name}") from exc
+
+    try:
+        engine_value = (
+            engine.value
+            if isinstance(engine, InferenceEngine)
+            else InferenceEngine.from_string(engine).value
+            if engine
+            else None
+        )
+    except (AttributeError, KeyError, ValueError) as exc:
+        raise ValueError(
+            f"Invalid inference engine {engine!r} for {catalog_name}"
+        ) from exc
+
+    spec_list = list(specs)
+    if "/" in model:
+        model_specs = [spec for spec in spec_list if spec.hf_model_repo == model]
+    else:
+        model_specs = [spec for spec in spec_list if spec.model_name == model_name]
+        hf_repos = sorted({spec.hf_model_repo for spec in model_specs})
+        if len(hf_repos) > 1:
+            raise ValueError(
+                f"Model basename {model_name!r} is ambiguous in {catalog_name}; "
+                f"matching Hugging Face repositories: {hf_repos!r}; "
+                "use the full Hugging Face repository"
+            )
+
+    candidates = [
+        spec
+        for spec in model_specs
+        if spec.device_type == device_type
+        and (engine_value is None or spec.inference_engine == engine_value)
+        and (impl is None or spec.impl.impl_name == impl)
+    ]
+    query = (
+        f"model={model_name!r}, device={device_type.to_string()!r}, "
+        f"engine={engine_value!r}, impl={impl!r}"
+    )
+    if not candidates:
+        raise ValueError(f"No model spec matches {query} in {catalog_name}")
+
+    default_specs = [spec for spec in candidates if spec.device_model_spec.default_impl]
+
+    # Preserve the existing no-engine runtime behavior. Defaults in different
+    # engines are valid and engine inference historically follows catalog order.
+    if engine_value is None:
+        selected_spec = next(iter(default_specs), None)
+        if selected_spec is not None:
+            return selected_spec
+        if impl is not None:
+            return candidates[0]
+        raise ValueError(
+            f"Model {model_name!r} does not have a default impl for "
+            f"device={device_type.to_string()!r} in {catalog_name}; "
+            "pass --impl or --engine"
+        )
+
+    if len(default_specs) == 1:
+        return default_specs[0]
+    if len(default_specs) > 1:
+        identities = sorted(model_spec_leaf_identity(spec) for spec in default_specs)
+        raise ValueError(
+            f"Multiple default implementations match {query} in {catalog_name}: "
+            f"{identities!r}"
+        )
+    if len(candidates) == 1:
+        return candidates[0]
+
+    identities = sorted(model_spec_leaf_identity(spec) for spec in candidates)
+    raise ValueError(
+        f"No unique default implementation matches {query} in {catalog_name}; "
+        f"candidates: {identities!r}"
+    )
+
+
 def get_runtime_model_spec(
     model: str,
     device: str,
@@ -1428,42 +1527,16 @@ def get_runtime_model_spec(
     Returns ``(model_spec, resolved_impl, resolved_engine)`` so the caller
     can construct a fully-initialised RuntimeConfig in one step.
     """
-    device_type = DeviceTypes.from_string(device)
-
-    candidate_specs = [
-        spec
-        for spec in MODEL_SPECS.values()
-        if spec.model_name == model
-        and spec.device_type == device_type
-        and (not engine or spec.inference_engine == engine)
-        and (not impl or spec.impl.impl_name == impl)
-    ]
-
-    if not candidate_specs:
-        engine_msg = f", engine={engine}" if engine else ""
-        impl_msg = f", impl={impl}" if impl else ""
-        raise ValueError(
-            f"Model:={model} does not support device:={device}{engine_msg}{impl_msg} "
-            f"in the {_MODEL_SPECS_ENV!r} catalog"
-        )
-
-    default_spec = next(
-        (spec for spec in candidate_specs if spec.device_model_spec.default_impl),
-        None,
+    model_spec = resolve_model_spec(
+        MODEL_SPECS.values(),
+        model=model,
+        device=device,
+        engine=engine,
+        impl=impl,
+        catalog_name=f"{_MODEL_SPECS_ENV!r} catalog",
     )
-    selected_spec = default_spec or (candidate_specs[0] if (impl or engine) else None)
-
-    if selected_spec is None:
-        raise ValueError(
-            f"Model:={model} does not have a default impl for "
-            f"device:={device}, engine:={engine} in the {_MODEL_SPECS_ENV!r} catalog; "
-            f"you must pass --impl or --engine"
-        )
-
-    resolved_impl = selected_spec.impl.impl_name
-    resolved_engine = engine if engine else selected_spec.inference_engine
-
-    model_spec = MODEL_SPECS[selected_spec.model_id]
+    resolved_impl = model_spec.impl.impl_name
+    resolved_engine = model_spec.inference_engine
     return model_spec, resolved_impl, resolved_engine
 
 

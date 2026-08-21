@@ -21,6 +21,7 @@ from workflows.model_spec import (
     VersionRequirement,
     export_model_specs_json,
     get_model_spec_map,
+    resolve_model_spec,
     spec_templates,
     SystemRequirements,
 )
@@ -775,6 +776,159 @@ class TestSystemIntegration:
         assert "maps to multiple leaf identities" in message
         assert "org-one/model-A" in message
         assert "org-two/model-A" in message
+
+    def test_resolve_model_spec_selects_engine_scoped_default(self):
+        specs = [
+            spec
+            for template in [
+                self._template(self._impl("impl-a")),
+                self._template(self._impl("impl-b"), default_impl=True),
+            ]
+            for spec in template.expand_to_specs()
+        ]
+
+        selected = resolve_model_spec(
+            specs,
+            model="test/model-A",
+            device="n150",
+            engine="vllm",
+            catalog_name="test dev catalog",
+        )
+
+        assert selected.impl.impl_id == "impl-b"
+
+    def test_resolve_model_spec_selects_explicit_non_default_impl(self):
+        specs = [
+            spec
+            for template in [
+                self._template(self._impl("impl-a"), default_impl=True),
+                self._template(self._impl("impl-b")),
+            ]
+            for spec in template.expand_to_specs()
+        ]
+
+        selected = resolve_model_spec(
+            specs,
+            model="model-A",
+            device=DeviceTypes.N150,
+            engine=InferenceEngine.VLLM,
+            impl="impl-b",
+        )
+
+        assert selected.impl.impl_id == "impl-b"
+
+    def test_resolve_model_spec_rejects_engine_scoped_order_fallback(self):
+        specs = [
+            spec
+            for template in [
+                self._template(self._impl("impl-a")),
+                self._template(self._impl("impl-b")),
+            ]
+            for spec in template.expand_to_specs()
+        ]
+
+        with pytest.raises(ValueError, match="No unique default implementation"):
+            resolve_model_spec(
+                specs,
+                model="model-A",
+                device="N150",
+                engine="VLLM",
+            )
+
+    def test_resolve_model_spec_accepts_sole_engine_candidate_without_default(self):
+        [spec] = self._template(self._impl("impl-a")).expand_to_specs()
+
+        assert (
+            resolve_model_spec(
+                [spec],
+                model="model-A",
+                device="N150",
+                engine="VLLM",
+            )
+            is spec
+        )
+
+    def test_resolve_model_spec_preserves_cross_engine_default_precedence(self):
+        [vllm_spec] = self._template(
+            self._impl("impl-a"), default_impl=True
+        ).expand_to_specs()
+        [media_spec] = self._template(
+            self._impl("impl-b"),
+            engine=InferenceEngine.MEDIA.value,
+            default_impl=True,
+        ).expand_to_specs()
+
+        assert (
+            resolve_model_spec(
+                [vllm_spec, media_spec],
+                model="model-A",
+                device="N150",
+            )
+            is vllm_spec
+        )
+
+    def test_resolve_model_spec_rejects_basename_collision(self):
+        specs = [
+            spec
+            for template in [
+                self._template(self._impl("impl-a"), weights=["org-one/model-A"]),
+                self._template(self._impl("impl-b"), weights=["org-two/model-A"]),
+            ]
+            for spec in template.expand_to_specs()
+        ]
+
+        with pytest.raises(ValueError) as exc_info:
+            resolve_model_spec(
+                specs,
+                model="model-A",
+                device="N150",
+                engine="VLLM",
+            )
+
+        message = str(exc_info.value)
+        assert "ambiguous" in message
+        assert "org-one/model-A" in message
+        assert "org-two/model-A" in message
+
+    def test_resolve_model_spec_full_repo_disambiguates_basename_collision(self):
+        specs = [
+            spec
+            for template in [
+                self._template(
+                    self._impl("impl-a"),
+                    weights=["org-one/model-A"],
+                    default_impl=True,
+                ),
+                self._template(
+                    self._impl("impl-b"),
+                    weights=["org-two/model-A"],
+                    default_impl=True,
+                ),
+            ]
+            for spec in template.expand_to_specs()
+        ]
+
+        selected = resolve_model_spec(
+            specs,
+            model="org-two/model-A",
+            device="N150",
+            engine="VLLM",
+        )
+
+        assert selected.hf_model_repo == "org-two/model-A"
+
+    def test_resolve_model_spec_rejects_missing_leaf(self):
+        [spec] = self._template(
+            self._impl("impl-a"), default_impl=True
+        ).expand_to_specs()
+
+        with pytest.raises(ValueError, match="No model spec matches"):
+            resolve_model_spec(
+                [spec],
+                model="model-A",
+                device="N300",
+                engine="VLLM",
+            )
 
     def test_export_model_specs_json_includes_metadata(
         self, sample_impl, sample_device_model_spec, tmp_path
