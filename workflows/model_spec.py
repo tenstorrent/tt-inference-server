@@ -1279,6 +1279,55 @@ spec_templates: List["ModelSpecTemplate"] = [
 ]
 
 
+def model_spec_leaf_identity(spec: ModelSpec) -> Tuple[str, str, str, str]:
+    """Return the exact identity of one expanded catalog leaf."""
+    return (
+        spec.hf_model_repo,
+        spec.device_type.to_string(),
+        spec.inference_engine,
+        spec.impl.impl_id,
+    )
+
+
+def model_spec_default_group(spec: ModelSpec) -> Tuple[str, str, str]:
+    """Return the identity shared by implementation alternatives."""
+    return model_spec_leaf_identity(spec)[:3]
+
+
+def validate_model_specs(specs: List[ModelSpec]) -> None:
+    """Reject catalog identities that would resolve or collapse ambiguously."""
+    specs_by_identity: Dict[Tuple[str, str, str, str], ModelSpec] = {}
+    identities_by_model_id: Dict[str, Tuple[str, str, str, str]] = {}
+
+    for spec in specs:
+        identity = model_spec_leaf_identity(spec)
+        if identity in specs_by_identity:
+            raise ValueError(f"Duplicate model spec leaf identity: {identity!r}")
+        specs_by_identity[identity] = spec
+
+        previous_identity = identities_by_model_id.get(spec.model_id)
+        if previous_identity is not None and previous_identity != identity:
+            raise ValueError(
+                f"Model ID {spec.model_id!r} maps to multiple leaf identities: "
+                f"{previous_identity!r} and {identity!r}"
+            )
+        identities_by_model_id[spec.model_id] = identity
+
+    defaults_by_group: Dict[Tuple[str, str, str], List[str]] = {}
+    for spec in specs:
+        if not spec.device_model_spec.default_impl:
+            continue
+        group = model_spec_default_group(spec)
+        defaults_by_group.setdefault(group, []).append(spec.impl.impl_id)
+
+    for group, impl_ids in defaults_by_group.items():
+        if len(impl_ids) > 1:
+            raise ValueError(
+                f"Multiple default implementations for model spec group {group!r}: "
+                f"{impl_ids!r}"
+            )
+
+
 def get_model_spec_map(
     templates: List[ModelSpecTemplate],
 ) -> Dict[str, ModelSpec]:
@@ -1291,11 +1340,9 @@ def get_model_spec_map(
     Returns:
         Dictionary mapping model_id to ModelSpec instances
     """
-    model_spec_map = {}
-    for template in templates:
-        for spec in template.expand_to_specs():
-            model_spec_map[spec.model_id] = spec
-    return model_spec_map
+    specs = [spec for template in templates for spec in template.expand_to_specs()]
+    validate_model_specs(specs)
+    return {spec.model_id: spec for spec in specs}
 
 
 def export_model_specs_json(model_specs: dict, output_path: Path) -> int:

@@ -15,6 +15,7 @@ from workflows.model_spec import (
     _build_device_model_spec,
     _build_system_requirements,
     _build_template,
+    get_model_spec_map,
     load_templates_from_yaml,
     tt_transformers_impl,
 )
@@ -256,6 +257,19 @@ def test_catalog_yaml_loads_and_every_template_expands(env, yaml_name):
     for t in templates:
         specs = t.expand_to_specs()
         assert specs, f"{env}/{yaml_name}: template {t.weights} expanded to zero specs"
+
+
+@pytest.mark.parametrize("env", EXPECTED_CATALOG_ENVS)
+def test_catalog_environment_has_unambiguous_expanded_identities(env):
+    """Validate identities across category-file boundaries within one environment."""
+    templates = [
+        template
+        for yaml_name in EXPECTED_CATALOG_FILES
+        for template in load_templates_from_yaml(MODEL_SPECS_DIR / env / yaml_name)
+    ]
+    expanded_count = sum(len(template.expand_to_specs()) for template in templates)
+
+    assert len(get_model_spec_map(templates)) == expanded_count
 
 
 def test_diffusiongemma_dev_spec_matches_validated_256k_contract():

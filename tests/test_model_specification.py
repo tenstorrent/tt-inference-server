@@ -634,6 +634,41 @@ class TestModelSpecSystem:
 class TestSystemIntegration:
     """Integration tests for the model spec system."""
 
+    @staticmethod
+    def _impl(impl_id):
+        return ImplSpec(
+            impl_id=impl_id,
+            impl_name=impl_id,
+            repo_url=f"https://github.com/test/{impl_id}",
+            code_path=f"models/{impl_id}",
+        )
+
+    @staticmethod
+    def _template(
+        impl,
+        *,
+        weights=None,
+        device=DeviceTypes.N150,
+        engine=InferenceEngine.VLLM.value,
+        default_impl=False,
+    ):
+        return ProdModelSpecTemplate(
+            impl=impl,
+            version="0.0.0",
+            tt_metal_commit="v1.0.0",
+            vllm_commit="abc123",
+            inference_engine=engine,
+            device_model_specs=[
+                DeviceModelSpec(
+                    device=device,
+                    max_concurrency=16,
+                    max_context=64 * 1024,
+                    default_impl=default_impl,
+                ),
+            ],
+            weights=weights or ["test/model-A"],
+        )
+
     def test_model_spec_map_generation(self, sample_impl):
         """Test spec map generation from templates."""
         templates = [
@@ -661,6 +696,85 @@ class TestSystemIntegration:
             assert isinstance(spec, ModelSpec)
             assert model_id.startswith("id_")
             assert spec.model_id == model_id
+
+    def test_model_spec_map_rejects_duplicate_leaf_identity(self):
+        template = self._template(self._impl("impl-a"))
+
+        with pytest.raises(ValueError) as exc_info:
+            get_model_spec_map([template, template])
+
+        message = str(exc_info.value)
+        assert "Duplicate model spec leaf identity" in message
+        assert "test/model-A" in message
+        assert DeviceTypes.N150.to_string() in message
+        assert InferenceEngine.VLLM.value in message
+        assert "impl-a" in message
+
+    def test_model_spec_map_rejects_multiple_default_implementations(self):
+        templates = [
+            self._template(self._impl("impl-a"), default_impl=True),
+            self._template(self._impl("impl-b"), default_impl=True),
+        ]
+
+        with pytest.raises(ValueError) as exc_info:
+            get_model_spec_map(templates)
+
+        message = str(exc_info.value)
+        assert "Multiple default implementations" in message
+        assert "test/model-A" in message
+        assert DeviceTypes.N150.to_string() in message
+        assert InferenceEngine.VLLM.value in message
+        assert "impl-a" in message
+        assert "impl-b" in message
+
+    def test_model_spec_map_accepts_one_default_implementation(self):
+        templates = [
+            self._template(self._impl("impl-a"), default_impl=True),
+            self._template(self._impl("impl-b")),
+        ]
+
+        assert len(get_model_spec_map(templates)) == 2
+
+    def test_model_spec_map_accepts_no_default_implementation(self):
+        templates = [
+            self._template(self._impl("impl-a")),
+            self._template(self._impl("impl-b")),
+        ]
+
+        assert len(get_model_spec_map(templates)) == 2
+
+    def test_model_spec_map_accepts_distinct_leaf_groups(self):
+        templates = [
+            self._template(self._impl("impl-a"), default_impl=True),
+            self._template(
+                self._impl("impl-a"),
+                device=DeviceTypes.N300,
+                default_impl=True,
+            ),
+            self._template(
+                self._impl("impl-b"),
+                weights=["test/model-B"],
+                engine=InferenceEngine.MEDIA.value,
+                default_impl=True,
+            ),
+        ]
+
+        assert len(get_model_spec_map(templates)) == 3
+
+    def test_model_spec_map_rejects_distinct_leaves_with_same_model_id(self):
+        impl = self._impl("impl-a")
+        templates = [
+            self._template(impl, weights=["org-one/model-A"]),
+            self._template(impl, weights=["org-two/model-A"]),
+        ]
+
+        with pytest.raises(ValueError) as exc_info:
+            get_model_spec_map(templates)
+
+        message = str(exc_info.value)
+        assert "maps to multiple leaf identities" in message
+        assert "org-one/model-A" in message
+        assert "org-two/model-A" in message
 
     def test_export_model_specs_json_includes_metadata(
         self, sample_impl, sample_device_model_spec, tmp_path
