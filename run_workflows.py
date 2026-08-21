@@ -51,10 +51,14 @@ _REPO_ROOT = Path(__file__).resolve().parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from workflows.model_spec import MODEL_SPECS  # noqa: E402
+from workflows.model_spec_provider import TenstorrentModelSpecProvider  # noqa: E402
 from workflows.workflow_types import DeviceTypes  # noqa: E402
 
 from workflow_module import CommandFactory, WorkflowRunner  # noqa: E402
+from workflow_module.model_catalog import (  # noqa: E402
+    get_model_spec_provider,
+    register_model_spec_provider,
+)
 
 logger = logging.getLogger("tt_workflow_runner")
 
@@ -69,7 +73,7 @@ _LOG_LEVELS = {
 def parse_args() -> argparse.Namespace:
     from workflow_module import WORKFLOW_REGISTRY
 
-    valid_models = sorted({spec.model_name for spec in MODEL_SPECS.values()})
+    valid_models = get_model_spec_provider().model_names()
     valid_devices = sorted({d.name.lower() for d in DeviceTypes})
     valid_workflows = sorted(WORKFLOW_REGISTRY)
 
@@ -526,6 +530,9 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    # Entry-point injection: install the Tenstorrent catalog as the engine's
+    # model spec provider before any command building touches it.
+    register_model_spec_provider(TenstorrentModelSpecProvider())
     args = parse_args()
     logging.basicConfig(
         level=_LOG_LEVELS[args.log_level],
