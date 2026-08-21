@@ -274,26 +274,32 @@ audio_feature_extraction_input_seconds = Counter(
 )
 
 # Host-side log-mel over a batch already padded to fixed frames, so near-constant
-# per item: measured ~2ms per chunk. Dense from 1ms to 100ms, a decade of
-# headroom above for a host that starves the extractor.
+# per item: measured ~2ms per chunk.
+#
+# The grid is dense across 1-4ms because that is where the mode sits. An earlier
+# version started at 0.001 and jumped straight to 0.0025, which put the whole
+# distribution in one bucket and made p50 and p95 interpolate the same interval —
+# the two quantiles moved together and neither meant anything. The tail stops at
+# 0.5 rather than 2.5: extraction is host CPU over a fixed frame count, so a
+# half-second batch already means severe host starvation and finer resolution
+# above that buys nothing.
 audio_feature_extraction_duration = Histogram(
     "tt_media_server_audio_feature_extraction_duration_seconds",
     "Wall time spent extracting acoustic features for one batch",
     ["model_type", "device_id", "sample_rate", "channels", "batch"],
     buckets=(
+        0.0005,
         0.001,
-        0.0025,
-        0.005,
+        0.0015,
+        0.002,
+        0.003,
+        0.004,
+        0.006,
         0.01,
         0.02,
-        0.03,
         0.05,
-        0.075,
         0.1,
-        0.25,
         0.5,
-        1.0,
-        2.5,
         float("inf"),
     ),
 )

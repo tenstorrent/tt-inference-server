@@ -59,10 +59,17 @@ _ENCODER_LABELS = {
 
 @dataclass
 class StubPerfMetrics:
-    """Mirrors the fields whisper_runner reads off the real PerfMetrics."""
+    """Mirrors the fields whisper_runner reads off the real PerfMetrics.
 
-    feature_extract_s: float = 0.01
-    encoder_s: float = 0.2
+    Defaults match tt-metal's dataclass exactly, zeros included. They used to
+    be 0.01/0.2, which made a bare StubPerfMetrics() record where a bare
+    PerfMetrics() records nothing — so a test could assert positive recording
+    against a value the real generator never produces. Every test that wants a
+    recording now has to say so.
+    """
+
+    feature_extract_s: float = 0.0
+    encoder_s: float = 0.0
     total_audio_s: float = 0.0
     ttft: float = 0.0
     decode_throughput: float = 0.0
@@ -305,13 +312,15 @@ def test_missing_durations_fall_back_to_the_array(whisper_module):
 
 def test_labels_carry_the_operating_point(whisper_module):
     runner = _runner(whisper_module)
-    context = runner._audio_stage_context(_batch(4.0, sample_rate=8000))
+    context = runner._audio_stage_context(
+        _batch(4.0), audio_profile={"sample_rate": "8000", "channels": "2"}
+    )
 
     assert context["feature_labels"] == {
         "model_type": "tt-whisper",
         "device_id": "0",
         "sample_rate": "8000",
-        "channels": "1",
+        "channels": "2",
         "batch": "1",
     }
     assert context["encoder_labels"] == {
@@ -321,6 +330,45 @@ def test_labels_carry_the_operating_point(whisper_module):
         "language": "English",
         "batch": "1",
     }
+
+
+def test_labels_fall_back_to_the_pipeline_operating_point(whisper_module):
+    """Warmup and any caller that has no request pass no profile."""
+    runner = _runner(whisper_module)
+    labels = runner._audio_stage_context(_batch(4.0))["feature_labels"]
+
+    assert labels["sample_rate"] == "16000"
+    assert labels["channels"] == "1"
+
+
+def test_source_profile_reports_what_was_submitted(whisper_module):
+    """The array is always mono at the default rate by the time the runner sees
+    it, so these labels have to come off the request, not the array."""
+    profile = whisper_module.TTWhisperRunner._audio_profile
+
+    request = MagicMock()
+    request._source_sample_rate = 44100
+    request._source_channels = 2
+    assert profile(request) == {"sample_rate": "44100", "channels": "2"}
+
+
+def test_unobservable_source_profile_is_not_reported_as_real(whisper_module):
+    """ffmpeg normalises before the WAV header is read, so the source is None."""
+    profile = whisper_module.TTWhisperRunner._audio_profile
+
+    request = MagicMock()
+    request._source_sample_rate = None
+    request._source_channels = None
+    assert profile(request) == {"sample_rate": "unknown", "channels": "unknown"}
+
+
+def test_disagreeing_batch_reports_mixed_rather_than_one_item(whisper_module):
+    profile = whisper_module.TTWhisperRunner._audio_profile
+
+    first, second = MagicMock(), MagicMock()
+    first._source_sample_rate, first._source_channels = 44100, 2
+    second._source_sample_rate, second._source_channels = 16000, 2
+    assert profile([first, second]) == {"sample_rate": "mixed", "channels": "2"}
 
 
 def test_trace_capture_call_is_labelled_not_dropped(whisper_module):
@@ -333,7 +381,14 @@ def test_trace_capture_call_is_labelled_not_dropped(whisper_module):
 
     context = runner._audio_stage_context(_batch(5.0))
     runner._record_audio_stage_throughput(
-        ("text", None, None, StubPerfMetrics(encoder_trace_hit=False)), context
+        # The capture call runs the encoder twice, hence the outlier timing.
+        (
+            "text",
+            None,
+            None,
+            StubPerfMetrics(encoder_s=0.9, encoder_trace_hit=False),
+        ),
+        context,
     )
 
     assert _counter(ENCODER_INPUT, miss_labels) == pytest.approx(miss_before + 5.0)
@@ -370,7 +425,7 @@ def test_streaming_records_once_across_every_yield(whisper_module):
     """Every yield repeats the timings; per-item recording would multiply one
     batch by its token count."""
     runner = _runner(whisper_module)
-    perf = StubPerfMetrics()
+    perf = StubPerfMetrics(feature_extract_s=0.01, encoder_s=0.2)
     items = [
         ("a", None, None, perf, False),
         ("b", None, None, perf, False),
@@ -394,7 +449,18 @@ def test_streaming_keeps_looking_past_a_metric_free_first_yield(whisper_module):
     context = runner._audio_stage_context(_batch(3.0))
     list(
         runner._stream_with_stage_metrics(
-            iter([("a", None, None), ("b", None, None, StubPerfMetrics(), True)]),
+            iter(
+                [
+                    ("a", None, None),
+                    (
+                        "b",
+                        None,
+                        None,
+                        StubPerfMetrics(feature_extract_s=0.01, encoder_s=0.2),
+                        True,
+                    ),
+                ]
+            ),
             context,
         )
     )

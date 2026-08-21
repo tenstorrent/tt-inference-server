@@ -13,7 +13,7 @@ import tempfile
 import time
 import uuid
 from pathlib import Path
-from typing import List, Optional
+from typing import List, NamedTuple, Optional
 
 import numpy as np
 from config.constants import AudioInputFormat, SupportedModels
@@ -41,6 +41,21 @@ AUDIO_VENV_PYTHON = os.getenv(
 
 # Path to the diarize.py script invoked inside the audio venv.
 DIARIZE_SCRIPT = Path(__file__).parent / "diarize.py"
+
+
+class PreparedAudio(NamedTuple):
+    """Decoded audio plus the operating point it was submitted at.
+
+    `audio_array` is always mono at `settings.default_sample_rate`; the two
+    source fields record what arrived, which is otherwise destroyed by the
+    downmix and resample. Either is None when the decode path could not
+    observe it (ffmpeg normalises before the WAV header is parsed).
+    """
+
+    audio_array: np.ndarray
+    duration: float
+    source_sample_rate: Optional[int] = None
+    source_channels: Optional[int] = None
 
 
 class AudioVenvWorker:
@@ -382,9 +397,19 @@ class AudioManager:
 
             audio_format = self._detect_audio_format(audio_bytes)
             self._validate_file_size(audio_bytes)
-            audio_array = self._convert_to_audio_array(audio_bytes, audio_format)
-            prepared = self._validate_and_truncate_duration(
+            (
+                audio_array,
+                source_sample_rate,
+                source_channels,
+            ) = self._convert_to_audio_array(audio_bytes, audio_format)
+            audio_array, duration_seconds = self._validate_and_truncate_duration(
                 audio_array, should_preprocess
+            )
+            prepared = PreparedAudio(
+                audio_array=audio_array,
+                duration=duration_seconds,
+                source_sample_rate=source_sample_rate,
+                source_channels=source_channels,
             )
         except Exception as e:
             self._logger.error(f"Failed to decode audio data: {e}")
@@ -754,7 +779,11 @@ class AudioManager:
 
     @log_execution_time("Converting to audio array")
     def _convert_to_audio_array(self, audio_bytes, audio_format):
-        """Convert audio file bytes (WAV/MP3) to numpy array."""
+        """Convert audio file bytes (WAV/MP3) to numpy array.
+
+        Returns (array, source_sample_rate, source_channels); the latter two are
+        None when the decode path normalised them away before they could be read.
+        """
         if audio_format is AudioInputFormat.WAV:
             self._logger.info("Processing WAV file format")
             return self._decode_wav_file(audio_bytes)
@@ -865,7 +894,10 @@ class AudioManager:
             self._logger.info(
                 f"Loaded WAV: {len(audio_array)} samples, duration: {len(audio_array) / settings.default_sample_rate:.2f}s"
             )
-            return audio_array.astype(np.float32)
+            # Header values, i.e. what was submitted — the array itself has been
+            # downmixed to mono and resampled to default_sample_rate above, so
+            # these are the only surviving record of the source operating point.
+            return audio_array.astype(np.float32), sample_rate, num_channels
 
         except Exception as e:
             self._logger.error(f"Failed to decode WAV file: {e}")
@@ -884,7 +916,11 @@ class AudioManager:
             self._logger.info(
                 f"{format_name} to WAV conversion completed successfully (in-memory)"
             )
-            return self._decode_wav_file(wav_bytes)
+            audio_array, _, _ = self._decode_wav_file(wav_bytes)
+            # decode_to_wav forces `-ar <default> -ac 1`, so the WAV it hands
+            # back reports ffmpeg's output, not the source. Reported as unknown
+            # rather than as a real value; recovering it needs an ffprobe pass.
+            return audio_array, None, None
         except subprocess.CalledProcessError as e:
             self._logger.error(f"ffmpeg conversion failed: {e}")
             raise ValueError(

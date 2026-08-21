@@ -127,7 +127,9 @@ def _runner(whisper_module, items=_DEFAULT_ITEMS):
     runner.settings.model_runner = "tt-whisper"
     runner.device_id = 0
 
-    async def execute_pipeline(_audio, _stream, _params, prompt=None):
+    async def execute_pipeline(
+        _audio, _stream, _params, prompt=None, audio_profile=None
+    ):
         async def generator():
             for item in items:
                 yield item

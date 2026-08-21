@@ -117,10 +117,15 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 self.logger.info(
                     f"Device {self.device_id}: Starting model warmup with {len(dummy_audio)} samples"
                 )
-                await self.pipeline(dummy_audio)
+                # Excluded from the stage metrics: these are cold, they capture
+                # the encoder traces, and their 1s of silence is not offered
+                # load. The encoder side would be filtered out anyway by
+                # trace_hit="false", but feature extraction has no such label,
+                # so warmup would otherwise sit in its panels permanently.
+                await self.pipeline(dummy_audio, record_stage_metrics=False)
                 if self.settings.max_batch_size > 1:
                     warmup_batch = [dummy_audio, dummy_audio]
-                    await self.pipeline(warmup_batch)
+                    await self.pipeline(warmup_batch, record_stage_metrics=False)
                 self.logger.info(
                     f"Device {self.device_id}: Model warmup completed successfully"
                 )
@@ -184,6 +189,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                     request.stream,
                     self._create_generation_params(request),
                     prompt=request.prompt,
+                    audio_profile=self._audio_profile(request),
                 )
 
                 if request.stream:
@@ -249,19 +255,19 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
         return request
 
     async def _execute_pipeline(
-        self, audio_data, stream, generation_params, prompt=None
+        self, audio_data, stream, generation_params, prompt=None, audio_profile=None
     ):
         """Main pipeline execution method"""
         try:
             if stream:
                 # Return the async generator
                 return self._execute_pipeline_streaming(
-                    audio_data, generation_params, prompt
+                    audio_data, generation_params, prompt, audio_profile
                 )
             else:
                 # Return the single result
                 return await self._execute_pipeline_non_streaming(
-                    audio_data, generation_params, prompt
+                    audio_data, generation_params, prompt, audio_profile
                 )
 
         except Exception as e:
@@ -315,6 +321,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 generation_params=generation_params,
                 prompt=prompt,
                 audio_durations=audio_durations,
+                audio_profile=self._audio_profile(requests),
             )
 
             responses = []
@@ -359,7 +366,35 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
             return float(chunk_length)
         return WHISPER_ENCODER_FRAME_SECONDS
 
-    def _audio_stage_context(self, current_batch, audio_durations=None):
+    @staticmethod
+    def _audio_profile(requests):
+        """The submitted operating point shared by a batch of requests.
+
+        `sample_rate` and `channels` describe what arrived, not what reaches the
+        extractor: audio_manager downmixes to mono and resamples to the default
+        rate before the runner sees an array, so deriving these from the array
+        would report a constant. "unknown" covers a decode path that normalised
+        them away (ffmpeg) and "mixed" a batch whose items disagree, so neither
+        case is silently reported as a real value.
+        """
+        if not isinstance(requests, (list, tuple)):
+            requests = [requests]
+
+        def _shared(attr):
+            values = {getattr(req, attr, None) for req in requests}
+            if len(values) != 1:
+                return "mixed"
+            value = values.pop()
+            return "unknown" if value is None else str(value)
+
+        return {
+            "sample_rate": _shared("_source_sample_rate"),
+            "channels": _shared("_source_channels"),
+        }
+
+    def _audio_stage_context(
+        self, current_batch, audio_durations=None, audio_profile=None
+    ):
         """Label values and the useful audio seconds credited to the two stages.
 
         Counted here rather than read off PerfMetrics.total_audio_s, which sums
@@ -374,18 +409,19 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
         """
         frame_seconds = self._encoder_frame_seconds
         audio_seconds = 0.0
-        channels = 1
-        sample_rate = self.settings.default_sample_rate
         for index, (rate, audio_array) in enumerate(current_batch):
             if rate:
-                sample_rate = rate
                 if audio_durations is not None and index < len(audio_durations):
                     duration = audio_durations[index]
                 else:
                     duration = audio_array.shape[0] / rate
                 audio_seconds += min(duration, frame_seconds)
-            if audio_array.ndim > 1:
-                channels = audio_array.shape[1]
+
+        profile = audio_profile or {}
+        sample_rate = profile.get("sample_rate") or str(
+            self.settings.default_sample_rate
+        )
+        channels = profile.get("channels") or "1"
 
         model_name = (
             os.path.basename((self.settings.model_weights_path or "").rstrip("/"))
@@ -397,8 +433,8 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
             "feature_labels": {
                 "model_type": self.settings.model_runner,
                 "device_id": device_id,
-                "sample_rate": str(sample_rate),
-                "channels": str(channels),
+                "sample_rate": sample_rate,
+                "channels": channels,
                 "batch": str(len(current_batch)),
             },
             "encoder_labels": {
@@ -490,7 +526,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
         )
 
     async def _execute_pipeline_streaming(
-        self, audio_data, generation_params, prompt=None
+        self, audio_data, generation_params, prompt=None, audio_profile=None
     ):
         """Async generator for streaming results"""
         generator = await self.pipeline(
@@ -498,13 +534,14 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
             stream=True,
             generation_params=generation_params,
             prompt=prompt,
+            audio_profile=audio_profile,
         )
 
         for item in generator:
             yield item
 
     async def _execute_pipeline_non_streaming(
-        self, audio_data, generation_params, prompt=None
+        self, audio_data, generation_params, prompt=None, audio_profile=None
     ):
         """Non-streaming pipeline execution"""
         result = await self.pipeline(
@@ -512,6 +549,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
             stream=False,
             generation_params=generation_params,
             prompt=prompt,
+            audio_profile=audio_profile,
         )
 
         if result is None:
@@ -555,6 +593,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 request.stream,
                 self._create_generation_params(request),
                 prompt=request.prompt,
+                audio_profile=self._audio_profile(request),
             )
 
             segment_prefix = f"[{speaker}] "
@@ -670,6 +709,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 request.stream,
                 self._create_generation_params(request),
                 prompt=request.prompt,
+                audio_profile=self._audio_profile(request),
             )
 
             cleaned_text, start, end = TextUtils.extract_text(segment_result)
@@ -940,6 +980,8 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 ] = None,
                 prompt: Optional[str] = None,
                 audio_durations: Optional[List[float]] = None,
+                record_stage_metrics: bool = True,
+                audio_profile: Optional[dict] = None,
             ):
                 try:
                     # Validate pipeline inputs
@@ -990,12 +1032,14 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
 
                     result = await asyncio.to_thread(_run)
 
-                    if not WHISPER_PERF_METRICS_SUPPORTED:
+                    if not WHISPER_PERF_METRICS_SUPPORTED or not record_stage_metrics:
                         return result
 
                     # Built here: only this scope knows what was submitted.
                     stage_context = self._audio_stage_context(
-                        current_batch, audio_durations=audio_durations
+                        current_batch,
+                        audio_durations=audio_durations,
+                        audio_profile=audio_profile,
                     )
                     if stream:
                         # Streaming defers every stage to the first pull, so the

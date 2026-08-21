@@ -48,18 +48,21 @@ def test_to_audio_array_base64():
     import base64
 
     b64 = base64.b64encode(wav_bytes).decode()
-    arr, duration = manager.to_audio_array(b64, False)
-    assert isinstance(arr, np.ndarray)
-    assert duration > 0
+    prepared = manager.to_audio_array(b64, False)
+    assert isinstance(prepared.audio_array, np.ndarray)
+    assert prepared.duration > 0
 
 
 @patch("utils.audio_manager.settings", new=DummySettings())
 def test_to_audio_array_bytes():
     manager = AudioManager()
     wav_bytes = generate_dummy_wav_bytes()
-    arr, duration = manager.to_audio_array(wav_bytes, False)
-    assert isinstance(arr, np.ndarray)
-    assert duration > 0
+    prepared = manager.to_audio_array(wav_bytes, False)
+    assert isinstance(prepared.audio_array, np.ndarray)
+    assert prepared.duration > 0
+    # The dummy WAV's own header, not the resampled array's.
+    assert prepared.source_sample_rate == 16000
+    assert prepared.source_channels == 1
 
 
 @patch("utils.audio_manager.settings", new=DummySettings())
