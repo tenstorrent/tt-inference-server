@@ -192,12 +192,9 @@ def _resolve_server_url(
 
 
 def _resolve_eval_config(model_name: str):
-    try:
-        from reference_config.evals.eval_config import EVAL_CONFIGS
-    except Exception as e:
-        logger.warning("Could not import v1 EVAL_CONFIGS (%s); evals will fail.", e)
-        return None
-    cfg = EVAL_CONFIGS.get(model_name)
+    from .target_pack import get_target_pack
+
+    cfg = get_target_pack().eval_config(model_name)
     if cfg is None:
         logger.warning(
             "No EvalConfig registered for model=%r; eval task metadata will be empty.",

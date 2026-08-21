@@ -29,19 +29,17 @@ def get_llm_configs(
     text-only, so any param without both ``isl`` and ``osl`` is dropped.
     ``limit_samples_mode`` honours v1's smoke-test selection when set.
     """
-    from reference_config.benchmarking.benchmark_config import (
-        get_benchmark_config,
-        select_smoke_test_benchmark_config,
-    )
     from workflow_module.engine_types import EvalLimitMode
+    from workflow_module.target_pack import get_target_pack
 
-    benchmark_config = get_benchmark_config(model_spec)
+    pack = get_target_pack()
+    benchmark_config = pack.benchmark_config(model_spec)
 
     if (
         limit_samples_mode
         and EvalLimitMode.from_string(limit_samples_mode) == EvalLimitMode.SMOKE_TEST
     ):
-        benchmark_config = select_smoke_test_benchmark_config(benchmark_config, device)
+        benchmark_config = pack.smoke_test_benchmark_config(benchmark_config, device)
 
     configured_devices = {
         dev for task in benchmark_config.tasks for dev in task.param_map
