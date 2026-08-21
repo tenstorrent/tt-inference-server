@@ -1127,9 +1127,8 @@ jobs:
           FAILED=0
           while IFS=',' read -r model engine device; do
             echo "--- Validating: $model / $engine / $device"
-            # auth.apiKey satisfies the chart's fail-closed auth check (media and
-            # forge engines require an explicit apiKey or auth.disabled) and
-            # renders the Secret's key branch so kubeconform sees it too.
+            # Satisfies the chart's fail-closed auth check for media/forge rows,
+            # and renders the Secret's key branch for kubeconform.
             RENDERED=$(helm template ci-test charts/tt-inference-server \
                 --set "model=$model" \
                 --set "engine=$engine" \
@@ -1172,11 +1171,8 @@ jobs:
       - name: Verify auth wiring and the HF cache location
         run: |
           set -e
-          # media/forge authenticate their inference routes with a literal bearer
-          # key and fall back to the image's built-in default when API_KEY is
-          # unset, so the chart fails closed until the operator picks. Render-level
-          # checks: the gate itself, both ways of satisfying it, the per-engine
-          # env name, and that the HF cache lands on the persistent volume.
+          # media/forge fall back to the image's built-in key when API_KEY is
+          # unset, so the chart fails closed until the operator picks.
           echo "--- media/forge with neither auth.apiKey nor auth.disabled must fail"
           if helm template ttis charts/tt-inference-server \
               --set model=Qwen3-Embedding-4B --set device=n150 >/dev/null 2>&1; then

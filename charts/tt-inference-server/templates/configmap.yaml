@@ -4,9 +4,9 @@
 {{- $auth := .Values.auth | default dict }}
 {{- $cacheRoot := include "tt-inference-server.cacheRoot" . }}
 {{- /*
-Built as a dict rather than emitted line by line: extraEnv may name a key the
-chart also sets, and two lines with the same key is invalid YAML. Later writes
-win, so a user's extraEnv literal overrides the chart's own entry.
+A dict, not line-by-line output: extraEnv may name a key the chart also sets,
+and two YAML lines with one key is a broken render. Later writes win, so a
+user's extraEnv literal overrides the chart's.
 */}}
 {{- $data := dict }}
 {{- if or (eq $engine "media") (eq $engine "forge") }}
@@ -14,11 +14,9 @@ win, so a user's extraEnv literal overrides the chart's own entry.
 {{- $_ := set $data "DEVICE" .Values.device }}
 {{- $_ := set $data "CACHE_ROOT" $cacheRoot }}
 {{- /*
-Keep the HuggingFace cache on the persistent cache volume. Without this the
-server downloads weights into the container's ephemeral layer (~/.cache) and
-pays the download again on every Pod restart. Matches the media/forge branch of
-workflows/run_docker_server.py. Not set for vllm: those images manage their own
-weight location under CACHE_ROOT, and hfCacheDir covers the pre-staged case.
+Without this the weights land in the container's ephemeral layer (~/.cache) and
+are downloaded again on every Pod restart. vllm images own their weight location
+under CACHE_ROOT, so this mirrors run_docker_server.py's media/forge branch.
 */}}
 {{- $_ := set $data "HF_HOME" (printf "%s/huggingface" $cacheRoot) }}
 {{- if dig "disabled" false $auth }}

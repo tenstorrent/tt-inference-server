@@ -2,8 +2,5 @@ self-hosted-runner:
   labels:
     - tt-ubuntu-2204-large-stable
     - tt-ubuntu-2204-xlarge-stable
-    # Tenstorrent hardware pools (shared with tt-operator's integration-rke2):
-    # ephemeral KVM VMs with a card passed through and tt-kmd preloaded. Used by
-    # helm-hw-smoke.yml.
     - tt-ubuntu-2204-n150-stable
     - tt-ubuntu-2204-bh-loudbox-viommu-stable

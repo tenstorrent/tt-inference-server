@@ -1,34 +1,9 @@
 name: Helm Chart Hardware Smoke
 
-# Real-hardware tier of the chart's CI. The two cheaper tiers live in
-# test-gate.yml and run on every PR:
-#
-#   helm-chart-validate  render + kubeconform + DRA claim structure
-#   helm-install-kind    a live k8s 1.34 API server installs the chart and the
-#                        Pod stays Pending only because no device exists
-#
-# This one runs the chart on a Tenstorrent board: one small model, one device
-# shape, asserting only what neither of the above can — that a real inference
-# image gets its device through the DRA claim, comes up inside the startupProbe
-# compile window, answers on /v1/..., and gives the board back on uninstall.
-# See .github/scripts/helm_hw_smoke.sh for the asserts themselves.
-#
-# Deliberately NOT per-PR: it holds a scarce board for the whole run. It runs
-# nightly, plus on demand — workflow_dispatch takes a ref, so a chart PR can be
-# validated on hardware before merge without a per-PR trigger. Nothing here
-# gates test-gate.yml.
-#
-# Preconditions this workflow creates for itself: the runner pool is bare (a KVM
-# VM with a card passed through and tt-kmd preloaded), so the first step stands
-# up RKE2 + tt-operator via .github/scripts/hw_smoke_bootstrap.sh.
+# Not per-PR: this holds a scarce Tenstorrent board for the whole run. The runner
+# pool is bare, so hw_smoke_bootstrap.sh stands up RKE2 + tt-operator first.
 
 on:
-  # GitHub cron is UTC and does not observe DST. 20:17 UTC is 05:17 JST /
-  # ~21:17 CET — clear of this repo's other nightlies (02:00, 11:00, 23:00 UTC)
-  # and in the lull between the CET evening and the JST morning, when the shared
-  # Tenstorrent pool is least contended. Not on the hour: scheduled runs pile up
-  # at :00 and get delayed or dropped. Only the default branch's copy of this
-  # file is ever scheduled, so this starts firing once the PR lands.
   schedule:
     - cron: "17 20 * * *"
 
@@ -55,8 +30,8 @@ on:
         default: forge_vllm_plugin
       image-tag:
         description: >-
-          Override the row's pinned image tag. For separating "the chart is
-          broken" from "the pinned image is stale" — leave empty normally.
+          Override the row's pinned image tag, to tell "the chart is broken" from
+          "the pinned image is stale". Leave empty normally.
         default: ""
       api-probe:
         description: Inference call to make (chat, embeddings, or models to skip).
@@ -67,9 +42,8 @@ on:
         description: How long to wait for Ready before failing.
         default: "2700"
 
-# One board at a time. Never cancel in flight: every run here is deliberate (a
-# nightly or a dispatch), and killing one mid-compile wastes the board's hour
-# and can leave a Pod terminating on a claim.
+# One board at a time, and never cancel: killing a run mid-compile can leave a
+# Pod terminating on its claim.
 concurrency:
   group: helm-hw-smoke
   cancel-in-progress: false
@@ -81,19 +55,14 @@ jobs:
   hw-smoke:
     name: Hardware Smoke (${{ github.event.inputs.model || 'Qwen3-Embedding-4B' }} / ${{ github.event.inputs.device || 'n150' }})
     runs-on: ${{ github.event.inputs.runner || 'tt-ubuntu-2204-n150-stable' }}
-    # Measured on a T3K lab box for the default row: ~13m wall clock end to end
-    # (5GB image pull, 8GB weight download, 408s to Ready). Left generous because
-    # a larger model or a cold proxy can multiply the pull and compile, and the
-    # smoke's own Ready budget is 45m by default.
+    # ~13m end to end for the default row; generous for bigger models.
     timeout-minutes: 150
     steps:
       - uses: actions/checkout@v5
 
       - name: Bootstrap (RKE2 + tt-operator + published boards)
         env:
-          # Optional: only needed where the container runtime cannot pull
-          # ghcr.io anonymously. Absent secrets resolve to empty, which is
-          # exactly the "anonymous" path.
+          # Only needed where the runtime cannot pull ghcr.io anonymously.
           GHCR_USERNAME: ${{ github.repository_owner }}
           GHCR_TOKEN: ${{ secrets.GHCR_PULL_PAT }}
         run: bash .github/scripts/hw_smoke_bootstrap.sh
@@ -107,15 +76,8 @@ jobs:
           IMAGE_TAG: ${{ github.event.inputs.image-tag }}
           API_PROBE: ${{ github.event.inputs.api-probe || 'embeddings' }}
           MAX_WAIT_SECONDS: ${{ github.event.inputs.max-wait-seconds || '2700' }}
-          # Set by the bootstrap step from the runner's IOMMU mode; the script
-          # falls back to probing the node when it is empty.
-          HUGEPAGES: ${{ env.HW_SMOKE_HUGEPAGES }}
-          # Only gated weights need this; the default row is ungated.
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          # API_KEY is left to the script: it mints a fresh key per run, installs
-          # it through the chart's auth.apiKey, and checks both that an
-          # authenticated call succeeds and that an unauthenticated one is
-          # refused. Set this only to pin a key for debugging.
+          HUGEPAGES: ${{ env.HW_SMOKE_HUGEPAGES }}  # set by the bootstrap step
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}         # only gated weights need it
         run: bash .github/scripts/helm_hw_smoke.sh
 
       - name: Diagnostics on failure
@@ -127,11 +89,8 @@ jobs:
           kubectl -n tt-operator-system logs -l app.kubernetes.io/name=tt-dra-driver --tail=100 || true
           sudo journalctl -u rke2-server --no-pager | tail -60 || true
 
-      # The runner VM is destroyed at job end, so this is not for its sake: it
-      # keeps the teardown ORDER on record and makes the workflow safe to point
-      # at a persistent cluster. Removing tt-operator first would take the DRA
-      # kubelet plugin out from under a running Pod, and NodeUnprepareResources
-      # can then never complete — the Pod sticks in Terminating holding a board.
+      # Order matters: removing tt-operator first strands the DRA plugin and the
+      # Pod sticks in Terminating on its claim.
       - name: Teardown (workload first, then tt-operator)
         if: always()
         run: |

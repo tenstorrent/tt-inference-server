@@ -33,11 +33,9 @@ Validate required values and that model/engine/device/impl resolves.
 {{- end }}
 
 {{/*
-Auth is a decision, not a default: the media/forge server guards its inference
-routes with a literal bearer key and falls back to a well-known built-in one
-when API_KEY is unset, which looks authenticated but is not. Fail closed and
-make the operator pick. (vLLM needs no such gate: it is open unless
-VLLM_API_KEY is set, and setting auth.apiKey is what sets it.)
+media/forge fall back to a well-known built-in key when API_KEY is unset, which
+looks authenticated but is not, so make the operator pick. vLLM needs no gate:
+it is open unless VLLM_API_KEY is set, which is what auth.apiKey sets.
 */}}
 {{- $auth := .Values.auth | default dict }}
 {{- if or (eq $engine "media") (eq $engine "forge") }}
@@ -159,10 +157,6 @@ with `with (include … | trim)`.
 {{- end }}
 {{- end }}
 
-{{/*
-In-container mount point of the cache volume. Single source for the ConfigMap's
-CACHE_ROOT, the container's volumeMount, and anything derived from it (HF_HOME).
-*/}}
 {{- define "tt-inference-server.cacheRoot" -}}
 /home/container_app_user/cache_root
 {{- end -}}
