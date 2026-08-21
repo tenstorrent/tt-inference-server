@@ -897,6 +897,11 @@ size_t maxTokensToPrefillOnDecode() {
                defaults::MAX_TOKENS_TO_PREFILL_ON_DECODE));
 }
 
+unsigned sessionInFlightTimeoutSeconds() {
+  return static_cast<unsigned>(envUlong("SESSION_IN_FLIGHT_TIMEOUT_S",
+                                        defaults::SESSION_IN_FLIGHT_TIMEOUT_S));
+}
+
 namespace {
 
 /** Extract a non-negative integer `max_position_embeddings` from a JSON node,
