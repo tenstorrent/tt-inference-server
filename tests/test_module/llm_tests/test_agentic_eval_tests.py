@@ -162,6 +162,19 @@ HARBOR_RESULT_FIXTURE = {
     },
 }
 
+HARBOR_ZERO_TRIALS_FIXTURE = {
+    "stats": {
+        "evals": {
+            "terminal_bench_2": {
+                "metrics": [],
+                "n_trials": 0,
+                "n_errors": 5,
+                "pass_at_k": {"1": 0.0},
+            }
+        },
+    },
+}
+
 
 class TestAgenticParser:
     def test_parse_harbor_result_to_evals_block(self):
@@ -182,6 +195,21 @@ class TestAgenticParser:
         assert block.data["accuracy_check"] == ReportCheckTypes.PASS
         assert "success" not in block.data
         assert "accuracy" not in block.data
+
+    def test_zero_trial_harbor_result_stays_na(self):
+        # Shared by every EVALS_AGENTIC catalog task. A Harbor setup failure
+        # (n_trials=0, no score metric) must keep the historical N/A row rather
+        # than success=False/FAIL, so ENFORCED models are not newly blocked.
+        block = AgenticEvalParser(
+            task_name="terminal_bench_2", score=FakeScore()
+        ).parse(HARBOR_ZERO_TRIALS_FIXTURE, device="N150")
+
+        assert block.targets["n_trials"] == 0
+        assert block.targets["pass_at_1"] == 0.0
+        assert block.data["score"] is None
+        assert block.data["accuracy_check"] == ReportCheckTypes.NA
+        assert "success" not in block.data
+        assert "error" not in block.data
 
     def test_mean_seconds_per_task_from_harbor_timing(self):
         raw = {

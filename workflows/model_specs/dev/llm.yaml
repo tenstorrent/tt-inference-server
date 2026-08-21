@@ -296,6 +296,76 @@ templates:
       # by enable-auto-tool-choice in vllm_args above.
       tool_call_parser_name: gemma4
 
+# DiffusionGemma model implementation: tenstorrent/tt-metal#52955.
+# Block-granular vLLM support: tenstorrent/tt-metal#47488.
+- weights:
+    - google/diffusiongemma-26B-A4B-it
+  impl: diffusion_gemma
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 1
+      # Validated on QB2 from short prompts through 250K with one shared 4K
+      # prefill program.
+      # DeviceModelSpec derives block_size=64, max_num_seqs=1 and
+      # max_num_batched_tokens=max_context from these fields.
+      max_context: 262144
+      default_impl: true
+      env_vars:
+        MESH_DEVICE: "P150x4"
+        VLLM_RPC_TIMEOUT: "1800000"
+        VLLM_ENABLE_V1_MULTIPROCESSING: "0"
+        DISABLE_METAL_OP_TIMEOUT: "1"
+        DG_VLLM_GUMBEL_MODE: "device"
+        DG_UPFRONT_CAPTURE: "1"
+        DG_MODEL_OWNED_HYBRID_KV: "1"
+        DG_UPFRONT_COARSE_PREFILL_BUCKETS: "1"
+        DG_UPFRONT_LAZY_PREFILL_RECAPTURE: "1"
+        # Reuse one bounded 4K prefill program for every prompt length. This
+        # prevents cold bucket recapture after long agent histories fragment DRAM.
+        DG_PREFILL_FIXED_CHUNKS: "1"
+        DG_PREFILL_CHUNK_SIZE: "4096"
+        # A 2048-token ragged-MoE slice needs a 176 MiB embedding output.
+        # After a 118-turn Terminal-Bench trial fragmented DRAM, its 23 MiB
+        # per-bank allocation killed EngineCore despite 1.30 GiB total free.
+        # Halving the bounded inner slice keeps the same per-token computation
+        # while reducing that contiguous allocation to 11 MiB per bank.
+        DG_PREFILL_RAGGED_CHUNK: "1024"
+        DG_DENOISE_REVEAL_PMAX: "262144"
+        DG_DENOISE_SLIDING_WINDOW: "1"
+        # Warm representative short lengths before capturing the shared program.
+        DG_UPFRONT_PREFILL_WARMUP_LENS: "32,64,96"
+        DG_TRACE_REGION_SIZE: "3758096384"
+      override_tt_config:
+        sample_on_device_mode: all
+        enable_model_warmup: true
+        trace_mode: all
+        trace_region_size: 3758096384
+      vllm_args:
+        generation-config: vllm
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+        # vLLM 0.24 enables these generative defaults before the TT platform
+        # hook runs. DiffusionGemma owns whole-prompt prefill/KV and emits
+        # synchronous 256-token blocks, so reject the defaults at CLI parsing.
+        no-enable-prefix-caching: true
+        no-enable-chunked-prefill: true
+        no-async-scheduling: true
+        # Deliberately omit --reasoning-parser for scored GPQA runs. vLLM 0.24
+        # honors the parser's request to retain <channel|> delimiters, which can
+        # move the boxed answer from message.content into message.reasoning.
+        # lm-eval scores content only; parser-off preserves the validated answer
+        # bytes while keeping the model's thinking chat template enabled.
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    google/diffusiongemma-26B-A4B-it:
+      tokenizer_trust_remote_code: true
+      output_block_size: 256
+      # A request must leave one full output canvas inside max_context.
+      max_effective_input_tokens: 261888
+
 - weights:
     - Qwen/Qwen3-8B
   impl: tt_transformers
@@ -400,6 +470,28 @@ templates:
       env_vars:
         HF_MODEL: Qwen/Qwen3.6-27B
         MESH_DEVICE: "P150x8"
+        QWEN36_MAX_TOKENS_ALL_USERS: "525312"
+      vllm_args:
+        enable_auto_tool_choice: true
+        reasoning_parser: qwen3
+        tool_call_parser: qwen3_coder
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 1073741824
+        l1_small_size: 24576
+        sample_on_device_mode: decode_only
+    # Same as Gemma4 note, QB2's 4 Blackhole chips (4x p150a) also
+    # run as a P150x4 (1,4) mesh.
+    # https://github.com/tenstorrent/tt-inference-server/blob/edb99fae3113f7ce10ba51b6ea310ede173b4b93/workflows/model_specs/dev/llm.yaml#L174-L177
+    - device: P150X4
+      max_concurrency: 32
+      max_context: 262144
+      max_tokens_all_users_override: 525312
+      default_impl: true
+      env_vars:
+        TT_QWEN35_TEXT_VER: qwen36_blackhole
+        HF_MODEL: Qwen/Qwen3.6-27B
+        MESH_DEVICE: "P150x4"
         QWEN36_MAX_TOKENS_ALL_USERS: "525312"
       vllm_args:
         enable_auto_tool_choice: true
@@ -1749,3 +1841,37 @@ templates:
       remote_api_model: zai-org/GLM-5.2
       reasoning_parser_name: glm45
       tool_call_parser_name: glm47
+
+- weights:
+    - Qwen/Qwen3.5-27B
+  impl: qwen36_blackhole  # the same model structure as 3.6
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+  device_model_specs:
+    - device: P150X4
+      max_concurrency: 32
+      max_context: 262144
+      max_tokens_all_users_override: 525312
+      default_impl: true
+      env_vars:
+        TT_QWEN35_TEXT_VER: qwen36_blackhole
+        HF_MODEL: Qwen/Qwen3.5-27B
+        MESH_DEVICE: "P150x4"
+        QWEN36_MAX_TOKENS_ALL_USERS: "525312"
+      vllm_args:
+        enable_auto_tool_choice: true
+        reasoning_parser: qwen3
+        tool_call_parser: qwen3_coder
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 1073741824
+        l1_small_size: 24576
+        sample_on_device_mode: decode_only
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  metadata:
+    Qwen/Qwen3.5-27B:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: qwen3_coder
