@@ -288,9 +288,41 @@ sdxl_forge_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-inference-server",
     code_path="tt-media-server/tt_model_runners/forge_runners/sdxl_forge_runner.py",
 )
+# --- Qwen3.5/3.6 on Blackhole: one tt-metal code path, several serving profiles ---
+#
+# All three impls below point at the SAME tt-metal code (repo_url + code_path are
+# identical: models/demos/blackhole/qwen36, which serves the whole Qwen3.5/3.6
+# family, text and vision, config-driven). They are NOT separate implementations.
+#
+# Why separate impl_id/impl_name entries then? Because a model spec is keyed by
+# get_model_id() = f"id_{impl_name}_{model_name}_{device}". To offer more than one
+# serving profile for the SAME (model_name, device) pair -- e.g. Qwen3.6-27B on
+# P150X4 as text-only, as vision (VLM), or as batch=8 -- each profile needs a
+# distinct impl_name so its model_id does not collide in the catalog. The impl_id
+# is therefore a selection/name-spacing key (chosen at launch via --impl), not a
+# different codebase. The per-profile differences (model_type, supported_modalities,
+# vllm_args, trace_region_size, release pins, ...) live in the dev/prod *.yaml specs,
+# not here.
+#
+# Profiles:
+#   qwen36_blackhole       -> text-only (LLM). Default profile for chat/tool use;
+#                             lighter trace / no mm processor. Kept even though the
+#                             VLM profile could also serve text, so text-only
+#                             workloads and their benchmarks/release pins stay isolated.
+#   qwen36_blackhole_vlm   -> native vision (VLM); model_type=VLM, modalities
+#                             text+image+video, larger trace_region for the vision tower.
 qwen36_blackhole_impl = ImplSpec(
     impl_id="qwen36_blackhole",
     impl_name="qwen36-blackhole",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/blackhole/qwen36",
+)
+# Same tt-metal code as qwen36_blackhole; distinct impl_id only so the VLM (vision)
+# spec gets its own model_id and does not collide with the text spec on the same
+# (model_name, device). Selectable via --impl qwen36-blackhole-vlm.
+qwen36_blackhole_vlm_impl = ImplSpec(
+    impl_id="qwen36_blackhole_vlm",
+    impl_name="qwen36-blackhole-vlm",
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/blackhole/qwen36",
 )
@@ -306,13 +338,6 @@ training_lora_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-inference-server",
     code_path="tt-media-server/tt_model_runners/forge_training_runners/training_lora_runner.py",
 )
-# Same impl as qwen36_blackhole; separate impl_id so the batch=8 spec is selectable via --impl.
-qwen36_blackhole_b8_impl = ImplSpec(
-    impl_id="qwen36_blackhole_b8",
-    impl_name="qwen36-blackhole-b8",
-    repo_url="https://github.com/tenstorrent/tt-metal",
-    code_path="models/demos/blackhole/qwen36",
-)
 
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "tt_transformers": tt_transformers_impl,
@@ -326,9 +351,9 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "tt_vllm_plugin": tt_vllm_plugin_impl,
     "sdxl_forge": sdxl_forge_impl,
     "qwen36_blackhole": qwen36_blackhole_impl,
+    "qwen36_blackhole_vlm": qwen36_blackhole_vlm_impl,
     "diffusion_gemma": diffusion_gemma_impl,
     "training_lora": training_lora_impl,
-    "qwen36_blackhole_b8": qwen36_blackhole_b8_impl,
 }
 
 
