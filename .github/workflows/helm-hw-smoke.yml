@@ -1,0 +1,135 @@
+name: Helm Chart Hardware Smoke
+
+# Real-hardware tier of the chart's CI. The two cheaper tiers live in
+# test-gate.yml and run on every PR:
+#
+#   helm-chart-validate  render + kubeconform + DRA claim structure
+#   helm-install-kind    a live k8s 1.34 API server installs the chart and the
+#                        Pod stays Pending only because no device exists
+#
+# This one runs the chart on a Tenstorrent board: one small model, one device
+# shape, asserting only what neither of the above can — that a real inference
+# image gets its device through the DRA claim, comes up inside the startupProbe
+# compile window, answers on /v1/..., and gives the board back on uninstall.
+# See .github/scripts/helm_hw_smoke.sh for the asserts themselves.
+#
+# Deliberately NOT per-PR: it takes a scarce board for well over an hour (image
+# pull, weight download, compile), so it is manual (workflow_dispatch) or opt-in
+# on a PR by adding the `ci:hw-smoke` label. Nothing here gates test-gate.yml.
+#
+# Preconditions this workflow creates for itself: the runner pool is bare (a KVM
+# VM with a card passed through and tt-kmd preloaded), so the first step stands
+# up RKE2 + tt-operator via .github/scripts/hw_smoke_bootstrap.sh.
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: Runner pool to take a board from.
+        type: choice
+        default: tt-ubuntu-2204-n150-stable
+        options:
+          - tt-ubuntu-2204-n150-stable
+          - tt-ubuntu-2204-bh-loudbox-viommu-stable
+      model:
+        description: Chart model value.
+        default: Qwen3-Embedding-4B
+      device:
+        description: Chart device value. Must match the runner's board.
+        default: n150
+      engine:
+        description: Chart engine value (pins the values row).
+        default: forge
+      impl:
+        description: Chart impl value (pins the values row).
+        default: forge_vllm_plugin
+      image-tag:
+        description: >-
+          Override the row's pinned image tag. For separating "the chart is
+          broken" from "the pinned image is stale" — leave empty normally.
+        default: ""
+      api-probe:
+        description: Inference call to make (chat, embeddings, or models to skip).
+        type: choice
+        default: embeddings
+        options: [embeddings, chat, models]
+      max-wait-seconds:
+        description: How long to wait for Ready before failing.
+        default: "2700"
+  pull_request:
+    branches: ["main"]
+    types: [opened, synchronize, reopened, labeled]
+    paths:
+      - "charts/**"
+      - ".github/scripts/helm_hw_smoke.sh"
+      - ".github/scripts/hw_smoke_bootstrap.sh"
+      - ".github/workflows/helm-hw-smoke.yml"
+
+# One board at a time per ref. A superseded PR run is cancelled; a manual run is
+# not, so an intentional dispatch never loses its board to a push.
+concurrency:
+  group: helm-hw-smoke-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  hw-smoke:
+    name: Hardware Smoke (${{ github.event.inputs.model || 'Qwen3-Embedding-4B' }} / ${{ github.event.inputs.device || 'n150' }})
+    # On a PR this needs the opt-in label; a dispatch is the opt-in.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'ci:hw-smoke')
+    runs-on: ${{ github.event.inputs.runner || 'tt-ubuntu-2204-n150-stable' }}
+    # Generous on purpose: a ~20GB image pull plus weight download plus first
+    # compile dominates, and the smoke's own Ready budget is 45m by default.
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Bootstrap (RKE2 + tt-operator + published boards)
+        env:
+          # Optional: only needed where the container runtime cannot pull
+          # ghcr.io anonymously. Absent secrets resolve to empty, which is
+          # exactly the "anonymous" path.
+          GHCR_USERNAME: ${{ github.repository_owner }}
+          GHCR_TOKEN: ${{ secrets.GHCR_PULL_PAT }}
+        run: bash .github/scripts/hw_smoke_bootstrap.sh
+
+      - name: Hardware smoke
+        env:
+          MODEL: ${{ github.event.inputs.model || 'Qwen3-Embedding-4B' }}
+          DEVICE: ${{ github.event.inputs.device || 'n150' }}
+          ENGINE: ${{ github.event.inputs.engine || 'forge' }}
+          IMPL: ${{ github.event.inputs.impl || 'forge_vllm_plugin' }}
+          IMAGE_TAG: ${{ github.event.inputs.image-tag }}
+          API_PROBE: ${{ github.event.inputs.api-probe || 'embeddings' }}
+          MAX_WAIT_SECONDS: ${{ github.event.inputs.max-wait-seconds || '2700' }}
+          # Set by the bootstrap step from the runner's IOMMU mode; the script
+          # falls back to probing the node when it is empty.
+          HUGEPAGES: ${{ env.HW_SMOKE_HUGEPAGES }}
+          # Only gated weights need this; the default row is ungated.
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: bash .github/scripts/helm_hw_smoke.sh
+
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          kubectl get nodes -o wide || true
+          kubectl get pods -A -o wide || true
+          kubectl get resourceslices,deviceclasses -o wide || true
+          kubectl -n tt-operator-system logs -l app.kubernetes.io/name=tt-dra-driver --tail=100 || true
+          sudo journalctl -u rke2-server --no-pager | tail -60 || true
+
+      # The runner VM is destroyed at job end, so this is not for its sake: it
+      # keeps the teardown ORDER on record and makes the workflow safe to point
+      # at a persistent cluster. Removing tt-operator first would take the DRA
+      # kubelet plugin out from under a running Pod, and NodeUnprepareResources
+      # can then never complete — the Pod sticks in Terminating holding a board.
+      - name: Teardown (workload first, then tt-operator)
+        if: always()
+        run: |
+          helm uninstall ttis-hw -n ttis-hw-smoke --wait --timeout 5m || true
+          kubectl -n ttis-hw-smoke wait --for=delete pod --all --timeout=5m || true
+          helm uninstall tt-operator -n tt-operator-system --wait --timeout 5m || true
