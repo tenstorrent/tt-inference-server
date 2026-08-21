@@ -13,9 +13,9 @@ name: Helm Chart Hardware Smoke
 # compile window, answers on /v1/..., and gives the board back on uninstall.
 # See .github/scripts/helm_hw_smoke.sh for the asserts themselves.
 #
-# Deliberately NOT per-PR: it takes a scarce board for well over an hour (image
-# pull, weight download, compile), so it is manual (workflow_dispatch) or opt-in
-# on a PR by adding the `ci:hw-smoke` label. Nothing here gates test-gate.yml.
+# Deliberately NOT per-PR: it holds a scarce board for the whole run, so it is
+# manual (workflow_dispatch) or opt-in on a PR by adding the `ci:hw-smoke`
+# label. Nothing here gates test-gate.yml.
 #
 # Preconditions this workflow creates for itself: the runner pool is bare (a KVM
 # VM with a card passed through and tt-kmd preloaded), so the first step stands
@@ -82,8 +82,10 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       contains(github.event.pull_request.labels.*.name, 'ci:hw-smoke')
     runs-on: ${{ github.event.inputs.runner || 'tt-ubuntu-2204-n150-stable' }}
-    # Generous on purpose: a ~20GB image pull plus weight download plus first
-    # compile dominates, and the smoke's own Ready budget is 45m by default.
+    # Measured on a T3K lab box for the default row: ~13m wall clock end to end
+    # (5GB image pull, 8GB weight download, 408s to Ready). Left generous because
+    # a larger model or a cold proxy can multiply the pull and compile, and the
+    # smoke's own Ready budget is 45m by default.
     timeout-minutes: 150
     steps:
       - uses: actions/checkout@v5
@@ -111,6 +113,13 @@ jobs:
           HUGEPAGES: ${{ env.HW_SMOKE_HUGEPAGES }}
           # Only gated weights need this; the default row is ungated.
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          # The media / forge server guards its inference routes with a static
+          # key and the chart configures neither API_KEY nor NO_AUTH, so a
+          # chart-deployed server runs on the image's default. Passing that
+          # default here keeps the smoke honest about what the chart ships;
+          # leave it empty for vLLM rows, which are open unless VLLM_API_KEY or
+          # JWT_SECRET is set. See tt-media-server/security/api_key_checker.py.
+          API_KEY: ${{ (github.event.inputs.api-probe || 'embeddings') == 'chat' && '' || 'your-secret-key' }}
         run: bash .github/scripts/helm_hw_smoke.sh
 
       - name: Diagnostics on failure

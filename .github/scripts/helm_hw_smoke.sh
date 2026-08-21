@@ -43,6 +43,22 @@
 #   HF_CACHE_DIR                    host dir holding pre-downloaded weights
 #   PULL_SECRET                     name of an existing docker-registry secret
 #   API_PROBE                       chat|embeddings|models (default: from image)
+#   API_KEY                         sent as `Authorization: Bearer <API_KEY>`.
+#                                   The media / forge server guards its inference
+#                                   routes with a static key (API_KEY env,
+#                                   default "your-secret-key", or NO_AUTH=1 to
+#                                   turn auth off — see
+#                                   tt-media-server/security/api_key_checker.py)
+#                                   and the chart configures neither, so a
+#                                   chart-deployed one runs on that default.
+#                                   vLLM images are open unless VLLM_API_KEY /
+#                                   JWT_SECRET is set, so leave this empty there.
+#   INFER_MODEL_ID                  `model` field for the inference call. Default:
+#                                   the id from /v1/models, except that the media
+#                                   server reports a local snapshot path there
+#                                   while its runner only accepts the HF repo id,
+#                                   so an HF cache path is converted back to
+#                                   <org>/<name>.
 #   MAX_WAIT_SECONDS                how long we wait for Ready (default 2700).
 #                                   Independent of the chart's own budget; both
 #                                   are reported so a timeout is unambiguous.
@@ -64,6 +80,8 @@ HF_TOKEN="${HF_TOKEN:-}"
 HF_CACHE_DIR="${HF_CACHE_DIR:-}"
 PULL_SECRET="${PULL_SECRET:-}"
 API_PROBE="${API_PROBE:-}"
+API_KEY="${API_KEY:-}"
+INFER_MODEL_ID="${INFER_MODEL_ID:-}"
 MAX_WAIT_SECONDS="${MAX_WAIT_SECONDS:-2700}"
 CPU_REQUEST="${CPU_REQUEST:-}"
 MEMORY_REQUEST="${MEMORY_REQUEST:-}"
@@ -303,6 +321,28 @@ SERVED_ID="$(python3 -c 'import json;d=json.load(open("/tmp/hw-smoke-models.json
   || fail "/v1/models returned 200 but listed no model: $(head -c 300 /tmp/hw-smoke-models.json)"
 ok "/v1/models 200, serving id=$SERVED_ID"
 
+AUTH=()
+[ -n "$API_KEY" ] && AUTH=(-H "Authorization: Bearer $API_KEY")
+
+# /v1/models advertises what the server calls itself; the inference route wants
+# what its runner recognises. On the media server those differ: it reports
+# settings.model_weights_path (an HF snapshot directory) unless SERVED_MODEL_NAME
+# is set, but the runner only accepts the HF repo id, so posting the advertised
+# id back gets "Model <path> is not supported by <Runner>". Convert the path.
+if [ -z "$INFER_MODEL_ID" ]; then
+  case "$SERVED_ID" in
+    *models--*/snapshots/*)
+      repo="${SERVED_ID#*models--}"
+      repo="${repo%%/snapshots/*}"
+      INFER_MODEL_ID="$(printf '%s' "$repo" | sed 's/--/\//')"
+      info "the served id is an HF cache path -> using repo id $INFER_MODEL_ID for the inference call"
+      ;;
+    *)
+      INFER_MODEL_ID="$SERVED_ID"
+      ;;
+  esac
+fi
+
 if [ -z "$API_PROBE" ]; then
   case "$IMAGE_REF" in
     *vllm-tt-metal-src*) API_PROBE=chat ;;
@@ -313,9 +353,10 @@ fi
 case "$API_PROBE" in
   chat)
     code="$(curl -s -o /tmp/hw-smoke-infer.json -w '%{http_code}' \
-      -H 'Content-Type: application/json' \
-      -d "{\"model\":\"${SERVED_ID}\",\"messages\":[{\"role\":\"user\",\"content\":\"Say hello.\"}],\"max_tokens\":16}" \
+      -H 'Content-Type: application/json' "${AUTH[@]+"${AUTH[@]}"}" \
+      -d "{\"model\":\"${INFER_MODEL_ID}\",\"messages\":[{\"role\":\"user\",\"content\":\"Say hello.\"}],\"max_tokens\":16}" \
       "http://127.0.0.1:${LOCAL_PORT}/v1/chat/completions")"
+    [ "$code" != "401" ] || fail "/v1/chat/completions returned 401 — the server wants an API key and API_KEY is $([ -n "$API_KEY" ] && echo "wrong" || echo "unset")"
     [ "$code" = "200" ] \
       || fail "/v1/chat/completions returned $code: $(head -c 300 /tmp/hw-smoke-infer.json)"
     python3 -c 'import json,sys;d=json.load(open("/tmp/hw-smoke-infer.json"));sys.exit(0 if (d["choices"][0]["message"].get("content") or "").strip() else 1)' \
@@ -324,9 +365,10 @@ case "$API_PROBE" in
     ;;
   embeddings)
     code="$(curl -s -o /tmp/hw-smoke-infer.json -w '%{http_code}' \
-      -H 'Content-Type: application/json' \
-      -d "{\"model\":\"${SERVED_ID}\",\"input\":\"hello from the hardware smoke\"}" \
+      -H 'Content-Type: application/json' "${AUTH[@]+"${AUTH[@]}"}" \
+      -d "{\"model\":\"${INFER_MODEL_ID}\",\"input\":\"hello from the hardware smoke\"}" \
       "http://127.0.0.1:${LOCAL_PORT}/v1/embeddings")"
+    [ "$code" != "401" ] || fail "/v1/embeddings returned 401 — the server wants an API key and API_KEY is $([ -n "$API_KEY" ] && echo "wrong" || echo "unset"); the media/forge image defaults to \"your-secret-key\" (tt-media-server/security/api_key_checker.py)"
     [ "$code" = "200" ] \
       || fail "/v1/embeddings returned $code: $(head -c 300 /tmp/hw-smoke-infer.json)"
     dims="$(python3 -c 'import json;d=json.load(open("/tmp/hw-smoke-infer.json"));print(len((d.get("data") or [{}])[0].get("embedding") or []))')"
@@ -389,6 +431,7 @@ if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
     echo "| boards allocated | \`$DEVICES\` (asked for $WANT_COUNT x $WANT_BOARD) |"
     echo "| hugepages | \`$HUGEPAGES\` |"
     echo "| compile to Ready | ${COMPILE}s of the chart's ${BUDGET}s startupProbe budget (${PCT}%) |"
-    echo "| served id | \`$SERVED_ID\` (probe: $API_PROBE) |"
+    echo "| served id | \`$SERVED_ID\` |"
+    echo "| inference call | \`$API_PROBE\` as \`$INFER_MODEL_ID\`$([ -n "$API_KEY" ] && echo ", API key sent") |"
   } >> "$GITHUB_STEP_SUMMARY"
 fi
