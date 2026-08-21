@@ -116,7 +116,8 @@ def _render_block(template: CommentedMap) -> list[str]:
     lines = stream.getvalue().splitlines(keepends=True)
     if not lines:
         raise ValueError("Cannot render an empty template")
-    return [f"- {lines[0]}"] + [f"  {line}" for line in lines[1:]]
+    rendered = [f"- {lines[0]}"] + [f"  {line}" for line in lines[1:]]
+    return ["\n" if line.strip() == "" else line for line in rendered]
 
 
 def _template_identity(
