@@ -1806,6 +1806,22 @@ templates:
           task_name: meta_gpqa_cot
           reason: "Structural TTI limitation, not a model result: identical cause to meta_ifeval - workflow_venvs.py:444 builds evals_dataset as f'{model_name}-evals' and prepare_meta_eval.py:280-287 accepts only the Llama-3.1/3.2 Evals collection, so this task cannot execute for any non-Llama model. Root cause and reproducer: tt-metal models/autoports/qwen_qwen3_coder_30b_a3b_instruct/doc/tti_release/RUN_NOTES.md, Finding 2. Upstream issue NOT YET FILED - pending filing by the project owner. Generic 'gpqa_diamond_cot_zeroshot' is registered alongside and does measure this model."
   status: EXPERIMENTAL
+  # The model implements the TT vLLM plugin's two-phase warmup hooks itself --
+  # warmup_model_prefill (compiles prefill at 128 and the deliberately
+  # non-page-aligned 129) and warmup_model_decode (compiles, then captures the
+  # decode traces at the serving batch), both in tt/generator_vllm.py. Declaring
+  # it here makes run_vllm_api_server.start_trace_capture skip TTI's background
+  # bucket sweep, exactly as Qwen/Qwen3.6-27B (same 262144 max_context on the
+  # same P300X2) does.
+  #
+  # Skipping that sweep loses nothing for this port: the sweep's cost is
+  # dominated by eager prefills at the 65408 and 130944 buckets, and this port
+  # has no prefill trace at all (warmup_model_prefill accepts enable_trace and
+  # ignores it), so those runs capture nothing and are discarded. The decode
+  # traces -- the ones that determine steady-state t/s/u -- are captured by the
+  # builtin path instead, and deliberately so, to keep a multi-second capture
+  # out of the first token's latency.
+  has_builtin_warmup: true
   # ModelSpec.infer_param_count takes the LAST "<n>B" in the repo name, so
   # "...-30B-A3B-Instruct" infers 3B and derives far too small a disk/RAM
   # minimum. Pin them here for the real 30.5B bf16 checkpoint (the values the
