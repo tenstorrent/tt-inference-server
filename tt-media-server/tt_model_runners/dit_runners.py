@@ -1380,6 +1380,12 @@ class TTMiniMaxH3Runner(TTDiTRunner):
     inside the request rather than fail, which is worse than a clear error.
     """
 
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
+        # Mux a/v inline by default; video_runner flips this so its encoder
+        # thread muxes off the hot path.
+        self.export_in_runner = True
+
     def _weights_dir(self) -> str | None:
         """A local snapshot directory, or None to let the pipeline read its own env var.
 
@@ -1594,7 +1600,7 @@ class TTMiniMaxH3Runner(TTDiTRunner):
         os.environ.get("TT_VISIBLE_DEVICES"),
     )
     def run(self, requests: list[VideoGenerateRequest]):
-        from utils.video_manager import VideoManager
+        from utils.video_manager import VideoAudioResult, VideoManager
 
         request = requests[0]
         self._validate(request)
@@ -1629,11 +1635,16 @@ class TTMiniMaxH3Runner(TTDiTRunner):
             )
             warm.add(served)
 
-        self.logger.debug(f"Device {self.device_id}: Inference completed, muxing a/v")
+        self.logger.debug(f"Device {self.device_id}: Inference completed")
         # (1, 3, F, H, W) in [0, 1] -> (F, H, W, 3), which is what the exporter's rawvideo pipe
         # wants. Without the permute it reads the width as a channel count and raises.
         frames = output.video[0].permute(1, 2, 3, 0).contiguous().numpy()
         audio = output.audio[0].numpy()
+
+        # video_runner set export_in_runner=False: hand the raw a/v to its encoder thread to mux.
+        if not self.export_in_runner:
+            return VideoAudioResult(frames, audio, output.sampling_rate, output.fps)
+
         path = VideoManager().export_to_mp4_with_audio(
             frames, audio, output.sampling_rate, fps=output.fps
         )

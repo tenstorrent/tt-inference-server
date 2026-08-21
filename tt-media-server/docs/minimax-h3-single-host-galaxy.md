@@ -266,6 +266,12 @@ Steady-state at the default shape (16:9, 5 s), per request:
 1168 ms per forward, 13.3x realtime (compute / 5.17 s of video). Compute only: weight load,
 prompt-embedding cache writes and mp4 export are outside these rows.
 
+mp4 export path: on this single-host route the runner muxes video + audio inline and returns the
+finished path. Under the multi-host SP `video_runner` (4x32) the runner instead hands the raw
+frames + audio back as a `VideoAudioResult`, and rank 0's encoder thread muxes them off the hot
+path so the export overlaps the next request. The muxed bytes are identical; only *when* the mux
+happens differs.
+
 Measured 2026-08-13 on `9c96923d1bb` via `test_t2va_end_to_end[4x8-16x9_5s]`, one 4x8 Blackhole
 Galaxy, warm. Reproduced within 1.3 % across three runs spanning a rebase onto main, so treat a
 >5 % move as a real regression rather than noise. Numbers come from the model-side gate, not from

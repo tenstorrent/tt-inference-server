@@ -33,6 +33,21 @@ _NORMALIZED_RANGE_MAX = 1.0
 _AV_TIME_BASE = 1_000_000
 
 
+@dataclass(frozen=True)
+class VideoAudioResult:
+    """A runner's raw (un-encoded) output when the model emits a soundtrack.
+
+    An audio model returns this in place of a bare frame array so the encoder
+    muxes video + audio via ``export_to_mp4_with_audio``. Fields map 1:1 to that
+    exporter's arguments, so any future audio runner can reuse this contract.
+    """
+
+    frames: NDArray
+    audio: NDArray
+    sampling_rate: int
+    fps: int = 16
+
+
 class VideoManager:
     """MP4 export via FFmpeg subprocess pipe (raw RGB → libx264)."""
 

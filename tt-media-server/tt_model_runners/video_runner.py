@@ -356,7 +356,7 @@ def _encoder_loop(
     and error paths. Sentinel ``None`` signals shutdown.
 
     """
-    from utils.video_manager import VideoManager
+    from utils.video_manager import VideoAudioResult, VideoManager
 
     video_manager = VideoManager()
     _log.info("Encoder thread: started")
@@ -394,7 +394,18 @@ def _encoder_loop(
             continue
 
         try:
-            mp4_path = video_manager.export_to_mp4(job.frames)
+            # Audio runners (e.g. MiniMax-H3 t2va) hand back a VideoAudioResult so the
+            # soundtrack is muxed here; everything else hands back a raw frame array.
+            payload = job.frames
+            if isinstance(payload, VideoAudioResult):
+                mp4_path = video_manager.export_to_mp4_with_audio(
+                    payload.frames,
+                    payload.audio,
+                    payload.sampling_rate,
+                    fps=payload.fps,
+                )
+            else:
+                mp4_path = video_manager.export_to_mp4(payload)
             _log.info(
                 f"Encoder thread: encoded mp4 for task {job.task_id} at {mp4_path}"
             )
