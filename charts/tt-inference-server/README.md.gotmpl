@@ -1,8 +1,22 @@
 # tt-inference-server Helm Chart
 
-Deploys vLLM and media inference backends on Tenstorrent Galaxy hardware.
+Deploys vLLM, media, and forge inference backends on Tenstorrent hardware.
 
 **Chart version:** {{ .Version }} | **App version:** {{ .AppVersion }}
+
+## Contents
+
+- [Overview](#overview)
+- [Architecture](#architecture)
+- [Requirements](#requirements)
+- [Device Acquisition (DRA)](#device-acquisition-dra)
+- [Quick Start](#quick-start)
+- [Chart Structure](#chart-structure)
+- [Configuration System](#configuration-system)
+- [Values Reference](#values-reference)
+- [Defaults Reference](#defaults-reference)
+- [Supported Models](#supported-models)
+- [Advanced Usage](#advanced-usage)
 
 ---
 
@@ -17,10 +31,26 @@ Three engines are supported:
 - **forge** — models served via the tt-forge backend
 
 Devices are acquired through **Dynamic Resource Allocation (DRA)**: each Pod
-declares a `ResourceClaim` that the [tt-operator](https://github.com/tenstorrent/tt-operator)
+declares a `ResourceClaim` that the [tt-operator](https://docs.tenstorrent.com/tt-operator/latest/)
 DRA driver satisfies by allocating Tenstorrent boards and injecting the matching
 `/dev/tenstorrent/<N>` node(s). The container runs **unprivileged**, with **no
 `hostPath` on `/dev/tenstorrent`**, and multiple Pods can share one Node.
+
+---
+
+## Architecture
+
+tt-operator (the **supply side**) and this chart (the **consumer**) have
+separate lifecycles, connected only through DRA:
+
+- **tt-operator** is an umbrella chart of cluster-singleton components (the DRA
+  driver, fabric manager, node-feature-discovery, ...). There is no standalone
+  `tt-operator` image. A cluster administrator installs it **once per cluster**.
+- **This chart** (the consumer) requests devices through a `ResourceClaim` and
+  never installs, bundles, or depends on tt-operator as a sub-chart — cluster
+  singletons and per-model workloads have different lifecycle granularity, and
+  bundling would make each model release co-own the cluster-wide device
+  foundation (a `helm uninstall` of one model would tear it down for the others).
 
 ---
 
@@ -30,24 +60,21 @@ DRA driver satisfies by allocating Tenstorrent boards and injecting the matching
   from 1.34 (DRA GA). Verify the API is present:
   `kubectl api-resources --api-group=resource.k8s.io`.
 - **tt-operator installed on the cluster**, providing at least the DRA driver
-  (`tt-dra-driver`), the fabric manager (`tt-fabric-manager`, which the DRA
-  driver queries to enumerate devices), and node-feature-discovery. tt-operator
-  is a cluster-level prerequisite installed **once by an administrator**, on a
-  lifecycle separate from this chart — this chart never installs or manages it,
-  it only emits a `ResourceClaim` that the driver fulfils.
+  ([`tt-dra-driver`](https://docs.tenstorrent.com/tt-dra-driver/latest/)), the
+  fabric manager ([`tt-fabric-manager`](https://docs.tenstorrent.com/tt-fabric-manager/latest/),
+  which the DRA driver queries to enumerate devices), and
+  [node-feature-discovery](https://docs.tenstorrent.com/tt-operator/latest/components/node-feature-discovery.html). See
+  [Architecture](#architecture) for how its lifecycle relates to this chart.
 
-Minimal tt-operator install (device acquisition only):
+The tt-operator chart and its component images are **public on GHCR** — the
+`helm install` below needs no authentication on a standard cluster.
+
+Install tt-operator (v0.2 doesn't use its multi-node scheduling, so `jobset` and
+`kubepmix` are turned off):
 
 ```bash
-kubectl create namespace tt-operator-system
-# GHCR pull secret (k3s/containerd cannot pull the component images anonymously)
-kubectl create secret generic ghcr \
-  --from-file=.dockerconfigjson=$HOME/.docker/config.json \
-  --type=kubernetes.io/dockerconfigjson -n tt-operator-system
 helm install tt-operator oci://ghcr.io/tenstorrent/helm/tt-operator \
-  --version 0.2.0 -n tt-operator-system \
-  --set tt-k8s-driver-manager.enabled=false \
-  --set tt-telemetry.enabled=false \
+  --version 0.2.0 -n tt-operator-system --create-namespace \
   --set jobset.enabled=false \
   --set kubepmix.enabled=false
 # Verify: a DeviceClass and a per-node ResourceSlice appear
@@ -55,8 +82,10 @@ kubectl get deviceclass          # tenstorrent.com
 kubectl get resourceslices       # <node> / tenstorrent.com, one device per board
 ```
 
-> The other tt-operator sub-charts (driver-manager, telemetry, jobset, kubepmix)
-> are optional and documented separately.
+> The remaining sub-charts — `node-feature-discovery`, `tt-k8s-driver-manager`,
+> `tt-fabric-manager`, `tt-dra-driver`, `tt-telemetry` — stay at their defaults.
+> See the [tt-operator docs](https://docs.tenstorrent.com/tt-operator/latest/) for
+> what each sub-chart does and how to configure it.
 
 ---
 
@@ -96,6 +125,8 @@ claims and stuck `Terminating`.
 
 ## Quick Start
 
+> **Prerequisite:** tt-operator must already be installed on the cluster (see [Requirements](#requirements)). Without its DRA driver the Pod can't acquire a device and stays `Pending`.
+
 Three values are required at install time:
 
 ```bash
@@ -125,15 +156,46 @@ charts/tt-inference-server/
 
 ### templates/_helpers.tpl
 
-Contains the core logic for this chart:
+The chart's named templates (all prefixed `tt-inference-server.`), grouped by role:
 
-- **`tt-inference-server.validateValues`** — fails the render if `model` or `device` is missing, or if the resolved `model`/`engine`/`device`/`impl` has no entry in the `models` map.
-- **`tt-inference-server.resolvedEngine`** — picks the engine: `.Values.engine` if set, the sole engine offering the device, otherwise `models.<model>.defaultEngine` when more than one engine offers it.
-- **`tt-inference-server.resolvedImpl`** — picks the implementation: `.Values.impl` if set, otherwise `models.<model>.<engine>.<device>.defaultImpl`.
-- **`tt-inference-server.resolvedConfig`** — deep-merges `defaults` with the resolved impl block (`models.<model>.<engine>.<device>.impls.<impl>`) and returns the effective config as YAML (see [Configuration System](#configuration-system)).
-- **`tt-inference-server.image`** — assembles the container image string (`repository:tag`) from the resolved config.
-- **`tt-inference-server.cacheHostPath`** — returns `cache.hostPath` if set, otherwise generates `/opt/cache/<model>-<device>-<impl>`.
-- Standard Helm name helpers: `tt-inference-server.name`, `tt-inference-server.fullname`, `tt-inference-server.labels`, `tt-inference-server.selectorLabels`.
+**Config resolution** — resolve `model` + `device` into an effective config:
+
+| Helper | Purpose |
+|---|---|
+| `validateValues` | Fails the render if `model`/`device` is missing, or the resolved combination has no entry in `models`. |
+| `resolvedEngine` | Picks the engine: `.Values.engine`, else the sole engine offering the device, else `models.<model>.defaultEngine`. |
+| `resolvedImpl` | Picks the impl: `.Values.impl`, else `models.<model>.<engine>.<device>.defaultImpl`. |
+| `resolvedConfig` | Deep-merges `defaults` with the resolved impl block into the effective config (see [Configuration System](#configuration-system)). |
+
+**Derived values** — build fields from the resolved config:
+
+| Helper | Purpose |
+|---|---|
+| `image` | Container image string `repository:tag`. |
+| `containerEnv` | Container env, merged from spec env, hf-cache env, and `extraEnv` `valueFrom` entries. |
+| `cacheHostPath` | `cache.hostPath` if set, else `/opt/cache/<model>-<device>-<impl>`. |
+| `draDeviceCount` | DRA board count for `device` from `deviceBoardCounts` (fails for unsupported shapes). |
+| `draBoardName` | DRA `boardName` the `ResourceClaim` selects, from `deviceBoardNames`. |
+
+**Naming** — `name`, `fullname`, `chart`, `labels`, `selectorLabels`, `configmapName`, `secretName`: standard Helm name/label helpers.
+
+### Init Containers
+
+Run before the inference server starts:
+
+**`fix-cache-permissions`** (always)
+Runs `chown -R 1000:1000 /cache` on the cache host path volume. The inference server runs as UID 1000 and requires write access to the cache directory, which may be created by root on the host.
+
+**`cleanup-hugepages`** (only when `hugepages.enabled`)
+Removes stale hugepage files left by previous runs, **scoped to this Pod's
+DRA-allocated board(s)** only. The init container requests the same
+`ResourceClaim` as the main container, so the DRA driver injects its
+`/dev/tenstorrent/<N>` node(s); the container then deletes only
+`/dev/hugepages-1G/device_<N>_*tenstorrent` (and the bare `tenstorrent` file for
+board 0) for each allocated `N`. This is required now that multiple Pods can run
+on one Node — a global `rm` would delete a co-located running Pod's hugepage
+files. Without the cleanup, a replacement Pod reusing the same board may fail to
+acquire hugepages if a previous Pod exited uncleanly.
 
 ---
 
@@ -306,27 +368,6 @@ helm install my-model ./charts/tt-inference-server \
 
 The chart ships no Grafana dashboard (metrics differ per engine). For vLLM, import the [official vLLM dashboard](https://docs.vllm.ai/en/stable/examples/online_serving/prometheus_grafana/) ([JSON](https://github.com/vllm-project/vllm/tree/main/examples/observability/prometheus_grafana)) via Grafana → Import, pointed at your Prometheus. For media-server / forge, build panels in Grafana Explore from the scraped metrics.
 
-**Device telemetry** is not part of this chart. It is a tt-operator component (`tt-telemetry`) — a cluster-wide singleton with a separate lifecycle. The cluster admin enables it by setting the `tt-telemetry.enabled=true` subchart value when installing the tt-operator umbrella chart (`oci://ghcr.io/tenstorrent/helm/tt-operator`); see the [tt-operator documentation](https://docs.tenstorrent.com/cloud-native-support/) for the full install procedure.
+**Device telemetry** is not part of this chart. It is a tt-operator component (`tt-telemetry`) — a cluster-wide singleton with a separate lifecycle. The cluster admin enables it by setting the `tt-telemetry.enabled=true` subchart value when installing the tt-operator umbrella chart (`oci://ghcr.io/tenstorrent/helm/tt-operator`); see the [tt-telemetry documentation](https://docs.tenstorrent.com/tt-telemetry/latest/) for details.
 
 Correlating the two (device × app) is future work — it needs a supply-side bridge exporter that maps devices to pods.
-
----
-
-## Init Containers
-
-`fix-cache-permissions` always runs before the inference server starts;
-`cleanup-hugepages` runs only when `hugepages.enabled` (the default).
-
-**`fix-cache-permissions`**
-Runs `chown -R 1000:1000 /cache` on the cache host path volume. The inference server runs as UID 1000 and requires write access to the cache directory, which may be created by root on the host.
-
-**`cleanup-hugepages`** (only when `hugepages.enabled`)
-Removes stale hugepage files left by previous runs, **scoped to this Pod's
-DRA-allocated board(s)** only. The init container requests the same
-`ResourceClaim` as the main container, so the DRA driver injects its
-`/dev/tenstorrent/<N>` node(s); the container then deletes only
-`/dev/hugepages-1G/device_<N>_*tenstorrent` (and the bare `tenstorrent` file for
-board 0) for each allocated `N`. This is required now that multiple Pods can run
-on one Node — a global `rm` would delete a co-located running Pod's hugepage
-files. Without the cleanup, a replacement Pod reusing the same board may fail to
-acquire hugepages if a previous Pod exited uncleanly.
