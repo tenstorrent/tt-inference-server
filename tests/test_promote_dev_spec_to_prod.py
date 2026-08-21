@@ -610,3 +610,62 @@ def test_real_catalog_promotion_is_exact_leaf_granular_and_idempotent(tmp_path):
     assert {
         path.name: path.read_bytes() for path in prod_copy.glob("*.yaml")
     } == snapshot
+
+
+def test_partial_multiweight_release_keeps_sibling_docs_and_stable_group(tmp_path):
+    prod_copy = tmp_path / "prod"
+    shutil.copytree(DEFAULT_PROD_DIR, prod_copy)
+    empty_config = _write_ci(tmp_path, {})
+    promote(
+        empty_config,
+        DEFAULT_DEV_DIR,
+        prod_copy,
+        version="base",
+        tt_metal_commit="base-metal",
+    )
+    release_config = _write_ci(
+        tmp_path,
+        {"Llama-3.1-8B": _vllm_release_entry("N150")},
+    )
+
+    promote(
+        release_config,
+        DEFAULT_DEV_DIR,
+        prod_copy,
+        version="next",
+        tt_metal_commit="next-metal",
+        vllm_commit="next-vllm",
+    )
+    docs = tmp_path / "docs"
+    with contextlib.redirect_stdout(io.StringIO()):
+        generate_doc_pages(
+            [
+                template
+                for filename in MODEL_SPEC_CATALOG_FILES
+                for template in load_templates_from_yaml(prod_copy / filename)
+            ],
+            str(docs),
+        )
+
+    n150 = (docs / "llm" / "Llama-3.1-8B_n150.md").read_text()
+    n300 = (docs / "llm" / "Llama-3.1-8B_n300.md").read_text()
+    assert "Llama-3.1-8B-Instruct" in n150
+    assert "Additional released configurations" in n150
+    assert "Llama-3.1-8B-Instruct" in n300
+
+    llama_groups = {
+        template["catalog_group"]
+        for template in _raw_templates(prod_copy)
+        if template.get("model_display_name") == "Llama-3.1-8B"
+        and template["impl"] == "tt_transformers"
+        and any(
+            weight
+            in {
+                "meta-llama/Llama-3.1-8B",
+                "meta-llama/Llama-3.1-8B-Instruct",
+            }
+            for weight in template["weights"]
+        )
+    }
+    assert len(llama_groups) == 1
+    assert next(iter(llama_groups)).startswith("doc:")

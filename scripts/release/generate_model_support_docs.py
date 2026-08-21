@@ -232,7 +232,7 @@ def get_model_display_name(template: ModelSpecTemplate) -> str:
 def coalesce_catalog_groups_for_docs(
     templates: List[ModelSpecTemplate],
 ) -> List[ModelSpecTemplate]:
-    """Reconstruct complete generated template groups for stable docs output."""
+    """Combine only leaf variants sharing one device and runtime configuration."""
 
     def shared_signature(template):
         data = asdict(template)
@@ -262,42 +262,48 @@ def coalesce_catalog_groups_for_docs(
     coalesced = []
     for key in ordered_keys:
         members = grouped[key]
-        if len(members) == 1 or members[0].catalog_group is None:
+        if members[0].catalog_group is None:
             coalesced.extend(members)
             continue
 
-        weights = list(
-            dict.fromkeys(weight for item in members for weight in item.weights)
-        )
-        devices = {}
-        metadata = {}
-        observed_pairs = set()
-        homogeneous = all(
-            shared_signature(item) == shared_signature(members[0])
-            for item in members[1:]
-        )
+        buckets = []
         for item in members:
-            metadata.update(item.metadata)
-            for weight in item.weights:
-                for device_spec in item.device_model_specs:
-                    observed_pairs.add((weight, device_spec.device))
-                    existing = devices.setdefault(device_spec.device, device_spec)
-                    if device_signature(existing) != device_signature(device_spec):
-                        homogeneous = False
+            for device_spec in item.device_model_specs:
+                shared = shared_signature(item)
+                device = device_signature(device_spec)
+                bucket = next(
+                    (
+                        candidate
+                        for candidate in buckets
+                        if candidate["shared"] == shared
+                        and candidate["device"] == device
+                    ),
+                    None,
+                )
+                if bucket is None:
+                    bucket = {
+                        "template": item,
+                        "device_spec": device_spec,
+                        "shared": shared,
+                        "device": device,
+                        "weights": [],
+                        "metadata": {},
+                    }
+                    buckets.append(bucket)
+                for weight in item.weights:
+                    if weight not in bucket["weights"]:
+                        bucket["weights"].append(weight)
+                bucket["metadata"].update(item.metadata)
 
-        expected_pairs = {(weight, device) for weight in weights for device in devices}
-        if not homogeneous or observed_pairs != expected_pairs:
-            coalesced.extend(members)
-            continue
-
-        coalesced.append(
-            replace(
-                members[0],
-                weights=weights,
-                device_model_specs=list(devices.values()),
-                metadata=metadata,
+        for bucket in buckets:
+            coalesced.append(
+                replace(
+                    bucket["template"],
+                    weights=bucket["weights"],
+                    device_model_specs=[bucket["device_spec"]],
+                    metadata=bucket["metadata"],
+                )
             )
-        )
     return coalesced
 
 
@@ -521,36 +527,43 @@ def generate_model_page_group_page(
 
     # Collect devices in this group that support the model
     supported_devices_in_group = []
-    device_template_map = {}  # device -> (template, dev_spec)
+    device_template_map = defaultdict(list)  # device -> [(template, dev_spec)]
     for device in group.device_ordering:
         for template in templates:
             for dev_spec in template.device_model_specs:
                 if dev_spec.device == device:
-                    supported_devices_in_group.append(device)
-                    device_template_map[device] = (template, dev_spec)
+                    device_template_map[device].append((template, dev_spec))
                     break
-            if device in device_template_map:
-                break
+        if device_template_map[device]:
+            supported_devices_in_group.append(device)
 
     if not supported_devices_in_group:
         return f"# {model_name} - No devices found in group {group.name}\n"
 
     # Use first supported device for common sections
     first_device = supported_devices_in_group[0]
-    first_template, first_dev_spec = device_template_map[first_device]
+    first_device_templates = device_template_map[first_device]
+    first_template, first_dev_spec = first_device_templates[0]
 
     # Page title with group name
     lines.append(f"# {model_name} Tenstorrent Support on {group.name}")
     lines.append("")
 
     # Supported weights (only show if multiple weights are supported)
-    if first_template.weights and len(first_template.weights) > 1:
-        default_weights = first_template.weights[0]
+    supported_weights = list(
+        dict.fromkeys(
+            weight
+            for template, _ in first_device_templates
+            for weight in template.weights
+        )
+    )
+    if len(supported_weights) > 1:
+        default_weights = supported_weights[0]
         default_weights_name = default_weights.split("/")[-1]
 
         lines.append("Supported weights variants for this model implementation are:")
         lines.append("")
-        for idx, weight in enumerate(first_template.weights):
+        for idx, weight in enumerate(supported_weights):
             weight_name = weight.split("/")[-1]
             if idx == 0:
                 lines.append(
@@ -562,9 +575,15 @@ def generate_model_page_group_page(
                 )
 
         lines.append("")
-        lines.append(
-            f"To use non-default weights, replace `{default_weights_name}` in commands below."
-        )
+        if len(first_device_templates) == 1:
+            lines.append(
+                f"To use non-default weights, replace `{default_weights_name}` in commands below."
+            )
+        else:
+            lines.append(
+                "Weight variants use more than one released configuration; "
+                "see the configuration table below."
+            )
         lines.append("")
 
     # Useful links section
@@ -606,7 +625,8 @@ def generate_model_page_group_page(
 
     # Generate sections for each supported device in the group
     for idx, device in enumerate(supported_devices_in_group):
-        target_template, target_dev_spec = device_template_map[device]
+        device_templates = device_template_map[device]
+        target_template, target_dev_spec = device_templates[0]
         product_name = device.to_product_str()
 
         # Section header for secondary devices
@@ -746,6 +766,37 @@ def generate_model_page_group_page(
 
         lines.append(f"| Docker Image | `{docker_image}` |")
         lines.append("")
+
+        if len(device_templates) > 1:
+            lines.append("#### Additional released configurations")
+            lines.append("")
+            lines.append(
+                "| Weights | Implementation | tt-metal Commit | vLLM Commit | Docker Image |"
+            )
+            lines.append(
+                "|---------|----------------|-----------------|-------------|--------------|"
+            )
+            for alternate, _ in device_templates[1:]:
+                alternate_weights = ", ".join(
+                    f"[{weight}](https://huggingface.co/{weight})"
+                    for weight in alternate.weights
+                )
+                alternate_image = (
+                    alternate.docker_image
+                    or generate_default_docker_link(
+                        alternate.version,
+                        alternate.tt_metal_commit,
+                        alternate.vllm_commit,
+                        inference_engine=alternate.inference_engine,
+                        multihost=device.is_multihost(),
+                    )
+                )
+                lines.append(
+                    f"| {alternate_weights} | `{alternate.impl.impl_name}` | "
+                    f"`{alternate.tt_metal_commit}` | "
+                    f"`{alternate.vllm_commit or '-'}` | `{alternate_image}` |"
+                )
+            lines.append("")
 
     return "\n".join(lines)
 

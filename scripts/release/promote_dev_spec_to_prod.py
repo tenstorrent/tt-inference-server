@@ -6,6 +6,7 @@
 """Promote exact release-scoped dev leaves into a leaf-granular prod catalog."""
 
 import argparse
+import hashlib
 import json
 import sys
 import tempfile
@@ -148,11 +149,28 @@ def _filter_metadata(template: CommentedMap, weight: str) -> None:
     template["metadata"] = filtered
 
 
+def _catalog_group(template: CommentedMap) -> str:
+    existing = template.get("catalog_group")
+    if existing:
+        return str(existing)
+    weights = [str(weight) for weight in template.get("weights", [])]
+    payload = {
+        "model_display_name": template.get("model_display_name")
+        or (Path(weights[0]).name if weights else ""),
+        "weights": sorted(weights),
+        "inference_engine": str(template.get("inference_engine", "")),
+        "impl": str(template.get("impl", "")),
+    }
+    digest = hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()[:16]
+    return f"doc:{digest}"
+
+
 def _make_leaf(
     template: CommentedMap,
     weight_index: int,
     device_index: int,
-    catalog_group: str | None = None,
 ) -> tuple[LeafIdentity, CommentedMap]:
     weights = template.get("weights")
     devices = template.get("device_model_specs")
@@ -174,16 +192,13 @@ def _make_leaf(
     leaf["model_display_name"] = (
         template.get("model_display_name") or Path(str(weights[0])).name
     )
-    group = template.get("catalog_group") or catalog_group
-    if group is not None:
-        leaf["catalog_group"] = group
+    leaf["catalog_group"] = _catalog_group(template)
     _filter_metadata(leaf, weight)
     return _template_identity(leaf, weight, leaf["device_model_specs"][0]), leaf
 
 
 def _leafize_template(
     template: CommentedMap,
-    catalog_group: str | None = None,
 ) -> list[tuple[LeafIdentity, CommentedMap]]:
     weights = template.get("weights")
     devices = template.get("device_model_specs")
@@ -192,7 +207,7 @@ def _leafize_template(
     if not isinstance(devices, list) or not devices:
         raise ValueError("Template device_model_specs must be a non-empty list")
     return [
-        _make_leaf(template, weight_index, device_index, catalog_group)
+        _make_leaf(template, weight_index, device_index)
         for weight_index in range(len(weights))
         for device_index in range(len(devices))
     ]
@@ -424,7 +439,6 @@ def promote(
             raw_template,
             item.weight_index,
             item.device_index,
-            f"dev:{item.source_path.name}:{item.template_index}",
         )
         if actual_identity != identity:
             raise ValueError(
@@ -469,15 +483,11 @@ def promote(
         segments = split_into_blocks(text)
         candidate_segments[filename] = [(kind, list(lines)) for kind, lines in segments]
 
-        block_index = 0
         for kind, lines in segments:
             if kind != "block":
                 continue
             raw_template = _parse_block(lines)
-            for identity, leaf in _leafize_template(
-                raw_template,
-                f"prod:{filename}:{block_index}",
-            ):
+            for identity, leaf in _leafize_template(raw_template):
                 if identity in before_leaves:
                     raise ValueError(
                         f"Duplicate prod identity {identity!r} in "
@@ -485,7 +495,6 @@ def promote(
                     )
                 before_leaves[identity] = _semantic_value(leaf)
                 owner_filenames[identity] = filename
-            block_index += 1
 
     for identity, filename in owner_filenames.items():
         if identity in target_filenames and filename != target_filenames[identity]:
@@ -496,16 +505,11 @@ def promote(
 
     found_targets = set()
     for filename, segments in candidate_segments.items():
-        block_index = 0
         for segment_index, (kind, lines) in enumerate(list(segments)):
             if kind != "block":
                 continue
             raw_template = _parse_block(lines)
-            leaves = _leafize_template(
-                raw_template,
-                f"prod:{filename}:{block_index}",
-            )
-            block_index += 1
+            leaves = _leafize_template(raw_template)
             found_targets.update(
                 identity for identity, _ in leaves if identity in promoted_leaves
             )
