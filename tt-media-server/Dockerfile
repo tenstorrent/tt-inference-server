@@ -95,6 +95,7 @@ RUN git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_M
     && git submodule update --init --recursive --depth 1 \
     && ./install_dependencies.sh --docker \
     && CXX=clang++-17 CC=clang-17 bash ./create_venv.sh --bundle-python \
+    && test -f "${PYTHON_ENV_DIR}/bin/activate" \
     && echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc \
     && uv pip install --upgrade setuptools wheel \
     && bash ./build_metal.sh --release -e \
@@ -102,7 +103,7 @@ RUN git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_M
     && cmake --build build_Release --target test_system_health -j$(nproc) \
     && uv pip install --upgrade cmake \
     && hash -r \
-    && find ${TT_METAL_HOME} -name ".git" -type d -exec rm -rf {} + 2>/dev/null || true
+    && (find ${TT_METAL_HOME} -name ".git" -type d -exec rm -rf {} + 2>/dev/null || true)
 
 RUN mkdir -p ${HOME_DIR} \
     && mkdir -p /run/sshd \
@@ -118,7 +119,7 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && . ${HOME_DIR}/.cargo/env \
     && rustup update \
     && uv pip install git+https://github.com/tenstorrent/tt-smi \
-    && find ${HOME_DIR} -name '.git' -type d -exec rm -rf {} + 2>/dev/null || true"
+    && (find ${HOME_DIR} -name '.git' -type d -exec rm -rf {} + 2>/dev/null || true)"
 
 WORKDIR ${HOME_DIR}
 
