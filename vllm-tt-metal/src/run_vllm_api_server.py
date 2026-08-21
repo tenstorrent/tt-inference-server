@@ -504,6 +504,19 @@ def set_metal_timeout_env_vars():
         logger.info("Metal op timeout disabled via DISABLE_METAL_OP_TIMEOUT=1")
         return
 
+    # The op-timeout watchdog is sized for a single generation step, but the
+    # colocated worker also services device-socket weight updates: recv_state()
+    # blocks in ttnn.synchronize_device() for several seconds while it streams
+    # the full state dict, so the default 5s watchdog fires mid-transfer. Give
+    # the colocated path a much larger budget (or an explicit override).
+    override = os.getenv("TT_METAL_OP_TIMEOUT_SECONDS")
+    if override:
+        timeout_seconds = override
+    elif os.getenv("TT_COLOCATED_INFERENCE") == "1":
+        timeout_seconds = "120.0"
+    else:
+        timeout_seconds = "5.0"
+
     tt_metal_home = os.getenv("TT_METAL_HOME", "/home/container_app_user/tt-metal")
     python_env_dir = os.getenv("PYTHON_ENV_DIR", f"{tt_metal_home}/python_env")
     # Triage report dir: TT_TRIAGE_LOGS_PATH (the cache_root volume in CI) if set,
@@ -525,9 +538,9 @@ def set_metal_timeout_env_vars():
         f"--disable-progress > {log_dir}/tt-triage-$(date +%Y%m%d-%H%M%S).log 2>&1"
     )
 
-    os.environ["TT_METAL_OPERATION_TIMEOUT_SECONDS"] = "5.0"
+    os.environ["TT_METAL_OPERATION_TIMEOUT_SECONDS"] = timeout_seconds
     os.environ["TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE"] = timeout_cmd
-    logger.info("Set TT_METAL_OPERATION_TIMEOUT_SECONDS=5.0")
+    logger.info(f"Set TT_METAL_OPERATION_TIMEOUT_SECONDS={timeout_seconds}")
     logger.info(f"Set TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE={timeout_cmd}")
 
 
@@ -638,6 +651,9 @@ def _append_vllm_arg(argv: list[str], arg_name: str, value) -> None:
         if value:
             argv.append(arg_name)
         return
+    if isinstance(value, (dict, list)):
+        argv.extend([arg_name, json.dumps(value)])
+        return
     argv.extend([arg_name, str(value)])
 
 
@@ -742,6 +758,107 @@ def set_vllm_sys_argv(args, remaining_sys_argv, default_vllm_args):
     logger.info(f"vLLM command:\n{format_vllm_serve_command(sys.argv)}")
 
 
+def absorb_plugin_config_into_additional_config(default_vllm_args):
+    """Translate the fork-only ``plugin_config`` into ``additional_config['tt']``.
+
+    ``model_spec.py`` serializes the general ``override_tt_config`` as
+    ``plugin_config = json.dumps({"tt": {...}})``. That flag only exists in the
+    TT vLLM fork; upstream vLLM rejects ``--plugin_config``. Upstream's supported
+    channel is ``--additional-config``, so we pop ``plugin_config`` here and
+    fold its inner ``tt`` dict into ``additional_config['tt']``. Only pre-seeds
+    keys so the ``inject_*`` functions (called afterwards) always win. Tolerates
+    a JSON string, a dict, or empty/missing/unparseable input (no-op, and the
+    ``--plugin_config`` flag is never forwarded).
+    """
+    raw = default_vllm_args.pop("plugin_config", None)
+    if raw is None:
+        raw = default_vllm_args.pop("plugin-config", None)
+    else:
+        default_vllm_args.pop("plugin-config", None)
+    if raw is None:
+        return
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except (TypeError, ValueError):
+            return
+    if not isinstance(raw, dict):
+        return
+    tt_override = raw.get("tt")
+    if not isinstance(tt_override, dict) or not tt_override:
+        return
+    additional = default_vllm_args.get("additional_config")
+    if not isinstance(additional, dict):
+        additional = {}
+    tt_cfg = additional.get("tt")
+    if not isinstance(tt_cfg, dict):
+        tt_cfg = {}
+    for key, value in tt_override.items():
+        tt_cfg.setdefault(key, value)
+    additional["tt"] = tt_cfg
+    default_vllm_args["additional_config"] = additional
+    logger.info(
+        f"Absorbed plugin_config into additional_config['tt']: {tt_override} "
+        "(routed through upstream --additional-config)"
+    )
+
+
+def inject_tt_data_parallel(default_vllm_args):
+    """Route ``TT_DATA_PARALLEL`` into ``additional_config['tt']['tt_data_parallel']``.
+
+    vLLM spawns the EngineCore with a curated env that drops arbitrary env vars,
+    so ``TT_DATA_PARALLEL`` would not survive to the worker (DP silently falls
+    back to 1). ``additional_config`` is serialized to the EngineCore reliably.
+    Only fires when TT_DATA_PARALLEL>1, so other modes are unchanged.
+    """
+    raw = os.environ.get("TT_DATA_PARALLEL")
+    if raw is None:
+        return
+    try:
+        n = int(raw)
+    except (TypeError, ValueError):
+        return
+    if n <= 1:
+        return
+    additional = default_vllm_args.get("additional_config")
+    if not isinstance(additional, dict):
+        additional = {}
+    tt_cfg = additional.get("tt")
+    if not isinstance(tt_cfg, dict):
+        tt_cfg = {}
+    tt_cfg["tt_data_parallel"] = n
+    additional["tt"] = tt_cfg
+    default_vllm_args["additional_config"] = additional
+    logger.info(
+        f"Injected tt_data_parallel={n} into additional_config['tt'] from "
+        "TT_DATA_PARALLEL (in-process submesh DP)"
+    )
+
+
+def inject_tt_weight_bridge_dir(default_vllm_args):
+    """Route ``TT_WEIGHT_BRIDGE_DIR`` into ``additional_config['tt']['tt_weight_bridge_dir']``
+    so the receiver can locate ``inference_bridge.py`` (same curated-env issue as
+    ``inject_tt_data_parallel``). The worker resolves this key first and falls
+    back to the ``TT_WEIGHT_BRIDGE_DIR`` env var. Only fires when the env var is set.
+    """
+    bridge_dir = os.environ.get("TT_WEIGHT_BRIDGE_DIR")
+    if not bridge_dir:
+        return
+    additional = default_vllm_args.get("additional_config")
+    if not isinstance(additional, dict):
+        additional = {}
+    tt_cfg = additional.get("tt")
+    if not isinstance(tt_cfg, dict):
+        tt_cfg = {}
+    tt_cfg["tt_weight_bridge_dir"] = bridge_dir
+    additional["tt"] = tt_cfg
+    default_vllm_args["additional_config"] = additional
+    logger.info(
+        f"Injected tt_weight_bridge_dir={bridge_dir} into additional_config['tt'] "
+        "from TT_WEIGHT_BRIDGE_DIR (co-located device-socket weight bridge)"
+    )
+
+
 def main():
     # Step 1: Parse --model argument (if provided)
     args, remaining_sys_argv = parse_args()
@@ -782,6 +899,9 @@ def main():
     set_metal_timeout_env_vars()
     runtime_settings(model_spec, no_auth=args.no_auth)
     default_vllm_args = model_spec["device_model_spec"]["vllm_args"]
+    absorb_plugin_config_into_additional_config(default_vllm_args)
+    inject_tt_data_parallel(default_vllm_args)
+    inject_tt_weight_bridge_dir(default_vllm_args)
     set_vllm_sys_argv(args, remaining_sys_argv, default_vllm_args)
 
     # Step 5: Start trace capture if needed
@@ -790,6 +910,18 @@ def main():
         service_port=resolve_service_port(),
         disable_trace_capture=args.disable_trace_capture,
     )
+
+    # The internal weight-update routes (/v1/internal/weights/*) exist ONLY for
+    # the co-located RL trainer and must never mount on a normal (non-colocated)
+    # inference server -- they would expose a device-socket rendezvous that
+    # hangs. Gate the install strictly on the co-located signal.
+    if os.getenv("TT_COLOCATED_INFERENCE") == "1":
+        try:
+            from weight_update_api import install as install_weight_update_routes
+
+            install_weight_update_routes()
+        except Exception as exc:  # noqa: BLE001 - never block server startup on this
+            logger.warning("Could not install weight-update routes: %s", exc)
 
     # Step 6: Launch vLLM server
     # runpy uses the same process and environment so the registered models are available

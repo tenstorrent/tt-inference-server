@@ -15,6 +15,41 @@ from vllm.logger import init_logger
 logger = init_logger("vllm.tt_vllm_plugin.worker.tt_worker")
 
 
+def get_inprocess_data_parallel(vllm_config: VllmConfig) -> int:
+    """Return the requested in-process submesh-DP degree (>=1).
+
+    Resolves ``override_tt_config["tt_data_parallel"]`` first, then the
+    ``TT_DATA_PARALLEL`` env var. Defaults to 1 (disabled).
+    """
+    override = getattr(vllm_config.model_config, "override_tt_config", None) or {}
+    raw = override.get("tt_data_parallel")
+    if raw is None:
+        raw = os.environ.get("TT_DATA_PARALLEL")
+    try:
+        n = int(raw) if raw is not None else 1
+    except (TypeError, ValueError):
+        n = 1
+    return max(n, 1)
+
+
+def effective_data_parallel(vllm_config: VllmConfig) -> int:
+    """Number of on-device submesh replicas the model owns.
+
+    Drives submesh creation, KV-cache sizing and per-replica batch width for
+    both vLLM process DP and in-process submesh DP. Exactly one may be > 1.
+    """
+    process_dp = vllm_config.parallel_config.data_parallel_size
+    inprocess_dp = get_inprocess_data_parallel(vllm_config)
+    if inprocess_dp > 1:
+        assert process_dp == 1, (
+            "tt_data_parallel (in-process submesh DP) is incompatible with vLLM "
+            f"process data_parallel_size={process_dp}; set --data-parallel-size 1 "
+            "when using override_tt_config['tt_data_parallel'] > 1."
+        )
+        return inprocess_dp
+    return process_dp
+
+
 def get_num_available_blocks_tt(vllm_config: VllmConfig) -> int:
     """
     Used to set the number of available blocks for the TT KV cache as we
@@ -27,8 +62,9 @@ def get_num_available_blocks_tt(vllm_config: VllmConfig) -> int:
     scheduler_config = vllm_config.scheduler_config
     cache_config = vllm_config.cache_config
 
-    if envs.VLLM_USE_V1:
-        data_parallel = vllm_config.parallel_config.data_parallel_size
+    if getattr(envs, "VLLM_USE_V1", True):
+        # Number of on-device replicas (process DP or in-process submesh DP).
+        data_parallel = effective_data_parallel(vllm_config)
     else:
         data_parallel = 1
         if (
@@ -131,7 +167,7 @@ def get_num_available_blocks_tt(vllm_config: VllmConfig) -> int:
     max_batch = scheduler_config.max_num_seqs
     max_tokens_all_users += cache_config.block_size * max_batch
 
-    if not envs.VLLM_USE_V1:
+    if not getattr(envs, "VLLM_USE_V1", True):
         # For multi-step, to fit (max_tokens_all_users / max batch) per user,
         # allocate an extra num_lookahead_slots (num_scheduler_steps - 1 when
         # not using speculative decoding) per user.
@@ -140,7 +176,7 @@ def get_num_available_blocks_tt(vllm_config: VllmConfig) -> int:
 
     num_tt_blocks = math.ceil(max_tokens_all_users / cache_config.block_size)
 
-    if not envs.VLLM_USE_V1:
+    if not getattr(envs, "VLLM_USE_V1", True):
         # Add 1% to account for vLLM's watermark_blocks
         num_tt_blocks = int(num_tt_blocks * 1.01)
 
@@ -278,9 +314,6 @@ def device_params_from_override_tt_config(
 
 
 def get_mesh_grid(dp_rank=0):
-    if dp_rank == 0:
-        # Only DP rank 0 should get device ids, otherwise device init may hang.
-        num_devices_available = len(ttnn.get_device_ids())
     mesh_grid_dict = {
         "N150": (1, 1),
         "P100": (1, 1),
@@ -294,6 +327,18 @@ def get_mesh_grid(dp_rank=0):
         "P150x8": (1, 8),
         "TG": (8, 4),
     }
+
+    # Query device count lazily: ttnn.get_device_ids() touches the control plane
+    # and can throw under a co-located shared distributed context before this
+    # rank's submesh is open. Only needed to derive/bound the grid.
+    _num_devices_cache = {}
+
+    def _num_devices_available():
+        if "n" not in _num_devices_cache:
+            # Only DP rank 0 should get device ids, otherwise device init may hang.
+            _num_devices_cache["n"] = len(ttnn.get_device_ids())
+        return _num_devices_cache["n"]
+
     mesh_device_env = os.environ.get("MESH_DEVICE")
     if mesh_device_env is not None:
         try:
@@ -314,18 +359,54 @@ def get_mesh_grid(dp_rank=0):
         assert dp_rank == 0, (
             "MESH_DEVICE must be set when running with data_parallel_size > 1"
         )
-        mesh_grid = (1, num_devices_available)
+        mesh_grid = (1, _num_devices_available())
 
-    assert dp_rank != 0 or (mesh_grid[0] * mesh_grid[1] <= num_devices_available), (
-        f"Requested mesh grid shape {mesh_grid} is larger than "
-        f"number of available devices {num_devices_available}"
-    )
+    if dp_rank == 0 and os.environ.get("TT_COLOCATED_INFERENCE") != "1":
+        assert mesh_grid[0] * mesh_grid[1] <= _num_devices_available(), (
+            f"Requested mesh grid shape {mesh_grid} is larger than "
+            f"number of available devices {_num_devices_available()}"
+        )
 
     return mesh_grid
 
 
+def _maybe_join_shared_distributed_context() -> bool:
+    """Join an externally-launched ttnn distributed context when co-located.
+
+    When the inference server is co-launched with a trainer under a single
+    ``tt-run`` (one MPI world + an MGD that fabric-connects the two meshes),
+    set ``TT_COLOCATED_INFERENCE=1``. We then initialize/join the shared ttnn
+    distributed context (idempotent) so ``open_mesh_device`` opens only this
+    rank's bound submesh (rank -> mesh via the rank-binding) instead of
+    grabbing every visible device, and so it can later create a
+    ``MeshSocket`` / ``WeightBridge`` to the peer (trainer) mesh for runtime
+    weight updates. Returns True when co-located.
+    """
+    if os.environ.get("TT_COLOCATED_INFERENCE") != "1":
+        return False
+    try:
+        if not ttnn.distributed_context_is_initialized():
+            ttnn.init_distributed_context()
+    except AttributeError:
+        # Older ttnn without the standalone context API; the launcher
+        # (tt-run) has already initialized it, so this is a no-op.
+        logger.warning(
+            "ttnn distributed-context API unavailable; assuming the launcher "
+            "(tt-run) already initialized the shared context."
+        )
+    logger.info("Co-located inference: joined shared ttnn distributed context.")
+    return True
+
+
 def open_mesh_device(override_tt_config, trace_mode, dp_rank=0, model_config=None):
     assert dp_rank == 0, "open_mesh_device must run on DP rank 0"
+
+    # Co-located deployment (RL: trainer + inference under one tt-run): join the
+    # launcher's shared distributed context BEFORE any device enumeration / open
+    # so this rank sees only its bound submesh (and can socket-rendezvous with
+    # the trainer). Must precede get_mesh_grid(), which may enumerate devices.
+    _maybe_join_shared_distributed_context()
+
     mesh_grid = get_mesh_grid(dp_rank)
 
     device_params = device_params_from_override_tt_config(

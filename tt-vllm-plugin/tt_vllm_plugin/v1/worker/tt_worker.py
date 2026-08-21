@@ -1,16 +1,23 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+import os
 from contextlib import suppress
 from typing import TYPE_CHECKING, Optional, Union
 
 import torch
 import torch.nn as nn
+import ttnn
 
 from vllm.config import VllmConfig
 from vllm.logger import init_logger
-from vllm.utils import STR_DTYPE_TO_TORCH_DTYPE
-from vllm.v1.kv_cache_interface import FullAttentionSpec, KVCacheConfig, KVCacheSpec
+from vllm.utils.torch_utils import STR_DTYPE_TO_TORCH_DTYPE
+from vllm.v1.kv_cache_interface import (
+    FullAttentionSpec,
+    KVCacheConfig,
+    KVCacheSpec,
+    MLAAttentionSpec,
+)
 from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.worker.worker_base import WorkerBase
 
@@ -51,9 +58,23 @@ class TTWorker(WorkerBase):
 
         # Initialized by init_device
         self.mesh_device = None
-        self.model_config.override_tt_config = getattr(
-            self.vllm_config, "additional_config", {}
-        ).get("tt", {})
+        # Prefer the tt override threaded through additional_config (upstream
+        # vLLM channel that survives the EngineCore's curated env); fall back to
+        # the fork-only model_config.plugin_config so the TT vLLM fork still works.
+        additional_config = getattr(self.vllm_config, "additional_config", None) or {}
+        tt_override = additional_config.get("tt")
+        if not isinstance(tt_override, dict) or not tt_override:
+            tt_override = (getattr(self.model_config, "plugin_config", None) or {}).get(
+                "tt", {}
+            )
+        self.model_config.override_tt_config = tt_override
+
+        # Runtime weight-update (co-located RL) state. The transport is owned by
+        # a WeightTransferEngine (device-socket bridge); the worker owns the
+        # on-device apply + the authoritative weights-version counter. Both are
+        # inert unless the co-located RL control plane calls the hooks below.
+        self.weight_transfer_engine = None
+        self._weights_version = 0
 
         # Whether to use ttnn tracing for model execution
         override_tt_config = self.model_config.override_tt_config
@@ -155,6 +176,191 @@ class TTWorker(WorkerBase):
                     trace_mode=self.trace_mode,
                 )
 
+    # ---- Runtime weight update over a device socket (RL rollouts) ----
+    #
+    # These hooks implement vLLM's *native* RL weight-sync worker contract
+    # (``init_weight_transfer_engine`` / ``update_weights``), so the co-located
+    # trainer can drive updates through vLLM's own endpoints
+    # (``/init_weight_transfer_engine``, ``/update_weights``) + pause/resume
+    # instead of a bespoke control plane. Both are dispatched to every worker in
+    # the (DP) group via ``engine_client.collective_rpc(...)`` (which runs
+    # between engine steps, so a swap never interleaves an ``execute_model``);
+    # only the rank that owns the on-device model (DP rank 0 on TT) does work,
+    # other ranks no-op so the collective returns uniformly.
+    #
+    # Transport is owned by a ``WeightTransferEngine`` -- here the TT
+    # ``device_socket`` backend, which wraps tt-metal's ``WeightBridge`` over a
+    # ``ttnn.MeshSocket`` (tt-train/.../grpo/utils/inference_bridge.py). The
+    # trainer (tt-training-service) owns a *separate* mesh and is the bridge
+    # *sender* (role="ttml"); this worker is the *receiver* (role="ttt").
+    # ``recv_state()`` yields a HF-keyed dict of on-device ``ttnn.Tensor``
+    # handles; this worker applies it via ``Generator.update_weights(hf_dict,
+    # hf_rope=...)`` -- an in-place ``ttnn.copy`` per weight that preserves each
+    # device buffer address so captured decode traces stay valid.
+    #
+    # Deployment prerequisites (established at launch, TT_COLOCATED_INFERENCE=1):
+    #   * Trainer + inference share ONE MPI world (co-launched via ``tt-run``);
+    #     the bridge pins TTML_RANK=0 (sender) / TTT_RANK=1 (receiver).
+    #   * Fabric enabled (FABRIC_2D) before the mesh device is opened.
+    #   * Weights replicated, DRAM-interleaved, TILE, bfloat16 (DDP-only on the
+    #     trainer, no TP, for now).
+
+    def _owns_model(self) -> bool:
+        runner = getattr(self, "model_runner", None)
+        return runner is not None and getattr(runner, "model", None) is not None
+
+    def _colocated_rl_only(self, what: str) -> None:
+        """Fast-fail off the co-located RL path.
+
+        On a normal (non-colocated) server there is no trainer peer, so the
+        device-socket rendezvous would block forever. The native routes are
+        also only mounted on the RL path; this guards a stray/reachable call.
+        """
+        if os.getenv("TT_COLOCATED_INFERENCE") != "1":
+            raise RuntimeError(
+                f"{what} is only available on a co-located RL inference server "
+                "(TT_COLOCATED_INFERENCE=1)."
+            )
+
+    def _ensure_weight_transfer_engine(self):
+        """Lazily construct the TT ``device_socket`` weight-transfer engine.
+
+        Prefer the engine already attached by vLLM (from
+        ``--weight-transfer-config '{"backend": "device_socket"}'``); otherwise
+        build one directly so the native ``/update_weights`` path works without
+        threading a ``WeightTransferConfig`` through vLLM's CLI (whose
+        ``backend`` is a closed ``Literal["nccl", "ipc"]``).
+        """
+        if self.weight_transfer_engine is not None:
+            return self.weight_transfer_engine
+
+        from tt_vllm_plugin.weight_transfer.tt_device_socket_engine import (
+            TTDeviceSocketWeightTransferEngine,
+        )
+
+        config = getattr(self.vllm_config, "weight_transfer_config", None)
+        self.weight_transfer_engine = TTDeviceSocketWeightTransferEngine(
+            config, self.vllm_config.parallel_config
+        )
+        return self.weight_transfer_engine
+
+    def init_weight_transfer_engine(self, init_info: dict) -> dict:
+        """Native RL hook: stand up the device-socket transport.
+
+        Called once by the trainer (via ``/init_weight_transfer_engine`` ->
+        ``collective_rpc``) before the training loop. On TT this constructs +
+        connects the receiver ``WeightBridge`` (the MPI handshake + MeshSocket
+        descriptor exchange); it blocks until the trainer also reaches
+        ``connect()``. Non-owning DP ranks have no device model / mesh, so they
+        no-op and let the collective return uniformly.
+        """
+        self._colocated_rl_only("Weight transfer")
+        rank = self.vllm_config.parallel_config.data_parallel_rank
+        if not self._owns_model():
+            return {"rank": rank, "initialized": False}
+
+        engine = self._ensure_weight_transfer_engine()
+        # Prefer the bridge dir threaded through additional_config (survives the
+        # EngineCore's curated env, unlike a bare TT_WEIGHT_BRIDGE_DIR).
+        override_tt_config = getattr(self.model_config, "override_tt_config", None) or {}
+        engine.bind_runtime(
+            device=self.mesh_device,
+            bridge_dir=override_tt_config.get("tt_weight_bridge_dir"),
+        )
+        typed_init_info = engine.parse_init_info(init_info or {})
+        engine.init_transfer_engine(typed_init_info)
+        logger.info("Weight transfer engine initialized (rank %s)", rank)
+        return {"rank": rank, "initialized": True}
+
+    def update_weights(self, update_info: dict) -> dict:
+        """Native RL hook: in-place replace on-device weights over the bridge.
+
+        Signature matches vLLM's worker contract
+        (``update_weights(update_info: dict)``, dispatched via
+        ``collective_rpc``). Transport (``recv_state`` + barrier) is owned by
+        the ``WeightTransferEngine``; this worker owns the on-device apply
+        (``Generator.update_weights`` in-place ``ttnn.copy``), the decode-trace
+        release, and the authoritative weights-version counter.
+
+        Callers should quiesce inference first (vLLM ``/pause?mode=wait`` or the
+        legacy admission gate) so no request spans the version boundary.
+        """
+        self._colocated_rl_only("Runtime weight update")
+        rank = self.vllm_config.parallel_config.data_parallel_rank
+
+        if not self._owns_model():
+            # Non-owning DP ranks have no device model; nothing to do.
+            return {"rank": rank, "updated": False, "version": self._weights_version}
+
+        if self.weight_transfer_engine is None:
+            raise RuntimeError(
+                "update_weights called before init_weight_transfer_engine(); "
+                "the device-socket bridge has not been connected."
+            )
+
+        model = self.model_runner.get_model()
+        if not hasattr(model, "update_weights"):
+            raise NotImplementedError(
+                f"Model {type(model).__name__} does not implement "
+                "update_weights(hf_state_dict, hf_rope=...). Runtime weight "
+                "update requires the tt-metal Generator.update_weights "
+                "passthrough + Transformer.update_weights in-place API."
+            )
+
+        typed_update_info = self.weight_transfer_engine.parse_update_info(
+            update_info or {}
+        )
+
+        # Drop any captured decode trace before the transfer: recv_state()
+        # allocates the full state dict as fresh device buffers, and doing that
+        # while a decode trace holds DRAM/L1 wedges the on-device CCL recv
+        # (device timeout). tt-transformers re-captures the trace lazily on the
+        # next generation. Guarded on hasattr for older Generators.
+        ttnn.synchronize_device(self.mesh_device)
+        if hasattr(model, "release_decode_traces"):
+            model.release_decode_traces()
+
+        # Apply callback handed to the engine's transport. Receives the HF-keyed
+        # dict of on-device ttnn tensors from recv_state(). An empty dict is the
+        # plumbing-test payload (SIM_PAYLOAD=empty): model.update_weights is
+        # strict (KeyError on missing keys), so no-op the apply while still
+        # bumping the version + running the barrier inside receive_weights().
+        applied = {"weights": False}
+
+        def _apply_ttnn_weights(hf_dict) -> None:
+            if hf_dict:
+                model.update_weights(hf_dict, hf_rope=typed_update_info.hf_rope)
+                applied["weights"] = True
+            else:
+                logger.info(
+                    "Received empty weight payload (plumbing test); skipping "
+                    "model.update_weights and applying a no-op version bump."
+                )
+
+        self.weight_transfer_engine.receive_weights(
+            typed_update_info,
+            load_weights=_apply_ttnn_weights,
+        )
+
+        # The worker owns the version counter (single source of truth).
+        self._weights_version += 1
+        logger.info(
+            "Weight update complete; weights_version=%s weights_applied=%s",
+            self._weights_version,
+            applied["weights"],
+        )
+        return {
+            "rank": rank,
+            "updated": True,
+            "weights_applied": applied["weights"],
+            "version": self._weights_version,
+        }
+
+    def get_weights_version(self) -> int:
+        """Return the current on-device weights/policy version."""
+        self._colocated_rl_only("Weights versioning")
+        return self._weights_version
+
     def get_kv_cache_spec(self) -> dict[str, KVCacheSpec]:
         """
         For the GPU/TPU backends, this method generates the KVCacheSpec by
@@ -190,33 +396,30 @@ class TTWorker(WorkerBase):
             else STR_DTYPE_TO_TORCH_DTYPE[cache_config.cache_dtype]
         )
 
-        attn_spec = FullAttentionSpec(
+        # MLA is expressed via the MLAAttentionSpec subclass; AttentionSpec no
+        # longer carries a use_mla flag. Pick the class by MLA-ness so the
+        # dummy spec's page-size accounting stays correct for MLA models.
+        attn_spec_cls = MLAAttentionSpec if model_config.use_mla else FullAttentionSpec
+        attn_spec = attn_spec_cls(
             block_size=cache_config.block_size,
             num_kv_heads=total_num_kv_heads,
             head_size=head_size,
             dtype=dtype,
-            use_mla=model_config.use_mla,
             sliding_window=model_config.get_sliding_window(),
         )
         kv_cache_spec: dict[str, KVCacheSpec] = {"foo": attn_spec}
         return kv_cache_spec
 
     def determine_available_memory(self) -> int:
-        """
-        For the GPU/TPU backends, this method runs profiling to determine
-        available memory for the KV cache. The available memory is then used
-        in conjunction with the output of get_kv_cache_spec to determine
-        the number of kv cache blocks (total memory / page_size / num layers).
 
-        Currenly we just return a large dummy number of bytes similar to the
-        Spyre/Neuron backends and override the number of kv cache blocks.
-        """
-
-        # TODO: Once we can run profiling, return real available memory
-        # instead of overriding the number of blocks.
         num_tt_blocks = get_num_available_blocks_tt(self.vllm_config)
         self.cache_config.num_gpu_blocks_override = num_tt_blocks
-        return 1 << 64
+
+        # page_size_bytes of the single dummy spec we hand vLLM in
+        # get_kv_cache_spec(); this is exactly the per-block divisor vLLM uses.
+        kv_cache_spec = self.get_kv_cache_spec()
+        page_size_bytes = next(iter(kv_cache_spec.values())).page_size_bytes
+        return num_tt_blocks * page_size_bytes
 
     def initialize_from_config(self, kv_cache_config: KVCacheConfig) -> None:
         """Allocate TT KV cache (only DP rank 0) and initialize persistent
@@ -361,7 +564,6 @@ class TTWorker(WorkerBase):
                 req_ids=[],
                 req_id_to_index={},
                 sampled_token_ids=[],
-                spec_token_ids=None,
                 logprobs=None,
                 prompt_logprobs_dict={},
                 pooler_output=[],
