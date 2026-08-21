@@ -15,6 +15,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import List, Optional
 
+import pytest
 import requests
 
 from llm_module import DriverResult, LLMPerformanceRunner, RunnerResult
@@ -31,9 +32,8 @@ _CTX = DriverContext(output_dir=Path("/tmp/out"), device="n300")
 
 
 class FakeDriver:
-    name = "fake"
-
-    def __init__(self, outcomes: List[DriverResult]):
+    def __init__(self, outcomes: List[DriverResult], name: str = "fake"):
+        self.name = name
         self._outcomes = list(outcomes)
         self.run_calls: List[LLMRunConfig] = []
         self.parsed_devices: List[str] = []
@@ -223,3 +223,51 @@ class TestSweepPointGrading:
 
         assert result.blocks[0].data["status"] == "na"
         assert "target_checks" not in result.blocks[0].data
+
+
+def _custom_dataset_cfg() -> LLMRunConfig:
+    return LLMRunConfig(
+        isl=128,
+        osl=128,
+        max_concurrency=1,
+        num_prompts=8,
+        custom_dataset_path=Path("speed_bench_prompts_isl-128_n-8.jsonl"),
+    )
+
+
+def test_vllm_runner_prepares_custom_dataset_before_driver_run(monkeypatch, tmp_path):
+    incoming = _custom_dataset_cfg()
+    prepared = LLMRunConfig(
+        isl=128,
+        osl=128,
+        max_concurrency=1,
+        num_prompts=8,
+        custom_dataset_path=tmp_path / incoming.custom_dataset_path.name,
+    )
+    calls = []
+
+    def fake_ensure(config, server, output_dir):
+        calls.append((config, server.model, output_dir))
+        return prepared
+
+    monkeypatch.setattr("llm_module.runner.ensure_custom_dataset", fake_ensure)
+    driver = FakeDriver([_ok()], name="vllm")
+    ctx = DriverContext(output_dir=tmp_path, device="n300")
+    _runner(driver, FakeController()).run([incoming], _SERVER, ctx)
+
+    assert calls == [(incoming, "m", tmp_path)]
+    assert driver.run_calls == [prepared]
+
+
+@pytest.mark.parametrize("driver_name", ["aiperf", "genai_perf", "guidellm"])
+def test_non_vllm_runner_skips_custom_dataset_prep(monkeypatch, driver_name):
+    incoming = _custom_dataset_cfg()
+
+    def fail_ensure(*args, **kwargs):
+        raise AssertionError("non-vLLM drivers must not materialize SPEED-Bench")
+
+    monkeypatch.setattr("llm_module.runner.ensure_custom_dataset", fail_ensure)
+    driver = FakeDriver([_ok()], name=driver_name)
+    _runner(driver, FakeController()).run([incoming], _SERVER, _CTX)
+
+    assert driver.run_calls == [incoming]

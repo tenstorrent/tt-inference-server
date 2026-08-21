@@ -12,7 +12,7 @@
       }
     ]
   },
-  "description": "TT Media Server (Python) - request latency, pipeline stages, multihost video-gen breakdown, and per-process infrastructure. Transient asset; sunsets with the Python server (~4 months).",
+  "description": "TT Media Server (Python) - request latency, pipeline stages, image-generation stage breakdown (denoising / VAE decode / conditioning), multihost video-gen breakdown, and per-process infrastructure. Transient asset; sunsets with the Python server (~4 months).",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -20,14 +20,14 @@
   "links": [],
   "liveNow": false,
   "panels": [
-    {
+{
       "collapsed": false,
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
       "id": 100,
       "title": "System Overview",
       "type": "row"
     },
-    {
+{
       "datasource": { "type": "prometheus", "uid": "$datasource" },
       "description": "Total HTTP requests/sec hitting the FastAPI server (auto-instrumented).",
       "fieldConfig": {
@@ -59,7 +59,7 @@
       "title": "Request Rate",
       "type": "stat"
     },
-    {
+{
       "datasource": { "type": "prometheus", "uid": "$datasource" },
       "description": "Generation jobs currently being processed by the model service (post-queue, pre-response). Reflects true model concurrency, unlike the HTTP in-flight gauge which only sees the ~2ms queue-and-202 handler.",
       "fieldConfig": {
@@ -90,7 +90,7 @@
       "title": "Jobs In Flight (model)",
       "type": "stat"
     },
-    {
+{
       "datasource": { "type": "prometheus", "uid": "$datasource" },
       "description": "5xx error ratio over the last 5m. Alert threshold: 5%.",
       "fieldConfig": {
@@ -122,7 +122,7 @@
       "title": "Error Rate (5xx)",
       "type": "stat"
     },
-    {
+{
       "datasource": { "type": "prometheus", "uid": "$datasource" },
       "description": "End-to-end p99 request latency (FastAPI auto-instrumented).",
       "fieldConfig": {
@@ -154,14 +154,14 @@
       "title": "HTTP p99 Latency",
       "type": "stat"
     },
-    {
+{
       "collapsed": false,
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
       "id": 200,
       "title": "End-to-End Request Latency (per model_type)",
       "type": "row"
     },
-    {
+{
       "datasource": { "type": "prometheus", "uid": "$datasource" },
       "description": "p50/p95/p99 of total request duration, grouped by model_type. Filter via the $model_type variable to focus on a single runner (e.g. sp_runner for video gen).",
       "fieldConfig": {
@@ -197,7 +197,7 @@
       "title": "End-to-End Latency Quantiles",
       "type": "timeseries"
     },
-    {
+{
       "datasource": { "type": "prometheus", "uid": "$datasource" },
       "description": "Successful requests/sec per model_type from the custom telemetry counter.",
       "fieldConfig": {
@@ -221,14 +221,14 @@
       "title": "Requests / sec per model_type",
       "type": "timeseries"
     },
-    {
+{
       "collapsed": false,
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
       "id": 300,
       "title": "Pipeline Stages (where time is spent inside a request)",
       "type": "row"
     },
-    {
+{
       "datasource": { "type": "prometheus", "uid": "$datasource" },
       "description": "p95 latency of each pipeline stage stacked. Lets you see which stage dominates request time.",
       "fieldConfig": {
@@ -270,14 +270,1047 @@
       "title": "Pipeline Stage p95 (stacked)",
       "type": "timeseries"
     },
-    {
+{
       "collapsed": false,
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
+      "id": 800,
+      "title": "Video Generation",
+      "type": "row"
+    },
+{
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Finished video generations per minute across all outcomes (success, failure, cancelled). Video is slow work, so per-minute reads better than per-second.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{"color": "green", "value": null}] },
+          "unit": "none",
+          "decimals": 2
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 24 },
+      "id": 801,
+      "options": {
+        "colorMode": "background_solid",
+        "graphMode": "area",
+        "textMode": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "60 * sum(rate(tt_media_server_video_generation_total{service=~\"$service\",model_type=~\"$model_type\"}[5m]))",
+          "refId": "A",
+          "legendFormat": "gen/min"
+        }
+      ],
+      "title": "Generations / min",
+      "type": "stat"
+    },
+{
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Share of finished generations that produced a video over the last 1h. Failures are timeouts and runner/peer errors, not HTTP 4xx. Cancelled generations are excluded from both sides of the ratio \u2014 /cancel traffic is a client action, not a reliability signal. Empty (not 0% or 100%) when no success/failure completed in the window, including non-video model_type filters.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{"color": "transparent", "value": null}, {"color": "red", "value": 0}, {"color": "yellow", "value": 95}, {"color": "green", "value": 99}]
+          },
+          "unit": "percent",
+          "decimals": 1,
+          "noValue": "n/a"
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 24 },
+      "id": 802,
+      "options": {
+        "colorMode": "background_solid",
+        "graphMode": "area",
+        "textMode": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "(100 * sum(increase(tt_media_server_video_generation_total{service=~\"$service\",model_type=~\"$model_type\",status=\"success\"}[1h])) / sum(increase(tt_media_server_video_generation_total{service=~\"$service\",model_type=~\"$model_type\",status=~\"success|failure\"}[1h]))) and (sum(increase(tt_media_server_video_generation_total{service=~\"$service\",model_type=~\"$model_type\",status=~\"success|failure\"}[1h])) > 0)",
+          "refId": "A",
+          "legendFormat": "success %"
+        }
+      ],
+      "title": "Success Rate",
+      "type": "stat"
+    },
+{
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Video generations currently being processed, summed across request types. Narrower than Jobs In Flight, which counts every model_type.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 4}, {"color": "red", "value": 8}]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 24 },
+      "id": 803,
+      "options": {
+        "colorMode": "background_solid",
+        "graphMode": "area",
+        "textMode": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum(tt_media_server_video_generations_in_progress{service=~\"$service\",model_type=~\"$model_type\"})",
+          "refId": "A",
+          "legendFormat": "in flight"
+        }
+      ],
+      "title": "Generations In Flight",
+      "type": "stat"
+    },
+{
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "95th-percentile wall-clock time for a successful generation: queue wait + inference + mp4 encode.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{"color": "green", "value": null}] },
+          "unit": "s",
+          "decimals": 1
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 24 },
+      "id": 804,
+      "options": {
+        "colorMode": "background_solid",
+        "graphMode": "area",
+        "textMode": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_video_generation_duration_seconds_bucket{service=~\"$service\",model_type=~\"$model_type\",status=\"success\"}[5m])))",
+          "refId": "A",
+          "legendFormat": "p95"
+        }
+      ],
+      "title": "Generation p95",
+      "type": "stat"
+    },
+{
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Wall-clock seconds spent per second of playable video. 1.0 = realtime; 100 = a 5s clip took ~8 minutes. Resolution-independent, so it is the one number to compare pipelines with.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{"color": "green", "value": null}] },
+          "unit": "none",
+          "decimals": 1
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 24 },
+      "id": 805,
+      "options": {
+        "colorMode": "background_solid",
+        "graphMode": "area",
+        "textMode": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_video_realtime_factor_bucket{service=~\"$service\",model_type=~\"$model_type\"}[5m])))",
+          "refId": "A",
+          "legendFormat": "x realtime"
+        }
+      ],
+      "title": "Realtime Factor p95",
+      "type": "stat"
+    },
+{
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Seconds since the last successful generation while idle. 0 while video_generations_in_progress > 0 so a 20-minute job does not go yellow at 15 minutes. Rising without bound after in-flight drops to 0 means the pipeline stopped producing \u2014 a wedged runner that never returns an error.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 900}, {"color": "red", "value": 3600}]
+          },
+          "unit": "s",
+          "noValue": "n/a"
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 24 },
+      "id": 806,
+      "options": {
+        "colorMode": "background_solid",
+        "graphMode": "area",
+        "textMode": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "(0 * (sum(tt_media_server_video_generations_in_progress{service=~\"$service\",model_type=~\"$model_type\"}) > 0)) or (time() - max(tt_media_server_video_last_generation_timestamp{service=~\"$service\",model_type=~\"$model_type\",status=\"success\"}))",
+          "refId": "A",
+          "legendFormat": "age"
+        }
+      ],
+      "title": "Since Last Success",
+      "type": "stat"
+    },
+{
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Finished generations per minute split by t2v vs i2v and outcome. The request type is derived from the payload (presence of image_prompts), so /i2v and /i2v/upload share a series.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "fillOpacity": 20,
+            "lineWidth": 2,
+            "drawStyle": "line",
+            "showPoints": "never",
+            "stacking": { "mode": "normal" }
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
+      "id": 810,
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "max"], "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "60 * sum by (request_type, status) (rate(tt_media_server_video_generation_total{service=~\"$service\",model_type=~\"$model_type\"}[5m]))",
+          "refId": "A",
+          "legendFormat": "{{request_type}} {{status}}"
+        }
+      ],
+      "title": "Generation rate by type / status",
+      "type": "timeseries"
+    },
+{
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "End-to-end generation time for successful requests, by type. Failures are excluded on purpose \u2014 a timeout says nothing about how long the pipeline takes when it works. Plot status=\"failure\" separately to see time-to-failure.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 5, "lineWidth": 2, "drawStyle": "line", "showPoints": "never" },
+          "unit": "s"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
+      "id": 811,
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "max"], "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.5, sum by (request_type, le) (rate(tt_media_server_video_generation_duration_seconds_bucket{service=~\"$service\",model_type=~\"$model_type\",status=\"success\"}[5m])))",
+          "refId": "A",
+          "legendFormat": "p50 {{request_type}}"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.95, sum by (request_type, le) (rate(tt_media_server_video_generation_duration_seconds_bucket{service=~\"$service\",model_type=~\"$model_type\",status=\"success\"}[5m])))",
+          "refId": "B",
+          "legendFormat": "p95 {{request_type}}"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.99, sum by (request_type, le) (rate(tt_media_server_video_generation_duration_seconds_bucket{service=~\"$service\",model_type=~\"$model_type\",status=\"success\"}[5m])))",
+          "refId": "C",
+          "legendFormat": "p99 {{request_type}}"
+        }
+      ],
+      "title": "Generation latency quantiles (success)",
+      "type": "timeseries"
+    },
+{
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Frames produced per wall-clock second within a single generation, by resolution. This is the per-request speed, not fleet throughput.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 5, "lineWidth": 2, "drawStyle": "line", "showPoints": "never" },
+          "unit": "none"
+        }
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 36 },
+      "id": 820,
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "max"], "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.5, sum by (resolution, le) (rate(tt_media_server_video_frames_per_second_bucket{service=~\"$service\",model_type=~\"$model_type\"}[5m])))",
+          "refId": "A",
+          "legendFormat": "p50 {{resolution}}"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.95, sum by (resolution, le) (rate(tt_media_server_video_frames_per_second_bucket{service=~\"$service\",model_type=~\"$model_type\"}[5m])))",
+          "refId": "B",
+          "legendFormat": "p95 {{resolution}}"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.99, sum by (resolution, le) (rate(tt_media_server_video_frames_per_second_bucket{service=~\"$service\",model_type=~\"$model_type\"}[5m])))",
+          "refId": "C",
+          "legendFormat": "p99 {{resolution}}"
+        }
+      ],
+      "title": "Frame throughput per generation",
+      "type": "timeseries"
+    },
+{
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Wall-clock seconds per diffusion step (generation time / steps requested), by resolution. Success-only: a timed-out request never ran its steps.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 5, "lineWidth": 2, "drawStyle": "line", "showPoints": "never" },
+          "unit": "s"
+        }
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 36 },
+      "id": 821,
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "max"], "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.5, sum by (resolution, le) (rate(tt_media_server_video_step_duration_seconds_bucket{service=~\"$service\",model_type=~\"$model_type\"}[5m])))",
+          "refId": "A",
+          "legendFormat": "p50 {{resolution}}"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.95, sum by (resolution, le) (rate(tt_media_server_video_step_duration_seconds_bucket{service=~\"$service\",model_type=~\"$model_type\"}[5m])))",
+          "refId": "B",
+          "legendFormat": "p95 {{resolution}}"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.99, sum by (resolution, le) (rate(tt_media_server_video_step_duration_seconds_bucket{service=~\"$service\",model_type=~\"$model_type\"}[5m])))",
+          "refId": "C",
+          "legendFormat": "p99 {{resolution}}"
+        }
+      ],
+      "title": "Mean denoise step latency",
+      "type": "timeseries"
+    },
+{
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Wall seconds per second of playable video, by resolution. Flat under load = the pipeline is keeping up; rising = contention or a straggler host.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 5, "lineWidth": 2, "drawStyle": "line", "showPoints": "never" },
+          "unit": "none"
+        }
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 36 },
+      "id": 822,
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "max"], "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.5, sum by (resolution, le) (rate(tt_media_server_video_realtime_factor_bucket{service=~\"$service\",model_type=~\"$model_type\"}[5m])))",
+          "refId": "A",
+          "legendFormat": "p50 {{resolution}}"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.95, sum by (resolution, le) (rate(tt_media_server_video_realtime_factor_bucket{service=~\"$service\",model_type=~\"$model_type\"}[5m])))",
+          "refId": "B",
+          "legendFormat": "p95 {{resolution}}"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.99, sum by (resolution, le) (rate(tt_media_server_video_realtime_factor_bucket{service=~\"$service\",model_type=~\"$model_type\"}[5m])))",
+          "refId": "C",
+          "legendFormat": "p99 {{resolution}}"
+        }
+      ],
+      "title": "Realtime factor distribution",
+      "type": "timeseries"
+    },
+{
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Aggregate output rate across all in-flight generations: frames, denoise steps, and seconds of playable video produced per second. Steps/sec is the one to watch when comparing runner builds.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 5, "lineWidth": 2, "drawStyle": "line", "showPoints": "never" },
+          "unit": "none"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 44 },
+      "id": 830,
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "max"], "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum(rate(tt_media_server_video_frames_generated_total{service=~\"$service\",model_type=~\"$model_type\"}[1m]))",
+          "refId": "A",
+          "legendFormat": "frames/sec"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum(rate(tt_media_server_video_denoise_steps_total{service=~\"$service\",model_type=~\"$model_type\"}[1m]))",
+          "refId": "B",
+          "legendFormat": "denoise steps/sec"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum(rate(tt_media_server_video_content_seconds_total{service=~\"$service\",model_type=~\"$model_type\"}[1m]))",
+          "refId": "C",
+          "legendFormat": "video seconds/sec"
+        }
+      ],
+      "title": "Work produced per second (fleet)",
+      "type": "timeseries"
+    },
+{
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "width x height x frames per wall-clock second, by resolution. Lets a 480p run and a 720p run be compared on equal terms \u2014 frames/sec cannot.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 5, "lineWidth": 2, "drawStyle": "line", "showPoints": "never" },
+          "unit": "none"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 44 },
+      "id": 831,
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "max"], "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.5, sum by (resolution, le) (rate(tt_media_server_video_pixels_per_second_bucket{service=~\"$service\",model_type=~\"$model_type\"}[5m])))",
+          "refId": "A",
+          "legendFormat": "p50 {{resolution}}"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.95, sum by (resolution, le) (rate(tt_media_server_video_pixels_per_second_bucket{service=~\"$service\",model_type=~\"$model_type\"}[5m])))",
+          "refId": "B",
+          "legendFormat": "p95 {{resolution}}"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.99, sum by (resolution, le) (rate(tt_media_server_video_pixels_per_second_bucket{service=~\"$service\",model_type=~\"$model_type\"}[5m])))",
+          "refId": "C",
+          "legendFormat": "p99 {{resolution}}"
+        }
+      ],
+      "title": "Pixel throughput per generation",
+      "type": "timeseries"
+    },
+{
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Size of the mp4 handed back to the client. A sudden drop with steady frame counts usually means a degraded or truncated encode.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 5, "lineWidth": 2, "drawStyle": "line", "showPoints": "never" },
+          "unit": "bytes"
+        }
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 52 },
+      "id": 840,
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "max"], "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.5, sum by (request_type, le) (rate(tt_media_server_video_output_size_bytes_bucket{service=~\"$service\",model_type=~\"$model_type\"}[5m])))",
+          "refId": "A",
+          "legendFormat": "p50 {{request_type}}"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.95, sum by (request_type, le) (rate(tt_media_server_video_output_size_bytes_bucket{service=~\"$service\",model_type=~\"$model_type\"}[5m])))",
+          "refId": "B",
+          "legendFormat": "p95 {{request_type}}"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.99, sum by (request_type, le) (rate(tt_media_server_video_output_size_bytes_bucket{service=~\"$service\",model_type=~\"$model_type\"}[5m])))",
+          "refId": "C",
+          "legendFormat": "p99 {{request_type}}"
+        }
+      ],
+      "title": "Output mp4 size",
+      "type": "timeseries"
+    },
+{
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "ffmpeg encode latency and frames/sec, recorded where the encode runs (in-process runners and CPU postprocessing workers). A multihost SP_RUNNER deployment encodes inside its external peer, which serves no /metrics, so these series are absent there by design.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 5, "lineWidth": 2, "drawStyle": "line", "showPoints": "never" },
+          "unit": "s"
+        }
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 52 },
+      "id": 841,
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "max"], "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.5, sum by (resolution, le) (rate(tt_media_server_video_encode_duration_seconds_bucket{service=~\"$service\",model_type=~\"$model_type\"}[5m])))",
+          "refId": "A",
+          "legendFormat": "encode p50 {{resolution}}"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.95, sum by (resolution, le) (rate(tt_media_server_video_encode_duration_seconds_bucket{service=~\"$service\",model_type=~\"$model_type\"}[5m])))",
+          "refId": "B",
+          "legendFormat": "encode p95 {{resolution}}"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.99, sum by (resolution, le) (rate(tt_media_server_video_encode_duration_seconds_bucket{service=~\"$service\",model_type=~\"$model_type\"}[5m])))",
+          "refId": "C",
+          "legendFormat": "encode p99 {{resolution}}"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.95, sum by (resolution, le) (rate(tt_media_server_video_encode_frames_per_second_bucket{service=~\"$service\",model_type=~\"$model_type\"}[5m])))",
+          "refId": "D",
+          "legendFormat": "p95 enc fps {{resolution}}"
+        }
+      ],
+      "title": "MP4 encode cost",
+      "type": "timeseries"
+    },
+{
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "What clients are asking for: mean num_inference_steps per request and mean image_prompts count on I2V. A shift here explains a latency shift that is not a regression.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 5, "lineWidth": 2, "drawStyle": "line", "showPoints": "never" },
+          "unit": "none"
+        }
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 52 },
+      "id": 842,
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "max"], "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum(rate(tt_media_server_video_requested_inference_steps_sum{service=~\"$service\",model_type=~\"$model_type\"}[5m])) / clamp_min(sum(rate(tt_media_server_video_requested_inference_steps_count{service=~\"$service\",model_type=~\"$model_type\"}[5m])), 1e-9)",
+          "refId": "A",
+          "legendFormat": "mean steps requested"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum(rate(tt_media_server_video_conditioning_images_sum{service=~\"$service\",model_type=~\"$model_type\"}[5m])) / clamp_min(sum(rate(tt_media_server_video_conditioning_images_count{service=~\"$service\",model_type=~\"$model_type\"}[5m])), 1e-9)",
+          "refId": "B",
+          "legendFormat": "mean i2v images"
+        }
+      ],
+      "title": "Steps requested vs I2V conditioning images",
+      "type": "timeseries"
+    },
+{
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Lifetime totals since server start, by request type. Frames and video-seconds are success-only; the generation count includes failures.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{"color": "green", "value": null}] },
+          "custom": { "align": "auto", "displayMode": "color-text" }
+        }
+      },
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 60 },
+      "id": 850,
+      "options": { "showHeader": true },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum by (request_type, status) (tt_media_server_video_generation_total{service=~\"$service\",model_type=~\"$model_type\"})",
+          "refId": "A",
+          "format": "table",
+          "instant": true
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum by (request_type) (tt_media_server_video_frames_generated_total{service=~\"$service\",model_type=~\"$model_type\"})",
+          "refId": "B",
+          "format": "table",
+          "instant": true
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum by (request_type) (tt_media_server_video_content_seconds_total{service=~\"$service\",model_type=~\"$model_type\"})",
+          "refId": "C",
+          "format": "table",
+          "instant": true
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum by (request_type) (tt_media_server_video_output_bytes_total{service=~\"$service\",model_type=~\"$model_type\"})",
+          "refId": "D",
+          "format": "table",
+          "instant": true
+        }
+      ],
+      "title": "Video totals by request type",
+      "type": "table"
+    },
+{
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 66 },
+      "id": 900,
+      "title": "Image Generation (denoising / VAE decode / conditioning)",
+      "type": "row"
+    },
+{
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Completed denoising steps per second across all image models. This is the core generation capacity number: it moves with resolution, step count and batching.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 0.5 },
+              { "color": "green", "value": 2 }
+            ]
+          },
+          "unit": "cps",
+          "decimals": 2
+        }
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 67 },
+      "id": 30,
+      "options": { "colorMode": "background_solid", "graphMode": "area", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum(rate(tt_media_server_image_denoise_steps_total{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[$__rate_interval]))",
+          "legendFormat": "steps/s",
+          "refId": "A"
+        }
+      ],
+      "title": "Denoising Throughput (steps/s)",
+      "type": "stat"
+    },
+{
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Images per second converted from latents to pixels by the VAE. Compare against denoising throughput: if this is the lower number, reconstruction is the limiter, not denoising.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] },
+          "unit": "cps",
+          "decimals": 3
+        }
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 67 },
+      "id": 31,
+      "options": { "colorMode": "background_solid", "graphMode": "area", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum(rate(tt_media_server_image_vae_images_total{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[$__rate_interval]))",
+          "legendFormat": "images/s",
+          "refId": "A"
+        }
+      ],
+      "title": "VAE Decode (images/s)",
+      "type": "stat"
+    },
+{
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Megapixels per second out of the VAE. Resolution-independent view of reconstruction capacity - images/s alone makes a 512x512 model look faster than a 1024x1024 one at equal silicon cost.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "purple", "value": null }] },
+          "unit": "short",
+          "decimals": 2
+        }
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 67 },
+      "id": 32,
+      "options": { "colorMode": "background_solid", "graphMode": "area", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum(rate(tt_media_server_image_vae_pixels_total{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[$__rate_interval])) / 1e6",
+          "legendFormat": "MP/s",
+          "refId": "A"
+        }
+      ],
+      "title": "VAE Decode (megapixels/s)",
+      "type": "stat"
+    },
+{
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Conditioning encode time as a share of total engine time. High values mean prompt encoding - not denoising - dominates, which is the usual signature of short/low-step image requests.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 20 },
+              { "color": "red", "value": 40 }
+            ]
+          },
+          "unit": "percent",
+          "decimals": 1,
+          "max": 100,
+          "min": 0
+        }
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 67 },
+      "id": 33,
+      "options": { "colorMode": "background_solid", "graphMode": "area", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "100 * sum(rate(tt_media_server_image_conditioning_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\",encoder=\"all\"}[5m])) / clamp_min(sum(rate(tt_media_server_image_engine_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[5m])), 0.000001)",
+          "legendFormat": "conditioning %",
+          "refId": "A"
+        }
+      ],
+      "title": "Conditioning % of Engine Time",
+      "type": "stat"
+    },
+{
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Denoising steps/s split by resolution and batch size. Doubling resolution should cut steps/s; batching should raise it. If batching does not raise it, the batch is not being formed.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 10, "lineWidth": 2, "drawStyle": "line", "showPoints": "never" },
+          "unit": "cps"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 72 },
+      "id": 34,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "mean", "max"], "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum by (resolution, batch) (rate(tt_media_server_image_denoise_steps_total{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[$__rate_interval]))",
+          "legendFormat": "{{resolution}} batch={{batch}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Denoising steps/s by resolution & batch",
+      "type": "timeseries"
+    },
+{
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Denoising steps/s split by device and sampler. Divergence between devices running the same model and sampler is a per-host problem; divergence between samplers is expected.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 10, "lineWidth": 2, "drawStyle": "line", "showPoints": "never" },
+          "unit": "cps"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 72 },
+      "id": 35,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "mean", "max"], "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum by (device_id, sampler, model_type) (rate(tt_media_server_image_denoise_steps_total{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[$__rate_interval]))",
+          "legendFormat": "{{model_type}} dev={{device_id}} {{sampler}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Denoising steps/s by device & sampler",
+      "type": "timeseries"
+    },
+{
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Per-step denoising latency, p50 and p99, by resolution and batch. The reciprocal of p50 is the per-device step rate; a widening p50-p99 gap means some steps are stalling. Only the tt_dit models (SD3.5, Flux, Motif, Qwen-Image) report per-step timings; SDXL and Z-Image-Turbo report only a loop total, so they are absent here by design - use the denoise_duration_seconds panels for those.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 0, "lineWidth": 2, "drawStyle": "line", "showPoints": "never" },
+          "unit": "s"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byRegexp", "options": ".*p99.*" },
+            "properties": [{ "id": "custom.lineStyle", "value": { "dash": [10, 10], "fill": "dash" } }]
+          }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 80 },
+      "id": 36,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "max"], "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.50, sum by (le, resolution, batch) (rate(tt_media_server_image_denoise_step_duration_seconds_bucket{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[5m])))",
+          "legendFormat": "{{resolution}} batch={{batch}} p50",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.99, sum by (le, resolution, batch) (rate(tt_media_server_image_denoise_step_duration_seconds_bucket{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[5m])))",
+          "legendFormat": "{{resolution}} batch={{batch}} p99",
+          "refId": "B"
+        }
+      ],
+      "title": "Denoising step latency p50 / p99",
+      "type": "timeseries"
+    },
+{
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Heatmap of per-step denoising latency. Each row is a bucket; intensity = count. Shows bimodal step timing (e.g. first step paying a compile or cache cost) that quantiles hide. Only the tt_dit models (SD3.5, Flux, Motif, Qwen-Image) report per-step timings; SDXL and Z-Image-Turbo report only a loop total, so \"No data\" here means the runner cannot report it, not that the metric is broken.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "scaleDistribution": { "type": "linear" } },
+          "unit": "s"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 80 },
+      "id": 37,
+      "options": {
+        "calculate": false,
+        "color": { "scheme": "Spectral", "mode": "scheme", "exponent": 0.5, "steps": 64, "reverse": false },
+        "legend": { "show": true },
+        "tooltip": { "show": true, "yHistogram": false },
+        "yAxis": { "axisPlacement": "left", "unit": "s" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum by (le) (rate(tt_media_server_image_denoise_step_duration_seconds_bucket{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[$__rate_interval]))",
+          "format": "heatmap",
+          "legendFormat": "{{le}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Denoising step latency heatmap",
+      "type": "heatmap"
+    },
+{
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "VAE decode throughput per resolution and batch, in images/s and megapixels/s. Flat images/s while denoising steps/s climbs means the VAE has become the bottleneck.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 10, "lineWidth": 2, "drawStyle": "line", "showPoints": "never" },
+          "unit": "cps"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byRegexp", "options": ".*MP/s.*" },
+            "properties": [{ "id": "unit", "value": "short" }, { "id": "custom.axisPlacement", "value": "right" }]
+          }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 88 },
+      "id": 38,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "mean"], "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum by (resolution, batch) (rate(tt_media_server_image_vae_images_total{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[$__rate_interval]))",
+          "legendFormat": "{{resolution}} batch={{batch}} images/s",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum by (resolution) (rate(tt_media_server_image_vae_pixels_total{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[$__rate_interval])) / 1e6",
+          "legendFormat": "{{resolution}} MP/s",
+          "refId": "B"
+        }
+      ],
+      "title": "VAE decode throughput (images/s & MP/s)",
+      "type": "timeseries"
+    },
+{
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "VAE decode latency p50/p99 per resolution and batch. Rising with batch means the decode is not amortising across the batch.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 0, "lineWidth": 2, "drawStyle": "line", "showPoints": "never" },
+          "unit": "s"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byRegexp", "options": ".*p99.*" },
+            "properties": [{ "id": "custom.lineStyle", "value": { "dash": [10, 10], "fill": "dash" } }]
+          }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 88 },
+      "id": 39,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "max"], "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.50, sum by (le, resolution, batch) (rate(tt_media_server_image_vae_decode_duration_seconds_bucket{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[5m])))",
+          "legendFormat": "{{resolution}} batch={{batch}} p50",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.99, sum by (le, resolution, batch) (rate(tt_media_server_image_vae_decode_duration_seconds_bucket{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[5m])))",
+          "legendFormat": "{{resolution}} batch={{batch}} p99",
+          "refId": "B"
+        }
+      ],
+      "title": "VAE decode latency p50 / p99",
+      "type": "timeseries"
+    },
+{
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Conditioning encode time per request, p50 and p99, in milliseconds. 'all' is the pipeline-level encoder span; clip / t5 / qwen / image are nested inside it, so do not add them to 'all'.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 0, "lineWidth": 2, "drawStyle": "line", "showPoints": "never" },
+          "unit": "ms"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byRegexp", "options": ".*p99.*" },
+            "properties": [{ "id": "custom.lineStyle", "value": { "dash": [10, 10], "fill": "dash" } }]
+          }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 96 },
+      "id": 40,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "max"], "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "1000 * histogram_quantile(0.50, sum by (le, encoder) (rate(tt_media_server_image_conditioning_duration_seconds_bucket{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[5m])))",
+          "legendFormat": "{{encoder}} p50",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "1000 * histogram_quantile(0.99, sum by (le, encoder) (rate(tt_media_server_image_conditioning_duration_seconds_bucket{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[5m])))",
+          "legendFormat": "{{encoder}} p99",
+          "refId": "B"
+        }
+      ],
+      "title": "Conditioning encoder time p50 / p99 (ms)",
+      "type": "timeseries"
+    },
+{
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Conditioning encode time as a percent of engine time, per model. Climbing here on short requests is the signal that prompt encoding, not generation, is what the user is waiting for.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 20, "lineWidth": 2, "drawStyle": "line", "showPoints": "never" },
+          "unit": "percent",
+          "min": 0
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 96 },
+      "id": 41,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "mean", "max"], "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "100 * sum by (model_type) (rate(tt_media_server_image_conditioning_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\",encoder=\"all\"}[5m])) / clamp_min(sum by (model_type) (rate(tt_media_server_image_engine_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[5m])), 0.000001)",
+          "legendFormat": "{{model_type}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Conditioning share of engine time (%)",
+      "type": "timeseries"
+    },
+{
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Where engine time goes: conditioning vs denoising vs VAE decode, as a percent of total engine time. Whichever band is widest is the thing to optimise. Bands will not sum to 100% on runners that cannot report every stage (Z-Image-Turbo reports only the total).",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 60, "lineWidth": 1, "drawStyle": "line", "stacking": { "mode": "normal" }, "showPoints": "never" },
+          "unit": "percent",
+          "min": 0
+        }
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 104 },
+      "id": 42,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "mean"], "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "100 * sum(rate(tt_media_server_image_conditioning_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\",encoder=\"all\"}[5m])) / clamp_min(sum(rate(tt_media_server_image_engine_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[5m])), 0.000001)",
+          "legendFormat": "conditioning",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "100 * sum(rate(tt_media_server_image_denoise_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[5m])) / clamp_min(sum(rate(tt_media_server_image_engine_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[5m])), 0.000001)",
+          "legendFormat": "denoising",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "100 * sum(rate(tt_media_server_image_vae_decode_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[5m])) / clamp_min(sum(rate(tt_media_server_image_engine_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[5m])), 0.000001)",
+          "legendFormat": "vae decode",
+          "refId": "C"
+        }
+      ],
+      "title": "Engine time split: conditioning vs denoising vs VAE decode (%)",
+      "type": "timeseries"
+    },
+{
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 112 },
       "id": 400,
       "title": "Multihost / Per-Device (video gen drill-down)",
       "type": "row"
     },
-    {
+{
       "datasource": { "type": "prometheus", "uid": "$datasource" },
       "description": "Model inference p95 broken down by device_id. For sp_runner (multihost video) each host emits its own time series via TT_VISIBLE_DEVICES. Diverging lines = a slow host (straggler).",
       "fieldConfig": {
@@ -287,7 +1320,7 @@
           "unit": "s"
         }
       },
-      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 24 },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 113 },
       "id": 8,
       "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "max"], "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
@@ -301,7 +1334,7 @@
       "title": "Inference p95 by device_id",
       "type": "timeseries"
     },
-    {
+{
       "datasource": { "type": "prometheus", "uid": "$datasource" },
       "description": "Successful model inferences per second per device_id. Tells you how throughput is distributed across hosts.",
       "fieldConfig": {
@@ -311,7 +1344,7 @@
           "unit": "reqps"
         }
       },
-      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 24 },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 113 },
       "id": 9,
       "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "mean"], "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
@@ -325,7 +1358,7 @@
       "title": "Inferences/sec by device_id (success only)",
       "type": "timeseries"
     },
-    {
+{
       "datasource": { "type": "prometheus", "uid": "$datasource" },
       "description": "Heatmap of model inference latency. Each row is a latency bucket; intensity = count. Reveals bimodal distributions and tail latency growth that quantiles can hide.",
       "fieldConfig": {
@@ -334,7 +1367,7 @@
           "unit": "s"
         }
       },
-      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 33 },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 122 },
       "id": 10,
       "options": {
         "calculate": false,
@@ -355,7 +1388,7 @@
       "title": "Inference Latency Heatmap",
       "type": "heatmap"
     },
-    {
+{
       "datasource": { "type": "prometheus", "uid": "$datasource" },
       "description": "Inference success vs failure rate per device_id. A device with rising failures while others are healthy is a host issue, not a model issue.",
       "fieldConfig": {
@@ -371,7 +1404,7 @@
           }
         ]
       },
-      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 33 },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 122 },
       "id": 11,
       "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "sum"], "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
@@ -385,7 +1418,7 @@
       "title": "Inference success vs failure by device_id",
       "type": "timeseries"
     },
-    {
+{
       "datasource": { "type": "prometheus", "uid": "$datasource" },
       "description": "Cross-host inference p95 skew: max(device_id) - min(device_id). Spikes here mean one host is much slower than the others (straggler detection for multihost video gen).",
       "fieldConfig": {
@@ -403,7 +1436,7 @@
           "unit": "s"
         }
       },
-      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 42 },
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 131 },
       "id": 12,
       "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
@@ -417,14 +1450,14 @@
       "title": "Cross-host p95 skew (straggler detector)",
       "type": "timeseries"
     },
-    {
+{
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 49 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 138 },
       "id": 500,
       "title": "Lifecycle (warmup / model load / download)",
       "type": "row"
     },
-    {
+{
       "datasource": { "type": "prometheus", "uid": "$datasource" },
       "description": "Device warmup p95 per device_id. Warmup happens once at startup; long warmup on a single device usually means a slow weight load on that host.",
       "fieldConfig": {
@@ -434,7 +1467,7 @@
           "unit": "s"
         }
       },
-      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 50 },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 139 },
       "id": 13,
       "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["last", "max"], "showLegend": true } },
       "targets": [
@@ -448,7 +1481,7 @@
       "title": "Device warmup p95 per device",
       "type": "timeseries"
     },
-    {
+{
       "datasource": { "type": "prometheus", "uid": "$datasource" },
       "description": "Cumulative device warmup attempts split by status. Persistent failures here block a host from accepting traffic.",
       "fieldConfig": {
@@ -463,7 +1496,7 @@
           "custom": { "align": "auto", "displayMode": "color-text" }
         }
       },
-      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 50 },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 139 },
       "id": 14,
       "options": { "showHeader": true },
       "targets": [
@@ -478,7 +1511,7 @@
       "title": "Warmup totals by device / status",
       "type": "table"
     },
-    {
+{
       "datasource": { "type": "prometheus", "uid": "$datasource" },
       "description": "Cumulative model load operations split by status. Should stay flat after startup; spikes mean reloads.",
       "fieldConfig": {
@@ -493,7 +1526,7 @@
           "custom": { "align": "auto", "displayMode": "color-text" }
         }
       },
-      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 50 },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 139 },
       "id": 15,
       "options": { "showHeader": true },
       "targets": [
@@ -508,7 +1541,7 @@
       "title": "Model load totals by device / status",
       "type": "table"
     },
-    {
+{
       "datasource": { "type": "prometheus", "uid": "$datasource" },
       "description": "Result download success vs failure rate. Failures here usually mean object store / network problems, not model problems.",
       "fieldConfig": {
@@ -524,7 +1557,7 @@
           }
         ]
       },
-      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 57 },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 146 },
       "id": 16,
       "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "sum"], "showLegend": true } },
       "targets": [
@@ -538,7 +1571,7 @@
       "title": "Download result rate (success / failure)",
       "type": "timeseries"
     },
-    {
+{
       "datasource": { "type": "prometheus", "uid": "$datasource" },
       "description": "Result download p95 duration per model_type.",
       "fieldConfig": {
@@ -548,7 +1581,7 @@
           "unit": "s"
         }
       },
-      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 57 },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 146 },
       "id": 17,
       "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "max"], "showLegend": true } },
       "targets": [
@@ -562,14 +1595,14 @@
       "title": "Download result p95 duration",
       "type": "timeseries"
     },
-    {
+{
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 64 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 153 },
       "id": 600,
       "title": "Infrastructure (per-process, host-wide)",
       "type": "row"
     },
-    {
+{
       "datasource": { "type": "prometheus", "uid": "$datasource" },
       "description": "CPU % consumed by Python tt-media-server processes (uvicorn parent + workers). Sourced from process-exporter group `tt_media_server_python` (see process-exporter.yml).",
       "fieldConfig": {
@@ -579,7 +1612,7 @@
           "unit": "percent"
         }
       },
-      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 65 },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 154 },
       "id": 18,
       "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
       "targets": [
@@ -593,7 +1626,7 @@
       "title": "CPU % (Python processes)",
       "type": "timeseries"
     },
-    {
+{
       "datasource": { "type": "prometheus", "uid": "$datasource" },
       "description": "Resident set size in MB across all Python tt-media-server processes.",
       "fieldConfig": {
@@ -603,7 +1636,7 @@
           "unit": "decmbytes"
         }
       },
-      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 65 },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 154 },
       "id": 19,
       "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
       "targets": [
@@ -617,7 +1650,7 @@
       "title": "Memory RSS (MB)",
       "type": "timeseries"
     },
-    {
+{
       "datasource": { "type": "prometheus", "uid": "$datasource" },
       "description": "Total threads across Python tt-media-server processes.",
       "fieldConfig": {
@@ -627,7 +1660,7 @@
           "unit": "none"
         }
       },
-      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 65 },
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 154 },
       "id": 20,
       "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
       "targets": [
@@ -641,7 +1674,7 @@
       "title": "Threads",
       "type": "timeseries"
     },
-    {
+{
       "datasource": { "type": "prometheus", "uid": "$datasource" },
       "description": "Open file descriptors. Steady growth = leak suspect.",
       "fieldConfig": {
@@ -651,7 +1684,7 @@
           "unit": "none"
         }
       },
-      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 71 },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 160 },
       "id": 21,
       "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
       "targets": [
@@ -665,7 +1698,7 @@
       "title": "Open file descriptors",
       "type": "timeseries"
     },
-    {
+{
       "datasource": { "type": "prometheus", "uid": "$datasource" },
       "description": "Number of distinct uvicorn / Python worker processes. Verifies your worker fan-out matches the configured count.",
       "fieldConfig": {
@@ -675,7 +1708,7 @@
           "unit": "none"
         }
       },
-      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 71 },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 160 },
       "id": 22,
       "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
       "targets": [
@@ -689,7 +1722,7 @@
       "title": "Process count",
       "type": "timeseries"
     },
-    {
+{
       "datasource": { "type": "prometheus", "uid": "$datasource" },
       "description": "Major + minor page faults / sec. Sustained majors = thrashing or memory-mapped IO pressure.",
       "fieldConfig": {
@@ -699,7 +1732,7 @@
           "unit": "ops"
         }
       },
-      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 71 },
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 160 },
       "id": 23,
       "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
       "targets": [
@@ -719,14 +1752,14 @@
       "title": "Page faults / sec",
       "type": "timeseries"
     },
-    {
+{
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 77 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 166 },
       "id": 700,
       "title": "System Info",
       "type": "row"
     },
-    {
+{
       "datasource": { "type": "prometheus", "uid": "$datasource" },
       "description": "System info reported by the server at startup (version, environment, device_mesh_shape, model_runner).",
       "fieldConfig": {
@@ -736,7 +1769,7 @@
           "custom": { "align": "auto", "displayMode": "auto" }
         }
       },
-      "gridPos": { "h": 5, "w": 24, "x": 0, "y": 78 },
+      "gridPos": { "h": 5, "w": 24, "x": 0, "y": 167 },
       "id": 24,
       "options": { "showHeader": true },
       "targets": [
@@ -757,7 +1790,7 @@
   ],
   "refresh": "5s",
   "schemaVersion": 38,
-  "tags": ["tenstorrent", "tt-media-server", "python", "video-gen"],
+  "tags": ["tenstorrent", "tt-media-server", "python", "video-gen", "image-gen"],
   "templating": {
     "list": [
       {
@@ -823,5 +1856,5 @@
   "timezone": "browser",
   "title": "TT Media Server (Python)",
   "uid": "tt-media-server-python",
-  "version": 1
+  "version": 2
 }

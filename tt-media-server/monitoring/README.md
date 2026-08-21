@@ -113,6 +113,51 @@ Open Grafana at **http://localhost:3000** (admin / admin). The dashboard loads
 automatically. PrefillGateway panels are available in the `TT Prefill Gateway`
 dashboard.
 
+## Video generation metrics
+
+The Python dashboard has a **Video Generation** row driven by the
+`tt_media_server_video_*` family (emitted by `telemetry/telemetry_client.py`,
+recorded in `model_services/video_service.py`). The generic request metrics
+answer *how long*; these answer *how much video, how fast*:
+
+| Metric | What it tells you |
+|--------|-------------------|
+| `video_generation_total{request_type,status}` | throughput and outcome, split t2v / i2v; `status` is `success` / `failure` / `cancelled` |
+| `video_generation_duration_seconds{resolution,status}` | end-to-end latency; filter `status="success"` for latency, `"failure"` for time-to-failure |
+| `video_frames_generated_total`, `video_content_seconds_total` | fleet output rate (frames/sec, video-seconds/sec) |
+| `video_denoise_steps_total` | denoise steps **executed** (success only) — Distill/Lightning run 4, AniSora 8, even when the client asked for 20 |
+| `video_frames_per_second`, `video_pixels_per_second` | per-generation throughput; pixels/sec makes 480p and 720p comparable |
+| `video_step_duration_seconds` | mean wall-clock seconds per **executed** denoise step |
+| `video_realtime_factor` | wall seconds per second of playable video (1.0 = realtime) |
+| `video_output_size_bytes`, `video_output_frames` | what the client actually got back |
+| `video_requested_inference_steps`, `video_conditioning_images` | what clients are asking for |
+| `video_generations_in_progress` | live concurrency, split by request type |
+| `video_last_generation_timestamp` | freshness — Since Last Success is 0 while a generation is in flight, then `time() - this` once idle |
+| `video_encode_*` | ffmpeg mp4 encode cost |
+
+Three things to know when reading these:
+
+* **`cancelled` is not `failure`.** `POST /generations/{id}/cancel` is a normal
+  client action, so it gets its own `status` value and is excluded from both
+  sides of the Success Rate panel. Executed steps, frames, and throughput are
+  recorded for successful generations only — a request that timed out or was
+  cancelled after 6s of a 300s budget did not run its steps that fast.
+  Distill, Lightning, and AniSora ignore `num_inference_steps`; executed
+  steps come from those pipelines, not from the request. The Success Rate
+  panel is empty (not 0% or 100%) when no success/failure completed in the
+  last hour.
+
+* **Frame count and resolution come from probing the produced mp4** (PyAV, in
+  `utils.video_manager.probe_video`). On a multihost `sp_runner` deployment the
+  server only receives a file path from its MPI peer, so this is the only source
+  of shape truth. If the probe fails, the resolution label is `unknown` and the
+  shape-derived series are skipped rather than recorded as zero.
+
+* **`video_encode_*` is absent on multihost `sp_runner` deployments.** The mp4 is
+  encoded inside the external runner peer, which serves no `/metrics`. It *is*
+  populated for in-process runners and the CPU postprocessing workers — including
+  a small `resolution="64x64"` series from the postprocessing warmup task.
+
 ## Directory layout
 
 ```

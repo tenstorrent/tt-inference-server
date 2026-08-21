@@ -7,11 +7,15 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import time
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 from numpy.typing import NDArray
+from telemetry.telemetry_client import get_telemetry_client
 
 from utils.decorators import log_execution_time
 from utils.logger import TTLogger
@@ -25,6 +29,8 @@ _VALID_CHANNEL_COUNTS = (1, 3, 4)
 _RGB_CHANNELS = 3
 _MAX_PIXEL_VALUE = 255.0
 _NORMALIZED_RANGE_MAX = 1.0
+# PyAV reports container-level durations in microseconds (av.time_base).
+_AV_TIME_BASE = 1_000_000
 
 
 class VideoManager:
@@ -58,12 +64,17 @@ class VideoManager:
         frames = _normalize_shape(frames)
         frames = _normalize_channels(frames)
 
+        frame_count, height, width = frames.shape[0], frames.shape[1], frames.shape[2]
+        started = time.monotonic()
+
         try:
             cmd = self._build_encode_cmd(frames, output_path, fps, crf, preset)
             self._stream_to_ffmpeg(cmd, frames)
+            self._record_encode(started, frame_count, width, height, status=True)
             return output_path
 
         except Exception as e:
+            self._record_encode(started, frame_count, width, height, status=False)
             self._logger.error(f"Video export failed: {e}")
             raise RuntimeError(f"Failed to export video: {e}") from e
 
@@ -166,6 +177,32 @@ class VideoManager:
             handle.setsampwidth(2)
             handle.setframerate(int(sampling_rate))
             handle.writeframes(pcm.tobytes())
+    def _record_encode(
+        self,
+        started: float,
+        num_frames: int,
+        width: int,
+        height: int,
+        status: bool,
+    ) -> None:
+        """Report encode cost to Prometheus without ever failing the export.
+
+        Encoding runs in whichever process owns the frames — a CPU
+        postprocessing worker, an in-process runner, or (for SP_RUNNER) the
+        external peer. Only the first two are in the server's process tree and
+        therefore visible on /metrics; the peer's observations land nowhere,
+        which is why this is best-effort and silent on error.
+        """
+        try:
+            get_telemetry_client().record_video_encode(
+                duration=time.monotonic() - started,
+                num_frames=num_frames,
+                width=width,
+                height=height,
+                status=status,
+            )
+        except Exception as e:  # pragma: no cover - telemetry must never raise
+            self._logger.warning(f"Failed to record video encode telemetry: {e}")
 
     @staticmethod
     def _build_encode_cmd(
@@ -370,3 +407,76 @@ def _normalize_dtype_single(frame: NDArray) -> NDArray[np.uint8]:
         return frame.clip(0, 255).astype(np.uint8)
 
     return frame.clip(0, 255).astype(np.uint8)
+
+
+@dataclass(frozen=True)
+class VideoProbe:
+    """Shape and length facts read back off a produced mp4.
+
+    Every field is optional. The server side of a multihost video deployment
+    (SP_RUNNER) receives only a file path from its peer — it never sees the
+    frame tensors — so probing the container is the only way to learn what was
+    actually generated. A probe that partly fails yields partly-populated
+    stats rather than nothing, and callers skip the unknown fields.
+    """
+
+    size_bytes: Optional[int] = None
+    width: Optional[int] = None
+    height: Optional[int] = None
+    num_frames: Optional[int] = None
+    duration_seconds: Optional[float] = None
+
+
+def probe_video(path: str) -> VideoProbe:
+    """Read width/height/frames/duration from an mp4 without decoding it.
+
+    Uses PyAV (already a dependency for the LTX audio-video muxing) so this
+    costs one container-header read rather than an ffprobe subprocess. Never
+    raises: a metrics helper must not be able to fail a request that already
+    produced a valid video.
+    """
+    if not path or not isinstance(path, str):
+        return VideoProbe()
+
+    try:
+        size_bytes = os.path.getsize(path)
+    except OSError:
+        return VideoProbe()
+
+    try:
+        import av
+    except ImportError:
+        return VideoProbe(size_bytes=size_bytes)
+
+    try:
+        with av.open(path) as container:
+            if not container.streams.video:
+                return VideoProbe(size_bytes=size_bytes)
+            stream = container.streams.video[0]
+
+            width = getattr(stream, "width", None) or None
+            height = getattr(stream, "height", None) or None
+
+            duration = None
+            if stream.duration and stream.time_base:
+                duration = float(stream.duration * stream.time_base)
+            elif container.duration:
+                duration = container.duration / _AV_TIME_BASE
+
+            # ``stream.frames`` is authoritative for a well-formed mp4 but is 0
+            # for streamed/fragmented containers; fall back to duration x fps.
+            num_frames = stream.frames or None
+            if num_frames is None and duration:
+                rate = stream.average_rate or stream.guessed_rate
+                if rate:
+                    num_frames = round(duration * float(rate)) or None
+
+            return VideoProbe(
+                size_bytes=size_bytes,
+                width=width,
+                height=height,
+                num_frames=num_frames,
+                duration_seconds=duration,
+            )
+    except Exception:
+        return VideoProbe(size_bytes=size_bytes)

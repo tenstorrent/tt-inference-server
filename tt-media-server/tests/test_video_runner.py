@@ -9,6 +9,9 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 
+_orig_config_settings = sys.modules.get("config.settings")
+_orig_telemetry_client = sys.modules.get("telemetry.telemetry_client")
+
 sys.modules["ttnn"] = Mock()
 
 mock_settings = Mock()
@@ -40,6 +43,20 @@ from tt_model_runners.video_runner import (
     run_all_ranks,
     video_request_to_generate_request,
 )
+
+# Restore the real modules so that test files collected after this one (e.g.
+# tests/test_video_metrics.py, which asserts on real Prometheus values) do not
+# inherit our Mocks. Same pattern and rationale as tests/test_device_worker.py:
+# the modules under test above already hold their imported references, so the
+# swap only needs to last for the duration of those imports.
+for _module_name, _original_module in {
+    "config.settings": _orig_config_settings,
+    "telemetry.telemetry_client": _orig_telemetry_client,
+}.items():
+    if _original_module is not None:
+        sys.modules[_module_name] = _original_module
+    else:
+        sys.modules.pop(_module_name, None)
 
 
 class TestRank:
