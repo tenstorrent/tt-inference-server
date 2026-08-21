@@ -320,7 +320,7 @@ AUTH=()
 code="$(curl -s -o /tmp/hw-smoke-models.json -w '%{http_code}' \
   "${AUTH[@]+"${AUTH[@]}"}" "http://127.0.0.1:${LOCAL_PORT}/v1/models")"
 [ "$code" = "200" ] || fail "/v1/models returned $code"
-SERVED_ID="$(python3 -c 'import json;d=json.load(open("/tmp/hw-smoke-models.json"));print((d.get("data") or [{}])[0].get("id",""))')"
+SERVED_ID="$(python3 -c 'import json;d=json.load(open("/tmp/hw-smoke-models.json"));print((d.get("data") or [{}])[0].get("id",""))' 2>/dev/null || true)"
 [ -n "$SERVED_ID" ] \
   || fail "/v1/models returned 200 but listed no model: $(head -c 300 /tmp/hw-smoke-models.json)"
 ok "/v1/models 200, serving id=$SERVED_ID"
@@ -391,7 +391,7 @@ if [ -n "$INFER_PATH" ]; then
       ok "$INFER_PATH 200 with generated content"
       ;;
     embeddings)
-      dims="$(python3 -c 'import json;d=json.load(open("/tmp/hw-smoke-infer.json"));print(len((d.get("data") or [{}])[0].get("embedding") or []))')"
+      dims="$(python3 -c 'import json;d=json.load(open("/tmp/hw-smoke-infer.json"));print(len((d.get("data") or [{}])[0].get("embedding") or []))' 2>/dev/null || true)"
       [ "${dims:-0}" -gt 0 ] \
         || fail "$INFER_PATH returned 200 but an empty vector: $(head -c 300 /tmp/hw-smoke-infer.json)"
       ok "$INFER_PATH 200 with a ${dims}-dimension vector"

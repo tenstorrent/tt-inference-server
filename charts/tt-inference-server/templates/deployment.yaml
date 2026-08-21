@@ -6,12 +6,19 @@
 {{- if le $startupPeriod 0 }}{{- fail "probes.startup.periodSeconds must be greater than 0 (it divides progressDeadlineSeconds to size the startupProbe budget)." }}{{- end }}
 {{- /* default true (provision hugepages) when the hugepages map is absent/null or omits enabled. */ -}}
 {{- $hugepages := dig "enabled" true (.Values.hugepages | default dict) }}
-{{- /* Size hugepages per device; a copy so $cfg is untouched. */ -}}
 {{- $resources := deepCopy ($cfg.resources | default dict) }}
+{{- /* No size means the device needs no hugepages (gpu/cpu): turn the whole
+       feature off rather than mounting /dev/hugepages-1G with no reservation. */ -}}
 {{- $hpSize := include "tt-inference-server.hugepagesSize" . }}
+{{- $hugepages = and $hugepages (ne $hpSize "") }}
 {{- range $group := list "limits" "requests" }}
-{{- if and $hugepages $hpSize }}
-{{- $_ := set $resources $group (merge (dict "hugepages-1Gi" $hpSize) (index $resources $group | default dict)) }}
+{{- /* Sizing hugepages here would let requests and limits disagree, which k8s
+       rejects; hugepages.size is the one place that sets both. */ -}}
+{{- if hasKey (index $resources $group | default dict) "hugepages-1Gi" }}
+{{- fail (printf "set hugepages.size, not resources.%s.hugepages-1Gi: the request and limit must match and the chart sets both." $group) }}
+{{- end }}
+{{- if $hugepages }}
+{{- $_ := set $resources $group (merge (index $resources $group | default dict) (dict "hugepages-1Gi" $hpSize)) }}
 {{- else if hasKey $resources $group }}
 {{- $_ := unset (index $resources $group) "hugepages-1Gi" }}
 {{- if not (index $resources $group) }}{{- $_ := unset $resources $group }}{{- end }}

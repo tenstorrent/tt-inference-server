@@ -38,6 +38,9 @@ looks authenticated but is not, so make the operator pick. vLLM needs no gate:
 it is open unless VLLM_API_KEY is set, which is what auth.apiKey sets.
 */}}
 {{- $auth := .Values.auth | default dict }}
+{{- if and (dig "apiKey" "" $auth) (dig "disabled" false $auth) }}
+  {{- fail "auth.apiKey and auth.disabled are contradictory: the server would honour NO_AUTH and serve unauthenticated while the key sits in the release Secret. Set one." }}
+{{- end }}
 {{- if or (eq $engine "media") (eq $engine "forge") }}
   {{- if and (not (dig "apiKey" "" $auth)) (not (dig "disabled" false $auth)) }}
     {{- fail (printf "engine '%s' authenticates its inference routes with a bearer key, and leaving it unset would silently use the server image's built-in default. Set auth.apiKey=<key> (stored in the release Secret as API_KEY), or auth.disabled=true to run without auth." $engine) }}
