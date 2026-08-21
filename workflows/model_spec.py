@@ -311,19 +311,9 @@ sdxl_forge_impl = ImplSpec(
 #                             workloads and their benchmarks/release pins stay isolated.
 #   qwen36_blackhole_vlm   -> native vision (VLM); model_type=VLM, modalities
 #                             text+image+video, larger trace_region for the vision tower.
-#   qwen36_blackhole_b8    -> same as text but a batch=8 (max_num_seqs=8) throughput
-#                             profile.
 qwen36_blackhole_impl = ImplSpec(
     impl_id="qwen36_blackhole",
     impl_name="qwen36-blackhole",
-    repo_url="https://github.com/tenstorrent/tt-metal",
-    code_path="models/demos/blackhole/qwen36",
-)
-# Same tt-metal code as qwen36_blackhole; distinct impl_id only so the batch=8
-# throughput spec gets its own model_id and is selectable via --impl qwen36-blackhole-b8.
-qwen36_blackhole_b8_impl = ImplSpec(
-    impl_id="qwen36_blackhole_b8",
-    impl_name="qwen36-blackhole-b8",
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/blackhole/qwen36",
 )
@@ -361,7 +351,6 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "tt_vllm_plugin": tt_vllm_plugin_impl,
     "sdxl_forge": sdxl_forge_impl,
     "qwen36_blackhole": qwen36_blackhole_impl,
-    "qwen36_blackhole_b8": qwen36_blackhole_b8_impl,
     "qwen36_blackhole_vlm": qwen36_blackhole_vlm_impl,
     "diffusion_gemma": diffusion_gemma_impl,
     "training_lora": training_lora_impl,
