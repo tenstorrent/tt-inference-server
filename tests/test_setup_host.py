@@ -19,11 +19,12 @@ import pytest
 
 from workflows.utils import get_repo_root_path
 from workflows.runtime_config import RuntimeConfig
-from workflows.validate_setup import validate_runtime_args
+from workflows.validate_setup import validate_custom_weights, validate_runtime_args
 from workflows.model_spec import (
     DeviceModelSpec,
     ImplSpec,
     ModelSpec,
+    derive_custom_weights_spec,
 )
 from workflows.run_docker_server import (
     generate_docker_run_command,
@@ -936,3 +937,267 @@ class TestSetupWeightsHostVolumeResume:
             mock_run.return_value.returncode = 1
             with pytest.raises(AssertionError):
                 manager.setup_weights_huggingface()
+
+
+CUSTOM_LABEL_HF = "myorg/llama-3.1-8b-finetune"
+CUSTOM_LABEL_HF_NAME = "llama-3.1-8b-finetune"
+CUSTOM_LABEL_LOCAL = "my-local-finetune"
+
+
+class TestDeriveCustomWeightsSpec:
+    """derive_custom_weights_spec re-keys a base spec onto a custom identity."""
+
+    def test_identity_fields_overridden(self, tiny_model_spec):
+        derived = derive_custom_weights_spec(tiny_model_spec, CUSTOM_LABEL_HF)
+
+        assert derived.model_name == CUSTOM_LABEL_HF_NAME
+        assert derived.hf_model_repo == CUSTOM_LABEL_HF
+        assert derived.hf_weights_repo == CUSTOM_LABEL_HF
+        assert derived.model_id == (
+            f"id_{tiny_model_spec.impl.impl_name}_{CUSTOM_LABEL_HF_NAME}_n150"
+        )
+        # Custom-alone (no local path): vLLM --model is the label (a real HF repo),
+        # and /v1/models reports the label via served_model_name.
+        assert derived.device_model_spec.vllm_args["model"] == CUSTOM_LABEL_HF
+        assert (
+            derived.device_model_spec.vllm_args["served_model_name"] == CUSTOM_LABEL_HF
+        )
+
+    def test_local_model_path_points_vllm_model_at_mount(self, tiny_model_spec):
+        """With --host-weights-dir, vLLM's --model resolves config/tokenizer from
+        the local mount (offline), while served_model_name still exposes the
+        label. Avoids a 404 when the label is not a real HF repo."""
+        container_path = "/home/container_app_user/readonly_weights_mount/my_weights"
+        derived = derive_custom_weights_spec(
+            tiny_model_spec, CUSTOM_LABEL_LOCAL, local_model_path=container_path
+        )
+        assert derived.device_model_spec.vllm_args["model"] == container_path
+        assert (
+            derived.device_model_spec.vllm_args["served_model_name"]
+            == CUSTOM_LABEL_LOCAL
+        )
+        # Identity/cache key is still the basename, independent of the model path.
+        assert derived.model_name == CUSTOM_LABEL_LOCAL
+        assert derived.hf_model_repo == CUSTOM_LABEL_LOCAL
+
+    def test_inherits_base_fields(self, tiny_model_spec):
+        derived = derive_custom_weights_spec(tiny_model_spec, CUSTOM_LABEL_HF)
+
+        # impl / device / engine / image inherited from the base spec.
+        assert derived.impl == tiny_model_spec.impl
+        assert derived.device_type == tiny_model_spec.device_type
+        assert derived.inference_engine == tiny_model_spec.inference_engine
+        assert derived.docker_image == tiny_model_spec.docker_image
+        assert (
+            derived.device_model_spec.max_context
+            == tiny_model_spec.device_model_spec.max_context
+        )
+
+    def test_base_spec_unmutated(self, tiny_model_spec):
+        base_name = tiny_model_spec.model_name
+        base_repo = tiny_model_spec.hf_model_repo
+        base_model_arg = tiny_model_spec.device_model_spec.vllm_args["model"]
+
+        derive_custom_weights_spec(tiny_model_spec, CUSTOM_LABEL_HF)
+
+        assert tiny_model_spec.model_name == base_name
+        assert tiny_model_spec.hf_model_repo == base_repo
+        assert tiny_model_spec.device_model_spec.vllm_args["model"] == base_model_arg
+
+    def test_bare_label_uses_basename(self, tiny_model_spec):
+        derived = derive_custom_weights_spec(tiny_model_spec, CUSTOM_LABEL_LOCAL)
+        assert derived.model_name == CUSTOM_LABEL_LOCAL
+        assert derived.hf_model_repo == CUSTOM_LABEL_LOCAL
+
+    def test_empty_label_raises(self, tiny_model_spec):
+        with pytest.raises(ValueError, match="non-empty"):
+            derive_custom_weights_spec(tiny_model_spec, "   ")
+
+
+class TestCustomWeightsIdentitySeparation:
+    """The derived model_name gives custom weights their own volume/cache subtree."""
+
+    def test_distinct_volume_id_and_cache_dir_from_base(
+        self, tiny_model_spec, temp_dir
+    ):
+        host_volume = str(temp_dir / "persistent_volume")
+        base_config = SetupConfig(
+            model_spec=tiny_model_spec, host_volume=host_volume
+        )
+        derived = derive_custom_weights_spec(tiny_model_spec, CUSTOM_LABEL_HF)
+        custom_config = SetupConfig(model_spec=derived, host_volume=host_volume)
+
+        assert base_config.docker_volume_name != custom_config.docker_volume_name
+        assert CUSTOM_LABEL_HF_NAME in custom_config.docker_volume_name
+        assert (
+            base_config.container_tt_metal_cache_dir
+            != custom_config.container_tt_metal_cache_dir
+        )
+        assert (
+            base_config.host_tt_metal_cache_dir
+            != custom_config.host_tt_metal_cache_dir
+        )
+        assert custom_config.container_tt_metal_cache_dir == (
+            custom_config.cache_root
+            / "tt_metal_cache"
+            / f"cache_{CUSTOM_LABEL_HF_NAME}"
+        )
+
+    def test_two_labels_coexist_in_distinct_subtrees(self, tiny_model_spec, temp_dir):
+        host_volume = str(temp_dir / "persistent_volume")
+        spec_a = derive_custom_weights_spec(tiny_model_spec, "myorg/finetune-a")
+        spec_b = derive_custom_weights_spec(tiny_model_spec, "myorg/finetune-b")
+        config_a = SetupConfig(model_spec=spec_a, host_volume=host_volume)
+        config_b = SetupConfig(model_spec=spec_b, host_volume=host_volume)
+
+        assert config_a.docker_volume_name != config_b.docker_volume_name
+        assert config_a.host_model_volume_root != config_b.host_model_volume_root
+        assert config_a.host_tt_metal_cache_dir != config_b.host_tt_metal_cache_dir
+
+    def test_custom_plus_host_weights_binds_local_and_skips_hf(
+        self, tiny_model_spec, temp_dir
+    ):
+        """custom + --host-weights-dir loads local bytes (bind mount), never HF."""
+        weights_dir = temp_dir / "custom_weights"
+        weights_dir.mkdir()
+        (weights_dir / "config.json").write_text("{}")
+
+        derived = derive_custom_weights_spec(tiny_model_spec, CUSTOM_LABEL_LOCAL)
+        config = SetupConfig(
+            model_spec=derived, host_weights_dir=str(weights_dir)
+        )
+
+        # Local bytes: bind mount, container path is the mount (not a HF snapshot).
+        assert config.host_model_weights_mount_dir.resolve() == weights_dir.resolve()
+        assert config.container_model_weights_path == (
+            config.container_readonly_model_weights_dir / weights_dir.name
+        )
+        assert config.host_model_weights_snapshot_dir is None
+
+    def test_custom_plus_host_weights_does_not_hit_hf(
+        self, tiny_model_spec, temp_dir
+    ):
+        """setup_weights_huggingface early-returns for host_weights_dir: no download."""
+        weights_dir = temp_dir / "custom_weights"
+        weights_dir.mkdir()
+        (weights_dir / "config.json").write_text("{}")
+
+        derived = derive_custom_weights_spec(tiny_model_spec, CUSTOM_LABEL_LOCAL)
+        manager = HostSetupManager(
+            model_spec=derived,
+            automatic=True,
+            jwt_secret="test_jwt",
+            hf_token="hf_test_token",
+            host_weights_dir=str(weights_dir),
+        )
+        with patch("subprocess.run") as mock_run:
+            manager.setup_weights_huggingface()
+        mock_run.assert_not_called()
+
+
+class TestValidateCustomWeights:
+    """validate_custom_weights fail-fast checks for source-of-bytes consistency."""
+
+    def _config(self, **overrides):
+        defaults = {
+            "model": TINY_MODEL_NAME,
+            "device": "n150",
+            "workflow": "server",
+            "docker_server": True,
+            "custom_weights": None,
+            "host_weights_dir": None,
+        }
+        defaults.update(overrides)
+        return RuntimeConfig(**defaults)
+
+    def test_noop_when_custom_weights_unset(self, tiny_model_spec):
+        # Should not raise and not require any weights.
+        validate_custom_weights(tiny_model_spec, self._config())
+
+    def test_host_weights_valid_dir_passes(self, tiny_model_spec, temp_dir):
+        weights_dir = temp_dir / "weights"
+        weights_dir.mkdir()
+        (weights_dir / "config.json").write_text("{}")
+        (weights_dir / "tokenizer.json").write_text("{}")
+        (weights_dir / "model.safetensors").write_bytes(b"\x00" * 8)
+
+        derived = derive_custom_weights_spec(tiny_model_spec, CUSTOM_LABEL_LOCAL)
+        cfg = self._config(
+            custom_weights=CUSTOM_LABEL_LOCAL, host_weights_dir=str(weights_dir)
+        )
+        validate_custom_weights(derived, cfg)
+
+    def test_host_weights_missing_dir_raises(self, tiny_model_spec):
+        derived = derive_custom_weights_spec(tiny_model_spec, CUSTOM_LABEL_LOCAL)
+        cfg = self._config(
+            custom_weights=CUSTOM_LABEL_LOCAL,
+            host_weights_dir="/nonexistent/weights/path",
+        )
+        with pytest.raises(ValueError, match="does not exist"):
+            validate_custom_weights(derived, cfg)
+
+    def test_host_weights_incomplete_dir_raises(self, tiny_model_spec, temp_dir):
+        weights_dir = temp_dir / "empty_weights"
+        weights_dir.mkdir()
+
+        derived = derive_custom_weights_spec(tiny_model_spec, CUSTOM_LABEL_LOCAL)
+        cfg = self._config(
+            custom_weights=CUSTOM_LABEL_LOCAL, host_weights_dir=str(weights_dir)
+        )
+        with pytest.raises(ValueError, match="recognizable model weights layout"):
+            validate_custom_weights(derived, cfg)
+
+    def test_bare_label_without_host_weights_raises(self, tiny_model_spec):
+        """A non-repo-like label with no --host-weights-dir cannot be an HF repo."""
+        derived = derive_custom_weights_spec(tiny_model_spec, CUSTOM_LABEL_LOCAL)
+        cfg = self._config(custom_weights=CUSTOM_LABEL_LOCAL, host_weights_dir=None)
+        with pytest.raises(ValueError, match="form 'org/name'"):
+            validate_custom_weights(derived, cfg)
+
+    def test_repo_label_without_host_weights_passes(self, tiny_model_spec):
+        """An org/name label is accepted as an HF repo id (Hub access checked later)."""
+        derived = derive_custom_weights_spec(tiny_model_spec, CUSTOM_LABEL_HF)
+        cfg = self._config(custom_weights=CUSTOM_LABEL_HF, host_weights_dir=None)
+        validate_custom_weights(derived, cfg)
+
+
+class TestCustomWeightsDockerCommand:
+    """Custom-weights deploys mount the derived runtime spec into the container."""
+
+    def _make_json_fpath(self, temp_dir):
+        json_fpath = temp_dir / "runtime_model_spec.json"
+        json_fpath.write_text("{}")
+        return json_fpath
+
+    def _generate_cmd(self, model_spec, runtime_config, config, json_fpath):
+        with patch(
+            "workflows.run_docker_server.get_repo_root_path",
+            return_value=Path("/tmp"),
+        ), patch("workflows.run_docker_server.DeviceTypes"), patch(
+            "workflows.run_docker_server.short_uuid", return_value="test123"
+        ):
+            return generate_docker_run_command(
+                model_spec, runtime_config, config, json_fpath
+            )
+
+    def test_runtime_spec_mounted_without_dev_mode(
+        self, tiny_model_spec, mock_cli_args, temp_dir
+    ):
+        """The runtime spec JSON + RUNTIME_MODEL_SPEC_JSON_PATH are wired in even
+        when dev_mode is False, so the container uses the derived custom spec
+        instead of resolving the (absent) label from its baked catalog."""
+        derived = derive_custom_weights_spec(tiny_model_spec, CUSTOM_LABEL_HF)
+        mock_cli_args.custom_weights = CUSTOM_LABEL_HF
+        mock_cli_args.dev_mode = False
+        config = SetupConfig(model_spec=derived)
+        json_fpath = self._make_json_fpath(temp_dir)
+
+        docker_command, _ = self._generate_cmd(
+            derived, mock_cli_args, config, json_fpath
+        )
+
+        cmd_str = _join_docker_cmd(docker_command)
+        assert str(json_fpath) in cmd_str
+        assert _find_env_var(docker_command, "RUNTIME_MODEL_SPEC_JSON_PATH") is not None
+        # No dev source mounts when dev_mode is off.
+        assert "/app/src" not in cmd_str
