@@ -293,6 +293,13 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
             else:
                 audio_data = audio_arrays
 
+            # Measured before the pad above, which is silence: throughput has to
+            # be credited the audio that was actually submitted, or a batch of
+            # unequal lengths reports the longer item's duration twice.
+            audio_durations = [
+                len(arr) / self.settings.default_sample_rate for arr in audio_arrays
+            ]
+
             # prompt is batch-homogeneous in tt-metal's WhisperGenerator: take the
             # first request's prompt and warn if requests disagree.
             prompts = {req.prompt for req in requests if req.prompt is not None}
@@ -307,6 +314,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 stream=False,
                 generation_params=generation_params,
                 prompt=prompt,
+                audio_durations=audio_durations,
             )
 
             responses = []
@@ -351,22 +359,31 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
             return float(chunk_length)
         return WHISPER_ENCODER_FRAME_SECONDS
 
-    def _audio_stage_context(self, current_batch):
-        """Label values and the audio seconds the two stages actually consume.
+    def _audio_stage_context(self, current_batch, audio_durations=None):
+        """Label values and the useful audio seconds credited to the two stages.
 
         Counted here rather than read off PerfMetrics.total_audio_s, which sums
         submitted durations: an item longer than one frame is truncated to it.
         Reachable here — chunking never splits a single long VAD segment, so
         uninterrupted speech becomes one long chunk.
+
+        `audio_durations` overrides the duration derived from each array's
+        length. Batched calls zero-pad the shorter item up to the longer one
+        before submitting, and that pad is silence no stage turns into useful
+        features — measuring the submitted array would credit it as real audio.
         """
         frame_seconds = self._encoder_frame_seconds
         audio_seconds = 0.0
         channels = 1
         sample_rate = self.settings.default_sample_rate
-        for rate, audio_array in current_batch:
+        for index, (rate, audio_array) in enumerate(current_batch):
             if rate:
                 sample_rate = rate
-                audio_seconds += min(audio_array.shape[0] / rate, frame_seconds)
+                if audio_durations is not None and index < len(audio_durations):
+                    duration = audio_durations[index]
+                else:
+                    duration = audio_array.shape[0] / rate
+                audio_seconds += min(duration, frame_seconds)
             if audio_array.ndim > 1:
                 channels = audio_array.shape[1]
 
@@ -922,6 +939,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                     Union[GenerationParams, List[GenerationParams]]
                 ] = None,
                 prompt: Optional[str] = None,
+                audio_durations: Optional[List[float]] = None,
             ):
                 try:
                     # Validate pipeline inputs
@@ -976,7 +994,9 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                         return result
 
                     # Built here: only this scope knows what was submitted.
-                    stage_context = self._audio_stage_context(current_batch)
+                    stage_context = self._audio_stage_context(
+                        current_batch, audio_durations=audio_durations
+                    )
                     if stream:
                         # Streaming defers every stage to the first pull, so the
                         # timings do not exist yet.

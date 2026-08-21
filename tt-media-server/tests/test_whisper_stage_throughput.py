@@ -263,6 +263,46 @@ def test_batch_audio_seconds_sum_per_item(whisper_module):
     assert context["encoder_labels"]["batch"] == "2"
 
 
+def test_batch_padding_is_not_credited_as_audio(whisper_module):
+    """A 2-item batch is zero-padded to the longer item before submission.
+
+    The arrays therefore both measure 25s, but only 30s of real audio went in.
+    Deriving duration from the submitted array would credit the pad and report
+    50s, inflating both stage throughputs by 1.67x.
+    """
+    runner = _runner(whisper_module)
+    padded = _batch(25.0, count=2)
+
+    assert runner._audio_stage_context(padded)["audio_seconds"] == pytest.approx(50.0)
+
+    context = runner._audio_stage_context(padded, audio_durations=[5.0, 25.0])
+    assert context["audio_seconds"] == pytest.approx(30.0)
+    assert context["feature_labels"]["batch"] == "2"
+
+
+def test_supplied_durations_are_still_capped_at_the_frame(whisper_module):
+    """The clamp has to survive the override, or an over-long submitted
+    duration reintroduces the inflation the extractor's truncation causes."""
+    runner = _runner(whisper_module)
+    context = runner._audio_stage_context(
+        _batch(90.0, count=2), audio_durations=[90.0, 10.0]
+    )
+
+    assert context["audio_seconds"] == pytest.approx(40.0)
+
+
+def test_missing_durations_fall_back_to_the_array(whisper_module):
+    """Every non-batched caller passes nothing; the array stays the source."""
+    runner = _runner(whisper_module)
+
+    assert runner._audio_stage_context(_batch(7.0), audio_durations=None)[
+        "audio_seconds"
+    ] == pytest.approx(7.0)
+    assert runner._audio_stage_context(_batch(7.0, count=2), audio_durations=[3.0])[
+        "audio_seconds"
+    ] == pytest.approx(10.0)
+
+
 def test_labels_carry_the_operating_point(whisper_module):
     runner = _runner(whisper_module)
     context = runner._audio_stage_context(_batch(4.0, sample_rate=8000))
