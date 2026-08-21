@@ -16,6 +16,10 @@
 #                                   Never the steady state: the smoke guards
 #                                   that pin.
 #   HUGEPAGES                       true|false (default: probe the node)
+#   POD_PROXY                       http proxy the Pod should use for weight
+#                                   downloads (default: $HTTPS_PROXY with its
+#                                   host resolved to an IP, since the Pod's DNS
+#                                   cannot resolve the runner's proxy Service)
 #   HUGEPAGES_SIZE                  hugepages-1Gi request/limit when they are on
 #                                   (default: the node's allocatable). The chart
 #                                   asks for 32Gi regardless of board count,
@@ -43,6 +47,7 @@ RELEASE="${RELEASE:-ttis-hw}"
 IMAGE_TAG="${IMAGE_TAG:-}"
 HUGEPAGES="${HUGEPAGES:-}"
 HUGEPAGES_SIZE="${HUGEPAGES_SIZE:-}"
+POD_PROXY="${POD_PROXY:-}"
 HF_TOKEN="${HF_TOKEN:-}"
 HF_CACHE_DIR="${HF_CACHE_DIR:-}"
 PULL_SECRET="${PULL_SECRET:-}"
@@ -105,12 +110,24 @@ HELM_SET+=(--set "hugepages.enabled=$HUGEPAGES")
 # The chart's 32Gi request is Galaxy-sized and fixed, so on a smaller host the
 # Pod is unschedulable for a reason that has nothing to do with what we assert.
 # Capacity adaptation, like CPU_REQUEST / MEMORY_REQUEST.
-if [ "$HUGEPAGES" = "true" ]; then
-  [ -n "$HUGEPAGES_SIZE" ] || HUGEPAGES_SIZE="$hp_alloc"
-  if [ -n "$HUGEPAGES_SIZE" ]; then
-    info "hugepages request/limit -> $HUGEPAGES_SIZE (chart default is 32Gi)"
-    HELM_SET+=(--set "defaults.resources.requests.hugepages-1Gi=$HUGEPAGES_SIZE"
-               --set "defaults.resources.limits.hugepages-1Gi=$HUGEPAGES_SIZE")
+if [ "$HUGEPAGES" = "true" ] && [ -z "$HUGEPAGES_SIZE" ]; then
+  HUGEPAGES_SIZE="$hp_alloc"
+fi
+
+# The Pod downloads weights from HuggingFace, and on a proxied runner it cannot
+# inherit the proxy: the host resolves the proxy Service through the outer
+# cluster's DNS, the Pod cannot. Resolve it to an IP, as tt-operator does for
+# its own spawned pods. No-op where nothing is proxied.
+if [ -z "$POD_PROXY" ] && [ -n "${HTTPS_PROXY:-${https_proxy:-}}" ]; then
+  proxy_url="${HTTPS_PROXY:-$https_proxy}"
+  proxy_host="$(printf '%s' "$proxy_url" | sed -E 's,^[a-z]+://,,; s,/.*$,,; s,:[0-9]+$,,')"
+  proxy_port="$(printf '%s' "$proxy_url" | sed -nE 's,.*:([0-9]+)/?$,\1,p')"
+  proxy_ip="$(getent hosts "$proxy_host" | awk '{print $1; exit}' || true)"
+  if [ -n "$proxy_ip" ]; then
+    POD_PROXY="http://${proxy_ip}:${proxy_port:-3128}"
+    info "pod proxy -> $POD_PROXY (from $proxy_url)"
+  else
+    warn "could not resolve the proxy host $proxy_host — the Pod will have no egress and a weight download will fail"
   fi
 fi
 
@@ -122,12 +139,37 @@ if [ -z "$API_KEY" ]; then
 fi
 HELM_SET+=(--set "auth.apiKey=$API_KEY")
 
-# A values file, not --set: the path contains the model name, and model names
-# contain dots that --set reads as separators.
+# A values file, not --set: the row path contains the model name (and model names
+# contain dots that --set reads as separators), and NO_PROXY contains commas.
+if [ -n "$IMAGE_TAG" ] || [ -n "$CPU_REQUEST" ] || [ -n "$MEMORY_REQUEST" ] \
+   || [ -n "$HUGEPAGES_SIZE" ] || [ -n "$POD_PROXY" ]; then
+  OVERRIDES="$(mktemp /tmp/hw-smoke-overrides.XXXXXX)"
+  : > "$OVERRIDES"
+  if [ -n "$HUGEPAGES_SIZE" ] || [ -n "$POD_PROXY" ]; then
+    {
+      echo "defaults:"
+      if [ -n "$HUGEPAGES_SIZE" ]; then
+        echo "  resources:"
+        echo "    requests:"
+        echo "      hugepages-1Gi: \"$HUGEPAGES_SIZE\""
+        echo "    limits:"
+        echo "      hugepages-1Gi: \"$HUGEPAGES_SIZE\""
+      fi
+      if [ -n "$POD_PROXY" ]; then
+        echo "  extraEnv:"
+        echo "    - name: HTTPS_PROXY"
+        echo "      value: \"$POD_PROXY\""
+        echo "    - name: HTTP_PROXY"
+        echo "      value: \"$POD_PROXY\""
+        echo "    - name: NO_PROXY"
+        echo "      value: \"${NO_PROXY:-${no_proxy:-}}\""
+      fi
+    } >> "$OVERRIDES"
+  fi
+fi
 if [ -n "$IMAGE_TAG" ] || [ -n "$CPU_REQUEST" ] || [ -n "$MEMORY_REQUEST" ]; then
   { [ -n "$ENGINE" ] && [ -n "$IMPL" ]; } \
     || fail "IMAGE_TAG / CPU_REQUEST / MEMORY_REQUEST address models.<model>.<engine>.<device>.impls.<impl>, so ENGINE and IMPL must be set explicitly"
-  OVERRIDES="$(mktemp /tmp/hw-smoke-overrides.XXXXXX)"
   {
     echo "models:"
     echo "  \"$MODEL\":"
@@ -145,8 +187,10 @@ if [ -n "$IMAGE_TAG" ] || [ -n "$CPU_REQUEST" ] || [ -n "$MEMORY_REQUEST" ]; the
       [ -n "$CPU_REQUEST" ]    && echo "                cpu: \"$CPU_REQUEST\""
       [ -n "$MEMORY_REQUEST" ] && echo "                memory: \"$MEMORY_REQUEST\""
     fi
-  } > "$OVERRIDES"
-  info "row overrides:"
+  } >> "$OVERRIDES"
+fi
+if [ -n "$OVERRIDES" ]; then
+  info "overrides:"
   sed 's/^/       /' "$OVERRIDES"
   HELM_SET+=(-f "$OVERRIDES")
 fi
