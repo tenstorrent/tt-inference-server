@@ -2,7 +2,8 @@
 # ---------------------------------------------------------------------------
 # Hardware smoke — the chart's runtime assumptions, on real silicon.
 #
-# Third tier of the chart's CI (see .github/workflows/helm-hw-smoke.yml):
+# Third tier of the chart's CI (nightly / on-demand, see
+# .github/workflows/helm-hw-smoke.yml):
 #   render gate  (helm-chart-validate) -> the manifests are well-formed
 #   install gate (helm-install-kind)   -> a live API server accepts them, and the
 #                                         Pod stalls only for lack of a device
