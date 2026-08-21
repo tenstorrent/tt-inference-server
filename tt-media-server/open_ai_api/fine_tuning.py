@@ -7,6 +7,7 @@ import zipfile
 
 from config.constants import JobTypes
 from config.settings import get_settings
+from domain.adapter_merge_request import AdapterMergeRequest
 from domain.training_request import TrainingRequest
 from fastapi import APIRouter, Depends, HTTPException, Security
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -254,3 +255,37 @@ async def download_checkpoint(
             "Content-Disposition": f"attachment; filename=adapter_{checkpoint_id}.zip"
         },
     )
+
+
+@router.post("/jobs/{job_id}/checkpoints/{checkpoint_id}/merge")
+async def merge_adapter_checkpoint(
+    job_id: str,
+    checkpoint_id: str,
+    service: BaseJobService = Depends(service_resolver),
+    api_key: str = Security(get_api_key),
+    org_id: str = Depends(get_org_id),
+):
+    """
+    Merge a LoRA adapter checkpoint into its base model, producing a full model
+    checkpoint that can be served by the inference container.
+
+    Poll the returned job via GET /jobs/{job_id}; on completion its result_path
+    points at the merged checkpoint.
+
+    Returns:
+        JSONResponse: Adapter merge job object with job ID and metadata.
+
+    Raises:
+        HTTPException: If the checkpoint is not found or the merge cannot start.
+    """
+    request = AdapterMergeRequest(
+        source_job_id=job_id,
+        checkpoint_id=checkpoint_id,
+    )
+    try:
+        job_data = await service.create_adapter_merge_job(request, org_id=org_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return JSONResponse(content=job_data, status_code=201)

@@ -25,7 +25,8 @@ The list of ModelSpecTemplates in https://github.com/tenstorrent/tt-inference-se
 
 For example, for Qwen3-32B on WH Galaxy:
 ```python
-ModelSpecTemplate(
+(
+    ModelSpecTemplate(
         weights=["Qwen/Qwen3-32B"],
         impl=qwen3_32b_galaxy_impl,
         tt_metal_commit="a9b09e0",
@@ -62,6 +63,7 @@ ModelSpecTemplate(
         status=ModelStatusTypes.COMPLETE,
         has_builtin_warmup=True,
     ),
+)
 ```
 
 ## Step 3: Add Accuracy Evals
@@ -141,35 +143,37 @@ EvalConfig(
 #### Step 3B: Add EvalTask Entries
 Each EvalTask specifies a benchmark/task (e.g., AIME, GPQA, IFEval) the model will be evaluated on. You may add multiple tasks per model. Below is an example for AIME24:
 ```python
-EvalTask(
-    task_name="r1_aime24",
-    score=EvalTaskScore(
-        published_score=70.00,
-        published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
-        gpu_reference_score=70.00,
-        gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/112",
-        score_func=score_task_single_key,
-        score_func_kwargs={
-            "result_keys": [
-                "exact_match,none",
-            ],
-            "unit": "percent",
+(
+    EvalTask(
+        task_name="r1_aime24",
+        score=EvalTaskScore(
+            published_score=70.00,
+            published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
+            gpu_reference_score=70.00,
+            gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/112",
+            score_func=score_task_single_key,
+            score_func_kwargs={
+                "result_keys": [
+                    "exact_match,none",
+                ],
+                "unit": "percent",
+            },
+        ),
+        workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+        include_path="work_dir",
+        apply_chat_template=True,
+        model_kwargs={
+            "model": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
+            "base_url": "http://127.0.0.1:8000/v1/completions",
+            "tokenizer_backend": "huggingface",
+            "max_length": 65536,
         },
+        gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
+        seed=42,
+        num_fewshot=0,
+        log_samples=True,
     ),
-    workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-    include_path="work_dir",
-    apply_chat_template=True,
-    model_kwargs={
-        "model": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
-        "base_url": "http://127.0.0.1:8000/v1/completions",
-        "tokenizer_backend": "huggingface",
-        "max_length": 65536,
-    },
-    gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
-    seed=42,
-    num_fewshot=0,
-    log_samples=True,
-),
+)
 ```
 
 **Parameter notes:**
