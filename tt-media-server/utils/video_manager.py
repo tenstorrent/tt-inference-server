@@ -177,6 +177,7 @@ class VideoManager:
             handle.setsampwidth(2)
             handle.setframerate(int(sampling_rate))
             handle.writeframes(pcm.tobytes())
+
     def _record_encode(
         self,
         started: float,

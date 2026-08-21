@@ -90,6 +90,7 @@ class VideoGenerateRequest(BaseRequest):
             )
         return value
 
+
 # TODO: Remove model specific logic
 def _is_minimax_h3() -> bool:
     from config.constants import ModelRunners

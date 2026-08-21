@@ -1608,7 +1608,8 @@ class TTMiniMaxH3Runner(TTDiTRunner):
             num_frames=num_frames,
             height=height,
             width=width,
-            num_inference_steps=request.num_inference_steps or MINIMAX_H3_NUM_INFERENCE_STEPS,
+            num_inference_steps=request.num_inference_steps
+            or MINIMAX_H3_NUM_INFERENCE_STEPS,
             seed=int(request.seed) if request.seed is not None else 0,
         )
 
