@@ -2,6 +2,15 @@
 Description=LTX-2.3-Fast media server (tt-media-server, Galaxy)
 After=network-online.target
 Wants=network-online.target
+# tenstorrent-hugepages allocates the 1G hugepages that device DMA buffers pin into, and
+# can run minutes into boot. Unordered, the server wins the race and dies with "Failed to
+# pin pages for hugepage at virtual address 0x0" -- a clean start followed by a worker
+# error, which Restart=on-failure does not catch, so the box sits idle until a human
+# intervenes. Observed 2026-08-19: server started 18:07:24, hugepages 18:09:49.
+# Wants (not Requires): a host lacking the unit should still boot and fail loudly at
+# device init rather than refuse to start.
+After=tenstorrent-hugepages.service
+Wants=tenstorrent-hugepages.service
 # Circuit breaker: if it keeps failing fast (e.g. device needs a manual tt-smi -r),
 # stop auto-restarting after 5 starts in 30 min so a human can intervene.
 StartLimitIntervalSec=1800
@@ -13,6 +22,11 @@ User=rsalman
 Group=rsalman
 Environment=HOME=/home/rsalman
 WorkingDirectory=/home/rsalman/tt-metal/tt-inference-server/tt-media-server
+# After= above is necessary but not sufficient: tenstorrent-hugepages is Type=simple, so
+# systemd calls it started as soon as its script is forked, well before the pages exist.
+# Gate on the postcondition instead. An ExecStartPre failure is a start failure, so the
+# circuit breaker above still applies if the pages never arrive.
+ExecStartPre=/home/rsalman/tt-metal/tt-inference-server/tt-media-server/deploy/wait-for-hugepages.sh
 ExecStart=/home/rsalman/tt-metal/tt-inference-server/tt-media-server/start_ltx_fast.sh
 Restart=on-failure
 RestartSec=10
