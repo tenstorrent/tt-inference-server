@@ -21,7 +21,7 @@ Usage:
 import re
 import sys
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -224,7 +224,81 @@ def generate_section_anchor(section_title: str) -> str:
 
 def get_model_display_name(template: ModelSpecTemplate) -> str:
     """Get the display name for a model template."""
-    return model_weights_to_model_name(template.weights[0])
+    return template.model_display_name or model_weights_to_model_name(
+        template.weights[0]
+    )
+
+
+def coalesce_catalog_groups_for_docs(
+    templates: List[ModelSpecTemplate],
+) -> List[ModelSpecTemplate]:
+    """Reconstruct complete generated template groups for stable docs output."""
+
+    def shared_signature(template):
+        data = asdict(template)
+        for field_name in (
+            "weights",
+            "device_model_specs",
+            "metadata",
+            "model_display_name",
+            "catalog_group",
+        ):
+            data.pop(field_name, None)
+        return data
+
+    def device_signature(device_spec):
+        data = asdict(device_spec)
+        data.pop("perf_reference", None)
+        return data
+
+    grouped = defaultdict(list)
+    ordered_keys = []
+    for index, template in enumerate(templates):
+        key = template.catalog_group or f"ungrouped:{index}"
+        if key not in grouped:
+            ordered_keys.append(key)
+        grouped[key].append(template)
+
+    coalesced = []
+    for key in ordered_keys:
+        members = grouped[key]
+        if len(members) == 1 or members[0].catalog_group is None:
+            coalesced.extend(members)
+            continue
+
+        weights = list(
+            dict.fromkeys(weight for item in members for weight in item.weights)
+        )
+        devices = {}
+        metadata = {}
+        observed_pairs = set()
+        homogeneous = all(
+            shared_signature(item) == shared_signature(members[0])
+            for item in members[1:]
+        )
+        for item in members:
+            metadata.update(item.metadata)
+            for weight in item.weights:
+                for device_spec in item.device_model_specs:
+                    observed_pairs.add((weight, device_spec.device))
+                    existing = devices.setdefault(device_spec.device, device_spec)
+                    if device_signature(existing) != device_signature(device_spec):
+                        homogeneous = False
+
+        expected_pairs = {(weight, device) for weight in weights for device in devices}
+        if not homogeneous or observed_pairs != expected_pairs:
+            coalesced.extend(members)
+            continue
+
+        coalesced.append(
+            replace(
+                members[0],
+                weights=weights,
+                device_model_specs=list(devices.values()),
+                metadata=metadata,
+            )
+        )
+    return coalesced
 
 
 def get_model_device_filename(model_name: str, device: DeviceTypes) -> str:
@@ -1029,6 +1103,7 @@ def generate_doc_pages(
         output_dir: Output directory for docs (default: docs/model_support)
         dry_run: If True, print what would be written without writing
     """
+    templates = coalesce_catalog_groups_for_docs(templates)
     output_path = Path(output_dir)
 
     print(f"Generating Model Support documentation from {len(templates)} templates")
@@ -1103,6 +1178,7 @@ def update_readme_model_support(
         readme_path: Path to README.md file (default: README.md)
         dry_run: If True, print what would change without writing
     """
+    templates = coalesce_catalog_groups_for_docs(templates)
     readme_file = Path(readme_path)
     if not readme_file.exists():
         print(f"Warning: README.md not found at {readme_path}, skipping update")
