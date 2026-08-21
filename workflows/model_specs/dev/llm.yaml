@@ -1779,6 +1779,28 @@ templates:
       default_impl: true
       env_vars:
         MESH_DEVICE: "P150x4"
+        # REQUIRED at max_concurrency > 1 -- same class of missing key as
+        # sample_on_device_mode below, and nearly the same magnitude.
+        #
+        # Expert, router and paged-SDPA cost is paid per row *configured*, not
+        # per row live: a 32-slot decode step is ~85% fixed in the configured
+        # row count. Unset, this server decodes a SINGLE user at 4.3464 t/s/u --
+        # the 32-slot cost, paid by one user -- against 49.3636 with the ladder
+        # on. That is 11.36x, and it looks like a broken deployment rather than
+        # a missing config key.
+        #
+        # The values are the measured ladder: each decode step runs in the
+        # narrowest graph that holds the live rows. 20 is deliberately absent --
+        # it measured 106.50 tok/s aggregate, the worst point on the board,
+        # below even width 8 -- and this ladder makes it unreachable, since
+        # 17..32 live rows round up to 32.
+        #
+        # Costs 24.8 MB (one trace resident; released and recaptured on width
+        # change). No memory setting changes: KV pool, max_context and
+        # max_concurrency are what production already runs, and a maximal
+        # 262,080-token prefill completes with 21.92 GB/die free.
+        #
+        QWEN3_DECODE_WIDTHS: "1,2,4,8,16,32"
       override_tt_config:
         trace_region_size: 50331648  # 48 MB; shipped optimized_vllm config
         fabric_config: FABRIC_1D_RING
