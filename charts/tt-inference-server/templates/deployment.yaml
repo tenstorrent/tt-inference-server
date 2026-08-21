@@ -116,7 +116,7 @@ spec:
           {{- end }}
           volumeMounts:
             - name: cache
-              mountPath: /home/container_app_user/cache_root
+              mountPath: {{ include "tt-inference-server.cacheRoot" . }}
             {{- if $hugepages }}
             - name: hugepages-1g
               mountPath: /dev/hugepages-1G

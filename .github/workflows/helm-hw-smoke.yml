@@ -113,13 +113,10 @@ jobs:
           HUGEPAGES: ${{ env.HW_SMOKE_HUGEPAGES }}
           # Only gated weights need this; the default row is ungated.
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          # The media / forge server guards its inference routes with a static
-          # key and the chart configures neither API_KEY nor NO_AUTH, so a
-          # chart-deployed server runs on the image's default. Passing that
-          # default here keeps the smoke honest about what the chart ships;
-          # leave it empty for vLLM rows, which are open unless VLLM_API_KEY or
-          # JWT_SECRET is set. See tt-media-server/security/api_key_checker.py.
-          API_KEY: ${{ (github.event.inputs.api-probe || 'embeddings') == 'chat' && '' || 'your-secret-key' }}
+          # API_KEY is left to the script: it mints a fresh key per run, installs
+          # it through the chart's auth.apiKey, and checks both that an
+          # authenticated call succeeds and that an unauthenticated one is
+          # refused. Set this only to pin a key for debugging.
         run: bash .github/scripts/helm_hw_smoke.sh
 
       - name: Diagnostics on failure

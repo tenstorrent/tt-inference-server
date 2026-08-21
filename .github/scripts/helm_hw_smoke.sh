@@ -43,16 +43,14 @@
 #   HF_CACHE_DIR                    host dir holding pre-downloaded weights
 #   PULL_SECRET                     name of an existing docker-registry secret
 #   API_PROBE                       chat|embeddings|models (default: from image)
-#   API_KEY                         sent as `Authorization: Bearer <API_KEY>`.
-#                                   The media / forge server guards its inference
-#                                   routes with a static key (API_KEY env,
-#                                   default "your-secret-key", or NO_AUTH=1 to
-#                                   turn auth off — see
-#                                   tt-media-server/security/api_key_checker.py)
-#                                   and the chart configures neither, so a
-#                                   chart-deployed one runs on that default.
-#                                   vLLM images are open unless VLLM_API_KEY /
-#                                   JWT_SECRET is set, so leave this empty there.
+#   API_KEY                         bearer key to install with and then send.
+#                                   Default: a fresh random key per run. The
+#                                   chart's auth.apiKey carries it (API_KEY for
+#                                   media/forge, VLLM_API_KEY for vllm), so the
+#                                   smoke exercises the chart's own auth wiring
+#                                   rather than an image default — including the
+#                                   negative case, that an unauthenticated call
+#                                   is refused.
 #   INFER_MODEL_ID                  `model` field for the inference call. Default:
 #                                   the id from /v1/models, except that the media
 #                                   server reports a local snapshot path there
@@ -138,6 +136,16 @@ if [ -z "$HUGEPAGES" ]; then
   info "HUGEPAGES not set -> $HUGEPAGES (node allocatable hugepages-1Gi=${hp_alloc:-0})"
 fi
 HELM_SET+=(--set "hugepages.enabled=$HUGEPAGES")
+
+# Auth is a required decision for media/forge rows (auth.apiKey or
+# auth.disabled), so pick a key per run and prove below that it is enforced.
+# Random rather than fixed: a fixed one would still pass if the chart quietly
+# stopped wiring it and the server fell back to its built-in default.
+if [ -z "$API_KEY" ]; then
+  API_KEY="$(openssl rand -hex 16 2>/dev/null || head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+  [ -n "${GITHUB_ACTIONS:-}" ] && printf '::add-mask::%s\n' "$API_KEY"
+fi
+HELM_SET+=(--set "auth.apiKey=$API_KEY")
 
 # Per-row overrides go through a values file, not --set: the values path contains
 # the model name, and model names contain dots that --set reads as separators.
@@ -314,15 +322,18 @@ code="$(curl -s -o /tmp/hw-smoke-health.json -w '%{http_code}' "http://127.0.0.1
   || fail "/health returned $code (port-forward: $(tr '\n' ' ' < /tmp/hw-smoke-pf.log | tail -c 200))"
 ok "/health 200"
 
-code="$(curl -s -o /tmp/hw-smoke-models.json -w '%{http_code}' "http://127.0.0.1:${LOCAL_PORT}/v1/models")"
+AUTH=()
+[ -n "$API_KEY" ] && AUTH=(-H "Authorization: Bearer $API_KEY")
+
+# /v1/models is open on the media server but guarded by vLLM once VLLM_API_KEY
+# is set, so send the key here as well.
+code="$(curl -s -o /tmp/hw-smoke-models.json -w '%{http_code}' \
+  "${AUTH[@]+"${AUTH[@]}"}" "http://127.0.0.1:${LOCAL_PORT}/v1/models")"
 [ "$code" = "200" ] || fail "/v1/models returned $code"
 SERVED_ID="$(python3 -c 'import json;d=json.load(open("/tmp/hw-smoke-models.json"));print((d.get("data") or [{}])[0].get("id",""))')"
 [ -n "$SERVED_ID" ] \
   || fail "/v1/models returned 200 but listed no model: $(head -c 300 /tmp/hw-smoke-models.json)"
 ok "/v1/models 200, serving id=$SERVED_ID"
-
-AUTH=()
-[ -n "$API_KEY" ] && AUTH=(-H "Authorization: Bearer $API_KEY")
 
 # /v1/models advertises what the server calls itself; the inference route wants
 # what its runner recognises. On the media server those differ: it reports
@@ -352,37 +363,55 @@ if [ -z "$API_PROBE" ]; then
 fi
 case "$API_PROBE" in
   chat)
-    code="$(curl -s -o /tmp/hw-smoke-infer.json -w '%{http_code}' \
-      -H 'Content-Type: application/json' "${AUTH[@]+"${AUTH[@]}"}" \
-      -d "{\"model\":\"${INFER_MODEL_ID}\",\"messages\":[{\"role\":\"user\",\"content\":\"Say hello.\"}],\"max_tokens\":16}" \
-      "http://127.0.0.1:${LOCAL_PORT}/v1/chat/completions")"
-    [ "$code" != "401" ] || fail "/v1/chat/completions returned 401 — the server wants an API key and API_KEY is $([ -n "$API_KEY" ] && echo "wrong" || echo "unset")"
-    [ "$code" = "200" ] \
-      || fail "/v1/chat/completions returned $code: $(head -c 300 /tmp/hw-smoke-infer.json)"
-    python3 -c 'import json,sys;d=json.load(open("/tmp/hw-smoke-infer.json"));sys.exit(0 if (d["choices"][0]["message"].get("content") or "").strip() else 1)' \
-      || fail "/v1/chat/completions returned 200 but generated no content: $(head -c 300 /tmp/hw-smoke-infer.json)"
-    ok "/v1/chat/completions 200 with generated content"
+    INFER_PATH=/v1/chat/completions
+    PAYLOAD="{\"model\":\"${INFER_MODEL_ID}\",\"messages\":[{\"role\":\"user\",\"content\":\"Say hello.\"}],\"max_tokens\":16}"
     ;;
   embeddings)
-    code="$(curl -s -o /tmp/hw-smoke-infer.json -w '%{http_code}' \
-      -H 'Content-Type: application/json' "${AUTH[@]+"${AUTH[@]}"}" \
-      -d "{\"model\":\"${INFER_MODEL_ID}\",\"input\":\"hello from the hardware smoke\"}" \
-      "http://127.0.0.1:${LOCAL_PORT}/v1/embeddings")"
-    [ "$code" != "401" ] || fail "/v1/embeddings returned 401 — the server wants an API key and API_KEY is $([ -n "$API_KEY" ] && echo "wrong" || echo "unset"); the media/forge image defaults to \"your-secret-key\" (tt-media-server/security/api_key_checker.py)"
-    [ "$code" = "200" ] \
-      || fail "/v1/embeddings returned $code: $(head -c 300 /tmp/hw-smoke-infer.json)"
-    dims="$(python3 -c 'import json;d=json.load(open("/tmp/hw-smoke-infer.json"));print(len((d.get("data") or [{}])[0].get("embedding") or []))')"
-    [ "${dims:-0}" -gt 0 ] \
-      || fail "/v1/embeddings returned 200 but an empty vector: $(head -c 300 /tmp/hw-smoke-infer.json)"
-    ok "/v1/embeddings 200 with a ${dims}-dimension vector"
+    INFER_PATH=/v1/embeddings
+    PAYLOAD="{\"model\":\"${INFER_MODEL_ID}\",\"input\":\"hello from the hardware smoke\"}"
     ;;
   models)
+    INFER_PATH=""
     info "API_PROBE=models — inference call skipped by request"
     ;;
   *)
     fail "unknown API_PROBE=$API_PROBE (want chat|embeddings|models)"
     ;;
 esac
+
+if [ -n "$INFER_PATH" ]; then
+  # Negative first: with a key installed, an unauthenticated call must be
+  # refused. Without this, "200 with the key" would also pass on a server that
+  # ignores the key entirely — which is exactly the state the chart's auth
+  # values exist to prevent.
+  if [ -n "$API_KEY" ]; then
+    code="$(curl -s -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' \
+      -d "$PAYLOAD" "http://127.0.0.1:${LOCAL_PORT}${INFER_PATH}")"
+    [ "$code" = "401" ] \
+      || fail "$INFER_PATH answered $code without a key while auth.apiKey was installed — the key is not being enforced (expected 401)"
+    ok "$INFER_PATH without a key -> 401 (auth.apiKey is enforced)"
+  fi
+
+  code="$(curl -s -o /tmp/hw-smoke-infer.json -w '%{http_code}' \
+    -H 'Content-Type: application/json' "${AUTH[@]+"${AUTH[@]}"}" \
+    -d "$PAYLOAD" "http://127.0.0.1:${LOCAL_PORT}${INFER_PATH}")"
+  [ "$code" = "200" ] \
+    || fail "$INFER_PATH returned $code: $(head -c 300 /tmp/hw-smoke-infer.json)"
+
+  case "$API_PROBE" in
+    chat)
+      python3 -c 'import json,sys;d=json.load(open("/tmp/hw-smoke-infer.json"));sys.exit(0 if (d["choices"][0]["message"].get("content") or "").strip() else 1)' \
+        || fail "$INFER_PATH returned 200 but generated no content: $(head -c 300 /tmp/hw-smoke-infer.json)"
+      ok "$INFER_PATH 200 with generated content"
+      ;;
+    embeddings)
+      dims="$(python3 -c 'import json;d=json.load(open("/tmp/hw-smoke-infer.json"));print(len((d.get("data") or [{}])[0].get("embedding") or []))')"
+      [ "${dims:-0}" -gt 0 ] \
+        || fail "$INFER_PATH returned 200 but an empty vector: $(head -c 300 /tmp/hw-smoke-infer.json)"
+      ok "$INFER_PATH 200 with a ${dims}-dimension vector"
+      ;;
+  esac
+fi
 kill "$PF_PID" 2>/dev/null || true
 PF_PID=""
 
