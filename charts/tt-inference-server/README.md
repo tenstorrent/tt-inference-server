@@ -238,6 +238,7 @@ Set per release, typically via `--set`.
 | `auth.apiKey` | yes* | `""` | Bearer key clients must send. Stored in the release Secret as `API_KEY` (media/forge) or `VLLM_API_KEY` (vllm). *Required for `media` and `forge` engines unless `auth.disabled=true`: those servers guard their inference routes with a literal bearer key and fall back to a well-known built-in default when unset. |
 | `auth.disabled` | no | `false` | Run the server with authentication off (`NO_AUTH=1`). media/forge only — vLLM is already open when `auth.apiKey` is unset. |
 | `hugepages.enabled` | no | `true` | Whether Tenstorrent boards need 1Gi hugepages. Set `false` on IOMMU + KMD 1.29.0+ clusters to drop the `hugepages-1Gi` request/limit, the `/dev/hugepages-1G` volume + mounts, and the `cleanup-hugepages` initContainer. |
+| `hugepages.size` | no | `""` | Hugepage request/limit when enabled. Empty means one 1Gi page per ASIC of the chosen device (`deviceChipCounts`) — 1Gi on an n150, 8Gi on a T3K, 32Gi on a Galaxy. |
 | `podMonitor.enabled` | no | `false` | Emit a `PodMonitor` scraping the server's `/metrics`. Requires the Prometheus Operator CRDs (`monitoring.coreos.com`); leave `false` on clusters without them. |
 | `podMonitor.labels` | no | `{release: prometheus}` | Labels on the `PodMonitor`; must match your Prometheus's `podMonitorSelector` or it won't be scraped. The default matches tt-telemetry's chart and the kube-prometheus-stack convention (`podMonitorSelector` defaults to `release: <the stack's release name>`); override when yours is named differently. |
 | `podMonitor.interval` | no | `30s` | Scrape interval. |
@@ -265,10 +266,8 @@ All fields under `defaults` apply to every model/engine/device/impl unless overr
 | `defaults.service.port` | `8000` | Service port. |
 | `defaults.service.targetPort` | `8000` | Container target port. |
 | `defaults.service.annotations` | `{}` | Annotations applied to the Service. |
-| `defaults.resources.limits.hugepages-1Gi` | `32Gi` | Hugepage limit. Dropped when `hugepages.enabled=false`. (`cpu` and `memory` limits are unset by default.) |
 | `defaults.resources.requests.cpu` | `"6"` | CPU request. |
 | `defaults.resources.requests.memory` | `64Gi` | Memory request (often overridden per impl). |
-| `defaults.resources.requests.hugepages-1Gi` | `32Gi` | Hugepage request. Dropped when `hugepages.enabled=false`. |
 | `defaults.probes.startup.periodSeconds` | `15` | startupProbe poll interval (must be `> 0`). The startupProbe is always rendered — it owns the model compile/warmup window, and while it runs the kubelet suppresses liveness/readiness so a slow compile never triggers a restart. `failureThreshold` is not set here — the Deployment derives it as `ceil(progressDeadlineSeconds / periodSeconds)`, so the startup budget tracks the max compile time and the Pod flips to `1/1` as soon as one poll succeeds. |
 | `defaults.probes.liveness.enabled` | `true` | Enable liveness probe. |
 | `defaults.probes.liveness.path` | `/v1/models` | Liveness probe HTTP path (`/tt-liveness` for non-vllm engines). |

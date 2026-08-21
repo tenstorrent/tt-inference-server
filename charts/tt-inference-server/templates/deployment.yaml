@@ -6,15 +6,15 @@
 {{- if le $startupPeriod 0 }}{{- fail "probes.startup.periodSeconds must be greater than 0 (it divides progressDeadlineSeconds to size the startupProbe budget)." }}{{- end }}
 {{- /* default true (provision hugepages) when the hugepages map is absent/null or omits enabled. */ -}}
 {{- $hugepages := dig "enabled" true (.Values.hugepages | default dict) }}
-{{- $resources := $cfg.resources }}
-{{- if and $resources (not $hugepages) }}
-{{- /* hugepages disabled: strip hugepages-1Gi from a copy so $cfg is untouched. */ -}}
-{{- $resources = deepCopy $resources }}
+{{- /* Size hugepages per device; a copy so $cfg is untouched. */ -}}
+{{- $resources := deepCopy ($cfg.resources | default dict) }}
+{{- $hpSize := include "tt-inference-server.hugepagesSize" . }}
 {{- range $group := list "limits" "requests" }}
-{{- if hasKey $resources $group }}
+{{- if and $hugepages $hpSize }}
+{{- $_ := set $resources $group (merge (dict "hugepages-1Gi" $hpSize) (index $resources $group | default dict)) }}
+{{- else if hasKey $resources $group }}
 {{- $_ := unset (index $resources $group) "hugepages-1Gi" }}
 {{- if not (index $resources $group) }}{{- $_ := unset $resources $group }}{{- end }}
-{{- end }}
 {{- end }}
 {{- end }}
 apiVersion: apps/v1
