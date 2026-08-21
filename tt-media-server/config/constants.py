@@ -961,7 +961,6 @@ ModelConfigs = {
         "max_batch_size": 1,
         "download_weights_from_service": False,
         "request_processing_timeout_seconds": 5000,
-        "video_request_timeout_seconds": 5000,
     },
     (ModelRunners.TT_WAN_2_2, DeviceTypes.P150X4): {
         "device_mesh_shape": (1, 4),
