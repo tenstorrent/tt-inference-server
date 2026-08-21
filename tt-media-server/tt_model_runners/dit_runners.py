@@ -13,6 +13,9 @@ from pathlib import Path
 import numpy as np
 import ttnn
 from config.constants import (
+    WAN22_ANISORA_NUM_STEPS,
+    WAN22_DISTILL_NUM_STEPS,
+    WAN22_LIGHTNING_NUM_STEPS,
     WAN22_NUM_FRAMES,
     ModelRunners,
     ModelServices,
@@ -41,6 +44,7 @@ from models.tt_dit.pipelines.wan.pipeline_wan_i2v import (
     WanPipelineI2V,
 )
 from PIL import Image
+from telemetry.image_metrics import ImageStageRecorder, sampler_name
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
 from utils.decorators import log_execution_time
@@ -80,6 +84,8 @@ class TTDiTRunner(BaseMetalDeviceRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.pipeline = None
+        # Warmup calls run(); recording it would skew the stage metrics.
+        self._warming_up = False
 
     def _configure_fabric(self, updated_device_params):
         try:
@@ -163,18 +169,22 @@ class TTDiTRunner(BaseMetalDeviceRunner):
 
         # we use model_construct to create the request without validation
         # (warmup uses 2 inference steps which is below the normal minimum)
-        if self.settings.model_service == ModelServices.IMAGE.value:
-            self.run(
-                [
-                    ImageGenerateRequest.model_construct(
-                        prompt="Sunrise on a beach",
-                        negative_prompt="",
-                        num_inference_steps=2,
-                    )
-                ],
-            )
-        elif self.settings.model_service == ModelServices.VIDEO.value:
-            self.run([self._build_warmup_video_request()])
+        self._warming_up = True
+        try:
+            if self.settings.model_service == ModelServices.IMAGE.value:
+                self.run(
+                    [
+                        ImageGenerateRequest.model_construct(
+                            prompt="Sunrise on a beach",
+                            negative_prompt="",
+                            num_inference_steps=2,
+                        )
+                    ],
+                )
+            elif self.settings.model_service == ModelServices.VIDEO.value:
+                self.run([self._build_warmup_video_request()])
+        finally:
+            self._warming_up = False
 
         self.logger.info(f"Device {self.device_id}: Model warmup completed")
 
@@ -198,12 +208,26 @@ class TTDiTRunner(BaseMetalDeviceRunner):
     def run(self, requests: list[ImageGenerateRequest]):
         self.logger.debug(f"Device {self.device_id}: Running inference")
         request = requests[0]
+        # run_single_prompt is single-prompt by construction, hence batch=1.
+        recorder = (
+            None
+            if self._warming_up
+            else ImageStageRecorder(
+                model_type=self.settings.model_runner,
+                device_id=self.device_id,
+                sampler=sampler_name(self.pipeline),
+                batch=1,
+            )
+        )
         image = self.pipeline.run_single_prompt(
             prompt=request.prompt,
             negative_prompt=request.negative_prompt,
             num_inference_steps=request.num_inference_steps,
             seed=int(request.seed or 0),
+            on_event=recorder,
         )
+        if recorder is not None:
+            recorder.flush(image)
         self.logger.debug(f"Device {self.device_id}: Inference completed")
         return image
 
@@ -402,12 +426,9 @@ WAN_ANISORA_FAST_ENCODE_FLAGS = {
 # default OOMs during warmup).
 WAN22_ANISORA_BH_TRACE_REGION_BYTES = 200_000_000
 WAN22_ANISORA_GUIDANCE_SCALE = 3.5
-# Fixed step count (mirrors the distill forcing 4): AniSora always runs 8 steps,
-# the validated good-quality / low-latency point (~9.3s traced). The client's
-# num_inference_steps is ignored, same as the distill runner.
-WAN22_ANISORA_NUM_STEPS = 8
+# AniSora / Lightning / Distill step counts live in config.constants
+# (WAN22_*_NUM_STEPS) so telemetry can use the same values.
 
-WAN22_LIGHTNING_NUM_STEPS = 4
 WAN22_LIGHTNING_BOUNDARY_RATIO = 0.875
 WAN22_LIGHTNING_FLOW_SHIFT = 5.0
 
@@ -951,7 +972,7 @@ class TTWan22I2VDistillRunner(TTDiTRunner):
         seed = int(request.seed) if request.seed is not None else 0
         pipeline_args = {
             "prompts": [request.prompt],
-            "num_inference_steps": 4,
+            "num_inference_steps": WAN22_DISTILL_NUM_STEPS,
             "guidance_scale": 1.0,
             "guidance_scale_2": 1.0,
             "seed": seed,
