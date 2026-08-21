@@ -15,14 +15,16 @@ The body has four sections:
   # Model Spec Release Updates    -> AUTO-GENERATED table (the tricky part)
   # Release Artifacts Summary     -> auto-listed promoted images + Total (from --promoted-images)
 
-The "Model Spec Release Updates" table has one row per (model, device) release
-combo taken from ``.github/workflows/models-ci-config.json`` (the ``ci.release``
-entries), matched to its ``workflows/model_specs/prod/*.yaml`` block. Columns:
+The "Model Spec Release Updates" table has one row per released runtime leaf --
+the (hf_model_repo, device, engine, impl_id) tuple that a release actually
+publishes. Each ``ci.release`` entry in ``.github/workflows/models-ci-config.json``
+is resolved against the dev catalogue to exactly one such leaf, and that leaf is
+then looked up in ``workflows/model_specs/prod/*.yaml`` by identity. Columns:
 
-  Impl                   <- prod block ``impl:``
-  Model Arch             <- the models-ci-config.json model key
-  Weights                <- prod block ``weights:`` (all, <br>-joined)
-  Devices                <- the release device from models-ci-config.json
+  Impl                   <- impl_id of the released leaf
+  Model Arch             <- weight basename (the models-ci-config.json model key)
+  Weights                <- the released weight
+  Devices                <- the released device
   TT-Metal Commit Change <- old->new (old = base branch's prod; new = this branch)
                             "`old` -> `new`" if changed, else "`new`"
   Status Change          <- "No change [STATUS]" if unchanged, else the new STATUS
@@ -31,6 +33,10 @@ entries), matched to its ``workflows/model_specs/prod/*.yaml`` block. Columns:
                             the tt-shield run's ``run-release-<model>-...-<device>`` job
 
 Any value that cannot be computed is rendered as ``UNKNOWN``.
+
+Resolution is by exact identity throughout: a selector that matches no leaf, or
+more than one, aborts instead of silently reporting whichever prod block happened
+to come first.
 
 """
 
@@ -51,15 +57,26 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT))
-from workflows.workflow_types import DeviceTypes, InferenceEngine  # noqa: E402
+from scripts.release.model_spec_resolver import (  # noqa: E402
+    collect_release_combos,
+    load_dev_model_spec_sources,
+    resolve_release_combos,
+)
+from scripts.release.release_scope import (  # noqa: E402
+    UNKNOWN,
+    expand_raw_prod_blocks,
+    load_prod_leaves,
+)
+from utils.model_naming import ci_job_matches_device  # noqa: E402
+from workflows.model_spec import MODEL_SPEC_CATALOG_FILES  # noqa: E402
 
 DEFAULT_CI_CONFIG = REPO_ROOT / ".github" / "workflows" / "models-ci-config.json"
+DEFAULT_DEV_DIR = REPO_ROOT / "workflows" / "model_specs" / "dev"
 DEFAULT_PROD_DIR = REPO_ROOT / "workflows" / "model_specs" / "prod"
 DEFAULT_VERSION_FILE = REPO_ROOT / "VERSION"
 DEFAULT_REPO = "tenstorrent/tt-inference-server"
 DEFAULT_TT_SHIELD_REPO = "tenstorrent/tt-shield"
 TOKEN_ENV_VARS = ("TMP_VCANKOVIC_SHIELD_CRANE_PAT", "GH_PAT", "GITHUB_TOKEN")
-UNKNOWN = "UNKNOWN"
 
 STATIC_SW_VERSIONS = (
     "# SW versions recommended for Wormhole Galaxy:\n\n"
@@ -77,133 +94,53 @@ def _safe_repo_path(p) -> Path:
     return resolved
 
 
-# ---------------------------------------------------------------------------
-# release scope (mirrors promote_dev_spec_to_prod.py)
-# ---------------------------------------------------------------------------
-def iter_implementations(model_entry: dict):
-    """Yield each implementation dict (flat or implementations:[...] shape)."""
-    if "implementations" in model_entry:
-        yield from model_entry["implementations"]
-    else:
-        yield model_entry
-
-
 def model_name_from_weight(weight: str) -> str:
     return Path(weight).name
 
 
-def collect_release_combos(
-    ci_config: dict,
-) -> list[tuple[str, InferenceEngine, DeviceTypes]]:
-    """Ordered, de-duplicated list of (model_name, engine, device) marked release."""
-    combos: list[tuple[str, InferenceEngine, DeviceTypes]] = []
-    seen: set = set()
-    for model_name, entry in ci_config.get("models", {}).items():
-        for impl in iter_implementations(entry):
-            release = impl.get("ci", {}).get("release")
-            if not release:
-                continue
-            try:
-                engine = InferenceEngine.from_string(impl["inference_engine"])
-            except (ValueError, KeyError):
-                engine = None
-            for device in release.get("devices", []):
-                try:
-                    dev = DeviceTypes.from_string(device)
-                except ValueError:
-                    continue
-                key = (model_name, engine, dev)
-                if key not in seen:
-                    seen.add(key)
-                    combos.append((model_name, engine, dev))
-    return combos
+# ---------------------------------------------------------------------------
+# release scope (exact leaves, shared with promote_dev_spec_to_prod.py)
+# ---------------------------------------------------------------------------
+def resolve_release_scope(ci_config: dict, dev_dir: Path):
+    combos = collect_release_combos(ci_config)
+    sources = load_dev_model_spec_sources(dev_dir)
+    resolved = resolve_release_combos(combos, sources)
+    seen = {}
+    for item in resolved:
+        if item.identity in seen:
+            raise ValueError(
+                f"Configured selectors {seen[item.identity]!r} and {item.combo!r} "
+                f"resolve to duplicate identity {item.identity!r}"
+            )
+        seen[item.identity] = item.combo
+    return tuple(resolved)
 
 
 # ---------------------------------------------------------------------------
 # prod catalogue parsing
 # ---------------------------------------------------------------------------
-def _parse_catalogue(text: str) -> list[dict]:
-    data = yaml.safe_load(text)
-    if isinstance(data, dict):
-        data = data.get("templates") or next(
-            (v for v in data.values() if isinstance(v, list)), []
-        )
-    return [b for b in (data or []) if isinstance(b, dict)]
+def load_prod_blocks_from_ref(ref: str) -> list[dict]:
+    """Raw prod blocks from a git ref.
 
-
-def load_prod_blocks_from_dir(prod_dir: Path) -> list[dict]:
-    prod_dir = _safe_repo_path(prod_dir)
+    The base ref may predate the leaf-granular prod catalogue, so the blocks are
+    returned unexpanded and widened by expand_raw_prod_blocks() instead.
+    """
     blocks: list[dict] = []
-    for f in sorted(prod_dir.glob("*.yaml")):
-        blocks += _parse_catalogue(f.read_text())
-    return blocks
-
-
-def load_prod_blocks_from_ref(ref: str, prod_filenames: list[str]) -> list[dict]:
-    blocks: list[dict] = []
-    for name in prod_filenames:
+    for filename in MODEL_SPEC_CATALOG_FILES:
         try:
             text = subprocess.run(
-                ["git", "show", f"{ref}:workflows/model_specs/prod/{name}"],
+                ["git", "show", f"{ref}:workflows/model_specs/prod/{filename}"],
                 capture_output=True,
                 text=True,
                 check=True,
             ).stdout
-        except subprocess.CalledProcessError:
-            continue  # file absent on that ref
-        blocks += _parse_catalogue(text)
+        except subprocess.CalledProcessError as exc:
+            raise ValueError(
+                f"Could not read prod catalog {filename!r} from base ref {ref!r}"
+            ) from exc
+        document = yaml.safe_load(text) or {}
+        blocks.extend(document.get("templates", []))
     return blocks
-
-
-def _block_engine(block: dict):
-    try:
-        return InferenceEngine.from_string(block.get("inference_engine", ""))
-    except (ValueError, KeyError):
-        return None
-
-
-def _block_devices(block: dict) -> set:
-    out = set()
-    for d in block.get("device_model_specs", []) or []:
-        try:
-            out.add(DeviceTypes.from_string(d.get("device", "")))
-        except ValueError:
-            pass
-    return out
-
-
-def _block_models(block: dict) -> set:
-    return {model_name_from_weight(w) for w in block.get("weights", []) or []}
-
-
-def find_block(
-    blocks, model_name, engine, device, prefer_version=None, prefer_impl=None
-) -> dict | None:
-    """A prod block that provides (model_name, engine) on `device`.
-
-    Matches by device MEMBERSHIP (not the exact device-set). When several blocks
-    match (a stale block from a prior release plus the just-promoted one, or two
-    impls), prefer (1) the block at `prefer_version`, then (2) `prefer_impl`,
-    else the first match — so the table reports the release block, not a stale one.
-    """
-    matches = [
-        b
-        for b in blocks
-        if model_name in _block_models(b)
-        and _block_engine(b) == engine
-        and device in _block_devices(b)
-    ]
-    if not matches:
-        return None
-    if prefer_version is not None:
-        for b in matches:
-            if str(b.get("version")) == str(prefer_version):
-                return b
-    if prefer_impl is not None:
-        for b in matches:
-            if b.get("impl") == prefer_impl:
-                return b
-    return matches[0]
 
 
 # ---------------------------------------------------------------------------
@@ -212,24 +149,21 @@ def find_block(
 def resolve_token(explicit: str | None) -> str | None:
     if explicit:
         return explicit
-    for name in TOKEN_ENV_VARS:
-        val = os.environ.get(name)
-        if val:
-            return val
-    return None
+    return next(
+        (os.environ[name] for name in TOKEN_ENV_VARS if os.environ.get(name)),
+        None,
+    )
 
 
 def fetch_run_jobs(repo: str, run_id: str, token: str) -> list[dict] | None:
     """All jobs of a workflow run, or None if unreachable (no access/expired)."""
-    owner_repo = repo
     jobs: list[dict] = []
-    page = 1
-    while True:
+    for page in range(1, 16):
         url = (
-            f"https://api.github.com/repos/{owner_repo}/actions/runs/{run_id}"
+            f"https://api.github.com/repos/{repo}/actions/runs/{run_id}"
             f"/jobs?per_page=100&page={page}"
         )
-        req = urllib.request.Request(
+        request = urllib.request.Request(
             url,
             headers={
                 "Authorization": f"Bearer {token}",
@@ -239,79 +173,104 @@ def fetch_run_jobs(repo: str, run_id: str, token: str) -> list[dict] | None:
             },
         )
         try:
-            with urllib.request.urlopen(req, timeout=60) as resp:
-                data = json.loads(resp.read())
+            with urllib.request.urlopen(request, timeout=60) as response:
+                batch = json.loads(response.read()).get("jobs", [])
         except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError):
             return None
-        batch = data.get("jobs", [])
-        jobs += batch
-        if len(batch) < 100 or page >= 15:
+        jobs.extend(batch)
+        if len(batch) < 100:
             break
-        page += 1
     return jobs
 
 
-def ci_job_url(
-    jobs, repo: str, run_id: str, model_name: str, device: DeviceTypes
-) -> str | None:
-    """URL of the run-release-<model>-<runner>-<device> job for this combo."""
+def _matching_ci_jobs(jobs, *, identity, scope_identities) -> list[dict]:
     if not jobs:
-        return None
-    token = device.name.lower()  # device token used in tt-shield job names
-    prefix = f"run-release-{model_name}-"
-    for job in jobs:
-        leaf = job.get("name", "").split("/")[-1].strip()
-        if leaf.startswith(prefix) and leaf.endswith(f"-{token}"):
-            return f"https://github.com/{repo}/actions/runs/{run_id}/job/{job['id']}"
-    return None
+        return []
+    same_model_device = [
+        candidate
+        for candidate in scope_identities
+        if candidate[0] == identity[0] and candidate[1] == identity[1]
+    ]
+    if len(same_model_device) > 1:
+        raise ValueError(
+            f"CI job names cannot distinguish release identities {same_model_device!r}"
+        )
+    other_repos = [candidate[0] for candidate in scope_identities]
+    return [
+        job
+        for job in jobs
+        if ci_job_matches_device(
+            job.get("name", ""),
+            "release",
+            identity[0],
+            identity[1],
+            other_repos,
+        )
+    ]
 
 
 # ---------------------------------------------------------------------------
 # row model + rendering
 # ---------------------------------------------------------------------------
-def build_rows(new_blocks, old_blocks, combos, jobs, tt_shield_repo, run_id, version):
+def build_rows(scope, current_prod, base_prod, jobs, tt_shield_repo, run_id, version):
+    identities = tuple(item.identity for item in scope)
+    job_urls: dict = {}
+    job_owners: dict = {}
+    if jobs and run_id:
+        for identity in identities:
+            matches = _matching_ci_jobs(
+                jobs, identity=identity, scope_identities=identities
+            )
+            if len(matches) > 1:
+                raise ValueError(
+                    f"Multiple CI jobs match release identity {identity!r}"
+                )
+            if not matches:
+                job_urls[identity] = None
+                continue
+            job_id = matches[0]["id"]
+            owner = job_owners.get(job_id)
+            if owner is not None and owner != identity:
+                raise ValueError(
+                    f"CI job {job_id!r} ambiguously matches {owner!r} and {identity!r}"
+                )
+            job_owners[job_id] = identity
+            job_urls[identity] = (
+                f"https://github.com/{tt_shield_repo}/actions/runs/"
+                f"{run_id}/job/{job_id}"
+            )
+
     rows = []
-    seen: set = set()
-    for model_name, engine, device in combos:
-        # NEW = the just-promoted block (prefer this release's version) so a stale
-        # prior-release block on the same device can't shadow it. OLD = the base
-        # block for the SAME impl, so old->new is apples-to-apples.
-        new_b = find_block(
-            new_blocks, model_name, engine, device, prefer_version=version
-        )
-        old_b = find_block(
-            old_blocks,
-            model_name,
-            engine,
-            device,
-            prefer_version=version,
-            prefer_impl=(new_b or {}).get("impl"),
-        )
-
-        # De-duplicate: one row per (prod block weights+engine, device). A block
-        # bundling several weights (e.g. whisper) yields a single row.
-        ident_block = new_b or old_b
-        weights = tuple((ident_block or {}).get("weights", []) or [])
-        dedup_key = (weights, engine, device)
-        if dedup_key in seen:
-            continue
-        seen.add(dedup_key)
-
+    for item in scope:
+        identity = item.identity
+        # The release publishes this exact leaf, so prod must carry it at the
+        # release version. A miss here means the promotion step did not run, ran
+        # against a different scope, or wrote a different pin.
+        current = current_prod.get(identity)
+        if current is None:
+            raise ValueError(f"Current prod is missing release identity {identity!r}")
+        if current.pin.version != version:
+            raise ValueError(
+                f"Prod identity {identity!r} has version {current.pin.version!r}, "
+                f"expected {version!r}"
+            )
+        before = base_prod.get(identity)
         rows.append(
             {
-                "impl": (new_b or old_b or {}).get("impl"),
-                "model_arch": model_name,
-                "weights": list(weights),
-                "device": device,
-                "tt_before": (old_b or {}).get("tt_metal_commit"),
-                "tt_after": (new_b or {}).get("tt_metal_commit"),
-                "status_before": (old_b or {}).get("status"),
-                "status_after": (new_b or {}).get("status"),
-                "ci_url": ci_job_url(jobs, tt_shield_repo, run_id, model_name, device)
-                if (jobs and run_id)
-                else None,
+                "identity": identity,
+                "impl": identity[3],
+                "model_arch": model_name_from_weight(identity[0]),
+                "weights": [identity[0]],
+                "device": identity[1],
+                "tt_before": before.pin.tt_metal_commit if before else None,
+                "tt_after": current.pin.tt_metal_commit,
+                "status_before": before.status if before else None,
+                "status_after": current.status,
+                "ci_url": job_urls.get(identity),
             }
         )
+    if {row["identity"] for row in rows} != set(identities):
+        raise ValueError("Release-note row identities do not match resolved scope")
     return rows
 
 
@@ -353,7 +312,7 @@ def render_table(rows) -> str:
         impl = f"`{r['impl']}`" if r["impl"] else UNKNOWN
         arch = f"`{r['model_arch']}`" if r["model_arch"] else UNKNOWN
         weights = _weights_cell(r["weights"])
-        device = r["device"].name if r["device"] else UNKNOWN
+        device = r["device"] or UNKNOWN
         commit = _commit_cell(r["tt_before"], r["tt_after"])
         status = _status_cell(r["status_before"], r["status_after"])
         ci = f"[CI Link]({r['ci_url']})" if r["ci_url"] else UNKNOWN
@@ -469,6 +428,12 @@ def main() -> None:
     ap.add_argument("--tt-shield-repo", default=DEFAULT_TT_SHIELD_REPO)
     ap.add_argument("--ci-config", type=Path, default=DEFAULT_CI_CONFIG)
     ap.add_argument(
+        "--dev-dir",
+        type=Path,
+        default=DEFAULT_DEV_DIR,
+        help="dev catalogue the release selectors are resolved against",
+    )
+    ap.add_argument(
         "--prod-dir",
         type=Path,
         default=DEFAULT_PROD_DIR,
@@ -513,15 +478,6 @@ def main() -> None:
     head_branch = args.head_branch or current_branch()
     title = f"Post release v{version}"
 
-    ci_config = json.loads(args.ci_config.read_text())
-    combos = collect_release_combos(ci_config)
-
-    new_blocks = load_prod_blocks_from_dir(args.prod_dir)
-    prod_filenames = [
-        f.name for f in sorted(_safe_repo_path(args.prod_dir).glob("*.yaml"))
-    ]
-    old_blocks = load_prod_blocks_from_ref(args.base_ref, prod_filenames)
-
     # CI jobs (best-effort; UNKNOWN on any failure).
     jobs = None
     if args.tt_shield_run_id:
@@ -546,15 +502,23 @@ def main() -> None:
             file=sys.stderr,
         )
 
-    rows = build_rows(
-        new_blocks,
-        old_blocks,
-        combos,
-        jobs,
-        args.tt_shield_repo,
-        args.tt_shield_run_id,
-        version,
-    )
+    try:
+        ci_config = json.loads(args.ci_config.read_text())
+        scope = resolve_release_scope(ci_config, _safe_repo_path(args.dev_dir))
+        current_prod = load_prod_leaves(_safe_repo_path(args.prod_dir))
+        base_prod = expand_raw_prod_blocks(load_prod_blocks_from_ref(args.base_ref))
+        rows = build_rows(
+            scope,
+            current_prod,
+            base_prod,
+            jobs,
+            args.tt_shield_repo,
+            args.tt_shield_run_id,
+            version,
+        )
+    except (OSError, ValueError, yaml.YAMLError) as exc:
+        sys.exit(f"ERROR: {exc}")
+
     body = render_body(version, args.tt_shield_run_id, rows, promoted_images)
 
     print(f"Version:      {version}", file=sys.stderr)

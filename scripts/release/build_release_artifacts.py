@@ -42,7 +42,7 @@ The release package, however, names the inner zips after the *device*
      the job-name mapping can't resolve a device, it falls back to classifying
      bundles purely by that internal token.
 
-Requirements: Python 3.8+, the GitHub CLI ``gh`` installed and authenticated
+Requirements: Python 3.10+, the GitHub CLI ``gh`` installed and authenticated
 (``gh auth status``) with ``repo`` scope.
 
 Usage
@@ -67,9 +67,8 @@ model, or to package models that are not in the release list):
         --model whisper-large-v3=p150,p300x2 \
         --output-dir .
 
-Other flags: --repo, --ci-config, --output-dir, --keep-temp, --strict (turn the
-internal device-token check from a warning into a hard error), --reference-zip
-<prev.zip> (sanity-check the output layout against a previous release package).
+Other flags: --repo, --ci-config, --output-dir, --keep-temp, and --strict
+(turn the internal device-token check from a warning into a hard error).
 """
 
 from __future__ import annotations
@@ -84,14 +83,21 @@ import time
 import zipfile
 from pathlib import Path
 
-# Make the repo root importable so we can reuse the canonical DeviceTypes enum
-# (scripts/release/ -> repo root is three parents up).
-from _bootstrap import REPO_ROOT  # noqa: E402  (sets sys.path for imports below)
-from workflows.workflow_types import DeviceTypes  # noqa: E402
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(REPO_ROOT))
+
+from scripts.release.model_spec_resolver import (  # noqa: E402
+    collect_release_combos,
+    load_dev_model_spec_sources,
+    resolve_release_combos,
+)
+from scripts.release.release_scope import extract_bundle_identity  # noqa: E402
+from utils.model_naming import model_name_variants, slugify_model_id  # noqa: E402
 
 ARTIFACT_PREFIX = "workflow_logs_release_"
 DEFAULT_REPO = "tenstorrent/tt-shield"
 DEFAULT_CI_CONFIG = REPO_ROOT / ".github" / "workflows" / "models-ci-config.json"
+DEFAULT_DEV_DIR = REPO_ROOT / "workflows" / "model_specs" / "dev"
 
 # ---------------------------------------------------------------------------
 # Defaults — override any of them on the command line.
@@ -100,42 +106,45 @@ DEFAULT_VERSION = "v0.15.0"
 DEFAULT_RUN_ID = "26592936143"
 
 
-# ---------------------------------------------------------------------------
-# release scope from models-ci-config.json
-# ---------------------------------------------------------------------------
-def iter_implementations(model_entry: dict):
-    """Yield each implementation dict for a CI-config model entry.
-
-    Handles both the flat shape ({inference_engine, ci}) and the
-    implementations:[...] array shape (mirrors promote_dev_spec_to_prod.py).
-    """
-    if "implementations" in model_entry:
-        yield from model_entry["implementations"]
-    else:
-        yield model_entry
-
-
-def collect_release_models(ci_config: dict) -> dict[str, list[str]]:
-    """Build {model: [device, ...]} from the entries marked ``release`` in
-    models-ci-config.json.
-
-    Device tokens are the lowercased canonical device names (``p150``,
-    ``p300x2``, ``galaxy``) — the same tokens run.py, the tt-shield release job
-    names, and the release-package inner-zip names use. Devices are aggregated
-    across a model's implementations and de-duplicated, preserving config order.
-    """
-    models: dict[str, list[str]] = {}
-    for model_name, entry in ci_config.get("models", {}).items():
-        for impl in iter_implementations(entry):
-            release = impl.get("ci", {}).get("release")
-            if not release:
-                continue
-            for device in release.get("devices", []):
-                token = DeviceTypes.from_string(device).name.lower()
-                bucket = models.setdefault(model_name, [])
-                if token not in bucket:
-                    bucket.append(token)
-    return models
+def resolve_configured_scope(ci_config: dict, dev_dir: Path):
+    combos = collect_release_combos(ci_config)
+    resolved = resolve_release_combos(
+        combos,
+        load_dev_model_spec_sources(dev_dir),
+    )
+    expected = {}
+    models = {}
+    identity_selectors = {}
+    archive_owners = {}
+    for item in resolved:
+        model = item.identity[0]
+        device = item.combo.device.name.lower()
+        key = (model, device)
+        archive_key = (slugify_model_id(model), device)
+        prior_selector = identity_selectors.get(item.identity)
+        if prior_selector is not None:
+            raise ValueError(
+                f"Configured selectors {prior_selector!r} and {item.combo!r} "
+                f"resolve to duplicate artifact identity {item.identity!r}"
+            )
+        identity_selectors[item.identity] = item.combo
+        archive_owner = archive_owners.get(archive_key)
+        if archive_owner is not None and archive_owner != item.identity:
+            raise ValueError(
+                f"Release identities {archive_owner!r} and {item.identity!r} "
+                f"collide on artifact filename token {archive_key!r}"
+            )
+        archive_owners[archive_key] = item.identity
+        if key in expected and expected[key] != item.identity:
+            raise ValueError(
+                f"Artifact names cannot distinguish exact identities "
+                f"{expected[key]!r} and {item.identity!r}"
+            )
+        expected[key] = item.identity
+        models.setdefault(model, [])
+        if device not in models[model]:
+            models[model].append(device)
+    return models, expected
 
 
 # ---------------------------------------------------------------------------
@@ -182,21 +191,34 @@ def runner_of(artifact_name: str, model: str) -> str:
     exactly, so models that share a prefix (foo vs foo-turbo) are unambiguous
     because of the underscore boundary after the model name.
     """
-    rest = artifact_name[len(ARTIFACT_PREFIX) + len(model) + 1 :]  # "<runner>_<suffix>"
+    token = artifact_model_token(artifact_name, model)
+    if token is None:
+        raise ValueError(f"Artifact {artifact_name!r} does not match model {model!r}")
+    rest = artifact_name[len(ARTIFACT_PREFIX) + len(token) + 1 :]
     return rest.rsplit("_", 1)[0]
+
+
+def artifact_model_token(artifact_name: str, model: str) -> str | None:
+    matches = [
+        token
+        for token in model_name_variants(model)
+        if artifact_name.startswith(f"{ARTIFACT_PREFIX}{token}_")
+    ]
+    return max(matches, key=len) if matches else None
 
 
 def device_from_jobs(jobs: list[dict], model: str, runner: str) -> str | None:
     """Find the device a (model, runner) pair ran on, from the job name
     pattern ``run-release-<model>-<runner>-<device>``."""
-    marker = f"run-release-{model}-{runner}-"
     for job in jobs:
-        leaf = job.get("name", "").split("/")[-1].strip()
-        idx = leaf.find(marker)
-        if idx != -1:
-            tail = leaf[idx + len(marker) :].strip()
-            if tail:
-                return tail.split()[0]  # device token has no spaces
+        name = job.get("name", "").strip()
+        for token in model_name_variants(model):
+            marker = f"run-release-{token}-{runner}-"
+            idx = name.find(marker)
+            if idx != -1:
+                tail = name[idx + len(marker) :].strip()
+                if tail:
+                    return tail.split()[0]
     return None
 
 
@@ -205,6 +227,25 @@ def token_in_names(names: list[str], device: str) -> bool:
     ``p150`` does NOT match inside the runner label ``p150b``)."""
     pat = re.compile(r"(?<![0-9A-Za-z])" + re.escape(device) + r"(?![0-9A-Za-z])")
     return any(pat.search(n) for n in names)
+
+
+def validate_bundle_identity(bundle: Path, expected_identity):
+    actual_identity = extract_bundle_identity(bundle)
+    if actual_identity != expected_identity:
+        raise ValueError(
+            f"Runtime identity {actual_identity!r} does not match configured "
+            f"{expected_identity!r}"
+        )
+    return actual_identity
+
+
+def validate_staged_identity_set(expected, validated) -> None:
+    if validated != expected:
+        raise ValueError(
+            "Staged runtime identities do not match configured scope: "
+            f"missing={sorted(expected - validated)!r}, "
+            f"extra={sorted(validated - expected)!r}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -252,10 +293,14 @@ def resolve_model(
     repo: str,
     tmp: Path,
     cache: dict[int, Path],
+    expected_identities: dict[tuple[str, str], tuple] | None = None,
 ) -> dict[str, dict]:
     """Return {device: artifact} for the requested devices of one model."""
+    expected_identities = expected_identities or {}
     candidates = [
-        a for a in artifacts if a["name"].startswith(f"{ARTIFACT_PREFIX}{model}_")
+        artifact
+        for artifact in artifacts
+        if artifact_model_token(artifact["name"], model) is not None
     ]
     if not candidates:
         sys.exit(
@@ -264,12 +309,12 @@ def resolve_model(
         )
 
     # Primary: map each candidate's runner -> device via the run's job names.
-    by_device: dict[str, dict] = {}
+    by_device: dict[str, list[dict]] = {}
     for a in candidates:
         runner = runner_of(a["name"], model)
         dev = device_from_jobs(jobs, model, runner)
-        if dev and dev not in by_device:
-            by_device[dev] = a
+        if dev:
+            by_device.setdefault(dev, []).append(a)
 
     # Fallback: for any still-missing requested device, classify candidates by
     # the device token embedded in their own file names (ground truth).
@@ -280,7 +325,7 @@ def resolve_model(
                 names = zf.namelist()
             for d in devices:
                 if d not in by_device and token_in_names(names, d):
-                    by_device[d] = a
+                    by_device.setdefault(d, []).append(a)
 
     chosen: dict[str, dict] = {}
     for d in devices:
@@ -292,7 +337,30 @@ def resolve_model(
                 f"       Devices resolved for this model: {found}.\n"
                 f"       Candidate runner labels seen: {runners}."
             )
-        chosen[d] = by_device[d]
+        device_candidates = by_device[d]
+        expected_identity = expected_identities.get((model, d))
+        if expected_identity is None:
+            chosen[d] = device_candidates[0]
+            continue
+
+        matching = []
+        rejected = []
+        for artifact in device_candidates:
+            path = download_artifact(repo, artifact, tmp, cache)
+            try:
+                validate_bundle_identity(path, expected_identity)
+            except ValueError as exc:
+                rejected.append(f"{artifact['name']!r}: {exc}")
+            else:
+                matching.append(artifact)
+        if len(matching) != 1:
+            details = "; ".join(rejected) or "none"
+            sys.exit(
+                f"ERROR: expected one artifact for exact identity "
+                f"{expected_identity!r}, found {len(matching)}. "
+                f"Rejected candidates: {details}"
+            )
+        chosen[d] = matching[0]
     return chosen
 
 
@@ -321,36 +389,6 @@ def package(version: str, staged: dict[str, Path], out_dir: Path) -> Path:
             zf.writestr(info, src.read_bytes())
 
     return out_path
-
-
-def validate_structure(zip_path: Path, reference: Path | None) -> None:
-    """Assert the produced package has the expected shape; optionally diff the
-    inner-zip naming pattern against a previous release package."""
-    with zipfile.ZipFile(zip_path) as zf:
-        infos = zf.infolist()
-    top_dirs = {i.filename.split("/")[0] for i in infos}
-    if len(top_dirs) != 1:
-        sys.exit(
-            f"ERROR: expected exactly one top-level folder, found: {sorted(top_dirs)}"
-        )
-    inner = [i for i in infos if not i.filename.endswith("/")]
-    for i in inner:
-        if not i.filename.endswith(".zip"):
-            sys.exit(f"ERROR: unexpected non-zip entry in package: {i.filename}")
-        if i.compress_type != zipfile.ZIP_STORED:
-            sys.exit(f"ERROR: entry not stored uncompressed: {i.filename}")
-
-    if reference and reference.exists():
-        pat = re.compile(r"^[^/]+/workflow_logs_release_.+\.zip$")
-        with zipfile.ZipFile(reference) as zf:
-            ref_inner = [n for n in zf.namelist() if not n.endswith("/")]
-        ours_ok = all(pat.match(i.filename) for i in inner)
-        ref_ok = all(pat.match(n) for n in ref_inner)
-        status = "matches" if (ours_ok and ref_ok) else "DIFFERS FROM"
-        print(
-            f"  Layout vs reference '{reference.name}': inner-zip naming {status} "
-            f"the 'workflow_logs_release_<model>_<device>.zip' pattern."
-        )
 
 
 # ---------------------------------------------------------------------------
@@ -392,6 +430,11 @@ def main() -> None:
         help="CI config JSON providing the default release model list "
         f"(default: {DEFAULT_CI_CONFIG}). Ignored when --model is given.",
     )
+    ap.add_argument(
+        "--dev-dir",
+        default=str(DEFAULT_DEV_DIR),
+        help="Dev catalog used to resolve exact config identities",
+    )
     ap.add_argument("--run-id", default=DEFAULT_RUN_ID, help="Actions run ID")
     ap.add_argument(
         "--version", default=DEFAULT_VERSION, help="Release version, e.g. v0.15.0"
@@ -412,11 +455,6 @@ def main() -> None:
         help="Where to write the final zip. Accepts absolute path, relative path, or '.' for cwd (default: cwd)",
     )
     ap.add_argument(
-        "--reference-zip",
-        default=None,
-        help="Optional previous release zip to sanity-check layout against",
-    )
-    ap.add_argument(
         "--keep-temp",
         action="store_true",
         help="Keep the temp download dir for inspection",
@@ -430,13 +468,25 @@ def main() -> None:
 
     if args.model:
         models = parse_model_specs(args.model)
+        expected_identities = {}
+        print(
+            "WARNING: manual --model scope does not perform final exact-identity "
+            "verification.",
+            file=sys.stderr,
+        )
     else:
         ci_config_path = Path(args.ci_config).expanduser()
         try:
             ci_config = json.loads(ci_config_path.read_text())
         except FileNotFoundError:
             sys.exit(f"ERROR: CI config not found: {ci_config_path}")
-        models = collect_release_models(ci_config)
+        try:
+            models, expected_identities = resolve_configured_scope(
+                ci_config,
+                Path(args.dev_dir).expanduser(),
+            )
+        except ValueError as exc:
+            sys.exit(f"ERROR: {exc}")
         if not models:
             sys.exit(
                 f"ERROR: no models are marked 'release' in {ci_config_path}.\n"
@@ -445,9 +495,6 @@ def main() -> None:
 
     out_dir = Path(args.output_dir).expanduser().resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
-    reference = (
-        Path(args.reference_zip).expanduser().resolve() if args.reference_zip else None
-    )
 
     print(f"Repo:    {args.repo}")
     print(f"Run:     {args.run_id}")
@@ -465,15 +512,35 @@ def main() -> None:
     tmp_dir = Path(tempfile.mkdtemp(prefix="release_artifacts_"))
     cache: dict[int, Path] = {}
     staged: dict[str, Path] = {}  # inner-zip filename -> staged path
+    validated_identities = set()
 
     try:
         for model, devices in models.items():
             chosen = resolve_model(
-                model, devices, artifacts, jobs, args.repo, tmp_dir, cache
+                model,
+                devices,
+                artifacts,
+                jobs,
+                args.repo,
+                tmp_dir,
+                cache,
+                expected_identities,
             )
             for device in devices:
                 artifact = chosen[device]
                 src = download_artifact(args.repo, artifact, tmp_dir, cache)
+
+                expected_identity = expected_identities.get((model, device))
+                if expected_identity is not None:
+                    try:
+                        validated_identities.add(
+                            validate_bundle_identity(src, expected_identity)
+                        )
+                    except ValueError as exc:
+                        sys.exit(
+                            f"ERROR: bundle '{artifact['name']}' has invalid "
+                            f"runtime-spec evidence: {exc}"
+                        )
 
                 # ground-truth check: the device must appear as a token inside the bundle
                 with zipfile.ZipFile(src) as zf:
@@ -488,7 +555,7 @@ def main() -> None:
                         sys.exit(f"ERROR: {msg}")
                     print(f"  WARNING: {msg}")
 
-                inner_name = f"{ARTIFACT_PREFIX}{model}_{device}.zip"
+                inner_name = f"{ARTIFACT_PREFIX}{slugify_model_id(model)}_{device}.zip"
                 staged_path = tmp_dir / inner_name
                 staged_path.write_bytes(src.read_bytes())
                 staged[inner_name] = staged_path
@@ -497,9 +564,18 @@ def main() -> None:
                     f"({artifact.get('size_in_bytes', '?')} bytes)"
                 )
 
+        expected_identity_set = set(expected_identities.values())
+        if expected_identity_set:
+            try:
+                validate_staged_identity_set(
+                    expected_identity_set,
+                    validated_identities,
+                )
+            except ValueError as exc:
+                sys.exit(f"ERROR: {exc}")
+
         print(f"\nPackaging {len(staged)} bundles ...")
         out_path = package(args.version, staged, out_dir)
-        validate_structure(out_path, reference)
         print(f"\nDone: {out_path}  ({out_path.stat().st_size} bytes)")
     finally:
         if args.keep_temp:
