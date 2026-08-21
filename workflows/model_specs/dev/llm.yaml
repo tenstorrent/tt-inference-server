@@ -1782,6 +1782,23 @@ templates:
       override_tt_config:
         trace_region_size: 50331648  # 48 MB; shipped optimized_vllm config
         fabric_config: FABRIC_1D_RING
+        # REQUIRED for traced decode -- this is the setting the 52 t/s/u figure
+        # was measured with, not an optimisation. The model declares
+        # supports_sample_on_device and its canonical token-out path is the
+        # traced split sampling (sample_greedy_argmax / sample_split); "all" is
+        # what makes vLLM send per-row (temperature, top_k, top_p) and take
+        # token ids back instead of pulling logits to the host.
+        #
+        # Without it the plugin reports sample_on_device_mode=None,
+        # can_sample_on_device is False, and generator_vllm.warmup_model_decode
+        # returns early without capturing ANY decode trace ("host-sampled decode
+        # is eager by construction"). Every token then runs eager: measured at
+        # ~3.4 tok/s against ~50 traced, i.e. a ~15x regression that looks like
+        # a broken deployment rather than a missing config key.
+        sample_on_device_mode: all
+        # NOTE: "decode_only" is what Qwen3.6-27B and gemma-4-31B use, but this
+        # model's adapter documents "all" as the measured path, and "all" is what
+        # the bare-metal runs that produced the README numbers passed.
       # meta_ifeval / meta_gpqa_cot cannot execute for ANY non-Llama model.
       # workflow_venvs.py:444 builds the dataset name by concatenation --
       # config["evals_dataset"] = f"{_model_name}-evals" -- giving
