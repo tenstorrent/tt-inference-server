@@ -1814,6 +1814,16 @@ templates:
   min_ram_gb: 75
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+    # The model registers TTQwen3MoeForCausalLM with the TT vLLM plugin through
+    # the plugin's EXTRA_MODELS_DIR hook rather than by editing the plugin (see
+    # the bring-up branch's models/demos/blackhole/qwen3_coder_30b_a3b/README.md).
+    # tt-inference-server has no other EXTRA_MODELS_DIR handling anywhere, so
+    # without this the container starts and vLLM then fails at model load with an
+    # unregistered architecture. run_docker_server.py propagates ModelSpec.env_vars
+    # into the container, which is what makes setting it here sufficient.
+    # Absolute in-image path: the Dockerfile copies the whole ${TT_METAL_HOME}
+    # tree into the runtime stage, with HOME_DIR=/home/container_app_user.
+    EXTRA_MODELS_DIR: "/home/container_app_user/tt-metal/models/demos/blackhole/qwen3_coder_30b_a3b/vllm_bundle"
   metadata:
     Qwen/Qwen3-Coder-30B-A3B-Instruct:
       tool_call_parser_name: qwen3_coder
