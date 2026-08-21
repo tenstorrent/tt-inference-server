@@ -1564,25 +1564,8 @@ class TTMiniMaxH3Runner(TTDiTRunner):
         return height, width, num_frames
 
     def _validate(self, request: VideoGenerateRequest) -> None:
-        """Reject anything outside the published working points, with a reason.
-
-        The pipeline would otherwise either raise from deep inside packing or -- worse -- accept
-        the request and silently recompile the whole 50-block stack inside it.
-        """
+        """Reject shapes outside the published aspect-ratio/duration set before the request runs."""
         self._resolve_shape(request)
-
-        # `num_inference_steps` is not a lever on this deployment: the AdaLN modulation table is
-        # precomputed per step count and every shape is warmed at 50, so another value would
-        # recompile the stack and read from a table built for a different schedule. It stays on
-        # the shared request model because Wan uses it, so it is refused here rather than removed
-        # there -- and refused even when it happens to equal 50, so the API has one answer instead
-        # of "accepted if you guess the number we wanted".
-        if "num_inference_steps" in getattr(request, "model_fields_set", set()):
-            raise ValueError(
-                "num_inference_steps is not accepted for MiniMax-H3 t2va; omit it. This "
-                f"deployment always runs {MINIMAX_H3_NUM_INFERENCE_STEPS} steps (the modulation "
-                "table is precomputed for that schedule and every shape is warmed at it)."
-            )
 
     @log_execution_time(
         f"{dit_runner_log_map[get_settings().model_runner]} inference",
@@ -1604,7 +1587,7 @@ class TTMiniMaxH3Runner(TTDiTRunner):
             num_frames=num_frames,
             height=height,
             width=width,
-            num_inference_steps=MINIMAX_H3_NUM_INFERENCE_STEPS,
+            num_inference_steps=request.num_inference_steps or MINIMAX_H3_NUM_INFERENCE_STEPS,
             seed=int(request.seed) if request.seed is not None else 0,
         )
 

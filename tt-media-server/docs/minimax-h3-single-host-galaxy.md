@@ -285,8 +285,7 @@ row drops to 0.0 s.
 | `duration_seconds` | Any integer `4`..`15` -- what the MiniMax API accepts. Anything else is a 422. Omitted gives `5`. The video VAE encodes in 17-frame chunks, so only `17n + 5` frame counts exist and a request rounds **up** to the next one: the clip is never shorter than asked, by at most 0.67 s (`13` -> 13.667 s). `8` is the only exact fit (192 frames). |
 | Unknown fields | Rejected, not ignored. `{"resolution": "1080P", "duration": 9}` is a 422 naming the fields this deployment reads -- silently dropping them would tell a caller it got something it did not. Note the field is `duration_seconds`, and resolution is chosen with `aspect_ratio`. |
 | Resolution | 768P throughout: short edge 768 from 16:9 to 9:16, area capped at ~1 MPix for wider (21:9 is 1536x672). Derived by the model's `resolve_canvas_size`, not settable directly. |
-| `num_inference_steps` | **Not accepted.** Sending it at any value -- including 50 -- is a 422. The deployment always runs 50: the AdaLN modulation table is precomputed per step count. |
+| `num_inference_steps` | Any integer `4`..`50`; the shared default (20) applies when omitted. A count other than what was warmed rebuilds the AdaLN table and recompiles the denoise trace on first use -- the same cost a new aspect ratio or duration already pays. |
 | Warmup | Nothing is warmed by default; the first request per shape compiles. See section 6. |
-| `num_inference_steps` | Omitted is served as 50. An explicit value other than 50 is rejected. |
 | One request at a time | One device worker owns the mesh; further requests queue. |
 | `t2va` only | `ref2va` needs the `transformer_ref/` partition, and switching task in-process is a 62 GB reload. Separate deployment. |

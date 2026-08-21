@@ -90,23 +90,6 @@ class VideoGenerateRequest(BaseRequest):
             )
         return value
 
-    # TODO: Make generic for all video models, and remove model specific logic
-    @field_validator("num_inference_steps")
-    @classmethod
-    def _reject_steps_for_minimax_h3(cls, value):
-        # Only fires when the caller actually sent the field: pydantic does not run validators for
-        # defaults, so an omitted `num_inference_steps` still reaches the runner as 20 and is
-        # served at the deployment's 50.
-        if value is None or not _is_minimax_h3():
-            return value
-        from tt_model_runners.minimax_h3_policy import MINIMAX_H3_NUM_INFERENCE_STEPS
-
-        raise ValueError(
-            "num_inference_steps is not accepted for MiniMax-H3 t2va; omit it. This deployment "
-            f"always runs {MINIMAX_H3_NUM_INFERENCE_STEPS} steps."
-        )
-
-
 # TODO: Remove model specific logic
 def _is_minimax_h3() -> bool:
     from config.constants import ModelRunners
