@@ -16,6 +16,10 @@
 #                                   Never the steady state: the smoke guards
 #                                   that pin.
 #   HUGEPAGES                       true|false (default: probe the node)
+#   HUGEPAGES_SIZE                  hugepages-1Gi request/limit when they are on
+#                                   (default: the node's allocatable). The chart
+#                                   asks for 32Gi regardless of board count,
+#                                   which no single-board host can schedule.
 #   HF_TOKEN                        gated weights only
 #   HF_CACHE_DIR                    host dir with pre-downloaded weights
 #   PULL_SECRET                     existing docker-registry secret to use
@@ -38,6 +42,7 @@ NAMESPACE="${NAMESPACE:-ttis-hw-smoke}"
 RELEASE="${RELEASE:-ttis-hw}"
 IMAGE_TAG="${IMAGE_TAG:-}"
 HUGEPAGES="${HUGEPAGES:-}"
+HUGEPAGES_SIZE="${HUGEPAGES_SIZE:-}"
 HF_TOKEN="${HF_TOKEN:-}"
 HF_CACHE_DIR="${HF_CACHE_DIR:-}"
 PULL_SECRET="${PULL_SECRET:-}"
@@ -89,13 +94,25 @@ HELM_SET=(--set "model=$MODEL" --set "device=$DEVICE")
 [ -n "$HF_CACHE_DIR" ] && HELM_SET+=(--set "hfCacheDir=$HF_CACHE_DIR")
 [ -n "$PULL_SECRET" ]  && HELM_SET+=(--set "defaults.image.pullSecrets[0].name=$PULL_SECRET")
 
+hp_alloc="$(kubectl get nodes -o jsonpath='{.items[0].status.allocatable.hugepages-1Gi}' 2>/dev/null || true)"
 # A runner with no 1Gi pages would leave the Pod Pending unrelated to DRA.
 if [ -z "$HUGEPAGES" ]; then
-  hp_alloc="$(kubectl get nodes -o jsonpath='{.items[0].status.allocatable.hugepages-1Gi}' 2>/dev/null || true)"
   case "${hp_alloc:-0}" in ""|0|0Gi|0Ki) HUGEPAGES=false ;; *) HUGEPAGES=true ;; esac
   info "HUGEPAGES not set -> $HUGEPAGES (node allocatable hugepages-1Gi=${hp_alloc:-0})"
 fi
 HELM_SET+=(--set "hugepages.enabled=$HUGEPAGES")
+
+# The chart's 32Gi request is Galaxy-sized and fixed, so on a smaller host the
+# Pod is unschedulable for a reason that has nothing to do with what we assert.
+# Capacity adaptation, like CPU_REQUEST / MEMORY_REQUEST.
+if [ "$HUGEPAGES" = "true" ]; then
+  [ -n "$HUGEPAGES_SIZE" ] || HUGEPAGES_SIZE="$hp_alloc"
+  if [ -n "$HUGEPAGES_SIZE" ]; then
+    info "hugepages request/limit -> $HUGEPAGES_SIZE (chart default is 32Gi)"
+    HELM_SET+=(--set "defaults.resources.requests.hugepages-1Gi=$HUGEPAGES_SIZE"
+               --set "defaults.resources.limits.hugepages-1Gi=$HUGEPAGES_SIZE")
+  fi
+fi
 
 # Random rather than fixed: a fixed key would still pass if the chart stopped
 # wiring it and the server fell back to its built-in default.
@@ -183,8 +200,14 @@ for _ in $(seq 1 60); do
   [ -n "${DEVICES// /}" ] && break
   sleep 5
 done
-[ -n "${DEVICES// /}" ] \
-  || fail "ResourceClaim $CLAIM never allocated — the scheduler found no free $WANT_BOARD board for this Pod"
+if [ -z "${DEVICES// /}" ]; then
+  # The claim is allocated during scheduling, so anything that makes the Pod
+  # unschedulable (hugepages, cpu, memory) leaves it unallocated too. Report
+  # what the scheduler actually said.
+  why="$(kubectl -n "$NAMESPACE" get events --field-selector reason=FailedScheduling \
+    -o jsonpath='{.items[-1:].message}' 2>/dev/null || true)"
+  fail "ResourceClaim $CLAIM never allocated. Scheduler: ${why:-<no FailedScheduling event>}"
+fi
 ok "claim $CLAIM allocated: $DEVICES"
 
 priv="$(kubectl -n "$NAMESPACE" get pod "$POD" -o jsonpath='{.spec.containers[0].securityContext.privileged}')"
