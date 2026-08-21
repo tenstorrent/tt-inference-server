@@ -18,7 +18,15 @@ import time
 from abc import ABC
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar, List, Optional, Sequence, Tuple
+from typing import (
+    TYPE_CHECKING,
+    ClassVar,
+    Iterable,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+)
 
 from report_module import (
     GenerateResult,
@@ -26,6 +34,7 @@ from report_module import (
     ReportSchema,
     acceptance_criteria_check,
     build_acceptance_export,
+    fully_waived_task_types,
     task_failure_blockers,
 )
 from test_module.task_types import MediaTaskType
@@ -59,6 +68,10 @@ class TaskOutcome:
     @property
     def succeeded(self) -> bool:
         return self.exit_code == 0
+
+    def is_waived(self, waived_task_types: Iterable[str]) -> bool:
+        """Whether a non-zero exit is explained by a waiver on this task's block."""
+        return self.block_kind is not None and self.task_type in waived_task_types
 
 
 @dataclass(frozen=True)
@@ -263,7 +276,9 @@ class WorkflowExecution(ABC):
             )
 
         try:
-            accepted, _blockers = self.apply_acceptance_criteria(schema, task_outcomes)
+            accepted, _blockers, waived_task_types = self.apply_acceptance_criteria(
+                schema, task_outcomes
+            )
             self.inject_metadata(schema)
             gen = self.generate_report(schema)
         except Exception as e:
@@ -277,7 +292,11 @@ class WorkflowExecution(ABC):
                 error=str(e),
             )
 
-        failed_tasks = [outcome for outcome in task_outcomes if not outcome.succeeded]
+        failed_tasks = [
+            o
+            for o in task_outcomes
+            if not o.succeeded and not o.is_waived(waived_task_types)
+        ]
         return_code = 0 if accepted and not failed_tasks else 1
         if failed_tasks:
             self.logger.error(
@@ -343,13 +362,19 @@ class WorkflowExecution(ABC):
 
     def apply_acceptance_criteria(
         self, schema: ReportSchema, task_outcomes: Sequence[TaskOutcome]
-    ) -> Tuple[bool, dict]:
+    ) -> Tuple[bool, dict, set]:
         model_status = self._model_status()
+        known_issues = self._known_issues()
         accepted, blockers, categories = acceptance_criteria_check(
-            schema, known_issues=self._known_issues(), model_status=model_status
+            schema, known_issues=known_issues, model_status=model_status
         )
+        waived_task_types = fully_waived_task_types(schema, known_issues)
         crash_blockers = task_failure_blockers(
-            (o.task_type, o.exit_code, o.block_kind is not None) for o in task_outcomes
+            (
+                (o.task_type, o.exit_code, o.block_kind is not None)
+                for o in task_outcomes
+            ),
+            waived_task_types=waived_task_types,
         )
         if crash_blockers:
             blockers = {**blockers, **crash_blockers}
@@ -362,7 +387,7 @@ class WorkflowExecution(ABC):
             "PASS" if accepted else "FAIL",
             len(blockers),
         )
-        return accepted, blockers
+        return accepted, blockers, waived_task_types
 
     def _known_issues(self) -> Optional[list]:
         """model_spec known_issues (waivers) for this device, or None.

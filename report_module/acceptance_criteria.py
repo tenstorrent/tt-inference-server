@@ -18,6 +18,11 @@ KIND_BENCHMARKS = "benchmarks"
 KIND_EVALS = "evals"
 KIND_SPEC_TESTS = "spec_tests"
 
+# TaskOutcome.task_type for the spec-test task, i.e. MediaTaskType.SPEC_TESTS
+# .value. A separate namespace from the block kinds above; not imported from
+# test_module to keep report_module free of that dependency.
+SPEC_TESTS_TASK_TYPE = "spec_tests"
+
 TARGET_LEVELS = ("functional", "complete", "target")
 CHECK_SUFFIX = "_check"
 FAIL_CHECK_INT = 3
@@ -104,7 +109,7 @@ def acceptance_criteria_check(
     categories = [
         _check_benchmarks(schema, model_status),
         _check_evals(schema, known_issues, model_status),
-        _check_spec_tests(schema),
+        _check_spec_tests(schema, known_issues),
     ]
     blockers: Dict[str, str] = {}
     for category in categories:
@@ -114,6 +119,7 @@ def acceptance_criteria_check(
 
 def task_failure_blockers(
     outcomes: Iterable[Tuple[str, int, bool]],
+    waived_task_types: Optional[Iterable[str]] = None,
 ) -> Dict[str, str]:
     """Blockers for workflow tasks whose process exited non-zero.
 
@@ -122,10 +128,16 @@ def task_failure_blockers(
     missing category as ``NA`` rather than a failure. Surfacing the raw task
     exit code here keeps the acceptance verdict consistent with the workflow's
     return code so a crash can never be laundered into a silent ``PASS``.
+
+    ``waived_task_types`` suppresses the exit-code blocker for tasks whose block
+    was fully waived; a task that produced no block always blocks.
     """
+    waived = set(waived_task_types or ())
     blockers: Dict[str, str] = {}
     for task_type, exit_code, produced_block in outcomes:
         if exit_code == 0:
+            continue
+        if produced_block and task_type in waived:
             continue
         detail = (
             "and produced no report block"
@@ -136,6 +148,35 @@ def task_failure_blockers(
             f"Task '{task_type}' failed (exit={exit_code}) {detail}."
         )
     return blockers
+
+
+def fully_waived_task_types(
+    schema: ReportSchema, known_issues: Optional[Iterable[Any]] = None
+) -> set:
+    """Task types whose every failure was waived, so their exit code is expected.
+
+    Spec tests only, as policy: other categories' non-zero exits always block
+    (and ``CategoryResult.waived`` also holds #4830's status-tier masking, which
+    must never excuse one).
+
+    Deliberately walks the raw blocks rather than reading the Spec Tests
+    category: the category drops :data:`INFRA_TASK_TYPES` blocks, while the
+    task's exit code counts them, so "category clean apart from waivers" is a
+    strictly weaker claim than "every failure was waived". One unwaived
+    health/unit/stability/integration failure keeps the exit-code blocker.
+    """
+    blocking = [
+        b
+        for b in schema.sections
+        if b.kind == KIND_SPEC_TESTS
+        and isinstance(b.data, Mapping)
+        and _block_test_status(b).is_blocking
+    ]
+    if not blocking:
+        return set()
+    if any(_spec_waiver(b, known_issues) is None for b in blocking):
+        return set()
+    return {SPEC_TESTS_TASK_TYPE}
 
 
 def _find_waiver(
@@ -457,7 +498,51 @@ def _check_evals(
     )
 
 
-def _check_spec_tests(schema: ReportSchema) -> CategoryResult:
+def _failing_spec_cases(block: Block) -> List[str]:
+    """Failing case names from ``parameter_conformance_summary``, if itemised.
+
+    One suite block covers many pytest functions, so a waiver can name one case.
+    """
+    summary = block.data.get("parameter_conformance_summary")
+    if not isinstance(summary, list):
+        return []
+    return [
+        row.get("test_case")
+        for row in summary
+        if isinstance(row, Mapping)
+        and "FAIL" in str(row.get("status", "")).upper()
+        and row.get("test_case")
+    ]
+
+
+def _spec_waiver(block: Block, known_issues: Optional[Iterable[Any]]) -> Optional[str]:
+    """Waiver reason for this block, or None.
+
+    Matches a waiver naming the suite, else only when every failing case is
+    individually waived -- so an unwaived regression alongside a known issue
+    still blocks. Cases that are not itemised cannot be waived case by case.
+    """
+    if not known_issues:
+        return None
+
+    suite_name = block.data.get("test_name") or block.data.get("task_name")
+    reason = _find_waiver(known_issues, "SPEC_TESTS", suite_name)
+    if reason is not None:
+        return reason
+
+    reasons = []
+    for case in _failing_spec_cases(block):
+        case_reason = _find_waiver(known_issues, "SPEC_TESTS", case)
+        if case_reason is None:
+            return None
+        reasons.append(f"{case}: {case_reason}")
+    return "; ".join(reasons) if reasons else None
+
+
+def _check_spec_tests(
+    schema: ReportSchema,
+    known_issues: Optional[Iterable[Any]] = None,
+) -> CategoryResult:
     spec_blocks = [
         b
         for b in schema.sections
@@ -469,16 +554,25 @@ def _check_spec_tests(schema: ReportSchema) -> CategoryResult:
         return CategoryResult(CATEGORY_SPEC_TESTS, STATUS_NA, 0, 0)
 
     blockers: Dict[str, str] = {}
+    waived: Dict[str, str] = {}
     failed = 0
     skipped = 0
     na = 0
     for block in spec_blocks:
         test_status = _block_test_status(block)
         if test_status.is_blocking:
-            blockers[f"spec.{_block_key(block)}"] = (
+            block_key = f"spec.{_block_key(block)}"
+            message = (
                 f"{block.title or block.kind} reported status={test_status.value} "
                 f"(attempts={block.data.get('attempts', '?')})"
             )
+            # A model_spec known_issues waiver (workflow_type SPEC_TESTS)
+            # demotes the blocker to a non-fatal waiver, mirroring evals above.
+            reason = _spec_waiver(block, known_issues)
+            if reason is not None:
+                waived[block_key] = f"{message} (waived: {reason})"
+                continue
+            blockers[block_key] = message
             failed += 1
         elif test_status is TestStatus.SKIP:
             skipped += 1
@@ -494,6 +588,7 @@ def _check_spec_tests(schema: ReportSchema) -> CategoryResult:
         na=na,
         skipped=skipped,
         blockers=blockers,
+        waived=waived,
     )
 
 

@@ -304,7 +304,7 @@ class PrefillDecodeWorkflow(WorkflowExecution):
 
     def apply_acceptance_criteria(self, schema, task_outcomes):
         self.logger.info("Acceptance: N/A (prefill_decode has no acceptance gate)")
-        return True, {}
+        return True, {}, set()
 
     def _inject_model_spec_metadata(self, meta: dict) -> None:
         """Report the served model, not the placeholder catalog spec."""
