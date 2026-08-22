@@ -84,6 +84,10 @@ class VideoService(BaseJobService):
     @log_execution_time("Video postprocessing", TelemetryEvent.POST_PROCESSING, None)
     async def post_process(self, result, input_request: VideoGenerateRequest):
         """Asynchronous postprocessing using queue-based workers."""
+        if isinstance(result, BaseException):
+            # A worker that raised returns the exception object; without this it reaches the
+            # exporter and the client gets a shape error instead of the real reason.
+            raise result
         if isinstance(result, str):
             return result
         try:
