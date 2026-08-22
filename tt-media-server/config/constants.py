@@ -455,6 +455,17 @@ class AudioResponseFormat(Enum):
     OGG = "ogg"
 
 
+class AudioInputFormat(Enum):
+    """Container formats accepted on the transcription path.
+
+    UNKNOWN matches no known header and is rejected.
+    """
+
+    WAV = "wav"
+    MP3 = "mp3"
+    UNKNOWN = "unknown"
+
+
 SDXL_VALID_IMAGE_RESOLUTIONS = frozenset({(1024, 1024), (512, 512)})
 
 

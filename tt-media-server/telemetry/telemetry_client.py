@@ -78,6 +78,270 @@ post_processing_duration = Histogram(
     ["model_type", "post_processing_enabled"],
 )
 
+# Buckets are calibrated against measured WAV decode
+audio_input_preparation_duration = Histogram(
+    "tt_media_server_audio_input_preparation_seconds",
+    "Time to decode, resample and prepare submitted audio for inference",
+    ["model_type", "format"],
+    buckets=(
+        0.0002,
+        0.0005,
+        0.001,
+        0.002,
+        0.005,
+        0.01,
+        0.02,
+        0.05,
+        0.1,
+        0.25,
+        0.5,
+        1.0,
+        2.5,
+        5.0,
+        float("inf"),
+    ),
+)
+
+# Segment-merge step only, observed once per request; microsecond floor.
+audio_chunking_duration = Histogram(
+    "tt_media_server_audio_chunking_seconds",
+    "Time to merge VAD/diarization segments into inference-sized audio chunks",
+    ["model_type", "mode"],
+    buckets=(
+        0.00001,
+        0.00005,
+        0.0001,
+        0.0005,
+        0.001,
+        0.005,
+        0.01,
+        0.05,
+        0.1,
+        0.5,
+        float("inf"),
+    ),
+)
+
+# Closest available proxy for per-chunk input preparation: tt-metal's
+# WhisperGenerator fuses log-mel extraction with the encoder pass and the first
+# decode step, so this bundles all three and cannot separate them from here.
+#
+# Buckets are fitted to measured data (whisper-large-v3, one p300c chip, ~8s
+# chunks, VAD-only): mean 0.45s with 84% of observations in 0.25-0.5s, so the
+# grid is dense there and sparse outside. Nothing landed below 0.25s, but the
+# floor keeps headroom for distil-large-v3, whose shorter decode should sit
+# lower. Encoder cost is fixed because every chunk is padded to a 30s frame, so
+# this barely moves with chunk length.
+audio_chunk_first_token_duration = Histogram(
+    "tt_media_server_audio_chunk_first_token_seconds",
+    "Time from chunk hand-off until the first item is emitted for that chunk",
+    ["model_type"],
+    buckets=(
+        0.1,
+        0.2,
+        0.3,
+        0.4,
+        0.5,
+        0.65,
+        0.8,
+        1.0,
+        1.5,
+        2.5,
+        5.0,
+        10.0,
+        30.0,
+        float("inf"),
+    ),
+)
+
+# One observation per chunk, so ms/chunk and p50/p99 read straight off this.
+# Wall time, not compute: the streaming loop yields to its consumer inside this
+# span, so a slow client shows up here but not in the first-item histogram.
+#
+# Measured mean is 1.4s for ~8s chunks, with 87% of observations in 1.0-2.5s;
+# the grid is dense there. Unlike the first-item span this does scale with chunk
+# length, because decode step count follows the transcribed content, so the
+# lower buckets carry the short-chunk (diarized) case.
+#
+# 1.75 splits what was otherwise a single bucket holding over half the
+# observations, with p90 sitting on its 2.0 boundary: without it every quantile
+# from p50 to p90 resolves to the same interpolation across one wide bucket.
+audio_chunk_processing_duration = Histogram(
+    "tt_media_server_audio_chunk_processing_seconds",
+    "Wall time to transcribe a single audio chunk end to end",
+    ["model_type"],
+    buckets=(
+        0.25,
+        0.5,
+        0.75,
+        1.0,
+        1.25,
+        1.5,
+        1.75,
+        2.0,
+        2.5,
+        3.5,
+        5.0,
+        10.0,
+        30.0,
+        float("inf"),
+    ),
+)
+
+# Chunk fan-out; divides audio_chunking_seconds down to a per-chunk cost.
+audio_chunks_per_request = Histogram(
+    "tt_media_server_audio_chunks_per_request",
+    "Number of inference chunks produced for one audio request",
+    ["model_type", "mode"],
+    buckets=(1, 2, 4, 8, 16, 32, 64, 128, float("inf")),
+)
+
+# VAD gates when inference starts and ends, so a timeout here is delay, not a
+# non-event: `outcome` keeps failed runs visible without skewing the ok quantiles.
+audio_vad_duration = Histogram(
+    "tt_media_server_audio_vad_seconds",
+    "Wall time to identify speech and endpoint boundaries",
+    ["model_type", "outcome"],
+    buckets=(
+        0.005,
+        0.01,
+        0.025,
+        0.05,
+        0.1,
+        0.25,
+        0.5,
+        1.0,
+        2.5,
+        5.0,
+        10.0,
+        30.0,
+        float("inf"),
+    ),
+)
+
+# CPU consumed by the VAD worker process, not the caller's wall clock. Divide by
+# audio_vad_seconds for utilisation: >1 means the model went multi-threaded.
+audio_vad_cpu_duration = Histogram(
+    "tt_media_server_audio_vad_cpu_seconds",
+    "CPU time consumed by the VAD worker process for one request",
+    ["model_type"],
+    buckets=(
+        0.005,
+        0.01,
+        0.025,
+        0.05,
+        0.1,
+        0.25,
+        0.5,
+        1.0,
+        2.5,
+        5.0,
+        10.0,
+        30.0,
+        float("inf"),
+    ),
+)
+
+# Endpoint count. A collapse toward 1, or a jump into the hundreds, is the
+# signature of bad endpointing that a duration alone will not show.
+audio_vad_segments = Histogram(
+    "tt_media_server_audio_vad_segments",
+    "Speech segments returned by VAD for one request",
+    ["model_type"],
+    buckets=(0, 1, 2, 4, 8, 16, 32, 64, 128, 256, float("inf")),
+)
+
+# --- Feature extraction and encoder throughput ------------------------------
+#
+# Stage timings come from tt-metal's `PerfMetrics` (tt-metal #53717). Throughput
+# is a counter pair rather than a ready-made rate, so it aggregates across
+# workers and survives scrape gaps:
+#
+#     audio-seconds/s = rate(<stage>_input_seconds_total) / rate(<stage>_duration_seconds_sum)
+#
+# `_input_seconds_total` is accounted server-side, not read off
+# PerfMetrics.total_audio_s, which sums raw submitted durations: the extractor
+# truncates each item to one 30s frame, so a longer submission would inflate
+# both throughputs by the truncation ratio.
+#
+# These are *effective* audio throughput, not device utilisation: a short chunk
+# is padded up to the frame, so encoder cost is fixed per chunk and throughput
+# falls roughly linearly with chunk length.
+audio_feature_extraction_input_seconds = Counter(
+    "tt_media_server_audio_feature_extraction_input_seconds_total",
+    "Audio duration converted into acoustic features",
+    ["model_type", "device_id", "sample_rate", "channels", "batch"],
+)
+
+# Host-side log-mel over a batch already padded to fixed frames, so near-constant
+# per item: measured ~2ms per chunk.
+#
+# The grid is dense across 1-4ms because that is where the mode sits. An earlier
+# version started at 0.001 and jumped straight to 0.0025, which put the whole
+# distribution in one bucket and made p50 and p95 interpolate the same interval —
+# the two quantiles moved together and neither meant anything. The tail stops at
+# 0.5 rather than 2.5: extraction is host CPU over a fixed frame count, so a
+# half-second batch already means severe host starvation and finer resolution
+# above that buys nothing.
+audio_feature_extraction_duration = Histogram(
+    "tt_media_server_audio_feature_extraction_duration_seconds",
+    "Wall time spent extracting acoustic features for one batch",
+    ["model_type", "device_id", "sample_rate", "channels", "batch"],
+    buckets=(
+        0.0005,
+        0.001,
+        0.0015,
+        0.002,
+        0.003,
+        0.004,
+        0.006,
+        0.01,
+        0.02,
+        0.05,
+        0.1,
+        0.5,
+        float("inf"),
+    ),
+)
+
+# `trace_hit="false"` is the call that captures the encoder trace for a batch
+# bucket: it runs the encoder eagerly and again under capture, so its duration is
+# a one-off outlier. Labelled rather than dropped, so the cost stays visible
+# while steady-state panels filter on trace_hit="true".
+audio_encoder_input_seconds = Counter(
+    "tt_media_server_audio_encoder_input_seconds_total",
+    "Audio duration processed by the acoustic encoder",
+    ["model_type", "device_id", "model_name", "language", "batch", "trace_hit"],
+)
+
+# Encoder input preprocessing, the encoder stack, and the synchronize that makes
+# its result observable — compute, not enqueue. Bounded above by the chunk
+# first-item span (mean 0.45s including first decode), so the grid is dense from
+# 10ms to 500ms with room to 10s for trace-capture calls.
+audio_encoder_duration = Histogram(
+    "tt_media_server_audio_encoder_duration_seconds",
+    "Wall time spent in the acoustic encoder for one batch",
+    ["model_type", "device_id", "model_name", "language", "batch", "trace_hit"],
+    buckets=(
+        0.01,
+        0.025,
+        0.05,
+        0.075,
+        0.1,
+        0.15,
+        0.2,
+        0.3,
+        0.4,
+        0.5,
+        0.75,
+        1.0,
+        2.5,
+        5.0,
+        10.0,
+        float("inf"),
+    ),
+)
+
 # Model inference metrics
 model_inference_duration = Histogram(
     "tt_media_server_model_inference_duration_seconds",
