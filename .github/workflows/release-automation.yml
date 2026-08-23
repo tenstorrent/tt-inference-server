@@ -288,6 +288,19 @@ jobs:
           git push -f origin "refs/tags/${TAG}"
           echo "Tagged HEAD and pushed '${TAG}'."
 
+      - name: "git branch <tag> from release HEAD + push"
+        # README_MANUAL also cuts a v<version> BRANCH (besides the tag) from the
+        # release HEAD. Use `git branch -f` (NOT switch/checkout) so HEAD stays on
+        # the current release branch — later steps (crane copy / re-bake / verify /
+        # post-release) are unaffected. The branch is taken from HEAD (never
+        # references 'stable' or the branch name), and NO branch is deleted. Force
+        # so a re-run re-points the (temp) branch instead of failing.
+        run: |
+          TAG="v${RELEASE_VERSION}${TAG_SUFFIX}"
+          git branch -f "${TAG}" HEAD
+          git push -f origin "refs/heads/${TAG}"
+          echo "Created branch '${TAG}' at release HEAD and pushed it (stable left intact)."
+
       # Preserve the generated files so they can be inspected / downloaded.
       - name: "Upload generated changes as an artifact"
         if: always()
