@@ -43,6 +43,12 @@ This page lists all supported models organized by hardware type.
 | 🛠️ Experimental | LLM | [gpt-oss-20b](llm/gpt-oss-20b_galaxy.md) |
 | 🛠️ Experimental | VLM | [gemma-3-27b-it](vlm/gemma-3-27b-it_galaxy.md) |
 
+## [BH Galaxy](https://tenstorrent.com/hardware/galaxy)
+
+| Status | Type | Model |
+|--------|------|-------|
+| 🟢 Complete | LLM | [Qwen3-32B](llm/Qwen3-32B_blackhole_galaxy.md) |
+
 ## [BH LoudBox](https://tenstorrent.com/hardware/tt-loudbox)
 
 | Status | Type | Model |

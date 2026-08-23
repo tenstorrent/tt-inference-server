@@ -314,7 +314,7 @@ All fields under `defaults` apply to every model/engine/device/impl unless overr
 | `Qwen2.5-VL-3B-Instruct` | n150, n300 |
 | `Qwen2.5-VL-72B-Instruct` | gpu, t3k |
 | `Qwen2.5-VL-7B-Instruct` | n150, n300 |
-| `Qwen3-32B` | galaxy, p150x8, p300x2, t3k |
+| `Qwen3-32B` | blackhole_galaxy, galaxy, p150x8, p300x2, t3k |
 | `Qwen3-8B` | galaxy, n150, n300, p300, t3k |
 | `Qwen3-VL-32B-Instruct` | t3k |
 | `Qwen3.6-27B` | p150x8, p300x2 |
