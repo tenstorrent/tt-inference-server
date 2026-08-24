@@ -155,10 +155,11 @@ def _catalog_group(template: CommentedMap) -> str:
     if existing:
         return str(existing)
     weights = [str(weight) for weight in template.get("weights", [])]
+    # Group identity describes the logical docs owner, not its current members.
+    # Adding or removing a weight must not split re-promoted leaves from siblings.
     payload = {
         "model_display_name": template.get("model_display_name")
         or (Path(weights[0]).name if weights else ""),
-        "weights": sorted(weights),
         "inference_engine": str(template.get("inference_engine", "")),
         "impl": str(template.get("impl", "")),
     }

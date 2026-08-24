@@ -10,11 +10,13 @@ import textwrap
 
 import pytest
 import yaml
+from ruamel.yaml.comments import CommentedMap
 
 from scripts.release.promote_dev_spec_to_prod import (
     DEFAULT_CI_CONFIG,
     DEFAULT_DEV_DIR,
     DEFAULT_PROD_DIR,
+    _catalog_group,
     main,
     promote,
 )
@@ -35,6 +37,24 @@ PINS = {
     "version": "9.9.9",
     "vllm_commit": "new-vllm",
 }
+
+
+def test_catalog_group_ignores_weight_membership_but_distinguishes_impl():
+    template = CommentedMap(
+        {
+            "weights": ["org/model-base"],
+            "model_display_name": "model",
+            "inference_engine": "VLLM",
+            "impl": "tt_transformers",
+        }
+    )
+    original = _catalog_group(template)
+
+    template["weights"].append("org/model-instruct")
+    assert _catalog_group(template) == original
+
+    template["impl"] = "forge_vllm_plugin"
+    assert _catalog_group(template) != original
 
 
 def _write_catalogs(tmp_path, *, dev_llm, prod_llm):
@@ -526,7 +546,7 @@ def test_full_prod_flattening_preserves_generated_documentation(tmp_path):
     assert _file_tree(after_docs) == _file_tree(before_docs)
 
 
-def test_docs_do_not_coalesce_heterogeneous_release_pins(tmp_path):
+def test_docs_show_limits_for_heterogeneous_release_configurations(tmp_path):
     _, prod_dir = _write_catalogs(
         tmp_path,
         dev_llm="templates: []\n",
@@ -551,12 +571,20 @@ def test_docs_do_not_coalesce_heterogeneous_release_pins(tmp_path):
               catalog_group: shared
               model_display_name: model
               device_model_specs:
-                - {device: N150, max_concurrency: 1, max_context: 1024}
+                - {device: N150, max_concurrency: 8, max_context: 65536}
         """,
     )
     templates = load_templates_from_yaml(prod_dir / "llm.yaml")
 
     assert coalesce_catalog_groups_for_docs(templates) == templates
+    docs = tmp_path / "docs"
+    with contextlib.redirect_stdout(io.StringIO()):
+        generate_doc_pages(templates, str(docs))
+    page = (docs / "llm" / "model_n150.md").read_text()
+    assert (
+        "| Weights | Implementation | Max Batch Size | Max Context Length |"
+    ) in page
+    assert "| 8 | 65536 |" in page
 
 
 def test_real_catalog_promotion_is_exact_leaf_granular_and_idempotent(tmp_path):

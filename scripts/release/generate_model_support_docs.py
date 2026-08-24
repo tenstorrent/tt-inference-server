@@ -770,13 +770,13 @@ def generate_model_page_group_page(
         if len(device_templates) > 1:
             lines.append("#### Additional released configurations")
             lines.append("")
-            lines.append(
-                "| Weights | Implementation | tt-metal Commit | vLLM Commit | Docker Image |"
-            )
-            lines.append(
-                "|---------|----------------|-----------------|-------------|--------------|"
-            )
-            for alternate, _ in device_templates[1:]:
+            columns = ["Weights", "Implementation", "Max Batch Size"]
+            if model_type in (ModelType.LLM, ModelType.VLM):
+                columns.append("Max Context Length")
+            columns.extend(["tt-metal Commit", "vLLM Commit", "Docker Image"])
+            lines.append("| " + " | ".join(columns) + " |")
+            lines.append("|" + "|".join("---" for _ in columns) + "|")
+            for alternate, alternate_dev_spec in device_templates[1:]:
                 alternate_weights = ", ".join(
                     f"[{weight}](https://huggingface.co/{weight})"
                     for weight in alternate.weights
@@ -791,11 +791,21 @@ def generate_model_page_group_page(
                         multihost=device.is_multihost(),
                     )
                 )
-                lines.append(
-                    f"| {alternate_weights} | `{alternate.impl.impl_name}` | "
-                    f"`{alternate.tt_metal_commit}` | "
-                    f"`{alternate.vllm_commit or '-'}` | `{alternate_image}` |"
+                values = [
+                    alternate_weights,
+                    f"`{alternate.impl.impl_name}`",
+                    str(alternate_dev_spec.max_concurrency),
+                ]
+                if model_type in (ModelType.LLM, ModelType.VLM):
+                    values.append(str(alternate_dev_spec.max_context))
+                values.extend(
+                    [
+                        f"`{alternate.tt_metal_commit}`",
+                        f"`{alternate.vllm_commit or '-'}`",
+                        f"`{alternate_image}`",
+                    ]
                 )
+                lines.append("| " + " | ".join(values) + " |")
             lines.append("")
 
     return "\n".join(lines)

@@ -22,6 +22,9 @@ from workflows.workflow_types import DeviceTypes, InferenceEngine
 
 LeafIdentity = Tuple[str, str, str, str]
 
+# models-ci-config schema uses the CI-facing BH_GALAXY label while model
+# catalogs and DeviceTypes use the canonical BLACKHOLE_GALAXY identity.
+# All release consumers normalize through collect_release_combos.
 _RELEASE_DEVICE_ALIASES = {
     "BH_GALAXY": "BLACKHOLE_GALAXY",
 }
