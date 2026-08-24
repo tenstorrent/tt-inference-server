@@ -1821,6 +1821,29 @@ templates:
         # NOTE: "decode_only" is what Qwen3.6-27B and gemma-4-31B use, but this
         # model's adapter documents "all" as the measured path, and "all" is what
         # the bare-metal runs that produced the README numbers passed.
+      vllm_args:
+        # Ignore the checkpoint's generation_config.json, which injects
+        # repetition_penalty=1.05 into every request that does not override it.
+        # This is the flag every bare-metal run behind the README numbers used,
+        # and it matters twice:
+        #
+        # 1. Performance: a penalised request costs ~14% TPOT, because the
+        #    penalty operands are staged per step on the host (README.md,
+        #    "--generation-config vllm matters").
+        # 2. Stability, as of the decode-width ladder: a penalised request takes
+        #    the order-remap branch in generator_vllm._apply_penalties, which
+        #    rebuilds prompt_tokens/output_tokens as a *list* of row tensors by
+        #    list comprehension. generator._row_token_ids then calls
+        #    torch.as_tensor on that list and raises "only integer tensors of a
+        #    single element can be converted to an index", killing EngineCore on
+        #    the first decode step. Neutral penalties take set_penalty_params'
+        #    early-return fast path and never reach it.
+        #
+        # (2) is a model-side bug and this flag only avoids the trigger -- a
+        # client that sets repetition_penalty explicitly still hits it. Drop this
+        # second note once the remap preserves the [rows, L] tensor type; keep
+        # the flag itself regardless, for (1).
+        generation-config: vllm
       # meta_ifeval / meta_gpqa_cot cannot execute for ANY non-Llama model.
       # workflow_venvs.py:444 builds the dataset name by concatenation --
       # config["evals_dataset"] = f"{_model_name}-evals" -- giving
