@@ -494,6 +494,18 @@ def promote(
             f"{sorted(requested_set - after_set)!r}"
         )
 
+    # A release may only move the identities it asked for. Everything else in
+    # prod must survive byte-identical, so a block-splitting or rendering defect
+    # that damages a neighbouring leaf fails the promotion instead of shipping.
+    for identity in sorted(after_set - requested_set):
+        if identity not in before_payloads:
+            raise ValueError(f"Promotion introduced unrequested identity {identity!r}")
+        if before_payloads[identity] != after_payloads[identity]:
+            raise ValueError(f"Promotion changed retained identity {identity!r}")
+    dropped = sorted(set(before_payloads) - after_set)
+    if dropped:
+        raise ValueError(f"Promotion dropped existing identities {dropped!r}")
+
     actions = {}
     for identity in requested:
         if identity not in before_payloads:

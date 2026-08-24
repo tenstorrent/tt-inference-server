@@ -10,6 +10,7 @@ import textwrap
 import pytest
 import yaml
 
+import scripts.release.promote_dev_spec_to_prod as promote_module
 from scripts.release.promote_dev_spec_to_prod import (
     main,
     promote,
@@ -276,6 +277,29 @@ def test_resolution_failure_does_not_write_any_prod_file(tmp_path):
     before = {path.name: path.read_bytes() for path in prod_dir.glob("*.yaml")}
 
     with pytest.raises(ValueError, match="No model spec matches"):
+        promote(ci_path, dev_dir, prod_dir, **PINS)
+
+    assert {path.name: path.read_bytes() for path in prod_dir.glob("*.yaml")} == before
+
+
+def test_damaged_retained_leaf_fails_before_write(tmp_path, monkeypatch):
+    """A release may only move the identities it asked for.
+
+    Block splitting and rendering rewrite catalog text around leaves the
+    release never selected. Simulate such a defect and require the promotion to
+    refuse it rather than ship a silently altered released configuration.
+    """
+    ci_path, dev_dir, prod_dir = _flat_fixture(tmp_path)
+    before = {path.name: path.read_bytes() for path in prod_dir.glob("*.yaml")}
+
+    render_segments = promote_module._render_segments
+
+    def damage_unrelated_leaf(segments):
+        return render_segments(segments).replace("unrelated-metal", "damaged-metal")
+
+    monkeypatch.setattr(promote_module, "_render_segments", damage_unrelated_leaf)
+
+    with pytest.raises(ValueError, match="changed retained identity"):
         promote(ci_path, dev_dir, prod_dir, **PINS)
 
     assert {path.name: path.read_bytes() for path in prod_dir.glob("*.yaml")} == before
