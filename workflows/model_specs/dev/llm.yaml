@@ -450,18 +450,6 @@ templates:
       reasoning_parser_name: qwen3
       tool_call_parser_name: qwen3_coder
 
-# QB2 bring-up spec for Qwen3.8-27B. UNVALIDATED ON HARDWARE -- the premise is that
-# the existing qwen36 implementation already covers this checkpoint:
-#   * models/demos/blackhole/qwen36 reads every model-specific value (hybrid layer
-#     dispatch via layer_types, DeltaNet head/conv dims, partial rotary factor,
-#     vocab, layer count) from the parsed HF config, and its README states the one
-#     code base adapts to each checkpoint (Qwen3.5-9B/27B, Qwen3.6-27B).
-#   * Qwen3.8-27B's HF config declares architectures ['Qwen3_5ForConditionalGeneration'],
-#     which vllm-tt-plugin already maps (as TTQwen3_5ForConditionalGeneration) to
-#     models.demos.blackhole.qwen36.tt.qwen36_vllm:Qwen36ForCausalLM. So no tt-metal
-#     or plugin change should be needed -- that is the hypothesis under test.
-# Declared text-only for bring-up even though the checkpoint ships a vision encoder,
-# matching how the Qwen3.6-27B spec above handles the same situation.
 - weights:
     - Qwen/Qwen3.8-27B
   impl: qwen36_blackhole
