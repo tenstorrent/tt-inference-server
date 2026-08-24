@@ -13,7 +13,7 @@ The body has four sections:
   # Summary of Changes           -> header + placeholder (filled in manually)
   # SW versions recommended ...   -> static (tt-smi / Firmware / tt-kmd)
   # Model Spec Release Updates    -> AUTO-GENERATED table (the tricky part)
-  # Release Artifacts Summary     -> header + placeholder (filled in manually)
+  # Release Artifacts Summary     -> auto-listed promoted images + Total (from --promoted-images)
 
 The "Model Spec Release Updates" table has one row per (model, device) release
 combo taken from ``.github/workflows/models-ci-config.json`` (the ``ci.release``
@@ -176,20 +176,34 @@ def _block_models(block: dict) -> set:
     return {model_name_from_weight(w) for w in block.get("weights", []) or []}
 
 
-def find_block(blocks, model_name, engine, device) -> dict | None:
-    """First block that provides (model_name, engine) on `device`.
+def find_block(
+    blocks, model_name, engine, device, prefer_version=None, prefer_impl=None
+) -> dict | None:
+    """A prod block that provides (model_name, engine) on `device`.
 
-    Matches by device MEMBERSHIP (not the exact device-set), so a block that
-    bundles extra devices still matches the specific release device.
+    Matches by device MEMBERSHIP (not the exact device-set). When several blocks
+    match (a stale block from a prior release plus the just-promoted one, or two
+    impls), prefer (1) the block at `prefer_version`, then (2) `prefer_impl`,
+    else the first match — so the table reports the release block, not a stale one.
     """
-    for b in blocks:
-        if (
-            model_name in _block_models(b)
-            and _block_engine(b) == engine
-            and device in _block_devices(b)
-        ):
-            return b
-    return None
+    matches = [
+        b
+        for b in blocks
+        if model_name in _block_models(b)
+        and _block_engine(b) == engine
+        and device in _block_devices(b)
+    ]
+    if not matches:
+        return None
+    if prefer_version is not None:
+        for b in matches:
+            if str(b.get("version")) == str(prefer_version):
+                return b
+    if prefer_impl is not None:
+        for b in matches:
+            if b.get("impl") == prefer_impl:
+                return b
+    return matches[0]
 
 
 # ---------------------------------------------------------------------------
@@ -255,12 +269,24 @@ def ci_job_url(
 # ---------------------------------------------------------------------------
 # row model + rendering
 # ---------------------------------------------------------------------------
-def build_rows(new_blocks, old_blocks, combos, jobs, tt_shield_repo, run_id):
+def build_rows(new_blocks, old_blocks, combos, jobs, tt_shield_repo, run_id, version):
     rows = []
     seen: set = set()
     for model_name, engine, device in combos:
-        new_b = find_block(new_blocks, model_name, engine, device)
-        old_b = find_block(old_blocks, model_name, engine, device)
+        # NEW = the just-promoted block (prefer this release's version) so a stale
+        # prior-release block on the same device can't shadow it. OLD = the base
+        # block for the SAME impl, so old->new is apples-to-apples.
+        new_b = find_block(
+            new_blocks, model_name, engine, device, prefer_version=version
+        )
+        old_b = find_block(
+            old_blocks,
+            model_name,
+            engine,
+            device,
+            prefer_version=version,
+            prefer_impl=(new_b or {}).get("impl"),
+        )
 
         # De-duplicate: one row per (prod block weights+engine, device). A block
         # bundling several weights (e.g. whisper) yields a single row.
@@ -337,8 +363,28 @@ def render_table(rows) -> str:
     return "\n".join(lines)
 
 
-def render_body(version: str, rows) -> str:
+def _promoted_section(promoted_images) -> str:
+    """Render the 'Images Promoted from Models CI' section: one bullet per
+    destination image (https://-prefixed) followed by '**Total:** N'."""
+    lines = ["## Images Promoted from Models CI", ""]
+    for img in promoted_images:
+        url = img if img.startswith(("http://", "https://")) else f"https://{img}"
+        lines.append(f"- {url}")
+    if promoted_images:
+        lines.append("")
+    lines.append(f"**Total:** {len(promoted_images)}")
+    return "\n".join(lines) + "\n"
+
+
+def render_body(version: str, run_id, rows, promoted_images) -> str:
     return (
+        # Machine-readable metadata block (parsed by downstream tooling); keep
+        # it first, before the Summary. run_id = tt-shield Release run id,
+        # version = the release version with a leading 'v'.
+        "<!--\n"
+        f"metadata:run_id={run_id or ''}\n"
+        f"metadata:version=v{version}\n"
+        "-->\n\n"
         "# Summary of Changes\n\n"
         "<!-- Fill in the summary of changes manually. -->\n"
         "- placeholder\n\n\n"
@@ -346,9 +392,7 @@ def render_body(version: str, rows) -> str:
         + "\n"
         + render_table(rows)
         + "\n\n\n# Release Artifacts Summary\n\n"
-        "## Images Promoted from Models CI\n\n"
-        "<!-- Add promoted image paths manually. -->\n\n"
-        "**Total:** \n"
+        + _promoted_section(promoted_images)
     )
 
 
@@ -451,7 +495,19 @@ def main() -> None:
     ap.add_argument(
         "--output", type=Path, default=None, help="Also write the body to this file"
     )
+    ap.add_argument(
+        "--promoted-images",
+        default="",
+        help="Whitespace/newline-separated destination image URLs to list under "
+        "'Images Promoted from Models CI' (the release-scoped publish plan).",
+    )
     args = ap.parse_args()
+
+    # Destination images actually published (already release-scoped upstream);
+    # split on any whitespace/newlines and drop blanks / None sentinels.
+    promoted_images = [
+        img for img in args.promoted_images.split() if img and img != "None"
+    ]
 
     version = args.version or read_version(args.version_file)
     head_branch = args.head_branch or current_branch()
@@ -491,9 +547,15 @@ def main() -> None:
         )
 
     rows = build_rows(
-        new_blocks, old_blocks, combos, jobs, args.tt_shield_repo, args.tt_shield_run_id
+        new_blocks,
+        old_blocks,
+        combos,
+        jobs,
+        args.tt_shield_repo,
+        args.tt_shield_run_id,
+        version,
     )
-    body = render_body(version, rows)
+    body = render_body(version, args.tt_shield_run_id, rows, promoted_images)
 
     print(f"Version:      {version}", file=sys.stderr)
     print(f"Title:        {title}", file=sys.stderr)
