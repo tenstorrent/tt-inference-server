@@ -1,4 +1,4 @@
-name: Release Automation (promote specs, docs & docker images)
+name: Release Automation (promote specs, docs, helm & docker images)
 
 run-name: ${{ inputs.version && format('Release automation v{0}', inputs.version) || 'Release automation (push)' }}
 
