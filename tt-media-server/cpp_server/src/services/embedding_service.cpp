@@ -248,23 +248,16 @@ struct EmbeddingService::Impl {
     const auto cfg = tt::config::embeddingEngineConfig();
     const std::string visibleDevices = tt::config::visibleDevicesForWorker(wid);
 
-    // Set environment variables for the child process.
+    // The runner drives tt-metal directly, so no Python-side config exists
+    // to feed: the only export is which chips this worker may open. Set in
+    // the child so sibling workers get their own values.
     setenv("TT_VISIBLE_DEVICES", visibleDevices.c_str(), 1);
-    if (!cfg.python_model_name.empty()) {
-      setenv("MODEL", cfg.python_model_name.c_str(), 1);
-    }
-    setenv("DEVICE", cfg.device.c_str(), 1);
-    const std::string clientRunner =
-        tt::config::toClientRunnerName(cfg.runner_type);
-    if (!clientRunner.empty()) {
-      setenv("MODEL_RUNNER", clientRunner.c_str(), 1);
-    }
 
     TT_LOG_INFO(
         "[Worker {}] Started (PID {}, runner_type={}, TT_VISIBLE_DEVICES={}, "
-        "MODEL={}, DEVICE={}, max_batch_size={})",
+        "DEVICE={}, max_batch_size={})",
         workerId, getpid(), tt::config::toString(cfg.runner_type),
-        visibleDevices, cfg.python_model_name, cfg.device, cfg.max_batch_size);
+        visibleDevices, cfg.device, cfg.max_batch_size);
 
     std::unique_ptr<runners::IEmbeddingRunner> runner;
     try {
