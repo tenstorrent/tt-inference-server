@@ -211,9 +211,7 @@ class TrainingService(BaseJobService):
     def _write_merge_info(self, request: AdapterMergeRequest) -> None:
         # Enforce locally that we only ever write inside the merged-models root,
         # rather than trusting the caller to have set a safe output path.
-        if not self._is_within_dir(
-            merged_models_root(), request._output_model_path
-        ):
+        if not self._is_within_dir(merged_models_root(), request._output_model_path):
             raise ValueError(
                 f"Refusing to write merge info outside merged-models root: "
                 f"{request._output_model_path!r}"
