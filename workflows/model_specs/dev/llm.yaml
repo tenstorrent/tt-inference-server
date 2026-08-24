@@ -570,15 +570,12 @@ templates:
       tool_call_parser_name: qwen3_coder
 
 # google/gemma-4-31B-it served by the agentic autoport rather than tt_transformers.
-# Mirrors the tt_transformers entry above. Five deviations, all required:
+# Mirrors the tt_transformers entry above. Four deviations, all required:
 # impl; default_impl false (that entry owns the default -- select this one with
 # --impl gemma4-31b-autoport); EXTRA_MODELS_DIR + GEMMA4_31B_AUTOPORT_DIR, without
-# which the arch resolves to models/demos/gemma4; sample_on_device_mode all,
+# which the arch resolves to models/demos/gemma4; and sample_on_device_mode all,
 # because decode_only routes prefill to host sampling, which the autoport gates
-# behind a logprob-compatibility env var rather than supporting as a serving mode;
-# and no vllm_args, because that entry's tool-call and reasoning parsers are what
-# killed its own release run 32132213868 ("Gemma4ToolParser.__init__() takes 2
-# positional arguments but 3 were given").
+# behind a logprob-compatibility env var rather than supporting as a serving mode.
 # Needs tt-metal branch `mvasiljevic/gemma4-31b-it-weights`.
 - weights:
     - google/gemma-4-31B-it
@@ -599,6 +596,21 @@ templates:
         fabric_config: FABRIC_1D
         trace_region_size: 200000000
         sample_on_device_mode: all
+      vllm_args:
+        # Tool calling + server-side thinking, same rationale as the
+        # tt_transformers entry above: mini-swe-agent (swe_bench_verified)
+        # requires tool_choice:"auto", which vLLM refuses without
+        # --enable-auto-tool-choice/--tool-call-parser (60x HTTP 400 zeroed the
+        # eval on run 32355285037, tt-agentic-bringup-qb2#2). These flags were
+        # initially left off this entry because the gemma4 tool parser crashed
+        # on newer vLLM ("Gemma4ToolParser.__init__() takes 2 positional
+        # arguments but 3 were given", run 32132213868); that signature is
+        # fixed in vllm-tt-plugin (tenstorrent/vllm-tt-plugin#72), which this
+        # entry now requires.
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: gemma4
   status: EXPERIMENTAL
   has_builtin_warmup: true
   env_vars:
