@@ -38,7 +38,6 @@ import ttnn
 from models.tt_transformers.tt.model_config import ModelArgs
 
 SR = 16000
-AUDIO_TOKEN_ID = 151676
 
 # Device params (match the demo): 2CQ + trace region for the decode-trace fast path.
 QWEN3_ASR_L1_SMALL_SIZE = 32768
@@ -183,7 +182,7 @@ class TTQwen3AsrRunner(BaseMetalDeviceRunner):
         t0 = time.time()
         audio_embeds = tt_enc.encode_mel(mel, self.enc_params, self.ttnn_device).float()
         inp = self.embed[input_ids].clone()
-        mask = input_ids == AUDIO_TOKEN_ID
+        mask = input_ids == tq.AUDIO_TOKEN_ID
         n_mask = int(mask.sum())
         if audio_embeds.shape[0] > n_mask:
             audio_embeds = audio_embeds[:n_mask]
@@ -218,8 +217,7 @@ class TTQwen3AsrRunner(BaseMetalDeviceRunner):
     def _run_full(self, request: AudioProcessingRequest):
         """No pre-segmentation: chunk long audio into fixed windows, transcribe, join."""
         wav = np.asarray(request._audio_array, dtype=np.float32)
-        step = int(QWEN3_ASR_FIXED_SEC * SR)
-        windows = [wav] if len(wav) <= step else [wav[i : i + step] for i in range(0, len(wav), step)]
+        windows = tq.chunk_wav(wav, QWEN3_ASR_FIXED_SEC)
         parts, ntok, t_dec = [], 0, 0.0
         for win in windows:
             _lang, text, nt, _te, td = self._infer(win)
