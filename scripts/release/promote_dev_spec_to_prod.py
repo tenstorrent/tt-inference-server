@@ -281,7 +281,7 @@ def _validate_candidate_catalog(candidate_text: dict[str, str]):
         templates = [
             template
             for filename in MODEL_SPEC_CATALOG_FILES
-            for template in load_templates_from_yaml(prod_dir / filename)
+            for template in load_templates_from_yaml(prod_dir / filename, env="prod")
         ]
         return get_model_spec_map(templates)
 
@@ -363,15 +363,9 @@ def promote(
     sources = load_dev_model_spec_sources(Path(dev_dir))
     resolved = resolve_release_combos(combos, sources)
 
-    resolved_by_identity = {}
-    for item in resolved:
-        existing = resolved_by_identity.get(item.identity)
-        if existing is not None and existing.combo != item.combo:
-            raise ValueError(
-                f"Multiple configured combos resolve to {item.identity!r}: "
-                f"{existing.combo!r} and {item.combo!r}"
-            )
-        resolved_by_identity[item.identity] = item
+    # resolve_release_combos() rejects two selectors that collide on one
+    # identity, so this index keeps every resolved entry.
+    resolved_by_identity = {item.identity: item for item in resolved}
 
     needs_vllm = any(
         item.combo.engine == InferenceEngine.VLLM
@@ -423,15 +417,11 @@ def promote(
     before_templates = [
         template
         for filename in MODEL_SPEC_CATALOG_FILES
-        for template in load_templates_from_yaml(prod_dir / filename)
+        for template in load_templates_from_yaml(prod_dir / filename, env="prod")
     ]
-    before_specs_by_identity = {
-        model_spec_leaf_identity(spec): spec
-        for spec in get_model_spec_map(before_templates).values()
-    }
     before_payloads = {
-        identity: spec.get_serialized_dict()
-        for identity, spec in before_specs_by_identity.items()
+        model_spec_leaf_identity(spec): spec.get_serialized_dict()
+        for spec in get_model_spec_map(before_templates).values()
     }
     original_text = {}
     candidate_segments = {}

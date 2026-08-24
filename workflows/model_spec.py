@@ -1246,12 +1246,23 @@ def _build_template(data: Dict, env: str = "prod") -> "ModelSpecTemplate":
         raise ValueError(f"{env} template {weights}: {exc}") from exc
 
 
-def load_templates_from_yaml(path: Path) -> List["ModelSpecTemplate"]:
+def load_templates_from_yaml(
+    path: Path, env: Optional[str] = None
+) -> List["ModelSpecTemplate"]:
+    """Load one catalog file as templates for the given catalog environment.
+
+    ``env`` selects the template contract -- "prod" requires release pins, dev
+    rejects them -- so callers that already know which catalog they are reading
+    should pass it. It defaults to the parent directory name because the runtime
+    catalogs live in ``model_specs/<env>/``, but relying on that default makes
+    the contract depend on where a file happens to sit.
+    """
     with open(path, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f)
     if not data or "templates" not in data:
         raise ValueError(f"YAML file {path} is empty or missing 'templates' key")
-    env = path.parent.name
+    if env is None:
+        env = path.parent.name
     return [_build_template(t, env) for t in data["templates"]]
 
 
@@ -1285,7 +1296,7 @@ spec_templates: List["ModelSpecTemplate"] = [
     template
     for fname in MODEL_SPEC_CATALOG_FILES
     for template in load_templates_from_yaml(
-        _MODEL_SPECS_DIR / _MODEL_SPECS_ENV / fname
+        _MODEL_SPECS_DIR / _MODEL_SPECS_ENV / fname, env=_MODEL_SPECS_ENV
     )
 ]
 
@@ -1298,11 +1309,6 @@ def model_spec_leaf_identity(spec: ModelSpec) -> Tuple[str, str, str, str]:
         spec.inference_engine,
         spec.impl.impl_id,
     )
-
-
-def model_spec_default_group(spec: ModelSpec) -> Tuple[str, str, str]:
-    """Return the identity shared by implementation alternatives."""
-    return model_spec_leaf_identity(spec)[:3]
 
 
 def validate_model_specs(specs: List[ModelSpec]) -> None:
@@ -1328,7 +1334,9 @@ def validate_model_specs(specs: List[ModelSpec]) -> None:
     for spec in specs:
         if not spec.device_model_spec.default_impl:
             continue
-        group = model_spec_default_group(spec)
+        # Implementation alternatives share everything but impl_id, so trimming
+        # it off the leaf identity yields the group that must hold one default.
+        group = model_spec_leaf_identity(spec)[:3]
         defaults_by_group.setdefault(group, []).append(spec.impl.impl_id)
 
     for group, impl_ids in defaults_by_group.items():

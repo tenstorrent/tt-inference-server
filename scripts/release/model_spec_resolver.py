@@ -6,7 +6,7 @@
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, List, Tuple
+from typing import Dict, Iterable, List, Tuple
 
 from workflows.model_spec import (
     MODEL_SPEC_CATALOG_FILES,
@@ -152,14 +152,20 @@ def load_dev_model_spec_sources(dev_dir: Path) -> List[ModelSpecSource]:
     sources: List[ModelSpecSource] = []
     for filename in MODEL_SPEC_CATALOG_FILES:
         path = Path(dev_dir) / filename
-        for template_index, template in enumerate(load_templates_from_yaml(path)):
-            for spec in template.expand_to_specs():
-                weight_index = template.weights.index(spec.hf_model_repo)
-                device_index = next(
-                    index
-                    for index, device_spec in enumerate(template.device_model_specs)
-                    if device_spec.device == spec.device_type
-                )
+        for template_index, template in enumerate(
+            load_templates_from_yaml(path, env="dev")
+        ):
+            # expand_to_specs() iterates weights first and devices second, so
+            # provenance comes from position. Searching the lists by value would
+            # silently return the first match for a repeated weight or device.
+            positions = [
+                (weight_index, device_index)
+                for weight_index in range(len(template.weights))
+                for device_index in range(len(template.device_model_specs))
+            ]
+            for spec, (weight_index, device_index) in zip(
+                template.expand_to_specs(), positions, strict=True
+            ):
                 sources.append(
                     ModelSpecSource(
                         spec=spec,
@@ -222,6 +228,24 @@ def resolve_release_combos(
     combos: Iterable[ReleaseCombo],
     sources: Iterable[ModelSpecSource],
 ) -> List[ResolvedReleaseCombo]:
-    """Resolve every release tuple in input order, failing on the first error."""
+    """Resolve every release tuple in input order, failing on the first error.
+
+    Two configured selectors that land on one runtime leaf leave the release
+    scope ambiguous for every consumer -- promotion, release notes, and artifact
+    packaging would each have to pick a winner. Reject it once, here, so those
+    consumers can treat the resolved list as an exact set.
+    """
     source_list = list(sources)
-    return [resolve_release_combo(combo, source_list) for combo in combos]
+    resolved: List[ResolvedReleaseCombo] = []
+    selector_by_identity: Dict[LeafIdentity, ReleaseCombo] = {}
+    for combo in combos:
+        item = resolve_release_combo(combo, source_list)
+        previous = selector_by_identity.get(item.identity)
+        if previous is not None:
+            raise ValueError(
+                f"Configured selectors {previous!r} and {combo!r} resolve to "
+                f"duplicate identity {item.identity!r}"
+            )
+        selector_by_identity[item.identity] = combo
+        resolved.append(item)
+    return resolved
