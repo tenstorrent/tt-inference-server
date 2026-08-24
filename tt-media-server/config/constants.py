@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+import os
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import NamedTuple, Optional, Tuple
@@ -553,6 +554,15 @@ class TrainingOptimizers(Enum):
 
 TRAINING_STORE_ADAPTERS_DIR = "adapters/"
 TRAINING_STORE_MERGED_MODELS_DIR = "merged_models/"
+
+
+# Adapters/merged models live under $CACHE_ROOT
+def adapters_root() -> str:
+    return os.path.join(os.getenv("CACHE_ROOT", "."), TRAINING_STORE_ADAPTERS_DIR)
+
+
+def merged_models_root() -> str:
+    return os.path.join(os.getenv("CACHE_ROOT", "."), TRAINING_STORE_MERGED_MODELS_DIR)
 
 
 # Helper function to create vLLM configuration with late import to avoid circular imports

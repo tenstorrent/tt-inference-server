@@ -7,7 +7,7 @@ import os
 from dataclasses import dataclass
 from typing import Optional
 
-from config.constants import TRAINING_STORE_ADAPTERS_DIR
+from config.constants import adapters_root
 
 
 @dataclass(frozen=True)
@@ -28,7 +28,8 @@ def resolve_adapter(adapter: str) -> AdapterInfo:
         AdapterInfo with the base model name (from adapter_config.json)
         and the absolute adapter path on disk.
     """
-    adapter_path = os.path.join(TRAINING_STORE_ADAPTERS_DIR, adapter)
+    adapters_base = adapters_root()
+    adapter_path = os.path.join(adapters_base, adapter)
 
     if not os.path.isdir(adapter_path):
         raise FileNotFoundError(f"Adapter not found at {adapter_path}")
