@@ -73,6 +73,9 @@ AVAILABLE_RUNNERS = {
     ModelRunners.TT_WHISPER: lambda wid: __import__(
         "tt_model_runners.whisper_runner", fromlist=["TTWhisperRunner"]
     ).TTWhisperRunner(wid),
+    ModelRunners.TT_QWEN3_ASR: lambda wid: __import__(
+        "tt_model_runners.qwen3_asr_runner", fromlist=["TTQwen3AsrRunner"]
+    ).TTQwen3AsrRunner(wid),
     ModelRunners.VLLMForge: lambda wid: __import__(
         "tt_model_runners.vllm_runner", fromlist=["VLLMForgeRunner"]
     ).VLLMForgeRunner(wid),
