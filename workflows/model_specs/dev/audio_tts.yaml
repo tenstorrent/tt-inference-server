@@ -77,6 +77,24 @@ templates:
   status: COMPLETE
 
 - weights:
+    - Qwen/Qwen3-ASR-1.7B
+  impl: qwen3_asr
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: AUDIO
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: N150
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+    - device: N300
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+  status: EXPERIMENTAL
+
+- weights:
     - microsoft/speecht5_tts
   impl: speecht5_tts
   min_disk_gb: 15
