@@ -4369,8 +4369,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=26.2,  # Terminal-Bench v2.1 (reasoning high)
                     published_score_ref="https://artificialanalysis.ai/evaluations/terminalbench-v2-1?models=gpt-oss-120b",
-                    gpu_reference_score=26.2,  # TODO: MEASURE THIS https://github.com/tenstorrent/tt-inference-server/issues/1322
-                    gpu_reference_score_ref="DUMMY VALUE",
+                    gpu_reference_score=33.7,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4903#issuecomment-5391638558",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
@@ -4436,8 +4436,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=12.8,  # no public tau3-banking score for gpt-oss-120b
                     published_score_ref="https://artificialanalysis.ai/evaluations/tau3-banking?models=gpt-oss-120b",
-                    gpu_reference_score=7.2,  # TODO: MEASURE THIS https://github.com/tenstorrent/tt-inference-server/issues/1322
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=8.2,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4903#issuecomment-5391638558",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
@@ -4452,7 +4452,7 @@ _eval_config_list = [
                     task_names=["sierra-research/tau3-bench__tau3-banking_knowledge-*"],
                     # A single served instance is shared by the agent,
                     # the simulated user, and the Natural Language verifier.
-                    n_concurrent_trials=38,
+                    n_concurrent_trials=19,
                     n_attempts=1,
                     n_tasks=97,
                     override_cpus=4,
