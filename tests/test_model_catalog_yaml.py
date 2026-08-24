@@ -95,6 +95,18 @@ def test_build_device_model_spec_with_known_issues_and_overrides():
     ]
 
 
+def test_catalog_device_spec_rejects_explicit_performance_reference():
+    with pytest.raises(ValueError, match="must not define perf_reference"):
+        _build_device_model_spec(
+            {
+                "device": "N150",
+                "max_concurrency": 1,
+                "max_context": 1024,
+                "perf_reference": [],
+            }
+        )
+
+
 def test_build_template_resolves_all_enum_and_impl_references():
     template = _build_template(
         {

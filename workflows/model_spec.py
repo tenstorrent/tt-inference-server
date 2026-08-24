@@ -1183,6 +1183,11 @@ def _build_system_requirements(data: Optional[Dict]) -> Optional["SystemRequirem
 def _build_device_model_spec(data: Dict) -> "DeviceModelSpec":
     kwargs = dict(data)
     kwargs["device"] = DeviceTypes.from_string(kwargs["device"])
+    if "perf_reference" in kwargs:
+        raise ValueError(
+            "Catalog YAML must not define perf_reference; it is derived from "
+            "model_performance_reference.json"
+        )
     if "system_requirements" in kwargs:
         kwargs["system_requirements"] = _build_system_requirements(
             kwargs["system_requirements"]
