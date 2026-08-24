@@ -65,6 +65,7 @@ class FakeTerminalBenchConfig:
     agent_import_path: Optional[str] = None
     environment_env: Dict[str, str] = field(default_factory=dict)
     verifier_env: Dict[str, str] = field(default_factory=dict)
+    device_budgets: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -90,6 +91,7 @@ class FakeSWEbenchConfig:
     shuffle: bool = True
     random_delay_multiplier: float = 0.3
     instance_ids_map: Dict[EvalLimitMode, List[str]] = field(default_factory=dict)
+    device_budgets: Dict[str, Any] = field(default_factory=dict)
 
 
 def _runtime(limit_samples_mode: Optional[str] = None):
@@ -414,6 +416,136 @@ class TestAgenticDriverConfigMapping:
             "/tmp/out/eval_Qwen__Qwen3.6-27B/agentic/swe_bench_verified"
         )
         assert cfg.model_name == "openai/Qwen/Qwen3.6-27B"
+
+
+def _gpu_reference_agent_kwargs() -> Dict[str, Any]:
+    return {
+        "parser_name": "json",
+        "temperature": 1.0,
+        "model_info": {
+            "max_input_tokens": 112 * 1024,
+            "max_output_tokens": 80 * 1024,
+        },
+        "llm_kwargs": {
+            "top_p": 0.95,
+            "max_tokens": 80 * 1024,
+            "timeout": 60 * 60,
+        },
+    }
+
+
+class TestAgenticDeviceBudgets:
+    """Device-aware agentic token budgets + the served-window backstop clamp.
+
+    The GPU-reference budgets (112K in / 80K out) exceed QB2's 49152 window;
+    without a device budget or clamp, vLLM up-front-rejects every request
+    (max_tokens > max_model_len) and the eval scores 0 with zero tasks run
+    (tt-agentic-bringup-qb2#2).
+    """
+
+    def test_terminal_bench_applies_device_budget(self):
+        task = _terminal_task()
+        task.agentic_eval_config.agent_kwargs = _gpu_reference_agent_kwargs()
+        task.agentic_eval_config.device_budgets = {
+            "P300X2": SimpleNamespace(
+                max_input_tokens=30 * 1024, max_output_tokens=16 * 1024
+            )
+        }
+        ctx = DriverContext(
+            output_dir=Path("/tmp/out"), device="P300X2", max_context=49152
+        )
+
+        cfg = build_terminal_bench_config(task, _server(), ctx)
+
+        model_info = cfg.agent_kwargs["model_info"]
+        assert model_info["max_input_tokens"] == 30 * 1024
+        assert model_info["max_output_tokens"] == 16 * 1024
+        assert cfg.agent_kwargs["llm_kwargs"]["max_tokens"] == 16 * 1024
+        # untouched keys survive; the source config is not mutated
+        assert cfg.agent_kwargs["llm_kwargs"]["top_p"] == 0.95
+        assert (
+            task.agentic_eval_config.agent_kwargs["llm_kwargs"]["max_tokens"]
+            == 80 * 1024
+        )
+
+    def test_terminal_bench_gpu_budget_unchanged(self):
+        task = _terminal_task()
+        task.agentic_eval_config.agent_kwargs = _gpu_reference_agent_kwargs()
+        task.agentic_eval_config.device_budgets = {
+            "P300X2": SimpleNamespace(
+                max_input_tokens=30 * 1024, max_output_tokens=16 * 1024
+            )
+        }
+        ctx = DriverContext(
+            output_dir=Path("/tmp/out"), device="GPU", max_context=204800
+        )
+
+        cfg = build_terminal_bench_config(task, _server(), ctx)
+
+        # 112K + 80K fits in 204800; no override, no clamp, same object
+        assert cfg.agent_kwargs is task.agentic_eval_config.agent_kwargs
+
+    def test_terminal_bench_backstop_clamps_to_window(self):
+        task = _terminal_task()
+        task.agentic_eval_config.agent_kwargs = _gpu_reference_agent_kwargs()
+        # no device budget configured: the clamp is the last line of defense
+        ctx = DriverContext(
+            output_dir=Path("/tmp/out"), device="P300X2", max_context=49152
+        )
+
+        cfg = build_terminal_bench_config(task, _server(), ctx)
+
+        model_info = cfg.agent_kwargs["model_info"]
+        max_tokens = cfg.agent_kwargs["llm_kwargs"]["max_tokens"]
+        assert max_tokens == model_info["max_output_tokens"]
+        assert max_tokens < 49152  # vLLM's up-front check passes
+        assert model_info["max_input_tokens"] + max_tokens <= 49152 - 1024
+
+    def test_terminal_bench_no_context_no_clamp(self):
+        task = _terminal_task()
+        task.agentic_eval_config.agent_kwargs = _gpu_reference_agent_kwargs()
+
+        cfg = build_terminal_bench_config(task, _server(), _driver_context())
+
+        assert cfg.agent_kwargs is task.agentic_eval_config.agent_kwargs
+
+    def test_swebench_applies_device_budget(self):
+        task = _swebench_task()
+        task.swebench_eval_config.device_budgets = {
+            "P300X2": SimpleNamespace(
+                max_input_tokens=30 * 1024, max_output_tokens=16 * 1024
+            )
+        }
+        ctx = DriverContext(
+            output_dir=Path("/tmp/out"), device="P300X2", max_context=49152
+        )
+
+        cfg = build_swebench_config(task, _server(), ctx)
+
+        assert cfg.max_input_tokens == 30 * 1024
+        assert cfg.max_output_tokens == 16 * 1024
+
+    def test_swebench_backstop_clamps_to_window(self):
+        task = _swebench_task()  # 200K in / 32K out GPU-reference budgets
+        ctx = DriverContext(
+            output_dir=Path("/tmp/out"), device="P300X2", max_context=49152
+        )
+
+        cfg = build_swebench_config(task, _server(), ctx)
+
+        assert cfg.max_output_tokens < 49152
+        assert cfg.max_input_tokens + cfg.max_output_tokens <= 49152 - 1024
+
+    def test_swebench_gpu_budget_unchanged(self):
+        task = _swebench_task()
+        ctx = DriverContext(
+            output_dir=Path("/tmp/out"), device="GPU", max_context=262144
+        )
+
+        cfg = build_swebench_config(task, _server(), ctx)
+
+        assert cfg.max_input_tokens == 200 * 1024
+        assert cfg.max_output_tokens == 32 * 1024
 
 
 class TestTerminalBenchHarness:

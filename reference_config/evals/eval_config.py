@@ -131,6 +131,24 @@ def accept_eval_score(ref, score, n_total=None):
 
 
 @dataclass(frozen=True)
+class AgenticDeviceBudget:
+    """Per-device token budgets for an agentic eval task.
+
+    Agentic harnesses (terminus-2, mini-swe-agent) send up to
+    ``max_input_tokens + max_output_tokens`` per request, so both must be sized
+    to the *served* context window, which varies per device (e.g. gemma-4-31B:
+    204800 on the H100 reference server vs 49152 on QB2). The base config
+    fields carry the GPU-reference budgets; entries here, keyed by
+    ``DeviceTypes.name`` (e.g. "P300X2"), override them at driver-build time.
+    Budgets that still exceed the device window are clamped loudly as a
+    backstop (see ``llm_module.drivers.agentic``).
+    """
+
+    max_input_tokens: int
+    max_output_tokens: int
+
+
+@dataclass(frozen=True)
 class TerminalBenchEvalConfig:
     dataset: str
     agent: str
@@ -152,6 +170,10 @@ class TerminalBenchEvalConfig:
     agent_import_path: Optional[str] = None
     environment_env: Dict[str, str] = field(default_factory=dict)
     verifier_env: Dict[str, str] = field(default_factory=dict)
+    # Per-device overrides for agent_kwargs["model_info"]["max_input_tokens"/
+    # "max_output_tokens"] and agent_kwargs["llm_kwargs"]["max_tokens"], keyed
+    # by DeviceTypes.name. See AgenticDeviceBudget.
+    device_budgets: Dict[str, AgenticDeviceBudget] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -177,6 +199,9 @@ class SWEbenchEvalConfig:
     shuffle: bool = True
     random_delay_multiplier: float = 0.3
     instance_ids_map: Dict[EvalLimitMode, List[str]] = field(default_factory=dict)
+    # Per-device overrides for max_input_tokens / max_output_tokens, keyed by
+    # DeviceTypes.name. See AgenticDeviceBudget.
+    device_budgets: Dict[str, AgenticDeviceBudget] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -4844,6 +4869,25 @@ _eval_config_list = [
                             },
                         },
                     },
+                    # QB2 serves gemma-4-31B at 49152 (Blackhole hybrid-off
+                    # DRAM ceiling, see workflows/model_specs), not the 200K
+                    # the GPU budgets above assume; vLLM rejects any request
+                    # whose max_tokens exceeds the window before the prompt is
+                    # even tokenized, so 80K out zeroed the whole eval on run
+                    # 32355285037 (tt-agentic-bringup-qb2#2). Constraints: the
+                    # prompt must stay under the 32768 prefill bucket (the
+                    # next bucket, 65536, exceeds the 49152 KV pool and hits
+                    # the page-table "negative dimension" fault noted in the
+                    # 12B spec comment) and in+out <= 49152, hence 30K in /
+                    # 16K out. NOTE: gpu_reference_score=44.94 was measured
+                    # with 112K/80K on a 200K window; a QB2 score under these
+                    # budgets is not directly comparable to it.
+                    device_budgets={
+                        "P300X2": AgenticDeviceBudget(
+                            max_input_tokens=30 * 1024,
+                            max_output_tokens=16 * 1024,
+                        ),
+                    },
                     task_names_map={
                         EvalLimitMode.CI_NIGHTLY: [
                             "terminal-bench/break-filter-js-from-html",
@@ -4901,6 +4945,19 @@ _eval_config_list = [
                         "extra_body": {
                             "top_k": 20,
                         },
+                    },
+                    # Same QB2 sizing as the terminal_bench_2 task above: the
+                    # served window is 49152 and the prompt must stay under
+                    # the 32768 prefill bucket, so the GPU budgets (160K in /
+                    # 32K out) cannot fit — 160K in alone is >3x the window.
+                    # NOTE: gpu_reference_score=64.80 was measured with
+                    # 160K/32K on a 200K window; a QB2 score under these
+                    # budgets is not directly comparable to it.
+                    device_budgets={
+                        "P300X2": AgenticDeviceBudget(
+                            max_input_tokens=30 * 1024,
+                            max_output_tokens=16 * 1024,
+                        ),
                     },
                     instance_ids_map={
                         EvalLimitMode.CI_NIGHTLY: [

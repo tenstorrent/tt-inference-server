@@ -108,3 +108,9 @@ class DriverContext:
     # a ``release`` run. Standalone agentic runs leave this False and keep the
     # ``eval_<hf>/agentic/<task>`` layout.
     agentic_release_layout: bool = False
+    # ``device_model_spec.max_context`` of the served model — the window vLLM
+    # validates every request against. Agentic drivers use it to clamp token
+    # budgets that would otherwise be rejected up front (the lm-eval path has
+    # the same guard in eval_command._clamp_max_gen_toks). None disables the
+    # clamp.
+    max_context: Optional[int] = None

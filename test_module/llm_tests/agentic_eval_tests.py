@@ -73,10 +73,16 @@ def _driver_context(ctx: MediaContext) -> DriverContext:
     # LLM layout) via ``agentic_release_layout``. The standalone `agentic`
     # workflow keeps its existing eval_<hf>/agentic/<task> layout.
     release_layout = getattr(ctx.runtime_config, "workflow", None) == "release"
+    # The served context window, used by the drivers to size/clamp the agent
+    # token budgets (same source the lm-eval path reads in eval_command).
+    max_context = getattr(
+        getattr(ctx.model_spec, "device_model_spec", None), "max_context", None
+    )
     return DriverContext(
         output_dir=Path(ctx.output_path),
         device=device,
         agentic_release_layout=release_layout,
+        max_context=max_context,
     )
 
 
