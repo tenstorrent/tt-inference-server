@@ -235,7 +235,6 @@ namespace pl = tt_llm_engine::pipeline;
 
 inline pl::WireFormat wireFormatFromString(const std::string& s) {
   static const std::unordered_map<std::string, pl::WireFormat> formats = {
-      {"deepseek", pl::WireFormat::DEEPSEEK},
       {"loopback", pl::WireFormat::LOOPBACK},
       {"blaze", pl::WireFormat::BLAZE}};
 
