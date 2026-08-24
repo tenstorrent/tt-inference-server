@@ -652,6 +652,7 @@ class TestSystemIntegration:
         device=DeviceTypes.N150,
         engine=InferenceEngine.VLLM.value,
         default_impl=False,
+        model_display_name=None,
     ):
         return ProdModelSpecTemplate(
             impl=impl,
@@ -668,7 +669,24 @@ class TestSystemIntegration:
                 ),
             ],
             weights=weights or ["test/model-A"],
+            model_display_name=model_display_name,
         )
+
+    def test_model_display_name_is_performance_reference_lookup_key(self, monkeypatch):
+        lookups = []
+        monkeypatch.setattr(
+            "workflows.model_spec.get_perf_reference_map",
+            lambda model_name, targets: lookups.append(model_name) or {},
+        )
+        template = self._template(
+            self._impl("impl-a"),
+            weights=["org/model-base", "org/model-instruct"],
+            model_display_name="stable-model-family",
+        )
+
+        template.expand_to_specs()
+
+        assert lookups == ["stable-model-family"]
 
     def test_model_spec_map_generation(self, sample_impl):
         """Test spec map generation from templates."""

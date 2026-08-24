@@ -229,10 +229,10 @@ def get_model_display_name(template: ModelSpecTemplate) -> str:
     )
 
 
-def coalesce_catalog_groups_for_docs(
+def coalesce_model_families_for_docs(
     templates: List[ModelSpecTemplate],
 ) -> List[ModelSpecTemplate]:
-    """Combine only leaf variants sharing one device and runtime configuration."""
+    """Combine model-family leaves sharing one device and runtime configuration."""
 
     def shared_signature(template):
         data = asdict(template)
@@ -241,7 +241,6 @@ def coalesce_catalog_groups_for_docs(
             "device_model_specs",
             "metadata",
             "model_display_name",
-            "catalog_group",
         ):
             data.pop(field_name, None)
         return data
@@ -253,8 +252,12 @@ def coalesce_catalog_groups_for_docs(
 
     grouped = defaultdict(list)
     ordered_keys = []
-    for index, template in enumerate(templates):
-        key = template.catalog_group or f"ungrouped:{index}"
+    for template in templates:
+        key = (
+            get_model_display_name(template),
+            template.inference_engine,
+            template.impl.impl_id,
+        )
         if key not in grouped:
             ordered_keys.append(key)
         grouped[key].append(template)
@@ -262,10 +265,6 @@ def coalesce_catalog_groups_for_docs(
     coalesced = []
     for key in ordered_keys:
         members = grouped[key]
-        if members[0].catalog_group is None:
-            coalesced.extend(members)
-            continue
-
         buckets = []
         for item in members:
             for device_spec in item.device_model_specs:
@@ -1164,7 +1163,7 @@ def generate_doc_pages(
         output_dir: Output directory for docs (default: docs/model_support)
         dry_run: If True, print what would be written without writing
     """
-    templates = coalesce_catalog_groups_for_docs(templates)
+    templates = coalesce_model_families_for_docs(templates)
     output_path = Path(output_dir)
 
     print(f"Generating Model Support documentation from {len(templates)} templates")
@@ -1239,7 +1238,7 @@ def update_readme_model_support(
         readme_path: Path to README.md file (default: README.md)
         dry_run: If True, print what would change without writing
     """
-    templates = coalesce_catalog_groups_for_docs(templates)
+    templates = coalesce_model_families_for_docs(templates)
     readme_file = Path(readme_path)
     if not readme_file.exists():
         print(f"Warning: README.md not found at {readme_path}, skipping update")

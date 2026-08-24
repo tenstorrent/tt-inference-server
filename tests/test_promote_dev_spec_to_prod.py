@@ -5,28 +5,21 @@
 import contextlib
 import io
 import json
-import shutil
 import textwrap
 
 import pytest
 import yaml
-from ruamel.yaml.comments import CommentedMap
 
 from scripts.release.promote_dev_spec_to_prod import (
-    DEFAULT_CI_CONFIG,
-    DEFAULT_DEV_DIR,
-    DEFAULT_PROD_DIR,
-    _catalog_group,
     main,
     promote,
 )
 from scripts.release.generate_model_support_docs import (
-    coalesce_catalog_groups_for_docs,
+    coalesce_model_families_for_docs,
     generate_doc_pages,
 )
 from workflows.model_spec import (
     MODEL_SPEC_CATALOG_FILES,
-    get_model_spec_map,
     load_templates_from_yaml,
 )
 from workflows.workflow_types import DeviceTypes, InferenceEngine
@@ -37,24 +30,6 @@ PINS = {
     "version": "9.9.9",
     "vllm_commit": "new-vllm",
 }
-
-
-def test_catalog_group_ignores_weight_membership_but_distinguishes_impl():
-    template = CommentedMap(
-        {
-            "weights": ["org/model-base"],
-            "model_display_name": "model",
-            "inference_engine": "VLLM",
-            "impl": "tt_transformers",
-        }
-    )
-    original = _catalog_group(template)
-
-    template["weights"].append("org/model-instruct")
-    assert _catalog_group(template) == original
-
-    template["impl"] = "forge_vllm_plugin"
-    assert _catalog_group(template) != original
 
 
 def _write_catalogs(tmp_path, *, dev_llm, prod_llm):
@@ -105,35 +80,7 @@ def _load_leaf_templates(prod_dir):
     return {_template_identity(template): template for template in templates}
 
 
-def _raw_templates(prod_dir):
-    return [
-        template
-        for filename in MODEL_SPEC_CATALOG_FILES
-        for template in yaml.safe_load((prod_dir / filename).read_text())["templates"]
-    ]
-
-
-def _file_tree(root):
-    return {
-        str(path.relative_to(root)): path.read_text()
-        for path in root.rglob("*")
-        if path.is_file()
-    }
-
-
-def _serialized_catalog(prod_dir):
-    templates = [
-        template
-        for filename in MODEL_SPEC_CATALOG_FILES
-        for template in load_templates_from_yaml(prod_dir / filename)
-    ]
-    return {
-        model_id: spec.get_serialized_dict()
-        for model_id, spec in get_model_spec_map(templates).items()
-    }
-
-
-def _grouped_fixture(tmp_path):
+def _flat_fixture(tmp_path):
     dev_dir, prod_dir = _write_catalogs(
         tmp_path,
         dev_llm="""
@@ -175,6 +122,37 @@ def _grouped_fixture(tmp_path):
 
             - weights:
                 - org/model-A
+              impl: tt_transformers
+              inference_engine: VLLM
+              version: "1.0.0"
+              tt_metal_commit: "old-metal"
+              vllm_commit: "old-vllm"
+              device_model_specs:
+                - device: N150
+                  max_concurrency: 2
+                  max_context: 4096
+                  default_impl: true
+              metadata:
+                org/model-A:
+                  note: old-a
+
+            - weights:
+                - org/model-A
+              impl: tt_transformers
+              inference_engine: VLLM
+              version: "1.0.0"
+              tt_metal_commit: "old-metal"
+              vllm_commit: "old-vllm"
+              device_model_specs:
+                - device: N300
+                  max_concurrency: 4
+                  max_context: 8192
+                  default_impl: true
+              metadata:
+                org/model-A:
+                  note: old-a
+
+            - weights:
                 - org/model-B
               impl: tt_transformers
               inference_engine: VLLM
@@ -186,13 +164,23 @@ def _grouped_fixture(tmp_path):
                   max_concurrency: 2
                   max_context: 4096
                   default_impl: true
+              metadata:
+                org/model-B:
+                  note: old-b
+
+            - weights:
+                - org/model-B
+              impl: tt_transformers
+              inference_engine: VLLM
+              version: "1.0.0"
+              tt_metal_commit: "old-metal"
+              vllm_commit: "old-vllm"
+              device_model_specs:
                 - device: N300
                   max_concurrency: 4
                   max_context: 8192
                   default_impl: true
               metadata:
-                org/model-A:
-                  note: old-a
                 org/model-B:
                   note: old-b
         """,
@@ -204,8 +192,8 @@ def _grouped_fixture(tmp_path):
     return ci_path, dev_dir, prod_dir
 
 
-def test_grouped_owner_is_leafized_and_only_target_semantics_change(tmp_path):
-    ci_path, dev_dir, prod_dir = _grouped_fixture(tmp_path)
+def test_only_exact_target_leaf_changes(tmp_path):
+    ci_path, dev_dir, prod_dir = _flat_fixture(tmp_path)
 
     report = promote(ci_path, dev_dir, prod_dir, **PINS)
 
@@ -277,7 +265,7 @@ def test_new_target_is_appended_as_exact_leaf(tmp_path):
 
 
 def test_resolution_failure_does_not_write_any_prod_file(tmp_path):
-    ci_path, dev_dir, prod_dir = _grouped_fixture(tmp_path)
+    ci_path, dev_dir, prod_dir = _flat_fixture(tmp_path)
     ci_path = _write_ci(
         tmp_path,
         {
@@ -335,7 +323,7 @@ def test_duplicate_prod_identity_fails_before_write(tmp_path):
 
 @pytest.mark.parametrize("vllm_commit", [None, "", "   "])
 def test_vllm_target_requires_non_empty_vllm_commit(tmp_path, vllm_commit):
-    ci_path, dev_dir, prod_dir = _grouped_fixture(tmp_path)
+    ci_path, dev_dir, prod_dir = _flat_fixture(tmp_path)
     before = (prod_dir / "llm.yaml").read_bytes()
 
     with pytest.raises(ValueError, match="vllm_commit"):
@@ -352,7 +340,7 @@ def test_vllm_target_requires_non_empty_vllm_commit(tmp_path, vllm_commit):
 
 
 def test_dry_run_json_reports_changes_without_writing(tmp_path, capsys):
-    ci_path, dev_dir, prod_dir = _grouped_fixture(tmp_path)
+    ci_path, dev_dir, prod_dir = _flat_fixture(tmp_path)
     before = (prod_dir / "llm.yaml").read_bytes()
 
     result = main(
@@ -385,7 +373,7 @@ def test_dry_run_json_reports_changes_without_writing(tmp_path, capsys):
 
 
 def test_json_error_is_machine_readable_and_does_not_write(tmp_path, capsys):
-    _, dev_dir, prod_dir = _grouped_fixture(tmp_path)
+    _, dev_dir, prod_dir = _flat_fixture(tmp_path)
     ci_path = _write_ci(
         tmp_path,
         {"missing-model": _vllm_release_entry("N150")},
@@ -440,7 +428,7 @@ def test_json_error_is_machine_readable_and_does_not_write(tmp_path, capsys):
 def test_yaml_errors_are_machine_readable_and_do_not_write(
     tmp_path, capsys, invalid_prod
 ):
-    ci_path, dev_dir, prod_dir = _grouped_fixture(tmp_path)
+    ci_path, dev_dir, prod_dir = _flat_fixture(tmp_path)
     (prod_dir / "llm.yaml").write_text(textwrap.dedent(invalid_prod))
     before = (prod_dir / "llm.yaml").read_bytes()
 
@@ -471,7 +459,7 @@ def test_yaml_errors_are_machine_readable_and_do_not_write(
 
 
 def test_second_promotion_is_byte_idempotent(tmp_path):
-    ci_path, dev_dir, prod_dir = _grouped_fixture(tmp_path)
+    ci_path, dev_dir, prod_dir = _flat_fixture(tmp_path)
     promote(ci_path, dev_dir, prod_dir, **PINS)
     after_first = {path.name: path.read_bytes() for path in prod_dir.glob("*.yaml")}
 
@@ -482,68 +470,6 @@ def test_second_promotion_is_byte_idempotent(tmp_path):
     assert {
         path.name: path.read_bytes() for path in prod_dir.glob("*.yaml")
     } == after_first
-
-
-def test_full_prod_flattening_has_no_expanded_semantic_diff(tmp_path):
-    prod_copy = tmp_path / "prod"
-    shutil.copytree(DEFAULT_PROD_DIR, prod_copy)
-    before = _serialized_catalog(prod_copy)
-    ci_path = _write_ci(tmp_path, {})
-
-    report = promote(
-        ci_path,
-        DEFAULT_DEV_DIR,
-        prod_copy,
-        version=PINS["version"],
-        tt_metal_commit=PINS["tt_metal_commit"],
-    )
-
-    assert report["leaf_count_before"] == 225
-    assert report["leaf_count_after"] == 225
-    assert _serialized_catalog(prod_copy) == before
-    assert len(_load_leaf_templates(prod_copy)) == 225
-    for template in _raw_templates(prod_copy):
-        assert "perf_reference" in template["device_model_specs"][0]
-        assert template["model_display_name"]
-        assert template["catalog_group"]
-
-
-def test_full_prod_flattening_preserves_generated_documentation(tmp_path):
-    prod_copy = tmp_path / "prod"
-    shutil.copytree(DEFAULT_PROD_DIR, prod_copy)
-    ci_path = _write_ci(tmp_path, {})
-    before_docs = tmp_path / "docs-before"
-    after_docs = tmp_path / "docs-after"
-
-    with contextlib.redirect_stdout(io.StringIO()):
-        generate_doc_pages(
-            [
-                template
-                for filename in MODEL_SPEC_CATALOG_FILES
-                for template in load_templates_from_yaml(prod_copy / filename)
-            ],
-            str(before_docs),
-        )
-
-    promote(
-        ci_path,
-        DEFAULT_DEV_DIR,
-        prod_copy,
-        version=PINS["version"],
-        tt_metal_commit=PINS["tt_metal_commit"],
-    )
-
-    with contextlib.redirect_stdout(io.StringIO()):
-        generate_doc_pages(
-            [
-                template
-                for filename in MODEL_SPEC_CATALOG_FILES
-                for template in load_templates_from_yaml(prod_copy / filename)
-            ],
-            str(after_docs),
-        )
-
-    assert _file_tree(after_docs) == _file_tree(before_docs)
 
 
 def test_docs_show_limits_for_heterogeneous_release_configurations(tmp_path):
@@ -558,7 +484,6 @@ def test_docs_show_limits_for_heterogeneous_release_configurations(tmp_path):
               version: "1.0.0"
               tt_metal_commit: old
               vllm_commit: old
-              catalog_group: shared
               model_display_name: model
               device_model_specs:
                 - {device: N150, max_concurrency: 1, max_context: 1024}
@@ -568,7 +493,6 @@ def test_docs_show_limits_for_heterogeneous_release_configurations(tmp_path):
               version: "2.0.0"
               tt_metal_commit: new
               vllm_commit: new
-              catalog_group: shared
               model_display_name: model
               device_model_specs:
                 - {device: N150, max_concurrency: 8, max_context: 65536}
@@ -576,7 +500,7 @@ def test_docs_show_limits_for_heterogeneous_release_configurations(tmp_path):
     )
     templates = load_templates_from_yaml(prod_dir / "llm.yaml")
 
-    assert coalesce_catalog_groups_for_docs(templates) == templates
+    assert coalesce_model_families_for_docs(templates) == templates
     docs = tmp_path / "docs"
     with contextlib.redirect_stdout(io.StringIO()):
         generate_doc_pages(templates, str(docs))
@@ -587,113 +511,35 @@ def test_docs_show_limits_for_heterogeneous_release_configurations(tmp_path):
     assert "| 8 | 65536 |" in page
 
 
-def test_real_catalog_promotion_is_exact_leaf_granular_and_idempotent(tmp_path):
-    prod_copy = tmp_path / "prod"
-    shutil.copytree(DEFAULT_PROD_DIR, prod_copy)
-
-    report = promote(
-        DEFAULT_CI_CONFIG,
-        DEFAULT_DEV_DIR,
-        prod_copy,
-        **PINS,
-    )
-
-    expected = {
-        (
-            "google/diffusiongemma-26B-A4B-it",
-            "P300X2",
-            "vLLM",
-            "diffusion_gemma",
-        ),
-        ("Qwen/Qwen3-32B", "GALAXY", "vLLM", "qwen3_32b_galaxy"),
-    }
-    assert set(report["requested_identities"]) == expected
-    assert set(report["added_identities"]) == {
-        (
-            "google/diffusiongemma-26B-A4B-it",
-            "P300X2",
-            "vLLM",
-            "diffusion_gemma",
-        )
-    }
-    assert set(report["updated_identities"]) == {
-        ("Qwen/Qwen3-32B", "GALAXY", "vLLM", "qwen3_32b_galaxy")
-    }
-    assert report["leaf_count_before"] == 225
-    assert report["leaf_count_after"] == 226
-    assert len(_load_leaf_templates(prod_copy)) == 226
-    assert all(
-        "perf_reference" in template["device_model_specs"][0]
-        for template in _raw_templates(prod_copy)
-    )
-
-    snapshot = {path.name: path.read_bytes() for path in prod_copy.glob("*.yaml")}
-    second = promote(
-        DEFAULT_CI_CONFIG,
-        DEFAULT_DEV_DIR,
-        prod_copy,
-        **PINS,
-    )
-    assert second["changed_files"] == []
-    assert {
-        path.name: path.read_bytes() for path in prod_copy.glob("*.yaml")
-    } == snapshot
-
-
-def test_partial_multiweight_release_keeps_sibling_docs_and_stable_group(tmp_path):
-    prod_copy = tmp_path / "prod"
-    shutil.copytree(DEFAULT_PROD_DIR, prod_copy)
-    empty_config = _write_ci(tmp_path, {})
-    promote(
-        empty_config,
-        DEFAULT_DEV_DIR,
-        prod_copy,
-        version="base",
-        tt_metal_commit="base-metal",
-    )
-    release_config = _write_ci(
+def test_docs_coalesce_flat_weights_by_stable_model_family(tmp_path):
+    _, prod_dir = _write_catalogs(
         tmp_path,
-        {"Llama-3.1-8B": _vllm_release_entry("N150")},
+        dev_llm="templates: []\n",
+        prod_llm="""
+            templates:
+            - weights: [org/model-base]
+              model_display_name: model
+              impl: tt_transformers
+              inference_engine: VLLM
+              version: "1.0.0"
+              tt_metal_commit: metal
+              vllm_commit: vllm
+              device_model_specs:
+                - {device: N150, max_concurrency: 1, max_context: 1024}
+            - weights: [org/model-instruct]
+              model_display_name: model
+              impl: tt_transformers
+              inference_engine: VLLM
+              version: "1.0.0"
+              tt_metal_commit: metal
+              vllm_commit: vllm
+              device_model_specs:
+                - {device: N150, max_concurrency: 1, max_context: 1024}
+        """,
     )
+    templates = load_templates_from_yaml(prod_dir / "llm.yaml")
 
-    promote(
-        release_config,
-        DEFAULT_DEV_DIR,
-        prod_copy,
-        version="next",
-        tt_metal_commit="next-metal",
-        vllm_commit="next-vllm",
-    )
-    docs = tmp_path / "docs"
-    with contextlib.redirect_stdout(io.StringIO()):
-        generate_doc_pages(
-            [
-                template
-                for filename in MODEL_SPEC_CATALOG_FILES
-                for template in load_templates_from_yaml(prod_copy / filename)
-            ],
-            str(docs),
-        )
+    coalesced = coalesce_model_families_for_docs(templates)
 
-    n150 = (docs / "llm" / "Llama-3.1-8B_n150.md").read_text()
-    n300 = (docs / "llm" / "Llama-3.1-8B_n300.md").read_text()
-    assert "Llama-3.1-8B-Instruct" in n150
-    assert "Additional released configurations" in n150
-    assert "Llama-3.1-8B-Instruct" in n300
-
-    llama_groups = {
-        template["catalog_group"]
-        for template in _raw_templates(prod_copy)
-        if template.get("model_display_name") == "Llama-3.1-8B"
-        and template["impl"] == "tt_transformers"
-        and any(
-            weight
-            in {
-                "meta-llama/Llama-3.1-8B",
-                "meta-llama/Llama-3.1-8B-Instruct",
-            }
-            for weight in template["weights"]
-        )
-    }
-    assert len(llama_groups) == 1
-    assert next(iter(llama_groups)).startswith("doc:")
+    assert len(coalesced) == 1
+    assert coalesced[0].weights == ["org/model-base", "org/model-instruct"]

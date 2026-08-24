@@ -427,10 +427,6 @@ class KnownIssue:
         return task_name is not None and self.task_name == task_name
 
 
-class ExplicitPerfReference(list):
-    """Marker for generated YAML references that must not be re-derived."""
-
-
 @dataclass(frozen=True)
 class DeviceModelSpec:
     """
@@ -1033,10 +1029,9 @@ class ModelSpecTemplate:
     )
     has_builtin_warmup: bool = False
     metadata: Dict[str, Dict] = field(default_factory=dict)
-    # Generated leaf-granular prod entries retain the display grouping of their
-    # source template so documentation layout does not change during migration.
+    # Leaf-granular prod entries retain their source model family. This keeps
+    # documentation grouping and performance-reference lookup stable.
     model_display_name: Optional[str] = None
-    catalog_group: Optional[str] = None
 
     def __post_init__(self):
         self._validate_data()
@@ -1076,7 +1071,9 @@ class ModelSpecTemplate:
         specs = []
 
         # Generate performance reference map
-        main_model_name = model_weights_to_model_name(self.weights[0])
+        main_model_name = self.model_display_name or model_weights_to_model_name(
+            self.weights[0]
+        )
         perf_reference_map = get_perf_reference_map(
             main_model_name, self.perf_targets_map
         )
@@ -1091,12 +1088,8 @@ class ModelSpecTemplate:
 
                 # Perf reference for this device accounting for impl features
                 # e.g. data parallelism factor
-                perf_reference = (
-                    device_model_spec.perf_reference
-                    if isinstance(
-                        device_model_spec.perf_reference, ExplicitPerfReference
-                    )
-                    else get_perf_reference(device_model_spec, perf_reference_map)
+                perf_reference = get_perf_reference(
+                    device_model_spec, perf_reference_map
                 )
 
                 # Create a new device_model_spec with performance reference data
@@ -1190,21 +1183,6 @@ def _build_system_requirements(data: Optional[Dict]) -> Optional["SystemRequirem
 def _build_device_model_spec(data: Dict) -> "DeviceModelSpec":
     kwargs = dict(data)
     kwargs["device"] = DeviceTypes.from_string(kwargs["device"])
-    if "perf_reference" in kwargs:
-        perf_reference = []
-        for task_data in kwargs["perf_reference"]:
-            if isinstance(task_data, BenchmarkTaskParams):
-                perf_reference.append(task_data)
-                continue
-            task_kwargs = dict(task_data)
-            task_kwargs["targets"] = {
-                target_name: PerformanceTarget(**target_data)
-                if isinstance(target_data, dict)
-                else target_data
-                for target_name, target_data in task_kwargs.get("targets", {}).items()
-            }
-            perf_reference.append(BenchmarkTaskParams(**task_kwargs))
-        kwargs["perf_reference"] = ExplicitPerfReference(perf_reference)
     if "system_requirements" in kwargs:
         kwargs["system_requirements"] = _build_system_requirements(
             kwargs["system_requirements"]

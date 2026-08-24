@@ -6,12 +6,10 @@
 """Promote exact release-scoped dev leaves into a leaf-granular prod catalog."""
 
 import argparse
-import hashlib
 import json
 import sys
 import tempfile
 from copy import deepcopy
-from dataclasses import asdict
 from io import StringIO
 from pathlib import Path
 
@@ -150,25 +148,6 @@ def _filter_metadata(template: CommentedMap, weight: str) -> None:
     template["metadata"] = filtered
 
 
-def _catalog_group(template: CommentedMap) -> str:
-    existing = template.get("catalog_group")
-    if existing:
-        return str(existing)
-    weights = [str(weight) for weight in template.get("weights", [])]
-    # Group identity describes the logical docs owner, not its current members.
-    # Adding or removing a weight must not split re-promoted leaves from siblings.
-    payload = {
-        "model_display_name": template.get("model_display_name")
-        or (Path(weights[0]).name if weights else ""),
-        "inference_engine": str(template.get("inference_engine", "")),
-        "impl": str(template.get("impl", "")),
-    }
-    digest = hashlib.sha256(
-        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()[:16]
-    return f"doc:{digest}"
-
-
 def _make_leaf(
     template: CommentedMap,
     weight_index: int,
@@ -191,28 +170,18 @@ def _make_leaf(
     leaf = deepcopy(template)
     leaf["weights"] = CommentedSeq([deepcopy(weights[weight_index])])
     leaf["device_model_specs"] = CommentedSeq([deepcopy(device_spec)])
-    leaf["model_display_name"] = (
-        template.get("model_display_name") or Path(str(weights[0])).name
-    )
-    leaf["catalog_group"] = _catalog_group(template)
     _filter_metadata(leaf, weight)
     return _template_identity(leaf, weight, leaf["device_model_specs"][0]), leaf
 
 
-def _leafize_template(
-    template: CommentedMap,
-) -> list[tuple[LeafIdentity, CommentedMap]]:
+def _flat_template_identity(template: CommentedMap) -> LeafIdentity:
     weights = template.get("weights")
     devices = template.get("device_model_specs")
-    if not isinstance(weights, list) or not weights:
-        raise ValueError("Template weights must be a non-empty list")
-    if not isinstance(devices, list) or not devices:
-        raise ValueError("Template device_model_specs must be a non-empty list")
-    return [
-        _make_leaf(template, weight_index, device_index)
-        for weight_index in range(len(weights))
-        for device_index in range(len(devices))
-    ]
+    if not isinstance(weights, list) or len(weights) != 1:
+        raise ValueError("Prod template must contain exactly one weight")
+    if not isinstance(devices, list) or len(devices) != 1:
+        raise ValueError("Prod template must contain exactly one device")
+    return _template_identity(template, str(weights[0]), devices[0])
 
 
 def _has_unsafe_yaml_structure(value) -> bool:
@@ -265,15 +234,6 @@ def _semantic_value(value):
     if isinstance(value, (list, tuple)):
         return [_semantic_value(item) for item in value]
     return value
-
-
-def _set_explicit_perf_reference(leaf: CommentedMap, model_spec) -> None:
-    """Freeze the expanded leaf's derived performance reference in prod YAML."""
-    device_spec = leaf["device_model_specs"][0]
-    device_spec["perf_reference"] = [
-        _semantic_value(asdict(task))
-        for task in model_spec.device_model_spec.perf_reference
-    ]
 
 
 def _append_block(segments, lines) -> None:
@@ -447,7 +407,6 @@ def promote(
                 f"Source provenance mismatch: expected {identity!r}, "
                 f"found {actual_identity!r}"
             )
-        _set_explicit_perf_reference(leaf, item.model_spec)
         _inject_pins(
             leaf,
             version=version,
@@ -475,8 +434,7 @@ def promote(
     }
     original_text = {}
     candidate_segments = {}
-    before_leaves = {}
-    owner_filenames = {}
+    prod_locations = {}
 
     for filename in MODEL_SPEC_CATALOG_FILES:
         path = prod_dir / filename
@@ -485,73 +443,22 @@ def promote(
         segments = split_into_blocks(text)
         candidate_segments[filename] = [(kind, list(lines)) for kind, lines in segments]
 
-        for kind, lines in segments:
+        for segment_index, (kind, lines) in enumerate(segments):
             if kind != "block":
                 continue
             raw_template = _parse_block(lines)
-            for identity, leaf in _leafize_template(raw_template):
-                if identity in before_leaves:
-                    raise ValueError(
-                        f"Duplicate prod identity {identity!r} in "
-                        f"{owner_filenames[identity]!r} and {filename!r}"
-                    )
-                before_leaves[identity] = _semantic_value(leaf)
-                owner_filenames[identity] = filename
-
-    for identity, filename in owner_filenames.items():
-        if identity in target_filenames and filename != target_filenames[identity]:
-            raise ValueError(
-                f"Release identity {identity!r} would move from {filename!r} "
-                f"to {target_filenames[identity]!r}"
-            )
-
-    found_targets = set()
-    for filename, segments in candidate_segments.items():
-        for segment_index, (kind, lines) in enumerate(list(segments)):
-            if kind != "block":
-                continue
-            raw_template = _parse_block(lines)
-            leaves = _leafize_template(raw_template)
-            found_targets.update(
-                identity for identity, _ in leaves if identity in promoted_leaves
-            )
-            target_requires_update = any(
-                identity in promoted_leaves
-                and _semantic_value(old_leaf)
-                != _semantic_value(promoted_leaves[identity])
-                for identity, old_leaf in leaves
-            )
-            has_explicit_perf_references = all(
-                "perf_reference" in leaf["device_model_specs"][0] for _, leaf in leaves
-            )
-            if (
-                len(leaves) == 1
-                and has_explicit_perf_references
-                and not target_requires_update
-            ):
-                continue
-            if _has_unsafe_yaml_structure(raw_template):
-                raise ValueError(
-                    f"Template in {filename!r} uses YAML anchors or merge keys "
-                    "and cannot be leafized safely"
-                )
-
-            rendered_lines = []
-            for identity, old_leaf in leaves:
-                replacement = promoted_leaves.get(identity)
-                if replacement is None:
-                    replacement = old_leaf
-                    _set_explicit_perf_reference(
-                        replacement,
-                        before_specs_by_identity[identity],
-                    )
-                rendered_lines.extend(_render_block(replacement))
-                if identity in promoted_leaves:
-                    found_targets.add(identity)
-            segments[segment_index] = ("block", rendered_lines)
+            identity = _flat_template_identity(raw_template)
+            prod_locations[identity] = (filename, segment_index, raw_template)
 
     for identity, leaf in promoted_leaves.items():
-        if identity in found_targets:
+        location = prod_locations.get(identity)
+        if location is not None:
+            filename, segment_index, current = location
+            if _semantic_value(current) != _semantic_value(leaf):
+                candidate_segments[filename][segment_index] = (
+                    "block",
+                    _render_block(leaf),
+                )
             continue
         filename = target_filenames[identity]
         if filename not in candidate_segments:
@@ -565,51 +472,19 @@ def promote(
         for filename, segments in candidate_segments.items()
     }
 
-    after_leaves = {}
-    for filename, text in candidate_text.items():
-        for kind, lines in split_into_blocks(text):
-            if kind != "block":
-                continue
-            raw_template = _parse_block(lines)
-            weights = raw_template.get("weights", [])
-            devices = raw_template.get("device_model_specs", [])
-            if len(weights) != 1 or len(devices) != 1:
-                raise ValueError(
-                    f"Candidate prod block in {filename!r} is not leaf-granular"
-                )
-            identity, leaf = _leafize_template(raw_template)[0]
-            if identity in after_leaves:
-                raise ValueError(f"Candidate prod contains duplicate {identity!r}")
-            after_leaves[identity] = _semantic_value(leaf)
-
     requested = tuple(promoted_leaves)
     requested_set = set(requested)
-    before_set = set(before_leaves)
-    after_set = set(after_leaves)
-    non_target_before = before_set - requested_set
-    non_target_after = after_set - requested_set
-    if non_target_before != non_target_after:
-        raise ValueError(
-            "Promotion changed non-requested identity membership: "
-            f"removed={sorted(non_target_before - non_target_after)!r}, "
-            f"added={sorted(non_target_after - non_target_before)!r}"
-        )
-    if not requested_set <= after_set:
-        raise ValueError(
-            f"Candidate prod is missing requested identities "
-            f"{sorted(requested_set - after_set)!r}"
-        )
-
     candidate_model_specs = _validate_candidate_catalog(candidate_text)
     after_payloads = {
         model_spec_leaf_identity(spec): spec.get_serialized_dict()
         for spec in candidate_model_specs.values()
     }
-    for identity in non_target_before:
-        if before_payloads[identity] != after_payloads[identity]:
-            raise ValueError(
-                f"Promotion changed non-requested leaf payload {identity!r}"
-            )
+    after_set = set(after_payloads)
+    if not requested_set <= after_set:
+        raise ValueError(
+            f"Candidate prod is missing requested identities "
+            f"{sorted(requested_set - after_set)!r}"
+        )
 
     actions = {}
     for identity in requested:
@@ -654,10 +529,10 @@ def promote(
         "unchanged_identities": tuple(
             identity for identity, action in actions.items() if action == "unchanged"
         ),
-        "retained_identities": tuple(sorted(non_target_after)),
+        "retained_identities": tuple(sorted(after_set - requested_set)),
         "changed_files": changed_files,
-        "leaf_count_before": len(before_leaves),
-        "leaf_count_after": len(after_leaves),
+        "leaf_count_before": len(before_payloads),
+        "leaf_count_after": len(after_payloads),
     }
 
 
