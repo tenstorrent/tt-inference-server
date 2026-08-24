@@ -247,16 +247,27 @@ def coalesce_model_families_for_docs(
 
     def device_signature(device_spec):
         data = asdict(device_spec)
+        # perf_reference is derived from model_performance_reference.json, keyed
+        # by the family's model_display_name, so family members share it today
+        # and comparing it here would only add float noise. If targets ever
+        # become per-weight, drop this pop -- otherwise leaves with different
+        # targets would silently coalesce into one documented configuration.
         data.pop("perf_reference", None)
         return data
 
     grouped = defaultdict(list)
     ordered_keys = []
-    for template in templates:
+    for index, template in enumerate(templates):
         key = (
-            get_model_display_name(template),
-            template.inference_engine,
-            template.impl.impl_id,
+            (
+                "family",
+                template.model_type,
+                template.model_display_name,
+                template.inference_engine,
+                template.impl.impl_id,
+            )
+            if template.model_display_name
+            else ("template", index)
         )
         if key not in grouped:
             ordered_keys.append(key)
@@ -394,7 +405,9 @@ def get_page_group_status_link(
 
 def group_templates_by_model(
     templates: List[ModelSpecTemplate],
-) -> Dict[str, List[ModelSpecTemplate]]:
+    *,
+    include_model_type: bool = False,
+) -> Dict[object, List[ModelSpecTemplate]]:
     """
     Group templates by their model display name.
     Multiple templates may exist for the same model targeting different devices.
@@ -402,7 +415,8 @@ def group_templates_by_model(
     groups = defaultdict(list)
     for template in templates:
         display_name = get_model_display_name(template)
-        groups[display_name].append(template)
+        key = (template.model_type, display_name) if include_model_type else display_name
+        groups[key].append(template)
     return dict(groups)
 
 
@@ -1016,7 +1030,7 @@ def generate_models_by_hardware_page(templates: List[ModelSpecTemplate]) -> str:
     devices_with_templates = get_devices_with_templates(templates)
 
     # Group templates by model name
-    model_groups = group_templates_by_model(templates)
+    model_groups = group_templates_by_model(templates, include_model_type=True)
 
     # Iterate through all devices with page group mappings (excluding EXCLUDED_DEVICES)
     for device in get_devices_with_templates_ordered():
@@ -1034,7 +1048,7 @@ def generate_models_by_hardware_page(templates: List[ModelSpecTemplate]) -> str:
 
         # Collect models that support this device
         device_models = []
-        for model_name, model_templates in model_groups.items():
+        for (_, model_name), model_templates in model_groups.items():
             status_enum = get_device_status_enum_for_model(model_templates, device)
             if status_enum is not None:
                 model_type = get_model_type_for_templates(model_templates)
@@ -1192,9 +1206,9 @@ def generate_doc_pages(
         write_file(output_path / subdir / "README.md", page_content, dry_run)
 
     # Group templates by model name and generate per-page-group pages in subdirectories
-    model_groups = group_templates_by_model(templates)
+    model_groups = group_templates_by_model(templates, include_model_type=True)
 
-    for model_name, model_templates in model_groups.items():
+    for (_, model_name), model_templates in model_groups.items():
         # Get model type subdirectory
         model_type = get_model_type_for_templates(model_templates)
         subdir = get_model_subdir(model_type)

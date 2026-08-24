@@ -276,9 +276,10 @@ def test_multiweight_dev_templates_define_stable_display_name():
         templates = load_templates_from_yaml(MODEL_SPECS_DIR / "dev" / yaml_name)
         for template in templates:
             if len(template.weights) > 1:
-                assert template.model_display_name, (
+                expected = template.weights[0].split("/")[-1]
+                assert template.model_display_name == expected, (
                     f"dev/{yaml_name}: multiweight template {template.weights!r} "
-                    "must define model_display_name"
+                    f"must define model_display_name={expected!r}"
                 )
 
 
