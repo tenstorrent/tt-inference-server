@@ -30,8 +30,9 @@ import time
 
 import numpy as np
 import torch
+from config.constants import ResponseFormat
 from domain.audio_processing_request import AudioProcessingRequest
-from domain.audio_text_response import AudioTextResponse, AudioTextSegment
+from domain.audio_text_response import AudioStreamChunk, AudioTextResponse, AudioTextSegment
 from safetensors import safe_open
 from transformers import AutoTokenizer, WhisperFeatureExtractor
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
@@ -201,11 +202,12 @@ class TTQwen3AsrRunner(BaseMetalDeviceRunner):
             return wav[:n]
         return np.concatenate([wav, np.zeros(n - len(wav), dtype=np.float32)])
 
-    def _infer(self, wav: np.ndarray, max_new_tokens: int = QWEN3_ASR_MAX_NEW_TOKENS):
-        """Full TT pipeline on a 16k mono waveform. Returns (lang, text, ntok, t_enc, t_dec)."""
+    def _encode_splice(self, wav: np.ndarray):
+        """Bucketed wav -> merged prefill embeddings (1, S, dim) torch: Whisper mel +
+        Qwen3-ASR prompt, TT audio encoder, audio embeds spliced at the audio-token
+        positions. Shared by the batch (_infer) and streaming (_run_stream) paths."""
         wav = self._bucket_length(np.asarray(wav, dtype=np.float32))
         input_ids, mel = tq.build_inputs(wav, self.fe, self.tok, self.chat_template)
-        t0 = time.time()
         audio_embeds = tt_enc.encode_mel(mel, self.enc_params, self.ttnn_device).float()
         inp = self.embed[input_ids].clone()
         mask = input_ids == tq.AUDIO_TOKEN_ID
@@ -216,9 +218,15 @@ class TTQwen3AsrRunner(BaseMetalDeviceRunner):
             pad = torch.zeros(n_mask - audio_embeds.shape[0], audio_embeds.shape[1])
             audio_embeds = torch.cat([audio_embeds, pad], 0)
         inp[mask] = audio_embeds
+        return inp.unsqueeze(0)
+
+    def _infer(self, wav: np.ndarray, max_new_tokens: int = QWEN3_ASR_MAX_NEW_TOKENS):
+        """Full TT pipeline on a 16k mono waveform. Returns (lang, text, ntok, t_enc, t_dec)."""
+        t0 = time.time()
+        inp = self._encode_splice(wav)
         t_enc = time.time() - t0
         t0 = time.time()
-        ids = self.model.generate(inp.unsqueeze(0), max_new_tokens=max_new_tokens)
+        ids = self.model.generate(inp, max_new_tokens=max_new_tokens)
         t_dec = time.time() - t0
         lang, text = tq.parse_asr(self.tok.decode(ids, skip_special_tokens=False))
         return lang, text, len(ids), t_enc, t_dec
@@ -236,6 +244,9 @@ class TTQwen3AsrRunner(BaseMetalDeviceRunner):
         if request._audio_array is None or len(request._audio_array) == 0:
             raise ValueError("Audio data is empty")
 
+        if getattr(request, "stream", False):
+            # device_worker awaits _run_async then iterates the returned async gen.
+            return self._run_stream(request)
         if request._segments:
             return await asyncio.to_thread(self._run_segments, request)
         return await asyncio.to_thread(self._run_full, request)
@@ -284,3 +295,62 @@ class TTQwen3AsrRunner(BaseMetalDeviceRunner):
                 speakers=sorted(speakers),
             )
         ]
+
+    _ASR_MARKER = "<asr_text>"
+
+    def _stream_window_text(self, wav: np.ndarray, max_new_tokens: int):
+        """Yield transcription-text deltas for one audio window. Decodes the growing
+        id sequence each step and emits only what follows the <asr_text> marker, so
+        the leading `language <Lang>` scaffold is never streamed."""
+        inp = self._encode_splice(wav)
+        ids, emitted = [], 0
+        for tid in self.model.generate_iter(inp, max_new_tokens=max_new_tokens):
+            ids.append(tid)
+            full = self.tok.decode(ids, skip_special_tokens=False)
+            if self._ASR_MARKER not in full:
+                continue
+            text = full.split(self._ASR_MARKER, 1)[1]
+            if len(text) > emitted:
+                yield text[emitted:]
+                emitted = len(text)
+
+    async def _run_stream(self, request: AudioProcessingRequest):
+        """Async generator emitting SSE chunks then a final result, matching the
+        Whisper runner's streaming protocol so the shared endpoint/service handle it
+        identically. device_worker serialises streaming (one request at a time), so
+        the blocking device work runs inline; each yielded token hands control back
+        to the worker which forwards the chunk to the client."""
+        if request._segments:
+            sr = self.settings.default_sample_rate
+            windows = [
+                request._audio_array[int(float(s["start"]) * sr) : int(float(s["end"]) * sr)]
+                for s in request._segments
+            ]
+        else:
+            wav = np.asarray(request._audio_array, dtype=np.float32)
+            windows = tq.chunk_wav(wav, QWEN3_ASR_FIXED_SEC)
+
+        chunk_id, parts = 0, []
+        for win in windows:
+            if win is None or len(win) == 0:
+                continue
+            seg = []
+            for delta in self._stream_window_text(win, QWEN3_ASR_MAX_NEW_TOKENS):
+                seg.append(delta)
+                chunk_id += 1
+                yield {
+                    "type": "streaming_chunk",
+                    "chunk": AudioStreamChunk(text=delta, chunk_id=chunk_id),
+                    "task_id": request._task_id,
+                }
+            joined = "".join(seg).strip()
+            if joined:
+                parts.append(joined)
+
+        final = AudioTextResponse(text=" ".join(parts), duration=request._duration)
+        yield {
+            "type": "final_result",
+            "result": final,
+            "task_id": request._task_id,
+            "return": request.response_format.lower() != ResponseFormat.TEXT.value,
+        }
