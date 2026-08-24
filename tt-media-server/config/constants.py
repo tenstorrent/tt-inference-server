@@ -31,6 +31,7 @@ class SupportedModels(Enum):
     MINIMAX_H3 = "MiniMaxAI/MiniMax-H3"
     DISTIL_WHISPER_LARGE_V3 = "distil-whisper/distil-large-v3"
     OPENAI_WHISPER_LARGE_V3 = "openai/whisper-large-v3"
+    QWEN3_ASR_1_7B = "Qwen/Qwen3-ASR-1.7B"
     PYANNOTE_SPEAKER_DIARIZATION = "pyannote/speaker-diarization-3.0"
     QWEN_3_EMBEDDING_0_6B = "Qwen/Qwen3-Embedding-0.6B"
     QWEN_3_EMBEDDING_4B = "Qwen/Qwen3-Embedding-4B"
@@ -82,6 +83,7 @@ class ModelNames(Enum):
     MINIMAX_H3 = "MiniMax-H3"
     DISTIL_WHISPER_LARGE_V3 = "distil-large-v3"
     OPENAI_WHISPER_LARGE_V3 = "whisper-large-v3"
+    QWEN3_ASR_1_7B = "Qwen3-ASR-1.7B"
     MICROSOFT_RESNET_50 = "resnet-50"
     VOVNET = "vovnet"
     MOBILENETV2 = "mobilenetv2"
@@ -134,6 +136,7 @@ class ModelRunners(Enum):
     TT_LTX_2_3_DISTILLED = "tt-ltx-2.3-distilled"
     TT_MINIMAX_H3_T2VA = "tt-minimax-h3-t2va"
     TT_WHISPER = "tt-whisper"
+    TT_QWEN3_ASR = "qwen3-asr"
     VLLMForge = "vllm_forge"
     TT_YOLOV4 = "tt-yolov4"
     VLLMForge_QWEN_EMBEDDING = "vllmforge_qwen_embedding"
@@ -223,6 +226,7 @@ MODEL_SERVICE_RUNNER_MAP = {
     },
     ModelServices.AUDIO: {
         ModelRunners.TT_WHISPER,
+        ModelRunners.TT_QWEN3_ASR,
     },
     ModelServices.VIDEO: {
         ModelRunners.TT_MOCHI_1,
@@ -358,6 +362,9 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_WHISPER: {
         ModelNames.OPENAI_WHISPER_LARGE_V3,
         ModelNames.DISTIL_WHISPER_LARGE_V3,
+    },
+    ModelRunners.TT_QWEN3_ASR: {
+        ModelNames.QWEN3_ASR_1_7B,
     },
     ModelRunners.TT_XLA_RESNET: {ModelNames.MICROSOFT_RESNET_50},
     ModelRunners.TT_XLA_VOVNET: {ModelNames.VOVNET},
@@ -1180,6 +1187,30 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 1,
+    },
+    # default_throttle_level 0: the baked-in decode-trace path is di/dt-safe for this
+    # 1.7B model (validated at 68 tok/s across the n150 gate harness); the default "5"
+    # matmul throttle otherwise caps decode at ~48 tok/s.
+    (ModelRunners.TT_QWEN3_ASR, DeviceTypes.N150): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "max_batch_size": 1,
+        "default_throttle_level": 0,
+    },
+    (ModelRunners.TT_QWEN3_ASR, DeviceTypes.N300): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "max_batch_size": 1,
+        "default_throttle_level": 0,
+    },
+    (ModelRunners.TT_QWEN3_ASR, DeviceTypes.P150): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "max_batch_size": 1,
+        "default_throttle_level": 0,
     },
     (ModelRunners.VLLMForge_QWEN_EMBEDDING, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),
