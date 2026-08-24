@@ -277,6 +277,7 @@ def _validate_candidate_catalog(candidate_text: dict[str, str]):
         prod_dir.mkdir()
         for filename in MODEL_SPEC_CATALOG_FILES:
             (prod_dir / filename).write_text(candidate_text[filename])
+            _load_document(prod_dir / filename)
         templates = [
             template
             for filename in MODEL_SPEC_CATALOG_FILES
@@ -449,6 +450,13 @@ def promote(
             raw_template = _parse_block(lines)
             identity = _flat_template_identity(raw_template)
             prod_locations[identity] = (filename, segment_index, raw_template)
+
+    for identity, (filename, _, _) in prod_locations.items():
+        if identity in target_filenames and filename != target_filenames[identity]:
+            raise ValueError(
+                f"Release identity {identity!r} belongs to {filename!r}, "
+                f"but dev source is {target_filenames[identity]!r}"
+            )
 
     for identity, leaf in promoted_leaves.items():
         location = prod_locations.get(identity)

@@ -543,3 +543,32 @@ def test_docs_coalesce_flat_weights_by_stable_model_family(tmp_path):
 
     assert len(coalesced) == 1
     assert coalesced[0].weights == ["org/model-base", "org/model-instruct"]
+
+
+def test_docs_do_not_coalesce_implicit_basename_collisions(tmp_path):
+    _, prod_dir = _write_catalogs(
+        tmp_path,
+        dev_llm="templates: []\n",
+        prod_llm="""
+            templates:
+            - weights: [org-a/shared]
+              impl: tt_transformers
+              inference_engine: VLLM
+              version: "1.0.0"
+              tt_metal_commit: metal
+              vllm_commit: vllm
+              device_model_specs:
+                - {device: N150, max_concurrency: 1, max_context: 1024}
+            - weights: [org-b/shared]
+              impl: tt_transformers
+              inference_engine: VLLM
+              version: "1.0.0"
+              tt_metal_commit: metal
+              vllm_commit: vllm
+              device_model_specs:
+                - {device: N150, max_concurrency: 1, max_context: 1024}
+        """,
+    )
+    templates = load_templates_from_yaml(prod_dir / "llm.yaml")
+
+    assert coalesce_model_families_for_docs(templates) == templates
