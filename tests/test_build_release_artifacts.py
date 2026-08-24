@@ -215,7 +215,7 @@ def test_config_scope_rejects_short_and_full_selector_aliases(tmp_path):
         }
     }
 
-    with pytest.raises(ValueError, match="duplicate artifact identity"):
+    with pytest.raises(ValueError, match="duplicate identity"):
         resolve_configured_scope(config, _write_dev(tmp_path))
 
 

@@ -58,26 +58,30 @@ def _required_string(value, field: str, identity: LeafIdentity) -> str:
     return str(value)
 
 
-def load_prod_leaves(prod_dir: Path, *, require_leaf_granular: bool = True):
-    """Load and index exact prod leaves from the runtime catalog file set."""
+def load_prod_leaves(prod_dir: Path):
+    """Load and index exact prod leaves from the runtime catalog file set.
+
+    One weight and one device per prod entry is a permanent invariant of the
+    generated catalog, not an option: every release consumer indexes prod by
+    exact leaf identity and a coarse entry has no single one.
+    """
     prod_dir = Path(prod_dir)
     templates = []
     for filename in MODEL_SPEC_CATALOG_FILES:
         path = prod_dir / filename
         try:
-            file_templates = load_templates_from_yaml(path)
+            file_templates = load_templates_from_yaml(path, env="prod")
         except KeyError as exc:
             raise ValueError(
                 f"Prod catalog {path} contains an invalid enum value: {exc}"
             ) from exc
-        if require_leaf_granular:
-            for template in file_templates:
-                if len(template.weights) != 1 or len(template.device_model_specs) != 1:
-                    raise ValueError(
-                        f"Prod template in {path} is not leaf-granular: "
-                        f"weights={template.weights!r}, "
-                        f"devices={[item.device.name for item in template.device_model_specs]!r}"
-                    )
+        for template in file_templates:
+            if len(template.weights) != 1 or len(template.device_model_specs) != 1:
+                raise ValueError(
+                    f"Prod template in {path} is not leaf-granular: "
+                    f"weights={template.weights!r}, "
+                    f"devices={[item.device.name for item in template.device_model_specs]!r}"
+                )
         templates.extend(file_templates)
 
     model_specs = get_model_spec_map(templates)
@@ -101,8 +105,8 @@ def load_prod_leaves(prod_dir: Path, *, require_leaf_granular: bool = True):
             ),
             status=spec.status.name,
         )
-        if identity in leaves:
-            raise ValueError(f"Duplicate prod identity {identity!r}")
+        # get_model_spec_map() runs validate_model_specs(), which already
+        # rejects a repeated leaf identity, so this index cannot collide.
         leaves[identity] = leaf
     return leaves
 

@@ -269,8 +269,6 @@ def build_rows(scope, current_prod, base_prod, jobs, tt_shield_repo, run_id, ver
                 "ci_url": job_urls.get(identity),
             }
         )
-    if {row["identity"] for row in rows} != set(identities):
-        raise ValueError("Release-note row identities do not match resolved scope")
     return rows
 
 

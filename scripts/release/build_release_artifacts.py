@@ -107,27 +107,19 @@ DEFAULT_RUN_ID = "26592936143"
 
 
 def resolve_configured_scope(ci_config: dict, dev_dir: Path):
-    combos = collect_release_combos(ci_config)
+    # resolve_release_combos() rejects two selectors resolving to one identity.
     resolved = resolve_release_combos(
-        combos,
+        collect_release_combos(ci_config),
         load_dev_model_spec_sources(dev_dir),
     )
     expected = {}
     models = {}
-    identity_selectors = {}
     archive_owners = {}
     for item in resolved:
         model = item.identity[0]
         device = item.combo.device.name.lower()
         key = (model, device)
         archive_key = (slugify_model_id(model), device)
-        prior_selector = identity_selectors.get(item.identity)
-        if prior_selector is not None:
-            raise ValueError(
-                f"Configured selectors {prior_selector!r} and {item.combo!r} "
-                f"resolve to duplicate artifact identity {item.identity!r}"
-            )
-        identity_selectors[item.identity] = item.combo
         archive_owner = archive_owners.get(archive_key)
         if archive_owner is not None and archive_owner != item.identity:
             raise ValueError(
