@@ -10,14 +10,23 @@ import selectors
 import struct
 import subprocess
 import tempfile
+import time
 import uuid
 from pathlib import Path
-from typing import List, Optional
+from typing import List, NamedTuple, Optional
 
 import numpy as np
-from config.constants import SupportedModels
+from config.constants import AudioInputFormat, SupportedModels
 from config.settings import settings
 from domain.audio_text_response import AudioTextResponse, AudioTextSegment
+from telemetry.telemetry_client import (
+    audio_chunking_duration,
+    audio_chunks_per_request,
+    audio_input_preparation_duration,
+    audio_vad_cpu_duration,
+    audio_vad_duration,
+    audio_vad_segments,
+)
 
 from utils.decorators import log_execution_time
 from utils.ffmpeg_utils import decode_to_wav as ffmpeg_decode_to_wav
@@ -32,6 +41,21 @@ AUDIO_VENV_PYTHON = os.getenv(
 
 # Path to the diarize.py script invoked inside the audio venv.
 DIARIZE_SCRIPT = Path(__file__).parent / "diarize.py"
+
+
+class PreparedAudio(NamedTuple):
+    """Decoded audio plus the operating point it was submitted at.
+
+    `audio_array` is always mono at `settings.default_sample_rate`; the two
+    source fields record what arrived, which is otherwise destroyed by the
+    downmix and resample. Either is None when the decode path could not
+    observe it (ffmpeg normalises before the WAV header is parsed).
+    """
+
+    audio_array: np.ndarray
+    duration: float
+    source_sample_rate: Optional[int] = None
+    source_channels: Optional[int] = None
 
 
 class AudioVenvWorker:
@@ -93,6 +117,28 @@ class AudioVenvWorker:
 
     def is_running(self) -> bool:
         return self._proc is not None and self._proc.poll() is None
+
+    def cpu_seconds(self) -> Optional[float]:
+        """CPU time this worker has used so far, or None if unreadable.
+
+        Read from /proc rather than rusage: the worker is persistent, so a
+        per-call delta on this is attributable to that call, whereas
+        RUSAGE_CHILDREN would fold in every other child of the process.
+        """
+        proc = self._proc
+        if proc is None or proc.poll() is not None:
+            return None
+
+        try:
+            with open(f"/proc/{proc.pid}/stat") as stat_file:
+                stat = stat_file.read()
+            # comm can itself contain spaces and parens, so split after the last ')'.
+            fields = stat[stat.rindex(")") + 2 :].split()
+            utime, stime = int(fields[11]), int(fields[12])
+        except (OSError, ValueError, IndexError):
+            return None
+
+        return (utime + stime) / os.sysconf("SC_CLK_TCK")
 
     def start(self) -> None:
         """Spawn the worker and block until it signals ready.
@@ -335,6 +381,7 @@ class AudioManager:
 
     def to_audio_array(self, file, should_preprocess):
         """Convert audio file (base64 string or raw bytes) to numpy array for audio model inference."""
+        start = time.perf_counter()
         try:
             if isinstance(file, str):
                 # Base64-encoded string
@@ -348,12 +395,31 @@ class AudioManager:
                 )
                 raise ValueError(f"Unsupported file input type: {type(file).__name__}")
 
+            audio_format = self._detect_audio_format(audio_bytes)
             self._validate_file_size(audio_bytes)
-            audio_array = self._convert_to_audio_array(audio_bytes)
-            return self._validate_and_truncate_duration(audio_array, should_preprocess)
+            (
+                audio_array,
+                source_sample_rate,
+                source_channels,
+            ) = self._convert_to_audio_array(audio_bytes, audio_format)
+            audio_array, duration_seconds = self._validate_and_truncate_duration(
+                audio_array, should_preprocess
+            )
+            prepared = PreparedAudio(
+                audio_array=audio_array,
+                duration=duration_seconds,
+                source_sample_rate=source_sample_rate,
+                source_channels=source_channels,
+            )
         except Exception as e:
             self._logger.error(f"Failed to decode audio data: {e}")
             raise ValueError(f"Failed to process audio data: {str(e)}")
+
+        # Observed only on success
+        audio_input_preparation_duration.labels(
+            model_type=settings.model_runner, format=audio_format.value
+        ).observe(time.perf_counter() - start)
+        return prepared
 
     @log_execution_time("Applying VAD and optional diarization")
     def apply_diarization_with_vad(self, audio_array, enable_diarization):
@@ -428,9 +494,20 @@ class AudioManager:
 
         normalized_segments = self._normalize_speaker_ids(vad_segments)
 
+        # Merge only: VAD and diarization are inference, not chunking.
+        chunking_start = time.perf_counter()
         whisper_chunks = self._merge_vad_segments_by_speaker_and_duration(
             normalized_segments
         )
+        chunking_elapsed = time.perf_counter() - chunking_start
+
+        mode = "diarization" if enable_diarization else "vad_only"
+        audio_chunking_duration.labels(
+            model_type=settings.model_runner, mode=mode
+        ).observe(chunking_elapsed)
+        audio_chunks_per_request.labels(
+            model_type=settings.model_runner, mode=mode
+        ).observe(len(whisper_chunks))
 
         if enable_diarization:
             self._logger.info(
@@ -609,15 +686,37 @@ class AudioManager:
 
         self._logger.info("Applying VAD via audio venv worker...")
 
-        segments = self._audio_venv_worker.run(
+        worker = self._audio_venv_worker
+        cpu_before = worker.cpu_seconds()
+        start = time.perf_counter()
+        segments = worker.run(
             mode="vad",
             audio_array=audio_array,
             timeout_seconds=self._VAD_TIMEOUT_SECONDS,
         )
+        elapsed = time.perf_counter() - start
+        cpu_after = worker.cpu_seconds()
+
+        audio_vad_duration.labels(
+            model_type=settings.model_runner,
+            outcome="ok" if segments is not None else "failed",
+        ).observe(elapsed)
+
+        # A respawn or a killed worker resets the counter, so a negative delta is
+        # not this call's compute and is dropped rather than clamped to zero.
+        if cpu_before is not None and cpu_after is not None:
+            cpu_used = cpu_after - cpu_before
+            if cpu_used >= 0:
+                audio_vad_cpu_duration.labels(model_type=settings.model_runner).observe(
+                    cpu_used
+                )
 
         if segments is None:
             return None
 
+        audio_vad_segments.labels(model_type=settings.model_runner).observe(
+            len(segments)
+        )
         self._logger.info(f"VAD detected {len(segments)} speech segments")
         return segments
 
@@ -660,30 +759,42 @@ class AudioManager:
                 f"Audio file too large: {len(audio_bytes)} bytes. Maximum allowed: {settings.max_audio_size_bytes} bytes"
             )
 
-    @log_execution_time("Converting to audio array")
-    def _convert_to_audio_array(self, audio_bytes):
-        """Convert audio file bytes (WAV/MP3) to numpy array."""
-
-        # Detect file format based on headers
+    @staticmethod
+    def _detect_audio_format(audio_bytes):
+        """Identify the container format from the file header."""
         if (
             len(audio_bytes) >= 12
             and audio_bytes[:4] == b"RIFF"
             and audio_bytes[8:12] == b"WAVE"
         ):
-            self._logger.info("Processing WAV file format")
-            return self._decode_wav_file(audio_bytes)
-        elif len(audio_bytes) >= 3 and (
+            return AudioInputFormat.WAV
+        if len(audio_bytes) >= 3 and (
             audio_bytes[:3] == b"ID3"
             or audio_bytes[:2] == b"\xff\xfb"
             or audio_bytes[:2] == b"\xff\xf3"
             or audio_bytes[:2] == b"\xff\xf2"
         ):
+            return AudioInputFormat.MP3
+        return AudioInputFormat.UNKNOWN
+
+    @log_execution_time("Converting to audio array")
+    def _convert_to_audio_array(self, audio_bytes, audio_format):
+        """Convert audio file bytes (WAV/MP3) to numpy array.
+
+        Returns (array, source_sample_rate, source_channels); the latter two are
+        None when the decode path normalised them away before they could be read.
+        """
+        if audio_format is AudioInputFormat.WAV:
+            self._logger.info("Processing WAV file format")
+            return self._decode_wav_file(audio_bytes)
+        if audio_format is AudioInputFormat.MP3:
             self._logger.info("Processing MP3 file format")
-            return self._decode_audio_file(audio_bytes, "MP3")
-        else:
-            raise ValueError(
-                "Unsupported audio format. Only WAV and MP3 files are supported."
+            return self._decode_audio_file(
+                audio_bytes, AudioInputFormat.MP3.value.upper()
             )
+        raise ValueError(
+            "Unsupported audio format. Only WAV and MP3 files are supported."
+        )
 
     @log_execution_time("Decoding WAV file")
     def _decode_wav_file(self, audio_bytes):
@@ -783,7 +894,10 @@ class AudioManager:
             self._logger.info(
                 f"Loaded WAV: {len(audio_array)} samples, duration: {len(audio_array) / settings.default_sample_rate:.2f}s"
             )
-            return audio_array.astype(np.float32)
+            # Header values, i.e. what was submitted — the array itself has been
+            # downmixed to mono and resampled to default_sample_rate above, so
+            # these are the only surviving record of the source operating point.
+            return audio_array.astype(np.float32), sample_rate, num_channels
 
         except Exception as e:
             self._logger.error(f"Failed to decode WAV file: {e}")
@@ -802,7 +916,11 @@ class AudioManager:
             self._logger.info(
                 f"{format_name} to WAV conversion completed successfully (in-memory)"
             )
-            return self._decode_wav_file(wav_bytes)
+            audio_array, _, _ = self._decode_wav_file(wav_bytes)
+            # decode_to_wav forces `-ar <default> -ac 1`, so the WAV it hands
+            # back reports ffmpeg's output, not the source. Reported as unknown
+            # rather than as a real value; recovering it needs an ffprobe pass.
+            return audio_array, None, None
         except subprocess.CalledProcessError as e:
             self._logger.error(f"ffmpeg conversion failed: {e}")
             raise ValueError(

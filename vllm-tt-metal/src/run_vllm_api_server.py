@@ -491,9 +491,16 @@ def set_metal_timeout_env_vars():
     TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE so that tt-triage runs
     automatically when an op dispatch hangs.
 
-    Disabled when DISABLE_METAL_OP_TIMEOUT=1 is set (via run.py --disable-metal-timeout).
+    Disabled when DISABLE_METAL_OP_TIMEOUT=1 is set by either the model spec or
+    ``run.py --disable-metal-timeout``.
     """
     if os.getenv("DISABLE_METAL_OP_TIMEOUT") == "1":
+        # DISABLE_METAL_OP_TIMEOUT is an inference-server control flag; tt-metal
+        # itself only reads these two variables. Clear inherited values so an
+        # explicit model/CLI disable cannot leave a previously configured timeout
+        # active in this process.
+        os.environ.pop("TT_METAL_OPERATION_TIMEOUT_SECONDS", None)
+        os.environ.pop("TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE", None)
         logger.info("Metal op timeout disabled via DISABLE_METAL_OP_TIMEOUT=1")
         return
 
@@ -771,8 +778,8 @@ def main():
     register_tt_models(impl_id)
 
     # Step 4: Set runtime environment variables and vLLM server args
-    set_metal_timeout_env_vars()
     set_runtime_env_vars(model_spec)
+    set_metal_timeout_env_vars()
     runtime_settings(model_spec, no_auth=args.no_auth)
     default_vllm_args = model_spec["device_model_spec"]["vllm_args"]
     set_vllm_sys_argv(args, remaining_sys_argv, default_vllm_args)

@@ -68,6 +68,8 @@ std::string resolveBlazeSocketDescriptorPrefix() {
       return "glm";
     case ModelType::DEEPSEEK_V4_PRO:
       return "deepseek";
+    case ModelType::GEMMA_4_31B_IT:
+      return "gemma";
   }
   throw std::runtime_error("Unsupported model type for Blaze socket prefix");
 }
@@ -89,6 +91,8 @@ uint32_t resolveBlazeNumberOfPipelineStages() {
     case ModelType::GLM_5_1:
     case ModelType::GLM_5_2:
       return 80;
+    case ModelType::GEMMA_4_31B_IT:
+      return 62;
     default:
       return defaults::BLAZE_NUMBER_OF_PIPELINE_STAGES;
   }
@@ -775,6 +779,7 @@ ModelType modelType() {
     if (m == "zai-org/GLM-5.1") return ModelType::GLM_5_1;
     if (m == "zai-org/GLM-5.2") return ModelType::GLM_5_2;
     if (m == "deepseek-ai/DeepSeek-V4-Pro") return ModelType::DEEPSEEK_V4_PRO;
+    if (m == "google/gemma-4-31B-it") return ModelType::GEMMA_4_31B_IT;
     return ModelType::DEEPSEEK_R1_0528;
   }();
   return cached;
