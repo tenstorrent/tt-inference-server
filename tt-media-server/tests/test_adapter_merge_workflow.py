@@ -186,4 +186,6 @@ def test_write_merge_info_no_partial_file_on_dump_failure(merge_service, tmp_pat
 
     assert not (output_dir / MERGE_INFO_FILE_NAME).exists()
     leftovers = list(output_dir.glob(".merge_info.*.tmp"))
-    assert leftovers == [], f"failed write must clean up its own temp file, got: {leftovers}"
+    assert leftovers == [], (
+        f"failed write must clean up its own temp file, got: {leftovers}"
+    )
