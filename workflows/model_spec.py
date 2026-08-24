@@ -1092,22 +1092,14 @@ class ModelSpecTemplate:
                     device_model_spec, perf_reference_map
                 )
 
-                # Create a new device_model_spec with performance reference data
-                device_model_spec_with_perf = DeviceModelSpec(
-                    device=device_model_spec.device,
-                    max_concurrency=device_model_spec.max_concurrency,
-                    max_context=device_model_spec.max_context,
-                    max_tokens_all_users_override=device_model_spec.max_tokens_all_users_override,
-                    perf_targets_map=device_model_spec.perf_targets_map,
-                    default_impl=device_model_spec.default_impl,
-                    perf_reference=perf_reference,
-                    vllm_args=device_model_spec.vllm_args,
-                    override_tt_config=device_model_spec.override_tt_config,
-                    env_vars=device_model_spec.env_vars,
-                    tensor_cache_timeout=device_model_spec.tensor_cache_timeout,
-                    system_requirements=device_model_spec.system_requirements,
-                    known_issues=device_model_spec.known_issues,
-                    eval_max_retries=device_model_spec.eval_max_retries,
+                # Carry the catalog device spec over wholesale and substitute only
+                # the derived field. Listing the copied fields by hand silently
+                # dropped every field added later without updating the list, so a
+                # catalog setting reached the dataclass but never the runtime spec.
+                # perf_reference stays explicit because it is the one field the
+                # catalog must not supply -- see _build_device_model_spec().
+                device_model_spec_with_perf = replace(
+                    device_model_spec, perf_reference=perf_reference
                 )
                 spec = ModelSpec(
                     # Core identity

@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 import json
+from dataclasses import replace
 
 from workflows.utils import get_repo_root_path
 from workflows.model_spec import (
@@ -105,6 +106,50 @@ def test_catalog_device_spec_rejects_explicit_performance_reference():
                 "perf_reference": [],
             }
         )
+
+
+def test_expansion_carries_every_catalog_device_field_but_perf_reference():
+    """Expansion may substitute the derived field and nothing else.
+
+    ``image_benchmark_num_batches`` was configurable in the catalog for a month
+    without reaching the runtime spec, because expansion rebuilt the device spec
+    from a hand-written field list. Compare against the whole catalog spec so a
+    field added later cannot be dropped the same way.
+    """
+    template = _build_template(
+        {
+            "weights": ["Qwen/Qwen3-8B"],
+            "impl": "tt_transformers",
+            "inference_engine": "VLLM",
+            "device_model_specs": [
+                {
+                    "device": "N150",
+                    "max_concurrency": 32,
+                    "max_context": 32768,
+                    "default_impl": True,
+                    "image_benchmark_num_batches": 7,
+                    "eval_max_retries": 1,
+                    "tensor_cache_timeout": 60.0,
+                },
+            ],
+        },
+        "dev",
+    )
+    catalog_spec = template.device_model_specs[0]
+
+    runtime_spec = template.expand_to_specs()[0].device_model_spec
+
+    assert runtime_spec.image_benchmark_num_batches == 7
+    # ModelSpec.__post_init__ adds the weight to the runtime spec's vllm_args,
+    # so check that one separately. Blanking it on both sides lets __post_init__
+    # rebuild the same derived args and leaves every other field comparable.
+    assert runtime_spec.vllm_args == {
+        **catalog_spec.vllm_args,
+        "model": "Qwen/Qwen3-8B",
+    }
+    assert replace(runtime_spec, vllm_args={}, perf_reference=[]) == replace(
+        catalog_spec, vllm_args={}, perf_reference=[]
+    )
 
 
 def test_build_template_resolves_all_enum_and_impl_references():
