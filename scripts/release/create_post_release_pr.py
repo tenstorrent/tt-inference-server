@@ -102,17 +102,26 @@ def model_name_from_weight(weight: str) -> str:
 # release scope (exact leaves, shared with promote_dev_spec_to_prod.py)
 # ---------------------------------------------------------------------------
 def resolve_release_scope(ci_config: dict, dev_dir: Path):
-    combos = collect_release_combos(ci_config)
-    sources = load_dev_model_spec_sources(dev_dir)
-    resolved = resolve_release_combos(combos, sources)
-    seen = {}
+    # resolve_release_combos() rejects two selectors resolving to one identity.
+    resolved = resolve_release_combos(
+        collect_release_combos(ci_config),
+        load_dev_model_spec_sources(dev_dir),
+    )
+    # A CI job name carries only repository and device, so two identities that
+    # share that pair cannot be told apart when a row is linked to its job.
+    # Check the whole scope here rather than while matching jobs: that path is
+    # skipped whenever the GitHub API returns nothing, which would make an
+    # ambiguous release scope pass or fail depending on the network.
+    owner_by_repo_device = {}
     for item in resolved:
-        if item.identity in seen:
+        repo_device = item.identity[:2]
+        owner = owner_by_repo_device.get(repo_device)
+        if owner is not None:
             raise ValueError(
-                f"Configured selectors {seen[item.identity]!r} and {item.combo!r} "
-                f"resolve to duplicate identity {item.identity!r}"
+                f"CI job names cannot distinguish release identities "
+                f"{[owner, item.identity]!r}"
             )
-        seen[item.identity] = item.combo
+        owner_by_repo_device[repo_device] = item.identity
     return tuple(resolved)
 
 
@@ -186,15 +195,6 @@ def fetch_run_jobs(repo: str, run_id: str, token: str) -> list[dict] | None:
 def _matching_ci_jobs(jobs, *, identity, scope_identities) -> list[dict]:
     if not jobs:
         return []
-    same_model_device = [
-        candidate
-        for candidate in scope_identities
-        if candidate[0] == identity[0] and candidate[1] == identity[1]
-    ]
-    if len(same_model_device) > 1:
-        raise ValueError(
-            f"CI job names cannot distinguish release identities {same_model_device!r}"
-        )
     other_repos = [candidate[0] for candidate in scope_identities]
     return [
         job
