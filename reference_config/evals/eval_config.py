@@ -1510,6 +1510,64 @@ _eval_config_list = [
     EvalConfig(
         hf_model_repo="Qwen/Qwen3.6-35B-A3B",
         tasks=[
+            # Release-validated task, unlike the bring-up gpqa entry below: this
+            # exact invocation scored 89.29 prompt_level_strict_acc on QB2 P300X2
+            # (autoport impl qwen36-autoport, external-server release, ci-nightly
+            # limit 0.05 = 28 rows, 2026-08-21; evidence in tt-metal
+            # models/autoports/qwen_qwen3_6_35b_a3b/doc/tti_release/). gen_kwargs
+            # follow the model card's thinking-mode sampling (temperature 1.0,
+            # top_k 20, top_p 0.95) plus the card's presence_penalty 1.5, which
+            # long-form IFEval answers tolerate -- unlike the short exact-match
+            # gpqa task below, where a nonzero presence penalty can suppress the
+            # answer token itself.
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=93.09,
+                    gpu_reference_score_ref="https://huggingface.co/RedHatAI/Qwen3.6-35B-A3B-NVFP4",
+                    # CI subset baseline is the TT measurement itself (no GPU has
+                    # run this fixed 28-row subset): it makes regressions against
+                    # the released state visible even when the full-set GPU
+                    # reference would still pass.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=89.29,
+                            ref="ci-nightly leaderboard_ifeval (limit 0.05, 28 rows), TT P300X2 qwen36-autoport release final7, 2026-08-21",
+                        ),
+                    },
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                model_kwargs={
+                    "max_length": 262144,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 8192,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                    "min_p": 0.0,
+                    "presence_penalty": 1.5,
+                    "repetition_penalty": 1.0,
+                },
+                seed=42,
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
             EvalTask(
                 task_name="r1_gpqa_diamond",
                 score=EvalTaskScore(

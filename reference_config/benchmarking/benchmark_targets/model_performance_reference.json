@@ -68,20 +68,38 @@
     "Qwen3.6-35B-A3B": {
         "p300x2": [
             {
-                "_comment": "ASSUMED, NOT VALIDATED. No t3k entry exists for this model. Inferred from 'Qwen3-30B-A3B' t3k (ttft 36.0 / tput_user 44.0) — the closest analogue in this file by BOTH size class and sparsity: 30B-A3B vs 35B-A3B, i.e. near-identical ~3B active parameters, and decode is bounded by active-weight traffic rather than total parameters. Caveats: (1) t3k is 8 Wormhole chips, QB2 is 4 Blackhole chips, so this is a cross-architecture transplant; (2) Qwen3.6 interleaves Gated DeltaNet (recurrent, O(1) state) with Gated Attention layers, so its decode cost curve differs from a uniform-attention MoE. 'tput' equals 'tput_user' because max_concurrency is 1, where aggregate decode throughput is per-user throughput by definition. Replace with measured/derived numbers before trusting a FUNCTIONAL+ verdict.",
+                "_comment": "MEASURED on QB2 P300X2 hardware (4 x Blackhole p300c, 1x4 mesh), autoport impl qwen36-autoport, TTI release run final7, 2026-08-21; evidence in tt-metal models/autoports/qwen_qwen3_6_35b_a3b/doc/tti_release/artifacts/final7/benchmark_isl128_osl128_conc1.json. Replaces the earlier cross-architecture transplant from the Qwen3-30B-A3B t3k row. Single user: mean TTFT 6132.6 ms, decode 9.29 t/s/user; tput equals tput_user at max_concurrency 1 by definition.",
                 "isl": 128,
                 "osl": 128,
                 "max_concurrency": 1,
-                "num_prompts": 8,
+                "num_prompts": 1,
                 "task_type": "text",
                 "image_height": null,
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 36.0,
-                        "tput_user": 44.0,
-                        "tput": 44.0
+                        "ttft_ms": 6132.6,
+                        "tput_user": 9.29,
+                        "tput": 9.29
+                    }
+                }
+            },
+            {
+                "_comment": "MEASURED, same run/evidence dir as the row above (benchmark_isl100_osl100_conc32.json). 32-way: mean TTFT 150266 ms (sequential long-context prefills at full concurrency), per-user decode 1000/mean_tpot = 1000/1003.2 ~= 1.0 t/s/user, aggregate output throughput 12.82 t/s.",
+                "isl": 100,
+                "osl": 100,
+                "max_concurrency": 32,
+                "num_prompts": 32,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 150266.1,
+                        "tput_user": 1.0,
+                        "tput": 12.82
                     }
                 }
             }

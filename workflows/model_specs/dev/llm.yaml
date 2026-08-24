@@ -530,6 +530,8 @@ templates:
 #      models.demos.blackhole.qwen36.tt.qwen36_vllm:Qwen36ForCausalLM.
 # Declared text-only for bring-up even though the checkpoint ships a vision encoder,
 # matching the Qwen3.6-27B spec.
+# NOTE: a release-validated autoport entry for this checkpoint exists below
+# (impl qwen36_autoport); this one predates it and remains the unvalidated default.
 - weights:
     - Qwen/Qwen3.6-35B-A3B
   impl: qwen36_blackhole
@@ -564,6 +566,66 @@ templates:
         sample_on_device_mode: decode_only
   status: EXPERIMENTAL
   has_builtin_warmup: true
+  metadata:
+    Qwen/Qwen3.6-35B-A3B:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: qwen3_coder
+
+# Qwen/Qwen3.6-35B-A3B served by the agentic autoport
+# (models/autoports/qwen_qwen3_6_35b_a3b) rather than the unvalidated
+# qwen36_blackhole guess above. Every value below is measured, not assumed: this
+# exact configuration passed a CI-subset `release` on P300X2 on 2026-08-21
+# (external-server mode, evidence under that autoport dir's doc/tti_release/,
+# run "final7": both benchmarks pass, leaderboard_ifeval 89.29, 22/22 spec tests).
+# default_impl false: the entry above owns the default for this checkpoint --
+# select this one with --impl qwen36-autoport.
+# Cross-repo prerequisites (NOT runnable against main of either repo):
+#   1. tt-metal: branch vkovacevic/agentic-research/qb2-qwen36-35b-a3b, which
+#      carries models/autoports/qwen_qwen3_6_35b_a3b. Pass as --tt-metal-git-ref.
+#   2. vllm-tt-plugin: a ref carrying the Qwen3.6 TT registration
+#      (Qwen3_5MoeForConditionalGeneration -> the autoport's generator_vllm) plus
+#      the host-sampling port (the ifeval eval sets presence_penalty 1.5, which
+#      rides the host sampling path) and the force-full-decode-width guard the
+#      stateful GDN layers need across concurrency transitions.
+# block_size 32 overrides the default 64: the released context contract
+# (262144) was validated with 32-token pages. sample_on_device_mode all matches
+# the release; decode_only routes prefill sampling to host, which the autoport
+# gates behind a logprob-compatibility env var rather than supporting as a
+# serving mode. tensor_cache_timeout 2400: first start pays HF download plus
+# weight conversion for 71.9 GB of weights.
+- weights:
+    - Qwen/Qwen3.6-35B-A3B
+  impl: qwen36_autoport
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 32
+      max_context: 262144
+      max_tokens_all_users_override: 262144
+      default_impl: false
+      tensor_cache_timeout: 2400.0
+      eval_max_retries: 1
+      env_vars:
+        TT_QWEN35_TEXT_VER: qwen36_autoport
+        HF_MODEL: Qwen/Qwen3.6-35B-A3B
+        MESH_DEVICE: P300x2
+      vllm_args:
+        block_size: '32'
+        async_scheduling: true
+        enable_auto_tool_choice: true
+        reasoning_parser: qwen3
+        tool_call_parser: qwen3_coder
+      override_tt_config:
+        fabric_config: FABRIC_1D_RING
+        trace_region_size: 384000000
+        sample_on_device_mode: all
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
   metadata:
     Qwen/Qwen3.6-35B-A3B:
       reasoning_parser_name: qwen3
