@@ -1263,6 +1263,54 @@ _eval_config_list = [
         hf_model_repo="Qwen/Qwen3.6-27B",
         tasks=[
             EvalTask(
+                # Third eval for the QB2 bring-up set. The card's "GPQA Diamond |
+                # 87.8" is a thinking-mode number (Qwen3.6 runs thinking by default),
+                # which is what r1_gpqa_diamond measures: the model reasons, then the
+                # task's own extractor scores exact_match,none. Do NOT switch to
+                # gpqa_diamond_generative_n_shot -- its 5-shot examples demonstrate
+                # bare "(C)" answers and suppress reasoning.
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=87.8,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
+                    # NO gpu_reference_score: the H100 runs referenced by the two
+                    # agentic tasks in this config covered terminal_bench_2 and
+                    # swe_bench_verified only, not GPQA.
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                # Chat endpoint so the server applies the chat template (which is what
+                # carries thinking mode); client-side apply_chat_template on
+                # /v1/completions would bypass it.
+                use_chat_api=True,
+                model_kwargs={
+                    # P300X2 spec max_context.
+                    "max_length": 262144,
+                },
+                gen_kwargs={
+                    # stream=false is REQUIRED: lm-eval's local-chat-completions
+                    # streaming parser raises KeyError 'message' on every response.
+                    "stream": "false",
+                    "max_gen_toks": 80 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    # Card, thinking mode: temperature 1.0, top_p 0.95, top_k 20.
+                    "temperature": 1.0,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
                 task_name="terminal_bench_2",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
@@ -1315,60 +1363,63 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 5,
                 },
             ),
-            # TODO: swe_bench_verified disabled due to timeouts from model limitations,
-            # re-enable once prefix cache or equivalent is enabled.
-            # timeout: https://github.com/tenstorrent/tt-shield/actions/runs/29363864010/job/87190489361#step:11:5880
-            # ticket to re-enable: https://github.com/tenstorrent/tt-inference-server/issues/4675
-            # EvalTask(
-            #     task_name="swe_bench_verified",
-            #     workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
-            #     score=EvalTaskScore(
-            #         published_score=77.2,
-            #         published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
-            #         gpu_reference_score=62.0,
-            #         gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/3359#issuecomment-4427941401",
-            #         score_func=score_task_single_key,
-            #         score_func_kwargs={
-            #             "result_keys": ["accuracy"],
-            #             "unit": "percent",
-            #         },
-            #     ),
-            #     swebench_eval_config=SWEbenchEvalConfig(
-            #         dataset_name="SWE-bench/SWE-bench_Verified",
-            #         sweagent_subset="verified",
-            #         # we will need to specify specific tasks
-            #         # for CI runs to keep runtime reasonable
-            #         dataset_split="test",
-            #         # mini-swe-agent is preferred: simpler CLI
-            #         # The swe-agent backend is kept as a fallback.
-            #         agent_backend="mini-swe-agent",
-            #         n_concurrent_trials=5,
-            #         max_workers=8,
-            #         n_tasks=None,
-            #         temperature=1.0,
-            #         top_p=0.95,
-            #         max_input_tokens=200 * 1024,
-            #         # max output tokens is not specifed in Qwen docs btw
-            #         max_output_tokens=32 * 1024,
-            #         completion_kwargs={
-            #             "extra_body": {
-            #                 "top_k": 20,
-            #             },
-            #         },
-            #         instance_ids_map={
-            #             EvalLimitMode.CI_NIGHTLY: [
-            #                 "django__django-11299",
-            #                 "astropy__astropy-14096",
-            #                 "matplotlib__matplotlib-25332",
-            #                 "sympy__sympy-13551",
-            #                 "scikit-learn__scikit-learn-14629",
-            #             ],
-            #         },
-            #     ),
-            #     limit_samples_map={
-            #         EvalLimitMode.SMOKE_TEST: 5,
-            #     },
-            # ),
+            # RE-ENABLED for the QB2 bring-up set (third eval alongside
+            # r1_gpqa_diamond and terminal_bench_2). It had been commented out on main
+            # after timeouts caused by model-side throughput limitations:
+            #   timeout: https://github.com/tenstorrent/tt-shield/actions/runs/29363864010/job/87190489361#step:11:5880
+            #   ticket to re-enable: https://github.com/tenstorrent/tt-inference-server/issues/4675
+            # That cause is NOT fixed here -- prefix caching or equivalent is still the
+            # dependency, so expect timeout-driven zero-scores until #4675 lands. The
+            # published/GPU numbers below are the ones the disabled block already
+            # carried; nothing was re-derived.
+            EvalTask(
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=77.2,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
+                    gpu_reference_score=62.0,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/3359#issuecomment-4427941401",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                swebench_eval_config=SWEbenchEvalConfig(
+                    dataset_name="SWE-bench/SWE-bench_Verified",
+                    sweagent_subset="verified",
+                    dataset_split="test",
+                    # mini-swe-agent is preferred: simpler CLI. The swe-agent backend
+                    # is kept as a fallback.
+                    agent_backend="mini-swe-agent",
+                    n_concurrent_trials=5,
+                    max_workers=8,
+                    n_tasks=None,  # full dataset
+                    temperature=1.0,
+                    top_p=0.95,
+                    max_input_tokens=200 * 1024,
+                    # max output tokens is not specified in Qwen docs btw
+                    max_output_tokens=32 * 1024,
+                    completion_kwargs={
+                        "extra_body": {
+                            "top_k": 20,
+                        },
+                    },
+                    instance_ids_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-11299",
+                            "astropy__astropy-14096",
+                            "matplotlib__matplotlib-25332",
+                            "sympy__sympy-13551",
+                            "scikit-learn__scikit-learn-14629",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
         ],
     ),
     # QB2 bring-up config for Qwen3.8-27B. Exists first of all because
@@ -1383,12 +1434,17 @@ _eval_config_list = [
     #     first bring-up run.
     #   * Qwen3.8-27B's own model card publishes GPQA Diamond = 89.2, so the
     #     baseline is a real number for THIS checkpoint, nothing transplanted.
-    #   * The card's other headline numbers do NOT map onto the harness's tasks:
-    #     it reports Terminal Bench *2.1* = 73.0 while terminal_bench_2 runs the
-    #     terminal-bench/terminal-bench-2 dataset with agent terminus-2 (i.e. 2.0),
-    #     and it reports SWE-bench Pro 61.7 / QwenSWEBench 79.0 but nothing for
-    #     SWE-bench *Verified*, which is what swe_bench_verified runs. Neither is
-    #     a like-for-like reference, so neither task is configured here.
+    #   * The card's Terminal Bench number is *2.1* = 73.0, so the agentic task
+    #     configured below is terminal_bench_2_1 (dataset terminal-bench-2-1),
+    #     NOT the terminal_bench_2 the sibling Qwen3.6-27B config runs. Picking the
+    #     task to match the published dataset version is the point -- scoring a 2.1
+    #     number against a 2.0 run would compare different task sets.
+    #   * SWE-bench Verified has NO published number for this checkpoint. The card
+    #     reports SWE-bench Pro 61.7 and QwenSWEBench 79.0, and neither is the
+    #     SWE-bench/SWE-bench_Verified dataset swe_bench_verified runs; AA's model
+    #     page does not break out a Verified score either. The task is still
+    #     configured (it is the third eval of the QB2 bring-up set) but with
+    #     published_score=None -- see that task for what that costs.
     #
     # Unlike gemma-4 this needs no enable_thinking override: Qwen3.8's chat
     # template has thinking ON by default (card: "Thinking mode is on by default"),
@@ -1471,17 +1527,147 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
+            EvalTask(
+                task_name="terminal_bench_2_1",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # Card: "Terminal Bench 2.1 (Terminus)" = 73.0. Dataset- and
+                    # agent-matched to this config (terminal-bench-2-1 + terminus-2).
+                    published_score=73.0,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.8-27B",
+                    # NO gpu_reference_score: nobody has run this checkpoint on an
+                    # H100 reference server. The check therefore falls back to
+                    # `accuracy >= published * (1 - tolerance)` = >= 69.35%, a strict
+                    # bar that early runs should be expected to miss. Informational
+                    # while the spec is EXPERIMENTAL; replace with a measured number
+                    # before promoting status.
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2-1",
+                    agent="terminus-2",
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=89,
+                    # QB2 release runners expose only 16 CPUs.
+                    override_cpus=16,
+                    override_memory_mb=48 * 1024,
+                    # 3h rather than the 2h the GLM/Kimi 2.1 entries use: QB2 is a
+                    # bring-up target and slower per token than those runs assumed.
+                    agent_timeout_sec=3 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            # P300X2 spec max_context is 262144 and the agent sends
+                            # ~max_input + max_output per request, so 160K + 80K =
+                            # 240K leaves ~22K headroom. (The Qwen3.6-27B entry above
+                            # sets 256K + 80K, which exceeds its own 262144 context --
+                            # do not copy that.) 80K out is the output budget Qwen's
+                            # docs use for this family.
+                            "max_input_tokens": 160 * 1024,
+                            "max_output_tokens": 80 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 80 * 1024,
+                            "timeout": 60 * 60,
+                            "extra_body": {
+                                "top_k": 20,
+                            },
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/break-filter-js-from-html",
+                            "terminal-bench/cobol-modernization",
+                            "terminal-bench/compile-compcert",
+                            "terminal-bench/feal-differential-cryptanalysis",
+                            "terminal-bench/qemu-startup",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+            EvalTask(
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # NO published_score EXISTS for this checkpoint on SWE-bench
+                    # Verified. Searched: the HF card (publishes SWE-bench Pro 61.7 and
+                    # QwenSWEBench 79.0 -- different datasets) and the Artificial
+                    # Analysis model page (no Verified breakout). Do NOT substitute the
+                    # Pro number: SWE-bench Pro is a harder, disjoint task set and
+                    # scoring a Verified run against it would read as a large false
+                    # regression.
+                    # Consequence, via resolve_eval_reference() + accept_eval_score():
+                    # with reference_score None the accuracy check returns None and the
+                    # report renders N/A -- the task still RUNS and still reports its
+                    # measured accuracy, it just cannot pass or fail. That is the same
+                    # shape the google/gemma-4-26B-A4B-it entries below use. Fill this
+                    # in from a measured H100 run (as gpu_reference_score) or from a
+                    # first-party number if Qwen publishes one.
+                    published_score=None,
+                    published_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                swebench_eval_config=SWEbenchEvalConfig(
+                    dataset_name="SWE-bench/SWE-bench_Verified",
+                    sweagent_subset="verified",
+                    dataset_split="test",
+                    agent_backend="mini-swe-agent",
+                    n_concurrent_trials=5,
+                    max_workers=8,
+                    n_tasks=None,  # full dataset
+                    temperature=1.0,
+                    top_p=0.95,
+                    # 160K + 32K = 192K, inside the P300X2 spec's 262144 max_context.
+                    max_input_tokens=160 * 1024,
+                    max_output_tokens=32 * 1024,
+                    completion_kwargs={
+                        "extra_body": {
+                            "top_k": 20,
+                        },
+                    },
+                    instance_ids_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-11299",
+                            "astropy__astropy-14096",
+                            "matplotlib__matplotlib-25332",
+                            "sympy__sympy-13551",
+                            "scikit-learn__scikit-learn-14629",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
         ],
     ),
     # QB2 bring-up eval configs for the three branch-only models. All three follow the
-    # same pattern as the Qwen3.8-27B entry above: a single lm-eval (EVALS_COMMON)
-    # r1_gpqa_diamond task, scored against the number the model's OWN card publishes
-    # for GPQA Diamond, with no gpu_reference_score (nobody has run these on an H100).
-    # Rationale for one cheap task rather than the agentic suites: these models cannot
-    # serve yet without specific tt-metal / vllm-tt-plugin refs, so the first job of the
-    # eval is to prove the server answers at all -- not to spend a 3-hour agent timeout.
-    # Consequence of no GPU baseline: the bar is `published * (1 - 0.05)`, which is
-    # strict and expected to fail early. Informational at EXPERIMENTAL.
+    # same pattern as the Qwen3.8-27B entry above: three tasks -- r1_gpqa_diamond on
+    # lm-eval (EVALS_COMMON), plus terminal_bench_* and swe_bench_verified on
+    # EVALS_AGENTIC -- each scored against the number the model's OWN card publishes,
+    # with no gpu_reference_score (nobody has run these on an H100).
+    # Ordering note: r1_gpqa_diamond is the cheap one (minutes, not a 3-hour agent
+    # timeout) and these models cannot serve at all without specific tt-metal /
+    # vllm-tt-plugin refs, so on a first bring-up run treat GPQA as the "does the
+    # server answer" probe and the two agentic tasks as the expensive follow-on.
+    # Consequence of no GPU baseline: where a published number exists the bar is
+    # `published * (1 - 0.05)`, which is strict and expected to fail early; where none
+    # exists (published_score=None) the check renders N/A and the task reports its
+    # measured accuracy without passing or failing. Informational at EXPERIMENTAL.
     EvalConfig(
         hf_model_repo="Qwen/Qwen3.6-35B-A3B",
         tasks=[
@@ -1525,6 +1711,111 @@ _eval_config_list = [
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.05,
                     EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="terminal_bench_2",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # Card: "Terminal-Bench 2.0" = 51.5, so this runs the
+                    # terminal-bench-2 dataset (NOT the 2.1 task the Qwen3.8-27B entry
+                    # above uses -- that card publishes 2.1 instead).
+                    published_score=51.5,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-35B-A3B",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2",
+                    agent="terminus-2",
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=None,  # full dataset
+                    override_cpus=16,  # QB2 runners expose 16
+                    override_memory_mb=48 * 1024,
+                    agent_timeout_sec=3 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            # 160K + 80K = 240K, inside the P300X2 spec's 262144.
+                            "max_input_tokens": 160 * 1024,
+                            "max_output_tokens": 80 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 80 * 1024,
+                            "timeout": 60 * 60,
+                            # Card thinking-mode sampling: temp 1.0 / top_p 0.95 /
+                            # top_k 20. presence_penalty 1.5 is also recommended but
+                            # deliberately omitted, as in the GPQA task above.
+                            "extra_body": {
+                                "top_k": 20,
+                            },
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/break-filter-js-from-html",
+                            "terminal-bench/cobol-modernization",
+                            "terminal-bench/compile-compcert",
+                            "terminal-bench/feal-differential-cryptanalysis",
+                            "terminal-bench/qemu-startup",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+            EvalTask(
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # Card: "SWE-bench Verified" = 73.4 -- the same dataset this task
+                    # runs. (The card also lists SWE-bench Pro 49.5 and Multilingual
+                    # 67.2; those are different task sets, do not substitute them.)
+                    published_score=73.4,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-35B-A3B",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                swebench_eval_config=SWEbenchEvalConfig(
+                    dataset_name="SWE-bench/SWE-bench_Verified",
+                    sweagent_subset="verified",
+                    dataset_split="test",
+                    agent_backend="mini-swe-agent",
+                    n_concurrent_trials=5,
+                    max_workers=8,
+                    n_tasks=None,  # full dataset
+                    temperature=1.0,
+                    top_p=0.95,
+                    # 160K + 32K = 192K, inside the P300X2 spec's 262144.
+                    max_input_tokens=160 * 1024,
+                    max_output_tokens=32 * 1024,
+                    completion_kwargs={
+                        "extra_body": {
+                            "top_k": 20,
+                        },
+                    },
+                    instance_ids_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-11299",
+                            "astropy__astropy-14096",
+                            "matplotlib__matplotlib-25332",
+                            "sympy__sympy-13551",
+                            "scikit-learn__scikit-learn-14629",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
                 },
             ),
         ],
@@ -1579,6 +1870,130 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
+            EvalTask(
+                task_name="terminal_bench_2_1",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # Card: "TerminalBench 2.1 (with terminus2) | 51.7" -- both the
+                    # dataset version and the scaffold match what this task runs
+                    # (terminal-bench-2-1 + agent terminus-2), which is as close to
+                    # like-for-like as a card number gets.
+                    published_score=51.7,
+                    published_score_ref="https://huggingface.co/meta-models/Muse-Glimmer-30B",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2-1",
+                    agent="terminus-2",
+                    # QB2 spec serves this model at max_concurrency=1.
+                    n_concurrent_trials=1,
+                    n_attempts=1,
+                    n_tasks=89,
+                    override_cpus=16,  # QB2 runners expose 16
+                    override_memory_mb=48 * 1024,
+                    agent_timeout_sec=3 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            # HARD CONSTRAINT: the bring-up spec caps max_context at
+                            # 32768 (conservative, not the model's capability), so the
+                            # whole agent loop -- system prompt, tool defs, and every
+                            # accumulated terminal observation -- has to fit in 24K in
+                            # + 8K out -- and they must sum to STRICTLY less than
+                            # 32768, hence 22K rather than 24K (22K + 8K = 30K, 2K left
+                            # for the chat template and tool defs). Terminus
+                            # trajectories routinely exceed that on long tasks, so
+                            # expect context-exhaustion failures that are a SPEC limit,
+                            # not a model regression. Raising max_context in
+                            # workflows/model_specs/dev/llm.yaml is the fix; re-tune
+                            # these two numbers with it.
+                            "max_input_tokens": 22 * 1024,
+                            "max_output_tokens": 8 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 8 * 1024,
+                            "timeout": 60 * 60,
+                            # Card sampling: temp 1.0 / top_p 0.95 / top_k 64 (64, not
+                            # the 20 the Qwen models use).
+                            "extra_body": {
+                                "top_k": 64,
+                            },
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/break-filter-js-from-html",
+                            "terminal-bench/cobol-modernization",
+                            "terminal-bench/compile-compcert",
+                            "terminal-bench/feal-differential-cryptanalysis",
+                            "terminal-bench/qemu-startup",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+            EvalTask(
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # Card, Agentic Coding block: "SWE-Bench Verified | 76.0" -- the
+                    # dataset this task runs. (SWE-Bench Pro 51.2 on the same card is a
+                    # different task set.)
+                    published_score=76.0,
+                    published_score_ref="https://huggingface.co/meta-models/Muse-Glimmer-30B",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                swebench_eval_config=SWEbenchEvalConfig(
+                    dataset_name="SWE-bench/SWE-bench_Verified",
+                    sweagent_subset="verified",
+                    dataset_split="test",
+                    agent_backend="mini-swe-agent",
+                    n_concurrent_trials=1,  # max_concurrency=1 on the QB2 spec
+                    max_workers=8,
+                    n_tasks=None,  # full dataset
+                    temperature=1.0,
+                    top_p=0.95,
+                    # Same 32768 spec ceiling as the terminal-bench task above: 22K +
+                    # 8K = 30K, kept strictly under it. This is the TIGHTEST agentic
+                    # budget in this file by a wide margin (the next smallest is 120K),
+                    # and
+                    # mini-swe-agent grows its prompt with every step, so a meaningful
+                    # fraction of instances will run out of context rather than fail on
+                    # reasoning. Read a low score here as spec-limited until
+                    # max_context is raised.
+                    max_input_tokens=22 * 1024,
+                    max_output_tokens=8 * 1024,
+                    completion_kwargs={
+                        "extra_body": {
+                            "top_k": 64,
+                        },
+                    },
+                    instance_ids_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-11299",
+                            "astropy__astropy-14096",
+                            "matplotlib__matplotlib-25332",
+                            "sympy__sympy-13551",
+                            "scikit-learn__scikit-learn-14629",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
         ],
     ),
     EvalConfig(
@@ -1621,6 +2036,128 @@ _eval_config_list = [
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.05,
                     EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="terminal_bench_2",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # NO published Terminal-Bench number for this checkpoint. Searched:
+                    # the HF card (MMLU Pro / GPQA Diamond / AIME / LiveCodeBench /
+                    # Tau2 / HLE / MMMU Pro / MRCR, but nothing terminal-agentic) and
+                    # the Artificial Analysis model page (lists Terminal-Bench v2.1 as
+                    # an Intelligence Index component but publishes no per-model
+                    # score). Do NOT borrow the google/gemma-4-26B-A4B-it number: this
+                    # checkpoint shares that MoE text backbone but decodes by block
+                    # diffusion, which is exactly the part agentic tasks stress.
+                    # 2.0 rather than 2.1 to match the sibling gemma-4-26B-A4B-it entry
+                    # (same backbone, same terminal_bench_2 task); revisit if a 2.1
+                    # number ever gets published for either.
+                    # Consequence of published_score=None: the accuracy check renders
+                    # N/A -- the task runs and reports measured accuracy but cannot
+                    # pass or fail.
+                    published_score=None,
+                    published_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2",
+                    agent="terminus-2",
+                    # QB2 spec serves this model at max_concurrency=1.
+                    n_concurrent_trials=1,
+                    n_attempts=1,
+                    n_tasks=None,  # full dataset
+                    override_cpus=16,  # QB2 runners expose 16
+                    override_memory_mb=48 * 1024,
+                    agent_timeout_sec=3 * 60 * 60,
+                    agent_kwargs={
+                        # NO temperature / top_p / top_k, for the same reason as the
+                        # GPQA task above: this is a diffusion decoder whose card
+                        # specifies a temperature SCHEDULE (linear 0.8 -> 0.4) plus
+                        # diffusion-only controls that live server-side in the tt-metal
+                        # sampler. Pinning a single temperature here would override the
+                        # schedule and change what is measured.
+                        "parser_name": "json",
+                        "model_info": {
+                            # 32K + 14K = 46K, STRICTLY inside the P300X2 spec's 49152
+                            # (2K left for the chat template and tool defs). 32K + 16K
+                            # would land exactly on the ceiling with no room for either.
+                            "max_input_tokens": 32 * 1024,
+                            "max_output_tokens": 14 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "max_tokens": 14 * 1024,
+                            "timeout": 60 * 60,
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/break-filter-js-from-html",
+                            "terminal-bench/cobol-modernization",
+                            "terminal-bench/compile-compcert",
+                            "terminal-bench/feal-differential-cryptanalysis",
+                            "terminal-bench/qemu-startup",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+            EvalTask(
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # NO published SWE-bench Verified number for this checkpoint --
+                    # same search as the terminal-bench task above (HF card + AA model
+                    # page), same outcome. A third-party gist quotes 17.4 for the
+                    # related gemma-4-26B-A4B; that is neither this checkpoint nor a
+                    # first-party source, so it is deliberately not used.
+                    # Consequence of published_score=None: check renders N/A.
+                    published_score=None,
+                    published_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                swebench_eval_config=SWEbenchEvalConfig(
+                    dataset_name="SWE-bench/SWE-bench_Verified",
+                    sweagent_subset="verified",
+                    dataset_split="test",
+                    agent_backend="mini-swe-agent",
+                    n_concurrent_trials=1,  # max_concurrency=1 on the QB2 spec
+                    max_workers=8,
+                    n_tasks=None,  # full dataset
+                    # temperature / top_p are REQUIRED fields on SWEbenchEvalConfig
+                    # (they always reach litellm), so unlike the terminal-bench task
+                    # above they cannot simply be omitted. 1.0 / 0.95 is the neutral
+                    # choice; if the server's diffusion sampler ignores them this is a
+                    # no-op, and if it honours them it FLATTENS the card's 0.8 -> 0.4
+                    # schedule. Compare against a run with the server defaults before
+                    # reading anything into the score.
+                    temperature=1.0,
+                    top_p=0.95,
+                    # 32K + 14K = 46K, STRICTLY inside the P300X2 spec's 49152.
+                    max_input_tokens=32 * 1024,
+                    max_output_tokens=14 * 1024,
+                    instance_ids_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-11299",
+                            "astropy__astropy-14096",
+                            "matplotlib__matplotlib-25332",
+                            "sympy__sympy-13551",
+                            "scikit-learn__scikit-learn-14629",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
                 },
             ),
         ],
@@ -4634,6 +5171,139 @@ _eval_config_list = [
                     "until": ["</s>"],
                 },
             ),
+            EvalTask(
+                task_name="terminal_bench_2",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # Terminal-Bench 2.0 official leaderboard: gpt-oss-120b with the
+                    # Terminus 2 agent = 18.7% +/- 2.7 (rank 126, submitted
+                    # 2025-11-01). Agent-matched -- this task runs agent="terminus-2"
+                    # over the same terminal-bench-2 dataset, so it is like-for-like.
+                    # The SAME leaderboard carries a second gpt-oss-120b entry at
+                    # 14.2% under Mini-SWE-Agent; that scaffold is not what this task
+                    # runs, so do not swap the number in.
+                    # Source note: neither the HF card nor the OpenAI model card PDF
+                    # publishes any Terminal-Bench result, so the benchmark's own
+                    # leaderboard is the reference rather than the model card.
+                    # ASSUMPTION: the leaderboard entry does not state a
+                    # reasoning_effort. "high" is set below to match the effort the
+                    # published SWE-bench Verified number (62.4) was measured at. If a
+                    # measured score lands far from 18.7, effort mismatch is the first
+                    # thing to check.
+                    published_score=18.7,
+                    published_score_ref="https://www.tbench.ai/leaderboard/terminal-bench/2.0",
+                    # NO gpu_reference_score: this task/model pair has never been run
+                    # on an H100 reference server. The accuracy check therefore falls
+                    # back to `accuracy >= published * (1 - tolerance)`, i.e. >= 17.77%.
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2",
+                    agent="terminus-2",
+                    # QB2 spec serves this model at max_concurrency=1, so concurrent
+                    # trials would only queue behind one another.
+                    n_concurrent_trials=1,
+                    n_attempts=1,
+                    n_tasks=None,  # full dataset
+                    # QB2 release runners expose only 16 CPUs; docker compose rejects
+                    # a higher --cpus reservation.
+                    override_cpus=16,
+                    override_memory_mb=48 * 1024,
+                    agent_timeout_sec=3 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            # P300X2 spec max_context is 131072 and the agent sends
+                            # ~max_input + max_output per request, so these must sum to
+                            # STRICTLY less: 88K + 32K = 120K leaves 11K for the chat
+                            # template and tool defs. Equality is not good enough here
+                            # -- see the aime25 task above, where max_gen_toks equal to
+                            # max_context schedules a 1-token prefill on the Harmony
+                            # path and every response comes back empty.
+                            "max_input_tokens": 88 * 1024,
+                            "max_output_tokens": 32 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "max_tokens": 32 * 1024,
+                            "timeout": 60 * 60,
+                            # gpt-oss carries reasoning depth as a request field, not a
+                            # sampling knob -- the lm-eval tasks above pass it the same
+                            # way as a gen_kwarg. No top_p/top_k for the same reason:
+                            # this config's other tasks set temperature only.
+                            "reasoning_effort": "high",
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/break-filter-js-from-html",
+                            "terminal-bench/cobol-modernization",
+                            "terminal-bench/compile-compcert",
+                            "terminal-bench/feal-differential-cryptanalysis",
+                            "terminal-bench/qemu-startup",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+            EvalTask(
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # HF card, "SWE-bench Verified" row, Reasoning: high = 62.4 (the
+                    # same table gives 52.6 medium / 47.9 low, and a separate 73.5 for
+                    # "medium, with tools" -- tool-augmented, so not comparable to this
+                    # task). reasoning_effort below is pinned to "high" to match.
+                    published_score=62.4,
+                    published_score_ref="https://huggingface.co/openai/gpt-oss-120b",
+                    # NO gpu_reference_score: not measured for this task/model.
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                swebench_eval_config=SWEbenchEvalConfig(
+                    dataset_name="SWE-bench/SWE-bench_Verified",
+                    sweagent_subset="verified",
+                    dataset_split="test",
+                    agent_backend="mini-swe-agent",
+                    n_concurrent_trials=1,  # max_concurrency=1 on the QB2 spec
+                    max_workers=8,
+                    n_tasks=None,  # full dataset
+                    temperature=1.0,
+                    top_p=0.95,
+                    # Clamped so max_input + max_output (88K + 32K = 120K) fits
+                    # STRICTLY inside the P300X2 spec's 131072 max_context, with 11K
+                    # left for the chat template and tool defs.
+                    max_input_tokens=88 * 1024,
+                    max_output_tokens=32 * 1024,
+                    completion_kwargs={
+                        # Passed straight into mini-swe-agent's litellm model_kwargs,
+                        # which sets drop_params=True, so an unsupported field degrades
+                        # to "ignored" rather than a 400.
+                        "reasoning_effort": "high",
+                    },
+                    instance_ids_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-11299",
+                            "astropy__astropy-14096",
+                            "matplotlib__matplotlib-25332",
+                            "sympy__sympy-13551",
+                            "scikit-learn__scikit-learn-14629",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
         ],
     ),
     EvalConfig(
@@ -4718,7 +5388,7 @@ _eval_config_list = [
                 task_name="r1_gpqa_diamond",
                 score=EvalTaskScore(
                     published_score=84.3,
-                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
+                    published_score_ref="https://huggingface.co/google/gemma-4-31B-it",
                     # Full 198-sample r1_gpqa_diamond, single run, on an H100
                     # reference vLLM server (vllm 0.23.1rc1.dev, max-model-len
                     # 131072) with thinking enabled, temp=1.0/top_p=0.95/
@@ -4789,6 +5459,17 @@ _eval_config_list = [
                 task_name="terminal_bench_2",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
+                    # REF IS NOT A TYPO. google/gemma-4-31B-it's own card publishes
+                    # NO Terminal-Bench and NO SWE-bench Verified number (its list
+                    # stops at MMLU Pro / AIME / LiveCodeBench / Codeforces / GPQA
+                    # Diamond / Tau2 / HLE / BBEH / MMMLU / MMMU Pro / OmniDocBench /
+                    # MATH-Vision / MedXPertQA / MRCR). Both numbers below come from
+                    # the "Gemma4-31B" competitor column of the COMPARISON TABLE on
+                    # the Qwen3.6-27B card, so that page is the provenance and hence
+                    # the ref. Contrast the r1_gpqa_diamond task above, which cites
+                    # the gemma card because gemma does publish GPQA Diamond (84.3).
+                    # Caveat that comes with a competitor-table number: it was
+                    # measured by Qwen, on Qwen's harness, not by Google.
                     published_score=42.9,
                     published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
                     # Full terminal-bench-2 (89 tasks), terminus-2, single
@@ -4862,7 +5543,10 @@ _eval_config_list = [
                 task_name="swe_bench_verified",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
-                    published_score=52.0,
+                    # gemma-4-31B-it's HF model page doesn't publish swe_bench score 
+                    # the score is taken from competitor comparison table of
+                    # qwen3.6-27B
+                   published_score=52.0,
                     published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
                     # Full SWE-bench Verified (500), mini-swe-agent, single
                     # H100 NVL bring-your-own vLLM (gemma-4-31B-it, max-model-len
