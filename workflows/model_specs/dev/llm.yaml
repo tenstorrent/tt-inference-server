@@ -789,6 +789,7 @@ templates:
 - weights:
     - Qwen/Qwen2.5-72B
     - Qwen/Qwen2.5-72B-Instruct
+  model_display_name: Qwen2.5-72B
   impl: tt_transformers
   inference_engine: VLLM
   device_model_specs:
@@ -834,6 +835,7 @@ templates:
 - weights:
     - Qwen/Qwen2.5-7B
     - Qwen/Qwen2.5-7B-Instruct
+  model_display_name: Qwen2.5-7B
   impl: tt_transformers
   inference_engine: VLLM
   device_model_specs:
@@ -861,6 +863,7 @@ templates:
     - meta-llama/Llama-3.1-70B
     - meta-llama/Llama-3.1-70B-Instruct
     - deepseek-ai/DeepSeek-R1-Distill-Llama-70B
+  model_display_name: Llama-3.3-70B-Instruct
   impl: llama3_70b_galaxy
   inference_engine: VLLM
   device_model_specs:
@@ -964,6 +967,7 @@ templates:
     - meta-llama/Llama-3.1-70B
     - meta-llama/Llama-3.1-70B-Instruct
     - deepseek-ai/DeepSeek-R1-Distill-Llama-70B
+  model_display_name: Llama-3.3-70B-Instruct
   impl: tt_transformers
   system_requirements:
     firmware:
@@ -1001,6 +1005,7 @@ templates:
     - meta-llama/Llama-3.1-70B
     - meta-llama/Llama-3.1-70B-Instruct
     - deepseek-ai/DeepSeek-R1-Distill-Llama-70B
+  model_display_name: Llama-3.3-70B-Instruct
   impl: tt_transformers
   inference_engine: VLLM
   device_model_specs:
@@ -1049,6 +1054,7 @@ templates:
     - meta-llama/Llama-3.1-70B
     - meta-llama/Llama-3.1-70B-Instruct
     - deepseek-ai/DeepSeek-R1-Distill-Llama-70B
+  model_display_name: Llama-3.3-70B-Instruct
   impl: tt_transformers
   system_requirements:
     firmware:
@@ -1088,6 +1094,7 @@ templates:
     - meta-llama/Llama-3.1-70B
     - meta-llama/Llama-3.1-70B-Instruct
     - deepseek-ai/DeepSeek-R1-Distill-Llama-70B
+  model_display_name: Llama-3.3-70B-Instruct
   impl: tt_transformers
   system_requirements:
     firmware:
@@ -1125,6 +1132,7 @@ templates:
 - weights:
     - meta-llama/Llama-3.2-1B
     - meta-llama/Llama-3.2-1B-Instruct
+  model_display_name: Llama-3.2-1B
   impl: tt_transformers
   inference_engine: VLLM
   device_model_specs:
@@ -1153,6 +1161,7 @@ templates:
 - weights:
     - meta-llama/Llama-3.2-3B
     - meta-llama/Llama-3.2-3B-Instruct
+  model_display_name: Llama-3.2-3B
   impl: tt_transformers
   inference_engine: VLLM
   device_model_specs:
@@ -1180,6 +1189,7 @@ templates:
 - weights:
     - meta-llama/Llama-3.1-8B
     - meta-llama/Llama-3.1-8B-Instruct
+  model_display_name: Llama-3.1-8B
   impl: tt_transformers
   inference_engine: VLLM
   device_model_specs:
@@ -1215,6 +1225,7 @@ templates:
 - weights:
     - meta-llama/Llama-3.1-8B
     - meta-llama/Llama-3.1-8B-Instruct
+  model_display_name: Llama-3.1-8B
   impl: tt_transformers
   inference_engine: VLLM
   device_model_specs:
@@ -1256,6 +1267,7 @@ templates:
 - weights:
     - meta-llama/Llama-3.1-8B
     - meta-llama/Llama-3.1-8B-Instruct
+  model_display_name: Llama-3.1-8B
   impl: tt_transformers
   inference_engine: VLLM
   device_model_specs:
@@ -1278,6 +1290,7 @@ templates:
 - weights:
     - meta-llama/Llama-3.1-8B
     - meta-llama/Llama-3.1-8B-Instruct
+  model_display_name: Llama-3.1-8B
   impl: tt_transformers
   system_requirements:
     firmware:
@@ -1306,6 +1319,7 @@ templates:
 - weights:
     - meta-llama/Llama-3.1-8B
     - meta-llama/Llama-3.1-8B-Instruct
+  model_display_name: Llama-3.1-8B
   impl: tt_transformers
   system_requirements:
     firmware:
@@ -1374,6 +1388,7 @@ templates:
 - weights:
     - meta-llama/Llama-3.1-8B
     - meta-llama/Llama-3.1-8B-Instruct
+  model_display_name: Llama-3.1-8B
   impl: tt_transformers
   inference_engine: VLLM
   device_model_specs:
@@ -1652,6 +1667,7 @@ templates:
 - weights:
     - meta-llama/Llama-3.2-3B
     - meta-llama/Llama-3.2-3B-Instruct
+  model_display_name: Llama-3.2-3B
   impl: forge_vllm_plugin
   min_disk_gb: 15
   min_ram_gb: 8

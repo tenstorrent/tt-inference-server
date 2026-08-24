@@ -259,6 +259,17 @@ def test_catalog_yaml_loads_and_every_template_expands(env, yaml_name):
         assert specs, f"{env}/{yaml_name}: template {t.weights} expanded to zero specs"
 
 
+def test_multiweight_dev_templates_define_stable_display_name():
+    for yaml_name in EXPECTED_CATALOG_FILES:
+        templates = load_templates_from_yaml(MODEL_SPECS_DIR / "dev" / yaml_name)
+        for template in templates:
+            if len(template.weights) > 1:
+                assert template.model_display_name, (
+                    f"dev/{yaml_name}: multiweight template {template.weights!r} "
+                    "must define model_display_name"
+                )
+
+
 @pytest.mark.parametrize("env", EXPECTED_CATALOG_ENVS)
 def test_catalog_environment_has_unambiguous_expanded_identities(env):
     """Validate identities across category-file boundaries within one environment."""

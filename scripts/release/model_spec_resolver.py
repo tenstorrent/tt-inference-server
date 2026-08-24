@@ -24,7 +24,8 @@ LeafIdentity = Tuple[str, str, str, str]
 
 # models-ci-config schema uses the CI-facing BH_GALAXY label while model
 # catalogs and DeviceTypes use the canonical BLACKHOLE_GALAXY identity.
-# All release consumers normalize through collect_release_combos.
+# Release consumers that resolve device identities normalize through
+# collect_release_combos; engine-family-only workflow parsing does not read it.
 _RELEASE_DEVICE_ALIASES = {
     "BH_GALAXY": "BLACKHOLE_GALAXY",
 }

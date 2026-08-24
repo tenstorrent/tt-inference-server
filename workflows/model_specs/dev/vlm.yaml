@@ -8,6 +8,7 @@ templates:
 - weights:
     - google/gemma-3-4b-it
     - google/medgemma-4b-it
+  model_display_name: gemma-3-4b-it
   impl: tt_transformers
   inference_engine: VLLM
   device_model_specs:
@@ -62,6 +63,7 @@ templates:
 - weights:
     - google/gemma-3-27b-it
     - google/medgemma-27b-it
+  model_display_name: gemma-3-27b-it
   impl: tt_transformers
   inference_engine: VLLM
   device_model_specs:
@@ -250,6 +252,7 @@ templates:
 - weights:
     - meta-llama/Llama-3.2-11B-Vision
     - meta-llama/Llama-3.2-11B-Vision-Instruct
+  model_display_name: Llama-3.2-11B-Vision
   impl: tt_transformers
   inference_engine: VLLM
   device_model_specs:
@@ -270,6 +273,7 @@ templates:
 - weights:
     - meta-llama/Llama-3.2-90B-Vision
     - meta-llama/Llama-3.2-90B-Vision-Instruct
+  model_display_name: Llama-3.2-90B-Vision
   impl: tt_transformers
   inference_engine: VLLM
   device_model_specs:
