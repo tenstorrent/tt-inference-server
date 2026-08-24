@@ -251,18 +251,26 @@ class TTQwen3AsrRunner(BaseMetalDeviceRunner):
             return await asyncio.to_thread(self._run_segments, request)
         return await asyncio.to_thread(self._run_full, request)
 
-    def _run_full(self, request: AudioProcessingRequest):
-        """No pre-segmentation: chunk long audio into fixed windows, transcribe, join."""
-        wav = np.asarray(request._audio_array, dtype=np.float32)
-        windows = tq.chunk_wav(wav, QWEN3_ASR_FIXED_SEC)
+    def _infer_long(self, wav: np.ndarray):
+        """Transcribe an arbitrary-length window. The decode trace needs a bounded
+        prefill, so split into <=FIXED_SEC chunks, transcribe each, and join. Any
+        caller-supplied window (a full clip or one VAD/diarization segment) can be
+        longer than the top bucket, so this is the single place that guards against
+        silently truncating the tail. Returns (text, ntok, t_dec)."""
         parts, ntok, t_dec = [], 0, 0.0
-        for win in windows:
-            _lang, text, nt, _te, td = self._infer(win)
+        for chunk in tq.chunk_wav(np.asarray(wav, dtype=np.float32), QWEN3_ASR_FIXED_SEC):
+            if chunk is None or len(chunk) == 0:
+                continue
+            _lang, text, nt, _te, td = self._infer(chunk)
             if text:
                 parts.append(text)
             ntok += nt
             t_dec += td
-        text = " ".join(parts)
+        return " ".join(parts), ntok, t_dec
+
+    def _run_full(self, request: AudioProcessingRequest):
+        """No pre-segmentation: chunk long audio into fixed windows, transcribe, join."""
+        text, ntok, t_dec = self._infer_long(request._audio_array)
         self.logger.info(
             f"Device {self.device_id}: qwen3-asr {request._duration:.1f}s -> {ntok} tok "
             f"({ntok / max(t_dec, 1e-6):.1f} tok/s decode)"
@@ -279,7 +287,7 @@ class TTQwen3AsrRunner(BaseMetalDeviceRunner):
             seg_audio = request._audio_array[int(start_t * sr) : int(end_t * sr)]
             if len(seg_audio) == 0:
                 continue
-            _lang, text, _nt, _te, _td = self._infer(seg_audio)
+            text, _nt, _td = self._infer_long(seg_audio)
             segments.append(
                 AudioTextSegment(id=i, speaker=speaker, start_time=start_t, end_time=end_t, text=text)
             )
@@ -322,13 +330,17 @@ class TTQwen3AsrRunner(BaseMetalDeviceRunner):
         to the worker which forwards the chunk to the client."""
         if request._segments:
             sr = self.settings.default_sample_rate
-            windows = [
+            raw = [
                 request._audio_array[int(float(s["start"]) * sr) : int(float(s["end"]) * sr)]
                 for s in request._segments
             ]
         else:
-            wav = np.asarray(request._audio_array, dtype=np.float32)
-            windows = tq.chunk_wav(wav, QWEN3_ASR_FIXED_SEC)
+            raw = [request._audio_array]
+        # Split each window into <=FIXED_SEC trace-safe chunks (a single segment can
+        # exceed the top bucket; _bucket_length would otherwise truncate its tail).
+        windows = []
+        for r in raw:
+            windows.extend(tq.chunk_wav(np.asarray(r, dtype=np.float32), QWEN3_ASR_FIXED_SEC))
 
         chunk_id, parts = 0, []
         for win in windows:
