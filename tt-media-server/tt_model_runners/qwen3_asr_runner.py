@@ -14,11 +14,13 @@ Reuses the proven, gated tt-metal demo pipeline
 mel + Qwen3-ASR chat prompt -> TT audio encoder -> baked-in 68 tok/s decoder
 (on-device argmax + decode trace + in-graph token/pos + 2CQ, BFP8 KV/attn/lm_head).
 
-STABILITY: in a long-lived server, mixing prefill lengths across requests
-corrupts the decode trace (it locks to the first request's shape). Every segment
-is therefore padded/capped to one FIXED audio length -> constant 512-token
-prefill -> the trace stays valid and we keep steady-state throughput. This is the
-same fixed-frame trick Whisper uses (always 30s frames).
+STABILITY + LATENCY: the decode trace requires a constant prefill program. All
+clips up to ~39s round to the same 512-token prefill, so instead of padding every
+request to one fixed 28s length we pad to the smallest of a few audio-length
+buckets (see QWEN3_ASR_BUCKETS_SEC). This keeps a single prefill program (trace
+stays valid) while letting the encoder input shrink for short clips -- the encoder
+attention is quadratic in length, so bucketing is what removes the short-clip
+latency tax that a flat 28s pad imposed.
 """
 
 import asyncio
@@ -44,10 +46,27 @@ QWEN3_ASR_L1_SMALL_SIZE = 32768
 QWEN3_ASR_TRACE_REGION_SIZE = 200_000_000
 QWEN3_ASR_NUM_COMMAND_QUEUES = 2
 
-# n150: ~28s of audio -> ~364 audio tokens + prompt scaffold < 512 (one prefill bucket).
-# Every request is padded/capped to this so the prefill program shape is constant.
+# n150: ~28s of audio -> ~364 audio tokens + prompt scaffold < 512, so a clip of
+# any length up to ~39s lands in the SAME 512-token prefill program (the decoder
+# rounds prefill up to a multiple of 512, min 512). QWEN3_ASR_FIXED_SEC is the top
+# bucket / long-audio chunk window.
 QWEN3_ASR_FIXED_SEC = float(os.environ.get("QWEN3ASR_FIXED_SEC", "28.0"))
 QWEN3_ASR_MAX_NEW_TOKENS = int(os.environ.get("QWEN3ASR_MAX_NEW_TOKENS", "256"))
+
+# Audio-length buckets (seconds). Every request is padded UP to the smallest bucket
+# >= its true duration. Because all buckets are <= ~39s they share one prefill
+# program (so the decode trace stays valid across mixed-length requests), while the
+# encoder input length varies per bucket. The encoder's attention is quadratic in
+# length, so a short clip bucketed to 4-8s avoids the bulk of the full-28s encoder
+# cost -> much lower short-clip latency. The top bucket is always FIXED_SEC.
+QWEN3_ASR_BUCKETS_SEC = tuple(
+    sorted(
+        {
+            *(float(x) for x in os.environ.get("QWEN3ASR_BUCKETS_SEC", "4,8,16").split(",") if x.strip()),
+            QWEN3_ASR_FIXED_SEC,
+        }
+    )
+)
 DEFAULT_HF_REPO = "Qwen/Qwen3-ASR-1.7B"
 
 
@@ -158,26 +177,33 @@ class TTQwen3AsrRunner(BaseMetalDeviceRunner):
         )
 
     def _warm(self):
-        # Two passes at the fixed length compile the prefill + decode traces so the
-        # first real request is already warm (no cold-JIT burst).
-        dummy = np.zeros(SR, dtype=np.float32)
-        for _ in range(2):
+        # One pass per bucket compiles that bucket's encoder + prefill programs so the
+        # first real request at any length is already warm. The decode kernels/trace
+        # compile once and are shared across buckets (prefill program is the same 512).
+        for sec in QWEN3_ASR_BUCKETS_SEC:
+            dummy = np.zeros(int(round(sec * SR)), dtype=np.float32)
             try:
                 self._infer(dummy)
             except Exception as e:
-                self.logger.warning(f"Device {self.device_id}: warmup pass skipped: {e}")
+                self.logger.warning(f"Device {self.device_id}: warmup pass ({sec:g}s) skipped: {e}")
                 break
 
-    def _fix_length(self, wav: np.ndarray) -> np.ndarray:
-        """Pad/cap to exactly QWEN3_ASR_FIXED_SEC so the prefill shape is constant."""
-        n = int(QWEN3_ASR_FIXED_SEC * SR)
+    def _bucket_length(self, wav: np.ndarray) -> np.ndarray:
+        """Pad up to the smallest bucket >= the clip duration (cap at the top bucket).
+
+        Keeps the prefill in one 512-token program (decode trace stays valid) while
+        letting the encoder input length track the audio, so short clips skip the
+        bulk of the full-28s encoder cost."""
+        dur = len(wav) / SR
+        target = next((b for b in QWEN3_ASR_BUCKETS_SEC if dur <= b), QWEN3_ASR_BUCKETS_SEC[-1])
+        n = int(round(target * SR))
         if len(wav) >= n:
             return wav[:n]
         return np.concatenate([wav, np.zeros(n - len(wav), dtype=np.float32)])
 
     def _infer(self, wav: np.ndarray, max_new_tokens: int = QWEN3_ASR_MAX_NEW_TOKENS):
         """Full TT pipeline on a 16k mono waveform. Returns (lang, text, ntok, t_enc, t_dec)."""
-        wav = self._fix_length(np.asarray(wav, dtype=np.float32))
+        wav = self._bucket_length(np.asarray(wav, dtype=np.float32))
         input_ids, mel = tq.build_inputs(wav, self.fe, self.tok, self.chat_template)
         t0 = time.time()
         audio_embeds = tt_enc.encode_mel(mel, self.enc_params, self.ttnn_device).float()
