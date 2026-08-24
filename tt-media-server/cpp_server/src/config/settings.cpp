@@ -211,10 +211,6 @@ unsigned batchTimeoutMs() {
       envUlong("MAX_BATCH_DELAY_TIME_MS", defaults::MAX_BATCH_DELAY_TIME_MS));
 }
 
-std::string pythonPath() {
-  return envString("TT_PYTHON_PATH", defaults::TT_PYTHON_PATH);
-}
-
 static std::filesystem::path tokenizersDir() {
   std::error_code ec;
   std::filesystem::path exePath =
@@ -517,60 +513,79 @@ void readMediaRunnerConfig(MediaRunnerConfigBase& cfg) {
 // ---------------------------------------------------------------------------
 // Embedding model catalog.
 //
-// Only what C++ must know *before* Python exists lives here:
-//   - python_model_name is exported as MODEL. Without it Python's Settings
-//     skips its config lookup entirely (config/settings.py: the
-//     `if model_to_run and self.device` gate) and silently keeps defaults.
-//   - batch_by_device is needed by the parent process, which forms batches
-//     and never boots an interpreter.
-//   - hf_model_id is the default the controller fills in when a client omits
-//     "model", also in the parent.
+// C++ is the single config authority for the embedding path: the runner
+// drives tt-metal directly (ttnn + the model's generator class), so the
+// per-(model, device) facts Python's ModelConfigs used to resolve live here.
+// The numbers mirror config/constants.py rows for the same models so the two
+// servers behave identically; there is no runtime handshake left to catch
+// drift, so keep them in sync when constants.py changes.
 //
-// Everything else Python already owns and is not duplicated here: which class
-// implements a model comes from tt_model_runners/runner_fabric.py, keyed on
-// the MODEL_RUNNER we export.
-//
-// The batch sizes mirror config/constants.py (ModelConfigs). Python stays
-// authoritative - each worker reads settings.max_batch_size back after import
-// and refuses to start if the two disagree.
-//
-// To onboard a model: add a ModelRunnerType enumerator with its toString and
-// toClientRunnerName cases, then one row here.
+// To onboard a model: add a ModelRunnerType enumerator with its toString
+// case, one row here, and a model impl in embedding_runner.cpp (module path,
+// constructor kwargs, output extraction).
+struct EmbeddingDeviceEntry {
+  std::string_view device;  // DEVICE value, e.g. "n150"
+  size_t max_batch_size;
+  size_t max_seq_len;  // vLLM max_model_length for this device
+  std::vector<size_t> mesh_shape;
+};
+
 struct EmbeddingModelEntry {
   ModelRunnerType runner_type;
   std::string_view hf_model_id;
-  // Internal ModelNames value, exported as MODEL. Empty for the mock, which
-  // starts no interpreter.
-  std::string_view python_model_name;
-  // {DEVICE value, max_batch_size}
-  std::vector<std::pair<std::string_view, size_t>> batch_by_device;
+  // ttnn.open_mesh_device knobs the model's Python runner used to pass.
+  // num_command_queues 0 = don't pass the kwarg (ttnn default).
+  size_t num_command_queues;
+  size_t trace_region_size;
+  std::vector<EmbeddingDeviceEntry> devices;
 };
+
+// Python Settings' default trace_region_size; no embedding row overrides it.
+constexpr size_t EMBEDDING_TRACE_REGION_SIZE = 34541598;
 
 constexpr ModelRunnerType DEFAULT_EMBEDDING_MODEL =
     ModelRunnerType::TT_BGE_LARGE_EN;
 
 const std::vector<EmbeddingModelEntry>& embeddingModels() {
+  // Device entries are {DEVICE, max_batch_size, max_seq_len, mesh_shape}.
   static const std::vector<EmbeddingModelEntry> kModels = {
       {ModelRunnerType::TT_BGE_LARGE_EN,
        "BAAI/bge-large-en-v1.5",
-       "bge-large-en-v1.5",
-       {{"n150", 8}, {"n300", 16}, {"t3k", 16}, {"galaxy", 8}}},
+       /*num_command_queues=*/2,
+       EMBEDDING_TRACE_REGION_SIZE,
+       {{"n150", 8, 384, {1, 1}},
+        {"n300", 16, 384, {2, 1}},
+        {"t3k", 16, 384, {2, 1}},
+        {"galaxy", 8, 384, {1, 1}}}},
       {ModelRunnerType::TT_BGE_M3,
        "BAAI/bge-m3",
-       "bge-m3",
-       {{"n150", 32}, {"n300", 32}, {"t3k", 32}, {"galaxy", 32}}},
+       /*num_command_queues=*/2,
+       EMBEDDING_TRACE_REGION_SIZE,
+       {{"n150", 32, 8192, {1, 1}},
+        {"n300", 32, 8192, {2, 1}},
+        {"t3k", 32, 8192, {2, 1}},
+        {"galaxy", 32, 8192, {1, 1}}}},
       // Galaxy batch 1: ModelConfigs has no max_batch_size key there, so
-      // Python resolves the Settings default (1); max_num_seqs=1 keeps it.
+      // Python resolved the Settings default (1); max_num_seqs=1 keeps it.
       {ModelRunnerType::TT_QWEN_EMBEDDING_8B,
        "Qwen/Qwen3-Embedding-8B",
-       "Qwen3-Embedding-8B",
-       {{"n150", 1}, {"n300", 2}, {"t3k", 2}, {"galaxy", 1}}},
+       /*num_command_queues=*/0,
+       EMBEDDING_TRACE_REGION_SIZE,
+       {{"n150", 1, 1024, {1, 1}},
+        {"n300", 2, 4096, {2, 1}},
+        {"t3k", 2, 4096, {2, 1}},
+        {"galaxy", 1, 1024, {1, 1}}}},
       // The mock needs no device and no Python. The "" device entry is
       // deliberate: CI runs it with nothing set.
       {ModelRunnerType::EMBEDDING_MOCK,
        "BAAI/bge-large-en-v1.5",
-       "",
-       {{"", 8}, {"n150", 8}, {"n300", 16}, {"t3k", 16}, {"galaxy", 8}}},
+       /*num_command_queues=*/0,
+       /*trace_region_size=*/0,
+       {{"", 8, 384, {1, 1}},
+        {"n150", 8, 384, {1, 1}},
+        {"n300", 16, 384, {1, 1}},
+        {"t3k", 16, 384, {1, 1}},
+        {"galaxy", 8, 384, {1, 1}}}},
   };
   return kModels;
 }
@@ -593,14 +608,14 @@ const EmbeddingModelEntry& findEmbeddingModelOrThrow(
                            "'; expected one of: " + joinNames(valid));
 }
 
-size_t batchSizeOrThrow(const EmbeddingModelEntry& model,
-                        const std::string& device) {
-  for (const auto& [name, batchSize] : model.batch_by_device) {
-    if (name == device) return batchSize;
+const EmbeddingDeviceEntry& deviceEntryOrThrow(const EmbeddingModelEntry& model,
+                                               const std::string& device) {
+  for (const auto& entry : model.devices) {
+    if (entry.device == device) return entry;
   }
   std::vector<std::string> valid;
-  for (const auto& [name, batchSize] : model.batch_by_device) {
-    if (!name.empty()) valid.push_back(std::string(name));
+  for (const auto& entry : model.devices) {
+    if (!entry.device.empty()) valid.push_back(std::string(entry.device));
   }
   throw std::runtime_error(
       "[Config] DEVICE='" + device + "' is not supported by " +
@@ -711,10 +726,15 @@ EmbeddingConfig embeddingEngineConfig() {
     EmbeddingConfig cfg;
     cfg.runner_type = model.runner_type;
     cfg.hf_model_id = model.hf_model_id;
-    cfg.python_model_name = model.python_model_name;
+    cfg.num_command_queues = model.num_command_queues;
+    cfg.trace_region_size = model.trace_region_size;
     cfg.device = envStringLower("DEVICE", "");
     cfg.visible_devices = visibleDevicesForWorker(0);
-    cfg.max_batch_size = batchSizeOrThrow(model, cfg.device);
+    const EmbeddingDeviceEntry& deviceEntry =
+        deviceEntryOrThrow(model, cfg.device);
+    cfg.max_batch_size = deviceEntry.max_batch_size;
+    cfg.max_seq_len = deviceEntry.max_seq_len;
+    cfg.mesh_shape = deviceEntry.mesh_shape;
     return cfg;
   }();
   return cached;

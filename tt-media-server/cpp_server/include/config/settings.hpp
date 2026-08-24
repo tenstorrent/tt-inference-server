@@ -54,10 +54,6 @@ size_t callbackPoolThreads();
  * defaults::MAX_BATCH_DELAY_TIME_MS. */
 unsigned batchTimeoutMs();
 
-/** Path prepended to Python sys.path for embedding runner. From TT_PYTHON_PATH.
- * Default: defaults::TT_PYTHON_PATH. */
-std::string pythonPath();
-
 /** Tokenizer path: tokenizers/<model>/tokenizer.json relative to executable.
  * Empty if not found. No-arg overload uses the current model_type(). */
 std::string tokenizerPath();

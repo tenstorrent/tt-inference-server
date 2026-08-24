@@ -177,12 +177,12 @@ inline std::string toClientRunnerName(ModelRunnerType m) {
       return "tt-sdxl-edit";
     case ModelRunnerType::TT_TTS:
       return "tt-tts";
+    // Embedding runners have no client runner name: the string existed only
+    // as the MODEL_RUNNER export for Python's runner_fabric, which the
+    // tt-metal-direct runner no longer uses.
     case ModelRunnerType::TT_BGE_LARGE_EN:
-      return "bge_large_en_v1_5";
     case ModelRunnerType::TT_BGE_M3:
-      return "bge-m3";
     case ModelRunnerType::TT_QWEN_EMBEDDING_8B:
-      return "qwen_embedding_8b";
     case ModelRunnerType::MOCK:
     case ModelRunnerType::MOCK_PIPELINE:
     case ModelRunnerType::MOCK_SCHEDULER:

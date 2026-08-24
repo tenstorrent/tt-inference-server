@@ -4,7 +4,6 @@
 #pragma once
 
 #include <memory>
-#include <string>
 #include <vector>
 
 #include "config/runner_config.hpp"
@@ -14,13 +13,26 @@
 
 namespace tt::runners {
 
+namespace detail {
+// Template-method base for the per-model implementations (defined in
+// embedding_runner.cpp). It owns the shared pipeline - device open,
+// tokenizer, warmup, tokenize->forward->extract, close - and each model
+// subclass overrides only the steps that differ: which tt-metal module and
+// class to load, the constructor kwargs, and how to pull the dense vectors
+// out of forward()'s result. Kept behind this forward declaration so pybind11
+// types never leak into headers.
+struct EmbeddingImpl;
+}  // namespace detail
+
 /**
- * Embedding runner that calls a Python model runner in-process.
+ * Embedding runner that drives tt-metal directly.
  *
- * Uses pybind11 (embedded interpreter). The runner class is resolved by
- * Python's tt_model_runners/runner_fabric.py from the MODEL_RUNNER env var
- * the worker exports. Python errors are captured with full tracebacks and
- * surfaced as per-request error responses rather than swallowed.
+ * Uses pybind11 (embedded interpreter) to import ttnn and the model's
+ * generator class from tt-metal's models.demos - there is no tt-media-server
+ * Python layer involved. Tokenization goes through the model's HuggingFace
+ * AutoTokenizer for exact parity with the Python server. Python errors are
+ * captured with full tracebacks and surfaced as per-request error responses
+ * rather than swallowed.
  */
 class EmbeddingRunner : public IEmbeddingRunner {
  public:
@@ -31,20 +43,20 @@ class EmbeddingRunner : public IEmbeddingRunner {
   EmbeddingRunner(const EmbeddingRunner&) = delete;
   EmbeddingRunner& operator=(const EmbeddingRunner&) = delete;
 
-  /** Import the Python module, construct the runner, initialize the TTNN
-   * device, and run the model's warmup. */
+  /** Open the ttnn mesh device, load tokenizer and model weights, and run
+   * one warmup forward pass. */
   bool warmup() override;
 
   std::vector<domain::EmbeddingResponse> run(
       const std::vector<domain::EmbeddingRequest>& requests) override;
 
-  /** Drop the Python objects. The interpreter itself is left running. */
+  /** Close the mesh device and drop the Python objects. The interpreter
+   * itself is left running. */
   void close() override;
 
  private:
   config::EmbeddingConfig config_;
-  struct Impl;
-  std::unique_ptr<Impl> impl_;
+  std::unique_ptr<detail::EmbeddingImpl> impl_;
 };
 
 }  // namespace tt::runners
