@@ -1029,8 +1029,9 @@ class ModelSpecTemplate:
     )
     has_builtin_warmup: bool = False
     metadata: Dict[str, Dict] = field(default_factory=dict)
-    # Leaf-granular prod entries retain their source model family. This keeps
-    # documentation grouping and performance-reference lookup stable.
+    # Leaf-granular prod entries retain their source model family, which a
+    # single-weight entry cannot imply. This keeps documentation grouping
+    # stable; performance targets are looked up per weight and do not use it.
     model_display_name: Optional[str] = None
 
     def __post_init__(self):
@@ -1070,15 +1071,16 @@ class ModelSpecTemplate:
         """Expand this template into individual ModelSpec instances."""
         specs = []
 
-        # Generate performance reference map
-        main_model_name = self.model_display_name or model_weights_to_model_name(
-            self.weights[0]
-        )
-        perf_reference_map = get_perf_reference_map(
-            main_model_name, self.perf_targets_map
-        )
-
         for weight in self.weights:
+            # Targets are looked up for the weight being expanded, not for the
+            # family it is listed under. A family member is a different model:
+            # grading it against a sibling's numbers reports a pass or a fail
+            # that was never measured for it. A weight with no entry in
+            # model_performance_reference.json therefore carries no targets
+            # rather than borrowing another model's.
+            perf_reference_map = get_perf_reference_map(
+                model_weights_to_model_name(weight), self.perf_targets_map
+            )
             for device_model_spec in self.device_model_specs:
                 device_type = device_model_spec.device
                 model_name = Path(weight).name

@@ -672,7 +672,13 @@ class TestSystemIntegration:
             model_display_name=model_display_name,
         )
 
-    def test_model_display_name_is_performance_reference_lookup_key(self, monkeypatch):
+    def test_performance_reference_is_looked_up_per_weight(self, monkeypatch):
+        """Every weight is graded against the targets measured for itself.
+
+        Keying the lookup on the family name applied one member's numbers to all
+        of its siblings, so a model built to be faster or slower than the family
+        head was judged at a bar that had never been measured for it.
+        """
         lookups = []
         monkeypatch.setattr(
             "workflows.model_spec.get_perf_reference_map",
@@ -686,7 +692,7 @@ class TestSystemIntegration:
 
         template.expand_to_specs()
 
-        assert lookups == ["stable-model-family"]
+        assert lookups == ["model-base", "model-instruct"]
 
     def test_model_spec_map_generation(self, sample_impl):
         """Test spec map generation from templates."""

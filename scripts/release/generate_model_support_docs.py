@@ -246,14 +246,10 @@ def coalesce_model_families_for_docs(
         return data
 
     def device_signature(device_spec):
-        data = asdict(device_spec)
-        # perf_reference is derived from model_performance_reference.json, keyed
-        # by the family's model_display_name, so family members share it today
-        # and comparing it here would only add float noise. If targets ever
-        # become per-weight, drop this pop -- otherwise leaves with different
-        # targets would silently coalesce into one documented configuration.
-        data.pop("perf_reference", None)
-        return data
+        # Catalog device specs carry no perf_reference: the field is rejected in
+        # YAML and only filled in during expansion, so there is nothing here to
+        # exclude from the comparison.
+        return asdict(device_spec)
 
     grouped = defaultdict(list)
     ordered_keys = []
