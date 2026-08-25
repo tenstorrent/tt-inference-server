@@ -148,7 +148,7 @@ class JobMetricsCallback(JobCallback):
 
 
 class AdapterCheckpointCallback(JobCallback):
-    """Saves the LoRA adapter every ``save_interval`` optimizer steps."""
+    """Saves the LoRA adapter every ``checkpoint.steps_freq`` optimizer steps."""
 
     def __init__(self, logger, metrics: JobMetricsCallback):
         super().__init__(logger)
@@ -157,23 +157,31 @@ class AdapterCheckpointCallback(JobCallback):
     def _reset(self) -> None:
         self._prev_global_step = 0
 
-    def on_train_batch_end(self, trainer, *args, **kwargs):
-        save_interval = self._request.save_interval
-        if save_interval <= 0 or trainer.global_step == self._prev_global_step:
+    def on_train_start(self, trainer, *args, **kwargs):
+        if trainer.config is None:
             return
         self._prev_global_step = trainer.global_step
 
-        if trainer.global_step % save_interval:
+    def on_train_batch_end(self, trainer, *args, **kwargs):
+        if trainer.config is None:
+            return
+        if trainer.global_step == self._prev_global_step:
+            return
+        self._prev_global_step = trainer.global_step
+
+        config = trainer.config.checkpoint
+        if config.save_strategy != "step":
+            return
+        if trainer.global_step % config.steps_freq:
             return
         self._save(trainer)
 
     def _save(self, trainer) -> None:
         checkpoint_id = f"ckpt-step-{trainer.global_step}"
-        checkpoint_path = os.path.join(self._request._output_model_path, checkpoint_id)
+        checkpoint_path = os.path.join(
+            trainer.config.checkpoint.project_dir, checkpoint_id
+        )
         try:
-            # Filter to adapter tensors before moving to host: PeftModel.state_dict()
-            # is the full base+adapter dict, so copying all of it would allocate a
-            # second copy of the base weights on every save.
             state_dict = {
                 key: value.cpu()
                 for key, value in trainer.model.state_dict().items()
@@ -190,24 +198,27 @@ class AdapterCheckpointCallback(JobCallback):
             f"Model checkpoint saved to {checkpoint_path}.",
             extra={"log_type": "checkpoint", "step": trainer.global_step},
         )
-        if self._request._training_checkpoints is None:
+        torch_xla.sync(wait=True)
+        if self._request is None or self._request._training_checkpoints is None:
             return
 
-        metrics = {}
-        if self._metrics.last_train_loss is not None:
-            metrics["train_loss"] = round(self._metrics.last_train_loss, 6)
-        if self._metrics.last_val_loss is not None:
-            metrics["val_loss"] = round(self._metrics.last_val_loss, 6)
         self._request._training_checkpoints.append(
             {
                 "id": checkpoint_id,
                 "step": trainer.global_step,
                 "epoch": trainer.epoch + 1,
-                "metrics": metrics,
+                "metrics": self._checkpoint_metrics(),
                 "created_at": time.time(),
             }
         )
-        torch_xla.sync(wait=True)
+
+    def _checkpoint_metrics(self) -> dict:
+        metrics = {}
+        if self._metrics.last_train_loss is not None:
+            metrics["train_loss"] = round(self._metrics.last_train_loss, 6)
+        if self._metrics.last_val_loss is not None:
+            metrics["val_loss"] = round(self._metrics.last_val_loss, 6)
+        return metrics
 
 
 class JobControlCallback(JobCallback):

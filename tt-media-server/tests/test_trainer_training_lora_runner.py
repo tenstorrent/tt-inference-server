@@ -132,8 +132,17 @@ class TestJobConfig:
         assert config.training_model_type == "lora"
         assert config.metrics.steps_freq == 5
         assert config.checkpoint.project_dir == "/tmp/job"
-        # Checkpoints are written by AdapterCheckpointCallback, not by blacksmith.
+        assert config.checkpoint.save_strategy == "step"
+        assert config.checkpoint.steps_freq == 25
+
+    def test_save_interval_zero_disables_step_saves(self, runner):
+        config = runner._job_config(_request(save_interval=0))
         assert config.checkpoint.save_strategy == "none"
+
+    def test_checkpoint_dir_is_the_job_output_path(self, runner):
+        request = _request()
+        request._output_model_path = "/adapters/job-a"
+        assert runner._job_config(request).checkpoint.project_dir == "/adapters/job-a"
 
     def test_weight_decay_defaults_to_adamws_own(self, runner):
         assert runner._job_config(_request()).weight_decay == 0.01
@@ -513,3 +522,99 @@ class TestJobMetricsCallback:
         assert callback.last_val_loss == 1.25
         assert request._training_metrics[0]["metric_name"] == "val_loss"
         assert request._training_metrics[0]["value"] == 1.25
+
+
+class TestAdapterCheckpointCallback:
+    def _callback(self, request):
+        from tt_model_runners.forge_training_runners.blacksmith_callbacks import (
+            AdapterCheckpointCallback,
+            JobMetricsCallback,
+        )
+
+        metrics = JobMetricsCallback(MagicMock())
+        metrics.bind(request)
+        callback = AdapterCheckpointCallback(MagicMock(), metrics)
+        callback.bind(request)
+        return callback, metrics
+
+    def _trainer(
+        self,
+        save_strategy="step",
+        steps_freq=2,
+        project_dir="/tmp/job",
+    ):
+        trainer = _fake_trainer()
+        trainer.config.checkpoint.save_strategy = save_strategy
+        trainer.config.checkpoint.steps_freq = steps_freq
+        trainer.config.checkpoint.project_dir = project_dir
+        lora = MagicMock()
+        lora.cpu.return_value = "adapter-tensor"
+        trainer.model.state_dict.return_value = {
+            "model.layers.0.weight": MagicMock(),
+            "model.layers.0.q_proj.lora_A.weight": lora,
+        }
+        return trainer
+
+    def test_saves_adapter_on_matching_step(self):
+        request = _request()
+        callback, _ = self._callback(request)
+        trainer = self._trainer(steps_freq=2)
+        callback.on_train_start(trainer)
+
+        trainer.global_step = 1
+        callback.on_train_batch_end(trainer)
+        trainer.model.save_pretrained.assert_not_called()
+
+        trainer.global_step = 2
+        callback.on_train_batch_end(trainer)
+        trainer.model.save_pretrained.assert_called_once()
+        path, kwargs = trainer.model.save_pretrained.call_args
+        assert path[0] == "/tmp/job/ckpt-step-2"
+        assert kwargs["state_dict"] == {
+            "model.layers.0.q_proj.lora_A.weight": "adapter-tensor"
+        }
+        assert [c["id"] for c in request._training_checkpoints] == ["ckpt-step-2"]
+
+    def test_writes_under_the_job_project_dir(self):
+        request = _request()
+        callback, _ = self._callback(request)
+        trainer = self._trainer(steps_freq=1, project_dir="/adapters/job-b")
+        callback.on_train_start(trainer)
+        trainer.global_step = 1
+        callback.on_train_batch_end(trainer)
+        assert trainer.model.save_pretrained.call_args.args[0] == (
+            "/adapters/job-b/ckpt-step-1"
+        )
+
+    def test_does_not_save_when_strategy_is_none(self):
+        request = _request()
+        callback, _ = self._callback(request)
+        trainer = self._trainer(save_strategy="none")
+        callback.on_train_start(trainer)
+        trainer.global_step = 2
+        callback.on_train_batch_end(trainer)
+        trainer.model.save_pretrained.assert_not_called()
+
+    def test_does_not_save_a_final_or_epoch_adapter(self):
+        from tt_model_runners.forge_training_runners.blacksmith_callbacks import (
+            AdapterCheckpointCallback,
+        )
+
+        assert "on_train_end" not in AdapterCheckpointCallback.__dict__
+        assert "on_train_epoch_end" not in AdapterCheckpointCallback.__dict__
+
+    def test_records_train_and_val_loss(self):
+        request = _request()
+        callback, metrics = self._callback(request)
+        trainer = self._trainer(steps_freq=1)
+        metrics.last_train_loss = 0.5
+        metrics.last_val_loss = 1.25
+        callback.on_train_start(trainer)
+        trainer.global_step = 1
+        callback.on_train_batch_end(trainer)
+
+        assert request._training_checkpoints[0]["metrics"] == {
+            "train_loss": 0.5,
+            "val_loss": 1.25,
+        }
+

@@ -203,7 +203,7 @@ class TrainerTrainingLoraRunner(BaseDeviceRunner):
             checkpoint=CheckpointConfig(
                 steps_freq=max(request.save_interval, 1),
                 epoch_freq=1,
-                save_strategy="none",
+                save_strategy="step" if request.save_interval > 0 else "none",
                 project_dir=request._output_model_path or "",
                 final_checkpoint_name="adapter",
                 save_optim=False,
