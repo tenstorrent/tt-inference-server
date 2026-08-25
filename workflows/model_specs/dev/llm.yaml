@@ -636,6 +636,33 @@ templates:
       tool_call_parser_name: hermes
 
 - weights:
+    - LGAI-EXAONE/EXAONE-4.5-33B
+  impl: tt_transformers
+  system_requirements:
+    firmware:
+      specifier: ">=18.12.0"
+      mode: STRICT
+    kmd:
+      specifier: ">=2.4.1"
+      mode: STRICT
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text  # vision tower ported (models/demos/exaone45_vl) but not wired through vLLM yet
+  device_model_specs:
+    - device: P150X8
+      max_concurrency: 32
+      # 128K cap: chunked prefill is unsupported on the sliding-window layers;
+      # tt-metal MAX_PREFILL_CHUNK_SIZES declares {"P150x8": 128}.
+      max_context: 131072
+      default_impl: true
+      override_tt_config:
+        trace_region_size: 94371840  # 90 MB, per tt-metal models/model_trace_region_sizes.yaml
+  status: EXPERIMENTAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+
+- weights:
     - Qwen/Qwen3-32B
   impl: tt_transformers
   system_requirements:
