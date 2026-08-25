@@ -16,12 +16,14 @@ import logging
 from pathlib import Path
 from typing import Any, Mapping, Optional
 
+from workflow_module.target_pack import TargetPack
+
 logger = logging.getLogger(__name__)
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-class TenstorrentTargetPack:
+class TenstorrentTargetPack(TargetPack):
     """``TargetPack`` over the Tenstorrent ``reference_config/`` corpus."""
 
     # --- eval configs ---
