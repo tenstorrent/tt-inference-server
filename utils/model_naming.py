@@ -126,28 +126,43 @@ def slugify_name_parts(*parts: Optional[str]) -> str:
 
 
 def model_name_variants(model_id: str) -> Tuple[str, ...]:
-    """Every token a producer may plausibly have used for ``model_id``.
+    """Every token a tt-shield run has actually used for ``model_id``.
 
-    Ordered most- to least-canonical and de-duplicated. Readers match against
-    this instead of the canonical token alone, so a name survives producers
-    that have not adopted this module yet:
+    Ordered most- to least-canonical and de-duplicated:
 
-    1. ``Qwen__Qwen3-32B`` -- canonical.
-    2. ``Qwen/Qwen3-32B``  -- unescaped. Cannot occur in an artifact name
-       (GitHub rejects ``/``) but does occur in job names, which allow it.
-    3. ``Qwen_Qwen3-32B``  -- the single-underscore escape tt-shield's shell
-       step used before this contract existed.
-    4. ``Qwen3-32B``       -- the bare name model ids had before they became
-       full HF repo ids. Last, because it is the only ambiguous one: two orgs
-       can share a basename. No two models in ``models-ci-config.json``
-       currently do.
+    1. ``Qwen__Qwen3-32B`` -- canonical, and the only spelling produced once the
+       full-HF-repo-id migration has landed on both sides.
+    2. ``Qwen3-32B``       -- the bare name, i.e. what every run produced before
+       the migration, when ``models-ci-config.json`` keys had no org prefix.
+
+    Only those two, because only those two were ever written. Two spellings a
+    tolerant reader might expect are deliberately absent:
+
+    * **unescaped** (``Qwen/Qwen3-32B``) needs full config keys *and* a name
+      built from the identity rather than the token -- a combination that exists
+      only if the two halves of the migration land apart (tt-inference-server
+      #4722 without tt-shield #927). Merge them together and it never occurs.
+      GitHub rejects ``/`` in an artifact name outright, so this could only ever
+      have been a job name.
+    * **single-underscore** (``Qwen_Qwen3-32B``) came from tt-shield's old
+      ``Sanitize model name`` step. That step fed the ``report_`` artifact name
+      only -- never a job name -- and on the bare ids of the time it was a no-op.
+
+    Accepting either would mean carrying a permanently unexercised match, and
+    both are ambiguous against ids that contain their separator natively
+    (``microsoft/phi-1_5``).
+
+    The bare spelling is the remaining ambiguous one -- two orgs can share a
+    basename -- so it is tried last, and a caller resolving a *bare* input must
+    fail closed when more than one org matches. No two models in
+    ``models-ci-config.json`` currently collide. Drop it once no release older
+    than the migration needs its artifact bundle rebuilt; after that this is
+    exact-match only.
     """
     if not model_id:
         return ()
     variants = [
         slugify_model_id(model_id),
-        model_id,
-        model_id.replace("/", "_").replace("\\", "_").replace(" ", "_"),
         model_id.rsplit("/", 1)[-1],
     ]
     seen = set()

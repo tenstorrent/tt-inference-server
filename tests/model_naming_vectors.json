@@ -1,0 +1,71 @@
+{
+  "comment": [
+    "Golden vectors for the model identity <-> name token escape.",
+    "",
+    "This file is the cross-repo contract between tt-shield (which builds artifact",
+    "and CI job names) and tt-inference-server (which parses them back). The same",
+    "file lives at .github/scripts/model_naming_vectors.json in tt-shield and at",
+    "tests/model_naming_vectors.json in tt-inference-server, byte-identical, and",
+    "each repo asserts its own implementation against its own copy.",
+    "",
+    "Pinning the format with data rather than sharing code is deliberate: the",
+    "escape is one line, while sharing the code would mean one repo fetching and",
+    "executing the other's module at CI time. A drift then fails on the pull",
+    "request that introduced it, in the repo that introduced it.",
+    "",
+    "Adding a vector: add it to both copies in the same change. Every entry must",
+    "round-trip, i.e. unslugify(token) == identity."
+  ],
+  "escape": [
+    {
+      "identity": "meta-llama/Llama-3.1-8B-Instruct",
+      "token": "meta-llama__Llama-3.1-8B-Instruct",
+      "why": "the common case"
+    },
+    {
+      "identity": "microsoft/speecht5_tts",
+      "token": "microsoft__speecht5_tts",
+      "why": "a single underscore in the name, which is why the escape is __ and not _"
+    },
+    {
+      "identity": "microsoft/phi-1_5",
+      "token": "microsoft__phi-1_5",
+      "why": "a single underscore next to digits; must not be confused with the escape"
+    },
+    {
+      "identity": "yolox_nano",
+      "token": "yolox_nano",
+      "why": "bare id that already contains an underscore; unchanged in both directions"
+    },
+    {
+      "identity": "resnet-50",
+      "token": "resnet-50",
+      "why": "org-less Forge CNN id; passes through untouched"
+    },
+    {
+      "identity": "black-forest-labs/FLUX.1-dev",
+      "token": "black-forest-labs__FLUX.1-dev",
+      "why": "dots and hyphens on both sides of the separator"
+    },
+    {
+      "identity": "Qwen/Qwen2.5-VL-3B-Instruct",
+      "token": "Qwen__Qwen2.5-VL-3B-Instruct",
+      "why": "mixed case is significant: HF repo ids are case-sensitive"
+    },
+    {
+      "identity": "google/gemma-4-31B-it",
+      "token": "google__gemma-4-31B-it",
+      "why": "differs from google/gemma-4-31b-it only by case; both are distinct ids"
+    },
+    {
+      "identity": "google/gemma-4-31b-it",
+      "token": "google__gemma-4-31b-it",
+      "why": "see above -- collapsing the two would merge two different models"
+    },
+    {
+      "identity": "stabilityai/stable-diffusion-xl-base-1.0",
+      "token": "stabilityai__stable-diffusion-xl-base-1.0",
+      "why": "a long name ending in a version, as media models do"
+    }
+  ]
+}

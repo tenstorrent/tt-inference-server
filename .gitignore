@@ -72,6 +72,9 @@ scripts/examples/example_data
 !tt-media-server/monitoring/grafana/**/*.json
 !test_module/exabox/multi_user_turn_bench/prompts.json
 !test_module/exabox/summarize_bench/prompts_32k.jsonl
+# The cross-repo name-token contract. `*.json` above would silently drop an edit
+# to it, and tt-shield carries a byte-identical copy that has to stay in step.
+!tests/model_naming_vectors.json
 .github/workflows/*.json
 
 venv*/**

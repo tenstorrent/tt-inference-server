@@ -33,6 +33,8 @@ from utils.model_naming import (
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MODULE_PATH = REPO_ROOT / "utils" / "model_naming.py"
 CI_CONFIG = REPO_ROOT / ".github" / "workflows" / "models-ci-config.json"
+VECTORS_PATH = Path(__file__).with_name("model_naming_vectors.json")
+VECTORS = json.loads(VECTORS_PATH.read_text())["escape"]
 
 # Every shape a real model id takes: org-prefixed, bare, and carrying the
 # single underscores that force `__` as the separator.
@@ -44,6 +46,55 @@ MODEL_IDS = [
     "resnet-50",
     "yolox_nano",
 ]
+
+
+class TestGoldenVectors:
+    """The escape must match `model_naming_vectors.json`, byte for byte.
+
+    That file is the cross-repo contract. tt-shield carries the identical copy at
+    `.github/scripts/model_naming_vectors.json` and asserts its own escape
+    against it; this class is the tt-inference-server half. Pinning the format
+    with data rather than sharing code is deliberate -- sharing code would mean
+    one repo fetching and executing the other's module at CI time, which is what
+    this replaced. A vector added on one side and not the other fails here, on
+    the pull request that introduced the drift.
+
+    Add a vector to both copies in the same change.
+    """
+
+    @pytest.mark.parametrize(
+        "vector", VECTORS, ids=[v["identity"] for v in VECTORS]
+    )
+    def test_slugify_matches_vector(self, vector):
+        assert slugify_model_id(vector["identity"]) == vector["token"], vector["why"]
+
+    @pytest.mark.parametrize(
+        "vector", VECTORS, ids=[v["identity"] for v in VECTORS]
+    )
+    def test_round_trips(self, vector):
+        assert unslugify_model_id(vector["token"]) == vector["identity"], vector["why"]
+
+    def test_no_vector_collides(self):
+        """Two identities must never escape to the same token.
+
+        A collision makes a name ambiguous -- two models writing one artifact
+        name -- which is what the `__` escape exists to prevent. The pair
+        differing only by case is the sharpest instance.
+        """
+        tokens = [v["token"] for v in VECTORS]
+        assert len(set(tokens)) == len(tokens)
+
+    @pytest.mark.parametrize(
+        "vector", VECTORS, ids=[v["identity"] for v in VECTORS]
+    )
+    def test_every_token_is_artifact_name_safe(self, vector):
+        assert is_artifact_name_safe(vector["token"])
+
+    def test_the_copy_in_tt_shield_is_named_in_the_file(self):
+        """A reader who finds one copy must be able to find the other."""
+        comment = " ".join(json.loads(VECTORS_PATH.read_text())["comment"])
+        assert ".github/scripts/model_naming_vectors.json" in comment
+        assert "tests/model_naming_vectors.json" in comment
 
 
 class TestSlugifyRoundTrip:
@@ -109,13 +160,30 @@ class TestModelNameVariants:
         assert model_name_variants("Qwen/Qwen3-32B")[0] == "Qwen__Qwen3-32B"
 
     def test_covers_the_forms_producers_have_actually_used(self):
-        variants = model_name_variants("Qwen/Qwen3-32B")
-        assert set(variants) == {
+        assert model_name_variants("Qwen/Qwen3-32B") == (
             "Qwen__Qwen3-32B",  # canonical
-            "Qwen/Qwen3-32B",  # unescaped (job names)
-            "Qwen_Qwen3-32B",  # tt-shield's old single-underscore step
-            "Qwen3-32B",  # pre-HF-prefix model id
-        }
+            "Qwen3-32B",  # pre-migration model id, i.e. every older run
+        )
+
+    def test_unwritten_spellings_are_absent(self):
+        """Two spellings a tolerant reader might expect, and why they are not here.
+
+        `Qwen/Qwen3-32B` needs full config keys *and* a name built from the
+        identity instead of the token -- only reachable if the two halves of the
+        migration land apart. `Qwen_Qwen3-32B` came from tt-shield's old
+        `Sanitize model name` step, which fed the `report_` artifact name only,
+        never a job name, and was a no-op on the bare ids of the time.
+        """
+        variants = model_name_variants("Qwen/Qwen3-32B")
+        assert "Qwen/Qwen3-32B" not in variants
+        assert "Qwen_Qwen3-32B" not in variants
+
+    def test_a_native_separator_is_not_mistaken_for_an_escape(self):
+        """`microsoft/phi-1_5` is exactly why the single-`_` spelling is unsafe."""
+        assert model_name_variants("microsoft/phi-1_5") == (
+            "microsoft__phi-1_5",
+            "phi-1_5",
+        )
 
     def test_deduplicates_for_bare_ids(self):
         assert model_name_variants("resnet-50") == ("resnet-50",)
@@ -160,15 +228,23 @@ class TestWorkflowLogsArtifactName:
             is None
         )
 
-    def test_tolerates_producers_that_predate_the_contract(self):
-        """A bundle still resolves if it was named the old way."""
-        for name in (
-            "workflow_logs_release_Qwen_Qwen3-32B_p150_default",  # single "_"
-            "workflow_logs_release_Qwen3-32B_p150_default",  # no org prefix
-        ):
-            assert split_workflow_logs_artifact_name(
-                name, "release", "Qwen/Qwen3-32B"
-            ) == ("p150", "default")
+    def test_a_pre_migration_bundle_still_resolves(self):
+        """Every release before the migration named its bundles bare."""
+        assert split_workflow_logs_artifact_name(
+            "workflow_logs_release_Qwen3-32B_p150_default", "release", "Qwen/Qwen3-32B"
+        ) == ("p150", "default")
+
+    def test_a_single_underscore_bundle_is_not_a_match(self):
+        """No bundle was ever named that way, and `_` is the field separator of
+        this very grammar -- accepting it would make the name ambiguous."""
+        assert (
+            split_workflow_logs_artifact_name(
+                "workflow_logs_release_Qwen_Qwen3-32B_p150_default",
+                "release",
+                "Qwen/Qwen3-32B",
+            )
+            is None
+        )
 
     def test_missing_suffix_is_not_a_match(self):
         assert (
@@ -198,17 +274,21 @@ class TestCiJobName:
             device_from_ci_job_name(name, "release", "Qwen/Qwen3-32B", "p150") == "P150"
         )
 
-    def test_unescaped_model_id_still_resolves(self):
-        """The bug this contract exists to prevent.
-
-        A producer that interpolates the raw id puts a "/" in the job name.
-        Stripping the caller prefix by splitting on "/" would eat the org
-        prefix along with it and lose the device.
-        """
-        name = "call-release / run-release-Qwen/Qwen3-32B-p150-P150"
+    def test_a_caller_prefix_with_extra_separators_is_ignored(self):
+        """The marker is searched for, not reached by splitting: the caller prefix
+        the jobs API prepends can carry more separators than expected."""
+        name = "a / b / run-release-Qwen__Qwen3-32B-p150-P150"
         assert (
             device_from_ci_job_name(name, "release", "Qwen/Qwen3-32B", "p150") == "P150"
         )
+
+    def test_an_unescaped_model_id_is_not_a_match(self):
+        """A job name can only hold a raw `/` if the tt-inference-server and
+        tt-shield halves of the migration landed apart. They land together, so
+        this spelling is not accepted -- and matching it would require splitting
+        logic that eats the org prefix along with the caller prefix."""
+        name = "call-release / run-release-Qwen/Qwen3-32B-p150-P150"
+        assert device_from_ci_job_name(name, "release", "Qwen/Qwen3-32B", "p150") is None
 
     def test_trailing_punctuation_is_trimmed(self):
         name = "run-tests (run-release-Qwen__Qwen3-32B-p150-P150)"
@@ -258,12 +338,16 @@ class TestCiJobMatchesDevice:
         assert ci_job_matches_device(name, "release", "Qwen/Qwen3-32B", "P150")
         assert ci_job_matches_device(name, "release", "Qwen/Qwen3-32B", "p150")
 
-    def test_tolerates_producers_that_predate_the_contract(self):
-        for token in ("Qwen/Qwen3-32B", "Qwen_Qwen3-32B", "Qwen3-32B"):
+    def test_a_pre_migration_job_name_still_matches(self):
+        name = "run-tests / run-release-Qwen3-32B-p150-p150"
+        assert ci_job_matches_device(name, "release", "Qwen/Qwen3-32B", "P150")
+
+    def test_unwritten_spellings_do_not_match(self):
+        for token in ("Qwen/Qwen3-32B", "Qwen_Qwen3-32B"):
             name = f"run-tests / run-release-{token}-p150-p150"
-            assert ci_job_matches_device(name, "release", "Qwen/Qwen3-32B", "P150"), (
-                token
-            )
+            assert not ci_job_matches_device(
+                name, "release", "Qwen/Qwen3-32B", "P150"
+            ), token
 
     def test_a_missing_runner_label_is_not_a_match(self):
         assert not ci_job_matches_device(
