@@ -32,7 +32,11 @@ import numpy as np
 import torch
 from config.constants import ResponseFormat
 from domain.audio_processing_request import AudioProcessingRequest
-from domain.audio_text_response import AudioStreamChunk, AudioTextResponse, AudioTextSegment
+from domain.audio_text_response import (
+    AudioStreamChunk,
+    AudioTextResponse,
+    AudioTextSegment,
+)
 from safetensors import safe_open
 from transformers import AutoTokenizer, WhisperFeatureExtractor
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
@@ -63,7 +67,11 @@ QWEN3_ASR_MAX_NEW_TOKENS = int(os.environ.get("QWEN3ASR_MAX_NEW_TOKENS", "256"))
 QWEN3_ASR_BUCKETS_SEC = tuple(
     sorted(
         {
-            *(float(x) for x in os.environ.get("QWEN3ASR_BUCKETS_SEC", "4,8,16").split(",") if x.strip()),
+            *(
+                float(x)
+                for x in os.environ.get("QWEN3ASR_BUCKETS_SEC", "4,8,16").split(",")
+                if x.strip()
+            ),
             QWEN3_ASR_FIXED_SEC,
         }
     )
@@ -87,7 +95,9 @@ def _qwen_demo_root():
     for c in candidates:
         if c and os.path.isdir(os.path.join(c, "demo")):
             return c
-    raise RuntimeError("Could not locate models/demos/audio/qwen3_asr (set TT_METAL_HOME).")
+    raise RuntimeError(
+        "Could not locate models/demos/audio/qwen3_asr (set TT_METAL_HOME)."
+    )
 
 
 _QWEN_ROOT = _qwen_demo_root()
@@ -128,7 +138,9 @@ class TTQwen3AsrRunner(BaseMetalDeviceRunner):
     def _resolve_snapshot(self):
         """Return the local Qwen3-ASR-1.7B snapshot dir (download via HF cache if needed)."""
         weights = self.settings.model_weights_path or DEFAULT_HF_REPO
-        if os.path.isdir(weights) and os.path.exists(os.path.join(weights, "config.json")):
+        if os.path.isdir(weights) and os.path.exists(
+            os.path.join(weights, "config.json")
+        ):
             return weights
         try:
             return tq.find_snap()
@@ -140,27 +152,37 @@ class TTQwen3AsrRunner(BaseMetalDeviceRunner):
     async def warmup(self) -> bool:
         try:
             if self.ttnn_device is None:
-                raise RuntimeError("TTNN device not initialized (set_device not called)")
+                raise RuntimeError(
+                    "TTNN device not initialized (set_device not called)"
+                )
             self.logger.info(f"Device {self.device_id}: Loading Qwen3-ASR-1.7B...")
             await asyncio.to_thread(self._load_model)
-            self.logger.info(f"Device {self.device_id}: Model loaded; warming traces...")
+            self.logger.info(
+                f"Device {self.device_id}: Model loaded; warming traces..."
+            )
             await asyncio.to_thread(self._warm)
             self.logger.info(f"Device {self.device_id}: Qwen3-ASR ready.")
             return True
         except Exception as e:
             self.logger.error(f"Device {self.device_id}: Model loading failed: {e}")
-            raise RuntimeError(f"Device {self.device_id}: Model loading failed: {str(e)}") from e
+            raise RuntimeError(
+                f"Device {self.device_id}: Model loading failed: {str(e)}"
+            ) from e
 
     def _load_model(self):
         import json
 
         dev = self.ttnn_device
         snap = self._resolve_snapshot()
-        ckpt = tq.find_text_decoder(snap)  # auto-extracts the plain Qwen3 decoder once (cached)
+        ckpt = tq.find_text_decoder(
+            snap
+        )  # auto-extracts the plain Qwen3 decoder once (cached)
         # tt_transformers' ModelArgs loads the decoder weights/tokenizer from HF_MODEL.
         os.environ["HF_MODEL"] = ckpt
         os.environ["QWEN3ASR_TEXT_DECODER"] = ckpt
-        self.logger.info(f"Device {self.device_id}: snapshot={snap} text_decoder={ckpt}")
+        self.logger.info(
+            f"Device {self.device_id}: snapshot={snap} text_decoder={ckpt}"
+        )
 
         self.tok = AutoTokenizer.from_pretrained(ckpt)
         with open(os.path.join(snap, "chat_template.json")) as fh:
@@ -174,7 +196,12 @@ class TTQwen3AsrRunner(BaseMetalDeviceRunner):
         margs = ModelArgs(dev, max_batch_size=1, max_seq_len=2048)
         sd = margs.load_state_dict()
         self.model = Qwen3ASRDecoder(
-            margs, ttnn.bfloat16, dev, sd, margs.weight_cache_path(ttnn.bfloat16), use_paged_kv_cache=False
+            margs,
+            ttnn.bfloat16,
+            dev,
+            sd,
+            margs.weight_cache_path(ttnn.bfloat16),
+            use_paged_kv_cache=False,
         )
 
     def _warm(self):
@@ -186,7 +213,9 @@ class TTQwen3AsrRunner(BaseMetalDeviceRunner):
             try:
                 self._infer(dummy)
             except Exception as e:
-                self.logger.warning(f"Device {self.device_id}: warmup pass ({sec:g}s) skipped: {e}")
+                self.logger.warning(
+                    f"Device {self.device_id}: warmup pass ({sec:g}s) skipped: {e}"
+                )
                 break
 
     def _bucket_length(self, wav: np.ndarray) -> np.ndarray:
@@ -196,7 +225,9 @@ class TTQwen3AsrRunner(BaseMetalDeviceRunner):
         letting the encoder input length track the audio, so short clips skip the
         bulk of the full-28s encoder cost."""
         dur = len(wav) / SR
-        target = next((b for b in QWEN3_ASR_BUCKETS_SEC if dur <= b), QWEN3_ASR_BUCKETS_SEC[-1])
+        target = next(
+            (b for b in QWEN3_ASR_BUCKETS_SEC if dur <= b), QWEN3_ASR_BUCKETS_SEC[-1]
+        )
         n = int(round(target * SR))
         if len(wav) >= n:
             return wav[:n]
@@ -258,7 +289,9 @@ class TTQwen3AsrRunner(BaseMetalDeviceRunner):
         longer than the top bucket, so this is the single place that guards against
         silently truncating the tail. Returns (text, ntok, t_dec)."""
         parts, ntok, t_dec = [], 0, 0.0
-        for chunk in tq.chunk_wav(np.asarray(wav, dtype=np.float32), QWEN3_ASR_FIXED_SEC):
+        for chunk in tq.chunk_wav(
+            np.asarray(wav, dtype=np.float32), QWEN3_ASR_FIXED_SEC
+        ):
             if chunk is None or len(chunk) == 0:
                 continue
             _lang, text, nt, _te, td = self._infer(chunk)
@@ -289,7 +322,9 @@ class TTQwen3AsrRunner(BaseMetalDeviceRunner):
                 continue
             text, _nt, _td = self._infer_long(seg_audio)
             segments.append(
-                AudioTextSegment(id=i, speaker=speaker, start_time=start_t, end_time=end_t, text=text)
+                AudioTextSegment(
+                    id=i, speaker=speaker, start_time=start_t, end_time=end_t, text=text
+                )
             )
             if text:
                 full_text.append(text)
@@ -331,7 +366,9 @@ class TTQwen3AsrRunner(BaseMetalDeviceRunner):
         if request._segments:
             sr = self.settings.default_sample_rate
             raw = [
-                request._audio_array[int(float(s["start"]) * sr) : int(float(s["end"]) * sr)]
+                request._audio_array[
+                    int(float(s["start"]) * sr) : int(float(s["end"]) * sr)
+                ]
                 for s in request._segments
             ]
         else:
@@ -340,7 +377,9 @@ class TTQwen3AsrRunner(BaseMetalDeviceRunner):
         # exceed the top bucket; _bucket_length would otherwise truncate its tail).
         windows = []
         for r in raw:
-            windows.extend(tq.chunk_wav(np.asarray(r, dtype=np.float32), QWEN3_ASR_FIXED_SEC))
+            windows.extend(
+                tq.chunk_wav(np.asarray(r, dtype=np.float32), QWEN3_ASR_FIXED_SEC)
+            )
 
         chunk_id, parts = 0, []
         for win in windows:
