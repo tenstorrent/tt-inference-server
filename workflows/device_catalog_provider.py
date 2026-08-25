@@ -13,10 +13,11 @@ from __future__ import annotations
 
 from typing import List
 
+from workflow_module.device_catalog import DeviceCatalog
 from workflows.workflow_types import DeviceTypes
 
 
-class TenstorrentDeviceCatalog:
+class TenstorrentDeviceCatalog(DeviceCatalog):
     """``DeviceCatalog`` over the Tenstorrent ``DeviceTypes`` enum."""
 
     def device_names(self) -> List[str]:
