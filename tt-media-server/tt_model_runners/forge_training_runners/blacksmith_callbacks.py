@@ -47,14 +47,16 @@ class JobMetricsCallback(JobCallback):
 
     def _reset(self) -> None:
         self._running_loss = 0.0
-        self._step_running_loss = 0.0
         self._prev_global_step = 0
         self._val_batch = 0
         self.last_train_loss = None
         self.last_val_loss = None
 
-    def on_backward_end(self, trainer, loss, *args, **kwargs):
-        self._step_running_loss += loss.item()
+    def on_optimizer_step_end(self, trainer, window_loss, *args, **kwargs):
+        # optimizer_step has already synced; window_loss is the sum of scaled
+        # micro-batch losses for this accumulation window (the per-step mean).
+        # Do not read loss in on_backward_end: on TT it is still lazy.
+        self._running_loss += window_loss.item()
 
     def on_train_start(self, trainer, *args, **kwargs):
         # `Trainer.train` fires this even when config is unset; skip in that case.
@@ -101,11 +103,6 @@ class JobMetricsCallback(JobCallback):
         if trainer.global_step == self._prev_global_step:
             return
         self._prev_global_step = trainer.global_step
-
-        self._running_loss += (
-            self._step_running_loss / trainer.config.gradient_accumulation_steps
-        )
-        self._step_running_loss = 0.0
 
         self._logger.info(
             self._epoch_step_label(trainer),
@@ -179,10 +176,10 @@ class AdapterCheckpointCallback(JobCallback):
             # second copy of the base weights on every save.
             state_dict = {
                 key: value.cpu()
-                for key, value in trainer.peft_model.state_dict().items()
+                for key, value in trainer.model.state_dict().items()
                 if "lora_" in key
             }
-            trainer.peft_model.save_pretrained(checkpoint_path, state_dict=state_dict)
+            trainer.model.save_pretrained(checkpoint_path, state_dict=state_dict)
         except Exception as exception:
             self._logger.error(
                 f"Failed to save checkpoint at step {trainer.global_step}: {exception}"

@@ -8,8 +8,6 @@ import pytest
 from config.constants import DatasetLoaders, ModelNames, SupportedModels
 from domain.training_request import TrainingRequest
 
-RUNNER_MODULE = "tt_model_runners.forge_training_runners.trainer_training_lora_runner"
-
 MODEL_ID = ModelNames.GEMMA_1_1_2B_IT.value
 HF_REPO_ID = SupportedModels.GEMMA_1_1_2B_IT.value
 
@@ -96,52 +94,15 @@ class TestWarmup:
             runner._checkpoint_callback,
             runner._control_callback,
         ]
+        # Weights and the device are opened on the first job, not at warmup.
+        assert runner._trainer.config is None
+        assert not hasattr(runner._trainer, "model")
 
     @pytest.mark.asyncio
     async def test_rejects_multichip(self):
         runner = _build_runner(_settings(mesh_shape=(1, 2)))
         with pytest.raises(NotImplementedError, match="single-chip"):
             await runner.warmup()
-
-
-class TestBaseModelDtype:
-    @pytest.mark.asyncio
-    async def test_loads_base_model_once_while_dtype_is_unchanged(self, runner):
-        with patch(f"{RUNNER_MODULE}.AutoModelForCausalLM") as auto_model:
-            await runner.warmup()
-            runner._trainer.setup(runner._job_config(_request()))
-            runner._trainer.setup(runner._job_config(_request()))
-
-        assert auto_model.from_pretrained.call_count == 1
-
-    @pytest.mark.asyncio
-    async def test_reloads_base_model_when_dtype_changes(self, runner):
-        with patch(f"{RUNNER_MODULE}.AutoModelForCausalLM") as auto_model:
-            await runner.warmup()
-            runner._trainer.setup(runner._job_config(_request(dtype="torch.float32")))
-
-        assert auto_model.from_pretrained.call_count == 2
-        assert runner._trainer._base_model_dtype == "torch.float32"
-
-    @pytest.mark.asyncio
-    async def test_reuses_the_reloaded_base_model(self, runner):
-        with patch(f"{RUNNER_MODULE}.AutoModelForCausalLM") as auto_model:
-            await runner.warmup()
-            for _ in range(2):
-                runner._trainer.setup(
-                    runner._job_config(_request(dtype="torch.float32"))
-                )
-
-        # Warmup plus one reload; the second float32 job reuses what is resident.
-        assert auto_model.from_pretrained.call_count == 2
-
-    @pytest.mark.asyncio
-    async def test_dtype_survives_a_job_teardown(self, runner):
-        await runner.warmup()
-        runner.run([_request(dtype="torch.float32")])
-
-        assert runner._trainer.config is None
-        assert runner._trainer._base_model_dtype == "torch.float32"
 
 
 class TestJobConfig:
@@ -290,8 +251,8 @@ class TestRun:
         # The trainer is left ready for the next job.
         assert runner._trainer.config is None
 
-    # These patch the class rather than the instance: run() starts with
-    # trainer.setup(), whose cleanup() clears the instance __dict__.
+    # These patch the class rather than the instance: run()'s finally
+    # calls trainer.cleanup(), which clears the instance __dict__.
     @pytest.mark.asyncio
     async def test_reraises_failure_reported_through_callbacks(self, runner):
         await runner.warmup()
@@ -329,24 +290,16 @@ class TestRun:
         assert runner._trainer.config is None
 
 
-class TestJobLoraTrainer:
+class TestCleanup:
     @pytest.mark.asyncio
-    async def test_cleanup_unloads_adapter_and_keeps_base_model(self, runner):
+    async def test_cleanup_drops_the_model_and_keeps_callbacks(self, runner):
         await runner.warmup()
         trainer = runner._trainer
         trainer.setup(runner._job_config(_request()))
-        # Patched locally: conftest's `peft` mock is shared for the whole
-        # session, so its call counts leak between tests.
-        with patch(f"{RUNNER_MODULE}.get_peft_model") as get_peft_model:
-            trainer.model = trainer._load_model()
-        peft_model = get_peft_model.return_value
-        assert trainer.peft_model is peft_model
+        assert trainer.model is not None
 
         trainer.cleanup()
 
-        peft_model.unload.assert_called_once()
-        assert trainer._base_model is peft_model.unload.return_value
-        assert not hasattr(trainer, "peft_model")
         assert not hasattr(trainer, "model")
         assert trainer.config is None
         assert trainer.global_step == 0
@@ -462,17 +415,16 @@ class TestJobMetricsCallback:
         callback.bind(request)
         return callback
 
-    def test_averages_micro_batches_within_a_step(self):
+    def test_records_window_loss_after_an_optimizer_step(self):
         request = _request()
         callback = self._callback(request)
         trainer = _fake_trainer(grad_accum=2, steps_freq=1)
 
-        callback.on_backward_end(trainer, _Loss(2.0))
-        # First micro-batch: no optimizer step, so nothing is reported yet.
+        # Micro-batches that do not complete a step must not report a loss.
         callback.on_train_batch_end(trainer)
         assert request._training_metrics == []
 
-        callback.on_backward_end(trainer, _Loss(4.0))
+        callback.on_optimizer_step_end(trainer, _Loss(3.0))
         trainer.global_step = 1
         callback.on_train_batch_end(trainer)
 
@@ -485,7 +437,7 @@ class TestJobMetricsCallback:
         trainer = _fake_trainer(grad_accum=1, steps_freq=2)
 
         for step, loss in enumerate((1.0, 3.0), start=1):
-            callback.on_backward_end(trainer, _Loss(loss))
+            callback.on_optimizer_step_end(trainer, _Loss(loss))
             trainer.global_step = step
             callback.on_train_batch_end(trainer)
 
@@ -497,7 +449,7 @@ class TestJobMetricsCallback:
         trainer = _fake_trainer(grad_accum=1, steps_freq=2, num_epochs=3)
 
         for step, loss in enumerate((1.0, 3.0), start=1):
-            callback.on_backward_end(trainer, _Loss(loss))
+            callback.on_optimizer_step_end(trainer, _Loss(loss))
             trainer.global_step = step
             callback.on_train_batch_end(trainer)
 
