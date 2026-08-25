@@ -16,6 +16,7 @@ import logging
 from typing import Any, Optional
 
 from workflow_module.commands import ServerMode
+from workflow_module.server_lifecycle import ServerLifecycle
 from workflows.workflow_types import InferenceEngine
 
 logger = logging.getLogger(__name__)
@@ -26,12 +27,12 @@ _LITERAL_KEY_ENGINE_VALUES = frozenset(
 )
 
 
-class TenstorrentServerLifecycle:
+class TenstorrentServerLifecycle(ServerLifecycle):
     """``ServerLifecycle`` over the Tenstorrent docker/local launchers."""
 
     def launch(
         self,
-        mode: Any,
+        mode: ServerMode,
         model_spec: Any,
         runtime_config: Any,
         setup_config: Any,

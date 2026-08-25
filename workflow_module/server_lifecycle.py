@@ -23,6 +23,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional, Protocol, runtime_checkable
 
+from workflow_module.commands import ServerMode
+
 logger = logging.getLogger(__name__)
 
 
@@ -32,7 +34,7 @@ class ServerLifecycle(Protocol):
 
     def launch(
         self,
-        mode: Any,
+        mode: ServerMode,
         model_spec: Any,
         runtime_config: Any,
         setup_config: Any,
