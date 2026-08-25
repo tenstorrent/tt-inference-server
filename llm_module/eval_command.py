@@ -296,7 +296,7 @@ def build_eval_command(
         # payloads, independently of --gen_kwargs. Use the scoped wrapper so
         # --seed still controls harness RNGs without reaching the server.
         lm_eval_prefix = [
-            str(task_venv_config.venv_path / "bin" / "python"),
+            str(task_venv_path / "bin" / "python"),
             str(Path(__file__).with_name("lm_eval_no_server_seed.py")),
         ]
 
