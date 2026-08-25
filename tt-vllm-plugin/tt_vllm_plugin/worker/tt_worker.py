@@ -77,7 +77,8 @@ def get_num_available_blocks_tt(vllm_config: VllmConfig) -> int:
     num_devices_per_model = device_config.num_devices // data_parallel
 
     max_batch = scheduler_config.max_num_seqs
-    max_model_len = scheduler_config.max_model_len
+    # max_model_len moved off SchedulerConfig (InitVar only) to ModelConfig upstream.
+    max_model_len = model_config.max_model_len
 
     # Check if this is an embedding model using the explicit flag in override_tt_config
     # This flag is set by embedding models (Qwen3-Embedding, BGE, etc.) in their

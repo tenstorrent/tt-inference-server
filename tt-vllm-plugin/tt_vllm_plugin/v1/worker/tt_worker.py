@@ -452,6 +452,17 @@ class TTWorker(WorkerBase):
         output = self.model_runner.execute_model(scheduler_output)
         return output
 
+    def reset_encoder_cache(self) -> None:
+        # TT backend is text-only; there is no vision/encoder embedding
+        # cache to reset. vLLM's clear_cache path (invoked by /pause with
+        # clear_cache=True during RL weight swaps) calls this via
+        # collective_rpc; provide a no-op so pause succeeds instead of
+        # raising NotImplementedError (which would leave the engine paused).
+        runner = self.model_runner
+        enc = getattr(runner, "encoder_cache", None)
+        if isinstance(enc, dict):
+            enc.clear()
+
     def check_health(self) -> None:
         # Worker will always be healthy as long as it's running.
         return

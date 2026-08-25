@@ -226,13 +226,12 @@ class TTModelRunner:
             if req_index is not None:
                 removed_req_indices.append(req_index)
 
-        # Free the cached encoder outputs.
-        for req_id, input_id in scheduler_output.free_encoder_input_ids:
-            encoder_outputs = self.encoder_cache.get(req_id)
-            if encoder_outputs is not None:
-                encoder_outputs.pop(input_id, None)
-                if not encoder_outputs:
-                    self.encoder_cache.pop(req_id, None)
+        # Free the cached encoder outputs. Upstream switched the encoder
+        # cache to a flat mm_hash -> output map
+        # (SchedulerOutput.free_encoder_mm_hashes); TT is text-only so this
+        # is effectively a no-op, but must use the new field/key.
+        for mm_hash in scheduler_output.free_encoder_mm_hashes:
+            self.encoder_cache.pop(mm_hash, None)
 
         # Remove the unscheduled requests from the persistent batch.
         # NOTE(woosuk): The unscheduled requests are either preempted requests
@@ -273,8 +272,7 @@ class TTModelRunner:
                 num_computed_tokens=new_req_data.num_computed_tokens,
                 output_token_ids=[],
                 lora_request=new_req_data.lora_request,
-                mm_kwargs=getattr(new_req_data, "mm_kwargs", []),
-                mm_positions=getattr(new_req_data, "mm_positions", []),
+                mm_features=getattr(new_req_data, "mm_features", []),
             )
 
             req_ids_to_add.append(req_id)

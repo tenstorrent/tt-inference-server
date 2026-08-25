@@ -52,6 +52,9 @@ class InputBatch:
             pin_memory=False,
             device="cpu",
             block_sizes=block_sizes,
+            # kernel_block_sizes became required upstream; TT uses no kernel-level
+            # sub-block splitting, so mirror block_sizes 1:1.
+            kernel_block_sizes=block_sizes,
         )
 
         self.req_output_token_ids: list[Optional[list[int]]] = []

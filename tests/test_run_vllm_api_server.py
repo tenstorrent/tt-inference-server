@@ -231,6 +231,68 @@ def test_resolve_service_port_reads_port_from_sys_argv(
     assert run_vllm_api_server_module.resolve_service_port() == expected_port
 
 
+@pytest.mark.parametrize(
+    "plugin_config",
+    [
+        json.dumps({"tt": {}}),
+        {"tt": {}},
+        "",
+        "not-json",
+        None,
+    ],
+)
+def test_absorb_plugin_config_no_op_leaves_no_additional_config(
+    run_vllm_api_server_module, plugin_config
+):
+    default_vllm_args = {"port": 8000}
+    if plugin_config is not None:
+        default_vllm_args["plugin_config"] = plugin_config
+
+    run_vllm_api_server_module.absorb_plugin_config_into_additional_config(
+        default_vllm_args
+    )
+
+    assert "plugin_config" not in default_vllm_args
+    assert "plugin-config" not in default_vllm_args
+    assert "additional_config" not in default_vllm_args
+
+
+def test_absorb_plugin_config_merges_into_additional_config_tt(
+    run_vllm_api_server_module,
+):
+    default_vllm_args = {
+        "port": 8000,
+        "plugin_config": json.dumps({"tt": {"trace_mode": False, "foo": 1}}),
+    }
+
+    run_vllm_api_server_module.absorb_plugin_config_into_additional_config(
+        default_vllm_args
+    )
+
+    assert "plugin_config" not in default_vllm_args
+    assert default_vllm_args["additional_config"] == {
+        "tt": {"trace_mode": False, "foo": 1}
+    }
+
+
+def test_absorb_plugin_config_does_not_clobber_existing_tt_keys(
+    run_vllm_api_server_module,
+):
+    default_vllm_args = {
+        "plugin_config": {"tt": {"tt_data_parallel": 99, "foo": 1}},
+        "additional_config": {"tt": {"tt_data_parallel": 2}},
+    }
+
+    run_vllm_api_server_module.absorb_plugin_config_into_additional_config(
+        default_vllm_args
+    )
+
+    assert default_vllm_args["additional_config"]["tt"] == {
+        "tt_data_parallel": 2,
+        "foo": 1,
+    }
+
+
 def test_main_passes_passthrough_port_to_trace_capture(
     monkeypatch, run_vllm_api_server_module
 ):

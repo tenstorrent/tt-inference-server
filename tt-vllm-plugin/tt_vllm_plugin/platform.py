@@ -62,6 +62,12 @@ class TTPlatform(Platform):
         )
         vllm_config.scheduler_config.enable_chunked_prefill = False
         vllm_config.scheduler_config.chunked_prefill_enabled = False
+        # Async scheduling (default in newer vLLM) drives max_concurrent_batches=2,
+        # which enables the batch-queue step path (step_with_batch_queue) that calls
+        # worker.sample_tokens() as a separate step. The TT worker only implements the
+        # synchronous execute_model (sampling inline), so force sync scheduling.
+        logger.info("Async scheduling is not supported for TT backend; disabling it.")
+        vllm_config.scheduler_config.async_scheduling = False
         logger.info(
             f"max_num_batched_tokens: {vllm_config.scheduler_config.max_num_batched_tokens}"
         )
@@ -215,9 +221,8 @@ class TTPlatform(Platform):
     @classmethod
     def validate_request(
         cls,
-        prompt: PromptType,
-        params: Union[SamplingParams, PoolingParams],
         processed_inputs: ProcessorInputs,
+        params: Union[SamplingParams, PoolingParams],
     ) -> None:
         """Raises if this request is unsupported on this platform"""
 
@@ -226,10 +231,6 @@ class TTPlatform(Platform):
         if isinstance(params, SamplingParams):
             if params.n != 1:
                 raise ValueError(f"Currently only supporting n=1 on {cls.device_name}.")
-            if params.best_of is not None:
-                raise ValueError(
-                    f"Currently not supporting best_of on {cls.device_name}"
-                )
             if params.prompt_logprobs is not None:
                 raise ValueError(
                     f"Currently not supporting prompt_logprobs on {cls.device_name}"

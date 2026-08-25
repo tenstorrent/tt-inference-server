@@ -852,6 +852,40 @@ def inject_tt_weight_bridge_dir(default_vllm_args):
     )
 
 
+def inject_tt_colocated_fabric_config(default_vllm_args):
+    """Force ``additional_config['tt']['fabric_config'] = FABRIC_2D`` on the
+    co-located RL inference server so the vLLM worker joins the SAME
+    world-collective ``SetFabricConfig`` the trainer issues via
+    ``enable_fabric``. Single-chip inference (P150) otherwise skips fabric
+    setup entirely (``get_fabric_config`` returns None for num_devices==1),
+    leaving the trainer's fabric-config all_gather without a peer -> deadlock.
+    Only fires co-located; never overrides an explicit fabric_config.
+    """
+    if os.getenv("TT_COLOCATED_INFERENCE") != "1":
+        return
+    additional = default_vllm_args.get("additional_config")
+    if not isinstance(additional, dict):
+        additional = {}
+    tt_cfg = additional.get("tt")
+    if not isinstance(tt_cfg, dict):
+        tt_cfg = {}
+    if "fabric_config" not in tt_cfg:
+        tt_cfg["fabric_config"] = "FABRIC_2D"
+    # RL rollouts issue many prompts of varying lengths, so the model
+    # captures more distinct prefill traces at runtime than a fixed-length
+    # inference warmup. The stock default (~50MB) overflows
+    # (mesh_trace.cpp: get_trace_buffers_size() <= trace_region_size).
+    # Reserve a larger trace region co-located; never override an explicit one.
+    if "trace_region_size" not in tt_cfg:
+        tt_cfg["trace_region_size"] = 134217728
+    additional["tt"] = tt_cfg
+    default_vllm_args["additional_config"] = additional
+    logger.info(
+        "Injected fabric_config=FABRIC_2D into additional_config['tt'] "
+        "(co-located: match trainer enable_fabric world-collective)"
+    )
+
+
 def main():
     # Step 1: Parse --model argument (if provided)
     args, remaining_sys_argv = parse_args()
@@ -895,6 +929,7 @@ def main():
     absorb_plugin_config_into_additional_config(default_vllm_args)
     inject_tt_data_parallel(default_vllm_args)
     inject_tt_weight_bridge_dir(default_vllm_args)
+    inject_tt_colocated_fabric_config(default_vllm_args)
     set_vllm_sys_argv(args, remaining_sys_argv, default_vllm_args)
 
     # Step 5: Start trace capture if needed
