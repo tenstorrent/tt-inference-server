@@ -16,12 +16,13 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from workflow_module.venv_provisioner import VenvProvisioner
 from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger(__name__)
 
 
-class TenstorrentVenvProvisioner:
+class TenstorrentVenvProvisioner(VenvProvisioner):
     """``VenvProvisioner`` over the Tenstorrent ``VENV_CONFIGS`` registry."""
 
     def has_venv(self, venv_type: Any) -> bool:
