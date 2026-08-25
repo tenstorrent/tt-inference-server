@@ -31,8 +31,6 @@ def resolve_adapter(adapter: str) -> AdapterInfo:
     adapters_base = adapters_root()
     adapter_path = os.path.join(adapters_base, adapter)
 
-    # Reject path traversal: the resolved adapter must stay inside adapters_base
-    # so an identifier like "../evil" cannot escape the adapters store.
     real_base = os.path.realpath(adapters_base)
     real_adapter = os.path.realpath(adapter_path)
     if os.path.commonpath([real_base, real_adapter]) != real_base:
