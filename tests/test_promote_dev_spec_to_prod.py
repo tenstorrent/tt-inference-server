@@ -33,6 +33,26 @@ PINS = {
 }
 
 
+_DEFAULT_IMPL_ENTRY = """
+            - weights: [org/model]
+              impl: tt_transformers
+              inference_engine: VLLM
+              version: "1.0.0"
+              tt_metal_commit: aaaaaaa
+              vllm_commit: aaaaaaa
+              device_model_specs:
+                - {device: N150, max_concurrency: 32, max_context: 65536, default_impl: true}"""
+
+_ALTERNATE_IMPL_ENTRY = """
+            - weights: [org/model]
+              impl: forge_vllm_plugin
+              inference_engine: FORGE
+              version: "2.0.0"
+              tt_metal_commit: bbbbbbb
+              device_model_specs:
+                - {device: N150, max_concurrency: 1, max_context: 2048}"""
+
+
 def _write_catalogs(tmp_path, *, dev_llm, prod_llm):
     dev_dir = tmp_path / "dev"
     prod_dir = tmp_path / "prod"
@@ -494,6 +514,37 @@ def test_second_promotion_is_byte_idempotent(tmp_path):
     assert {
         path.name: path.read_bytes() for path in prod_dir.glob("*.yaml")
     } == after_first
+
+
+@pytest.mark.parametrize("default_first", [True, False])
+def test_docs_document_the_default_impl_regardless_of_catalog_order(
+    tmp_path, default_first
+):
+    """The page headlines the default implementation, not the first entry.
+
+    Selecting by catalog order let a non-default impl become the documented
+    configuration merely by being listed first, putting its own batch and
+    context limits into the quickstart a reader copies.
+    """
+    entries = [_DEFAULT_IMPL_ENTRY, _ALTERNATE_IMPL_ENTRY]
+    if not default_first:
+        entries.reverse()
+    _, prod_dir = _write_catalogs(
+        tmp_path,
+        dev_llm="templates: []\n",
+        prod_llm="templates:" + "".join(entries) + "\n",
+    )
+    templates = load_templates_from_yaml(prod_dir / "llm.yaml")
+
+    docs = tmp_path / "docs"
+    with contextlib.redirect_stdout(io.StringIO()):
+        generate_doc_pages(templates, str(docs))
+    page = (docs / "llm" / "model_n150.md").read_text()
+
+    assert "| Implementation Code | [tt-transformers" in page
+    assert "| Max Batch Size | 32 |" in page
+    assert "#### Additional released configurations" in page
+    assert "| `forge-vllm-plugin` |" in page
 
 
 def test_docs_show_limits_for_heterogeneous_release_configurations(tmp_path):

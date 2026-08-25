@@ -544,6 +544,14 @@ def generate_model_page_group_page(
                     device_template_map[device].append((template, dev_spec))
                     break
         if device_template_map[device]:
+            # The default implementation is what a user gets without asking for
+            # one, so it is the configuration the page documents; the rest go
+            # into the additional-configurations table. Taking the first entry
+            # in catalog order instead made that depend on entry order, so a
+            # non-default impl listed first became the headline configuration
+            # and its batch and context limits went into the quickstart. Stable
+            # sort, so catalog order still decides among equals.
+            device_template_map[device].sort(key=lambda item: not item[1].default_impl)
             supported_devices_in_group.append(device)
 
     if not supported_devices_in_group:

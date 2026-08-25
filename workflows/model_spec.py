@@ -1072,12 +1072,6 @@ class ModelSpecTemplate:
         specs = []
 
         for weight in self.weights:
-            # Targets are looked up for the weight being expanded, not for the
-            # family it is listed under. A family member is a different model:
-            # grading it against a sibling's numbers reports a pass or a fail
-            # that was never measured for it. A weight with no entry in
-            # model_performance_reference.json therefore carries no targets
-            # rather than borrowing another model's.
             perf_reference_map = get_perf_reference_map(
                 model_weights_to_model_name(weight), self.perf_targets_map
             )
@@ -1094,12 +1088,6 @@ class ModelSpecTemplate:
                     device_model_spec, perf_reference_map
                 )
 
-                # Carry the catalog device spec over wholesale and substitute only
-                # the derived field. Listing the copied fields by hand silently
-                # dropped every field added later without updating the list, so a
-                # catalog setting reached the dataclass but never the runtime spec.
-                # perf_reference stays explicit because it is the one field the
-                # catalog must not supply -- see _build_device_model_spec().
                 device_model_spec_with_perf = replace(
                     device_model_spec, perf_reference=perf_reference
                 )
