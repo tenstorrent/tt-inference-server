@@ -8,11 +8,11 @@ from __future__ import annotations
 
 import io
 import json
+import subprocess
+import tempfile
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Iterable
-
 from scripts.release.model_spec_resolver import LeafIdentity
 from workflows.model_spec import (
     MODEL_SPEC_CATALOG_FILES,
@@ -111,57 +111,44 @@ def load_prod_leaves(prod_dir: Path):
     return leaves
 
 
-def expand_raw_prod_blocks(blocks: Iterable[dict]):
-    """Expand coarse historical prod blocks for exact before-value lookup."""
-    leaves = {}
-    for block in blocks:
-        try:
-            engine = InferenceEngine.from_string(block["inference_engine"]).value
-            impl_id = str(block["impl"])
-            weights = block["weights"]
-            devices = block["device_model_specs"]
-        except (AttributeError, KeyError, TypeError, ValueError) as exc:
-            raise ValueError(f"Invalid prod block: {block!r}") from exc
-        for weight in weights:
-            for device_spec in devices:
-                device = DeviceTypes.from_string(device_spec["device"]).to_string()
-                identity = (str(weight), device, engine, impl_id)
-                if identity in leaves:
-                    raise ValueError(f"Duplicate historical prod identity {identity!r}")
-                version = block.get("version")
-                tt_metal_commit = block.get("tt_metal_commit")
-                vllm_commit = block.get("vllm_commit")
-                leaves[identity] = ProdLeaf(
-                    identity=identity,
-                    pin=ProdPin(
-                        version=str(version) if version is not None else "",
-                        tt_metal_commit=str(tt_metal_commit)
-                        if tt_metal_commit is not None
-                        else "",
-                        vllm_commit=str(vllm_commit)
-                        if vllm_commit is not None
-                        else None,
-                        docker_image=block.get("docker_image"),
-                    ),
-                    status=str(block.get("status") or "EXPERIMENTAL"),
-                )
-    return leaves
+def load_prod_leaves_from_ref(ref: str):
+    """Index the prod catalogue at a git ref by exact leaf identity.
+
+    The base side of a release comparison is read through the same loader as the
+    working tree, so both sides are validated identically and a change is only
+    ever reported between two leaves that exist. This requires the ref to carry
+    the leaf-granular catalogue; a coarse ref fails here rather than being
+    widened on the fly into leaves the catalogue never actually pinned.
+    """
+    with tempfile.TemporaryDirectory() as temp_dir:
+        prod_dir = Path(temp_dir) / "prod"
+        prod_dir.mkdir()
+        for filename in MODEL_SPEC_CATALOG_FILES:
+            try:
+                text = subprocess.run(
+                    ["git", "show", f"{ref}:workflows/model_specs/prod/{filename}"],
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                ).stdout
+            except subprocess.CalledProcessError as exc:
+                raise ValueError(
+                    f"Could not read prod catalog {filename!r} from ref {ref!r}"
+                ) from exc
+            (prod_dir / filename).write_text(text)
+        return load_prod_leaves(prod_dir)
 
 
 def identity_from_model_spec_document(document: dict) -> LeafIdentity:
-    """Extract exact identity from modern or legacy runtime-spec JSON."""
+    """Extract exact identity from a runtime-spec JSON document."""
     if not isinstance(document, dict):
         raise ValueError("Runtime model spec must be a JSON object")
     if isinstance(document.get("runtime_model_spec"), dict):
         document = document["runtime_model_spec"]
-    elif isinstance(document.get("model_spec"), dict):
-        document = document["model_spec"]
 
     try:
         hf_repo = document["hf_model_repo"]
-        raw_device = document.get("device_type")
-        if raw_device is None:
-            raw_device = document["device_model_spec"]["device"]
+        raw_device = document["device_type"]
         raw_engine = document["inference_engine"]
         implementation = document["impl"]
         impl_id = (
@@ -200,7 +187,7 @@ def identity_from_model_spec_document(document: dict) -> LeafIdentity:
 def _is_runtime_spec_path(name: str) -> bool:
     path = PurePosixPath(name)
     return path.suffix.lower() == ".json" and any(
-        part in {"runtime_model_specs", "run_specs"} for part in path.parts
+        part == "runtime_model_specs" for part in path.parts
     )
 
 

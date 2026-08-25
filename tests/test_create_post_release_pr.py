@@ -10,7 +10,6 @@ import pytest
 
 from scripts.release.create_post_release_pr import (
     build_rows,
-    load_prod_blocks_from_ref,
     render_body,
     render_table,
     resolve_release_scope,
@@ -18,7 +17,7 @@ from scripts.release.create_post_release_pr import (
 from scripts.release.release_scope import (
     ProdLeaf,
     ProdPin,
-    expand_raw_prod_blocks,
+    load_prod_leaves_from_ref,
 )
 from workflows.model_spec import MODEL_SPEC_CATALOG_FILES
 
@@ -72,20 +71,13 @@ def _prod_leaf(version="1.2.3"):
 
 def test_exact_release_row_uses_default_leaf_full_repo_and_pins(tmp_path):
     scope = _scope(tmp_path)
-    base = expand_raw_prod_blocks(
-        [
-            {
-                "weights": ["Qwen/Qwen3-32B", "Qwen/Qwen3-14B"],
-                "impl": "qwen3_32b_galaxy",
-                "inference_engine": "VLLM",
-                "version": "1.0.0",
-                "tt_metal_commit": "old-metal",
-                "vllm_commit": "old-vllm",
-                "status": "FUNCTIONAL",
-                "device_model_specs": [{"device": "GALAXY"}],
-            }
-        ]
-    )
+    base = {
+        IDENTITY: ProdLeaf(
+            identity=IDENTITY,
+            pin=ProdPin("1.0.0", "old-metal", "old-vllm", None),
+            status="FUNCTIONAL",
+        )
+    }
 
     rows = build_rows(
         scope,
@@ -98,11 +90,10 @@ def test_exact_release_row_uses_default_leaf_full_repo_and_pins(tmp_path):
     )
     table = render_table(rows)
 
+    # The dev catalogue offers two impls on GALAXY; only the default one is the
+    # release leaf, and its commit is reported as the old -> new change.
     assert [item.identity for item in scope] == [IDENTITY]
     assert table.count("Qwen/Qwen3-32B") == 1
-    assert "Qwen/Qwen3-14B" not in table
-    # The base block bundled two weights under one pin; only the released leaf
-    # is reported, and its commit is shown as the old -> new change.
     assert "`old-metal` → `metal`" in table
     assert "No change [FUNCTIONAL]" in table
 
@@ -236,7 +227,7 @@ def test_invalid_base_ref_fails_instead_of_appearing_new(monkeypatch):
 
     monkeypatch.setattr(subprocess, "run", fail)
     with pytest.raises(ValueError, match="Could not read prod catalog"):
-        load_prod_blocks_from_ref("not-a-ref")
+        load_prod_leaves_from_ref("not-a-ref")
 
 
 def test_one_legacy_basename_job_cannot_link_two_repositories():

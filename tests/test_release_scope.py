@@ -38,11 +38,10 @@ def _bundle_bytes(document=None, *, path="runtime_model_specs/spec.json"):
     "document",
     [
         {"runtime_model_spec": _model_spec(), "runtime_config": {}},
-        {"model_spec": _model_spec()},
         _model_spec(),
     ],
 )
-def test_identity_from_modern_and_legacy_runtime_specs(document):
+def test_identity_from_wrapped_and_bare_runtime_specs(document):
     assert identity_from_model_spec_document(document) == IDENTITY
 
 
@@ -65,12 +64,6 @@ def test_runtime_identity_rejects_non_string_or_empty_fields(field, value):
     document["impl"]["impl_id"] = value
     with pytest.raises(ValueError, match="invalid exact identity fields"):
         identity_from_model_spec_document(document)
-
-
-def test_extract_bundle_identity_accepts_legacy_run_specs():
-    bundle = _bundle_bytes({"model_spec": _model_spec()}, path="run_specs/old.json")
-
-    assert extract_bundle_identity(bundle) == IDENTITY
 
 
 def test_extract_bundle_identity_rejects_missing_and_conflicting_specs():

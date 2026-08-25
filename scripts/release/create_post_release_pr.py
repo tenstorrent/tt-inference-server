@@ -64,11 +64,10 @@ from scripts.release.model_spec_resolver import (  # noqa: E402
 )
 from scripts.release.release_scope import (  # noqa: E402
     UNKNOWN,
-    expand_raw_prod_blocks,
     load_prod_leaves,
+    load_prod_leaves_from_ref,
 )
 from utils.model_naming import ci_job_matches_device  # noqa: E402
-from workflows.model_spec import MODEL_SPEC_CATALOG_FILES  # noqa: E402
 
 DEFAULT_CI_CONFIG = REPO_ROOT / ".github" / "workflows" / "models-ci-config.json"
 DEFAULT_DEV_DIR = REPO_ROOT / "workflows" / "model_specs" / "dev"
@@ -123,33 +122,6 @@ def resolve_release_scope(ci_config: dict, dev_dir: Path):
             )
         owner_by_repo_device[repo_device] = item.identity
     return tuple(resolved)
-
-
-# ---------------------------------------------------------------------------
-# prod catalogue parsing
-# ---------------------------------------------------------------------------
-def load_prod_blocks_from_ref(ref: str) -> list[dict]:
-    """Raw prod blocks from a git ref.
-
-    The base ref may predate the leaf-granular prod catalogue, so the blocks are
-    returned unexpanded and widened by expand_raw_prod_blocks() instead.
-    """
-    blocks: list[dict] = []
-    for filename in MODEL_SPEC_CATALOG_FILES:
-        try:
-            text = subprocess.run(
-                ["git", "show", f"{ref}:workflows/model_specs/prod/{filename}"],
-                capture_output=True,
-                text=True,
-                check=True,
-            ).stdout
-        except subprocess.CalledProcessError as exc:
-            raise ValueError(
-                f"Could not read prod catalog {filename!r} from base ref {ref!r}"
-            ) from exc
-        document = yaml.safe_load(text) or {}
-        blocks.extend(document.get("templates", []))
-    return blocks
 
 
 # ---------------------------------------------------------------------------
@@ -504,7 +476,7 @@ def main() -> None:
         ci_config = json.loads(args.ci_config.read_text())
         scope = resolve_release_scope(ci_config, _safe_repo_path(args.dev_dir))
         current_prod = load_prod_leaves(_safe_repo_path(args.prod_dir))
-        base_prod = expand_raw_prod_blocks(load_prod_blocks_from_ref(args.base_ref))
+        base_prod = load_prod_leaves_from_ref(args.base_ref)
         rows = build_rows(
             scope,
             current_prod,
