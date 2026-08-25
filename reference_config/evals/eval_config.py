@@ -4532,7 +4532,10 @@ _eval_config_list = [
                 gen_kwargs={
                     "stream": "false",
                     "max_gen_toks": 124 * 1024,
-                    "until": [],
+                    # Dynamo frontend rejects empty stop. HF tokenizer_config.json
+                    # eos_token for google/gemma-4-31B-it (id 1; generation_config
+                    # also stops on <end_of_turn> 106 and <|tool_response> 50).
+                    "until": ["<eos>"],
                     "do_sample": "true",
                     "temperature": 1.0,
                     "top_k": 20,
