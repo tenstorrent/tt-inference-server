@@ -1347,7 +1347,7 @@ ModelConfigs = {
         "queue_for_multiprocessing": QueueType.FasterFifo.value,
     },
     (ModelRunners.QWEN_EMBEDDING_8B, DeviceTypes.N300): {
-        "device_mesh_shape": (2, 1),
+        "device_mesh_shape": (1, 2),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_1.value,
         "max_batch_size": 2,
@@ -1363,7 +1363,7 @@ ModelConfigs = {
         "queue_for_multiprocessing": QueueType.FasterFifo.value,
     },
     (ModelRunners.QWEN_EMBEDDING_8B, DeviceTypes.T3K): {
-        "device_mesh_shape": (2, 1),
+        "device_mesh_shape": (1, 2),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 2,
