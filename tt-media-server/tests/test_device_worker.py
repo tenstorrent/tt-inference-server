@@ -52,6 +52,7 @@ class MockImageGenerateRequest:
         self.prompt = prompt
         self.num_inference_steps = num_inference_steps
         self.stream = False  # Default to non-streaming
+        self._start_event = Mock()
 
 
 _orig_image_generate_request = sys.modules.get("domain.image_generate_request")
@@ -273,6 +274,8 @@ class TestDeviceWorker:
         assert len(call_args) == 2
         assert call_args[0]._task_id == "task_1"
         assert call_args[1]._task_id == "task_2"
+        for request in mock_requests:
+            request._start_event.set.assert_called()
 
         mock_timer_instance.start.assert_called_once()
         mock_timer_instance.cancel.assert_called_once()
