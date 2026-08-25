@@ -29,12 +29,46 @@ cache:
 # (tt-media-server) env vars are set so each server picks up the name it reads.
 hfCacheDir: ""
 
+# Tenstorrent boards need 1Gi hugepages unless the cluster runs IOMMU + KMD
+# 1.29.0+, where they aren't required. When disabled, the chart drops the
+# hugepages-1Gi request/limit, the /dev/hugepages-1G volume + mounts, and the
+# cleanup-hugepages initContainer.
+hugepages:
+  enabled: true
+
+# PodMonitor scraping the inference server's own /metrics (vLLM and media-server
+# expose it). Disabled by default: a PodMonitor needs the Prometheus Operator
+# CRDs (monitoring.coreos.com), and rendering one without them fails at install.
+podMonitor:
+  enabled: false
+  # Labels added to the PodMonitor so your Prometheus's podMonitorSelector
+  # matches it, or it won't be scraped. The default matches tt-telemetry's chart
+  # and the kube-prometheus-stack convention (its podMonitorSelector defaults to
+  # release: <the stack's own release name>). Override when your Prometheus was
+  # installed under a different release name.
+  labels:
+    release: prometheus
+  interval: 30s
+  path: /metrics
+
 # ---------------------------------------------------------------------------
 # Defaults — merged with (and overridden by) per-model config below.
 # ---------------------------------------------------------------------------
 defaults:
   replicaCount: 1
   progressDeadlineSeconds: 3600
+  # DRA: devices acquired via a ResourceClaim served by tt-operator's tt-dra-driver.
+  # Board count comes from deviceBoardCounts (per device); only the DeviceClass
+  # name is set here.
+  dra:
+    deviceClassName: tenstorrent.com
+  # maxSurge=0 frees the outgoing Pod's board + hugepages before its replacement
+  # starts; maxUnavailable=1 rolls one Pod at a time when replicaCount > 1.
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   podAnnotations: {}
   podSecurityContext: {}
   image:
@@ -55,24 +89,59 @@ defaults:
       memory: 64Gi
       hugepages-1Gi: 32Gi
   probes:
+    # startupProbe owns the model compile/warmup window; while it runs the kubelet
+    # suppresses liveness/readiness. Its failureThreshold is computed in the
+    # Deployment as ceil(progressDeadlineSeconds / periodSeconds), so the budget
+    # tracks the max compile time — no per-model initialDelaySeconds to hand-sync.
+    # Always rendered (no enable toggle): disabling it would let liveness, whose
+    # initialDelaySeconds defaults to 0, restart the container mid-compile.
+    startup:
+      periodSeconds: 15
     liveness:
       enabled: true
       path: /v1/models
-      initialDelaySeconds: 2400
     readiness:
       enabled: true
       path: /health
-      initialDelaySeconds: 2400
   nodeSelector: {}
   tolerations: []
-  # User-supplied affinity. MERGED with the chart's hardcoded device-collision
-  # podAntiAffinity term (see tt-inference-server.affinity in _helpers.tpl) —
-  # nodeAffinity / podAffinity / extra podAntiAffinity terms all apply, but
-  # the 1:1 Pod-to-Node guarantee from issue #2801 is unconditional and cannot
-  # be disabled from values. replicaCount must not exceed the number of nodes
-  # matching nodeSelector/tolerations or pods will sit Pending.
+  # User-supplied affinity, applied as-is. v0.2: the chart no longer injects a
+  # 1:1-Pod-per-Node podAntiAffinity — DRA prevents device collisions by
+  # allocation, so multiple Pods may run on one Node (e.g. 4 single-n300 Pods on
+  # a T3K). Add your own nodeAffinity / podAffinity / podAntiAffinity here if
+  # needed.
   affinity: {}
   extraEnv: []
+
+# DRA boardName per device — the tt-dra-driver `boardName` attribute a ResourceClaim selects (CEL) for each device shape.
+# Generated from workflows/device_utils.py:BOARD_TYPE_COUNT_TO_DEVICE; consumed by tt-inference-server.draBoardName.
+deviceBoardNames:
+  galaxy: galaxy-wormhole
+  n150: n150
+  n150x4: n150
+  n300: n300
+  p100: p100
+  p150: p150
+  p150x4: p150
+  p150x8: p150
+  p300: p300
+  p300x2: p300
+  t3k: n300
+
+# DRA board count per device — number of Tenstorrent boards a ResourceClaim requests for each device shape.
+# Generated from workflows/device_utils.py:BOARD_TYPE_COUNT_TO_DEVICE; consumed by tt-inference-server.draDeviceCount.
+deviceBoardCounts:
+  galaxy: 32
+  n150: 1
+  n150x4: 4
+  n300: 1
+  p100: 1
+  p150: 1
+  p150x4: 4
+  p150x8: 8
+  p300: 1
+  p300x2: 2
+  t3k: 4
 
 # ---------------------------------------------------------------------------
 # Per-model configuration — keyed by model -> engine -> device -> impl.
@@ -91,11 +160,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.10.0-e867533-8f36910
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 50Gi
@@ -128,11 +192,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.10.0-e867533-8f36910
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 50Gi
@@ -163,11 +222,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.10.0-e867533-8f36910
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 50Gi
@@ -197,11 +251,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.17.0-8c48a10-f52987a
-            probes:
-              liveness:
-                initialDelaySeconds: 3600
-              readiness:
-                initialDelaySeconds: 3600
             resources:
               requests:
                 memory: 300Gi
@@ -230,11 +279,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.17.0-8c48a10-f52987a
-            probes:
-              liveness:
-                initialDelaySeconds: 3600
-              readiness:
-                initialDelaySeconds: 3600
             resources:
               requests:
                 memory: 300Gi
@@ -263,11 +307,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.17.0-8c48a10-f52987a
-            probes:
-              liveness:
-                initialDelaySeconds: 3600
-              readiness:
-                initialDelaySeconds: 3600
             resources:
               requests:
                 memory: 300Gi
@@ -299,11 +338,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.3.0-ae65ee5-35f023f
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 10Gi
@@ -330,11 +364,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.3.0-ae65ee5-35f023f
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 10Gi
@@ -364,11 +393,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-c254ee3-c4f2327
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 2Gi
@@ -396,11 +420,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.10.0-e0e0500-409b1cd
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 20Gi
@@ -425,11 +444,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.10.0-e0e0500-409b1cd
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 20Gi
@@ -456,11 +470,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.10.0-e0e0500-409b1cd
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 20Gi
@@ -487,11 +496,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.10.0-e0e0500-409b1cd
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 20Gi
@@ -522,11 +526,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.10.0-e0e0500-409b1cd
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 20Gi
@@ -553,11 +552,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.10.0-e867533-22be241
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 20Gi
@@ -586,10 +580,7 @@ models:
               tag: 709c6a767e00ee7f2803e20851193ac0d6aaff3b_e0b9595_75385194349
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 12Gi
@@ -614,10 +605,7 @@ models:
               tag: 709c6a767e00ee7f2803e20851193ac0d6aaff3b_e0b9595_75385194349
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 12Gi
@@ -644,10 +632,7 @@ models:
               tag: 709c6a767e00ee7f2803e20851193ac0d6aaff3b_e0b9595_75385194349
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 12Gi
@@ -672,11 +657,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.11.1-bac8b34-7c6685a
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 80Gi
@@ -700,11 +680,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-e95ffa5-48eba14
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 80Gi
@@ -733,11 +708,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-e95ffa5-48eba14
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 80Gi
@@ -766,11 +736,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-e95ffa5-48eba14
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 80Gi
@@ -803,11 +768,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.10.1-555f240-22be241
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 80Gi
@@ -834,11 +794,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.17.0-8c48a10-f52987a
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 80Gi
@@ -868,11 +823,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-9b67e09-a91b644
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 17Gi
@@ -899,11 +849,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-9b67e09-a91b644
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 17Gi
@@ -932,11 +877,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-9b67e09-a91b644
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 17Gi
@@ -968,11 +908,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-e95ffa5-48eba14
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 80Gi
@@ -1001,11 +936,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-e95ffa5-48eba14
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 80Gi
@@ -1034,11 +964,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-e95ffa5-48eba14
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 80Gi
@@ -1074,11 +999,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-13f44c5-0edd242
-            probes:
-              liveness:
-                initialDelaySeconds: 3600
-              readiness:
-                initialDelaySeconds: 3600
             resources:
               requests:
                 memory: 180Gi
@@ -1109,11 +1029,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-13f44c5-0edd242
-            probes:
-              liveness:
-                initialDelaySeconds: 3600
-              readiness:
-                initialDelaySeconds: 3600
             resources:
               requests:
                 memory: 180Gi
@@ -1144,11 +1059,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-13f44c5-0edd242
-            probes:
-              liveness:
-                initialDelaySeconds: 3600
-              readiness:
-                initialDelaySeconds: 3600
             resources:
               requests:
                 memory: 180Gi
@@ -1186,11 +1096,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-13f44c5-0edd242
-            probes:
-              liveness:
-                initialDelaySeconds: 3600
-              readiness:
-                initialDelaySeconds: 3600
             resources:
               requests:
                 memory: 180Gi
@@ -1221,11 +1126,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-13f44c5-0edd242
-            probes:
-              liveness:
-                initialDelaySeconds: 3600
-              readiness:
-                initialDelaySeconds: 3600
             resources:
               requests:
                 memory: 180Gi
@@ -1256,11 +1156,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-13f44c5-0edd242
-            probes:
-              liveness:
-                initialDelaySeconds: 3600
-              readiness:
-                initialDelaySeconds: 3600
             resources:
               requests:
                 memory: 180Gi
@@ -1298,11 +1193,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-5b5db8a-e771fff
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 17Gi
@@ -1331,11 +1221,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-5b5db8a-e771fff
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 17Gi
@@ -1365,11 +1250,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-5b5db8a-e771fff
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 17Gi
@@ -1398,11 +1278,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-5b5db8a-e771fff
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 17Gi
@@ -1432,11 +1307,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.10.0-e867533-8f36910
-            probes:
-              liveness:
-                initialDelaySeconds: 3600
-              readiness:
-                initialDelaySeconds: 3600
             resources:
               requests:
                 memory: 175Gi
@@ -1461,11 +1331,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.11.1-750ca54-38dee8c
-            probes:
-              liveness:
-                initialDelaySeconds: 3600
-              readiness:
-                initialDelaySeconds: 3600
             resources:
               requests:
                 memory: 175Gi
@@ -1496,11 +1361,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.10.1-555f240-22be241
-            probes:
-              liveness:
-                initialDelaySeconds: 3600
-              readiness:
-                initialDelaySeconds: 3600
             resources:
               requests:
                 memory: 175Gi
@@ -1525,11 +1385,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.10.1-555f240-22be241
-            probes:
-              liveness:
-                initialDelaySeconds: 3600
-              readiness:
-                initialDelaySeconds: 3600
             resources:
               requests:
                 memory: 175Gi
@@ -1554,11 +1409,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.16.0-669d59e-3334377
-            probes:
-              liveness:
-                initialDelaySeconds: 3600
-              readiness:
-                initialDelaySeconds: 3600
             resources:
               requests:
                 memory: 175Gi
@@ -1583,11 +1433,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.2.0-v0.62.0-rc33-e7c329b
-            probes:
-              liveness:
-                initialDelaySeconds: 3600
-              readiness:
-                initialDelaySeconds: 3600
             resources:
               requests:
                 memory: 175Gi
@@ -1625,11 +1470,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.10.0-e867533-8f36910
-            probes:
-              liveness:
-                initialDelaySeconds: 3600
-              readiness:
-                initialDelaySeconds: 3600
             resources:
               requests:
                 memory: 175Gi
@@ -1654,11 +1494,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.11.1-750ca54-38dee8c
-            probes:
-              liveness:
-                initialDelaySeconds: 3600
-              readiness:
-                initialDelaySeconds: 3600
             resources:
               requests:
                 memory: 175Gi
@@ -1689,11 +1524,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.10.1-555f240-22be241
-            probes:
-              liveness:
-                initialDelaySeconds: 3600
-              readiness:
-                initialDelaySeconds: 3600
             resources:
               requests:
                 memory: 175Gi
@@ -1718,11 +1548,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.10.1-555f240-22be241
-            probes:
-              liveness:
-                initialDelaySeconds: 3600
-              readiness:
-                initialDelaySeconds: 3600
             resources:
               requests:
                 memory: 175Gi
@@ -1747,11 +1572,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.16.0-669d59e-3334377
-            probes:
-              liveness:
-                initialDelaySeconds: 3600
-              readiness:
-                initialDelaySeconds: 3600
             resources:
               requests:
                 memory: 175Gi
@@ -1776,11 +1596,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.2.0-v0.62.0-rc33-e7c329b
-            probes:
-              liveness:
-                initialDelaySeconds: 3600
-              readiness:
-                initialDelaySeconds: 3600
             resources:
               requests:
                 memory: 175Gi
@@ -1818,10 +1633,7 @@ models:
               tag: 0.11.1-2496be4
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 80Gi
@@ -1851,11 +1663,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.10.0-e867533-8f36910
-            probes:
-              liveness:
-                initialDelaySeconds: 3600
-              readiness:
-                initialDelaySeconds: 3600
             resources:
               requests:
                 memory: 175Gi
@@ -1880,11 +1687,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.11.1-750ca54-38dee8c
-            probes:
-              liveness:
-                initialDelaySeconds: 3600
-              readiness:
-                initialDelaySeconds: 3600
             resources:
               requests:
                 memory: 175Gi
@@ -1915,11 +1717,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.10.1-555f240-22be241
-            probes:
-              liveness:
-                initialDelaySeconds: 3600
-              readiness:
-                initialDelaySeconds: 3600
             resources:
               requests:
                 memory: 175Gi
@@ -1944,11 +1741,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.10.1-555f240-22be241
-            probes:
-              liveness:
-                initialDelaySeconds: 3600
-              readiness:
-                initialDelaySeconds: 3600
             resources:
               requests:
                 memory: 175Gi
@@ -1973,11 +1765,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.16.0-669d59e-3334377
-            probes:
-              liveness:
-                initialDelaySeconds: 3600
-              readiness:
-                initialDelaySeconds: 3600
             resources:
               requests:
                 memory: 175Gi
@@ -2002,11 +1789,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.2.0-v0.62.0-rc33-e7c329b
-            probes:
-              liveness:
-                initialDelaySeconds: 3600
-              readiness:
-                initialDelaySeconds: 3600
             resources:
               requests:
                 memory: 175Gi
@@ -2044,11 +1826,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.10.0-e867533-8f36910
-            probes:
-              liveness:
-                initialDelaySeconds: 3600
-              readiness:
-                initialDelaySeconds: 3600
             resources:
               requests:
                 memory: 175Gi
@@ -2073,11 +1850,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.11.1-750ca54-38dee8c
-            probes:
-              liveness:
-                initialDelaySeconds: 3600
-              readiness:
-                initialDelaySeconds: 3600
             resources:
               requests:
                 memory: 175Gi
@@ -2108,11 +1880,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.10.1-555f240-22be241
-            probes:
-              liveness:
-                initialDelaySeconds: 3600
-              readiness:
-                initialDelaySeconds: 3600
             resources:
               requests:
                 memory: 175Gi
@@ -2137,11 +1904,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.10.1-555f240-22be241
-            probes:
-              liveness:
-                initialDelaySeconds: 3600
-              readiness:
-                initialDelaySeconds: 3600
             resources:
               requests:
                 memory: 175Gi
@@ -2166,11 +1928,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.16.0-669d59e-3334377
-            probes:
-              liveness:
-                initialDelaySeconds: 3600
-              readiness:
-                initialDelaySeconds: 3600
             resources:
               requests:
                 memory: 175Gi
@@ -2195,11 +1952,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.2.0-v0.62.0-rc33-e7c329b
-            probes:
-              liveness:
-                initialDelaySeconds: 3600
-              readiness:
-                initialDelaySeconds: 3600
             resources:
               requests:
                 memory: 175Gi
@@ -2237,11 +1989,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.12.0-805f43d-a45c614
-            probes:
-              liveness:
-                initialDelaySeconds: 4266
-              readiness:
-                initialDelaySeconds: 4266
             env:
               - name: ARCH_NAME
                 value: wormhole_b0
@@ -2266,11 +2013,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.11.1-84b4c53-222ee06
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 2Gi
@@ -2297,11 +2039,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.11.1-84b4c53-222ee06
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 2Gi
@@ -2330,11 +2067,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.11.1-84b4c53-222ee06
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 2Gi
@@ -2366,11 +2098,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.11.1-84b4c53-222ee06
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 2Gi
@@ -2397,11 +2124,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.11.1-84b4c53-222ee06
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 2Gi
@@ -2430,11 +2152,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.11.1-84b4c53-222ee06
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 2Gi
@@ -2466,11 +2183,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.3.0-20edc39-03cb300
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 7Gi
@@ -2495,11 +2207,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.3.0-20edc39-03cb300
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 7Gi
@@ -2526,11 +2233,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.3.0-20edc39-03cb300
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 7Gi
@@ -2560,10 +2262,7 @@ models:
               tag: 0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 8Gi
@@ -2588,10 +2287,7 @@ models:
               tag: 0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 8Gi
@@ -2618,10 +2314,7 @@ models:
               tag: 709c6a767e00ee7f2803e20851193ac0d6aaff3b_e0b9595_75385194349
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 8Gi
@@ -2647,11 +2340,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.3.0-20edc39-03cb300
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 7Gi
@@ -2676,11 +2364,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.3.0-20edc39-03cb300
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 7Gi
@@ -2707,11 +2390,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.3.0-20edc39-03cb300
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 7Gi
@@ -2742,10 +2420,7 @@ models:
               tag: 709c6a767e00ee7f2803e20851193ac0d6aaff3b_e0b9595_75385194349
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 8Gi
@@ -2772,10 +2447,7 @@ models:
               tag: 709c6a767e00ee7f2803e20851193ac0d6aaff3b_e0b9595_75385194349
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 8Gi
@@ -2804,10 +2476,7 @@ models:
               tag: 709c6a767e00ee7f2803e20851193ac0d6aaff3b_e0b9595_75385194349
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 8Gi
@@ -2832,11 +2501,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-25305db-6e67d2d
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 20Gi
@@ -2861,11 +2525,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-25305db-6e67d2d
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 20Gi
@@ -2892,11 +2551,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-25305db-6e67d2d
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 20Gi
@@ -2923,11 +2577,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-25305db-6e67d2d
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 20Gi
@@ -2950,11 +2599,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.18.0-c49bb76-6b4a3a7
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 20Gi
@@ -2979,11 +2623,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.18.0-c49bb76-6b4a3a7
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 20Gi
@@ -3008,11 +2647,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.10.0-55fd115-aa4ae1e
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 20Gi
@@ -3037,11 +2671,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.10.1-555f240-22be241
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 20Gi
@@ -3066,11 +2695,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.19.0-b204341-9bd099c
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 20Gi
@@ -3095,11 +2719,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.19.0-b204341-9bd099c
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 20Gi
@@ -3126,11 +2745,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.11.1-bac8b34-7c6685a
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 20Gi
@@ -3157,11 +2771,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.11.1-bac8b34-7c6685a
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 20Gi
@@ -3197,11 +2806,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-25305db-6e67d2d
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 20Gi
@@ -3226,11 +2830,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-25305db-6e67d2d
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 20Gi
@@ -3257,11 +2856,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-25305db-6e67d2d
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 20Gi
@@ -3288,11 +2882,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-25305db-6e67d2d
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 20Gi
@@ -3315,11 +2904,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.18.0-c49bb76-6b4a3a7
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 20Gi
@@ -3344,11 +2928,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.18.0-c49bb76-6b4a3a7
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 20Gi
@@ -3373,11 +2952,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.10.0-55fd115-aa4ae1e
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 20Gi
@@ -3402,11 +2976,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.10.1-555f240-22be241
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 20Gi
@@ -3431,11 +3000,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.19.0-b204341-9bd099c
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 20Gi
@@ -3460,11 +3024,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.19.0-b204341-9bd099c
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 20Gi
@@ -3491,11 +3050,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.11.1-bac8b34-7c6685a
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 20Gi
@@ -3522,11 +3076,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.11.1-bac8b34-7c6685a
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 20Gi
@@ -3563,10 +3112,7 @@ models:
               tag: 709c6a767e00ee7f2803e20851193ac0d6aaff3b_e0b9595_75385194349
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 12Gi
@@ -3591,10 +3137,7 @@ models:
               tag: 709c6a767e00ee7f2803e20851193ac0d6aaff3b_e0b9595_75385194349
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 12Gi
@@ -3621,10 +3164,7 @@ models:
               tag: 709c6a767e00ee7f2803e20851193ac0d6aaff3b_e0b9595_75385194349
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 12Gi
@@ -3649,11 +3189,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-17a5973-aa4ae1e
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 80Gi
@@ -3682,11 +3217,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-17a5973-aa4ae1e
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 80Gi
@@ -3722,11 +3252,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-c254ee3-c4f2327
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 10Gi
@@ -3751,11 +3276,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-c254ee3-c4f2327
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 10Gi
@@ -3782,11 +3302,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-aecd1d7-0da90eb
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 10Gi
@@ -3813,11 +3328,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-aecd1d7-0da90eb
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 10Gi
@@ -3845,11 +3355,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-c254ee3-c4f2327
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 10Gi
@@ -3874,11 +3379,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-c254ee3-c4f2327
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 10Gi
@@ -3905,11 +3405,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-aecd1d7-0da90eb
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 10Gi
@@ -3936,11 +3431,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-aecd1d7-0da90eb
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 10Gi
@@ -3968,11 +3458,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-0b10c51-3499ffa
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 67Gi
@@ -3999,11 +3484,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-0b10c51-3499ffa
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 67Gi
@@ -4034,11 +3514,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-0b10c51-3499ffa
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 67Gi
@@ -4065,11 +3540,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-aecd1d7-0da90eb
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 67Gi
@@ -4097,11 +3567,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-0b10c51-3499ffa
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 67Gi
@@ -4128,11 +3593,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-0b10c51-3499ffa
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 67Gi
@@ -4163,11 +3623,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-0b10c51-3499ffa
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 67Gi
@@ -4194,11 +3649,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-aecd1d7-0da90eb
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 67Gi
@@ -4226,11 +3676,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.14.0-80180b9-7678b70
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 80Gi
@@ -4262,11 +3707,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-c18569e-b2894d3
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 7Gi
@@ -4293,11 +3733,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-c18569e-b2894d3
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 7Gi
@@ -4329,11 +3764,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-c18569e-b2894d3
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 17Gi
@@ -4360,11 +3790,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-c18569e-b2894d3
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 17Gi
@@ -4396,11 +3821,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-c18569e-b2894d3
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 80Gi
@@ -4432,11 +3852,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-c18569e-b2894d3
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 180Gi
@@ -4465,11 +3880,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-c18569e-b2894d3
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 180Gi
@@ -4497,11 +3907,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-v0.61.1-rc1-5cbc982
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 27Gi
@@ -4528,11 +3933,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-v0.61.1-rc1-5cbc982
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 27Gi
@@ -4562,11 +3962,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-v0.61.1-rc1-5cbc982
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 27Gi
@@ -4593,11 +3988,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-v0.61.1-rc1-5cbc982
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 27Gi
@@ -4627,11 +4017,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-v0.61.1-rc1-5cbc982
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 225Gi
@@ -4663,11 +4048,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.9.0-v0.61.1-rc1-5cbc982
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 225Gi
@@ -4701,10 +4081,7 @@ models:
               tag: 0.10.0-555f240
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 32Gi
@@ -4725,10 +4102,7 @@ models:
               tag: 0.10.0-555f240
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 32Gi
@@ -4747,10 +4121,7 @@ models:
               tag: 0.10.0-555f240
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 32Gi
@@ -4769,10 +4140,7 @@ models:
               tag: 0.10.0-555f240
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 32Gi
@@ -4791,10 +4159,7 @@ models:
               tag: 0.10.0-555f240
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 32Gi
@@ -4816,10 +4181,7 @@ models:
               tag: 0.10.0-555f240
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 32Gi
@@ -4840,10 +4202,7 @@ models:
               tag: 0.10.0-555f240
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 32Gi
@@ -4862,10 +4221,7 @@ models:
               tag: 0.10.0-555f240
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 32Gi
@@ -4884,10 +4240,7 @@ models:
               tag: 0.10.1-555f240
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 32Gi
@@ -4906,10 +4259,7 @@ models:
               tag: 0.17.0-8c48a10
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 32Gi
@@ -4933,10 +4283,7 @@ models:
               tag: 0.11.1-bac8b34
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -4955,10 +4302,7 @@ models:
               tag: 0.11.1-bac8b34
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -4979,10 +4323,7 @@ models:
               tag: 0.11.1-bac8b34
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -5003,10 +4344,7 @@ models:
               tag: 0.11.1-bac8b34
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -5025,10 +4363,7 @@ models:
               tag: 0.11.1-bac8b34
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -5047,10 +4382,7 @@ models:
               tag: 0.11.1-bac8b34
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -5069,10 +4401,7 @@ models:
               tag: 0.11.1-bac8b34
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -5091,10 +4420,7 @@ models:
               tag: 0.11.1-bac8b34
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -5115,10 +4441,7 @@ models:
               tag: 0.13.0-079a2c2
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -5139,10 +4462,7 @@ models:
               tag: 0.13.0-079a2c2
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -5165,10 +4485,7 @@ models:
               tag: 0.11.1-bac8b34
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -5187,10 +4504,7 @@ models:
               tag: 0.11.1-bac8b34
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -5211,10 +4525,7 @@ models:
               tag: 0.11.1-bac8b34
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -5235,10 +4546,7 @@ models:
               tag: 0.11.1-bac8b34
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -5257,10 +4565,7 @@ models:
               tag: 0.11.1-bac8b34
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -5279,10 +4584,7 @@ models:
               tag: 0.11.1-bac8b34
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -5301,10 +4603,7 @@ models:
               tag: 0.11.1-bac8b34
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -5323,10 +4622,7 @@ models:
               tag: 0.11.1-bac8b34
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -5348,10 +4644,7 @@ models:
               tag: 0.9.0-c180ef7
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -5372,10 +4665,7 @@ models:
               tag: 0.9.0-c180ef7
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -5397,10 +4687,7 @@ models:
               tag: 0.5.0-fbbbd2da8cfab49ddf43d28dd9c0813a3c3ee2bd
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -5419,10 +4706,7 @@ models:
               tag: 0.5.0-fbbbd2da8cfab49ddf43d28dd9c0813a3c3ee2bd
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -5443,10 +4727,7 @@ models:
               tag: 0.5.0-fbbbd2da8cfab49ddf43d28dd9c0813a3c3ee2bd
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -5467,10 +4748,7 @@ models:
               tag: 0.5.0-fbbbd2da8cfab49ddf43d28dd9c0813a3c3ee2bd
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -5489,10 +4767,7 @@ models:
               tag: 0.5.0-fbbbd2da8cfab49ddf43d28dd9c0813a3c3ee2bd
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -5511,10 +4786,7 @@ models:
               tag: 0.5.0-fbbbd2da8cfab49ddf43d28dd9c0813a3c3ee2bd
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -5533,10 +4805,7 @@ models:
               tag: 0.5.0-fbbbd2da8cfab49ddf43d28dd9c0813a3c3ee2bd
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -5555,10 +4824,7 @@ models:
               tag: 0.5.0-fbbbd2da8cfab49ddf43d28dd9c0813a3c3ee2bd
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -5580,10 +4846,7 @@ models:
               tag: 0.10.0-555f240
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -5604,10 +4867,7 @@ models:
               tag: 0.10.0-555f240
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -5626,10 +4886,7 @@ models:
               tag: 0.10.0-555f240
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -5648,10 +4905,7 @@ models:
               tag: 0.17.0-8c48a10
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -5670,10 +4924,7 @@ models:
               tag: 0.10.0-555f240
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -5692,10 +4943,7 @@ models:
               tag: 0.10.1-555f240
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -5717,10 +4965,7 @@ models:
               tag: 0.10.0-555f240
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -5741,10 +4986,7 @@ models:
               tag: 0.10.0-555f240
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -5763,10 +5005,7 @@ models:
               tag: 0.10.0-555f240
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -5785,10 +5024,7 @@ models:
               tag: 0.18.0-c49bb76
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -5807,10 +5043,7 @@ models:
               tag: 0.10.0-555f240
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -5829,10 +5062,7 @@ models:
               tag: 0.10.1-555f240
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -5854,10 +5084,7 @@ models:
               tag: 0.9.0-c180ef7
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -5878,10 +5105,7 @@ models:
               tag: 0.9.0-c180ef7
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -5900,10 +5124,7 @@ models:
               tag: 0.9.0-c180ef7
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -5922,10 +5143,7 @@ models:
               tag: 0.9.0-c180ef7
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -5947,10 +5165,7 @@ models:
               tag: 0.9.0-be88351
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -5973,10 +5188,7 @@ models:
               tag: 0.9.0-be88351
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -5998,10 +5210,7 @@ models:
               tag: 0.9.0-be88351
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -6024,10 +5233,7 @@ models:
               tag: 0.9.0-be88351
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -6049,10 +5255,7 @@ models:
               tag: 0.17.0-8c48a10
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -6071,10 +5274,7 @@ models:
               tag: 0.17.0-8c48a10
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -6095,10 +5295,7 @@ models:
               tag: 0.17.0-8c48a10
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -6117,10 +5314,7 @@ models:
               tag: 0.17.0-8c48a10
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -6141,10 +5335,7 @@ models:
               tag: 0.15.0-25891d3
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -6165,10 +5356,7 @@ models:
               tag: 0.11.1-2508216
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -6189,10 +5377,7 @@ models:
               tag: 0.15.0-25891d3
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -6216,10 +5401,7 @@ models:
               tag: 0.17.0-8c48a10
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -6238,10 +5420,7 @@ models:
               tag: 0.17.0-8c48a10
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -6262,10 +5441,7 @@ models:
               tag: 0.17.0-8c48a10
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -6284,10 +5460,7 @@ models:
               tag: 0.17.0-8c48a10
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -6308,10 +5481,7 @@ models:
               tag: 0.15.0-25891d3
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -6332,10 +5502,7 @@ models:
               tag: 0.11.1-2508216
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -6356,10 +5523,7 @@ models:
               tag: 0.15.0-25891d3
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -6383,10 +5547,7 @@ models:
               tag: 0.9.0-a9b09e0
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -6405,10 +5566,7 @@ models:
               tag: 0.9.0-a9b09e0
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -6429,10 +5587,7 @@ models:
               tag: 0.15.0-25891d3
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -6453,10 +5608,7 @@ models:
               tag: 0.10.0-2508216
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -6477,10 +5629,7 @@ models:
               tag: 0.15.0-25891d3
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -6504,10 +5653,7 @@ models:
               tag: 0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -6538,10 +5684,7 @@ models:
               tag: 0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -6574,10 +5717,7 @@ models:
               tag: 0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -6610,10 +5750,7 @@ models:
               tag: 0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -6649,10 +5786,7 @@ models:
               tag: 0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -6679,10 +5813,7 @@ models:
               tag: 0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -6711,10 +5842,7 @@ models:
               tag: 0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -6743,10 +5871,7 @@ models:
               tag: 0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -6772,14 +5897,11 @@ models:
           forge_vllm_plugin:
             progressDeadlineSeconds: 5400
             image:
-              repository: ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge
-              tag: a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673
+              repository: ghcr.io/tenstorrent/tt-media-inference-server-forge
+              tag: 0.20.0-de59f8a
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -6806,14 +5928,11 @@ models:
           forge_vllm_plugin:
             progressDeadlineSeconds: 5400
             image:
-              repository: ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge
-              tag: a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673
+              repository: ghcr.io/tenstorrent/tt-media-inference-server-forge
+              tag: 0.20.0-de59f8a
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -6842,14 +5961,11 @@ models:
           forge_vllm_plugin:
             progressDeadlineSeconds: 5400
             image:
-              repository: ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge
-              tag: a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673
+              repository: ghcr.io/tenstorrent/tt-media-inference-server-forge
+              tag: 0.20.0-de59f8a
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -6878,14 +5994,11 @@ models:
           forge_vllm_plugin:
             progressDeadlineSeconds: 5400
             image:
-              repository: ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge
-              tag: a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673
+              repository: ghcr.io/tenstorrent/tt-media-inference-server-forge
+              tag: 0.20.0-de59f8a
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -6906,6 +6019,47 @@ models:
                 value: '1'
               - name: VLLM__MIN_CONTEXT_LENGTH
                 value: '32'
+      p300x2:
+        defaultImpl: forge_vllm_plugin
+        impls:
+          forge_vllm_plugin:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-media-inference-server-forge
+              tag: 0.20.0-de59f8a
+            probes:
+              liveness:
+                path: /tt-liveness
+            resources:
+              requests:
+                memory: 6Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: BENCHMARK_MAX_CONCURRENCY
+                value: '32'
+              - name: DEFAULT_THROTTLE_LEVEL
+                value: '0'
+              - name: MAX_BATCH_SIZE
+                value: '8'
+              - name: MESH_DEVICE
+                value: P300x2
+              - name: MODEL_RUNNER
+                value: vllmforge_qwen_embedding
+              - name: TT_MESH_GRAPH_DESC_PATH
+                value: /home/container_app_user/app/server/venv-worker/lib/python3.12/site-packages/pjrt_plugin_tt/tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_mesh_graph_descriptor.textproto
+              - name: TT_METAL_INSPECTOR_RPC
+                value: '0'
+              - name: USE_DYNAMIC_BATCHER
+                value: 'false'
+              - name: VLLM__MAX_MODEL_LENGTH
+                value: '128'
+              - name: VLLM__MAX_NUM_BATCHED_TOKENS
+                value: '1024'
+              - name: VLLM__MAX_NUM_SEQS
+                value: '8'
+              - name: VLLM__MIN_CONTEXT_LENGTH
+                value: '32'
     defaultEngine: forge
   Qwen3-4B:
     forge:
@@ -6919,10 +6073,7 @@ models:
               tag: 0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 8Gi
@@ -6947,10 +6098,7 @@ models:
               tag: 0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 8Gi
@@ -6977,10 +6125,7 @@ models:
               tag: 709c6a767e00ee7f2803e20851193ac0d6aaff3b_e0b9595_75385194349
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 8Gi
@@ -7008,10 +6153,7 @@ models:
               tag: 0.13.0-079a2c2
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -7030,10 +6172,7 @@ models:
               tag: 0.13.0-079a2c2
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -7057,10 +6196,7 @@ models:
               tag: 0.13.0-079a2c2
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -7079,10 +6215,7 @@ models:
               tag: 0.13.0-079a2c2
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -7106,10 +6239,7 @@ models:
               tag: 0.13.0-079a2c2
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -7128,10 +6258,7 @@ models:
               tag: 0.13.0-079a2c2
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -7155,10 +6282,7 @@ models:
               tag: a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -7177,10 +6301,7 @@ models:
               tag: a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -7204,10 +6325,7 @@ models:
               tag: 0.13.0-079a2c2
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -7226,10 +6344,7 @@ models:
               tag: 0.13.0-079a2c2
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -7253,10 +6368,7 @@ models:
               tag: 0.13.0-079a2c2
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -7275,10 +6387,7 @@ models:
               tag: 0.13.0-079a2c2
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -7302,10 +6411,7 @@ models:
               tag: 0.18.0-c49bb76
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -7324,10 +6430,7 @@ models:
               tag: 0.18.0-c49bb76
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -7349,10 +6452,7 @@ models:
               tag: a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -7371,10 +6471,7 @@ models:
               tag: a9b09e0b611da6deb4d8972e8296148fd864e5fd_98dcf62_60920940673
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 6Gi
@@ -7398,10 +6495,7 @@ models:
               tag: 0.10.0-555f240
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 32Gi
@@ -7422,10 +6516,7 @@ models:
               tag: 0.10.0-555f240
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 32Gi
@@ -7444,10 +6535,7 @@ models:
               tag: 0.10.0-555f240
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 32Gi
@@ -7466,10 +6554,7 @@ models:
               tag: 0.10.0-555f240
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 32Gi
@@ -7488,10 +6573,7 @@ models:
               tag: 0.10.0-555f240
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 32Gi
@@ -7513,10 +6595,7 @@ models:
               tag: 709c6a767e00ee7f2803e20851193ac0d6aaff3b_e0b9595_75385194349
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 12Gi
@@ -7541,10 +6620,7 @@ models:
               tag: 709c6a767e00ee7f2803e20851193ac0d6aaff3b_e0b9595_75385194349
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 12Gi
@@ -7571,10 +6647,7 @@ models:
               tag: 0.18.0-c49bb76
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 12Gi
@@ -7618,10 +6691,7 @@ models:
               tag: 0.17.0-8c48a10
             probes:
               liveness:
-                initialDelaySeconds: 2400
                 path: /tt-liveness
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 16Gi
@@ -7641,11 +6711,6 @@ models:
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
               tag: 0.18.0-c49bb76-6b4a3a7
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
             resources:
               requests:
                 memory: 77Gi
@@ -7678,12 +6743,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.18.0-c49bb76-6b4a3a7
-            probes:
-              liveness:
-                initialDelaySeconds: 2400
-              readiness:
-                initialDelaySeconds: 2400
+              tag: 0.20.0-de59f8a-03fa3af
             resources:
               requests:
                 memory: 67Gi
@@ -7694,6 +6754,8 @@ models:
                 value: Qwen/Qwen3.6-27B
               - name: MESH_DEVICE
                 value: (1, 4)
+              - name: QWEN36_MAX_TOKENS_ALL_USERS
+                value: '525312'
               - name: TORCHDYNAMO_DISABLE
                 value: '1'
               - name: TT_MESH_GRAPH_DESC_PATH
@@ -7706,4 +6768,120 @@ models:
                 value: '900000'
               - name: VLLM_TARGET_DEVICE
                 value: tt
+      p150x8:
+        defaultImpl: qwen36_blackhole
+        impls:
+          qwen36_blackhole:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+              tag: 0.20.0-de59f8a-03fa3af
+            resources:
+              requests:
+                memory: 67Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: HF_MODEL
+                value: Qwen/Qwen3.6-27B
+              - name: MESH_DEVICE
+                value: P150x8
+              - name: QWEN36_MAX_TOKENS_ALL_USERS
+                value: '525312'
+              - name: TORCHDYNAMO_DISABLE
+                value: '1'
+              - name: VLLM_CONFIGURE_LOGGING
+                value: '1'
+              - name: VLLM_RPC_TIMEOUT
+                value: '900000'
+              - name: VLLM_TARGET_DEVICE
+                value: tt
     defaultEngine: vllm
+  Qwen3-Embedding-0.6B:
+    forge:
+      p300x2:
+        defaultImpl: forge_vllm_plugin
+        impls:
+          forge_vllm_plugin:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-media-inference-server-forge
+              tag: 0.20.0-de59f8a
+            probes:
+              liveness:
+                path: /tt-liveness
+            resources:
+              requests:
+                memory: 6Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: BENCHMARK_MAX_CONCURRENCY
+                value: '32'
+              - name: DEFAULT_THROTTLE_LEVEL
+                value: '0'
+              - name: MAX_BATCH_SIZE
+                value: '8'
+              - name: MESH_DEVICE
+                value: P300x2
+              - name: MODEL_RUNNER
+                value: vllmforge_qwen_embedding_0_6b
+              - name: TT_MESH_GRAPH_DESC_PATH
+                value: /home/container_app_user/app/server/venv-worker/lib/python3.12/site-packages/pjrt_plugin_tt/tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_mesh_graph_descriptor.textproto
+              - name: TT_METAL_INSPECTOR_RPC
+                value: '0'
+              - name: USE_DYNAMIC_BATCHER
+                value: 'false'
+              - name: VLLM__MAX_MODEL_LENGTH
+                value: '128'
+              - name: VLLM__MAX_NUM_BATCHED_TOKENS
+                value: '1024'
+              - name: VLLM__MAX_NUM_SEQS
+                value: '8'
+              - name: VLLM__MIN_CONTEXT_LENGTH
+                value: '32'
+    defaultEngine: forge
+  bge-m3:
+    forge:
+      p300x2:
+        defaultImpl: forge_vllm_plugin
+        impls:
+          forge_vllm_plugin:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-media-inference-server-forge
+              tag: 0.20.0-de59f8a
+            probes:
+              liveness:
+                path: /tt-liveness
+            resources:
+              requests:
+                memory: 6Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: BENCHMARK_MAX_CONCURRENCY
+                value: '32'
+              - name: DEFAULT_THROTTLE_LEVEL
+                value: '0'
+              - name: MAX_BATCH_SIZE
+                value: '8'
+              - name: MESH_DEVICE
+                value: P300x2
+              - name: MODEL_RUNNER
+                value: vllmforge_bge_m3
+              - name: TT_MESH_GRAPH_DESC_PATH
+                value: /home/container_app_user/app/server/venv-worker/lib/python3.12/site-packages/pjrt_plugin_tt/tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_mesh_graph_descriptor.textproto
+              - name: TT_METAL_INSPECTOR_RPC
+                value: '0'
+              - name: USE_DYNAMIC_BATCHER
+                value: 'false'
+              - name: VLLM__MAX_MODEL_LENGTH
+                value: '128'
+              - name: VLLM__MAX_NUM_BATCHED_TOKENS
+                value: '1024'
+              - name: VLLM__MAX_NUM_SEQS
+                value: '8'
+              - name: VLLM__MIN_CONTEXT_LENGTH
+                value: '32'
+    defaultEngine: forge

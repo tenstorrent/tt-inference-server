@@ -88,6 +88,12 @@ SERVER_PORT="${SERVER_PORT:-8000}"
 MODEL_NAME="${MODEL_NAME:-tt-cpp-server}"
 export OPENAI_API_KEY="${OPENAI_API_KEY:-dynamo-bypass}"
 
+# Dynamo's frontend injects `traceparent` towards the backend worker only when
+# its OTel layers are installed, which requires JSONL logging. Enabled by
+# default so Sentry distributed traces stay connected; set DYN_LOGGING_JSONL=0
+# for pretty logs at the cost of trace propagation.
+export DYN_LOGGING_JSONL="${DYN_LOGGING_JSONL:-1}"
+
 if [[ "${DYN_DISCOVERY_BACKEND}" == "file" ]]; then
     rm -rf "${DYN_FILE_STORE}"
     DISCOVERY_LABEL="file://${DYN_FILE_STORE}"

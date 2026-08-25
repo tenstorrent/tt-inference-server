@@ -258,9 +258,11 @@ def parse_arguments():
         "--vllm-dir",
         type=str,
         default=os.getenv("vllm_dir"),
-        help="[for --local-server] Host path to the vLLM source tree to export as vllm_dir "
-        "and append to PYTHONPATH. Defaults to vllm_dir from the environment when set, "
-        "otherwise tt-metal-home/vllm.",
+        help="[DEPRECATED, ignored] Formerly the host path to a vLLM source tree, exported "
+        "as vllm_dir and appended to PYTHONPATH. vLLM is now an ordinary installed package "
+        "in the tt-metal venv and the TT platform comes from the separately installed "
+        "vllm-tt-plugin, so no source tree is needed. Accepted for backwards compatibility; "
+        "will be removed in a future release.",
     )
     parser.add_argument(
         "--limit-samples-mode",
@@ -275,6 +277,15 @@ def parse_arguments():
         "Accepts a JSON string '{\"task_name\": [int, ...]}' or a path to a JSON file. "
         "Indices are zero-based. Mutually exclusive with --limit-samples-mode. "
         "Text/LLM evals only.",
+    )
+    parser.add_argument(
+        "--repeat-evals",
+        type=int,
+        default=1,
+        metavar="N",
+        help="Run --workflow evals N times, keeping each run's report under "
+        "run_NN/ and writing an aggregated summary/ (reuses the workflow engine's "
+        "--repeat). Default 1 (no summary).",
     )
     parser.add_argument(
         "--skip-system-sw-validation",
@@ -463,6 +474,22 @@ def parse_arguments():
         "tt-media-server/cpp_server/tokenizers/. Overrides the model derived from "
         "--model; lets you serve a model with no catalog entry. Defaults to the "
         "--model's HF repo, then run_stack.sh's built-in default.",
+    )
+
+    agentic_group = parser.add_argument_group(
+        "Agentic evals",
+        "Arguments for --workflow agentic (accuracy evals: tau3 / terminal-bench / "
+        "swe-bench), routed to the workflow engine",
+    )
+    agentic_group.add_argument(
+        "--agentic-benchmark",
+        type=str,
+        default=None,
+        help="Comma-separated agentic benchmark(s) to run under --workflow agentic. "
+        "Aliases: tau3 (tau3_bench_*), tb2.0 (terminal_bench_2), tb2.1 "
+        "(terminal_bench_2_1), swebench (swe_bench_*). Raw task names are also "
+        "accepted. When unset (or 'all'), runs every EVALS_AGENTIC task configured "
+        "for the model.",
     )
 
     agentic_traces_group = parser.add_argument_group(
@@ -689,8 +716,12 @@ def parse_arguments():
         args.device = infer_default_device(args.model, args.engine)
     args.tt_device = args.device
 
-    if not args.vllm_dir and args.tt_metal_home:
-        args.vllm_dir = str(Path(args.tt_metal_home).expanduser() / "vllm")
+    if args.vllm_dir:
+        logger.warning(
+            "--vllm-dir (or the vllm_dir env var) is deprecated and ignored: vLLM is "
+            "installed into the tt-metal venv as an ordinary package and the TT platform "
+            "is provided by vllm-tt-plugin, so no vLLM source tree is used."
+        )
 
     # indirectly set additional flags for CI-mode
     if args.ci_mode:
@@ -723,6 +754,23 @@ def parse_arguments():
     if args.served_model and args.workflow != "prefill_decode":
         parser.error(
             "--served-model requires --workflow prefill_decode "
+            f"(got --workflow {args.workflow})."
+        )
+
+    if args.agentic_benchmark and args.workflow != "agentic":
+        parser.error(
+            "--agentic-benchmark selects which agentic eval(s) to run and requires "
+            f"--workflow agentic (got --workflow {args.workflow})."
+        )
+
+    if args.repeat_evals is not None and args.repeat_evals < 1:
+        parser.error(
+            f"--repeat-evals must be a positive integer (got {args.repeat_evals})."
+        )
+
+    if args.repeat_evals and args.repeat_evals > 1 and args.workflow != "evals":
+        parser.error(
+            "--repeat-evals applies to --workflow evals "
             f"(got --workflow {args.workflow})."
         )
 
@@ -881,7 +929,6 @@ def format_cli_args_summary(runtime_config):
         f"  no_auth:                    {runtime_config.no_auth}",
         f"  tt_metal_python_venv_dir:   {runtime_config.tt_metal_python_venv_dir}",
         f"  tt_metal_home:              {runtime_config.tt_metal_home}",
-        f"  vllm_dir:                   {runtime_config.vllm_dir}",
         f"  service_port:               {runtime_config.service_port}",
         f"  bind_host:                  {runtime_config.bind_host}",
         f"  docker_override_image:      {runtime_config.override_docker_image}",

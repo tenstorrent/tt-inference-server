@@ -21,6 +21,7 @@
 
 #include "api/error_response.hpp"
 #include "api/route_registry.hpp"
+#include "config/build_info.hpp"
 #include "config/defaults.hpp"
 #include "config/settings.hpp"
 #include "dynamo/worker_server.hpp"
@@ -28,12 +29,15 @@
 #include "profiling/tracy.hpp"
 #include "runtime/worker/blaze_worker_metrics_renderer.hpp"
 #include "runtime/worker/single_process_worker_metrics.hpp"
+#include "runtime/worker/tts_worker_metrics_renderer.hpp"
 #include "runtime/worker/worker_manager.hpp"
 #include "runtime/worker/worker_metrics_aggregator.hpp"
 #include "runtime/worker/worker_metrics_shm.hpp"
 #include "services/llm_pipeline.hpp"
 #include "services/llm_service.hpp"
 #include "services/service_container.hpp"
+#include "services/tts_service.hpp"
+#include "telemetry/sentry_tracing.hpp"
 #include "utils/logger.hpp"
 #include "utils/service_factory.hpp"
 
@@ -81,8 +85,9 @@ tt::worker::MetricsLayout metricsLayoutFromConfig() {
       return tt::worker::MetricsLayout::BLAZE_RUNNER;
     case tt::config::ModelService::EMBEDDING:
       return tt::worker::MetricsLayout::EMBEDDING;
-    case tt::config::ModelService::IMAGE:
     case tt::config::ModelService::TTS:
+      return tt::worker::MetricsLayout::TTS_RUNNER;
+    case tt::config::ModelService::IMAGE:
       return tt::worker::MetricsLayout::UNKNOWN;
   }
   return tt::worker::MetricsLayout::UNKNOWN;
@@ -222,23 +227,38 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
+  // Sentry distributed tracing (no-op without SENTRY_DSN). Initialized after
+  // the service fork+execv'd its workers so the SDK runs only in this node
+  // process; workers are never instrumented.
+  tt::telemetry::init(std::string(tt::config::kInferenceServerVersion),
+                      tt::config::logInstanceTag());
+
   // Wire the aggregator now that the WorkerManager exists. Workers may still
   // be attaching to the segment; renderers tolerate empty/UNKNOWN slots.
   if (shm != nullptr) {
     auto& agg = tt::worker::WorkerMetricsAggregator::instance();
     tt::worker::WorkerManager* mgr = nullptr;
-    auto llm = std::dynamic_pointer_cast<tt::services::LLMService>(
-        tt::services::ServiceContainer::instance().getService(
-            tt::config::ModelService::LLM));
-    if (llm) {
+    auto& container = tt::services::ServiceContainer::instance();
+    if (auto llm = std::dynamic_pointer_cast<tt::services::LLMService>(
+            container.getService(tt::config::ModelService::LLM))) {
       mgr = llm->getWorkerManager();
+    } else if (auto tts = std::dynamic_pointer_cast<tt::services::TtsService>(
+                   container.getService(tt::config::ModelService::TTS))) {
+      mgr = tts->getWorkerManager();
     }
     std::vector<tt::worker::MetricsLayout> layoutByWorker(
         numWorkers, metricsLayoutFromConfig());
     agg.initialize(shm.get(), mgr, std::move(layoutByWorker));
+    // Only the renderer matching the configured layout ever builds its
+    // families (prebuildAll dispatches per worker layout, and a process
+    // serves exactly one MODEL_SERVICE), so registering both is safe despite
+    // the shared tt_worker_* metric names.
     agg.registerRenderer(
         tt::worker::MetricsLayout::BLAZE_RUNNER,
         std::make_unique<tt::worker::SpPipelineWorkerMetricsRenderer>());
+    agg.registerRenderer(
+        tt::worker::MetricsLayout::TTS_RUNNER,
+        std::make_unique<tt::worker::TtsWorkerMetricsRenderer>());
     agg.prebuildAll();
   }
 
@@ -453,6 +473,8 @@ int main(int argc, char* argv[]) {
     dynamoWorkerServer->stop();
     dynamoWorkerServer.reset();
   }
+
+  tt::telemetry::shutdown();
 
   // `shm`'s destructor runs on scope exit and handles munmap + shm_unlink.
   TT_LOG_INFO("[Main] Server shutdown complete (graceful)");

@@ -10,6 +10,21 @@
         }
       }
     },
+    "diffusiongemma-26B-A4B-it": {
+      "inference_engine": "vLLM",
+      "ci": {
+        "nightly": {
+          "devices": [
+            "P300X2"
+          ]
+        },
+        "release": {
+          "devices": [
+            "P300X2"
+          ]
+        }
+      }
+    },
     "Falcon3-7B-Instruct": {
       "inference_engine": "FORGE",
       "ci": {
@@ -323,11 +338,6 @@
           "devices": [
             "P300X2"
           ]
-        },
-        "release": {
-          "devices": [
-            "P300X2"
-          ]
         }
       }
     },
@@ -349,11 +359,6 @@
             "P300X2"
           ]
         },
-        "release": {
-          "devices": [
-            "P300X2"
-          ]
-        },
         "weekly": {
           "devices": [
             "N150"
@@ -365,11 +370,6 @@
       "inference_engine": "FORGE",
       "ci": {
         "nightly": {
-          "devices": [
-            "P300X2"
-          ]
-        },
-        "release": {
           "devices": [
             "P300X2"
           ]
@@ -406,11 +406,6 @@
           "inference_engine": "FORGE",
           "ci": {
             "nightly": {
-              "devices": [
-                "P300X2"
-              ]
-            },
-            "release": {
               "devices": [
                 "P300X2"
               ]

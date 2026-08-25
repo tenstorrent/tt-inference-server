@@ -37,7 +37,7 @@ def _record(ttft=350.0, tpot=69.8, tput=13.9, **extra):
         "output_sequence_length": 128.0,
         "mean_ttft_ms": ttft,
         "mean_tpot_ms": tpot,
-        "tps_decode_throughput": tput,
+        "tps_output_throughput": tput,
     }
     record.update(extra)
     return record
@@ -104,6 +104,16 @@ class TestBuildTargetChecks:
         assert checks["target"]["ttft_check"] == ReportCheckTypes.NA
         assert checks["target"]["tput_check"] == ReportCheckTypes.NA
         assert checks["target"]["tput_user_check"] == ReportCheckTypes.NA
+
+    def test_tput_falls_back_to_the_legacy_decode_key(self):
+        """aiperf / genai-perf still emit tps_decode_throughput."""
+        record = _record(tps_decode_throughput=25.0)
+        del record["tps_output_throughput"]
+        checks, verdict = build_target_checks(TARGETS, record)
+
+        assert checks["target"]["tput_ratio"] == pytest.approx(25.0 / 17.0)
+        assert checks["target"]["tput_check"] == ReportCheckTypes.PASS
+        assert verdict == ReportCheckTypes.FAIL  # ttft still fails
 
 
 class TestApplyTargetChecks:

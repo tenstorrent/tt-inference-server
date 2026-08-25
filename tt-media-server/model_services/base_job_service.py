@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
+import os
 from multiprocessing import Manager
 from typing import Any, Optional
 
@@ -36,7 +37,7 @@ class BaseJobService(BaseService):
         return await self._job_manager.create_job(
             job_id=request._task_id,
             job_type=job_type,
-            model=settings.model_weights_path,
+            model=os.environ.get("SERVED_MODEL_NAME") or settings.model_weights_path,
             request=request,
             task_function=self.process_request,
             start_event=startEvent,

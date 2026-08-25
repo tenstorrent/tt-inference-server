@@ -619,6 +619,26 @@ class TestSetupRunnerEnvironmentBlackhole:
 
                             mock_bh.assert_called_once_with("/opt/tt-metal")
 
+    def test_calls_blackhole_setup_for_trainer_training_lora(self):
+        """trainer-training-lora inits torch-xla on a single BH chip of a P300."""
+        with patch.dict(os.environ, {"TT_METAL_HOME": "/opt/tt-metal"}, clear=True):
+            with patch("utils.runner_utils.set_torch_thread_limits"):
+                with patch("utils.runner_utils.get_telemetry_client"):
+                    with patch(
+                        "utils.runner_utils._setup_blackhole_mesh_config"
+                    ) as mock_bh:
+                        mock_settings_bh = Mock()
+                        mock_settings_bh.enable_telemetry = False
+                        mock_settings_bh.is_galaxy = False
+                        mock_settings_bh.device = "p150"
+                        mock_settings_bh.model_runner = "trainer-training-lora"
+                        mock_settings_bh.default_throttle_level = None
+
+                        with patch("utils.runner_utils.settings", mock_settings_bh):
+                            setup_runner_environment("0")
+
+                            mock_bh.assert_called_once_with("/opt/tt-metal")
+
     def test_calls_blackhole_setup_for_speecht5(self):
         """Test that _setup_blackhole_mesh_config is called for speecht5 on BH"""
         with patch.dict(os.environ, {"TT_METAL_HOME": "/opt/tt-metal"}, clear=True):
