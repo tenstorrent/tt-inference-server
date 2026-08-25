@@ -1045,14 +1045,26 @@ def resolve_runtime(args):
             )
         except ValueError:
             # A requirements document may name a model the catalog has no entry
-            # for; the registered provider synthesizes a spec from its context
-            # length + concurrency. Catalog models still resolve above, so
-            # non-requirements runs keep failing loudly.
+            # for: wrap the registered provider with the requirements-backed one
+            # (which synthesizes a spec from the document's context length +
+            # concurrency) and register it for the rest of this process.
+            # Catalog models still resolve above, so non-requirements runs keep
+            # failing loudly.
             if args.requirements_doc is None:
                 raise
-            from workflow_module.model_catalog import get_model_spec_provider
+            from workflow_module.model_catalog import (
+                get_model_spec_provider,
+                register_model_spec_provider,
+            )
+            from workflows.requirements_target_pack import (
+                RequirementsModelSpecProvider,
+            )
 
-            model_spec = get_model_spec_provider().resolve(args.model, args.device)
+            provider = RequirementsModelSpecProvider(
+                get_model_spec_provider(), args.requirements_doc
+            )
+            register_model_spec_provider(provider)
+            model_spec = provider.resolve(args.model, args.device)
             resolved_impl = model_spec.impl.impl_name
             resolved_engine = model_spec.inference_engine
         if args.custom_weights:
