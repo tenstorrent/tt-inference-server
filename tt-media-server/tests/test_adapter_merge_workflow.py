@@ -161,3 +161,31 @@ async def test_adapter_merge_workflow_end_to_end(tmp_path, monkeypatch):
     assert info["model"] == BASE_REPO
     assert info["source_job_id"] == "train-1"
     assert info["checkpoint_id"] == "ckpt-100"
+
+
+def test_write_merge_info_no_partial_file_on_dump_failure(merge_service, tmp_path):
+    """If ``json.dump`` raises mid-write, the completion sentinel must not exist
+    at its final path and no leftover temp file may remain. Otherwise a reader
+    would treat a truncated ``merge_info.json`` as a completed merge."""
+    from domain.adapter_merge_request import AdapterMergeRequest
+    from model_services.training_service import MERGE_INFO_FILE_NAME
+
+    service, _ = merge_service
+    output_dir = tmp_path / "merged_models" / "model-fail"
+    output_dir.mkdir(parents=True)
+
+    request = AdapterMergeRequest(source_job_id="train-1", checkpoint_id="ckpt-100")
+    request._output_model_path = str(output_dir)
+
+    with patch(
+        "model_services.training_service.json.dump",
+        side_effect=RuntimeError("disk full"),
+    ):
+        with pytest.raises(RuntimeError, match="disk full"):
+            service._write_merge_info(request)
+
+    assert not (output_dir / MERGE_INFO_FILE_NAME).exists()
+    leftovers = list(output_dir.glob(".merge_info.*.tmp"))
+    assert leftovers == [], (
+        f"failed write must clean up its own temp file, got: {leftovers}"
+    )

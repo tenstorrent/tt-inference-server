@@ -125,10 +125,10 @@ process-global accumulator, runs acceptance, and generates the report.
 
 ```python
 WORKFLOW_REGISTRY = {
-    "evals": EvalsWorkflow,  # task_types = (EVALUATION,)
+    "evals":      EvalsWorkflow,       # task_types = (EVALUATION,)
     "benchmarks": BenchmarksWorkflow,  # task_types = (BENCHMARK,)
-    "spec_tests": SpecTestsWorkflow,  # task_types = (SPEC_TESTS,)
-    "release": ReleaseWorkflow,  # composes the three above
+    "spec_tests": SpecTestsWorkflow,   # task_types = (SPEC_TESTS,)
+    "release":    ReleaseWorkflow,     # composes the three above
 }
 ```
 
@@ -445,6 +445,25 @@ The workflow checks the server via `/v1/models`, sets OpenAI-compatible
 environment variables (`OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_API_BASE`),
 then runs each configured agentic task through the LLM driver/parser
 adapters.
+
+By default every `EVALS_AGENTIC` task configured for the model runs. To run only
+a subset, pass `--agentic-benchmark` (forwarded from `run.py`) with a
+comma-separated list of aliases or raw task names:
+
+- `tau3` → every `tau3_bench_*` task
+- `tb2.0` → `terminal_bench_2` only (not `terminal_bench_2_1`)
+- `tb2.1` → `terminal_bench_2_1`
+- `swebench` → every `swe_bench_*` task
+- `all` (or omitting the flag) → every configured agentic task
+
+```bash
+python run.py --model Kimi-K2.7-Code --workflow agentic \
+    --agentic-benchmark tau3 --device super_cluster \
+    --server-url https://<host>:443 --skip-system-sw-validation --dev-mode
+```
+
+A selection that matches no configured task fails fast with the list of
+available task names.
 
 ## Agentic-traces benchmark
 

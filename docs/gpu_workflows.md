@@ -7,14 +7,12 @@ The `reports` workflow (and the upstream `benchmarks` / `evals` workflows) can t
 Find the `ModelSpecTemplate` for your model in `workflows/model_spec.py` and add a GPU entry to `device_model_specs`. Example pattern (matches the existing Llama-3.1-8B-Instruct entry — grep `model_spec.py` for `DeviceTypes.GPU` to see it in context):
 
 ```python
-(
-    DeviceModelSpec(
-        device=DeviceTypes.GPU,
-        max_concurrency=32,
-        max_context=128 * 1024,
-        default_impl=True,
-    ),
-)
+DeviceModelSpec(
+    device=DeviceTypes.GPU,
+    max_concurrency=32,
+    max_context=128 * 1024,
+    default_impl=True,
+),
 ```
 
 Setting `default_impl=True` lets the runtime resolver pick this device entry without requiring an explicit `--impl` flag on the CLI.

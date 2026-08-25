@@ -86,7 +86,6 @@ The reference targets are based on theoretical performance estimates for each mo
 
 For example, `Llama-3.3-70B` is the key for
 ```python
-(
     ModelSpec(
         impl=tt_transformers_impl,
         default_impl_map={
@@ -104,7 +103,6 @@ For example, `Llama-3.3-70B` is the key for
         vllm_commit="2a8debd",
         status="testing",
     ),
-)
 ```
 
 The performance targets for each model-hardware combination are defined in `benchmarking/benchmark_targets/model_performance_reference.json` key used is the ModelSpec's 1st model weights model name. This model name e.g. `Llama-3.3-70B` above, uniquely defines the targets for all models weights of the same model architecture. These base theoretical targets are the same for all implementations for the same model architecture and hardware combination. Targets can be added directly to a specific ModelSpec as needed for additional points of comparison.
