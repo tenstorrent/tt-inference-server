@@ -18,7 +18,6 @@ from typing import List, Optional, Tuple, Union
 from llm_module import HttpServerController, RemoteOpenAIController
 from llm_module.eval_command import build_eval_command
 from llm_module.eval_configs import get_llm_eval_tasks
-from reference_config.evals.eval_config import accept_eval_score, resolve_eval_reference
 from report_module.schema import Block
 from workflow_module import accept_blocks
 from workflow_module.engine_types import EvalLimitMode
