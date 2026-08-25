@@ -11,6 +11,9 @@ ENDPOINT="/v1/chat/completions"
 DATASET="random"
 NUM_PROMPTS="${NUM_PROMPTS:-1}"
 RESULTS_DIR="${RESULTS_DIR:-bench_results}"
+# Some models (e.g. moonshotai/Kimi-K2.7-Code) ship a custom tokenizer class on
+# the Hub that transformers will not load without this. Set to 0 to opt out.
+TRUST_REMOTE_CODE="${TRUST_REMOTE_CODE:-1}"
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 REPORT_TYPE="vllm_bench_serve"
 
@@ -21,8 +24,12 @@ run_bench() {
     local suffix="${JOB_SUFFIX:-$TIMESTAMP}"
     local filename="${RESULTS_DIR}/bench_isl${isl}_osl${osl}_conc${concurrency}_${suffix}.json"
 
+    local extra_args=()
+    [[ "$TRUST_REMOTE_CODE" == "1" ]] && extra_args+=(--trust-remote-code)
+
     echo "=== Running: ISL=${isl} OSL=${osl} max-concurrency=${concurrency} ==="
     vllm bench serve \
+        ${extra_args[@]+"${extra_args[@]}"} \
         --base-url "$BASE_URL" \
         --model "$MODEL" \
         --backend "$BACKEND" \
