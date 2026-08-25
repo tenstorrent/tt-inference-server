@@ -530,8 +530,13 @@ class TTWorker(WorkerBase):
         merged = self.model_runner.concat_dp_model_inputs(
             inputs, is_decode, max_blocks_decode_batch
         )
-        sampled_token_ids_per_dp: list[torch.Tensor] = (
-            self.model_runner.execute_with_model_input(merged)
+        # Logprobs are dropped on this path: the cross-process DP result is
+        # all-gathered as a single [world, B, 1] token tensor, which has no room
+        # for them. Requests needing logprobs must run in-process submesh DP
+        # (tt_data_parallel) or DP=1, where the runner returns them directly.
+        sampled_token_ids_per_dp: list[torch.Tensor]
+        sampled_token_ids_per_dp, _ = self.model_runner.execute_with_model_input(
+            merged
         )
 
         # Pad each DP result to uniform shape for tensor all_gather.
