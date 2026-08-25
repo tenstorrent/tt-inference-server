@@ -1477,6 +1477,30 @@ templates:
 # Remote-served model: evaluated against an external OpenAI-compatible
 # endpoint via `--server-url` (e.g. Tenstorrent console). The device entry
 # is a placeholder so the model resolves through MODEL_SPECS / EVAL_CONFIGS;
+# no local TT serving is implied. Same weights as the VLLM gemma-4-31B-it
+# template above (P300X2 / GPU); this MEDIA entry is the SUPER_CLUSTER path.
+# Context is the 128K deployment window, not the 48K QB2 DRAM pool.
+- weights:
+    - google/gemma-4-31B-it
+  impl: tt_transformers
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: SUPER_CLUSTER
+      max_concurrency: 64
+      max_context: 131072  # 128 * 1024
+      default_impl: true
+  status: EXPERIMENTAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    google/gemma-4-31B-it:
+      remote_api_model: google/gemma-4-31B-it
+      reasoning_parser_name: gemma4
+      tool_call_parser_name: gemma4
+
+# Remote-served model: evaluated against an external OpenAI-compatible
+# endpoint via `--server-url` (e.g. Tenstorrent console). The device entry
+# is a placeholder so the model resolves through MODEL_SPECS / EVAL_CONFIGS;
 # no local TT serving is implied.
 - weights:
     - moonshotai/Kimi-K2.6
