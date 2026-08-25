@@ -13,7 +13,6 @@ def _training_service_patches(mock_settings):
     from contextlib import ExitStack
 
     stack = ExitStack()
-    stack.enter_context(patch("model_services.training_service.Manager"))
     stack.enter_context(
         patch(
             "model_services.training_service.get_settings",
