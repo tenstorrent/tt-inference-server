@@ -786,7 +786,8 @@
         "nightly": {
           "devices": [
             "N150",
-            "N300"
+            "N300",
+            "GALAXY"
           ]
         }
       }

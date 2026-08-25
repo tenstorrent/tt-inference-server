@@ -97,6 +97,10 @@ templates:
       max_concurrency: 1
       max_context: 65536  # 64 * 1024
       default_impl: true
+    - device: GALAXY
+      max_concurrency: 32  # DP=32: 32 single-chip instances, batch=1 each
+      max_context: 65536  # 64 * 1024
+      default_impl: true
   status: EXPERIMENTAL
 
 - weights:

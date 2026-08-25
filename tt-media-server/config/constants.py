@@ -1212,6 +1212,19 @@ ModelConfigs = {
         "max_batch_size": 1,
         "default_throttle_level": 0,
     },
+    # Galaxy DP=32: 32 single-chip workers (DEVICE_IDS_32 -> one (N) group per chip).
+    # Each worker opens a (1,1) mesh, so tt-metal sees num_devices==1 -> ModelArgs.is_galaxy
+    # is False and the full n150 68 tok/s decode path applies per chip. batch=1 (no batched
+    # decode); the scheduler fans requests/segments across the 32 workers for throughput.
+    # Mirrors the Whisper Galaxy entry (which uses batch=2); throttle 0 keeps 68 tok/s.
+    (ModelRunners.TT_QWEN3_ASR, DeviceTypes.GALAXY): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": True,
+        "device_ids": DeviceIds.DEVICE_IDS_32.value,
+        "max_batch_size": 1,
+        "default_throttle_level": 0,
+        "request_processing_timeout_seconds": 5000,
+    },
     (ModelRunners.VLLMForge_QWEN_EMBEDDING, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
