@@ -5,20 +5,40 @@ from typing import TYPE_CHECKING, Optional, Union
 
 import torch
 import vllm.envs as envs
-from vllm.inputs import ProcessorInputs, PromptType
 from vllm.logger import init_logger
 from vllm.platforms.interface import Platform, PlatformEnum
-from vllm.sampling_params import SamplingParams
 
 if TYPE_CHECKING:
     from vllm.config import ModelConfig, VllmConfig
+    from vllm.inputs import ProcessorInputs, PromptType
     from vllm.pooling_params import PoolingParams
+    from vllm.sampling_params import SamplingParams
 else:
+    # Deferred (not imported at module top level) to avoid a circular import
+    # during vLLM platform resolution: on newer vLLM, importing
+    # vllm.sampling_params / vllm.inputs here pulls in vllm.config, which imports
+    # current_platform from vllm.platforms while that module is still resolving
+    # this very platform class -> ImportError. These names are only needed as
+    # annotations plus one isinstance check in validate_request(), which imports
+    # SamplingParams locally at call time (well after vLLM has finished loading).
     ModelConfig = None
     VllmConfig = None
     PoolingParams = None
+    ProcessorInputs = None
+    PromptType = None
+    SamplingParams = None
 
 logger = init_logger("vllm.tt_vllm_plugin.platform")
+
+
+def _vllm_use_v1() -> bool:
+    """Whether the V1 engine is active.
+
+    Newer vLLM is V1-only and removed the ``VLLM_USE_V1`` env flag (accessing
+    ``envs.VLLM_USE_V1`` now raises AttributeError). Treat its absence as V1
+    being on, while still honoring the flag on older builds that expose it.
+    """
+    return bool(getattr(envs, "VLLM_USE_V1", True))
 
 
 class TTPlatform(Platform):
@@ -70,7 +90,7 @@ class TTPlatform(Platform):
 
         parallel_config = vllm_config.parallel_config
         if parallel_config.worker_cls == "auto":
-            if envs.VLLM_USE_V1:
+            if _vllm_use_v1():
                 parallel_config.worker_cls = (
                     "tt_vllm_plugin.v1.worker.tt_worker.TTWorker"
                 )
@@ -100,7 +120,14 @@ class TTPlatform(Platform):
         # TODO move this to tt_model_runner when request validation
         # stops depending on vllm_config
 
-        override_tt_config = getattr(vllm_config, "additional_config", {}).get("tt", {})
+        # Prefer the tt override threaded through additional_config (upstream
+        # vLLM channel); fall back to the fork-only model_config.plugin_config.
+        additional_config = getattr(vllm_config, "additional_config", None) or {}
+        override_tt_config = additional_config.get("tt")
+        if not isinstance(override_tt_config, dict) or not override_tt_config:
+            override_tt_config = getattr(
+                vllm_config.model_config, "plugin_config", {}
+            ).get("tt", {})
         if (
             override_tt_config is not None
             and "sample_on_device_mode" in override_tt_config
@@ -120,7 +147,7 @@ class TTPlatform(Platform):
         # or if any of the requests in the batch require it.
         # For now, it is only supported with host-side sampling.
 
-        if envs.VLLM_USE_V1:  # type: ignore[attr-defined]
+        if _vllm_use_v1():  # type: ignore[attr-defined]
             logger.warning(
                 "Disabling compatibility sampling as it's not yet support for "
                 "V1 TT backend."
@@ -136,7 +163,7 @@ class TTPlatform(Platform):
                 "always_compat_sampling must be a boolean"
             )
             if always_compat_sampling:
-                if envs.VLLM_USE_V1:
+                if _vllm_use_v1():
                     raise ValueError(
                         "always_compat_sampling is not yet supported for V1 TT backend."
                     )
@@ -165,17 +192,12 @@ class TTPlatform(Platform):
     def supports_v1(cls, model_config: ModelConfig) -> bool:
         # V1 support on TT is experimental.
         # Allow users to opt in, but give a warning.
-        if envs.is_set("VLLM_USE_V1") and envs.VLLM_USE_V1:
+        if _vllm_use_v1():
             if model_config.is_encoder_decoder:
                 raise ValueError(
-                    "VLLM_USE_V1=1 was set but encoder-decoder models aren't "
-                    "yet supported in V1 for TT"
+                    "encoder-decoder models aren't yet supported in V1 for TT"
                 )
-            logger.warning(
-                "Enabling V1 since VLLM_USE_V1=1, however V1 is still "
-                "experimental for TT backend."
-            )
-            return envs.VLLM_USE_V1
+            return True
         return False
 
     @classmethod
@@ -198,6 +220,8 @@ class TTPlatform(Platform):
         processed_inputs: ProcessorInputs,
     ) -> None:
         """Raises if this request is unsupported on this platform"""
+
+        from vllm.sampling_params import SamplingParams
 
         if isinstance(params, SamplingParams):
             if params.n != 1:
