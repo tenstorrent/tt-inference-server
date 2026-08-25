@@ -122,11 +122,24 @@ class StressTestParamSpace:
 
     def _resolve_model_config(self):
         """Resolve the appropriate model configuration."""
-        # Prefer a default_impl spec; fall back to the first matching impl
-        # (with a warning inside the provider) when no default exists.
-        self.model_spec = get_model_spec_provider().resolve_lenient(
-            self.model_name, self.device
-        )
+        # Prefer the default_impl spec; when none exists, stress tests
+        # historically accept the first matching impl — that policy lives
+        # here at the caller, not inside the provider.
+        provider = get_model_spec_provider()
+        try:
+            self.model_spec = provider.resolve(self.model_name, self.device)
+        except ValueError:
+            candidates = provider.resolve_candidates(self.model_name, self.device)
+            if not candidates:
+                raise
+            logger.warning(
+                "No default impl for model=%s device=%s; using non-default "
+                "implementation %s",
+                self.model_name,
+                self.device,
+                candidates[0].model_id,
+            )
+            self.model_spec = candidates[0]
         self.model_id = self.model_spec.model_id
 
     def _extract_parameter_boundaries(self):

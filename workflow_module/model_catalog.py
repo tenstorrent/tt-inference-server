@@ -25,6 +25,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional, Protocol, runtime_checkable
 
+from workflow_module.engine_types import ModelType
+
 logger = logging.getLogger(__name__)
 
 
@@ -40,7 +42,7 @@ class ModelSpecLike(Protocol):
     model_name: str
     model_id: str
     hf_model_repo: str
-    model_type: Any  # engine_types.ModelType
+    model_type: Optional[ModelType]
     inference_engine: Any  # vendor engine taxonomy; engine reads ``.value``
     cli_args: Dict[str, Any]
     device_model_spec: Any  # vendor device-scoped limits (max_context, ...)
@@ -63,12 +65,13 @@ class ModelSpecProvider(Protocol):
         """
         ...
 
-    def resolve_lenient(self, model: str, device: str) -> ModelSpecLike:
-        """Resolve like :meth:`resolve` but fall back to a non-default impl.
+    def resolve_candidates(self, model: str, device: str) -> List[ModelSpecLike]:
+        """All specs matching ``(model, device)``, across impls, no policy.
 
-        Used by stress-test parameter extraction, which historically accepts
-        the first matching impl (with a warning) when no default exists.
-        Raises ``ValueError`` only when no spec matches at all.
+        Pure data access so a caller can apply its own fallback policy when
+        :meth:`resolve` raises — e.g. stress-test parameter extraction, which
+        historically accepts a non-default impl (with a warning) when no
+        default exists. Returns ``[]`` when nothing matches.
         """
         ...
 

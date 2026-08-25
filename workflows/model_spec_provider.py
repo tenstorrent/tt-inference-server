@@ -15,12 +15,13 @@ import json
 import logging
 from typing import List, Optional
 
+from workflow_module.model_catalog import ModelSpecProvider
 from workflows.model_spec import MODEL_SPECS, ModelSpec, get_runtime_model_spec
 
 logger = logging.getLogger(__name__)
 
 
-class TenstorrentModelSpecProvider:
+class TenstorrentModelSpecProvider(ModelSpecProvider):
     """``ModelSpecProvider`` over the Tenstorrent YAML model catalog."""
 
     def model_names(self) -> List[str]:
@@ -30,29 +31,13 @@ class TenstorrentModelSpecProvider:
         model_spec, _, _ = get_runtime_model_spec(model=model, device=device)
         return model_spec
 
-    def resolve_lenient(self, model: str, device: str) -> ModelSpec:
-        default_spec = None
-        first_match = None
-        for model_id, config in MODEL_SPECS.items():
-            if (
-                config.model_name == model
-                and config.device_type.name.lower() == device.lower()
-            ):
-                if config.device_model_spec.default_impl:
-                    default_spec = config
-                    break
-                if first_match is None:
-                    first_match = config
-        if default_spec is not None:
-            return default_spec
-        if first_match is not None:
-            logger.warning(
-                "Using non-default implementation for %s", first_match.model_id
-            )
-            return first_match
-        raise ValueError(
-            f"No model configuration found for model: {model}, device: {device}"
-        )
+    def resolve_candidates(self, model: str, device: str) -> List[ModelSpec]:
+        return [
+            config
+            for config in MODEL_SPECS.values()
+            if config.model_name == model
+            and config.device_type.name.lower() == device.lower()
+        ]
 
     def load_runtime_spec(self, path: str) -> Optional[ModelSpec]:
         try:
