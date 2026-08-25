@@ -412,6 +412,7 @@ class TestJobManager:
         startEvent.set()
         await asyncio.sleep(0.6)
         assert job_manager.get_job_metadata("job-wait")["status"] == "in_progress"
+        job_manager.cancel_job("job-wait")
 
     @pytest.mark.asyncio
     async def test_get_all_jobs_metadata_empty(self, job_manager):
