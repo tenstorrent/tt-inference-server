@@ -61,6 +61,7 @@ jobs:
               - 'workflows/helm_generator/**'
               - 'charts/tt-inference-server/values.yaml'
               - 'tests/test_helm_generator/test_values_in_sync.py'
+              - '.github/scripts/helm_install_gate.sh'
 
   lint:
     needs: detect-changes
@@ -1181,6 +1182,54 @@ jobs:
               || { echo "::error::$model/$device startupProbe.failureThreshold must be $want"; exit 1; }
           done
 
+  # Install gate (kind, no hardware). Sibling of helm-chart-validate: that job
+  # proves the manifests render, this one proves a real API server installs them.
+  # On a k8s 1.34 kind node (DRA GA), it installs the chart and asserts the DRA
+  # ResourceClaimTemplate is accepted, the Pod is schedulable but Pending only
+  # because no Tenstorrent device exists, and the CRD-gated PodMonitor / hugepages
+  # toggle apply live. Assumes a working DRA layer (stubbed DeviceClass) — it does
+  # NOT re-test the driver handing out /dev/tenstorrent (tt-operator's dra-smoke,
+  # on real silicon). See .github/scripts/helm_install_gate.sh.
+  helm-install-kind:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.helm-inputs == 'true' || needs.detect-changes.outputs.charts == 'true' }}
+    name: Helm Chart Install Gate (kind)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: latest
+
+      # kind on k8s 1.34 so the API server serves resource.k8s.io/v1 (DRA GA) —
+      # the version floor for the chart's ResourceClaimTemplate.
+      - name: Create kind cluster (k8s 1.34, DRA GA)
+        uses: helm/kind-action@v1
+        with:
+          # kind >= 0.30 is required to serve the kindest/node:v1.34.0 image.
+          kind_version: v0.30.0
+          cluster_name: ttis-install-gate
+          node_image: kindest/node:v1.34.0
+
+      - name: Install gate
+        run: bash .github/scripts/helm_install_gate.sh
+
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          kubectl get pods -A -o wide || true
+          kubectl get deviceclass,resourceclaimtemplate,resourceclaim -A || true
+          for ns in ttis-core ttis-hugepages ttis-podmonitor; do
+            echo "== namespace $ns =="
+            kubectl -n "$ns" describe pods || true
+            kubectl -n "$ns" get events --sort-by=.lastTimestamp | tail -30 || true
+          done
+
   ci-gate:
     name: CI Gate
     runs-on: ubuntu-latest
@@ -1201,6 +1250,7 @@ jobs:
       - prefill-gateway-format-check
       - prefill-gateway-build
       - helm-chart-validate
+      - helm-install-kind
     if: always()
     steps:
       - name: Check results
@@ -1263,7 +1313,7 @@ jobs:
                   echo "job condition evaluated false"
                 fi
                 ;;
-              helm-chart-validate)
+              helm-chart-validate|helm-install-kind)
                 if [[ "$CHARTS" != "true" && "$HELM_INPUTS" != "true" ]]; then
                   echo "chart and Helm generator inputs did not change"
                 else
@@ -1292,6 +1342,7 @@ jobs:
             prefill-gateway-format-check
             prefill-gateway-build
             helm-chart-validate
+            helm-install-kind
           )
           declare -A JOBS=(
             [detect-changes]="${{ needs.detect-changes.result }}"
@@ -1309,6 +1360,7 @@ jobs:
             [prefill-gateway-format-check]="${{ needs.prefill-gateway-format-check.result }}"
             [prefill-gateway-build]="${{ needs.prefill-gateway-build.result }}"
             [helm-chart-validate]="${{ needs.helm-chart-validate.result }}"
+            [helm-install-kind]="${{ needs.helm-install-kind.result }}"
           )
           {
             echo "## Test Gate Results"

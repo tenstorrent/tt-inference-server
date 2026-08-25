@@ -58,6 +58,7 @@ def merge_service(tmp_path, monkeypatch):
     settings.download_weights_from_service = False
     fake_jm = FakeJobManager(checkpoints=[], result_path=None)
     with ExitStack() as stack:
+        stack.enter_context(patch("model_services.training_service.Manager"))
         stack.enter_context(
             patch("model_services.training_service.get_settings", return_value=settings)
         )
@@ -111,6 +112,10 @@ async def test_adapter_merge_workflow_end_to_end(tmp_path, monkeypatch):
     settings.download_weights_from_service = False
 
     with ExitStack() as stack:
+<<<<<<< HEAD
+=======
+        stack.enter_context(patch("model_services.training_service.Manager"))
+>>>>>>> 502bc9ac31cfaa2239f7ef0324ed52eb7291d868
         stack.enter_context(
             patch("model_services.training_service.get_settings", return_value=settings)
         )
