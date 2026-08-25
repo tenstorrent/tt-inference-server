@@ -7,16 +7,17 @@ import json
 import os
 import re
 import shutil
+import tempfile
 import time
 from multiprocessing import Manager
 
 from model_services.base_job_service import BaseJobService
 from config.constants import (
-    TRAINING_STORE_ADAPTERS_DIR,
-    TRAINING_STORE_MERGED_MODELS_DIR,
     JobTypes,
     ModelNames,
     SupportedModels,
+    adapters_root,
+    merged_models_root,
 )
 from config.settings import get_settings
 from domain.adapter_merge_request import AdapterMergeRequest
@@ -48,7 +49,7 @@ class TrainingService(BaseJobService):
         org_id: Optional[str] = None,
     ) -> dict:
         request.device_type = self.settings.device
-        adapter_path = os.path.join(self._adapters_root(), request._task_id)
+        adapter_path = os.path.join(adapters_root(), request._task_id)
         os.makedirs(adapter_path, exist_ok=True)
         request._output_model_path = adapter_path
         self.logger.info(f"Generated output path: {request._output_model_path}")
@@ -131,7 +132,7 @@ class TrainingService(BaseJobService):
         merged_model_dir_name = re.sub(
             r"[^a-zA-Z0-9_.-]", "-", f"{self._model_name}-{request._task_id}"
         )
-        output_dir = os.path.join(self._merged_models_root(), merged_model_dir_name)
+        output_dir = os.path.join(merged_models_root(), merged_model_dir_name)
         request._adapter_path = adapter_path
         request._output_model_path = output_dir
 
@@ -187,15 +188,6 @@ class TrainingService(BaseJobService):
             )
             return request._output_model_path
 
-    def _cache_root(self) -> str:
-        return os.getenv("CACHE_ROOT", ".")
-
-    def _adapters_root(self) -> str:
-        return os.path.join(self._cache_root(), TRAINING_STORE_ADAPTERS_DIR)
-
-    def _merged_models_root(self) -> str:
-        return os.path.join(self._cache_root(), TRAINING_STORE_MERGED_MODELS_DIR)
-
     @staticmethod
     def _is_within_dir(base: str, path: str) -> bool:
         """True if `path` resolves to a location strictly inside `base`.
@@ -209,7 +201,7 @@ class TrainingService(BaseJobService):
     def _safe_rmtree_under_root(self, path: str) -> None:
         """Delete `path` only if it resolves to a location strictly inside the
         merged-models root."""
-        if self._is_within_dir(self._merged_models_root(), path):
+        if self._is_within_dir(merged_models_root(), path):
             shutil.rmtree(os.path.realpath(path), ignore_errors=True)
         else:
             self.logger.error(
@@ -217,6 +209,13 @@ class TrainingService(BaseJobService):
             )
 
     def _write_merge_info(self, request: AdapterMergeRequest) -> None:
+        # Enforce locally that we only ever write inside the merged-models root,
+        # rather than trusting the caller to have set a safe output path.
+        if not self._is_within_dir(merged_models_root(), request._output_model_path):
+            raise ValueError(
+                f"Refusing to write merge info outside merged-models root: "
+                f"{request._output_model_path!r}"
+            )
         info = {
             "merge_id": request._task_id,
             "model": self._base_model_hf_repo_id,
@@ -225,5 +224,14 @@ class TrainingService(BaseJobService):
             "created_at": time.time(),
         }
         info_path = os.path.join(request._output_model_path, MERGE_INFO_FILE_NAME)
-        with open(info_path, "w") as f:
-            json.dump(info, f)
+
+        fd, tmp_path = tempfile.mkstemp(
+            dir=request._output_model_path, prefix=".merge_info.", suffix=".tmp"
+        )
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(info, f)
+            os.replace(tmp_path, info_path)
+        except Exception:
+            os.unlink(tmp_path)
+            raise

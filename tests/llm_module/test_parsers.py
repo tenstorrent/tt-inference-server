@@ -212,6 +212,120 @@ def test_vllm_throughputs_are_none_without_duration_or_totals():
     assert data["tps_total_throughput"] is None
 
 
+def _parse_vllm_block_metrics(
+    *,
+    completed,
+    total_output_tokens,
+    request_throughput,
+    mean_e2el_ms,
+    output_lens=None,
+):
+    raw = {
+        **VLLM_RAW,
+        "completed": completed,
+        "total_input_tokens": 128 * completed,
+        "total_output_tokens": total_output_tokens,
+        "request_throughput": request_throughput,
+        "mean_e2el_ms": mean_e2el_ms,
+        # vLLM divides inter-event time by token count. For block-emitting
+        # models this is near zero when one event contains many token IDs.
+        "mean_tpot_ms": 0.00025,
+        "output_throughput": total_output_tokens / 100.0,
+        "tt_output_block_size": 256,
+    }
+    if output_lens is not None:
+        raw["output_lens"] = output_lens
+    return VLLMBenchParser().parse(raw, device="P300X2").data
+
+
+def test_vllm_partial_output_block_uses_request_latency_not_token_tpot():
+    data = _parse_vllm_block_metrics(
+        completed=8,
+        total_output_tokens=1024,
+        request_throughput=0.0461580898,
+        mean_e2el_ms=21664.4408,
+        output_lens=[128] * 8,
+    )
+
+    assert data["metric_semantics"] == "block_granular"
+    assert data["output_block_size"] == 256
+    assert data["output_blocks_per_request"] == 1
+    assert data["output_blocks_per_second"] == pytest.approx(0.0462)
+    assert data["mean_block_latency_ms"] == pytest.approx(21664.4408)
+    assert data["primary_throughput_metric"] == "output_blocks_per_second"
+    assert data["primary_latency_metric"] == "mean_block_latency_ms"
+
+
+def test_vllm_multi_block_latency_amortizes_request_e2el():
+    data = _parse_vllm_block_metrics(
+        completed=4,
+        total_output_tokens=4096,
+        request_throughput=0.0129386199,
+        mean_e2el_ms=77287.7441,
+        output_lens=[1024] * 4,
+    )
+
+    assert data["output_blocks_per_request"] == 4
+    assert data["output_blocks_per_second"] == pytest.approx(0.0518)
+    assert data["mean_block_latency_ms"] == pytest.approx(19321.936)
+
+
+def test_vllm_block_count_uses_actual_emitted_output_lengths():
+    data = _parse_vllm_block_metrics(
+        completed=3,
+        total_output_tokens=514,
+        request_throughput=0.3,
+        mean_e2el_ms=4000.0,
+        output_lens=[1, 256, 257],
+    )
+
+    # ceil(1/256) + ceil(256/256) + ceil(257/256) = 4 scheduling blocks.
+    assert data["output_blocks_per_request"] == pytest.approx(4 / 3, abs=1e-4)
+    assert data["output_blocks_per_second"] == pytest.approx(0.4)
+    assert data["mean_block_latency_ms"] == pytest.approx(3000.0)
+
+
+def test_vllm_block_metrics_exclude_failed_zero_length_entries():
+    data = _parse_vllm_block_metrics(
+        completed=2,
+        total_output_tokens=768,
+        request_throughput=0.2,
+        mean_e2el_ms=4000.0,
+        output_lens=[256, 0, 512, 0],
+    )
+
+    assert data["output_blocks_per_request"] == 1.5
+    assert data["output_blocks_per_second"] == pytest.approx(0.3)
+    assert data["mean_block_latency_ms"] == pytest.approx(2666.6667)
+
+
+def test_vllm_block_metrics_require_detailed_output_lengths():
+    data = _parse_vllm_block_metrics(
+        completed=3,
+        total_output_tokens=514,
+        request_throughput=0.3,
+        mean_e2el_ms=4000.0,
+    )
+
+    assert data["output_blocks_per_request"] is None
+    assert data["output_blocks_per_second"] is None
+    assert data["mean_block_latency_ms"] is None
+
+
+def test_vllm_zero_block_rate_is_not_treated_as_missing():
+    data = _parse_vllm_block_metrics(
+        completed=2,
+        total_output_tokens=0,
+        request_throughput=0.2,
+        mean_e2el_ms=1000.0,
+        output_lens=[0, 0],
+    )
+
+    assert data["output_blocks_per_request"] == 0.0
+    assert data["output_blocks_per_second"] == 0.0
+    assert data["mean_block_latency_ms"] is None
+
+
 def test_vllm_errors_surface_from_failed_count():
     data = VLLMBenchParser().parse({**VLLM_RAW, "failed": 4}, device="N150").data
     assert data["error_request_count"] == 4

@@ -29,6 +29,28 @@ cache:
 # (tt-media-server) env vars are set so each server picks up the name it reads.
 hfCacheDir: ""
 
+# Tenstorrent boards need 1Gi hugepages unless the cluster runs IOMMU + KMD
+# 1.29.0+, where they aren't required. When disabled, the chart drops the
+# hugepages-1Gi request/limit, the /dev/hugepages-1G volume + mounts, and the
+# cleanup-hugepages initContainer.
+hugepages:
+  enabled: true
+
+# PodMonitor scraping the inference server's own /metrics (vLLM and media-server
+# expose it). Disabled by default: a PodMonitor needs the Prometheus Operator
+# CRDs (monitoring.coreos.com), and rendering one without them fails at install.
+podMonitor:
+  enabled: false
+  # Labels added to the PodMonitor so your Prometheus's podMonitorSelector
+  # matches it, or it won't be scraped. The default matches tt-telemetry's chart
+  # and the kube-prometheus-stack convention (its podMonitorSelector defaults to
+  # release: <the stack's own release name>). Override when your Prometheus was
+  # installed under a different release name.
+  labels:
+    release: prometheus
+  interval: 30s
+  path: /metrics
+
 # ---------------------------------------------------------------------------
 # Defaults — merged with (and overridden by) per-model config below.
 # ---------------------------------------------------------------------------

@@ -280,6 +280,15 @@ def parse_arguments():
         "Text/LLM evals only.",
     )
     parser.add_argument(
+        "--repeat-evals",
+        type=int,
+        default=1,
+        metavar="N",
+        help="Run --workflow evals N times, keeping each run's report under "
+        "run_NN/ and writing an aggregated summary/ (reuses the workflow engine's "
+        "--repeat). Default 1 (no summary).",
+    )
+    parser.add_argument(
         "--skip-system-sw-validation",
         action="store_true",
         help="Skips the system software validation step (no tt-smi or tt-topology verification)",
@@ -478,6 +487,22 @@ def parse_arguments():
         "tt-media-server/cpp_server/tokenizers/. Overrides the model derived from "
         "--model; lets you serve a model with no catalog entry. Defaults to the "
         "--model's HF repo, then run_stack.sh's built-in default.",
+    )
+
+    agentic_group = parser.add_argument_group(
+        "Agentic evals",
+        "Arguments for --workflow agentic (accuracy evals: tau3 / terminal-bench / "
+        "swe-bench), routed to the workflow engine",
+    )
+    agentic_group.add_argument(
+        "--agentic-benchmark",
+        type=str,
+        default=None,
+        help="Comma-separated agentic benchmark(s) to run under --workflow agentic. "
+        "Aliases: tau3 (tau3_bench_*), tb2.0 (terminal_bench_2), tb2.1 "
+        "(terminal_bench_2_1), swebench (swe_bench_*). Raw task names are also "
+        "accepted. When unset (or 'all'), runs every EVALS_AGENTIC task configured "
+        "for the model.",
     )
 
     agentic_traces_group = parser.add_argument_group(
@@ -755,6 +780,23 @@ def parse_arguments():
     if args.served_model and args.workflow != "prefill_decode":
         parser.error(
             "--served-model requires --workflow prefill_decode "
+            f"(got --workflow {args.workflow})."
+        )
+
+    if args.agentic_benchmark and args.workflow != "agentic":
+        parser.error(
+            "--agentic-benchmark selects which agentic eval(s) to run and requires "
+            f"--workflow agentic (got --workflow {args.workflow})."
+        )
+
+    if args.repeat_evals is not None and args.repeat_evals < 1:
+        parser.error(
+            f"--repeat-evals must be a positive integer (got {args.repeat_evals})."
+        )
+
+    if args.repeat_evals and args.repeat_evals > 1 and args.workflow != "evals":
+        parser.error(
+            "--repeat-evals applies to --workflow evals "
             f"(got --workflow {args.workflow})."
         )
 
