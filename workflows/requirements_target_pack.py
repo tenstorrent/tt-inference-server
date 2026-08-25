@@ -26,6 +26,7 @@ import logging
 from dataclasses import replace
 from typing import Any, List, Mapping, Optional
 
+from workflow_module.model_catalog import ModelSpecProvider
 from workflow_module.requirements_schema import (
     PRIORITY_MUST,
     PRIORITY_SHOULD,
@@ -33,6 +34,7 @@ from workflow_module.requirements_schema import (
     RequirementsDoc,
     Scenario,
 )
+from workflow_module.target_pack import TargetPack
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +89,7 @@ def _num_prompts_for(concurrency: int) -> int:
     return max(_MIN_NUM_PROMPTS, concurrency * _NUM_PROMPTS_CONCURRENCY_MULTIPLE)
 
 
-class RequirementsModelSpecProvider:
+class RequirementsModelSpecProvider(ModelSpecProvider):
     """Model-spec provider that synthesizes off-catalog specs from a document.
 
     Delegates to the wrapped Tenstorrent provider for catalog models; when the
@@ -115,11 +117,12 @@ class RequirementsModelSpecProvider:
             )
             return self._synthesize(model, device)
 
-    def resolve_lenient(self, model: str, device: str) -> Any:
-        try:
-            return self._delegate.resolve_lenient(model=model, device=device)
-        except ValueError:
-            return self._synthesize(model, device)
+    def resolve_candidates(self, model: str, device: str) -> List[Any]:
+        # Pure data access (no fallback policy): an off-catalog model has no
+        # catalog candidates by definition — resolve() already synthesizes a
+        # spec for it without raising, so callers only reach this when the
+        # model is genuinely unknown.
+        return self._delegate.resolve_candidates(model=model, device=device)
 
     def load_runtime_spec(self, path: str) -> Optional[Any]:
         return self._delegate.load_runtime_spec(path)
@@ -149,7 +152,7 @@ class RequirementsModelSpecProvider:
         )
 
 
-class RequirementsTargetPack:
+class RequirementsTargetPack(TargetPack):
     """Target pack whose eval + benchmark content comes from a requirements doc.
 
     Everything the document does not define (agentic traces, reference-target
