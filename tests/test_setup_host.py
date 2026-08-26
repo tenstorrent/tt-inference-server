@@ -1019,9 +1019,7 @@ class TestCustomWeightsIdentitySeparation:
         self, tiny_model_spec, temp_dir
     ):
         host_volume = str(temp_dir / "persistent_volume")
-        base_config = SetupConfig(
-            model_spec=tiny_model_spec, host_volume=host_volume
-        )
+        base_config = SetupConfig(model_spec=tiny_model_spec, host_volume=host_volume)
         derived = derive_custom_weights_spec(tiny_model_spec, CUSTOM_LABEL_HF)
         custom_config = SetupConfig(model_spec=derived, host_volume=host_volume)
 
@@ -1032,8 +1030,7 @@ class TestCustomWeightsIdentitySeparation:
             != custom_config.container_tt_metal_cache_dir
         )
         assert (
-            base_config.host_tt_metal_cache_dir
-            != custom_config.host_tt_metal_cache_dir
+            base_config.host_tt_metal_cache_dir != custom_config.host_tt_metal_cache_dir
         )
         assert custom_config.container_tt_metal_cache_dir == (
             custom_config.cache_root
@@ -1061,9 +1058,7 @@ class TestCustomWeightsIdentitySeparation:
         (weights_dir / "config.json").write_text("{}")
 
         derived = derive_custom_weights_spec(tiny_model_spec, CUSTOM_LABEL_LOCAL)
-        config = SetupConfig(
-            model_spec=derived, host_weights_dir=str(weights_dir)
-        )
+        config = SetupConfig(model_spec=derived, host_weights_dir=str(weights_dir))
 
         # Local bytes: bind mount, container path is the mount (not a HF snapshot).
         assert config.host_model_weights_mount_dir.resolve() == weights_dir.resolve()
@@ -1072,9 +1067,7 @@ class TestCustomWeightsIdentitySeparation:
         )
         assert config.host_model_weights_snapshot_dir is None
 
-    def test_custom_plus_host_weights_does_not_hit_hf(
-        self, tiny_model_spec, temp_dir
-    ):
+    def test_custom_plus_host_weights_does_not_hit_hf(self, tiny_model_spec, temp_dir):
         """setup_weights_huggingface early-returns for host_weights_dir: no download."""
         weights_dir = temp_dir / "custom_weights"
         weights_dir.mkdir()
