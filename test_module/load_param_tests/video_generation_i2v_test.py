@@ -4,9 +4,11 @@
 
 """End-to-end test for Wan2.2 Image-to-Video generation.
 
-Uploads a fixture image as the conditioning frame, submits a job to
-``POST /v1/videos/generations/i2v``, polls until completion, and asserts
-the returned MP4 is a non-empty file.
+Submits a conditioning image to ``POST /v1/videos/generations/i2v``, polls
+until completion, and asserts the returned MP4 is a non-empty file. When the
+test target supplies ``image_url``, the URL is passed through unchanged so the
+live server must download and resolve it before Wan2.2 generation starts.
+Without that target, the checked-in fixture is sent as inline base64.
 
 Requires the server to be booted with ``MODEL_RUNNER=tt-wan2.2-i2v``.
 """
@@ -18,6 +20,7 @@ import logging
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.parse import urlsplit
 
 import aiohttp
 from report_module.schema import Block
@@ -87,16 +90,35 @@ class VideoGenerationI2VTest(BaseTest):
         submit_url = f"{self.base_url}{SUBMIT_PATH}"
         logger.info(f"Testing I2V generation at {submit_url}")
 
-        image_b64 = _load_fixture_image_base64()
-        payload = {
-            "prompt": (
+        image_url = self.targets.get("image_url")
+        if image_url:
+            image_prompt = image_url
+            image_source = "url"
+            prompt = (
+                "The silver sports car accelerates smoothly down the country "
+                "road as the camera tracks alongside it, cinematic motion"
+            )
+            parsed_image_url = urlsplit(image_url)
+            logger.info(
+                "Using remote I2V conditioning image: scheme=%s host=%s",
+                parsed_image_url.scheme,
+                parsed_image_url.hostname,
+            )
+        else:
+            image_prompt = _load_fixture_image_base64()
+            image_source = "inline_base64"
+            prompt = (
                 "A tranquil sunrise over rolling hills, soft golden light, "
                 "cinematic camera pan"
-            ),
+            )
+            logger.info("Using inline-base64 I2V conditioning image")
+
+        payload = {
+            "prompt": prompt,
             "negative_prompt": "blurry, low quality, distorted",
             "num_inference_steps": num_inference_steps,
             "seed": 42,
-            "image_prompts": [{"image": image_b64, "frame_pos": 0}],
+            "image_prompts": [{"image": image_prompt, "frame_pos": 0}],
         }
 
         session_timeout = aiohttp.ClientTimeout(total=self.poll_timeout)
@@ -105,11 +127,20 @@ class VideoGenerationI2VTest(BaseTest):
         ) as session:
             job_id = await self._submit_job(session, submit_url, payload)
             if not job_id:
-                return {"success": False, "reason": "submit_failed"}
+                return {
+                    "success": False,
+                    "reason": "submit_failed",
+                    "image_source": image_source,
+                }
 
             file_path = await self._poll_until_complete(session, job_id)
             if not file_path:
-                return {"success": False, "reason": "poll_failed", "job_id": job_id}
+                return {
+                    "success": False,
+                    "reason": "poll_failed",
+                    "job_id": job_id,
+                    "image_source": image_source,
+                }
 
             file_size = (
                 Path(file_path).stat().st_size if Path(file_path).exists() else 0
@@ -121,6 +152,7 @@ class VideoGenerationI2VTest(BaseTest):
                 "job_id": job_id,
                 "file_path": file_path,
                 "file_size_bytes": file_size,
+                "image_source": image_source,
             }
 
     async def _submit_job(

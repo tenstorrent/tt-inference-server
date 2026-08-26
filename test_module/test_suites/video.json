@@ -68,7 +68,8 @@
                     "targets": {
                         "num_inference_steps": 40,
                         "poll_timeout": 1200,
-                        "poll_interval": 5
+                        "poll_interval": 5,
+                        "image_url": "https://pixnio.com/free-images/2019/01/10/2019-01-10-10-11-54.jpg"
                     },
                     "model_targets": {
                         "wan_i2v+t3k": {
