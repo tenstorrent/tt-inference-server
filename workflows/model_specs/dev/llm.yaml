@@ -225,6 +225,45 @@ templates:
       # by enable-auto-tool-choice in vllm_args above.
       tool_call_parser_name: gemma4
 
+# Explicit generated-Quetzal development implementation.  The native
+# tt_transformers entry above remains the default.  The package root is inside
+# TTIS's persistent cache_root mount and is content-addressed by the attested
+# artifact and weights tree hashes.  TTIS does not install this bundle yet; see
+# docs/quetzal_dev_integration.md for the required layout and fail-closed setup.
+- weights:
+    - google/gemma-4-31B-it
+  impl: quetzal
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 1
+      max_context: 1024
+      default_impl: false
+      env_vars:
+        MESH_DEVICE: P150x4
+        QUETZAL_VLLM: "1"
+        QUETZAL_MODEL: google/gemma-4-31B-it
+        QUETZAL_PACKAGE_ID: sha256-e4ebc6d59bc92279c9bbba365474d6ab4ce292013db1e5faf02b6ea9eb096f99-32c815d68145964c942386b052f49dd088de89d72f8e5e5243b33d13dadb87da
+        QUETZAL_PACKAGE_ROOT: /home/container_app_user/cache_root/quetzal/packages/sha256-e4ebc6d59bc92279c9bbba365474d6ab4ce292013db1e5faf02b6ea9eb096f99-32c815d68145964c942386b052f49dd088de89d72f8e5e5243b33d13dadb87da
+        QZ_MODELS_ROOT: /home/container_app_user/cache_root/quetzal/packages/sha256-e4ebc6d59bc92279c9bbba365474d6ab4ce292013db1e5faf02b6ea9eb096f99-32c815d68145964c942386b052f49dd088de89d72f8e5e5243b33d13dadb87da
+        QZ_QUALIFICATION_MANIFEST: /home/container_app_user/cache_root/quetzal/packages/sha256-e4ebc6d59bc92279c9bbba365474d6ab4ce292013db1e5faf02b6ea9eb096f99-32c815d68145964c942386b052f49dd088de89d72f8e5e5243b33d13dadb87da/qualification_manifest.yaml
+        QUETZAL_PREFILL_GENERATED_PY: /home/container_app_user/cache_root/quetzal/packages/sha256-e4ebc6d59bc92279c9bbba365474d6ab4ce292013db1e5faf02b6ea9eb096f99-32c815d68145964c942386b052f49dd088de89d72f8e5e5243b33d13dadb87da/compiled/google_gemma-4-31B-it-4chip-b1/full/prefill/generated.py
+        QUETZAL_DECODE_GENERATED_PY: /home/container_app_user/cache_root/quetzal/packages/sha256-e4ebc6d59bc92279c9bbba365474d6ab4ce292013db1e5faf02b6ea9eb096f99-32c815d68145964c942386b052f49dd088de89d72f8e5e5243b33d13dadb87da/compiled/google_gemma-4-31B-it-4chip-b1/full/decode/generated.py
+        QUETZAL_PREFILL_METADATA_JSON: /home/container_app_user/cache_root/quetzal/packages/sha256-e4ebc6d59bc92279c9bbba365474d6ab4ce292013db1e5faf02b6ea9eb096f99-32c815d68145964c942386b052f49dd088de89d72f8e5e5243b33d13dadb87da/compiled/google_gemma-4-31B-it-4chip-b1/full/prefill/metadata.json
+        QUETZAL_DECODE_METADATA_JSON: /home/container_app_user/cache_root/quetzal/packages/sha256-e4ebc6d59bc92279c9bbba365474d6ab4ce292013db1e5faf02b6ea9eb096f99-32c815d68145964c942386b052f49dd088de89d72f8e5e5243b33d13dadb87da/compiled/google_gemma-4-31B-it-4chip-b1/full/decode/metadata.json
+        QUETZAL_WEIGHTS: /home/container_app_user/cache_root/quetzal/packages/sha256-e4ebc6d59bc92279c9bbba365474d6ab4ce292013db1e5faf02b6ea9eb096f99-32c815d68145964c942386b052f49dd088de89d72f8e5e5243b33d13dadb87da/compiled_weights/google_gemma-4-31B-it/full/weights.pt
+      vllm_args:
+        block_size: 64
+        max_model_len: 1024
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 90000000
+  status: EXPERIMENTAL
+  has_builtin_warmup: false
+
 - weights:
     - google/gemma-4-12B-it
   impl: tt_transformers
@@ -397,6 +436,42 @@ templates:
     Qwen/Qwen3.6-27B:
       reasoning_parser_name: qwen3
       tool_call_parser_name: qwen3_coder
+
+# Explicit generated-Quetzal development implementation.  Keep the native
+# qwen36_blackhole_b8 entry below as the default implementation.
+- weights:
+    - Qwen/Qwen3.6-27B
+  impl: quetzal
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 1
+      max_context: 4096
+      default_impl: false
+      env_vars:
+        MESH_DEVICE: P150x4
+        QUETZAL_VLLM: "1"
+        QUETZAL_MODEL: Qwen/Qwen3.6-27B
+        QUETZAL_PACKAGE_ID: sha256-91945862b1237a89d10f241a376068d8b995dd2f9add7ed2b0bfb2801f1399a8-e4841b00c2a2aae0c94b72d79e2dc3a2adf0b283b65e570adca14bb546a4b050
+        QUETZAL_PACKAGE_ROOT: /home/container_app_user/cache_root/quetzal/packages/sha256-91945862b1237a89d10f241a376068d8b995dd2f9add7ed2b0bfb2801f1399a8-e4841b00c2a2aae0c94b72d79e2dc3a2adf0b283b65e570adca14bb546a4b050
+        QZ_MODELS_ROOT: /home/container_app_user/cache_root/quetzal/packages/sha256-91945862b1237a89d10f241a376068d8b995dd2f9add7ed2b0bfb2801f1399a8-e4841b00c2a2aae0c94b72d79e2dc3a2adf0b283b65e570adca14bb546a4b050
+        QZ_QUALIFICATION_MANIFEST: /home/container_app_user/cache_root/quetzal/packages/sha256-91945862b1237a89d10f241a376068d8b995dd2f9add7ed2b0bfb2801f1399a8-e4841b00c2a2aae0c94b72d79e2dc3a2adf0b283b65e570adca14bb546a4b050/qualification_manifest.yaml
+        QUETZAL_PREFILL_GENERATED_PY: /home/container_app_user/cache_root/quetzal/packages/sha256-91945862b1237a89d10f241a376068d8b995dd2f9add7ed2b0bfb2801f1399a8-e4841b00c2a2aae0c94b72d79e2dc3a2adf0b283b65e570adca14bb546a4b050/compiled/Qwen_Qwen3.6-27B-4chip-b1/full/prefill/generated.py
+        QUETZAL_DECODE_GENERATED_PY: /home/container_app_user/cache_root/quetzal/packages/sha256-91945862b1237a89d10f241a376068d8b995dd2f9add7ed2b0bfb2801f1399a8-e4841b00c2a2aae0c94b72d79e2dc3a2adf0b283b65e570adca14bb546a4b050/compiled/Qwen_Qwen3.6-27B-4chip-b1/full/decode/generated.py
+        QUETZAL_PREFILL_METADATA_JSON: /home/container_app_user/cache_root/quetzal/packages/sha256-91945862b1237a89d10f241a376068d8b995dd2f9add7ed2b0bfb2801f1399a8-e4841b00c2a2aae0c94b72d79e2dc3a2adf0b283b65e570adca14bb546a4b050/compiled/Qwen_Qwen3.6-27B-4chip-b1/full/prefill/metadata.json
+        QUETZAL_DECODE_METADATA_JSON: /home/container_app_user/cache_root/quetzal/packages/sha256-91945862b1237a89d10f241a376068d8b995dd2f9add7ed2b0bfb2801f1399a8-e4841b00c2a2aae0c94b72d79e2dc3a2adf0b283b65e570adca14bb546a4b050/compiled/Qwen_Qwen3.6-27B-4chip-b1/full/decode/metadata.json
+        QUETZAL_WEIGHTS: /home/container_app_user/cache_root/quetzal/packages/sha256-91945862b1237a89d10f241a376068d8b995dd2f9add7ed2b0bfb2801f1399a8-e4841b00c2a2aae0c94b72d79e2dc3a2adf0b283b65e570adca14bb546a4b050/compiled_weights/Qwen_Qwen3.6-27B/full/weights.pt
+      vllm_args:
+        block_size: 64
+        max_model_len: 4096
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 90000000
+  status: EXPERIMENTAL
+  has_builtin_warmup: false
 
 - weights:
     - Qwen/Qwen3.6-27B

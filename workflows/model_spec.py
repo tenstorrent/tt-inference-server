@@ -308,6 +308,16 @@ qwen36_blackhole_b8_impl = ImplSpec(
     code_path="models/demos/blackhole/qwen36",
 )
 
+quetzal_impl = ImplSpec(
+    impl_id="quetzal",
+    impl_name="quetzal",
+    repo_url="https://github.com/tenstorrent/tt-quetzalcoatlus",
+    # QuetzalLlamaForCausalLM lives here; bound inside the vLLM process by the
+    # vllm-tt-plugin registration patch (QUETZAL_VLLM=1). code_path is doc-link
+    # only and is never dereferenced on the dev catalog (no tt_metal_commit).
+    code_path="serving/quetzal_vllm.py",
+)
+
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "tt_transformers": tt_transformers_impl,
     "llama3_70b_galaxy": llama3_70b_galaxy_impl,
@@ -322,6 +332,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "qwen36_blackhole": qwen36_blackhole_impl,
     "training_lora": training_lora_impl,
     "qwen36_blackhole_b8": qwen36_blackhole_b8_impl,
+    "quetzal": quetzal_impl,
 }
 
 

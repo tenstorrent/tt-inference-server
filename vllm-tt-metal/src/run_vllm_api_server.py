@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import argparse
+from importlib import metadata as importlib_metadata
 import json
 import logging
 import multiprocessing
@@ -572,6 +573,90 @@ def set_runtime_env_vars(model_spec_json):
         os.environ[key] = value
 
 
+_QUETZAL_ARTIFACT_ENV_VARS = (
+    "QZ_QUALIFICATION_MANIFEST",
+    "QUETZAL_PREFILL_GENERATED_PY",
+    "QUETZAL_DECODE_GENERATED_PY",
+    "QUETZAL_PREFILL_METADATA_JSON",
+    "QUETZAL_DECODE_METADATA_JSON",
+    "QUETZAL_WEIGHTS",
+)
+
+
+def validate_quetzal_runtime_contract(model_spec_json, entry_points=None):
+    """Fail before vLLM when an explicit Quetzal spec is not materialized.
+
+    Selecting ``impl=quetzal`` must never degrade into the native model registry
+    because a development image omitted the general plugin or its artifact
+    volume.  All artifact paths must be files below the declared immutable
+    package root; resolving paths also rejects symlink escapes.
+    """
+    impl_id = model_spec_json.get("impl", {}).get("impl_id")
+    if impl_id != "quetzal":
+        return
+
+    if os.getenv("QUETZAL_VLLM", "").lower() in ("", "0", "false"):
+        raise RuntimeError(
+            "impl=quetzal requires QUETZAL_VLLM=1; refusing native fallback"
+        )
+
+    package_id = os.getenv("QUETZAL_PACKAGE_ID")
+    package_root_value = os.getenv("QUETZAL_PACKAGE_ROOT")
+    if not package_id or not package_root_value:
+        raise RuntimeError(
+            "impl=quetzal requires QUETZAL_PACKAGE_ID and "
+            "QUETZAL_PACKAGE_ROOT"
+        )
+    package_root = Path(package_root_value).resolve()
+    if package_root.name != package_id:
+        raise RuntimeError(
+            "QUETZAL_PACKAGE_ROOT basename must equal QUETZAL_PACKAGE_ID"
+        )
+    if Path(os.getenv("QZ_MODELS_ROOT", "")).resolve() != package_root:
+        raise RuntimeError(
+            "QZ_MODELS_ROOT must equal the declared QUETZAL_PACKAGE_ROOT"
+        )
+
+    missing = []
+    for env_name in _QUETZAL_ARTIFACT_ENV_VARS:
+        value = os.getenv(env_name)
+        if not value:
+            missing.append(f"{env_name}=<unset>")
+            continue
+        artifact_path = Path(value).resolve()
+        try:
+            artifact_path.relative_to(package_root)
+        except ValueError as exc:
+            raise RuntimeError(
+                f"{env_name} escapes QUETZAL_PACKAGE_ROOT: {artifact_path}"
+            ) from exc
+        if not artifact_path.is_file():
+            missing.append(f"{env_name}={artifact_path}")
+    if missing:
+        raise RuntimeError(
+            "Quetzal content package is not materialized; missing files: "
+            + ", ".join(missing)
+        )
+
+    discovered = (
+        importlib_metadata.entry_points() if entry_points is None else entry_points
+    )
+    plugins = (
+        discovered.select(group="vllm.general_plugins")
+        if hasattr(discovered, "select")
+        else discovered.get("vllm.general_plugins", ())
+    )
+    if not any(
+        ep.name == "quetzal_model_registry"
+        and ep.value == "tt_quetzalcoatlus.vllm_plugin:register"
+        for ep in plugins
+    ):
+        raise RuntimeError(
+            "impl=quetzal requires the Quetzal vllm.general_plugins entry point; "
+            "refusing native fallback"
+        )
+
+
 def start_trace_capture(
     model_spec_json, service_port: int, disable_trace_capture: bool = False
 ):
@@ -773,6 +858,7 @@ def main():
     # Step 4: Set runtime environment variables and vLLM server args
     set_metal_timeout_env_vars()
     set_runtime_env_vars(model_spec)
+    validate_quetzal_runtime_contract(model_spec)
     runtime_settings(model_spec, no_auth=args.no_auth)
     default_vllm_args = model_spec["device_model_spec"]["vllm_args"]
     set_vllm_sys_argv(args, remaining_sys_argv, default_vllm_args)

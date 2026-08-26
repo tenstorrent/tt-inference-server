@@ -284,6 +284,95 @@ def test_main_passes_passthrough_port_to_trace_capture(
     )
 
 
+def _materialized_quetzal_contract(monkeypatch, tmp_path, module):
+    package_id = "sha256-test-artifact-test-weights"
+    package_root = tmp_path / package_id
+    package_root.mkdir()
+    monkeypatch.setenv("QUETZAL_VLLM", "1")
+    monkeypatch.setenv("QUETZAL_PACKAGE_ID", package_id)
+    monkeypatch.setenv("QUETZAL_PACKAGE_ROOT", str(package_root))
+    monkeypatch.setenv("QZ_MODELS_ROOT", str(package_root))
+    for index, env_name in enumerate(module._QUETZAL_ARTIFACT_ENV_VARS):
+        artifact = package_root / f"artifact-{index}"
+        artifact.write_text("test")
+        monkeypatch.setenv(env_name, str(artifact))
+    return package_root
+
+
+def _quetzal_entry_points():
+    return {
+        "vllm.general_plugins": [
+            types.SimpleNamespace(
+                name="quetzal_model_registry",
+                value="tt_quetzalcoatlus.vllm_plugin:register",
+            )
+        ]
+    }
+
+
+def test_quetzal_runtime_contract_accepts_materialized_content_package(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    _materialized_quetzal_contract(
+        monkeypatch, tmp_path, run_vllm_api_server_module
+    )
+    run_vllm_api_server_module.validate_quetzal_runtime_contract(
+        {"impl": {"impl_id": "quetzal"}},
+        entry_points=_quetzal_entry_points(),
+    )
+
+
+def test_quetzal_runtime_contract_rejects_missing_package_file(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    _materialized_quetzal_contract(
+        monkeypatch, tmp_path, run_vllm_api_server_module
+    )
+    Path(os.environ["QUETZAL_WEIGHTS"]).unlink()
+    with pytest.raises(RuntimeError, match="not materialized.*QUETZAL_WEIGHTS"):
+        run_vllm_api_server_module.validate_quetzal_runtime_contract(
+            {"impl": {"impl_id": "quetzal"}},
+            entry_points=_quetzal_entry_points(),
+        )
+
+
+def test_quetzal_runtime_contract_rejects_path_escape(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    _materialized_quetzal_contract(
+        monkeypatch, tmp_path, run_vllm_api_server_module
+    )
+    outside = tmp_path / "outside.py"
+    outside.write_text("test")
+    monkeypatch.setenv("QUETZAL_PREFILL_GENERATED_PY", str(outside))
+    with pytest.raises(RuntimeError, match="escapes QUETZAL_PACKAGE_ROOT"):
+        run_vllm_api_server_module.validate_quetzal_runtime_contract(
+            {"impl": {"impl_id": "quetzal"}},
+            entry_points=_quetzal_entry_points(),
+        )
+
+
+def test_quetzal_runtime_contract_rejects_missing_plugin(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    _materialized_quetzal_contract(
+        monkeypatch, tmp_path, run_vllm_api_server_module
+    )
+    with pytest.raises(RuntimeError, match="requires the Quetzal.*entry point"):
+        run_vllm_api_server_module.validate_quetzal_runtime_contract(
+            {"impl": {"impl_id": "quetzal"}},
+            entry_points={"vllm.general_plugins": []},
+        )
+
+
+def test_quetzal_runtime_contract_is_noop_for_native(
+    run_vllm_api_server_module,
+):
+    run_vllm_api_server_module.validate_quetzal_runtime_contract(
+        {"impl": {"impl_id": "tt_transformers"}}, entry_points={}
+    )
+
+
 def _weights_spec():
     return {
         "model_name": "Mistral-7B-Instruct-v0.3",

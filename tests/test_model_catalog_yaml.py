@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
+import workflows.model_spec as model_spec_module
 from workflows.utils import get_repo_root_path
 from workflows.model_spec import (
     DeviceModelSpec,
@@ -13,6 +14,8 @@ from workflows.model_spec import (
     _build_device_model_spec,
     _build_system_requirements,
     _build_template,
+    get_model_spec_map,
+    get_runtime_model_spec,
     load_templates_from_yaml,
     tt_transformers_impl,
 )
@@ -254,3 +257,67 @@ def test_catalog_yaml_loads_and_every_template_expands(env, yaml_name):
     for t in templates:
         specs = t.expand_to_specs()
         assert specs, f"{env}/{yaml_name}: template {t.weights} expanded to zero specs"
+
+
+def _dev_llm_spec_map():
+    templates = load_templates_from_yaml(MODEL_SPECS_DIR / "dev" / "llm.yaml")
+    return get_model_spec_map(templates)
+
+
+@pytest.mark.parametrize(
+    "model_name,expected_context,expected_native_impl",
+    [
+        ("Qwen3.6-27B", 4096, "qwen36-blackhole-b8"),
+        ("gemma-4-31B-it", 1024, "tt-transformers"),
+    ],
+)
+def test_quetzal_dev_specs_are_explicit_and_preserve_native_default(
+    monkeypatch, model_name, expected_context, expected_native_impl
+):
+    specs = _dev_llm_spec_map()
+    monkeypatch.setattr(model_spec_module, "MODEL_SPECS", specs)
+    monkeypatch.setattr(model_spec_module, "_MODEL_SPECS_ENV", "dev")
+
+    native, native_impl, _ = get_runtime_model_spec(model_name, "p300x2")
+    assert native_impl == expected_native_impl
+    assert native.device_model_spec.default_impl is True
+
+    quetzal, resolved_impl, _ = get_runtime_model_spec(
+        model_name, "p300x2", impl="quetzal"
+    )
+    assert resolved_impl == "quetzal"
+    assert quetzal.impl.impl_id == "quetzal"
+    assert quetzal.device_model_spec.default_impl is False
+    assert quetzal.device_model_spec.max_concurrency == 1
+    assert quetzal.device_model_spec.max_context == expected_context
+
+
+@pytest.mark.parametrize("model_name", ["Qwen3.6-27B", "gemma-4-31B-it"])
+def test_quetzal_dev_specs_use_content_store_contract(monkeypatch, model_name):
+    specs = _dev_llm_spec_map()
+    monkeypatch.setattr(model_spec_module, "MODEL_SPECS", specs)
+    monkeypatch.setattr(model_spec_module, "_MODEL_SPECS_ENV", "dev")
+    quetzal, _, _ = get_runtime_model_spec(
+        model_name, "p300x2", impl="quetzal"
+    )
+    env = quetzal.env_vars
+
+    package_root = env["QUETZAL_PACKAGE_ROOT"]
+    assert package_root.startswith(
+        "/home/container_app_user/cache_root/quetzal/packages/sha256-"
+    )
+    assert env["QZ_MODELS_ROOT"] == package_root
+    assert env["QUETZAL_PACKAGE_ID"] == package_root.rsplit("/", 1)[-1]
+    for key in (
+        "QZ_QUALIFICATION_MANIFEST",
+        "QUETZAL_PREFILL_GENERATED_PY",
+        "QUETZAL_DECODE_GENERATED_PY",
+        "QUETZAL_PREFILL_METADATA_JSON",
+        "QUETZAL_DECODE_METADATA_JSON",
+        "QUETZAL_WEIGHTS",
+    ):
+        assert env[key].startswith(f"{package_root}/")
+
+    serialized_env = "\n".join(f"{key}={value}" for key, value in env.items())
+    assert "/home/ttuser" not in serialized_env
+    assert "/mnt/nas" not in serialized_env
