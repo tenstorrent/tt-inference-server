@@ -53,11 +53,13 @@ def short_uuid():
 # binary; its CMD picks one based on SERVER_MODE (`cpp` -> run_cpp.sh).
 #
 # Unlike the Python server, the C++ binary doesn't derive per-model settings
-# from MODEL+DEVICE — it expects each as its own env var. The tables below
-# mirror tt-media-server/config/constants.py::ModelConfigs and must be kept
-# in sync until the C++ binary learns to derive them itself.
+# from MODEL+DEVICE — it expects each as its own env var. In particular it
+# sizes its worker pool from DEVICE_IDS before any embedded Python (and thus
+# ModelConfigs) exists. The tables below mirror
+# tt-media-server/config/constants.py::ModelConfigs and must be kept in sync
+# until the C++ binary learns to derive them itself.
 
-_SDXL_DEVICE_IDS_32 = ",".join(f"({i})" for i in range(32))
+_DEVICE_IDS_32 = ",".join(f"({i})" for i in range(32))
 
 _CPP_SDXL_RUNNER_BY_MODEL_NAME = {
     "stable-diffusion-xl-base-1.0": "tt_sdxl_generate",
@@ -70,24 +72,45 @@ _CPP_SDXL_DEVICE_DEFAULTS = {
     "n150": ("1,1", False, "(0)"),
     "n300": ("2,1", False, "(0)"),
     "t3k": ("2,1", False, "(0),(1),(2),(3)"),
-    "galaxy": ("1,1", True, _SDXL_DEVICE_IDS_32),
+    "galaxy": ("1,1", True, _DEVICE_IDS_32),
     "p150": ("1,1", False, "(0)"),
     "p300": ("2,1", False, "(0,1)"),
     "p300x2": ("2,1", False, "(0,1),(2,3)"),
     "p150x4": ("2,1", False, "(0,1),(2,3)"),
     "p150x8": ("2,1", False, "(0,1),(2,3),(4,5),(6,7)"),
-    "blackhole_galaxy": ("1,1", False, _SDXL_DEVICE_IDS_32),
+    "blackhole_galaxy": ("1,1", False, _DEVICE_IDS_32),
+}
+
+# Embedding models on the cpp_server backend. MODEL_RUNNER_TYPE values must
+# match the C++ embedding catalog in
+# tt-media-server/cpp_server/src/config/settings.cpp (embeddingModels()).
+_CPP_EMBEDDING_RUNNER_BY_MODEL_NAME = {
+    "bge-large-en-v1.5": "tt_bge_large_en",
+    "bge-m3": "tt_bge_m3",
+    "Qwen3-Embedding-8B": "tt_qwen_embedding_8b",
+}
+
+# device.name.lower() -> DEVICE_IDS (worker layout, one worker per group).
+# Mirrors constants.py::DeviceIds usage in the embedding ModelConfigs entries;
+# identical for all three embedding models.
+_CPP_EMBEDDING_DEVICE_IDS = {
+    "n150": "(0)",
+    "n300": "(0)",
+    "t3k": "(0),(1),(2),(3)",
+    "galaxy": _DEVICE_IDS_32,
 }
 
 
 def _is_cpp_media_spec(model_spec) -> bool:
     """True if this MEDIA spec should run on the cpp_server backend."""
-    defaults = _CPP_SDXL_DEVICE_DEFAULTS.get(model_spec.device_type.name.lower())
-    return (
-        model_spec.inference_engine == InferenceEngine.MEDIA.value
-        and model_spec.model_name in _CPP_SDXL_RUNNER_BY_MODEL_NAME
-        and defaults is not None
-    )
+    if model_spec.inference_engine != InferenceEngine.MEDIA.value:
+        return False
+    device = model_spec.device_type.name.lower()
+    if model_spec.model_name in _CPP_SDXL_RUNNER_BY_MODEL_NAME:
+        return device in _CPP_SDXL_DEVICE_DEFAULTS
+    if model_spec.model_name in _CPP_EMBEDDING_RUNNER_BY_MODEL_NAME:
+        return device in _CPP_EMBEDDING_DEVICE_IDS
+    return False
 
 
 def _get_cpp_media_server_docker_env_vars(model_spec):
@@ -121,6 +144,39 @@ def _get_cpp_media_server_docker_env_vars(model_spec):
     return env_vars
 
 
+def _get_cpp_embedding_server_docker_env_vars(model_spec):
+    """Build the env-var set the cpp_server embedding service needs.
+
+    Deliberately minimal: the C++ parent only needs the runner type, the
+    machine class (DEVICE, which it cannot derive) and the worker layout
+    (DEVICE_IDS). Everything else — device_mesh_shape, batch sizes, vllm
+    settings — is resolved from constants.py::ModelConfigs by the embedded
+    Python interpreter, to which the C++ worker exports MODEL/DEVICE/
+    MODEL_RUNNER itself. MODEL must NOT be set here: the C++ parent's
+    config::model() throws on non-LLM values.
+    """
+    device = model_spec.device_type.name.lower()
+    runner = _CPP_EMBEDDING_RUNNER_BY_MODEL_NAME[model_spec.model_name]
+    device_ids = _CPP_EMBEDDING_DEVICE_IDS[device]
+
+    env_vars = {
+        "SERVER_MODE": "cpp",
+        "MODEL_SERVICE": "embedding",
+        "MODEL_RUNNER_TYPE": runner,
+        "DEVICE": device,
+        "DEVICE_IDS": device_ids,
+        # Keep HF weights on the persistent cache_root volume, same as the
+        # Python (uvicorn) media server branch below.
+        "CACHE_ROOT": "/home/container_app_user/cache_root",
+        "HF_HOME": "/home/container_app_user/cache_root/huggingface",
+    }
+    logger.info(
+        f"cpp_server environment variables: MODEL_SERVICE=embedding, "
+        f"MODEL_RUNNER_TYPE={runner}, DEVICE={device}, DEVICE_IDS={device_ids}"
+    )
+    return env_vars
+
+
 def _media_server_dev_mounts(repo_root_path, user_home_path, model_spec) -> List[str]:
     src_root = Path(repo_root_path) / "tt-media-server"
     dst_root = f"{user_home_path}/tt-metal/server"
@@ -144,6 +200,8 @@ def _media_server_dev_mounts(repo_root_path, user_home_path, model_spec) -> List
 def get_media_server_docker_env_vars(model_spec):
     """Get media server environment variables for Docker container."""
     if _is_cpp_media_spec(model_spec):
+        if model_spec.model_name in _CPP_EMBEDDING_RUNNER_BY_MODEL_NAME:
+            return _get_cpp_embedding_server_docker_env_vars(model_spec)
         return _get_cpp_media_server_docker_env_vars(model_spec)
 
     env_vars = {
