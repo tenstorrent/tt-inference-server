@@ -163,8 +163,6 @@ class AdapterCheckpointCallback(JobCallback):
         self._prev_global_step = trainer.global_step
 
     def on_train_batch_end(self, trainer, *args, **kwargs):
-        if trainer.config is None:
-            return
         if trainer.global_step == self._prev_global_step:
             return
         self._prev_global_step = trainer.global_step
