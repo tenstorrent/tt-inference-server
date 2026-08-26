@@ -94,6 +94,30 @@ def test_collect_release_combos_array_and_flat_shapes():
     }
 
 
+def test_collect_release_combos_preserves_impl_selector():
+    ci_config = {
+        "models": {
+            "Qwen3.6-27B": {
+                "implementations": [
+                    {
+                        "impl": "quetzal",
+                        "inference_engine": "vLLM",
+                        "ci": {"release": {"devices": ["P300X2"]}},
+                    }
+                ]
+            }
+        }
+    }
+    assert collect_release_combos(ci_config) == {
+        ReleaseCombo(
+            "Qwen3.6-27B",
+            InferenceEngine.VLLM,
+            DeviceTypes.P300X2,
+            "quetzal",
+        )
+    }
+
+
 def test_collect_release_combos_ignores_nightly_and_weekly():
     ci_config = {
         "models": {
@@ -137,6 +161,26 @@ def test_template_does_not_match_wrong_device():
 def test_template_does_not_match_wrong_engine():
     combo = ReleaseCombo(
         "Llama-3.1-8B-Instruct", InferenceEngine.FORGE, DeviceTypes.GALAXY
+    )
+    assert template_matches(_llama_template(), combo) is False
+
+
+def test_template_matches_explicit_user_facing_impl_selector():
+    combo = ReleaseCombo(
+        "Llama-3.1-8B-Instruct",
+        InferenceEngine.VLLM,
+        DeviceTypes.GALAXY,
+        "tt-transformers",
+    )
+    assert template_matches(_llama_template(), combo) is True
+
+
+def test_template_rejects_other_same_engine_impl():
+    combo = ReleaseCombo(
+        "Llama-3.1-8B-Instruct",
+        InferenceEngine.VLLM,
+        DeviceTypes.GALAXY,
+        "quetzal",
     )
     assert template_matches(_llama_template(), combo) is False
 

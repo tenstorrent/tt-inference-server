@@ -78,6 +78,11 @@
               "type": "object",
               "description": "Single-engine model configuration",
               "properties": {
+                "impl": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Optional run.py --impl selector. Required to distinguish implementations that share an inference engine."
+                },
                 "inference_engine": {
                   "type": "string",
                   "enum": ["vLLM", "MEDIA", "FORGE"],
@@ -118,6 +123,11 @@
                   "items": {
                     "type": "object",
                     "properties": {
+                      "impl": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Optional run.py --impl selector. Required to distinguish implementations that share an inference engine."
+                      },
                       "inference_engine": {
                         "type": "string",
                         "enum": ["vLLM", "MEDIA", "FORGE"],

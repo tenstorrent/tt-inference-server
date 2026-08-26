@@ -5,6 +5,7 @@ on:
     branches: ["main"]
     paths:
       - ".github/workflows/models-ci-config.json"
+      - ".github/workflows/models-ci-config-schema.json"
 
 jobs:
   validate:

@@ -58,14 +58,14 @@ plus a pinned TTIS development image that installs the Quetzal plugin non-editab
 Generated-provider registration is fail-closed; missing plugin or artifacts must
 never select `tt_transformers`.
 
-## Nightly selection blocker
+## Nightly selection
 
-`.github/workflows/models-ci-config.json` cannot currently describe two parallel
-vLLM implementations for the same model. Its schema can attach `additional-args`
-to a device, but that would change the existing native job rather than create a
-second `--impl quetzal` job. The multi-implementation form distinguishes only
-`inference_engine`, not `impl`, so two vLLM rows are ambiguous to consumers.
+`.github/workflows/models-ci-config.json` can now represent an explicit `impl`
+selector on each implementation row, and release promotion preserves that selector
+when matching a development catalog template. This removes the previous ambiguity
+between native and Quetzal implementations that both use vLLM.
 
-Do not alter the native nightly entry until the CI schema and matrix generator gain
-an explicit implementation selector. At that point, add a second P300X2 job with
-`--impl quetzal`, retaining the native job unchanged.
+Do not alter the native nightly entry. Add Quetzal as a second P300X2 implementation
+row only after the CI matrix consumer passes its `impl` value to `run.py`, and after
+the pinned development image and immutable package are available to that job. Until
+then, nightly enrollment would only create an expected infrastructure failure.

@@ -7,10 +7,10 @@
 Promote dev model specs to prod for every model-device combination marked
 ``release`` in models-ci-config.json.
 
-For each (model, inference_engine, device) under ``ci.release`` in the CI config,
-the matching template in workflows/model_specs/dev/ is copied into the same-named
-file in workflows/model_specs/prod/, upserting by
-(impl, inference_engine, weights, devices) identity.
+For each (model, inference_engine, implementation, device) under ``ci.release``
+in the CI config, the matching template in workflows/model_specs/dev/ is copied
+into the same-named file in workflows/model_specs/prod/, upserting by (impl,
+inference_engine, weights, devices) identity.
 
 Dev templates intentionally omit the release pins (``version``,
 ``tt_metal_commit`` and ``vllm_commit``); promotion injects them from CLI flags
@@ -45,7 +45,9 @@ DEFAULT_CI_CONFIG = REPO_ROOT / ".github" / "workflows" / "models-ci-config.json
 DEFAULT_DEV_DIR = REPO_ROOT / "workflows" / "model_specs" / "dev"
 DEFAULT_PROD_DIR = REPO_ROOT / "workflows" / "model_specs" / "prod"
 
-ReleaseCombo = namedtuple("ReleaseCombo", ["model_name", "engine", "device"])
+ReleaseCombo = namedtuple(
+    "ReleaseCombo", ["model_name", "engine", "device", "impl"], defaults=[None]
+)
 
 # A matched dev template: its upsert identity, parsed dict, and exact source lines.
 MatchedBlock = namedtuple("MatchedBlock", ["identity", "template", "lines"])
@@ -72,7 +74,11 @@ def iter_implementations(model_entry: dict):
 
 
 def collect_release_combos(ci_config: dict) -> set:
-    """Return the set of ReleaseCombo(model_name, engine, device) marked release."""
+    """Return release combinations, preserving an optional impl selector.
+
+    The selector prevents release promotion from silently matching every dev
+    template when multiple implementations use the same inference engine.
+    """
     combos = set()
     for model_name, entry in ci_config.get("models", {}).items():
         for impl in iter_implementations(entry):
@@ -80,9 +86,15 @@ def collect_release_combos(ci_config: dict) -> set:
             if not release:
                 continue
             engine = InferenceEngine.from_string(impl["inference_engine"])
+            impl_selector = impl.get("impl")
             for device in release.get("devices", []):
                 combos.add(
-                    ReleaseCombo(model_name, engine, DeviceTypes.from_string(device))
+                    ReleaseCombo(
+                        model_name,
+                        engine,
+                        DeviceTypes.from_string(device),
+                        impl_selector,
+                    )
                 )
     return combos
 
@@ -102,12 +114,18 @@ def template_model_names(template: dict) -> set:
     return {model_name_from_weight(w) for w in template.get("weights", [])}
 
 
+def template_impl_selector(template: dict) -> str:
+    """Return the user-facing ``run.py --impl`` name for a YAML template."""
+    return template["impl"].replace("_", "-")
+
+
 def template_matches(template: dict, combo: ReleaseCombo) -> bool:
     """True if the template provides the given release combo."""
     return (
         combo.model_name in template_model_names(template)
         and combo.engine == template_engine(template)
         and combo.device in template_devices(template)
+        and (combo.impl is None or combo.impl == template_impl_selector(template))
     )
 
 
@@ -341,7 +359,8 @@ def promote(
 
 
 def _combo_str(combo: ReleaseCombo) -> str:
-    return f"{combo.model_name} [{combo.engine.name}] on {combo.device.name}"
+    impl = f", impl={combo.impl}" if combo.impl else ""
+    return f"{combo.model_name} [{combo.engine.name}{impl}] on {combo.device.name}"
 
 
 def main(argv=None) -> int:
@@ -381,7 +400,7 @@ def main(argv=None) -> int:
 
     for combo in sorted(
         report["unmatched"],
-        key=lambda c: (c.model_name, c.engine.name, c.device.name),
+        key=lambda c: (c.model_name, c.engine.name, c.device.name, c.impl or ""),
     ):
         print(f"WARNING: no dev template found for {_combo_str(combo)}")
 
