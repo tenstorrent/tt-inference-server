@@ -782,9 +782,7 @@ class TestSystemIntegration:
         the untouched tiers stay put.
         """
         base = self._real_reference_template({}).expand_to_specs()[0]
-        halved = self._real_reference_template(
-            {"complete": 0.25}
-        ).expand_to_specs()[0]
+        halved = self._real_reference_template({"complete": 0.25}).expand_to_specs()[0]
 
         base_targets = base.device_model_spec.perf_reference[0].targets
         halved_targets = halved.device_model_spec.perf_reference[0].targets

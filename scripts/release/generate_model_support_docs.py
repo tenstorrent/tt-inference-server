@@ -411,7 +411,9 @@ def group_templates_by_model(
     groups = defaultdict(list)
     for template in templates:
         display_name = get_model_display_name(template)
-        key = (template.model_type, display_name) if include_model_type else display_name
+        key = (
+            (template.model_type, display_name) if include_model_type else display_name
+        )
         groups[key].append(template)
     return dict(groups)
 
