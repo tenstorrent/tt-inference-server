@@ -512,10 +512,18 @@ def set_metal_timeout_env_vars():
 
     # mkdir -p so the redirect succeeds when log_dir doesn't exist yet (in CI it
     # points at the cache_root volume, which has no pre-created logs/ dir). See #2670.
+    # Tee rather than redirect: the triage report names the stalled core/kernel and
+    # is the only artifact that explains a dispatch hang. Writing it solely into
+    # log_dir loses it whenever that directory is a container volume CI does not
+    # upload (the Galaxy release job is exactly this case), so a hang reproduces as
+    # an unexplained TT_THROW with the diagnosis stranded inside the dead container.
+    # Teeing keeps the on-disk copy and also puts the report on stdout, where it is
+    # captured in the server log and therefore in the CI job log.
     timeout_cmd = (
         f"mkdir -p {log_dir} && "
         f"{python_env_dir}/bin/python {triage_script} "
-        f"--disable-progress > {log_dir}/tt-triage-$(date +%Y%m%d-%H%M%S).log 2>&1"
+        f"--disable-progress 2>&1 | "
+        f"tee {log_dir}/tt-triage-$(date +%Y%m%d-%H%M%S).log"
     )
 
     os.environ["TT_METAL_OPERATION_TIMEOUT_SECONDS"] = "5.0"
