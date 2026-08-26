@@ -1560,6 +1560,32 @@ templates:
       # spec-decode, agentic-traces) must trust remote code to load it.
       tokenizer_trust_remote_code: true
 
+# Remote-served model: evaluated against an external OpenAI-compatible
+# endpoint via `--server-url`. The device entry is a placeholder so the model
+# resolves through MODEL_SPECS / EVAL_CONFIGS; no local TT serving is implied.
+- weights:
+    - moonshotai/Kimi-K3
+  impl: tt_transformers
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: SUPER_CLUSTER
+      max_concurrency: 64
+      max_context: 1048576  # 1024 * 1024;
+      default_impl: true
+  status: EXPERIMENTAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    moonshotai/Kimi-K3:
+      remote_api_model: moonshotai/Kimi-K3
+      # K3 ships its own parsers, distinct from the kimi_k2 pair used by
+      # K2.6/K2.7-Code: https://recipes.vllm.ai/moonshotai/Kimi-K3
+      reasoning_parser_name: kimi_k3
+      tool_call_parser_name: kimi_k3
+      # Kimi ships a custom tokenizer; AIPerf-driven sweeps (prefix-cache,
+      # spec-decode, agentic-traces) must trust remote code to load it.
+      tokenizer_trust_remote_code: true
+
 - weights:
     - MiniMaxAI/MiniMax-M3
   impl: tt_transformers
