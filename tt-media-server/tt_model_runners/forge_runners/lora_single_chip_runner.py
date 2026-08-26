@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
+import json
 import os
 from typing import List
 
@@ -36,6 +37,9 @@ class LoraSingleChipRunner(BaseDeviceRunner):
         self._active_adapter: AdapterInfo | None = None
         self._base_model = None
         self._tokenizer = None
+        # Dataset template applied to prompts (from the active adapter or, when
+        # serving a merged model, from settings/metadata). None means no template.
+        self._prompt_dataset_loader: str | None = None
 
     async def warmup(self):
         xr.set_device_type("TT")
@@ -43,7 +47,8 @@ class LoraSingleChipRunner(BaseDeviceRunner):
         os.environ["XLA_STABLEHLO_COMPILE"] = "1"
         self.device = torch_xla.device()
 
-        # Preload adapter and compile model if adapter is set
+        # Preload and compile at warmup so the first request doesn't pay the
+        # load + compile cost. lora_adapter wins if both are configured.
         if self.settings.lora_adapter:
             self.logger.info(
                 f"Preloading adapter from settings: {self.settings.lora_adapter}"
@@ -51,22 +56,42 @@ class LoraSingleChipRunner(BaseDeviceRunner):
             adapter_info = resolve_adapter(self.settings.lora_adapter)
             self._load_adapter(adapter_info)
             self._compile_model()
-            self.logger.info("Running warmup decode to trigger compilation")
-            self._generate(self.WARMUP_PROMPT, self.WARMUP_TOKENS)
-            self.logger.info("Warmup decode completed")
+            self._warmup_decode()
+        elif self.settings.merged_model_path:
+            self.logger.info(
+                f"Preloading merged model from settings: {self.settings.merged_model_path}"
+            )
+            self._load_merged_model(self.settings.merged_model_path)
+            self._compile_model()
+            self._warmup_decode()
+
+    def _warmup_decode(self):
+        self.logger.info("Running warmup decode to trigger compilation")
+        self._generate(self.WARMUP_PROMPT, self.WARMUP_TOKENS)
+        self.logger.info("Warmup decode completed")
 
     @log_execution_time("Lora Inference")
     def run(self, requests: list[CompletionRequest]):
         request = requests[0]
         self._validate_request(request)
 
-        # Handle adapter loading and compilation
+        # Handle adapter/model loading and compilation
         if self.settings.lora_adapter:
             if request.adapter and request.adapter != self.settings.lora_adapter:
                 self.logger.warning(
                     f"Ignoring request.adapter={request.adapter!r}; runner is "
                     f"pinned to settings.lora_adapter={self.settings.lora_adapter!r}"
                 )
+        elif self.settings.merged_model_path:
+            if request.adapter:
+                self.logger.warning(
+                    f"Ignoring request.adapter={request.adapter!r}; runner is "
+                    f"pinned to settings.merged_model_path={self.settings.merged_model_path!r}"
+                )
+            # Idempotent no-ops when warmup already loaded + compiled; this is a
+            # safety net in case warmup was skipped.
+            self._load_merged_model(self.settings.merged_model_path)
+            self._compile_model()
         else:
             if request.adapter:
                 self._load_adapter(resolve_adapter(request.adapter))
@@ -81,9 +106,7 @@ class LoraSingleChipRunner(BaseDeviceRunner):
             else self._tokenizer.decode(request.prompt)
         )
         # wrap prompt in dataset template if applicable
-        dataset_name = (
-            self._active_adapter.dataset_loader if self._active_adapter else None
-        )
+        dataset_name = self._prompt_dataset_loader
         if dataset_name == DatasetLoaders.SST2.value:
             self.logger.info("Using SST2 template for prompt")
             prompt = sst2_utils.PROMPT_TEMPLATE.substitute(input=prompt)
@@ -136,6 +159,7 @@ class LoraSingleChipRunner(BaseDeviceRunner):
             self._base_model, adapter_info.adapter_path
         )
         self._active_adapter = adapter_info
+        self._prompt_dataset_loader = adapter_info.dataset_loader
         self.logger.info(f"Loaded adapter from {adapter_info.adapter_path}")
 
     def _unload_adapter(self):
@@ -148,6 +172,7 @@ class LoraSingleChipRunner(BaseDeviceRunner):
                 delattr(self._base_model, "peft_config")
         self._active_model = self._base_model
         self._active_adapter = None
+        self._prompt_dataset_loader = None
         self._discard_compiled_model()
 
     def _load_base_model(self, model_name: str):
@@ -169,7 +194,43 @@ class LoraSingleChipRunner(BaseDeviceRunner):
         self._tokenizer.pad_token = self._tokenizer.eos_token
         self._active_model = self._base_model
         self._active_adapter = None
+        self._prompt_dataset_loader = None
         self.logger.info(f"Loaded base model: {model_name}")
+
+    def _load_merged_model(self, model_name: str):
+        """Load an already-merged (base + adapter fused) model and serve it directly.
+
+        A merged checkpoint is a full HF model on disk, so loading is identical to
+        loading a base model — no PEFT adapter is loaded or merged at runtime. Any
+        previously active adapter is unloaded first, and the dataset prompt template
+        is resolved from settings (or dataset_metadata.json for a local path) so
+        prompts are wrapped the same way they were during fine-tuning.
+        """
+        self._unload_adapter()
+        self._load_base_model(model_name)
+        self._prompt_dataset_loader = self._resolve_merged_dataset_loader(model_name)
+        if self._prompt_dataset_loader:
+            self.logger.info(
+                f"Merged model prompt template: {self._prompt_dataset_loader}"
+            )
+
+    def _resolve_merged_dataset_loader(self, model_name: str) -> str | None:
+        """Resolve the prompt template for a merged model.
+
+        Explicit settings win; otherwise fall back to dataset_metadata.json in a
+        local merged-model directory (same convention as trained adapters).
+        """
+        if self.settings.merged_model_dataset_loader:
+            return self.settings.merged_model_dataset_loader
+        metadata_path = os.path.join(model_name, "dataset_metadata.json")
+        if os.path.isfile(metadata_path):
+            try:
+                with open(metadata_path) as f:
+                    return json.load(f).get("dataset_loader")
+            except (OSError, json.JSONDecodeError, AttributeError):
+                # Template is best-effort; ignore malformed/unreadable metadata.
+                pass
+        return None
 
     def _discard_compiled_model(self):
         if self._compiled_model is not None:

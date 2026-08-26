@@ -167,6 +167,16 @@ class Settings(BaseSettings):
     # Currently only supported in LoraSingleChipRunner
     lora_adapter: Optional[str] = None
 
+    # Preload an already-merged (base + adapter fused) model at warmup and serve
+    # it directly, skipping PEFT adapter loading/merging. Accepts a local path or
+    # HF repo id. Mutually exclusive with lora_adapter (lora_adapter wins).
+    # Currently only supported in LoraSingleChipRunner
+    merged_model_path: Optional[str] = None
+    # Optional dataset template used to wrap prompts for the merged model, e.g.
+    # "SST2" or "Alpaca" (see DatasetLoaders). If unset, the runner tries to read
+    # dataset_metadata.json from a local merged_model_path; otherwise no template.
+    merged_model_dataset_loader: Optional[str] = None
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     def __init__(self, **kwargs):
