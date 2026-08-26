@@ -1072,8 +1072,9 @@ class ModelSpecTemplate:
         specs = []
 
         for weight in self.weights:
-            perf_reference_map = get_perf_reference_map(
-                model_weights_to_model_name(weight), self.perf_targets_map
+            weight_model_name = model_weights_to_model_name(weight)
+            template_reference_map = get_perf_reference_map(
+                weight_model_name, self.perf_targets_map
             )
             for device_model_spec in self.device_model_specs:
                 device_type = device_model_spec.device
@@ -1081,6 +1082,25 @@ class ModelSpecTemplate:
                 model_id = get_model_id(
                     self.impl.impl_name, model_name, device_type.name.lower()
                 )
+
+                # A device may be graded against a different fraction of
+                # theoretical than the rest of the template -- one board where
+                # this impl is known to reach less. Its map overrides the
+                # template's tier by tier, so a device can loosen `complete`
+                # without restating the others, and the theoretical reference
+                # itself stays shared (it is a property of the model and the
+                # hardware, not of the stack). Recomputed only when the device
+                # actually overrides; otherwise this is one map per weight.
+                if device_model_spec.perf_targets_map:
+                    perf_reference_map = get_perf_reference_map(
+                        weight_model_name,
+                        {
+                            **self.perf_targets_map,
+                            **device_model_spec.perf_targets_map,
+                        },
+                    )
+                else:
+                    perf_reference_map = template_reference_map
 
                 # Perf reference for this device accounting for impl features
                 # e.g. data parallelism factor

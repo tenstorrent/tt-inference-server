@@ -96,6 +96,26 @@ def test_build_device_model_spec_with_known_issues_and_overrides():
     ]
 
 
+def test_catalog_device_spec_accepts_perf_targets_map():
+    """The tiers are settable per device; the reference numbers are not.
+
+    `perf_targets_map` says what fraction of theoretical counts as passing, which
+    is a property of the stack on that board. `perf_reference` is the theoretical
+    number itself, a property of the model and the hardware, so it is derived and
+    rejected here. Keeping both readable in one place because the pair is easy to
+    confuse.
+    """
+    spec = _build_device_model_spec(
+        {
+            "device": "P300X2",
+            "max_concurrency": 16,
+            "max_context": 1024,
+            "perf_targets_map": {"complete": 0.30},
+        }
+    )
+    assert spec.perf_targets_map == {"complete": 0.30}
+
+
 def test_catalog_device_spec_rejects_explicit_performance_reference():
     with pytest.raises(ValueError, match="must not define perf_reference"):
         _build_device_model_spec(

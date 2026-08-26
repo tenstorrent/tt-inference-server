@@ -694,6 +694,112 @@ class TestSystemIntegration:
 
         assert lookups == ["model-base", "model-instruct"]
 
+    def _template_with_device_targets(self, device_targets, template_targets=None):
+        """A two-device template where only the second device overrides its tiers."""
+        impl = self._impl("impl-a")
+        return ProdModelSpecTemplate(
+            impl=impl,
+            version="0.0.0",
+            tt_metal_commit="v1.0.0",
+            vllm_commit="abc123",
+            inference_engine=InferenceEngine.VLLM.value,
+            perf_targets_map=template_targets or {},
+            device_model_specs=[
+                DeviceModelSpec(
+                    device=DeviceTypes.N150, max_concurrency=16, max_context=1024
+                ),
+                DeviceModelSpec(
+                    device=DeviceTypes.N300,
+                    max_concurrency=16,
+                    max_context=1024,
+                    perf_targets_map=device_targets,
+                ),
+            ],
+            weights=["test/model-A"],
+        )
+
+    def test_device_perf_targets_override_the_template_tiers(self, monkeypatch):
+        """A device can be graded at a different fraction of theoretical.
+
+        The theoretical reference is a property of the model and the hardware, so
+        it stays shared; what a device may differ in is how much of it counts as
+        passing. Before this the field existed on `DeviceModelSpec`, was accepted
+        from catalog YAML, and was never read -- the tiers always came from the
+        template.
+        """
+        calls = []
+        monkeypatch.setattr(
+            "workflows.model_spec.get_perf_reference_map",
+            lambda model_name, targets: calls.append(dict(targets)) or {},
+        )
+
+        self._template_with_device_targets({"complete": 0.30}).expand_to_specs()
+
+        template_default = {"functional": 0.10, "complete": 0.50, "target": 1.0}
+        assert calls == [
+            template_default,
+            # tier-by-tier: `complete` loosened, the others inherited
+            {**template_default, "complete": 0.30},
+        ]
+
+    def test_a_device_without_an_override_reuses_the_template_map(self, monkeypatch):
+        """The common case must not pay for the feature: one lookup per weight."""
+        calls = []
+        monkeypatch.setattr(
+            "workflows.model_spec.get_perf_reference_map",
+            lambda model_name, targets: calls.append(dict(targets)) or {},
+        )
+
+        self._template_with_device_targets({}).expand_to_specs()
+
+        assert calls == [{"functional": 0.10, "complete": 0.50, "target": 1.0}]
+
+    def _real_reference_template(self, device_targets):
+        """A template on a weight that actually has reference data, so the tiers
+        are computed from real numbers rather than a monkeypatched map."""
+        return ProdModelSpecTemplate(
+            impl=self._impl("impl-a"),
+            version="0.0.0",
+            tt_metal_commit="v1.0.0",
+            vllm_commit="abc123",
+            inference_engine=InferenceEngine.VLLM.value,
+            device_model_specs=[
+                DeviceModelSpec(
+                    device=DeviceTypes.P300X2,
+                    max_concurrency=16,
+                    max_context=1024,
+                    perf_targets_map=device_targets,
+                ),
+            ],
+            weights=["google/gemma-4-31b-it"],
+        )
+
+    def test_device_override_reaches_the_expanded_targets(self):
+        """End to end against the real reference data, not a monkeypatch.
+
+        `tput` scales with the percentage and `ttft_ms` divides by it, so halving
+        `complete` halves the throughput bar and doubles the latency budget, while
+        the untouched tiers stay put.
+        """
+        base = self._real_reference_template({}).expand_to_specs()[0]
+        halved = self._real_reference_template(
+            {"complete": 0.25}
+        ).expand_to_specs()[0]
+
+        base_targets = base.device_model_spec.perf_reference[0].targets
+        halved_targets = halved.device_model_spec.perf_reference[0].targets
+
+        assert base_targets["complete"].tput == pytest.approx(37 * 0.50)
+        assert halved_targets["complete"].tput == pytest.approx(37 * 0.25)
+        assert halved_targets["complete"].ttft_ms == pytest.approx(46 / 0.25)
+        # tier-by-tier: `functional` and `target` are inherited unchanged
+        assert halved_targets["functional"].tput == pytest.approx(
+            base_targets["functional"].tput
+        )
+        assert halved_targets["target"].tput == pytest.approx(
+            base_targets["target"].tput
+        )
+
     def test_model_spec_map_generation(self, sample_impl):
         """Test spec map generation from templates."""
         templates = [
