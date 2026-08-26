@@ -3,11 +3,14 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import atexit
+import io
 import json
 import logging
 import os
 import shlex
+import shutil
 import subprocess
+import tarfile
 import threading
 import time
 import uuid
@@ -190,6 +193,108 @@ def generate_docker_volume_name(model_spec) -> str:
     The volume name excludes version to allow image upgrades without creating new volumes.
     """
     return f"volume_id_{model_spec.impl.impl_id}-{model_spec.model_name}"
+
+
+def collect_tt_triage_logs(
+    setup_config, model_spec, dest_dir: Path, since_ts: float = None
+) -> int:
+    """Copy tt-triage hang reports out of cache_root so CI can upload them.
+
+    tt-metal runs ``tools/triage/triage.py`` automatically when its dispatch
+    layer detects a device timeout (via the
+    ``TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE`` hook) and writes the report
+    to ``TT_TRIAGE_LOGS_PATH``, which :func:`generate_docker_run_command` points
+    at ``<cache_root>/logs`` in CI mode. ``cache_root`` is a docker volume, so
+    the reports outlive the container but sit outside ``workflow_logs/`` -- the
+    only tree CI uploads as an artifact. Copying them in makes the existing
+    upload step collect them with no CI-side change.
+
+    The volume is reused across runs, so ``since_ts`` (epoch seconds, normally
+    the start of this run) drops reports left behind by earlier runs rather
+    than misattributing them to this one.
+
+    Best-effort: logs and returns 0 on any failure, never raises, so a
+    collection problem can never mask the workload's own result.
+
+    Returns:
+        Number of reports collected into ``dest_dir``.
+    """
+    if setup_config is None:
+        return 0
+
+    dest_dir = Path(dest_dir)
+    try:
+        if setup_config.host_model_volume_root:
+            # cache_root is a host bind mount -- read it directly, no docker needed.
+            host_logs = Path(setup_config.host_model_volume_root) / "logs"
+            if not host_logs.is_dir():
+                logger.info(f"No tt-triage log directory at {host_logs}.")
+                return 0
+            ensure_readwriteable_dir(dest_dir)
+            for src in host_logs.iterdir():
+                if src.is_file():
+                    shutil.copy2(src, dest_dir / src.name)
+        else:
+            # cache_root is a named docker volume. Read the volume directly
+            # rather than `docker cp` from the server container: that container
+            # runs with --rm, so a hang that kills it also deletes it, and the
+            # hang is precisely the case a report exists for. Mount the volume
+            # into a throwaway container and tar to stdout, so the extracted
+            # files end up owned by the host user instead of root.
+            result = subprocess.run(
+                [
+                    "docker",
+                    "run",
+                    "--rm",
+                    "--entrypoint",
+                    "tar",
+                    "--volume",
+                    f"{setup_config.docker_volume_name}:/cache_root:ro",
+                    model_spec.docker_image,
+                    "-cf",
+                    "-",
+                    "-C",
+                    "/cache_root/logs",
+                    ".",
+                ],
+                capture_output=True,
+            )
+            if result.returncode != 0:
+                # A missing logs/ directory is the common case: nothing hung.
+                stderr = result.stderr.decode(errors="replace").strip()
+                logger.info(
+                    "No tt-triage reports in docker volume "
+                    f"{setup_config.docker_volume_name}: {stderr}"
+                )
+                return 0
+            ensure_readwriteable_dir(dest_dir)
+            with tarfile.open(fileobj=io.BytesIO(result.stdout)) as tar:
+                try:
+                    tar.extractall(dest_dir, filter="data")
+                except TypeError:
+                    # filter= is only available on newer Python 3.10/3.11 patches.
+                    tar.extractall(dest_dir)
+
+        collected = sorted(p for p in dest_dir.iterdir() if p.is_file())
+        if since_ts is not None:
+            stale = [p for p in collected if p.stat().st_mtime < since_ts]
+            for path in stale:
+                # Left over from an earlier run sharing this volume.
+                path.unlink()
+            collected = [p for p in collected if p not in stale]
+
+        if collected:
+            logger.info(
+                f"Collected {len(collected)} tt-triage report(s) to {dest_dir}:"
+            )
+            for path in collected:
+                logger.info(f"  {path.name}")
+        else:
+            logger.info("No tt-triage reports from this run.")
+        return len(collected)
+    except Exception as e:
+        logger.warning(f"Failed to collect tt-triage reports: {e}")
+        return 0
 
 
 def format_docker_command(docker_command):
@@ -423,11 +528,9 @@ def generate_docker_run_command(
                 )
 
     user_home_path = "/home/container_app_user"
-    # Mount the pre-resolved runtime spec whenever run.py provides one (dev mode
-    # overriding the baked prod catalog, or a --custom-weights spec whose derived
-    # model_name/hf_model_repo are absent from the baked catalog). The container
-    # prefers RUNTIME_MODEL_SPEC_JSON_PATH over resolving from --model, so this is
-    # what lets a custom-weights label deploy without a catalog entry.
+    # Mount the runtime spec whenever run.py provides one (dev mode or
+    # --custom-weights). The container prefers RUNTIME_MODEL_SPEC_JSON_PATH over
+    # resolving --model, letting a spec that is absent from the catalog deploy.
     if json_fpath:
         container_model_spec_dir = Path(f"{user_home_path}/model_specs")
         runtime_json_fpath = container_model_spec_dir / json_fpath.name

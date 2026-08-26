@@ -1391,40 +1391,19 @@ def derive_custom_weights_spec(
     *,
     local_model_path: Optional[str] = None,
 ) -> ModelSpec:
-    """Derive a ModelSpec for custom weights from an already-resolved base spec.
+    """Re-key a resolved base spec onto a custom-weights identity.
 
-    Separates *identity* from *source of bytes*. The returned spec copies the
-    base's impl / device configs / inference engine / env_vars / metadata /
-    docker image, but takes its identity from ``custom_weights``:
+    Inherits the base's impl/device/engine/env_vars/image but sets model_name to
+    basename(custom_weights), hf_model_repo/hf_weights_repo to the label, and
+    regenerates model_id. Since all persistent paths (docker volume, tt-metal
+    cache, weights dir) key off model_name, the derived spec gets its own subtree.
 
-    - ``model_name`` becomes ``Path(custom_weights).name`` (via
-      ``model_weights_to_model_name``),
-    - ``hf_model_repo`` and ``hf_weights_repo`` become ``custom_weights``,
-    - ``model_id`` is regenerated from the new model_name.
+    custom_weights must be a valid HF repo id when downloading from the Hub, but
+    can be any label when paired with --host-weights-dir (bytes come from disk).
 
-    Because every persistent path keys off ``model_name`` (the
-    ``volume_id_<impl>-<model_name>`` docker volume, the
-    ``cache_{model_name}`` tt-metal cache subtree, the ``weights/<model_name>``
-    download dir), the derived spec automatically lands in its own subtree and
-    never collides with the base model.
-
-    ``custom_weights`` is a label: it must be a valid HF repo id when weights are
-    downloaded from the Hub, but may be any name when paired with
-    ``--host-weights-dir`` (bytes come from local disk and the label is only an
-    identity/cache key).
-
-    ``vllm_args`` handling (what ``vllm serve`` actually loads):
-
-    - ``served_model_name`` is set to ``custom_weights`` so the OpenAI API
-      (``/v1/models``) reports the custom identity regardless of where bytes
-      come from.
-    - ``model`` (what vLLM resolves config/tokenizer/weights from) is set to
-      ``local_model_path`` when given -- the *container* path of the mounted
-      ``--host-weights-dir`` -- so config + tokenizer + weights all resolve
-      locally/offline. A custom label is not a real HF repo, so leaving vLLM's
-      ``--model`` as the label would 404 on ``config.json``. When
-      ``local_model_path`` is None (custom-alone, download-from-Hub), ``model``
-      stays ``custom_weights`` because the label *is* the HF repo id.
+    vllm_args: served_model_name always exposes the label on the API. model is
+    set to local_model_path (the container weights mount) when given so weights
+    load offline; otherwise it stays the label, which is the HF repo id.
     """
     if not custom_weights or not custom_weights.strip():
         raise ValueError("custom_weights must be a non-empty string")
@@ -1435,9 +1414,7 @@ def derive_custom_weights_spec(
         base_spec.impl.impl_name, model_name, base_spec.device_type.name.lower()
     )
 
-    # ModelSpec.__post_init__ bakes vllm_args["model"] = hf_model_repo into the
-    # (shared) device_model_spec. Rebuild it so vLLM loads config/tokenizer from
-    # the right place and reports the custom identity on the API.
+    # __post_init__ baked vllm_args["model"] from the base hf_model_repo; rebuild it.
     new_vllm_args = dict(base_spec.device_model_spec.vllm_args)
     new_vllm_args["model"] = local_model_path if local_model_path else custom_weights
     new_vllm_args["served_model_name"] = custom_weights

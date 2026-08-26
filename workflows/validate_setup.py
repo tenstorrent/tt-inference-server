@@ -97,10 +97,8 @@ def validate_runtime_args(model_spec, runtime_config):
 
     model_id = model_spec.model_id
 
-    # Built-in catalog runs must resolve to MODEL_SPECS. Explicit
-    # --runtime-model-spec-json runs use that JSON as the source of truth, and
-    # --custom-weights runs derive a valid spec from a resolved base model whose
-    # (custom) model_id is intentionally absent from the baked catalog.
+    # Catalog runs must resolve to MODEL_SPECS; --runtime-model-spec-json and
+    # --custom-weights supply their own spec whose model_id is not in the catalog.
     if (
         model_id not in MODEL_SPECS
         and not _uses_external_runtime_model_spec(args)
@@ -566,18 +564,11 @@ def validate_local_server_paths(args):
 
 
 def validate_custom_weights(model_spec, runtime_config):
-    """Fail fast on --custom-weights misconfiguration.
+    """Fail fast on --custom-weights misconfiguration (source of bytes only).
 
-    The derived spec already carries the custom identity (model_name /
-    hf_model_repo / model_id). This validates only the *source of bytes*:
-
-    - with --host-weights-dir: the directory must exist and contain a
-      recognizable weights/tokenizer/params layout (reuses
-      HostSetupManager.check_model_weights_dir), since the label need not exist
-      on HuggingFace.
-    - without --host-weights-dir: the label is treated as an HF repo id, so it
-      must at least look like ``org/name``; full Hub access is validated during
-      host setup with the HF token.
+    With --host-weights-dir the directory must exist and hold a recognizable
+    weights layout. Without it the label must look like an HF repo id (org/name);
+    Hub access is checked later during host setup.
     """
     custom_weights = getattr(runtime_config, "custom_weights", None)
     if not custom_weights:
@@ -585,8 +576,7 @@ def validate_custom_weights(model_spec, runtime_config):
 
     host_weights_dir = getattr(runtime_config, "host_weights_dir", None)
     if host_weights_dir:
-        # Local import: setup_host imports from this module, so a module-level
-        # import here would be circular.
+        # Local import avoids a circular import with setup_host.
         from workflows.setup_host import HostSetupManager
 
         weights_path = Path(host_weights_dir).expanduser().resolve()
