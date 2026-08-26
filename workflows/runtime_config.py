@@ -116,8 +116,7 @@ class RuntimeConfig:
     host_volume: Optional[str] = None
     host_hf_cache: Optional[str] = None
     host_weights_dir: Optional[str] = None
-    # --custom-weights: label giving custom weights a distinct identity derived
-    # from the base --model spec. See run.py / model_spec.derive_custom_weights_spec.
+    # Label giving custom weights a distinct identity; see derive_custom_weights_spec.
     custom_weights: Optional[str] = None
     image_user: str = "1000"
 

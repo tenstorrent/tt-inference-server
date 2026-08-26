@@ -423,11 +423,9 @@ def generate_docker_run_command(
                 )
 
     user_home_path = "/home/container_app_user"
-    # Mount the pre-resolved runtime spec whenever run.py provides one (dev mode
-    # overriding the baked prod catalog, or a --custom-weights spec whose derived
-    # model_name/hf_model_repo are absent from the baked catalog). The container
-    # prefers RUNTIME_MODEL_SPEC_JSON_PATH over resolving from --model, so this is
-    # what lets a custom-weights label deploy without a catalog entry.
+    # Mount the runtime spec whenever run.py provides one (dev mode or
+    # --custom-weights). The container prefers RUNTIME_MODEL_SPEC_JSON_PATH over
+    # resolving --model, letting a spec that is absent from the catalog deploy.
     if json_fpath:
         container_model_spec_dir = Path(f"{user_home_path}/model_specs")
         runtime_json_fpath = container_model_spec_dir / json_fpath.name

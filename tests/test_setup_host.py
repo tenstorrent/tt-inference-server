@@ -964,9 +964,7 @@ class TestDeriveCustomWeightsSpec:
         )
 
     def test_local_model_path_points_vllm_model_at_mount(self, tiny_model_spec):
-        """With --host-weights-dir, vLLM's --model resolves config/tokenizer from
-        the local mount (offline), while served_model_name still exposes the
-        label. Avoids a 404 when the label is not a real HF repo."""
+        """local_model_path sets vLLM --model to the mount; label stays the served name."""
         container_path = "/home/container_app_user/readonly_weights_mount/my_weights"
         derived = derive_custom_weights_spec(
             tiny_model_spec, CUSTOM_LABEL_LOCAL, local_model_path=container_path
@@ -1183,9 +1181,8 @@ class TestCustomWeightsDockerCommand:
     def test_runtime_spec_mounted_without_dev_mode(
         self, tiny_model_spec, mock_cli_args, temp_dir
     ):
-        """The runtime spec JSON + RUNTIME_MODEL_SPEC_JSON_PATH are wired in even
-        when dev_mode is False, so the container uses the derived custom spec
-        instead of resolving the (absent) label from its baked catalog."""
+        """Runtime spec is mounted even when dev_mode is off, so the container
+        uses the derived spec instead of the (absent) label."""
         derived = derive_custom_weights_spec(tiny_model_spec, CUSTOM_LABEL_HF)
         mock_cli_args.custom_weights = CUSTOM_LABEL_HF
         mock_cli_args.dev_mode = False

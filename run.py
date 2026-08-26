@@ -386,12 +386,9 @@ def parse_arguments():
         type=str,
         default=None,
         help="Label giving custom weights their own identity, derived from the "
-        "base --model's spec (impl, device configs, engine, docker image). "
-        "model_name becomes basename(<label>), so the deployment gets its own "
-        "volume_id_ / tt-metal cache subtree and never collides with the base "
-        "model. Paired with --host-weights-dir the bytes come from local disk "
-        "and the label need not exist on HuggingFace; without it the label is "
-        "treated as the HuggingFace repo to download. Requires --model.",
+        "base --model spec. Gets its own volume/cache subtree. With "
+        "--host-weights-dir the bytes come from local disk; without it the label "
+        "is the HuggingFace repo to download. Requires --model.",
     )
     parser.add_argument(
         "--image-user",
@@ -1024,14 +1021,10 @@ def resolve_runtime(args):
             engine=args.engine,
             impl=args.impl,
         )
-        # --custom-weights: re-key the resolved base spec onto a custom identity
-        # (distinct model_name -> distinct volume_id_/cache subtree) while
-        # inheriting the base's impl/device/engine/image.
         if args.custom_weights:
-            # With --host-weights-dir the label is not a real HF repo, so point
-            # vLLM's --model at the container mount of the local weights (config
-            # + tokenizer + weights load offline); served_model_name still
-            # exposes the label. Mirrors setup_host's readonly weights mount.
+            # With --host-weights-dir, point vLLM's --model at the container
+            # mount so weights load offline (the label is not a real HF repo).
+            # Must match setup_host's readonly weights mount path.
             local_model_path = None
             if args.host_weights_dir:
                 from workflows.setup_host import SetupConfig
@@ -1157,10 +1150,8 @@ def main():
     server_launch = None
     if runtime_config.docker_server:
         docker_json_fpath = None
-        # Mount the pre-resolved runtime spec into the container for dev mode
-        # (overrides the baked prod catalog) and for --custom-weights (whose
-        # derived model_name/hf_model_repo do not exist in the baked catalog,
-        # so the container must use this spec instead of resolving by --model).
+        # dev mode and --custom-weights both need the container to use this spec
+        # rather than resolving --model against the baked catalog.
         if runtime_config.dev_mode or runtime_config.custom_weights:
             docker_json_fpath = json_fpath
         if runtime_config.print_docker_cmd:
