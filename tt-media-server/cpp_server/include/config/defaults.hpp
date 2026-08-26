@@ -170,7 +170,19 @@ constexpr uint32_t MOCK_PREFILL_CHUNK_SIZE = 24;
 constexpr unsigned MOCK_DECODE_TOKEN_ID = 12345;
 
 // Text-to-speech scheduler defaults.
+// B: how many audio chunks may be mid-flight on SpeechLM at once. Bounded by
+// TTS_MAX_USERS (one KV slot per concurrent chunk), not by the wire.
 constexpr size_t TTS_MAX_BATCH_SIZE = 1;
+// m: rows per fused SpeechLM H2D page, one distinct user per row. Independent
+// of B — filling a P-stage device pipeline wants ~P pages in flight, i.e.
+// B >= P * m — so this has its own env var (TTS_PAGE_WIDTH). 0 means "follow
+// TTS_MAX_BATCH_SIZE", which reproduces the behaviour from before the two
+// knobs were split.
+constexpr size_t TTS_PAGE_WIDTH = 0;
+// Hard wire limit on m: BlazeWireCodec::BATCH == pipeline::MAX_PAGE_ROWS == 8.
+// Mirrored here (rather than included) so this header stays engine-agnostic;
+// blaze_tts_scheduler_factory.cpp static_asserts the two against each other.
+constexpr size_t TTS_PAGE_WIDTH_MAX = 8;
 constexpr size_t TTS_AUDIO_QUEUE_CAPACITY = 1024;
 constexpr uint32_t TTS_CHUNK_TOKENS = 30;
 constexpr uint32_t TTS_VOICE_SAMPLE_RATE_HZ = 16000;

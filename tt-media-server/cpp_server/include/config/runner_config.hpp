@@ -96,8 +96,10 @@ struct ImageConfig : MediaRunnerConfigBase {
 struct TtsConfig : RunnerConfigBase {
   TtsConfig() { runner_type = ModelRunnerType::TT_TTS; }
 
-  // Scheduler batching.
+  // Scheduler batching. maxBatchSize is B (chunks mid-flight); pageWidth is m
+  // (rows per fused H2D page). 0 means "m follows B". See defaults.hpp.
   size_t maxBatchSize = defaults::TTS_MAX_BATCH_SIZE;
+  size_t pageWidth = defaults::TTS_PAGE_WIDTH;
 
   // Scheduler lifecycle and capacity.
   size_t maxUsers = defaults::PM_MAX_USERS;

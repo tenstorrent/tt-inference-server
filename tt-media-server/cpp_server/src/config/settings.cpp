@@ -557,6 +557,19 @@ TtsConfig ttsEngineConfig() {
 
     cfg.maxBatchSize = static_cast<size_t>(
         envUlong("TTS_MAX_BATCH_SIZE", defaults::TTS_MAX_BATCH_SIZE));
+    if (cfg.maxBatchSize == 0) {
+      throw std::runtime_error("[Config] TTS_MAX_BATCH_SIZE must be >= 1");
+    }
+    // Page width (m) is capped by the wire; batch size (B) is not. Rejecting
+    // an out-of-range m here rather than letting TtsScheduler throw keeps the
+    // failure at config-parse time with the env var name in the message.
+    cfg.pageWidth = static_cast<size_t>(
+        envUlong("TTS_PAGE_WIDTH", defaults::TTS_PAGE_WIDTH));
+    if (cfg.pageWidth > defaults::TTS_PAGE_WIDTH_MAX) {
+      throw std::runtime_error("[Config] TTS_PAGE_WIDTH must be in [1, " +
+                               std::to_string(defaults::TTS_PAGE_WIDTH_MAX) +
+                               "], or 0 to follow TTS_MAX_BATCH_SIZE");
+    }
     cfg.maxUsers =
         static_cast<size_t>(envUlong("TTS_MAX_USERS", defaults::PM_MAX_USERS));
     cfg.connectTimeoutMs = static_cast<unsigned>(

@@ -306,6 +306,24 @@ engine_tts::TtsSchedulerParams makeEngineTtsParams(
   params.chunk_tokens = config.chunkTokens;
   params.first_chunk_tokens = config.chunkTokens;
   params.max_batch_size = static_cast<uint32_t>(config.maxBatchSize);
+  // Rows per fused H2D page (m), a separate lever from max_batch_size (B). B
+  // caps how many chunks are mid-flight; m caps how many distinct users ride
+  // one device step. Saturating a P-stage device pipeline needs roughly P
+  // pages in flight, i.e. B >= P * m, so B has to be free to exceed m — which
+  // is why TTS_PAGE_WIDTH exists and B is no longer clamped to the wire.
+  //
+  // TTS_PAGE_WIDTH=0 (the default) keeps the old coupling: m follows B. Either
+  // way m is clamped to the wire limit, so an oversized B cannot corrupt page
+  // assembly. m must still match the m the launched device pipeline was
+  // compiled for: the socket descriptor carries no width field, so a mismatch
+  // is a silent misread of every page rather than an error.
+  static_assert(tt::config::defaults::TTS_PAGE_WIDTH_MAX ==
+                    engine_pipeline::MAX_PAGE_ROWS,
+                "TTS_PAGE_WIDTH_MAX must track pipeline::MAX_PAGE_ROWS");
+  const size_t resolvedPageWidth =
+      std::min(config.pageWidth != 0 ? config.pageWidth : config.maxBatchSize,
+               tt::config::defaults::TTS_PAGE_WIDTH_MAX);
+  params.page_width = static_cast<uint32_t>(resolvedPageWidth);
   params.speech_end_token = tt::utils::tts_tokenizer::tokenIdFor(
       tokenizer, tt::utils::tts_tokenizer::SPEECH_END_TOKEN);
   params.speech_token_base = tt::utils::tts_tokenizer::tokenIdFor(
@@ -329,9 +347,10 @@ engine_tts::TtsSchedulerParams makeEngineTtsParams(
   // to strip tokens from decoded text.
   TT_LOG_INFO(
       "makeTtsScheduler: tokenizer ids — speech_end={} speech_token_base={} "
-      "vocab_size={} max_new_tokens={}",
+      "vocab_size={} max_new_tokens={} max_batch_size={} page_width={}",
       params.speech_end_token, params.speech_token_base,
-      tokenizer.getEncodedVocab().size(), params.max_new_tokens);
+      tokenizer.getEncodedVocab().size(), params.max_new_tokens,
+      params.max_batch_size, params.page_width);
   return params;
 }
 
@@ -525,10 +544,17 @@ class DisabledEncoderPipeline final
 std::unique_ptr<tts_scheduler::ITtsScheduler> makeRealTtsScheduler(
     const tt::config::TtsConfig& config) {
   TT_LOG_INFO("makeTtsScheduler: constructing real TtsScheduler");
-  auto speechlm = std::make_unique<engine_pipeline::SocketPipeline>(
-      config.speechlmSocketDescriptorPrefix,
-      config.speechlmSocketDescriptorPrefix, config.connectTimeoutMs,
-      std::make_unique<engine_pipeline::SpeechlmWireCodec>());
+  // The SpeechLM pipeline is built by TtsScheduler from this config rather
+  // than injected: the scheduler derives the wire codec's page width from
+  // TtsSchedulerParams::page_width, so a scheduler/codec width mismatch is
+  // unrepresentable. Injecting a pre-built SocketPipeline (the pre-65cf43a7
+  // contract) would reintroduce exactly that mismatch.
+  const engine_pipeline::SpeechlmPipelineConfig speechlmConfig =
+      engine_pipeline::SpeechlmSocketConfig{
+          .h2d_socket_id = config.speechlmSocketDescriptorPrefix,
+          .d2h_socket_id = config.speechlmSocketDescriptorPrefix,
+          .connect_timeout_ms = config.connectTimeoutMs,
+      };
 
   std::unique_ptr<engine_pipeline::EncoderPipelineInterface> encoder;
   if (!config.encoderEnabled) {
@@ -574,7 +600,7 @@ std::unique_ptr<tts_scheduler::ITtsScheduler> makeRealTtsScheduler(
   }
 
   auto scheduler = std::make_unique<engine_tts::TtsScheduler>(
-      std::move(speechlm), std::move(encoder), std::move(decoder),
+      speechlmConfig, std::move(encoder), std::move(decoder),
       makeEngineTtsParams(config));
   return std::make_unique<RealTtsScheduler>(
       std::move(scheduler), config.audioSampleRateHz, config.audioChannels);
