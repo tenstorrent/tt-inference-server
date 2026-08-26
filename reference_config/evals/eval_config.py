@@ -899,8 +899,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=93.5,
                     published_score_ref="https://artificialanalysis.ai/evaluations/gpqa-diamond?models=kimi-k3",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref=None,
+                    gpu_reference_score=91.92,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4971#issuecomment-5395831460",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -942,8 +942,8 @@ _eval_config_list = [
                     # comparable to this run.
                     published_score=85.0,
                     published_score_ref="https://artificialanalysis.ai/evaluations/terminalbench-v2-1?models=kimi-k3",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref=None,
+                    gpu_reference_score=85.39,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4971#issuecomment-5411123386",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
@@ -953,7 +953,7 @@ _eval_config_list = [
                 agentic_eval_config=TerminalBenchEvalConfig(
                     dataset="terminal-bench/terminal-bench-2-1",
                     agent="terminus-2",
-                    n_concurrent_trials=16,
+                    n_concurrent_trials=64,
                     n_attempts=1,
                     n_tasks=89,
                     override_cpus=16,
@@ -963,9 +963,6 @@ _eval_config_list = [
                         "parser_name": "json",
                         "temperature": 1.0,
                         "model_info": {
-                            # Half the 1M window: bounds accumulated tool
-                            # history so a looping trial cannot grow into a
-                            # prefill that starves the other 63 trials.
                             "max_input_tokens": 1024 * 1024,
                             "max_output_tokens": 256 * 1024,
                         },
@@ -996,8 +993,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=46.0,
                     published_score_ref="https://artificialanalysis.ai/evaluations/tau3-banking?models=kimi-k3",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref=None,
+                    gpu_reference_score=27.84,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4971#issuecomment-5422026498",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
@@ -1012,7 +1009,7 @@ _eval_config_list = [
                     task_names=["sierra-research/tau3-bench__tau3-banking_knowledge-*"],
                     # A single served instance is shared by the agent,
                     # the simulated user, and the Natural Language verifier.
-                    n_concurrent_trials=2,
+                    n_concurrent_trials=32,
                     n_attempts=1,
                     n_tasks=97,
                     override_cpus=4,
@@ -1069,15 +1066,15 @@ _eval_config_list = [
             # selected from 256K ISL up to the top of the context budget.
             EvalTask(
                 task_name="longbench2_generate",
-                max_concurrent=16,
+                max_concurrent=64,
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 min_context_required=1048576,
                 use_chat_api=True,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref=None,
+                    gpu_reference_score=71.88,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4971#issuecomment-5395831460",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["exact_match,none"],
