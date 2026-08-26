@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+import os
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import NamedTuple, Optional, Tuple
@@ -455,6 +456,17 @@ class AudioResponseFormat(Enum):
     OGG = "ogg"
 
 
+class AudioInputFormat(Enum):
+    """Container formats accepted on the transcription path.
+
+    UNKNOWN matches no known header and is rejected.
+    """
+
+    WAV = "wav"
+    MP3 = "mp3"
+    UNKNOWN = "unknown"
+
+
 SDXL_VALID_IMAGE_RESOLUTIONS = frozenset({(1024, 1024), (512, 512)})
 
 
@@ -512,6 +524,7 @@ TTS_RESPONSE_FORMATS = AUDIO_RESPONSE_FORMATS | frozenset(
 class JobTypes(Enum):
     VIDEO = "video"
     TRAINING = "training"
+    ADAPTER_MERGE = "adapter_merge"
 
 
 class DatasetLoaders(Enum):
@@ -539,8 +552,17 @@ class TrainingOptimizers(Enum):
     ADAMW = "adamw"
 
 
-# Base directory for storing fine-tuned adapter outputs.
-TRAINING_STORE_ADAPTERS_DIR = "model_store/"
+TRAINING_STORE_ADAPTERS_DIR = "adapters/"
+TRAINING_STORE_MERGED_MODELS_DIR = "merged_models/"
+
+
+# Adapters/merged models live under $CACHE_ROOT
+def adapters_root() -> str:
+    return os.path.join(os.getenv("CACHE_ROOT", "."), TRAINING_STORE_ADAPTERS_DIR)
+
+
+def merged_models_root() -> str:
+    return os.path.join(os.getenv("CACHE_ROOT", "."), TRAINING_STORE_MERGED_MODELS_DIR)
 
 
 # Helper function to create vLLM configuration with late import to avoid circular imports
