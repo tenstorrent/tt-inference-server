@@ -150,6 +150,12 @@ def _build_context(
 
     device = DeviceTypes.from_string(args.device)
     runtime_config = _load_runtime_config(args.runtime_model_spec_json)
+    # An explicit --agentic-benchmark on the engine command line overrides the
+    # value carried in the runtime_config JSON, so a direct run_workflows.py
+    # invocation (or a stale JSON) still honors the flag.
+    cli_agentic_benchmark = getattr(args, "agentic_benchmark", None)
+    if cli_agentic_benchmark and runtime_config is not None:
+        runtime_config.agentic_benchmark = cli_agentic_benchmark
 
     if output_path is None:
         output_path = args.output_dir / f"{args.model}_{args.device}_{args.workflow}"

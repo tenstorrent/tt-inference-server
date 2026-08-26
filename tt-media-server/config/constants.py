@@ -2,9 +2,10 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+import os
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import NamedTuple, Tuple
+from typing import NamedTuple, Optional, Tuple
 
 
 class SupportedModels(Enum):
@@ -28,6 +29,7 @@ class SupportedModels(Enum):
     WAN_2_2_I2V_LORA = "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
     WAN_2_2_I2V_LIGHTNING = "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
     LTX_2_3_DISTILLED = "Lightricks/LTX-2.3:ltx-2.3-22b-distilled-1.1.safetensors"
+    MINIMAX_H3 = "MiniMaxAI/MiniMax-H3"
     DISTIL_WHISPER_LARGE_V3 = "distil-whisper/distil-large-v3"
     OPENAI_WHISPER_LARGE_V3 = "openai/whisper-large-v3"
     PYANNOTE_SPEAKER_DIARIZATION = "pyannote/speaker-diarization-3.0"
@@ -78,6 +80,7 @@ class ModelNames(Enum):
     WAN_2_2_I2V_LORA = "Wan2.2-I2V-LoRA"
     WAN_2_2_I2V_LIGHTNING = "Wan2.2-I2V-Lightning"
     LTX_2_3_DISTILLED = "LTX-2.3-distilled"
+    MINIMAX_H3 = "MiniMax-H3"
     DISTIL_WHISPER_LARGE_V3 = "distil-large-v3"
     OPENAI_WHISPER_LARGE_V3 = "whisper-large-v3"
     MICROSOFT_RESNET_50 = "resnet-50"
@@ -130,6 +133,7 @@ class ModelRunners(Enum):
     TT_WAN_2_2_I2V_LORA = "tt-wan2.2-i2v-lora"
     TT_WAN_2_2_I2V_LIGHTNING = "tt-wan2.2-i2v-lightning"
     TT_LTX_2_3_DISTILLED = "tt-ltx-2.3-distilled"
+    TT_MINIMAX_H3_T2VA = "tt-minimax-h3-t2va"
     TT_WHISPER = "tt-whisper"
     VLLMForge = "vllm_forge"
     TT_YOLOV4 = "tt-yolov4"
@@ -232,6 +236,7 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_WAN_2_2_I2V_LORA,
         ModelRunners.TT_WAN_2_2_I2V_LIGHTNING,
         ModelRunners.TT_LTX_2_3_DISTILLED,
+        ModelRunners.TT_MINIMAX_H3_T2VA,
         ModelRunners.SP_RUNNER,
     },
     ModelServices.TRAINING: {
@@ -275,6 +280,53 @@ MIN_VIDEO_INFERENCE_STEPS = 4
 MAX_VIDEO_INFERENCE_STEPS = 50
 DEFAULT_VIDEO_INFERENCE_STEPS = 20
 
+# Pipelines that ignore the client's num_inference_steps. Keep these as the
+# values passed into the runner (dit_runners Distill / Lightning / AniSora).
+WAN22_DISTILL_NUM_STEPS = 4
+WAN22_LIGHTNING_NUM_STEPS = 4
+WAN22_ANISORA_NUM_STEPS = 8
+
+VIDEO_FORCED_INFERENCE_STEPS_BY_RUNNER = {
+    ModelRunners.TT_WAN_2_2_I2V_DISTILL: WAN22_DISTILL_NUM_STEPS,
+    ModelRunners.TT_WAN_2_2_I2V_LIGHTNING: WAN22_LIGHTNING_NUM_STEPS,
+    ModelRunners.TT_WAN_2_2_I2V_ANISORA: WAN22_ANISORA_NUM_STEPS,
+}
+VIDEO_FORCED_INFERENCE_STEPS_BY_MODEL = {
+    ModelNames.WAN_2_2_I2V_DISTILL: WAN22_DISTILL_NUM_STEPS,
+    ModelNames.WAN_2_2_I2V_LIGHTNING: WAN22_LIGHTNING_NUM_STEPS,
+    ModelNames.WAN_2_2_I2V_ANISORA: WAN22_ANISORA_NUM_STEPS,
+}
+
+
+def video_executed_inference_steps(
+    requested: Optional[int],
+    model_runner: Optional[str] = None,
+    model_name: Optional[str] = None,
+) -> Optional[int]:
+    """Return the denoise steps the pipeline actually runs.
+
+    Distill, Lightning, and AniSora ignore ``num_inference_steps``; SP_RUNNER
+    serving those weights is identified by ``MODEL``, not by the runner name.
+    """
+    if model_runner:
+        try:
+            forced = VIDEO_FORCED_INFERENCE_STEPS_BY_RUNNER.get(
+                ModelRunners(model_runner)
+            )
+        except ValueError:
+            forced = None
+        if forced is not None:
+            return forced
+    if model_name:
+        try:
+            forced = VIDEO_FORCED_INFERENCE_STEPS_BY_MODEL.get(ModelNames(model_name))
+        except ValueError:
+            forced = None
+        if forced is not None:
+            return forced
+    return requested
+
+
 INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_SDXL_EDIT: {ModelNames.STABLE_DIFFUSION_XL_INPAINTING},
     ModelRunners.TT_SDXL_IMAGE_TO_IMAGE: {ModelNames.STABLE_DIFFUSION_XL_IMG2IMG},
@@ -303,6 +355,7 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
         ModelNames.WAN_2_2_I2V_LIGHTNING,
         ModelNames.MOCHI_1,
     },
+    ModelRunners.TT_MINIMAX_H3_T2VA: {ModelNames.MINIMAX_H3},
     ModelRunners.TT_WHISPER: {
         ModelNames.OPENAI_WHISPER_LARGE_V3,
         ModelNames.DISTIL_WHISPER_LARGE_V3,
@@ -403,6 +456,17 @@ class AudioResponseFormat(Enum):
     OGG = "ogg"
 
 
+class AudioInputFormat(Enum):
+    """Container formats accepted on the transcription path.
+
+    UNKNOWN matches no known header and is rejected.
+    """
+
+    WAV = "wav"
+    MP3 = "mp3"
+    UNKNOWN = "unknown"
+
+
 SDXL_VALID_IMAGE_RESOLUTIONS = frozenset({(1024, 1024), (512, 512)})
 
 
@@ -460,6 +524,7 @@ TTS_RESPONSE_FORMATS = AUDIO_RESPONSE_FORMATS | frozenset(
 class JobTypes(Enum):
     VIDEO = "video"
     TRAINING = "training"
+    ADAPTER_MERGE = "adapter_merge"
 
 
 class DatasetLoaders(Enum):
@@ -487,8 +552,17 @@ class TrainingOptimizers(Enum):
     ADAMW = "adamw"
 
 
-# Base directory for storing fine-tuned adapter outputs.
-TRAINING_STORE_ADAPTERS_DIR = "model_store/"
+TRAINING_STORE_ADAPTERS_DIR = "adapters/"
+TRAINING_STORE_MERGED_MODELS_DIR = "merged_models/"
+
+
+# Adapters/merged models live under $CACHE_ROOT
+def adapters_root() -> str:
+    return os.path.join(os.getenv("CACHE_ROOT", "."), TRAINING_STORE_ADAPTERS_DIR)
+
+
+def merged_models_root() -> str:
+    return os.path.join(os.getenv("CACHE_ROOT", "."), TRAINING_STORE_MERGED_MODELS_DIR)
 
 
 # Helper function to create vLLM configuration with late import to avoid circular imports
@@ -899,6 +973,15 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
         "max_batch_size": 1,
+        "request_processing_timeout_seconds": 5000,
+    },
+    # One device-id group -> one worker -> requests serialise on the mesh.
+    (ModelRunners.TT_MINIMAX_H3_T2VA, DeviceTypes.GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "download_weights_from_service": False,
         "request_processing_timeout_seconds": 5000,
     },
     (ModelRunners.TT_WAN_2_2, DeviceTypes.P150X4): {

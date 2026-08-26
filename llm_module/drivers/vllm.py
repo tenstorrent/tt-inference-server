@@ -64,16 +64,10 @@ def build_vllm_bench_serve_argv(
         "/v1/chat/completions",
         "--model",
         server.model,
-        "--dataset-name",
-        "random",
         "--max-concurrency",
         str(config.max_concurrency),
         "--num-prompts",
         str(config.num_prompts),
-        "--random-input-len",
-        str(config.isl),
-        "--random-output-len",
-        str(config.osl),
         "--percentile-metrics",
         "ttft,tpot,itl,e2el",
         "--save-result",
@@ -82,10 +76,43 @@ def build_vllm_bench_serve_argv(
         str(result_filename),
     ]
 
-    if uses_remote_base_url(server.url_with_port, server.is_remote):
+    if config.custom_dataset_path is not None:
+        cmd.extend(
+            [
+                "--dataset-name",
+                "custom",
+                "--dataset-path",
+                str(config.custom_dataset_path),
+                "--custom-output-len",
+                str(config.osl),
+                "--disable-shuffle",
+                # The custom file contains raw chat content sized so the server's
+                # single template application reaches the requested ISL.
+                "--skip-chat-template",
+            ]
+        )
+    else:
+        cmd.extend(
+            [
+                "--dataset-name",
+                "random",
+                "--random-input-len",
+                str(config.isl),
+                "--random-output-len",
+                str(config.osl),
+            ]
+        )
+
+    is_remote_base_url = uses_remote_base_url(
+        server.url_with_port,
+        server.is_remote,
+    )
+    if server.tokenizer_trust_remote_code or is_remote_base_url:
+        cmd.append("--trust-remote-code")
+
+    if is_remote_base_url:
         cmd.extend(["--base-url", server.url_with_port])
         cmd.extend(["--ready-check-timeout-sec", "0"])
-        cmd.extend(["--trust-remote-code"])
         if auth_token:
             headers.append(f"Authorization=Bearer {auth_token}")
     else:
@@ -93,7 +120,7 @@ def build_vllm_bench_serve_argv(
         cmd.extend(
             [
                 "--extra-body",
-                json.dumps({"truncate_prompt_tokens": str(config.isl)}),
+                json.dumps({"truncate_prompt_tokens": config.isl}),
             ]
         )
 
@@ -136,6 +163,8 @@ class VLLMBenchDriver(LLMDriver):
 
         rc = run_command(cmd, env=env, timeout_s=context.per_run_timeout_s)
         raw = load_json(result_filename) if rc == 0 else None
+        if raw is not None and config.output_block_size > 1:
+            raw["tt_output_block_size"] = config.output_block_size
         return DriverResult(return_code=rc, raw=raw, raw_path=result_filename)
 
 

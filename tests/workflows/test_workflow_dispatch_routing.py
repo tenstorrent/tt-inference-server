@@ -33,6 +33,8 @@ def _rc(workflow="benchmarks", **kw):
         spec_decode_preset="full",
         spec_decode_warmup_requests=None,
         spec_decode_metrics_url=None,
+        agentic_benchmark=None,
+        repeat_evals=1,
         agentic_traces_mode="full",
         agentic_traces_sources=None,
         agentic_traces_duration=None,
@@ -645,6 +647,50 @@ def test_release_forwards_agentic_traces_flags(monkeypatch, tmp_path):
         argv[argv.index("--agentic-traces-git-ref") + 1]
         == "e2dcfa91c86936cc011e3be0668eb3b1ca17288f"
     )
+
+
+def test_agentic_forwards_benchmark_selection(monkeypatch, tmp_path):
+    spec = _spec(ModelType.LLM, name="Kimi-K2.7-Code")
+    rc = _rc(workflow="agentic", agentic_benchmark="tau3")
+    monkeypatch.setattr(
+        workflow_dispatch, "get_default_workflow_root_log_dir", lambda: tmp_path
+    )
+
+    argv = workflow_dispatch.build_engine_commands(spec, rc, "/tmp/spec.json")[0].argv
+
+    assert "run_agentic.py" in argv[0]
+    assert argv[argv.index("--agentic-benchmark") + 1] == "tau3"
+
+
+def test_agentic_omits_benchmark_when_unset(monkeypatch, tmp_path):
+    spec = _spec(ModelType.LLM, name="Kimi-K2.7-Code")
+    rc = _rc(workflow="agentic")
+    monkeypatch.setattr(
+        workflow_dispatch, "get_default_workflow_root_log_dir", lambda: tmp_path
+    )
+
+    argv = workflow_dispatch.build_engine_commands(spec, rc, "/tmp/spec.json")[0].argv
+
+    assert "--agentic-benchmark" not in argv
+
+
+def test_evals_forwards_repeat_as_engine_repeat(monkeypatch, tmp_path):
+    spec, rc = _spec(ModelType.LLM), _rc(workflow="evals", repeat_evals=3)
+    _patch_engine_dispatch(monkeypatch, tmp_path)
+
+    workflow_dispatch.dispatch_workflows(spec, rc, str(tmp_path / "spec.json"))
+
+    argv = _FakeRunner.captured[0].argv
+    assert argv[argv.index("--repeat") + 1] == "3"
+
+
+def test_evals_omits_repeat_when_one(monkeypatch, tmp_path):
+    spec, rc = _spec(ModelType.LLM), _rc(workflow="evals", repeat_evals=1)
+    _patch_engine_dispatch(monkeypatch, tmp_path)
+
+    workflow_dispatch.dispatch_workflows(spec, rc, str(tmp_path / "spec.json"))
+
+    assert "--repeat" not in _FakeRunner.captured[0].argv
 
 
 def test_release_without_the_opt_in_forwards_nothing_agentic_traces(

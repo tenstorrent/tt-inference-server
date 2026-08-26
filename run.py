@@ -37,6 +37,7 @@ from workflows.multihost_orchestrator import (
     setup_multihost_config,
 )
 from workflows.run_docker_server import (
+    collect_tt_triage_logs,
     format_docker_command,
     generate_docker_run_command,
 )
@@ -279,6 +280,15 @@ def parse_arguments():
         "Text/LLM evals only.",
     )
     parser.add_argument(
+        "--repeat-evals",
+        type=int,
+        default=1,
+        metavar="N",
+        help="Run --workflow evals N times, keeping each run's report under "
+        "run_NN/ and writing an aggregated summary/ (reuses the workflow engine's "
+        "--repeat). Default 1 (no summary).",
+    )
+    parser.add_argument(
         "--skip-system-sw-validation",
         action="store_true",
         help="Skips the system software validation step (no tt-smi or tt-topology verification)",
@@ -465,6 +475,22 @@ def parse_arguments():
         "tt-media-server/cpp_server/tokenizers/. Overrides the model derived from "
         "--model; lets you serve a model with no catalog entry. Defaults to the "
         "--model's HF repo, then run_stack.sh's built-in default.",
+    )
+
+    agentic_group = parser.add_argument_group(
+        "Agentic evals",
+        "Arguments for --workflow agentic (accuracy evals: tau3 / terminal-bench / "
+        "swe-bench), routed to the workflow engine",
+    )
+    agentic_group.add_argument(
+        "--agentic-benchmark",
+        type=str,
+        default=None,
+        help="Comma-separated agentic benchmark(s) to run under --workflow agentic. "
+        "Aliases: tau3 (tau3_bench_*), tb2.0 (terminal_bench_2), tb2.1 "
+        "(terminal_bench_2_1), swebench (swe_bench_*). Raw task names are also "
+        "accepted. When unset (or 'all'), runs every EVALS_AGENTIC task configured "
+        "for the model.",
     )
 
     agentic_traces_group = parser.add_argument_group(
@@ -746,6 +772,23 @@ def parse_arguments():
             f"(got --workflow {args.workflow})."
         )
 
+    if args.agentic_benchmark and args.workflow != "agentic":
+        parser.error(
+            "--agentic-benchmark selects which agentic eval(s) to run and requires "
+            f"--workflow agentic (got --workflow {args.workflow})."
+        )
+
+    if args.repeat_evals is not None and args.repeat_evals < 1:
+        parser.error(
+            f"--repeat-evals must be a positive integer (got {args.repeat_evals})."
+        )
+
+    if args.repeat_evals and args.repeat_evals > 1 and args.workflow != "evals":
+        parser.error(
+            "--repeat-evals applies to --workflow evals "
+            f"(got --workflow {args.workflow})."
+        )
+
     if args.agentic_traces and args.workflow != "release":
         parser.error(
             "--agentic-traces adds the trace replay to a release run and requires "
@@ -1009,7 +1052,8 @@ def main():
     tt_inference_server_sha = get_current_commit_sha()
 
     # step 3: setup logging and finalize run_id
-    run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    run_start = datetime.now()
+    run_timestamp = run_start.strftime("%Y-%m-%d_%H-%M-%S")
     run_id = get_run_id(
         timestamp=run_timestamp,
         model_id=model_id,
@@ -1172,7 +1216,19 @@ def main():
         )
         main_return_code = 0
     else:
-        main_return_code = WorkflowRunner(commands).run()
+        runner = WorkflowRunner(commands)
+        main_return_code = runner.run()
+        if runtime_config.docker_server:
+            # tt-metal writes a tt-triage report into the cache_root volume when
+            # it detects a device hang; copy it under workflow_logs/ so CI's
+            # existing artifact upload picks it up. Runs on success too -- the
+            # report is simply absent when nothing hung.
+            collect_tt_triage_logs(
+                setup_config=setup_config,
+                model_spec=model_spec,
+                dest_dir=log_path / "tt_triage",
+                since_ts=run_start.timestamp(),
+            )
     if main_return_code == 0:
         logger.info("Completed run.py.")
     else:

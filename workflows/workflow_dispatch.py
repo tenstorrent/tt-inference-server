@@ -383,6 +383,12 @@ def _engine_run_argv(
         # need the bearer token to reach a JWT-protected server; run.py mints it
         # from --jwt-secret/$JWT_SECRET.
         _forward_jwt(argv, runtime_config)
+        # --repeat-evals (v1) drives the engine's generic --repeat loop, which
+        # writes run_NN/ reports plus an aggregated summary/.
+        if wf == WorkflowType.EVALS:
+            repeat_evals = getattr(runtime_config, "repeat_evals", None)
+            if repeat_evals and int(repeat_evals) > 1:
+                argv.extend(["--repeat", str(int(repeat_evals))])
         if wf == WorkflowType.RELEASE:
             _forward_prefix_cache(argv, runtime_config)
             _forward_spec_decode(argv, runtime_config)
@@ -546,6 +552,11 @@ def _build_agentic_cmd(repo_root, model_spec, runtime_config, json_fpath, output
     launcher = _resolve_launcher(repo_root, "run_agentic.py", "agentic")
     cmd = _base_engine_argv(
         launcher, model_spec, runtime_config, json_fpath, output_dir, "agentic"
+    )
+    _extend_if_set(
+        cmd,
+        "--agentic-benchmark",
+        getattr(runtime_config, "agentic_benchmark", None),
     )
     _forward_jwt(cmd, runtime_config)
     return cmd

@@ -82,6 +82,162 @@ Two dedicated dashboards are provisioned for this setup:
 > construction (e.g. TPOT on the prefill dashboard, were it shown). Tailoring
 > the *exposed* metrics per mode is the next iteration.
 
+### TTS server
+
+A TTS deployment (`MODEL_SERVICE=tts`) is scraped by the plain
+`tt_media_server` job — point `SERVER_TARGET` at it like any other single
+server, and open the **TT Media Server — TTS (decode + vocoder + conditioning)**
+dashboard (uid `tt-media-server-tts`):
+
+```bash
+SERVER_TARGET=<tts-container-name>:8000 SERVER_SERVICE=cpp \
+  docker compose -f monitoring/docker-compose.yml up -d
+```
+
+Speech generation is a pipeline, and the dashboard measures its stages
+separately so a slowdown can be pinned to one of them.
+
+**Stage 0 — conditioning.**
+`tt_tts_conditioning_seconds` is a summary (exact quantiles, 60 s window) of
+time spent *preparing* a request rather than synthesizing it, labelled by
+`stage`:
+
+| `stage` | Process | Runs when |
+| --- | --- | --- |
+| `text_conditioning` | main | request has **no** voice sample — tokenizer lookup + prompt compilation |
+| `voice_normalization` | main | request **has** a voice sample — validation, downmix to mono, resample |
+| `voice_encode` | worker | voice-sample requests, encoding the reference WAV into speech IDs on device |
+| `prompt_compile` | worker | voice-sample requests, prompt compilation once speech IDs exist |
+
+The stages are named for the conditioning they build, not for the individual
+steps inside them, and the two paths are disjoint: a request either has a voice
+sample or it does not. `text_conditioning` is the whole text-only path — prompt
+compilation included — which is why prompt compilation is broken out as its own
+`prompt_compile` stage only on the voice path, where it happens later, in the
+worker, and only once the speech IDs exist. So the two never co-occur on one
+request, and `prompt_compile` timings are always worker-side and always
+post-encode, never blended with the cheap main-process compile.
+
+p50/p99 per stage come straight off the summary
+(`tt_tts_conditioning_seconds{stage="...", quantile="0.99"}`). The headline is
+its **share of engine time**:
+
+```promql
+sum(rate(tt_tts_conditioning_seconds_sum[$__rate_interval]))
+  / sum(rate(tt_tts_request_duration_seconds_sum[$__rate_interval]))
+```
+
+Short utterances can be dominated by preprocessing rather than synthesis: the
+fixed cost of normalizing and conditioning stops being amortized once there is
+little audio to generate, and this ratio is where that shows up. Use the
+`_sum` series for it — quantiles cannot be summed or averaged. Mean per-request
+cost is `rate(_sum) / rate(_count)`.
+
+Both sides have to be aggregated the same way or the division silently returns
+nothing: the conditioning series carries a `stage` label that the request-duration
+series does not, and Prometheus only pairs samples whose label sets match
+exactly. Collapsing both to a label-less scalar with `sum()` is what makes them
+divisible. Per stage, keep `stage` on the left and reduce the denominator to a
+true scalar instead:
+
+```promql
+sum by (stage) (rate(tt_tts_conditioning_seconds_sum[$__rate_interval]))
+  / scalar(sum(rate(tt_tts_request_duration_seconds_sum[$__rate_interval])))
+```
+
+Two things to know when reading it. **A stage that did not run is not
+observed**, rather than observed as zero — so `voice_encode` goes silent on a
+voice-sample cache hit instead of dragging its own quantiles toward zero, and
+`rate(tt_tts_conditioning_seconds_count{stage="voice_encode"})` climbing toward
+the request rate means the cache has stopped absorbing repeats. **Only requests
+that reached a terminal event are counted** in either the numerator or the
+denominator; a client cancellation ends a request at an arbitrary point, so it
+is excluded from both rather than skewing the share.
+
+**Warmup pollutes `text_conditioning`.** The tokenizer is cached in a
+`thread_local` map (`tokenizerForPath`), and the cache fill happens *inside* the
+measured window — the clock in `TtsService::generate` starts before
+`prepareTask`. So the first request on each Drogon IO thread pays a full
+tokenizer load from disk, and with N IO threads (`--threads`, defaulting to
+`hardware_concurrency`) you get N outliers of hundreds of milliseconds against a
+steady state that is sub-millisecond. Because the summary window is 60 s, those
+outliers own the stage's p95/p99 for the first minute of any deployment: a
+`text_conditioning` p99 of 400 ms read off a freshly started server is the
+tokenizer load, not the cost of preparing a text-only request. Give the server a minute and
+more requests than it has IO threads before trusting that stage's quantiles, or
+warm the tokenizer per thread at startup to keep the load out of the window
+entirely. The worker-side `prompt_compile` stage fills the same per-thread cache
+and carries the same one-time cost on its first compile.
+
+The worker-process stages are timed in `BlazeTtsRunner` and travel to the main
+process as microsecond fields on the request's terminal audio IPC message —
+which is the one message per request the main process sees exactly once, and is
+therefore what lets cross-process work land in a real quantile summary rather
+than in bucketed shared-memory counters.
+
+**Stage 1 — codec-token decode.** `tt_tts_codec_tokens_total` is the cumulative
+count of acoustic / codec tokens emitted by the TTS decoder, labelled by
+`worker_id`, `device` (the worker's `DEVICE_IDS` group), `model_name` and
+`voice_source`. Throughput is
+`rate(tt_tts_codec_tokens_total[$__rate_interval])`, i.e. the autoregressive
+decode capacity that has to stay ahead of playback.
+
+**Stage 2 — vocoder / waveform reconstruction.**
+`tt_tts_audio_frames_total` is the cumulative count of PCM frames (samples per
+channel) the vocoder reconstructed from those tokens, labelled by `worker_id`,
+`device`, `model_name` and `batch`. Both units come from that one counter, so
+nothing can drift apart:
+
+| Quantity | Query |
+| --- | --- |
+| samples/s | `rate(tt_tts_audio_frames_total[$__rate_interval])` |
+| audio seconds/s (RTF) | `rate(tt_tts_audio_frames_total[$__rate_interval]) / scalar(max(tt_tts_audio_sample_rate_hz))` |
+
+The second is the real-time factor: **below 1.0 the vocoder cannot keep up with
+playback** even when the decoder can. `tt_tts_vocoder_chunks_total` (same
+labels) pairs with the frame counter to give mean frames per chunk, which tells
+apart "fewer chunks" from "shorter chunks" when audio throughput drops.
+
+**Separating decode from vocoding.** Tokens per second of audio is a constant
+of the codec,
+so `rate(codec_tokens) / (rate(audio_frames) / sample_rate)` is flat while both
+stages keep pace — it rises when the vocoder falls behind a healthy decoder and
+falls when the decoder is starving. The two staleness clocks say the same thing
+at a glance: `tt_tts_last_vocode_age_seconds` rising while
+`tt_worker_last_output_age_seconds` stays flat is a vocoder stall; both rising
+together points upstream at token generation.
+
+Per-replica granularity comes from the scrape `instance` label. All of these are
+published by the TTS worker process into its worker-metrics shared-memory slot
+(`MetricsLayout::TTS_RUNNER`, see
+`cpp_server/include/runtime/worker/tts_metrics_layout.hpp`) and rendered on the
+main process's `/metrics` by `TtsWorkerMetricsRenderer`.
+
+#### Label caveats
+
+There is deliberately **no `voice` or `language` label**: the TTS API accepts
+only `text`, a free-form `description` and an optional voice WAV, so neither
+dimension exists to label by. `voice_source`
+(`default` / `description` / `voice_sample`) is the bounded stand-in until
+those fields are added to the request.
+
+`batch` (`1`, `2`, `3-4`, `5-8`, `9-16`, `17+`) is **derived, not reported**.
+The engine does not expose the batch its vocoder formed, so the runner counts
+the distinct streams whose chunks came out of one `drainAudioOutputs()` sweep —
+the engine vocodes a batch and pushes one chunk per stream in it, so a sweep
+observes one batch's worth. The proxy errs in both directions. Under load a
+single batch can straddle two sweeps, which shows up as two smaller buckets
+rather than one larger one; conversely the runner sleeps 1 ms between sweeps, so
+two batches that finish inside that gap are drained together and counted as one
+larger batch. Over-counting is the flattering error — frames credited to a batch
+bigger than the engine actually formed make reconstruction look like it scales
+with batch size better than it does, which is the one question the label exists
+to answer. Read a bucket as approximate rather than as a bound in either
+direction, and trust a shift in the distribution over any single bucket. Buckets
+rather than a raw count keep the label at 6 values instead of the 128 that
+`PM_MAX_USERS` would admit. Replace this with the real batch size if the engine
+starts reporting it.
+
 ### Docker Scrape Targets
 
 Prometheus runs in Docker, so `localhost` inside Prometheus refers to the
@@ -113,6 +269,51 @@ Open Grafana at **http://localhost:3000** (admin / admin). The dashboard loads
 automatically. PrefillGateway panels are available in the `TT Prefill Gateway`
 dashboard.
 
+## Video generation metrics
+
+The Python dashboard has a **Video Generation** row driven by the
+`tt_media_server_video_*` family (emitted by `telemetry/telemetry_client.py`,
+recorded in `model_services/video_service.py`). The generic request metrics
+answer *how long*; these answer *how much video, how fast*:
+
+| Metric | What it tells you |
+|--------|-------------------|
+| `video_generation_total{request_type,status}` | throughput and outcome, split t2v / i2v; `status` is `success` / `failure` / `cancelled` |
+| `video_generation_duration_seconds{resolution,status}` | end-to-end latency; filter `status="success"` for latency, `"failure"` for time-to-failure |
+| `video_frames_generated_total`, `video_content_seconds_total` | fleet output rate (frames/sec, video-seconds/sec) |
+| `video_denoise_steps_total` | denoise steps **executed** (success only) — Distill/Lightning run 4, AniSora 8, even when the client asked for 20 |
+| `video_frames_per_second`, `video_pixels_per_second` | per-generation throughput; pixels/sec makes 480p and 720p comparable |
+| `video_step_duration_seconds` | mean wall-clock seconds per **executed** denoise step |
+| `video_realtime_factor` | wall seconds per second of playable video (1.0 = realtime) |
+| `video_output_size_bytes`, `video_output_frames` | what the client actually got back |
+| `video_requested_inference_steps`, `video_conditioning_images` | what clients are asking for |
+| `video_generations_in_progress` | live concurrency, split by request type |
+| `video_last_generation_timestamp` | freshness — Since Last Success is 0 while a generation is in flight, then `time() - this` once idle |
+| `video_encode_*` | ffmpeg mp4 encode cost |
+
+Three things to know when reading these:
+
+* **`cancelled` is not `failure`.** `POST /generations/{id}/cancel` is a normal
+  client action, so it gets its own `status` value and is excluded from both
+  sides of the Success Rate panel. Executed steps, frames, and throughput are
+  recorded for successful generations only — a request that timed out or was
+  cancelled after 6s of a 300s budget did not run its steps that fast.
+  Distill, Lightning, and AniSora ignore `num_inference_steps`; executed
+  steps come from those pipelines, not from the request. The Success Rate
+  panel is empty (not 0% or 100%) when no success/failure completed in the
+  last hour.
+
+* **Frame count and resolution come from probing the produced mp4** (PyAV, in
+  `utils.video_manager.probe_video`). On a multihost `sp_runner` deployment the
+  server only receives a file path from its MPI peer, so this is the only source
+  of shape truth. If the probe fails, the resolution label is `unknown` and the
+  shape-derived series are skipped rather than recorded as zero.
+
+* **`video_encode_*` is absent on multihost `sp_runner` deployments.** The mp4 is
+  encoded inside the external runner peer, which serves no `/metrics`. It *is*
+  populated for in-process runners and the CPU postprocessing workers — including
+  a small `resolution="64x64"` series from the postprocessing warmup task.
+
 ## Directory layout
 
 ```
@@ -129,6 +330,7 @@ monitoring/
         ├── tt_media_server_cpp.json          # C++ server dashboard, regular mode (latency, throughput, queue)
         ├── tt_media_server_cpp_prefill.json  # C++ disaggregated prefill node (role="prefill")
         ├── tt_media_server_cpp_decode.json   # C++ disaggregated decode node (role="decode")
+        ├── tt_media_server_cpp_tts.json      # C++ TTS server (MODEL_SERVICE=tts): conditioning, codec-token + vocoder throughput
         ├── tt_media_server_python.json       # Python server dashboard (legacy, sunsetting)
         └── tt_prefill_gateway.json           # PrefillGateway routing, latency, registration-age dashboard
 ```

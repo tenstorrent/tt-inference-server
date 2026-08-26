@@ -377,6 +377,22 @@ def parse_args() -> argparse.Namespace:
         ),
     )
 
+    # ----- Agentic evals (--workflow agentic) --------------------------
+    # Selects which EVALS_AGENTIC task(s) to run. Forwarded from run.py's
+    # --agentic-benchmark; also present in the runtime_config JSON, which is
+    # the source of truth the agentic runner reads for task filtering.
+    parser.add_argument(
+        "--agentic-benchmark",
+        type=str,
+        default=None,
+        help=(
+            "Comma-separated agentic benchmark(s) to run. Aliases: tau3, "
+            "tb2.0 (terminal_bench_2), tb2.1 (terminal_bench_2_1), swebench "
+            "(swe_bench_*). Raw task names accepted. Unset/'all' runs every "
+            "configured EVALS_AGENTIC task."
+        ),
+    )
+
     # ----- Agentic-traces benchmark (--workflow agentic_traces) --------
     # The benchmark parameters live in reference_config/agentic_traces, keyed by
     # ModelSpec.model_id. These flags only select the duration profile and allow

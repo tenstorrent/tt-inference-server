@@ -68,6 +68,8 @@ std::string resolveBlazeSocketDescriptorPrefix() {
       return "glm";
     case ModelType::DEEPSEEK_V4_PRO:
       return "deepseek";
+    case ModelType::GEMMA_4_31B_IT:
+      return "gemma";
   }
   throw std::runtime_error("Unsupported model type for Blaze socket prefix");
 }
@@ -89,6 +91,8 @@ uint32_t resolveBlazeNumberOfPipelineStages() {
     case ModelType::GLM_5_1:
     case ModelType::GLM_5_2:
       return 80;
+    case ModelType::GEMMA_4_31B_IT:
+      return 62;
     default:
       return defaults::BLAZE_NUMBER_OF_PIPELINE_STAGES;
   }
@@ -555,6 +559,16 @@ const std::vector<EmbeddingModelEntry>& embeddingModels() {
        "BAAI/bge-large-en-v1.5",
        "bge-large-en-v1.5",
        {{"n150", 8}, {"n300", 16}, {"t3k", 16}, {"galaxy", 8}}},
+      {ModelRunnerType::TT_BGE_M3,
+       "BAAI/bge-m3",
+       "bge-m3",
+       {{"n150", 32}, {"n300", 32}, {"t3k", 32}, {"galaxy", 32}}},
+      // Galaxy batch 1: ModelConfigs has no max_batch_size key there, so
+      // Python resolves the Settings default (1); max_num_seqs=1 keeps it.
+      {ModelRunnerType::TT_QWEN_EMBEDDING_8B,
+       "Qwen/Qwen3-Embedding-8B",
+       "Qwen3-Embedding-8B",
+       {{"n150", 1}, {"n300", 2}, {"t3k", 2}, {"galaxy", 1}}},
       // The mock needs no device and no Python. The "" device entry is
       // deliberate: CI runs it with nothing set.
       {ModelRunnerType::EMBEDDING_MOCK,
@@ -775,6 +789,7 @@ ModelType modelType() {
     if (m == "zai-org/GLM-5.1") return ModelType::GLM_5_1;
     if (m == "zai-org/GLM-5.2") return ModelType::GLM_5_2;
     if (m == "deepseek-ai/DeepSeek-V4-Pro") return ModelType::DEEPSEEK_V4_PRO;
+    if (m == "google/gemma-4-31B-it") return ModelType::GEMMA_4_31B_IT;
     return ModelType::DEEPSEEK_R1_0528;
   }();
   return cached;

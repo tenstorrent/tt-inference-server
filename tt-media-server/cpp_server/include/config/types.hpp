@@ -55,6 +55,7 @@ enum class ModelType {
   GLM_5_1,
   GLM_5_2,
   DEEPSEEK_V4_PRO,
+  GEMMA_4_31B_IT,
 };
 
 enum class LLMMode {
@@ -93,6 +94,8 @@ enum class ModelRunnerType {
   TT_SDXL_EDIT,
   TT_TTS,
   TT_BGE_LARGE_EN,
+  TT_BGE_M3,
+  TT_QWEN_EMBEDDING_8B,
   EMBEDDING_MOCK,
 };
 
@@ -107,6 +110,7 @@ enum class Model {
   GLM_5_1,
   GLM_5_2,
   DEEPSEEK_V4_PRO,
+  GEMMA_4_31B_IT,
 };
 
 struct ModelMapping {
@@ -125,6 +129,7 @@ static constexpr ModelMapping MODEL_MAPPINGS[] = {
     {Model::GLM_5_1, "zai-org/GLM-5.1"},
     {Model::GLM_5_2, "zai-org/GLM-5.2"},
     {Model::DEEPSEEK_V4_PRO, "deepseek-ai/DeepSeek-V4-Pro"},
+    {Model::GEMMA_4_31B_IT, "google/gemma-4-31B-it"},
 };
 
 inline std::string toString(Model m) {
@@ -154,6 +159,10 @@ inline std::string toString(ModelRunnerType m) {
       return "tt_tts";
     case ModelRunnerType::TT_BGE_LARGE_EN:
       return "tt_bge_large_en";
+    case ModelRunnerType::TT_BGE_M3:
+      return "tt_bge_m3";
+    case ModelRunnerType::TT_QWEN_EMBEDDING_8B:
+      return "tt_qwen_embedding_8b";
     case ModelRunnerType::EMBEDDING_MOCK:
       return "embedding_mock";
   }
@@ -173,6 +182,10 @@ inline std::string toClientRunnerName(ModelRunnerType m) {
       return "tt-tts";
     case ModelRunnerType::TT_BGE_LARGE_EN:
       return "bge_large_en_v1_5";
+    case ModelRunnerType::TT_BGE_M3:
+      return "bge-m3";
+    case ModelRunnerType::TT_QWEN_EMBEDDING_8B:
+      return "qwen_embedding_8b";
     case ModelRunnerType::MOCK:
     case ModelRunnerType::MOCK_PIPELINE:
     case ModelRunnerType::MOCK_SCHEDULER:

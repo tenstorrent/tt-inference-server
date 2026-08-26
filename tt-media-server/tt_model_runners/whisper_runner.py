@@ -4,6 +4,7 @@
 
 import asyncio
 import os
+import time
 from typing import List, Optional, Union
 
 import numpy as np
@@ -28,7 +29,15 @@ from models.demos.audio.whisper.tt.whisper_generator import (
     WhisperGenerator,
 )
 from models.demos.utils.common_demo_utils import get_mesh_mappers
-from telemetry.telemetry_client import TelemetryEvent
+from telemetry.telemetry_client import (
+    TelemetryEvent,
+    audio_chunk_first_token_duration,
+    audio_chunk_processing_duration,
+    audio_encoder_duration,
+    audio_encoder_input_seconds,
+    audio_feature_extraction_duration,
+    audio_feature_extraction_input_seconds,
+)
 from transformers import (
     AutoFeatureExtractor,
     AutoProcessor,
@@ -42,11 +51,28 @@ from utils.text_utils import TextUtils
 # two-command-queue (2CQ) trace execution path
 WHISPER_NUM_COMMAND_QUEUES = 2
 
+# Fallback frame length when the extractor does not advertise one.
+WHISPER_ENCODER_FRAME_SECONDS = 30.0
+
+try:
+    # tt-metal #53717 packs the stage timings into PerfMetrics. Probed, not
+    # assumed: without it, asking for perf metrics only changes the tuple arity.
+    from models.demos.audio.whisper.tt.whisper_generator import (  # noqa: F401
+        PerfMetrics,
+    )
+
+    WHISPER_PERF_METRICS_SUPPORTED = True
+except ImportError:
+    WHISPER_PERF_METRICS_SUPPORTED = False
+
 
 class TTWhisperRunner(BaseMetalDeviceRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.pipeline = None
+        # Replaced with the loaded extractor's real frame length once the
+        # pipeline is created.
+        self._encoder_frame_seconds = WHISPER_ENCODER_FRAME_SECONDS
 
     def get_pipeline_device_params(self):
         device_params = {
@@ -91,10 +117,15 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 self.logger.info(
                     f"Device {self.device_id}: Starting model warmup with {len(dummy_audio)} samples"
                 )
-                await self.pipeline(dummy_audio)
+                # Excluded from the stage metrics: these are cold, they capture
+                # the encoder traces, and their 1s of silence is not offered
+                # load. The encoder side would be filtered out anyway by
+                # trace_hit="false", but feature extraction has no such label,
+                # so warmup would otherwise sit in its panels permanently.
+                await self.pipeline(dummy_audio, record_stage_metrics=False)
                 if self.settings.max_batch_size > 1:
                     warmup_batch = [dummy_audio, dummy_audio]
-                    await self.pipeline(warmup_batch)
+                    await self.pipeline(warmup_batch, record_stage_metrics=False)
                 self.logger.info(
                     f"Device {self.device_id}: Model warmup completed successfully"
                 )
@@ -158,6 +189,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                     request.stream,
                     self._create_generation_params(request),
                     prompt=request.prompt,
+                    audio_profile=self._audio_profile(request),
                 )
 
                 if request.stream:
@@ -223,19 +255,19 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
         return request
 
     async def _execute_pipeline(
-        self, audio_data, stream, generation_params, prompt=None
+        self, audio_data, stream, generation_params, prompt=None, audio_profile=None
     ):
         """Main pipeline execution method"""
         try:
             if stream:
                 # Return the async generator
                 return self._execute_pipeline_streaming(
-                    audio_data, generation_params, prompt
+                    audio_data, generation_params, prompt, audio_profile
                 )
             else:
                 # Return the single result
                 return await self._execute_pipeline_non_streaming(
-                    audio_data, generation_params, prompt
+                    audio_data, generation_params, prompt, audio_profile
                 )
 
         except Exception as e:
@@ -267,6 +299,13 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
             else:
                 audio_data = audio_arrays
 
+            # Measured before the pad above, which is silence: throughput has to
+            # be credited the audio that was actually submitted, or a batch of
+            # unequal lengths reports the longer item's duration twice.
+            audio_durations = [
+                len(arr) / self.settings.default_sample_rate for arr in audio_arrays
+            ]
+
             # prompt is batch-homogeneous in tt-metal's WhisperGenerator: take the
             # first request's prompt and warn if requests disagree.
             prompts = {req.prompt for req in requests if req.prompt is not None}
@@ -281,6 +320,8 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 stream=False,
                 generation_params=generation_params,
                 prompt=prompt,
+                audio_durations=audio_durations,
+                audio_profile=self._audio_profile(requests),
             )
 
             responses = []
@@ -305,8 +346,187 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
             )
             raise RuntimeError(f"Audio processing failed: {str(e)}") from e
 
+    @staticmethod
+    def _resolve_encoder_frame_seconds(feature_extractor):
+        """Length of the fixed frame every batch item is padded or truncated to.
+
+        Whisper's extractor pads to `n_samples` (30s at 16kHz), so this caps the
+        audio either stage can consume per item whatever was submitted.
+        """
+        n_samples = getattr(feature_extractor, "n_samples", None)
+        sampling_rate = getattr(feature_extractor, "sampling_rate", None)
+        if (
+            isinstance(n_samples, (int, float))
+            and isinstance(sampling_rate, (int, float))
+            and sampling_rate
+        ):
+            return n_samples / sampling_rate
+        chunk_length = getattr(feature_extractor, "chunk_length", None)
+        if isinstance(chunk_length, (int, float)) and chunk_length:
+            return float(chunk_length)
+        return WHISPER_ENCODER_FRAME_SECONDS
+
+    @staticmethod
+    def _audio_profile(requests):
+        """The submitted operating point shared by a batch of requests.
+
+        `sample_rate` and `channels` describe what arrived, not what reaches the
+        extractor: audio_manager downmixes to mono and resamples to the default
+        rate before the runner sees an array, so deriving these from the array
+        would report a constant. "unknown" covers a decode path that normalised
+        them away (ffmpeg) and "mixed" a batch whose items disagree, so neither
+        case is silently reported as a real value.
+        """
+        if not isinstance(requests, (list, tuple)):
+            requests = [requests]
+
+        def _shared(attr):
+            values = {getattr(req, attr, None) for req in requests}
+            if len(values) != 1:
+                return "mixed"
+            value = values.pop()
+            return "unknown" if value is None else str(value)
+
+        return {
+            "sample_rate": _shared("_source_sample_rate"),
+            "channels": _shared("_source_channels"),
+        }
+
+    def _audio_stage_context(
+        self, current_batch, audio_durations=None, audio_profile=None
+    ):
+        """Label values and the useful audio seconds credited to the two stages.
+
+        Counted here rather than read off PerfMetrics.total_audio_s, which sums
+        submitted durations: an item longer than one frame is truncated to it.
+        Reachable here — chunking never splits a single long VAD segment, so
+        uninterrupted speech becomes one long chunk.
+
+        `audio_durations` overrides the duration derived from each array's
+        length. Batched calls zero-pad the shorter item up to the longer one
+        before submitting, and that pad is silence no stage turns into useful
+        features — measuring the submitted array would credit it as real audio.
+        """
+        frame_seconds = self._encoder_frame_seconds
+        audio_seconds = 0.0
+        for index, (rate, audio_array) in enumerate(current_batch):
+            if rate:
+                if audio_durations is not None and index < len(audio_durations):
+                    duration = audio_durations[index]
+                else:
+                    duration = audio_array.shape[0] / rate
+                audio_seconds += min(duration, frame_seconds)
+
+        profile = audio_profile or {}
+        sample_rate = profile.get("sample_rate") or str(
+            self.settings.default_sample_rate
+        )
+        channels = profile.get("channels") or "1"
+
+        model_name = (
+            os.path.basename((self.settings.model_weights_path or "").rstrip("/"))
+            or "unknown"
+        )
+        device_id = str(self.device_id) if self.device_id is not None else "unknown"
+        return {
+            "audio_seconds": audio_seconds,
+            "feature_labels": {
+                "model_type": self.settings.model_runner,
+                "device_id": device_id,
+                "sample_rate": sample_rate,
+                "channels": channels,
+                "batch": str(len(current_batch)),
+            },
+            "encoder_labels": {
+                "model_type": self.settings.model_runner,
+                "device_id": device_id,
+                "model_name": model_name,
+                "language": self.settings.audio_language or "unknown",
+                "batch": str(len(current_batch)),
+            },
+        }
+
+    @staticmethod
+    def _find_perf_metrics(result):
+        """Pull the PerfMetrics out of a returned or yielded tuple.
+
+        Matched on shape, not type, so its position in the tuple can move.
+        """
+        if not isinstance(result, tuple):
+            return None
+        for item in result:
+            if hasattr(item, "feature_extract_s") and hasattr(item, "encoder_s"):
+                return item
+        return None
+
+    def _record_audio_stage_throughput(self, result, context):
+        """Record feature-extraction and encoder throughput for one batch.
+
+        Returns whether anything was recorded, so the streaming wrapper knows
+        when to stop looking. Each stage is gated on a positive duration:
+        generate()'s no-valid-output paths return zeroed timings, and crediting
+        audio against a zero-second stage reports unbounded throughput.
+        """
+        perf = self._find_perf_metrics(result)
+        if perf is None:
+            return False
+
+        audio_seconds = context["audio_seconds"]
+        recorded = False
+
+        feature_extract_s = getattr(perf, "feature_extract_s", 0.0) or 0.0
+        if feature_extract_s > 0:
+            labels = context["feature_labels"]
+            audio_feature_extraction_input_seconds.labels(**labels).inc(audio_seconds)
+            audio_feature_extraction_duration.labels(**labels).observe(
+                feature_extract_s
+            )
+            recorded = True
+
+        encoder_s = getattr(perf, "encoder_s", 0.0) or 0.0
+        if encoder_s > 0:
+            # The capture call runs the encoder twice; labelled, not dropped,
+            # so the cost stays visible.
+            trace_hit = bool(getattr(perf, "encoder_trace_hit", True))
+            labels = dict(
+                context["encoder_labels"], trace_hit="true" if trace_hit else "false"
+            )
+            audio_encoder_input_seconds.labels(**labels).inc(audio_seconds)
+            audio_encoder_duration.labels(**labels).observe(encoder_s)
+            recorded = True
+
+        return recorded
+
+    def _stream_with_stage_metrics(self, generator, context):
+        """Record the stage timings once, off the first yield that carries them.
+
+        Both stages run once per generate() call, ahead of the decode loop, and
+        every yield repeats the same timings — recording per item would multiply
+        one batch by its token count.
+        """
+        recorded = False
+        for item in generator:
+            if not recorded:
+                recorded = self._record_audio_stage_throughput(item, context)
+            yield item
+
+    @staticmethod
+    def _is_final_result(item):
+        """Whether a streamed item is the final marker for its chunk.
+
+        The flag is always last but its index shifts with return_perf_metrics,
+        so key off the trailing bool. Non-streaming tuples end in a tensor or a
+        PerfMetrics and never match.
+        """
+        return (
+            isinstance(item, tuple)
+            and len(item) >= 4
+            and isinstance(item[-1], bool)
+            and item[-1]
+        )
+
     async def _execute_pipeline_streaming(
-        self, audio_data, generation_params, prompt=None
+        self, audio_data, generation_params, prompt=None, audio_profile=None
     ):
         """Async generator for streaming results"""
         generator = await self.pipeline(
@@ -314,13 +534,14 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
             stream=True,
             generation_params=generation_params,
             prompt=prompt,
+            audio_profile=audio_profile,
         )
 
         for item in generator:
             yield item
 
     async def _execute_pipeline_non_streaming(
-        self, audio_data, generation_params, prompt=None
+        self, audio_data, generation_params, prompt=None, audio_profile=None
     ):
         """Non-streaming pipeline execution"""
         result = await self.pipeline(
@@ -328,6 +549,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
             stream=False,
             generation_params=generation_params,
             prompt=prompt,
+            audio_profile=audio_profile,
         )
 
         if result is None:
@@ -362,25 +584,36 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 f"Device {self.device_id}: Processing segment {i + 1}/{len(request._segments)}: {start_time:.2f}s-{end_time:.2f}s, speaker: {speaker}"
             )
 
+            # `_execute_pipeline` only builds the async generator; the log-mel
+            # extraction and the device passes are deferred to the first pull
+            # below, so the clock has to start here and stop inside the loop.
+            chunk_start = time.perf_counter()
             async_generator = await self._execute_pipeline(
                 segment_audio,
                 request.stream,
                 self._create_generation_params(request),
                 prompt=request.prompt,
+                audio_profile=self._audio_profile(request),
             )
 
             segment_prefix = f"[{speaker}] "
             first_token = True
+            first_item_observed = False
             segment_text_parts = []
 
             async for partial_result in async_generator:
+                # Ahead of the is_final check: a chunk whose only item is the
+                # final marker still paid the extraction and encode cost.
+                if not first_item_observed:
+                    audio_chunk_first_token_duration.labels(
+                        model_type=self.settings.model_runner
+                    ).observe(time.perf_counter() - chunk_start)
+                    first_item_observed = True
+
                 text_part, start, end = TextUtils.extract_text(partial_result)
-                # Check is_final flag
-                if isinstance(partial_result, tuple) and len(partial_result) >= 4:
-                    is_final = partial_result[3]
-                    if is_final:
-                        final_text = text_part
-                        break
+                if self._is_final_result(partial_result):
+                    final_text = text_part
+                    break
 
                 # Add speaker prefix to first token for streaming display
                 if first_token:
@@ -405,6 +638,13 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                     }
 
                 segment_text_parts.append(text_part)
+
+            # Reached on both generator exhaustion and the is_final `break`. The
+            # span covers the `yield`s above, so it is wall time per chunk and
+            # includes any consumer backpressure, not compute alone.
+            audio_chunk_processing_duration.labels(
+                model_type=self.settings.model_runner
+            ).observe(time.perf_counter() - chunk_start)
 
             # Build segment data for final result
             segment_result = TextUtils.concatenate_chunks(segment_text_parts)
@@ -469,6 +709,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 request.stream,
                 self._create_generation_params(request),
                 prompt=request.prompt,
+                audio_profile=self._audio_profile(request),
             )
 
             cleaned_text, start, end = TextUtils.extract_text(segment_result)
@@ -508,12 +749,9 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
         async for chunk in result_generator:
             cleaned_text, start, end = TextUtils.extract_text(chunk)
 
-            # Check is_final flag
-            if isinstance(chunk, tuple) and len(chunk) >= 4:
-                is_final = chunk[3]
-                if is_final:
-                    final_text = cleaned_text
-                    break
+            if self._is_final_result(chunk):
+                final_text = cleaned_text
+                break
 
             # Yield non-empty chunks
             if not cleaned_text:
@@ -730,6 +968,10 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 max_batch_size=self.settings.max_batch_size,
             )
 
+            self._encoder_frame_seconds = self._resolve_encoder_frame_seconds(
+                feature_extractor
+            )
+
             async def _model_pipeline(
                 audio_data,
                 stream=False,
@@ -737,6 +979,9 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                     Union[GenerationParams, List[GenerationParams]]
                 ] = None,
                 prompt: Optional[str] = None,
+                audio_durations: Optional[List[float]] = None,
+                record_stage_metrics: bool = True,
+                audio_profile: Optional[dict] = None,
             ):
                 try:
                     # Validate pipeline inputs
@@ -782,10 +1027,27 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                             task=self.settings.audio_task,
                             prompt=prompt or None,
                             stream_generation=stream,
-                            return_perf_metrics=False,
+                            return_perf_metrics=WHISPER_PERF_METRICS_SUPPORTED,
                         )
 
-                    return await asyncio.to_thread(_run)
+                    result = await asyncio.to_thread(_run)
+
+                    if not WHISPER_PERF_METRICS_SUPPORTED or not record_stage_metrics:
+                        return result
+
+                    # Built here: only this scope knows what was submitted.
+                    stage_context = self._audio_stage_context(
+                        current_batch,
+                        audio_durations=audio_durations,
+                        audio_profile=audio_profile,
+                    )
+                    if stream:
+                        # Streaming defers every stage to the first pull, so the
+                        # timings do not exist yet.
+                        return self._stream_with_stage_metrics(result, stage_context)
+
+                    self._record_audio_stage_throughput(result, stage_context)
+                    return result
                 except Exception as e:
                     self.logger.error(
                         f"Device {self.device_id}: Pipeline execution failed: {e}"
