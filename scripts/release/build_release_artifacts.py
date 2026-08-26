@@ -316,7 +316,13 @@ def package(version: str, staged: dict[str, Path], out_dir: Path) -> Path:
             src = staged[arcname]
             mtime = time.localtime(src.stat().st_mtime)[:6]
             info = zipfile.ZipInfo(f"{root}/{arcname}", date_time=mtime)
-            info.external_attr = 0o644 << 16
+            # S_IFREG must be part of the mode. ZipInfo reports create_system=3
+            # (Unix), which tells an extractor to honour the high word as st_mode,
+            # so a mode with no file-type bits declares "type unknown". unzip and
+            # Keka fall back to a default and open it anyway; macOS Archive Utility
+            # honours the declaration and refuses the archive as an unsupported
+            # format. The directory entry above already gets this right via S_IFDIR.
+            info.external_attr = 0o100644 << 16
             info.compress_type = zipfile.ZIP_STORED
             zf.writestr(info, src.read_bytes())
 
