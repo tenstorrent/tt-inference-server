@@ -617,4 +617,3 @@ class TestAdapterCheckpointCallback:
             "train_loss": 0.5,
             "val_loss": 1.25,
         }
-
