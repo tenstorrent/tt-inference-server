@@ -38,6 +38,7 @@ from workflows.multihost_orchestrator import (
     setup_multihost_config,
 )
 from workflows.run_docker_server import (
+    collect_tt_triage_logs,
     format_docker_command,
     generate_docker_run_command,
 )
@@ -1079,7 +1080,8 @@ def main():
     tt_inference_server_sha = get_current_commit_sha()
 
     # step 3: setup logging and finalize run_id
-    run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    run_start = datetime.now()
+    run_timestamp = run_start.strftime("%Y-%m-%d_%H-%M-%S")
     run_id = get_run_id(
         timestamp=run_timestamp,
         model_id=model_id,
@@ -1244,7 +1246,19 @@ def main():
         )
         main_return_code = 0
     else:
-        main_return_code = WorkflowRunner(commands).run()
+        runner = WorkflowRunner(commands)
+        main_return_code = runner.run()
+        if runtime_config.docker_server:
+            # tt-metal writes a tt-triage report into the cache_root volume when
+            # it detects a device hang; copy it under workflow_logs/ so CI's
+            # existing artifact upload picks it up. Runs on success too -- the
+            # report is simply absent when nothing hung.
+            collect_tt_triage_logs(
+                setup_config=setup_config,
+                model_spec=model_spec,
+                dest_dir=log_path / "tt_triage",
+                since_ts=run_start.timestamp(),
+            )
     if main_return_code == 0:
         logger.info("Completed run.py.")
     else:

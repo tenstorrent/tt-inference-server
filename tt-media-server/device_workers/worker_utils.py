@@ -9,6 +9,13 @@ from tt_model_runners.runner_fabric import get_device_runner
 from utils.logger import TTLogger
 
 
+def signalJobStart(request) -> None:
+    """Notify JobManager that a device worker has started this request."""
+    startEvent = getattr(request, "_start_event", None)
+    if startEvent is not None:
+        startEvent.set()
+
+
 def initialize_device_worker(worker_id: str, logger: TTLogger):
     """Initialize device runner and event loop for worker"""
     # Create a single event loop for this worker process

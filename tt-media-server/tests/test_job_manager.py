@@ -201,6 +201,8 @@ class TestJobManager:
             mock_settings.return_value.job_retention_seconds = 2
             mock_settings.return_value.job_max_stuck_time_seconds = 3
             mock_settings.return_value.max_jobs = 10
+            # Keep this above max_jobs so existing tests still hit the record cap.
+            mock_settings.return_value.max_queue_size = 1000
 
             mock_settings.return_value.enable_job_persistence = request.param
             mock_settings.return_value.job_database_path = str(test_db_file)
@@ -286,6 +288,131 @@ class TestJobManager:
                 request=mock_request,
                 task_function=task_func,
             )
+
+    @pytest.mark.asyncio
+    async def test_create_job_rejects_when_active_queue_full(
+        self, job_manager, mock_request
+    ):
+        """Outstanding (non-terminal) jobs are capped by max_queue_size."""
+        from fastapi import HTTPException
+
+        job_manager._settings.max_queue_size = 2
+
+        async def blockingTask(req):
+            await asyncio.sleep(10)
+            return "videos/test-123.mp4"
+
+        await job_manager.create_job(
+            job_id="job-1",
+            job_type=JobTypes.VIDEO,
+            model="test-model",
+            request=mock_request,
+            task_function=blockingTask,
+        )
+        await job_manager.create_job(
+            job_id="job-2",
+            job_type=JobTypes.VIDEO,
+            model="test-model",
+            request=mock_request,
+            task_function=blockingTask,
+        )
+
+        with pytest.raises(HTTPException) as excInfo:
+            await job_manager.create_job(
+                job_id="job-3",
+                job_type=JobTypes.VIDEO,
+                model="test-model",
+                request=mock_request,
+                task_function=blockingTask,
+            )
+        assert excInfo.value.status_code == 429
+        assert "Task queue is full" in excInfo.value.detail
+
+    @pytest.mark.asyncio
+    async def test_create_job_completed_jobs_do_not_consume_queue(
+        self, job_manager, mock_request
+    ):
+        """Completed jobs count toward max_jobs, not max_queue_size."""
+        job_manager._settings.max_queue_size = 1
+
+        async def quickTask(req):
+            return "videos/test-123.mp4"
+
+        await job_manager.create_job(
+            job_id="job-done",
+            job_type=JobTypes.VIDEO,
+            model="test-model",
+            request=mock_request,
+            task_function=quickTask,
+        )
+        await asyncio.sleep(0.15)
+        assert job_manager.get_job_metadata("job-done")["status"] == "completed"
+
+        jobData = await job_manager.create_job(
+            job_id="job-next",
+            job_type=JobTypes.VIDEO,
+            model="test-model",
+            request=mock_request,
+            task_function=quickTask,
+        )
+        assert jobData["id"] == "job-next"
+
+    @pytest.mark.asyncio
+    async def test_ten_concurrent_submits_honor_max_queue_size(
+        self, job_manager, mock_request
+    ):
+        """Issue #4959: 10 concurrent jobs with max_queue_size=2 yield 8 x 429."""
+        from fastapi import HTTPException
+
+        job_manager._settings.max_queue_size = 2
+
+        async def blockingTask(req):
+            await asyncio.sleep(10)
+            return "videos/test-123.mp4"
+
+        async def submit(jobId):
+            return await job_manager.create_job(
+                job_id=jobId,
+                job_type=JobTypes.VIDEO,
+                model="test-model",
+                request=mock_request,
+                task_function=blockingTask,
+            )
+
+        results = await asyncio.gather(
+            *[submit(f"job-{i}") for i in range(10)],
+            return_exceptions=True,
+        )
+        accepted = [item for item in results if not isinstance(item, Exception)]
+        rejected = [item for item in results if isinstance(item, HTTPException)]
+        assert len(accepted) == 2
+        assert len(rejected) == 8
+        assert all(exc.status_code == 429 for exc in rejected)
+
+    @pytest.mark.asyncio
+    async def test_job_stays_queued_until_start_event(self, job_manager, mock_request):
+        """Issue #4959: in_progress waits for device dispatch, not task creation."""
+        startEvent = Event()
+
+        async def blockingTask(req):
+            await asyncio.sleep(10)
+            return "videos/test-123.mp4"
+
+        await job_manager.create_job(
+            job_id="job-wait",
+            job_type=JobTypes.VIDEO,
+            model="test-model",
+            request=mock_request,
+            task_function=blockingTask,
+            start_event=startEvent,
+        )
+        await asyncio.sleep(0.6)
+        assert job_manager.get_job_metadata("job-wait")["status"] == "queued"
+
+        startEvent.set()
+        await asyncio.sleep(0.6)
+        assert job_manager.get_job_metadata("job-wait")["status"] == "in_progress"
+        job_manager.cancel_job("job-wait")
 
     @pytest.mark.asyncio
     async def test_get_all_jobs_metadata_empty(self, job_manager):
