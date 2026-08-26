@@ -311,7 +311,8 @@ class ServerCommand(Command):
                 )
             try:
                 payload = self._launch_once(spec)
-            except Exception as e:  # launcher itself failed (container/process died at once)
+            # launcher itself failed (container/process died at once)
+            except Exception as e:
                 logger.exception("Server bring-up failed: %s", e)
                 last_error = str(e)
                 _teardown_server(spec, None)
@@ -368,7 +369,8 @@ class ServerCommand(Command):
                 spec.json_fpath,
                 spec.setup_config,
             )
-        return _UNKNOWN_MODE  # pragma: no cover - ServerLaunchSpec rejects unknown modes
+        # ServerLaunchSpec rejects unknown modes
+        return _UNKNOWN_MODE  # pragma: no cover
 
 
 class VenvCommand(Command):
