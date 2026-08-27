@@ -4530,12 +4530,16 @@ _eval_config_list = [
                 # minus the prompt (server 400s if output+prompt > ctx);
                 # 124K leaves ~4K headroom for prompt + chat template.
                 gen_kwargs={
-                    "stream": "false",
+                    "stream": "true",
                     "max_gen_toks": 124 * 1024,
                     # Dynamo frontend rejects empty stop. HF tokenizer_config.json
                     # eos_token for google/gemma-4-31B-it (id 1; generation_config
                     # also stops on <end_of_turn> 106 and <|tool_response> 50).
                     "until": ["<eos>"],
+                    # Nested so the chat-completions body gets
+                    # chat_template_kwargs, not a top-level enable_thinking
+                    # field (vLLM 400). eval_command emits this as JSON.
+                    "chat_template_kwargs": {"enable_thinking": True},
                     "do_sample": "true",
                     "temperature": 1.0,
                     "top_k": 20,
@@ -4608,6 +4612,19 @@ _eval_config_list = [
                                 "top_k": 20,
                             },
                         },
+                        # Terminus-2 forwards llm_call_kwargs onto each LiteLLM
+                        # completion (same Harbor path as Kimi-K2.6's commented
+                        # thinking extra_body). Remote --server-url hosts do not
+                        # get the local spec's --default-chat-template-kwargs
+                        # '{"enable_thinking": true}', and gemma-4's template
+                        # otherwise injects an empty thought channel.
+                        "llm_call_kwargs": {
+                            "extra_body": {
+                                "chat_template_kwargs": {
+                                    "enable_thinking": True,
+                                },
+                            },
+                        },
                     },
                     task_names_map={
                         EvalLimitMode.CI_NIGHTLY: [
@@ -4660,11 +4677,17 @@ _eval_config_list = [
                     # 160K + 32K = 192K (~8K headroom). SWE prompts rarely
                     # approach 200K, so the 256K->200K cap should not affect
                     # scores.
-                    max_input_tokens=160 * 1024,
+                    max_input_tokens=128 * 1024,
                     max_output_tokens=32 * 1024,
                     completion_kwargs={
                         "extra_body": {
                             "top_k": 20,
+                            # mini-swe-agent merges this into LiteLLM
+                            # model_kwargs; same remote-host thinking gap as
+                            # terminal_bench_2's llm_call_kwargs above.
+                            "chat_template_kwargs": {
+                                "enable_thinking": True,
+                            },
                         },
                     },
                     instance_ids_map={
