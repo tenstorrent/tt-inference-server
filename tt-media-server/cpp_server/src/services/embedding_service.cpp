@@ -145,18 +145,18 @@ struct WorkerProcess {
    * Returns false on child exit (pipe EOF), timeout, or unexpected data.
    * keepWaiting lets service shutdown abort the wait within ~100ms.
    */
-  bool waitUntilReady(unsigned timeoutMs, const std::atomic<bool>& keepWaiting) {
-    const auto deadline = std::chrono::steady_clock::now() +
-                          std::chrono::milliseconds(timeoutMs);
+  bool waitUntilReady(unsigned timeoutMs,
+                      const std::atomic<bool>& keepWaiting) {
+    const auto deadline =
+        std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
     while (keepWaiting.load()) {
       const auto remaining =
           std::chrono::duration_cast<std::chrono::milliseconds>(
               deadline - std::chrono::steady_clock::now())
               .count();
       if (remaining <= 0) {
-        TT_LOG_ERROR(
-            "[EmbeddingService] Worker {} warmup timed out after {}ms",
-            workerId, timeoutMs);
+        TT_LOG_ERROR("[EmbeddingService] Worker {} warmup timed out after {}ms",
+                     workerId, timeoutMs);
         return false;
       }
 
