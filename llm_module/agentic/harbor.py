@@ -73,12 +73,12 @@ class HarborRunConfig:
     agent_setup_timeout_multiplier: Optional[float] = None
     task_names: list[str] = field(default_factory=list)
     exclude_task_names: list[str] = field(default_factory=list)
-    quiet: bool = True
+    # Rich Live progress: quiet=True shows only the loading bar; quiet=False
+    # adds per-trial stage spinners (env start, agent start, verification).
+    # In CI (non-TTY) Rich degrades Live to static line-by-line output, which
+    # is exactly the visibility we want — each trial stage prints a line.
+    quiet: bool = False
     yes: bool = True
-    # Stream harbor's per-trial DEBUG logs to stdout. On by default so CI -- a
-    # non-TTY where harbor's Rich Live progress does not render -- still shows
-    # which evals and rollouts are running. Orthogonal to (and safe alongside)
-    # ``quiet``, which only governs the progress display.
     debug: bool = False
     agent_import_path: Optional[str] = None
     # Injected into the agent's container for the agent phase. Harbor's
