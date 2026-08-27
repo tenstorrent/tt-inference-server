@@ -192,11 +192,15 @@ async def handle_audio_request(audio_request, service):
         )
         try:
             async for partial in service.process_streaming_request(audio_request):
-                progress.on_update()
                 if isinstance(partial, AudioTextResponse):
+                    # Finalization is the wait after the last partial, a proxy
+                    # for "end-of-speech → final transcript" — the true metric
+                    # needs an end-of-audio marker the protocol doesn't have.
                     final_result = partial
+                    progress.on_final()
                 else:
                     streamed_characters += char_count(partial.text) or 0
+                    progress.on_update()
                 if is_text_format:
                     yield partial.text + "\n"
                 else:

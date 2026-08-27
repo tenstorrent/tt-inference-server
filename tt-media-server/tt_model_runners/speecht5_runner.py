@@ -39,6 +39,7 @@ from models.experimental.speecht5_tts.tt.ttnn_speecht5_postnet import (
     preprocess_postnet_parameters,
 )
 from num2words import num2words
+from telemetry.audio_metrics import TtsChunkProgress
 from telemetry.telemetry_client import TelemetryEvent
 from transformers import SpeechT5ForTextToSpeech, SpeechT5HifiGan, SpeechT5Processor
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
@@ -783,6 +784,11 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                     f"Long text ({len(text)} chars) split into {len(chunks)} chunks"
                 )
 
+            # Streaming TTFA/cadence proxy: the endpoint has no streaming mode
+            # (the client always gets the complete utterance), so these record
+            # what streaming would deliver — per-chunk mel generation time,
+            # with the first chunk doubling as the time-to-first-audio floor.
+            progress = TtsChunkProgress(model_type=self.settings.model_runner)
             mel_spectrograms = []
             for i, chunk in enumerate(chunks):
                 if len(chunks) > 1:
@@ -791,6 +797,7 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                         f"'{chunk[:60]}{'...' if len(chunk) > 60 else ''}'"
                     )
                 mel = self._generate_mel_for_chunk(chunk)
+                progress.on_chunk()
                 mel_spectrograms.append(mel)
 
             # Concatenate mels from all chunks along time axis, then run vocoder once

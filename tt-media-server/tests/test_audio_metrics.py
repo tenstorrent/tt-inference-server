@@ -24,9 +24,13 @@ from telemetry.audio_metrics import (
     VOICE_CUSTOM,
     VOICE_DEFAULT,
     SttStreamProgress,
+    TtsChunkProgress,
     char_count,
+    confidence_from_generator_output,
+    record_stt_confidence,
     record_stt_request,
     record_tts_request,
+    transcript_compression_ratio,
     tts_voice_label,
 )
 
@@ -245,6 +249,154 @@ class TestSttStreamProgress:
             is None
         )
 
+    def test_final_records_finalization_not_cadence(self):
+        model = "stt-stream-final"
+        progress = SttStreamProgress(
+            model_type=model, task="transcription", language="English"
+        )
+        progress.on_update()
+        progress.on_final()
+        labels = dict(model_type=model, task="transcription", language="English")
+        assert (
+            sample("tt_media_server_audio_stt_finalization_seconds_count", **labels)
+            == 1
+        )
+        assert (
+            sample("tt_media_server_audio_stt_partial_interval_seconds_count", **labels)
+            is None
+        )
+
+    def test_final_without_partials_measures_from_start(self):
+        model = "stt-stream-final-only"
+        progress = SttStreamProgress(
+            model_type=model, task="transcription", language="English"
+        )
+        progress.on_final()
+        labels = dict(model_type=model, task="transcription", language="English")
+        assert (
+            sample("tt_media_server_audio_stt_finalization_seconds_count", **labels)
+            == 1
+        )
+        assert (
+            sample("tt_media_server_audio_stt_first_partial_seconds_count", **labels)
+            is None
+        )
+
+
+class TestTtsChunkProgress:
+    def test_first_chunk_and_cadence(self):
+        model = "tts-chunk-progress"
+        progress = TtsChunkProgress(model_type=model)
+        progress.on_chunk()
+        progress.on_chunk()
+        progress.on_chunk()
+        labels = dict(model_type=model)
+        assert (
+            sample("tt_media_server_audio_tts_first_chunk_seconds_count", **labels) == 1
+        )
+        assert (
+            sample("tt_media_server_audio_tts_chunk_generation_seconds_count", **labels)
+            == 3
+        )
+
+    def test_no_chunks_records_nothing(self):
+        model = "tts-chunk-quiet"
+        TtsChunkProgress(model_type=model)
+        assert (
+            sample(
+                "tt_media_server_audio_tts_first_chunk_seconds_count", model_type=model
+            )
+            is None
+        )
+
+
+class FakeTensor:
+    """Stand-in for a 0-d torch tensor: float() works, iteration does not."""
+
+    def __init__(self, value):
+        self._value = value
+
+    def __float__(self):
+        return self._value
+
+
+class TestConfidenceHelpers:
+    def test_extracts_floats_by_position(self):
+        item = ("transcript", -0.5, 0.1, True)
+        assert confidence_from_generator_output(item) == (-0.5, 0.1)
+
+    def test_extracts_tensor_scalars_and_sequences(self):
+        item = ("t", FakeTensor(-0.75), [FakeTensor(0.2), FakeTensor(0.4)], True)
+        avg_logprob, no_speech = confidence_from_generator_output(item)
+        assert avg_logprob == -0.75
+        assert no_speech == pytest.approx(0.3)
+
+    def test_rejects_non_tuples_and_short_tuples(self):
+        assert confidence_from_generator_output("text") == (None, None)
+        assert confidence_from_generator_output(("text", -0.5)) == (None, None)
+
+    def test_compression_ratio_repetitive_text_is_higher(self):
+        varied = transcript_compression_ratio("the quick brown fox jumps over it")
+        looped = transcript_compression_ratio("the the the the the the the the the")
+        assert varied is not None and looped is not None
+        assert looped > varied
+
+    def test_compression_ratio_empty_or_non_str(self):
+        assert transcript_compression_ratio("") is None
+        assert transcript_compression_ratio(None) is None
+
+
+class TestRecordSttConfidence:
+    def test_records_all_signals(self):
+        model = "stt-confidence"
+        record_stt_confidence(
+            model_type=model,
+            language="English",
+            avg_logprob=-0.4,
+            no_speech_prob=0.05,
+            compression_ratio=1.6,
+        )
+        labels = dict(model_type=model, language="English")
+        # No _sum assertion for avg_logprob: prometheus_client omits _sum for
+        # histograms holding negative observations (OpenMetrics rule).
+        assert sample("tt_media_server_audio_stt_avg_logprob_count", **labels) == 1
+        assert (
+            sample("tt_media_server_audio_stt_avg_logprob_bucket", le="-0.4", **labels)
+            == 1
+        )
+        assert (
+            sample("tt_media_server_audio_stt_no_speech_probability_sum", **labels)
+            == 0.05
+        )
+        assert (
+            sample("tt_media_server_audio_stt_compression_ratio_sum", **labels) == 1.6
+        )
+
+    def test_partial_signals_record_independently(self):
+        model = "stt-confidence-partial"
+        record_stt_confidence(
+            model_type=model,
+            language="English",
+            avg_logprob=-1.2,
+            no_speech_prob=None,
+            compression_ratio=None,
+        )
+        labels = dict(model_type=model, language="English")
+        assert sample("tt_media_server_audio_stt_avg_logprob_count", **labels) == 1
+        assert (
+            sample("tt_media_server_audio_stt_no_speech_probability_count", **labels)
+            is None
+        )
+
+    def test_garbage_never_raises(self):
+        record_stt_confidence(
+            model_type="stt-confidence-garbage",
+            language=None,
+            avg_logprob=object(),
+            no_speech_prob="not-a-number",
+            compression_ratio=-2.0,
+        )
+
 
 class TestRecordTtsRequest:
     def test_success_records_usage_and_rtf(self):
@@ -427,7 +579,8 @@ class TestHandleAudioRequestMetrics:
         assert sample(
             "tt_media_server_audio_stt_output_characters_total", **usage
         ) == len("one two")
-        # Three emitted updates: one first-partial, two intervals.
+        # Two partials then the final: one first-partial, one interval, and
+        # the final feeds finalization instead of cadence.
         stream_labels = dict(
             model_type=model_runner_label, task="transcription", language=LANGUAGE
         )
@@ -443,7 +596,14 @@ class TestHandleAudioRequestMetrics:
                 "tt_media_server_audio_stt_partial_interval_seconds_count",
                 **stream_labels,
             )
-            == 2
+            == 1
+        )
+        assert (
+            sample(
+                "tt_media_server_audio_stt_finalization_seconds_count",
+                **stream_labels,
+            )
+            == 1
         )
 
     @pytest.mark.asyncio
