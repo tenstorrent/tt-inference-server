@@ -4823,21 +4823,25 @@ _eval_config_list = [
                         "parser_name": "json",
                         "temperature": 1.0,
                         "model_info": {
-                            # gemma-4-31B native ctx is 256K (model card), but a
-                            # single H100 NVL (94GB, bf16 KV) only holds a
-                            # 210,605-token KV cache, so a request can't exceed
-                            # ~205K. We serve at --max-model-len 204800 (200K).
-                            # The agent sends ~max_input + max_output per
-                            # request, so keep them under 204800: 112K + 80K =
-                            # 196K (~8K headroom for chat template + tool defs).
-                            # SWE/Terminal prompts rarely approach 200K, so the
-                            # 256K->200K cap should not affect scores.
-                            "max_input_tokens": 112 * 1024,
-                            "max_output_tokens": 80 * 1024,
+                            # Sized for QB2 (P300X2), where gemma-4-31B serves
+                            # at max_model_len=49152 (Blackhole hybrid-off DRAM
+                            # ceiling, see workflows/model_specs). The agent
+                            # sends ~max_input + max_output per request, vLLM
+                            # up-front-rejects any request with max_tokens >
+                            # max_model_len (80K out zeroed the whole eval on
+                            # run 32355285037, tt-agentic-bringup-qb2#2), and
+                            # the prompt must stay under the 32768 prefill
+                            # bucket. NOTE: gpu_reference_score=44.94 was
+                            # measured at 112K in / 80K out on a 200K-window
+                            # H100 -- restore those budgets to re-collect the
+                            # GPU reference; QB2 scores under these budgets are
+                            # not directly comparable to it.
+                            "max_input_tokens": 30 * 1024,
+                            "max_output_tokens": 16 * 1024,
                         },
                         "llm_kwargs": {
                             "top_p": 0.95,
-                            "max_tokens": 80 * 1024,
+                            "max_tokens": 16 * 1024,
                             "timeout": 60 * 60,
                             "extra_body": {
                                 "top_k": 20,
@@ -4887,16 +4891,14 @@ _eval_config_list = [
                     n_tasks=None,  # full dataset
                     temperature=1.0,
                     top_p=0.95,
-                    # gemma-4-31B native ctx is 256K (model card), but a single
-                    # H100 NVL (94GB, bf16 KV) only holds a 210,605-token KV
-                    # cache, so a request can't exceed ~205K. We serve at
-                    # --max-model-len 204800 (200K). mini-swe-agent sends
-                    # ~max_input + max_output per request, so keep under 204800:
-                    # 160K + 32K = 192K (~8K headroom). SWE prompts rarely
-                    # approach 200K, so the 256K->200K cap should not affect
-                    # scores.
-                    max_input_tokens=160 * 1024,
-                    max_output_tokens=32 * 1024,
+                    # Sized for QB2 (49152 window / 32768 prefill bucket),
+                    # same rationale as terminal_bench_2 above. NOTE:
+                    # gpu_reference_score=64.80 was measured at 160K in / 32K
+                    # out on a 200K-window H100 -- restore those budgets to
+                    # re-collect the GPU reference; QB2 scores under these
+                    # budgets are not directly comparable to it.
+                    max_input_tokens=30 * 1024,
+                    max_output_tokens=16 * 1024,
                     completion_kwargs={
                         "extra_body": {
                             "top_k": 20,
