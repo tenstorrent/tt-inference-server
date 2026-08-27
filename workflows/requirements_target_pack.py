@@ -72,11 +72,12 @@ _REFERENCE_KEY_TO_ATTR = {
     "goodputPct": "goodput",
 }
 
-# Tolerance for requirements-driven benchmark targets. Reference values are
-# another stack's noisy measurements, and even the contractual SLO/scalar
-# gates grade against noisy benchmark runs — the catalog's own perf
-# references use the same 5% margin.
-_REQUIREMENTS_TARGET_TOLERANCE = 0.05
+# Tolerance for grading a sweep point against the document's *reference
+# measurements* — another stack's noisy numbers, graded with the same 5%
+# margin as the catalog's own perf references. Contractual gates (SLOs,
+# scalar targets) grade exact (tolerance 0): the document's comparators are
+# hard thresholds.
+_REFERENCE_TOLERANCE = 0.05
 
 # Minimal harness profiles for known evals, used only when NO catalog model
 # defines the task (fully off-catalog model). A profile carries just the
@@ -433,28 +434,32 @@ class RequirementsTargetPack(TargetPack):
         for idx, point in enumerate(scenario.sweep):
             tier_kwargs: dict = {}
             target_priorities: dict = {}
+            tolerances: dict = {}
 
             # The point's own reference measurements gate it (must): they are
             # the document's statement of what the reference stack achieves at
-            # exactly this (ISL, OSL, concurrency).
+            # exactly this (ISL, OSL, concurrency). Noisy measurements grade
+            # at _REFERENCE_TOLERANCE.
             for key, attr in _REFERENCE_KEY_TO_ATTR.items():
                 value = (point.reference or {}).get(key)
                 if isinstance(value, bool) or not isinstance(value, (int, float)):
                     continue
                 tier_kwargs[attr] = float(value)
                 target_priorities[attr] = PRIORITY_MUST
+                tolerances[attr] = _REFERENCE_TOLERANCE
 
             # A scenario-level gate attached here overrides the point's
             # reference value for the same metric (the target is contractual;
-            # the reference is the incumbent's measurement).
+            # the reference is the incumbent's measurement) and grades exact.
             for attr, (value, priority) in attach.get(idx, {}).items():
                 tier_kwargs[attr] = value
                 target_priorities[attr] = priority
+                tolerances[attr] = 0.0
 
             targets = (
                 {
                     "target": PerformanceTarget(
-                        tolerance=_REQUIREMENTS_TARGET_TOLERANCE, **tier_kwargs
+                        tolerance=0.0, tolerances=tolerances, **tier_kwargs
                     )
                 }
                 if tier_kwargs

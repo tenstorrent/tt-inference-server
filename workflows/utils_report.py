@@ -28,6 +28,11 @@ class PerformanceTarget:
     tput_total: float = None
     goodput: float = None
     tolerance: float = 0.0
+    # Per-attribute tolerance overrides (e.g. {"ttft_ms": 0.05}), taking
+    # precedence over `tolerance` for that metric. Requirements-driven runs
+    # use this to grade reference measurements (noisy) at 5% while keeping
+    # contractual SLO/scalar gates exact.
+    tolerances: Dict[str, float] = None
 
 
 @dataclass

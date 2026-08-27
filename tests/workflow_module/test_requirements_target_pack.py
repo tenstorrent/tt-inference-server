@@ -249,8 +249,10 @@ def test_benchmark_config_builds_sweep_from_document(pack, doc):
     assert ref_target.tput == 200  # decodeThroughputTps
     assert ref_target.tput_total == 600  # totalThroughputTps
     assert ref_target.goodput == 100  # goodputPct
-    assert ref_target.tolerance == 0.05
     assert ref_point.priority == "must"
+    # Reference measurements grade at 5% (noisy); the tier default is exact.
+    assert ref_target.tolerance == 0.0
+    assert set(ref_target.tolerances.values()) == {0.05}
 
     # Scenario-level gates are capability gates: each attaches at the sweep
     # point whose reference is best for that metric, overriding it. Latency
@@ -265,6 +267,10 @@ def test_benchmark_config_builds_sweep_from_document(pack, doc):
     assert light_target.e2el_ms == 20000
     assert light_target.goodput == 99  # request_goodput scalar
     assert light_target.tput == 200  # reference: no scenario gate for it
+    # Contractual gates grade exact; the reference-gated tput keeps 5%.
+    assert light_target.tolerances["ttft_ms"] == 0.0
+    assert light_target.tolerances["goodput"] == 0.0
+    assert light_target.tolerances["tput"] == 0.05
 
     capable = next(
         p for p in points if p.isl == 65536 and p.osl == 128 and p.max_concurrency == 64
