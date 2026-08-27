@@ -4,6 +4,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import argparse
+import hashlib
 import importlib.util
 import json
 import os
@@ -292,10 +293,59 @@ def _materialized_quetzal_contract(monkeypatch, tmp_path, module):
     monkeypatch.setenv("QUETZAL_PACKAGE_ID", package_id)
     monkeypatch.setenv("QUETZAL_PACKAGE_ROOT", str(package_root))
     monkeypatch.setenv("QZ_MODELS_ROOT", str(package_root))
-    for index, env_name in enumerate(module._QUETZAL_ARTIFACT_ENV_VARS):
-        artifact = package_root / f"artifact-{index}"
+    paths = {
+        "QZ_QUALIFICATION_MANIFEST": "qualification_manifest.yaml",
+        "QUETZAL_PREFILL_GENERATED_PY": "compiled/artifact/full/prefill/generated.py",
+        "QUETZAL_DECODE_GENERATED_PY": "compiled/artifact/full/decode/generated.py",
+        "QUETZAL_PREFILL_METADATA_JSON": "compiled/artifact/full/prefill/metadata.json",
+        "QUETZAL_DECODE_METADATA_JSON": "compiled/artifact/full/decode/metadata.json",
+        "QUETZAL_WEIGHTS": "compiled_weights/weights/full/weights.pt",
+    }
+    for env_name, relative in paths.items():
+        artifact = package_root / relative
+        artifact.parent.mkdir(parents=True, exist_ok=True)
         artifact.write_text("test")
         monkeypatch.setenv(env_name, str(artifact))
+
+    def row(relative):
+        path = package_root / relative
+        raw = path.read_bytes()
+        tree_relative = relative.split("/", 2)[-1]
+        return {
+            "path": tree_relative,
+            "size": len(raw),
+            "sha256": hashlib.sha256(raw).hexdigest(),
+            "object": f"objects/sha256/00/{'0' * 64}",
+        }
+
+    compiled_rows = [
+        row(relative)
+        for relative in paths.values()
+        if relative.startswith("compiled/artifact/")
+    ]
+    weights_rows = [row(paths["QUETZAL_WEIGHTS"])]
+    qualification_raw = (package_root / "qualification_manifest.yaml").read_bytes()
+    manifest = {
+        "schema": "ttq.artifact_bundle/v1",
+        "trees": [
+            {"role": "compiled", "name": "artifact", "files": compiled_rows},
+            {"role": "compiled_weights", "name": "weights", "files": weights_rows},
+        ],
+        "qualification_manifest": {
+            "path": "qualification_manifest.yaml",
+            "size": len(qualification_raw),
+            "sha256": hashlib.sha256(qualification_raw).hexdigest(),
+            "object": f"objects/sha256/00/{'0' * 64}",
+        },
+    }
+    raw_manifest = (
+        json.dumps(manifest, sort_keys=True, separators=(",", ":")) + "\n"
+    ).encode()
+    manifest_sha256 = hashlib.sha256(raw_manifest).hexdigest()
+    proof = package_root / ".quetzal-bundle-manifests" / f"{manifest_sha256}.json"
+    proof.parent.mkdir()
+    proof.write_bytes(raw_manifest)
+    monkeypatch.setenv("QUETZAL_BUNDLE_MANIFEST_SHA256", manifest_sha256)
     return package_root
 
 
@@ -402,6 +452,35 @@ def test_quetzal_runtime_contract_rejects_missing_package_file(
     )
     Path(os.environ["QUETZAL_WEIGHTS"]).unlink()
     with pytest.raises(RuntimeError, match="not materialized.*QUETZAL_WEIGHTS"):
+        run_vllm_api_server_module.validate_quetzal_runtime_contract(
+            {"impl": {"impl_id": "quetzal"}},
+            entry_points=_quetzal_entry_points(),
+        )
+
+
+def test_quetzal_runtime_contract_rejects_missing_trusted_root_proof(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    package_root = _materialized_quetzal_contract(
+        monkeypatch, tmp_path, run_vllm_api_server_module
+    )
+    digest = os.environ["QUETZAL_BUNDLE_MANIFEST_SHA256"]
+    (package_root / ".quetzal-bundle-manifests" / f"{digest}.json").unlink()
+    with pytest.raises(RuntimeError, match="missing its installed trusted-root proof"):
+        run_vllm_api_server_module.validate_quetzal_runtime_contract(
+            {"impl": {"impl_id": "quetzal"}},
+            entry_points=_quetzal_entry_points(),
+        )
+
+
+def test_quetzal_runtime_contract_rejects_tampered_executable(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    _materialized_quetzal_contract(
+        monkeypatch, tmp_path, run_vllm_api_server_module
+    )
+    Path(os.environ["QUETZAL_DECODE_GENERATED_PY"]).write_text("evil")
+    with pytest.raises(RuntimeError, match="trusted-root proof|verification"):
         run_vllm_api_server_module.validate_quetzal_runtime_contract(
             {"impl": {"impl_id": "quetzal"}},
             entry_points=_quetzal_entry_points(),

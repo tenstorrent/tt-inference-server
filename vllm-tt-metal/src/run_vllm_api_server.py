@@ -4,6 +4,7 @@
 
 import argparse
 from importlib import metadata as importlib_metadata
+import hashlib
 import json
 import logging
 import multiprocessing
@@ -581,6 +582,18 @@ _QUETZAL_ARTIFACT_ENV_VARS = (
     "QUETZAL_DECODE_METADATA_JSON",
     "QUETZAL_WEIGHTS",
 )
+_QUETZAL_BUNDLE_MANIFEST_ENV = "QUETZAL_BUNDLE_MANIFEST_SHA256"
+_QUETZAL_BUNDLE_MANIFESTS_DIR = ".quetzal-bundle-manifests"
+
+
+def _sha256_file(path: Path) -> tuple[str, int]:
+    digest = hashlib.sha256()
+    size = 0
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(8 * 1024 * 1024), b""):
+            digest.update(chunk)
+            size += len(chunk)
+    return digest.hexdigest(), size
 
 
 def validate_quetzal_runtime_contract(model_spec_json, entry_points=None):
@@ -617,6 +630,38 @@ def validate_quetzal_runtime_contract(model_spec_json, entry_points=None):
             "QZ_MODELS_ROOT must equal the declared QUETZAL_PACKAGE_ROOT"
         )
 
+    manifest_sha256 = os.getenv(_QUETZAL_BUNDLE_MANIFEST_ENV, "")
+    if (
+        len(manifest_sha256) != 64
+        or any(ch not in "0123456789abcdef" for ch in manifest_sha256)
+    ):
+        raise RuntimeError(
+            "impl=quetzal requires a lowercase SHA-256 in "
+            f"{_QUETZAL_BUNDLE_MANIFEST_ENV}"
+        )
+    installed_manifest = (
+        package_root
+        / _QUETZAL_BUNDLE_MANIFESTS_DIR
+        / f"{manifest_sha256}.json"
+    )
+    if installed_manifest.is_symlink() or not installed_manifest.is_file():
+        raise RuntimeError(
+            "Quetzal package is missing its installed trusted-root proof: "
+            f"{installed_manifest}"
+        )
+    actual_manifest_sha256, manifest_size = _sha256_file(installed_manifest)
+    if manifest_size > 16 * 1024 * 1024 or actual_manifest_sha256 != manifest_sha256:
+        raise RuntimeError(
+            "Quetzal installed trusted-root proof does not match "
+            f"{_QUETZAL_BUNDLE_MANIFEST_ENV}"
+        )
+    try:
+        bundle_manifest = json.loads(installed_manifest.read_bytes())
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError("Quetzal installed trusted-root proof is invalid JSON") from exc
+    if bundle_manifest.get("schema") != "ttq.artifact_bundle/v1":
+        raise RuntimeError("Quetzal installed trusted-root proof has an invalid schema")
+
     missing = []
     for env_name in _QUETZAL_ARTIFACT_ENV_VARS:
         value = os.getenv(env_name)
@@ -637,6 +682,33 @@ def validate_quetzal_runtime_contract(model_spec_json, entry_points=None):
             "Quetzal content package is not materialized; missing files: "
             + ", ".join(missing)
         )
+
+    # The trusted manifest binds every executable path and the weights archive
+    # to their installed tree. Recheck small executable/metadata files on each
+    # launch; the very large weights file is size-checked here after the
+    # installer has already performed its full SHA-256 reread.
+    inventory = {}
+    for tree in bundle_manifest.get("trees", []):
+        role = tree.get("role")
+        name = tree.get("name")
+        for row in tree.get("files", []):
+            inventory[f"{role}/{name}/{row.get('path')}"] = row
+    qualification = bundle_manifest.get("qualification_manifest", {})
+    inventory["qualification_manifest.yaml"] = qualification
+    for env_name in _QUETZAL_ARTIFACT_ENV_VARS:
+        artifact_path = Path(os.environ[env_name]).resolve()
+        relative = artifact_path.relative_to(package_root).as_posix()
+        row = inventory.get(relative)
+        if not isinstance(row, dict) or row.get("size") != artifact_path.stat().st_size:
+            raise RuntimeError(
+                f"{env_name} is not bound by the installed trusted-root proof"
+            )
+        if env_name != "QUETZAL_WEIGHTS":
+            digest, _ = _sha256_file(artifact_path)
+            if digest != row.get("sha256"):
+                raise RuntimeError(
+                    f"{env_name} failed installed trusted-root verification"
+                )
 
     discovered = (
         importlib_metadata.entry_points() if entry_points is None else entry_points
