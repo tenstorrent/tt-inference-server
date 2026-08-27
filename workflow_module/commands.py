@@ -79,6 +79,211 @@ class ServerLaunchSpec:
             raise ValueError(f"unknown server mode: {self.mode!r}") from e
 
 
+_UNKNOWN_MODE = object()
+
+# The dispatch watchdog's signature. tt-metal raises this when the device stops
+# draining its fetch queue, which on Galaxy has shown up intermittently during the
+# model's prefill warmup sweep. It is worth naming explicitly so a retry says *why*
+# it retried instead of reporting a generic timeout.
+_HANG_MARKERS = (
+    "potential hang detected",
+    "device timeout in fetch queue wait",
+    "Timeout detected",
+)
+
+
+def _server_boot_attempts() -> int:
+    """How many times to try bringing the server up.
+
+    Defaults to 2. Galaxy bring-up can hit an intermittent device stall during the
+    model's prefill warmup sweep, and a single stall otherwise fails an entire
+    release run. Set TT_SERVER_BOOT_ATTEMPTS=1 to restore strict fail-fast.
+
+    A retry is only meaningful if bring-up waits long enough to observe whether the
+    server actually came up, so this also governs the readiness wait below.
+    """
+    import os
+
+    raw = os.getenv("TT_SERVER_BOOT_ATTEMPTS", "2")
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        logger.warning("Invalid TT_SERVER_BOOT_ATTEMPTS=%r; using 2", raw)
+        return 2
+
+
+def _readiness_timeout() -> float:
+    """How long bring-up waits for /health before calling the attempt failed.
+
+    Generous on purpose (1h). A cold Qwen3-32B Galaxy boot measured ~23.5 min --
+    most of it one-time kernel compilation -- so a tight bound here would spend a
+    retry on a server that was merely still compiling, which costs another full boot
+    and can turn a slow-but-fine run into a failed one. Genuine stalls are caught by
+    the log hang markers long before this deadline, so this is a backstop, not the
+    primary detector.
+    """
+    import os
+
+    raw = os.getenv("TT_SERVER_READY_TIMEOUT_SECONDS", "3600")
+    try:
+        return max(1.0, float(raw))
+    except ValueError:
+        logger.warning("Invalid TT_SERVER_READY_TIMEOUT_SECONDS=%r; using 3600", raw)
+        return 3600.0
+
+
+def _payload_get(payload: Any, key: str) -> Any:
+    if isinstance(payload, Mapping):
+        return payload.get(key)
+    return None
+
+
+def _server_log_path(payload: Any) -> Optional[Path]:
+    """Path to the launched server's log, if it exists and is readable."""
+    raw = _payload_get(payload, "local_log_file_path") or _payload_get(
+        payload, "docker_log_file_path"
+    )
+    if not raw:
+        return None
+    path = Path(raw)
+    return path if path.exists() else None
+
+
+def _scan_log_for_hang(payload: Any) -> Optional[str]:
+    """Return the hang marker found in the server log, if any."""
+    log_path = _server_log_path(payload)
+    if not log_path:
+        return None
+    try:
+        text = log_path.read_text(errors="ignore")
+    except OSError:
+        return None
+    for marker in _HANG_MARKERS:
+        if marker in text:
+            return marker
+    return None
+
+
+def _server_is_alive(spec: ServerLaunchSpec, payload: Any) -> Optional[bool]:
+    """Liveness of the launched server: True, False, or None when unobservable.
+
+    Deliberately does not shell out. Bring-up is a subprocess-free path (run.py must
+    not perform docker status checks), and shelling out to `docker ps` here would
+    both violate that and add a failure mode of its own. For docker the container is
+    therefore unobservable from here and liveness is None; a dead container is caught
+    instead by the hang markers in the server log, which is where this failure mode
+    announces itself anyway.
+    """
+    if spec.mode is ServerMode.LOCAL:
+        pid = _payload_get(payload, "pid")
+        if pid is None:
+            return None
+        return Path(f"/proc/{pid}").exists()
+    return None
+
+
+def _wait_until_ready(spec: ServerLaunchSpec, payload: Any) -> Optional[str]:
+    """Block until the server answers /health.
+
+    Returns None once ready, else a short reason string. The launchers return as soon
+    as the process/container exists (a ~2s grace period), long before the model has
+    finished loading and warming up -- so a device stall during warmup would otherwise
+    be reported as a successful bring-up and only surface later as a confusing
+    health-check failure in whatever workflow ran next.
+    """
+    import time
+    import urllib.error
+    import urllib.request
+
+    # Readiness polling rides along with the retry opt-in. With a single attempt
+    # there is nothing to do differently if the server is unhealthy, and polling
+    # would add process/network calls to a path that deliberately has none.
+    if _server_boot_attempts() <= 1:
+        return None
+
+    port = _payload_get(payload, "service_port") or getattr(
+        spec.runtime_config, "service_port", None
+    )
+    if not port:
+        # Unknown port (also the unit-test path, where runtime_config is a stub):
+        # nothing to probe, so preserve the previous fire-and-forget behaviour.
+        return None
+
+    url = f"http://127.0.0.1:{port}/health"
+
+    # Only wait on a server we can actually observe. The server log is what makes a
+    # stalled bring-up diagnosable (and detectable, via the hang markers); if it does
+    # not exist there is nothing here that was really started -- e.g. a stubbed
+    # launcher -- so fall back to the previous fire-and-forget behaviour rather than
+    # burning the whole timeout.
+    if not _server_log_path(payload):
+        logger.info(
+            "No readable server log for this handle; skipping readiness wait for %s",
+            url,
+        )
+        return None
+
+    deadline = time.time() + _readiness_timeout()
+    logger.info("Waiting for inference server readiness at %s ...", url)
+
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(url, timeout=10) as resp:
+                if 200 <= resp.status < 300:
+                    logger.info("Inference server is ready at %s", url)
+                    return None
+        except (urllib.error.URLError, OSError, ValueError):
+            pass
+
+        if _server_is_alive(spec, payload) is False:
+            marker = _scan_log_for_hang(payload)
+            if marker:
+                return f"server process exited during startup (device hang: {marker!r})"
+            return "server process exited during startup"
+
+        # A hung device keeps the process alive but never serves traffic, so the
+        # log marker is the only way to fail fast instead of burning the timeout.
+        marker = _scan_log_for_hang(payload)
+        if marker:
+            return f"device hang detected during startup ({marker!r})"
+
+        time.sleep(5)
+
+    return f"timed out after {_readiness_timeout():.0f}s waiting for {url}"
+
+
+def _teardown_server(spec: ServerLaunchSpec, payload: Any) -> None:
+    """Stop a half-started server so the next attempt gets the devices back."""
+    import signal
+    import subprocess
+    import time
+
+    try:
+        if spec.mode is ServerMode.LOCAL:
+            pid = _payload_get(payload, "pid")
+            if pid:
+                import os
+
+                for sig in (signal.SIGTERM, signal.SIGKILL):
+                    try:
+                        os.killpg(pid, sig)
+                    except (ProcessLookupError, PermissionError, OSError):
+                        break
+                    time.sleep(5)
+                    if not Path(f"/proc/{pid}").exists():
+                        break
+        else:
+            container = _payload_get(payload, "container_name") or _payload_get(
+                payload, "container_id"
+            )
+            if container:
+                subprocess.run(
+                    ["docker", "stop", container], capture_output=True, timeout=120
+                )
+    except Exception:  # teardown is best-effort; never mask the original failure
+        logger.exception("Server teardown failed (continuing)")
+
+
 class ServerCommand(Command):
     """Bring up the inference server as the first step of a run.
 
@@ -92,36 +297,80 @@ class ServerCommand(Command):
         self.launch = launch
 
     def execute(self) -> CommandResult:
-        from workflows.run_docker_server import run_docker_server
-        from workflows.run_local_server import run_local_server
-
         spec = self.launch
-        try:
-            if spec.mode is ServerMode.DOCKER:
-                payload = run_docker_server(
-                    spec.model_spec,
-                    spec.runtime_config,
-                    spec.setup_config,
-                    spec.json_fpath,
+        attempts = _server_boot_attempts()
+        last_error = None
+
+        for attempt in range(1, attempts + 1):
+            if attempt > 1:
+                logger.warning(
+                    "Retrying server bring-up (attempt %d/%d) after: %s",
+                    attempt,
+                    attempts,
+                    last_error,
                 )
-            elif spec.mode is ServerMode.LOCAL:
-                payload = run_local_server(
-                    spec.model_spec,
-                    spec.runtime_config,
-                    spec.json_fpath,
-                    spec.setup_config,
-                )
-            else:  # pragma: no cover - ServerLaunchSpec rejects unknown modes
+            try:
+                payload = self._launch_once(spec)
+            # launcher itself failed (container/process died at once)
+            except Exception as e:
+                logger.exception("Server bring-up failed: %s", e)
+                last_error = str(e)
+                _teardown_server(spec, None)
+                continue
+
+            if payload is _UNKNOWN_MODE:
                 return CommandResult(
                     command_name=self.name,
                     return_code=1,
                     error=f"unknown server mode: {spec.mode!r}",
                 )
-        except Exception as e:
-            logger.exception("Server bring-up failed: %s", e)
-            return CommandResult(command_name=self.name, return_code=1, error=str(e))
 
-        return CommandResult(command_name=self.name, return_code=0, payload=payload)
+            ready_error = _wait_until_ready(spec, payload)
+            if ready_error is None:
+                if attempt > 1:
+                    # Distinctive, greppable line: a green run that needed a retry is
+                    # still hiding an intermittent bring-up failure, and that must stay
+                    # visible in CI rather than being silently absorbed.
+                    logger.warning(
+                        "TT_SERVER_BOOT_RETRY_SUCCEEDED attempt=%d/%d prior_error=%s",
+                        attempt,
+                        attempts,
+                        last_error,
+                    )
+                return CommandResult(
+                    command_name=self.name, return_code=0, payload=payload
+                )
+
+            last_error = ready_error
+            logger.error("Server did not become ready: %s", ready_error)
+            _teardown_server(spec, payload)
+
+        return CommandResult(
+            command_name=self.name,
+            return_code=1,
+            error=f"server bring-up failed after {attempts} attempt(s): {last_error}",
+        )
+
+    def _launch_once(self, spec: ServerLaunchSpec) -> Any:
+        from workflows.run_docker_server import run_docker_server
+        from workflows.run_local_server import run_local_server
+
+        if spec.mode is ServerMode.DOCKER:
+            return run_docker_server(
+                spec.model_spec,
+                spec.runtime_config,
+                spec.setup_config,
+                spec.json_fpath,
+            )
+        if spec.mode is ServerMode.LOCAL:
+            return run_local_server(
+                spec.model_spec,
+                spec.runtime_config,
+                spec.json_fpath,
+                spec.setup_config,
+            )
+        # ServerLaunchSpec rejects unknown modes
+        return _UNKNOWN_MODE  # pragma: no cover
 
 
 class VenvCommand(Command):

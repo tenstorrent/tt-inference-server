@@ -129,8 +129,23 @@ def get_perf_reference_map(
                             else None,
                         )
 
+            # A "measured" block gates acceptance instead of the theoretical
+            # ceiling: measured/theoretical is 0.35 on Galaxy and 0.48 on T3K,
+            # so a "target" tier at 100% of theoretical can never pass.
+            # theoretical still yields the functional/complete tiers, so the
+            # ceiling stays visible. Mirrors how evals use gpu_reference_score.
+            measured = targets.get("measured")
+            if measured:
+                target_dict["target"] = PerformanceTarget(
+                    ttft_ms=measured.get("ttft_ms"),
+                    tput_user=measured.get("tput_user"),
+                    tput=measured.get("tput"),
+                    tolerance=measured.get("tolerance", 0.05),
+                )
+
             # Create the BenchmarkTaskParams instance.
             benchmark_task = BenchmarkTaskParams(
+                data_parallel=bench.get("data_parallel"),
                 isl=bench.get("isl"),
                 osl=bench.get("osl"),
                 max_concurrency=bench.get("max_concurrency"),
@@ -156,10 +171,16 @@ def scale_llm_perf_targets(
         scaled_targets[target_name] = PerformanceTarget(
             ttft_ms=target.ttft_ms,
             tput_user=target.tput_user,
-            tput=target.tput * data_parallel if target.tput else None,
+            # Concurrency is deliberately left unscaled at 1 (see below), so
+            # the aggregate must not be scaled either: with one user only one
+            # data-parallel group is active, so aggregate == per-user.
+            tput=target.tput * data_parallel
+            if target.tput and task.max_concurrency != 1
+            else target.tput,
             tolerance=target.tolerance,
         )
     return BenchmarkTaskParams(
+        data_parallel=task.data_parallel,
         isl=task.isl,
         osl=task.osl,
         max_concurrency=task.max_concurrency
@@ -181,17 +202,31 @@ def scale_llm_perf_targets(
 def get_perf_reference(device_model_spec, perf_reference_map):
     # Migrated to vLLM API for data parallelism
     data_parallel = device_model_spec.vllm_args.get("data_parallel_size")
+    own_entries = perf_reference_map.get(device_model_spec.device, [])
 
     if data_parallel:
-        # need to adjust perf target device for data_parallel factor
+        # Prefer entries this device declares for THIS data_parallel. Their
+        # targets already describe the whole device, so they are used verbatim:
+        # no subdevice remap and no scaling. This keeps Galaxy numbers under
+        # "galaxy" rather than silently reading (and requiring edits to) the
+        # t3k row, which was the single most confusing thing about this file.
+        direct = [t for t in own_entries if t.data_parallel == data_parallel]
+        if direct:
+            return direct
+
+        # Legacy fallback: a Galaxy at DP=4 runs as four T3K-sized groups, so
+        # read the subdevice row and scale it. Kept for models that have no
+        # explicit data_parallel entries yet.
         dp_device = device_model_spec.device.get_data_parallel_subdevice(data_parallel)
-        perf_reference = perf_reference_map.get(dp_device, [])
+        perf_reference = [
+            t for t in perf_reference_map.get(dp_device, []) if t.data_parallel is None
+        ]
         if perf_reference:
             perf_reference = [
                 scale_llm_perf_targets(task, data_parallel) for task in perf_reference
             ]
     else:
-        perf_reference = perf_reference_map.get(device_model_spec.device, [])
+        perf_reference = [t for t in own_entries if t.data_parallel is None]
     return perf_reference
 
 
