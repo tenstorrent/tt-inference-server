@@ -991,7 +991,6 @@ templates:
       override_tt_config:
         sample_on_device_mode: decode_only
         trace_region_size: 56000000
-        optimizations: accuracy
       known_issues:
         - workflow_type: EVALS
           task_name: meta_ifeval
