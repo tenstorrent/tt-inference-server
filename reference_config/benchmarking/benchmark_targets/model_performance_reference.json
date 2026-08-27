@@ -1,25 +1,4 @@
 {
-    "gemma-4-31b-it": {
-        "p300x2": [
-            {
-                "isl": 128,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 8,
-                "task_type": "text",
-                "image_height": null,
-                "image_width": null,
-                "images_per_prompt": null,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 46,
-                        "tput_user": 37,
-                        "tput": 37
-                    }
-                }
-            }
-        ]
-    },
     "Qwen3-VL-32B-Instruct": {
         "t3k": [
             {
@@ -7017,6 +6996,154 @@
                     "theoretical": {
                         "ttft_ms": 180,
                         "rtr": 1.97
+                    }
+                }
+            }
+        ]
+    },
+    "gemma-4-31B-it": {
+        "p300x2": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 46,
+                        "tput_user": 37,
+                        "tput": 37
+                    }
+                }
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 64,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 200,
+                        "tput_user": 20,
+                        "tput": 400
+                    }
+                }
+            }
+        ],
+        "p150x8": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 40,
+                        "tput_user": 30,
+                        "tput": 30
+                    }
+                }
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 64,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 150,
+                        "tput_user": 22,
+                        "tput": 700
+                    }
+                }
+            }
+        ]
+    },
+    "gemma-4-12B-it": {
+        "p300x2": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 40,
+                        "tput_user": 40,
+                        "tput": 40
+                    }
+                }
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 64,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 200,
+                        "tput_user": 25,
+                        "tput": 500
+                    }
+                }
+            }
+        ],
+        "p150x8": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 35,
+                        "tput_user": 45,
+                        "tput": 45
+                    }
+                }
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 64,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 150,
+                        "tput_user": 28,
+                        "tput": 700
                     }
                 }
             }
