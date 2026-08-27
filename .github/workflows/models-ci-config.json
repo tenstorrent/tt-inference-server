@@ -279,6 +279,11 @@
                 "P300X2"
               ]
             },
+            "release": {
+              "devices": [
+                "GALAXY"
+              ]
+            },
             "weekly": {
               "devices": [
                 "GALAXY",
@@ -433,21 +438,6 @@
             "P150X4",
             "P300X2",
             "T3K"
-          ]
-        }
-      }
-    },
-    "MiniMax-H3": {
-      "inference_engine": "MEDIA",
-      "ci": {
-        "weekly": {
-          "devices": [
-            "BH_GALAXY"
-          ]
-        },
-        "release": {
-          "devices": [
-            "BH_GALAXY"
           ]
         }
       }
