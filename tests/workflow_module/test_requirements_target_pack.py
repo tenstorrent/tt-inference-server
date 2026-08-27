@@ -237,23 +237,108 @@ def test_benchmark_config_builds_sweep_from_document(pack, doc):
     # One point per sweep entry in the document.
     assert len(points) == len(doc.scenarios[0].sweep)
 
-    # Every point carries the scenario SLOs; only the peak-concurrency point
-    # carries the aggregate scalar targets (throughput/goodput).
-    peak = max(p.max_concurrency for p in points)
-    peak_point = next(p for p in points if p.max_concurrency == peak)
-    peak_target = peak_point.targets["target"]
-    assert peak_target.ttft_ms == 2000
-    assert peak_target.tpot_ms == 20
-    assert peak_target.e2el_ms == 20000
-    assert peak_target.tput == 12000
-    assert peak_target.goodput == 99
+    # A point with no scenario-level gate attached gates on its own
+    # reference measurements only.
+    ref_point = next(
+        p for p in points if p.isl == 256 and p.osl == 128 and p.max_concurrency == 1
+    )
+    ref_target = ref_point.targets["target"]
+    assert ref_target.ttft_ms == 135  # ttftMeanMs reference
+    assert ref_target.tpot_ms == 5
+    assert ref_target.e2el_ms == 775
+    assert ref_target.tput == 200  # decodeThroughputTps
+    assert ref_target.tput_total == 600  # totalThroughputTps
+    assert ref_target.goodput == 100  # goodputPct
+    assert ref_target.tolerance == 0.05
+    assert ref_point.priority == "must"
 
-    low_point = next(p for p in points if p.max_concurrency == 1)
-    low_target = low_point.targets["target"]
-    assert low_target.ttft_ms == 2000  # SLO applies to every point
-    assert low_target.tput is None  # aggregate target only at peak
-    # SLOs are must, so every point is a must sweep point here.
-    assert low_point.priority == "must"
+    # Scenario-level gates are capability gates: each attaches at the sweep
+    # point whose reference is best for that metric, overriding it. Latency
+    # SLOs and request_goodput are best at the lightest point (ISL 128,
+    # c=1); system_throughput is best at ISL 65536, c=64.
+    light = next(
+        p for p in points if p.isl == 128 and p.osl == 128 and p.max_concurrency == 1
+    )
+    light_target = light.targets["target"]
+    assert light_target.ttft_ms == 2000  # SLO, not the 128 reference
+    assert light_target.tpot_ms == 20
+    assert light_target.e2el_ms == 20000
+    assert light_target.goodput == 99  # request_goodput scalar
+    assert light_target.tput == 200  # reference: no scenario gate for it
+
+    capable = next(
+        p for p in points if p.isl == 65536 and p.osl == 128 and p.max_concurrency == 64
+    )
+    assert capable.targets["target"].tput_total == 12000  # system_throughput
+
+    # Nothing broadcasts: another peak-concurrency point keeps its own
+    # references and sees neither the SLOs nor the scalar targets.
+    loaded = next(
+        p for p in points if p.isl == 128 and p.osl == 128 and p.max_concurrency == 64
+    )
+    loaded_target = loaded.targets["target"]
+    assert loaded_target.ttft_ms == 2144  # reference, not the 2000 SLO
+    assert loaded_target.tput_total == 4740  # reference, not the 12000 target
+    assert loaded_target.goodput == 36  # reference, not the 99 target
+
+
+def test_benchmark_config_per_metric_priorities(pack, doc):
+    """A point mixing must/should targets keeps the per-metric severities."""
+    provider = RequirementsModelSpecProvider(TenstorrentModelSpecProvider(), doc)
+    spec = provider.resolve(doc.model.name, "super_cluster")
+    points = pack.benchmark_config(spec).tasks[0].param_map[DeviceTypes.SUPER_CLUSTER]
+
+    # The should-priority request_goodput scalar attaches at the lightest
+    # point (best goodputPct reference), alongside the must-priority SLOs.
+    light = next(
+        p for p in points if p.isl == 128 and p.osl == 128 and p.max_concurrency == 1
+    )
+    assert light.priority == "must"  # block severity: any must => must
+    assert light.target_priorities == {
+        "ttft_ms": "must",
+        "tpot_ms": "must",
+        "e2el_ms": "must",
+        "tput": "must",
+        "tput_total": "must",
+        "goodput": "should",
+    }
+
+    # Every other point is reference-gated only, all must.
+    others = [p for p in points if p is not light]
+    assert all(set(p.target_priorities.values()) == {"must"} for p in others)
+
+
+def test_benchmark_config_goodput_constraints_from_slos(pack, doc):
+    """Scenario SLOs become the vllm --goodput constraint string on each point."""
+    provider = RequirementsModelSpecProvider(TenstorrentModelSpecProvider(), doc)
+    spec = provider.resolve(doc.model.name, "super_cluster")
+    points = pack.benchmark_config(spec).tasks[0].param_map[DeviceTypes.SUPER_CLUSTER]
+    assert {p.goodput for p in points} == {"ttft:2000 tpot:20 e2el:20000"}
+
+
+def test_benchmark_config_goodput_unmeasurable_without_slos(doc, caplog):
+    """No SLOs => no --goodput constraints; the targets grade as NA."""
+    from dataclasses import replace
+
+    no_slo = replace(
+        doc,
+        scenarios=[replace(doc.scenarios[0], slo=None)],
+    )
+    pack = RequirementsTargetPack(no_slo, TenstorrentTargetPack())
+    provider = RequirementsModelSpecProvider(TenstorrentModelSpecProvider(), no_slo)
+    spec = provider.resolve(no_slo.model.name, "super_cluster")
+    with caplog.at_level("WARNING"):
+        points = (
+            pack.benchmark_config(spec).tasks[0].param_map[DeviceTypes.SUPER_CLUSTER]
+        )
+    assert {p.goodput for p in points} == {None}
+    assert "no SLOs" in caplog.text
+    # The goodput expectation stays on its capability point's targets (it
+    # grades NA, visibly).
+    light = next(
+        p for p in points if p.isl == 128 and p.osl == 128 and p.max_concurrency == 1
+    )
+    assert light.targets["target"].goodput == 99
 
 
 def test_smoke_test_benchmark_config_narrows_to_one_point(pack, doc):

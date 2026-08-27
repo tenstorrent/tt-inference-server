@@ -17,12 +17,15 @@ class PerformanceTarget:
     ttft_ms: float = None
     tput_user: float = None
     tput: float = None
-    # Optional latency/quality targets. Populated by requirements-driven runs
-    # from a scenario's SLOs (tpot/e2el, lower-is-better) and scalar targets
-    # (goodput, higher-is-better). Left None for catalog perf references, where
-    # they grade as NA (see llm_module/target_checks.py).
+    # Optional latency/throughput targets. Populated by requirements-driven
+    # runs from a sweep point's reference measurements and the scenario's
+    # SLOs (tpot/e2el, lower-is-better) and scalar targets (tput_total =
+    # system throughput, goodput = % of requests meeting the run's --goodput
+    # SLO constraints; both higher-is-better). Left None for catalog perf
+    # references, where they grade as NA (see llm_module/target_checks.py).
     tpot_ms: float = None
     e2el_ms: float = None
+    tput_total: float = None
     goodput: float = None
     tolerance: float = 0.0
 
@@ -146,6 +149,16 @@ class BenchmarkTaskParams:
     # target blocks acceptance. Carried onto the emitted benchmark block so
     # acceptance can downgrade "should" failures to informational.
     priority: str = None
+    # Per-metric acceptance severity, keyed by PerformanceTarget attribute
+    # (e.g. {"tput_total": "should"}). Requirements-driven runs set this when
+    # a sweep point mixes must- and should-priority targets, so acceptance can
+    # downgrade individual metric failures instead of the whole block.
+    target_priorities: dict = None
+
+    # ``vllm bench serve --goodput`` SLO constraint string for this sweep
+    # point ("ttft:2000 tpot:20 e2el:20000", milliseconds), derived from the
+    # requirements scenario's SLOs. None means goodput is not measured.
+    goodput: str = None
 
     def __post_init__(self):
         self._infer_data()

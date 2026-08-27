@@ -109,6 +109,27 @@ def test_non_requirements_mode_still_gates_unknown_model(monkeypatch):
         run_workflows.parse_args()
 
 
+def test_unknown_accuracy_eval_fails_at_parse_time(monkeypatch, tmp_path):
+    """A mistyped eval name is a CLI usage error, not a mid-run crash."""
+    doc = {
+        "schemaVersion": "2.1.0",
+        "id": "bad-eval",
+        "model": {"name": "acme/tiny-llm", "contextLength": 4096},
+        "deployment": {"maxConcurrencyPerInstance": 8},
+        "accuracyEvals": [{"name": "GPQA Diamnd"}],  # typo
+        "scenarios": [],
+    }
+    path = tmp_path / "bad-eval.json"
+    path.write_text(json.dumps(doc))
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        _argv("--workflow", "evals", "--requirements-json", str(path)),
+    )
+    with pytest.raises(SystemExit):
+        run_workflows.parse_args()
+
+
 # The document's model is deliberately off-catalog: the point of a
 # requirements-driven run is validating a model the repo was never onboarded
 # with, which is exactly what every catalog gate below would otherwise refuse.

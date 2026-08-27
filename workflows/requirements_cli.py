@@ -76,11 +76,21 @@ def apply_requirements(
     """
     from workflow_module.requirements_schema import RequirementsError, load_requirements
     from workflows.model_spec_provider import hardware_to_device_name
+    from workflows.requirements_target_pack import unknown_eval_names
 
     try:
         doc = load_requirements(args.requirements_json)
     except RequirementsError as e:
         parser.error(str(e))
+    # Reject unknown accuracy evals now rather than at eval-config build time,
+    # halfway through the run.
+    unknown = unknown_eval_names(doc)
+    if unknown:
+        parser.error(
+            f"requirements document {args.requirements_json} names unknown "
+            f"accuracy eval(s): {sorted(unknown)}. Add a mapping in "
+            "workflows/requirements_target_pack.py:_EVAL_NAME_TO_TASK."
+        )
     args.requirements_doc = doc
     # The path is forwarded to child processes and recorded in the runtime
     # config, so pin it to an absolute path rather than one relative to

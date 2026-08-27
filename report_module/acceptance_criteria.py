@@ -313,6 +313,16 @@ def _check_benchmarks(
 
         block_blockers: Dict[str, str] = {}
         block_informational: Dict[str, str] = {}
+        # Per-metric severities stamped by apply_target_checks (requirements-
+        # driven runs mixing must/should targets in one sweep point), keyed by
+        # target_checks field name (e.g. "goodput").
+        metric_priorities = (
+            block.data.get("target_priorities")
+            if isinstance(block.data, Mapping)
+            else None
+        )
+        if not isinstance(metric_priorities, Mapping):
+            metric_priorities = {}
         target_checks = _resolve_nested(block.data, "target_checks")
         if not isinstance(target_checks, Mapping):
             block_blockers[f"{block_key}.target_checks"] = (
@@ -340,10 +350,20 @@ def _check_benchmarks(
                             lvl, check_name, metric, level_checks
                         )
                         key = f"{block_key}.{lvl}.{check_name}"
-                        if lvl in enforced_tiers:
-                            block_blockers[key] = failure
-                        else:
+                        if lvl not in enforced_tiers:
                             block_informational[key] = failure
+                        elif (
+                            str(metric_priorities.get(metric, "")).strip().lower()
+                            == PRIORITY_SHOULD
+                        ):
+                            # A "should" metric failure is informational even in
+                            # an enforced tier; the point's other (must) metrics
+                            # still block.
+                            block_informational[key] = (
+                                f"{failure} {_should_priority_suffix()}"
+                            )
+                        else:
+                            block_blockers[key] = failure
             if not any_check_seen:
                 block_blockers[f"{block_key}.target_checks"] = (
                     "No *_check fields found across any tier."

@@ -51,12 +51,32 @@ _EVAL_NAME_TO_TASK = {
     "terminal-bench 2.1": "terminal_bench_2_1",
 }
 
-# Scenario scalar-target metric -> (PerformanceTarget attribute, lower_is_better).
-# Only these aggregate metrics are graded; others are ignored with a warning.
+# Scenario scalar-target metric -> PerformanceTarget attribute. Only these
+# aggregate metrics are graded; others are ignored with a warning.
 _SCALAR_METRIC_TO_ATTR = {
-    "system_throughput": "tput",
+    "system_throughput": "tput_total",
     "request_goodput": "goodput",
 }
+
+# Sweep-point reference-measurement key -> PerformanceTarget attribute. These
+# are the document's per-point expectations (measured on the customer's
+# reference stack); each gates its own sweep point. Keys without a graded
+# counterpart (reqThroughputRps, kvCacheHitRatePct, p50/p99 latencies) stay
+# provenance-only in SweepPoint.reference.
+_REFERENCE_KEY_TO_ATTR = {
+    "ttftMeanMs": "ttft_ms",
+    "tpotMs": "tpot_ms",
+    "e2elMs": "e2el_ms",
+    "decodeThroughputTps": "tput",
+    "totalThroughputTps": "tput_total",
+    "goodputPct": "goodput",
+}
+
+# Tolerance for requirements-driven benchmark targets. Reference values are
+# another stack's noisy measurements, and even the contractual SLO/scalar
+# gates grade against noisy benchmark runs — the catalog's own perf
+# references use the same 5% margin.
+_REQUIREMENTS_TARGET_TOLERANCE = 0.05
 
 # Minimal harness profiles for known evals, used only when NO catalog model
 # defines the task (fully off-catalog model). A profile carries just the
@@ -83,6 +103,19 @@ _MIN_NUM_PROMPTS = 16
 
 def _normalize_eval_name(name: str) -> str:
     return " ".join(name.strip().lower().split())
+
+
+def unknown_eval_names(doc: RequirementsDoc) -> List[str]:
+    """Accuracy-eval names in the document with no known catalog task mapping.
+
+    Used by the CLI entry points to reject a mistyped/unsupported eval at
+    parse time instead of mid-run when the eval config is built.
+    """
+    return [
+        ae.name
+        for ae in doc.accuracy_evals
+        if _normalize_eval_name(ae.name) not in _EVAL_NAME_TO_TASK
+    ]
 
 
 def _num_prompts_for(concurrency: int) -> int:
@@ -378,44 +411,52 @@ class RequirementsTargetPack(TargetPack):
 
         if not scenario.sweep:
             return []
-        peak_concurrency = max(p.concurrency for p in scenario.sweep)
+        goodput_constraints = _goodput_constraints(scenario)
+        if goodput_constraints is None and _scenario_targets_goodput(scenario):
+            logger.warning(
+                "Scenario %r declares goodput expectations but no SLOs; "
+                "goodput is only measured when SLOs provide the --goodput "
+                "constraints, so those targets will grade as NA.",
+                scenario.id,
+            )
+
+        # Scenario-level gates (SLOs, scalar targets) are *capability* gates:
+        # each attaches to the single sweep point whose reference measurement
+        # is best for that metric — the document asserts the target is
+        # reachable at the system's best operating point within the sweep
+        # envelope. Broadcasting them to every point would contradict the
+        # document's own references (latency SLOs only hold at low load; the
+        # throughput target only at high ISL).
+        attach = _capability_attach_points(scenario, _scenario_level_gates(scenario))
 
         params: List[Any] = []
-        for point in scenario.sweep:
+        for idx, point in enumerate(scenario.sweep):
             tier_kwargs: dict = {}
-            priorities: List[str] = []
+            target_priorities: dict = {}
 
-            slo = scenario.slo
-            if slo is not None:
-                # Per-request SLOs apply to every sweep point (default must).
-                if slo.ttft_ms is not None:
-                    tier_kwargs["ttft_ms"] = slo.ttft_ms
-                    priorities.append(PRIORITY_MUST)
-                if slo.tpot_ms is not None:
-                    tier_kwargs["tpot_ms"] = slo.tpot_ms
-                    priorities.append(PRIORITY_MUST)
-                if slo.e2el_ms is not None:
-                    tier_kwargs["e2el_ms"] = slo.e2el_ms
-                    priorities.append(PRIORITY_MUST)
+            # The point's own reference measurements gate it (must): they are
+            # the document's statement of what the reference stack achieves at
+            # exactly this (ISL, OSL, concurrency).
+            for key, attr in _REFERENCE_KEY_TO_ATTR.items():
+                value = (point.reference or {}).get(key)
+                if isinstance(value, bool) or not isinstance(value, (int, float)):
+                    continue
+                tier_kwargs[attr] = float(value)
+                target_priorities[attr] = PRIORITY_MUST
 
-            # Aggregate scalar targets only make sense at the peak-throughput
-            # operating point, so attach them to the max-concurrency point.
-            if point.concurrency == peak_concurrency:
-                for st in scenario.scalar_targets:
-                    attr = _SCALAR_METRIC_TO_ATTR.get(st.metric)
-                    if attr is None:
-                        logger.warning(
-                            "Ignoring unsupported scalar target metric %r in "
-                            "scenario %r.",
-                            st.metric,
-                            scenario.id,
-                        )
-                        continue
-                    tier_kwargs[attr] = st.target
-                    priorities.append(st.priority)
+            # A scenario-level gate attached here overrides the point's
+            # reference value for the same metric (the target is contractual;
+            # the reference is the incumbent's measurement).
+            for attr, (value, priority) in attach.get(idx, {}).items():
+                tier_kwargs[attr] = value
+                target_priorities[attr] = priority
 
             targets = (
-                {"target": PerformanceTarget(tolerance=0.0, **tier_kwargs)}
+                {
+                    "target": PerformanceTarget(
+                        tolerance=_REQUIREMENTS_TARGET_TOLERANCE, **tier_kwargs
+                    )
+                }
                 if tier_kwargs
                 else {}
             )
@@ -427,7 +468,9 @@ class RequirementsTargetPack(TargetPack):
                     num_prompts=_num_prompts_for(point.concurrency),
                     task_type="text",
                     targets=targets,
-                    priority=_aggregate_priority(priorities),
+                    priority=_aggregate_priority(list(target_priorities.values())),
+                    target_priorities=target_priorities or None,
+                    goodput=goodput_constraints,
                 )
             )
         return params
@@ -489,4 +532,105 @@ def _aggregate_priority(priorities: List[str]) -> Optional[str]:
     return PRIORITY_MUST if PRIORITY_MUST in priorities else PRIORITY_SHOULD
 
 
-__all__ = ["RequirementsModelSpecProvider", "RequirementsTargetPack"]
+def _scenario_level_gates(scenario: Scenario) -> dict:
+    """Scenario-level gates: ``{PerformanceTarget attr: (value, priority, lower_is_better)}``."""
+    gates: dict = {}
+    slo = scenario.slo
+    if slo is not None:
+        for attr, value in (
+            ("ttft_ms", slo.ttft_ms),
+            ("tpot_ms", slo.tpot_ms),
+            ("e2el_ms", slo.e2el_ms),
+        ):
+            if value is not None:
+                gates[attr] = (value, PRIORITY_MUST, True)
+    for st in scenario.scalar_targets:
+        attr = _SCALAR_METRIC_TO_ATTR.get(st.metric)
+        if attr is None:
+            logger.warning(
+                "Ignoring unsupported scalar target metric %r in scenario %r.",
+                st.metric,
+                scenario.id,
+            )
+            continue
+        gates[attr] = (st.target, st.priority, False)
+    return gates
+
+
+def _capability_attach_points(scenario: Scenario, gates: dict) -> dict:
+    """Map each scenario-level gate to its capability point: ``{sweep index: {attr: (value, priority)}}``.
+
+    The capability point for a metric is the sweep point whose reference
+    measurement is best for it (min for latency SLOs, max for throughput /
+    goodput percentages). A metric with no reference data anywhere attaches
+    at the least-loaded point, the most charitable operating point.
+    """
+    attach: dict = {}
+    if not gates:
+        return attach
+    ref_key = {attr: key for key, attr in _REFERENCE_KEY_TO_ATTR.items()}
+    fallback = min(
+        range(len(scenario.sweep)),
+        key=lambda i: (
+            scenario.sweep[i].concurrency,
+            scenario.sweep[i].isl,
+            scenario.sweep[i].osl,
+        ),
+    )
+    for attr, (value, priority, lower_is_better) in gates.items():
+        key = ref_key.get(attr)
+        best_idx = None
+        best_val = None
+        if key is not None:
+            for i, point in enumerate(scenario.sweep):
+                ref = (point.reference or {}).get(key)
+                if isinstance(ref, bool) or not isinstance(ref, (int, float)):
+                    continue
+                if best_val is None or (
+                    ref < best_val if lower_is_better else ref > best_val
+                ):
+                    best_idx, best_val = i, ref
+        attach.setdefault(best_idx if best_idx is not None else fallback, {})[attr] = (
+            value,
+            priority,
+        )
+    return attach
+
+
+def _goodput_constraints(scenario: Scenario) -> Optional[str]:
+    """``vllm bench serve --goodput`` constraint string from the scenario's SLOs.
+
+    vLLM's keys are ttft/tpot/e2el in milliseconds — exactly the document's
+    SLO metrics. Returns None when the scenario declares no SLOs, in which
+    case goodput cannot be measured.
+    """
+    slo = scenario.slo
+    if slo is None:
+        return None
+    parts = []
+    for key, value in (
+        ("ttft", slo.ttft_ms),
+        ("tpot", slo.tpot_ms),
+        ("e2el", slo.e2el_ms),
+    ):
+        if value is not None:
+            parts.append(f"{key}:{value:g}")
+    return " ".join(parts) or None
+
+
+def _scenario_targets_goodput(scenario: Scenario) -> bool:
+    """True if the document expresses any goodput expectation for the scenario."""
+    if any(st.metric == "request_goodput" for st in scenario.scalar_targets):
+        return True
+    return any(
+        isinstance((p.reference or {}).get("goodputPct"), (int, float))
+        and not isinstance((p.reference or {}).get("goodputPct"), bool)
+        for p in scenario.sweep
+    )
+
+
+__all__ = [
+    "RequirementsModelSpecProvider",
+    "RequirementsTargetPack",
+    "unknown_eval_names",
+]

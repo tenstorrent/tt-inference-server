@@ -27,8 +27,11 @@ _METRIC_SPECS: Tuple[Tuple[str, str, bool], ...] = (
     ("tput", "tput", False),
     # Extra metrics graded only when a target defines them (requirements-driven
     # SLOs/scalar targets); catalog perf references leave them None -> NA.
+    # goodput is the % of requests meeting the run's --goodput SLOs, measured
+    # by vllm bench serve when the sweep point carries SLO constraints.
     ("tpot", "tpot_ms", True),
     ("e2el", "e2el_ms", True),
+    ("tput_total", "tput_total", False),
     ("goodput", "goodput", False),
 )
 
@@ -58,7 +61,8 @@ def _measured(record: Mapping[str, Any]) -> Dict[str, Optional[float]]:
         "tput": tput,
         "tpot": tpot,
         "e2el": _as_float(record.get("mean_e2el_ms")),
-        "goodput": _as_float(record.get("goodput")),
+        "tput_total": _as_float(record.get("tps_total_throughput")),
+        "goodput": _as_float(record.get("goodput_pct")),
     }
 
 
@@ -152,6 +156,16 @@ def apply_target_checks(block: Block, config: Any) -> Block:
     priority = getattr(config, "priority", None)
     if priority is not None:
         data["priority"] = priority
+    # Per-metric severities, translated from PerformanceTarget attribute names
+    # to target_checks field names so acceptance can route individual metric
+    # failures (a block mixing must/should targets).
+    target_priorities = getattr(config, "target_priorities", None)
+    if target_priorities:
+        attr_to_field = {attr: field for field, attr, _ in _METRIC_SPECS}
+        data["target_priorities"] = {
+            attr_to_field.get(attr, attr): prio
+            for attr, prio in target_priorities.items()
+        }
     if not targets:
         logger.warning(
             "No perf targets for sweep point isl=%s osl=%s max_concurrency=%s; "
