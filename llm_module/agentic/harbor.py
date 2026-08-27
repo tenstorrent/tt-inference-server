@@ -79,7 +79,7 @@ class HarborRunConfig:
     # non-TTY where harbor's Rich Live progress does not render -- still shows
     # which evals and rollouts are running. Orthogonal to (and safe alongside)
     # ``quiet``, which only governs the progress display.
-    debug: bool = True
+    debug: bool = False
     agent_import_path: Optional[str] = None
     # Injected into the agent's container for the agent phase. Harbor's
     # installed agents also fall back to the harbor host's ``os.environ``, so
