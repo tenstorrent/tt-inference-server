@@ -1775,10 +1775,25 @@ templates:
   device_model_specs:
     - device: P300X2  # QB2 (2x P300, 4-chip 1x4 mesh)
       max_concurrency: 32
-      max_context: 262144  # 256 * 1024; doc/context_contract.json
+      # 256000, not 262144: config/context_contract.json now records
+      # current_supported_context 256000 with capability_reduction true. A
+      # ~253,000-token prompt died on TT_METAL_OPERATION_TIMEOUT_SECONDS (a stall
+      # watchdog, not a capability limit) and 262144 does not complete in 3600 s
+      # at all -- an unresolved cliff in the last ~3,100 tokens. generator_vllm
+      # reads the contract as the source of truth and fails loudly when
+      # max_model_len exceeds it, so this must track the contract.
+      max_context: 256000
       default_impl: true
       env_vars:
         MESH_DEVICE: "P150x4"
+        # 120.0, overriding the unconditional 5.0 that
+        # run_vllm_api_server.set_metal_timeout_env_vars sets for hang detection.
+        # That 5.0 is a per-op stall watchdog whose clock resets on device-side
+        # dispatch progress; a single O(S^2) attention op at long context legitimately
+        # exceeds it, so the watchdog fired on healthy work and killed the server.
+        # 253,000 and 259,000 tokens both complete at 120. set_runtime_env_vars runs
+        # after set_metal_timeout_env_vars, so this value wins.
+        TT_METAL_OPERATION_TIMEOUT_SECONDS: "120.0"
         # REQUIRED at max_concurrency > 1 -- same class of missing key as
         # sample_on_device_mode below, and nearly the same magnitude.
         #
