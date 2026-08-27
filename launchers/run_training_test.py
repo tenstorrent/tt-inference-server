@@ -1,0 +1,325 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+
+"""Training-workflow driver.
+
+Runs in run.py's interpreter (NOT inside the container): the forge inference
+server is already up as a sibling ``ServerCommand``; this launcher acts as the
+HTTP client that submits one LoRA fine-tuning job, waits for it to finish,
+pulls its per-step loss from ``GET /v1/jobs/{id}/metrics``, grades the loss
+trajectory against a checked-in expectation and writes a ``report_data_*.json``
+so tt-shield's existing artifact/collect_data steps pick it up.
+
+Exit code is non-zero if the job failed OR the loss checks failed, so the CI
+step gates on it.
+
+Usage (flags mirror the other engine launchers)::
+
+    python launchers/run_training_test.py \
+        --model meta-llama/Llama-3.1-8B --workflow training --device p150 \
+        --service-port 8000 --runtime-model-spec-json /tmp/spec.json \
+        --output-dir workflow_logs/reports_output/training \
+        --expected-config workflows/training/expected/llama_3_1_8b_sst2_p150.yaml \
+        --docker-server
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+import os
+import sys
+import time
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger("tt_training_launcher")
+
+_TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
+_SUCCESS_STATUSES = {"completed"}
+
+
+def _parse_args(argv: List[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--model", required=True)
+    parser.add_argument("--workflow", required=True)
+    parser.add_argument("--device", required=True)
+    parser.add_argument("--service-port", required=True)
+    parser.add_argument("--runtime-model-spec-json", default=None)
+    parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--expected-config", required=True)
+    parser.add_argument("--jwt-secret", default=None)
+    parser.add_argument("--server-url", default=None)
+    parser.add_argument("--docker-server", action="store_true")
+    # Bounds (seconds). Server readiness for an 8B model + first-run tensor
+    # cache can be very slow; the job itself compiles then trains.
+    parser.add_argument("--health-timeout", type=float, default=3600.0)
+    parser.add_argument("--job-timeout", type=float, default=5400.0)
+    parser.add_argument("--poll-interval", type=float, default=15.0)
+    args, _ = parser.parse_known_args(argv)
+    if args.workflow != "training":
+        parser.error(
+            f"run_training_test.py requires --workflow training (got {args.workflow})."
+        )
+    return args
+
+
+def _base_url(args: argparse.Namespace) -> str:
+    if args.server_url:
+        return args.server_url.rstrip("/")
+    return f"http://127.0.0.1:{args.service_port}"
+
+
+def _auth_headers(jwt_secret: Optional[str]) -> Dict[str, str]:
+    """Mint the same bearer token the vLLM/media clients use (HS256 over a
+    fixed debug payload). Falls back to no auth when no secret is available."""
+    secret = jwt_secret or os.getenv("JWT_SECRET")
+    if not secret:
+        logger.warning("No --jwt-secret / $JWT_SECRET set; sending unauthenticated.")
+        return {}
+    import jwt  # pyjwt, present in run.py's interpreter
+
+    token = jwt.encode(
+        {"team_id": "tenstorrent", "token_id": "debug-test"},
+        secret,
+        algorithm="HS256",
+    )
+    return {"Authorization": f"Bearer {token}"}
+
+
+def _wait_for_health(session, base_url: str, headers, timeout: float) -> bool:
+    import requests
+
+    deadline = time.time() + timeout
+    health_url = f"{base_url}/health"
+    while time.time() < deadline:
+        try:
+            resp = session.get(health_url, headers=headers, timeout=30)
+            if resp.status_code == 200:
+                logger.info("Server healthy at %s", health_url)
+                return True
+            logger.info("Health %s -> %s; waiting...", health_url, resp.status_code)
+        except requests.exceptions.RequestException as exc:
+            logger.info("Health check not ready (%s); waiting...", exc)
+        time.sleep(10)
+    logger.error("Server did not become healthy within %ss", timeout)
+    return False
+
+
+def _build_request_body(device: str, request_overrides: Dict[str, Any]) -> Dict[str, Any]:
+    body = {"device_type": device}
+    body.update(request_overrides)
+    # device_type must match the server device; the expectation file should not
+    # override it, but guard anyway.
+    body["device_type"] = device
+    return body
+
+
+def _submit_job(session, base_url, headers, body) -> Optional[str]:
+    import requests
+
+    url = f"{base_url}/v1/jobs"
+    # The endpoint returns 405 until the model is ready; retry a few times in
+    # case health passed but warmup is still finishing.
+    for attempt in range(1, 11):
+        try:
+            resp = session.post(url, headers=headers, json=body, timeout=120)
+        except requests.exceptions.RequestException as exc:
+            logger.warning("Submit attempt %d failed to connect: %s", attempt, exc)
+            time.sleep(15)
+            continue
+        if resp.status_code == 201:
+            data = resp.json()
+            job_id = data.get("id") or data.get("job_id") or data.get("task_id")
+            logger.info("Submitted training job: %s", job_id)
+            return job_id
+        if resp.status_code == 405:
+            logger.info("Model not ready (405); retry %d/10 ...", attempt)
+            time.sleep(15)
+            continue
+        logger.error("Submit failed (%s): %s", resp.status_code, resp.text[:500])
+        return None
+    logger.error("Model never became ready for job submission.")
+    return None
+
+
+def _poll_until_terminal(
+    session, base_url, headers, job_id, timeout, interval
+) -> Optional[str]:
+    import requests
+
+    url = f"{base_url}/v1/jobs/{job_id}"
+    deadline = time.time() + timeout
+    last_status = None
+    while time.time() < deadline:
+        try:
+            resp = session.get(url, headers=headers, timeout=60)
+            if resp.status_code == 200:
+                status = str(resp.json().get("status", "")).lower()
+                if status != last_status:
+                    logger.info("Job %s status: %s", job_id, status)
+                    last_status = status
+                if status in _TERMINAL_STATUSES:
+                    return status
+            else:
+                logger.info("Job poll %s -> %s", url, resp.status_code)
+        except requests.exceptions.RequestException as exc:
+            logger.info("Job poll error (%s); retrying...", exc)
+        time.sleep(interval)
+    logger.error("Job %s did not reach a terminal state within %ss", job_id, timeout)
+    return None
+
+
+def _fetch_metrics(session, base_url, headers, job_id) -> List[Dict[str, Any]]:
+    import requests
+
+    url = f"{base_url}/v1/jobs/{job_id}/metrics"
+    try:
+        resp = session.get(url, headers=headers, timeout=60)
+    except requests.exceptions.RequestException as exc:
+        logger.error("Failed to fetch metrics: %s", exc)
+        return []
+    if resp.status_code != 200:
+        logger.error("Metrics fetch failed (%s): %s", resp.status_code, resp.text[:500])
+        return []
+    payload = resp.json()
+    if isinstance(payload, dict):
+        return payload.get("metrics") or payload.get("data") or []
+    if isinstance(payload, list):
+        return payload
+    return []
+
+
+def _write_report(output_dir, model, device, records, extra_metadata) -> None:
+    from report_module.generator import generate_report
+
+    metadata = {
+        "model_name": model,
+        "device": device,
+        "workflow": "training",
+        "report_id": f"{model.replace('/', '__')}_{device}_"
+        f"{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}",
+        "generated_at": datetime.utcnow().isoformat(),
+    }
+    metadata.update(extra_metadata)
+    # from_records groups the flat records into blocks by (kind, model, device).
+    from report_module.schema import ReportSchema
+
+    schema = ReportSchema.from_records(records, metadata=metadata)
+    generate_report(schema, output_dir)
+
+
+def main() -> int:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
+    args = _parse_args(sys.argv[1:])
+
+    import requests
+    import yaml
+
+    from workflows.training.loss_check import evaluate, parse_config
+
+    expected_path = Path(args.expected_config)
+    if not expected_path.is_file():
+        logger.error("Expected-config not found: %s", expected_path)
+        return 1
+    config = parse_config(yaml.safe_load(expected_path.read_text()))
+
+    base_url = _base_url(args)
+    headers = {"Content-Type": "application/json", **_auth_headers(args.jwt_secret)}
+    session = requests.Session()
+
+    output_dir = Path(args.output_dir)
+
+    if not _wait_for_health(session, base_url, headers, args.health_timeout):
+        _write_report(
+            output_dir,
+            args.model,
+            args.device,
+            [
+                {
+                    "kind": "spec_tests",
+                    "model": args.model,
+                    "device": args.device,
+                    "test_name": "server_healthy",
+                    "status": "fail",
+                    "attempts": 1,
+                    "elapsed_seconds": 0.0,
+                    "description": "server never became healthy",
+                }
+            ],
+            {"verdict": "FAIL"},
+        )
+        return 1
+
+    body = _build_request_body(args.device, config.request)
+    logger.info("Submitting training job with body: %s", json.dumps(body))
+    job_id = _submit_job(session, base_url, headers, body)
+    if not job_id:
+        _write_report(
+            output_dir,
+            args.model,
+            args.device,
+            [
+                {
+                    "kind": "spec_tests",
+                    "model": args.model,
+                    "device": args.device,
+                    "test_name": "job_submitted",
+                    "status": "fail",
+                    "attempts": 1,
+                    "elapsed_seconds": 0.0,
+                    "description": "failed to submit training job",
+                }
+            ],
+            {"verdict": "FAIL"},
+        )
+        return 1
+
+    final_status = _poll_until_terminal(
+        session, base_url, headers, job_id, args.job_timeout, args.poll_interval
+    )
+    metrics = _fetch_metrics(session, base_url, headers, job_id)
+
+    result = evaluate(metrics, config, model=args.model, device=args.device)
+
+    job_succeeded = final_status in _SUCCESS_STATUSES
+    if not job_succeeded:
+        result.records.append(
+            {
+                "kind": "spec_tests",
+                "model": args.model,
+                "device": args.device,
+                "test_name": "job_completed",
+                "status": "fail",
+                "attempts": 1,
+                "elapsed_seconds": 0.0,
+                "description": f"job terminal status={final_status}",
+            }
+        )
+
+    passed = result.passed and job_succeeded
+    _write_report(
+        output_dir,
+        args.model,
+        args.device,
+        result.records,
+        {"verdict": "PASS" if passed else "FAIL", "summary": result.summary},
+    )
+
+    logger.info("Training check summary: %s (job_status=%s)", result.summary, final_status)
+    if passed:
+        logger.info("✅ Training workflow passed.")
+        return 0
+    logger.error("⛔ Training workflow failed.")
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

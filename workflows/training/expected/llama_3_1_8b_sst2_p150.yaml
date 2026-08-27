@@ -1,0 +1,59 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+#
+# Expected LoRA training-loss trajectory for meta-llama/Llama-3.1-8B on SST-2,
+# single-chip P150, run through the forge server's `trainer-training-lora`
+# runner (tt-blacksmith LoraLLMTrainer).
+#
+# IMPORTANT: these values are NOT tt-blacksmith's golden CSVs. The forge runner
+# builds its LoraLLMConfig directly from the TrainingRequest below (seed=0,
+# deterministic=False) rather than through tt-blacksmith's pytest test-mode, so
+# the trajectory differs. Regenerate from a known-good P150 run whenever the
+# blacksmith pin (tt-media-server/.../forge_runners/requirements.txt) or the
+# tt-forge pin changes.
+#
+# TODO(regenerate-on-hardware): the `value`s below are seed placeholders. Run a
+# first green P150 job, read GET /v1/jobs/{id}/metrics, and paste the observed
+# train_loss/val_loss here before trusting the gate.
+
+# Hyperparameters forwarded verbatim into the TrainingRequest POST body. Kept
+# small so a nightly P150 job stays bounded while still exercising the full
+# submit -> train -> checkpoint -> metrics path.
+request:
+  dataset_loader: SST2
+  dataset_max_sequence_length: 64
+  batch_size: 8
+  learning_rate: 0.0001
+  num_epochs: 1
+  max_steps: 15
+  steps_freq: 5
+  val_steps_freq: 5
+  save_interval: 0
+  lora_r: 4
+  lora_alpha: 8
+  lora_target_modules: ["q_proj", "v_proj"]
+  lora_task_type: CAUSAL_LM
+  dtype: torch.bfloat16
+  optimizer: adamw
+
+# Loose "did it converge" tolerances, matching tt-blacksmith's own golden checks.
+tolerances:
+  rtol: 0.5
+  atol: 0.1
+
+checks:
+  # Final training loss must not exceed the first recorded value (+atol).
+  require_decreasing: true
+  # Absolute ceiling on the final training loss (guards against a diverged run
+  # that happens to be "decreasing"). Tune after regeneration.
+  final_train_loss_max: 5.0
+
+# Per-checkpoint expectations (steps must line up with steps_freq / val_steps_freq).
+expected_losses:
+  - {global_step: 5,  metric_name: train_loss, value: 5.7}
+  - {global_step: 10, metric_name: train_loss, value: 4.6}
+  - {global_step: 15, metric_name: train_loss, value: 3.8}
+  - {global_step: 5,  metric_name: val_loss,   value: 5.6}
+  - {global_step: 10, metric_name: val_loss,   value: 4.5}
+  - {global_step: 15, metric_name: val_loss,   value: 3.9}

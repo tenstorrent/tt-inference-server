@@ -17,6 +17,7 @@ class WorkflowType(IntEnum):
     AGENTIC_TRACES = auto()
     SERVING_BENCH = auto()
     PREFILL_DECODE = auto()
+    TRAINING = auto()
 
     @classmethod
     def from_string(cls, name: str):
