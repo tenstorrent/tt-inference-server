@@ -37,7 +37,7 @@ _ENGINE_WORKFLOW_NAMES = {
     WorkflowType.AGENTIC_TRACES: "agentic_traces",
     WorkflowType.SERVING_BENCH: "serving_bench",
     WorkflowType.PREFILL_DECODE: "prefill_decode",
-    WorkflowType.TRAINING: "training",
+    WorkflowType.TRAINING_TESTS: "training_tests",
 }
 
 _ENGINE_EVAL_WORKFLOWS = frozenset({WorkflowType.EVALS, WorkflowType.RELEASE})
@@ -148,11 +148,14 @@ def _is_llm_spec_test_run(wf, model_spec) -> bool:
 
 
 def _is_training_run(wf, model_spec) -> bool:
-    """``--workflow training`` on a TRAINING model routes to the training driver
-    (``launchers/run_training_test.py``): it submits a LoRA job to the running
-    forge server and grades the loss trajectory. Not the generic workflow
+    """``--workflow training_tests`` on a TRAINING model routes to the training
+    driver (``launchers/run_training_test.py``): it submits a LoRA job to the
+    running forge server and grades the loss trajectory. Not the generic workflow
     engine — the launcher runs in the current interpreter as an HTTP client."""
-    return wf == WorkflowType.TRAINING and model_spec.model_type == ModelType.TRAINING
+    return (
+        wf == WorkflowType.TRAINING_TESTS
+        and model_spec.model_type == ModelType.TRAINING
+    )
 
 
 def can_dispatch_to_engine(model_spec, runtime_config) -> bool:
@@ -563,9 +566,9 @@ def _build_training_cmd(repo_root, model_spec, runtime_config, json_fpath, outpu
     interpreter, which is the HTTP client for the running forge server)."""
     from workflows.training.registry import expected_config_path
 
-    launcher = _resolve_launcher(repo_root, "run_training_test.py", "training")
+    launcher = _resolve_launcher(repo_root, "run_training_test.py", "training_tests")
     cmd = _base_engine_argv(
-        launcher, model_spec, runtime_config, json_fpath, output_dir, "training"
+        launcher, model_spec, runtime_config, json_fpath, output_dir, "training_tests"
     )
     cmd.extend(
         [

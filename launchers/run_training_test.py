@@ -18,9 +18,9 @@ step gates on it.
 Usage (flags mirror the other engine launchers)::
 
     python launchers/run_training_test.py \
-        --model meta-llama/Llama-3.1-8B --workflow training --device p150 \
+        --model meta-llama/Llama-3.1-8B --workflow training_tests --device p150 \
         --service-port 8000 --runtime-model-spec-json /tmp/spec.json \
-        --output-dir workflow_logs/reports_output/training \
+        --output-dir workflow_logs/reports_output/training_tests \
         --expected-config workflows/training/expected/llama_3_1_8b_sst2_p150.yaml \
         --docker-server
 """
@@ -61,9 +61,10 @@ def _parse_args(argv: List[str]) -> argparse.Namespace:
     parser.add_argument("--job-timeout", type=float, default=5400.0)
     parser.add_argument("--poll-interval", type=float, default=15.0)
     args, _ = parser.parse_known_args(argv)
-    if args.workflow != "training":
+    if args.workflow != "training_tests":
         parser.error(
-            f"run_training_test.py requires --workflow training (got {args.workflow})."
+            "run_training_test.py requires --workflow training_tests "
+            f"(got {args.workflow})."
         )
     return args
 
@@ -200,7 +201,7 @@ def _write_report(output_dir, model, device, records, extra_metadata) -> None:
     metadata = {
         "model_name": model,
         "device": device,
-        "workflow": "training",
+        "workflow": "training_tests",
         "report_id": f"{model.replace('/', '__')}_{device}_"
         f"{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}",
         "generated_at": datetime.utcnow().isoformat(),

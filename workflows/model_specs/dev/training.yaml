@@ -50,7 +50,7 @@ templates:
       max_concurrency: 1
       max_context: 1024
 # tt-blacksmith-backed LoRA runner (LoraLLMTrainer). Selected by the training
-# CI workflow via `--impl trainer-training-lora`; the `--workflow training`
+# CI workflow via `--impl trainer-training-lora`; the `--workflow training_tests`
 # driver submits a job to this runner and asserts its loss trajectory.
 - weights:
     - meta-llama/Llama-3.1-8B
