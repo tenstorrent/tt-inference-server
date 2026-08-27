@@ -74,7 +74,8 @@ named BuildKit context. No `.git` directory, token, credential helper, SSH agent
 or network repository URL is forwarded into the build.
 The v0.20.0 base currently carries two pre-existing `uv pip check` conflicts.
 The derivative records the exact conflict set before installation and requires
-the post-install set to be byte-identical, so Quetzal cannot add or mask a
+the post-install set to be byte-identical after removing only timing/environment
+headers, so Quetzal cannot add or mask a
 dependency conflict while that independently owned base-image debt remains.
 Generated-provider registration remains fail-closed: a missing plugin or model
 package must never select `tt_transformers`.

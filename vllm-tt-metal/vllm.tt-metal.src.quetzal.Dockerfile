@@ -28,9 +28,9 @@ USER container_app_user
 RUN test "$(cat /tmp/quetzal-source/.tt-quetzal-commit)" = "${TT_QUETZAL_COMMIT_SHA}" \
     && rm /tmp/quetzal-source/.tt-quetzal-commit \
     && /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
-        && (LC_ALL=C uv pip check > /tmp/pip-check.before 2>&1 || true) \
+        && (LC_ALL=C uv pip check 2>&1 || true) | sed -E '/^Using Python /d;/^Checked [0-9]+ packages in /d' > /tmp/pip-check.before \
         && uv pip install /tmp/quetzal-source \
-        && (LC_ALL=C uv pip check > /tmp/pip-check.after 2>&1 || true) \
+        && (LC_ALL=C uv pip check 2>&1 || true) | sed -E '/^Using Python /d;/^Checked [0-9]+ packages in /d' > /tmp/pip-check.after \
         && cmp /tmp/pip-check.before /tmp/pip-check.after \
         && rm /tmp/pip-check.before /tmp/pip-check.after \
         && python -c \"import importlib.metadata as m; eps=[e for e in m.entry_points(group='vllm.general_plugins') if e.name == 'quetzal_model_registry' and e.value == 'tt_quetzalcoatlus.vllm_plugin:register']; assert len(eps) == 1, eps; import serving.artifact_bundle\"" \

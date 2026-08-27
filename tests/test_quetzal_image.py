@@ -22,8 +22,9 @@ def test_quetzal_is_installed_non_editably_and_entry_point_is_verified():
     source = DOCKERFILE.read_text()
     install_line = next(line for line in source.splitlines() if "uv pip install" in line)
     assert " -e " not in install_line
-    assert "uv pip check > /tmp/pip-check.before" in source
-    assert "uv pip check > /tmp/pip-check.after" in source
+    assert "> /tmp/pip-check.before" in source
+    assert "> /tmp/pip-check.after" in source
+    assert "sed -E '/^Using Python /d;/^Checked [0-9]+ packages in /d'" in source
     assert "cmp /tmp/pip-check.before /tmp/pip-check.after" in source
     assert "quetzal_model_registry" in source
     assert "tt_quetzalcoatlus.vllm_plugin:register" in source
