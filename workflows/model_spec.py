@@ -8,7 +8,7 @@ import json
 import os
 import re
 import yaml
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Union
 
@@ -1418,3 +1418,50 @@ def get_runtime_model_spec(
 
     model_spec = MODEL_SPECS[selected_spec.model_id]
     return model_spec, resolved_impl, resolved_engine
+
+
+def derive_custom_weights_spec(
+    base_spec: ModelSpec,
+    custom_weights: str,
+    *,
+    local_model_path: Optional[str] = None,
+) -> ModelSpec:
+    """Re-key a resolved base spec onto a custom-weights identity.
+
+    Inherits the base's impl/device/engine/env_vars/image but sets model_name to
+    basename(custom_weights), hf_model_repo/hf_weights_repo to the label, and
+    regenerates model_id. Since all persistent paths (docker volume, tt-metal
+    cache, weights dir) key off model_name, the derived spec gets its own subtree.
+
+    custom_weights must be a valid HF repo id when downloading from the Hub, but
+    can be any label when paired with --host-weights-dir (bytes come from disk).
+
+    vllm_args: served_model_name always exposes the label on the API. model is
+    set to local_model_path (the container weights mount) when given so weights
+    load offline; otherwise it stays the label, which is the HF repo id.
+    """
+    if not custom_weights or not custom_weights.strip():
+        raise ValueError("custom_weights must be a non-empty string")
+
+    custom_weights = custom_weights.strip()
+    model_name = model_weights_to_model_name(custom_weights)
+    model_id = get_model_id(
+        base_spec.impl.impl_name, model_name, base_spec.device_type.name.lower()
+    )
+
+    # __post_init__ baked vllm_args["model"] from the base hf_model_repo; rebuild it.
+    new_vllm_args = dict(base_spec.device_model_spec.vllm_args)
+    new_vllm_args["model"] = local_model_path if local_model_path else custom_weights
+    new_vllm_args["served_model_name"] = custom_weights
+    new_device_model_spec = replace(
+        base_spec.device_model_spec, vllm_args=new_vllm_args
+    )
+
+    return replace(
+        base_spec,
+        model_id=model_id,
+        model_name=model_name,
+        hf_model_repo=custom_weights,
+        hf_weights_repo=custom_weights,
+        device_model_spec=new_device_model_spec,
+    )

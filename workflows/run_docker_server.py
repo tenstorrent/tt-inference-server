@@ -528,20 +528,23 @@ def generate_docker_run_command(
                 )
 
     user_home_path = "/home/container_app_user"
-    if runtime_config.dev_mode:
-        if json_fpath:
-            container_model_spec_dir = Path(f"{user_home_path}/model_specs")
-            runtime_json_fpath = container_model_spec_dir / json_fpath.name
-            docker_command += [
-                "--mount",
-                f"type=bind,src={json_fpath},dst={runtime_json_fpath},readonly",
-            ]
-            docker_env_vars["RUNTIME_MODEL_SPEC_JSON_PATH"] = str(runtime_json_fpath)
-        else:
-            logger.warning(
-                "No runtime model spec JSON path provided while in dev mode, using default model spec."
-            )
+    # Mount the runtime spec whenever run.py provides one (dev mode or
+    # --custom-weights). The container prefers RUNTIME_MODEL_SPEC_JSON_PATH over
+    # resolving --model, letting a spec that is absent from the catalog deploy.
+    if json_fpath:
+        container_model_spec_dir = Path(f"{user_home_path}/model_specs")
+        runtime_json_fpath = container_model_spec_dir / json_fpath.name
+        docker_command += [
+            "--mount",
+            f"type=bind,src={json_fpath},dst={runtime_json_fpath},readonly",
+        ]
+        docker_env_vars["RUNTIME_MODEL_SPEC_JSON_PATH"] = str(runtime_json_fpath)
+    elif runtime_config.dev_mode:
+        logger.warning(
+            "No runtime model spec JSON path provided while in dev mode, using default model spec."
+        )
 
+    if runtime_config.dev_mode:
         # fmt: off
         docker_command += [
             "--mount", f"type=bind,src={repo_root_path}/reference_config,dst={user_home_path}/app/reference_config",
