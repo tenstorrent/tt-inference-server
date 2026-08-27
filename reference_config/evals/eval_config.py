@@ -277,7 +277,7 @@ class HarborEvalConfig:
     timeout_multiplier: Optional[float] = None
     agent_timeout_sec: Optional[float] = None
     agent_setup_timeout_multiplier: Optional[float] = None
-    quiet: bool = True
+    quiet: bool = False
     yes: bool = True
     task_names_map: Dict[EvalLimitMode, List[str]] = field(default_factory=dict)
     agent_import_path: Optional[str] = None
