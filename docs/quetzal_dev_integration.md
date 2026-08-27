@@ -45,18 +45,33 @@ The qualification manifest is required even when explicit graph paths are set:
 Quetzal discovery uses it to admit the exact declared reduced-precision
 transformations, including Gemma's BFP8 attention and MLP weights.
 
-TTIS does **not** currently fetch, verify, or materialize a Quetzal package into
-that content store. Its release image also does not currently install the Quetzal
-vLLM entry-point package and serving modules. Consequently, catalog resolution is
-host-testable, but an actual server launch must fail until a development image and
-installer provide both dependencies. Do not replace these paths with a workstation
-or NAS path.
+TTIS does **not** fetch, verify, or materialize a Quetzal model package into that
+content store. Do not replace these paths with a workstation or NAS path. Install
+the content-addressed bundle into the persistent cache before server startup with
+Quetzal's `ttq-artifact-bundle install`, supplying the root-manifest SHA-256 from
+the signed release record. The installer verifies every object, stages privately,
+and publishes the compiled tree last.
 
-The required follow-up is a signed-package installer that verifies the root
-manifest and all file hashes before atomically publishing the package directory,
-plus a pinned TTIS development image that installs the Quetzal plugin non-editably.
-Generated-provider registration is fail-closed; missing plugin or artifacts must
-never select `tt_transformers`.
+The base release image still does not contain Quetzal. Build a uniquely identified
+development derivative from a digest-pinned base and an exact Quetzal commit:
+
+```shell
+scripts/build_quetzal_dev_image.sh \
+  --base-image ghcr.io/tenstorrent/tt-inference-server/<image>@sha256:<digest> \
+  --quetzal-commit <full-40-character-commit> \
+  --tag <registry>/ttis-quetzal:<tt-metal>-<vllm>-<quetzal>
+```
+
+`vllm.tt-metal.src.quetzal.Dockerfile` installs a regular wheel with no editable
+source path and verifies the exact `vllm.general_plugins` entry point during the
+build. It deliberately derives from, rather than conditionally changing, the
+standard image so the ordinary tt-metal/vLLM image identity stays unambiguous.
+Generated-provider registration remains fail-closed: a missing plugin or model
+package must never select `tt_transformers`.
+
+This closes the image-construction path, not release qualification. The two real
+model bundles, trusted manifest digests, container build, clean-QB2 launch, nightly,
+and CS-owned acceptance rows are still required.
 
 ## Nightly selection
 
