@@ -63,8 +63,9 @@ scripts/build_quetzal_dev_image.sh \
 ```
 
 `vllm.tt-metal.src.quetzal.Dockerfile` installs a regular wheel with no editable
-source path and verifies the exact `vllm.general_plugins` entry point during the
-build. It deliberately derives from, rather than conditionally changing, the
+source path, checks the resulting environment, and verifies the exact
+`vllm.general_plugins` entry point during the build. It deliberately derives
+from, rather than conditionally changing, the
 standard image so the ordinary tt-metal/vLLM image identity stays unambiguous.
 Generated-provider registration remains fail-closed: a missing plugin or model
 package must never select `tt_transformers`.

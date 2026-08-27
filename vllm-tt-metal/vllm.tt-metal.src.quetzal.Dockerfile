@@ -32,7 +32,8 @@ RUN test -n "${TT_QUETZAL_COMMIT_SHA}" \
     && git -C "${build_root}" checkout --detach FETCH_HEAD \
     && resolved_commit="$(git -C "${build_root}" rev-parse HEAD)" \
     && /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
-        && uv pip install --no-deps '${build_root}' \
+        && uv pip install '${build_root}' \
+        && uv pip check \
         && python -c \"import importlib.metadata as m; eps=[e for e in m.entry_points(group='vllm.general_plugins') if e.name == 'quetzal_model_registry' and e.value == 'tt_quetzalcoatlus.vllm_plugin:register']; assert len(eps) == 1, eps; import serving.artifact_bundle\"" \
     && test "${resolved_commit}" = "${TT_QUETZAL_COMMIT_SHA}" \
     && rm -rf "${build_root}"
