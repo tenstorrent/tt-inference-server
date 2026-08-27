@@ -10,6 +10,7 @@ import os
 import re
 import shlex
 import subprocess
+import sys
 import tempfile
 import threading
 import uuid
@@ -17,6 +18,28 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
+
+
+def can_prompt_interactively() -> bool:
+    """True only when getpass() would read from a real controlling terminal.
+
+    sys.stdin.isatty() is not a sufficient signal: a worker spawned with
+    Popen(..., start_new_session=True) and no stdin= (e.g. TT-Studio's uvicorn
+    worker) inherits the launching terminal on fd 0 — isatty() is True — but
+    has no controlling terminal, so getpass() falls back to reading fd 0 and
+    blocks forever with nobody there to answer. On POSIX getpass() prompts on
+    /dev/tty when it can be opened, so /dev/tty openability is the precise
+    signal for whether a prompt can actually be answered.
+    """
+    if os.name != "posix":
+        return sys.stdin is not None and sys.stdin.isatty()
+    try:
+        fd = os.open("/dev/tty", os.O_RDWR)
+    except OSError:
+        return False
+    os.close(fd)
+    return True
+
 
 # SDXL num prompts limits
 SDXL_DEFAULT_NUM_PROMPTS = 100
