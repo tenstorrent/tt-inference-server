@@ -4575,7 +4575,7 @@ _eval_config_list = [
                 agentic_eval_config=TerminalBenchEvalConfig(
                     dataset="terminal-bench/terminal-bench-2",
                     agent="terminus-2",
-                    n_concurrent_trials=1,  # TODO increase back to 5 when batch > 1 is supported
+                    n_concurrent_trials=8,  # TODO increase back to 5 when batch > 1 is supported
                     n_attempts=1,
                     n_tasks=None,  # full dataset
                     # QB2 release runners expose only 16 CPUs; docker compose
@@ -4647,7 +4647,7 @@ _eval_config_list = [
                     sweagent_subset="verified",
                     dataset_split="test",
                     agent_backend="mini-swe-agent",
-                    n_concurrent_trials=5,
+                    n_concurrent_trials=8,
                     max_workers=8,
                     n_tasks=None,  # full dataset
                     temperature=1.0,
