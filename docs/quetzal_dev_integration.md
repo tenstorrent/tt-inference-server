@@ -2,7 +2,7 @@
 
 The development catalog exposes generated Quetzal implementations for:
 
-- `Qwen/Qwen3.6-27B` on `P300X2`, context 4096, concurrency 1; and
+- `Qwen/Qwen3.6-27B` on `P300X2`, context 8192, concurrency 1; and
 - `google/gemma-4-31B-it` on `P300X2`, context 1024, concurrency 1.
 
 They are explicit, non-default implementations. The existing native model remains
@@ -85,9 +85,11 @@ dependency conflict while that independently owned base-image debt remains.
 Generated-provider registration remains fail-closed: a missing plugin or model
 package must never select `tt_transformers`.
 
-This closes the image-construction path, not release qualification. The two real
-model bundles, trusted manifest digests, container build, clean-QB2 launch, nightly,
-and CS-owned acceptance rows are still required.
+This closes the development image-construction path, not release qualification.
+The catalog binds both models to content-addressed package IDs and trusted root
+manifest digests, but each runner must still materialize the matching bundle.
+An officially published immutable Quetzal image, clean-QB2 launch receipts,
+nightly results, and CS-owned acceptance rows are still required.
 
 ## Nightly selection
 
@@ -97,6 +99,15 @@ when matching a development catalog template. This removes the previous ambiguit
 between native and Quetzal implementations that both use vLLM.
 
 Do not alter the native nightly entry. Add Quetzal as a second P300X2 implementation
-row only after the CI matrix consumer passes its `impl` value to `run.py`, and after
-the pinned development image and immutable package are available to that job. Until
-then, nightly enrollment would only create an expected infrastructure failure.
+row only after the CI matrix consumer's implementation-identity change is merged,
+and after the pinned development image and immutable package are available to that
+job. The runner already accepts a flattened matrix `impl` and passes it to `run.py`,
+but the upstream matrix generator does not yet preserve same-engine implementation
+identity. Until both pieces are live, nightly enrollment would silently select the
+native default or create an expected infrastructure failure.
+
+Release promotion is intentionally fail-closed for `impl: quetzal`: the generic
+promoter synthesizes the ordinary tt-metal/vLLM image from release pins, while
+Quetzal currently requires a distinct package-capable derivative. The promotion
+path must first gain an explicit immutable image contract; a generated model must
+never be published against an image that can only provide the native runtime.

@@ -313,6 +313,24 @@ def promote(
     combos = collect_release_combos(ci_config)
     matches_by_file, unmatched = find_matches(Path(dev_dir), combos)
 
+    # Quetzal is installed in a distinct, package-capable derivative image.  The
+    # generic release promoter only knows how to synthesize the ordinary
+    # tt-metal/vLLM image from version + commit pins.  Promoting a Quetzal row
+    # through that path would therefore publish a prod spec whose selected
+    # implementation cannot exist in its image.  Refuse that false promotion
+    # until the release contract carries an explicit, immutable Quetzal image.
+    quetzal_combos = sorted(
+        (combo for combo in combos if combo.impl == "quetzal"),
+        key=lambda combo: (combo.model_name, combo.engine.name, combo.device.name),
+    )
+    if quetzal_combos:
+        rendered = ", ".join(_combo_str(combo) for combo in quetzal_combos)
+        raise ValueError(
+            "Quetzal release promotion requires an explicit immutable "
+            "package-capable image; refusing to synthesize the standard vLLM "
+            f"image for: {rendered}"
+        )
+
     needs_vllm = any(
         template_engine(block.template) == InferenceEngine.VLLM
         for matched in matches_by_file.values()

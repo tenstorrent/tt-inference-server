@@ -118,6 +118,34 @@ def test_collect_release_combos_preserves_impl_selector():
     }
 
 
+def test_promote_rejects_quetzal_without_explicit_package_capable_image(tmp_path):
+    ci = tmp_path / "ci.json"
+    ci.write_text(
+        json.dumps(
+            {
+                "models": {
+                    "Qwen3.6-27B": {
+                        "impl": "quetzal",
+                        "inference_engine": "vLLM",
+                        "ci": {"release": {"devices": ["P300X2"]}},
+                    }
+                }
+            }
+        )
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="requires an explicit immutable package-capable image",
+    ):
+        promote(
+            ci,
+            tmp_path / "dev",
+            tmp_path / "prod",
+            **PINS,
+        )
+
+
 def test_collect_release_combos_ignores_nightly_and_weekly():
     ci_config = {
         "models": {
