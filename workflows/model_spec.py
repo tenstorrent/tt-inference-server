@@ -8,7 +8,7 @@ import json
 import os
 import re
 import yaml
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Union
 
@@ -129,8 +129,23 @@ def get_perf_reference_map(
                             else None,
                         )
 
+            # A "measured" block gates acceptance instead of the theoretical
+            # ceiling: measured/theoretical is 0.35 on Galaxy and 0.48 on T3K,
+            # so a "target" tier at 100% of theoretical can never pass.
+            # theoretical still yields the functional/complete tiers, so the
+            # ceiling stays visible. Mirrors how evals use gpu_reference_score.
+            measured = targets.get("measured")
+            if measured:
+                target_dict["target"] = PerformanceTarget(
+                    ttft_ms=measured.get("ttft_ms"),
+                    tput_user=measured.get("tput_user"),
+                    tput=measured.get("tput"),
+                    tolerance=measured.get("tolerance", 0.05),
+                )
+
             # Create the BenchmarkTaskParams instance.
             benchmark_task = BenchmarkTaskParams(
+                data_parallel=bench.get("data_parallel"),
                 isl=bench.get("isl"),
                 osl=bench.get("osl"),
                 max_concurrency=bench.get("max_concurrency"),
@@ -156,10 +171,16 @@ def scale_llm_perf_targets(
         scaled_targets[target_name] = PerformanceTarget(
             ttft_ms=target.ttft_ms,
             tput_user=target.tput_user,
-            tput=target.tput * data_parallel if target.tput else None,
+            # Concurrency is deliberately left unscaled at 1 (see below), so
+            # the aggregate must not be scaled either: with one user only one
+            # data-parallel group is active, so aggregate == per-user.
+            tput=target.tput * data_parallel
+            if target.tput and task.max_concurrency != 1
+            else target.tput,
             tolerance=target.tolerance,
         )
     return BenchmarkTaskParams(
+        data_parallel=task.data_parallel,
         isl=task.isl,
         osl=task.osl,
         max_concurrency=task.max_concurrency
@@ -181,17 +202,31 @@ def scale_llm_perf_targets(
 def get_perf_reference(device_model_spec, perf_reference_map):
     # Migrated to vLLM API for data parallelism
     data_parallel = device_model_spec.vllm_args.get("data_parallel_size")
+    own_entries = perf_reference_map.get(device_model_spec.device, [])
 
     if data_parallel:
-        # need to adjust perf target device for data_parallel factor
+        # Prefer entries this device declares for THIS data_parallel. Their
+        # targets already describe the whole device, so they are used verbatim:
+        # no subdevice remap and no scaling. This keeps Galaxy numbers under
+        # "galaxy" rather than silently reading (and requiring edits to) the
+        # t3k row, which was the single most confusing thing about this file.
+        direct = [t for t in own_entries if t.data_parallel == data_parallel]
+        if direct:
+            return direct
+
+        # Legacy fallback: a Galaxy at DP=4 runs as four T3K-sized groups, so
+        # read the subdevice row and scale it. Kept for models that have no
+        # explicit data_parallel entries yet.
         dp_device = device_model_spec.device.get_data_parallel_subdevice(data_parallel)
-        perf_reference = perf_reference_map.get(dp_device, [])
+        perf_reference = [
+            t for t in perf_reference_map.get(dp_device, []) if t.data_parallel is None
+        ]
         if perf_reference:
             perf_reference = [
                 scale_llm_perf_targets(task, data_parallel) for task in perf_reference
             ]
     else:
-        perf_reference = perf_reference_map.get(device_model_spec.device, [])
+        perf_reference = [t for t in own_entries if t.data_parallel is None]
     return perf_reference
 
 
@@ -1383,3 +1418,50 @@ def get_runtime_model_spec(
 
     model_spec = MODEL_SPECS[selected_spec.model_id]
     return model_spec, resolved_impl, resolved_engine
+
+
+def derive_custom_weights_spec(
+    base_spec: ModelSpec,
+    custom_weights: str,
+    *,
+    local_model_path: Optional[str] = None,
+) -> ModelSpec:
+    """Re-key a resolved base spec onto a custom-weights identity.
+
+    Inherits the base's impl/device/engine/env_vars/image but sets model_name to
+    basename(custom_weights), hf_model_repo/hf_weights_repo to the label, and
+    regenerates model_id. Since all persistent paths (docker volume, tt-metal
+    cache, weights dir) key off model_name, the derived spec gets its own subtree.
+
+    custom_weights must be a valid HF repo id when downloading from the Hub, but
+    can be any label when paired with --host-weights-dir (bytes come from disk).
+
+    vllm_args: served_model_name always exposes the label on the API. model is
+    set to local_model_path (the container weights mount) when given so weights
+    load offline; otherwise it stays the label, which is the HF repo id.
+    """
+    if not custom_weights or not custom_weights.strip():
+        raise ValueError("custom_weights must be a non-empty string")
+
+    custom_weights = custom_weights.strip()
+    model_name = model_weights_to_model_name(custom_weights)
+    model_id = get_model_id(
+        base_spec.impl.impl_name, model_name, base_spec.device_type.name.lower()
+    )
+
+    # __post_init__ baked vllm_args["model"] from the base hf_model_repo; rebuild it.
+    new_vllm_args = dict(base_spec.device_model_spec.vllm_args)
+    new_vllm_args["model"] = local_model_path if local_model_path else custom_weights
+    new_vllm_args["served_model_name"] = custom_weights
+    new_device_model_spec = replace(
+        base_spec.device_model_spec, vllm_args=new_vllm_args
+    )
+
+    return replace(
+        base_spec,
+        model_id=model_id,
+        model_name=model_name,
+        hf_model_repo=custom_weights,
+        hf_weights_repo=custom_weights,
+        device_model_spec=new_device_model_spec,
+    )
