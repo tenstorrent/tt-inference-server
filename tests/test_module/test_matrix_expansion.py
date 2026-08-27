@@ -207,7 +207,7 @@ class TestVideoMatrixExpansion:
     # Expected VideoGenerationI2VTest targets per expanded suite. p150x4 keeps
     # the base poll_timeout (no per-device override).
     WAN_I2V_IMAGE_URL = (
-        "https://pixnio.com/free-images/2019/01/10/2019-01-10-10-11-54.jpg"
+        "https://images-assets.nasa.gov/image/PIA00342/PIA00342~medium.jpg"
     )
     WAN_I2V_TARGETS = {
         "wan-i2v-t3k": {

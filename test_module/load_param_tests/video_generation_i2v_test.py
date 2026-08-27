@@ -95,8 +95,8 @@ class VideoGenerationI2VTest(BaseTest):
             image_prompt = image_url
             image_source = "url"
             prompt = (
-                "The silver sports car accelerates smoothly down the country "
-                "road as the camera tracks alongside it, cinematic motion"
+                "The Earth and Moon slowly rotate in space as the camera glides "
+                "past them, cinematic orbital motion"
             )
             parsed_image_url = urlsplit(image_url)
             logger.info(
