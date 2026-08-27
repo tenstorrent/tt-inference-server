@@ -2,6 +2,8 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
+import re
+
 import workflows.model_spec as model_spec_module
 from workflows.utils import get_repo_root_path
 from workflows.model_spec import (
@@ -267,7 +269,7 @@ def _dev_llm_spec_map():
 @pytest.mark.parametrize(
     "model_name,expected_context,expected_native_impl",
     [
-        ("Qwen3.6-27B", 4096, "qwen36-blackhole-b8"),
+        ("Qwen3.6-27B", 8192, "qwen36-blackhole-b8"),
         ("gemma-4-31B-it", 1024, "tt-transformers"),
     ],
 )
@@ -308,6 +310,9 @@ def test_quetzal_dev_specs_use_content_store_contract(monkeypatch, model_name):
     )
     assert env["QZ_MODELS_ROOT"] == package_root
     assert env["QUETZAL_PACKAGE_ID"] == package_root.rsplit("/", 1)[-1]
+    assert re.fullmatch(
+        r"[0-9a-f]{64}", env["QUETZAL_BUNDLE_MANIFEST_SHA256"]
+    )
     for key in (
         "QZ_QUALIFICATION_MANIFEST",
         "QUETZAL_PREFILL_GENERATED_PY",

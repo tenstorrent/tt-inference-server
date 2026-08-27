@@ -49,7 +49,8 @@ RUN test "$(cat /tmp/quetzal-source/.tt-quetzal-commit)" = "${TT_QUETZAL_COMMIT_
         && cmp /tmp/pip-check.before /tmp/pip-check.after \
         && rm /tmp/pip-check.before /tmp/pip-check.after \
         && grep -q '^def validate_quetzal_runtime_contract' /home/container_app_user/app/src/run_vllm_api_server.py \
-        && grep -q 'sha256-91945862b1237a89d10f241a376068d8b995dd2f9add7ed2b0bfb2801f1399a8' /home/container_app_user/model_specs/model_spec.json \
+        && grep -q '78497e43312c9d6abc07192fc7852f7eb3f315b0fddd192231be33f1e09dd34c' /home/container_app_user/model_specs/model_spec.json \
+        && grep -q '152a50f9a06a66e3f64f822e88b4a00bf76fbe9d02cf53094d702751970be8d0' /home/container_app_user/model_specs/model_spec.json \
         && python -c \"import importlib.metadata as m; eps=[e for e in m.entry_points(group='vllm.general_plugins') if e.name == 'quetzal_model_registry' and e.value == 'tt_quetzalcoatlus.vllm_plugin:register']; assert len(eps) == 1, eps; import serving.artifact_bundle\"" \
     && rm -rf /tmp/quetzal-source
 
