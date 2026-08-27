@@ -82,7 +82,7 @@ class MiniMaxDownload:
 def resolve_server_api_key() -> str:
     """Resolve the literal bearer token used by the media server."""
 
-    for env_name in ("API_KEY", "MINIMAX_API_KEY", "MINIMAX_MOCK_API_KEY"):
+    for env_name in ("API_KEY", "MINIMAX_API_KEY"):
         value = os.getenv(env_name)
         if value:
             return value

@@ -277,7 +277,8 @@ class TestVideoMatrixExpansion:
         templates = [tc["template"] for tc in suite["test_cases"]]
         assert templates == [
             "MiniMaxH3CreateContractTest",
-            "MiniMaxH3LifecycleDeleteTest",
+            "MiniMaxH3LifecycleDownloadTest",
+            "MiniMaxH3CancelLifecycleTest",
             "MiniMaxH3VideoQualityTest",
         ]
 
