@@ -100,7 +100,6 @@ def build_target_checks(
         if tier_target is None:
             continue
         tolerance = getattr(tier_target, "tolerance", 0.0) or 0.0
-        tolerances = getattr(tier_target, "tolerances", None) or {}
         tier: Dict[str, Any] = {}
         for field, target_attr, lower_is_better in _METRIC_SPECS:
             target_value = getattr(tier_target, target_attr, None)
@@ -115,9 +114,7 @@ def build_target_checks(
                 continue
             ratio = actual / target_value
             tier[f"{field}_ratio"] = ratio
-            tier[f"{field}_check"] = _check(
-                ratio, tolerances.get(target_attr, tolerance), lower_is_better
-            )
+            tier[f"{field}_check"] = _check(ratio, tolerance, lower_is_better)
         target_checks[tier_name] = tier
     return target_checks, _verdict(target_checks)
 

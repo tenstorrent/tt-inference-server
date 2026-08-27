@@ -106,22 +106,6 @@ class TestBuildTargetChecks:
         assert checks["target"]["tput_check"] == ReportCheckTypes.PASS
         assert verdict == ReportCheckTypes.PASS
 
-    def test_per_metric_tolerance_overrides_the_tier_default(self):
-        # Requirements-driven mix: a reference measurement (5%) beside a
-        # contractual SLO (exact).
-        targets = {
-            "target": PerformanceTarget(
-                ttft_ms=100.0,
-                tpot_ms=20.0,
-                tolerance=0.0,
-                tolerances={"ttft_ms": 0.05},
-            )
-        }
-        record = _record(ttft=104.0, tpot=20.1)
-        checks, _ = build_target_checks(targets, record)
-        assert checks["target"]["ttft_check"] == ReportCheckTypes.PASS  # within 5%
-        assert checks["target"]["tpot_check"] == ReportCheckTypes.FAIL  # 20.1 > 20
-
     def test_undefined_target_and_unmeasured_metric_are_na_not_failures(self):
         targets = {"target": PerformanceTarget(ttft_ms=89.0)}  # no tput targets
         checks, _ = build_target_checks(targets, {"mean_ttft_ms": None})
