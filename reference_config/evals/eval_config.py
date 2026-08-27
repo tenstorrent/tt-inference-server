@@ -707,6 +707,7 @@ _eval_config_list = [
                     "do_sample": "true",
                     "temperature": 1.0,
                     "top_p": 0.95,
+                    "top_k": 1,
                     "stream": "true",
                 },
                 limit_samples_map={
