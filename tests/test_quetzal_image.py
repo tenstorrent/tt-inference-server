@@ -1,3 +1,4 @@
+import os
 import subprocess
 from pathlib import Path
 
@@ -25,7 +26,10 @@ def test_quetzal_is_installed_non_editably_and_entry_point_is_verified():
     assert "quetzal_model_registry" in source
     assert "tt_quetzalcoatlus.vllm_plugin:register" in source
     assert "import serving.artifact_bundle" in source
-    assert 'test "${resolved_commit}" = "${TT_QUETZAL_COMMIT_SHA}"' in source
+    assert 'cat /tmp/quetzal-source/.tt-quetzal-commit' in source
+    assert "COPY --from=quetzal_src" in source
+    assert "git fetch" not in source
+    assert "git clone" not in source
 
 
 def test_build_wrapper_requires_digest_base_and_full_quetzal_commit():
@@ -38,6 +42,7 @@ def test_build_wrapper_requires_digest_base_and_full_quetzal_commit():
     )
     assert "IMAGE@sha256:DIGEST" in help_result.stdout
     assert "FULL_COMMIT_SHA" in help_result.stdout
+    assert "PATH_TO_CLEAN_GIT_CHECKOUT" in help_result.stdout
 
 
 def test_build_wrapper_refuses_mutable_base_before_invoking_docker():
@@ -53,3 +58,58 @@ def test_build_wrapper_refuses_mutable_base_before_invoking_docker():
     )
     assert result.returncode == 2
     assert "pinned by an sha256 digest" in result.stderr
+
+
+def _git_source(tmp_path):
+    source = tmp_path / "quetzal"
+    source.mkdir()
+    subprocess.run(["git", "init", "-q", str(source)], check=True)
+    (source / "pyproject.toml").write_text("[project]\nname='fixture'\nversion='0'\n")
+    subprocess.run(["git", "-C", str(source), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(source), "-c", "user.name=Test",
+                    "-c", "user.email=test@example.invalid", "commit", "-qm", "fixture"],
+                   check=True)
+    commit = subprocess.run(["git", "-C", str(source), "rev-parse", "HEAD"],
+                            check=True, text=True, capture_output=True).stdout.strip()
+    return source, commit
+
+
+def test_build_wrapper_exports_clean_exact_commit_as_named_context(tmp_path):
+    source, commit = _git_source(tmp_path)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    capture = tmp_path / "docker-args"
+    docker = bin_dir / "docker"
+    docker.write_text("#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$CAPTURE\"\n")
+    docker.chmod(0o755)
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}",
+           "CAPTURE": str(capture)}
+    subprocess.run([
+        "bash", str(BUILD_SCRIPT),
+        "--base-image", f"example.invalid/ttis@sha256:{'1' * 64}",
+        "--quetzal-source", str(source), "--quetzal-commit", commit,
+        "--tag", "example.invalid/quetzal:test",
+    ], check=True, env=env)
+    args = capture.read_text().splitlines()
+    assert args[:3] == ["buildx", "build", "--load"]
+    context = args[args.index("--build-context") + 1]
+    assert context.startswith("quetzal_src=")
+    # The wrapper cleans the ephemeral export after the build command returns.
+    assert not Path(context.split("=", 1)[1]).exists()
+
+
+def test_build_wrapper_rejects_dirty_or_wrong_commit_source(tmp_path):
+    source, commit = _git_source(tmp_path)
+    common = ["bash", str(BUILD_SCRIPT),
+              "--base-image", f"example.invalid/ttis@sha256:{'1' * 64}",
+              "--quetzal-source", str(source), "--tag", "unused"]
+    (source / "untracked").write_text("dirty")
+    result = subprocess.run(common + ["--quetzal-commit", commit], text=True,
+                            capture_output=True)
+    assert result.returncode == 2
+    assert "no tracked, staged, or untracked changes" in result.stderr
+    (source / "untracked").unlink()
+    result = subprocess.run(common + ["--quetzal-commit", "a" * 40], text=True,
+                            capture_output=True)
+    assert result.returncode == 2
+    assert "does not match" in result.stderr

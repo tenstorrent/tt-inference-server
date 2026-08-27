@@ -58,6 +58,7 @@ development derivative from a digest-pinned base and an exact Quetzal commit:
 ```shell
 scripts/build_quetzal_dev_image.sh \
   --base-image ghcr.io/tenstorrent/tt-inference-server/<image>@sha256:<digest> \
+  --quetzal-source /path/to/tt-quetzalcoatlus \
   --quetzal-commit <full-40-character-commit> \
   --tag <registry>/ttis-quetzal:<tt-metal>-<vllm>-<quetzal>
 ```
@@ -67,6 +68,10 @@ source path, checks the resulting environment, and verifies the exact
 `vllm.general_plugins` entry point during the build. It deliberately derives
 from, rather than conditionally changing, the
 standard image so the ordinary tt-metal/vLLM image identity stays unambiguous.
+The wrapper refuses a dirty checkout or a HEAD different from the requested
+commit, exports that commit with `git archive`, and supplies the export as a
+named BuildKit context. No `.git` directory, token, credential helper, SSH agent,
+or network repository URL is forwarded into the build.
 Generated-provider registration remains fail-closed: a missing plugin or model
 package must never select `tt_transformers`.
 

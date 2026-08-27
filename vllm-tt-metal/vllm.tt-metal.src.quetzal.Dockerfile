@@ -8,34 +8,29 @@ ARG TT_INFERENCE_SERVER_BASE_IMAGE=scratch
 FROM ${TT_INFERENCE_SERVER_BASE_IMAGE}
 
 ARG TT_INFERENCE_SERVER_BASE_IMAGE
-ARG TT_QUETZAL_REPO_URL=https://github.com/tenstorrent/tt-quetzalcoatlus.git
 ARG TT_QUETZAL_COMMIT_SHA
 
-LABEL org.opencontainers.image.quetzal.source=${TT_QUETZAL_REPO_URL} \
+LABEL org.opencontainers.image.quetzal.source=https://github.com/tenstorrent/tt-quetzalcoatlus \
       org.opencontainers.image.quetzal.revision=${TT_QUETZAL_COMMIT_SHA}
 
 USER root
 RUN printf '%s' "${TT_INFERENCE_SERVER_BASE_IMAGE}" \
         | grep -Eq '^.+@sha256:[0-9a-f]{64}$' \
     && printf '%s' "${TT_QUETZAL_COMMIT_SHA}" \
-        | grep -Eq '^[0-9a-f]{40}$' \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends git \
-    && rm -rf /var/lib/apt/lists/*
+        | grep -Eq '^[0-9a-f]{40}$'
+
+# ``quetzal_src`` is a named BuildKit context exported from the exact clean
+# local commit by the wrapper. It contains neither .git nor authentication
+# material. The marker is generated after git-archive and checked in-image.
+COPY --from=quetzal_src --chown=container_app_user:container_app_user / /tmp/quetzal-source/
 
 USER container_app_user
-RUN test -n "${TT_QUETZAL_COMMIT_SHA}" \
-    && build_root="$(mktemp -d)" \
-    && git -C "${build_root}" init -q \
-    && git -C "${build_root}" remote add origin "${TT_QUETZAL_REPO_URL}" \
-    && git -C "${build_root}" fetch --depth 1 origin "${TT_QUETZAL_COMMIT_SHA}" \
-    && git -C "${build_root}" checkout --detach FETCH_HEAD \
-    && resolved_commit="$(git -C "${build_root}" rev-parse HEAD)" \
+RUN test "$(cat /tmp/quetzal-source/.tt-quetzal-commit)" = "${TT_QUETZAL_COMMIT_SHA}" \
+    && rm /tmp/quetzal-source/.tt-quetzal-commit \
     && /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
-        && uv pip install '${build_root}' \
+        && uv pip install /tmp/quetzal-source \
         && uv pip check \
         && python -c \"import importlib.metadata as m; eps=[e for e in m.entry_points(group='vllm.general_plugins') if e.name == 'quetzal_model_registry' and e.value == 'tt_quetzalcoatlus.vllm_plugin:register']; assert len(eps) == 1, eps; import serving.artifact_bundle\"" \
-    && test "${resolved_commit}" = "${TT_QUETZAL_COMMIT_SHA}" \
-    && rm -rf "${build_root}"
+    && rm -rf /tmp/quetzal-source
 
 ENV TT_QUETZAL_COMMIT_SHA=${TT_QUETZAL_COMMIT_SHA}
