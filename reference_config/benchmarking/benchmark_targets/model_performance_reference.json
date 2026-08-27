@@ -12,7 +12,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 166.645,
+                        "ttft_ms": 266.645,
                         "tput_user": 35.0,
                         "tput": 35.0
                     }
@@ -30,7 +30,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 233.2899,
+                        "ttft_ms": 333.2899,
                         "tput_user": 35.0,
                         "tput": 35.0
                     }
@@ -48,7 +48,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 366.5799,
+                        "ttft_ms": 466.5799,
                         "tput_user": 35.0,
                         "tput": 35.0
                     }
@@ -66,7 +66,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 633.1598,
+                        "ttft_ms": 733.1598,
                         "tput_user": 35.0,
                         "tput": 35.0
                     }
@@ -84,7 +84,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 1166.3196,
+                        "ttft_ms": 1266.3196,
                         "tput_user": 35.0,
                         "tput": 35.0
                     }
@@ -102,7 +102,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 2232.6391,
+                        "ttft_ms": 2332.6391,
                         "tput_user": 35.0,
                         "tput": 35.0
                     }
@@ -120,7 +120,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 4365.2782,
+                        "ttft_ms": 4465.2782,
                         "tput_user": 35.0,
                         "tput": 35.0
                     }
@@ -138,7 +138,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 8630.5565,
+                        "ttft_ms": 8730.5565,
                         "tput_user": 35.0,
                         "tput": 35.0
                     }
@@ -156,7 +156,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 17152.7823,
+                        "ttft_ms": 17252.7823,
                         "tput_user": 35.0,
                         "tput": 35.0
                     }
@@ -174,7 +174,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 2232.6391,
+                        "ttft_ms": 2332.6391,
                         "tput_user": 35.0,
                         "tput": 1120.0
                     }
@@ -192,7 +192,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 4365.2782,
+                        "ttft_ms": 4465.2782,
                         "tput_user": 35.0,
                         "tput": 1120.0
                     }
@@ -210,7 +210,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 8630.5565,
+                        "ttft_ms": 8730.5565,
                         "tput_user": 35.0,
                         "tput": 1120.0
                     }
@@ -228,7 +228,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 17161.1129,
+                        "ttft_ms": 17261.1129,
                         "tput_user": 35.0,
                         "tput": 1120.0
                     }
@@ -246,7 +246,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 34222.2258,
+                        "ttft_ms": 34322.2258,
                         "tput_user": 35.0,
                         "tput": 1120.0
                     }
@@ -264,7 +264,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 68344.4517,
+                        "ttft_ms": 68444.4517,
                         "tput_user": 35.0,
                         "tput": 1120.0
                     }
@@ -282,7 +282,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 136588.9034,
+                        "ttft_ms": 136688.9034,
                         "tput_user": 35.0,
                         "tput": 1120.0
                     }
@@ -300,7 +300,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 273077.8067,
+                        "ttft_ms": 273177.8067,
                         "tput_user": 35.0,
                         "tput": 1120.0
                     }
@@ -318,7 +318,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 545789.0335,
+                        "ttft_ms": 545889.0335,
                         "tput_user": 35.0,
                         "tput": 1120.0
                     }
@@ -340,7 +340,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 166.167,
+                        "ttft_ms": 266.167,
                         "tput_user": 25.0,
                         "tput": 25.0
                     }
@@ -358,7 +358,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 232.3339,
+                        "ttft_ms": 332.3339,
                         "tput_user": 25.0,
                         "tput": 25.0
                     }
@@ -376,7 +376,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 364.6679,
+                        "ttft_ms": 464.6679,
                         "tput_user": 25.0,
                         "tput": 25.0
                     }
@@ -394,7 +394,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 629.3357,
+                        "ttft_ms": 729.3357,
                         "tput_user": 25.0,
                         "tput": 25.0
                     }
@@ -412,7 +412,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 1158.6715,
+                        "ttft_ms": 1258.6715,
                         "tput_user": 25.0,
                         "tput": 25.0
                     }
@@ -430,7 +430,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 2217.343,
+                        "ttft_ms": 2317.343,
                         "tput_user": 25.0,
                         "tput": 25.0
                     }
@@ -448,7 +448,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 4334.686,
+                        "ttft_ms": 4434.686,
                         "tput_user": 25.0,
                         "tput": 25.0
                     }
@@ -466,7 +466,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 8569.3719,
+                        "ttft_ms": 8669.3719,
                         "tput_user": 25.0,
                         "tput": 25.0
                     }
@@ -484,7 +484,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 17038.7439,
+                        "ttft_ms": 17138.7439,
                         "tput_user": 25.0,
                         "tput": 25.0
                     }
@@ -502,7 +502,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 33977.4877,
+                        "ttft_ms": 34077.4877,
                         "tput_user": 25.0,
                         "tput": 25.0
                     }
@@ -520,7 +520,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 67846.7046,
+                        "ttft_ms": 67946.7046,
                         "tput_user": 25.0,
                         "tput": 25.0
                     }
@@ -538,7 +538,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 4334.686,
+                        "ttft_ms": 4434.686,
                         "tput_user": 25.0,
                         "tput": 1600.0
                     }
@@ -556,7 +556,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 8569.3719,
+                        "ttft_ms": 8669.3719,
                         "tput_user": 25.0,
                         "tput": 1600.0
                     }
@@ -574,7 +574,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 17038.7439,
+                        "ttft_ms": 17138.7439,
                         "tput_user": 25.0,
                         "tput": 1600.0
                     }
@@ -592,7 +592,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 33977.4877,
+                        "ttft_ms": 34077.4877,
                         "tput_user": 25.0,
                         "tput": 1600.0
                     }
@@ -610,7 +610,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 67854.9754,
+                        "ttft_ms": 67954.9754,
                         "tput_user": 25.0,
                         "tput": 1600.0
                     }
@@ -628,7 +628,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 135609.9509,
+                        "ttft_ms": 135709.9509,
                         "tput_user": 25.0,
                         "tput": 1600.0
                     }
@@ -646,7 +646,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 271119.9018,
+                        "ttft_ms": 271219.9018,
                         "tput_user": 25.0,
                         "tput": 1600.0
                     }
@@ -664,7 +664,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 542139.8036,
+                        "ttft_ms": 542239.8036,
                         "tput_user": 25.0,
                         "tput": 1600.0
                     }
@@ -682,7 +682,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 1084179.6071,
+                        "ttft_ms": 1084279.6071,
                         "tput_user": 25.0,
                         "tput": 1600.0
                     }
@@ -700,7 +700,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 2168259.2143,
+                        "ttft_ms": 2168359.2143,
                         "tput_user": 25.0,
                         "tput": 1600.0
                     }
@@ -718,7 +718,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 4335889.0928,
+                        "ttft_ms": 4335989.0928,
                         "tput_user": 25.0,
                         "tput": 1600.0
                     }

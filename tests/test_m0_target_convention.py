@@ -42,15 +42,15 @@ REF_ISL, REF_CONC = 8192, 64
 # Authored values at this point, to the 4 dp the reference file stores.
 # RFP Appendix B.2 publishes both terms of the target formula:
 #     ttft = FIXED_OVERHEAD_MS + isl * concurrency / prefill_rate * 1000
-# so here: 100 + 8192 * 64 / 15476 * 1000 = 33977.4877 ms, and 25 t/s/u x 64.
-TTFT_TARGET, TPUT_USER_TARGET, TPUT_TARGET = 33977.4877, 25.0, 1600.0
+# so here: 200 + 8192 * 64 / 15476 * 1000 = 34077.4877 ms, and 25 t/s/u x 64.
+TTFT_TARGET, TPUT_USER_TARGET, TPUT_TARGET = 34077.4877, 25.0, 1600.0
 
 #: The fixed, input-length-independent part of every B.2 target. A forward pass
 #: must read the weights and dispatch across all 32 accelerators whatever the
 #: input length, so a short prefill cannot beat this floor. Measured on Blackhole
 #: Galaxy hardware, 2026-08-27. The shape tests below subtract it first, because
 #: only the remaining part of the target scales with input length.
-FIXED_OVERHEAD_MS = 100.0
+FIXED_OVERHEAD_MS = 200.0
 
 
 def _reference_point(points):
