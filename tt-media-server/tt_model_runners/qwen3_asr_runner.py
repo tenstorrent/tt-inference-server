@@ -311,14 +311,21 @@ class TTQwen3AsrRunner(BaseMetalDeviceRunner):
         return [AudioTextResponse(text=text, duration=request._duration)]
 
     def _run_segments(self, request: AudioProcessingRequest):
-        """VAD/diarization segments: transcribe each, keep speaker labels + spans."""
-        sr = self.settings.default_sample_rate
+        """VAD/diarization segments: transcribe each, keep speaker labels + spans.
+
+        AudioService.create_segment_request() has ALREADY cropped _audio_array to
+        this segment's [start:end] before dispatch (one segment per fanned request),
+        so we must NOT slice it again by start/end: that re-indexes a clip that now
+        begins at t=0 and silently drops every non-zero-offset segment. Whisper's
+        _process_segments_non_streaming consumes request._audio_array as-is for the
+        same reason. seg start/end are kept only for the response's segment labels.
+        """
         segments, full_text, speakers = [], [], set()
         for i, seg in enumerate(request._segments):
             start_t, end_t = float(seg["start"]), float(seg["end"])
             speaker = seg.get("speaker", f"SPEAKER_{i:02d}")
-            seg_audio = request._audio_array[int(start_t * sr) : int(end_t * sr)]
-            if len(seg_audio) == 0:
+            seg_audio = request._audio_array
+            if seg_audio is None or len(seg_audio) == 0:
                 continue
             text, _nt, _td = self._infer_long(seg_audio)
             segments.append(
