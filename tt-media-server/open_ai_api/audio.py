@@ -3,11 +3,13 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import json
+import time
 from typing import Optional
 
 from config.constants import AudioTasks, ResponseFormat
 from config.settings import settings
 from domain.audio_processing_request import AudioProcessingRequest
+from domain.audio_text_response import AudioTextResponse
 from fastapi import (
     APIRouter,
     Depends,
@@ -23,6 +25,19 @@ from fastapi.responses import StreamingResponse
 from model_services.base_service import BaseService
 from resolver.service_resolver import service_resolver
 from security.api_key_checker import get_api_key
+from telemetry.audio_metrics import (
+    STATUS_ERROR,
+    STATUS_SUCCESS,
+    char_count,
+    record_stt_request,
+)
+
+# One task per deployment: settings.audio_task decides which router is live.
+STT_TASK = (
+    "translation"
+    if settings.audio_task.lower() == AudioTasks.TRANSLATE.value
+    else "transcription"
+)
 
 
 async def parse_audio_request(
@@ -113,36 +128,85 @@ async def translate_audio(
 
 
 async def handle_audio_request(audio_request, service):
-    try:
-        if not audio_request.stream:
+    start = time.perf_counter()
+    is_text_format = audio_request.response_format.lower() == ResponseFormat.TEXT.value
+
+    if not audio_request.stream:
+        status = STATUS_SUCCESS
+        result = None
+        try:
             result = await service.process_request(audio_request)
-            if audio_request.response_format.lower() == ResponseFormat.TEXT.value:
+            if is_text_format:
                 return Response(content=result.text, media_type="text/plain")
             return get_dict_response(result)
-        else:
-            try:
-                service.scheduler.check_is_model_ready()
-            except Exception:
-                raise HTTPException(status_code=405, detail="Model is not ready")
-
-            async def result_stream():
-                async for partial in service.process_streaming_request(audio_request):
-                    if (
-                        audio_request.response_format.lower()
-                        == ResponseFormat.TEXT.value
-                    ):
-                        yield partial.text + "\n"
-                    else:
-                        yield json.dumps(get_dict_response(partial)) + "\n"
-
-            media_type = (
-                "text/plain"
-                if (audio_request.response_format.lower() == ResponseFormat.TEXT.value)
-                else "application/x-ndjson"
+        except HTTPException:
+            status = STATUS_ERROR
+            raise
+        except Exception as e:
+            status = STATUS_ERROR
+            raise HTTPException(status_code=500, detail=str(e))
+        finally:
+            record_stt_request(
+                model_type=settings.model_runner,
+                task=STT_TASK,
+                streaming=False,
+                status=status,
+                duration_seconds=time.perf_counter() - start,
+                audio_seconds=getattr(result, "duration", None),
+                characters=char_count(getattr(result, "text", None)),
             )
-            return StreamingResponse(result_stream(), media_type=media_type)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+
+    try:
+        service.scheduler.check_is_model_ready()
+    except Exception:
+        record_stt_request(
+            model_type=settings.model_runner,
+            task=STT_TASK,
+            streaming=True,
+            status=STATUS_ERROR,
+            duration_seconds=time.perf_counter() - start,
+        )
+        raise HTTPException(status_code=405, detail="Model is not ready")
+
+    async def result_stream():
+        # Partial chunks carry incremental text; the final AudioTextResponse
+        # (yielded for non-text formats) carries the full transcript and the
+        # input audio duration, so it supersedes the accumulated count.
+        streamed_characters = 0
+        final_result = None
+        status = STATUS_ERROR
+        try:
+            async for partial in service.process_streaming_request(audio_request):
+                if isinstance(partial, AudioTextResponse):
+                    final_result = partial
+                else:
+                    streamed_characters += char_count(partial.text) or 0
+                if is_text_format:
+                    yield partial.text + "\n"
+                else:
+                    yield json.dumps(get_dict_response(partial)) + "\n"
+            status = STATUS_SUCCESS
+        finally:
+            if final_result is not None:
+                audio_seconds = final_result.duration
+                characters = char_count(final_result.text)
+            else:
+                # text format never yields the final result; preprocessing
+                # stored the input duration on the request.
+                audio_seconds = getattr(audio_request, "_duration", None)
+                characters = streamed_characters
+            record_stt_request(
+                model_type=settings.model_runner,
+                task=STT_TASK,
+                streaming=True,
+                status=status,
+                duration_seconds=time.perf_counter() - start,
+                audio_seconds=audio_seconds,
+                characters=characters,
+            )
+
+    media_type = "text/plain" if is_text_format else "application/x-ndjson"
+    return StreamingResponse(result_stream(), media_type=media_type)
 
 
 def get_dict_response(obj):
