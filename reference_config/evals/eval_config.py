@@ -991,8 +991,8 @@ _eval_config_list = [
                 task_name="tau3_bench_banking",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
-                    published_score=46.0,
-                    published_score_ref="https://artificialanalysis.ai/evaluations/tau3-banking?models=kimi-k3",
+                    published_score=33.4,
+                    published_score_ref="https://huggingface.co/moonshotai/Kimi-K3",
                     gpu_reference_score=27.84,
                     gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4971#issuecomment-5422026498",
                     score_func=score_task_single_key,
