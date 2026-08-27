@@ -248,13 +248,23 @@ class EvalTask:
         self._infer_data()
 
     def _infer_data(self):
+        # Must stay idempotent: resolve_task_for_device() rebuilds the task via
+        # dataclasses.replace, which re-runs __post_init__ on already-inferred
+        # field values. Every inference here must be a fixed point.
         if self.use_chat_api and self.eval_class == "local-completions":
             object.__setattr__(self, "eval_class", "local-chat-completions")
+        elif not self.use_chat_api and self.eval_class == "local-chat-completions":
+            # Symmetric reverse: a device override can flip use_chat_api off on
+            # a task whose eval_class was already inferred to the chat variant.
+            object.__setattr__(self, "eval_class", "local-completions")
 
         if self.workflow_venv_type == WorkflowVenvType.EVALS_META:
             # max_concurrent is not supported in lm-eval==0.4.3
-            object.__setattr__(self, "batch_size", self.max_concurrent)
-            object.__setattr__(self, "max_concurrent", None)
+            # Guard on max_concurrent: after the first inference it is None, so
+            # re-inference must not copy None into batch_size.
+            if self.max_concurrent is not None:
+                object.__setattr__(self, "batch_size", self.max_concurrent)
+                object.__setattr__(self, "max_concurrent", None)
             # lm-eval 0.4.4's API models default add_bos_token=False. Llama is trained with a
             # leading BOS and regresses badly without it (meta_ifeval strict-format failures,
             # ~3pt drop crossing the 0.95 gate). Force BOS on for all meta tasks.

@@ -83,3 +83,44 @@ def test_chat_api_override_reinfers_eval_class():
     assert task.eval_class == "local-completions"
     resolved = resolve_task_for_device(task, "SUPER_CLUSTER")
     assert resolved.eval_class == "local-chat-completions"
+
+
+def test_chat_api_off_override_reinfers_eval_class_back():
+    # The reverse direction: the base task's eval_class was already inferred to
+    # the chat variant; overriding use_chat_api off must flip it back.
+    task = EvalTask(
+        task_name="t",
+        use_chat_api=True,
+        device_overrides={"GALAXY": {"use_chat_api": False}},
+    )
+    assert task.eval_class == "local-chat-completions"
+    resolved = resolve_task_for_device(task, "GALAXY")
+    assert resolved.use_chat_api is False
+    assert resolved.eval_class == "local-completions"
+
+
+def test_evals_meta_override_preserves_batch_size():
+    # EVALS_META inference moves max_concurrent into batch_size (and Nones the
+    # former). Re-inference after replace() must not wipe batch_size to None —
+    # neither for an explicit batch_size override nor for an unrelated one.
+    from workflow_module.engine_types import WorkflowVenvType
+
+    task = EvalTask(
+        task_name="meta_ifeval",
+        workflow_venv_type=WorkflowVenvType.EVALS_META,
+        max_concurrent=32,
+        device_overrides={
+            "GALAXY": {"batch_size": 64},
+            "SUPER_CLUSTER": {"gen_kwargs": {"stream": "True"}},
+        },
+    )
+    assert task.batch_size == 32
+    assert task.max_concurrent is None
+
+    resolved = resolve_task_for_device(task, "GALAXY")
+    assert resolved.batch_size == 64
+    assert resolved.max_concurrent is None
+
+    resolved_unrelated = resolve_task_for_device(task, "SUPER_CLUSTER")
+    assert resolved_unrelated.batch_size == 32
+    assert resolved_unrelated.max_concurrent is None
