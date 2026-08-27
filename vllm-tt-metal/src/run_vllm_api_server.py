@@ -853,7 +853,14 @@ def main():
 
     # Step 3: Register TT models (after lookup, with correct impl_id)
     impl_id = model_spec.get("impl", {}).get("impl_id")
-    register_tt_models(impl_id)
+    if impl_id == "quetzal":
+        # Quetzal's vllm.general_plugins entry point owns model registration.
+        # Registering the native TT providers as well makes an implementation
+        # collision capable of selecting the wrong backend before the package
+        # contract can protect us.
+        logger.info("Skipping native TT model registration for impl=quetzal")
+    else:
+        register_tt_models(impl_id)
 
     # Step 4: Set runtime environment variables and vLLM server args
     set_metal_timeout_env_vars()

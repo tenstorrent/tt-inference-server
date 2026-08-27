@@ -47,6 +47,11 @@ if [[ -z "${output_tag}" ]]; then
 fi
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ttis_commit="$(git -C "${repo_root}" rev-parse HEAD)"
+if [[ ! "${ttis_commit}" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "cannot resolve exact tt-inference-server commit" >&2
+    exit 2
+fi
 quetzal_source="$(git -C "${quetzal_source}" rev-parse --show-toplevel 2>/dev/null)" || {
     echo "--quetzal-source must be a local git checkout" >&2
     exit 2
@@ -67,15 +72,21 @@ if git -C "${quetzal_source}" ls-tree -r --name-only "${quetzal_commit}" \
 fi
 
 export_root="$(mktemp -d)"
-trap 'rm -rf -- "${export_root}"' EXIT
+ttis_export_root="$(mktemp -d)"
+trap 'rm -rf -- "${export_root}" "${ttis_export_root}"' EXIT
 git -C "${quetzal_source}" archive --format=tar "${quetzal_commit}" \
     | tar -xf - -C "${export_root}"
 printf '%s\n' "${quetzal_commit}" > "${export_root}/.tt-quetzal-commit"
+git -C "${repo_root}" archive --format=tar "${ttis_commit}" \
+    vllm-tt-metal/src/run_vllm_api_server.py \
+    | tar -xf - -C "${ttis_export_root}"
 
 docker buildx build --load \
     --file "${repo_root}/vllm-tt-metal/vllm.tt-metal.src.quetzal.Dockerfile" \
     --build-context "quetzal_src=${export_root}" \
+    --build-context "ttis_src=${ttis_export_root}" \
     --build-arg "TT_INFERENCE_SERVER_BASE_IMAGE=${base_image}" \
+    --build-arg "TT_INFERENCE_SERVER_COMMIT_SHA=${ttis_commit}" \
     --build-arg "TT_QUETZAL_COMMIT_SHA=${quetzal_commit}" \
     --tag "${output_tag}" \
     "${repo_root}"

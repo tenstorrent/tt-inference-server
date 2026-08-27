@@ -6,6 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DOCKERFILE = ROOT / "vllm-tt-metal" / "vllm.tt-metal.src.quetzal.Dockerfile"
 BUILD_SCRIPT = ROOT / "scripts" / "build_quetzal_dev_image.sh"
+RUNNER = ROOT / "vllm-tt-metal" / "src" / "run_vllm_api_server.py"
 
 
 def test_quetzal_derivative_keeps_third_runtime_out_of_standard_image_identity():
@@ -13,6 +14,8 @@ def test_quetzal_derivative_keeps_third_runtime_out_of_standard_image_identity()
     assert "ARG TT_INFERENCE_SERVER_BASE_IMAGE" in source
     assert "FROM ${TT_INFERENCE_SERVER_BASE_IMAGE}" in source
     assert "ARG TT_QUETZAL_COMMIT_SHA" in source
+    assert "ARG TT_INFERENCE_SERVER_COMMIT_SHA" in source
+    assert "org.opencontainers.image.tt-inference-server.revision" in source
     assert "org.opencontainers.image.quetzal.revision" in source
     assert "@sha256:[0-9a-f]{64}" in source
     assert "^[0-9a-f]{40}$" in source
@@ -31,8 +34,22 @@ def test_quetzal_is_installed_non_editably_and_entry_point_is_verified():
     assert "import serving.artifact_bundle" in source
     assert 'cat /tmp/quetzal-source/.tt-quetzal-commit' in source
     assert "COPY --from=quetzal_src" in source
+    assert "COPY --from=ttis_src" in source
+    assert "vllm-tt-metal/src/run_vllm_api_server.py" in source
+    assert "/home/container_app_user/app/src/run_vllm_api_server.py" in source
+    assert "validate_quetzal_runtime_contract" in source
     assert "git fetch" not in source
     assert "git clone" not in source
+
+
+def test_quetzal_runner_skips_native_registration_and_validates_package():
+    source = RUNNER.read_text()
+    assert 'if impl_id == "quetzal":' in source
+    assert 'Skipping native TT model registration for impl=quetzal' in source
+    assert "validate_quetzal_runtime_contract(model_spec)" in source
+    assert source.index('if impl_id == "quetzal":') < source.index(
+        "validate_quetzal_runtime_contract(model_spec)"
+    )
 
 
 def test_build_wrapper_requires_digest_base_and_full_quetzal_commit():
@@ -97,6 +114,12 @@ def test_build_wrapper_exports_clean_exact_commit_as_named_context(tmp_path):
     assert args[:3] == ["buildx", "build", "--load"]
     context = args[args.index("--build-context") + 1]
     assert context.startswith("quetzal_src=")
+    contexts = [
+        args[index + 1] for index, value in enumerate(args)
+        if value == "--build-context"
+    ]
+    assert any(value.startswith("ttis_src=") for value in contexts)
+    assert "TT_INFERENCE_SERVER_COMMIT_SHA=" in "\n".join(args)
     # The wrapper cleans the ephemeral export after the build command returns.
     assert not Path(context.split("=", 1)[1]).exists()
 
