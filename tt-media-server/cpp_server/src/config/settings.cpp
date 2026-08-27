@@ -419,6 +419,10 @@ BlazeConfig blazeConfig() {
     cfg.prefillChunkSize = prefillChunkSize();
     cfg.enableMigration = enableMigration();
     cfg.prefillUseRemoteKvManager = prefillUseRemoteKvManager();
+    cfg.prefillKvManagerTransport = prefillKvManagerTransport();
+    cfg.kvmZmqCmdEndpoint = kvmZmqCmdEndpoint();
+    cfg.kvmZmqReplyEndpoint = kvmZmqReplyEndpoint();
+    cfg.kvmZmqTopic = kvmZmqTopic();
     cfg.migrationPrefillEndpointId = migrationPrefillEndpointId();
     cfg.migrationDecodeEndpointId = migrationDecodeEndpointId();
     cfg.specDecodeMode = specDecodeMode();
@@ -1046,6 +1050,23 @@ bool enableMigration() {
 bool prefillUseRemoteKvManager() {
   return envBool("PREFILL_USE_REMOTE_KV_MANAGER",
                  defaults::PREFILL_USE_REMOTE_KV_MANAGER);
+}
+
+std::string prefillKvManagerTransport() {
+  return envStringLower("PREFILL_KV_MANAGER_TRANSPORT",
+                        defaults::PREFILL_KV_MANAGER_TRANSPORT);
+}
+
+std::string kvmZmqCmdEndpoint() {
+  return envString("KVM_ZMQ_CMD_ENDPOINT", defaults::KVM_ZMQ_CMD_ENDPOINT);
+}
+
+std::string kvmZmqReplyEndpoint() {
+  return envString("KVM_ZMQ_REPLY_ENDPOINT", defaults::KVM_ZMQ_REPLY_ENDPOINT);
+}
+
+std::string kvmZmqTopic() {
+  return envString("KVM_ZMQ_TOPIC", defaults::KVM_ZMQ_TOPIC);
 }
 
 std::string migrationCmdQueueName() {

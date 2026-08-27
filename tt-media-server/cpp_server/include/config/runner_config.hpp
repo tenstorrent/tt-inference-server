@@ -58,6 +58,19 @@ struct BlazeConfig : RunnerConfigBase {
   // scheduler construction rather than silently downgrading to the shmem
   // path. See makeMigrationClientInterface in blaze_utils.hpp.
   bool prefillUseRemoteKvManager = defaults::PREFILL_USE_REMOTE_KV_MANAGER;
+  // Transport selector for the RemoteKVManager path: "kafka" (existing
+  // per-worker Kafka fan-out) or "zmq" (single kv_manager prefill-leader
+  // endpoint; kv_manager fans out internally). Only consulted when
+  // prefillUseRemoteKvManager is true. See makeMigrationClientInterface in
+  // blaze_utils.hpp for the dispatch logic.
+  std::string prefillKvManagerTransport =
+      defaults::PREFILL_KV_MANAGER_TRANSPORT;
+  // ZMQ endpoints for the kv_manager prefill-leader control channel. Both
+  // are ZMQ URIs (e.g. "tcp://0.0.0.0:5559"); this side binds and
+  // kv_manager connects.
+  std::string kvmZmqCmdEndpoint = defaults::KVM_ZMQ_CMD_ENDPOINT;
+  std::string kvmZmqReplyEndpoint = defaults::KVM_ZMQ_REPLY_ENDPOINT;
+  std::string kvmZmqTopic = defaults::KVM_ZMQ_TOPIC;
   uint32_t migrationPrefillEndpointId = defaults::MIGRATION_PREFILL_ENDPOINT_ID;
   uint32_t migrationDecodeEndpointId = defaults::MIGRATION_DECODE_ENDPOINT_ID;
   std::string specDecodeMode = defaults::SPEC_DECODE_MODE;

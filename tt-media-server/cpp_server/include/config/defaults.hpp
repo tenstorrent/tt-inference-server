@@ -62,6 +62,21 @@ constexpr const char* KAFKA_GROUP_ID = "migration-workers";
 constexpr const char* KAFKA_MIGRATION_REQUEST_TOPIC = "kv-migration-requests";
 constexpr const char* KAFKA_MIGRATION_ACK_TOPIC = "kv-migration-acks";
 
+// Transport for PrefillScheduler -> kv_manager control plane. "kafka"
+// preserves the existing multi-worker Kafka fan-out (workers own layer
+// partitions). "zmq" routes every burst chunk to a single kv_manager
+// prefill-leader endpoint; kv_manager owns internal fan-out from there.
+constexpr const char* PREFILL_KV_MANAGER_TRANSPORT = "kafka";
+
+// ZMQ endpoints kv_manager connects into (see plan doc: engine binds,
+// kv_manager connects). Both must be reachable by the kv_manager
+// prefill-leader; the reply endpoint is where we bind SUB for acks.
+constexpr const char* KVM_ZMQ_CMD_ENDPOINT = "tcp://0.0.0.0:5559";
+constexpr const char* KVM_ZMQ_REPLY_ENDPOINT = "tcp://0.0.0.0:5560";
+// Byte prefix used for kv_manager's SUB filter. Matches kv_manager's
+// default KV_MANAGER_ZMQ_TOPICS ("L1").
+constexpr const char* KVM_ZMQ_TOPIC = "L1";
+
 // Mooncake KV Migration configuration.
 constexpr unsigned KV_MIGRATION_TIMEOUT_MS = 60000;
 constexpr unsigned KV_MIGRATION_SWEEP_INTERVAL_MS = 5000;

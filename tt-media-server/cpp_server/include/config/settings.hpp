@@ -256,6 +256,23 @@ bool enableMigration();
  */
 bool prefillUseRemoteKvManager();
 
+/** Transport selector for the RemoteKVManager path: "kafka" or "zmq". From
+ *  PREFILL_KV_MANAGER_TRANSPORT. Default:
+ *  defaults::PREFILL_KV_MANAGER_TRANSPORT. */
+std::string prefillKvManagerTransport();
+
+/** ZMQ command endpoint that kv_manager's SUB connects into. From
+ *  KVM_ZMQ_CMD_ENDPOINT. Default: defaults::KVM_ZMQ_CMD_ENDPOINT. */
+std::string kvmZmqCmdEndpoint();
+
+/** ZMQ reply endpoint that kv_manager's PUB connects into. From
+ *  KVM_ZMQ_REPLY_ENDPOINT. Default: defaults::KVM_ZMQ_REPLY_ENDPOINT. */
+std::string kvmZmqReplyEndpoint();
+
+/** Byte-prefix topic used for kv_manager's SUB filter and echoed back on
+ *  acks. From KVM_ZMQ_TOPIC. Default: defaults::KVM_ZMQ_TOPIC. */
+std::string kvmZmqTopic();
+
 /** Migration cmd queue name from MIGRATION_CMD_QUEUE_NAME. Default:
  * defaults::MIGRATION_CMD_QUEUE_NAME. */
 std::string migrationCmdQueueName();
