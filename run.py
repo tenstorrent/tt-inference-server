@@ -869,15 +869,32 @@ def handle_secrets(runtime_config):
             "Set API_KEY in .env or as an environment variable."
         )
 
+    # HF_TOKEN is not strictly required even where it is expected: public
+    # (non-gated) models download anonymously, and setup_host.check_hf_access
+    # fails fast with an actionable error for gated repos. Never prompt for it
+    # on a non-interactive stdin (e.g. spawned by TT-Studio) — getpass() there
+    # hangs forever or dies with EOFError.
+    def _hf_token_optional(key: str) -> bool:
+        return key == "HF_TOKEN" and not sys.stdin.isatty()
+
+    _anon_warning = (
+        "HF_TOKEN is not set — proceeding without a token. Public models "
+        "download anonymously; gated models require HF_TOKEN in .env or the "
+        "environment."
+    )
+
     # load secrets from env file or prompt user to enter them once
     if not load_dotenv():
         env_vars = {}
         for key in required_env_vars:
             _val = os.getenv(key)
+            if not _val and _hf_token_optional(key):
+                logger.warning(_anon_warning)
+                continue
             if not _val:
                 _val = getpass.getpass(f"Enter your {key}: ").strip()
             env_vars[key] = _val
-        assert all([env_vars[k] for k in required_env_vars])
+        assert all([env_vars[k] for k in env_vars])
         write_dotenv(env_vars)
         # read back secrets to current process env vars
         check = load_dotenv()
@@ -885,6 +902,9 @@ def handle_secrets(runtime_config):
     else:
         logger.info("Using secrets from .env file.")
         for key in required_env_vars:
+            if not os.getenv(key) and _hf_token_optional(key):
+                logger.warning(_anon_warning)
+                continue
             assert os.getenv(key), (
                 f"Required environment variable {key} is not set in .env file."
             )

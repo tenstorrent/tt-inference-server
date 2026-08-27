@@ -1254,7 +1254,7 @@ class TestSecretsHandling:
     def test_secrets_prompting(
         self, mock_getpass, mock_write_dotenv, mock_load_dotenv, mock_runtime_config
     ):
-        """Test prompting for missing secrets."""
+        """Test prompting for missing secrets on an interactive stdin."""
         mock_runtime_config.workflow = "server"
         mock_runtime_config.docker_server = True
         mock_runtime_config.interactive = False
@@ -1263,10 +1263,43 @@ class TestSecretsHandling:
         mock_getpass.side_effect = ["test-jwt", "test-hf"]
 
         with patch.dict(os.environ, {}, clear=True):
-            handle_secrets(mock_runtime_config)
+            with patch("sys.stdin.isatty", return_value=True):
+                handle_secrets(mock_runtime_config)
 
         assert mock_getpass.call_count == 2
         mock_write_dotenv.assert_called_once()
+
+    @patch("run.load_dotenv")
+    @patch("run.write_dotenv")
+    @patch("getpass.getpass")
+    def test_hf_token_optional_on_non_interactive_stdin(
+        self, mock_getpass, mock_write_dotenv, mock_load_dotenv, mock_runtime_config
+    ):
+        """Headless run (e.g. spawned by an orchestrator) with no HF_TOKEN must
+        not prompt: public models deploy anonymously."""
+        mock_runtime_config.workflow = "server"
+        mock_runtime_config.docker_server = True
+        mock_runtime_config.interactive = False
+
+        mock_load_dotenv.side_effect = [False, True]
+
+        with patch.dict(os.environ, {"JWT_SECRET": "test-jwt"}, clear=True):
+            with patch("sys.stdin.isatty", return_value=False):
+                handle_secrets(mock_runtime_config)
+
+        mock_getpass.assert_not_called()
+        mock_write_dotenv.assert_called_once_with({"JWT_SECRET": "test-jwt"})
+
+    def test_hf_token_optional_with_dotenv_loaded(self, mock_runtime_config):
+        """A .env without HF_TOKEN must not fail a headless run."""
+        mock_runtime_config.workflow = "server"
+        mock_runtime_config.docker_server = True
+        mock_runtime_config.interactive = False
+
+        with patch("run.load_dotenv", return_value=True):
+            with patch.dict(os.environ, {"JWT_SECRET": "test-jwt"}, clear=True):
+                with patch("sys.stdin.isatty", return_value=False):
+                    handle_secrets(mock_runtime_config)
 
 
 class TestUtilityFunctions:
