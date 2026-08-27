@@ -34,6 +34,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -245,25 +246,26 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
                       "ttft_ms": 180.0,
                       "tput_user": 13.100000000000001,
-                      "tput": 1710.4,
+                      "tput": 427.6,
                       "tolerance": 0.0
                     },
                     "complete": {
                       "ttft_ms": 36.0,
                       "tput_user": 65.5,
-                      "tput": 8552.0,
+                      "tput": 2138.0,
                       "tolerance": 0.0
                     },
                     "target": {
                       "ttft_ms": 18.0,
                       "tput_user": 131.0,
-                      "tput": 17104.0,
+                      "tput": 4276.0,
                       "tolerance": 0.0
                     }
                   },
@@ -369,6 +371,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -496,25 +499,26 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
                       "ttft_ms": 510.0,
                       "tput_user": 2.7,
-                      "tput": 343.6,
+                      "tput": 85.9,
                       "tolerance": 0.0
                     },
                     "complete": {
                       "ttft_ms": 102.0,
                       "tput_user": 13.5,
-                      "tput": 1718.0,
+                      "tput": 429.5,
                       "tolerance": 0.0
                     },
                     "target": {
                       "ttft_ms": 51.0,
                       "tput_user": 27.0,
-                      "tput": 3436.0,
+                      "tput": 859.0,
                       "tolerance": 0.0
                     }
                   },
@@ -637,6 +641,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -1023,6 +1028,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -1147,6 +1153,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -1273,6 +1280,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -1484,6 +1492,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -1696,26 +1705,56 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": 4,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
-                      "ttft_ms": 620.0,
-                      "tput_user": 4.1000000000000005,
-                      "tput": 532.8000000000001,
+                      "ttft_ms": 300.0,
+                      "tput_user": 15.600000000000001,
+                      "tput": 15.600000000000001,
                       "tolerance": 0.0
                     },
                     "complete": {
-                      "ttft_ms": 124.0,
-                      "tput_user": 20.5,
-                      "tput": 2664.0,
+                      "ttft_ms": 60.0,
+                      "tput_user": 78.0,
+                      "tput": 78.0,
                       "tolerance": 0.0
                     },
                     "target": {
-                      "ttft_ms": 62.0,
-                      "tput_user": 41.0,
-                      "tput": 5328.0,
-                      "tolerance": 0.0
+                      "ttft_ms": 203.2,
+                      "tput_user": 55.1,
+                      "tput": 51.2,
+                      "tolerance": 0.05
+                    }
+                  },
+                  "target_peak_perf": {
+                    "customer_functional": 0.1,
+                    "customer_complete": 0.5,
+                    "customer_sellable": 0.8
+                  },
+                  "num_inference_steps": null,
+                  "structured_dataset": null,
+                  "structured_output_ratio": null
+                },
+                {
+                  "isl": 128,
+                  "osl": 128,
+                  "max_concurrency": 32,
+                  "num_prompts": 256,
+                  "image_height": null,
+                  "image_width": null,
+                  "images_per_prompt": null,
+                  "task_type": "text",
+                  "data_parallel": 4,
+                  "theoretical_ttft_ms": null,
+                  "theoretical_tput_user": null,
+                  "targets": {
+                    "target": {
+                      "ttft_ms": 4360.9,
+                      "tput_user": 50.4,
+                      "tput": 617.1,
+                      "tolerance": 0.05
                     }
                   },
                   "target_peak_perf": {
@@ -1836,26 +1875,56 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": 4,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
-                      "ttft_ms": 620.0,
-                      "tput_user": 4.1000000000000005,
-                      "tput": 532.8000000000001,
+                      "ttft_ms": 300.0,
+                      "tput_user": 15.600000000000001,
+                      "tput": 15.600000000000001,
                       "tolerance": 0.0
                     },
                     "complete": {
-                      "ttft_ms": 124.0,
-                      "tput_user": 20.5,
-                      "tput": 2664.0,
+                      "ttft_ms": 60.0,
+                      "tput_user": 78.0,
+                      "tput": 78.0,
                       "tolerance": 0.0
                     },
                     "target": {
-                      "ttft_ms": 62.0,
-                      "tput_user": 41.0,
-                      "tput": 5328.0,
-                      "tolerance": 0.0
+                      "ttft_ms": 203.2,
+                      "tput_user": 55.1,
+                      "tput": 51.2,
+                      "tolerance": 0.05
+                    }
+                  },
+                  "target_peak_perf": {
+                    "customer_functional": 0.1,
+                    "customer_complete": 0.5,
+                    "customer_sellable": 0.8
+                  },
+                  "num_inference_steps": null,
+                  "structured_dataset": null,
+                  "structured_output_ratio": null
+                },
+                {
+                  "isl": 128,
+                  "osl": 128,
+                  "max_concurrency": 32,
+                  "num_prompts": 256,
+                  "image_height": null,
+                  "image_width": null,
+                  "images_per_prompt": null,
+                  "task_type": "text",
+                  "data_parallel": 4,
+                  "theoretical_ttft_ms": null,
+                  "theoretical_tput_user": null,
+                  "targets": {
+                    "target": {
+                      "ttft_ms": 4360.9,
+                      "tput_user": 50.4,
+                      "tput": 617.1,
+                      "tolerance": 0.05
                     }
                   },
                   "target_peak_perf": {
@@ -1966,25 +2035,26 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
                       "ttft_ms": 620.0,
                       "tput_user": 4.1000000000000005,
-                      "tput": 133.20000000000002,
+                      "tput": 4.1000000000000005,
                       "tolerance": 0.0
                     },
                     "complete": {
                       "ttft_ms": 124.0,
                       "tput_user": 20.5,
-                      "tput": 666.0,
+                      "tput": 20.5,
                       "tolerance": 0.0
                     },
                     "target": {
                       "ttft_ms": 62.0,
                       "tput_user": 41.0,
-                      "tput": 1332.0,
+                      "tput": 41.0,
                       "tolerance": 0.0
                     }
                   },
@@ -2276,6 +2346,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -2412,6 +2483,7 @@
                   "image_width": 896,
                   "images_per_prompt": 1,
                   "task_type": "vlm",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -2690,6 +2762,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -2813,6 +2886,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -3032,6 +3106,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -3072,6 +3147,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -3199,6 +3275,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -3239,6 +3316,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -3460,6 +3538,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -3587,6 +3666,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -3808,6 +3888,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -4015,6 +4096,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -4222,6 +4304,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -4363,6 +4446,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -4501,6 +4585,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -4642,6 +4727,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -4783,6 +4869,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -5024,25 +5111,26 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
                       "ttft_ms": 1190.0,
                       "tput_user": 2.0,
-                      "tput": 244.0,
+                      "tput": 61.0,
                       "tolerance": 0.0
                     },
                     "complete": {
                       "ttft_ms": 238.0,
                       "tput_user": 10.0,
-                      "tput": 1220.0,
+                      "tput": 305.0,
                       "tolerance": 0.0
                     },
                     "target": {
                       "ttft_ms": 119.0,
                       "tput_user": 20.0,
-                      "tput": 2440.0,
+                      "tput": 610.0,
                       "tolerance": 0.0
                     }
                   },
@@ -5165,6 +5253,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -5503,6 +5592,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -5744,25 +5834,26 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
                       "ttft_ms": 1130.0,
                       "tput_user": 1.9000000000000001,
-                      "tput": 244.0,
+                      "tput": 61.0,
                       "tolerance": 0.0
                     },
                     "complete": {
                       "ttft_ms": 226.0,
                       "tput_user": 9.5,
-                      "tput": 1220.0,
+                      "tput": 305.0,
                       "tolerance": 0.0
                     },
                     "target": {
                       "ttft_ms": 113.0,
                       "tput_user": 19.0,
-                      "tput": 2440.0,
+                      "tput": 610.0,
                       "tolerance": 0.0
                     }
                   },
@@ -5885,6 +5976,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -6223,6 +6315,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -7336,6 +7429,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -7456,6 +7550,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -7578,6 +7673,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -7702,6 +7798,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -7822,6 +7919,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -7944,6 +8042,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -8068,6 +8167,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -8189,6 +8289,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -8308,6 +8409,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -8427,6 +8529,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -8548,6 +8651,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -8671,6 +8775,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -8794,6 +8899,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -8915,6 +9021,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -9038,6 +9145,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -9161,6 +9269,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -9286,6 +9395,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -9326,6 +9436,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -9527,6 +9638,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -9650,6 +9762,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -9799,6 +9912,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -9924,6 +10038,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -10057,6 +10172,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -10338,6 +10454,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -10378,6 +10495,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -10616,6 +10734,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -10739,6 +10858,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -10864,6 +10984,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -11065,6 +11186,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -11188,6 +11310,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -11421,25 +11544,26 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
                       "ttft_ms": 300.0,
                       "tput_user": 3.7,
-                      "tput": 29.6,
+                      "tput": 3.7,
                       "tolerance": 0.0
                     },
                     "complete": {
                       "ttft_ms": 60.0,
                       "tput_user": 18.5,
-                      "tput": 148.0,
+                      "tput": 18.5,
                       "tolerance": 0.0
                     },
                     "target": {
                       "ttft_ms": 30.0,
                       "tput_user": 37.0,
-                      "tput": 296.0,
+                      "tput": 37.0,
                       "tolerance": 0.0
                     }
                   },
@@ -11794,25 +11918,26 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
                       "ttft_ms": 290.0,
                       "tput_user": 7.300000000000001,
-                      "tput": 29.200000000000003,
+                      "tput": 7.300000000000001,
                       "tolerance": 0.0
                     },
                     "complete": {
                       "ttft_ms": 58.0,
                       "tput_user": 36.5,
-                      "tput": 146.0,
+                      "tput": 36.5,
                       "tolerance": 0.0
                     },
                     "target": {
                       "ttft_ms": 29.0,
                       "tput_user": 73.0,
-                      "tput": 292.0,
+                      "tput": 73.0,
                       "tolerance": 0.0
                     }
                   },
@@ -12032,6 +12157,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -12545,6 +12671,7 @@
                   "image_width": 896,
                   "images_per_prompt": 1,
                   "task_type": "vlm",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -12671,6 +12798,7 @@
                   "image_width": 896,
                   "images_per_prompt": 1,
                   "task_type": "vlm",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -12975,6 +13103,7 @@
                   "image_width": 896,
                   "images_per_prompt": 1,
                   "task_type": "vlm",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -13198,25 +13327,26 @@
                   "image_width": 896,
                   "images_per_prompt": 1,
                   "task_type": "vlm",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
                       "ttft_ms": 760.0,
                       "tput_user": 4.3,
-                      "tput": 309.20000000000005,
+                      "tput": 77.30000000000001,
                       "tolerance": 0.0
                     },
                     "complete": {
                       "ttft_ms": 152.0,
                       "tput_user": 21.5,
-                      "tput": 1546.0,
+                      "tput": 386.5,
                       "tolerance": 0.0
                     },
                     "target": {
                       "ttft_ms": 76.0,
                       "tput_user": 43.0,
-                      "tput": 3092.0,
+                      "tput": 773.0,
                       "tolerance": 0.0
                     }
                   },
@@ -13605,6 +13735,7 @@
                   "image_width": 512,
                   "images_per_prompt": 1,
                   "task_type": "vlm",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -13729,6 +13860,7 @@
                   "image_width": 512,
                   "images_per_prompt": 1,
                   "task_type": "vlm",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -13850,6 +13982,7 @@
                   "image_width": 512,
                   "images_per_prompt": 1,
                   "task_type": "vlm",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -13975,6 +14108,7 @@
                   "image_width": 512,
                   "images_per_prompt": 1,
                   "task_type": "vlm",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -14096,6 +14230,7 @@
                   "image_width": 512,
                   "images_per_prompt": 1,
                   "task_type": "vlm",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -14226,6 +14361,7 @@
                   "image_width": 512,
                   "images_per_prompt": 1,
                   "task_type": "vlm",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -14352,6 +14488,7 @@
                   "image_width": 512,
                   "images_per_prompt": 1,
                   "task_type": "vlm",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -14482,6 +14619,7 @@
                   "image_width": 512,
                   "images_per_prompt": 1,
                   "task_type": "vlm",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -14602,6 +14740,7 @@
                   "image_width": 512,
                   "images_per_prompt": 1,
                   "task_type": "vlm",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -14724,6 +14863,7 @@
                   "image_width": 512,
                   "images_per_prompt": 1,
                   "task_type": "vlm",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -14844,6 +14984,7 @@
                   "image_width": 512,
                   "images_per_prompt": 1,
                   "task_type": "vlm",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -14966,6 +15107,7 @@
                   "image_width": 512,
                   "images_per_prompt": 1,
                   "task_type": "vlm",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -15090,6 +15232,7 @@
                   "image_width": 512,
                   "images_per_prompt": 1,
                   "task_type": "vlm",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -15214,6 +15357,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "video",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -15329,6 +15473,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "video",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -15442,6 +15587,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "video",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -15559,6 +15705,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "video",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -15676,6 +15823,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "video",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -15795,6 +15943,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "video",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -15910,6 +16059,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "video",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -16023,6 +16173,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "video",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -16140,6 +16291,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "video",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -16257,6 +16409,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "video",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -16377,6 +16530,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -16490,6 +16644,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -16605,6 +16760,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -16720,6 +16876,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -16835,6 +16992,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -16948,6 +17106,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -17063,6 +17222,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -17178,6 +17338,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -17293,6 +17454,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -17408,6 +17570,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -17523,6 +17686,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -17636,6 +17800,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -17751,6 +17916,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -17866,6 +18032,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -17981,6 +18148,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -18096,6 +18264,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -18209,6 +18378,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -18322,6 +18492,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -18435,6 +18606,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -18548,6 +18720,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -18667,6 +18840,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -18782,6 +18956,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -18895,6 +19070,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -19008,6 +19184,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -19121,6 +19298,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -19234,6 +19412,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -19353,6 +19532,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -19468,6 +19648,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -19581,6 +19762,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -20068,6 +20250,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -20183,6 +20366,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "asr",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -20370,6 +20554,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "asr",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -20483,6 +20668,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "asr",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -20598,6 +20784,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "asr",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -20713,6 +20900,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "asr",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -20830,6 +21018,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "asr",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -21017,6 +21206,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "asr",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -21130,6 +21320,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "asr",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -21245,6 +21436,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "asr",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -21360,6 +21552,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "asr",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -21477,6 +21670,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "tts",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -21590,6 +21784,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "tts",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -21855,6 +22050,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "embedding",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -21980,6 +22176,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "embedding",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -22107,6 +22304,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "embedding",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -22234,6 +22432,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "embedding",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -22363,6 +22562,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "embedding",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -22484,6 +22684,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "embedding",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -22607,6 +22808,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "embedding",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -22730,6 +22932,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "embedding",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -22779,7 +22982,8 @@
                 "VLLM__MAX_NUM_BATCHED_TOKENS": "1024",
                 "VLLM__MAX_MODEL_LENGTH": "1024",
                 "VLLM__MIN_CONTEXT_LENGTH": "32",
-                "VLLM__MAX_NUM_SEQS": "1"
+                "VLLM__MAX_NUM_SEQS": "1",
+                "BENCHMARK_MAX_CONCURRENCY": "32"
               },
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
@@ -22794,7 +22998,8 @@
               "VLLM__MAX_NUM_BATCHED_TOKENS": "1024",
               "VLLM__MAX_MODEL_LENGTH": "1024",
               "VLLM__MIN_CONTEXT_LENGTH": "32",
-              "VLLM__MAX_NUM_SEQS": "1"
+              "VLLM__MAX_NUM_SEQS": "1",
+              "BENCHMARK_MAX_CONCURRENCY": "32"
             },
             "tt_metal_commit": "555f240",
             "vllm_commit": null,
@@ -22853,6 +23058,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "embedding",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -22978,6 +23184,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "embedding",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -23105,6 +23312,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "embedding",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -23232,6 +23440,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "embedding",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -23357,6 +23566,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "embedding",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -23494,6 +23704,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "embedding",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -23631,6 +23842,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "embedding",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -23768,6 +23980,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -23887,6 +24100,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -24010,6 +24224,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "cnn",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -24123,6 +24338,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "cnn",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -24240,6 +24456,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "cnn",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -24353,6 +24570,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "cnn",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -24470,6 +24688,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "cnn",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -24583,6 +24802,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "cnn",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -24700,6 +24920,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "cnn",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -24813,6 +25034,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "cnn",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -24930,6 +25152,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "cnn",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -25043,6 +25266,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "cnn",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -25160,6 +25384,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "cnn",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -25273,6 +25498,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "cnn",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -25390,6 +25616,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "cnn",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -25503,6 +25730,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "cnn",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -25620,6 +25848,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -25757,6 +25986,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "cnn",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -25870,6 +26100,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "cnn",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
