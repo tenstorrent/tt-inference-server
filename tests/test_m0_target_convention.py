@@ -39,9 +39,18 @@ M0_TOLERANCE = 0.10
 # LOADED corner. Input lengths are swept at both concurrency corners, so a point
 # is identified by (isl, concurrency) — isl alone is ambiguous.
 REF_ISL, REF_CONC = 8192, 64
-# Authored values at this point, to the 4 dp the reference file stores:
-# 8192 / (371835 * 0.50 / 64) * 1000 = 2820.0035 ms, and 25 t/s/u x 64.
-TTFT_TARGET, TPUT_USER_TARGET, TPUT_TARGET = 2820.0035, 25.0, 1600.0
+# Authored values at this point, to the 4 dp the reference file stores.
+# RFP Appendix B.2 publishes both terms of the target formula:
+#     ttft = FIXED_OVERHEAD_MS + isl * concurrency / prefill_rate * 1000
+# so here: 100 + 8192 * 64 / 15476 * 1000 = 33977.4877 ms, and 25 t/s/u x 64.
+TTFT_TARGET, TPUT_USER_TARGET, TPUT_TARGET = 33977.4877, 25.0, 1600.0
+
+#: The fixed, input-length-independent part of every B.2 target. A forward pass
+#: must read the weights and dispatch across all 32 accelerators whatever the
+#: input length, so a short prefill cannot beat this floor. Measured on Blackhole
+#: Galaxy hardware, 2026-08-27. The shape tests below subtract it first, because
+#: only the remaining part of the target scales with input length.
+FIXED_OVERHEAD_MS = 100.0
 
 
 def _reference_point(points):
@@ -296,32 +305,47 @@ def test_no_input_length_exceeds_the_context_window(key):
 
 @pytest.mark.parametrize("key", sorted(M0_SWEEPS))
 def test_ttft_targets_scale_linearly_with_input_length_at_each_corner(key):
-    """Prefill is compute-bound, so the target curve is linear in ISL. A point
-    off the line is an authoring slip, not a modelling choice."""
+    """Prefill is compute-bound, so the part of the target that scales with input
+    length is linear in it. A point off the line is an authoring slip, not a
+    modelling choice.
+
+    The fixed overhead is subtracted first. The raw target is deliberately *not*
+    proportional to input length: it has an intercept, because a forward pass must
+    read the weights and dispatch across the mesh whatever the input length. An
+    earlier revision of B.2 had no intercept, which made the shortest points
+    unreachable and would have disqualified every Partner (RFP Appendix B.2).
+    """
     _, loaded, _ = M0_SWEEPS[key]
     for conc in (1, loaded):
         pts = sorted(
             (p for p in _points(key) if p.max_concurrency == conc), key=lambda p: p.isl
         )
-        rate = pts[0].isl / pts[0].targets[M0_TIER].ttft_ms
+        prefill = lambda p: p.targets[M0_TIER].ttft_ms - FIXED_OVERHEAD_MS  # noqa: E731
+        rate = pts[0].isl / prefill(pts[0])
         for p in pts:
-            assert p.isl / p.targets[M0_TIER].ttft_ms == pytest.approx(rate, rel=1e-3)
+            assert p.isl / prefill(p) == pytest.approx(rate, rel=1e-3)
+            # And the intercept really is there, not folded into the slope.
+            assert p.targets[M0_TIER].ttft_ms > p.isl / rate
 
 
 @pytest.mark.parametrize("key", sorted(M0_SWEEPS))
 def test_the_loaded_corner_is_slower_by_exactly_the_concurrency_factor(key):
-    """The concurrent requests share one machine's fixed prefill capability."""
+    """The concurrent requests share one machine's fixed prefill capability.
+
+    The concurrency factor applies to the prefill term only. The fixed overhead is
+    paid once per request, and requests in flight pay it in parallel, so it does
+    not multiply — which is why it is subtracted from both sides here.
+    """
     _, loaded, _ = M0_SWEEPS[key]
     idle = {
-        p.isl: p.targets[M0_TIER].ttft_ms
+        p.isl: p.targets[M0_TIER].ttft_ms - FIXED_OVERHEAD_MS
         for p in _points(key)
         if p.max_concurrency == 1
     }
     for p in _points(key):
         if p.max_concurrency == loaded:
-            assert p.targets[M0_TIER].ttft_ms == pytest.approx(
-                idle[p.isl] * loaded, rel=1e-3
-            )
+            prefill = p.targets[M0_TIER].ttft_ms - FIXED_OVERHEAD_MS
+            assert prefill == pytest.approx(idle[p.isl] * loaded, rel=1e-3)
 
 
 @pytest.mark.parametrize("key", sorted(M0_SWEEPS))
