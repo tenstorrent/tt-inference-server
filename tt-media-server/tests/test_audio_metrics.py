@@ -21,10 +21,17 @@ from prometheus_client import REGISTRY
 from telemetry.audio_metrics import (
     STATUS_ERROR,
     STATUS_SUCCESS,
+    VOICE_CUSTOM,
+    VOICE_DEFAULT,
+    SttStreamProgress,
     char_count,
     record_stt_request,
     record_tts_request,
+    tts_voice_label,
 )
+
+# Handler tests read the language off the real settings object.
+LANGUAGE = settings.audio_language or "unknown"
 
 
 def sample(name, **labels):
@@ -35,8 +42,20 @@ def stt_labels(model_type, **overrides):
     labels = dict(
         model_type=model_type,
         task="transcription",
+        language=LANGUAGE,
         streaming="false",
         status=STATUS_SUCCESS,
+    )
+    labels.update(overrides)
+    return labels
+
+
+def stt_usage(model_type, **overrides):
+    labels = dict(
+        model_type=model_type,
+        task="transcription",
+        language=LANGUAGE,
+        streaming="false",
     )
     labels.update(overrides)
     return labels
@@ -56,25 +75,61 @@ class TestCharCount:
         assert char_count(MagicMock()) is None
 
 
+class TestTtsVoiceLabel:
+    def test_result_speaker_id_wins(self):
+        request = MagicMock()
+        request.speaker_id = "asked-for"
+        result = MagicMock()
+        result.speaker_id = "actually-used"
+        assert tts_voice_label(request, result) == "actually-used"
+
+    def test_request_speaker_id_fallback(self):
+        request = MagicMock()
+        request.speaker_id = "alice"
+        request.speaker_embedding = None
+        result = MagicMock()
+        result.speaker_id = None
+        assert tts_voice_label(request, result) == "alice"
+
+    def test_custom_embedding(self):
+        request = MagicMock()
+        request.speaker_id = None
+        request.speaker_embedding = b"embedding-bytes"
+        assert tts_voice_label(request, None) == VOICE_CUSTOM
+
+    def test_default(self):
+        request = MagicMock()
+        request.speaker_id = None
+        request.speaker_embedding = None
+        assert tts_voice_label(request, None) == VOICE_DEFAULT
+
+    def test_long_id_truncated(self):
+        request = MagicMock()
+        request.speaker_id = "v" * 200
+        request.speaker_embedding = None
+        assert tts_voice_label(request, None) == "v" * 64
+
+
 class TestRecordSttRequest:
     def test_success_records_usage_and_rtf(self):
         model = "stt-success"
         record_stt_request(
             model_type=model,
             task="transcription",
+            language="English",
             streaming=False,
             status=STATUS_SUCCESS,
             duration_seconds=2.0,
             audio_seconds=10.0,
             characters=120,
         )
-        labels = stt_labels(model)
+        labels = stt_labels(model, language="English")
         assert sample("tt_media_server_audio_stt_requests_total", **labels) == 1
         assert (
             sample("tt_media_server_audio_stt_request_duration_seconds_sum", **labels)
             == 2.0
         )
-        usage = dict(model_type=model, task="transcription")
+        usage = stt_usage(model, language="English")
         assert (
             sample("tt_media_server_audio_stt_input_audio_seconds_total", **usage)
             == 10.0
@@ -89,10 +144,9 @@ class TestRecordSttRequest:
         assert (
             sample("tt_media_server_audio_stt_output_characters_total", **usage) == 120
         )
-        rtf = dict(model_type=model, task="transcription", streaming="false")
-        assert sample("tt_media_server_audio_stt_realtime_factor_count", **rtf) == 1
+        assert sample("tt_media_server_audio_stt_realtime_factor_count", **usage) == 1
         assert sample(
-            "tt_media_server_audio_stt_realtime_factor_sum", **rtf
+            "tt_media_server_audio_stt_realtime_factor_sum", **usage
         ) == pytest.approx(0.2)
 
     def test_error_skips_usage(self):
@@ -100,15 +154,18 @@ class TestRecordSttRequest:
         record_stt_request(
             model_type=model,
             task="transcription",
+            language="English",
             streaming=True,
             status=STATUS_ERROR,
             duration_seconds=1.0,
             audio_seconds=30.0,
             characters=500,
         )
-        labels = stt_labels(model, streaming="true", status=STATUS_ERROR)
+        labels = stt_labels(
+            model, language="English", streaming="true", status=STATUS_ERROR
+        )
         assert sample("tt_media_server_audio_stt_requests_total", **labels) == 1
-        usage = dict(model_type=model, task="transcription")
+        usage = stt_usage(model, language="English", streaming="true")
         assert (
             sample("tt_media_server_audio_stt_input_audio_seconds_total", **usage)
             is None
@@ -123,6 +180,7 @@ class TestRecordSttRequest:
             record_stt_request(
                 model_type=model,
                 task="transcription",
+                language="English",
                 streaming=False,
                 status=STATUS_SUCCESS,
                 duration_seconds=1.0,
@@ -130,15 +188,62 @@ class TestRecordSttRequest:
                 characters=None,
             )
         assert (
-            sample("tt_media_server_audio_stt_requests_total", **stt_labels(model)) == 3
+            sample(
+                "tt_media_server_audio_stt_requests_total",
+                **stt_labels(model, language="English"),
+            )
+            == 3
         )
-        usage = dict(model_type=model, task="transcription")
+        usage = stt_usage(model, language="English")
         assert (
             sample("tt_media_server_audio_stt_input_audio_seconds_total", **usage)
             is None
         )
-        rtf = dict(model_type=model, task="transcription", streaming="false")
-        assert sample("tt_media_server_audio_stt_realtime_factor_count", **rtf) is None
+        assert (
+            sample("tt_media_server_audio_stt_realtime_factor_count", **usage) is None
+        )
+
+    def test_non_str_language_becomes_unknown(self):
+        model = "stt-bad-language"
+        record_stt_request(
+            model_type=model,
+            task="transcription",
+            language=None,
+            streaming=False,
+            status=STATUS_SUCCESS,
+            duration_seconds=1.0,
+        )
+        labels = stt_labels(model, language="unknown")
+        assert sample("tt_media_server_audio_stt_requests_total", **labels) == 1
+
+
+class TestSttStreamProgress:
+    def test_first_update_then_intervals(self):
+        model = "stt-stream-progress"
+        progress = SttStreamProgress(
+            model_type=model, task="transcription", language="English"
+        )
+        progress.on_update()
+        progress.on_update()
+        progress.on_update()
+        labels = dict(model_type=model, task="transcription", language="English")
+        assert (
+            sample("tt_media_server_audio_stt_first_partial_seconds_count", **labels)
+            == 1
+        )
+        assert (
+            sample("tt_media_server_audio_stt_partial_interval_seconds_count", **labels)
+            == 2
+        )
+
+    def test_no_updates_records_nothing(self):
+        model = "stt-stream-quiet"
+        SttStreamProgress(model_type=model, task="transcription", language="English")
+        labels = dict(model_type=model, task="transcription", language="English")
+        assert (
+            sample("tt_media_server_audio_stt_first_partial_seconds_count", **labels)
+            is None
+        )
 
 
 class TestRecordTtsRequest:
@@ -149,25 +254,37 @@ class TestRecordTtsRequest:
             response_format="wav",
             status=STATUS_SUCCESS,
             duration_seconds=1.5,
+            voice="alice",
             characters=200,
             audio_seconds=6.0,
         )
-        labels = dict(model_type=model, response_format="wav", status=STATUS_SUCCESS)
+        labels = dict(
+            model_type=model,
+            response_format="wav",
+            voice="alice",
+            status=STATUS_SUCCESS,
+        )
         assert sample("tt_media_server_audio_tts_requests_total", **labels) == 1
         assert (
-            sample("tt_media_server_audio_tts_request_duration_seconds_sum", **labels)
+            sample(
+                "tt_media_server_audio_tts_request_duration_seconds_sum",
+                model_type=model,
+                response_format="wav",
+                status=STATUS_SUCCESS,
+            )
             == 1.5
         )
-        usage = dict(model_type=model)
         assert (
-            sample("tt_media_server_audio_tts_input_characters_total", **usage) == 200
+            sample("tt_media_server_audio_tts_input_characters_total", model_type=model)
+            == 200
         )
+        voiced = dict(model_type=model, voice="alice")
         assert (
-            sample("tt_media_server_audio_tts_output_audio_seconds_total", **usage)
+            sample("tt_media_server_audio_tts_output_audio_seconds_total", **voiced)
             == 6.0
         )
         assert sample(
-            "tt_media_server_audio_tts_realtime_factor_sum", **usage
+            "tt_media_server_audio_tts_realtime_factor_sum", **voiced
         ) == pytest.approx(0.25)
 
     def test_error_skips_usage(self):
@@ -177,30 +294,44 @@ class TestRecordTtsRequest:
             response_format="mp3",
             status=STATUS_ERROR,
             duration_seconds=0.5,
+            voice="bob",
             characters=100,
             audio_seconds=2.0,
         )
-        labels = dict(model_type=model, response_format="mp3", status=STATUS_ERROR)
+        labels = dict(
+            model_type=model,
+            response_format="mp3",
+            voice="bob",
+            status=STATUS_ERROR,
+        )
         assert sample("tt_media_server_audio_tts_requests_total", **labels) == 1
-        usage = dict(model_type=model)
         assert (
-            sample("tt_media_server_audio_tts_input_characters_total", **usage) is None
+            sample("tt_media_server_audio_tts_input_characters_total", model_type=model)
+            is None
         )
         assert (
-            sample("tt_media_server_audio_tts_output_audio_seconds_total", **usage)
+            sample(
+                "tt_media_server_audio_tts_output_audio_seconds_total",
+                model_type=model,
+                voice="bob",
+            )
             is None
         )
 
-    def test_non_str_response_format_becomes_unknown(self):
+    def test_non_str_response_format_and_voice_fall_back(self):
         model = "tts-bad-format"
         record_tts_request(
             model_type=model,
             response_format=MagicMock(),
             status=STATUS_SUCCESS,
             duration_seconds=1.0,
+            voice=MagicMock(),
         )
         labels = dict(
-            model_type=model, response_format="unknown", status=STATUS_SUCCESS
+            model_type=model,
+            response_format="unknown",
+            voice=VOICE_DEFAULT,
+            status=STATUS_SUCCESS,
         )
         assert sample("tt_media_server_audio_tts_requests_total", **labels) == 1
 
@@ -221,6 +352,15 @@ def make_stt_request(stream=False, response_format="verbose_json"):
     return audio_request
 
 
+def make_tts_request(text="say this", speaker_id=None, speaker_embedding=None):
+    tts_request = MagicMock()
+    tts_request.response_format = "wav"
+    tts_request.text = text
+    tts_request.speaker_id = speaker_id
+    tts_request.speaker_embedding = speaker_embedding
+    return tts_request
+
+
 class TestHandleAudioRequestMetrics:
     @pytest.mark.asyncio
     async def test_non_streaming_success(self, model_runner_label):
@@ -233,7 +373,7 @@ class TestHandleAudioRequestMetrics:
         assert response == result.to_dict()
         labels = stt_labels(model_runner_label)
         assert sample("tt_media_server_audio_stt_requests_total", **labels) == 1
-        usage = dict(model_type=model_runner_label, task="transcription")
+        usage = stt_usage(model_runner_label)
         assert (
             sample("tt_media_server_audio_stt_input_audio_seconds_total", **usage)
             == 12.0
@@ -253,7 +393,7 @@ class TestHandleAudioRequestMetrics:
         assert exc_info.value.status_code == 500
         labels = stt_labels(model_runner_label, status=STATUS_ERROR)
         assert sample("tt_media_server_audio_stt_requests_total", **labels) == 1
-        usage = dict(model_type=model_runner_label, task="transcription")
+        usage = stt_usage(model_runner_label)
         assert (
             sample("tt_media_server_audio_stt_input_audio_seconds_total", **usage)
             is None
@@ -278,7 +418,7 @@ class TestHandleAudioRequestMetrics:
         assert json.loads(chunks[-1]) == final.to_dict()
         labels = stt_labels(model_runner_label, streaming="true")
         assert sample("tt_media_server_audio_stt_requests_total", **labels) == 1
-        usage = dict(model_type=model_runner_label, task="transcription")
+        usage = stt_usage(model_runner_label, streaming="true")
         assert (
             sample("tt_media_server_audio_stt_input_audio_seconds_total", **usage)
             == 5.0
@@ -287,6 +427,24 @@ class TestHandleAudioRequestMetrics:
         assert sample(
             "tt_media_server_audio_stt_output_characters_total", **usage
         ) == len("one two")
+        # Three emitted updates: one first-partial, two intervals.
+        stream_labels = dict(
+            model_type=model_runner_label, task="transcription", language=LANGUAGE
+        )
+        assert (
+            sample(
+                "tt_media_server_audio_stt_first_partial_seconds_count",
+                **stream_labels,
+            )
+            == 1
+        )
+        assert (
+            sample(
+                "tt_media_server_audio_stt_partial_interval_seconds_count",
+                **stream_labels,
+            )
+            == 2
+        )
 
     @pytest.mark.asyncio
     async def test_streaming_text_format_falls_back_to_request_duration(
@@ -305,7 +463,7 @@ class TestHandleAudioRequestMetrics:
         chunks = [chunk async for chunk in response.body_iterator]
 
         assert chunks == ["one \n", "two\n"]
-        usage = dict(model_type=model_runner_label, task="transcription")
+        usage = stt_usage(model_runner_label, streaming="true")
         assert (
             sample("tt_media_server_audio_stt_input_audio_seconds_total", **usage)
             == 8.0
@@ -331,10 +489,21 @@ class TestHandleAudioRequestMetrics:
 
         labels = stt_labels(model_runner_label, streaming="true", status=STATUS_ERROR)
         assert sample("tt_media_server_audio_stt_requests_total", **labels) == 1
-        usage = dict(model_type=model_runner_label, task="transcription")
+        usage = stt_usage(model_runner_label, streaming="true")
         assert (
             sample("tt_media_server_audio_stt_input_audio_seconds_total", **usage)
             is None
+        )
+        # The one chunk that did reach the client still counts as first partial.
+        stream_labels = dict(
+            model_type=model_runner_label, task="transcription", language=LANGUAGE
+        )
+        assert (
+            sample(
+                "tt_media_server_audio_stt_first_partial_seconds_count",
+                **stream_labels,
+            )
+            == 1
         )
 
     @pytest.mark.asyncio
@@ -361,28 +530,30 @@ class TestHandleTtsRequestMetrics:
         result.output_bytes = b"riff"
         result.format = "wav"
         result.duration = 4.0
+        result.speaker_id = "alice"
         service = MagicMock()
         service.process_request = AsyncMock(return_value=result)
 
-        tts_request = MagicMock()
-        tts_request.response_format = "wav"
-        tts_request.text = "say this"
-
-        response = await handle_tts_request(tts_request, service)
+        response = await handle_tts_request(make_tts_request(), service)
 
         assert response.body == b"riff"
         labels = dict(
             model_type=model_runner_label,
             response_format="wav",
+            voice="alice",
             status=STATUS_SUCCESS,
         )
         assert sample("tt_media_server_audio_tts_requests_total", **labels) == 1
-        usage = dict(model_type=model_runner_label)
         assert sample(
-            "tt_media_server_audio_tts_input_characters_total", **usage
+            "tt_media_server_audio_tts_input_characters_total",
+            model_type=model_runner_label,
         ) == len("say this")
         assert (
-            sample("tt_media_server_audio_tts_output_audio_seconds_total", **usage)
+            sample(
+                "tt_media_server_audio_tts_output_audio_seconds_total",
+                model_type=model_runner_label,
+                voice="alice",
+            )
             == 4.0
         )
 
@@ -391,21 +562,21 @@ class TestHandleTtsRequestMetrics:
         service = MagicMock()
         service.process_request = AsyncMock(side_effect=RuntimeError("boom"))
 
-        tts_request = MagicMock()
-        tts_request.response_format = "wav"
-        tts_request.text = "say this"
-
         with pytest.raises(HTTPException) as exc_info:
-            await handle_tts_request(tts_request, service)
+            await handle_tts_request(make_tts_request(), service)
 
         assert exc_info.value.status_code == 500
         labels = dict(
             model_type=model_runner_label,
             response_format="wav",
+            voice=VOICE_DEFAULT,
             status=STATUS_ERROR,
         )
         assert sample("tt_media_server_audio_tts_requests_total", **labels) == 1
-        usage = dict(model_type=model_runner_label)
         assert (
-            sample("tt_media_server_audio_tts_input_characters_total", **usage) is None
+            sample(
+                "tt_media_server_audio_tts_input_characters_total",
+                model_type=model_runner_label,
+            )
+            is None
         )

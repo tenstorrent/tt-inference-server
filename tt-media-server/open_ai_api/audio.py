@@ -28,6 +28,7 @@ from security.api_key_checker import get_api_key
 from telemetry.audio_metrics import (
     STATUS_ERROR,
     STATUS_SUCCESS,
+    SttStreamProgress,
     char_count,
     record_stt_request,
 )
@@ -38,6 +39,12 @@ STT_TASK = (
     if settings.audio_task.lower() == AudioTasks.TRANSLATE.value
     else "transcription"
 )
+
+
+def _stt_language() -> str:
+    """Configured input language; one value per deployment (whisper_runner
+    labels its encoder metrics the same way)."""
+    return settings.audio_language or "unknown"
 
 
 async def parse_audio_request(
@@ -149,6 +156,7 @@ async def handle_audio_request(audio_request, service):
             record_stt_request(
                 model_type=settings.model_runner,
                 task=STT_TASK,
+                language=_stt_language(),
                 streaming=False,
                 status=status,
                 duration_seconds=time.perf_counter() - start,
@@ -162,6 +170,7 @@ async def handle_audio_request(audio_request, service):
         record_stt_request(
             model_type=settings.model_runner,
             task=STT_TASK,
+            language=_stt_language(),
             streaming=True,
             status=STATUS_ERROR,
             duration_seconds=time.perf_counter() - start,
@@ -175,8 +184,15 @@ async def handle_audio_request(audio_request, service):
         streamed_characters = 0
         final_result = None
         status = STATUS_ERROR
+        progress = SttStreamProgress(
+            model_type=settings.model_runner,
+            task=STT_TASK,
+            language=_stt_language(),
+            start=start,
+        )
         try:
             async for partial in service.process_streaming_request(audio_request):
+                progress.on_update()
                 if isinstance(partial, AudioTextResponse):
                     final_result = partial
                 else:
@@ -198,6 +214,7 @@ async def handle_audio_request(audio_request, service):
             record_stt_request(
                 model_type=settings.model_runner,
                 task=STT_TASK,
+                language=_stt_language(),
                 streaming=True,
                 status=status,
                 duration_seconds=time.perf_counter() - start,

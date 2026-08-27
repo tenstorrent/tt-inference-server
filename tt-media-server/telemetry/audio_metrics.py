@@ -18,6 +18,8 @@ that failed after 2s of a 60s file did not transcribe 60 audio seconds, and
 letting it land in the RTF histogram would drag the quantiles.
 """
 
+import time
+
 from prometheus_client import Counter, Histogram
 from utils.logger import TTLogger
 
@@ -25,6 +27,11 @@ logger = TTLogger()
 
 STATUS_SUCCESS = "success"
 STATUS_ERROR = "error"
+
+# ``voice`` label fallbacks: a client-supplied raw embedding has no id, and a
+# request naming no speaker uses the model's built-in default voice.
+VOICE_DEFAULT = "default"
+VOICE_CUSTOM = "custom"
 
 # Wall time of the whole request, queue included. STT is bounded by input
 # length (a 30-minute file legitimately takes minutes), so the tail runs to
@@ -102,6 +109,44 @@ _OUTPUT_AUDIO_BUCKETS = (
     float("inf"),
 )
 
+# Request arrival at the handler until the first transcript update reaches the
+# client: audio decode/VAD plus the first chunk's encode-and-first-decode
+# (measured mean 0.45s), so the grid is dense from 0.25s to 2.5s with room for
+# long preprocessing (diarization) and cold starts.
+_FIRST_PARTIAL_BUCKETS = (
+    0.05,
+    0.1,
+    0.25,
+    0.5,
+    0.75,
+    1.0,
+    1.5,
+    2.5,
+    5.0,
+    10.0,
+    30.0,
+    60.0,
+    float("inf"),
+)
+
+# Wall time between successive transcript updates within one stream. Updates
+# arrive per decode step (tens of ms) with occasional chunk-boundary gaps of
+# seconds, so the grid spans both regimes.
+_PARTIAL_INTERVAL_BUCKETS = (
+    0.01,
+    0.025,
+    0.05,
+    0.1,
+    0.25,
+    0.5,
+    1.0,
+    2.5,
+    5.0,
+    10.0,
+    30.0,
+    float("inf"),
+)
+
 # Client-facing bound is DEFAULT_MAX_TTS_TEXT_LENGTH (20000 characters).
 _TTS_CHARACTER_BUCKETS = (
     10.0,
@@ -118,10 +163,15 @@ _TTS_CHARACTER_BUCKETS = (
 )
 
 # --- STT (transcriptions / translations) --------------------------------------
-# ``task`` is "transcription" or "translation" (one per deployment, decided by
-# settings.audio_task). ``streaming`` is "true"/"false".
-_STT_REQUEST_LABELS = ["model_type", "task", "streaming", "status"]
-_STT_USAGE_LABELS = ["model_type", "task"]
+# ``task`` is "transcription" or "translation" and ``language`` is the
+# configured input language (settings.audio_task / settings.audio_language) —
+# both single-valued per deployment, so they add series only across
+# deployments, where the mix panels need them. ``streaming`` is "true"/"false"
+# on usage metrics too, so streaming mix is computable by audio seconds and
+# characters, not just request count.
+_STT_REQUEST_LABELS = ["model_type", "task", "language", "streaming", "status"]
+_STT_USAGE_LABELS = ["model_type", "task", "language", "streaming"]
+_STT_STREAM_LABELS = ["model_type", "task", "language"]
 
 stt_requests_total = Counter(
     "tt_media_server_audio_stt_requests_total",
@@ -158,14 +208,37 @@ stt_output_characters_total = Counter(
 stt_realtime_factor = Histogram(
     "tt_media_server_audio_stt_realtime_factor",
     "Wall-clock seconds spent per second of input audio (1.0 = realtime)",
-    ["model_type", "task", "streaming"],
+    _STT_USAGE_LABELS,
     buckets=_REALTIME_FACTOR_BUCKETS,
+)
+
+# Streaming-only: one observation per stream for the first update, one per
+# subsequent update for cadence. Wall time as the client experiences it — the
+# emitting generator only resumes after the client consumes the previous
+# update, so a slow consumer shows up here by design (matches the philosophy
+# of audio_chunk_processing_seconds).
+stt_first_partial_duration = Histogram(
+    "tt_media_server_audio_stt_first_partial_seconds",
+    "Time from request arrival until the first transcript update is emitted",
+    _STT_STREAM_LABELS,
+    buckets=_FIRST_PARTIAL_BUCKETS,
+)
+
+stt_partial_interval = Histogram(
+    "tt_media_server_audio_stt_partial_interval_seconds",
+    "Wall time between successive transcript updates within one stream",
+    _STT_STREAM_LABELS,
+    buckets=_PARTIAL_INTERVAL_BUCKETS,
 )
 
 # --- TTS (speech) --------------------------------------------------------------
 # ``response_format`` is bounded by TTS_RESPONSE_FORMATS (wav/mp3/ogg/json/
-# verbose_json).
-_TTS_REQUEST_LABELS = ["model_type", "response_format", "status"]
+# verbose_json). ``voice`` is the speaker id (client-supplied, so its
+# cardinality is the deployment's speaker catalog — see tts_voice_label); it
+# goes on the counters and the realtime factor, which the voice-mix and
+# per-voice-RTF panels need, but not on the wide duration histograms, where
+# it would multiply every bucket.
+_TTS_REQUEST_LABELS = ["model_type", "response_format", "voice", "status"]
 
 tts_requests_total = Counter(
     "tt_media_server_audio_tts_requests_total",
@@ -176,7 +249,7 @@ tts_requests_total = Counter(
 tts_request_duration = Histogram(
     "tt_media_server_audio_tts_request_duration_seconds",
     "Wall-clock duration of a text-to-speech request (queue + inference)",
-    _TTS_REQUEST_LABELS,
+    ["model_type", "response_format", "status"],
     buckets=_REQUEST_DURATION_BUCKETS,
 )
 
@@ -196,7 +269,7 @@ tts_input_characters = Histogram(
 tts_output_audio_seconds_total = Counter(
     "tt_media_server_audio_tts_output_audio_seconds_total",
     "Total seconds of speech audio generated",
-    ["model_type"],
+    ["model_type", "voice"],
 )
 
 tts_output_audio_duration = Histogram(
@@ -209,7 +282,7 @@ tts_output_audio_duration = Histogram(
 tts_realtime_factor = Histogram(
     "tt_media_server_audio_tts_realtime_factor",
     "Wall-clock seconds spent per second of generated audio (1.0 = realtime)",
-    ["model_type"],
+    ["model_type", "voice"],
     buckets=_REALTIME_FACTOR_BUCKETS,
 )
 
@@ -233,10 +306,77 @@ def _positive_float(value) -> float | None:
     return value if value > 0 else None
 
 
+def _label_str(value, fallback: str) -> str:
+    """A non-empty str verbatim; anything else becomes the fallback."""
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return fallback
+
+
+def tts_voice_label(request, result=None) -> str:
+    """Resolve the ``voice`` label for one TTS request.
+
+    The id the runner reports back wins over the one asked for; a request
+    carrying a raw speaker embedding has no id at all and is labelled
+    ``custom``; everything else used the model's default voice. Truncated so
+    a pathological client id cannot bloat the exposition. Never raises —
+    handlers call this from ``finally`` blocks.
+    """
+    try:
+        speaker_id = getattr(result, "speaker_id", None)
+        if not isinstance(speaker_id, str) or not speaker_id.strip():
+            speaker_id = getattr(request, "speaker_id", None)
+        if isinstance(speaker_id, str) and speaker_id.strip():
+            return speaker_id.strip()[:64]
+        if getattr(request, "speaker_embedding", None) is not None:
+            return VOICE_CUSTOM
+        return VOICE_DEFAULT
+    except Exception:  # pragma: no cover - telemetry must not break serving
+        return VOICE_DEFAULT
+
+
+class SttStreamProgress:
+    """First-partial latency and inter-update cadence for one STT stream.
+
+    Construct when the stream request arrives, call :meth:`on_update` once per
+    transcript update emitted to the client (partial chunks and the final
+    result alike). The first call observes first-partial latency; every later
+    call observes the gap since the previous one. Never raises.
+    """
+
+    def __init__(
+        self,
+        model_type: str,
+        task: str,
+        language: str,
+        start: float | None = None,
+    ) -> None:
+        self.model_type = model_type
+        self.task = task
+        self.language = language
+        self._start = start if start is not None else time.perf_counter()
+        self._last: float | None = None
+
+    def on_update(self) -> None:
+        try:
+            now = time.perf_counter()
+            labels = dict(
+                model_type=self.model_type, task=self.task, language=self.language
+            )
+            if self._last is None:
+                stt_first_partial_duration.labels(**labels).observe(now - self._start)
+            else:
+                stt_partial_interval.labels(**labels).observe(now - self._last)
+            self._last = now
+        except Exception as exc:  # pragma: no cover - telemetry must not break serving
+            logger.warning(f"Failed to record STT stream progress: {exc}")
+
+
 def record_stt_request(
     *,
     model_type: str,
     task: str,
+    language: str,
     streaming: bool,
     status: str,
     duration_seconds: float,
@@ -250,10 +390,12 @@ def record_stt_request(
     """
     try:
         streaming_label = str(bool(streaming)).lower()
+        language = _label_str(language, "unknown")
         duration_seconds = _positive_float(duration_seconds)
         request_labels = dict(
             model_type=model_type,
             task=task,
+            language=language,
             streaming=streaming_label,
             status=status,
         )
@@ -264,15 +406,20 @@ def record_stt_request(
         if status != STATUS_SUCCESS:
             return
 
-        usage_labels = dict(model_type=model_type, task=task)
+        usage_labels = dict(
+            model_type=model_type,
+            task=task,
+            language=language,
+            streaming=streaming_label,
+        )
         audio_seconds = _positive_float(audio_seconds)
         if audio_seconds is not None:
             stt_input_audio_seconds_total.labels(**usage_labels).inc(audio_seconds)
             stt_input_audio_duration.labels(**usage_labels).observe(audio_seconds)
             if duration_seconds is not None:
-                stt_realtime_factor.labels(
-                    model_type=model_type, task=task, streaming=streaming_label
-                ).observe(duration_seconds / audio_seconds)
+                stt_realtime_factor.labels(**usage_labels).observe(
+                    duration_seconds / audio_seconds
+                )
         if isinstance(characters, int) and characters > 0:
             stt_output_characters_total.labels(**usage_labels).inc(characters)
     except Exception as exc:  # pragma: no cover - telemetry must not break serving
@@ -285,6 +432,7 @@ def record_tts_request(
     response_format: str,
     status: str,
     duration_seconds: float,
+    voice: str = VOICE_DEFAULT,
     characters: int | None = None,
     audio_seconds: float | None = None,
 ) -> None:
@@ -292,20 +440,26 @@ def record_tts_request(
 
     ``characters`` is the input text length; ``audio_seconds`` the generated
     speech duration. Both are only recorded for ``status="success"``.
+    ``voice`` comes from :func:`tts_voice_label`.
     """
     try:
         duration_seconds = _positive_float(duration_seconds)
         response_format = (
             response_format.lower() if isinstance(response_format, str) else "unknown"
         )
-        request_labels = dict(
+        voice = _label_str(voice, VOICE_DEFAULT)
+        tts_requests_total.labels(
             model_type=model_type,
             response_format=response_format,
+            voice=voice,
             status=status,
-        )
-        tts_requests_total.labels(**request_labels).inc()
+        ).inc()
         if duration_seconds is not None:
-            tts_request_duration.labels(**request_labels).observe(duration_seconds)
+            tts_request_duration.labels(
+                model_type=model_type,
+                response_format=response_format,
+                status=status,
+            ).observe(duration_seconds)
 
         if status != STATUS_SUCCESS:
             return
@@ -315,14 +469,14 @@ def record_tts_request(
             tts_input_characters.labels(model_type=model_type).observe(characters)
         audio_seconds = _positive_float(audio_seconds)
         if audio_seconds is not None:
-            tts_output_audio_seconds_total.labels(model_type=model_type).inc(
-                audio_seconds
-            )
+            tts_output_audio_seconds_total.labels(
+                model_type=model_type, voice=voice
+            ).inc(audio_seconds)
             tts_output_audio_duration.labels(model_type=model_type).observe(
                 audio_seconds
             )
             if duration_seconds is not None:
-                tts_realtime_factor.labels(model_type=model_type).observe(
+                tts_realtime_factor.labels(model_type=model_type, voice=voice).observe(
                     duration_seconds / audio_seconds
                 )
     except Exception as exc:  # pragma: no cover - telemetry must not break serving
