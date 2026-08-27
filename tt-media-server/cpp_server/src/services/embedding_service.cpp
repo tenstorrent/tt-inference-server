@@ -2,10 +2,12 @@
 #include "utils/id_generator.hpp"
 // SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+#include <poll.h>
 #include <signal.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -30,6 +32,10 @@
 namespace tt::services {
 
 namespace {
+
+// Sent by a worker child over its response pipe once warmup succeeds, so the
+// parent can distinguish "forked" from "actually able to serve requests".
+constexpr char WORKER_READY_SENTINEL[] = "READY";
 
 // Length-prefixed pipe write: [len:u32][data].  Returns false on failure.
 bool pipeWrite(int fd, const void* data, size_t len) {
@@ -75,7 +81,8 @@ std::string pipeReadString(int fd) {
 
 struct WorkerProcess {
   int workerId = -1;
-  pid_t pid = -1;
+  // Atomic because health snapshots read it while the startup thread spawns.
+  std::atomic<pid_t> pid{-1};
   tt::utils::ScopedFd writeFd;  // parent → child (request pipe write end)
   tt::utils::ScopedFd readFd;   // child → parent (response pipe read end)
   std::atomic<bool> isReady{false};
@@ -115,28 +122,79 @@ struct WorkerProcess {
       _exit(0);  // childMain is [[noreturn]], but just in case
     }
 
-    // Parent: close child ends, transfer ownership to members.
+    // Parent: close child ends, transfer ownership to members. The worker is
+    // NOT ready yet: isReady only flips once the child sends the READY
+    // sentinel after warmup (see waitUntilReady).
     reqRead.reset();
     respWrite.reset();
-    pid = child;
+    pid.store(child);
     writeFd = std::move(reqWrite);
     readFd = std::move(respRead);
-    isReady.store(true);
     running.store(true);
 
     TT_LOG_INFO(
         "[EmbeddingService] Spawned worker {} with PID {} "
         "(TT_VISIBLE_DEVICES={}) writeFd={} readFd={}",
-        wid, pid, tt::config::visibleDevicesForWorker(wid), writeFd.get(),
+        wid, child, tt::config::visibleDevicesForWorker(wid), writeFd.get(),
         readFd.get());
     return true;
   }
 
+  /**
+   * Block until the child reports warmup completion via the READY sentinel.
+   * Returns false on child exit (pipe EOF), timeout, or unexpected data.
+   * keepWaiting lets service shutdown abort the wait within ~100ms.
+   */
+  bool waitUntilReady(unsigned timeoutMs, const std::atomic<bool>& keepWaiting) {
+    const auto deadline = std::chrono::steady_clock::now() +
+                          std::chrono::milliseconds(timeoutMs);
+    while (keepWaiting.load()) {
+      const auto remaining =
+          std::chrono::duration_cast<std::chrono::milliseconds>(
+              deadline - std::chrono::steady_clock::now())
+              .count();
+      if (remaining <= 0) {
+        TT_LOG_ERROR(
+            "[EmbeddingService] Worker {} warmup timed out after {}ms",
+            workerId, timeoutMs);
+        return false;
+      }
+
+      struct pollfd pfd = {readFd.get(), POLLIN, 0};
+      const int rc =
+          poll(&pfd, 1, static_cast<int>(std::min<int64_t>(remaining, 100)));
+      if (rc < 0) {
+        if (errno == EINTR) continue;
+        TT_LOG_ERROR("[EmbeddingService] Worker {} warmup poll failed: {}",
+                     workerId, strerror(errno));
+        return false;
+      }
+      if (rc == 0) continue;  // slice elapsed; re-check keepWaiting/deadline
+
+      const auto msg = pipeReadBinary(readFd.get());
+      constexpr size_t sentinelLen = sizeof(WORKER_READY_SENTINEL) - 1;
+      if (msg.size() == sentinelLen &&
+          std::memcmp(msg.data(), WORKER_READY_SENTINEL, sentinelLen) == 0) {
+        isReady.store(true);
+        TT_LOG_INFO("[EmbeddingService] Worker {} reported ready", workerId);
+        return true;
+      }
+      // EOF (child exited during warmup) or garbage on the pipe.
+      TT_LOG_ERROR(
+          "[EmbeddingService] Worker {} exited or sent unexpected data "
+          "during warmup",
+          workerId);
+      return false;
+    }
+    return false;
+  }
+
   bool checkAlive() {
-    if (pid <= 0) return false;
+    const pid_t p = pid.load();
+    if (p <= 0) return false;
     int status;
-    pid_t result = waitpid(pid, &status, WNOHANG);
-    if (result != pid) return true;
+    pid_t result = waitpid(p, &status, WNOHANG);
+    if (result != p) return true;
 
     if (WIFEXITED(status)) {
       TT_LOG_ERROR("[EmbeddingService] Worker {} exited with code {}", workerId,
@@ -170,9 +228,10 @@ struct WorkerProcess {
   }
 
   void terminate() {
-    if (pid > 0) {
-      kill(pid, SIGTERM);
-      waitpid(pid, nullptr, 0);
+    const pid_t p = pid.load();
+    if (p > 0) {
+      kill(p, SIGTERM);
+      waitpid(p, nullptr, 0);
       TT_LOG_INFO("[EmbeddingService] Worker {} terminated", workerId);
     }
     writeFd.reset();
@@ -189,6 +248,11 @@ struct EmbeddingService::Impl {
   };
 
   std::vector<std::unique_ptr<WorkerProcess>> workers;
+  // Guards the vector's structure (populate in start, clear in stop) against
+  // health-endpoint snapshots. Element state is atomic and needs no lock;
+  // startup/dispatch threads index into the vector lock-free because it is
+  // fully sized before they exist and only cleared after they are joined.
+  mutable std::mutex workersMutex;
   size_t numWorkers = 3;
 
   TRACY_LOCKABLE(std::mutex, queueMutex);
@@ -197,6 +261,11 @@ struct EmbeddingService::Impl {
 
   std::atomic<bool> running{false};
   std::atomic<bool> isReady{false};
+
+  // Spawning and warmup run here so start() returns immediately and the HTTP
+  // server can answer health probes while the model loads (parity with the
+  // Python server, whose /tt-liveness responds 405/503 during load).
+  std::unique_ptr<std::thread> startupThread;
 
   size_t maxBatchSize = 1;
   std::chrono::milliseconds batchTimeout{5};
@@ -264,6 +333,14 @@ struct EmbeddingService::Impl {
       TT_LOG_ERROR("[Worker {}] Warmup failed!", workerId);
       _exit(1);
     }
+
+    // Tell the parent we can serve; until this arrives the parent keeps the
+    // worker marked not-ready and won't dispatch to it.
+    if (!pipeWrite(writeFd, WORKER_READY_SENTINEL,
+                   sizeof(WORKER_READY_SENTINEL) - 1)) {
+      TT_LOG_ERROR("[Worker {}] Failed to send ready signal", workerId);
+      _exit(1);
+    }
     TT_LOG_INFO("[Worker {}] Ready", workerId);
 
     while (true) {
@@ -316,31 +393,115 @@ struct EmbeddingService::Impl {
 
     TT_LOG_INFO("[EmbeddingService] Starting with {} worker processes",
                 numWorkers);
-    workers.reserve(numWorkers);
 
-    for (size_t i = 0; i < numWorkers; ++i) {
-      auto w = std::make_unique<WorkerProcess>();
-      int wid = static_cast<int>(i);
-      if (!w->spawn(
-              wid, [wid](int rd, int wr) { workerProcessMain(wid, rd, wr); })) {
-        continue;
+    // Fully size the vector before any other thread can observe it: the
+    // startup thread, dispatch threads, and health snapshots all index into
+    // it concurrently, so it must never reallocate.
+    {
+      std::lock_guard lock(workersMutex);
+      workers.reserve(numWorkers);
+      for (size_t i = 0; i < numWorkers; ++i) {
+        auto w = std::make_unique<WorkerProcess>();
+        w->workerId = static_cast<int>(i);
+        workers.push_back(std::move(w));
       }
-      workers.push_back(std::move(w));
     }
 
-    for (size_t i = 0; i < workers.size(); ++i) {
-      workers[i]->dispatchThread =
-          std::make_unique<std::thread>(&Impl::workerDispatchLoop, this, i);
+    startupThread = std::make_unique<std::thread>(&Impl::runStartup, this);
+  }
+
+  /**
+   * Bring up worker 0 alone and wait for its READY handshake before spawning
+   * the rest. The first warmup on a cold volume generates the shared tensor
+   * cache (model_cache/.../tensor_cache_*); when all workers race to generate
+   * it concurrently they read each other's half-written .tensorbin files and
+   * crash with "file too small" / SIGBUS in memcpy_to_device. Once one worker
+   * has written the cache, the remaining workers warm up in parallel safely.
+   */
+  void runStartup() {
+    const unsigned warmupTimeoutMs =
+        tt::config::defaults::EMBEDDING_WARMUP_TIMEOUT_MS;
+
+    // Phase 1: warm up a single worker with exclusive cache access. If it
+    // fails, try the next one alone (a fast-failing worker doesn't burn the
+    // timeout: pipe EOF aborts the wait immediately).
+    size_t next = 0;
+    bool haveReadyWorker = false;
+    while (!haveReadyWorker && next < numWorkers && running.load()) {
+      const size_t idx = next++;
+      if (!spawnWorkerAt(idx)) continue;
+      if (workers[idx]->waitUntilReady(warmupTimeoutMs, running)) {
+        launchDispatchThread(idx);
+        isReady = true;
+        haveReadyWorker = true;
+      } else {
+        TT_LOG_ERROR(
+            "[EmbeddingService] Worker {} failed warmup; trying next worker "
+            "alone",
+            idx);
+        workers[idx]->terminate();
+      }
     }
 
-    isReady = true;
-    TT_LOG_INFO("[EmbeddingService] All {} workers started", workers.size());
+    // Phase 2: the tensor cache is warm; the rest can load concurrently.
+    const size_t phase2Begin = next;
+    for (; next < numWorkers && running.load(); ++next) {
+      spawnWorkerAt(next);
+    }
+    for (size_t i = phase2Begin; i < numWorkers && running.load(); ++i) {
+      if (workers[i]->pid.load() <= 0) continue;
+      if (workers[i]->waitUntilReady(warmupTimeoutMs, running)) {
+        launchDispatchThread(i);
+      } else {
+        workers[i]->terminate();
+      }
+    }
+
+    size_t readyCount = 0;
+    for (const auto& w : workers) {
+      if (w->isReady.load()) ++readyCount;
+    }
+    TT_LOG_INFO("[EmbeddingService] Startup finished: {}/{} workers ready",
+                readyCount, numWorkers);
+  }
+
+  bool spawnWorkerAt(size_t idx) {
+    const int wid = static_cast<int>(idx);
+    return workers[idx]->spawn(
+        wid, [wid](int rd, int wr) { workerProcessMain(wid, rd, wr); });
+  }
+
+  void launchDispatchThread(size_t idx) {
+    workers[idx]->dispatchThread =
+        std::make_unique<std::thread>(&Impl::workerDispatchLoop, this, idx);
+  }
+
+  std::vector<tt::worker::WorkerInfo> workerInfoSnapshot() const {
+    std::lock_guard lock(workersMutex);
+    std::vector<tt::worker::WorkerInfo> out;
+    out.reserve(workers.size());
+    for (const auto& w : workers) {
+      if (!w) continue;
+      tt::worker::WorkerInfo info;
+      info.worker_id = std::to_string(w->workerId);
+      info.pid = w->pid.load();
+      // kill(pid, 0) probes existence without reaping; waitpid stays owned
+      // by the dispatch thread (checkAlive) and terminate().
+      info.is_alive = info.pid > 0 && kill(info.pid, 0) == 0;
+      info.is_ready = w->isReady.load();
+      out.push_back(std::move(info));
+    }
+    return out;
   }
 
   void stop() {
     if (!running.exchange(false)) return;
 
     TT_LOG_INFO("[EmbeddingService] Stopping...");
+    // The startup thread checks `running` at least every 100ms while waiting
+    // on warmups, so this join is quick.
+    if (startupThread && startupThread->joinable()) startupThread->join();
+    startupThread.reset();
     queueCv.notify_all();
 
     for (auto& w : workers) w->running = false;
@@ -351,7 +512,10 @@ struct EmbeddingService::Impl {
         w->dispatchThread->join();
       w->terminate();
     }
-    workers.clear();
+    {
+      std::lock_guard lock(workersMutex);
+      workers.clear();
+    }
     isReady = false;
     TT_LOG_INFO("[EmbeddingService] Stopped");
   }
@@ -504,6 +668,10 @@ bool EmbeddingService::isModelReady() const { return impl_->isReady.load(); }
 size_t EmbeddingService::currentQueueSize() const {
   std::lock_guard lock(impl_->queueMutex);
   return impl_->requestQueue.size();
+}
+
+std::vector<tt::worker::WorkerInfo> EmbeddingService::getWorkerInfo() const {
+  return impl_->workerInfoSnapshot();
 }
 
 domain::EmbeddingResponse EmbeddingService::produceResponse(
