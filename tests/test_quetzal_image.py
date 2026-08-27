@@ -37,6 +37,8 @@ def test_quetzal_is_installed_non_editably_and_entry_point_is_verified():
     assert "COPY --from=ttis_src" in source
     assert "vllm-tt-metal/src/run_vllm_api_server.py" in source
     assert "/home/container_app_user/app/src/run_vllm_api_server.py" in source
+    assert "model_spec.json" in source
+    assert "/home/container_app_user/model_specs/model_spec.json" in source
     assert "validate_quetzal_runtime_contract" in source
     assert "git fetch" not in source
     assert "git clone" not in source

@@ -78,8 +78,23 @@ git -C "${quetzal_source}" archive --format=tar "${quetzal_commit}" \
     | tar -xf - -C "${export_root}"
 printf '%s\n' "${quetzal_commit}" > "${export_root}/.tt-quetzal-commit"
 git -C "${repo_root}" archive --format=tar "${ttis_commit}" \
-    vllm-tt-metal/src/run_vllm_api_server.py \
     | tar -xf - -C "${ttis_export_root}"
+# workflows.utils locates the repository root by its .git marker. The export is
+# still an exact git archive (and contains no repository metadata); an empty
+# temporary marker is sufficient while generating the development catalog.
+mkdir "${ttis_export_root}/.git"
+(
+    cd "${ttis_export_root}"
+    MODEL_SPECS_ENV=dev python3 - "${ttis_export_root}/model_spec.json" <<'PY'
+import sys
+from pathlib import Path
+
+from workflows.model_spec import MODEL_SPECS, export_model_specs_json
+
+export_model_specs_json(MODEL_SPECS, Path(sys.argv[1]))
+PY
+)
+rmdir "${ttis_export_root}/.git"
 
 docker buildx build --load \
     --file "${repo_root}/vllm-tt-metal/vllm.tt-metal.src.quetzal.Dockerfile" \

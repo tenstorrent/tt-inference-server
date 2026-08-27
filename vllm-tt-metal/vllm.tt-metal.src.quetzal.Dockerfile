@@ -30,6 +30,9 @@ RUN printf '%s' "${TT_INFERENCE_SERVER_BASE_IMAGE}" \
 COPY --from=ttis_src --chown=container_app_user:container_app_user \
     vllm-tt-metal/src/run_vllm_api_server.py \
     /home/container_app_user/app/src/run_vllm_api_server.py
+COPY --from=ttis_src --chown=container_app_user:container_app_user \
+    model_spec.json \
+    /home/container_app_user/model_specs/model_spec.json
 
 # ``quetzal_src`` is a named BuildKit context exported from the exact clean
 # local commit by the wrapper. It contains neither .git nor authentication
@@ -46,6 +49,7 @@ RUN test "$(cat /tmp/quetzal-source/.tt-quetzal-commit)" = "${TT_QUETZAL_COMMIT_
         && cmp /tmp/pip-check.before /tmp/pip-check.after \
         && rm /tmp/pip-check.before /tmp/pip-check.after \
         && grep -q '^def validate_quetzal_runtime_contract' /home/container_app_user/app/src/run_vllm_api_server.py \
+        && grep -q 'sha256-91945862b1237a89d10f241a376068d8b995dd2f9add7ed2b0bfb2801f1399a8' /home/container_app_user/model_specs/model_spec.json \
         && python -c \"import importlib.metadata as m; eps=[e for e in m.entry_points(group='vllm.general_plugins') if e.name == 'quetzal_model_registry' and e.value == 'tt_quetzalcoatlus.vllm_plugin:register']; assert len(eps) == 1, eps; import serving.artifact_bundle\"" \
     && rm -rf /tmp/quetzal-source
 

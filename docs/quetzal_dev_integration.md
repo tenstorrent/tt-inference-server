@@ -72,6 +72,11 @@ The wrapper refuses a dirty checkout or a HEAD different from the requested
 commit, exports that commit with `git archive`, and supplies the export as a
 named BuildKit context. No `.git` directory, token, credential helper, SSH agent,
 or network repository URL is forwarded into the build.
+The derivative also replaces the base image's runner and built-in development
+catalog with files derived from the exact stamped TTIS commit. Consequently,
+both the direct container interface (`--impl quetzal`) and the `run.py`
+pre-resolved-spec interface use the same fail-closed implementation selector;
+neither depends on a live source bind mount.
 The v0.20.0 base currently carries two pre-existing `uv pip check` conflicts.
 The derivative records the exact conflict set before installation and requires
 the post-install set to be byte-identical after removing only timing/environment
