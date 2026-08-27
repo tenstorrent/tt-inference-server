@@ -265,6 +265,16 @@ class Settings(BaseSettings):
                 f"Using pre-mounted weights from MODEL_WEIGHTS_DIR: {model_weights_dir}"
             )
 
+        # Serving a merged checkpoint is the model — don't keep the runner's
+        # default HF repo (e.g. google/gemma-1.1-2b-it for lora-single-chip)
+        # as model_weights_path, or BaseService will snapshot_download it
+        # before the runner ever reads merged_model_path.
+        if self.merged_model_path:
+            self.model_weights_path = self.merged_model_path
+            logger.info(
+                f"Using merged_model_path as model weights: {self.merged_model_path}"
+            )
+
         # use throttling overrides until we confirm is no-throttling a stable approach
         self._set_throttling_overrides()
         self._set_device_pairs_overrides()
@@ -276,6 +286,7 @@ class Settings(BaseSettings):
             f"is_galaxy={self.is_galaxy}, "
             f"device_mesh_shape={self.device_mesh_shape}, "
             f"model_weights_path={self.model_weights_path!r}, "
+            f"merged_model_path={self.merged_model_path!r}, "
             f"max_batch_size={self.max_batch_size}"
         )
         if (
