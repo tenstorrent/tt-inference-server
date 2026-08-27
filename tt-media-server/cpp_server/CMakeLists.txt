@@ -1865,6 +1865,14 @@ if(ENABLE_BLAZE)
     add_library(remote_kv_adapter
         src/services/remote_kv_manager_adapter.cpp
         src/services/composite_migration_client.cpp
+        # logger.cpp bundled in so any consumer that only links this .a (e.g.
+        # composite_migration_client_test) has ZeroOverheadLogger::level and
+        # logImpl(Level,const char*) resolved. Matches the same pattern used by
+        # llm_runner_lib / transport_lib / messaging (which each also compile
+        # logger.cpp into their own archive); the linker de-dupes at final link
+        # time because the first .a in the group provides the symbols and the
+        # others' logger.o is simply not pulled in.
+        src/utils/logger.cpp
     )
     target_include_directories(remote_kv_adapter PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -1887,6 +1895,14 @@ if(ENABLE_BLAZE)
         src/messaging/kvm_command_message.cpp
         src/messaging/kvm_zmq_transport.cpp
         src/services/remote_kv_manager_zmq_impl.cpp
+        # Same rationale as remote_kv_adapter above: kvm_command_message_test /
+        # remote_kv_manager_zmq_impl_test / kvm_zmq_transport_integration_test
+        # only link kvm_zmq (+ gtest), and the ZMQ .cpp files use LOG_* macros
+        # that inline ZeroOverheadLogger::level and logImpl into the caller's
+        # object files. Bundling logger.cpp here keeps every kvm_zmq consumer
+        # self-sufficient without having to also pull in llm_runner_lib or
+        # messaging just for the logger symbols.
+        src/utils/logger.cpp
     )
     target_include_directories(kvm_zmq PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
