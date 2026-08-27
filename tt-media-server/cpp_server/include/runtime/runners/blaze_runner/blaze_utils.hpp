@@ -469,9 +469,9 @@ makePrefillZmqMigrationClient(const tt::config::BlazeConfig& config) {
 
 // Top-level migration-client factory for the PrefillScheduler. Dispatches
 // on config.prefillUseRemoteKvManager (feature gate) and, when on, on
-// config.prefillKvManagerTransport ("kafka" or "zmq") to pick the burst
-// backend. When the feature gate is off the scheduler talks directly to the
-// shmem/mock client. This function is what
+// config.prefillKvManagerTransport ("zmq" [default] or "kafka") to pick
+// the burst backend. When the feature gate is off the scheduler talks
+// directly to the shmem/mock client. This function is what
 // blaze_scheduler_factory::makePrefillScheduler calls; the *MigrationClient
 // helpers above are private-in-spirit implementation details.
 inline std::unique_ptr<sch::MigrationClientInterface>
@@ -481,23 +481,26 @@ makeMigrationClientInterface(const tt::config::BlazeConfig& config) {
   }
   if (config.prefillUseRemoteKvManager) {
     const std::string& transport = config.prefillKvManagerTransport;
-    if (transport == "zmq") {
+    // ZMQ is the default (see defaults.hpp); empty string is treated as
+    // "zmq" so an operator that only sets PREFILL_USE_REMOTE_KV_MANAGER=1
+    // gets the new path without having to know about the transport flag.
+    if (transport == "zmq" || transport.empty()) {
       return makePrefillZmqMigrationClient(config);
     }
-    if (transport == "kafka" || transport.empty()) {
+    if (transport == "kafka") {
 #ifdef KAFKA_ENABLED
       return makePrefillKafkaMigrationClient(config);
 #else
       throw std::runtime_error(
           "PREFILL_KV_MANAGER_TRANSPORT=kafka but this binary was built "
-          "without KAFKA_ENABLED=ON. Rebuild with -DKAFKA_ENABLED=ON, set "
-          "PREFILL_KV_MANAGER_TRANSPORT=zmq, or unset "
-          "PREFILL_USE_REMOTE_KV_MANAGER to use the shmem "
+          "without KAFKA_ENABLED=ON. Rebuild with -DKAFKA_ENABLED=ON, unset "
+          "PREFILL_KV_MANAGER_TRANSPORT to use the default ZMQ path, or "
+          "unset PREFILL_USE_REMOTE_KV_MANAGER to use the shmem "
           "MigrationLayerClient.");
 #endif
     }
     throw std::runtime_error("Unknown PREFILL_KV_MANAGER_TRANSPORT='" +
-                             transport + "'; expected 'kafka' or 'zmq'.");
+                             transport + "'; expected 'zmq' or 'kafka'.");
   }
   return makeShmemOrMockMigrationClient(config);
 }

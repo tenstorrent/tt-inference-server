@@ -51,18 +51,20 @@ struct BlazeConfig : RunnerConfigBase {
   uint32_t prefillChunkSize = defaults::PREFILL_CHUNK_SIZE;
   bool enableMigration = defaults::ENABLE_MIGRATION;
   // Route the PrefillScheduler's cross-endpoint (P->D) KV migration through
-  // the Kafka-backed RemoteKVManagerAdapter (composed with a shmem/mock
-  // loopback for migrate() calls the adapter cannot service). Only effective
-  // when enableMigration is also true and the binary was built with
-  // KAFKA_ENABLED=ON; toggling it on a non-Kafka build fails loudly at
-  // scheduler construction rather than silently downgrading to the shmem
-  // path. See makeMigrationClientInterface in blaze_utils.hpp.
+  // the RemoteKVManagerAdapter (composed with a shmem/mock loopback for
+  // migrate() calls the adapter cannot service). Only effective when
+  // enableMigration is also true. Which concrete transport carries the
+  // burst — ZMQ to kv_manager (default) or Kafka to per-worker topics —
+  // is picked by `prefillKvManagerTransport` below. See
+  // makeMigrationClientInterface in blaze_utils.hpp.
   bool prefillUseRemoteKvManager = defaults::PREFILL_USE_REMOTE_KV_MANAGER;
-  // Transport selector for the RemoteKVManager path: "kafka" (existing
-  // per-worker Kafka fan-out) or "zmq" (single kv_manager prefill-leader
-  // endpoint; kv_manager fans out internally). Only consulted when
-  // prefillUseRemoteKvManager is true. See makeMigrationClientInterface in
-  // blaze_utils.hpp for the dispatch logic.
+  // Transport selector for the RemoteKVManager path: "zmq" (default —
+  // single kv_manager prefill-leader endpoint, kv_manager fans out
+  // internally by layer) or "kafka" (legacy per-worker Kafka fan-out;
+  // requires the binary to have been built with KAFKA_ENABLED=ON, else
+  // scheduler construction fails loudly). Only consulted when
+  // prefillUseRemoteKvManager is true. See makeMigrationClientInterface
+  // in blaze_utils.hpp for the dispatch logic.
   std::string prefillKvManagerTransport =
       defaults::PREFILL_KV_MANAGER_TRANSPORT;
   // ZMQ endpoints for the kv_manager prefill-leader control channel. Both
