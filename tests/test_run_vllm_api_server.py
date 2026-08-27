@@ -310,6 +310,78 @@ def _quetzal_entry_points():
     }
 
 
+def test_main_validates_quetzal_before_runtime_and_skips_native_weight_setup(
+    monkeypatch, run_vllm_api_server_module
+):
+    args = argparse.Namespace(
+        model="Qwen3.6-27B",
+        tt_device="p300x2",
+        device=None,
+        engine=None,
+        impl="quetzal",
+        no_auth=False,
+        disable_trace_capture=True,
+        service_port=None,
+    )
+    model_spec = {
+        "model_id": "id_quetzal_Qwen3.6-27B_p300x2",
+        "device_type": "P300X2",
+        "impl": {"impl_id": "quetzal"},
+        "device_model_spec": {"vllm_args": {"port": 8000}},
+    }
+    events = []
+    monkeypatch.setattr(
+        run_vllm_api_server_module, "parse_args", lambda: (args, [])
+    )
+    monkeypatch.setattr(
+        run_vllm_api_server_module,
+        "load_model_spec",
+        MagicMock(return_value=model_spec),
+    )
+    monkeypatch.setattr(run_vllm_api_server_module, "set_cache_paths", MagicMock())
+    ensure_weights = MagicMock()
+    register_native = MagicMock()
+    monkeypatch.setattr(
+        run_vllm_api_server_module, "ensure_weights_available", ensure_weights
+    )
+    monkeypatch.setattr(
+        run_vllm_api_server_module, "register_tt_models", register_native
+    )
+    monkeypatch.setattr(
+        run_vllm_api_server_module,
+        "set_runtime_env_vars",
+        MagicMock(side_effect=lambda _spec: events.append("environment")),
+    )
+    monkeypatch.setattr(
+        run_vllm_api_server_module,
+        "validate_quetzal_runtime_contract",
+        MagicMock(side_effect=lambda _spec: events.append("validation")),
+    )
+    monkeypatch.setattr(
+        run_vllm_api_server_module,
+        "runtime_settings",
+        MagicMock(side_effect=lambda *_args, **_kwargs: events.append("runtime")),
+    )
+    monkeypatch.setattr(
+        run_vllm_api_server_module, "set_metal_timeout_env_vars", MagicMock()
+    )
+    monkeypatch.setattr(
+        run_vllm_api_server_module, "set_vllm_sys_argv", MagicMock()
+    )
+    monkeypatch.setattr(
+        run_vllm_api_server_module, "start_trace_capture", MagicMock()
+    )
+    monkeypatch.setattr(
+        run_vllm_api_server_module.runpy, "run_module", MagicMock()
+    )
+
+    run_vllm_api_server_module.main()
+
+    assert events == ["environment", "validation", "runtime"]
+    ensure_weights.assert_not_called()
+    register_native.assert_not_called()
+
+
 def test_quetzal_runtime_contract_accepts_materialized_content_package(
     monkeypatch, tmp_path, run_vllm_api_server_module
 ):

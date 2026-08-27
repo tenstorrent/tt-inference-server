@@ -833,6 +833,15 @@ def main():
         engine_arg=args.engine,
         impl_arg=args.impl,
     )
+    impl_id = model_spec.get("impl", {}).get("impl_id")
+
+    # Quetzal packages are the weight/runtime identity. Validate their complete
+    # fail-closed contract before generic cache or Hugging Face setup can touch
+    # the network, materialize a native checkpoint, or open a device.
+    if impl_id == "quetzal":
+        set_runtime_env_vars(model_spec)
+        validate_quetzal_runtime_contract(model_spec)
+
     device_type = model_spec.get("device_type")
     if device_type:
         device_type = normalize_device_type(device_type)
@@ -846,13 +855,16 @@ def main():
     # environment variables (e.g., DEEPSEEK_V3_HF_MODEL). Users are responsible for
     # downloading weights to a location on shared storage beforehand. Therefore,
     # automatic weight download is skipped when MULTIHOST_ROLE is set.
-    if not os.getenv("MODEL_WEIGHTS_DIR") and not os.getenv("MULTIHOST_ROLE"):
+    if (
+        impl_id != "quetzal"
+        and not os.getenv("MODEL_WEIGHTS_DIR")
+        and not os.getenv("MULTIHOST_ROLE")
+    ):
         ensure_weights_available(model_spec)
 
     logger.info(f"Using model spec: {model_spec['model_id']}")
 
     # Step 3: Register TT models (after lookup, with correct impl_id)
-    impl_id = model_spec.get("impl", {}).get("impl_id")
     if impl_id == "quetzal":
         # Quetzal's vllm.general_plugins entry point owns model registration.
         # Registering the native TT providers as well makes an implementation
@@ -864,8 +876,8 @@ def main():
 
     # Step 4: Set runtime environment variables and vLLM server args
     set_metal_timeout_env_vars()
-    set_runtime_env_vars(model_spec)
-    validate_quetzal_runtime_contract(model_spec)
+    if impl_id != "quetzal":
+        set_runtime_env_vars(model_spec)
     runtime_settings(model_spec, no_auth=args.no_auth)
     default_vllm_args = model_spec["device_model_spec"]["vllm_args"]
     set_vllm_sys_argv(args, remaining_sys_argv, default_vllm_args)
