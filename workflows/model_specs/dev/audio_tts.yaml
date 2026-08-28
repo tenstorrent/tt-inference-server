@@ -145,3 +145,19 @@ templates:
       max_context: 65536  # 64 * 1024
       default_impl: true
   status: EXPERIMENTAL
+
+- weights:
+    - coqui/XTTS-v2
+  impl: xtts-v2
+  min_disk_gb: 15
+  min_ram_gb: 8
+  model_type: TEXT_TO_SPEECH
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 4  # 4 chips, one single-chip worker each (data parallel)
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+      env_vars:
+        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
+  status: EXPERIMENTAL

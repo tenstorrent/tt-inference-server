@@ -1047,6 +1047,14 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 1,
     },
+    (ModelRunners.TT_XTTS_V2, DeviceTypes.P300X2): {
+        # BH QuietBox 2 = 2x P300 cards = 4 chips. Data parallel: one worker per chip,
+        # each opening its own (1,1) mesh, so four requests synthesize concurrently.
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4.value,
+        "max_batch_size": 1,
+    },
     (ModelRunners.TT_WHISPER, DeviceTypes.N300): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,

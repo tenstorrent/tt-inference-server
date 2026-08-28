@@ -39,6 +39,32 @@ def _tts_sample_count(ctx: MediaContext) -> int:
     return DEFAULT_QUALITY_SAMPLE_COUNT
 
 
+class _PlaceholderScore:
+    """Report-metadata stand-in used when no EvalConfig is registered."""
+
+    published_score = None
+    published_score_ref = ""
+    tolerance = None
+
+
+class _PlaceholderTask:
+    """Minimal task shape _tts_eval_block needs to render an NA block."""
+
+    task_name = "tts_generation"
+    score = _PlaceholderScore()
+
+
+_PLACEHOLDER_TASK = _PlaceholderTask()
+
+
+def _resolve_eval_task(ctx: MediaContext):
+    """Return the first eval task for this model, or None if none is registered."""
+    tasks = getattr(ctx.all_params, "tasks", None)
+    if not tasks:
+        return None
+    return tasks[0]
+
+
 def _missing_quality_deps() -> List[str]:
     """Return the subset of :data:`TTS_QUALITY_DEPS` that cannot be imported."""
     return [name for name in TTS_QUALITY_DEPS if not _can_import(name)]
@@ -157,7 +183,28 @@ def run_tts_eval(ctx: MediaContext) -> Block:
         f"Running evals for model: {ctx.model_spec.model_name} on device: {ctx.device.name}"
     )
     require_health(ctx, HardwareRequirement.ANY_CHIP)
-    task = ctx.all_params.tasks[0]
+
+    # ctx.all_params is [] when the model has no EvalConfig registered in
+    # reference_config/evals/eval_config.py (command_factory._resolve_eval_config
+    # returns None and logs a warning). Report that as an NA block with the reason,
+    # the way a missing toolchain is reported below, instead of surfacing an
+    # AttributeError from .tasks on a list.
+    task = _resolve_eval_task(ctx)
+    if task is None:
+        reason = (
+            f"No EvalConfig registered for {ctx.model_spec.model_name!r} "
+            f"(hf_model_repo={ctx.model_spec.hf_model_repo!r}) in "
+            "reference_config/evals/eval_config.py; cannot run the TTS quality eval."
+        )
+        logger.error(reason)
+        return _tts_eval_block(
+            ctx,
+            _PLACEHOLDER_TASK,
+            score=None,
+            wer=None,
+            accuracy_check=ReportCheckTypes.NA,
+            error=reason,
+        )
 
     missing = _missing_quality_deps()
     if missing:

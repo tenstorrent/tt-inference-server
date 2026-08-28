@@ -1,16 +1,16 @@
-# xtts-v2 Tenstorrent Support on N150
+# xtts-v2 Tenstorrent Support on BH QuietBox 2
 
 #### Useful links
 
-- [N150 details](https://tenstorrent.com/hardware/wormhole)
+- [BH QuietBox 2 details](https://tenstorrent.com/hardware/tt-quietbox)
 - [Search other tts models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
 `xtts-v2` is also supported on hardware:
 
-- [BH QuietBox 2](xtts_v2_p300x2.md)
+- [N150](xtts_v2_n150.md)
 
-## Quickstart - Deploy xtts-v2 Inference Server on n150
+## Quickstart - Deploy xtts-v2 Inference Server on BH QuietBox 2
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
 
@@ -20,7 +20,7 @@ This model is supported by [tt-media-server](../../../tt-media-server/README.md)
 
 ```bash
 # --dev-mode is required: the model spec currently lives in the dev catalog (EXPERIMENTAL)
-python3 run.py --dev-mode --model XTTS-v2 --device n150 --workflow server --docker-server
+python3 run.py --dev-mode --model XTTS-v2 --device p300x2 --workflow server --docker-server
 ```
 For details on the run.py command, see the [run.py CLI Options](../../workflows_user_guide.md#runpy-cli-options) section of the User Guide.
 
@@ -30,10 +30,23 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 |-----------|-------|
 | Weights | [coqui/XTTS-v2](https://huggingface.co/coqui/XTTS-v2) |
 | Model Status | 🟡 Experimental |
-| Max Batch Size | 1 |
+| Max Batch Size | 1 (per chip; 4 concurrent requests across the box) |
 | Implementation Code | [xtts_v2](https://github.com/tenstorrent/tt-metal/tree/main/models/experimental/xtts_v2) |
 | tt-metal Commit | TBD (requires a tt-metal build containing `models/experimental/xtts_v2`) |
 | Docker Image | TBD |
+
+## Parallelism
+
+The model is single-chip, so a BH QuietBox 2 (2x P300 cards = 4 Blackhole chips) is used
+**data-parallel**: the server opens one worker per chip (`device_ids = "(0),(1),(2),(3)"`),
+each holding its own full copy of the model on a `(1,1)` mesh, and the scheduler hands each
+incoming request to a free worker. Four requests are therefore synthesized concurrently at
+single-chip latency; a single request is no faster than on N150.
+
+Each worker sees exactly one chip via `TT_VISIBLE_DEVICES`, which makes tt-metal classify the
+board as a CUSTOM cluster; `TT_MESH_GRAPH_DESC_PATH` is set to the single-Blackhole-chip
+descriptor for that reason (handled automatically in `utils/runner_utils.py`, same as
+speecht5).
 
 ## Model-specific configuration
 
@@ -49,3 +62,6 @@ Notes:
 - Long request texts are split at sentence boundaries (~240 chars per chunk) and synthesized per chunk with a short stitched pause — one request may take several seconds per ~10 s of audio.
 - Fixing the request's `seed` makes identical text reproduce identical audio; omitting it draws randomly per request.
 - Voice cloning is fixed to the `XTTS_REF_AUDIO` voice at warmup; per-request `speaker_id`/`speaker_embedding` are not yet supported.
+- All four workers warm up in parallel on first start (each JIT-compiles into its own
+  `built/<device_id>` cache), so first-start warmup is CPU-bound and slower than a single-chip
+  start; subsequent starts hit the caches.
