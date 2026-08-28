@@ -65,5 +65,14 @@ def test_quetzal_nightly_rows_preserve_native_vllm_rows():
         # additional-args would create two selectors at the run.py boundary.
         assert "--impl" not in args
         assert "--quetzal-models-root" in args
-        assert quetzal_commit in args
-        assert expected_revision[model] in args
+        if model != "Qwen3.6-27B":
+            assert quetzal_commit in args
+            assert expected_revision[model] in args
+
+    qwen_args = config["models"]["Qwen3.6-27B"]["implementations"][1]["ci"][
+        "nightly"
+    ]["device-args"]["P300X2"]["additional-args"]
+    assert qwen_args == (
+        "--quetzal-models-root "
+        "/mnt/models/huggingface/quetzal/nkapre/packages/sha256-f1d6cebaf6cd432c78721ec3b81101ab86493f387b37f63bc11aca2fc6f6d8d8-0a8efa103ee378c7cd0e2fa25b0426cbb82752e270f8927bdf44eb2cfe68ce66"
+    )

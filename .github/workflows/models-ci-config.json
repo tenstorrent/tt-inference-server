@@ -354,7 +354,7 @@
               ],
               "device-args": {
                 "P300X2": {
-                  "additional-args": "--quetzal-models-root /mnt/models/quetzal-runtime/49f103ad8f80523ba0d35c5825aee908507f196b/qwen36-6a9e13bd6fc8f0983b9b99948120bc37f49c13e9-p150x4-b1-s8192"
+                  "additional-args": "--quetzal-models-root /mnt/models/huggingface/quetzal/nkapre/packages/sha256-f1d6cebaf6cd432c78721ec3b81101ab86493f387b37f63bc11aca2fc6f6d8d8-0a8efa103ee378c7cd0e2fa25b0426cbb82752e270f8927bdf44eb2cfe68ce66"
                 }
               }
             }
