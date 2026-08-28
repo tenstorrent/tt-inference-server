@@ -7,42 +7,17 @@ templates:
 # Training templates
 # =============================================================================
 - weights:
-    - google/gemma-1.1-2b-it
-  version: "0.19.0"
-  tt_metal_commit: "REPLACE_ME"
-  docker_image: "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:7dd06205408f80831c0c9abb93f85e13d4b20a81_22f431c_97985089226"
-  impl: training_lora
-  model_type: TRAINING
-  inference_engine: FORGE
-  status: EXPERIMENTAL
-  uses_tensor_model_cache: false
-  env_vars:
-    MODEL_RUNNER: "training-lora"
-    TRAINING_MODEL: "gemma-1.1-2b-it"
-    ENABLE_JOB_PERSISTENCE: true
-    JOB_CLEANUP_INTERVAL_SECONDS: 10000
-    JOB_MAX_STUCK_TIME_SECONDS: 100000
-    REQUEST_PROCESSING_TIMEOUT_SECONDS: 100000
-  device_model_specs:
-    - device: P150
-      max_concurrency: 1
-      max_context: 1024
-    - device: P300
-      max_concurrency: 1
-      max_context: 1024
-
-- weights:
     - meta-llama/Llama-3.1-8B
   version: "0.19.0"
   tt_metal_commit: "REPLACE_ME"
-  docker_image: "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:7dd06205408f80831c0c9abb93f85e13d4b20a81_22f431c_97985089226"
+  docker_image: "ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-forge:f9bf47380cac8eba49c496502b814084ec8448f9_c57fa48_98720748645"
   impl: training_lora
   model_type: TRAINING
   inference_engine: FORGE
   status: EXPERIMENTAL
   uses_tensor_model_cache: false
   env_vars:
-    MODEL_RUNNER: "training-lora"
+    MODEL_RUNNER: "trainer-training-lora"
     TRAINING_MODEL: "Llama-3.1-8B"
     ENABLE_JOB_PERSISTENCE: true
     JOB_CLEANUP_INTERVAL_SECONDS: 10000
