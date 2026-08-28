@@ -49,6 +49,12 @@ class ContractError(ValueError):
 
 _CAPABILITY_SCHEMA = "ttis.external-generated-quetzal-capability/v1"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_QUETZAL_TARGET_MESH_BY_DEVICE = {
+    # P300X2/QB2 is four physically discovered P150 chips. Keep this hardware
+    # mapping independent of model IDs; the receipt still binds the exact
+    # generated artifact to the endpoint's reported target_mesh.
+    "p300x2": "p150x4",
+}
 
 
 def _require_sha256(value: object, field: str) -> str:
@@ -105,15 +111,46 @@ def _validate_capability_receipt(receipt: dict, expected_model: str) -> None:
         raise ContractError(
             "artifact_identity.serving_backend must be 'generated_quetzal'"
         )
-    for field in ("codegen_fingerprint", "weights_fingerprint", "emit_hash"):
+    for field in (
+        "codegen_fingerprint",
+        "weights_fingerprint",
+        "emit_hash",
+        "prefill_emit_hash",
+        "decode_emit_hash",
+    ):
         _require_sha256(identity.get(field), f"artifact_identity.{field}")
+    if identity.get("artifact_equivalence") != "exact":
+        raise ContractError("artifact_identity.artifact_equivalence must be 'exact'")
+    if identity.get("lossy_transformations") != []:
+        raise ContractError("artifact_identity.lossy_transformations must be empty")
+    if not isinstance(identity.get("target_mesh"), str) or not identity["target_mesh"]:
+        raise ContractError("artifact_identity.target_mesh must be non-empty")
+    if identity.get("batch_size") != 1:
+        raise ContractError("artifact_identity.batch_size must be 1")
     capabilities = receipt.get("capabilities")
     if not isinstance(capabilities, dict):
         raise ContractError("capability receipt needs capabilities")
-    for field in ("max_input_tokens", "max_context_tokens", "max_concurrency"):
+    if capabilities.get("schema") != "ttq.serving_capabilities/v1":
+        raise ContractError(
+            "capabilities.schema must be 'ttq.serving_capabilities/v1'"
+        )
+    for field in (
+        "max_context_tokens",
+        "max_concurrency",
+        "batch_size",
+        "chunk_size",
+        "kv_blocks",
+    ):
         value = capabilities.get(field)
         if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
             raise ContractError(f"capabilities.{field} must be a positive integer")
+    if capabilities.get("batch_size") != 1:
+        raise ContractError("capabilities.batch_size must be 1")
+    if capabilities.get("chunked_prefill") is not True:
+        raise ContractError("capabilities.chunked_prefill must be true")
+    physical_capacity = capabilities["chunk_size"] * capabilities["kv_blocks"]
+    if physical_capacity != capabilities["max_context_tokens"]:
+        raise ContractError("capability KV geometry differs from max_context_tokens")
 
 
 def _endpoint_base(server_url: str, service_port: int) -> str:
@@ -136,6 +173,7 @@ def _expected_endpoint_evidence(receipt: dict) -> dict:
             "provider_policy": "generated_quetzal_only",
             "resident": receipt["served_model"],
             "artifact_identity": dict(receipt["artifact_identity"]),
+            "serving_capabilities": dict(receipt["capabilities"]),
         },
     }
 
@@ -145,6 +183,54 @@ def _evidence_sha256(evidence: dict) -> str:
         evidence, sort_keys=True, separators=(",", ":"), ensure_ascii=False
     ).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
+
+
+def receipt_from_contract(contract: dict) -> dict:
+    """Reconstruct the already-verified receipt fields needed for drift checks."""
+    evidence = contract.get("endpoint_evidence")
+    if not isinstance(evidence, dict):
+        raise ContractError("launch contract has no endpoint_evidence")
+    expected_digest = contract.get("endpoint_evidence_sha256")
+    if _evidence_sha256(evidence) != expected_digest:
+        raise ContractError("launch contract endpoint evidence digest mismatch")
+    health = evidence.get("health")
+    if not isinstance(health, dict):
+        raise ContractError("launch contract has no endpoint health evidence")
+    receipt = {
+        "schema": _CAPABILITY_SCHEMA,
+        "model_id": contract.get("hf_model_repo"),
+        "served_model": contract.get("served_model"),
+        "implementation": contract.get("implementation"),
+        "serving_backend": contract.get("serving_backend"),
+        "provider_policy": contract.get("provider_policy"),
+        "artifact_identity": contract.get("artifact_identity"),
+        "capabilities": health.get("serving_capabilities"),
+    }
+    _validate_capability_receipt(receipt, contract.get("hf_model_repo"))
+    return receipt
+
+
+def verify_launch_contract_endpoint(
+    contract_path: Path, timeout_sec: float = 10.0
+) -> dict:
+    """Re-probe an endpoint and reject any drift from a persisted launch plan."""
+    try:
+        document = json.loads(contract_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ContractError(f"cannot read launch contract {contract_path}: {exc}") from exc
+    contract = document.get("contract") if isinstance(document, dict) else None
+    if not isinstance(contract, dict):
+        raise ContractError("launch contract document has no contract object")
+    receipt = receipt_from_contract(contract)
+    evidence = verify_external_endpoint(
+        server_url=contract["server_url"],
+        service_port=contract["service_port"],
+        receipt=receipt,
+        timeout_sec=timeout_sec,
+    )
+    if _evidence_sha256(evidence) != contract["endpoint_evidence_sha256"]:
+        raise ContractError("external generated-Quetzal endpoint identity drifted")
+    return evidence
 
 
 def verify_external_endpoint(
@@ -221,6 +307,10 @@ def verify_external_endpoint(
                 f"endpoint artifact_identity.{field} mismatch: expected "
                 f"{expected!r}, got {actual_identity.get(field)!r}"
             )
+    if health.get("serving_capabilities") != receipt["capabilities"]:
+        raise ContractError(
+            "endpoint serving_capabilities do not exactly match the pinned receipt"
+        )
     # Persist only the closed identity fields. Runtime counters and other
     # mutable health fields must not make a post-run drift check ambiguous.
     return _expected_endpoint_evidence(receipt)
@@ -268,11 +358,21 @@ def build_contract(
 ) -> tuple[AgenticLaunchContract, object]:
     catalog_spec, _, _ = get_runtime_model_spec(model=model, device=device)
     _validate_capability_receipt(capability_receipt, catalog_spec.hf_model_repo)
+    expected_mesh = _QUETZAL_TARGET_MESH_BY_DEVICE.get(device.lower())
+    if expected_mesh is None:
+        raise ContractError(
+            f"no generated-Quetzal target-mesh contract for device {device!r}"
+        )
+    actual_mesh = capability_receipt["artifact_identity"]["target_mesh"]
+    if actual_mesh != expected_mesh:
+        raise ContractError(
+            f"artifact target_mesh must be {expected_mesh!r} for {device}, "
+            f"got {actual_mesh!r}"
+        )
     expected_endpoint_evidence = _expected_endpoint_evidence(capability_receipt)
     if endpoint_evidence != expected_endpoint_evidence:
         raise ContractError("closed endpoint identity evidence does not match receipt")
     capabilities = capability_receipt["capabilities"]
-    admitted_max_input_tokens = capabilities["max_input_tokens"]
     admitted_max_context_tokens = capabilities["max_context_tokens"]
     model_spec = catalog_spec
     eval_config = EVAL_CONFIGS.get(model_spec.model_name)
@@ -300,11 +400,6 @@ def build_contract(
     if required_context > catalog_context:
         raise ContractError(
             f"task requires {required_context} tokens but catalog declares {catalog_context}"
-        )
-    if admitted_max_input_tokens < cfg.max_input_tokens:
-        raise ContractError(
-            f"artifact admits {admitted_max_input_tokens} input tokens; "
-            f"task requires {cfg.max_input_tokens}"
         )
     if admitted_max_context_tokens < required_context:
         raise ContractError(
@@ -355,7 +450,10 @@ def build_contract(
         artifact_identity=dict(capability_receipt["artifact_identity"]),
         endpoint_evidence=expected_endpoint_evidence,
         endpoint_evidence_sha256=_evidence_sha256(expected_endpoint_evidence),
-        admitted_max_input_tokens=admitted_max_input_tokens,
+        # Input admission is the exact workload policy, counted immediately
+        # before dispatch. The endpoint independently proves total KV context;
+        # no caller-authored max-input capacity is trusted.
+        admitted_max_input_tokens=cfg.max_input_tokens,
         admitted_max_context_tokens=admitted_max_context_tokens,
         server_url=server_url.rstrip("/"),
         service_port=service_port,
@@ -367,6 +465,7 @@ def write_plan(
     contract: AgenticLaunchContract, model_spec: object, output_dir: Path
 ) -> tuple[Path, Path, list[str]]:
     output_dir.mkdir(parents=True, exist_ok=True)
+    plan_path = output_dir / "agentic_launch_contract.json"
     runtime = RuntimeConfig(
         model=contract.model,
         workflow="agentic",
@@ -375,6 +474,7 @@ def write_plan(
         server_url=contract.server_url,
         limit_samples_mode=contract.limit_samples_mode,
         impl="quetzal",
+        external_agentic_contract=str(plan_path),
     )
     # This spec is client-side metadata for an already-running external server.
     # Make the selected implementation explicit so the launch artifact cannot
@@ -417,7 +517,6 @@ def write_plan(
         "--output-dir",
         str(output_dir / "results"),
     ]
-    plan_path = output_dir / "agentic_launch_contract.json"
     plan_path.write_text(
         json.dumps(
             {"contract": asdict(contract), "argv": command}, indent=2, sort_keys=True

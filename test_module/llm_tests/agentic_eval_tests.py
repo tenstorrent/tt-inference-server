@@ -134,10 +134,32 @@ def _require_openai_server(ctx: MediaContext) -> None:
     logger.info("Inference server health check passed via %s", endpoint)
 
 
+def _verify_external_agentic_identity(ctx: MediaContext) -> None:
+    runtime = getattr(ctx, "runtime_config", None)
+    contract_path = getattr(runtime, "external_agentic_contract", None)
+    if not contract_path:
+        return
+    if not ctx.remote_server:
+        raise RuntimeError(
+            "external_agentic_contract is only valid for an external server"
+        )
+    from scripts.release.plan_agentic_external_run import (
+        verify_launch_contract_endpoint,
+    )
+
+    evidence = verify_launch_contract_endpoint(Path(contract_path))
+    logger.info(
+        "External generated-Quetzal identity verified: model=%s emit=%s",
+        evidence["models"]["id"],
+        evidence["health"]["artifact_identity"]["emit_hash"],
+    )
+
+
 def run_llm_agentic_eval(ctx: MediaContext) -> List[Block]:
     """Run every EVALS_AGENTIC task for this model; return one Block per task."""
     _configure_openai_env(ctx)
     _require_openai_server(ctx)
+    _verify_external_agentic_identity(ctx)
 
     agentic_tasks = _select_agentic_tasks(ctx)
     if not agentic_tasks:
@@ -152,33 +174,38 @@ def run_llm_agentic_eval(ctx: MediaContext) -> List[Block]:
     placeholder_config = LLMRunConfig(isl=0, osl=0, max_concurrency=0, num_prompts=0)
 
     blocks: List[Block] = []
-    for task in agentic_tasks:
-        driver = make_agentic_driver(task, runtime_config=runtime_config)
-        logger.info("Running %s task: %s", driver.name, task.task_name)
-        outcome = driver.run(placeholder_config, server, driver_context)
+    try:
+        for task in agentic_tasks:
+            driver = make_agentic_driver(task, runtime_config=runtime_config)
+            logger.info("Running %s task: %s", driver.name, task.task_name)
+            outcome = driver.run(placeholder_config, server, driver_context)
 
-        if outcome.return_code != 0:
-            logger.error(
-                "Task %s exited with rc=%d",
-                task.task_name,
-                outcome.return_code,
-            )
-            blocks.append(
-                driver.failure_block(
-                    return_code=outcome.return_code,
-                    device=driver_context.device,
+            if outcome.return_code != 0:
+                logger.error(
+                    "Task %s exited with rc=%d",
+                    task.task_name,
+                    outcome.return_code,
                 )
-            )
-            continue
-        if outcome.raw is None:
-            continue
+                blocks.append(
+                    driver.failure_block(
+                        return_code=outcome.return_code,
+                        device=driver_context.device,
+                    )
+                )
+                continue
+            if outcome.raw is None:
+                continue
 
-        blocks.append(driver.parse(outcome.raw, device=driver_context.device))
-        logger.info(
-            "Task %s done: accuracy=%s",
-            task.task_name,
-            blocks[-1].data.get("accuracy"),
-        )
+            blocks.append(driver.parse(outcome.raw, device=driver_context.device))
+            logger.info(
+                "Task %s done: accuracy=%s",
+                task.task_name,
+                blocks[-1].data.get("accuracy"),
+            )
+    finally:
+        # A server that restarted into a native/wrong artifact during a long
+        # run must invalidate the result even if the harness itself returned 0.
+        _verify_external_agentic_identity(ctx)
 
     accept_blocks(blocks, envelope=sweep_envelope(ctx))
     return blocks

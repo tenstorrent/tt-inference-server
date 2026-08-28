@@ -98,6 +98,7 @@ def _swe_config(tmp_path, venv_python, backend="swe-agent"):
         max_output_tokens=None,
         completion_kwargs={},
         swebench_timeout_sec=None,
+        agent_generation_timeout_sec=3600,
         shuffle=False,
         random_delay_multiplier=0.0,
         score_existing_predictions=False,

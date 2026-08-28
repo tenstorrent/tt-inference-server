@@ -38,6 +38,7 @@ def test_gpt120_swebench_is_exact_c1_124k_five_instance_contract(tmp_path):
     assert cfg.max_input_tokens == 92 * 1024
     assert cfg.max_output_tokens == 32 * 1024
     assert cfg.max_input_tokens + cfg.max_output_tokens == 124 * 1024
+    assert cfg.agent_generation_timeout_sec == 6 * 60 * 60
     assert cfg.swebench_timeout_sec == 30 * 60
     assert resolve_instance_ids(task, Runtime()) == EXPECTED_INSTANCES
     assert resolve_n_tasks(task, Runtime()) is None

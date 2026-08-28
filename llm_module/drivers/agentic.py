@@ -195,6 +195,7 @@ def build_swebench_config(
         max_output_tokens=cfg.max_output_tokens,
         completion_kwargs=cfg.completion_kwargs,
         swebench_timeout_sec=cfg.swebench_timeout_sec,
+        agent_generation_timeout_sec=cfg.agent_generation_timeout_sec,
         shuffle=cfg.shuffle,
         random_delay_multiplier=cfg.random_delay_multiplier,
         score_existing_predictions=False,

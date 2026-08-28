@@ -174,6 +174,9 @@ class SWEbenchEvalConfig:
     mini_model_class: str = "litellm"
     mini_environment_class: str = "docker"
     swebench_timeout_sec: Optional[int] = None
+    # Wall-clock bound for the complete agent-generation phase. This is
+    # distinct from swebench_timeout_sec, which bounds each later verifier.
+    agent_generation_timeout_sec: Optional[int] = None
     shuffle: bool = True
     random_delay_multiplier: float = 0.3
     instance_ids_map: Dict[EvalLimitMode, List[str]] = field(default_factory=dict)
@@ -4404,6 +4407,10 @@ _eval_config_list = [
                     # shrink the workload.
                     max_input_tokens=92 * 1024,
                     max_output_tokens=32 * 1024,
+                    # Five C1 agentic trials may each generate a long reasoning
+                    # trajectory. Bound the complete generation phase without
+                    # conflating it with the 30-minute per-instance verifier.
+                    agent_generation_timeout_sec=6 * 60 * 60,
                     swebench_timeout_sec=30 * 60,
                     shuffle=False,
                     instance_ids_map={

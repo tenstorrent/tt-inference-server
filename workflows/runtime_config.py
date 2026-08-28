@@ -68,6 +68,9 @@ class RuntimeConfig:
     workflow_args: Optional[str] = None
     limit_samples_mode: Optional[str] = None
     eval_samples: Optional[str] = None
+    # Immutable external generated-Quetzal launch plan. Agentic workflows
+    # re-probe its closed identity before and after the long-running harness.
+    external_agentic_contract: Optional[str] = None
     sdxl_num_prompts: str = "100"
 
     # Prefix-cache benchmark

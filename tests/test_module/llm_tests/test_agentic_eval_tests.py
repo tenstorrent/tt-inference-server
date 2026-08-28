@@ -87,6 +87,7 @@ class FakeSWEbenchConfig:
     mini_model_class: str = "litellm"
     mini_environment_class: str = "docker"
     swebench_timeout_sec: Optional[int] = None
+    agent_generation_timeout_sec: Optional[int] = 3600
     shuffle: bool = True
     random_delay_multiplier: float = 0.3
     instance_ids_map: Dict[EvalLimitMode, List[str]] = field(default_factory=dict)
@@ -480,9 +481,10 @@ class TestSWEbenchHarness:
             n_tasks=1,
         )
 
-        with patch("llm_module.agentic.swebench.subprocess.run") as run_cmd:
-            run_cmd.return_value.returncode = 23
-
+        with patch(
+            "llm_module.agentic.swebench._run_bounded_process_group",
+            return_value=23,
+        ):
             assert run_swebench(cfg) == 23
 
     def test_harness_failure_returns_nonzero_without_result_file(
@@ -501,16 +503,15 @@ class TestSWEbenchHarness:
         preds_path = cfg.output_dir / "mini_sweagent" / "preds.json"
         preds_path.parent.mkdir(parents=True)
         preds_path.write_text(
-            '{"django__django-11299": {"model_patch": ""}}',
+            '{"django__django-11299": {"model_patch": "diff --git a/x b/x"}}',
             encoding="utf-8",
         )
 
-        with patch("llm_module.agentic.swebench.subprocess.run") as run_cmd:
-            run_cmd.side_effect = [
-                SimpleNamespace(returncode=0),
-                SimpleNamespace(returncode=31),
-            ]
-
+        with patch(
+            "llm_module.agentic.swebench._run_bounded_process_group",
+            return_value=0,
+        ), patch("llm_module.agentic.swebench.subprocess.run") as run_cmd:
+            run_cmd.return_value = SimpleNamespace(returncode=31)
             assert run_swebench(cfg) == 31
 
     def test_harness_retries_transient_failure(self, tmp_path, monkeypatch):
@@ -529,20 +530,21 @@ class TestSWEbenchHarness:
         preds_path = cfg.output_dir / "mini_sweagent" / "preds.json"
         preds_path.parent.mkdir(parents=True)
         preds_path.write_text(
-            '{"django__django-11299": {"model_patch": ""}}',
+            '{"django__django-11299": {"model_patch": "diff --git a/x b/x"}}',
             encoding="utf-8",
         )
 
-        with patch("llm_module.agentic.swebench.subprocess.run") as run_cmd:
+        with patch(
+            "llm_module.agentic.swebench._run_bounded_process_group",
+            return_value=0,
+        ), patch("llm_module.agentic.swebench.subprocess.run") as run_cmd:
             run_cmd.side_effect = [
-                SimpleNamespace(returncode=0),  # agent
                 SimpleNamespace(returncode=1),  # harness attempt 1
                 SimpleNamespace(returncode=1),  # harness attempt 2 (last)
             ]
 
             assert run_swebench(cfg) == 1
-            # 1 agent invocation + 2 harness attempts.
-            assert run_cmd.call_count == 3
+            assert run_cmd.call_count == 2
 
 
 class TestRunCommandWithRetries:

@@ -7,9 +7,11 @@ from __future__ import annotations
 import json
 import logging
 import os
+import signal
 import subprocess
 import sys
 import re
+import tempfile
 import time
 
 from dataclasses import dataclass, field
@@ -55,6 +57,7 @@ class SWEbenchRunConfig:
     max_output_tokens: Optional[int]
     completion_kwargs: dict[str, Any]
     swebench_timeout_sec: Optional[int]
+    agent_generation_timeout_sec: Optional[int]
     shuffle: bool
     random_delay_multiplier: float
     score_existing_predictions: bool
@@ -76,6 +79,120 @@ def _interpreter(config: SWEbenchRunConfig) -> Path:
 def _run_command(cmd: list[str], cwd: Path, env: dict[str, str]) -> int:
     logger.info("Running command: %s", " ".join(cmd))
     return subprocess.run(cmd, cwd=cwd, env=env).returncode
+
+
+def _run_bounded_process_group(
+    cmd: list[str],
+    cwd: Path,
+    env: dict[str, str],
+    *,
+    timeout_sec: float,
+    terminate_grace_sec: float = 20.0,
+) -> int:
+    """Run a harness subprocess with a hard wall-clock and group cleanup."""
+    if timeout_sec <= 0:
+        raise ValueError(f"timeout_sec must be positive, got {timeout_sec!r}")
+    logger.info(
+        "Running bounded command (timeout %.0fs): %s", timeout_sec, " ".join(cmd)
+    )
+    process = subprocess.Popen(cmd, cwd=cwd, env=env, start_new_session=True)
+    try:
+        return process.wait(timeout=timeout_sec)
+    except subprocess.TimeoutExpired:
+        logger.error(
+            "Command exceeded %.0fs; terminating process group: %s",
+            timeout_sec,
+            " ".join(cmd),
+        )
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        try:
+            process.wait(timeout=terminate_grace_sec)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.wait()
+        return 124
+
+
+def _atomic_write_json(path: Path, value: object) -> None:
+    """Durably replace a JSON state file without exposing partial contents."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    temporary_path = Path(temporary)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            json.dump(value, stream, indent=2, sort_keys=True)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary_path, path)
+        directory_fd = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    finally:
+        temporary_path.unlink(missing_ok=True)
+
+
+def _valid_prediction(record: object) -> bool:
+    return (
+        isinstance(record, dict)
+        and isinstance(record.get("model_patch"), str)
+        and bool(record["model_patch"].strip())
+    )
+
+
+def _load_successful_predictions(path: Path, expected_ids: list[str]) -> dict[str, dict]:
+    if not path.exists():
+        return {}
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"resume state is unreadable at {path}: {exc}") from exc
+    if not isinstance(value, dict):
+        raise RuntimeError(f"resume state at {path} is not a JSON object")
+    expected = set(expected_ids)
+    unknown = sorted(set(value) - expected)
+    if unknown:
+        raise RuntimeError(f"resume state contains unexpected instance IDs: {unknown}")
+    invalid = sorted(
+        instance_id
+        for instance_id, row in value.items()
+        if not _valid_prediction(row)
+    )
+    if invalid:
+        raise RuntimeError(f"resume state contains failed/empty samples: {invalid}")
+    return value
+
+
+def _validate_prediction_file(path: Path, expected_ids: list[str]) -> dict[str, dict]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"predictions are unreadable at {path}: {exc}") from exc
+    if not isinstance(value, dict) or not value:
+        raise RuntimeError(f"predictions at {path} are empty or not an object")
+    invalid = sorted(
+        instance_id
+        for instance_id, row in value.items()
+        if not _valid_prediction(row)
+    )
+    if invalid:
+        raise RuntimeError(f"predictions contain failed/empty samples: {invalid}")
+    if expected_ids:
+        missing = sorted(set(expected_ids) - set(value))
+        extra = sorted(set(value) - set(expected_ids))
+        if missing or extra:
+            raise RuntimeError(
+                f"prediction IDs differ from fixed selection: missing={missing}, extra={extra}"
+            )
+    return value
 
 
 def _env_int(name: str, default: int) -> int:
@@ -306,6 +423,8 @@ def build_mini_sweagent_command(
     config: SWEbenchRunConfig,
     mini_config_path: Path,
     mini_output_dir: Path,
+    *,
+    instance_ids: Optional[list[str]] = None,
 ) -> list[str]:
     mini_exec = _interpreter(config).parent / "mini-extra"
     cmd = [
@@ -330,12 +449,100 @@ def build_mini_sweagent_command(
     ]
     if config.shuffle:
         cmd.append("--shuffle")
-    if config.instance_ids:
-        regex = "^(" + "|".join(re.escape(iid) for iid in config.instance_ids) + ")$"
+    selected_ids = config.instance_ids if instance_ids is None else instance_ids
+    if selected_ids:
+        regex = "^(" + "|".join(re.escape(iid) for iid in selected_ids) + ")$"
         cmd.extend(["--filter", regex])
     elif config.n_tasks is not None:
         cmd.extend(["--slice", f":{config.n_tasks}"])
     return cmd
+
+
+def _run_fixed_mini_sweagent_samples(
+    config: SWEbenchRunConfig,
+    mini_config_path: Path,
+    env: dict[str, str],
+) -> tuple[int, Path]:
+    """Run fixed IDs one at a time with atomic successful-sample resume state."""
+    if not config.instance_ids:
+        raise ValueError("fixed-sample runner requires instance_ids")
+    timeout = config.agent_generation_timeout_sec
+    if timeout is None or timeout <= 0:
+        raise ValueError("fixed-sample runner requires a positive generation timeout")
+
+    output_dir = config.output_dir / "mini_sweagent"
+    resume_path = output_dir / "successful_samples.json"
+    predictions = _load_successful_predictions(resume_path, config.instance_ids)
+    started = time.monotonic()
+    for instance_id in config.instance_ids:
+        if instance_id in predictions:
+            logger.info("Resuming successful SWE-bench sample %s", instance_id)
+            continue
+        remaining = timeout - (time.monotonic() - started)
+        if remaining <= 0:
+            return 124, output_dir / "preds.json"
+        sample_dir = output_dir / "samples" / instance_id
+        sample_predictions_path = sample_dir / "preds.json"
+        if sample_predictions_path.exists():
+            try:
+                previous = json.loads(sample_predictions_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                previous = None
+            previous_record = previous.get(instance_id) if isinstance(previous, dict) else None
+            if _valid_prediction(previous_record):
+                # The sample completed before a crash but the consolidated
+                # resume state did not. Recover it without another model call.
+                predictions[instance_id] = previous_record
+                _atomic_write_json(resume_path, predictions)
+                _atomic_write_json(output_dir / "preds.json", predictions)
+                continue
+            failed_path = sample_dir / f"preds.failed.{int(time.time())}.json"
+            os.replace(sample_predictions_path, failed_path)
+        command = build_mini_sweagent_command(
+            config,
+            mini_config_path,
+            sample_dir,
+            instance_ids=[instance_id],
+        )
+        rc = _run_bounded_process_group(
+            command,
+            cwd=config.output_dir,
+            env=env,
+            timeout_sec=remaining,
+        )
+        if rc != 0:
+            return rc, output_dir / "preds.json"
+        try:
+            sample_predictions = json.loads(
+                sample_predictions_path.read_text(encoding="utf-8")
+            )
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.error(
+                "Sample %s produced unreadable predictions: %s", instance_id, exc
+            )
+            return 65, output_dir / "preds.json"
+        record = (
+            sample_predictions.get(instance_id)
+            if isinstance(sample_predictions, dict)
+            else None
+        )
+        if not _valid_prediction(record):
+            logger.error("Sample %s produced a failed/empty patch sentinel", instance_id)
+            return 65, output_dir / "preds.json"
+        predictions[instance_id] = record
+        _atomic_write_json(resume_path, predictions)
+        _atomic_write_json(output_dir / "preds.json", predictions)
+
+    missing = [
+        instance_id
+        for instance_id in config.instance_ids
+        if instance_id not in predictions
+    ]
+    if missing:
+        logger.error("Fixed SWE-bench run is missing predictions: %s", missing)
+        return 65, output_dir / "preds.json"
+    _atomic_write_json(output_dir / "preds.json", predictions)
+    return 0, output_dir / "preds.json"
 
 
 def _find_sweagent_preds(sweagent_output_dir: Path) -> Path:
@@ -610,13 +817,37 @@ def run(config: SWEbenchRunConfig) -> int:
     elif config.agent_backend == "mini-swe-agent":
         mini_config_path = _write_mini_sweagent_model_config(config)
         mini_output_dir = config.output_dir / "mini_sweagent"
-        mini_cmd = build_mini_sweagent_command(
-            config, mini_config_path, mini_output_dir
-        )
-        rc = _run_command(mini_cmd, cwd=config.output_dir, env=env)
+        if config.instance_ids:
+            rc, preds_path = _run_fixed_mini_sweagent_samples(
+                config, mini_config_path, env
+            )
+        else:
+            if (
+                config.agent_generation_timeout_sec is None
+                or config.agent_generation_timeout_sec <= 0
+            ):
+                raise ValueError(
+                    "mini-swe-agent requires a positive agent generation timeout"
+                )
+            mini_cmd = build_mini_sweagent_command(
+                config, mini_config_path, mini_output_dir
+            )
+            rc = _run_bounded_process_group(
+                mini_cmd,
+                cwd=config.output_dir,
+                env=env,
+                timeout_sec=config.agent_generation_timeout_sec,
+            )
+            preds_path = mini_output_dir / "preds.json"
         if rc != 0:
             return rc
-        preds_path = _find_sweagent_preds(mini_output_dir)
+        if not preds_path.exists():
+            raise FileNotFoundError(f"No mini-swe-agent predictions at {preds_path}")
+        try:
+            _validate_prediction_file(preds_path, config.instance_ids)
+        except RuntimeError as exc:
+            logger.error("Refusing to score invalid mini-swe-agent predictions: %s", exc)
+            return 65
     else:
         raise ValueError(f"Unsupported SWE-bench agent backend: {config.agent_backend}")
 

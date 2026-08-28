@@ -13,6 +13,7 @@ from scripts.release.plan_agentic_external_run import (
     build_contract,
     load_capability_receipt,
     verify_external_endpoint,
+    verify_launch_contract_endpoint,
     write_plan,
 )
 
@@ -21,14 +22,20 @@ _DIGESTS = {
     "codegen_fingerprint": "1" * 64,
     "weights_fingerprint": "2" * 64,
     "emit_hash": "3" * 64,
+    "prefill_emit_hash": "4" * 64,
+    "decode_emit_hash": "5" * 64,
 }
 
 
 def _receipt(**capability_overrides):
     capabilities = {
-        "max_input_tokens": 92 * 1024,
+        "schema": "ttq.serving_capabilities/v1",
         "max_context_tokens": 128 * 1024,
         "max_concurrency": 1,
+        "batch_size": 1,
+        "chunked_prefill": True,
+        "chunk_size": 1024,
+        "kv_blocks": 128,
     }
     capabilities.update(capability_overrides)
     return {
@@ -41,6 +48,10 @@ def _receipt(**capability_overrides):
         "artifact_identity": {
             "model_id": "openai/gpt-oss-120b",
             "serving_backend": "generated_quetzal",
+            "target_mesh": "p150x4",
+            "batch_size": 1,
+            "artifact_equivalence": "exact",
+            "lossy_transformations": [],
             **_DIGESTS,
         },
         "capabilities": capabilities,
@@ -62,6 +73,7 @@ def _evidence(receipt=None):
             "provider_policy": "generated_quetzal_only",
             "resident": receipt["served_model"],
             "artifact_identity": deepcopy(receipt["artifact_identity"]),
+            "serving_capabilities": deepcopy(receipt["capabilities"]),
         },
     }
 
@@ -132,6 +144,7 @@ def test_gpt120_plan_pins_exact_swe_shape_and_writes_quetzal_argv(tmp_path):
     assert runtime["runtime_config"]["limit_samples_mode"] == "ci-nightly"
     assert runtime["runtime_config"]["workflow"] == "agentic"
     assert runtime["runtime_config"]["impl"] == "quetzal"
+    assert runtime["runtime_config"]["external_agentic_contract"] == str(plan_path)
     assert runtime["runtime_model_spec"]["impl"]["impl_id"] == "quetzal"
     assert runtime["runtime_model_spec"]["impl"]["repo_url"] == (
         "https://github.com/tenstorrent/tt-quetzalcoatlus"
@@ -148,14 +161,19 @@ def test_gpt120_plan_pins_exact_swe_shape_and_writes_quetzal_argv(tmp_path):
 @pytest.mark.parametrize(
     "field,value,match",
     [
-        ("max_input_tokens", 92 * 1024 - 1, "input tokens"),
-        ("max_context_tokens", 124 * 1024 - 1, "total tokens"),
         ("max_concurrency", 0, "positive integer"),
+        ("chunked_prefill", False, "chunked_prefill"),
     ],
 )
 def test_gpt120_plan_rejects_under_admitted_receipt(field, value, match):
     with pytest.raises(ContractError, match=match):
         _gpt120(capability_receipt=_receipt(**{field: value}))
+
+
+def test_gpt120_plan_rejects_coherent_but_insufficient_context():
+    receipt = _receipt(max_context_tokens=123 * 1024, kv_blocks=123)
+    with pytest.raises(ContractError, match="total tokens"):
+        _gpt120(capability_receipt=receipt)
 
 
 @pytest.mark.parametrize(
@@ -174,6 +192,24 @@ def test_gpt120_plan_rejects_under_admitted_receipt(field, value, match):
 def test_plan_rejects_non_quetzal_or_wrong_receipt(field, value, match):
     receipt = _receipt()
     receipt[field] = value
+    with pytest.raises(ContractError, match=match):
+        _gpt120(capability_receipt=receipt)
+
+
+@pytest.mark.parametrize(
+    "field,value,match",
+    [
+        ("target_mesh", "1chip", "target_mesh"),
+        ("batch_size", 2, "batch_size"),
+        ("artifact_equivalence", "reduced", "artifact_equivalence"),
+        ("lossy_transformations", [{"kind": "weight_quantization"}], "lossy_transformations"),
+        ("prefill_emit_hash", None, "prefill_emit_hash"),
+        ("decode_emit_hash", None, "decode_emit_hash"),
+    ],
+)
+def test_plan_rejects_wrong_topology_or_reduced_artifact(field, value, match):
+    receipt = _receipt()
+    receipt["artifact_identity"][field] = value
     with pytest.raises(ContractError, match=match):
         _gpt120(capability_receipt=receipt)
 
@@ -229,6 +265,35 @@ def test_endpoint_must_match_model_backend_policy_and_artifact():
             receipt=receipt,
             session=_Session(bad),
         )
+
+    bad = _evidence(receipt)
+    bad["health"]["serving_capabilities"]["max_context_tokens"] -= 1
+    with pytest.raises(ContractError, match="serving_capabilities"):
+        verify_external_endpoint(
+            server_url="http://qb2",
+            service_port=18091,
+            receipt=receipt,
+            session=_Session(bad),
+        )
+
+
+def test_persisted_contract_rejects_post_run_identity_drift(tmp_path, monkeypatch):
+    contract, model_spec = _gpt120()
+    plan_path, _, _ = write_plan(contract, model_spec, tmp_path)
+    monkeypatch.setattr(
+        "scripts.release.plan_agentic_external_run.verify_external_endpoint",
+        lambda **_kwargs: _evidence(),
+    )
+    assert verify_launch_contract_endpoint(plan_path) == _evidence()
+
+    drifted = _evidence()
+    drifted["health"]["artifact_identity"]["emit_hash"] = "9" * 64
+    monkeypatch.setattr(
+        "scripts.release.plan_agentic_external_run.verify_external_endpoint",
+        lambda **_kwargs: drifted,
+    )
+    with pytest.raises(ContractError, match="identity drifted"):
+        verify_launch_contract_endpoint(plan_path)
 
 
 def test_plan_rejects_non_agentic_task():
