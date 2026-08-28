@@ -28,7 +28,9 @@ def test_quetzal_derivative_keeps_third_runtime_out_of_standard_image_identity()
 def test_quetzal_is_installed_non_editably_and_entry_point_is_verified():
     source = DOCKERFILE.read_text()
     install_line = next(
-        line for line in source.splitlines() if "uv pip install" in line
+        line
+        for line in source.splitlines()
+        if "uv pip install /tmp/quetzal-source" in line
     )
     assert " -e " not in install_line
     assert "> /tmp/pip-check.before" in source
@@ -48,8 +50,35 @@ def test_quetzal_is_installed_non_editably_and_entry_point_is_verified():
     assert "validate_quetzal_runtime_contract" in source
     assert "d71abb2865d94511a1aaafbb02fabe1adfc5bd658ff9b876412f5f558111db4a" in source
     assert "152a50f9a06a66e3f64f822e88b4a00bf76fbe9d02cf53094d702751970be8d0" in source
-    assert "git fetch" not in source
-    assert "git clone" not in source
+
+
+def test_quetzal_runtime_is_rebuilt_in_base_abi_and_atomically_replaced():
+    source = DOCKERFILE.read_text()
+    revision = "b534549300fe2af11e6ee828675294bc0e359555"
+    patchset_sha = "22fb0bd2523b8a5c63fa20c3c8a1586dc9ead5150449d0eb02231fa8173a7edd"
+
+    assert "AS quetzal_ttmetal_builder" in source
+    assert source.count("FROM ${TT_INFERENCE_SERVER_BASE_IMAGE}") == 2
+    assert revision in source
+    assert patchset_sha in source
+    assert "COPY --from=quetzal_src patches/tt-metal/" in source
+    assert "COPY --from=quetzal_src tools/tt_metal_patchset.py" in source
+    assert source.index('git -C "${TT_METAL_HOME}" fetch') < source.index(
+        'git -C "${TT_METAL_HOME}" checkout --detach'
+    )
+    assert "--apply" in source
+    assert source.count("tt_metal_patchset.py") >= 3
+    assert "cmp /tmp/packages.before /tmp/packages.after" in source
+    assert "uv pip check" in source
+    assert "import ttnn, ttnn._ttnn, vllm" in source
+    whiteout = "RUN rm -rf /home/container_app_user/tt-metal"
+    runtime_copy = "COPY --from=quetzal_ttmetal_builder"
+    assert source.index(whiteout) < source.index(runtime_copy)
+    assert "/var/tmp/nkapre" not in source
+    assert "org.opencontainers.image.tt-metal.revision" in source
+    assert "org.opencontainers.image.tt-metal.patchset.sha256" in source
+    assert "ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_BASE_REVISION}" in source
+    assert "ENV TT_METAL_PATCHSET_SHA256=${TT_METAL_PATCHSET_SHA256}" in source
 
 
 def test_quetzal_runner_skips_native_registration_and_validates_package():
@@ -108,6 +137,12 @@ def _git_source(tmp_path):
     source.mkdir()
     subprocess.run(["git", "init", "-q", str(source)], check=True)
     (source / "pyproject.toml").write_text("[project]\nname='fixture'\nversion='0'\n")
+    patch_dir = source / "patches" / "tt-metal"
+    patch_dir.mkdir(parents=True)
+    (patch_dir / "gdn-productization-v1.json").write_text("{}\n")
+    tools_dir = source / "tools"
+    tools_dir.mkdir()
+    (tools_dir / "tt_metal_patchset.py").write_text("# fixture\n")
     subprocess.run(["git", "-C", str(source), "add", "."], check=True)
     subprocess.run(
         [
@@ -173,6 +208,9 @@ def test_build_wrapper_exports_clean_exact_commit_as_named_context(tmp_path):
     ]
     assert any(value.startswith("ttis_src=") for value in contexts)
     assert "TT_INFERENCE_SERVER_COMMIT_SHA=" in "\n".join(args)
+    assert "TT_METAL_BASE_REVISION=b534549300fe2af11e6ee828675294bc0e359555" in args
+    assert "TT_METAL_BASE_FETCH_REF=qz/mixtral-epd2-wait-min-20260827" in args
+    assert any(value.startswith("TT_METAL_PATCHSET_SHA256=") for value in args)
     # The wrapper cleans the ephemeral export after the build command returns.
     assert not Path(context.split("=", 1)[1]).exists()
 

@@ -22,6 +22,8 @@ base_image=""
 quetzal_commit=""
 quetzal_source=""
 output_tag=""
+tt_metal_base_revision="b534549300fe2af11e6ee828675294bc0e359555"
+tt_metal_base_fetch_ref="qz/mixtral-epd2-wait-min-20260827"
 while (($#)); do
     case "$1" in
         --base-image) base_image="${2:-}"; shift 2 ;;
@@ -69,6 +71,14 @@ if [[ "${source_head}" != "${quetzal_commit}" ]]; then
     echo "--quetzal-source HEAD ${source_head} does not match --quetzal-commit ${quetzal_commit}" >&2
     exit 2
 fi
+patchset_path="patches/tt-metal/gdn-productization-v1.json"
+if ! git -C "${quetzal_source}" cat-file -e "${quetzal_commit}:${patchset_path}"; then
+    echo "Quetzal commit does not contain ${patchset_path}" >&2
+    exit 2
+fi
+tt_metal_patchset_sha256="$({
+    git -C "${quetzal_source}" show "${quetzal_commit}:${patchset_path}"
+} | sha256sum | awk '{print $1}')"
 if git -C "${quetzal_source}" ls-tree -r --name-only "${quetzal_commit}" \
         | grep -Fxq '.tt-quetzal-commit'; then
     echo "Quetzal source reserves .tt-quetzal-commit for build identity" >&2
@@ -107,5 +117,8 @@ docker buildx build --load \
     --build-arg "TT_INFERENCE_SERVER_BASE_IMAGE=${base_image}" \
     --build-arg "TT_INFERENCE_SERVER_COMMIT_SHA=${ttis_commit}" \
     --build-arg "TT_QUETZAL_COMMIT_SHA=${quetzal_commit}" \
+    --build-arg "TT_METAL_BASE_REVISION=${tt_metal_base_revision}" \
+    --build-arg "TT_METAL_BASE_FETCH_REF=${tt_metal_base_fetch_ref}" \
+    --build-arg "TT_METAL_PATCHSET_SHA256=${tt_metal_patchset_sha256}" \
     --tag "${output_tag}" \
     "${repo_root}"
