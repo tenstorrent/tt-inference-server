@@ -496,9 +496,7 @@ def test_main_validates_quetzal_before_runtime_and_skips_native_weight_setup(
         "device_model_spec": {"vllm_args": {"port": 8000}},
     }
     events = []
-    monkeypatch.setattr(
-        run_vllm_api_server_module, "parse_args", lambda: (args, [])
-    )
+    monkeypatch.setattr(run_vllm_api_server_module, "parse_args", lambda: (args, []))
     monkeypatch.setattr(
         run_vllm_api_server_module,
         "load_model_spec",
@@ -531,15 +529,9 @@ def test_main_validates_quetzal_before_runtime_and_skips_native_weight_setup(
     monkeypatch.setattr(
         run_vllm_api_server_module, "set_metal_timeout_env_vars", MagicMock()
     )
-    monkeypatch.setattr(
-        run_vllm_api_server_module, "set_vllm_sys_argv", MagicMock()
-    )
-    monkeypatch.setattr(
-        run_vllm_api_server_module, "start_trace_capture", MagicMock()
-    )
-    monkeypatch.setattr(
-        run_vllm_api_server_module.runpy, "run_module", MagicMock()
-    )
+    monkeypatch.setattr(run_vllm_api_server_module, "set_vllm_sys_argv", MagicMock())
+    monkeypatch.setattr(run_vllm_api_server_module, "start_trace_capture", MagicMock())
+    monkeypatch.setattr(run_vllm_api_server_module.runpy, "run_module", MagicMock())
 
     run_vllm_api_server_module.main()
 
@@ -551,9 +543,7 @@ def test_main_validates_quetzal_before_runtime_and_skips_native_weight_setup(
 def test_quetzal_runtime_contract_accepts_materialized_content_package(
     monkeypatch, tmp_path, run_vllm_api_server_module
 ):
-    _materialized_quetzal_contract(
-        monkeypatch, tmp_path, run_vllm_api_server_module
-    )
+    _materialized_quetzal_contract(monkeypatch, tmp_path, run_vllm_api_server_module)
     run_vllm_api_server_module.validate_quetzal_runtime_contract(
         _quetzal_model_spec(),
         entry_points=_quetzal_entry_points(),
@@ -563,9 +553,7 @@ def test_quetzal_runtime_contract_accepts_materialized_content_package(
 def test_quetzal_runtime_contract_rejects_missing_package_file(
     monkeypatch, tmp_path, run_vllm_api_server_module
 ):
-    _materialized_quetzal_contract(
-        monkeypatch, tmp_path, run_vllm_api_server_module
-    )
+    _materialized_quetzal_contract(monkeypatch, tmp_path, run_vllm_api_server_module)
     Path(os.environ["QUETZAL_WEIGHTS"]).unlink()
     with pytest.raises(RuntimeError, match="not materialized.*QUETZAL_WEIGHTS"):
         run_vllm_api_server_module.validate_quetzal_runtime_contract(
@@ -592,9 +580,7 @@ def test_quetzal_runtime_contract_rejects_missing_trusted_root_proof(
 def test_quetzal_runtime_contract_rejects_tampered_executable(
     monkeypatch, tmp_path, run_vllm_api_server_module
 ):
-    _materialized_quetzal_contract(
-        monkeypatch, tmp_path, run_vllm_api_server_module
-    )
+    _materialized_quetzal_contract(monkeypatch, tmp_path, run_vllm_api_server_module)
     Path(os.environ["QUETZAL_DECODE_GENERATED_PY"]).write_text("evil")
     with pytest.raises(RuntimeError, match="trusted-root proof|verification"):
         run_vllm_api_server_module.validate_quetzal_runtime_contract(
@@ -606,9 +592,7 @@ def test_quetzal_runtime_contract_rejects_tampered_executable(
 def test_quetzal_runtime_contract_rejects_path_escape(
     monkeypatch, tmp_path, run_vllm_api_server_module
 ):
-    _materialized_quetzal_contract(
-        monkeypatch, tmp_path, run_vllm_api_server_module
-    )
+    _materialized_quetzal_contract(monkeypatch, tmp_path, run_vllm_api_server_module)
     outside = tmp_path / "outside.py"
     outside.write_text("test")
     monkeypatch.setenv("QUETZAL_PREFILL_GENERATED_PY", str(outside))
@@ -622,9 +606,7 @@ def test_quetzal_runtime_contract_rejects_path_escape(
 def test_quetzal_runtime_contract_rejects_missing_plugin(
     monkeypatch, tmp_path, run_vllm_api_server_module
 ):
-    _materialized_quetzal_contract(
-        monkeypatch, tmp_path, run_vllm_api_server_module
-    )
+    _materialized_quetzal_contract(monkeypatch, tmp_path, run_vllm_api_server_module)
     with pytest.raises(RuntimeError, match="requires the Quetzal.*entry point"):
         run_vllm_api_server_module.validate_quetzal_runtime_contract(
             _quetzal_model_spec(),
@@ -635,9 +617,7 @@ def test_quetzal_runtime_contract_rejects_missing_plugin(
 def test_quetzal_runtime_contract_rejects_tt_metal_revision_mismatch(
     monkeypatch, tmp_path, run_vllm_api_server_module
 ):
-    _materialized_quetzal_contract(
-        monkeypatch, tmp_path, run_vllm_api_server_module
-    )
+    _materialized_quetzal_contract(monkeypatch, tmp_path, run_vllm_api_server_module)
     monkeypatch.setenv("TT_METAL_COMMIT_SHA_OR_TAG", "b" * 40)
     with pytest.raises(RuntimeError, match="TT-Metal runtime mismatch"):
         run_vllm_api_server_module.validate_quetzal_runtime_contract(
@@ -649,9 +629,7 @@ def test_quetzal_runtime_contract_rejects_tt_metal_revision_mismatch(
 def test_quetzal_runtime_contract_rejects_catalog_package_identity_mismatch(
     monkeypatch, tmp_path, run_vllm_api_server_module
 ):
-    _materialized_quetzal_contract(
-        monkeypatch, tmp_path, run_vllm_api_server_module
-    )
+    _materialized_quetzal_contract(monkeypatch, tmp_path, run_vllm_api_server_module)
     with pytest.raises(RuntimeError, match="hf_model_repo to equal QUETZAL_MODEL"):
         run_vllm_api_server_module.validate_quetzal_runtime_contract(
             _quetzal_model_spec("other/model"),

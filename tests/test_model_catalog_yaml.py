@@ -300,9 +300,7 @@ def test_quetzal_dev_specs_use_content_store_contract(monkeypatch, model_name):
     specs = _dev_llm_spec_map()
     monkeypatch.setattr(model_spec_module, "MODEL_SPECS", specs)
     monkeypatch.setattr(model_spec_module, "_MODEL_SPECS_ENV", "dev")
-    quetzal, _, _ = get_runtime_model_spec(
-        model_name, "p300x2", impl="quetzal"
-    )
+    quetzal, _, _ = get_runtime_model_spec(model_name, "p300x2", impl="quetzal")
     env = quetzal.env_vars
 
     package_root = env["QUETZAL_PACKAGE_ROOT"]
@@ -311,9 +309,7 @@ def test_quetzal_dev_specs_use_content_store_contract(monkeypatch, model_name):
     )
     assert env["QZ_MODELS_ROOT"] == package_root
     assert env["QUETZAL_PACKAGE_ID"] == package_root.rsplit("/", 1)[-1]
-    assert re.fullmatch(
-        r"[0-9a-f]{64}", env["QUETZAL_BUNDLE_MANIFEST_SHA256"]
-    )
+    assert re.fullmatch(r"[0-9a-f]{64}", env["QUETZAL_BUNDLE_MANIFEST_SHA256"])
     for key in (
         "QZ_QUALIFICATION_MANIFEST",
         "QUETZAL_PREFILL_GENERATED_PY",
@@ -333,9 +329,7 @@ def test_qwen_quetzal_dev_spec_uses_portable_qb2_fabric_contract(monkeypatch):
     specs = _dev_llm_spec_map()
     monkeypatch.setattr(model_spec_module, "MODEL_SPECS", specs)
     monkeypatch.setattr(model_spec_module, "_MODEL_SPECS_ENV", "dev")
-    quetzal, _, _ = get_runtime_model_spec(
-        "Qwen3.6-27B", "p300x2", impl="quetzal"
-    )
+    quetzal, _, _ = get_runtime_model_spec("Qwen3.6-27B", "p300x2", impl="quetzal")
     env = quetzal.env_vars
 
     assert "TT_MESH_GRAPH_DESC_PATH" not in env

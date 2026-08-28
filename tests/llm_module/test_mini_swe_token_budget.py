@@ -40,20 +40,22 @@ def test_count_includes_generation_prompt_and_exact_tool_schema():
     tools = [{"type": "function", "function": {"name": "bash"}}]
 
     assert count_chat_input_tokens(tokenizer, messages, tools) == 3
-    assert tokenizer.calls == [(
-        messages,
-        {
-            "tools": tools,
-            "tokenize": True,
-            "add_generation_prompt": True,
-        },
-    )]
+    assert tokenizer.calls == [
+        (
+            messages,
+            {
+                "tools": tools,
+                "tokenize": True,
+                "add_generation_prompt": True,
+            },
+        )
+    ]
 
 
 def test_count_accepts_batch_encoding_shape_and_rejects_ambiguous_batch():
-    assert count_chat_input_tokens(
-        Tokenizer({"input_ids": [[1, 2, 3, 4]]}), [], []
-    ) == 4
+    assert (
+        count_chat_input_tokens(Tokenizer({"input_ids": [[1, 2, 3, 4]]}), [], []) == 4
+    )
     with pytest.raises(TokenBudgetConfigurationError, match="expected one"):
         count_chat_input_tokens(Tokenizer([[1], [2]]), [], [])
 
@@ -185,14 +187,17 @@ def test_bounded_process_group_terminates_and_kills_after_timeout(
         "llm_module.agentic.swebench._cleanup_labeled_containers",
         lambda label, env: cleanup_calls.append((label, env)),
     )
-    assert _run_bounded_process_group(
-        ["agent"],
-        tmp_path,
-        {"RUN": "env"},
-        timeout_sec=1,
-        terminate_grace_sec=1,
-        cleanup_container_label="ttis.agentic_run=deadbeef",
-    ) == 124
+    assert (
+        _run_bounded_process_group(
+            ["agent"],
+            tmp_path,
+            {"RUN": "env"},
+            timeout_sec=1,
+            terminate_grace_sec=1,
+            cleanup_container_label="ttis.agentic_run=deadbeef",
+        )
+        == 124
+    )
     assert popen_calls[0][1]["start_new_session"] is True
     assert [signal for _, signal in signals] == [15, 9]
     assert cleanup_calls == [("ttis.agentic_run=deadbeef", {"RUN": "env"})]
@@ -255,9 +260,13 @@ def test_fixed_samples_resume_success_and_retry_failed_empty_patch(
         instance_id = (tmp_path / command[command.index("--output") + 1]).name
         output = tmp_path / "mini_sweagent" / "samples" / instance_id
         output.mkdir(parents=True, exist_ok=True)
-        patch = "diff --git a/x b/x" if instance_id == "case-a" or not fail_case_b else ""
+        patch = (
+            "diff --git a/x b/x" if instance_id == "case-a" or not fail_case_b else ""
+        )
         (output / "preds.json").write_text(
-            json.dumps({instance_id: {"instance_id": instance_id, "model_patch": patch}})
+            json.dumps(
+                {instance_id: {"instance_id": instance_id, "model_patch": patch}}
+            )
         )
         calls.append(instance_id)
         return 0
@@ -265,9 +274,7 @@ def test_fixed_samples_resume_success_and_retry_failed_empty_patch(
     monkeypatch.setattr(
         "llm_module.agentic.swebench._run_bounded_process_group", run_sample
     )
-    rc, _ = _run_fixed_mini_sweagent_samples(
-        config, tmp_path / "config.json", {}
-    )
+    rc, _ = _run_fixed_mini_sweagent_samples(config, tmp_path / "config.json", {})
     assert rc == 65
     assert calls == ["case-a", "case-b"]
     state = json.loads(

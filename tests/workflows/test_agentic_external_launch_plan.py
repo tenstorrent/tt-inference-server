@@ -202,7 +202,11 @@ def test_plan_rejects_non_quetzal_or_wrong_receipt(field, value, match):
         ("target_mesh", "1chip", "target_mesh"),
         ("batch_size", 2, "batch_size"),
         ("artifact_equivalence", "reduced", "artifact_equivalence"),
-        ("lossy_transformations", [{"kind": "weight_quantization"}], "lossy_transformations"),
+        (
+            "lossy_transformations",
+            [{"kind": "weight_quantization"}],
+            "lossy_transformations",
+        ),
         ("prefill_emit_hash", None, "prefill_emit_hash"),
         ("decode_emit_hash", None, "decode_emit_hash"),
     ],
@@ -230,9 +234,15 @@ def test_endpoint_must_match_model_backend_policy_and_artifact():
     receipt = _receipt()
     evidence = _evidence(receipt)
     session = _Session(evidence)
-    assert verify_external_endpoint(
-        server_url="http://qb2", service_port=18091, receipt=receipt, session=session
-    ) == evidence
+    assert (
+        verify_external_endpoint(
+            server_url="http://qb2",
+            service_port=18091,
+            receipt=receipt,
+            session=session,
+        )
+        == evidence
+    )
     assert [url.rsplit("/", 1)[-1] for url, _ in session.calls] == ["models", "health"]
 
     for container, field, value, match in [

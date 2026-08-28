@@ -126,7 +126,9 @@ def _run_bounded_process_group(
 
 
 def _agentic_container_label(config: SWEbenchRunConfig) -> str:
-    identity = hashlib.sha256(str(config.output_dir.resolve()).encode()).hexdigest()[:16]
+    identity = hashlib.sha256(str(config.output_dir.resolve()).encode()).hexdigest()[
+        :16
+    ]
     return f"ttis.agentic_run={identity}"
 
 
@@ -196,7 +198,9 @@ def _valid_prediction(record: object) -> bool:
     )
 
 
-def _load_successful_predictions(path: Path, expected_ids: list[str]) -> dict[str, dict]:
+def _load_successful_predictions(
+    path: Path, expected_ids: list[str]
+) -> dict[str, dict]:
     if not path.exists():
         return {}
     try:
@@ -210,9 +214,7 @@ def _load_successful_predictions(path: Path, expected_ids: list[str]) -> dict[st
     if unknown:
         raise RuntimeError(f"resume state contains unexpected instance IDs: {unknown}")
     invalid = sorted(
-        instance_id
-        for instance_id, row in value.items()
-        if not _valid_prediction(row)
+        instance_id for instance_id, row in value.items() if not _valid_prediction(row)
     )
     if invalid:
         raise RuntimeError(f"resume state contains failed/empty samples: {invalid}")
@@ -227,9 +229,7 @@ def _validate_prediction_file(path: Path, expected_ids: list[str]) -> dict[str, 
     if not isinstance(value, dict) or not value:
         raise RuntimeError(f"predictions at {path} are empty or not an object")
     invalid = sorted(
-        instance_id
-        for instance_id, row in value.items()
-        if not _valid_prediction(row)
+        instance_id for instance_id, row in value.items() if not _valid_prediction(row)
     )
     if invalid:
         raise RuntimeError(f"predictions contain failed/empty samples: {invalid}")
@@ -403,7 +403,9 @@ def _write_mini_sweagent_model_config(config: SWEbenchRunConfig) -> Path:
             "model_kwargs": model_kwargs,
             "tokenizer_name": config.tokenizer_name,
             "max_input_tokens": config.max_input_tokens,
-            "token_count_log": str(config.output_dir / "mini_sweagent_token_counts.jsonl"),
+            "token_count_log": str(
+                config.output_dir / "mini_sweagent_token_counts.jsonl"
+            ),
         }
     }
     if config.mini_environment_class == "docker":
@@ -542,10 +544,14 @@ def _run_fixed_mini_sweagent_samples(
         sample_predictions_path = sample_dir / "preds.json"
         if sample_predictions_path.exists():
             try:
-                previous = json.loads(sample_predictions_path.read_text(encoding="utf-8"))
+                previous = json.loads(
+                    sample_predictions_path.read_text(encoding="utf-8")
+                )
             except (OSError, json.JSONDecodeError):
                 previous = None
-            previous_record = previous.get(instance_id) if isinstance(previous, dict) else None
+            previous_record = (
+                previous.get(instance_id) if isinstance(previous, dict) else None
+            )
             if _valid_prediction(previous_record):
                 # The sample completed before a crash but the consolidated
                 # resume state did not. Recover it without another model call.
@@ -585,7 +591,9 @@ def _run_fixed_mini_sweagent_samples(
             else None
         )
         if not _valid_prediction(record):
-            logger.error("Sample %s produced a failed/empty patch sentinel", instance_id)
+            logger.error(
+                "Sample %s produced a failed/empty patch sentinel", instance_id
+            )
             return 65, output_dir / "preds.json"
         predictions[instance_id] = record
         _atomic_write_json(resume_path, predictions)
@@ -909,7 +917,9 @@ def run(config: SWEbenchRunConfig) -> int:
         try:
             _validate_prediction_file(preds_path, config.instance_ids)
         except RuntimeError as exc:
-            logger.error("Refusing to score invalid mini-swe-agent predictions: %s", exc)
+            logger.error(
+                "Refusing to score invalid mini-swe-agent predictions: %s", exc
+            )
             return 65
     else:
         raise ValueError(f"Unsupported SWE-bench agent backend: {config.agent_backend}")

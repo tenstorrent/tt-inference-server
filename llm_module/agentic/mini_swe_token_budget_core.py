@@ -17,7 +17,9 @@ class TokenBudgetConfigurationError(RuntimeError):
     """The configured tokenizer cannot authoritatively count the API input."""
 
 
-def count_chat_input_tokens(tokenizer: Any, messages: list[dict], tools: list[dict]) -> int:
+def count_chat_input_tokens(
+    tokenizer: Any, messages: list[dict], tools: list[dict]
+) -> int:
     """Count the exact rendered chat input, including generation prompt and tools."""
     if not getattr(tokenizer, "chat_template", None):
         raise TokenBudgetConfigurationError("configured tokenizer has no chat_template")
@@ -90,7 +92,11 @@ def enforce_token_budget(
     actual_input_tokens: int,
     max_input_tokens: int,
 ) -> None:
-    if not isinstance(max_input_tokens, int) or isinstance(max_input_tokens, bool) or max_input_tokens <= 0:
+    if (
+        not isinstance(max_input_tokens, int)
+        or isinstance(max_input_tokens, bool)
+        or max_input_tokens <= 0
+    ):
         raise TokenBudgetConfigurationError(
             f"max_input_tokens must be a positive integer, got {max_input_tokens!r}"
         )

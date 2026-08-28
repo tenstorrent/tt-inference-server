@@ -40,8 +40,7 @@ PIN_ARGS = [
     "def5678",
 ]
 QUETZAL_IMAGE = (
-    "ghcr.io/tenstorrent/tt-inference-server/quetzal-vllm"
-    "@sha256:" + "a" * 64
+    "ghcr.io/tenstorrent/tt-inference-server/quetzal-vllm@sha256:" + "a" * 64
 )
 
 
@@ -940,8 +939,7 @@ def test_real_quetzal_templates_promote_with_exact_packages_and_image(tmp_path):
         template
         for template in load_templates_from_yaml(prod_copy / "llm.yaml")
         if template.impl.impl_id == "quetzal"
-        and set(template.weights)
-        in ({"Qwen/Qwen3.6-27B"}, {"google/gemma-4-31B-it"})
+        and set(template.weights) in ({"Qwen/Qwen3.6-27B"}, {"google/gemma-4-31B-it"})
     ]
     assert len(promoted) == 2
     by_weight = {template.weights[0]: template for template in promoted}

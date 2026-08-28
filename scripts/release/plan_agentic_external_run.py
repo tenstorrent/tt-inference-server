@@ -86,9 +86,7 @@ def load_capability_receipt(path: Path, expected_sha256: str) -> tuple[dict, str
 
 def _validate_capability_receipt(receipt: dict, expected_model: str) -> None:
     if receipt.get("model_id") != expected_model:
-        raise ContractError(
-            f"capability receipt model_id must be {expected_model!r}"
-        )
+        raise ContractError(f"capability receipt model_id must be {expected_model!r}")
     if receipt.get("implementation") != "quetzal":
         raise ContractError("capability receipt implementation must be 'quetzal'")
     if receipt.get("serving_backend") != "generated_quetzal":
@@ -131,9 +129,7 @@ def _validate_capability_receipt(receipt: dict, expected_model: str) -> None:
     if not isinstance(capabilities, dict):
         raise ContractError("capability receipt needs capabilities")
     if capabilities.get("schema") != "ttq.serving_capabilities/v1":
-        raise ContractError(
-            "capabilities.schema must be 'ttq.serving_capabilities/v1'"
-        )
+        raise ContractError("capabilities.schema must be 'ttq.serving_capabilities/v1'")
     for field in (
         "max_context_tokens",
         "max_concurrency",
@@ -217,7 +213,9 @@ def verify_launch_contract_endpoint(
     try:
         document = json.loads(contract_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        raise ContractError(f"cannot read launch contract {contract_path}: {exc}") from exc
+        raise ContractError(
+            f"cannot read launch contract {contract_path}: {exc}"
+        ) from exc
     contract = document.get("contract") if isinstance(document, dict) else None
     if not isinstance(contract, dict):
         raise ContractError("launch contract document has no contract object")
@@ -256,9 +254,13 @@ def verify_external_endpoint(
             response.raise_for_status()
             value = response.json()
         except (requests.RequestException, ValueError) as exc:
-            raise ContractError(f"endpoint identity probe {path} failed: {exc}") from exc
+            raise ContractError(
+                f"endpoint identity probe {path} failed: {exc}"
+            ) from exc
         if not isinstance(value, dict):
-            raise ContractError(f"endpoint identity probe {path} returned non-object JSON")
+            raise ContractError(
+                f"endpoint identity probe {path} returned non-object JSON"
+            )
         return value
 
     models = get_json("/v1/models")
@@ -266,7 +268,9 @@ def verify_external_endpoint(
     if not isinstance(rows, list):
         raise ContractError("endpoint /v1/models response has no data list")
     served_model = receipt["served_model"]
-    matching = [row for row in rows if isinstance(row, dict) and row.get("id") == served_model]
+    matching = [
+        row for row in rows if isinstance(row, dict) and row.get("id") == served_model
+    ]
     if len(matching) != 1:
         raise ContractError(
             f"endpoint must advertise exactly one served model {served_model!r}"

@@ -641,8 +641,7 @@ def validate_quetzal_runtime_contract(model_spec_json, entry_points=None):
     package_root_value = os.getenv("QUETZAL_PACKAGE_ROOT")
     if not package_id or not package_root_value:
         raise RuntimeError(
-            "impl=quetzal requires QUETZAL_PACKAGE_ID and "
-            "QUETZAL_PACKAGE_ROOT"
+            "impl=quetzal requires QUETZAL_PACKAGE_ID and QUETZAL_PACKAGE_ROOT"
         )
     package_root = Path(package_root_value).resolve()
     if package_root.name != package_id:
@@ -655,18 +654,15 @@ def validate_quetzal_runtime_contract(model_spec_json, entry_points=None):
         )
 
     manifest_sha256 = os.getenv(_QUETZAL_BUNDLE_MANIFEST_ENV, "")
-    if (
-        len(manifest_sha256) != 64
-        or any(ch not in "0123456789abcdef" for ch in manifest_sha256)
+    if len(manifest_sha256) != 64 or any(
+        ch not in "0123456789abcdef" for ch in manifest_sha256
     ):
         raise RuntimeError(
             "impl=quetzal requires a lowercase SHA-256 in "
             f"{_QUETZAL_BUNDLE_MANIFEST_ENV}"
         )
     installed_manifest = (
-        package_root
-        / _QUETZAL_BUNDLE_MANIFESTS_DIR
-        / f"{manifest_sha256}.json"
+        package_root / _QUETZAL_BUNDLE_MANIFESTS_DIR / f"{manifest_sha256}.json"
     )
     if installed_manifest.is_symlink() or not installed_manifest.is_file():
         raise RuntimeError(
@@ -682,7 +678,9 @@ def validate_quetzal_runtime_contract(model_spec_json, entry_points=None):
     try:
         bundle_manifest = json.loads(installed_manifest.read_bytes())
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise RuntimeError("Quetzal installed trusted-root proof is invalid JSON") from exc
+        raise RuntimeError(
+            "Quetzal installed trusted-root proof is invalid JSON"
+        ) from exc
     if bundle_manifest.get("schema") != "ttq.artifact_bundle/v1":
         raise RuntimeError("Quetzal installed trusted-root proof has an invalid schema")
 
@@ -761,8 +759,10 @@ def validate_quetzal_runtime_contract(model_spec_json, entry_points=None):
             "Quetzal qualification manifest must contain exactly one runtime "
             f"contract for QUETZAL_MODEL={declared_model!r}"
         )
-    required_runtime = matching_models[0].get("charter_pcc", {}).get(
-        "required_runtime_tt_metal_commit"
+    required_runtime = (
+        matching_models[0]
+        .get("charter_pcc", {})
+        .get("required_runtime_tt_metal_commit")
     )
     actual_runtime = os.getenv("TT_METAL_COMMIT_SHA_OR_TAG")
     if not required_runtime or not actual_runtime:

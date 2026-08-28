@@ -23,7 +23,9 @@ def test_quetzal_derivative_keeps_third_runtime_out_of_standard_image_identity()
 
 def test_quetzal_is_installed_non_editably_and_entry_point_is_verified():
     source = DOCKERFILE.read_text()
-    install_line = next(line for line in source.splitlines() if "uv pip install" in line)
+    install_line = next(
+        line for line in source.splitlines() if "uv pip install" in line
+    )
     assert " -e " not in install_line
     assert "> /tmp/pip-check.before" in source
     assert "> /tmp/pip-check.after" in source
@@ -32,7 +34,7 @@ def test_quetzal_is_installed_non_editably_and_entry_point_is_verified():
     assert "quetzal_model_registry" in source
     assert "tt_quetzalcoatlus.vllm_plugin:register" in source
     assert "import serving.artifact_bundle" in source
-    assert 'cat /tmp/quetzal-source/.tt-quetzal-commit' in source
+    assert "cat /tmp/quetzal-source/.tt-quetzal-commit" in source
     assert "COPY --from=quetzal_src" in source
     assert "COPY --from=ttis_src" in source
     assert "vllm-tt-metal/src/run_vllm_api_server.py" in source
@@ -49,7 +51,7 @@ def test_quetzal_is_installed_non_editably_and_entry_point_is_verified():
 def test_quetzal_runner_skips_native_registration_and_validates_package():
     source = RUNNER.read_text()
     assert 'if impl_id == "quetzal":' in source
-    assert 'Skipping native TT model registration for impl=quetzal' in source
+    assert "Skipping native TT model registration for impl=quetzal" in source
     assert "validate_quetzal_runtime_contract(model_spec)" in source
     assert source.index('if impl_id == "quetzal":') < source.index(
         "validate_quetzal_runtime_contract(model_spec)"
@@ -72,10 +74,14 @@ def test_build_wrapper_requires_digest_base_and_full_quetzal_commit():
 def test_build_wrapper_refuses_mutable_base_before_invoking_docker():
     result = subprocess.run(
         [
-            "bash", str(BUILD_SCRIPT),
-            "--base-image", "example.invalid/ttis:latest",
-            "--quetzal-commit", "a" * 40,
-            "--tag", "example.invalid/quetzal:test",
+            "bash",
+            str(BUILD_SCRIPT),
+            "--base-image",
+            "example.invalid/ttis:latest",
+            "--quetzal-commit",
+            "a" * 40,
+            "--tag",
+            "example.invalid/quetzal:test",
         ],
         text=True,
         capture_output=True,
@@ -90,11 +96,27 @@ def _git_source(tmp_path):
     subprocess.run(["git", "init", "-q", str(source)], check=True)
     (source / "pyproject.toml").write_text("[project]\nname='fixture'\nversion='0'\n")
     subprocess.run(["git", "-C", str(source), "add", "."], check=True)
-    subprocess.run(["git", "-C", str(source), "-c", "user.name=Test",
-                    "-c", "user.email=test@example.invalid", "commit", "-qm", "fixture"],
-                   check=True)
-    commit = subprocess.run(["git", "-C", str(source), "rev-parse", "HEAD"],
-                            check=True, text=True, capture_output=True).stdout.strip()
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(source),
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "commit",
+            "-qm",
+            "fixture",
+        ],
+        check=True,
+    )
+    commit = subprocess.run(
+        ["git", "-C", str(source), "rev-parse", "HEAD"],
+        check=True,
+        text=True,
+        capture_output=True,
+    ).stdout.strip()
     return source, commit
 
 
@@ -104,22 +126,36 @@ def test_build_wrapper_exports_clean_exact_commit_as_named_context(tmp_path):
     bin_dir.mkdir()
     capture = tmp_path / "docker-args"
     docker = bin_dir / "docker"
-    docker.write_text("#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$CAPTURE\"\n")
+    docker.write_text('#!/bin/sh\nprintf \'%s\\n\' "$@" > "$CAPTURE"\n')
     docker.chmod(0o755)
-    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}",
-           "CAPTURE": str(capture)}
-    subprocess.run([
-        "bash", str(BUILD_SCRIPT),
-        "--base-image", f"example.invalid/ttis@sha256:{'1' * 64}",
-        "--quetzal-source", str(source), "--quetzal-commit", commit,
-        "--tag", "example.invalid/quetzal:test",
-    ], check=True, env=env)
+    env = {
+        **os.environ,
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "CAPTURE": str(capture),
+    }
+    subprocess.run(
+        [
+            "bash",
+            str(BUILD_SCRIPT),
+            "--base-image",
+            f"example.invalid/ttis@sha256:{'1' * 64}",
+            "--quetzal-source",
+            str(source),
+            "--quetzal-commit",
+            commit,
+            "--tag",
+            "example.invalid/quetzal:test",
+        ],
+        check=True,
+        env=env,
+    )
     args = capture.read_text().splitlines()
     assert args[:3] == ["buildx", "build", "--load"]
     context = args[args.index("--build-context") + 1]
     assert context.startswith("quetzal_src=")
     contexts = [
-        args[index + 1] for index, value in enumerate(args)
+        args[index + 1]
+        for index, value in enumerate(args)
         if value == "--build-context"
     ]
     assert any(value.startswith("ttis_src=") for value in contexts)
@@ -130,16 +166,25 @@ def test_build_wrapper_exports_clean_exact_commit_as_named_context(tmp_path):
 
 def test_build_wrapper_rejects_dirty_or_wrong_commit_source(tmp_path):
     source, commit = _git_source(tmp_path)
-    common = ["bash", str(BUILD_SCRIPT),
-              "--base-image", f"example.invalid/ttis@sha256:{'1' * 64}",
-              "--quetzal-source", str(source), "--tag", "unused"]
+    common = [
+        "bash",
+        str(BUILD_SCRIPT),
+        "--base-image",
+        f"example.invalid/ttis@sha256:{'1' * 64}",
+        "--quetzal-source",
+        str(source),
+        "--tag",
+        "unused",
+    ]
     (source / "untracked").write_text("dirty")
-    result = subprocess.run(common + ["--quetzal-commit", commit], text=True,
-                            capture_output=True)
+    result = subprocess.run(
+        common + ["--quetzal-commit", commit], text=True, capture_output=True
+    )
     assert result.returncode == 2
     assert "no tracked, staged, or untracked changes" in result.stderr
     (source / "untracked").unlink()
-    result = subprocess.run(common + ["--quetzal-commit", "a" * 40], text=True,
-                            capture_output=True)
+    result = subprocess.run(
+        common + ["--quetzal-commit", "a" * 40], text=True, capture_output=True
+    )
     assert result.returncode == 2
     assert "does not match" in result.stderr
