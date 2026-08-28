@@ -83,21 +83,19 @@ def _base_url(args: argparse.Namespace) -> str:
     return f"http://127.0.0.1:{args.service_port}"
 
 
-def _auth_headers(jwt_secret: Optional[str]) -> Dict[str, str]:
-    """Mint the same bearer token the vLLM/media clients use (HS256 over a
-    fixed debug payload). Falls back to no auth when no secret is available."""
-    secret = jwt_secret or os.getenv("JWT_SECRET")
-    if not secret:
-        logger.warning("No --jwt-secret / $JWT_SECRET set; sending unauthenticated.")
-        return {}
-    import jwt  # pyjwt, present in run.py's interpreter
+def _auth_headers(jwt_secret: Optional[str] = None) -> Dict[str, str]:
+    """Build the bearer header the forge/media server expects.
 
-    token = jwt.encode(
-        {"team_id": "tenstorrent", "token_id": "debug-test"},
-        secret,
-        algorithm="HS256",
-    )
-    return {"Authorization": f"Bearer {token}"}
+    The training/fine-tuning endpoints live on the media server, which does a
+    literal string compare against ``$API_KEY`` (see
+    ``tt-media-server/security/api_key_checker.py``), defaulting to
+    ``"your-secret-key"`` — it does NOT decode a JWT (that is the vLLM auth
+    model). ``$NO_AUTH`` disables the check server-side, so we send no header.
+    """
+    if os.getenv("NO_AUTH", "").lower() in ("1", "true", "yes"):
+        return {}
+    api_key = os.getenv("API_KEY", "your-secret-key")
+    return {"Authorization": f"Bearer {api_key}"}
 
 
 def _wait_for_health(session, base_url: str, headers, timeout: float) -> bool:
