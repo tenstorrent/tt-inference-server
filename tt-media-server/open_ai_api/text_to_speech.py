@@ -65,7 +65,7 @@ async def handle_tts_request(tts_request, service):
     finally:
         record_tts_request(
             model_type=settings.model_runner,
-            response_format=fmt,
+            response_format=getattr(result, "format", fmt),
             status=status,
             duration_seconds=time.perf_counter() - start,
             voice=tts_voice_label(tts_request, result),
