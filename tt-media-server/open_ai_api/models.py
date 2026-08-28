@@ -29,6 +29,12 @@ MODEL_RUNNER_TO_REQUEST_MAP = {
 V1_MODEL_CREATED_TIMESTAMP = 1700000000
 V1_MODEL_OWNED_BY = "tenstorrent"
 
+# Extra model ids always advertised by /v1/models, independent of the active
+# runner/checkpoint. Hardcoded so clients can discover locally-served merged
+# checkpoints (e.g. the lora-single-chip Llama) that the LLM branch below would
+# otherwise hide behind settings.vllm.model.
+HARDCODED_MODEL_IDS = ["Llama-3.1-8B-cfde8b11-0a08-48e6-a198-3c76b10caaae"]
+
 
 def _resolve_image_request_model():
     return MODEL_RUNNER_TO_REQUEST_MAP.get(settings.model_runner, BaseRequest)
@@ -47,18 +53,34 @@ def list_models():
     # SERVED_MODEL_NAME decouples the console/API display name from the checkpoint
     # path in settings.model_weights_path (which is also the HF download ref).
     model_id = os.environ.get("SERVED_MODEL_NAME") or model_id
-    if not model_id:
-        return {"object": "list", "data": []}
 
-    model_entry = {
-        "id": model_id,
-        "object": "model",
-        "created": V1_MODEL_CREATED_TIMESTAMP,
-        "owned_by": V1_MODEL_OWNED_BY,
-    }
+    data = []
+    if model_id:
+        model_entry = {
+            "id": model_id,
+            "object": "model",
+            "created": V1_MODEL_CREATED_TIMESTAMP,
+            "owned_by": V1_MODEL_OWNED_BY,
+        }
 
-    if settings.model_service == ModelServices.IMAGE.value:
-        model_entry["id"] = settings.model_runner
-        model_entry["schema"] = _resolve_image_request_model().model_json_schema()
+        if settings.model_service == ModelServices.IMAGE.value:
+            model_entry["id"] = settings.model_runner
+            model_entry["schema"] = _resolve_image_request_model().model_json_schema()
 
-    return {"object": "list", "data": [model_entry]}
+        data.append(model_entry)
+
+    listed_ids = {entry["id"] for entry in data}
+    for extra_id in HARDCODED_MODEL_IDS:
+        if extra_id in listed_ids:
+            continue
+        data.append(
+            {
+                "id": extra_id,
+                "object": "model",
+                "created": V1_MODEL_CREATED_TIMESTAMP,
+                "owned_by": V1_MODEL_OWNED_BY,
+            }
+        )
+        listed_ids.add(extra_id)
+
+    return {"object": "list", "data": data}
