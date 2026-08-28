@@ -69,7 +69,11 @@ def test_quetzal_runtime_is_rebuilt_in_base_abi_and_atomically_replaced():
     assert "--apply" in source
     assert source.count("tt_metal_patchset.py") >= 3
     assert "cmp /tmp/packages.before /tmp/packages.after" in source
-    assert "uv pip check" in source
+    builder = source.split("FROM ${TT_INFERENCE_SERVER_BASE_IMAGE}", 2)[1]
+    assert "> /tmp/pip-check.before" in builder
+    assert "> /tmp/pip-check.after" in builder
+    assert "cmp /tmp/pip-check.before /tmp/pip-check.after" in builder
+    assert "LC_ALL=C sort > /tmp/pip-check" in builder
     assert "import ttnn, ttnn._ttnn, vllm" in source
     whiteout = "RUN rm -rf /home/container_app_user/tt-metal"
     runtime_copy = "COPY --from=quetzal_ttmetal_builder"

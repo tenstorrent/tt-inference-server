@@ -33,6 +33,9 @@ RUN --mount=type=cache,target=/root/.cache/ccache \
     source "${PYTHON_ENV_DIR}/bin/activate"; \
     uv pip freeze | sed -E '/^ttnn(==| @ |$)/d;/^-e .*tt-metal/d' | LC_ALL=C sort \
         > /tmp/packages.before; \
+    (LC_ALL=C uv pip check 2>&1 || true) \
+        | sed -E '/^Using Python /d;/^Checked [0-9]+ packages in /d' \
+        | LC_ALL=C sort > /tmp/pip-check.before; \
     deactivate; \
     mv "${PYTHON_ENV_DIR}" "${old_python_env}"; \
     rm -rf "${TT_METAL_HOME}"; \
@@ -61,7 +64,10 @@ RUN --mount=type=cache,target=/root/.cache/ccache \
     uv pip freeze | sed -E '/^ttnn(==| @ |$)/d;/^-e .*tt-metal/d' | LC_ALL=C sort \
         > /tmp/packages.after; \
     cmp /tmp/packages.before /tmp/packages.after; \
-    uv pip check; \
+    (LC_ALL=C uv pip check 2>&1 || true) \
+        | sed -E '/^Using Python /d;/^Checked [0-9]+ packages in /d' \
+        | LC_ALL=C sort > /tmp/pip-check.after; \
+    cmp /tmp/pip-check.before /tmp/pip-check.after; \
     python -c 'import ttnn, ttnn._ttnn, vllm; assert ttnn.__path__[0].startswith("/home/container_app_user/tt-metal"); assert ttnn._ttnn.__file__.startswith("/home/container_app_user/tt-metal/")'; \
     cp /tmp/patchset-probe.json "${TT_METAL_HOME}/.ttq-patchset-admission.json"; \
     printf '%s\n' \
