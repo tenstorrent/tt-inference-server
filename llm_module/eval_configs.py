@@ -81,7 +81,7 @@ def get_llm_eval_tasks(model_spec, runtime_config=None, device=None) -> List:
     from workflow_module.target_pack import get_target_pack
 
     pack = get_target_pack()
-    eval_config = pack.eval_config(model_spec.model_name)
+    eval_config = pack.eval_config(model_spec.hf_model_repo)
     if eval_config is None or not eval_config.tasks:
         logger.info("No EVAL_CONFIGS entry / tasks for model=%s", model_spec.model_name)
         return []
