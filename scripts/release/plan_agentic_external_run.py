@@ -13,12 +13,17 @@ are rejected before a long-running SWE/Terminal-Bench harness is launched.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import os
+import re
 import shlex
 import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from types import SimpleNamespace
+
+import requests
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
@@ -29,13 +34,196 @@ from llm_module.drivers.agentic import (  # noqa: E402
     resolve_n_tasks,
 )
 from reference_config.evals.eval_config import EVAL_CONFIGS  # noqa: E402
-from workflows.model_spec import get_runtime_model_spec  # noqa: E402
+from workflows.model_spec import (  # noqa: E402
+    get_model_id,
+    get_runtime_model_spec,
+    quetzal_impl,
+)
 from workflows.runtime_config import RuntimeConfig  # noqa: E402
 from workflows.workflow_types import WorkflowVenvType  # noqa: E402
 
 
 class ContractError(ValueError):
     """The endpoint admission evidence cannot satisfy the configured eval."""
+
+
+_CAPABILITY_SCHEMA = "ttis.external-generated-quetzal-capability/v1"
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _require_sha256(value: object, field: str) -> str:
+    if not isinstance(value, str) or not _SHA256_RE.fullmatch(value):
+        raise ContractError(f"{field} must be a lowercase SHA-256")
+    return value
+
+
+def load_capability_receipt(path: Path, expected_sha256: str) -> tuple[dict, str]:
+    """Load an immutable, caller-pinned generated-Quetzal capability receipt."""
+    expected = _require_sha256(expected_sha256, "capability receipt SHA-256")
+    try:
+        payload = path.read_bytes()
+    except OSError as exc:
+        raise ContractError(f"cannot read capability receipt {path}: {exc}") from exc
+    actual = hashlib.sha256(payload).hexdigest()
+    if actual != expected:
+        raise ContractError(
+            f"capability receipt SHA-256 mismatch: expected {expected}, got {actual}"
+        )
+    try:
+        receipt = json.loads(payload)
+    except json.JSONDecodeError as exc:
+        raise ContractError("capability receipt is not valid JSON") from exc
+    if not isinstance(receipt, dict) or receipt.get("schema") != _CAPABILITY_SCHEMA:
+        raise ContractError(f"capability receipt schema must be {_CAPABILITY_SCHEMA!r}")
+    return receipt, actual
+
+
+def _validate_capability_receipt(receipt: dict, expected_model: str) -> None:
+    if receipt.get("model_id") != expected_model:
+        raise ContractError(
+            f"capability receipt model_id must be {expected_model!r}"
+        )
+    if receipt.get("implementation") != "quetzal":
+        raise ContractError("capability receipt implementation must be 'quetzal'")
+    if receipt.get("serving_backend") != "generated_quetzal":
+        raise ContractError(
+            "capability receipt serving_backend must be 'generated_quetzal'"
+        )
+    if receipt.get("provider_policy") != "generated_quetzal_only":
+        raise ContractError(
+            "capability receipt provider_policy must be 'generated_quetzal_only'"
+        )
+    served_model = receipt.get("served_model")
+    if not isinstance(served_model, str) or not served_model:
+        raise ContractError("capability receipt needs a non-empty served_model")
+    identity = receipt.get("artifact_identity")
+    if not isinstance(identity, dict):
+        raise ContractError("capability receipt needs artifact_identity")
+    if identity.get("model_id") != expected_model:
+        raise ContractError("artifact_identity.model_id does not match the model")
+    if identity.get("serving_backend") != "generated_quetzal":
+        raise ContractError(
+            "artifact_identity.serving_backend must be 'generated_quetzal'"
+        )
+    for field in ("codegen_fingerprint", "weights_fingerprint", "emit_hash"):
+        _require_sha256(identity.get(field), f"artifact_identity.{field}")
+    capabilities = receipt.get("capabilities")
+    if not isinstance(capabilities, dict):
+        raise ContractError("capability receipt needs capabilities")
+    for field in ("max_input_tokens", "max_context_tokens", "max_concurrency"):
+        value = capabilities.get(field)
+        if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+            raise ContractError(f"capabilities.{field} must be a positive integer")
+
+
+def _endpoint_base(server_url: str, service_port: int) -> str:
+    from utils.url_helpers import build_base_url
+
+    return build_base_url(server_url.rstrip("/"), service_port)
+
+
+def _expected_endpoint_evidence(receipt: dict) -> dict:
+    return {
+        "models": {
+            "id": receipt["served_model"],
+            "owned_by": "quetzal",
+            "backend": "generated_quetzal",
+            "model_id": receipt["model_id"],
+        },
+        "health": {
+            "status": "ok",
+            "backend": "quetzal",
+            "provider_policy": "generated_quetzal_only",
+            "resident": receipt["served_model"],
+            "artifact_identity": dict(receipt["artifact_identity"]),
+        },
+    }
+
+
+def _evidence_sha256(evidence: dict) -> str:
+    payload = json.dumps(
+        evidence, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def verify_external_endpoint(
+    *,
+    server_url: str,
+    service_port: int,
+    receipt: dict,
+    timeout_sec: float = 10.0,
+    session=requests,
+) -> dict:
+    """Bind a live endpoint to the exact generated artifact in ``receipt``."""
+    model_id = receipt.get("model_id")
+    _validate_capability_receipt(receipt, model_id)
+    base = _endpoint_base(server_url, service_port)
+    api_key = os.getenv("OPENAI_API_KEY") or os.getenv("API_KEY")
+    headers = {"accept": "application/json"}
+    if api_key:
+        headers["authorization"] = f"Bearer {api_key}"
+
+    def get_json(path: str) -> dict:
+        try:
+            response = session.get(base + path, headers=headers, timeout=timeout_sec)
+            response.raise_for_status()
+            value = response.json()
+        except (requests.RequestException, ValueError) as exc:
+            raise ContractError(f"endpoint identity probe {path} failed: {exc}") from exc
+        if not isinstance(value, dict):
+            raise ContractError(f"endpoint identity probe {path} returned non-object JSON")
+        return value
+
+    models = get_json("/v1/models")
+    rows = models.get("data")
+    if not isinstance(rows, list):
+        raise ContractError("endpoint /v1/models response has no data list")
+    served_model = receipt["served_model"]
+    matching = [row for row in rows if isinstance(row, dict) and row.get("id") == served_model]
+    if len(matching) != 1:
+        raise ContractError(
+            f"endpoint must advertise exactly one served model {served_model!r}"
+        )
+    model_row = matching[0]
+    expected_row = {
+        "owned_by": "quetzal",
+        "backend": "generated_quetzal",
+        "model_id": model_id,
+    }
+    for field, expected in expected_row.items():
+        if model_row.get(field) != expected:
+            raise ContractError(
+                f"endpoint model {field} mismatch: expected {expected!r}, "
+                f"got {model_row.get(field)!r}"
+            )
+
+    health = get_json("/health")
+    expected_health = {
+        "status": "ok",
+        "backend": "quetzal",
+        "provider_policy": "generated_quetzal_only",
+        "resident": served_model,
+    }
+    for field, expected in expected_health.items():
+        if health.get(field) != expected:
+            raise ContractError(
+                f"endpoint health {field} mismatch: expected {expected!r}, "
+                f"got {health.get(field)!r}"
+            )
+    actual_identity = health.get("artifact_identity")
+    if not isinstance(actual_identity, dict):
+        raise ContractError("endpoint health has no artifact_identity")
+    expected_identity = receipt["artifact_identity"]
+    for field, expected in expected_identity.items():
+        if actual_identity.get(field) != expected:
+            raise ContractError(
+                f"endpoint artifact_identity.{field} mismatch: expected "
+                f"{expected!r}, got {actual_identity.get(field)!r}"
+            )
+    # Persist only the closed identity fields. Runtime counters and other
+    # mutable health fields must not make a post-run drift check ambiguous.
+    return _expected_endpoint_evidence(receipt)
 
 
 @dataclass(frozen=True)
@@ -52,6 +240,14 @@ class AgenticLaunchContract:
     max_output_tokens: int
     required_context_tokens: int
     catalog_max_context_tokens: int
+    implementation: str
+    serving_backend: str
+    provider_policy: str
+    served_model: str
+    capability_receipt_sha256: str
+    artifact_identity: dict
+    endpoint_evidence: dict
+    endpoint_evidence_sha256: str
     admitted_max_input_tokens: int
     admitted_max_context_tokens: int
     server_url: str
@@ -64,12 +260,21 @@ def build_contract(
     device: str,
     task_name: str,
     limit_samples_mode: str,
-    admitted_max_input_tokens: int,
-    admitted_max_context_tokens: int,
+    capability_receipt: dict,
+    capability_receipt_sha256: str,
+    endpoint_evidence: dict,
     server_url: str,
     service_port: int,
 ) -> tuple[AgenticLaunchContract, object]:
-    model_spec, _, _ = get_runtime_model_spec(model=model, device=device)
+    catalog_spec, _, _ = get_runtime_model_spec(model=model, device=device)
+    _validate_capability_receipt(capability_receipt, catalog_spec.hf_model_repo)
+    expected_endpoint_evidence = _expected_endpoint_evidence(capability_receipt)
+    if endpoint_evidence != expected_endpoint_evidence:
+        raise ContractError("closed endpoint identity evidence does not match receipt")
+    capabilities = capability_receipt["capabilities"]
+    admitted_max_input_tokens = capabilities["max_input_tokens"]
+    admitted_max_context_tokens = capabilities["max_context_tokens"]
+    model_spec = catalog_spec
     eval_config = EVAL_CONFIGS.get(model_spec.model_name)
     if eval_config is None:
         raise ContractError(f"no eval config for {model_spec.model_name!r}")
@@ -113,6 +318,11 @@ def build_contract(
             f"task concurrency {cfg.n_concurrent_trials} exceeds catalog maximum "
             f"{model_spec.device_model_spec.max_concurrency}"
         )
+    if cfg.n_concurrent_trials > capabilities["max_concurrency"]:
+        raise ContractError(
+            f"task concurrency {cfg.n_concurrent_trials} exceeds artifact maximum "
+            f"{capabilities['max_concurrency']}"
+        )
 
     runtime = SimpleNamespace(limit_samples_mode=limit_samples_mode)
     instance_ids = resolve_instance_ids(task, runtime)
@@ -135,6 +345,16 @@ def build_contract(
         max_output_tokens=max_output,
         required_context_tokens=required_context,
         catalog_max_context_tokens=catalog_context,
+        implementation="quetzal",
+        serving_backend="generated_quetzal",
+        provider_policy="generated_quetzal_only",
+        served_model=capability_receipt["served_model"],
+        capability_receipt_sha256=_require_sha256(
+            capability_receipt_sha256, "capability receipt SHA-256"
+        ),
+        artifact_identity=dict(capability_receipt["artifact_identity"]),
+        endpoint_evidence=expected_endpoint_evidence,
+        endpoint_evidence_sha256=_evidence_sha256(expected_endpoint_evidence),
         admitted_max_input_tokens=admitted_max_input_tokens,
         admitted_max_context_tokens=admitted_max_context_tokens,
         server_url=server_url.rstrip("/"),
@@ -154,6 +374,24 @@ def write_plan(
         service_port=str(contract.service_port),
         server_url=contract.server_url,
         limit_samples_mode=contract.limit_samples_mode,
+        impl="quetzal",
+    )
+    # This spec is client-side metadata for an already-running external server.
+    # Make the selected implementation explicit so the launch artifact cannot
+    # silently serialize the catalog's native/default implementation.
+    from dataclasses import replace
+
+    model_spec = replace(
+        model_spec,
+        impl=quetzal_impl,
+        model_id=get_model_id(
+            quetzal_impl.impl_name, model_spec.model_name, contract.device
+        ),
+        tt_metal_commit=None,
+        vllm_commit=None,
+        version=None,
+        docker_image=None,
+        code_link=None,
     )
     runtime_path = runtime.to_json(
         model_spec,
@@ -196,20 +434,31 @@ def main() -> int:
     parser.add_argument("--device", required=True)
     parser.add_argument("--task", required=True)
     parser.add_argument("--limit-samples-mode", default="ci-nightly")
-    parser.add_argument("--admitted-max-input-tokens", type=int, required=True)
-    parser.add_argument("--admitted-max-context-tokens", type=int, required=True)
+    parser.add_argument("--capability-receipt", type=Path, required=True)
+    parser.add_argument("--capability-receipt-sha256", required=True)
+    parser.add_argument("--identity-timeout-sec", type=float, default=10.0)
     parser.add_argument("--server-url", required=True)
     parser.add_argument("--service-port", type=int, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args()
     try:
+        receipt, receipt_sha256 = load_capability_receipt(
+            args.capability_receipt, args.capability_receipt_sha256
+        )
+        endpoint_evidence = verify_external_endpoint(
+            server_url=args.server_url,
+            service_port=args.service_port,
+            receipt=receipt,
+            timeout_sec=args.identity_timeout_sec,
+        )
         contract, model_spec = build_contract(
             model=args.model,
             device=args.device,
             task_name=args.task,
             limit_samples_mode=args.limit_samples_mode,
-            admitted_max_input_tokens=args.admitted_max_input_tokens,
-            admitted_max_context_tokens=args.admitted_max_context_tokens,
+            capability_receipt=receipt,
+            capability_receipt_sha256=receipt_sha256,
+            endpoint_evidence=endpoint_evidence,
             server_url=args.server_url,
             service_port=args.service_port,
         )
