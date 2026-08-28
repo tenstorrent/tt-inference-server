@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -88,6 +89,7 @@ def _run_bounded_process_group(
     *,
     timeout_sec: float,
     terminate_grace_sec: float = 20.0,
+    cleanup_container_label: Optional[str] = None,
 ) -> int:
     """Run a harness subprocess with a hard wall-clock and group cleanup."""
     if timeout_sec <= 0:
@@ -97,26 +99,72 @@ def _run_bounded_process_group(
     )
     process = subprocess.Popen(cmd, cwd=cwd, env=env, start_new_session=True)
     try:
-        return process.wait(timeout=timeout_sec)
-    except subprocess.TimeoutExpired:
-        logger.error(
-            "Command exceeded %.0fs; terminating process group: %s",
-            timeout_sec,
-            " ".join(cmd),
-        )
         try:
-            os.killpg(process.pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
-        try:
-            process.wait(timeout=terminate_grace_sec)
+            return process.wait(timeout=timeout_sec)
         except subprocess.TimeoutExpired:
+            logger.error(
+                "Command exceeded %.0fs; terminating process group: %s",
+                timeout_sec,
+                " ".join(cmd),
+            )
             try:
-                os.killpg(process.pid, signal.SIGKILL)
+                os.killpg(process.pid, signal.SIGTERM)
             except ProcessLookupError:
                 pass
-            process.wait()
-        return 124
+            try:
+                process.wait(timeout=terminate_grace_sec)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                process.wait()
+            return 124
+    finally:
+        if cleanup_container_label:
+            _cleanup_labeled_containers(cleanup_container_label, env)
+
+
+def _agentic_container_label(config: SWEbenchRunConfig) -> str:
+    identity = hashlib.sha256(str(config.output_dir.resolve()).encode()).hexdigest()[:16]
+    return f"ttis.agentic_run={identity}"
+
+
+def _cleanup_labeled_containers(label: str, env: dict[str, str]) -> None:
+    """Synchronously remove only containers carrying this run's unique label."""
+    executable = env.get("MSWEA_DOCKER_EXECUTABLE", "docker")
+    try:
+        listed = subprocess.run(
+            [executable, "ps", "-aq", "--filter", f"label={label}"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+            env=env,
+        )
+        if listed.returncode != 0:
+            raise RuntimeError(
+                listed.stderr.strip() or f"docker ps exited {listed.returncode}"
+            )
+        container_ids = listed.stdout.split()
+        if not container_ids:
+            return
+        removed = subprocess.run(
+            [executable, "rm", "-f", *container_ids],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+            env=env,
+        )
+        if removed.returncode != 0:
+            raise RuntimeError(
+                removed.stderr.strip() or f"docker rm exited {removed.returncode}"
+            )
+    except (OSError, subprocess.SubprocessError, RuntimeError) as exc:
+        raise RuntimeError(
+            f"failed to clean agent containers for label {label!r}: {exc}"
+        ) from exc
 
 
 def _atomic_write_json(path: Path, value: object) -> None:
@@ -358,6 +406,10 @@ def _write_mini_sweagent_model_config(config: SWEbenchRunConfig) -> Path:
             "token_count_log": str(config.output_dir / "mini_sweagent_token_counts.jsonl"),
         }
     }
+    if config.mini_environment_class == "docker":
+        model_config["environment"] = {
+            "run_args": ["--rm", "--label", _agentic_container_label(config)]
+        }
     config_path = config.output_dir / "mini_sweagent_model_config.yaml"
     config_path.write_text(json.dumps(model_config, indent=2), encoding="utf-8")
     return config_path
@@ -471,6 +523,11 @@ def _run_fixed_mini_sweagent_samples(
         raise ValueError("fixed-sample runner requires a positive generation timeout")
 
     output_dir = config.output_dir / "mini_sweagent"
+    container_label = (
+        _agentic_container_label(config)
+        if config.mini_environment_class == "docker"
+        else None
+    )
     resume_path = output_dir / "successful_samples.json"
     predictions = _load_successful_predictions(resume_path, config.instance_ids)
     started = time.monotonic()
@@ -509,6 +566,7 @@ def _run_fixed_mini_sweagent_samples(
             cwd=config.output_dir,
             env=env,
             timeout_sec=remaining,
+            cleanup_container_label=container_label,
         )
         if rc != 0:
             return rc, output_dir / "preds.json"
@@ -837,6 +895,11 @@ def run(config: SWEbenchRunConfig) -> int:
                 cwd=config.output_dir,
                 env=env,
                 timeout_sec=config.agent_generation_timeout_sec,
+                cleanup_container_label=(
+                    _agentic_container_label(config)
+                    if config.mini_environment_class == "docker"
+                    else None
+                ),
             )
             preds_path = mini_output_dir / "preds.json"
         if rc != 0:

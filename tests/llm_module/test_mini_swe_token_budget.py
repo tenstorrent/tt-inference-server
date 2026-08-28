@@ -14,6 +14,8 @@ from llm_module.agentic.mini_swe_token_budget_core import (
     record_token_count,
 )
 from llm_module.agentic.swebench import (
+    _agentic_container_label,
+    _cleanup_labeled_containers,
     _run_bounded_process_group,
     _run_fixed_mini_sweagent_samples,
     _write_mini_sweagent_model_config,
@@ -129,8 +131,10 @@ def _mini_config(tmp_path, **overrides):
 
 
 def test_generated_mini_config_selects_authoritative_wrapper(tmp_path):
-    path = _write_mini_sweagent_model_config(_mini_config(tmp_path))
-    model = json.loads(path.read_text())["model"]
+    config = _mini_config(tmp_path)
+    path = _write_mini_sweagent_model_config(config)
+    generated = json.loads(path.read_text())
+    model = generated["model"]
     assert model["model_class"] == (
         "llm_module.agentic.mini_swe_token_budget.TokenBudgetLitellmModel"
     )
@@ -138,6 +142,9 @@ def test_generated_mini_config_selects_authoritative_wrapper(tmp_path):
     assert model["max_input_tokens"] == 92 * 1024
     assert model["model_kwargs"]["max_tokens"] == 32 * 1024
     assert model["token_count_log"].endswith("mini_sweagent_token_counts.jsonl")
+    assert generated["environment"] == {
+        "run_args": ["--rm", "--label", _agentic_container_label(config)]
+    }
 
 
 def test_non_litellm_mini_model_cannot_bypass_budget_wrapper(tmp_path):
@@ -165,6 +172,7 @@ def test_bounded_process_group_terminates_and_kills_after_timeout(
     process = Process()
     popen_calls = []
     signals = []
+    cleanup_calls = []
     monkeypatch.setattr(
         "llm_module.agentic.swebench.subprocess.Popen",
         lambda *args, **kwargs: popen_calls.append((args, kwargs)) or process,
@@ -173,11 +181,65 @@ def test_bounded_process_group_terminates_and_kills_after_timeout(
         "llm_module.agentic.swebench.os.killpg",
         lambda pid, sig: signals.append((pid, sig)),
     )
+    monkeypatch.setattr(
+        "llm_module.agentic.swebench._cleanup_labeled_containers",
+        lambda label, env: cleanup_calls.append((label, env)),
+    )
     assert _run_bounded_process_group(
-        ["agent"], tmp_path, {}, timeout_sec=1, terminate_grace_sec=1
+        ["agent"],
+        tmp_path,
+        {"RUN": "env"},
+        timeout_sec=1,
+        terminate_grace_sec=1,
+        cleanup_container_label="ttis.agentic_run=deadbeef",
     ) == 124
     assert popen_calls[0][1]["start_new_session"] is True
     assert [signal for _, signal in signals] == [15, 9]
+    assert cleanup_calls == [("ttis.agentic_run=deadbeef", {"RUN": "env"})]
+
+
+def test_cleanup_removes_only_containers_with_exact_run_label(monkeypatch):
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append((command, kwargs))
+        if command[1] == "ps":
+            return SimpleNamespace(
+                returncode=0,
+                stdout="container-a\ncontainer-b\n",
+                stderr="",
+            )
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("llm_module.agentic.swebench.subprocess.run", run)
+    env = {"MSWEA_DOCKER_EXECUTABLE": "/usr/local/bin/docker"}
+    _cleanup_labeled_containers("ttis.agentic_run=deadbeef", env)
+
+    assert calls[0][0] == [
+        "/usr/local/bin/docker",
+        "ps",
+        "-aq",
+        "--filter",
+        "label=ttis.agentic_run=deadbeef",
+    ]
+    assert calls[1][0] == [
+        "/usr/local/bin/docker",
+        "rm",
+        "-f",
+        "container-a",
+        "container-b",
+    ]
+
+
+def test_cleanup_failure_is_not_silently_ignored(monkeypatch):
+    monkeypatch.setattr(
+        "llm_module.agentic.swebench.subprocess.run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=1, stdout="", stderr="daemon unavailable"
+        ),
+    )
+    with pytest.raises(RuntimeError, match="daemon unavailable"):
+        _cleanup_labeled_containers("ttis.agentic_run=deadbeef", {})
 
 
 def test_fixed_samples_resume_success_and_retry_failed_empty_patch(
@@ -187,8 +249,9 @@ def test_fixed_samples_resume_success_and_retry_failed_empty_patch(
     calls = []
     fail_case_b = True
 
-    def run_sample(command, cwd, env, timeout_sec):
+    def run_sample(command, cwd, env, timeout_sec, cleanup_container_label=None):
         nonlocal fail_case_b
+        assert cleanup_container_label == _agentic_container_label(config)
         instance_id = (tmp_path / command[command.index("--output") + 1]).name
         output = tmp_path / "mini_sweagent" / "samples" / instance_id
         output.mkdir(parents=True, exist_ok=True)
