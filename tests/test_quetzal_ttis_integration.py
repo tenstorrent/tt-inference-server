@@ -48,6 +48,12 @@ def test_dev_quetzal_specs_are_nondefault_and_revision_pinned(model):
     assert spec.device_model_spec.vllm_args["tokenizer_revision"] == revision
     assert spec.env_vars["VLLM_PLUGINS"] == "quetzal_model_registry,tt"
     assert spec.env_vars["TT_VLLM_BUILTIN_MODELS"] == "0"
+    if model == "Qwen3.6-27B":
+        assert spec.env_vars["TT_MESH_GRAPH_DESC_PATH"] == "auto"
+    else:
+        assert spec.env_vars["TT_MESH_GRAPH_DESC_PATH"].endswith(
+            "p150_x4_2ch_mesh_graph_descriptor.textproto"
+        )
 
     native, native_impl, _ = get_runtime_model_spec(model=model, device="p300x2")
     assert native_impl != "quetzal"
