@@ -85,6 +85,12 @@ dependency conflict while that independently owned base-image debt remains.
 Generated-provider registration remains fail-closed: a missing plugin or model
 package must never select `tt_transformers`.
 
+The Quetzal QB2 specs deliberately leave `TT_MESH_GRAPH_DESC_PATH` unset.  That
+is the portable physical-discovery contract across supported tt-metal images:
+newer runtimes also accept `auto`, but the pinned TTIS image interprets that
+string as a descriptor filename.  The generated row collectives remain pinned
+to Linear/1-link unless a separately admitted ring-capable host overrides them.
+
 This closes the development image-construction path, not release qualification.
 The catalog binds both models to content-addressed package IDs and trusted root
 manifest digests, but each runner must still materialize the matching bundle.

@@ -337,7 +337,7 @@ def test_qwen_quetzal_dev_spec_uses_portable_qb2_fabric_contract(monkeypatch):
     )
     env = quetzal.env_vars
 
-    assert env["TT_MESH_GRAPH_DESC_PATH"] == "auto"
+    assert "TT_MESH_GRAPH_DESC_PATH" not in env
     assert env["TTQ_ROW_ALL_REDUCE_TOPOLOGY"] == "Linear"
     assert env["TTQ_TUNED_ROW_ALL_REDUCE_LINKS"] == "1"
     assert env["TTQ_TUNED_ROW_ALL_REDUCE"] == "1"

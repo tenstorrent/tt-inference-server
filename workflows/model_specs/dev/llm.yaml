@@ -462,11 +462,13 @@ templates:
         QZ_MODELS_ROOT: /home/container_app_user/cache_root/quetzal/packages/sha256-f1d6cebaf6cd432c78721ec3b81101ab86493f387b37f63bc11aca2fc6f6d8d8-0a8efa103ee378c7cd0e2fa25b0426cbb82752e270f8927bdf44eb2cfe68ce66
         QZ_QUALIFICATION_MANIFEST: /home/container_app_user/cache_root/quetzal/packages/sha256-f1d6cebaf6cd432c78721ec3b81101ab86493f387b37f63bc11aca2fc6f6d8d8-0a8efa103ee378c7cd0e2fa25b0426cbb82752e270f8927bdf44eb2cfe68ce66/qualification_manifest.yaml
         # P300X2/QB2 hosts have been observed with both a four-chip cycle and a
-        # physical line.  Let tt-metal discover the actual fabric and use the
-        # portable Linear/1-link row-collective contract by default.  Ring/2-link
-        # is a deployment optimization only after hardware admission proves the
-        # cycle; it must never be assumed from the device marketing name.
-        TT_MESH_GRAPH_DESC_PATH: auto
+        # physical line.  Leave TT_MESH_GRAPH_DESC_PATH unset so every supported
+        # tt-metal release performs physical discovery.  Some releases accept
+        # the newer `auto` sentinel, while the pinned TTIS release interprets it
+        # as a literal filename.  Use the portable Linear/1-link row-collective
+        # contract by default.  Ring/2-link is a deployment optimization only
+        # after hardware admission proves the cycle; it must never be assumed
+        # from the device marketing name.
         TTQ_ROW_ALL_REDUCE_TOPOLOGY: Linear
         TTQ_TUNED_ROW_ALL_REDUCE_LINKS: "1"
         TTQ_TUNED_ROW_ALL_REDUCE: "1"
