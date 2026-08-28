@@ -337,6 +337,34 @@ _RESERVED_WRAPPER_FLAGS = {
     "host",
 }
 
+_QUETZAL_CONTAINER_MODELS_ROOT = "/home/container_app_user/quetzal_models"
+
+
+def _validate_quetzal_models_root(runtime_config, model_spec) -> Path | None:
+    """Resolve the generated-artifact mount and reject ambiguous launches."""
+    is_quetzal = model_spec.impl.impl_id == "quetzal"
+    configured = getattr(runtime_config, "quetzal_models_root", None)
+    if not is_quetzal:
+        if configured:
+            raise ValueError("--quetzal-models-root is only valid with --impl quetzal")
+        return None
+    if not configured:
+        raise ValueError("--impl quetzal requires --quetzal-models-root")
+
+    supplied = Path(configured).expanduser()
+    if supplied.is_symlink() or not supplied.is_dir():
+        raise ValueError(
+            "--quetzal-models-root must be an existing real directory: " f"{supplied}"
+        )
+    root = supplied.resolve()
+    qualification = root / "qualification_manifest.yaml"
+    if qualification.is_symlink() or not qualification.is_file():
+        raise ValueError(
+            "Quetzal artifact root must contain a regular "
+            f"qualification_manifest.yaml: {root}"
+        )
+    return root
+
 
 def _vllm_override_cli_args(vllm_override_args) -> List[str]:
     """Render --vllm-override-args (a JSON object string) into vLLM passthrough CLI flags for the docker-server container.
@@ -412,6 +440,7 @@ def generate_docker_run_command(
     device = DeviceTypes.from_string(runtime_config.device)
     mesh_device_str = device.to_mesh_device_str()
     container_name = f"tt-inference-server-{short_uuid()}"
+    quetzal_models_root = _validate_quetzal_models_root(runtime_config, model_spec)
 
     # TODO: remove this once https://github.com/tenstorrent/tt-metal/issues/23785 has been closed
     device_cache_dir = (
@@ -476,19 +505,37 @@ def generate_docker_run_command(
             "--mount", f"type=bind,src={setup_config.host_model_weights_mount_dir},dst={setup_config.container_model_weights_mount_dir},readonly"
         ])
 
+    if quetzal_models_root:
+        docker_command.extend([
+            "--mount",
+            "type=bind,"
+            f"src={quetzal_models_root},"
+            f"dst={_QUETZAL_CONTAINER_MODELS_ROOT},readonly",
+        ])
+
     if runtime_config.interactive:
         docker_command.append("-itd")
     # fmt: on
 
     docker_env_vars = {}
+    if model_spec.inference_engine == InferenceEngine.VLLM.value:
+        # Plugin selection must be present before the container entry point
+        # imports vLLM. In particular, generated Quetzal excludes the native
+        # tt_model_registry rather than changing providers after import.
+        docker_env_vars.update({k: str(v) for k, v in model_spec.env_vars.items()})
+        if quetzal_models_root:
+            docker_env_vars["QZ_MODELS_ROOT"] = _QUETZAL_CONTAINER_MODELS_ROOT
+            docker_env_vars[
+                "QZ_QUALIFICATION_MANIFEST"
+            ] = f"{_QUETZAL_CONTAINER_MODELS_ROOT}/qualification_manifest.yaml"
     if setup_config:
         if (
             setup_config.container_model_weights_path
             and setup_config.host_model_weights_mount_dir
         ):
-            docker_env_vars["MODEL_WEIGHTS_DIR"] = (
-                setup_config.container_model_weights_path
-            )
+            docker_env_vars[
+                "MODEL_WEIGHTS_DIR"
+            ] = setup_config.container_model_weights_path
         if (
             setup_config.host_model_volume_root
             and setup_config.container_tt_metal_cache_dir
@@ -585,6 +632,10 @@ def generate_docker_run_command(
     if model_spec.inference_engine == InferenceEngine.VLLM.value:
         docker_command.extend(["--model", model_spec.hf_model_repo])
         docker_command.extend(["--tt-device", runtime_config.device])
+        if runtime_config.impl:
+            docker_command.extend(["--impl", runtime_config.impl])
+        if runtime_config.engine:
+            docker_command.extend(["--engine", runtime_config.engine.lower()])
         if runtime_config.no_auth:
             docker_command.append("--no-auth")
         if runtime_config.disable_trace_capture:
@@ -711,9 +762,9 @@ def run_docker_server(model_spec, runtime_config, setup_config, json_fpath):
         / f"{server_prefix}_{timestamp}_{runtime_config.model}_{runtime_config.device}_{runtime_config.workflow}.log"
     )
 
-    assert ensure_docker_image(model_spec.docker_image), (
-        f"Docker image: {model_spec.docker_image} not found on GHCR or locally."
-    )
+    assert ensure_docker_image(
+        model_spec.docker_image
+    ), f"Docker image: {model_spec.docker_image} not found on GHCR or locally."
 
     docker_command, container_name = generate_docker_run_command(
         model_spec, runtime_config, setup_config, json_fpath
@@ -1012,9 +1063,9 @@ def run_multihost_server(model_spec, runtime_config, setup_config, json_fpath):
             os.chmod(cache_path, 0o1777)  # Sticky bit + world-writable for UID 1000
 
     # Ensure Docker image is available
-    assert ensure_docker_image(model_spec.docker_image), (
-        f"Docker image: {model_spec.docker_image} not found on GHCR or locally."
-    )
+    assert ensure_docker_image(
+        model_spec.docker_image
+    ), f"Docker image: {model_spec.docker_image} not found on GHCR or locally."
 
     # Create orchestrator
     orchestrator = MultiHostOrchestrator(
@@ -1056,9 +1107,10 @@ def run_multihost_server(model_spec, runtime_config, setup_config, json_fpath):
             )
 
         # Generate and log Controller command
-        controller_cmd, controller_name = (
-            orchestrator.generate_controller_docker_command()
-        )
+        (
+            controller_cmd,
+            controller_name,
+        ) = orchestrator.generate_controller_docker_command()
         logger.info(
             f"Controller docker command:\n{format_docker_command(controller_cmd)}\n"
         )

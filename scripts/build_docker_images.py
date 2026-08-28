@@ -8,6 +8,7 @@ import json
 import logging
 import multiprocessing
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -407,6 +408,7 @@ def process_sha_combination(args_tuple):
         dry_run,
         stdout_only,
         dry_run_build_duration,
+        quetzal_commit,
     ) = args_tuple
 
     # Set up individual logging for this combination
@@ -437,6 +439,7 @@ def process_sha_combination(args_tuple):
             tt_metal_commit=tt_metal_commit,
             vllm_commit=vllm_commit,
             ubuntu_version=ubuntu_version,
+            quetzal_commit=quetzal_commit,
         )
 
         process_logger.info(f"Generated image tags: {image_tags}")
@@ -563,6 +566,7 @@ def process_sha_combination(args_tuple):
                         vllm_commit,
                         container_app_uid,
                         process_logger,
+                        quetzal_commit=quetzal_commit,
                     )
                     image_status["dev"]["build_succeeded"] = True
                 except Exception as e:
@@ -662,6 +666,7 @@ def process_sha_combination(args_tuple):
             "combination_id": combination_id,
             "tt_metal_commit": tt_metal_commit,
             "vllm_commit": vllm_commit,
+            "quetzal_commit": quetzal_commit,
             "log_file": str(log_file) if log_file else None,
             "images": image_status,
         }
@@ -681,6 +686,7 @@ def process_sha_combination(args_tuple):
             "combination_id": combination_id,
             "tt_metal_commit": tt_metal_commit,
             "vllm_commit": vllm_commit,
+            "quetzal_commit": quetzal_commit,
             "log_file": str(log_file) if log_file else None,
             "error": str(e),
             "images": image_status if "image_status" in locals() else {},
@@ -851,6 +857,7 @@ def get_image_tags(
     ubuntu_version,
     tag_suffix="",
     image_repo="ghcr.io/tenstorrent/tt-inference-server",
+    quetzal_commit=None,
 ):
     """
     Generate Docker image tags for all image types.
@@ -863,7 +870,14 @@ def get_image_tags(
     tt_metal_tag = tt_metal_commit
     vllm_tag = vllm_commit
 
-    suffix = f"-{tag_suffix}" if tag_suffix else ""
+    if quetzal_commit and not re.fullmatch(r"[0-9a-f]{40}", quetzal_commit):
+        raise ValueError("quetzal_commit must be a lowercase 40-hex commit")
+    identity_parts = []
+    if quetzal_commit:
+        identity_parts.append(f"qz-{quetzal_commit[:12]}")
+    if tag_suffix:
+        identity_parts.append(tag_suffix)
+    suffix = f"-{'-'.join(identity_parts)}" if identity_parts else ""
 
     dev_image_tag = f"{image_repo}/vllm-tt-metal-src-dev-{os_version}:{image_version}-{tt_metal_tag}-{vllm_tag}{suffix}"
     release_image_tag = f"{image_repo}/vllm-tt-metal-src-release-{os_version}:{image_version}-{tt_metal_tag}-{vllm_tag}{suffix}"
@@ -1103,6 +1117,7 @@ def build_dev_image(
     vllm_commit,
     container_app_uid,
     logger,
+    quetzal_commit=None,
 ):
     """
     Build the dev Docker image from the Dockerfile.
@@ -1135,12 +1150,20 @@ def build_dev_image(
         f"TT_METAL_COMMIT_SHA_OR_TAG={tt_metal_commit}",
         "--build-arg",
         f"TT_VLLM_COMMIT_SHA_OR_TAG={vllm_commit}",
-        "--build-arg",
-        f"CONTAINER_APP_UID={container_app_uid}",
-        "-f",
-        "vllm-tt-metal/vllm.tt-metal.src.dev.Dockerfile",
-        ".",
     ]
+    if quetzal_commit:
+        if not re.fullmatch(r"[0-9a-f]{40}", quetzal_commit):
+            raise ValueError("quetzal_commit must be a lowercase 40-hex commit")
+        build_command.extend(["--build-arg", f"TT_QUETZAL_COMMIT_SHA={quetzal_commit}"])
+    build_command.extend(
+        [
+            "--build-arg",
+            f"CONTAINER_APP_UID={container_app_uid}",
+            "-f",
+            "vllm-tt-metal/vllm.tt-metal.src.dev.Dockerfile",
+            ".",
+        ]
+    )
 
     run_command_with_logging(build_command, logger=logger, check=True, cwd=repo_root)
     logger.info(f"Successfully built dev image: {dev_image_tag}")
@@ -1350,6 +1373,7 @@ def build_docker_images(
     memory_per_build_gb=MEMORY_PER_BUILD_GB,
     disk_per_build_gb=DISK_PER_BUILD_GB,
     dry_run_build_duration=DRY_RUN_BUILD_DURATION_SECONDS,
+    quetzal_commit=None,
 ):
     """
     Builds all Docker images required by the provided ModelConfigs.
@@ -1368,9 +1392,13 @@ def build_docker_images(
         memory_per_build_gb: GB of RAM required per concurrent build
         disk_per_build_gb: GB of disk required per concurrent build
         dry_run_build_duration: Seconds each mock build sleeps in dry-run mode
+        quetzal_commit: Optional immutable 40-hex Quetzal source commit. When set,
+            it is passed to the image build and included in every final image tag.
     """
     container_app_uid = 1000
     validate_inputs(ubuntu_version, container_app_uid)
+    if quetzal_commit and not re.fullmatch(r"[0-9a-f]{40}", quetzal_commit):
+        raise ValueError("quetzal_commit must be a lowercase 40-hex commit")
 
     unique_sha_combinations = list_image_combinations(
         model_configs,
@@ -1403,6 +1431,7 @@ def build_docker_images(
             dry_run,
             stdout_only,
             dry_run_build_duration,
+            quetzal_commit,
         )
         for tt_metal_commit, vllm_commit in unique_sha_combinations
     ]
@@ -1513,6 +1542,7 @@ def build_docker_images(
         "force_build": force_build,
         "release": release,
         "push": push,
+        "quetzal_commit": quetzal_commit,
         "success_count": success_count,
         "failure_count": failure_count,
         "build_attempted": build_attempted,
@@ -1556,6 +1586,14 @@ if __name__ == "__main__":
         help="Only build containers with this exact tt-metal commit",
     )
     parser.add_argument(
+        "--quetzal-commit",
+        type=str,
+        help=(
+            "Build a Quetzal-capable image from this lowercase 40-hex commit; "
+            "the pin becomes part of the image tag and build receipt"
+        ),
+    )
+    parser.add_argument(
         "--max-workers",
         type=int,
         help="Ceiling on parallel workers (resource-based auto-limit applies first)",
@@ -1596,6 +1634,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     logger.info(f"ubuntu_version: {args.ubuntu_version}")
     logger.info(f"build_metal_commit: {args.build_metal_commit}")
+    logger.info(f"quetzal_commit: {args.quetzal_commit}")
     logger.info(f"max_workers: {args.max_workers}")
     logger.info(f"force_build: {args.force_build}")
     logger.info(f"release: {args.release}")
@@ -1623,4 +1662,5 @@ if __name__ == "__main__":
         memory_per_build_gb=args.memory_per_build,
         disk_per_build_gb=args.disk_per_build,
         dry_run_build_duration=args.dry_run_build_duration,
+        quetzal_commit=args.quetzal_commit,
     )

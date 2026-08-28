@@ -18,7 +18,55 @@ from scripts.build_docker_images import (
     MEMORY_RESERVE_GB,
     DISK_PER_BUILD_GB,
     DISK_RESERVE_GB,
+    build_dev_image,
+    get_image_tags,
 )
+
+
+QUETZAL_COMMIT = "49f103ad8f80523ba0d35c5825aee908507f196b"
+
+
+def test_quetzal_commit_is_part_of_image_identity():
+    tags = get_image_tags(
+        "a" * 40,
+        "b" * 40,
+        "22.04",
+        quetzal_commit=QUETZAL_COMMIT,
+    )
+    assert "-qz-49f103ad8f80" in tags["dev"]
+    assert "-qz-49f103ad8f80" in tags["release"]
+
+
+@pytest.mark.parametrize("bad_ref", ["main", "v1.0", "ABCDEF" * 6 + "ABCD"])
+def test_quetzal_commit_rejects_tags_branches_and_uppercase(bad_ref):
+    with pytest.raises(ValueError, match="lowercase 40-hex"):
+        get_image_tags("a" * 40, "b" * 40, "22.04", quetzal_commit=bad_ref)
+
+
+def test_build_dev_image_forwards_exact_quetzal_commit(tmp_path):
+    tags = {
+        "dev": "local/dev:qz",
+        "tt_metal_base": "local/metal:base",
+    }
+    with patch(
+        "scripts.build_docker_images.get_repo_root_path", return_value=tmp_path
+    ), patch(
+        "scripts.build_docker_images.generate_model_specs_json",
+        return_value=tmp_path / "model_spec.json",
+    ), patch(
+        "scripts.build_docker_images.run_command_with_logging"
+    ) as run:
+        build_dev_image(
+            tags,
+            "a" * 40,
+            "b" * 40,
+            1000,
+            MagicMock(),
+            quetzal_commit=QUETZAL_COMMIT,
+        )
+
+    command = run.call_args.args[0]
+    assert command.count("TT_QUETZAL_COMMIT_SHA=" + QUETZAL_COMMIT) == 1
 
 
 class TestGetAvailableMemoryGb:

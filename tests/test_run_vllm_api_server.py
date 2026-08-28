@@ -10,6 +10,7 @@ import os
 import sys
 import types
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -412,9 +413,88 @@ def test_ensure_weights_available_resumes_partial_download(
     run_vllm_api_server_module.snapshot_download.assert_called_once()
     kwargs = run_vllm_api_server_module.snapshot_download.call_args.kwargs
     assert kwargs["repo_id"] == spec["hf_model_repo"]
+    assert kwargs["revision"] is None
     assert Path(kwargs["local_dir"]) == weights_path
     assert result == weights_path
     assert os.environ["MODEL_WEIGHTS_DIR"] == str(weights_path)
+
+
+def test_ensure_weights_available_pins_quetzal_revision(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    monkeypatch.delenv("MODEL_WEIGHTS_DIR", raising=False)
+    monkeypatch.setenv("CACHE_ROOT", str(tmp_path))
+    revision = "6a9e13bd6fc8f0983b9b99948120bc37f49c13e9"
+    spec = _weights_spec()
+    spec["device_model_spec"] = {"vllm_args": {"revision": revision}}
+
+    run_vllm_api_server_module.ensure_weights_available(spec)
+
+    assert (
+        run_vllm_api_server_module.snapshot_download.call_args.kwargs["revision"]
+        == revision
+    )
+
+
+def test_validate_quetzal_runtime_admits_only_generated_provider(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    root = tmp_path / "quetzal"
+    root.mkdir()
+    manifest = root / "qualification_manifest.yaml"
+    manifest.write_text("models: []\n")
+    revision = "6a9e13bd6fc8f0983b9b99948120bc37f49c13e9"
+    model = "Qwen/Qwen3.6-27B"
+    for key, value in {
+        "QUETZAL_VLLM": "1",
+        "QUETZAL_MODEL": model,
+        "QUETZAL_HF_REVISION": revision,
+        "VLLM_PLUGINS": "quetzal_model_registry,tt",
+        "TT_VLLM_BUILTIN_MODELS": "0",
+        "QZ_MODELS_ROOT": str(root),
+        "QZ_QUALIFICATION_MANIFEST": str(manifest),
+    }.items():
+        monkeypatch.setenv(key, value)
+    model_spec = {
+        "impl": {"impl_id": "quetzal"},
+        "hf_model_repo": model,
+        "device_model_spec": {
+            "max_context": 8192,
+            "vllm_args": {
+                "revision": revision,
+                "tokenizer_revision": revision,
+            },
+        },
+    }
+    monkeypatch.setattr(
+        run_vllm_api_server_module,
+        "_general_plugin_entry_points",
+        lambda: [
+            SimpleNamespace(
+                name="quetzal_model_registry",
+                value="tt_quetzalcoatlus.vllm_plugin:register",
+            )
+        ],
+    )
+    entry = {
+        "model_id": model,
+        "backend": "generated_quetzal",
+        "batch_size": 1,
+        "target_mesh": "p150x4",
+        "emit_hash": "a" * 64,
+        "prefill_buckets": [{"seq_len": 8192}],
+    }
+    monkeypatch.setattr(
+        run_vllm_api_server_module.importlib,
+        "import_module",
+        lambda name: SimpleNamespace(discover_models=lambda path: {"qwen": entry}),
+    )
+
+    assert run_vllm_api_server_module.validate_quetzal_runtime(model_spec) == entry
+
+    monkeypatch.setenv("VLLM_PLUGINS", "quetzal_model_registry,tt,tt_model_registry")
+    with pytest.raises(RuntimeError, match="requires exactly"):
+        run_vllm_api_server_module.validate_quetzal_runtime(model_spec)
 
 
 def test_ensure_weights_available_falls_back_when_hub_unreachable(

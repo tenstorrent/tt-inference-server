@@ -332,14 +332,35 @@
       ]
     },
     "Qwen3.6-27B": {
-      "inference_engine": "vLLM",
-      "ci": {
-        "nightly": {
-          "devices": [
-            "P300X2"
-          ]
+      "implementations": [
+        {
+          "inference_engine": "vLLM",
+          "impl": "qwen36-blackhole",
+          "ci": {
+            "nightly": {
+              "devices": [
+                "P300X2"
+              ]
+            }
+          }
+        },
+        {
+          "inference_engine": "vLLM",
+          "impl": "quetzal",
+          "ci": {
+            "nightly": {
+              "devices": [
+                "P300X2"
+              ],
+              "device-args": {
+                "P300X2": {
+                  "additional-args": "--quetzal-models-root /mnt/models/quetzal-runtime/49f103ad8f80523ba0d35c5825aee908507f196b/qwen36-6a9e13bd6fc8f0983b9b99948120bc37f49c13e9-p150x4-b1-s8192"
+                }
+              }
+            }
+          }
         }
-      }
+      ]
     },
     "Qwen3-4B": {
       "inference_engine": "FORGE",
@@ -541,14 +562,35 @@
       }
     },
     "gemma-4-31B-it": {
-      "inference_engine": "vLLM",
-      "ci": {
-        "nightly": {
-          "devices": [
-            "P300X2"
-          ]
+      "implementations": [
+        {
+          "inference_engine": "vLLM",
+          "impl": "tt-transformers",
+          "ci": {
+            "nightly": {
+              "devices": [
+                "P300X2"
+              ]
+            }
+          }
+        },
+        {
+          "inference_engine": "vLLM",
+          "impl": "quetzal",
+          "ci": {
+            "nightly": {
+              "devices": [
+                "P300X2"
+              ],
+              "device-args": {
+                "P300X2": {
+                  "additional-args": "--quetzal-models-root /mnt/models/quetzal-runtime/49f103ad8f80523ba0d35c5825aee908507f196b/gemma4-842da3794eaa0b77d5f08bae87a17459d91ff475-p150x4-b1-s4096"
+                }
+              }
+            }
+          }
         }
-      }
+      ]
     },
     "gemma-4-31b-it": {
       "inference_engine": "FORGE",
@@ -571,16 +613,37 @@
       }
     },
     "gpt-oss-120b": {
-      "inference_engine": "vLLM",
-      "ci": {
-        "nightly": {
-          "devices": [
-            "GALAXY",
-            "P300X2",
-            "T3K"
-          ]
+      "implementations": [
+        {
+          "inference_engine": "vLLM",
+          "impl": "gpt-oss",
+          "ci": {
+            "nightly": {
+              "devices": [
+                "GALAXY",
+                "P300X2",
+                "T3K"
+              ]
+            }
+          }
+        },
+        {
+          "inference_engine": "vLLM",
+          "impl": "quetzal",
+          "ci": {
+            "nightly": {
+              "devices": [
+                "P300X2"
+              ],
+              "device-args": {
+                "P300X2": {
+                  "additional-args": "--quetzal-models-root /mnt/models/quetzal-runtime/49f103ad8f80523ba0d35c5825aee908507f196b/gpt-oss-b5c939de8f754692c1647ca79fbf85e8c1e70f8a-p150x4-b1-s1024"
+                }
+              }
+            }
+          }
         }
-      }
+      ]
     },
     "gpt-oss-20b": {
       "inference_engine": "vLLM",

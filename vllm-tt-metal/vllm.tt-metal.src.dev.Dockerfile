@@ -13,6 +13,8 @@ FROM ${TT_METAL_DOCKERFILE_URL} AS builder
 # Build arguments
 ARG TT_METAL_COMMIT_SHA_OR_TAG
 ARG TT_VLLM_COMMIT_SHA_OR_TAG
+ARG TT_QUETZAL_COMMIT_SHA=""
+ARG TT_QUETZAL_REPO_URL=https://github.com/tenstorrent/tt-quetzalcoatlus.git
 ARG TT_SMI_COMMIT_SHA_OR_TAG=v3.1.1
 ARG CONTAINER_APP_UID=1000
 ARG DEBIAN_FRONTEND=noninteractive
@@ -30,6 +32,7 @@ ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
     TT_METAL_ENV=dev \
     VLLM_TARGET_DEVICE="tt" \
     vllm_tt_plugin_dir=${HOME_DIR}/vllm-tt-plugin \
+    quetzal_dir=${HOME_DIR}/tt-quetzalcoatlus \
     TT_SMI_DIR=${HOME_DIR}/tt-smi \
     LOGURU_LEVEL=INFO \
     # Rust build dependencies, for backward compatibility with tt-metal 
@@ -110,6 +113,36 @@ RUN /bin/bash -c "git clone https://github.com/tenstorrent/vllm-tt-plugin.git ${
     && rm -rf ${vllm_tt_plugin_dir}/.git \
     && { uv cache clean || echo 'WARN: uv cache clean failed'; true; }"
 
+# Optional generated-Quetzal image hook. A Quetzal-capable image must supply an
+# immutable 40-hex commit; ordinary native images leave the argument empty. We
+# retain the built wheel in the image build artifacts and install that exact
+# wheel without dependencies, so the source/ref and installed payload are both
+# auditable and cannot replace the image's pinned tt-metal/vLLM stack. vLLM
+# discovers quetzal_model_registry from the wheel's distribution metadata.
+RUN set -eu; \
+    mkdir -p "${HOME_DIR}/quetzal-runtime/mesh_graph_descriptors" \
+             "${HOME_DIR}/quetzal-runtime/wheels"; \
+    if [ -n "${TT_QUETZAL_COMMIT_SHA}" ]; then \
+      printf '%s' "${TT_QUETZAL_COMMIT_SHA}" | grep -Eq '^[0-9a-f]{40}$' \
+      || { echo 'TT_QUETZAL_COMMIT_SHA must be a lowercase 40-hex commit' >&2; exit 1; }; \
+      git clone --filter=blob:none --no-checkout "${TT_QUETZAL_REPO_URL}" "${quetzal_dir}"; \
+      cd "${quetzal_dir}"; \
+      git fetch --depth 1 origin "${TT_QUETZAL_COMMIT_SHA}"; \
+      git checkout --detach "${TT_QUETZAL_COMMIT_SHA}"; \
+      test "$(git rev-parse HEAD)" = "${TT_QUETZAL_COMMIT_SHA}"; \
+      . "${PYTHON_ENV_DIR}/bin/activate"; \
+      uv build --wheel --out-dir "${HOME_DIR}/quetzal-runtime/wheels"; \
+      test "$(find "${HOME_DIR}/quetzal-runtime/wheels" -maxdepth 1 -type f -name '*.whl' | wc -l)" -eq 1; \
+      quetzal_wheel="$(find "${HOME_DIR}/quetzal-runtime/wheels" -maxdepth 1 -type f -name '*.whl')"; \
+      uv pip install --no-cache-dir --no-deps "${quetzal_wheel}"; \
+      cp serving/mesh_graph_descriptors/p150_x4_2ch_mesh_graph_descriptor.textproto \
+         "${HOME_DIR}/quetzal-runtime/mesh_graph_descriptors/"; \
+      rm -rf "${quetzal_dir}"; \
+      { uv cache clean || echo 'WARN: uv cache clean failed'; true; }; \
+    else \
+      echo 'Building native-only image (TT_QUETZAL_COMMIT_SHA unset)'; \
+    fi
+
 # Build tt-smi in separate venv to avoid conflicts with tt-metal venv
 RUN /bin/bash -c "git clone https://github.com/tenstorrent/tt-smi.git ${TT_SMI_DIR} \
     && cd ${TT_SMI_DIR} \
@@ -131,14 +164,18 @@ LABEL maintainer="Tom Stesco <tstesco@tenstorrent.com>" \
 
 # IDENTICAL arguments and environment as builder stage
 ARG TT_METAL_COMMIT_SHA_OR_TAG
+ARG TT_QUETZAL_COMMIT_SHA=""
 ARG CONTAINER_APP_UID=15863
 ARG DEBIAN_FRONTEND=noninteractive
 ARG CONTAINER_APP_USERNAME=container_app_user
 ARG HOME_DIR=/home/${CONTAINER_APP_USERNAME}
 ARG APP_DIR="${HOME_DIR}/app"
 
+LABEL org.opencontainers.image.quetzal.revision=${TT_QUETZAL_COMMIT_SHA}
+
 # IDENTICAL environment variables as builder stage
 ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
+    TT_QUETZAL_COMMIT_SHA=${TT_QUETZAL_COMMIT_SHA} \
     SHELL=/bin/bash \
     TZ=America/Los_Angeles \
     CONTAINER_APP_USERNAME=${CONTAINER_APP_USERNAME} \
@@ -193,6 +230,17 @@ COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} 
 # inside ${PYTHON_ENV_DIR}/site-packages, already copied with TT_METAL_HOME above.
 COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     ${vllm_tt_plugin_dir} ${vllm_tt_plugin_dir}
+
+# Stable, catalog-owned locations for the P150x4 descriptor and the exact wheel
+# installed in the builder. Both directories remain empty for native-only
+# images; Quetzal admission still requires the installed entry point.
+RUN mkdir -p /opt/quetzal/mesh_graph_descriptors /opt/quetzal/wheels
+COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
+    ${HOME_DIR}/quetzal-runtime/mesh_graph_descriptors/ \
+    /opt/quetzal/mesh_graph_descriptors/
+COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
+    ${HOME_DIR}/quetzal-runtime/wheels/ \
+    /opt/quetzal/wheels/
 
 # Copy complete tt-smi installation  
 COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \

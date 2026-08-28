@@ -3,10 +3,13 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import argparse
+import importlib
+import importlib.metadata
 import json
 import logging
 import multiprocessing
 import os
+import re
 import runpy
 import shlex
 import sys
@@ -14,7 +17,6 @@ from pathlib import Path
 from typing import Optional
 
 from huggingface_hub import snapshot_download
-from vllm import ModelRegistry
 
 from utils.cache_monitor import get_container_cache_dir
 from utils.device_utils import get_mesh_device_name
@@ -33,6 +35,11 @@ logger = logging.getLogger(__name__)
 
 
 DEFAULT_VLLM_SERVER_PORT = "8000"
+QUETZAL_IMPL_ID = "quetzal"
+QUETZAL_BACKEND = "generated_quetzal"
+QUETZAL_PLUGIN_NAME = "quetzal_model_registry"
+QUETZAL_PLUGIN_VALUE = "tt_quetzalcoatlus.vllm_plugin:register"
+QUETZAL_PLUGIN_ALLOWLIST = {QUETZAL_PLUGIN_NAME, "tt"}
 
 
 def parse_args():
@@ -311,11 +318,14 @@ def ensure_weights_available(model_spec: dict) -> Path:
     model_name = model_spec["model_name"]
     weights_path = cache_root / "weights" / model_name
     hf_repo = model_spec.get("hf_weights_repo") or model_spec["hf_model_repo"]
+    revision = (
+        model_spec.get("device_model_spec", {}).get("vllm_args", {}).get("revision")
+    )
 
     weights_path.mkdir(parents=True, exist_ok=True)
     logger.info(f"Downloading weights from {hf_repo} to {weights_path}")
     try:
-        snapshot_download(repo_id=hf_repo, local_dir=weights_path)
+        snapshot_download(repo_id=hf_repo, revision=revision, local_dir=weights_path)
     except Exception as e:
         if any(weights_path.iterdir()):
             logger.warning(
@@ -359,6 +369,12 @@ def register_tt_models(impl_id=None):
                  "tt_transformers".
     """
     impl_id = impl_id or "tt_transformers"
+    if impl_id == QUETZAL_IMPL_ID:
+        raise RuntimeError("native TT model registration is forbidden for impl=quetzal")
+
+    # Delay importing vLLM until model-spec environment and Quetzal admission
+    # have been applied. VLLM discovers plugins during import in some versions.
+    from vllm import ModelRegistry
 
     # Llama path selection based on impl_id
     if impl_id == "llama3_70b_galaxy":
@@ -377,6 +393,135 @@ def register_tt_models(impl_id=None):
         "TTArceeForCausalLM",
         "models.tt_transformers.tt.generator_vllm:TTArceeForCausalLM",
     )
+
+
+def _general_plugin_entry_points():
+    """Return installed vLLM general plugins across Python metadata APIs."""
+    try:
+        return list(importlib.metadata.entry_points(group="vllm.general_plugins"))
+    except TypeError:  # Python/importlib_metadata compatibility
+        return list(
+            importlib.metadata.entry_points().select(group="vllm.general_plugins")
+        )
+
+
+def validate_quetzal_runtime(model_spec: dict) -> dict | None:
+    """Fail closed before vLLM import for a generated Quetzal launch.
+
+    The installed Quetzal plugin performs the definitive architecture
+    registration. This preflight proves the selected model spec cannot fall
+    through to the handcrafted registry while startup is still host-only.
+    """
+    impl_id = model_spec.get("impl", {}).get("impl_id")
+    if impl_id != QUETZAL_IMPL_ID:
+        return None
+
+    model_id = model_spec.get("hf_model_repo")
+    env_model = os.getenv("QUETZAL_MODEL")
+    if os.getenv("QUETZAL_VLLM") != "1":
+        raise RuntimeError("impl=quetzal requires QUETZAL_VLLM=1")
+    if not model_id or env_model != model_id:
+        raise RuntimeError(
+            "Quetzal model identity mismatch: catalog hf_model_repo must equal "
+            "QUETZAL_MODEL"
+        )
+
+    plugins = [item.strip() for item in os.getenv("VLLM_PLUGINS", "").split(",")]
+    plugins = [item for item in plugins if item]
+    if set(plugins) != QUETZAL_PLUGIN_ALLOWLIST or len(plugins) != 2:
+        raise RuntimeError(
+            "impl=quetzal requires exactly "
+            "VLLM_PLUGINS=quetzal_model_registry,tt; native model registries "
+            "are forbidden"
+        )
+    if os.getenv("TT_VLLM_BUILTIN_MODELS") != "0":
+        raise RuntimeError("impl=quetzal requires TT_VLLM_BUILTIN_MODELS=0")
+
+    vllm_args = model_spec.get("device_model_spec", {}).get("vllm_args", {})
+    revision = os.getenv("QUETZAL_HF_REVISION")
+    if not revision or re.fullmatch(r"[0-9a-f]{40}", revision) is None:
+        raise RuntimeError(
+            "Quetzal HF revision must be an immutable lowercase 40-hex commit"
+        )
+    if vllm_args.get("revision") != revision:
+        raise RuntimeError("Quetzal config revision does not match artifact revision")
+    if vllm_args.get("tokenizer_revision") != revision:
+        raise RuntimeError(
+            "Quetzal tokenizer revision does not match artifact revision"
+        )
+
+    root_value = os.getenv("QZ_MODELS_ROOT")
+    if not root_value:
+        raise RuntimeError("impl=quetzal requires QZ_MODELS_ROOT")
+    root = Path(root_value)
+    if root.is_symlink() or not root.is_dir():
+        raise RuntimeError(f"QZ_MODELS_ROOT must be a real directory: {root}")
+    root = root.resolve()
+
+    manifest_value = os.getenv("QZ_QUALIFICATION_MANIFEST")
+    if not manifest_value:
+        raise RuntimeError("impl=quetzal requires QZ_QUALIFICATION_MANIFEST")
+    manifest = Path(manifest_value)
+    if manifest.is_symlink() or not manifest.is_file():
+        raise RuntimeError(
+            f"QZ_QUALIFICATION_MANIFEST must be a regular file: {manifest}"
+        )
+    manifest = manifest.resolve()
+    if not manifest.is_relative_to(root):
+        raise RuntimeError(
+            "Quetzal qualification manifest must be inside QZ_MODELS_ROOT"
+        )
+
+    entry_points = [
+        entry
+        for entry in _general_plugin_entry_points()
+        if entry.name == QUETZAL_PLUGIN_NAME
+    ]
+    if len(entry_points) != 1:
+        raise RuntimeError(
+            "impl=quetzal requires exactly one installed "
+            f"{QUETZAL_PLUGIN_NAME!r} vLLM entry point; found {len(entry_points)}"
+        )
+    if entry_points[0].value != QUETZAL_PLUGIN_VALUE:
+        raise RuntimeError(
+            f"{QUETZAL_PLUGIN_NAME!r} must resolve to {QUETZAL_PLUGIN_VALUE!r}; "
+            f"found {entry_points[0].value!r}"
+        )
+
+    # Discovery is generated-only by default. It validates the qualification
+    # policy, prefill/decode pair, weights, runtime ABI, and backend identity.
+    quetzal_server = importlib.import_module("serving.quetzal_server")
+    entries = quetzal_server.discover_models(str(root))
+    required_context = model_spec.get("device_model_spec", {}).get("max_context")
+    matching = []
+    for entry in entries.values():
+        bucket_lengths = {
+            bucket.get("seq_len")
+            for bucket in entry.get("prefill_buckets", [])
+            if isinstance(bucket, dict)
+        }
+        if (
+            entry.get("model_id") == model_id
+            and entry.get("backend") == QUETZAL_BACKEND
+            and entry.get("batch_size") in (None, 1)
+            and entry.get("target_mesh") in ("p150x4", "4-chip")
+            and required_context in bucket_lengths
+        ):
+            matching.append(entry)
+    if not matching:
+        raise RuntimeError(
+            "no qualified generated_quetzal p150x4/B1 artifact with the "
+            f"catalog context {required_context} was discovered for {model_id} "
+            f"under {root}; refusing native fallback"
+        )
+    logger.info(
+        "Quetzal preflight admitted model=%s revision=%s backend=%s " "emit_hash=%s",
+        model_id,
+        revision,
+        matching[0].get("backend"),
+        matching[0].get("emit_hash"),
+    )
+    return matching[0]
 
 
 def model_setup(model_spec_json):
@@ -763,6 +908,11 @@ def main():
         engine_arg=args.engine,
         impl_arg=args.impl,
     )
+    # Apply the catalog environment before any vLLM import. Quetzal's plugin
+    # allowlist is an admission boundary, not a setting that can be changed
+    # safely after vLLM has discovered model registries.
+    set_runtime_env_vars(model_spec)
+    quetzal_artifact = validate_quetzal_runtime(model_spec)
     device_type = model_spec.get("device_type")
     if device_type:
         device_type = normalize_device_type(device_type)
@@ -781,12 +931,19 @@ def main():
 
     logger.info(f"Using model spec: {model_spec['model_id']}")
 
-    # Step 3: Register TT models (after lookup, with correct impl_id)
+    # Step 3: Register handcrafted TT models only for native implementations.
+    # Generated Quetzal is registered exclusively by its installed vLLM entry
+    # point; calling this function would create the forbidden fallback lane.
     impl_id = model_spec.get("impl", {}).get("impl_id")
-    register_tt_models(impl_id)
+    if impl_id != QUETZAL_IMPL_ID:
+        register_tt_models(impl_id)
+    else:
+        logger.info(
+            "Skipping native TT model registration for Quetzal artifact %s",
+            quetzal_artifact.get("emit_hash") if quetzal_artifact else None,
+        )
 
     # Step 4: Set runtime environment variables and vLLM server args
-    set_runtime_env_vars(model_spec)
     set_metal_timeout_env_vars()
     runtime_settings(model_spec, no_auth=args.no_auth)
     default_vllm_args = model_spec["device_model_spec"]["vllm_args"]
