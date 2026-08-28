@@ -10,9 +10,11 @@
 #include <prometheus/registry.h>
 #include <prometheus/summary.h>
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -21,6 +23,8 @@
 #include <thread>
 #include <unordered_map>
 #include <variant>
+
+#include "metrics/tts_conditioning_stage.hpp"
 
 namespace tt::metrics {
 
@@ -124,6 +128,30 @@ class ServerMetrics {
    */
   void onPrefixCacheLookup(uint32_t promptTokens, uint32_t matchedTokens);
 
+  /**
+   * Record how long one conditioning stage took for a TTS request. Called once
+   * per stage that actually ran, at most four times per request.
+   *
+   * Stages that did not run are not observed at all, rather than observed as
+   * zero: a `voice_encode` sample of 0 would otherwise be indistinguishable
+   * from a cache hit and would drag every quantile for that stage toward zero.
+   *
+   * Writes the Summary directly rather than via the event queue — this is
+   * per-request, not per-token, frequency, and prometheus-cpp Summary::Observe
+   * takes its own mutex, so calling from Drogon request threads and from the
+   * TTS audio-drain threads is safe.
+   */
+  void onTtsConditioning(TtsConditioningStage stage, double seconds);
+
+  /**
+   * Record a finished TTS request's total time, from service entry (before any
+   * conditioning) through delivery of its terminal event. Conditioning is
+   * measured inside this interval, which is what lets it be read as a share of
+   * engine time rather than an unrelated number.
+   * Same direct-write rationale as onTtsConditioning().
+   */
+  void onTtsRequestDuration(double seconds);
+
   /** Render the full registry in Prometheus text exposition format. */
   std::string renderText() const;
 
@@ -219,6 +247,13 @@ class ServerMetrics {
   // --- token-count histograms ---
   prometheus::Histogram* request_prompt_tokens_{nullptr};
   prometheus::Histogram* request_generation_tokens_{nullptr};
+
+  // --- TTS conditioning summaries (one per stage, plus the denominator) ---
+  // The family itself is not kept: every stage series is pre-created in the
+  // constructor, so nothing on the request path ever has to Add() a label set.
+  std::array<prometheus::Summary*, TTS_CONDITIONING_STAGE_COUNT>
+      tts_conditioning_{};
+  prometheus::Summary* tts_request_duration_seconds_{nullptr};
 };
 
 }  // namespace tt::metrics

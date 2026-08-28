@@ -1,0 +1,8 @@
+[Unit]
+Description=LTX media server healthcheck (restart on device wedge)
+# Don't run the check while the main unit is mid-(re)start.
+After=ltx-media-server.service
+
+[Service]
+Type=oneshot
+ExecStart=/home/rsalman/tt-metal/tt-inference-server/tt-media-server/ltx_healthcheck.sh

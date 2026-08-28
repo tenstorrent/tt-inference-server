@@ -2,6 +2,21 @@
 {{- $cfg := include "tt-inference-server.resolvedConfig" . | fromYaml }}
 {{- $engine := include "tt-inference-server.resolvedEngine" . }}
 {{- $ttCount := include "tt-inference-server.draDeviceCount" . }}
+{{- $startupPeriod := $cfg.probes.startup.periodSeconds | int }}
+{{- if le $startupPeriod 0 }}{{- fail "probes.startup.periodSeconds must be greater than 0 (it divides progressDeadlineSeconds to size the startupProbe budget)." }}{{- end }}
+{{- /* default true (provision hugepages) when the hugepages map is absent/null or omits enabled. */ -}}
+{{- $hugepages := dig "enabled" true (.Values.hugepages | default dict) }}
+{{- $resources := $cfg.resources }}
+{{- if and $resources (not $hugepages) }}
+{{- /* hugepages disabled: strip hugepages-1Gi from a copy so $cfg is untouched. */ -}}
+{{- $resources = deepCopy $resources }}
+{{- range $group := list "limits" "requests" }}
+{{- if hasKey $resources $group }}
+{{- $_ := unset (index $resources $group) "hugepages-1Gi" }}
+{{- if not (index $resources $group) }}{{- $_ := unset $resources $group }}{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -51,6 +66,7 @@ spec:
           volumeMounts:
             - name: cache
               mountPath: /cache
+        {{- if $hugepages }}
         # Scoped hugepages cleanup: claim requested here so the DRA driver injects
         # /dev/tenstorrent/<N>; delete only THIS Pod's board files, not co-located Pods'.
         - name: cleanup-hugepages
@@ -73,6 +89,7 @@ spec:
           volumeMounts:
             - name: hugepages-1g
               mountPath: /dev/hugepages-1G
+        {{- end }}
       containers:
         - name: inference-server
           image: {{ include "tt-inference-server.image" . }}
@@ -100,16 +117,18 @@ spec:
           volumeMounts:
             - name: cache
               mountPath: /home/container_app_user/cache_root
+            {{- if $hugepages }}
             - name: hugepages-1g
               mountPath: /dev/hugepages-1G
+            {{- end }}
             {{- if .Values.hfCacheDir }}
             - name: hf-cache
               mountPath: /mnt/hf-cache
               readOnly: true
             {{- end }}
-          {{- if or $cfg.resources $ttCount }}
+          {{- if or $resources $ttCount }}
           resources:
-            {{- with $cfg.resources }}
+            {{- with $resources }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
             {{- if $ttCount }}
@@ -117,6 +136,20 @@ spec:
               - name: tt
             {{- end }}
           {{- end }}
+          # startupProbe owns the compile/warmup window: while it runs the kubelet
+          # suppresses liveness/readiness, then they take over immediately. The
+          # budget = failureThreshold × periodSeconds is derived from
+          # progressDeadlineSeconds so it always matches the max compile time; it
+          # flips to serving as soon as one poll succeeds, not after a fixed delay.
+          # Always rendered — disabling it would let liveness (initialDelaySeconds
+          # defaults to 0) kill the container mid-compile.
+          startupProbe:
+            httpGet:
+              path: {{ $cfg.probes.readiness.path | default "/health" }}
+              port: http
+            periodSeconds: {{ $startupPeriod }}
+            failureThreshold: {{ ceil (divf $cfg.progressDeadlineSeconds $startupPeriod) | int }}
+            timeoutSeconds: 5
           {{- if $cfg.probes.liveness.enabled }}
           livenessProbe:
             httpGet:
@@ -126,7 +159,6 @@ spec:
               path: {{ $cfg.probes.liveness.path }}
               {{- end }}
               port: http
-            initialDelaySeconds: {{ $cfg.probes.liveness.initialDelaySeconds }}
             periodSeconds: 30
             timeoutSeconds: 5
             failureThreshold: 3
@@ -136,7 +168,6 @@ spec:
             httpGet:
               path: {{ $cfg.probes.readiness.path }}
               port: http
-            initialDelaySeconds: {{ $cfg.probes.readiness.initialDelaySeconds }}
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 3
@@ -146,10 +177,12 @@ spec:
           hostPath:
             path: {{ include "tt-inference-server.cacheHostPath" . }}
             type: DirectoryOrCreate
+        {{- if $hugepages }}
         - name: hugepages-1g
           hostPath:
             path: /dev/hugepages-1G
             type: Directory
+        {{- end }}
         {{- if .Values.hfCacheDir }}
         - name: hf-cache
           hostPath:

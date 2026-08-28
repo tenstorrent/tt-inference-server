@@ -35,6 +35,15 @@ logger = logging.getLogger(__name__)
 
 PASSED_STATUS = "passed"
 FAILED_STATUS = "failed"
+# pytest.skip() inside a test body reports "skipped". A skip means the scenario
+# does not apply to this server/model (e.g. an unsupported response_format is
+# rejected up front), NOT that the model misbehaved, so it must never count as a
+# failure. Previously the three consumers below disagreed about it: the suite
+# gate treated it as not-passed (failing the run), the summary treated it as
+# not-failed (rendering "PASS" alongside "0/1 passed"), and the detail table
+# rendered it "FAILED" -- one skip produced a self-contradictory report and a
+# release blocker.
+SKIPPED_STATUS = "skipped"
 DEFAULT_MODEL_NAME = "unknown-model"
 MESSAGE_MAX_LEN = 250
 
@@ -109,6 +118,7 @@ class VLLMParamConformanceTest(BaseTest):
             endpoint_url,
             "--model-name",
             model_name,
+            *self._extra_pytest_args(),
             "-q",
         ]
         logger.info("Running vLLM parameter suite: %s", " ".join(command))
@@ -154,6 +164,9 @@ class VLLMParamConformanceTest(BaseTest):
 
         return json.loads(report_path.read_text())
 
+    def _extra_pytest_args(self) -> List[str]:
+        return []
+
     def _record_pytest_output(
         self, return_code: Optional[int], stdout: Optional[bytes]
     ) -> None:
@@ -171,8 +184,9 @@ class VLLMParamConformanceTest(BaseTest):
 
     @staticmethod
     def _all_passed(results: Mapping[str, List[Mapping[str, Any]]]) -> bool:
-        return all(
-            test.get("status") == PASSED_STATUS
+        """True when nothing FAILED. Skips are tolerated (see SKIPPED_STATUS)."""
+        return not any(
+            test.get("status") == FAILED_STATUS
             for tests in results.values()
             for test in tests
         )
@@ -197,12 +211,21 @@ class VLLMParamConformanceTest(BaseTest):
                 continue
             passed = sum(1 for t in tests if t.get("status") == PASSED_STATUS)
             failed = sum(1 for t in tests if t.get("status") == FAILED_STATUS)
-            status = "✅ PASS" if failed == 0 else "❌ FAIL"
+            skipped = sum(1 for t in tests if t.get("status") == SKIPPED_STATUS)
+            if failed:
+                status = "❌ FAIL"
+            elif skipped and not passed:
+                status = "⚠️ SKIP"
+            else:
+                status = "✅ PASS"
+            summary = f"{passed}/{total} passed"
+            if skipped:
+                summary += f", {skipped} skipped"
             rows.append(
                 {
                     "test_case": test_case,
                     "status": status,
-                    "summary": f"{passed}/{total} passed",
+                    "summary": summary,
                 }
             )
         return rows
@@ -222,14 +245,22 @@ class VLLMParamConformanceTest(BaseTest):
                 ),
             )
             for test in ordered:
-                passed = test.get("status") == PASSED_STATUS
+                raw = test.get("status")
+                if raw == PASSED_STATUS:
+                    label = "✅ PASSED"
+                elif raw == SKIPPED_STATUS:
+                    label = "⚠️ SKIPPED"
+                else:
+                    label = "❌ FAILED"
                 rows.append(
                     {
                         "test_case": test_case,
                         "parametrization": str(test.get("test_node_name", "")),
-                        "status": "✅ PASSED" if passed else "❌ FAILED",
+                        "status": label,
+                        # keep the reason for skips too: it says WHY the scenario
+                        # did not apply, which is the useful part of a skip.
                         "message": ""
-                        if passed
+                        if raw == PASSED_STATUS
                         else _truncate_message(test.get("message", "")),
                     }
                 )
@@ -252,6 +283,31 @@ class VLLMQwen3StreamingParamConformanceTest(VLLMParamConformanceTest):
     PYTEST_FILENAME = "test_vllm_qwen3_streaming.py"
     ENDPOINT_PATH = "/v1/chat/completions"
     REPORT_TASK_NAME = "vllm_qwen3_streaming"
+
+
+class VLLMDiffusionGemmaParamConformanceTest(VLLMParamConformanceTest):
+    """Run DiffusionGemma's block-serving and admission regression suite."""
+
+    KIND = "vllm_diffusiongemma"
+    PYTEST_FILENAME = "test_vllm_diffusiongemma.py"
+    ENDPOINT_PATH = "/v1/chat/completions"
+    REPORT_TASK_NAME = "vllm_diffusiongemma"
+
+    def _extra_pytest_args(self) -> List[str]:
+        device_spec = (
+            getattr(self.ctx.model_spec, "device_model_spec", None)
+            if self.ctx is not None
+            else None
+        )
+        max_context = getattr(device_spec, "max_context", None)
+        if max_context is None:
+            # Without --max-context the context-admission gates pytest.skip,
+            # which would report a green suite with its regression gates off.
+            raise RuntimeError(
+                "vllm_diffusiongemma conformance requires "
+                "model_spec.device_model_spec.max_context"
+            )
+        return ["--max-context", str(max_context)]
 
 
 def run_vllm_param_conformance(

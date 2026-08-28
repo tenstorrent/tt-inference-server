@@ -284,3 +284,99 @@ templates:
   supported_modalities:
     - text
     - image
+
+# Vision (VLM) profile of the Qwen3.6-27B text spec in dev/llm.yaml. Only the fields
+# that differ from that text spec are vision-mode.
+- weights:
+    - Qwen/Qwen3.6-27B
+  impl: qwen36_blackhole_vlm  # distinct impl_id so the vision spec gets its own model_id
+  inference_engine: VLLM
+  model_type: VLM
+  device_model_specs:
+    - device: P150X4
+      # TODO(batching): pinned to max_concurrency=1 (B=1) for TWO reasons. (1) The
+      # qwen36 vision path is single-sequence by design: qwen36_vllm.py restricts the
+      # multimodal generator to B=1 (batched serving asserts text-only), so image/video
+      # requests must run at max_num_seqs=1. (2) Even text-only batching is unsafe on
+      # current builds: batched paged-attention/GDN decode corrupts output for >=2
+      # concurrent sequences (tt-metal issue #50512). Keep B=1 until vision batching is
+      # implemented AND #50512 is fixed with verified decode PCC.
+      max_concurrency: 1
+      max_context: 262144
+      # text (qwen36_blackhole) is the sole P150X4 default_impl; the VLM profile is
+      # non-default so `--impl qwen36-blackhole-vlm` is required to select vision
+      # (otherwise run.py would see two default_impl candidates for the same model+device).
+      default_impl: false
+      env_vars:
+        TT_QWEN35_TEXT_VER: qwen36_blackhole
+        HF_MODEL: Qwen/Qwen3.6-27B
+        MESH_DEVICE: "P150x4"
+      vllm_args:
+        async_scheduling: true
+        enable_auto_tool_choice: true
+        reasoning_parser: qwen3
+        tool_call_parser: qwen3_coder
+        limit-mm-per-prompt: '{"image": 1, "video": 1}'
+        mm-processor-cache-gb: 0
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        l1_small_size: 24576
+        trace_region_size: 402653184  # Extend text-only's 256MB to fit the extra vision-tower trace
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  supported_modalities:
+    - text
+    - image
+    - video
+  metadata:
+    Qwen/Qwen3.6-27B:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: qwen3_coder
+
+# Vision (VLM) profile of the Qwen3.5-27B text spec in dev/llm.yaml. Only the fields
+# that differ from that text spec are vision-mode.
+- weights:
+    - Qwen/Qwen3.5-27B
+  impl: qwen36_blackhole_vlm  # the same model structure as 3.6
+  inference_engine: VLLM
+  model_type: VLM
+  device_model_specs:
+    - device: P150X4
+      # TODO(batching): pinned to max_concurrency=1 (B=1) for TWO reasons. (1) The
+      # qwen36 vision path is single-sequence by design: qwen36_vllm.py restricts the
+      # multimodal generator to B=1 (batched serving asserts text-only), so image/video
+      # requests must run at max_num_seqs=1. (2) Even text-only batching is unsafe on
+      # current builds: batched paged-attention/GDN decode corrupts output for >=2
+      # concurrent sequences (tt-metal issue #50512). Keep B=1 until vision batching is
+      # implemented AND #50512 is fixed with verified decode PCC.
+      max_concurrency: 1
+      max_context: 262144
+      # text (qwen36_blackhole) is the sole P150X4 default_impl; the VLM profile is
+      # non-default so `--impl qwen36-blackhole-vlm` is required to select vision
+      # (otherwise run.py would see two default_impl candidates for the same model+device).
+      default_impl: false
+      env_vars:
+        TT_QWEN35_TEXT_VER: qwen36_blackhole
+        HF_MODEL: Qwen/Qwen3.5-27B
+        MESH_DEVICE: "P150x4"
+      vllm_args:
+        async_scheduling: true
+        enable_auto_tool_choice: true
+        reasoning_parser: qwen3
+        tool_call_parser: qwen3_coder
+        limit-mm-per-prompt: '{"image": 1, "video": 1}'
+        mm-processor-cache-gb: 0
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        l1_small_size: 24576
+        trace_region_size: 402653184  # Extend text-only's 256MB to fit the extra vision-tower trace
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  supported_modalities:
+    - text
+    - image
+    - video
+  metadata:
+    Qwen/Qwen3.5-27B:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: qwen3_coder
