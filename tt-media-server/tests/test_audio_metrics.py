@@ -45,7 +45,11 @@ def sample(name, **labels):
 def stt_labels(model_type, **overrides):
     labels = dict(
         model_type=model_type,
-        task=("translation" if settings.audio_task.lower() == "translate" else "transcription"),
+        task=(
+            "translation"
+            if settings.audio_task.lower() == "translate"
+            else "transcription"
+        ),
         language=LANGUAGE,
         streaming="false",
         status=STATUS_SUCCESS,
