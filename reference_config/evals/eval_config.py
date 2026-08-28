@@ -4398,11 +4398,11 @@ _eval_config_list = [
                     temperature=1.0,
                     top_p=0.95,
                     # The official P300X2 spec declares a 131072-token context.
-                    # Keep input+output at 128K, leaving 3K for template/tool
+                    # Keep input+output at 124K, leaving 4K for template/tool
                     # overhead.  An 8K development artifact does not satisfy
                     # this contract and must fail admission rather than silently
                     # shrink the workload.
-                    max_input_tokens=96 * 1024,
+                    max_input_tokens=92 * 1024,
                     max_output_tokens=32 * 1024,
                     swebench_timeout_sec=30 * 60,
                     shuffle=False,
