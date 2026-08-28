@@ -169,6 +169,10 @@ class SWEbenchEvalConfig:
     max_input_tokens: int = 200 * 1024
     max_output_tokens: Optional[int] = None
     completion_kwargs: Dict[str, Any] = field(default_factory=dict)
+    # Overrides merged into the generated mini-swe-agent config's "agent"
+    # section (layered after the builtin mini_config, so these win) --
+    # e.g. {"step_limit": 75}.
+    mini_agent_kwargs: Dict[str, Any] = field(default_factory=dict)
     sweagent_config: str = "config/default.yaml"
     mini_config: str = "swebench.yaml"
     mini_model_class: str = "litellm"
@@ -4822,6 +4826,11 @@ _eval_config_list = [
                     agent_kwargs={
                         "parser_name": "json",
                         "temperature": 1.0,
+                        # Terminus-2 defaults to effectively unlimited turns
+                        # (1,000,000), so without this the 3h timeout is the
+                        # only brake on a stuck trial. The verifier still
+                        # grades the container's end state after the cap.
+                        "max_turns": 50,
                         "model_info": {
                             # Sized for QB2 (P300X2), where gemma-4-31B serves
                             # at max_model_len=49152 (Blackhole hybrid-off DRAM
@@ -4836,12 +4845,17 @@ _eval_config_list = [
                             # H100 -- restore those budgets to re-collect the
                             # GPU reference; QB2 scores under these budgets are
                             # not directly comparable to it.
+                            # 8K out (not 16K): measured turns on run
+                            # 33095231523 -- productive turns median ~1.4K,
+                            # thinking-heavy turns median ~6.4K -- so 8K
+                            # bounds a turn at ~6 min on QB2 (~23 tok/s)
+                            # while truncating only the extreme tail.
                             "max_input_tokens": 30 * 1024,
-                            "max_output_tokens": 16 * 1024,
+                            "max_output_tokens": 8 * 1024,
                         },
                         "llm_kwargs": {
                             "top_p": 0.95,
-                            "max_tokens": 16 * 1024,
+                            "max_tokens": 8 * 1024,
                             "timeout": 60 * 60,
                             "extra_body": {
                                 "top_k": 20,
@@ -4898,7 +4912,13 @@ _eval_config_list = [
                     # re-collect the GPU reference; QB2 scores under these
                     # budgets are not directly comparable to it.
                     max_input_tokens=30 * 1024,
-                    max_output_tokens=16 * 1024,
+                    # 8K out, same measured-turn rationale as
+                    # terminal_bench_2 above.
+                    max_output_tokens=8 * 1024,
+                    # mini-swe-agent's builtin swebench.yaml step_limit is
+                    # sized for GPU-speed turns; cap explicitly so a stuck
+                    # instance is bounded at QB2 decode speed.
+                    mini_agent_kwargs={"step_limit": 75},
                     completion_kwargs={
                         "extra_body": {
                             "top_k": 20,
