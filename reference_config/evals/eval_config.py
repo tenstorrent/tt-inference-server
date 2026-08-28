@@ -4363,6 +4363,70 @@ _eval_config_list = [
                     "until": ["</s>"],
                 },
             ),
+            EvalTask(
+                # Provisional productization signal.  CS has not supplied a
+                # GPT-OSS-120B SWE-bench acceptance score, so both reference
+                # scores intentionally remain None: a completed run is
+                # reported with accuracy_check=N/A, never promoted into an
+                # invented accuracy pass.  Harness/endpoint failures remain
+                # real failures.  Once CS establishes a model/hardware
+                # reference, populate gpu_reference_score (or a mode-specific
+                # five-instance reference) to turn this into a graded gate.
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                swebench_eval_config=SWEbenchEvalConfig(
+                    dataset_name="SWE-bench/SWE-bench_Verified",
+                    sweagent_subset="verified",
+                    dataset_split="test",
+                    agent_backend="mini-swe-agent",
+                    # The P300X2 release spec is C1.  More workers would only
+                    # queue requests behind a B1 server and misstate fan-out.
+                    n_concurrent_trials=1,
+                    max_workers=4,
+                    n_tasks=None,
+                    temperature=1.0,
+                    top_p=0.95,
+                    # The official P300X2 spec declares a 131072-token context.
+                    # Keep input+output at 128K, leaving 3K for template/tool
+                    # overhead.  An 8K development artifact does not satisfy
+                    # this contract and must fail admission rather than silently
+                    # shrink the workload.
+                    max_input_tokens=96 * 1024,
+                    max_output_tokens=32 * 1024,
+                    swebench_timeout_sec=30 * 60,
+                    shuffle=False,
+                    instance_ids_map={
+                        EvalLimitMode.SMOKE_TEST: [
+                            "django__django-11299",
+                            "astropy__astropy-14096",
+                            "matplotlib__matplotlib-25332",
+                            "sympy__sympy-13551",
+                            "scikit-learn__scikit-learn-14629",
+                        ],
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-11299",
+                            "astropy__astropy-14096",
+                            "matplotlib__matplotlib-25332",
+                            "sympy__sympy-13551",
+                            "scikit-learn__scikit-learn-14629",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
         ],
     ),
     EvalConfig(
