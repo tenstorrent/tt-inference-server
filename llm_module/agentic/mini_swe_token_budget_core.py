@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+
 """Dependency-light token accounting for mini-swe-agent requests."""
 
 from __future__ import annotations
