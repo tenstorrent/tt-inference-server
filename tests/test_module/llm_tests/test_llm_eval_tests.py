@@ -97,6 +97,8 @@ def _build_eval_test_command(task):
 
 def _command_gen_kwargs(command):
     raw = command[command.index("--gen_kwargs") + 1]
+    if raw.lstrip().startswith("{"):
+        return json.loads(raw)
     return dict(item.split("=", 1) for item in raw.split(","))
 
 
@@ -125,6 +127,21 @@ class TestEvalCommand:
         assert _command_gen_kwargs(command)["seed"] == "42"
         assert command[command.index("--seed") + 1] == "42"
         assert command[0].endswith("/bin/lm_eval")
+
+    def test_nested_gen_kwargs_emitted_as_json(self):
+        task = EvalTask(
+            task_name="thinking_mode",
+            gen_kwargs={
+                "do_sample": "true",
+                "chat_template_kwargs": {"enable_thinking": True},
+            },
+        )
+        command = _build_eval_test_command(task)
+        raw = command[command.index("--gen_kwargs") + 1]
+        parsed = json.loads(raw)
+        assert parsed["chat_template_kwargs"] == {"enable_thinking": True}
+        assert parsed["do_sample"] is True
+        assert parsed["seed"] == 42
 
     def test_seed_filter_does_not_mutate_the_request(self):
         payload = {"model": "test-model", "seed": 42, "temperature": 1.0}

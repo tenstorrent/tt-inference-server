@@ -152,6 +152,20 @@ class TerminalBenchEvalConfig:
     agent_import_path: Optional[str] = None
     environment_env: Dict[str, str] = field(default_factory=dict)
     verifier_env: Dict[str, str] = field(default_factory=dict)
+    # Wave-aware deadline model (mirrors SWEbenchEvalConfig). The per-task
+    # budget B is ``agent_timeout_sec`` plus this overhead allowance, which
+    # covers Harbor's additive non-agent phases (env build ~600s, agent setup
+    # ~360s, verifier ~60s) that also count against per-trial wall time.
+    per_task_overhead_sec: int = 20 * 60
+    # Grace before the first wave (dataset resolve + image pulls).
+    startup_grace_sec: int = 10 * 60
+    # Kill if no trial makes progress for ``B + stall_grace_sec``.
+    stall_grace_sec: int = 5 * 60
+    # Progress watchdog log cadence.
+    progress_log_interval_sec: int = 5 * 60
+    # When False the watchdog logs deadlines but never kills the harbor
+    # subprocess, letting it run to completion.
+    enforce_agent_deadline: bool = False
 
 
 @dataclass(frozen=True)
@@ -174,6 +188,35 @@ class SWEbenchEvalConfig:
     mini_model_class: str = "litellm"
     mini_environment_class: str = "docker"
     swebench_timeout_sec: Optional[int] = None
+    # Per-request LLM timeout for the agent; litellm's OpenAI-compatible path
+    # defaults to an infinite read timeout, so without this a never-answered
+    # request hangs the eval forever. None disables.
+    llm_timeout_sec: Optional[int] = 20 * 60
+    # Per-task budget B for the wave-aware deadline model. Each mini-swe-agent
+    # instance runs in its own container started with ``sleep <this>``; once it
+    # exits no further agent action can succeed, so this is the authoritative
+    # wall-clock ceiling for a single instance. Written into the generated mini
+    # config as ``environment.container_timeout``.
+    mini_container_timeout_sec: int = 2 * 60 * 60
+    # Grace added on top of the container lifetime for dataset load + image
+    # pulls before the first wave can start (folds into the worst-case ceiling).
+    startup_grace_sec: int = 10 * 60
+    # If no instance completes for ``B + stall_grace_sec`` the run is wedged
+    # (every in-flight instance is necessarily past its own budget); kill it.
+    stall_grace_sec: int = 5 * 60
+    # How often the progress watchdog logs elapsed / percent / max-allowed.
+    progress_log_interval_sec: int = 5 * 60
+    # Explicit hard wall-clock kill for the whole agent subprocess. ``None``
+    # (default) uses the wave-aware ceiling derived from the fields above;
+    # set to a positive int to override with a flat bound.
+    agent_subprocess_timeout_sec: Optional[int] = None
+    # When False the watchdog logs deadlines but never kills the agent
+    # subprocess, letting it run to completion. Killing early truncates
+    # ``preds.json``, so the harness would grade a wrong denominator.
+    enforce_agent_deadline: bool = False
+    # Give up on an instance after this many consecutive responses that carry no
+    # usable tool call. 0 disables. mini-swe-agent only.
+    mini_max_consecutive_format_errors: int = 10
     shuffle: bool = True
     random_delay_multiplier: float = 0.3
     instance_ids_map: Dict[EvalLimitMode, List[str]] = field(default_factory=dict)
@@ -4664,9 +4707,21 @@ _eval_config_list = [
                     sweagent_subset="verified",
                     dataset_split="test",
                     agent_backend="mini-swe-agent",
-                    n_concurrent_trials=8,
+                    n_concurrent_trials=5,
                     max_workers=8,
-                    n_tasks=None,  # full dataset
+                    n_tasks=16,  # full dataset
+                    # 30-min per-task budget: long enough for a real instance,
+                    # short enough that the stall watchdog fires within an hour.
+                    # Grace windows are tight because startup here is a warm
+                    # image pull, not a cold build.
+                    mini_container_timeout_sec=30 * 60,
+                    startup_grace_sec=60,
+                    stall_grace_sec=60,
+                    progress_log_interval_sec=60,
+                    # Log deadlines but never kill: an early kill drops
+                    # unfinished instances from preds.json and inflates
+                    # accuracy. The format-error guard bounds wedged instances.
+                    enforce_agent_deadline=False,
                     temperature=1.0,
                     top_p=0.95,
                     # gemma-4-31B native ctx is 256K (model card), but a single

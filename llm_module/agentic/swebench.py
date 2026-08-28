@@ -17,6 +17,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
+from llm_module.agentic.progress import (
+    TIMEOUT_EXIT_CODE,
+    make_swebench_probe,
+    run_with_progress,
+    worst_case_ceiling_s,
+)
+
 logger = logging.getLogger(__name__)
 
 # The SWE-bench harness builds/pulls Docker images (a shared base image plus
@@ -26,6 +33,37 @@ logger = logging.getLogger(__name__)
 # before giving up; both counts are env-tunable for CI.
 _HARNESS_MAX_ATTEMPTS = 3
 _HARNESS_RETRY_DELAY_SEC = 30
+
+# litellm's OpenAI-compatible path defaults to httpx.Timeout(None) -- an
+# infinite read timeout -- so without an explicit value a never-answered
+# request blocks the worker thread forever.
+DEFAULT_LLM_TIMEOUT_SEC = 10 * 60
+# Per-task budget B for the wave-aware deadline model. mini-swe-agent runs each
+# instance in its own container started with ``sleep <this>``; once it exits no
+# further agent action can succeed, so this is the authoritative wall-clock
+# ceiling for a single instance.
+DEFAULT_MINI_CONTAINER_TIMEOUT_SEC = 2 * 60 * 60
+# Grace for dataset load + image pulls before the first wave can start.
+DEFAULT_STARTUP_GRACE_SEC = 10 * 60
+# If no instance completes for ``B + stall_grace`` the run is wedged (every
+# in-flight instance is necessarily past its own budget); kill it.
+DEFAULT_STALL_GRACE_SEC = 5 * 60
+# How often the progress watchdog logs elapsed / percent / max-allowed time.
+DEFAULT_PROGRESS_LOG_INTERVAL_SEC = 5 * 60
+# mini-swe-agent discards a response with no tool call without ever showing it
+# to the model, so a model that cannot emit one retries identically until
+# ``step_limit`` -- burning a full ``max_tokens`` generation each time. Cap the
+# streak instead. See mini_ext/tt_mini_model.py.
+DEFAULT_MINI_MAX_CONSECUTIVE_FORMAT_ERRORS = 10
+# Class path of the guard, importable once ``mini_ext/`` is on the subprocess's
+# PYTHONPATH.
+MINI_FORMAT_GUARD_MODEL_CLASS = "tt_mini_model.FormatErrorGuardModel"
+# One JSON file per discarded response lands here, under the mini output dir.
+MINI_FORMAT_ERROR_DIRNAME = "format_errors"
+# The guard subclasses LitellmModel, so it can only stand in for that backend.
+MINI_GUARDABLE_MODEL_CLASSES = frozenset(
+    {"litellm", "minisweagent.models.litellm_model.LitellmModel"}
+)
 
 
 @dataclass(frozen=True)
@@ -54,6 +92,32 @@ class SWEbenchRunConfig:
     shuffle: bool
     random_delay_multiplier: float
     score_existing_predictions: bool
+    # Per-request LLM timeout (seconds) written into the agent model config;
+    # ``None`` keeps the client default (infinite for litellm's OpenAI path).
+    llm_timeout_sec: Optional[int] = DEFAULT_LLM_TIMEOUT_SEC
+    # Wave-aware deadline model (see progress.py). ``mini_container_timeout_sec``
+    # is the per-task budget B, also written into the mini config as
+    # ``environment.container_timeout``.
+    mini_container_timeout_sec: int = DEFAULT_MINI_CONTAINER_TIMEOUT_SEC
+    startup_grace_sec: int = DEFAULT_STARTUP_GRACE_SEC
+    stall_grace_sec: int = DEFAULT_STALL_GRACE_SEC
+    progress_log_interval_sec: int = DEFAULT_PROGRESS_LOG_INTERVAL_SEC
+    # Explicit flat wall-clock kill for the agent subprocess. ``None`` uses the
+    # wave-aware ceiling derived from the fields above; set to override.
+    agent_subprocess_timeout_sec: Optional[int] = None
+    # When False the progress watchdog logs deadlines but never kills the agent
+    # subprocess, letting it run to completion. Killing early leaves unfinished
+    # instances out of ``preds.json``, and the score is resolved/submitted over
+    # exactly those predictions, so an early kill inflates accuracy. The
+    # format-error guard below is what bounds a wedged instance instead.
+    enforce_agent_deadline: bool = False
+    # Give up on an instance after this many consecutive unparseable responses.
+    # 0 disables the cap. mini-swe-agent only.
+    mini_max_consecutive_format_errors: int = (
+        DEFAULT_MINI_MAX_CONSECUTIVE_FORMAT_ERRORS
+    )
+    # Save each discarded (no-tool-call) response under the mini output dir.
+    mini_dump_format_errors: bool = True
     instance_ids: list[str] = field(default_factory=list)
     # Interpreter whose bin/ holds the ``sweagent`` / ``mini-extra`` CLIs and
     # whose ``-m swebench`` is importable. ``None`` uses the current interpreter
@@ -66,9 +130,51 @@ def _interpreter(config: SWEbenchRunConfig) -> Path:
     return Path(config.venv_python) if config.venv_python else Path(sys.executable)
 
 
-def _run_command(cmd: list[str], cwd: Path, env: dict[str, str]) -> int:
+def _mini_output_dir(config: SWEbenchRunConfig) -> Path:
+    """Where ``mini-extra swebench`` writes preds.json, logs and per-instance dirs."""
+    return config.output_dir / "mini_sweagent"
+
+
+def _resolve_total(config: SWEbenchRunConfig) -> Optional[int]:
+    """Instance count known up front: explicit ids win, else ``n_tasks``."""
+    if config.instance_ids:
+        return len(config.instance_ids)
+    return config.n_tasks
+
+
+def _flat_agent_timeout(config: SWEbenchRunConfig) -> Optional[float]:
+    """Flat wall-clock bound for backends without a progress probe.
+
+    Explicit ``agent_subprocess_timeout_sec`` wins; otherwise derive the
+    wave-aware worst-case ceiling when the total is known, else ``None``.
+    """
+    if config.agent_subprocess_timeout_sec is not None:
+        return config.agent_subprocess_timeout_sec
+    total = _resolve_total(config)
+    if total:
+        return worst_case_ceiling_s(
+            total,
+            config.n_concurrent_trials,
+            config.mini_container_timeout_sec,
+        )
+    return None
+
+
+def _run_command(
+    cmd: list[str], cwd: Path, env: dict[str, str], timeout_s: Optional[float] = None
+) -> int:
     logger.info("Running command: %s", " ".join(cmd))
-    return subprocess.run(cmd, cwd=cwd, env=env).returncode
+    try:
+        return subprocess.run(cmd, cwd=cwd, env=env, timeout=timeout_s).returncode
+    except subprocess.TimeoutExpired:
+        # 124 matches /usr/bin/timeout and llm_module.drivers._subprocess so
+        # callers treat a timed-out command like any other nonzero exit.
+        logger.error(
+            "Command exceeded timeout of %.0fs and was killed: %s",
+            timeout_s,
+            " ".join(cmd),
+        )
+        return 124
 
 
 def _env_int(name: str, default: int) -> int:
@@ -176,6 +282,17 @@ def _add_swebench_harness_patch_to_env(
     return patched_env
 
 
+def _add_mini_ext_to_env(env: dict[str, str]) -> dict[str, str]:
+    """Make ``tt_mini_model`` importable inside the agentic venv subprocess."""
+    ext_dir = Path(__file__).resolve().parent / "mini_ext"
+    patched_env = dict(env)
+    python_path = patched_env.get("PYTHONPATH")
+    patched_env["PYTHONPATH"] = (
+        str(ext_dir) if not python_path else f"{ext_dir}{os.pathsep}{python_path}"
+    )
+    return patched_env
+
+
 def _write_sweagent_model_config(config: SWEbenchRunConfig) -> Path:
     model_config: dict[str, Any] = {
         "agent": {
@@ -193,8 +310,11 @@ def _write_sweagent_model_config(config: SWEbenchRunConfig) -> Path:
     }
     if config.max_output_tokens is not None:
         model_config["agent"]["model"]["max_output_tokens"] = config.max_output_tokens
-    if config.completion_kwargs:
-        model_config["agent"]["model"]["completion_kwargs"] = config.completion_kwargs
+    completion_kwargs = dict(config.completion_kwargs or {})
+    if config.llm_timeout_sec is not None:
+        completion_kwargs.setdefault("timeout", config.llm_timeout_sec)
+    if completion_kwargs:
+        model_config["agent"]["model"]["completion_kwargs"] = completion_kwargs
 
     config_path = config.output_dir / "sweagent_model_config.yaml"
     config_path.write_text(json.dumps(model_config, indent=2), encoding="utf-8")
@@ -213,15 +333,41 @@ def _write_mini_sweagent_model_config(config: SWEbenchRunConfig) -> Path:
         model_kwargs["max_tokens"] = config.max_output_tokens
     if config.completion_kwargs:
         model_kwargs.update(config.completion_kwargs)
+    if config.llm_timeout_sec is not None:
+        model_kwargs.setdefault("timeout", config.llm_timeout_sec)
 
-    model_config = {
-        "model": {
-            "model_name": config.model_name,
-            "model_class": config.mini_model_class,
-            "cost_tracking": "ignore_errors",
-            "model_kwargs": model_kwargs,
-        }
+    model_section: dict[str, Any] = {
+        "model_name": config.model_name,
+        "model_class": config.mini_model_class,
+        "cost_tracking": "ignore_errors",
+        "model_kwargs": model_kwargs,
     }
+    cap = config.mini_max_consecutive_format_errors
+    if cap and cap > 0:
+        if config.mini_model_class in MINI_GUARDABLE_MODEL_CLASSES:
+            model_section["model_class"] = MINI_FORMAT_GUARD_MODEL_CLASS
+            model_section["max_consecutive_format_errors"] = cap
+            if config.mini_dump_format_errors:
+                # Responses with no tool call are dropped before they reach the
+                # trajectory, so this is the only record of what the model said.
+                model_section["format_error_dump_dir"] = str(
+                    _mini_output_dir(config) / MINI_FORMAT_ERROR_DIRNAME
+                )
+        else:
+            logger.warning(
+                "Ignoring mini_max_consecutive_format_errors=%s: the guard "
+                "subclasses LitellmModel and mini_model_class is %r.",
+                cap,
+                config.mini_model_class,
+            )
+    model_config: dict[str, Any] = {"model": model_section}
+    # Pin the container lifetime to our per-task budget B rather than inheriting
+    # mini-swe-agent's default ("2h"). ``container_timeout`` is passed verbatim
+    # to ``docker run ... sleep <value>``; use an explicit seconds suffix.
+    if config.mini_container_timeout_sec is not None:
+        model_config["environment"] = {
+            "container_timeout": f"{int(config.mini_container_timeout_sec)}s"
+        }
     config_path = config.output_dir / "mini_sweagent_model_config.yaml"
     config_path.write_text(json.dumps(model_config, indent=2), encoding="utf-8")
     return config_path
@@ -472,7 +618,36 @@ def normalize_swebench_report(
         resolved_count = len(resolved_ids)
         unresolved_ids = submitted_ids - resolved_ids
 
-    accuracy = resolved_count / submitted_count if submitted_count else 0.0
+    # The harness only knows the instances that reached preds.json, so grading
+    # against that count would score an interrupted run as resolved/finished and
+    # inflate accuracy. Grade against the instance count we asked for; anything
+    # missing never produced a patch and is by definition unresolved.
+    missing_ids: set[str] = set()
+    if config.instance_ids:
+        missing_ids = set(config.instance_ids) - submitted_ids
+    graded_count = submitted_count + len(missing_ids)
+    expected_total = _resolve_total(config)
+    if expected_total is not None:
+        graded_count = max(graded_count, expected_total)
+    if graded_count > submitted_count + len(missing_ids):
+        # n_tasks told us how many to expect but not which ones, so the gap can
+        # only widen the denominator, not name the absent instances.
+        logger.warning(
+            "Grading %s instances but only %s reached the report; counting the "
+            "%s unaccounted instance(s) as unresolved.",
+            graded_count,
+            submitted_count,
+            graded_count - submitted_count,
+        )
+    elif missing_ids:
+        logger.warning(
+            "Counting %s requested instance(s) with no prediction as unresolved: %s",
+            len(missing_ids),
+            ", ".join(sorted(missing_ids)),
+        )
+
+    unresolved_ids |= missing_ids
+    accuracy = resolved_count / graded_count if graded_count else 0.0
     trial_results = [
         {
             "task_name": instance_id,
@@ -483,7 +658,7 @@ def normalize_swebench_report(
                 }
             },
         }
-        for instance_id in sorted(submitted_ids)
+        for instance_id in sorted(submitted_ids | missing_ids)
     ]
 
     eval_key = f"{config.agent_backend}__{config.model_name}__{config.dataset_name}"
@@ -508,7 +683,7 @@ def normalize_swebench_report(
         "stats": {
             "evals": {
                 eval_key: {
-                    "n_trials": submitted_count,
+                    "n_trials": graded_count,
                     "metrics": [
                         {
                             "name": "accuracy",
@@ -537,7 +712,7 @@ def normalize_swebench_report(
     if started is not None and finished is not None:
         normalized["started_at"] = started.isoformat()
         normalized["finished_at"] = finished.isoformat()
-    normalized["n_total_trials"] = submitted_count
+    normalized["n_total_trials"] = graded_count
 
     result_path.write_text(json.dumps(normalized, indent=2), encoding="utf-8")
     return normalized
@@ -577,20 +752,72 @@ def run(config: SWEbenchRunConfig) -> int:
         sweagent_cmd = build_sweagent_command(
             config, sweagent_config_path, sweagent_output_dir
         )
-        rc = _run_command(sweagent_cmd, cwd=config.output_dir, env=env)
-        if rc != 0:
+        # swe-agent's output layout differs from mini-swe-agent's, so no
+        # progress probe; bound it with the explicit override or the derived
+        # worst-case ceiling. Honour enforce_agent_deadline here too, otherwise
+        # this backend would keep killing while mini-swe-agent does not.
+        rc = _run_command(
+            sweagent_cmd,
+            cwd=config.output_dir,
+            env=env,
+            timeout_s=(
+                _flat_agent_timeout(config) if config.enforce_agent_deadline else None
+            ),
+        )
+        # A timeout kill (124) still leaves partial predictions worth grading;
+        # only a genuine agent error aborts early.
+        if rc != 0 and rc != TIMEOUT_EXIT_CODE:
             return rc
-        preds_path = _find_sweagent_preds(sweagent_output_dir)
+        try:
+            preds_path = _find_sweagent_preds(sweagent_output_dir)
+        except FileNotFoundError:
+            logger.error(
+                "Agent timed out before writing any predictions; nothing to grade."
+            )
+            return rc if rc != 0 else TIMEOUT_EXIT_CODE
+        if rc == TIMEOUT_EXIT_CODE:
+            logger.warning(
+                "Agent hit the deadline; grading the partial predictions in %s.",
+                preds_path,
+            )
     elif config.agent_backend == "mini-swe-agent":
         mini_config_path = _write_mini_sweagent_model_config(config)
-        mini_output_dir = config.output_dir / "mini_sweagent"
+        mini_output_dir = _mini_output_dir(config)
         mini_cmd = build_mini_sweagent_command(
             config, mini_config_path, mini_output_dir
         )
-        rc = _run_command(mini_cmd, cwd=config.output_dir, env=env)
-        if rc != 0:
+        rc = run_with_progress(
+            mini_cmd,
+            cwd=config.output_dir,
+            env=_add_mini_ext_to_env(env),
+            probe=make_swebench_probe(mini_output_dir, _resolve_total(config)),
+            label=config.task_name,
+            per_task_budget_s=config.mini_container_timeout_sec,
+            concurrency=config.n_concurrent_trials,
+            startup_grace_s=config.startup_grace_sec,
+            stall_grace_s=config.stall_grace_sec,
+            log_interval_s=config.progress_log_interval_sec,
+            hard_timeout_s=config.agent_subprocess_timeout_sec,
+            enforce_deadlines=config.enforce_agent_deadline,
+            log=logger,
+        )
+        # A watchdog timeout (124) still leaves partial predictions in
+        # preds.json worth grading; only a genuine agent error aborts early.
+        if rc != 0 and rc != TIMEOUT_EXIT_CODE:
             return rc
-        preds_path = _find_sweagent_preds(mini_output_dir)
+        try:
+            preds_path = _find_sweagent_preds(mini_output_dir)
+        except FileNotFoundError:
+            # Killed before any instance finished -> nothing to grade.
+            logger.error(
+                "Agent timed out before writing any predictions; nothing to grade."
+            )
+            return rc if rc != 0 else TIMEOUT_EXIT_CODE
+        if rc == TIMEOUT_EXIT_CODE:
+            logger.warning(
+                "Agent hit the deadline; grading the partial predictions in %s.",
+                preds_path,
+            )
     else:
         raise ValueError(f"Unsupported SWE-bench agent backend: {config.agent_backend}")
 

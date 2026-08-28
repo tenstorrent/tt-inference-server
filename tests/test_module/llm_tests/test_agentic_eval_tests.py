@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
@@ -73,6 +73,11 @@ class FakeTerminalBenchConfig:
     agent_import_path: Optional[str] = None
     environment_env: Dict[str, str] = field(default_factory=dict)
     verifier_env: Dict[str, str] = field(default_factory=dict)
+    per_task_overhead_sec: int = 20 * 60
+    startup_grace_sec: int = 10 * 60
+    stall_grace_sec: int = 5 * 60
+    progress_log_interval_sec: int = 5 * 60
+    enforce_agent_deadline: bool = False
 
 
 @dataclass
@@ -95,6 +100,14 @@ class FakeSWEbenchConfig:
     mini_model_class: str = "litellm"
     mini_environment_class: str = "docker"
     swebench_timeout_sec: Optional[int] = None
+    llm_timeout_sec: Optional[int] = 20 * 60
+    mini_container_timeout_sec: int = 2 * 60 * 60
+    startup_grace_sec: int = 10 * 60
+    stall_grace_sec: int = 5 * 60
+    progress_log_interval_sec: int = 5 * 60
+    agent_subprocess_timeout_sec: Optional[int] = None
+    enforce_agent_deadline: bool = False
+    mini_max_consecutive_format_errors: int = 10
     shuffle: bool = True
     random_delay_multiplier: float = 0.3
     instance_ids_map: Dict[EvalLimitMode, List[str]] = field(default_factory=dict)
@@ -462,10 +475,48 @@ class TestTerminalBenchHarness:
             n_tasks=1,
         )
 
-        with patch("llm_module.agentic.terminal_bench.subprocess.run") as run_cmd:
-            run_cmd.return_value.returncode = 17
+        with patch("llm_module.agentic.terminal_bench.run_with_progress") as run_cmd:
+            run_cmd.return_value = 17
 
             assert run_terminal_bench(cfg) == 17
+
+    def test_timeout_still_annotates_partial_results(self, tmp_path):
+        # A watchdog timeout (124) must still annotate harbor's partial,
+        # already-graded result.json and report success (rc 0).
+        task = _terminal_task()
+        cfg = build_terminal_bench_config(
+            task,
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+        result_path = cfg.jobs_dir / cfg.task_name / "result.json"
+        result_path.parent.mkdir(parents=True)
+        result_path.write_text('{"n_total_trials": 5}', encoding="utf-8")
+
+        with patch(
+            "llm_module.agentic.terminal_bench.run_with_progress", return_value=124
+        ):
+            assert run_terminal_bench(cfg) == 0
+
+        annotated = json.loads(result_path.read_text(encoding="utf-8"))
+        assert annotated["_result_format"] == "harbor"
+
+    def test_timeout_without_result_file_returns_124(self, tmp_path):
+        # Killed before harbor wrote any results -> nothing to annotate, so the
+        # timeout code propagates.
+        task = _terminal_task()
+        cfg = build_terminal_bench_config(
+            task,
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+
+        with patch(
+            "llm_module.agentic.terminal_bench.run_with_progress", return_value=124
+        ):
+            assert run_terminal_bench(cfg) == 124
 
     def test_harbor_config_includes_adapter_and_env_overrides(self, tmp_path):
         task = _terminal_task()
@@ -486,8 +537,8 @@ class TestTerminalBenchHarness:
             n_tasks=1,
         )
 
-        with patch("llm_module.agentic.terminal_bench.subprocess.run") as run_cmd:
-            run_cmd.return_value.returncode = 17
+        with patch("llm_module.agentic.terminal_bench.run_with_progress") as run_cmd:
+            run_cmd.return_value = 17
 
             assert run_terminal_bench(cfg) == 17
 
@@ -516,10 +567,57 @@ class TestSWEbenchHarness:
             n_tasks=1,
         )
 
-        with patch("llm_module.agentic.swebench.subprocess.run") as run_cmd:
-            run_cmd.return_value.returncode = 23
+        with patch("llm_module.agentic.swebench.run_with_progress") as run_cmd:
+            run_cmd.return_value = 23
 
             assert run_swebench(cfg) == 23
+
+    def test_agent_timeout_still_grades_partial_predictions(
+        self, tmp_path, monkeypatch
+    ):
+        # A watchdog timeout (124) must not short-circuit grading: the partial
+        # preds.json is still scored by the harness.
+        monkeypatch.setenv("SWEBENCH_HARNESS_MAX_ATTEMPTS", "1")
+        task = _swebench_task()
+        cfg = build_swebench_config(
+            task,
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+        preds_path = cfg.output_dir / "mini_sweagent" / "preds.json"
+        preds_path.parent.mkdir(parents=True)
+        preds_path.write_text(
+            '{"django__django-11299": {"model_patch": ""}}',
+            encoding="utf-8",
+        )
+
+        with patch(
+            "llm_module.agentic.swebench.run_with_progress", return_value=124
+        ), patch("llm_module.agentic.swebench.subprocess.run") as run_cmd:
+            run_cmd.return_value = SimpleNamespace(returncode=5)
+
+            # Harness reached (returns its own rc), proving grading was not
+            # skipped by the 124.
+            assert run_swebench(cfg) == 5
+            run_cmd.assert_called()
+
+    def test_agent_timeout_without_predictions_returns_124(self, tmp_path):
+        # Killed before any instance finished -> nothing to grade, so the
+        # harness is never invoked and the timeout code propagates.
+        task = _swebench_task()
+        cfg = build_swebench_config(
+            task,
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+
+        with patch(
+            "llm_module.agentic.swebench.run_with_progress", return_value=124
+        ), patch("llm_module.agentic.swebench.subprocess.run") as run_cmd:
+            assert run_swebench(cfg) == 124
+            run_cmd.assert_not_called()
 
     def test_harness_failure_returns_nonzero_without_result_file(
         self, tmp_path, monkeypatch
@@ -541,11 +639,10 @@ class TestSWEbenchHarness:
             encoding="utf-8",
         )
 
-        with patch("llm_module.agentic.swebench.subprocess.run") as run_cmd:
-            run_cmd.side_effect = [
-                SimpleNamespace(returncode=0),
-                SimpleNamespace(returncode=31),
-            ]
+        with patch(
+            "llm_module.agentic.swebench.run_with_progress", return_value=0
+        ), patch("llm_module.agentic.swebench.subprocess.run") as run_cmd:
+            run_cmd.return_value = SimpleNamespace(returncode=31)
 
             assert run_swebench(cfg) == 31
 
@@ -569,16 +666,21 @@ class TestSWEbenchHarness:
             encoding="utf-8",
         )
 
-        with patch("llm_module.agentic.swebench.subprocess.run") as run_cmd:
+        with patch(
+            "llm_module.agentic.swebench.run_with_progress", return_value=0
+        ) as agent_cmd, patch(
+            "llm_module.agentic.swebench.subprocess.run"
+        ) as run_cmd:
             run_cmd.side_effect = [
-                SimpleNamespace(returncode=0),  # agent
                 SimpleNamespace(returncode=1),  # harness attempt 1
                 SimpleNamespace(returncode=1),  # harness attempt 2 (last)
             ]
 
             assert run_swebench(cfg) == 1
-            # 1 agent invocation + 2 harness attempts.
-            assert run_cmd.call_count == 3
+            # Agent runs once via the progress watchdog.
+            assert agent_cmd.call_count == 1
+            # Harness retried twice via subprocess.run.
+            assert run_cmd.call_count == 2
 
 
 class TestRunCommandWithRetries:
@@ -700,6 +802,79 @@ class TestSWEbenchReportNormalization:
         assert normalized["n_total_trials"] == 1
         assert "started_at" not in normalized
         assert extract_harbor_metrics(normalized).get("mean_seconds_per_task") is None
+
+    def _normalize_with_report(self, tmp_path, report, instance_ids=None, **cfg_kwargs):
+        cfg = build_swebench_config(
+            _swebench_task(),
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            **cfg_kwargs,
+        )
+        if instance_ids is not None:
+            cfg = replace(cfg, instance_ids=instance_ids)
+        cfg.output_dir.mkdir(parents=True, exist_ok=True)
+        harness_report = cfg.output_dir / "harness_report.json"
+        harness_report.write_text(json.dumps(report), encoding="utf-8")
+        return normalize_swebench_report(
+            harness_report,
+            cfg.output_dir / "result.json",
+            cfg,
+            cfg.output_dir / "predictions.jsonl",
+        )
+
+    def _accuracy(self, normalized):
+        (evaluation,) = normalized["stats"]["evals"].values()
+        return evaluation["pass_at_k"]["1"]
+
+    def test_unfinished_instances_count_against_accuracy(self, tmp_path):
+        # 5 requested, only 2 finished, 1 of those resolved. Grading the 2 that
+        # happen to be in the report would report 50%; the run scored 1 of 5.
+        normalized = self._normalize_with_report(
+            tmp_path,
+            {"submitted_ids": ["a", "b"], "resolved_ids": ["a"]},
+            n_tasks=5,
+        )
+
+        assert self._accuracy(normalized) == 1 / 5
+        assert normalized["n_total_trials"] == 5
+
+    def test_named_missing_instances_are_reported_unresolved(self, tmp_path):
+        normalized = self._normalize_with_report(
+            tmp_path,
+            {"submitted_ids": ["a"], "resolved_ids": ["a"]},
+            instance_ids=["a", "b", "c"],
+        )
+
+        (evaluation,) = normalized["stats"]["evals"].values()
+        assert self._accuracy(normalized) == 1 / 3
+        assert evaluation["reward_stats"]["reward"]["0.0"] == ["b", "c"]
+        # Absent instances still get a zero-reward trial so per-task views agree.
+        assert [t["task_name"] for t in normalized["trial_results"]] == ["a", "b", "c"]
+        assert [
+            t["verifier_result"]["rewards"]["reward"] for t in normalized["trial_results"]
+        ] == [1.0, 0.0, 0.0]
+
+    def test_complete_run_accuracy_is_unchanged(self, tmp_path):
+        normalized = self._normalize_with_report(
+            tmp_path,
+            {"submitted_ids": ["a", "b", "c", "d"], "resolved_ids": ["a", "c"]},
+            n_tasks=4,
+        )
+
+        assert self._accuracy(normalized) == 0.5
+        assert normalized["n_total_trials"] == 4
+
+    def test_extra_predictions_do_not_shrink_the_denominator(self, tmp_path):
+        # n_tasks is a cap, not a promise; if the harness graded more than we
+        # asked for, the larger count wins rather than clipping the denominator.
+        normalized = self._normalize_with_report(
+            tmp_path,
+            {"submitted_ids": ["a", "b", "c"], "resolved_ids": ["a"]},
+            n_tasks=2,
+        )
+
+        assert self._accuracy(normalized) == 1 / 3
+        assert normalized["n_total_trials"] == 3
 
 
 class TestAgenticLimitResolution:

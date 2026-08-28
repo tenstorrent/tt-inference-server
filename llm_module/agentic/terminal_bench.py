@@ -6,13 +6,25 @@ from __future__ import annotations
 
 import json
 import logging
-import subprocess
+import os
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
+from llm_module.agentic.progress import (
+    TIMEOUT_EXIT_CODE,
+    make_terminal_bench_probe,
+    run_with_progress,
+)
+
 logger = logging.getLogger(__name__)
+
+# Conservative fallback per-trial agent budget when the config leaves
+# ``agent_timeout_sec`` unset (Harbor then uses each task's own default, which
+# we cannot see from here). Only feeds the deadline math; the stall watchdog is
+# the real protection, so err generous to avoid false kills.
+_DEFAULT_AGENT_TIMEOUT_SEC = 60 * 60
 
 
 @dataclass(frozen=True)
@@ -39,6 +51,16 @@ class TerminalBenchRunConfig:
     agent_import_path: Optional[str] = None
     environment_env: dict[str, str] = field(default_factory=dict)
     verifier_env: dict[str, str] = field(default_factory=dict)
+    # Wave-aware deadline model (see progress.py). The per-task budget B is
+    # ``agent_timeout_sec`` plus ``per_task_overhead_sec`` (Harbor's additive
+    # non-agent phases: env build, agent setup, verifier).
+    per_task_overhead_sec: int = 20 * 60
+    startup_grace_sec: int = 10 * 60
+    stall_grace_sec: int = 5 * 60
+    progress_log_interval_sec: int = 5 * 60
+    # When False the progress watchdog logs deadlines but never kills the harbor
+    # subprocess, letting it run to completion.
+    enforce_agent_deadline: bool = False
     # Interpreter whose bin/ holds the ``harbor`` CLI. When ``None`` the current
     # interpreter is used (standalone ``run_agentic.py`` already re-execs into
     # the EVALS_AGENTIC venv). Set on the release path, where the harness runs
@@ -198,9 +220,45 @@ def run(config: TerminalBenchRunConfig) -> int:
         for key, value in agent_kwargs.items():
             cmd.extend(["--agent-kwarg", f"{key}={_format_kwarg(value)}"])
 
-    logger.info("Running command: %s", " ".join(cmd))
-    result = subprocess.run(cmd)
-    if result.returncode != 0:
-        return result.returncode
-    _annotate_result_file(config.jobs_dir / config.task_name / "result.json")
-    return result.returncode
+    job_dir = config.jobs_dir / config.task_name
+    agent_timeout = (
+        config.agent_timeout_sec
+        if config.agent_timeout_sec is not None
+        else _DEFAULT_AGENT_TIMEOUT_SEC
+    )
+    per_task_budget = agent_timeout
+    rc = run_with_progress(
+        cmd,
+        cwd=None,
+        env=os.environ.copy(),
+        probe=make_terminal_bench_probe(job_dir),
+        label=config.task_name,
+        per_task_budget_s=per_task_budget,
+        concurrency=config.n_concurrent_trials,
+        startup_grace_s=config.startup_grace_sec,
+        stall_grace_s=config.stall_grace_sec,
+        log_interval_s=config.progress_log_interval_sec,
+        enforce_deadlines=config.enforce_agent_deadline,
+        log=logger,
+    )
+    # A watchdog timeout (124) still leaves harbor's per-trial results (each
+    # already graded inline) in result.json worth annotating; only a genuine
+    # harness error aborts before annotation.
+    if rc != 0 and rc != TIMEOUT_EXIT_CODE:
+        return rc
+    result_path = job_dir / "result.json"
+    if rc == TIMEOUT_EXIT_CODE and not result_path.exists():
+        logger.error(
+            "Harbor timed out before writing any results; nothing to annotate."
+        )
+        return rc
+    if rc == TIMEOUT_EXIT_CODE:
+        logger.warning(
+            "Harbor hit the deadline; annotating the partial results in %s.",
+            result_path,
+        )
+    _annotate_result_file(result_path)
+    # Partial results were graded and annotated; report success so downstream
+    # scoring reads the (lower) partial score instead of treating the run as a
+    # hard failure.
+    return 0

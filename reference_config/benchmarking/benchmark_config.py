@@ -100,6 +100,7 @@ BENCHMARK_ISL_OSL_PAIRS = [
     (16384, 128),
     (32768, 128),
     (65536, 128),
+    (102400, 128),
     (131072, 128),
 ]
 # Additional high-ISL sweep points appended only for remote SUPER_CLUSTER

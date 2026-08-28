@@ -74,6 +74,41 @@ def _inject_seed_into_gen_kwargs(gen_kwargs: dict, seed) -> dict:
     return out
 
 
+def _cli_json_value(value):
+    """Coerce k=v-style strings so JSON gen_kwargs keep boolean/numeric types."""
+    if isinstance(value, dict):
+        return {k: _cli_json_value(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_cli_json_value(v) for v in value]
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered == "true":
+            return True
+        if lowered == "false":
+            return False
+        if lowered.isdigit() or (lowered.startswith("-") and lowered[1:].isdigit()):
+            return int(lowered)
+        try:
+            if lowered.count(".") == 1:
+                return float(value)
+        except ValueError:
+            pass
+        return value
+    return value
+
+
+def _format_gen_kwargs(gen_kwargs: dict) -> str:
+    """Serialize ``--gen_kwargs`` for lm-eval.
+
+    Flat values stay ``k=v`` (older lm-eval / lmms-eval). Nested dicts (e.g.
+    ``chat_template_kwargs``) must be a JSON object: current lm-eval treats any
+    ``{`` in the string as JSON and rejects Python single-quoted reprs.
+    """
+    if any(isinstance(v, dict) for v in gen_kwargs.values()):
+        return json.dumps(_cli_json_value(gen_kwargs))
+    return ",".join(f"{k}={v}" for k, v in gen_kwargs.items())
+
+
 def _get_limit_mode(runtime_config) -> Optional[EvalLimitMode]:
     if runtime_config is None or not getattr(
         runtime_config, "limit_samples_mode", None
@@ -303,9 +338,7 @@ def build_eval_command(
     model_kwargs_list += optional_model_args
     model_kwargs_str = ",".join(model_kwargs_list)
 
-    # build gen_kwargs string
-    gen_kwargs_list = [f"{k}={v}" for k, v in effective_gen_kwargs.items()]
-    gen_kwargs_str = ",".join(gen_kwargs_list)
+    gen_kwargs_str = _format_gen_kwargs(effective_gen_kwargs)
 
     # set output_dir
     # results go to {output_dir_path}/{hf_repo}/results_{timestamp}
