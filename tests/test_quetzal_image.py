@@ -63,6 +63,7 @@ def test_quetzal_runner_skips_native_registration_and_validates_package():
 
 
 def test_build_wrapper_requires_digest_base_and_full_quetzal_commit():
+    assert BUILD_SCRIPT.read_text().splitlines()[0] == "#!/usr/bin/env bash"
     subprocess.run(["bash", "-n", str(BUILD_SCRIPT)], check=True)
     help_result = subprocess.run(
         ["bash", str(BUILD_SCRIPT), "--help"],
@@ -73,6 +74,14 @@ def test_build_wrapper_requires_digest_base_and_full_quetzal_commit():
     assert "IMAGE@sha256:DIGEST" in help_result.stdout
     assert "FULL_COMMIT_SHA" in help_result.stdout
     assert "PATH_TO_CLEAN_GIT_CHECKOUT" in help_result.stdout
+
+    direct_result = subprocess.run(
+        [str(BUILD_SCRIPT), "--help"],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    assert direct_result.stdout == help_result.stdout
 
 
 def test_build_wrapper_refuses_mutable_base_before_invoking_docker():
