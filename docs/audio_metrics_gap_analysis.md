@@ -22,8 +22,14 @@ reference transcripts (offline evals), and noise/accent attribution needs acoust
 | End-to-end utterance latency | **Covered** | `tts_request_duration_seconds`. "By utterance length" cross-dimension isn't labeled — you can correlate via the separate character histogram but not slice latency by length. |
 | Text length | **Partial** | Characters: yes (`tts_input_characters_per_request` + total). **Words and tokens: no.** |
 | Utterance duration | **Covered** | `tts_output_audio_duration_seconds` + `tts_output_audio_seconds_total{voice}` (produced audio; "requested" duration isn't a concept in this API). |
+| Language mix | **N/A today** | Nothing varies: no language/locale field on the request, the model reports none, text normalization is hardcoded English, and SpeechT5 is English-only. Becomes doable (and easy — the STT label pattern applies) with a multilingual model or a request-level language field. |
 | Voice mix | **Covered** | `voice` label on `tts_requests_total` and `tts_output_audio_seconds_total`: the speaker id the runner reports (falling back to the requested id), `custom` for raw client embeddings, `default` otherwise; truncated to 64 chars. Cardinality = the deployment's speaker catalog. |
-| Streaming mix | **N/A today** | All TTS requests are batch; there's no streaming label because there's nothing to mix. Worth adding the label pre-emptively if streaming TTS is on the roadmap. |
+| Speaker conditioning | **Covered (share) / N/A today (size)** | Share of conditioning types is the `voice` label (`custom` = user-supplied embedding, catalog id, or `default`) — redundant with voice mix. Size ("reference seconds or tokens") is degenerate: SpeechT5 conditioning is always a fixed 512-dim x-vector, never reference audio or style prompts; becomes meaningful with a voice-cloning model. |
+| Streaming mix | **N/A today** | All TTS requests are batch (no `stream` field, complete-utterance responses), so a `streaming` label would have exactly one value. The runner already speaks the internal streaming protocol and generates mel chunks incrementally — the endpoint is the missing piece. |
+
+The N/A-today rows are contingent on the current model and endpoint, not intrinsically
+unmeasurable — re-check them whenever a new TTS model is onboarded or a streaming TTS
+endpoint lands.
 
 ## STT coverage
 
@@ -50,9 +56,11 @@ reference transcripts (offline evals), and noise/accent attribution needs acoust
 
 ## Remaining gaps (all blocked on more than a metric)
 
-1. **True TTS time-to-first-audio and chunk cadence** — the runner-level mel-generation proxies are exported; the client-observed metrics need a streaming TTS endpoint.
+1. **True TTS time-to-first-audio and chunk cadence** — the runner-level mel-generation proxies are exported; the client-observed metrics need a streaming TTS endpoint (which would also make a TTS `streaming` mix label meaningful).
 2. **True STT finalization latency** — the last-partial→final proxy is exported; the end-of-speech-anchored measurement needs live audio input with an end-of-audio marker.
 3. **True word error rate** — confidence-signal drift proxies are exported; real WER stays in offline evals (`test_module/eval_tests/`), optionally plus a canary WER probe on known audio.
 4. **Noise-condition attribution / accent** — difficulty proxies are exported; attributing the cause needs an acoustic SNR estimate (cheap, via VAD energies) or a classifier in preprocessing.
 5. **TTS text length in words/tokens** — needs a tokenizer choice; characters are exported today.
-6. **Per-request language mix** — the label plumbing exists (per-deployment value today); non-trivial values need the API to accept a `language` field *and* the runner to honor it, otherwise the label would report what clients asked for rather than what the model did.
+6. **Per-request language mix** — on STT the label plumbing exists (per-deployment value today), but non-trivial values need the API to accept a `language` field *and* the runner to honor it, otherwise the label would report what clients asked for rather than what the model did. On TTS there is nothing to label at all until a multilingual model or a request-level language field exists.
+7. **TTS speaker-conditioning size (reference seconds/tokens)** — the share half is covered by the `voice` label; the size half is degenerate while conditioning is a fixed 512-dim x-vector, and becomes measurable only if a voice-cloning model (reference audio / style prompts) lands.
+

@@ -13,6 +13,7 @@ import aiohttp
 from report_module.schema import Block
 
 from .._test_common import BaseTest, TestConfig
+from ._metrics_smoke import assert_series_present, fetch_metrics_body
 
 if TYPE_CHECKING:
     from ..context import MediaContext
@@ -24,6 +25,17 @@ HEADERS = {
     "Content-Type": "application/json",
     "Authorization": f"Bearer {os.getenv('API_KEY', DEFAULT_API_KEY)}",
 }
+
+# Series that must appear on /metrics after one successful generation.
+# tts_requests_total / output_audio_seconds are recorded in the API process;
+# first_chunk / chunk_generation inside the device worker, so their presence
+# also proves the multiprocess aggregation path (see _metrics_smoke).
+TTS_METRIC_SERIES = (
+    "tt_media_server_audio_tts_requests_total",
+    "tt_media_server_audio_tts_output_audio_seconds_total",
+    "tt_media_server_audio_tts_first_chunk_seconds",
+    "tt_media_server_audio_tts_chunk_generation_seconds",
+)
 
 
 class SpeechT5TTSTest(BaseTest):
@@ -38,9 +50,22 @@ class SpeechT5TTSTest(BaseTest):
         try:
             basic_result = await self._test_basic_tts()
             results["basic_tts"] = basic_result
-            results["success"] = basic_result.get("status") == "success"
         except Exception as e:
             results["basic_tts"] = {"error": str(e)}
+            return results
+
+        # Only meaningful after a successful generation has populated them.
+        try:
+            metrics_result = await self._test_metrics_smoke()
+            results["metrics_smoke"] = metrics_result
+        except Exception as e:
+            results["metrics_smoke"] = {"error": str(e)}
+            return results
+
+        results["success"] = (
+            basic_result.get("status") == "success"
+            and metrics_result.get("status") == "success"
+        )
         return results
 
     async def _test_basic_tts(self):
@@ -96,6 +121,12 @@ class SpeechT5TTSTest(BaseTest):
                     "format": result["format"],
                     "audio_size_bytes": len(audio_bytes),
                 }
+
+    async def _test_metrics_smoke(self):
+        """The TTS metric series must be exported after a real generation."""
+        body = await fetch_metrics_body(self.base_url, headers=HEADERS)
+        checked = assert_series_present(body, TTS_METRIC_SERIES)
+        return {"status": "success", "series_checked": checked}
 
 
 def run_speecht5_tts(ctx: MediaContext) -> Block:
