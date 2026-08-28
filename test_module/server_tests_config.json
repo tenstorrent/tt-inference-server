@@ -410,6 +410,7 @@
             "category": "LLM",
             "compatible_devices": [
                 "galaxy",
+                "blackhole_galaxy",
                 "t3k",
                 "galaxy_t3k",
                 "p150x8",

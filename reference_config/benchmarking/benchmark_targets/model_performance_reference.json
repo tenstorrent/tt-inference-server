@@ -326,6 +326,77 @@
                 }
             }
         ],
+        "blackhole_galaxy": [
+            {
+                "_comment": [
+                    "BLACKHOLE_GALAXY at data_parallel_size=4. Declaring data_parallel",
+                    "makes get_perf_reference() use this entry verbatim. Without a",
+                    "blackhole_galaxy row it fell through to the legacy subdevice remap,",
+                    "which maps (BLACKHOLE_GALAXY, 4) -> P150X8; there is no p150x8 row",
+                    "for this model, so every target resolved to NA and the benchmark",
+                    "checks reported 0/18 passed while looking green.",
+                    "Measured on g03blx02 with fabric_config FABRIC_2D_TORUS_XY, the",
+                    "fabric this device's spec now selects, across 7 sweeps on",
+                    "2026-08-27/28; TTFT varied under 26 ms and throughput under 1.6%,",
+                    "so the default 5% tolerance is generous. Values are the worst of",
+                    "the stable cluster.",
+                    "The last 3 sweeps include the sampling precompile fix that keeps",
+                    "sample_on_device_mode=all from crashing on unwarmed trace slots;",
+                    "it only adds warmup compiles, and decode was unchanged.",
+                    "At conc=1 tput ~= tput_user, as it must be with a single user.",
+                    "No 'theoretical' block: no hardware ceiling has been derived for",
+                    "Blackhole Galaxy, and copying the Wormhole numbers would assert a",
+                    "ceiling that was never measured on this device. The functional/",
+                    "complete tiers are therefore not emitted for this device rather",
+                    "than being emitted against an invented ceiling."
+                ],
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 124.9,
+                        "tput_user": 32.8,
+                        "tput": 32.0,
+                        "tolerance": 0.05
+                    }
+                }
+            },
+            {
+                "_comment": [
+                    "BLACKHOLE_GALAXY at data_parallel_size=4, 32 concurrent users: the",
+                    "point that exercises all four data-parallel groups. Same 7 sweeps",
+                    "on 2026-08-27/28; aggregate ranged 914.4-920.0 tok/s, TTFT",
+                    "525.3-546.4 ms, so again the worst of the cluster is recorded.",
+                    "For scale, the Wormhole GALAXY rows above are 4360.9 ms / 617.1",
+                    "tok/s at this point.",
+                    "No 'theoretical' block, for the same reason as the conc=1 entry."
+                ],
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 256,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 546.4,
+                        "tput_user": 32.3,
+                        "tput": 914.3,
+                        "tolerance": 0.05
+                    }
+                }
+            }
+        ],
         "t3k": [
             {
                 "isl": 128,
