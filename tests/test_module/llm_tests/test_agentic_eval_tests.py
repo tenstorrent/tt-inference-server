@@ -12,6 +12,8 @@ from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from llm_module import DriverContext, ServerConnection
 from llm_module.drivers.agentic import (
     build_swebench_config,
@@ -31,7 +33,10 @@ from llm_module.parsers.agentic import (
     compute_accuracy_check,
     extract_harbor_metrics,
 )
-from test_module.llm_tests.agentic_eval_tests import _select_agentic_tasks
+from test_module.llm_tests.agentic_eval_tests import (
+    _select_agentic_tasks,
+    _server_connection as bridge_server_connection,
+)
 from workflows.workflow_types import EvalLimitMode, ReportCheckTypes, WorkflowVenvType
 
 
@@ -693,6 +698,7 @@ class TestSelectAgenticTasks:
         ctx = MagicMock()
         ctx.all_params.tasks = tasks
         ctx.model_spec.model_name = "test-llm"
+        ctx.runtime_config = SimpleNamespace(external_agentic_contract=None)
         return ctx
 
     def test_returns_only_agentic_tasks(self):
@@ -718,6 +724,79 @@ class TestSelectAgenticTasks:
         ctx = self._ctx_with_tasks([t_agentic, t_other])
 
         assert _select_agentic_tasks(ctx) == [t_agentic]
+
+    def test_external_contract_selects_only_its_exact_task(self, tmp_path):
+        selected = _swebench_task()
+        unrelated = _terminal_task()
+        contract_path = tmp_path / "agentic_launch_contract.json"
+        contract_path.write_text(
+            json.dumps(
+                {
+                    "contract": {
+                        "task": "swe_bench_verified",
+                        "hf_model_repo": "openai/gpt-oss-120b",
+                        "served_model": "gpt-oss-120b@p150x4-b1",
+                    }
+                }
+            )
+        )
+        ctx = self._ctx_with_tasks([unrelated, selected])
+        ctx.model_spec.hf_model_repo = "openai/gpt-oss-120b"
+        ctx.runtime_config.external_agentic_contract = str(contract_path)
+
+        assert _select_agentic_tasks(ctx) == [selected]
+
+    def test_external_contract_rejects_missing_task(self, tmp_path):
+        contract_path = tmp_path / "agentic_launch_contract.json"
+        contract_path.write_text(
+            json.dumps(
+                {
+                    "contract": {
+                        "task": "swe_bench_verified",
+                        "hf_model_repo": "openai/gpt-oss-120b",
+                        "served_model": "gpt-oss-120b@p150x4-b1",
+                    }
+                }
+            )
+        )
+        ctx = self._ctx_with_tasks([_terminal_task()])
+        ctx.model_spec.hf_model_repo = "openai/gpt-oss-120b"
+        ctx.runtime_config.external_agentic_contract = str(contract_path)
+
+        with pytest.raises(RuntimeError, match="exactly one configured agentic task"):
+            _select_agentic_tasks(ctx)
+
+    def test_external_contract_uses_canonical_served_model(self, tmp_path):
+        contract_path = tmp_path / "agentic_launch_contract.json"
+        contract_path.write_text(
+            json.dumps(
+                {
+                    "contract": {
+                        "task": "swe_bench_verified",
+                        "hf_model_repo": "openai/gpt-oss-120b",
+                        "served_model": "gpt-oss-120b@p150x4-b1",
+                    }
+                }
+            )
+        )
+        ctx = self._ctx_with_tasks([_swebench_task()])
+        ctx.model_spec.hf_model_repo = "openai/gpt-oss-120b"
+        ctx.runtime_config.external_agentic_contract = str(contract_path)
+        ctx.server_host = "http://qb2"
+        ctx.server_port = 18091
+
+        connection = bridge_server_connection(ctx)
+        assert connection.model == "gpt-oss-120b@p150x4-b1"
+        assert connection.tokenizer == "openai/gpt-oss-120b"
+
+        cfg = build_swebench_config(
+            _swebench_task(),
+            connection,
+            DriverContext(output_dir=tmp_path, device="P300X2"),
+            runtime_config=_runtime("ci-nightly"),
+        )
+        assert cfg.model_name == "openai/gpt-oss-120b@p150x4-b1"
+        assert cfg.tokenizer_name == "openai/gpt-oss-120b"
 
 
 class TestAgenticBridge:

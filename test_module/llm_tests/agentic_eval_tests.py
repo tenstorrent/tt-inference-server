@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from pathlib import Path
@@ -27,6 +28,38 @@ from .._test_common import sweep_envelope
 from ..context import MediaContext
 
 logger = logging.getLogger(__name__)
+
+
+def _external_launch_contract(ctx: MediaContext) -> dict | None:
+    """Read the task/model routing fields from a verified external contract.
+
+    ``run_llm_agentic_eval`` performs the cryptographic receipt and live endpoint
+    verification before building drivers.  This helper keeps the downstream
+    task and OpenAI model routing bound to that same persisted launch contract.
+    """
+    runtime = getattr(ctx, "runtime_config", None)
+    contract_path = getattr(runtime, "external_agentic_contract", None)
+    if not contract_path:
+        return None
+    try:
+        document = json.loads(Path(contract_path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(
+            f"cannot read external agentic contract {contract_path}: {exc}"
+        ) from exc
+    contract = document.get("contract") if isinstance(document, dict) else None
+    if not isinstance(contract, dict):
+        raise RuntimeError("external agentic contract has no contract object")
+    expected_repo = ctx.model_spec.hf_model_repo
+    if contract.get("hf_model_repo") != expected_repo:
+        raise RuntimeError(
+            "external agentic contract model differs from runtime model: "
+            f"expected {expected_repo!r}, got {contract.get('hf_model_repo')!r}"
+        )
+    for field in ("task", "served_model"):
+        if not isinstance(contract.get(field), str) or not contract[field]:
+            raise RuntimeError(f"external agentic contract needs non-empty {field}")
+    return contract
 
 
 def _select_agentic_tasks(ctx: MediaContext) -> list:
@@ -54,14 +87,25 @@ def _select_agentic_tasks(ctx: MediaContext) -> list:
             len(non_agentic),
             [t.task_name for t in non_agentic],
         )
-    return agentic
+    contract = _external_launch_contract(ctx)
+    if contract is None:
+        return agentic
+    selected = [task for task in agentic if task.task_name == contract["task"]]
+    if len(selected) != 1:
+        raise RuntimeError(
+            "external agentic contract must select exactly one configured "
+            f"agentic task {contract['task']!r}; found {len(selected)}"
+        )
+    return selected
 
 
 def _server_connection(ctx: MediaContext) -> ServerConnection:
+    contract = _external_launch_contract(ctx)
     return ServerConnection(
         base_url=ctx.server_host,
         service_port=ctx.server_port,
-        model=ctx.model_spec.hf_model_repo,
+        model=(contract["served_model"] if contract else ctx.model_spec.hf_model_repo),
+        tokenizer=ctx.model_spec.hf_model_repo,
     )
 
 
