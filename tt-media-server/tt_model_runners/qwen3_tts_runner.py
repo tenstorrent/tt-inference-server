@@ -239,6 +239,15 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
         )
         self._post_warmup_rng_state = torch.get_rng_state()
 
+    def _warmup_inference(self) -> None:
+        # init_server_context captures load traces only. First live /v1/audio/speech
+        # still JIT-compiles ICL + decode for that language/length (~12s per worker).
+        for text in ("テスト", "Hello, this is a test."):
+            self.logger.info(
+                f"Device {self.device_id}: Warm-up synth text={text!r}"
+            )
+            self._synthesize(TextToSpeechRequest(text=text, response_format="wav"))
+
     @log_execution_time(
         "Qwen3-TTS warmup",
         TelemetryEvent.DEVICE_WARMUP,
@@ -249,6 +258,7 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
             if self.ttnn_device is None:
                 raise ValueError("Device not initialized. Call set_device() first.")
             await asyncio.to_thread(self._initialize_models)
+            await asyncio.to_thread(self._warmup_inference)
             self.logger.info(f"Device {self.device_id}: Qwen3-TTS warmup complete")
             return True
         except Exception as e:
