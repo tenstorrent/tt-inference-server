@@ -17,6 +17,8 @@ Dev templates intentionally omit the release pins (``version``,
 into each promoted prod block. ``--version`` and ``--tt-metal-commit`` are
 required; ``--vllm-commit`` is required only when one or more promoted templates
 use the VLLM inference engine and is injected only into those templates.
+Quetzal templates additionally require ``--quetzal-docker-image`` with an OCI
+digest; that exact package-capable image is injected only into Quetzal blocks.
 
 The catalogue YAML files are hand-authored with inconsistent block-sequence
 indentation (top-level list items at column 0, nested lists indented to column 4),
@@ -260,9 +262,41 @@ def _ensure_trailing_newline(lines):
 
 # Release-pin keys, matched at the template's top-level (2-space) indent.
 _PIN_LINE_RE = re.compile(r"^  (version|tt_metal_commit|vllm_commit):")
+_DOCKER_IMAGE_LINE_RE = re.compile(r"^  docker_image:")
+_SHA256_DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
-def inject_pin_fields(lines, *, version, tt_metal_commit, vllm_commit=None):
+def validate_digest_pinned_image(image: str) -> str:
+    """Return an immutable OCI image reference or raise ``ValueError``.
+
+    Release promotion must not turn a mutable tag into the authority for the
+    generated runtime. Registry ports are allowed, but a tag on the final path
+    component is not: callers must supply ``registry/path@sha256:<64 hex>``.
+    """
+    if not isinstance(image, str) or not image.strip() or image != image.strip():
+        raise ValueError(
+            "--quetzal-docker-image must be an immutable "
+            "registry/path@sha256:<64 lowercase hex> reference"
+        )
+    name, separator, digest = image.rpartition("@sha256:")
+    final_component = name.rsplit("/", 1)[-1]
+    if (
+        separator != "@sha256:"
+        or not name
+        or "@" in name
+        or ":" in final_component
+        or not _SHA256_DIGEST_RE.fullmatch(digest)
+    ):
+        raise ValueError(
+            "--quetzal-docker-image must be an immutable "
+            "registry/path@sha256:<64 lowercase hex> reference (tags are not accepted)"
+        )
+    return image
+
+
+def inject_pin_fields(
+    lines, *, version, tt_metal_commit, vllm_commit=None, docker_image=None
+):
     """Return the block's lines with the release pins injected.
 
     Any pre-existing pin line is dropped first, so the result is deterministic and
@@ -273,13 +307,20 @@ def inject_pin_fields(lines, *, version, tt_metal_commit, vllm_commit=None):
     ``vllm_commit`` is injected only when provided (the caller passes it solely for
     VLLM templates).
     """
-    body = [ln for ln in lines if not _PIN_LINE_RE.match(ln)]
+    body = [
+        ln
+        for ln in lines
+        if not _PIN_LINE_RE.match(ln)
+        and not (docker_image is not None and _DOCKER_IMAGE_LINE_RE.match(ln))
+    ]
     pins = [
         f'  version: "{version}"\n',
         f'  tt_metal_commit: "{tt_metal_commit}"\n',
     ]
     if vllm_commit is not None:
         pins.append(f'  vllm_commit: "{vllm_commit}"\n')
+    if docker_image is not None:
+        pins.append(f'  docker_image: "{docker_image}"\n')
 
     insert_at = len(body)
     for idx in range(1, len(body)):
@@ -294,7 +335,14 @@ def _render(segments) -> str:
 
 
 def promote(
-    ci_config_path, dev_dir, prod_dir, *, tt_metal_commit, version, vllm_commit=None
+    ci_config_path,
+    dev_dir,
+    prod_dir,
+    *,
+    tt_metal_commit,
+    version,
+    vllm_commit=None,
+    quetzal_docker_image=None,
 ) -> dict:
     """Promote release-marked dev templates into prod.
 
@@ -313,23 +361,24 @@ def promote(
     combos = collect_release_combos(ci_config)
     matches_by_file, unmatched = find_matches(Path(dev_dir), combos)
 
-    # Quetzal is installed in a distinct, package-capable derivative image.  The
-    # generic release promoter only knows how to synthesize the ordinary
-    # tt-metal/vLLM image from version + commit pins.  Promoting a Quetzal row
-    # through that path would therefore publish a prod spec whose selected
-    # implementation cannot exist in its image.  Refuse that false promotion
-    # until the release contract carries an explicit, immutable Quetzal image.
+    # Quetzal is installed in a distinct, package-capable derivative image.  It
+    # must never inherit the ordinary synthesized tt-metal/vLLM image.  Require
+    # the exact OCI digest before changing any prod file, then inject it only
+    # into Quetzal blocks; native promotion remains byte-for-byte unchanged.
     quetzal_combos = sorted(
         (combo for combo in combos if combo.impl == "quetzal"),
         key=lambda combo: (combo.model_name, combo.engine.name, combo.device.name),
     )
-    if quetzal_combos:
+    if quetzal_combos and quetzal_docker_image is None:
         rendered = ", ".join(_combo_str(combo) for combo in quetzal_combos)
         raise ValueError(
             "Quetzal release promotion requires an explicit immutable "
-            "package-capable image; refusing to synthesize the standard vLLM "
+            "package-capable image via --quetzal-docker-image; refusing to "
+            "synthesize the standard vLLM "
             f"image for: {rendered}"
         )
+    if quetzal_docker_image is not None:
+        quetzal_docker_image = validate_digest_pinned_image(quetzal_docker_image)
 
     needs_vllm = any(
         template_engine(block.template) == InferenceEngine.VLLM
@@ -356,6 +405,11 @@ def promote(
                 version=version,
                 tt_metal_commit=tt_metal_commit,
                 vllm_commit=vllm_commit if is_vllm else None,
+                docker_image=(
+                    quetzal_docker_image
+                    if block.template.get("impl") == "quetzal"
+                    else None
+                ),
             )
             action = upsert_block(segments, block.identity, lines)
             file_actions.append((block.identity, action))
@@ -391,6 +445,14 @@ def main(argv=None) -> int:
     parser.add_argument("--tt-metal-commit", required=True)
     parser.add_argument("--version", required=True)
     parser.add_argument("--vllm-commit", default=None)
+    parser.add_argument(
+        "--quetzal-docker-image",
+        default=None,
+        help=(
+            "Digest-pinned package-capable image required for impl=quetzal: "
+            "registry/path@sha256:<64 lowercase hex>"
+        ),
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -401,6 +463,7 @@ def main(argv=None) -> int:
             tt_metal_commit=args.tt_metal_commit,
             version=args.version,
             vllm_commit=args.vllm_commit,
+            quetzal_docker_image=args.quetzal_docker_image,
         )
     except ValueError as exc:
         parser.error(str(exc))

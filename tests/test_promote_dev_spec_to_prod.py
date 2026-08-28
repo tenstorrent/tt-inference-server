@@ -6,6 +6,7 @@ import json
 import textwrap
 
 import pytest
+import yaml
 
 from scripts.release.promote_dev_spec_to_prod import (
     DEFAULT_CI_CONFIG,
@@ -22,6 +23,7 @@ from scripts.release.promote_dev_spec_to_prod import (
     template_identity,
     template_matches,
     upsert_block,
+    validate_digest_pinned_image,
 )
 from workflows.workflow_types import DeviceTypes, InferenceEngine
 
@@ -37,6 +39,10 @@ PIN_ARGS = [
     "--vllm-commit",
     "def5678",
 ]
+QUETZAL_IMAGE = (
+    "ghcr.io/tenstorrent/tt-inference-server/quetzal-vllm"
+    "@sha256:" + "a" * 64
+)
 
 
 def test_model_name_from_weight_strips_org_prefix():
@@ -144,6 +150,125 @@ def test_promote_rejects_quetzal_without_explicit_package_capable_image(tmp_path
             tmp_path / "prod",
             **PINS,
         )
+
+
+@pytest.mark.parametrize(
+    "image",
+    [
+        "ghcr.io/tenstorrent/quetzal:latest",
+        "ghcr.io/tenstorrent/quetzal:tag@sha256:" + "a" * 64,
+        "ghcr.io/tenstorrent/quetzal@sha256:short",
+        "ghcr.io/tenstorrent/quetzal@sha256:" + "A" * 64,
+        " ghcr.io/tenstorrent/quetzal@sha256:" + "a" * 64,
+    ],
+)
+def test_quetzal_image_requires_a_canonical_immutable_digest(image):
+    with pytest.raises(ValueError, match="immutable.*sha256"):
+        validate_digest_pinned_image(image)
+
+
+def test_quetzal_image_allows_a_registry_port_without_allowing_a_tag():
+    image = "registry.example:5443/team/quetzal@sha256:" + "b" * 64
+    assert validate_digest_pinned_image(image) == image
+
+
+def _build_mixed_quetzal_tree(tmp_path):
+    dev = tmp_path / "dev"
+    prod = tmp_path / "prod"
+    _write(
+        dev / "llm.yaml",
+        """
+        templates:
+        - weights:
+            - Qwen/Qwen3.6-27B
+          impl: qwen36_blackhole
+          inference_engine: VLLM
+          device_model_specs:
+            - device: P300X2
+              max_concurrency: 1
+              max_context: 8192
+              default_impl: true
+        - weights:
+            - Qwen/Qwen3.6-27B
+          impl: quetzal
+          inference_engine: VLLM
+          device_model_specs:
+            - device: P300X2
+              max_concurrency: 1
+              max_context: 8192
+              default_impl: false
+              env_vars:
+                QUETZAL_PACKAGE_ID: sha256-package-id
+                QUETZAL_ROOT_MANIFEST_SHA256: d71abb2865d94511a1aaafbb02fabe1adfc5bd658ff9b876412f5f558111db4a
+        """,
+    )
+    ci = tmp_path / "ci.json"
+    ci.write_text(
+        json.dumps(
+            {
+                "models": {
+                    "Qwen3.6-27B": {
+                        "implementations": [
+                            {
+                                "inference_engine": "vLLM",
+                                "ci": {"release": {"devices": ["P300X2"]}},
+                            },
+                            {
+                                "impl": "quetzal",
+                                "inference_engine": "vLLM",
+                                "ci": {"release": {"devices": ["P300X2"]}},
+                            },
+                        ]
+                    }
+                }
+            }
+        )
+    )
+    return ci, dev, prod
+
+
+def test_promote_injects_digest_image_only_into_quetzal_block(tmp_path):
+    ci, dev, prod = _build_mixed_quetzal_tree(tmp_path)
+    promote(
+        ci,
+        dev,
+        prod,
+        **PINS,
+        quetzal_docker_image=QUETZAL_IMAGE,
+    )
+
+    templates = yaml.safe_load((prod / "llm.yaml").read_text())
+    native = next(t for t in templates if t["impl"] == "qwen36_blackhole")
+    quetzal = next(t for t in templates if t["impl"] == "quetzal")
+    assert "docker_image" not in native
+    assert quetzal["docker_image"] == QUETZAL_IMAGE
+    assert quetzal["device_model_specs"][0]["default_impl"] is False
+    env = quetzal["device_model_specs"][0]["env_vars"]
+    assert env["QUETZAL_PACKAGE_ID"] == "sha256-package-id"
+    assert env["QUETZAL_ROOT_MANIFEST_SHA256"].startswith("d71abb")
+
+    first = (prod / "llm.yaml").read_text()
+    report = promote(
+        ci,
+        dev,
+        prod,
+        **PINS,
+        quetzal_docker_image=QUETZAL_IMAGE,
+    )
+    assert (prod / "llm.yaml").read_text() == first
+    assert report["changed_files"] == []
+
+
+def test_quetzal_image_argument_does_not_modify_native_only_promotion(tmp_path):
+    ci, dev, prod = _build_tree(tmp_path)
+    promote(
+        ci,
+        dev,
+        prod,
+        **PINS,
+        quetzal_docker_image=QUETZAL_IMAGE,
+    )
+    assert "docker_image:" not in (prod / "llm.yaml").read_text()
 
 
 def test_collect_release_combos_ignores_nightly_and_weekly():
@@ -776,6 +901,75 @@ def test_real_repo_release_combos_all_match_dev():
     assert combos, "expected at least one release combo in the real ci-config"
     _, unmatched = find_matches(DEFAULT_DEV_DIR, combos)
     assert unmatched == set(), f"release combos missing from dev: {unmatched}"
+
+
+def test_real_quetzal_templates_promote_with_exact_packages_and_image(tmp_path):
+    """Exercise the actual Qwen/Gemma dev blocks, not only a synthetic shape."""
+    import shutil
+
+    from workflows.model_spec import load_templates_from_yaml
+
+    ci = tmp_path / "quetzal-ci.json"
+    ci.write_text(
+        json.dumps(
+            {
+                "models": {
+                    model: {
+                        "impl": "quetzal",
+                        "inference_engine": "vLLM",
+                        "ci": {"release": {"devices": ["P300X2"]}},
+                    }
+                    for model in ("Qwen3.6-27B", "gemma-4-31B-it")
+                }
+            }
+        )
+    )
+    prod_copy = tmp_path / "prod"
+    shutil.copytree(DEFAULT_PROD_DIR, prod_copy)
+
+    report = promote(
+        ci,
+        DEFAULT_DEV_DIR,
+        prod_copy,
+        **PINS,
+        quetzal_docker_image=QUETZAL_IMAGE,
+    )
+    assert report["unmatched"] == set()
+
+    promoted = [
+        template
+        for template in load_templates_from_yaml(prod_copy / "llm.yaml")
+        if template.impl.impl_id == "quetzal"
+        and set(template.weights)
+        in ({"Qwen/Qwen3.6-27B"}, {"google/gemma-4-31B-it"})
+    ]
+    assert len(promoted) == 2
+    by_weight = {template.weights[0]: template for template in promoted}
+    assert all(template.docker_image == QUETZAL_IMAGE for template in promoted)
+    assert all(
+        template.device_model_specs[0].default_impl is False for template in promoted
+    )
+
+    expected = {
+        "Qwen/Qwen3.6-27B": (
+            "sha256-f1d6cebaf6cd432c78721ec3b81101ab86493f387b37f63bc11aca2fc6f6d8d8-"
+            "0a8efa103ee378c7cd0e2fa25b0426cbb82752e270f8927bdf44eb2cfe68ce66",
+            "d71abb2865d94511a1aaafbb02fabe1adfc5bd658ff9b876412f5f558111db4a",
+        ),
+        "google/gemma-4-31B-it": (
+            "sha256-e4ebc6d59bc92279c9bbba365474d6ab4ce292013db1e5faf02b6ea9eb096f99-"
+            "32c815d68145964c942386b052f49dd088de89d72f8e5e5243b33d13dadb87da",
+            "152a50f9a06a66e3f64f822e88b4a00bf76fbe9d02cf53094d702751970be8d0",
+        ),
+    }
+    for weight, (package_id, manifest_sha) in expected.items():
+        env = by_weight[weight].device_model_specs[0].env_vars
+        assert env["QUETZAL_PACKAGE_ID"] == package_id
+        assert env["QUETZAL_BUNDLE_MANIFEST_SHA256"] == manifest_sha
+        for key, value in env.items():
+            if key.startswith(("QUETZAL_", "QZ_")) and isinstance(value, str):
+                assert "/mnt/" not in value
+                assert "/home/ttuser/" not in value
 
 
 def test_real_repo_promote_against_prod_succeeds(tmp_path):

@@ -119,8 +119,26 @@ but the upstream matrix generator does not yet preserve same-engine implementati
 identity. Until both pieces are live, nightly enrollment would silently select the
 native default or create an expected infrastructure failure.
 
-Release promotion is intentionally fail-closed for `impl: quetzal`: the generic
-promoter synthesizes the ordinary tt-metal/vLLM image from release pins, while
-Quetzal currently requires a distinct package-capable derivative. The promotion
-path must first gain an explicit immutable image contract; a generated model must
-never be published against an image that can only provide the native runtime.
+The generic generator repair is staged and tested on `tt-shield` branch
+`nkapre/quetzal` at `4c89e5a`: it carries `impl` as a distinct matrix identity,
+rejects duplicate/conflicting selectors, and leaves legacy rows unchanged. It is
+not an upstream capability until that change is reviewed and merged.
+
+Release promotion is fail-closed for `impl: quetzal` unless the operator supplies
+the distinct package-capable image by immutable OCI digest:
+
+```bash
+python3 scripts/release/promote_dev_spec_to_prod.py \
+  --version <release-version> \
+  --tt-metal-commit <exact-commit> \
+  --vllm-commit <exact-commit> \
+  --quetzal-docker-image \
+    ghcr.io/tenstorrent/<package-capable-quetzal-image>@sha256:<64-hex-digest>
+```
+
+Tags, malformed digests, and a missing image are rejected before any prod file is
+changed. The explicit image is injected only into `impl: quetzal` blocks; native
+rows retain the standard image synthesis. This enables a real promotion contract
+without asserting that an image has been published, admitted on QB2, or passed
+the official nightly. A generated model must never be published against an image
+that can only provide the native runtime.
