@@ -1009,7 +1009,7 @@ _eval_config_list = [
                     task_names=["sierra-research/tau3-bench__tau3-banking_knowledge-*"],
                     # A single served instance is shared by the agent,
                     # the simulated user, and the Natural Language verifier.
-                    n_concurrent_trials=46, # 93/2 = 46.5 we round down to 46
+                    n_concurrent_trials=46,  # 93/2 = 46.5 we round down to 46
                     n_attempts=1,
                     n_tasks=97,
                     override_cpus=4,
