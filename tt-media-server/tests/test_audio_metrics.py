@@ -28,6 +28,7 @@ from telemetry.audio_metrics import (
     char_count,
     confidence_from_generator_output,
     record_stt_confidence,
+    record_stt_chunk_sizes,
     record_stt_request,
     record_tts_input_tokens,
     record_tts_request,
@@ -324,6 +325,56 @@ class TestRecordSttRequest:
         )
         labels = stt_labels(model, language="unknown")
         assert sample("tt_media_server_audio_stt_requests_total", **labels) == 1
+
+
+class TestRecordSttChunkSizes:
+    def test_records_each_chunk(self):
+        model = "stt-chunk-sizes"
+        record_stt_chunk_sizes(
+            model_type=model,
+            mode="vad_only",
+            chunks=[
+                {"start": 0.0, "end": 4.5},
+                {"start": 4.5, "end": 12.0},
+            ],
+        )
+        labels = dict(model_type=model, mode="vad_only")
+        assert (
+            sample("tt_media_server_audio_stt_chunk_audio_seconds_count", **labels) == 2
+        )
+        assert sample(
+            "tt_media_server_audio_stt_chunk_audio_seconds_sum", **labels
+        ) == pytest.approx(12.0)
+
+    def test_skips_unreadable_chunks(self):
+        model = "stt-chunk-garbage"
+        record_stt_chunk_sizes(
+            model_type=model,
+            mode="diarization",
+            chunks=[
+                {"start": 1.0},  # missing end
+                "not-a-chunk",
+                {"start": 5.0, "end": 3.0},  # non-positive duration
+                {"start": 0.0, "end": 2.0},
+            ],
+        )
+        labels = dict(model_type=model, mode="diarization")
+        assert (
+            sample("tt_media_server_audio_stt_chunk_audio_seconds_count", **labels) == 1
+        )
+
+    def test_empty_or_none_records_nothing(self):
+        model = "stt-chunk-empty"
+        record_stt_chunk_sizes(model_type=model, mode="vad_only", chunks=None)
+        record_stt_chunk_sizes(model_type=model, mode="vad_only", chunks=[])
+        assert (
+            sample(
+                "tt_media_server_audio_stt_chunk_audio_seconds_count",
+                model_type=model,
+                mode="vad_only",
+            )
+            is None
+        )
 
 
 class TestSttStreamProgress:

@@ -149,6 +149,27 @@ _PARTIAL_INTERVAL_BUCKETS = (
     float("inf"),
 )
 
+# Audio seconds per inference chunk. The merge targets
+# settings.audio_chunk_duration_seconds and Whisper's frame caps useful length
+# at 30s, but a single uninterrupted VAD segment is never split, so >30s
+# chunks are real (the generator truncates them to one frame downstream).
+_CHUNK_AUDIO_BUCKETS = (
+    0.25,
+    0.5,
+    1.0,
+    2.0,
+    3.0,
+    5.0,
+    7.5,
+    10.0,
+    15.0,
+    20.0,
+    30.0,
+    60.0,
+    120.0,
+    float("inf"),
+)
+
 # Wait between the last partial and the final transcript: segment assembly
 # and speaker sorting, usually milliseconds, so the grid bottoms out at 1ms.
 _FINALIZATION_BUCKETS = (
@@ -337,6 +358,21 @@ stt_realtime_factor = Histogram(
     "Wall-clock seconds spent per second of input audio (1.0 = realtime)",
     _STT_USAGE_LABELS,
     buckets=_REALTIME_FACTOR_BUCKETS,
+)
+
+# Per-chunk audio length, one observation per chunk at the VAD-merge site in
+# audio_manager (where audio_chunks_per_request is already observed). This is
+# the distribution the count alone cannot give — it's bimodal by design:
+# diarization yields short speaker-bounded chunks, VAD-only longer merged
+# ones, and chunk length drives effective throughput (fixed cost per padded
+# 30s frame). VAD-path only: with preprocessing skipped there are no chunks
+# to measure and the series is legitimately absent. The configured merge
+# target is exported on tt_media_server_info as audio_chunk_duration_seconds.
+stt_chunk_audio_seconds = Histogram(
+    "tt_media_server_audio_stt_chunk_audio_seconds",
+    "Audio seconds of one inference chunk produced by VAD-segment merging",
+    ["model_type", "mode"],
+    buckets=_CHUNK_AUDIO_BUCKETS,
 )
 
 # Format mix BY REQUEST — deliberately distinct from the pre-existing
@@ -721,6 +757,31 @@ def transcript_compression_ratio(text) -> float | None:
         return None
     text_bytes = text.encode("utf-8")
     return len(text_bytes) / len(zlib.compress(text_bytes))
+
+
+def record_stt_chunk_sizes(*, model_type: str, mode: str, chunks) -> None:
+    """Export the audio length of each merged inference chunk. Never raises.
+
+    ``chunks`` is the VAD-merge output: mappings with ``start``/``end`` times
+    in seconds. Unreadable entries are skipped rather than aborting the batch.
+    """
+    try:
+        # Lazy labels(): resolving them up front would materialise an empty
+        # series for a request whose chunks are all unreadable or absent.
+        histogram = None
+        for chunk in chunks or ():
+            try:
+                seconds = float(chunk["end"]) - float(chunk["start"])
+            except Exception:
+                continue
+            if seconds > 0:
+                if histogram is None:
+                    histogram = stt_chunk_audio_seconds.labels(
+                        model_type=model_type, mode=mode
+                    )
+                histogram.observe(seconds)
+    except Exception as exc:  # pragma: no cover - telemetry must not break serving
+        logger.warning(f"Failed to record STT chunk sizes: {exc}")
 
 
 def record_stt_confidence(

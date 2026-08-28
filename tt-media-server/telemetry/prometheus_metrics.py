@@ -167,6 +167,12 @@ class PrometheusMetrics:
                 "environment": self.settings.environment,
                 "device_mesh_shape": str(self.settings.device_mesh_shape),
                 "model_runner": self.settings.model_runner,
+                # Configured VAD-merge target; pairs with the per-chunk
+                # distribution in audio_stt_chunk_audio_seconds. "unset" on
+                # non-audio deployments.
+                "audio_chunk_duration_seconds": str(
+                    self.settings.audio_chunk_duration_seconds or "unset"
+                ),
             }
         )
 
