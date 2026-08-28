@@ -889,7 +889,7 @@ _eval_config_list = [
             EvalTask(
                 task_name="r1_gpqa_diamond",
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                max_concurrent=64,
+                max_concurrent=93,
                 # This vLLM server only exposes /v1/chat/completions; the legacy
                 # text /v1/completions endpoint returns 404.
                 use_chat_api=True,
@@ -953,7 +953,7 @@ _eval_config_list = [
                 agentic_eval_config=TerminalBenchEvalConfig(
                     dataset="terminal-bench/terminal-bench-2-1",
                     agent="terminus-2",
-                    n_concurrent_trials=64,
+                    n_concurrent_trials=93,
                     n_attempts=1,
                     n_tasks=89,
                     override_cpus=16,
@@ -1009,7 +1009,7 @@ _eval_config_list = [
                     task_names=["sierra-research/tau3-bench__tau3-banking_knowledge-*"],
                     # A single served instance is shared by the agent,
                     # the simulated user, and the Natural Language verifier.
-                    n_concurrent_trials=32,
+                    n_concurrent_trials=46, # 93/2 = 46.5 we round down to 46
                     n_attempts=1,
                     n_tasks=97,
                     override_cpus=4,
@@ -1066,7 +1066,7 @@ _eval_config_list = [
             # selected from 256K ISL up to the top of the context budget.
             EvalTask(
                 task_name="longbench2_generate",
-                max_concurrent=64,
+                max_concurrent=93,
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 min_context_required=1048576,
                 use_chat_api=True,
