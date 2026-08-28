@@ -16,8 +16,10 @@ from typing import Dict, Tuple
 
 EXPECTED_CONFIG_DIR = Path(__file__).parent / "expected"
 
+# Keyed on model_spec.model_name (the weights basename, e.g. "Llama-3.1-8B"),
+# which is what _build_training_cmd forwards — NOT the full HF repo path.
 _EXPECTED_BY_MODEL_DEVICE: Dict[Tuple[str, str], str] = {
-    ("meta-llama/Llama-3.1-8B", "p150"): "llama_3_1_8b_sst2_p150.yaml",
+    ("Llama-3.1-8B", "p150"): "llama_3_1_8b_sst2_p150.yaml",
 }
 
 
