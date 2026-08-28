@@ -84,18 +84,31 @@ def _base_url(args: argparse.Namespace) -> str:
 
 
 def _auth_headers(jwt_secret: Optional[str] = None) -> Dict[str, str]:
-    """Build the bearer header the forge/media server expects.
+    """Build the auth headers the forge/media fine-tuning endpoints expect.
 
-    The training/fine-tuning endpoints live on the media server, which does a
-    literal string compare against ``$API_KEY`` (see
-    ``tt-media-server/security/api_key_checker.py``), defaulting to
-    ``"your-secret-key"`` — it does NOT decode a JWT (that is the vLLM auth
-    model). ``$NO_AUTH`` disables the check server-side, so we send no header.
+    The training/fine-tuning endpoints live on the media server and require two
+    things (see ``tt-media-server/security/``):
+
+    * ``Authorization: Bearer $API_KEY`` — a literal string compare against
+      ``$API_KEY`` (default ``"your-secret-key"``); it does NOT decode a JWT
+      (that is the vLLM auth model). ``$NO_AUTH`` disables the check
+      server-side, in which case no auth header is needed.
+    * A non-empty org header (``get_org_id``); its name is configurable via
+      ``$ORG_ID_HEADER`` (default ``X-TT-Organization``). The value is only
+      used to scope jobs to a tenant, so any non-empty id works for tests.
     """
+    headers: Dict[str, str] = {}
+
+    org_header = os.getenv("ORG_ID_HEADER", "X-TT-Organization")
+    org_id = os.getenv("TT_ORG_ID", "tenstorrent")
+    headers[org_header] = org_id
+
     if os.getenv("NO_AUTH", "").lower() in ("1", "true", "yes"):
-        return {}
+        return headers
+
     api_key = os.getenv("API_KEY", "your-secret-key")
-    return {"Authorization": f"Bearer {api_key}"}
+    headers["Authorization"] = f"Bearer {api_key}"
+    return headers
 
 
 def _wait_for_health(session, base_url: str, headers, timeout: float) -> bool:
