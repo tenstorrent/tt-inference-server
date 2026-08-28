@@ -3,17 +3,17 @@
     "_description": "Server tests schema configuration. Test suites are in test_suites/*.json",
     "model_categories": {
         "IMAGE": [
-            "stabilityai/stable-diffusion-xl-base-1.0",
-            "stabilityai/stable-diffusion-xl-base-1.0-img-2-img",
-            "diffusers/stable-diffusion-xl-1.0-inpainting-0.1",
-            "stabilityai/stable-diffusion-3.5-large",
-            "black-forest-labs/FLUX.1-dev",
-            "black-forest-labs/FLUX.1-schnell",
-            "Motif-Technologies/Motif-Image-6B-Preview"
+            "stable-diffusion-xl-base-1.0",
+            "stable-diffusion-xl-base-1.0-img-2-img",
+            "stable-diffusion-xl-1.0-inpainting-0.1",
+            "stable-diffusion-3.5-large",
+            "FLUX.1-dev",
+            "FLUX.1-schnell",
+            "Motif-Image-6B-Preview"
         ],
         "AUDIO": [
-            "distil-whisper/distil-large-v3",
-            "openai/whisper-large-v3"
+            "distil-large-v3",
+            "whisper-large-v3"
         ],
         "CNN": [
             "resnet-50",
@@ -25,24 +25,26 @@
             "vit"
         ],
         "EMBEDDING": [
-            "BAAI/bge-large-en-v1.5",
-            "Qwen/Qwen3-Embedding-4B",
-            "Qwen/Qwen3-Embedding-8B",
-            "BAAI/bge-m3"
+            "bge-large-en-v1.5",
+            "Qwen3-Embedding-4B",
+            "Qwen3-Embedding-8B",
+            "bge-m3"
         ],
         "TTS": [
-            "microsoft/speecht5_tts"
+            "speecht5_tts"
         ],
         "VIDEO": [
-            "Wan-AI/Wan2.2-T2V-A14B-Diffusers",
-            "Wan-AI/Wan2.2-I2V-A14B-Diffusers",
-            "genmo/mochi-1-preview"
+            "Wan2.2-T2V-A14B-Diffusers",
+            "Wan2.2-I2V-A14B-Diffusers",
+            "mochi-1-preview"
         ],
         "LLM": [
-            "Qwen/Qwen3-32B",
-            "meta-llama/Llama-3.1-8B-Instruct",
-            "meta-llama/Llama-3.3-70B-Instruct",
-            "openai/gpt-oss-20b"
+            "Qwen3-32B",
+            "Llama-3.1-8B-Instruct",
+            "Llama-3.3-70B-Instruct",
+            "gpt-oss-20b",
+            "diffusiongemma-26B-A4B-it",
+            "Mistral-Small-3.1-24B-Instruct-2503"
         ]
     },
     "available_markers": {
@@ -168,7 +170,7 @@
         "distil_whisper": {
             "id_name": "distil-whisper",
             "weights": [
-                "distil-whisper/distil-large-v3"
+                "distil-large-v3"
             ],
             "category": "AUDIO",
             "compatible_devices": [
@@ -180,7 +182,7 @@
         },
         "whisper": {
             "weights": [
-                "openai/whisper-large-v3"
+                "whisper-large-v3"
             ],
             "category": "AUDIO",
             "compatible_devices": [
@@ -192,7 +194,7 @@
         },
         "wan": {
             "weights": [
-                "Wan-AI/Wan2.2-T2V-A14B-Diffusers"
+                "Wan2.2-T2V-A14B-Diffusers"
             ],
             "category": "VIDEO",
             "compatible_devices": [
@@ -206,7 +208,7 @@
         "wan_i2v": {
             "id_name": "wan-i2v",
             "weights": [
-                "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
+                "Wan2.2-I2V-A14B-Diffusers"
             ],
             "category": "VIDEO",
             "compatible_devices": [
@@ -219,7 +221,7 @@
         },
         "mochi": {
             "weights": [
-                "genmo/mochi-1-preview"
+                "mochi-1-preview"
             ],
             "category": "VIDEO",
             "compatible_devices": [
@@ -232,7 +234,7 @@
         },
         "sdxl": {
             "weights": [
-                "stabilityai/stable-diffusion-xl-base-1.0"
+                "stable-diffusion-xl-base-1.0"
             ],
             "category": "IMAGE",
             "compatible_devices": [
@@ -247,7 +249,7 @@
         "sdxl_img2img": {
             "id_name": "sdxl-img2img",
             "weights": [
-                "stabilityai/stable-diffusion-xl-base-1.0-img-2-img"
+                "stable-diffusion-xl-base-1.0-img-2-img"
             ],
             "category": "IMAGE",
             "compatible_devices": [
@@ -259,7 +261,7 @@
         "sdxl_inpaint": {
             "id_name": "sdxl-inpaint",
             "weights": [
-                "diffusers/stable-diffusion-xl-1.0-inpainting-0.1"
+                "stable-diffusion-xl-1.0-inpainting-0.1"
             ],
             "category": "IMAGE",
             "compatible_devices": [
@@ -270,7 +272,7 @@
         },
         "sd35": {
             "weights": [
-                "stabilityai/stable-diffusion-3.5-large"
+                "stable-diffusion-3.5-large"
             ],
             "category": "IMAGE",
             "compatible_devices": [
@@ -281,7 +283,7 @@
         "flux_dev": {
             "id_name": "flux-dev",
             "weights": [
-                "black-forest-labs/FLUX.1-dev"
+                "FLUX.1-dev"
             ],
             "category": "IMAGE",
             "compatible_devices": [
@@ -296,7 +298,7 @@
         "flux_schnell": {
             "id_name": "flux-schnell",
             "weights": [
-                "black-forest-labs/FLUX.1-schnell"
+                "FLUX.1-schnell"
             ],
             "category": "IMAGE",
             "compatible_devices": [
@@ -310,7 +312,7 @@
         },
         "motif": {
             "weights": [
-                "Motif-Technologies/Motif-Image-6B-Preview"
+                "Motif-Image-6B-Preview"
             ],
             "category": "IMAGE",
             "compatible_devices": [
@@ -323,7 +325,7 @@
         },
         "z_image_turbo": {
             "weights": [
-                "Tongyi-MAI/Z-Image-Turbo"
+                "Z-Image-Turbo"
             ],
             "category": "IMAGE",
             "compatible_devices": [
@@ -332,7 +334,7 @@
         },
         "bge": {
             "weights": [
-                "BAAI/bge-large-en-v1.5"
+                "bge-large-en-v1.5"
             ],
             "category": "EMBEDDING",
             "compatible_devices": [
@@ -344,8 +346,8 @@
         "qwen3_emb": {
             "id_name": "qwen3-emb-8b",
             "weights": [
-                "Qwen/Qwen3-Embedding-8B",
-                "Qwen/Qwen3-Embedding-4B"
+                "Qwen3-Embedding-8B",
+                "Qwen3-Embedding-4B"
             ],
             "category": "EMBEDDING",
             "compatible_devices": [
@@ -356,7 +358,7 @@
         },
         "speecht5": {
             "weights": [
-                "microsoft/speecht5_tts"
+                "speecht5_tts"
             ],
             "category": "TTS",
             "compatible_devices": [
@@ -364,10 +366,20 @@
                 "p150"
             ]
         },
-        "gpt_oss_20b": {
-            "id_name": "openai/gpt-oss-20b",
+        "diffusiongemma_26b": {
+            "id_name": "diffusiongemma-26b-a4b-it",
             "weights": [
-                "openai/gpt-oss-20b"
+                "diffusiongemma-26B-A4B-it"
+            ],
+            "category": "LLM",
+            "compatible_devices": [
+                "p300x2"
+            ]
+        },
+        "gpt_oss_20b": {
+            "id_name": "gpt-oss-20b",
+            "weights": [
+                "gpt-oss-20b"
             ],
             "category": "LLM",
             "compatible_devices": [
@@ -379,7 +391,7 @@
         "qwen3_32b": {
             "id_name": "qwen3-32b",
             "weights": [
-                "Qwen/Qwen3-32B"
+                "Qwen3-32B"
             ],
             "category": "LLM",
             "compatible_devices": [
@@ -393,7 +405,7 @@
         "llama_70b_family": {
             "id_name": "llama-70b",
             "weights": [
-                "meta-llama/Llama-3.3-70B-Instruct"
+                "Llama-3.3-70B-Instruct"
             ],
             "category": "LLM",
             "compatible_devices": [
@@ -408,7 +420,7 @@
         "llama_3_1_8b": {
             "id_name": "llama-3.1-8b",
             "weights": [
-                "meta-llama/Llama-3.1-8B-Instruct"
+                "Llama-3.1-8B-Instruct"
             ],
             "category": "LLM",
             "compatible_devices": [
@@ -429,7 +441,7 @@
         "mistral_small_24b": {
             "id_name": "mistral-small-3.1-24b",
             "weights": [
-                "mistralai/Mistral-Small-3.1-24B-Instruct-2503"
+                "Mistral-Small-3.1-24B-Instruct-2503"
             ],
             "category": "LLM",
             "compatible_devices": [
@@ -891,6 +903,22 @@
             ],
             "test_config": {
                 "test_timeout": 3600,
+                "retry_attempts": 0,
+                "retry_delay": 10,
+                "break_on_failure": false,
+                "mock_mode": false
+            }
+        },
+        "VLLMDiffusionGemmaParamConformanceTest": {
+            "module": "test_module.llm_tests.vllm_param_conformance_test",
+            "markers": [
+                "param",
+                "e2e",
+                "slow",
+                "heavy"
+            ],
+            "test_config": {
+                "timeout": 3600,
                 "retry_attempts": 0,
                 "retry_delay": 10,
                 "break_on_failure": false,

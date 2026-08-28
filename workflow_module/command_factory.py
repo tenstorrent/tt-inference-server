@@ -15,6 +15,7 @@ from typing import List, Optional
 
 from workflows.runtime_config import RuntimeConfig
 
+from utils.model_naming import slugify_model_id
 from utils.url_helpers import is_remote_server, resolve_deploy_url
 
 from test_module import MediaContext
@@ -69,6 +70,7 @@ class CommandFactory:
 
     @staticmethod
     def _workflow_commands(args: argparse.Namespace) -> List[Command]:
+        _canonicalize_cli_model(args)
         metadata = _build_orchestrator_metadata(args)
         repeat = max(1, int(getattr(args, "repeat", 1) or 1))
         if repeat == 1:
@@ -92,13 +94,18 @@ def _workflow_command(
     )
 
 
+def _output_leaf(args: argparse.Namespace) -> str:
+    """Directory name for this run's output."""
+    return f"{slugify_model_id(args.model)}_{args.device}_{args.workflow}"
+
+
 def _build_repeated_commands(
     args: argparse.Namespace,
     metadata: OrchestratorMetadata,
     repeat: int,
 ) -> List[Command]:
     """N per-run workflows into ``run_NN/`` subfolders + a final summary."""
-    leaf = f"{args.model}_{args.device}_{args.workflow}"
+    leaf = _output_leaf(args)
     container = Path(args.output_dir) / leaf
     commands: List[Command] = []
     for run_index in range(1, repeat + 1):
@@ -130,6 +137,25 @@ def _load_model_spec_override(path: Optional[str]) -> Optional[ModelSpecLike]:
     return get_model_spec_provider().load_runtime_spec(path)
 
 
+def _canonicalize_cli_model(args: argparse.Namespace) -> None:
+    """Rewrite bare ``--model`` to the catalog HF identity when resolvable.
+
+    Input dual-accept (basename or full repo id) stays for CLI compat; after
+    this point ``args.model`` is the identity used for eval lookup, output
+    dirs, and report metadata.
+    """
+    override = _load_model_spec_override(getattr(args, "runtime_model_spec_json", None))
+    if override is not None and override.hf_model_repo:
+        args.model = override.hf_model_repo
+        return
+    try:
+        model_spec, _, _ = get_runtime_model_spec(model=args.model, device=args.device)
+    except (ValueError, AssertionError, KeyError):
+        return
+    if model_spec.hf_model_repo:
+        args.model = model_spec.hf_model_repo
+
+
 def _build_context(
     args: argparse.Namespace, output_path: Optional[Path] = None
 ) -> MediaContext:
@@ -154,7 +180,7 @@ def _build_context(
         runtime_config.agentic_benchmark = cli_agentic_benchmark
 
     if output_path is None:
-        output_path = args.output_dir / f"{args.model}_{args.device}_{args.workflow}"
+        output_path = args.output_dir / _output_leaf(args)
     output_path = Path(output_path)
     output_path.mkdir(parents=True, exist_ok=True)
 

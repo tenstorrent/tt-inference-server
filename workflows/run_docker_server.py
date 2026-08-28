@@ -31,6 +31,7 @@ from workflows.utils import (
     get_default_workflow_root_log_dir,
     get_repo_root_path,
     run_command,
+    server_log_file_name,
 )
 from workflows.validate_setup import run_multihost_validation_subprocess
 from workflows.workflow_types import (
@@ -706,9 +707,12 @@ def run_docker_server(model_spec, runtime_config, setup_config, json_fpath):
     server_prefix = (
         "vllm" if model_spec.model_type in (ModelType.LLM, ModelType.VLM) else "media"
     )
-    docker_log_file_path = (
-        docker_log_file_dir
-        / f"{server_prefix}_{timestamp}_{runtime_config.model}_{runtime_config.device}_{runtime_config.workflow}.log"
+    docker_log_file_path = docker_log_file_dir / server_log_file_name(
+        server_prefix,
+        timestamp,
+        runtime_config.model,
+        runtime_config.device,
+        runtime_config.workflow,
     )
 
     assert ensure_docker_image(model_spec.docker_image), (
@@ -1067,9 +1071,12 @@ def run_multihost_server(model_spec, runtime_config, setup_config, json_fpath):
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         docker_log_file_dir = get_default_workflow_root_log_dir() / "docker_server"
         ensure_readwriteable_dir(docker_log_file_dir)
-        docker_log_file_path = (
-            docker_log_file_dir
-            / f"multihost_{timestamp}_{runtime_config.model}_{runtime_config.device}_{runtime_config.workflow}.log"
+        docker_log_file_path = docker_log_file_dir / server_log_file_name(
+            "multihost",
+            timestamp,
+            runtime_config.model,
+            runtime_config.device,
+            runtime_config.workflow,
         )
 
         # Run Controller container with monitoring

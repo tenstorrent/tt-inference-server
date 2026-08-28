@@ -22,6 +22,7 @@ from workflows.utils import (
     get_default_workflow_root_log_dir,
     get_repo_root_path,
     run_command,
+    server_log_file_name,
 )
 from workflows.workflow_types import DeviceTypes, InferenceEngine, WorkflowType
 
@@ -343,9 +344,12 @@ def run_local_server(model_spec, runtime_config, json_fpath, setup_config: Setup
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     local_log_file_dir = get_default_workflow_root_log_dir() / "local_server"
     ensure_readwriteable_dir(local_log_file_dir)
-    local_log_file_path = (
-        local_log_file_dir
-        / f"vllm_local_{timestamp}_{runtime_config.model}_{runtime_config.device}_{runtime_config.workflow}.log"
+    local_log_file_path = local_log_file_dir / server_log_file_name(
+        "vllm_local",
+        timestamp,
+        runtime_config.model,
+        runtime_config.device,
+        runtime_config.workflow,
     )
 
     install_local_server_requirements(runtime_config)

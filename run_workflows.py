@@ -102,7 +102,10 @@ _LOG_LEVELS = {
 def parse_args() -> argparse.Namespace:
     from workflow_module import WORKFLOW_REGISTRY
 
+    # Canonical --model value is the full HF repo id; the basename is still
+    # accepted for backwards compatibility (resolution dual-accepts both).
     valid_models = get_model_spec_provider().model_names()
+    full_repo_models = sorted(model for model in valid_models if "/" in model)
     valid_devices = get_device_catalog().device_names()
     valid_workflows = sorted(WORKFLOW_REGISTRY)
 
@@ -117,16 +120,18 @@ def parse_args() -> argparse.Namespace:
             "against an already-running inference server. For full server "
             "bring-up + workflow runs, invoke through v1 /run.py instead."
         ),
-        epilog="Available models:\n  " + "\n  ".join(valid_models),
+        epilog="Available models:\n  " + "\n  ".join(full_repo_models),
         formatter_class=argparse.RawTextHelpFormatter,
     )
     if requirements_mode:
         # Un-gated and optional: defaults come from the requirements document
         # after parsing (and the model may not be in the catalog at all).
-        parser.add_argument("--model", required=False, default=None)
+        parser.add_argument("--model", required=False, default=None, metavar="MODEL")
         parser.add_argument("--device", required=False, default=None)
     else:
-        parser.add_argument("--model", required=True, choices=valid_models)
+        parser.add_argument(
+            "--model", required=True, choices=valid_models, metavar="MODEL"
+        )
         parser.add_argument("--device", required=True, choices=valid_devices)
     parser.add_argument("--workflow", required=True, choices=valid_workflows)
     add_requirements_argument(parser)
