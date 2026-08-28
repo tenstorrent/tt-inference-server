@@ -47,6 +47,7 @@ AUDIO_PAYLOAD_FILE = "image_client_audio_payload"
 # aggregation and the tuple contract (see _metrics_smoke).
 STT_METRIC_SERIES = (
     "tt_media_server_audio_stt_requests_total",
+    "tt_media_server_audio_stt_requests_by_audio_format_total",
     "tt_media_server_audio_stt_input_audio_seconds_total",
     "tt_media_server_audio_stt_realtime_factor",
     "tt_media_server_audio_stt_avg_logprob",

@@ -170,6 +170,8 @@ class TestRecordSttRequest:
             duration_seconds=2.0,
             audio_seconds=10.0,
             characters=120,
+            sample_rate=16000,
+            channels=1,
         )
         labels = stt_labels(model, language="English")
         assert sample("tt_media_server_audio_stt_requests_total", **labels) == 1
@@ -196,6 +198,17 @@ class TestRecordSttRequest:
         assert sample(
             "tt_media_server_audio_stt_realtime_factor_sum", **usage
         ) == pytest.approx(0.2)
+        assert (
+            sample(
+                "tt_media_server_audio_stt_requests_by_audio_format_total",
+                model_type=model,
+                task="transcription",
+                language="English",
+                sample_rate="16000",
+                channels="1",
+            )
+            == 1
+        )
 
     def test_error_skips_usage(self):
         model = "stt-error"
@@ -249,6 +262,54 @@ class TestRecordSttRequest:
         )
         assert (
             sample("tt_media_server_audio_stt_realtime_factor_count", **usage) is None
+        )
+
+    def test_unknown_audio_format_falls_back(self):
+        model = "stt-format-unknown"
+        record_stt_request(
+            model_type=model,
+            task="transcription",
+            language="English",
+            streaming=False,
+            status=STATUS_SUCCESS,
+            duration_seconds=1.0,
+            sample_rate=None,
+            channels="stereo?",
+        )
+        assert (
+            sample(
+                "tt_media_server_audio_stt_requests_by_audio_format_total",
+                model_type=model,
+                task="transcription",
+                language="English",
+                sample_rate="unknown",
+                channels="unknown",
+            )
+            == 1
+        )
+
+    def test_error_skips_audio_format(self):
+        model = "stt-format-error"
+        record_stt_request(
+            model_type=model,
+            task="transcription",
+            language="English",
+            streaming=False,
+            status=STATUS_ERROR,
+            duration_seconds=1.0,
+            sample_rate=44100,
+            channels=2,
+        )
+        assert (
+            sample(
+                "tt_media_server_audio_stt_requests_by_audio_format_total",
+                model_type=model,
+                task="transcription",
+                language="English",
+                sample_rate="44100",
+                channels="2",
+            )
+            is None
         )
 
     def test_non_str_language_becomes_unknown(self):
@@ -550,6 +611,9 @@ def make_stt_request(stream=False, response_format="verbose_json"):
     audio_request.stream = stream
     audio_request.response_format = response_format
     audio_request._duration = 8.0
+    # Stamped by AudioService.pre_process on the real request object.
+    audio_request._source_sample_rate = 16000
+    audio_request._source_channels = 1
     return audio_request
 
 
@@ -582,6 +646,17 @@ class TestHandleAudioRequestMetrics:
         assert sample(
             "tt_media_server_audio_stt_output_characters_total", **usage
         ) == len("hello world")
+        assert (
+            sample(
+                "tt_media_server_audio_stt_requests_by_audio_format_total",
+                model_type=model_runner_label,
+                task="transcription",
+                language=LANGUAGE,
+                sample_rate="16000",
+                channels="1",
+            )
+            == 1
+        )
 
     @pytest.mark.asyncio
     async def test_non_streaming_error(self, model_runner_label):

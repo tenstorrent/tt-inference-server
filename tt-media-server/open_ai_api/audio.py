@@ -162,6 +162,8 @@ async def handle_audio_request(audio_request, service):
                 duration_seconds=time.perf_counter() - start,
                 audio_seconds=getattr(result, "duration", None),
                 characters=char_count(getattr(result, "text", None)),
+                sample_rate=getattr(audio_request, "_source_sample_rate", None),
+                channels=getattr(audio_request, "_source_channels", None),
             )
 
     try:
@@ -224,6 +226,8 @@ async def handle_audio_request(audio_request, service):
                 duration_seconds=time.perf_counter() - start,
                 audio_seconds=audio_seconds,
                 characters=characters,
+                sample_rate=getattr(audio_request, "_source_sample_rate", None),
+                channels=getattr(audio_request, "_source_channels", None),
             )
 
     media_type = "text/plain" if is_text_format else "application/x-ndjson"

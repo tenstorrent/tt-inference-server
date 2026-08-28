@@ -339,6 +339,20 @@ stt_realtime_factor = Histogram(
     buckets=_REALTIME_FACTOR_BUCKETS,
 )
 
+# Format mix BY REQUEST — deliberately distinct from the pre-existing
+# audio_feature_extraction_input_seconds_total{sample_rate, channels}, which
+# is denominated in audio seconds (and is the numerator of that stage's
+# throughput calculation, so it stays). Ten hour-long files can dwarf a
+# thousand voice commands there; this counter answers "what share of
+# *requests* arrive at which operating point". Values are the submitted
+# rate/channels stamped by preprocessing, before the mono/default-rate
+# resample — same source as the feature-extraction labels.
+stt_requests_by_audio_format = Counter(
+    "tt_media_server_audio_stt_requests_by_audio_format_total",
+    "Successful speech-to-text requests by submitted sample rate and channels",
+    ["model_type", "task", "language", "sample_rate", "channels"],
+)
+
 # Streaming-only: one observation per stream for the first update, one per
 # subsequent update for cadence. Wall time as the client experiences it — the
 # emitting generator only resumes after the client consumes the previous
@@ -547,6 +561,20 @@ def _label_str(value, fallback: str) -> str:
     return fallback
 
 
+def _count_label(value) -> str:
+    """A positive integer as a label value, else "unknown".
+
+    Matches the value convention of the pre-existing feature-extraction
+    labels (str of the submitted number, "unknown" when preprocessing could
+    not determine it).
+    """
+    try:
+        value = int(value)
+    except (TypeError, ValueError):
+        return "unknown"
+    return str(value) if value > 0 else "unknown"
+
+
 def tts_voice_label(request, result=None) -> str:
     """Resolve the ``voice`` label for one TTS request.
 
@@ -734,11 +762,14 @@ def record_stt_request(
     duration_seconds: float,
     audio_seconds: float | None = None,
     characters: int | None = None,
+    sample_rate=None,
+    channels=None,
 ) -> None:
     """Export one finished STT request. Never raises into the request path.
 
-    ``audio_seconds`` and ``characters`` may be passed on any outcome; usage
-    totals and realtime factor are only recorded for ``status="success"``.
+    ``audio_seconds``, ``characters``, ``sample_rate`` and ``channels`` may be
+    passed on any outcome; usage totals, realtime factor and the audio-format
+    counter are only recorded for ``status="success"``.
     """
     try:
         streaming_label = str(bool(streaming)).lower()
@@ -774,6 +805,13 @@ def record_stt_request(
                 )
         if isinstance(characters, int) and characters > 0:
             stt_output_characters_total.labels(**usage_labels).inc(characters)
+        stt_requests_by_audio_format.labels(
+            model_type=model_type,
+            task=task,
+            language=language,
+            sample_rate=_count_label(sample_rate),
+            channels=_count_label(channels),
+        ).inc()
     except Exception as exc:  # pragma: no cover - telemetry must not break serving
         logger.warning(f"Failed to record STT request metrics: {exc}")
 
