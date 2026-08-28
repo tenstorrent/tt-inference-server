@@ -19,6 +19,10 @@ from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
+_TOKEN_BUDGET_MODEL_CLASS = (
+    "llm_module.agentic.mini_swe_token_budget.TokenBudgetLitellmModel"
+)
+
 # The SWE-bench harness builds/pulls Docker images (a shared base image plus
 # per-instance images) from ghcr.io. Those transfers can fail transiently
 # mid-stream (e.g. ``ChunkedEncodingError: Response ended prematurely`` while
@@ -55,6 +59,9 @@ class SWEbenchRunConfig:
     random_delay_multiplier: float
     score_existing_predictions: bool
     instance_ids: list[str] = field(default_factory=list)
+    # Exact Hugging Face tokenizer used to render/count each mini-swe request.
+    # Kept separate from model_name, which includes LiteLLM's provider prefix.
+    tokenizer_name: Optional[str] = None
     # Interpreter whose bin/ holds the ``sweagent`` / ``mini-extra`` CLIs and
     # whose ``-m swebench`` is importable. ``None`` uses the current interpreter
     # (standalone ``run_agentic.py`` re-execs into the EVALS_AGENTIC venv); set
@@ -202,6 +209,15 @@ def _write_sweagent_model_config(config: SWEbenchRunConfig) -> Path:
 
 
 def _write_mini_sweagent_model_config(config: SWEbenchRunConfig) -> Path:
+    if config.mini_model_class not in ("litellm", _TOKEN_BUDGET_MODEL_CLASS):
+        raise ValueError(
+            "mini-swe-agent input-budget enforcement currently requires the "
+            f"LiteLLM model path, got {config.mini_model_class!r}"
+        )
+    if not config.tokenizer_name:
+        raise ValueError(
+            "mini-swe-agent input-budget enforcement requires tokenizer_name"
+        )
     model_kwargs: dict[str, Any] = {
         "api_base": config.api_base,
         "api_key": os.environ.get("OPENAI_API_KEY", "EMPTY"),
@@ -217,9 +233,12 @@ def _write_mini_sweagent_model_config(config: SWEbenchRunConfig) -> Path:
     model_config = {
         "model": {
             "model_name": config.model_name,
-            "model_class": config.mini_model_class,
+            "model_class": _TOKEN_BUDGET_MODEL_CLASS,
             "cost_tracking": "ignore_errors",
             "model_kwargs": model_kwargs,
+            "tokenizer_name": config.tokenizer_name,
+            "max_input_tokens": config.max_input_tokens,
+            "token_count_log": str(config.output_dir / "mini_sweagent_token_counts.jsonl"),
         }
     }
     config_path = config.output_dir / "mini_sweagent_model_config.yaml"
@@ -552,6 +571,13 @@ def run(config: SWEbenchRunConfig) -> int:
     env.setdefault("OPENAI_API_BASE", config.api_base)
     env.setdefault("SWE_AGENT_LOG_STREAM_LEVEL", "INFO")
     env.setdefault("MSWEA_COST_TRACKING", "ignore_errors")
+    # mini-extra runs from the eval venv and output directory. Make this source
+    # tree importable so its fail-closed model class is the class that dispatches
+    # every request; do not rely on the caller's current working directory.
+    repo_root = str(Path(__file__).resolve().parents[2])
+    env["PYTHONPATH"] = repo_root + (
+        os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else ""
+    )
     sweagent_source_dir = _get_sweagent_source_dir(_interpreter(config))
     if sweagent_source_dir is not None:
         env.setdefault("SWE_AGENT_CONFIG_DIR", str(sweagent_source_dir / "config"))

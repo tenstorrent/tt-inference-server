@@ -12,6 +12,7 @@
 # is not shipped in the PyPI wheel) is importable by agent_import_path.
 
 mini-swe-agent==2.2.8
+transformers==4.57.1
 git+https://github.com/epoch-research/SWE-bench.git@bc2a82af2874e26fa6f206ae0ad9017c4768daa2
 
 orjson>=3.11.6,<4.0
