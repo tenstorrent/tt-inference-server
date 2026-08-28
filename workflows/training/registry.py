@@ -14,7 +14,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict, Tuple
 
-EXPECTED_CONFIG_DIR = Path(__file__).parent / "expected"
+# Goldens live under reference_config/training/ for symmetry with the perf
+# (reference_config/benchmarking/) and accuracy (reference_config/evals/)
+# targets, not next to this module. registry.py is at
+# <repo>/workflows/training/registry.py, so parents[2] is the repo root.
+EXPECTED_CONFIG_DIR = (
+    Path(__file__).resolve().parents[2] / "reference_config" / "training"
+)
 
 # Keyed on model_spec.model_name (the weights basename, e.g. "Llama-3.1-8B"),
 # which is what _build_training_cmd forwards — NOT the full HF repo path.

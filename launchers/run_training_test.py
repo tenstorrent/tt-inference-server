@@ -12,8 +12,17 @@ pulls its per-step loss from ``GET /v1/jobs/{id}/metrics``, grades the loss
 trajectory against a checked-in expectation and writes a ``report_data_*.json``
 so tt-shield's existing artifact/collect_data steps pick it up.
 
+The report is run through ``report_module.acceptance_criteria`` so the loss
+records (``kind: "spec_tests"``) are graded by ``_check_spec_tests`` for free:
+the ``.md`` gains an ``### Acceptance Criteria`` section and the JSON gains a
+top-level ``acceptance_criteria`` key — the same verdict/Slack/dashboard flow
+perf and evals already use, with no tt-shield change.
+
 Exit code is non-zero if the job failed OR the loss checks failed, so the CI
-step gates on it.
+step gates on it. By default acceptance is *advisory* (surfaced but not the
+gate) because the checked-in goldens are still placeholders
+(``TODO(regenerate-on-hardware)``); pass ``--enforce-acceptance`` once real
+goldens land to make the acceptance verdict drive the exit code.
 
 Usage (flags mirror the other engine launchers)::
 
@@ -21,7 +30,7 @@ Usage (flags mirror the other engine launchers)::
         --model meta-llama/Llama-3.1-8B --workflow training_tests --device p150 \
         --service-port 8000 --runtime-model-spec-json /tmp/spec.json \
         --output-dir workflow_logs/reports_output/training_tests \
-        --expected-config workflows/training/expected/llama_3_1_8b_sst2_p150.yaml \
+        --expected-config reference_config/training/llama_3_1_8b_sst2_p150.yaml \
         --docker-server
 """
 
@@ -63,6 +72,11 @@ def _parse_args(argv: List[str]) -> argparse.Namespace:
     parser.add_argument("--jwt-secret", default=None)
     parser.add_argument("--server-url", default=None)
     parser.add_argument("--docker-server", action="store_true")
+    # Make the acceptance verdict (which always enforces spec_tests) drive the
+    # exit code. Off by default: the checked-in goldens are placeholders, so we
+    # emit + surface the acceptance verdict without gating CI on it. Flip this
+    # on once reference_config/training/*.yaml holds real P150 losses.
+    parser.add_argument("--enforce-acceptance", action="store_true")
     # Bounds (seconds). Server readiness for an 8B model + first-run tensor
     # cache can be very slow; the job itself compiles then trains.
     parser.add_argument("--health-timeout", type=float, default=3600.0)
@@ -214,8 +228,70 @@ def _fetch_metrics(session, base_url, headers, job_id) -> List[Dict[str, Any]]:
     return []
 
 
-def _write_report(output_dir, model, device, records, extra_metadata) -> None:
+def _read_acceptance_inputs(
+    spec_json_path: Optional[str],
+) -> tuple[Optional[str], List[Dict[str, Any]]]:
+    """Extract ``(model_status, known_issues)`` from the runtime model spec JSON.
+
+    The launcher receives the same
+    ``{"runtime_model_spec": …, "runtime_config": …}`` document the engine
+    writes: ``status`` sits at the top of ``runtime_model_spec`` (a serialized
+    enum name, e.g. ``"EXPERIMENTAL"``) and per-device ``known_issues`` waivers
+    live under its ``device_model_spec``. Both feed
+    ``acceptance_criteria_check`` exactly as the engine's
+    ``execution.apply_acceptance_criteria`` supplies them.
+
+    Falls back to the dev-spec default (``EXPERIMENTAL`` / no waivers) when the
+    path is missing or unreadable. ``spec_tests`` are enforced regardless of
+    status, so this fallback never softens the gate.
+    """
+    fallback_status = "EXPERIMENTAL"
+    known_issues: List[Dict[str, Any]] = []
+    if not spec_json_path:
+        return fallback_status, known_issues
+    try:
+        data = json.loads(Path(spec_json_path).read_text())
+    except (OSError, ValueError) as exc:
+        logger.warning("Could not read runtime model spec %s: %s", spec_json_path, exc)
+        return fallback_status, known_issues
+    spec = data.get("runtime_model_spec") if isinstance(data, dict) else None
+    if not isinstance(spec, dict):
+        return fallback_status, known_issues
+    model_status = spec.get("status") or fallback_status
+    device_spec = spec.get("device_model_spec")
+    if isinstance(device_spec, dict) and isinstance(
+        device_spec.get("known_issues"), list
+    ):
+        known_issues = device_spec["known_issues"]
+    return model_status, known_issues
+
+
+def _write_report(
+    output_dir,
+    model,
+    device,
+    records,
+    extra_metadata,
+    *,
+    model_status=None,
+    known_issues=None,
+) -> bool:
+    """Render the training report, folding in an acceptance verdict.
+
+    Running the schema through ``acceptance_criteria_check`` grades the
+    ``spec_tests`` loss records via ``_check_spec_tests`` and — by stashing the
+    export in ``metadata`` before ``generate_report`` — makes the generator emit
+    both the ``### Acceptance Criteria`` markdown section and the top-level
+    ``acceptance_criteria`` JSON key that tt-shield already harvests. Returns
+    whether acceptance passed so the caller can gate on it.
+    """
+    from report_module.acceptance_criteria import (
+        KIND_SPEC_TESTS,
+        acceptance_criteria_check,
+        build_acceptance_export,
+    )
     from report_module.generator import generate_report
+    from report_module.schema import Block, ReportSchema
 
     metadata = {
         "model_name": model,
@@ -226,11 +302,33 @@ def _write_report(output_dir, model, device, records, extra_metadata) -> None:
         "generated_at": datetime.utcnow().isoformat(),
     }
     metadata.update(extra_metadata)
-    # from_records groups the flat records into blocks by (kind, model, device).
-    from report_module.schema import ReportSchema
 
-    schema = ReportSchema.from_records(records, metadata=metadata)
+    # Each record becomes its own titled Block. `_check_spec_tests` grades a
+    # *block-level* status, but `ReportSchema.from_records` would collapse the
+    # flat records into a single wrapper block with no top-level status —
+    # resolving (via legacy fallback) to a spurious blocking FAIL regardless of
+    # the records. One block per record instead gives correct per-test grading
+    # and per-test blocker keys (`spec.spec_tests:<test_name>`). Each such block
+    # renders to an empty table (all its columns are hidden) and is dropped, so
+    # the layout is unchanged: the generator injects its 🧪 Test Results summary
+    # from the same records.
+    sections = [
+        Block(
+            kind=str(record.get("kind") or KIND_SPEC_TESTS),
+            data=dict(record),
+            title=str(record["test_name"]) if record.get("test_name") else None,
+        )
+        for record in records
+    ]
+    schema = ReportSchema(metadata=metadata, sections=sections)
+    accepted, blockers, categories = acceptance_criteria_check(
+        schema, known_issues=known_issues, model_status=model_status
+    )
+    schema.metadata.update(
+        build_acceptance_export(accepted, blockers, categories, model_status)
+    )
     generate_report(schema, output_dir)
+    return accepted
 
 
 def main() -> int:
@@ -250,6 +348,8 @@ def main() -> int:
         logger.error("Expected-config not found: %s", expected_path)
         return 1
     config = parse_config(yaml.safe_load(expected_path.read_text()))
+
+    model_status, known_issues = _read_acceptance_inputs(args.runtime_model_spec_json)
 
     base_url = _base_url(args)
     headers = {"Content-Type": "application/json", **_auth_headers(args.jwt_secret)}
@@ -275,6 +375,8 @@ def main() -> int:
                 }
             ],
             {"verdict": "FAIL"},
+            model_status=model_status,
+            known_issues=known_issues,
         )
         return 1
 
@@ -299,6 +401,8 @@ def main() -> int:
                 }
             ],
             {"verdict": "FAIL"},
+            model_status=model_status,
+            known_issues=known_issues,
         )
         return 1
 
@@ -325,16 +429,35 @@ def main() -> int:
         )
 
     passed = result.passed and job_succeeded
-    _write_report(
+    accepted = _write_report(
         output_dir,
         args.model,
         args.device,
         result.records,
         {"verdict": "PASS" if passed else "FAIL", "summary": result.summary},
+        model_status=model_status,
+        known_issues=known_issues,
     )
 
-    logger.info("Training check summary: %s (job_status=%s)", result.summary, final_status)
-    if passed:
+    # Acceptance always enforces spec_tests, so `accepted` already reflects the
+    # loss checks and the appended job-failure record. Gate on it only when the
+    # goldens are trusted; otherwise keep the status-quo loss/job gate and let
+    # the (advisory) acceptance verdict ride along in the report for dashboards.
+    gate_passed = accepted if args.enforce_acceptance else passed
+    logger.info(
+        "Training check summary: %s (job_status=%s, acceptance=%s, mode=%s)",
+        result.summary,
+        final_status,
+        "PASS" if accepted else "FAIL",
+        "enforcing" if args.enforce_acceptance else "advisory",
+    )
+    if not args.enforce_acceptance and not accepted:
+        logger.warning(
+            "Acceptance verdict is FAIL but --enforce-acceptance is off; "
+            "surfacing it in the report without gating CI (goldens are still "
+            "placeholders)."
+        )
+    if gate_passed:
         logger.info("✅ Training workflow passed.")
         return 0
     logger.error("⛔ Training workflow failed.")
