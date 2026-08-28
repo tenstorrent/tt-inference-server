@@ -1,6 +1,29 @@
 {{- include "tt-inference-server.validateValues" . }}
 {{- $cfg := include "tt-inference-server.resolvedConfig" . | fromYaml }}
 {{- $engine := include "tt-inference-server.resolvedEngine" . }}
+{{- $ttCount := include "tt-inference-server.draDeviceCount" . }}
+{{- $startupPeriod := $cfg.probes.startup.periodSeconds | int }}
+{{- if le $startupPeriod 0 }}{{- fail "probes.startup.periodSeconds must be greater than 0 (it divides progressDeadlineSeconds to size the startupProbe budget)." }}{{- end }}
+{{- /* default true (provision hugepages) when the hugepages map is absent/null or omits enabled. */ -}}
+{{- $hugepages := dig "enabled" true (.Values.hugepages | default dict) }}
+{{- $resources := deepCopy ($cfg.resources | default dict) }}
+{{- /* No size means the device needs no hugepages (gpu/cpu): turn the whole
+       feature off rather than mounting /dev/hugepages-1G with no reservation. */ -}}
+{{- $hpSize := include "tt-inference-server.hugepagesSize" . }}
+{{- $hugepages = and $hugepages (ne $hpSize "") }}
+{{- range $group := list "limits" "requests" }}
+{{- /* Sizing hugepages here would let requests and limits disagree, which k8s
+       rejects; hugepages.size is the one place that sets both. */ -}}
+{{- if hasKey (index $resources $group | default dict) "hugepages-1Gi" }}
+{{- fail (printf "set hugepages.size, not resources.%s.hugepages-1Gi: the request and limit must match and the chart sets both." $group) }}
+{{- end }}
+{{- if $hugepages }}
+{{- $_ := set $resources $group (merge (index $resources $group | default dict) (dict "hugepages-1Gi" $hpSize)) }}
+{{- else if hasKey $resources $group }}
+{{- $_ := unset (index $resources $group) "hugepages-1Gi" }}
+{{- if not (index $resources $group) }}{{- $_ := unset $resources $group }}{{- end }}
+{{- end }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -14,14 +37,8 @@ spec:
   selector:
     matchLabels:
       {{- include "tt-inference-server.selectorLabels" . | nindent 6 }}
-  # Must be Recreate (not RollingUpdate): hugepages mmap'd by the terminating
-  # pod are not freed until it fully exits; a replacement pod would fail to
-  # allocate hugepages (see issue #2801). Trade-off: causes brief downtime
-  # during upgrades — acceptable because the chart's hardcoded podAntiAffinity
-  # already requires the only eligible node to be free. Hardcoded here (not
-  # values-driven) so a future maintainer cannot revert it inadvertently.
   strategy:
-    type: Recreate
+    {{- toYaml $cfg.updateStrategy | nindent 4 }}
   template:
     metadata:
       labels:
@@ -42,6 +59,13 @@ spec:
       securityContext:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- if $ttCount }}
+      # DRA: each Pod gets its own ResourceClaim generated from the
+      # ResourceClaimTemplate, satisfied by the tt-operator DRA driver.
+      resourceClaims:
+        - name: tt
+          resourceClaimTemplateName: {{ include "tt-inference-server.fullname" . }}-tt
+      {{- end }}
       initContainers:
         - name: fix-cache-permissions
           image: busybox
@@ -49,14 +73,30 @@ spec:
           volumeMounts:
             - name: cache
               mountPath: /cache
+        {{- if $hugepages }}
+        # Scoped hugepages cleanup: claim requested here so the DRA driver injects
+        # /dev/tenstorrent/<N>; delete only THIS Pod's board files, not co-located Pods'.
         - name: cleanup-hugepages
           image: busybox
-          command: ["sh", "-c", "rm -f /dev/hugepages-1G/device_*_tenstorrent /dev/hugepages-1G/tenstorrent && echo 'hugepage cleanup done'"]
-          securityContext:
-            privileged: true
+          command:
+            - sh
+            - -c
+            - |
+              boards=$(ls /dev/tenstorrent 2>/dev/null)
+              echo "scoped hugepage cleanup for boards: [$boards]"
+              for n in $boards; do
+                rm -f /dev/hugepages-1G/device_${n}_*tenstorrent
+                if [ "$n" = "0" ]; then rm -f /dev/hugepages-1G/tenstorrent; fi
+              done
+          {{- if $ttCount }}
+          resources:
+            claims:
+              - name: tt
+          {{- end }}
           volumeMounts:
             - name: hugepages-1g
               mountPath: /dev/hugepages-1G
+        {{- end }}
       containers:
         - name: inference-server
           image: {{ include "tt-inference-server.image" . }}
@@ -83,22 +123,40 @@ spec:
           {{- end }}
           volumeMounts:
             - name: cache
-              mountPath: /home/container_app_user/cache_root
-            - name: tenstorrent
-              mountPath: /dev/tenstorrent
+              mountPath: {{ include "tt-inference-server.cacheRoot" . }}
+            {{- if $hugepages }}
             - name: hugepages-1g
               mountPath: /dev/hugepages-1G
+            {{- end }}
             {{- if .Values.hfCacheDir }}
             - name: hf-cache
               mountPath: /mnt/hf-cache
               readOnly: true
             {{- end }}
-          {{- with $cfg.resources }}
+          {{- if or $resources $ttCount }}
           resources:
+            {{- with $resources }}
             {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- if $ttCount }}
+            claims:
+              - name: tt
+            {{- end }}
           {{- end }}
-          securityContext:
-            privileged: true
+          # startupProbe owns the compile/warmup window: while it runs the kubelet
+          # suppresses liveness/readiness, then they take over immediately. The
+          # budget = failureThreshold × periodSeconds is derived from
+          # progressDeadlineSeconds so it always matches the max compile time; it
+          # flips to serving as soon as one poll succeeds, not after a fixed delay.
+          # Always rendered — disabling it would let liveness (initialDelaySeconds
+          # defaults to 0) kill the container mid-compile.
+          startupProbe:
+            httpGet:
+              path: {{ $cfg.probes.readiness.path | default "/health" }}
+              port: http
+            periodSeconds: {{ $startupPeriod }}
+            failureThreshold: {{ ceil (divf $cfg.progressDeadlineSeconds $startupPeriod) | int }}
+            timeoutSeconds: 5
           {{- if $cfg.probes.liveness.enabled }}
           livenessProbe:
             httpGet:
@@ -108,7 +166,6 @@ spec:
               path: {{ $cfg.probes.liveness.path }}
               {{- end }}
               port: http
-            initialDelaySeconds: {{ $cfg.probes.liveness.initialDelaySeconds }}
             periodSeconds: 30
             timeoutSeconds: 5
             failureThreshold: 3
@@ -118,7 +175,6 @@ spec:
             httpGet:
               path: {{ $cfg.probes.readiness.path }}
               port: http
-            initialDelaySeconds: {{ $cfg.probes.readiness.initialDelaySeconds }}
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 3
@@ -128,14 +184,12 @@ spec:
           hostPath:
             path: {{ include "tt-inference-server.cacheHostPath" . }}
             type: DirectoryOrCreate
-        - name: tenstorrent
-          hostPath:
-            path: /dev/tenstorrent
-            type: Directory
+        {{- if $hugepages }}
         - name: hugepages-1g
           hostPath:
             path: /dev/hugepages-1G
             type: Directory
+        {{- end }}
         {{- if .Values.hfCacheDir }}
         - name: hf-cache
           hostPath:

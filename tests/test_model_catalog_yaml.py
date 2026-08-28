@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
+import json
 import re
 
 import workflows.model_spec as model_spec_module
@@ -269,7 +270,7 @@ def _dev_llm_spec_map():
 @pytest.mark.parametrize(
     "model_name,expected_context,expected_native_impl",
     [
-        ("Qwen3.6-27B", 8192, "qwen36-blackhole-b8"),
+        ("Qwen3.6-27B", 8192, "qwen36-blackhole"),
         ("gemma-4-31B-it", 1024, "tt-transformers"),
     ],
 )
@@ -341,3 +342,59 @@ def test_qwen_quetzal_dev_spec_uses_portable_qb2_fabric_contract(monkeypatch):
     assert env["TTQ_ROW_ALL_REDUCE_TOPOLOGY"] == "Linear"
     assert env["TTQ_TUNED_ROW_ALL_REDUCE_LINKS"] == "1"
     assert env["TTQ_TUNED_ROW_ALL_REDUCE"] == "1"
+
+
+def test_diffusiongemma_dev_spec_matches_validated_256k_contract():
+    templates = load_templates_from_yaml(MODEL_SPECS_DIR / "dev" / "llm.yaml")
+    template = next(
+        t for t in templates if t.weights == ["google/diffusiongemma-26B-A4B-it"]
+    )
+    spec = template.expand_to_specs()[0]
+    device_spec = spec.device_model_spec
+
+    assert device_spec.max_context == 262144
+    assert device_spec.max_concurrency == 1
+    assert device_spec.vllm_args["block_size"] == "64"
+    assert device_spec.vllm_args["max_model_len"] == "262144"
+    assert device_spec.vllm_args["max_num_batched_tokens"] == "262144"
+    assert device_spec.vllm_args["max_num_seqs"] == "1"
+    assert (
+        device_spec.vllm_args["default-chat-template-kwargs"]
+        == '{"enable_thinking": true}'
+    )
+    # vLLM 0.24 makes the DiffusionGemma parser effective, but lm-eval only
+    # scores message.content. Keep scored serving parser-off so a final boxed
+    # answer cannot be moved exclusively into message.reasoning.
+    assert "reasoning-parser" not in device_spec.vllm_args
+    assert "reasoning_parser_name" not in spec.metadata
+    assert spec.metadata["output_block_size"] == 256
+    assert (
+        spec.metadata["max_effective_input_tokens"]
+        == device_spec.max_context - spec.metadata["output_block_size"]
+    )
+    assert spec.has_builtin_warmup is True
+
+    env = device_spec.env_vars
+    assert env["DG_UPFRONT_CAPTURE"] == "1"
+    assert env["DG_MODEL_OWNED_HYBRID_KV"] == "1"
+    assert env["DG_UPFRONT_COARSE_PREFILL_BUCKETS"] == "1"
+    assert env["DG_UPFRONT_LAZY_PREFILL_RECAPTURE"] == "1"
+    assert env["DG_PREFILL_FIXED_CHUNKS"] == "1"
+    assert env["DG_PREFILL_CHUNK_SIZE"] == "4096"
+    assert env["DG_PREFILL_RAGGED_CHUNK"] == "1024"
+    assert env["DG_DENOISE_REVEAL_PMAX"] == "262144"
+    assert env["DG_UPFRONT_PREFILL_WARMUP_LENS"] == "32,64,96"
+    assert env["DISABLE_METAL_OP_TIMEOUT"] == "1"
+    assert int(env["DG_TRACE_REGION_SIZE"]) == 3758096384
+    additional_config = json.loads(device_spec.vllm_args["additional_config"])
+    assert additional_config == {
+        "tt": {
+            "sample_on_device_mode": "all",
+            "enable_model_warmup": True,
+            "trace_mode": "all",
+            "trace_region_size": 3758096384,
+        }
+    }
+    assert (
+        int(env["DG_TRACE_REGION_SIZE"]) == additional_config["tt"]["trace_region_size"]
+    )

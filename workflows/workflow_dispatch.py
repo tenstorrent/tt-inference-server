@@ -41,6 +41,11 @@ _ENGINE_WORKFLOW_NAMES = {
 
 _ENGINE_EVAL_WORKFLOWS = frozenset({WorkflowType.EVALS, WorkflowType.RELEASE})
 
+_ENGINE_BENCHMARK_WORKFLOWS = frozenset({WorkflowType.BENCHMARKS, WorkflowType.RELEASE})
+
+# Media/forge model types whose benchmark client is `vllm bench serve`.
+_ENGINE_VLLM_CLIENT_BENCHMARK_TYPES = frozenset({ModelType.EMBEDDING})
+
 
 _ENGINE_EVAL_VENV_BY_MODEL_TYPE = {
     ModelType.AUDIO: WorkflowVenvType.EVALS_AUDIO,
@@ -378,6 +383,12 @@ def _engine_run_argv(
         # need the bearer token to reach a JWT-protected server; run.py mints it
         # from --jwt-secret/$JWT_SECRET.
         _forward_jwt(argv, runtime_config)
+        # --repeat-evals (v1) drives the engine's generic --repeat loop, which
+        # writes run_NN/ reports plus an aggregated summary/.
+        if wf == WorkflowType.EVALS:
+            repeat_evals = getattr(runtime_config, "repeat_evals", None)
+            if repeat_evals and int(repeat_evals) > 1:
+                argv.extend(["--repeat", str(int(repeat_evals))])
         if wf == WorkflowType.RELEASE:
             _forward_prefix_cache(argv, runtime_config)
             _forward_spec_decode(argv, runtime_config)
@@ -529,6 +540,11 @@ def _build_agentic_cmd(repo_root, model_spec, runtime_config, json_fpath, output
     launcher = _resolve_launcher(repo_root, "run_agentic.py", "agentic")
     cmd = _base_engine_argv(
         launcher, model_spec, runtime_config, json_fpath, output_dir, "agentic"
+    )
+    _extend_if_set(
+        cmd,
+        "--agentic-benchmark",
+        getattr(runtime_config, "agentic_benchmark", None),
     )
     _forward_jwt(cmd, runtime_config)
     return cmd
@@ -715,6 +731,15 @@ def _engine_dependency_venv_types(
             venv_types.append(eval_venv)
         if model_spec.model_type in _LLM_LIKE_TYPES:
             venv_types.extend(_llm_eval_venv_types(model_spec, runtime_config))
+    if (
+        wf in _ENGINE_BENCHMARK_WORKFLOWS
+        and model_spec.model_type in _ENGINE_VLLM_CLIENT_BENCHMARK_TYPES
+    ):
+        from reference_config.benchmarking.benchmark_config import (
+            select_vllm_benchmark_venv,
+        )
+
+        venv_types.append(select_vllm_benchmark_venv(model_spec))
     # The release benchmark child runs the default perf tool (vllm) in-process
     # under WORKFLOW_RUN_SCRIPT, so its tool venv must exist up front.
     if wf == WorkflowType.RELEASE and model_spec.model_type in _LLM_LIKE_TYPES:

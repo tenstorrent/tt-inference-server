@@ -8,7 +8,7 @@ import json
 import os
 import re
 import yaml
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Union
 
@@ -129,8 +129,23 @@ def get_perf_reference_map(
                             else None,
                         )
 
+            # A "measured" block gates acceptance instead of the theoretical
+            # ceiling: measured/theoretical is 0.35 on Galaxy and 0.48 on T3K,
+            # so a "target" tier at 100% of theoretical can never pass.
+            # theoretical still yields the functional/complete tiers, so the
+            # ceiling stays visible. Mirrors how evals use gpu_reference_score.
+            measured = targets.get("measured")
+            if measured:
+                target_dict["target"] = PerformanceTarget(
+                    ttft_ms=measured.get("ttft_ms"),
+                    tput_user=measured.get("tput_user"),
+                    tput=measured.get("tput"),
+                    tolerance=measured.get("tolerance", 0.05),
+                )
+
             # Create the BenchmarkTaskParams instance.
             benchmark_task = BenchmarkTaskParams(
+                data_parallel=bench.get("data_parallel"),
                 isl=bench.get("isl"),
                 osl=bench.get("osl"),
                 max_concurrency=bench.get("max_concurrency"),
@@ -156,10 +171,16 @@ def scale_llm_perf_targets(
         scaled_targets[target_name] = PerformanceTarget(
             ttft_ms=target.ttft_ms,
             tput_user=target.tput_user,
-            tput=target.tput * data_parallel if target.tput else None,
+            # Concurrency is deliberately left unscaled at 1 (see below), so
+            # the aggregate must not be scaled either: with one user only one
+            # data-parallel group is active, so aggregate == per-user.
+            tput=target.tput * data_parallel
+            if target.tput and task.max_concurrency != 1
+            else target.tput,
             tolerance=target.tolerance,
         )
     return BenchmarkTaskParams(
+        data_parallel=task.data_parallel,
         isl=task.isl,
         osl=task.osl,
         max_concurrency=task.max_concurrency
@@ -181,17 +202,31 @@ def scale_llm_perf_targets(
 def get_perf_reference(device_model_spec, perf_reference_map):
     # Migrated to vLLM API for data parallelism
     data_parallel = device_model_spec.vllm_args.get("data_parallel_size")
+    own_entries = perf_reference_map.get(device_model_spec.device, [])
 
     if data_parallel:
-        # need to adjust perf target device for data_parallel factor
+        # Prefer entries this device declares for THIS data_parallel. Their
+        # targets already describe the whole device, so they are used verbatim:
+        # no subdevice remap and no scaling. This keeps Galaxy numbers under
+        # "galaxy" rather than silently reading (and requiring edits to) the
+        # t3k row, which was the single most confusing thing about this file.
+        direct = [t for t in own_entries if t.data_parallel == data_parallel]
+        if direct:
+            return direct
+
+        # Legacy fallback: a Galaxy at DP=4 runs as four T3K-sized groups, so
+        # read the subdevice row and scale it. Kept for models that have no
+        # explicit data_parallel entries yet.
         dp_device = device_model_spec.device.get_data_parallel_subdevice(data_parallel)
-        perf_reference = perf_reference_map.get(dp_device, [])
+        perf_reference = [
+            t for t in perf_reference_map.get(dp_device, []) if t.data_parallel is None
+        ]
         if perf_reference:
             perf_reference = [
                 scale_llm_perf_targets(task, data_parallel) for task in perf_reference
             ]
     else:
-        perf_reference = perf_reference_map.get(device_model_spec.device, [])
+        perf_reference = [t for t in own_entries if t.data_parallel is None]
     return perf_reference
 
 
@@ -288,24 +323,55 @@ sdxl_forge_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-inference-server",
     code_path="tt-media-server/tt_model_runners/forge_runners/sdxl_forge_runner.py",
 )
+# --- Qwen3.5/3.6 on Blackhole: one tt-metal code path, several serving profiles ---
+#
+# All three impls below point at the SAME tt-metal code (repo_url + code_path are
+# identical: models/demos/blackhole/qwen36, which serves the whole Qwen3.5/3.6
+# family, text and vision, config-driven). They are NOT separate implementations.
+#
+# Why separate impl_id/impl_name entries then? Because a model spec is keyed by
+# get_model_id() = f"id_{impl_name}_{model_name}_{device}". To offer more than one
+# serving profile for the SAME (model_name, device) pair -- e.g. Qwen3.6-27B on
+# P150X4 as text-only, as vision (VLM), or as batch=8 -- each profile needs a
+# distinct impl_name so its model_id does not collide in the catalog. The impl_id
+# is therefore a selection/name-spacing key (chosen at launch via --impl), not a
+# different codebase. The per-profile differences (model_type, supported_modalities,
+# vllm_args, trace_region_size, release pins, ...) live in the dev/prod *.yaml specs,
+# not here.
+#
+# Profiles:
+#   qwen36_blackhole       -> text-only (LLM). Default profile for chat/tool use;
+#                             lighter trace / no mm processor. Kept even though the
+#                             VLM profile could also serve text, so text-only
+#                             workloads and their benchmarks/release pins stay isolated.
+#   qwen36_blackhole_vlm   -> native vision (VLM); model_type=VLM, modalities
+#                             text+image+video, larger trace_region for the vision tower.
 qwen36_blackhole_impl = ImplSpec(
     impl_id="qwen36_blackhole",
     impl_name="qwen36-blackhole",
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/blackhole/qwen36",
 )
+# Same tt-metal code as qwen36_blackhole; distinct impl_id only so the VLM (vision)
+# spec gets its own model_id and does not collide with the text spec on the same
+# (model_name, device). Selectable via --impl qwen36-blackhole-vlm.
+qwen36_blackhole_vlm_impl = ImplSpec(
+    impl_id="qwen36_blackhole_vlm",
+    impl_name="qwen36-blackhole-vlm",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/blackhole/qwen36",
+)
+diffusion_gemma_impl = ImplSpec(
+    impl_id="diffusion_gemma",
+    impl_name="diffusion-gemma",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/experimental/diffusion_gemma",
+)
 training_lora_impl = ImplSpec(
     impl_id="training_lora",
     impl_name="training-lora",
     repo_url="https://github.com/tenstorrent/tt-inference-server",
     code_path="tt-media-server/tt_model_runners/forge_training_runners/training_lora_runner.py",
-)
-# Same impl as qwen36_blackhole; separate impl_id so the batch=8 spec is selectable via --impl.
-qwen36_blackhole_b8_impl = ImplSpec(
-    impl_id="qwen36_blackhole_b8",
-    impl_name="qwen36-blackhole-b8",
-    repo_url="https://github.com/tenstorrent/tt-metal",
-    code_path="models/demos/blackhole/qwen36",
 )
 
 quetzal_impl = ImplSpec(
@@ -330,8 +396,9 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "tt_vllm_plugin": tt_vllm_plugin_impl,
     "sdxl_forge": sdxl_forge_impl,
     "qwen36_blackhole": qwen36_blackhole_impl,
+    "qwen36_blackhole_vlm": qwen36_blackhole_vlm_impl,
+    "diffusion_gemma": diffusion_gemma_impl,
     "training_lora": training_lora_impl,
-    "qwen36_blackhole_b8": qwen36_blackhole_b8_impl,
     "quetzal": quetzal_impl,
 }
 
@@ -1362,3 +1429,56 @@ def get_runtime_model_spec(
 
     model_spec = MODEL_SPECS[selected_spec.model_id]
     return model_spec, resolved_impl, resolved_engine
+
+
+def derive_custom_weights_spec(
+    base_spec: ModelSpec,
+    custom_weights: str,
+    *,
+    local_model_path: Optional[str] = None,
+) -> ModelSpec:
+    """Re-key a resolved base spec onto a custom-weights identity.
+
+    Inherits the base's impl/device/engine/env_vars/image but sets model_name to
+    basename(custom_weights), hf_model_repo/hf_weights_repo to the label, and
+    regenerates model_id. Since all persistent paths (docker volume, tt-metal
+    cache, weights dir) key off model_name, the derived spec gets its own subtree.
+
+    custom_weights must be a valid HF repo id when downloading from the Hub, but
+    can be any label when paired with --host-weights-dir (bytes come from disk).
+
+    vllm_args: served_model_name always exposes the label on the API. model is
+    set to local_model_path (the container weights mount) when given so weights
+    load offline; otherwise it stays the label, which is the HF repo id.
+    """
+    if base_spec.impl.impl_id == "quetzal":
+        raise ValueError(
+            "impl=quetzal does not support --custom-weights: generated artifacts, "
+            "weights, qualification evidence, and served identity are one pinned "
+            "package contract"
+        )
+    if not custom_weights or not custom_weights.strip():
+        raise ValueError("custom_weights must be a non-empty string")
+
+    custom_weights = custom_weights.strip()
+    model_name = model_weights_to_model_name(custom_weights)
+    model_id = get_model_id(
+        base_spec.impl.impl_name, model_name, base_spec.device_type.name.lower()
+    )
+
+    # __post_init__ baked vllm_args["model"] from the base hf_model_repo; rebuild it.
+    new_vllm_args = dict(base_spec.device_model_spec.vllm_args)
+    new_vllm_args["model"] = local_model_path if local_model_path else custom_weights
+    new_vllm_args["served_model_name"] = custom_weights
+    new_device_model_spec = replace(
+        base_spec.device_model_spec, vllm_args=new_vllm_args
+    )
+
+    return replace(
+        base_spec,
+        model_id=model_id,
+        model_name=model_name,
+        hf_model_repo=custom_weights,
+        hf_weights_repo=custom_weights,
+        device_model_spec=new_device_model_spec,
+    )

@@ -7,7 +7,12 @@ import tempfile
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from config.constants import JobTypes
+from config.constants import (
+    DEFAULT_VIDEO_INFERENCE_STEPS,
+    JobTypes,
+    MAX_VIDEO_INFERENCE_STEPS,
+    MIN_VIDEO_INFERENCE_STEPS,
+)
 from domain.video_generate_request import VideoGenerateRequest
 from domain.video_i2v_generate_request import (
     ImagePromptEntry,
@@ -161,6 +166,27 @@ class TestSubmitGenerateVideoRequest:
 
         assert exc_info.value.status_code == 500
         assert "Service unavailable" in exc_info.value.detail
+
+    @pytest.mark.asyncio
+    async def test_submit_generate_video_request_queue_full_returns_429(self):
+        """Issue #4959: queue-full admission must surface as 429, not 500."""
+        mock_service = MagicMock()
+        mock_service.create_job = AsyncMock(
+            side_effect=HTTPException(
+                status_code=429, detail="Task queue is full. Please try again later."
+            )
+        )
+        request = VideoGenerateRequest(prompt="Test video")
+
+        with pytest.raises(HTTPException) as exc_info:
+            await submit_generate_video_request(
+                request=request,
+                service=mock_service,
+                api_key="test_key",
+            )
+
+        assert exc_info.value.status_code == 429
+        assert "Task queue is full" in exc_info.value.detail
 
 
 class TestGetVideoMetadata:
@@ -424,6 +450,42 @@ class TestVideoGenerateRequestValidation:
         assert request.num_inference_steps == 30
         assert request.seed == 42
 
+    def test_default_inference_steps(self):
+        request = VideoGenerateRequest(prompt="A cat walking in the park")
+        assert request.num_inference_steps == DEFAULT_VIDEO_INFERENCE_STEPS
+
+    def test_min_inference_steps_accepted(self):
+        request = VideoGenerateRequest(
+            prompt="A cat walking in the park",
+            num_inference_steps=MIN_VIDEO_INFERENCE_STEPS,
+        )
+        assert request.num_inference_steps == MIN_VIDEO_INFERENCE_STEPS
+
+    def test_below_min_inference_steps_rejected(self):
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            VideoGenerateRequest(
+                prompt="A cat walking in the park",
+                num_inference_steps=MIN_VIDEO_INFERENCE_STEPS - 1,
+            )
+
+    def test_max_inference_steps_accepted(self):
+        request = VideoGenerateRequest(
+            prompt="A cat walking in the park",
+            num_inference_steps=MAX_VIDEO_INFERENCE_STEPS,
+        )
+        assert request.num_inference_steps == MAX_VIDEO_INFERENCE_STEPS
+
+    def test_above_max_inference_steps_rejected(self):
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            VideoGenerateRequest(
+                prompt="A cat walking in the park",
+                num_inference_steps=MAX_VIDEO_INFERENCE_STEPS + 1,
+            )
+
 
 class TestResponseContent:
     """Tests for response content structure"""
@@ -487,6 +549,31 @@ class TestSubmitGenerateVideoI2VRequest:
 
         assert response.status_code == 202
         mock_service.create_job.assert_called_once_with(JobTypes.VIDEO, request)
+
+    @pytest.mark.asyncio
+    async def test_submit_i2v_request_queue_full_returns_429(self):
+        """Issue #4959 repro path: POST /generations/i2v returns 429 when full."""
+        mock_service = MagicMock()
+        mock_service.create_job = AsyncMock(
+            side_effect=HTTPException(
+                status_code=429, detail="Task queue is full. Please try again later."
+            )
+        )
+        request = VideoI2VGenerateRequest(
+            prompt="A cat on a hill",
+            image_prompts=[
+                ImagePromptEntry(image=_tiny_png_base64(), frame_pos=0),
+            ],
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await submit_generate_video_i2v_request(
+                request=request,
+                service=mock_service,
+                api_key="test_key",
+            )
+
+        assert exc_info.value.status_code == 429
 
     @pytest.mark.asyncio
     async def test_submit_i2v_request_multiple_image_prompts(self):
@@ -614,6 +701,25 @@ class TestVideoI2VGenerateRequestValidation:
         assert request.negative_prompt == "blurry"
         assert request.num_inference_steps == 30
         assert request.seed == 42
+
+    def test_inherits_min_inference_steps(self):
+        """I2V uses the same API floor as T2V; 4 must not 422."""
+        request = VideoI2VGenerateRequest(
+            prompt="A cat",
+            num_inference_steps=MIN_VIDEO_INFERENCE_STEPS,
+            image_prompts=[ImagePromptEntry(image=_tiny_png_base64(), frame_pos=0)],
+        )
+        assert request.num_inference_steps == MIN_VIDEO_INFERENCE_STEPS
+
+    def test_inherits_below_min_inference_steps_rejected(self):
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            VideoI2VGenerateRequest(
+                prompt="A cat",
+                num_inference_steps=MIN_VIDEO_INFERENCE_STEPS - 1,
+                image_prompts=[ImagePromptEntry(image=_tiny_png_base64(), frame_pos=0)],
+            )
 
     def test_valid_image_with_data_uri_prefix_accepted(self):
         """base64 image with 'data:image/png;base64,' prefix should pass."""

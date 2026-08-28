@@ -494,9 +494,16 @@ def set_metal_timeout_env_vars():
     TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE so that tt-triage runs
     automatically when an op dispatch hangs.
 
-    Disabled when DISABLE_METAL_OP_TIMEOUT=1 is set (via run.py --disable-metal-timeout).
+    Disabled when DISABLE_METAL_OP_TIMEOUT=1 is set by either the model spec or
+    ``run.py --disable-metal-timeout``.
     """
     if os.getenv("DISABLE_METAL_OP_TIMEOUT") == "1":
+        # DISABLE_METAL_OP_TIMEOUT is an inference-server control flag; tt-metal
+        # itself only reads these two variables. Clear inherited values so an
+        # explicit model/CLI disable cannot leave a previously configured timeout
+        # active in this process.
+        os.environ.pop("TT_METAL_OPERATION_TIMEOUT_SECONDS", None)
+        os.environ.pop("TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE", None)
         logger.info("Metal op timeout disabled via DISABLE_METAL_OP_TIMEOUT=1")
         return
 
@@ -515,10 +522,18 @@ def set_metal_timeout_env_vars():
 
     # mkdir -p so the redirect succeeds when log_dir doesn't exist yet (in CI it
     # points at the cache_root volume, which has no pre-created logs/ dir). See #2670.
+    # Tee rather than redirect: the triage report names the stalled core/kernel and
+    # is the only artifact that explains a dispatch hang. Writing it solely into
+    # log_dir loses it whenever that directory is a container volume CI does not
+    # upload (the Galaxy release job is exactly this case), so a hang reproduces as
+    # an unexplained TT_THROW with the diagnosis stranded inside the dead container.
+    # Teeing keeps the on-disk copy and also puts the report on stdout, where it is
+    # captured in the server log and therefore in the CI job log.
     timeout_cmd = (
         f"mkdir -p {log_dir} && "
         f"{python_env_dir}/bin/python {triage_script} "
-        f"--disable-progress > {log_dir}/tt-triage-$(date +%Y%m%d-%H%M%S).log 2>&1"
+        f"--disable-progress 2>&1 | "
+        f"tee {log_dir}/tt-triage-$(date +%Y%m%d-%H%M%S).log"
     )
 
     os.environ["TT_METAL_OPERATION_TIMEOUT_SECONDS"] = "5.0"
@@ -612,6 +627,14 @@ def validate_quetzal_runtime_contract(model_spec_json, entry_points=None):
     if os.getenv("QUETZAL_VLLM", "").lower() in ("", "0", "false"):
         raise RuntimeError(
             "impl=quetzal requires QUETZAL_VLLM=1; refusing native fallback"
+        )
+
+    declared_model = os.getenv("QUETZAL_MODEL")
+    spec_model = model_spec_json.get("hf_model_repo")
+    if not declared_model or spec_model != declared_model:
+        raise RuntimeError(
+            "impl=quetzal requires hf_model_repo to equal QUETZAL_MODEL; "
+            f"catalog declares {spec_model!r}, package declares {declared_model!r}"
         )
 
     package_id = os.getenv("QUETZAL_PACKAGE_ID")
@@ -727,7 +750,6 @@ def validate_quetzal_runtime_contract(model_spec_json, entry_points=None):
         if isinstance(qualification_doc, dict)
         else []
     )
-    declared_model = os.getenv("QUETZAL_MODEL")
     matching_models = [
         row
         for row in models
@@ -992,9 +1014,9 @@ def main():
         register_tt_models(impl_id)
 
     # Step 4: Set runtime environment variables and vLLM server args
-    set_metal_timeout_env_vars()
     if impl_id != "quetzal":
         set_runtime_env_vars(model_spec)
+    set_metal_timeout_env_vars()
     runtime_settings(model_spec, no_auth=args.no_auth)
     default_vllm_args = model_spec["device_model_spec"]["vllm_args"]
     set_vllm_sys_argv(args, remaining_sys_argv, default_vllm_args)

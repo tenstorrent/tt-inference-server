@@ -13,6 +13,9 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+_orig_config_settings = sys.modules.get("config.settings")
+_orig_telemetry_client = sys.modules.get("telemetry.telemetry_client")
+
 sys.modules["ttnn"] = Mock()
 
 mock_settings = Mock()
@@ -37,6 +40,20 @@ from ipc.video_shm import (
     cleanup_orphaned_video_files,
     video_result_path,
 )
+
+# Restore the real modules so that test files collected after this one (e.g.
+# tests/test_video_metrics.py, which asserts on real Prometheus values) do not
+# inherit our Mocks. Same pattern and rationale as tests/test_device_worker.py:
+# the modules under test above already hold their imported references, so the
+# swap only needs to last for the duration of those imports.
+for _module_name, _original_module in {
+    "config.settings": _orig_config_settings,
+    "telemetry.telemetry_client": _orig_telemetry_client,
+}.items():
+    if _original_module is not None:
+        sys.modules[_module_name] = _original_module
+    else:
+        sys.modules.pop(_module_name, None)
 
 # ── Helpers ──
 
@@ -906,6 +923,11 @@ class TestCrossThreadRoundtrip:
 
 # ── Timeout ──
 
+TIMEOUT_WAIT_S = 0.15
+TIMEOUT_MIN_ELAPSED_S = 0.14
+# Loaded CI runners can schedule far past the deadline; this only guards hangs.
+TIMEOUT_MAX_ELAPSED_S = 5.0
+
 
 class TestTimeout:
     def test_read_response_timeout(self):
@@ -915,12 +937,12 @@ class TestTimeout:
         shm.open()
 
         start = time.monotonic()
-        result = shm.read_response(timeout_s=0.15)
+        result = shm.read_response(timeout_s=TIMEOUT_WAIT_S)
         elapsed = time.monotonic() - start
 
         assert result is None
-        assert elapsed >= 0.14
-        assert elapsed < 1.0
+        assert elapsed >= TIMEOUT_MIN_ELAPSED_S
+        assert elapsed < TIMEOUT_MAX_ELAPSED_S
 
         shm.close()
         _force_cleanup_shm(name)
@@ -932,12 +954,12 @@ class TestTimeout:
         shm.open()
 
         start = time.monotonic()
-        result = shm.read_request(timeout_s=0.15)
+        result = shm.read_request(timeout_s=TIMEOUT_WAIT_S)
         elapsed = time.monotonic() - start
 
         assert result is None
-        assert elapsed >= 0.14
-        assert elapsed < 1.0
+        assert elapsed >= TIMEOUT_MIN_ELAPSED_S
+        assert elapsed < TIMEOUT_MAX_ELAPSED_S
 
         shm.close()
         _force_cleanup_shm(name)

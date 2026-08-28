@@ -16,6 +16,8 @@ import pytest
 
 from llm_module import DriverContext, ServerConnection
 from llm_module.drivers.agentic import (
+    SWEbenchAgenticDriver,
+    TerminalBenchAgenticDriver,
     build_swebench_config,
     build_terminal_bench_config,
     resolve_instance_ids,
@@ -34,6 +36,8 @@ from llm_module.parsers.agentic import (
     extract_harbor_metrics,
 )
 from test_module.llm_tests.agentic_eval_tests import (
+    _filter_agentic_tasks_by_benchmark,
+    _parse_agentic_benchmark,
     _select_agentic_tasks,
     _server_connection as bridge_server_connection,
 )
@@ -160,6 +164,19 @@ HARBOR_RESULT_FIXTURE = {
     },
 }
 
+HARBOR_ZERO_TRIALS_FIXTURE = {
+    "stats": {
+        "evals": {
+            "terminal_bench_2": {
+                "metrics": [],
+                "n_trials": 0,
+                "n_errors": 5,
+                "pass_at_k": {"1": 0.0},
+            }
+        },
+    },
+}
+
 
 class TestAgenticParser:
     def test_parse_harbor_result_to_evals_block(self):
@@ -180,6 +197,21 @@ class TestAgenticParser:
         assert block.data["accuracy_check"] == ReportCheckTypes.PASS
         assert "success" not in block.data
         assert "accuracy" not in block.data
+
+    def test_zero_trial_harbor_result_stays_na(self):
+        # Shared by every EVALS_AGENTIC catalog task. A Harbor setup failure
+        # (n_trials=0, no score metric) must keep the historical N/A row rather
+        # than success=False/FAIL, so ENFORCED models are not newly blocked.
+        block = AgenticEvalParser(
+            task_name="terminal_bench_2", score=FakeScore()
+        ).parse(HARBOR_ZERO_TRIALS_FIXTURE, device="N150")
+
+        assert block.targets["n_trials"] == 0
+        assert block.targets["pass_at_1"] == 0.0
+        assert block.data["score"] is None
+        assert block.data["accuracy_check"] == ReportCheckTypes.NA
+        assert "success" not in block.data
+        assert "error" not in block.data
 
     def test_mean_seconds_per_task_from_harbor_timing(self):
         raw = {
@@ -797,6 +829,185 @@ class TestSelectAgenticTasks:
         )
         assert cfg.model_name == "openai/gpt-oss-120b@p150x4-b1"
         assert cfg.tokenizer_name == "openai/gpt-oss-120b"
+
+
+class TestAgenticBenchmarkSelection:
+    def _ctx(self, tasks, agentic_benchmark):
+        ctx = MagicMock()
+        ctx.all_params.tasks = tasks
+        ctx.model_spec.model_name = "test-llm"
+        ctx.runtime_config = SimpleNamespace(
+            agentic_benchmark=agentic_benchmark,
+            external_agentic_contract=None,
+        )
+        return ctx
+
+    def _tasks(self):
+        return [
+            _terminal_task(task_name="terminal_bench_2"),
+            _terminal_task(task_name="terminal_bench_2_1"),
+            _terminal_task(task_name="tau3_bench_banking"),
+            _swebench_task(task_name="swe_bench_verified"),
+        ]
+
+    def test_parse_aliases(self):
+        prefixes, exacts = _parse_agentic_benchmark("tau3,tb2.0,swebench")
+        assert "tau3_bench_" in prefixes
+        assert "swe_bench_" in prefixes
+        assert "terminal_bench_2" in exacts
+
+    def test_parse_all_and_blank_yield_no_matchers(self):
+        assert _parse_agentic_benchmark("all") == ([], set())
+        assert _parse_agentic_benchmark("  ") == ([], set())
+
+    def test_tb20_excludes_tb21(self):
+        tasks = self._tasks()
+        ctx = self._ctx(tasks, "tb2.0")
+        selected = _select_agentic_tasks(ctx)
+        assert [t.task_name for t in selected] == ["terminal_bench_2"]
+
+    def test_tb21_selects_only_21(self):
+        ctx = self._ctx(self._tasks(), "tb2.1")
+        assert [t.task_name for t in _select_agentic_tasks(ctx)] == [
+            "terminal_bench_2_1"
+        ]
+
+    def test_tau3_prefix_selects_family(self):
+        ctx = self._ctx(self._tasks(), "tau3")
+        assert [t.task_name for t in _select_agentic_tasks(ctx)] == [
+            "tau3_bench_banking"
+        ]
+
+    def test_swebench_prefix(self):
+        ctx = self._ctx(self._tasks(), "swebench")
+        assert [t.task_name for t in _select_agentic_tasks(ctx)] == [
+            "swe_bench_verified"
+        ]
+
+    def test_comma_separated_union(self):
+        ctx = self._ctx(self._tasks(), "tau3,swebench")
+        assert [t.task_name for t in _select_agentic_tasks(ctx)] == [
+            "tau3_bench_banking",
+            "swe_bench_verified",
+        ]
+
+    def test_raw_task_name_accepted(self):
+        ctx = self._ctx(self._tasks(), "swe_bench_verified")
+        assert [t.task_name for t in _select_agentic_tasks(ctx)] == [
+            "swe_bench_verified"
+        ]
+
+    def test_all_returns_everything(self):
+        tasks = self._tasks()
+        ctx = self._ctx(tasks, "all")
+        assert _select_agentic_tasks(ctx) == tasks
+
+    def test_no_match_raises(self):
+        ctx = self._ctx(self._tasks(), "does_not_exist")
+        with pytest.raises(RuntimeError, match="matched no EVALS_AGENTIC tasks"):
+            _select_agentic_tasks(ctx)
+
+    def test_filter_direct(self):
+        tasks = self._tasks()
+        selected = _filter_agentic_tasks_by_benchmark(tasks, "tb2.1")
+        assert [t.task_name for t in selected] == ["terminal_bench_2_1"]
+
+    def test_external_contract_intersects_matching_benchmark(self, tmp_path):
+        contract_path = tmp_path / "agentic_launch_contract.json"
+        contract_path.write_text(
+            json.dumps(
+                {
+                    "contract": {
+                        "task": "swe_bench_verified",
+                        "hf_model_repo": "openai/gpt-oss-120b",
+                        "served_model": "gpt-oss-120b@p150x4-b1",
+                    }
+                }
+            )
+        )
+        ctx = self._ctx(self._tasks(), "swebench")
+        ctx.model_spec.hf_model_repo = "openai/gpt-oss-120b"
+        ctx.runtime_config.external_agentic_contract = str(contract_path)
+
+        assert [task.task_name for task in _select_agentic_tasks(ctx)] == [
+            "swe_bench_verified"
+        ]
+
+    def test_external_contract_rejects_disjoint_benchmark(self, tmp_path):
+        contract_path = tmp_path / "agentic_launch_contract.json"
+        contract_path.write_text(
+            json.dumps(
+                {
+                    "contract": {
+                        "task": "swe_bench_verified",
+                        "hf_model_repo": "openai/gpt-oss-120b",
+                        "served_model": "gpt-oss-120b@p150x4-b1",
+                    }
+                }
+            )
+        )
+        ctx = self._ctx(self._tasks(), "tb2.0")
+        ctx.model_spec.hf_model_repo = "openai/gpt-oss-120b"
+        ctx.runtime_config.external_agentic_contract = str(contract_path)
+
+        with pytest.raises(RuntimeError, match="exactly one configured agentic task"):
+            _select_agentic_tasks(ctx)
+
+
+class TestAgenticRunTimestamp:
+    """The harnesses (harbor job, sweagent output) refuse to start a new run in
+    an existing folder, so each run stamps its per-task folder to stay
+    collision-free; the driver's result_path must point at the stamped folder."""
+
+    STAMP = "20260813T120000"
+
+    def test_terminal_bench_config_stamps_job_folder(self):
+        cfg = build_terminal_bench_config(
+            _terminal_task(),
+            _server(),
+            _driver_context(),
+            n_tasks=1,
+            run_stamp=self.STAMP,
+        )
+        # jobs_dir stays the shared agentic/ parent; the job folder is stamped.
+        assert cfg.jobs_dir == Path("/tmp/out/eval_Qwen__Qwen3.6-27B/agentic")
+        assert cfg.task_name == f"terminal_bench_2_{self.STAMP}"
+        assert cfg.jobs_dir / cfg.task_name == Path(
+            f"/tmp/out/eval_Qwen__Qwen3.6-27B/agentic/terminal_bench_2_{self.STAMP}"
+        )
+
+    def test_swebench_config_stamps_output_dir(self):
+        cfg = build_swebench_config(
+            _swebench_task(),
+            _server(),
+            _driver_context(),
+            n_tasks=1,
+            run_stamp=self.STAMP,
+        )
+        assert cfg.output_dir == Path(
+            f"/tmp/out/eval_Qwen__Qwen3.6-27B/agentic/swe_bench_verified_{self.STAMP}"
+        )
+
+    def test_terminal_driver_result_path_matches_stamped_folder(self):
+        driver = TerminalBenchAgenticDriver(_terminal_task())
+        driver._run_stamp = self.STAMP
+        assert driver.result_path(_server(), _driver_context()) == Path(
+            f"/tmp/out/eval_Qwen__Qwen3.6-27B/agentic/terminal_bench_2_{self.STAMP}/result.json"
+        )
+
+    def test_swebench_driver_result_path_matches_stamped_folder(self):
+        driver = SWEbenchAgenticDriver(_swebench_task())
+        driver._run_stamp = self.STAMP
+        assert driver.result_path(_server(), _driver_context()) == Path(
+            f"/tmp/out/eval_Qwen__Qwen3.6-27B/agentic/swe_bench_verified_{self.STAMP}/result.json"
+        )
+
+    def test_no_stamp_preserves_legacy_layout(self):
+        cfg = build_terminal_bench_config(
+            _terminal_task(), _server(), _driver_context(), n_tasks=1
+        )
+        assert cfg.task_name == "terminal_bench_2"
+        assert cfg.jobs_dir == Path("/tmp/out/eval_Qwen__Qwen3.6-27B/agentic")
 
 
 class TestAgenticBridge:

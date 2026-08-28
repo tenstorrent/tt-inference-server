@@ -139,7 +139,7 @@ bool InterServerService::sendPrefillRequest(
     const std::vector<uint32_t>& tokenIds, std::optional<int> maxTokens,
     std::optional<uint32_t> slotId,
     const tt::domain::llm::SamplingParams& sampling, int decodePositionId,
-    int decodeSkipTokens) {
+    int decodeSkipTokens, const std::string& traceparent) {
   if (!enabled) {
     return false;
   }
@@ -155,6 +155,7 @@ bool InterServerService::sendPrefillRequest(
   message.fastMode = sampling.fast_mode;
   message.decodePositionId = decodePositionId;
   message.decodeSkipTokens = decodeSkipTokens;
+  message.traceparent = traceparent;
 
   return socketManager.sendObject(tags::PREFILL_REQUEST, message);
 }

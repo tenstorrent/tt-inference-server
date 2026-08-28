@@ -1,6 +1,33 @@
 {{- include "tt-inference-server.validateValues" . }}
 {{- $cfg := include "tt-inference-server.resolvedConfig" . | fromYaml }}
 {{- $engine := include "tt-inference-server.resolvedEngine" . }}
+{{- $auth := .Values.auth | default dict }}
+{{- $cacheRoot := include "tt-inference-server.cacheRoot" . }}
+{{- /*
+A dict, not line-by-line output: extraEnv may name a key the chart also sets,
+and two YAML lines with one key is a broken render. Later writes win, so a
+user's extraEnv literal overrides the chart's.
+*/}}
+{{- $data := dict }}
+{{- if or (eq $engine "media") (eq $engine "forge") }}
+{{- $_ := set $data "MODEL" .Values.model }}
+{{- $_ := set $data "DEVICE" .Values.device }}
+{{- $_ := set $data "CACHE_ROOT" $cacheRoot }}
+{{- /*
+Without this the weights land in the container's ephemeral layer (~/.cache) and
+are downloaded again on every Pod restart. vllm images own their weight location
+under CACHE_ROOT, so this mirrors run_docker_server.py's media/forge branch.
+*/}}
+{{- $_ := set $data "HF_HOME" (printf "%s/huggingface" $cacheRoot) }}
+{{- if dig "disabled" false $auth }}
+{{- $_ := set $data "NO_AUTH" "1" }}
+{{- end }}
+{{- end }}
+{{- range $cfg.extraEnv }}
+{{- if .value }}
+{{- $_ := set $data .name (.value | toString) }}
+{{- end }}
+{{- end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -9,13 +36,6 @@ metadata:
   labels:
     {{- include "tt-inference-server.labels" . | nindent 4 }}
 data:
-  {{- if or (eq $engine "media") (eq $engine "forge") }}
-  MODEL: {{ .Values.model | quote }}
-  DEVICE: {{ .Values.device | quote }}
-  CACHE_ROOT: "/home/container_app_user/cache_root"
-  {{- end }}
-  {{- range $cfg.extraEnv }}
-  {{- if .value }}
-  {{ .name }}: {{ .value | quote }}
-  {{- end }}
+  {{- range $k, $v := $data }}
+  {{ $k }}: {{ $v | quote }}
   {{- end }}
