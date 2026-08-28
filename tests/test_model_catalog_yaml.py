@@ -326,3 +326,18 @@ def test_quetzal_dev_specs_use_content_store_contract(monkeypatch, model_name):
     serialized_env = "\n".join(f"{key}={value}" for key, value in env.items())
     assert "/home/ttuser" not in serialized_env
     assert "/mnt/nas" not in serialized_env
+
+
+def test_qwen_quetzal_dev_spec_uses_portable_qb2_fabric_contract(monkeypatch):
+    specs = _dev_llm_spec_map()
+    monkeypatch.setattr(model_spec_module, "MODEL_SPECS", specs)
+    monkeypatch.setattr(model_spec_module, "_MODEL_SPECS_ENV", "dev")
+    quetzal, _, _ = get_runtime_model_spec(
+        "Qwen3.6-27B", "p300x2", impl="quetzal"
+    )
+    env = quetzal.env_vars
+
+    assert env["TT_MESH_GRAPH_DESC_PATH"] == "auto"
+    assert env["TTQ_ROW_ALL_REDUCE_TOPOLOGY"] == "Linear"
+    assert env["TTQ_TUNED_ROW_ALL_REDUCE_LINKS"] == "1"
+    assert env["TTQ_TUNED_ROW_ALL_REDUCE"] == "1"
