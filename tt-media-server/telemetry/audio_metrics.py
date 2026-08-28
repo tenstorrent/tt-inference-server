@@ -255,6 +255,40 @@ _TTS_CHARACTER_BUCKETS = (
     float("inf"),
 )
 
+# English averages ~5 characters/word, so the 20000-character cap is ~4000
+# words; same grid shape as characters, one order of magnitude down.
+_TTS_WORD_BUCKETS = (
+    2.0,
+    5.0,
+    10.0,
+    25.0,
+    50.0,
+    100.0,
+    250.0,
+    500.0,
+    1000.0,
+    2000.0,
+    4000.0,
+    float("inf"),
+)
+
+# SpeechT5's tokenizer is near character-level, so per-request encoder tokens
+# track the character count; the cap is ~20k with headroom for markup-heavy
+# text.
+_TTS_TOKEN_BUCKETS = (
+    10.0,
+    50.0,
+    100.0,
+    250.0,
+    500.0,
+    1000.0,
+    2500.0,
+    5000.0,
+    10000.0,
+    25000.0,
+    float("inf"),
+)
+
 # --- STT (transcriptions / translations) --------------------------------------
 # ``task`` is "transcription" or "translation" and ``language`` is the
 # configured input language (settings.audio_task / settings.audio_language) —
@@ -407,6 +441,36 @@ tts_input_characters = Histogram(
     buckets=_TTS_CHARACTER_BUCKETS,
 )
 
+# Whitespace word count — approximate, but honest for an English-only model.
+tts_input_words_total = Counter(
+    "tt_media_server_audio_tts_input_words_total",
+    "Total input words successfully converted to speech",
+    ["model_type"],
+)
+
+tts_input_words = Histogram(
+    "tt_media_server_audio_tts_input_words_per_request",
+    "Input words of one successful text-to-speech request",
+    ["model_type"],
+    buckets=_TTS_WORD_BUCKETS,
+)
+
+# Exact encoder token counts, recorded from the runner: the device worker
+# already tokenizes every chunk (real_seq_len in _generate_mel_for_chunk), so
+# this is the model's true input size, not a handler-side approximation.
+tts_input_tokens_total = Counter(
+    "tt_media_server_audio_tts_input_tokens_total",
+    "Total encoder input tokens successfully converted to speech",
+    ["model_type"],
+)
+
+tts_input_tokens = Histogram(
+    "tt_media_server_audio_tts_input_tokens_per_request",
+    "Encoder input tokens of one successful text-to-speech generation",
+    ["model_type"],
+    buckets=_TTS_TOKEN_BUCKETS,
+)
+
 tts_output_audio_seconds_total = Counter(
     "tt_media_server_audio_tts_output_audio_seconds_total",
     "Total seconds of speech audio generated",
@@ -460,6 +524,11 @@ def char_count(text) -> int | None:
     the real response or exception.
     """
     return len(text) if isinstance(text, str) else None
+
+
+def word_count(text) -> int | None:
+    """Whitespace word count with the same non-str contract as char_count."""
+    return len(text.split()) if isinstance(text, str) else None
 
 
 def _positive_float(value) -> float | None:
@@ -717,13 +786,16 @@ def record_tts_request(
     duration_seconds: float,
     voice: str = VOICE_DEFAULT,
     characters: int | None = None,
+    words: int | None = None,
     audio_seconds: float | None = None,
 ) -> None:
     """Export one finished TTS request. Never raises into the request path.
 
-    ``characters`` is the input text length; ``audio_seconds`` the generated
-    speech duration. Both are only recorded for ``status="success"``.
-    ``voice`` comes from :func:`tts_voice_label`.
+    ``characters`` and ``words`` are the input text length; ``audio_seconds``
+    the generated speech duration. Usage values are only recorded for
+    ``status="success"``. ``voice`` comes from :func:`tts_voice_label`.
+    (Input *tokens* are recorded by the runner via
+    :func:`record_tts_input_tokens`, where the text is actually tokenized.)
     """
     try:
         duration_seconds = _positive_float(duration_seconds)
@@ -750,6 +822,9 @@ def record_tts_request(
         if isinstance(characters, int) and characters > 0:
             tts_input_characters_total.labels(model_type=model_type).inc(characters)
             tts_input_characters.labels(model_type=model_type).observe(characters)
+        if isinstance(words, int) and words > 0:
+            tts_input_words_total.labels(model_type=model_type).inc(words)
+            tts_input_words.labels(model_type=model_type).observe(words)
         audio_seconds = _positive_float(audio_seconds)
         if audio_seconds is not None:
             tts_output_audio_seconds_total.labels(
@@ -764,3 +839,18 @@ def record_tts_request(
                 )
     except Exception as exc:  # pragma: no cover - telemetry must not break serving
         logger.warning(f"Failed to record TTS request metrics: {exc}")
+
+
+def record_tts_input_tokens(*, model_type: str, tokens) -> None:
+    """Export the encoder token count of one successful TTS generation.
+
+    Called from the runner, which already computes the exact count while
+    tokenizing each chunk — never from the handler, which has no tokenizer.
+    Never raises.
+    """
+    try:
+        if isinstance(tokens, int) and tokens > 0:
+            tts_input_tokens_total.labels(model_type=model_type).inc(tokens)
+            tts_input_tokens.labels(model_type=model_type).observe(tokens)
+    except Exception as exc:  # pragma: no cover - telemetry must not break serving
+        logger.warning(f"Failed to record TTS input tokens: {exc}")

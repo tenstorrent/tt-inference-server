@@ -18,6 +18,7 @@ from telemetry.audio_metrics import (
     char_count,
     record_tts_request,
     tts_voice_label,
+    word_count,
 )
 
 router = APIRouter()
@@ -75,6 +76,7 @@ async def handle_tts_request(tts_request, service):
             duration_seconds=time.perf_counter() - start,
             voice=tts_voice_label(tts_request, result),
             characters=char_count(getattr(tts_request, "text", None)),
+            words=word_count(getattr(tts_request, "text", None)),
             audio_seconds=getattr(result, "duration", None),
         )
 

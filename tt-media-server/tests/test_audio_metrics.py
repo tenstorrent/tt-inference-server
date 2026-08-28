@@ -29,9 +29,11 @@ from telemetry.audio_metrics import (
     confidence_from_generator_output,
     record_stt_confidence,
     record_stt_request,
+    record_tts_input_tokens,
     record_tts_request,
     transcript_compression_ratio,
     tts_voice_label,
+    word_count,
 )
 
 # Handler tests read the language off the real settings object.
@@ -79,6 +81,46 @@ class TestCharCount:
 
     def test_mock(self):
         assert char_count(MagicMock()) is None
+
+
+class TestWordCount:
+    def test_str(self):
+        assert word_count("hello there world") == 3
+
+    def test_empty_str(self):
+        assert word_count("") == 0
+
+    def test_none(self):
+        assert word_count(None) is None
+
+    def test_mock(self):
+        assert word_count(MagicMock()) is None
+
+
+class TestRecordTtsInputTokens:
+    def test_records_tokens(self):
+        model = "tts-tokens"
+        record_tts_input_tokens(model_type=model, tokens=128)
+        assert (
+            sample("tt_media_server_audio_tts_input_tokens_total", model_type=model)
+            == 128
+        )
+        assert (
+            sample(
+                "tt_media_server_audio_tts_input_tokens_per_request_count",
+                model_type=model,
+            )
+            == 1
+        )
+
+    def test_garbage_records_nothing(self):
+        model = "tts-tokens-garbage"
+        for tokens in (None, 0, -3, "many", MagicMock()):
+            record_tts_input_tokens(model_type=model, tokens=tokens)
+        assert (
+            sample("tt_media_server_audio_tts_input_tokens_total", model_type=model)
+            is None
+        )
 
 
 class TestTtsVoiceLabel:
@@ -410,6 +452,7 @@ class TestRecordTtsRequest:
             duration_seconds=1.5,
             voice="alice",
             characters=200,
+            words=30,
             audio_seconds=6.0,
         )
         labels = dict(
@@ -431,6 +474,10 @@ class TestRecordTtsRequest:
         assert (
             sample("tt_media_server_audio_tts_input_characters_total", model_type=model)
             == 200
+        )
+        assert (
+            sample("tt_media_server_audio_tts_input_words_total", model_type=model)
+            == 30
         )
         voiced = dict(model_type=model, voice="alice")
         assert (
@@ -710,6 +757,13 @@ class TestHandleTtsRequestMetrics:
             "tt_media_server_audio_tts_input_characters_total",
             model_type=model_runner_label,
         ) == len("say this")
+        assert (
+            sample(
+                "tt_media_server_audio_tts_input_words_total",
+                model_type=model_runner_label,
+            )
+            == 2
+        )
         assert (
             sample(
                 "tt_media_server_audio_tts_output_audio_seconds_total",

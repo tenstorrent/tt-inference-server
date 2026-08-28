@@ -35,6 +35,7 @@ TTS_METRIC_SERIES = (
     "tt_media_server_audio_tts_output_audio_seconds_total",
     "tt_media_server_audio_tts_first_chunk_seconds",
     "tt_media_server_audio_tts_chunk_generation_seconds",
+    "tt_media_server_audio_tts_input_tokens_total",
 )
 
 
