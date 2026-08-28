@@ -306,6 +306,15 @@ def _materialized_quetzal_contract(monkeypatch, tmp_path, module):
         artifact.parent.mkdir(parents=True, exist_ok=True)
         artifact.write_text("test")
         monkeypatch.setenv(env_name, str(artifact))
+    required_runtime = "a" * 40
+    (package_root / "qualification_manifest.yaml").write_text(
+        "models:\n"
+        "  - model_id: Qwen/Qwen3.6-27B\n"
+        "    charter_pcc:\n"
+        f"      required_runtime_tt_metal_commit: {required_runtime}\n"
+    )
+    monkeypatch.setenv("QUETZAL_MODEL", "Qwen/Qwen3.6-27B")
+    monkeypatch.setenv("TT_METAL_COMMIT_SHA_OR_TAG", required_runtime)
 
     def row(relative):
         path = package_root / relative
@@ -513,6 +522,20 @@ def test_quetzal_runtime_contract_rejects_missing_plugin(
         run_vllm_api_server_module.validate_quetzal_runtime_contract(
             {"impl": {"impl_id": "quetzal"}},
             entry_points={"vllm.general_plugins": []},
+        )
+
+
+def test_quetzal_runtime_contract_rejects_tt_metal_revision_mismatch(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    _materialized_quetzal_contract(
+        monkeypatch, tmp_path, run_vllm_api_server_module
+    )
+    monkeypatch.setenv("TT_METAL_COMMIT_SHA_OR_TAG", "b" * 40)
+    with pytest.raises(RuntimeError, match="TT-Metal runtime mismatch"):
+        run_vllm_api_server_module.validate_quetzal_runtime_contract(
+            {"impl": {"impl_id": "quetzal"}},
+            entry_points=_quetzal_entry_points(),
         )
 
 

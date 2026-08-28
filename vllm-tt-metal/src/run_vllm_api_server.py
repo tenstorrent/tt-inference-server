@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+import yaml
 from huggingface_hub import snapshot_download
 from vllm import ModelRegistry
 
@@ -709,6 +710,50 @@ def validate_quetzal_runtime_contract(model_spec_json, entry_points=None):
                 raise RuntimeError(
                     f"{env_name} failed installed trusted-root verification"
                 )
+
+    # Generated artifacts are allowed to bind a TT-Metal revision as part of
+    # their numerical qualification.  This is an execution contract, not
+    # bookkeeping: a Qwen package that passed PCC and generation on b5345493
+    # produced incorrect tokens on the release image's de59f8 runtime.  The
+    # qualification manifest is already covered by the trusted-root proof
+    # above, so enforce its runtime lock before opening a device.
+    qualification_path = Path(os.environ["QZ_QUALIFICATION_MANIFEST"])
+    try:
+        qualification_doc = yaml.safe_load(qualification_path.read_text())
+    except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
+        raise RuntimeError("Quetzal qualification manifest is invalid YAML") from exc
+    models = (
+        qualification_doc.get("models", [])
+        if isinstance(qualification_doc, dict)
+        else []
+    )
+    declared_model = os.getenv("QUETZAL_MODEL")
+    matching_models = [
+        row
+        for row in models
+        if isinstance(row, dict)
+        and (declared_model is None or row.get("model_id") == declared_model)
+    ]
+    if len(matching_models) != 1:
+        raise RuntimeError(
+            "Quetzal qualification manifest must contain exactly one runtime "
+            f"contract for QUETZAL_MODEL={declared_model!r}"
+        )
+    required_runtime = matching_models[0].get("charter_pcc", {}).get(
+        "required_runtime_tt_metal_commit"
+    )
+    actual_runtime = os.getenv("TT_METAL_COMMIT_SHA_OR_TAG")
+    if not required_runtime or not actual_runtime:
+        raise RuntimeError(
+            "Quetzal qualification requires both "
+            "charter_pcc.required_runtime_tt_metal_commit and "
+            "TT_METAL_COMMIT_SHA_OR_TAG"
+        )
+    if actual_runtime != required_runtime:
+        raise RuntimeError(
+            "Quetzal TT-Metal runtime mismatch: package requires "
+            f"{required_runtime}, image provides {actual_runtime}"
+        )
 
     discovered = (
         importlib_metadata.entry_points() if entry_points is None else entry_points

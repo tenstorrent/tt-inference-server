@@ -91,6 +91,13 @@ newer runtimes also accept `auto`, but the pinned TTIS image interprets that
 string as a descriptor filename.  The generated row collectives remain pinned
 to Linear/1-link unless a separately admitted ring-capable host overrides them.
 
+Admission also enforces the qualification manifest's
+`charter_pcc.required_runtime_tt_metal_commit` against the image's
+`TT_METAL_COMMIT_SHA_OR_TAG`.  Generated code is not assumed to be numerically
+portable across tt-metal revisions: an image/package mismatch fails before a
+device is opened, instead of serving output that did not pass the package's PCC
+and functional gates.
+
 This closes the development image-construction path, not release qualification.
 The catalog binds both models to content-addressed package IDs and trusted root
 manifest digests, but each runner must still materialize the matching bundle.
