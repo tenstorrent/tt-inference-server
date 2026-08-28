@@ -145,7 +145,8 @@ helm template charts/tt-inference-server \
   --set model=Llama-3.1-70B \
   --set device=t3k \
   --set engine=media \
-  --set hfToken=fake
+  --set hfToken=fake \
+  --set auth.apiKey=fake
 
 # pick a non-default impl
 helm template charts/tt-inference-server \

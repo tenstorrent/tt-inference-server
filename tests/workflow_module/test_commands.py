@@ -355,3 +355,120 @@ class TestSummaryCommand:
         result = cmd.execute()
         assert result.return_code == 1
         assert "disk full" in result.error
+
+
+class TestServerCommandBootRetry:
+    """TT_SERVER_BOOT_ATTEMPTS opt-in retry for intermittent bring-up failures.
+
+    Galaxy bring-up can hit an intermittent device stall during the model's prefill
+    warmup sweep; a single stall otherwise fails a whole release run. Retry is opt-in
+    so the default path keeps launching exactly once and never polls.
+    """
+
+    def test_healthy_launch_is_not_retried(self, monkeypatch):
+        monkeypatch.delenv("TT_SERVER_BOOT_ATTEMPTS", raising=False)
+        attempts = []
+
+        def fake_local(model_spec, runtime_config, json_fpath, setup_config):
+            attempts.append(1)
+            # Names a port but no existing log file: the handle is unobservable, so
+            # readiness is skipped rather than polled to the timeout.
+            return {"pid": 1, "service_port": "8000"}
+
+        _install_fake_launchers(monkeypatch, local=fake_local)
+        spec = ServerLaunchSpec(
+            mode=ServerMode.LOCAL,
+            model_spec="ms",
+            runtime_config="rc",
+            setup_config="sc",
+            json_fpath="/j.json",
+        )
+        result = ServerCommand(spec).execute()
+        assert result.return_code == 0
+        assert len(attempts) == 1
+
+    def test_retry_is_on_by_default(self, monkeypatch):
+        monkeypatch.delenv("TT_SERVER_BOOT_ATTEMPTS", raising=False)
+        attempts = []
+
+        def flaky_local(model_spec, runtime_config, json_fpath, setup_config):
+            attempts.append(1)
+            if len(attempts) == 1:
+                raise RuntimeError("device hang during warmup")
+            return {"ok": "local"}
+
+        _install_fake_launchers(monkeypatch, local=flaky_local)
+        spec = ServerLaunchSpec(
+            mode=ServerMode.LOCAL,
+            model_spec="ms",
+            runtime_config="rc",
+            setup_config="sc",
+            json_fpath="/j.json",
+        )
+        result = ServerCommand(spec).execute()
+        assert result.return_code == 0
+        assert len(attempts) == 2
+
+    def test_attempts_can_be_forced_back_to_one(self, monkeypatch):
+        monkeypatch.setenv("TT_SERVER_BOOT_ATTEMPTS", "1")
+        attempts = []
+
+        def always_fails(model_spec, runtime_config, json_fpath, setup_config):
+            attempts.append(1)
+            raise RuntimeError("device hang during warmup")
+
+        _install_fake_launchers(monkeypatch, local=always_fails)
+        spec = ServerLaunchSpec(
+            mode=ServerMode.LOCAL,
+            model_spec="ms",
+            runtime_config="rc",
+            setup_config="sc",
+            json_fpath="/j.json",
+        )
+        result = ServerCommand(spec).execute()
+        assert result.return_code == 1
+        assert len(attempts) == 1
+
+    def test_retries_launcher_exception_then_succeeds(self, monkeypatch):
+        monkeypatch.setenv("TT_SERVER_BOOT_ATTEMPTS", "2")
+        attempts = []
+
+        def flaky_local(model_spec, runtime_config, json_fpath, setup_config):
+            attempts.append(1)
+            if len(attempts) == 1:
+                raise RuntimeError("device hang during warmup")
+            # No pid/port -> unobservable handle -> readiness wait is skipped.
+            return {"ok": "local"}
+
+        _install_fake_launchers(monkeypatch, local=flaky_local)
+        spec = ServerLaunchSpec(
+            mode=ServerMode.LOCAL,
+            model_spec="ms",
+            runtime_config="rc",
+            setup_config="sc",
+            json_fpath="/j.json",
+        )
+        result = ServerCommand(spec).execute()
+        assert result.return_code == 0
+        assert len(attempts) == 2
+
+    def test_gives_up_after_configured_attempts(self, monkeypatch):
+        monkeypatch.setenv("TT_SERVER_BOOT_ATTEMPTS", "3")
+        attempts = []
+
+        def always_fails(model_spec, runtime_config, json_fpath, setup_config):
+            attempts.append(1)
+            raise RuntimeError("device hang during warmup")
+
+        _install_fake_launchers(monkeypatch, local=always_fails)
+        spec = ServerLaunchSpec(
+            mode=ServerMode.LOCAL,
+            model_spec="ms",
+            runtime_config="rc",
+            setup_config="sc",
+            json_fpath="/j.json",
+        )
+        result = ServerCommand(spec).execute()
+        assert result.return_code == 1
+        assert len(attempts) == 3
+        assert "device hang during warmup" in result.error

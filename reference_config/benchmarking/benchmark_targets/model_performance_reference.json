@@ -215,6 +215,100 @@
     "Qwen3-32B": {
         "galaxy": [
             {
+                "_comment": [
+                    "GALAXY at data_parallel_size=4. Declaring data_parallel here makes",
+                    "get_perf_reference() use this entry verbatim instead of remapping to",
+                    "the t3k row and scaling it -- so these numbers describe the whole",
+                    "Galaxy and mean exactly what they say.",
+                    "'theoretical' is a hardware ceiling and drives only the functional",
+                    "(10%) and complete (50%) tiers. 'measured' gates acceptance, because",
+                    "measured/theoretical is 0.35 here and 0.48 on T3K (tt-metal",
+                    "PERF.md: Qwen3-32B T3K = 19.6 t/s/u against a 41.0 target), so a tier",
+                    "at 100% of theoretical could never pass on any device.",
+                    "Measured across 4 sweeps on 2026-08-17 (wh-glx6u-08); throughput",
+                    "varied under 2%, so the default 5% tolerance is generous. Values are",
+                    "the worst of the stable cluster.",
+                    "At conc=1 tput ~= tput_user, as it must be with a single user; the",
+                    "previous target was 5328 (t3k 1332 x 4), about 100x unreachable."
+                ],
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 30.0,
+                        "tput_user": 156.0,
+                        "tput": 156.0
+                    },
+                    "measured": {
+                        "ttft_ms": 203.2,
+                        "tput_user": 55.1,
+                        "tput": 51.2,
+                        "tolerance": 0.05
+                    }
+                }
+            },
+            {
+                "_comment": [
+                    "GALAXY at data_parallel_size=4, 32 concurrent users: the point that",
+                    "actually exercises all four data-parallel groups. Aggregate 617 tok/s",
+                    "against 50.4 per user is the real multi-user number, and is where a",
+                    "meaningful aggregate target belongs -- not on the conc=1 point.",
+                    "No 'theoretical' block: no ceiling has been derived for this point,",
+                    "and inventing one would recreate the problem this entry fixes.",
+                    "Excluded from the measurement: the first sweep of 2026-08-17 reported",
+                    "tput_user 17.58 / tput 290.79 here, ~2x off the other three runs. It",
+                    "ran immediately after server start and is a warmup outlier."
+                ],
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 256,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 4360.9,
+                        "tput_user": 50.4,
+                        "tput": 617.1,
+                        "tolerance": 0.05
+                    }
+                }
+            },
+            {
+                "_comment": [
+                    "tput is set equal to tput_user because this point runs",
+                    "max_concurrency: 1: at one concurrent user aggregate throughput IS",
+                    "per-user throughput, so they cannot differ. It previously held 5329,",
+                    "a MULTI-USER aggregate (5329/156 = 34x), which made the check",
+                    "unreachable by construction -- it could never pass however well the",
+                    "model performed. p300x2 already had the correct form (37 == 37).",
+                    "Measured on wh-glx6u-08 (Qwen3-32B, GALAXY, 2026-08-17):",
+                    "  tput_user = 55.1 tok/s, tput = 52.0 tok/s",
+                    "tput ~= tput_user is exactly what a 1-user point must produce, so the",
+                    "measurement is sound. NOTE the check is now meaningful but still",
+                    "fails: 55.1 against 156 is a ratio of 0.35. That is a real performance",
+                    "question, no longer a broken comparison.",
+                    "TWO THINGS STILL TO RESOLVE:",
+                    "1) model_spec.py:159 multiplies tput (not tput_user) by",
+                    "   data_parallel_size=4, so this 156 becomes an effective 624 at a",
+                    "   point that only ever drives ONE replica. The scaling should not",
+                    "   apply when max_concurrency == 1.",
+                    "2) UNCONFIRMED: the 2026-08-17 GALAXY report applied tput_user=41 and",
+                    "   tput=5328, matching the t3k row (41, 1332*4) rather than this one",
+                    "   (5328 != 5329, so not rounding). If t3k targets are really being",
+                    "   applied to GALAXY runs they are lenient and mask the 0.35 gap above.",
+                    "   Trace the device-row selection before acting on it."
+                ],
                 "isl": 128,
                 "osl": 128,
                 "max_concurrency": 1,
@@ -227,7 +321,7 @@
                     "theoretical": {
                         "ttft_ms": 30.0,
                         "tput_user": 156.0,
-                        "tput": 5329.0
+                        "tput": 156.0
                     }
                 }
             }
@@ -246,7 +340,7 @@
                     "theoretical": {
                         "ttft_ms": 62.0,
                         "tput_user": 41.0,
-                        "tput": 1332.0
+                        "tput": 41.0
                     }
                 }
             }
