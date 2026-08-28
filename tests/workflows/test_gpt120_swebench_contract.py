@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+
 from llm_module import DriverContext, ServerConnection
 from llm_module.drivers.agentic import (
     build_swebench_config,

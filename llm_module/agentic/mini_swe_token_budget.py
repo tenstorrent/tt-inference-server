@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+
 """Fail-closed mini-swe-agent LiteLLM model with authoritative input counting."""
 
 from __future__ import annotations
