@@ -40,7 +40,7 @@ def test_quetzal_is_installed_non_editably_and_entry_point_is_verified():
     assert "model_spec.json" in source
     assert "/home/container_app_user/model_specs/model_spec.json" in source
     assert "validate_quetzal_runtime_contract" in source
-    assert "78497e43312c9d6abc07192fc7852f7eb3f315b0fddd192231be33f1e09dd34c" in source
+    assert "d71abb2865d94511a1aaafbb02fabe1adfc5bd658ff9b876412f5f558111db4a" in source
     assert "152a50f9a06a66e3f64f822e88b4a00bf76fbe9d02cf53094d702751970be8d0" in source
     assert "git fetch" not in source
     assert "git clone" not in source

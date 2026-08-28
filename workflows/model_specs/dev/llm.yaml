@@ -456,16 +456,16 @@ templates:
         MESH_DEVICE: P150x4
         QUETZAL_VLLM: "1"
         QUETZAL_MODEL: Qwen/Qwen3.6-27B
-        QUETZAL_PACKAGE_ID: sha256-b4a49e2a071dfe4cb2dc17ffb92fd1d1e171250c266d41ab80293bef13cb1741-83a301072b6315faeb6ffd45d0c2198358803763b117ef13c68d6a2e4e1f781b
-        QUETZAL_BUNDLE_MANIFEST_SHA256: 78497e43312c9d6abc07192fc7852f7eb3f315b0fddd192231be33f1e09dd34c
-        QUETZAL_PACKAGE_ROOT: /home/container_app_user/cache_root/quetzal/packages/sha256-b4a49e2a071dfe4cb2dc17ffb92fd1d1e171250c266d41ab80293bef13cb1741-83a301072b6315faeb6ffd45d0c2198358803763b117ef13c68d6a2e4e1f781b
-        QZ_MODELS_ROOT: /home/container_app_user/cache_root/quetzal/packages/sha256-b4a49e2a071dfe4cb2dc17ffb92fd1d1e171250c266d41ab80293bef13cb1741-83a301072b6315faeb6ffd45d0c2198358803763b117ef13c68d6a2e4e1f781b
-        QZ_QUALIFICATION_MANIFEST: /home/container_app_user/cache_root/quetzal/packages/sha256-b4a49e2a071dfe4cb2dc17ffb92fd1d1e171250c266d41ab80293bef13cb1741-83a301072b6315faeb6ffd45d0c2198358803763b117ef13c68d6a2e4e1f781b/qualification_manifest.yaml
-        QUETZAL_PREFILL_GENERATED_PY: /home/container_app_user/cache_root/quetzal/packages/sha256-b4a49e2a071dfe4cb2dc17ffb92fd1d1e171250c266d41ab80293bef13cb1741-83a301072b6315faeb6ffd45d0c2198358803763b117ef13c68d6a2e4e1f781b/compiled/Qwen_Qwen3.6-27B-4chip-b1/full/prefill/generated.py
-        QUETZAL_DECODE_GENERATED_PY: /home/container_app_user/cache_root/quetzal/packages/sha256-b4a49e2a071dfe4cb2dc17ffb92fd1d1e171250c266d41ab80293bef13cb1741-83a301072b6315faeb6ffd45d0c2198358803763b117ef13c68d6a2e4e1f781b/compiled/Qwen_Qwen3.6-27B-4chip-b1/full/decode/generated.py
-        QUETZAL_PREFILL_METADATA_JSON: /home/container_app_user/cache_root/quetzal/packages/sha256-b4a49e2a071dfe4cb2dc17ffb92fd1d1e171250c266d41ab80293bef13cb1741-83a301072b6315faeb6ffd45d0c2198358803763b117ef13c68d6a2e4e1f781b/compiled/Qwen_Qwen3.6-27B-4chip-b1/full/prefill/metadata.json
-        QUETZAL_DECODE_METADATA_JSON: /home/container_app_user/cache_root/quetzal/packages/sha256-b4a49e2a071dfe4cb2dc17ffb92fd1d1e171250c266d41ab80293bef13cb1741-83a301072b6315faeb6ffd45d0c2198358803763b117ef13c68d6a2e4e1f781b/compiled/Qwen_Qwen3.6-27B-4chip-b1/full/decode/metadata.json
-        QUETZAL_WEIGHTS: /home/container_app_user/cache_root/quetzal/packages/sha256-b4a49e2a071dfe4cb2dc17ffb92fd1d1e171250c266d41ab80293bef13cb1741-83a301072b6315faeb6ffd45d0c2198358803763b117ef13c68d6a2e4e1f781b/compiled_weights/Qwen_Qwen3.6-27B/full/weights.pt
+        QUETZAL_PACKAGE_ID: sha256-f1d6cebaf6cd432c78721ec3b81101ab86493f387b37f63bc11aca2fc6f6d8d8-0a8efa103ee378c7cd0e2fa25b0426cbb82752e270f8927bdf44eb2cfe68ce66
+        QUETZAL_BUNDLE_MANIFEST_SHA256: d71abb2865d94511a1aaafbb02fabe1adfc5bd658ff9b876412f5f558111db4a
+        QUETZAL_PACKAGE_ROOT: /home/container_app_user/cache_root/quetzal/packages/sha256-f1d6cebaf6cd432c78721ec3b81101ab86493f387b37f63bc11aca2fc6f6d8d8-0a8efa103ee378c7cd0e2fa25b0426cbb82752e270f8927bdf44eb2cfe68ce66
+        QZ_MODELS_ROOT: /home/container_app_user/cache_root/quetzal/packages/sha256-f1d6cebaf6cd432c78721ec3b81101ab86493f387b37f63bc11aca2fc6f6d8d8-0a8efa103ee378c7cd0e2fa25b0426cbb82752e270f8927bdf44eb2cfe68ce66
+        QZ_QUALIFICATION_MANIFEST: /home/container_app_user/cache_root/quetzal/packages/sha256-f1d6cebaf6cd432c78721ec3b81101ab86493f387b37f63bc11aca2fc6f6d8d8-0a8efa103ee378c7cd0e2fa25b0426cbb82752e270f8927bdf44eb2cfe68ce66/qualification_manifest.yaml
+        QUETZAL_PREFILL_GENERATED_PY: /home/container_app_user/cache_root/quetzal/packages/sha256-f1d6cebaf6cd432c78721ec3b81101ab86493f387b37f63bc11aca2fc6f6d8d8-0a8efa103ee378c7cd0e2fa25b0426cbb82752e270f8927bdf44eb2cfe68ce66/compiled/Qwen_Qwen3.6-27B/full/prefill/generated.py
+        QUETZAL_DECODE_GENERATED_PY: /home/container_app_user/cache_root/quetzal/packages/sha256-f1d6cebaf6cd432c78721ec3b81101ab86493f387b37f63bc11aca2fc6f6d8d8-0a8efa103ee378c7cd0e2fa25b0426cbb82752e270f8927bdf44eb2cfe68ce66/compiled/Qwen_Qwen3.6-27B/full/decode/generated.py
+        QUETZAL_PREFILL_METADATA_JSON: /home/container_app_user/cache_root/quetzal/packages/sha256-f1d6cebaf6cd432c78721ec3b81101ab86493f387b37f63bc11aca2fc6f6d8d8-0a8efa103ee378c7cd0e2fa25b0426cbb82752e270f8927bdf44eb2cfe68ce66/compiled/Qwen_Qwen3.6-27B/full/prefill/metadata.json
+        QUETZAL_DECODE_METADATA_JSON: /home/container_app_user/cache_root/quetzal/packages/sha256-f1d6cebaf6cd432c78721ec3b81101ab86493f387b37f63bc11aca2fc6f6d8d8-0a8efa103ee378c7cd0e2fa25b0426cbb82752e270f8927bdf44eb2cfe68ce66/compiled/Qwen_Qwen3.6-27B/full/decode/metadata.json
+        QUETZAL_WEIGHTS: /home/container_app_user/cache_root/quetzal/packages/sha256-f1d6cebaf6cd432c78721ec3b81101ab86493f387b37f63bc11aca2fc6f6d8d8-0a8efa103ee378c7cd0e2fa25b0426cbb82752e270f8927bdf44eb2cfe68ce66/compiled_weights/Qwen_Qwen3.6-27B/full/weights.pt
       vllm_args:
         block_size: 64
         max_model_len: 8192
