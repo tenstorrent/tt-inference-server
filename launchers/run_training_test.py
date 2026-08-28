@@ -37,6 +37,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+# launchers/<this file> -> parent is launchers/, parent.parent is the repo root.
+# Unlike the venv-reexec launchers, this driver runs directly in run.py's
+# interpreter as a subprocess, so the repo root is not guaranteed to be on
+# sys.path; add it so ``workflows`` / ``report_module`` imports resolve.
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 logger = logging.getLogger("tt_training_launcher")
 
 _TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
