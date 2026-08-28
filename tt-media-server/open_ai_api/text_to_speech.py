@@ -65,7 +65,12 @@ async def handle_tts_request(tts_request, service):
     finally:
         record_tts_request(
             model_type=settings.model_runner,
-            response_format=getattr(result, "format", fmt),
+            # The REQUESTED format, deliberately: the label tracks the client
+            # mix, and json/verbose_json must stay distinguishable — the
+            # delivered result.format is "wav" for every JSON response, so
+            # labelling with it would collapse the mix. The mp3/ogg→wav
+            # fallback is visible in the post_process warning logs instead.
+            response_format=fmt,
             status=status,
             duration_seconds=time.perf_counter() - start,
             voice=tts_voice_label(tts_request, result),

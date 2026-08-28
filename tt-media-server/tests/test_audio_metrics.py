@@ -15,7 +15,7 @@ import pytest
 from config.settings import settings
 from domain.audio_text_response import AudioStreamChunk, AudioTextResponse
 from fastapi import HTTPException
-from open_ai_api.audio import handle_audio_request
+from open_ai_api.audio import STT_TASK, handle_audio_request
 from open_ai_api.text_to_speech import handle_tts_request
 from prometheus_client import REGISTRY
 from telemetry.audio_metrics import (
@@ -45,11 +45,9 @@ def sample(name, **labels):
 def stt_labels(model_type, **overrides):
     labels = dict(
         model_type=model_type,
-        task=(
-            "translation"
-            if settings.audio_task.lower() == "translate"
-            else "transcription"
-        ),
+        # The handler's own config-verb → label-noun mapping ("transcribe" →
+        # "transcription"), so the helper can't drift from what it records.
+        task=STT_TASK,
         language=LANGUAGE,
         streaming="false",
         status=STATUS_SUCCESS,
@@ -720,6 +718,36 @@ class TestHandleTtsRequestMetrics:
             )
             == 4.0
         )
+
+    @pytest.mark.asyncio
+    async def test_json_request_keeps_requested_format_label(self, model_runner_label):
+        """Regression: the label is the REQUESTED format, not the delivered
+        codec. result.format is "wav" for every JSON response (it describes
+        the base64 payload), so labelling with it would collapse json and
+        verbose_json into "wav" and destroy the response-format mix.
+        """
+        result = MagicMock()
+        result.format = "wav"
+        result.duration = 4.0
+        result.speaker_id = None
+        result.to_dict = lambda: {"audio": "base64", "format": "wav"}
+        service = MagicMock()
+        service.process_request = AsyncMock(return_value=result)
+
+        tts_request = make_tts_request()
+        tts_request.response_format = "verbose_json"
+        tts_request.speaker_embedding = None
+
+        response = await handle_tts_request(tts_request, service)
+
+        assert response == result.to_dict()
+        labels = dict(
+            model_type=model_runner_label,
+            response_format="verbose_json",
+            voice=VOICE_DEFAULT,
+            status=STATUS_SUCCESS,
+        )
+        assert sample("tt_media_server_audio_tts_requests_total", **labels) == 1
 
     @pytest.mark.asyncio
     async def test_error(self, model_runner_label):
