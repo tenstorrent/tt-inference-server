@@ -583,10 +583,19 @@ templates:
         VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
       vllm_args:
         data_parallel_size: 4
+        # Mirrors the Wormhole GALAXY entry: the Qwen3 streaming conformance
+        # suite exercises reasoning + tool calls, which need these parsers.
+        structured-outputs-config: '{"backend": "xgrammar", "disable_any_whitespace": true}'
+        enable_auto_tool_choice: true
+        reasoning_parser: qwen3
+        tool_call_parser: hermes
+        default_chat_template_kwargs: '{"enable_thinking": false}'
       override_tt_config:
         dispatch_core_axis: col
         sample_on_device_mode: all
-        fabric_config: FABRIC_1D_RING
+        # Blackhole Galaxy decode runs column-axis collectives, which need the
+        # 2D torus; a 1D ring is the Wormhole setting and was inherited here.
+        fabric_config: FABRIC_2D_TORUS_XY
         worker_l1_size: 1344544
         trace_region_size: 184915840
   system_requirements:
