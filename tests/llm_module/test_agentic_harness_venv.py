@@ -15,7 +15,6 @@ the task container, so there are no other binaries to resolve.
 from __future__ import annotations
 
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import patch
 
 from llm_module.agentic import harbor
@@ -48,11 +47,11 @@ def test_harbor_uses_venv_python(tmp_path):
     config = _harbor_config(tmp_path, _VENV_PY)
     captured = {}
 
-    def fake_run(cmd, *a, **k):
+    def fake_run_with_timeout(cmd, timeout_sec=None):
         captured["cmd"] = cmd
-        return SimpleNamespace(returncode=0)
+        return 0
 
-    with patch.object(harbor.subprocess, "run", fake_run), patch.object(
+    with patch.object(harbor, "_run_with_timeout", fake_run_with_timeout), patch.object(
         harbor, "_annotate_result_file", lambda *_a, **_k: None
     ):
         rc = harbor.run(config)
@@ -65,11 +64,11 @@ def test_harbor_falls_back_to_sys_executable(tmp_path):
     config = _harbor_config(tmp_path, None)
     captured = {}
 
-    def fake_run(cmd, *a, **k):
+    def fake_run_with_timeout(cmd, timeout_sec=None):
         captured["cmd"] = cmd
-        return SimpleNamespace(returncode=0)
+        return 0
 
-    with patch.object(harbor.subprocess, "run", fake_run), patch.object(
+    with patch.object(harbor, "_run_with_timeout", fake_run_with_timeout), patch.object(
         harbor, "_annotate_result_file", lambda *_a, **_k: None
     ), patch.object(harbor.sys, "executable", "/cur/bin/python"):
         harbor.run(config)
