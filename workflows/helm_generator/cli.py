@@ -21,11 +21,16 @@ from workflows.helm_generator.merge import (
     merge_spec,
     set_default_engine,
     set_device_board_counts,
+    set_device_chip_counts,
     set_device_board_names,
 )
 from workflows.helm_generator.schema import HelmModelSpec
 from workflows.helm_generator.yaml_io import dump_values, dumps_values, load_values
-from workflows.device_utils import dra_device_board_counts, dra_device_board_names
+from workflows.device_utils import (
+    dra_device_board_counts,
+    dra_device_board_names,
+    dra_device_chip_counts,
+)
 from workflows.model_spec import IMAGE_PINNED_MODEL_SPECS, ModelSpec
 from workflows.utils import get_repo_root_path
 
@@ -213,6 +218,14 @@ def generate(
     }
     if set_device_board_counts(doc, board_counts):
         logger.info("updated deviceBoardCounts")
+
+    # deviceChipCounts: ASIC count per device, sizing the hugepages request —
+    # same single source of truth and catalogue restriction as deviceBoardCounts.
+    chip_counts = {
+        k: v for k, v in dra_device_chip_counts().items() if k in used_devices
+    }
+    if set_device_chip_counts(doc, chip_counts):
+        logger.info("updated deviceChipCounts")
 
     # deviceBoardNames: the tt-dra-driver boardName the ResourceClaim selects (CEL)
     # for each device the catalogue offers — same single source of truth and same
