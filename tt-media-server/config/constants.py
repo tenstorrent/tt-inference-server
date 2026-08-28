@@ -556,13 +556,22 @@ TRAINING_STORE_ADAPTERS_DIR = "adapters/"
 TRAINING_STORE_MERGED_MODELS_DIR = "merged_models/"
 
 
-# Adapters/merged models live under $CACHE_ROOT
+# Adapters/merged models live under $TRAINING_STORE_ROOT, which defaults to
+# $CACHE_ROOT so they persist in the mounted cache volume. Ephemeral/CI runs
+# that don't keep adapters — or where the cache volume is host-owned and not
+# writable by the non-root container user — can point $TRAINING_STORE_ROOT at a
+# writable in-container dir (e.g. /tmp), so nothing is written to the cache
+# volume and the output is discarded when the container is removed.
+def _training_store_root() -> str:
+    return os.getenv("TRAINING_STORE_ROOT") or os.getenv("CACHE_ROOT", ".")
+
+
 def adapters_root() -> str:
-    return os.path.join(os.getenv("CACHE_ROOT", "."), TRAINING_STORE_ADAPTERS_DIR)
+    return os.path.join(_training_store_root(), TRAINING_STORE_ADAPTERS_DIR)
 
 
 def merged_models_root() -> str:
-    return os.path.join(os.getenv("CACHE_ROOT", "."), TRAINING_STORE_MERGED_MODELS_DIR)
+    return os.path.join(_training_store_root(), TRAINING_STORE_MERGED_MODELS_DIR)
 
 
 # Helper function to create vLLM configuration with late import to avoid circular imports

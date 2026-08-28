@@ -516,6 +516,15 @@ def generate_docker_run_command(
             docker_env_vars["NO_AUTH"] = "1"
         elif api_key:
             docker_env_vars["API_KEY"] = api_key
+        if model_spec.model_type == ModelType.TRAINING:
+            # Training adapters/merged-models produced here are ephemeral CI
+            # artifacts we don't keep, and the cache_root volume is host-owned
+            # (not writable by the non-root container user). Redirect the
+            # training store to a writable in-container path so job submission
+            # doesn't fail creating the output dir; it is discarded on --rm. A
+            # model spec can still opt into persistence by setting
+            # TRAINING_STORE_ROOT in its env_vars.
+            docker_env_vars.setdefault("TRAINING_STORE_ROOT", "/tmp/tt_training_store")
         if _is_cpp_media_spec(model_spec):
             openai_api_key = os.getenv("OPENAI_API_KEY") or api_key
             if openai_api_key:
