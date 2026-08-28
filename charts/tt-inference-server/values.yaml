@@ -29,12 +29,26 @@ cache:
 # (tt-media-server) env vars are set so each server picks up the name it reads.
 hfCacheDir: ""
 
+# Inference-route authentication. media and forge servers check a literal
+# `Authorization: Bearer $API_KEY` (/health and /v1/models stay open) and fall
+# back to a well-known built-in key when unset, so one of these two is required
+# for those engines. vLLM is open unless VLLM_API_KEY is set.
+auth:
+  # Bearer key clients must send. Stored in the release Secret as API_KEY
+  # (media/forge) or VLLM_API_KEY (vllm).
+  apiKey: ""
+  # Serve without authentication (NO_AUTH=1). media/forge only.
+  disabled: false
+
 # Tenstorrent boards need 1Gi hugepages unless the cluster runs IOMMU + KMD
 # 1.29.0+, where they aren't required. When disabled, the chart drops the
 # hugepages-1Gi request/limit, the /dev/hugepages-1G volume + mounts, and the
 # cleanup-hugepages initContainer.
 hugepages:
   enabled: true
+  # Request/limit when enabled. Empty means one 1Gi page per ASIC of the chosen
+  # device (deviceChipCounts) — e.g. 1Gi on an n150, 8Gi on a T3K.
+  size: ""
 
 # PodMonitor scraping the inference server's own /metrics (vLLM and media-server
 # expose it). Disabled by default: a PodMonitor needs the Prometheus Operator
@@ -79,15 +93,15 @@ defaults:
     port: 8000
     targetPort: 8000
     annotations: {}
+  # hugepages-1Gi is not listed here: it is sized from the device's ASIC count
+  # (see hugepages.size).
   resources:
     limits:
 #      cpu: "8"
 #      memory: 480Gi #~90% of RAM available on Galaxy servers
-      hugepages-1Gi: 32Gi
     requests:
       cpu: "6"
       memory: 64Gi
-      hugepages-1Gi: 32Gi
   probes:
     # startupProbe owns the model compile/warmup window; while it runs the kubelet
     # suppresses liveness/readiness. Its failureThreshold is computed in the
@@ -128,6 +142,22 @@ deviceBoardNames:
   p300x2: p300
   t3k: n300
 
+# ASIC count per device — tt-metal maps one 1Gi hugepage per ASIC, so this sizes the
+# hugepages request/limit. Generated from workflows/device_utils.py:BOARD_TYPE_COUNT_TO_DEVICE;
+# consumed by tt-inference-server.hugepagesSize.
+deviceChipCounts:
+  galaxy: 32
+  n150: 1
+  n150x4: 4
+  n300: 2
+  p100: 1
+  p150: 1
+  p150x4: 4
+  p150x8: 8
+  p300: 2
+  p300x2: 4
+  t3k: 8
+
 # DRA board count per device — number of Tenstorrent boards a ResourceClaim requests for each device shape.
 # Generated from workflows/device_utils.py:BOARD_TYPE_COUNT_TO_DEVICE; consumed by tt-inference-server.draDeviceCount.
 deviceBoardCounts:
@@ -149,6 +179,7 @@ deviceBoardCounts:
 # ModelSpec catalog. Hand edits to leaf values are preserved across re-runs;
 # the generator only overwrites the keys it owns.
 # ---------------------------------------------------------------------------
+
 models:
   gpt-oss-20b:
     vllm:
