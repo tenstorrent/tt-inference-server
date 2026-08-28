@@ -747,6 +747,7 @@ _eval_config_list = [
                         },
                         "llm_kwargs": {
                             "top_p": 0.95,
+                            "top_k": 1,
                             "max_tokens": 64 * 1024,
                             "timeout": 60 * 60,
                         },
