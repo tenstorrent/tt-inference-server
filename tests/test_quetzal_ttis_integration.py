@@ -47,7 +47,7 @@ def test_dev_quetzal_specs_are_nondefault_and_revision_pinned(model):
     assert spec.env_vars["VLLM_PLUGINS"] == "quetzal_model_registry,tt"
     assert spec.env_vars["TT_VLLM_BUILTIN_MODELS"] == "0"
     if model == "Qwen3.6-27B":
-        assert spec.env_vars["TT_MESH_GRAPH_DESC_PATH"] == "auto"
+        assert "TT_MESH_GRAPH_DESC_PATH" not in spec.env_vars
     assert spec.env_vars["QUETZAL_PACKAGE_ID"].startswith("sha256-")
     assert len(spec.env_vars["QUETZAL_BUNDLE_MANIFEST_SHA256"]) == 64
     assert len(spec.env_vars["QUETZAL_REQUIRED_TT_METAL_PATCHSET_SHA256"]) == 64

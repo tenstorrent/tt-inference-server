@@ -43,10 +43,8 @@ templates:
         TRANSFORMERS_OFFLINE: "1"
         VLLM_PLUGINS: quetzal_model_registry,tt
         TT_VLLM_BUILTIN_MODELS: "0"
-        # Quetzal treats the literal sentinel `auto` as physical-topology
-        # discovery. This exact contract is required on line-wired QB2s; a
-        # bundled 2x2 descriptor is rejected by strict mapping there.
-        TT_MESH_GRAPH_DESC_PATH: auto
+        # Leave TT_MESH_GRAPH_DESC_PATH unset so pinned b534 performs physical
+        # discovery. b534 treats the newer `auto` sentinel as a literal file.
         TTQ_ROW_ALL_REDUCE_TOPOLOGY: Linear
         TTQ_TUNED_ROW_ALL_REDUCE_LINKS: "1"
         TTQ_TUNED_ROW_ALL_REDUCE: "1"
