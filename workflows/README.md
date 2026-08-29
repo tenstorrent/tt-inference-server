@@ -341,20 +341,22 @@ artifacts are pinned independently:
 - Build the image with a lowercase 40-hex source commit. The build creates and
   installs one wheel and includes `qz-<commit[:12]>` in the image tag, preventing
   a native-only image from satisfying the cache lookup. The current integration
-  pin is `49f103ad8f80523ba0d35c5825aee908507f196b`.
+  pin is `8a3bebe4afdd58068d4190248c3f7b82cc27ae9f`; this revision contains
+  the exact `22fb0bd2...` 12-patch GDN manifest required by the package contract.
 - Provision the generated artifact tree separately and pass its root with
   `--quetzal-models-root`. The root is mounted readonly and must contain a real,
   non-symlink `qualification_manifest.yaml`. Startup validates the manifest's
   model/revision/provider/mesh identity and fails closed before importing vLLM.
+  The current exact Qwen package at
+  `/mnt/models/huggingface/quetzal/nkapre/packages/sha256-f1d6cebaf6cd432c78721ec3b81101ab86493f387b37f63bc11aca2fc6f6d8d8-0a8efa103ee378c7cd0e2fa25b0426cbb82752e270f8927bdf44eb2cfe68ce66`
+  is intentionally not shown as a runnable example: its qualification manifest
+  does not own the paired patchset requirement and its storage is not yet an
+  administrator-published immutable generation. Do not mutate its permissions;
+  publish a successor identity and use that exact path after qualification.
 
 ```bash
 python3 scripts/build_docker_images.py \
-  --quetzal-commit 49f103ad8f80523ba0d35c5825aee908507f196b
-
-python3 run.py --model Qwen3.6-27B --tt-device p300x2 \
-  --engine vllm --impl quetzal --dev-mode --docker-server \
-  --quetzal-models-root \
-  /mnt/models/quetzal-runtime/49f103ad8f80523ba0d35c5825aee908507f196b/qwen36-6a9e13bd6fc8f0983b9b99948120bc37f49c13e9-p150x4-b1-s8192
+  --quetzal-commit 8a3bebe4afdd58068d4190248c3f7b82cc27ae9f
 ```
 
 The wheel pin does not provision model artifacts, and the artifact mount does

@@ -25,7 +25,7 @@ COPY --from=quetzal_src tools/tt_metal_patchset.py /tmp/quetzal-tt-metal/tt_meta
 RUN test "${TT_METAL_BASE_REVISION}" = "b534549300fe2af11e6ee828675294bc0e359555" \
     && test "${TT_METAL_BASE_FETCH_REF}" = "qz/mixtral-epd2-wait-min-20260827" \
     && test "${TT_METAL_PATCHSET_SHA256}" = "22fb0bd2523b8a5c63fa20c3c8a1586dc9ead5150449d0eb02231fa8173a7edd" \
-    && test "${TT_METAL_PATCHSET_MANIFEST_SHA256}" = "85599bb0c05d5a8b1e6607ec926ef344144657783eaa9b0db480d40e058d742e" \
+    && test "${TT_METAL_PATCHSET_MANIFEST_SHA256}" = "22fb0bd2523b8a5c63fa20c3c8a1586dc9ead5150449d0eb02231fa8173a7edd" \
     && echo "${TT_METAL_PATCHSET_MANIFEST_SHA256}  /tmp/quetzal-tt-metal/patches/gdn-productization-v1.json" \
         | sha256sum --check -
 

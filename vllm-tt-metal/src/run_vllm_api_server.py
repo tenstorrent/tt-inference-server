@@ -743,8 +743,10 @@ def _validate_quetzal_package_and_runtime(root: Path, model_id: str) -> None:
         raise RuntimeError(
             "Quetzal qualification manifest must contain exactly one model contract"
         )
-    required_runtime = (
-        matches[0].get("charter_pcc", {}).get("required_runtime_tt_metal_commit")
+    charter_pcc = matches[0].get("charter_pcc", {})
+    required_runtime = charter_pcc.get("required_runtime_tt_metal_commit")
+    package_required_patchset = charter_pcc.get(
+        "required_runtime_tt_metal_patchset_sha256"
     )
     actual_runtime = os.getenv("TT_METAL_COMMIT_SHA_OR_TAG")
     if not required_runtime or actual_runtime != required_runtime:
@@ -755,10 +757,19 @@ def _validate_quetzal_package_and_runtime(root: Path, model_id: str) -> None:
 
     required_patchset = os.getenv("QUETZAL_REQUIRED_TT_METAL_PATCHSET_SHA256")
     actual_patchset = os.getenv("TT_METAL_PATCHSET_SHA256")
-    if not required_patchset or actual_patchset != required_patchset:
+    actual_manifest = os.getenv("TT_METAL_PATCHSET_MANIFEST_SHA256")
+    if (
+        not package_required_patchset
+        or not required_patchset
+        or package_required_patchset != required_patchset
+        or actual_patchset != required_patchset
+        or actual_manifest != required_patchset
+    ):
         raise RuntimeError(
-            "Quetzal TT-Metal patchset mismatch: catalog requires "
-            f"{required_patchset!r}, image provides {actual_patchset!r}"
+            "Quetzal TT-Metal patchset mismatch: package requires "
+            f"{package_required_patchset!r}, catalog requires {required_patchset!r}, "
+            f"image provides patchset {actual_patchset!r} and applied manifest "
+            f"{actual_manifest!r}"
         )
     identity_path = Path(os.getenv("TT_METAL_HOME", "")) / ".ttq-runtime-identity.json"
     if identity_path.is_symlink() or not identity_path.is_file():
@@ -770,6 +781,7 @@ def _validate_quetzal_package_and_runtime(root: Path, model_id: str) -> None:
     if (
         identity.get("base_revision") != actual_runtime
         or identity.get("patchset_sha256") != actual_patchset
+        or identity.get("manifest_sha256") != actual_manifest
     ):
         raise RuntimeError("Quetzal TT-Metal runtime identity mismatch")
 

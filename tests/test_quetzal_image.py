@@ -56,7 +56,7 @@ def test_quetzal_runtime_is_rebuilt_in_base_abi_and_atomically_replaced():
     source = DOCKERFILE.read_text()
     revision = "b534549300fe2af11e6ee828675294bc0e359555"
     patchset_sha = "22fb0bd2523b8a5c63fa20c3c8a1586dc9ead5150449d0eb02231fa8173a7edd"
-    manifest_sha = "85599bb0c05d5a8b1e6607ec926ef344144657783eaa9b0db480d40e058d742e"
+    manifest_sha = patchset_sha
 
     assert "AS quetzal_ttmetal_builder" in source
     assert source.count("FROM ${TT_INFERENCE_SERVER_BASE_IMAGE}") == 2

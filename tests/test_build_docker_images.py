@@ -24,7 +24,7 @@ from scripts.build_docker_images import (
 )
 
 
-QUETZAL_COMMIT = "49f103ad8f80523ba0d35c5825aee908507f196b"
+QUETZAL_COMMIT = "8a3bebe4afdd58068d4190248c3f7b82cc27ae9f"
 
 
 def test_quetzal_commit_is_part_of_image_identity():
@@ -34,8 +34,8 @@ def test_quetzal_commit_is_part_of_image_identity():
         "22.04",
         quetzal_commit=QUETZAL_COMMIT,
     )
-    assert "-qz-49f103ad8f80" in tags["dev"]
-    assert "-qz-49f103ad8f80" in tags["release"]
+    assert "-qz-8a3bebe4afdd" in tags["dev"]
+    assert "-qz-8a3bebe4afdd" in tags["release"]
 
 
 @pytest.mark.parametrize("bad_ref", ["main", "v1.0", "ABCDEF" * 6 + "ABCD"])

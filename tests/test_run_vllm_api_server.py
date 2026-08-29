@@ -416,6 +416,7 @@ def _materialized_quetzal_contract(monkeypatch, tmp_path, module):
         "  - model_id: Qwen/Qwen3.6-27B\n"
         "    charter_pcc:\n"
         f"      required_runtime_tt_metal_commit: {required_runtime}\n"
+        f"      required_runtime_tt_metal_patchset_sha256: {'d' * 64}\n"
     )
     monkeypatch.setenv("QUETZAL_MODEL", "Qwen/Qwen3.6-27B")
     monkeypatch.setenv("QUETZAL_HF_REVISION", "c" * 40)
@@ -425,10 +426,17 @@ def _materialized_quetzal_contract(monkeypatch, tmp_path, module):
     patchset = "d" * 64
     monkeypatch.setenv("QUETZAL_REQUIRED_TT_METAL_PATCHSET_SHA256", patchset)
     monkeypatch.setenv("TT_METAL_PATCHSET_SHA256", patchset)
+    monkeypatch.setenv("TT_METAL_PATCHSET_MANIFEST_SHA256", patchset)
     metal_home = tmp_path / "tt-metal"
     metal_home.mkdir()
     (metal_home / ".ttq-runtime-identity.json").write_text(
-        json.dumps({"base_revision": required_runtime, "patchset_sha256": patchset})
+        json.dumps(
+            {
+                "base_revision": required_runtime,
+                "patchset_sha256": patchset,
+                "manifest_sha256": patchset,
+            }
+        )
     )
     monkeypatch.setenv("TT_METAL_HOME", str(metal_home))
 
@@ -772,6 +780,7 @@ def test_validate_quetzal_runtime_admits_only_generated_provider(
         f"  - model_id: {model}\n"
         "    charter_pcc:\n"
         f"      required_runtime_tt_metal_commit: {runtime_commit}\n"
+        f"      required_runtime_tt_metal_patchset_sha256: {patchset}\n"
     )
 
     artifact_rows = {}
@@ -819,7 +828,13 @@ def test_validate_quetzal_runtime_admits_only_generated_provider(
     metal_home = tmp_path / "tt-metal"
     metal_home.mkdir()
     (metal_home / ".ttq-runtime-identity.json").write_text(
-        json.dumps({"base_revision": runtime_commit, "patchset_sha256": patchset})
+        json.dumps(
+            {
+                "base_revision": runtime_commit,
+                "patchset_sha256": patchset,
+                "manifest_sha256": patchset,
+            }
+        )
     )
     for key, value in {
         "QUETZAL_VLLM": "1",
@@ -831,6 +846,7 @@ def test_validate_quetzal_runtime_admits_only_generated_provider(
         "QUETZAL_REQUIRED_TT_METAL_PATCHSET_SHA256": patchset,
         "TT_METAL_COMMIT_SHA_OR_TAG": runtime_commit,
         "TT_METAL_PATCHSET_SHA256": patchset,
+        "TT_METAL_PATCHSET_MANIFEST_SHA256": patchset,
         "TT_METAL_HOME": str(metal_home),
         "VLLM_PLUGINS": "quetzal_model_registry,tt",
         "TT_VLLM_BUILTIN_MODELS": "0",
@@ -875,6 +891,23 @@ def test_validate_quetzal_runtime_admits_only_generated_provider(
     )
 
     assert run_vllm_api_server_module.validate_quetzal_runtime(model_spec) == entry
+
+    monkeypatch.setenv("TT_METAL_PATCHSET_MANIFEST_SHA256", "0" * 64)
+    with pytest.raises(RuntimeError, match="patchset mismatch"):
+        run_vllm_api_server_module.validate_quetzal_runtime(model_spec)
+    monkeypatch.setenv("TT_METAL_PATCHSET_MANIFEST_SHA256", patchset)
+
+    (metal_home / ".ttq-runtime-identity.json").write_text(
+        json.dumps(
+            {
+                "base_revision": runtime_commit,
+                "patchset_sha256": patchset,
+                "manifest_sha256": "0" * 64,
+            }
+        )
+    )
+    with pytest.raises(RuntimeError, match="runtime identity mismatch"):
+        run_vllm_api_server_module.validate_quetzal_runtime(model_spec)
 
     monkeypatch.setenv("VLLM_PLUGINS", "quetzal_model_registry,tt,tt_model_registry")
     with pytest.raises(RuntimeError, match="requires exactly"):
