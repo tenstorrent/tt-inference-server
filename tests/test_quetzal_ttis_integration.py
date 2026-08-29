@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+
 import pytest
 
 from workflows.model_spec import get_runtime_model_spec, load_templates_from_yaml
