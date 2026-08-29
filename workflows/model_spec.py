@@ -315,12 +315,6 @@ tt_vllm_plugin_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-inference-server/tree/dev/tt-vllm-plugin",
     code_path="tt_vllm_plugin",
 )
-quetzal_impl = ImplSpec(
-    impl_id="quetzal",
-    impl_name="quetzal",
-    repo_url="https://github.com/tenstorrent/tt-quetzalcoatlus",
-    code_path="serving/quetzal_vllm.py",
-)
 # Distinct impl for forge SDXL so its model_id does not collide with the media
 # SDXL spec (which uses tt_transformers_impl) on shared Blackhole devices.
 sdxl_forge_impl = ImplSpec(
