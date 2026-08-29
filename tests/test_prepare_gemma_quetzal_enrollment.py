@@ -37,6 +37,25 @@ def current_ttis_revision():
     ).stdout.strip()
 
 
+@pytest.fixture
+def shield_checkout(tmp_path):
+    root = tmp_path / "tt-shield"
+    root.mkdir()
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    subprocess.run(["git", "-C", str(root), "config", "user.name", "test"], check=True)
+    subprocess.run(["git", "-C", str(root), "config", "user.email", "test@example.com"], check=True)
+    (root / "identity").write_text("exact shield checkout\n")
+    subprocess.run(["git", "-C", str(root), "add", "identity"], check=True)
+    subprocess.run(["git", "-C", str(root), "commit", "-qm", "identity"], check=True)
+    revision = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    return root, revision
+
+
 def evidence(*, ttis_revision=None, shield_revision=SHIELD_REVISION):
     return {
         "schema_version": SCHEMA, "decision": "approved", "administrator_owned": True,
@@ -65,9 +84,10 @@ def evidence(*, ttis_revision=None, shield_revision=SHIELD_REVISION):
     }
 
 
-def test_exact_evidence_renders_schema_valid_non_dispatching_fragments():
+def test_exact_evidence_renders_schema_valid_non_dispatching_fragments(shield_checkout):
+    shield_root, shield_revision = shield_checkout
     rendered = render_fragments(
-        evidence(), ROOT, expected_shield_revision=SHIELD_REVISION
+        evidence(shield_revision=shield_revision), ROOT, shield_repo_root=shield_root
     )
     row = rendered["implementation"]
     assert set(row["ci"]) == {"nightly", "release"}
@@ -79,7 +99,7 @@ def test_exact_evidence_renders_schema_valid_non_dispatching_fragments():
     assert env["TT_VLLM_BUILTIN_MODELS"] == "0"
     assert rendered["handoff"]["quetzal_source_revision"] == QUETZAL_SOURCE
     assert rendered["handoff"]["ttis_revision"] == current_ttis_revision()
-    assert rendered["handoff"]["shield_revision"] == SHIELD_REVISION
+    assert rendered["handoff"]["shield_revision"] == shield_revision
     assert rendered["handoff"]["fallback_allowed"] is False
 
 
@@ -96,31 +116,41 @@ def test_exact_evidence_renders_schema_valid_non_dispatching_fragments():
         (lambda x: x["roles"].update(generated_decode="../generated.py"), "contained relative"),
     ],
 )
-def test_dispatch_critical_mismatch_fails_closed(mutation, match):
-    bad = copy.deepcopy(evidence())
+def test_dispatch_critical_mismatch_fails_closed(mutation, match, shield_checkout):
+    shield_root, shield_revision = shield_checkout
+    bad = copy.deepcopy(evidence(shield_revision=shield_revision))
     mutation(bad)
     with pytest.raises(EnrollmentError, match=match):
-        render_fragments(bad, ROOT, expected_shield_revision=SHIELD_REVISION)
+        render_fragments(bad, ROOT, shield_repo_root=shield_root)
 
 
-def test_preconvergence_ttis_and_shield_evidence_is_rejected():
+def test_preconvergence_ttis_and_shield_evidence_is_rejected(shield_checkout):
+    shield_root, shield_revision = shield_checkout
     with pytest.raises(EnrollmentError, match="identity.ttis_revision"):
         render_fragments(
-            evidence(ttis_revision="fa81a5ea8d5a33a527192f0de1452b51366f0eee"),
+            evidence(
+                ttis_revision="fa81a5ea8d5a33a527192f0de1452b51366f0eee",
+                shield_revision=shield_revision,
+            ),
             ROOT,
-            expected_shield_revision=SHIELD_REVISION,
+            shield_repo_root=shield_root,
         )
     with pytest.raises(EnrollmentError, match="identity.shield_revision"):
         render_fragments(
             evidence(shield_revision="e52823404f76495769b03b02697b3328587a135f"),
             ROOT,
-            expected_shield_revision=SHIELD_REVISION,
+            shield_repo_root=shield_root,
         )
 
 
-def test_expected_shield_revision_must_be_explicit_full_git_identity():
-    with pytest.raises(EnrollmentError, match="expected Shield revision"):
-        render_fragments(evidence(), ROOT, expected_shield_revision="main")
+def test_shield_checkout_head_change_invalidates_prior_evidence(shield_checkout):
+    shield_root, old_revision = shield_checkout
+    (shield_root / "identity").write_text("new shield head\n")
+    subprocess.run(["git", "-C", str(shield_root), "commit", "-qam", "new head"], check=True)
+    with pytest.raises(EnrollmentError, match="identity.shield_revision"):
+        render_fragments(
+            evidence(shield_revision=old_revision), ROOT, shield_repo_root=shield_root
+        )
 
 
 def test_active_config_intentionally_has_no_gemma_quetzal_lane():

@@ -55,7 +55,7 @@ def _git_revision(value: Any, field: str) -> str:
     return value
 
 
-def _current_ttis_revision(repo_root: Path) -> str:
+def _current_repository_revision(repo_root: Path, field: str) -> str:
     try:
         result = subprocess.run(
             ["git", "-C", str(repo_root), "rev-parse", "--verify", "HEAD"],
@@ -65,8 +65,8 @@ def _current_ttis_revision(repo_root: Path) -> str:
             timeout=10,
         )
     except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
-        raise EnrollmentError("cannot resolve the exact TTIS checkout revision") from error
-    return _git_revision(result.stdout.strip(), "current TTIS checkout revision")
+        raise EnrollmentError(f"cannot resolve the exact {field} checkout revision") from error
+    return _git_revision(result.stdout.strip(), f"current {field} checkout revision")
 
 
 def _absolute(value: Any, field: str) -> str:
@@ -172,12 +172,12 @@ def validate_evidence(
 
 
 def render_fragments(
-    data: dict[str, Any], repo_root: Path, *, expected_shield_revision: str
+    data: dict[str, Any], repo_root: Path, *, shield_repo_root: Path
 ) -> dict[str, Any]:
     exact = validate_evidence(
         data,
-        ttis_revision=_current_ttis_revision(repo_root),
-        shield_revision=expected_shield_revision,
+        ttis_revision=_current_repository_revision(repo_root, "TTIS"),
+        shield_revision=_current_repository_revision(shield_repo_root, "Shield"),
     )
     root = exact["container_root"]
     roles = exact["roles"]
@@ -267,9 +267,10 @@ def main() -> int:
     parser.add_argument("--out-dir", required=True, type=Path)
     parser.add_argument("--repo-root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument(
-        "--expected-shield-revision",
+        "--shield-repo-root",
         required=True,
-        help="Exact 40-hex tt-shield revision that will consume the handoff",
+        type=Path,
+        help="Exact tt-shield checkout that will consume the handoff",
     )
     args = parser.parse_args()
     if args.out_dir.exists():
@@ -278,7 +279,7 @@ def main() -> int:
     rendered = render_fragments(
         data,
         args.repo_root,
-        expected_shield_revision=args.expected_shield_revision,
+        shield_repo_root=args.shield_repo_root,
     )
     args.out_dir.mkdir(parents=True)
     (args.out_dir / "gemma-dev-catalogue-entry.yaml").write_text(yaml.safe_dump(rendered["catalogue"], sort_keys=False))
