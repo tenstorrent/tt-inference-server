@@ -187,6 +187,7 @@ def render_fragments(
         "QUETZAL_VLLM": "1",
         "QUETZAL_MODEL": MODEL,
         "QUETZAL_HF_REVISION": HF_REVISION,
+        "QUETZAL_REQUIRED_SOURCE_REVISION": QUETZAL_SOURCE,
         "QUETZAL_PACKAGE_ID": exact["package_id"],
         "QUETZAL_BUNDLE_MANIFEST_SHA256": exact["manifest_sha"],
         "QUETZAL_REQUIRED_TT_METAL_PATCHSET_SHA256": PATCHSET,
@@ -211,7 +212,10 @@ def render_fragments(
             "weights": [MODEL], "impl": "quetzal", "inference_engine": "VLLM",
             "model_type": "LLM", "supported_modalities": ["text"],
             "device_model_specs": [{
-                "device": "P300X2", "max_concurrency": 1, "max_context": 2048,
+                # TTIS discovery uses max_context to select the generated
+                # prefill bucket.  Decode capacity remains 2048 below, so an
+                # ISL1024 + OSL512 request fits without advertising S2048.
+                "device": "P300X2", "max_concurrency": 1, "max_context": 1024,
                 "default_impl": False, "env_vars": env,
                 "vllm_args": {"block_size": 64, "max_model_len": 2048, "max_num_seqs": 1,
                               "revision": HF_REVISION, "tokenizer_revision": HF_REVISION},

@@ -91,12 +91,15 @@ def test_exact_evidence_renders_schema_valid_non_dispatching_fragments(shield_ch
     )
     row = rendered["implementation"]
     assert set(row["ci"]) == {"nightly", "release"}
-    assert rendered["catalogue"]["templates"][0]["device_model_specs"][0]["max_context"] == 2048
-    env = rendered["catalogue"]["templates"][0]["device_model_specs"][0]["env_vars"]
+    device_spec = rendered["catalogue"]["templates"][0]["device_model_specs"][0]
+    assert device_spec["max_context"] == 1024
+    assert device_spec["vllm_args"]["max_model_len"] == 2048
+    env = device_spec["env_vars"]
     assert env["TTQ_ROW_ALL_REDUCE_TOPOLOGY"] == "Ring"
     assert env["TTQ_TUNED_ROW_ALL_REDUCE_LINKS"] == "2"
     assert env["VLLM_PLUGINS"] == "quetzal_model_registry,tt"
     assert env["TT_VLLM_BUILTIN_MODELS"] == "0"
+    assert env["QUETZAL_REQUIRED_SOURCE_REVISION"] == QUETZAL_SOURCE
     assert rendered["handoff"]["quetzal_source_revision"] == QUETZAL_SOURCE
     assert rendered["handoff"]["ttis_revision"] == current_ttis_revision()
     assert rendered["handoff"]["shield_revision"] == shield_revision
