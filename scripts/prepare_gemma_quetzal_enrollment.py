@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -30,13 +31,12 @@ MODEL = "google/gemma-4-31B-it"
 MODEL_KEY = "gemma-4-31B-it"
 HF_REVISION = "842da3794eaa0b77d5f08bae87a17459d91ff475"
 QUETZAL_SOURCE = "bb02e1975437ee210578fd008721a7acff3f2dba"
-TTIS_SOURCE = "fa81a5ea8d5a33a527192f0de1452b51366f0eee"
-SHIELD_SOURCE = "e52823404f76495769b03b02697b3328587a135f"
 TT_METAL = "b534549300fe2af11e6ee828675294bc0e359555"
 PATCHSET = "22fb0bd2523b8a5c63fa20c3c8a1586dc9ead5150449d0eb02231fa8173a7edd"
 INIT_SHA256 = "b0073851fe9142c62d1ff488c40b8e5a9307040d4e6e93d1ebcb365440a5a218"
 RUNNER = "qb2-p300x2-physical-2x2-ring-links2"
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
+GIT_REVISION = re.compile(r"^[0-9a-f]{40}$")
 PACKAGE = re.compile(r"^sha256(?:-v[0-9]+)?(?:-[0-9a-f]{64}){2,3}$")
 
 
@@ -47,6 +47,26 @@ class EnrollmentError(ValueError):
 def _need(value: Any, expected: Any, field: str) -> None:
     if value != expected:
         raise EnrollmentError(f"{field} must be {expected!r}, got {value!r}")
+
+
+def _git_revision(value: Any, field: str) -> str:
+    if not isinstance(value, str) or not GIT_REVISION.fullmatch(value):
+        raise EnrollmentError(f"{field} must be a full lowercase git revision")
+    return value
+
+
+def _current_ttis_revision(repo_root: Path) -> str:
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo_root), "rev-parse", "--verify", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
+        raise EnrollmentError("cannot resolve the exact TTIS checkout revision") from error
+    return _git_revision(result.stdout.strip(), "current TTIS checkout revision")
 
 
 def _absolute(value: Any, field: str) -> str:
@@ -67,7 +87,11 @@ def _relative(value: Any, field: str) -> str:
     return value
 
 
-def validate_evidence(data: dict[str, Any]) -> dict[str, Any]:
+def validate_evidence(
+    data: dict[str, Any], *, ttis_revision: str, shield_revision: str
+) -> dict[str, Any]:
+    ttis_revision = _git_revision(ttis_revision, "expected TTIS revision")
+    shield_revision = _git_revision(shield_revision, "expected Shield revision")
     _need(data.get("schema_version"), SCHEMA, "schema_version")
     _need(data.get("decision"), "approved", "decision")
     _need(data.get("administrator_owned"), True, "administrator_owned")
@@ -79,8 +103,8 @@ def validate_evidence(data: dict[str, Any]) -> dict[str, Any]:
     _need(identity.get("model_id"), MODEL, "identity.model_id")
     _need(identity.get("hf_revision"), HF_REVISION, "identity.hf_revision")
     _need(identity.get("quetzal_source_revision"), QUETZAL_SOURCE, "identity.quetzal_source_revision")
-    _need(identity.get("ttis_revision"), TTIS_SOURCE, "identity.ttis_revision")
-    _need(identity.get("shield_revision"), SHIELD_SOURCE, "identity.shield_revision")
+    _need(identity.get("ttis_revision"), ttis_revision, "identity.ttis_revision")
+    _need(identity.get("shield_revision"), shield_revision, "identity.shield_revision")
     _need(identity.get("tt_metal_revision"), TT_METAL, "identity.tt_metal_revision")
     _need(identity.get("tt_metal_patchset_sha256"), PATCHSET, "identity.tt_metal_patchset_sha256")
     _need(identity.get("patchset_applied_manifest_matches"), True, "identity.patchset_applied_manifest_matches")
@@ -142,11 +166,19 @@ def validate_evidence(data: dict[str, Any]) -> dict[str, Any]:
         "container_root": container_root,
         "roles": role_paths,
         "pcc": float(pcc),
+        "ttis_revision": ttis_revision,
+        "shield_revision": shield_revision,
     }
 
 
-def render_fragments(data: dict[str, Any], repo_root: Path) -> dict[str, Any]:
-    exact = validate_evidence(data)
+def render_fragments(
+    data: dict[str, Any], repo_root: Path, *, expected_shield_revision: str
+) -> dict[str, Any]:
+    exact = validate_evidence(
+        data,
+        ttis_revision=_current_ttis_revision(repo_root),
+        shield_revision=expected_shield_revision,
+    )
     root = exact["container_root"]
     roles = exact["roles"]
     env = {
@@ -215,8 +247,8 @@ def render_fragments(data: dict[str, Any], repo_root: Path) -> dict[str, Any]:
         "device": "P300X2",
         "runner_label": RUNNER,
         "quetzal_source_revision": QUETZAL_SOURCE,
-        "ttis_revision": TTIS_SOURCE,
-        "shield_revision": SHIELD_SOURCE,
+        "ttis_revision": exact["ttis_revision"],
+        "shield_revision": exact["shield_revision"],
         "tt_metal_revision": TT_METAL,
         "tt_metal_patchset_sha256": PATCHSET,
         "package_id": exact["package_id"],
@@ -234,11 +266,20 @@ def main() -> int:
     parser.add_argument("--evidence", required=True, type=Path)
     parser.add_argument("--out-dir", required=True, type=Path)
     parser.add_argument("--repo-root", type=Path, default=Path(__file__).resolve().parents[1])
+    parser.add_argument(
+        "--expected-shield-revision",
+        required=True,
+        help="Exact 40-hex tt-shield revision that will consume the handoff",
+    )
     args = parser.parse_args()
     if args.out_dir.exists():
         raise EnrollmentError("out-dir must not already exist")
     data = json.loads(args.evidence.read_text())
-    rendered = render_fragments(data, args.repo_root)
+    rendered = render_fragments(
+        data,
+        args.repo_root,
+        expected_shield_revision=args.expected_shield_revision,
+    )
     args.out_dir.mkdir(parents=True)
     (args.out_dir / "gemma-dev-catalogue-entry.yaml").write_text(yaml.safe_dump(rendered["catalogue"], sort_keys=False))
     for name, key in (("gemma-models-ci-implementation.json", "implementation"),

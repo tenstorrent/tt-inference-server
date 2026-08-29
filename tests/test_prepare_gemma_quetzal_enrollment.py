@@ -4,6 +4,7 @@
 
 import copy
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -17,8 +18,6 @@ from scripts.prepare_gemma_quetzal_enrollment import (
     QUETZAL_SOURCE,
     RUNNER,
     SCHEMA,
-    SHIELD_SOURCE,
-    TTIS_SOURCE,
     TT_METAL,
     render_fragments,
 )
@@ -26,15 +25,26 @@ from scripts.prepare_gemma_quetzal_enrollment import (
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_ID = "sha256-" + "1" * 64 + "-" + "2" * 64
+SHIELD_REVISION = "da43fee60603da9a3b7a6c1bf5643fe0928eab0f"
 
 
-def evidence():
+def current_ttis_revision():
+    return subprocess.run(
+        ["git", "-C", str(ROOT), "rev-parse", "--verify", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
+def evidence(*, ttis_revision=None, shield_revision=SHIELD_REVISION):
     return {
         "schema_version": SCHEMA, "decision": "approved", "administrator_owned": True,
         "read_only": True, "no_writable_aliases": True, "revocation_status": "active",
         "identity": {"model_id": MODEL, "hf_revision": HF_REVISION,
-                     "quetzal_source_revision": QUETZAL_SOURCE, "ttis_revision": TTIS_SOURCE,
-                     "shield_revision": SHIELD_SOURCE, "tt_metal_revision": TT_METAL,
+                     "quetzal_source_revision": QUETZAL_SOURCE,
+                     "ttis_revision": ttis_revision or current_ttis_revision(),
+                     "shield_revision": shield_revision, "tt_metal_revision": TT_METAL,
                      "tt_metal_patchset_sha256": PATCHSET, "patchset_applied_manifest_matches": True,
                      "initialization_milestones_sha256": INIT_SHA256},
         "package_id": PACKAGE_ID, "package_manifest_sha256": "3" * 64,
@@ -56,7 +66,9 @@ def evidence():
 
 
 def test_exact_evidence_renders_schema_valid_non_dispatching_fragments():
-    rendered = render_fragments(evidence(), ROOT)
+    rendered = render_fragments(
+        evidence(), ROOT, expected_shield_revision=SHIELD_REVISION
+    )
     row = rendered["implementation"]
     assert set(row["ci"]) == {"nightly", "release"}
     assert rendered["catalogue"]["templates"][0]["device_model_specs"][0]["max_context"] == 2048
@@ -66,6 +78,8 @@ def test_exact_evidence_renders_schema_valid_non_dispatching_fragments():
     assert env["VLLM_PLUGINS"] == "quetzal_model_registry,tt"
     assert env["TT_VLLM_BUILTIN_MODELS"] == "0"
     assert rendered["handoff"]["quetzal_source_revision"] == QUETZAL_SOURCE
+    assert rendered["handoff"]["ttis_revision"] == current_ttis_revision()
+    assert rendered["handoff"]["shield_revision"] == SHIELD_REVISION
     assert rendered["handoff"]["fallback_allowed"] is False
 
 
@@ -86,7 +100,27 @@ def test_dispatch_critical_mismatch_fails_closed(mutation, match):
     bad = copy.deepcopy(evidence())
     mutation(bad)
     with pytest.raises(EnrollmentError, match=match):
-        render_fragments(bad, ROOT)
+        render_fragments(bad, ROOT, expected_shield_revision=SHIELD_REVISION)
+
+
+def test_preconvergence_ttis_and_shield_evidence_is_rejected():
+    with pytest.raises(EnrollmentError, match="identity.ttis_revision"):
+        render_fragments(
+            evidence(ttis_revision="fa81a5ea8d5a33a527192f0de1452b51366f0eee"),
+            ROOT,
+            expected_shield_revision=SHIELD_REVISION,
+        )
+    with pytest.raises(EnrollmentError, match="identity.shield_revision"):
+        render_fragments(
+            evidence(shield_revision="e52823404f76495769b03b02697b3328587a135f"),
+            ROOT,
+            expected_shield_revision=SHIELD_REVISION,
+        )
+
+
+def test_expected_shield_revision_must_be_explicit_full_git_identity():
+    with pytest.raises(EnrollmentError, match="expected Shield revision"):
+        render_fragments(evidence(), ROOT, expected_shield_revision="main")
 
 
 def test_active_config_intentionally_has_no_gemma_quetzal_lane():
