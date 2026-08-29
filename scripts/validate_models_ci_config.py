@@ -15,8 +15,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from collections import Counter
 from pathlib import Path
+
+IMMUTABLE_OCI_IMAGE_RE = re.compile(r"^[^\s@:]+(?:/[^\s@:]+)+@sha256:[0-9a-f]{64}$")
 
 
 def iter_implementations(model_entry: dict):
@@ -34,6 +37,7 @@ def validate_implementation_identities(config: dict) -> list[str]:
         for index, item in enumerate(implementations):
             engine = str(item.get("inference_engine", "")).lower()
             impl = item.get("impl")
+            image = item.get("image")
             if engines[engine] > 1 and not impl:
                 errors.append(
                     f"{model}.implementations[{index}]: impl is required because "
@@ -46,6 +50,13 @@ def validate_implementation_identities(config: dict) -> list[str]:
                     f"(inference_engine={item.get('inference_engine')!r}, impl={impl!r})"
                 )
             identities.add(identity)
+            if image is not None and not (
+                isinstance(image, str) and IMMUTABLE_OCI_IMAGE_RE.fullmatch(image)
+            ):
+                errors.append(
+                    f"{model}.implementations[{index}]: image must be an immutable "
+                    "registry/path@sha256:<64 lowercase hex> reference"
+                )
     return errors
 
 

@@ -7,8 +7,33 @@ from pathlib import Path
 
 from scripts.validate_models_ci_config import validate_implementation_identities
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_implementation_image_must_be_an_immutable_oci_digest():
+    base = {
+        "models": {
+            "m": {
+                "implementations": [
+                    {
+                        "inference_engine": "vLLM",
+                        "impl": "quetzal",
+                        "image": "ghcr.io/tenstorrent/ttis-quetzal@sha256:" + "a" * 64,
+                        "ci": {"nightly": {"devices": ["P300X2"]}},
+                    }
+                ]
+            }
+        }
+    }
+    assert validate_implementation_identities(base) == []
+
+    mutable = json.loads(json.dumps(base))
+    mutable["models"]["m"]["implementations"][0]["image"] = (
+        "ghcr.io/tenstorrent/ttis-quetzal:latest"
+    )
+    assert (
+        "image must be an immutable" in validate_implementation_identities(mutable)[0]
+    )
 
 
 def test_duplicate_engine_requires_impl_and_unique_identity():
