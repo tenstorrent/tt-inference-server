@@ -80,6 +80,8 @@ dit_runner_log_map = {
     ModelRunners.TT_WAN_2_2_I2V_LIGHTNING.value: "Wan22-I2V-Lightning",
     ModelRunners.TT_LTX_2_3_DISTILLED.value: "LTX-2.3-distilled",
     ModelRunners.TT_MINIMAX_H3_T2VA.value: "MiniMaxH3-T2VA",
+    ModelRunners.TT_MINIMAX_H3_FL2VA.value: "MiniMaxH3-FL2VA",
+    ModelRunners.TT_MINIMAX_H3_REF2VA.value: "MiniMaxH3-Ref2VA",
     ModelRunners.TT_QWEN_IMAGE.value: "Qwen-Image",
     ModelRunners.TT_QWEN_IMAGE_2512.value: "Qwen-Image-2512",
     ModelRunners.SP_RUNNER.value: "SP-Runner",
@@ -1334,14 +1336,15 @@ MINIMAX_H3_WARMUP_PROMPT = (
 MINIMAX_H3_TRACE_REGION_BYTES = 150_000_000
 
 
-def _minimax_h3_device_params(mesh_shape: tuple) -> dict:
-    """Device params for MiniMax-H3 t2va, keyed on the mesh shape.
+def _minimax_h3_device_params(mesh_shape: tuple, *, l1_small_size: int = 65536) -> dict:
+    """Device params for MiniMax-H3, keyed on the mesh shape.
 
     Everything here is derived from the pipeline's per-shape preset so the two can't disagree:
     fabric follows topology (Ring -> FABRIC_1D_RING), and a `trace_region_size` is reserved when the
     preset enables `trace_denoise` (the 4x32 quad) -- without it the pipeline's trace capture is
     fatal. The region is only reserved, so a shape that does not trace pays nothing but address
-    space. `l1_small_size` is mandatory (a bare open fails as "bank size is 0 B").
+    space. `l1_small_size` is mandatory (a bare open fails as "bank size is 0 B"). Ref2VA uses
+    16384: the video VAE's taps=3 encoder clashes with a 65536 pool.
     """
     preset = resolve_mesh_preset(mesh_shape)
     router_config = ttnn.FabricRouterConfig()
@@ -1352,7 +1355,7 @@ def _minimax_h3_device_params(mesh_shape: tuple) -> dict:
             ttnn.FabricConfig.FABRIC_1D_RING if ring else ttnn.FabricConfig.FABRIC_1D
         ),
         "fabric_router_config": router_config,
-        "l1_small_size": 65536,
+        "l1_small_size": l1_small_size,
     }
     if preset.get("trace_denoise"):
         params["trace_region_size"] = MINIMAX_H3_TRACE_REGION_BYTES
@@ -1379,6 +1382,8 @@ class TTMiniMaxH3Runner(TTDiTRunner):
     One shape only in v1, validated at the boundary. A request at an unwarmed shape would compile
     inside the request rather than fail, which is worse than a clear error.
     """
+
+    pipeline_task = "t2va"
 
     def __init__(self, device_id: str):
         super().__init__(device_id)
@@ -1412,6 +1417,7 @@ class TTMiniMaxH3Runner(TTDiTRunner):
             return MiniMaxH3Pipeline.create_pipeline(
                 mesh_device=self.ttnn_device,
                 weights_dir=self._weights_dir(),
+                task=self.pipeline_task,
             )
         except Exception as e:
             log_exception_chain(
@@ -1494,6 +1500,7 @@ class TTMiniMaxH3Runner(TTDiTRunner):
                         height=h,
                         width=w,
                         num_inference_steps=MINIMAX_H3_NUM_INFERENCE_STEPS,
+                        **self._warmup_extra_kwargs(h, w, f),
                     )
                 )
                 self.logger.info(
@@ -1617,6 +1624,7 @@ class TTMiniMaxH3Runner(TTDiTRunner):
             num_inference_steps=request.num_inference_steps
             or MINIMAX_H3_NUM_INFERENCE_STEPS,
             seed=int(request.seed) if request.seed is not None else 0,
+            **self._pipeline_extra_kwargs(request),
         )
 
         # `_warm_padded_lens` is what is known resident: seeded by warmup (possibly empty) and
@@ -1653,3 +1661,145 @@ class TTMiniMaxH3Runner(TTDiTRunner):
         # error anywhere; it just gets indexed, and the job's result path becomes "/" -- the first
         # character. Same shape as the Prodia runner's `return [VideoManager().export_to_mp4(...)]`.
         return [path]
+
+    def _warmup_extra_kwargs(self, height: int, width: int, num_frames: int) -> dict:
+        """Extra ``pipeline.warmup`` kwargs. FL2VA/Ref2VA add dummy media so padded_len matches."""
+        return {}
+
+    def _pipeline_extra_kwargs(self, request: VideoGenerateRequest) -> dict:
+        """Extra ``pipeline(...)`` kwargs beyond prompt/shape/steps/seed."""
+        return {}
+
+    @staticmethod
+    def _dummy_rgb(width: int, height: int) -> Image.Image:
+        return Image.new("RGB", (width, height), color=0)
+
+
+class TTMiniMaxH3FL2VARunner(TTMiniMaxH3Runner):
+    """MiniMax-H3 ``fl2va``: prompt plus first/last keyframes, video and soundtrack out.
+
+    Same ``transformer/`` partition as t2va. ``image_prompts`` use sentinels
+    ``frame_pos=0`` (first) and ``frame_pos=-1`` (last).
+    """
+
+    requires_image_conditioning = True
+
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
+        self.image_manager = ImageManager()
+
+    def _warmup_extra_kwargs(self, height: int, width: int, num_frames: int) -> dict:
+        # A t2va-shaped warm misses the keyframe vision block (~1010 rows).
+        return {"image": self._dummy_rgb(width, height)}
+
+    def _pipeline_extra_kwargs(self, request: VideoI2VGenerateRequest) -> dict:
+        first, last = None, None
+        for entry in request.image_prompts:
+            image = self.image_manager.base64_to_pil_image(entry.image)
+            if entry.frame_pos == 0:
+                first = image
+            elif entry.frame_pos == -1:
+                last = image
+            else:
+                raise ValueError(
+                    "MiniMax-H3 FL2VA image_prompts[].frame_pos must be 0 (first) "
+                    f"or -1 (last); got {entry.frame_pos}"
+                )
+        if first is None and last is None:
+            raise ValueError(
+                "MiniMax-H3 FL2VA requires image_prompts with frame_pos 0 and/or -1"
+            )
+        return {"image": first, "last_image": last}
+
+
+class TTMiniMaxH3Ref2VARunner(TTMiniMaxH3Runner):
+    """MiniMax-H3 ``ref2va``: omni-references in, a video and soundtrack out.
+
+    Loads ``transformer_ref/``. ``MultimodalReferences`` pack as images, then
+    videos, then audios.
+    """
+
+    pipeline_task = "ref2va"
+
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
+        self.image_manager = ImageManager()
+
+    def get_pipeline_device_params(self):
+        return _minimax_h3_device_params(
+            self.settings.device_mesh_shape, l1_small_size=16384
+        )
+
+    def _warmup_extra_kwargs(self, height: int, width: int, num_frames: int) -> dict:
+        from models.tt_dit.pipelines.minimax_h3.packing_ref2va import MiniMaxH3Reference
+
+        return {
+            "references": [MiniMaxH3Reference(image=self._dummy_rgb(width, height))]
+        }
+
+    def _pipeline_extra_kwargs(self, request) -> dict:
+        from domain.video_ref2va_generate_request import VideoRef2VAGenerateRequest
+        from models.tt_dit.pipelines.minimax_h3.packing_ref2va import (
+            MiniMaxH3Reference,
+            decode_reference_audio,
+            reference_from_video_file,
+        )
+        from tt_model_runners.minimax_h3_policy import (
+            check_reference_clip_durations,
+        )
+
+        if not isinstance(request, VideoRef2VAGenerateRequest):
+            raise ValueError(
+                "MiniMax-H3 Ref2VA requires a request with references "
+                "(POST /generations/ref2va)"
+            )
+
+        refs = []
+        video_durations: list[float] = []
+        audio_durations: list[float] = []
+
+        for source in request.references.images:
+            refs.append(
+                MiniMaxH3Reference(
+                    image=self.image_manager.base64_to_pil_image(source.b64)
+                )
+            )
+
+        for source in request.references.videos:
+            path = self._write_media_tempfile(source.b64, suffix=".mp4")
+            try:
+                reference = reference_from_video_file(path)
+            finally:
+                os.unlink(path)
+            n_frames = (
+                reference.video.shape[0]
+                if hasattr(reference.video, "shape")
+                else len(reference.video)
+            )
+            video_durations.append(n_frames / float(reference.fps))
+            refs.append(reference)
+
+        for source in request.references.audios:
+            path = self._write_media_tempfile(source.b64, suffix=".wav")
+            try:
+                waveform, sample_rate = decode_reference_audio(path)
+            finally:
+                os.unlink(path)
+            audio_durations.append(waveform.shape[-1] / float(sample_rate))
+            refs.append(MiniMaxH3Reference(audio=waveform, sample_rate=sample_rate))
+
+        check_reference_clip_durations(
+            video_durations=video_durations, audio_durations=audio_durations
+        )
+        return {"references": refs}
+
+    @staticmethod
+    def _write_media_tempfile(b64: str, *, suffix: str) -> str:
+        import tempfile
+
+        fd, path = tempfile.mkstemp(suffix=suffix)
+        try:
+            os.write(fd, base64.b64decode(b64))
+        finally:
+            os.close(fd)
+        return path

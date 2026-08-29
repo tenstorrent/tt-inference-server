@@ -644,11 +644,16 @@ class TestVideoI2VGenerateRequestValidation:
                 ],
             )
 
-    def test_negative_frame_pos_rejected(self):
+    def test_negative_one_is_last_frame_sentinel(self):
+        """frame_pos=-1 is last-frame (Python list indexing); Wan and FL2VA both use it."""
+        entry = ImagePromptEntry(image=_tiny_png_base64(), frame_pos=-1)
+        assert entry.frame_pos == -1
+
+    def test_negative_two_rejected(self):
         from pydantic import ValidationError
 
         with pytest.raises(ValidationError):
-            ImagePromptEntry(image=_tiny_png_base64(), frame_pos=-1)
+            ImagePromptEntry(image=_tiny_png_base64(), frame_pos=-2)
 
     def test_empty_base64_rejected(self):
         from pydantic import ValidationError

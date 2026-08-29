@@ -8,6 +8,7 @@ from tt_model_runners.minimax_h3_policy import (
     MINIMAX_H3_DEFAULT_ASPECT_RATIO,
     MINIMAX_H3_DEFAULT_DURATION_S,
     MINIMAX_H3_DURATIONS_S,
+    MINIMAX_H3_FL2VA_FRAME_POS,
     MINIMAX_H3_NUM_INFERENCE_STEPS,
     minimax_h3_frames_are_aligned,
     minimax_h3_parse_aspect_ratio,
@@ -74,3 +75,8 @@ class TestFramesAreAligned:
             exc_type=ImportError,
         )
         assert not minimax_h3_frames_are_aligned(120)
+
+
+class TestFL2VASentinels:
+    def test_first_and_last_only(self):
+        assert MINIMAX_H3_FL2VA_FRAME_POS == frozenset({0, -1})

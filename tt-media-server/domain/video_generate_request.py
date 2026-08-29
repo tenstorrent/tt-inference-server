@@ -54,7 +54,7 @@ class VideoGenerateRequest(BaseRequest):
         if unknown:
             known = ", ".join(sorted(cls.model_fields))
             raise ValueError(
-                f"unknown field(s) for MiniMax-H3 t2va: {', '.join(unknown)}. "
+                f"unknown field(s) for MiniMax-H3: {', '.join(unknown)}. "
                 f"This deployment reads: {known}. Note `duration` is not one of them -- the field "
                 "is `duration_seconds` -- and resolution is selected with `aspect_ratio`."
             )
@@ -96,6 +96,10 @@ def _is_minimax_h3() -> bool:
     from config.constants import ModelRunners
 
     try:
-        return get_settings().model_runner == ModelRunners.TT_MINIMAX_H3_T2VA.value
+        return get_settings().model_runner in {
+            ModelRunners.TT_MINIMAX_H3_T2VA.value,
+            ModelRunners.TT_MINIMAX_H3_FL2VA.value,
+            ModelRunners.TT_MINIMAX_H3_REF2VA.value,
+        }
     except Exception:  # noqa: BLE001 - settings unavailable (tests, tooling): do not gate on it
         return False

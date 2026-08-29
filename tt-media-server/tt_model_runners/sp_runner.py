@@ -756,7 +756,24 @@ class SPRunner(BaseDeviceRunner):
         the fully-written JSON.
         """
         image_prompts = getattr(request, "image_prompts", None)
-        if not image_prompts:
+        references = getattr(request, "references", None)
+        if references:
+            refs_payload = (
+                references.model_dump(exclude_none=True)
+                if hasattr(references, "model_dump")
+                else references
+            )
+            payload = {
+                "aspect_ratio": getattr(request, "aspect_ratio", None),
+                "duration_seconds": getattr(request, "duration_seconds", None),
+                "references": refs_payload,
+            }
+        elif image_prompts:
+            payload = [
+                {"image": entry.image, "frame_pos": entry.frame_pos}
+                for entry in image_prompts
+            ]
+        else:
             return ""
 
         final_path = image_prompts_path(task_id)
@@ -767,11 +784,6 @@ class SPRunner(BaseDeviceRunner):
                 f"({path_bytes} > {MAX_IMAGE_PATH_LEN} bytes); "
                 f"reduce TT_VIDEO_FILE_DIR length"
             )
-
-        payload = [
-            {"image": entry.image, "frame_pos": entry.frame_pos}
-            for entry in image_prompts
-        ]
         fd, tmp_path = tempfile.mkstemp(
             prefix=f"tt_img_{task_id}.",
             suffix=".json.tmp",
