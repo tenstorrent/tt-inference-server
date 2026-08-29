@@ -465,6 +465,32 @@ def _require_read_only_path(path: Path, *, directory: bool, label: str) -> None:
         raise RuntimeError(f"{label} is mutable: {path}")
 
 
+def _require_read_only_package_member(
+    package_root: Path, value: str, *, label: str
+) -> tuple[Path, str]:
+    """Resolve one package member without hiding symlink or mutable-parent state."""
+    member = Path(value)
+    try:
+        relative = member.relative_to(package_root)
+    except ValueError as exc:
+        raise RuntimeError(f"{label} escapes QUETZAL_PACKAGE_ROOT: {member}") from exc
+    if not relative.parts or any(part in ("", ".", "..") for part in relative.parts):
+        raise RuntimeError(f"{label} is not a canonical package path: {member}")
+
+    current = package_root
+    for part in relative.parts[:-1]:
+        current = current / part
+        _require_read_only_path(current, directory=True, label=f"{label} parent")
+    _require_read_only_path(member, directory=False, label=label)
+    try:
+        resolved = member.resolve(strict=True)
+    except OSError as exc:
+        raise RuntimeError(f"{label} is missing: {member}") from exc
+    if not resolved.is_relative_to(package_root):
+        raise RuntimeError(f"{label} escapes QUETZAL_PACKAGE_ROOT: {member}")
+    return member, relative.as_posix()
+
+
 def _validate_quetzal_auxiliary_references(
     bundle_manifest: dict, package_id: str
 ) -> None:
@@ -626,25 +652,47 @@ def _validate_quetzal_package_and_runtime(root: Path, model_id: str) -> None:
         raise RuntimeError(
             "impl=quetzal requires QUETZAL_PACKAGE_ID and QUETZAL_PACKAGE_ROOT"
         )
-    package_root = Path(package_root_value).resolve()
+    package_root_input = Path(package_root_value)
+    if package_root_input.is_symlink():
+        raise RuntimeError(
+            f"QUETZAL_PACKAGE_ROOT may not be a symlink: {package_root_input}"
+        )
+    try:
+        package_root = package_root_input.resolve(strict=True)
+    except OSError as exc:
+        raise RuntimeError(
+            f"QUETZAL_PACKAGE_ROOT is missing: {package_root_input}"
+        ) from exc
     if root != package_root or package_root.name != package_id:
         raise RuntimeError(
             "QZ_MODELS_ROOT must equal QUETZAL_PACKAGE_ROOT and its basename "
             "must equal QUETZAL_PACKAGE_ID"
         )
+    _require_read_only_path(package_root, directory=True, label="Quetzal package root")
 
     manifest_sha256 = os.getenv("QUETZAL_BUNDLE_MANIFEST_SHA256", "")
     if re.fullmatch(r"[0-9a-f]{64}", manifest_sha256) is None:
         raise RuntimeError(
             "impl=quetzal requires QUETZAL_BUNDLE_MANIFEST_SHA256 as lowercase SHA-256"
         )
-    trusted_manifest = (
-        package_root / QUETZAL_BUNDLE_MANIFESTS_DIR / f"{manifest_sha256}.json"
+    trusted_manifest_dir = package_root / QUETZAL_BUNDLE_MANIFESTS_DIR
+    _require_read_only_path(
+        trusted_manifest_dir,
+        directory=True,
+        label="Quetzal trusted-root proof directory",
     )
-    if trusted_manifest.is_symlink() or not trusted_manifest.is_file():
-        raise RuntimeError(
-            f"Quetzal package is missing trusted-root proof: {trusted_manifest}"
+    trusted_manifest = trusted_manifest_dir / f"{manifest_sha256}.json"
+    try:
+        _require_read_only_path(
+            trusted_manifest,
+            directory=False,
+            label="Quetzal trusted-root proof",
         )
+    except RuntimeError as exc:
+        raise RuntimeError(
+            f"Quetzal package has a missing trusted-root proof or an invalid one: "
+            f"{trusted_manifest}: {exc}"
+        ) from exc
     actual_manifest_sha256, manifest_size = _sha256_file(trusted_manifest)
     if manifest_size > 16 * 1024 * 1024 or actual_manifest_sha256 != manifest_sha256:
         raise RuntimeError("Quetzal trusted-root proof digest mismatch")
@@ -669,15 +717,9 @@ def _validate_quetzal_package_and_runtime(root: Path, model_id: str) -> None:
         value = os.getenv(env_name)
         if not value:
             raise RuntimeError(f"impl=quetzal requires {env_name}")
-        artifact = Path(value).resolve()
-        try:
-            relative = artifact.relative_to(package_root).as_posix()
-        except ValueError as exc:
-            raise RuntimeError(
-                f"{env_name} escapes QUETZAL_PACKAGE_ROOT: {artifact}"
-            ) from exc
-        if artifact.is_symlink() or not artifact.is_file():
-            raise RuntimeError(f"Quetzal artifact is not a regular file: {artifact}")
+        artifact, relative = _require_read_only_package_member(
+            package_root, value, label=env_name
+        )
         row = inventory.get(relative)
         digest, size = _sha256_file(artifact)
         if (

@@ -471,6 +471,9 @@ def _materialized_quetzal_contract(monkeypatch, tmp_path, module):
     proof.parent.mkdir()
     proof.write_bytes(raw_manifest)
     monkeypatch.setenv("QUETZAL_BUNDLE_MANIFEST_SHA256", manifest_sha256)
+    for path in package_root.rglob("*"):
+        path.chmod(0o555 if path.is_dir() else 0o444)
+    package_root.chmod(0o555)
     return package_root
 
 
@@ -577,8 +580,11 @@ def test_quetzal_runtime_contract_rejects_missing_package_file(
     package_root = _materialized_quetzal_contract(
         monkeypatch, tmp_path, run_vllm_api_server_module
     )
-    Path(os.environ["QUETZAL_WEIGHTS"]).unlink()
-    with pytest.raises(RuntimeError, match="not a regular file"):
+    weights = Path(os.environ["QUETZAL_WEIGHTS"])
+    weights.parent.chmod(0o755)
+    weights.unlink()
+    weights.parent.chmod(0o555)
+    with pytest.raises(RuntimeError, match="is missing"):
         run_vllm_api_server_module._validate_quetzal_package_and_runtime(
             package_root, "Qwen/Qwen3.6-27B"
         )
@@ -591,7 +597,10 @@ def test_quetzal_runtime_contract_rejects_missing_trusted_root_proof(
         monkeypatch, tmp_path, run_vllm_api_server_module
     )
     digest = os.environ["QUETZAL_BUNDLE_MANIFEST_SHA256"]
-    (package_root / ".quetzal-bundle-manifests" / f"{digest}.json").unlink()
+    proof_dir = package_root / ".quetzal-bundle-manifests"
+    proof_dir.chmod(0o755)
+    (proof_dir / f"{digest}.json").unlink()
+    proof_dir.chmod(0o555)
     with pytest.raises(RuntimeError, match="missing trusted-root proof"):
         run_vllm_api_server_module._validate_quetzal_package_and_runtime(
             package_root, "Qwen/Qwen3.6-27B"
@@ -604,8 +613,36 @@ def test_quetzal_runtime_contract_rejects_tampered_executable(
     package_root = _materialized_quetzal_contract(
         monkeypatch, tmp_path, run_vllm_api_server_module
     )
-    Path(os.environ["QUETZAL_DECODE_GENERATED_PY"]).write_text("evil")
+    generated = Path(os.environ["QUETZAL_DECODE_GENERATED_PY"])
+    generated.parent.chmod(0o755)
+    generated.chmod(0o644)
+    generated.write_text("evil")
+    generated.chmod(0o444)
+    generated.parent.chmod(0o555)
     with pytest.raises(RuntimeError, match="trusted-root proof|verification"):
+        run_vllm_api_server_module._validate_quetzal_package_and_runtime(
+            package_root, "Qwen/Qwen3.6-27B"
+        )
+
+
+@pytest.mark.parametrize("mutation", ["root", "parent", "payload", "proof"])
+def test_quetzal_runtime_contract_rejects_mutable_package_state(
+    monkeypatch, tmp_path, run_vllm_api_server_module, mutation
+):
+    package_root = _materialized_quetzal_contract(
+        monkeypatch, tmp_path, run_vllm_api_server_module
+    )
+    if mutation == "root":
+        package_root.chmod(0o755)
+    elif mutation == "parent":
+        Path(os.environ["QUETZAL_DECODE_GENERATED_PY"]).parent.chmod(0o755)
+    elif mutation == "payload":
+        Path(os.environ["QUETZAL_WEIGHTS"]).chmod(0o644)
+    else:
+        digest = os.environ["QUETZAL_BUNDLE_MANIFEST_SHA256"]
+        (package_root / ".quetzal-bundle-manifests" / f"{digest}.json").chmod(0o644)
+
+    with pytest.raises(RuntimeError, match="mutable"):
         run_vllm_api_server_module._validate_quetzal_package_and_runtime(
             package_root, "Qwen/Qwen3.6-27B"
         )
@@ -775,6 +812,9 @@ def test_validate_quetzal_runtime_admits_only_generated_provider(
     trusted = root / ".quetzal-bundle-manifests" / f"{bundle_digest}.json"
     trusted.parent.mkdir()
     trusted.write_bytes(bundle_bytes)
+    for path in root.rglob("*"):
+        path.chmod(0o555 if path.is_dir() else 0o444)
+    root.chmod(0o555)
 
     metal_home = tmp_path / "tt-metal"
     metal_home.mkdir()
