@@ -937,18 +937,13 @@ def _v2_auxiliary_fixture(tmp_path, run_vllm_api_server_module):
     return manifest, package_id, name, root
 
 
-def test_v2_auxiliary_validator_admits_without_reading_payloads(
+def test_v2_auxiliary_validator_admits_authenticated_payloads(
     monkeypatch, tmp_path, run_vllm_api_server_module
 ):
     manifest, package_id, name, root = _v2_auxiliary_fixture(
         tmp_path, run_vllm_api_server_module
     )
     monkeypatch.setenv("QUETZAL_AUXILIARY_ROOTS_JSON", json.dumps({name: str(root)}))
-    monkeypatch.setattr(
-        run_vllm_api_server_module,
-        "_sha256_file",
-        lambda _path: (_ for _ in ()).throw(AssertionError("payload read")),
-    )
 
     run_vllm_api_server_module._validate_quetzal_auxiliary_references(
         manifest, package_id
@@ -961,6 +956,7 @@ def test_v2_auxiliary_validator_admits_without_reading_payloads(
         "missing",
         "digest_address",
         "size",
+        "same_size_content",
         "symlink_escape",
         "parent_escape",
     ],
@@ -982,6 +978,11 @@ def test_v2_auxiliary_validator_fails_closed(
         payload = root / "cache/layer-0.tensorbin"
         payload.chmod(0o644)
         payload.write_bytes(b"wrong-sized")
+        payload.chmod(0o444)
+    elif mutation == "same_size_content":
+        payload = root / "cache/layer-0.tensorbin"
+        payload.chmod(0o644)
+        payload.write_bytes(b"wrong-payload")
         payload.chmod(0o444)
     elif mutation == "symlink_escape":
         payload = root / "cache/layer-0.tensorbin"

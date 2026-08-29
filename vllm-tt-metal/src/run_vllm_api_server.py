@@ -639,9 +639,10 @@ def _validate_quetzal_auxiliary_references(
             _require_read_only_path(
                 payload, directory=False, label=f"auxiliary object {name}/{row['path']}"
             )
-            if payload.stat(follow_symlinks=False).st_size != row["size"]:
+            digest, size = _sha256_file(payload)
+            if size != row["size"] or digest != row["sha256"]:
                 raise RuntimeError(
-                    f"auxiliary object size mismatch: {name}/{row['path']}"
+                    f"auxiliary object digest mismatch: {name}/{row['path']}"
                 )
 
 
