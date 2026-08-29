@@ -100,6 +100,24 @@ class TestAgenticTaskCapabilityAdmission:
         assert "required_context=344064" in message
         assert "max_input_tokens=262144 + max_output_tokens=81920" in message
 
+    def test_exact_qwen_native_release_rejects_inconsistent_task_envelope(self):
+        # The shared task contract is implementation-independent.  Its
+        # configured 256K input plus 80K output envelope also exceeds the
+        # native catalogue's S262144 profile.  Keep this explicit so the
+        # Quetzal admission fix cannot accidentally hide an existing native
+        # release-contract mismatch or be weakened merely to preserve it.
+        spec = self._spec("Qwen3.6-27B", 262144, impl="qwen36_blackhole")
+
+        with pytest.raises(ValueError) as exc:
+            validate_agentic_task_capabilities(spec, self._runtime())
+
+        message = str(exc.value)
+        assert "before host/server/device setup" in message
+        assert "implementation='qwen36_blackhole'" in message
+        assert "available_context=262144" in message
+        assert "required_context=344064" in message
+        assert "max_input_tokens=262144 + max_output_tokens=81920" in message
+
     def test_adequate_context_passes_without_concurrency_gate(self):
         task = self._terminal_task(max_input=128, max_output=64)
         spec = self._spec("adequate-model", 192, impl="native")
