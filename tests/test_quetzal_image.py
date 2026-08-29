@@ -27,6 +27,7 @@ def test_quetzal_derivative_keeps_third_runtime_out_of_standard_image_identity()
 
 def test_quetzal_is_installed_non_editably_and_entry_point_is_verified():
     source = DOCKERFILE.read_text()
+    runner = RUNNER.read_text()
     install_line = next(
         line
         for line in source.splitlines()
@@ -47,7 +48,9 @@ def test_quetzal_is_installed_non_editably_and_entry_point_is_verified():
     assert "/home/container_app_user/app/src/run_vllm_api_server.py" in source
     assert "model_spec.json" in source
     assert "/home/container_app_user/model_specs/model_spec.json" in source
-    assert "validate_quetzal_runtime_contract" in source
+    assert "grep -q '^def validate_quetzal_runtime('" in source
+    assert "def validate_quetzal_runtime(" in runner
+    assert "validate_quetzal_runtime_contract" not in source
     assert "1dc5aae559321ad21ddcd0d0e91342107c8ab297011f7de2712e7116a359b990" in source
     assert "152a50f9a06a66e3f64f822e88b4a00bf76fbe9d02cf53094d702751970be8d0" in source
 

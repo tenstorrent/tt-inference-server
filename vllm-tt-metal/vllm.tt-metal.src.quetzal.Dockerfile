@@ -142,7 +142,7 @@ RUN test "$(cat /tmp/quetzal-source/.tt-quetzal-commit)" = "${TT_QUETZAL_COMMIT_
         && (LC_ALL=C uv pip check 2>&1 || true) | sed -E '/^Using Python /d;/^Checked [0-9]+ packages in /d' > /tmp/pip-check.after \
         && cmp /tmp/pip-check.before /tmp/pip-check.after \
         && rm /tmp/pip-check.before /tmp/pip-check.after \
-        && grep -q '^def validate_quetzal_runtime_contract' /home/container_app_user/app/src/run_vllm_api_server.py \
+        && grep -q '^def validate_quetzal_runtime(' /home/container_app_user/app/src/run_vllm_api_server.py \
         && grep -q '1dc5aae559321ad21ddcd0d0e91342107c8ab297011f7de2712e7116a359b990' /home/container_app_user/model_specs/model_spec.json \
         && grep -q '152a50f9a06a66e3f64f822e88b4a00bf76fbe9d02cf53094d702751970be8d0' /home/container_app_user/model_specs/model_spec.json \
         && python -c \"import importlib.metadata as m; eps=[e for e in m.entry_points(group='vllm.general_plugins') if e.name == 'quetzal_model_registry' and e.value == 'tt_quetzalcoatlus.vllm_plugin:register']; assert len(eps) == 1, eps; import serving.artifact_bundle\"" \
