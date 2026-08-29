@@ -14,7 +14,8 @@
     "package manifest sha256 and exact four role-relative paths",
     "fresh exact-package PCC >= 0.99",
     "fresh endpoint ISL1024/OSL512 and clean lifecycle receipt",
-    "positive physical Ring/2 runner visibility attestation"
+    "positive physical Ring/2 runner visibility attestation",
+    "Shield scheduled Quetzal image source exactly matching the Gemma package source"
   ],
   "renderer": "scripts/prepare_gemma_quetzal_enrollment.py"
 }

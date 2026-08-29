@@ -47,7 +47,31 @@ def shield_checkout(tmp_path):
         ["git", "-C", str(root), "config", "user.email", "test@example.com"], check=True
     )
     (root / "identity").write_text("exact shield checkout\n")
-    subprocess.run(["git", "-C", str(root), "add", "identity"], check=True)
+    workflow = root / ".github/workflows/dynamic-workflow.yml"
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text(
+        json.dumps(
+            {
+                "on": {
+                    "workflow_call": {
+                        "inputs": {"tt-quetzal-commit": {"default": QUETZAL_SOURCE}}
+                    }
+                }
+            }
+        )
+        + "\n"
+    )
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(root),
+            "add",
+            "identity",
+            ".github/workflows/dynamic-workflow.yml",
+        ],
+        check=True,
+    )
     subprocess.run(["git", "-C", str(root), "commit", "-qm", "identity"], check=True)
     revision = subprocess.run(
         ["git", "-C", str(root), "rev-parse", "HEAD"],
@@ -195,6 +219,44 @@ def test_shield_checkout_head_change_invalidates_prior_evidence(shield_checkout)
     with pytest.raises(EnrollmentError, match="identity.shield_revision"):
         render_fragments(
             evidence(shield_revision=old_revision), ROOT, shield_repo_root=shield_root
+        )
+
+
+def test_shield_scheduled_image_source_must_match_gemma_evidence(shield_checkout):
+    shield_root, _ = shield_checkout
+    workflow = shield_root / ".github/workflows/dynamic-workflow.yml"
+    workflow.write_text(
+        json.dumps(
+            {
+                "on": {
+                    "workflow_call": {
+                        "inputs": {
+                            "tt-quetzal-commit": {
+                                "default": "8a3bebe4afdd58068d4190248c3f7b82cc27ae9f"
+                            }
+                        }
+                    }
+                }
+            }
+        )
+        + "\n"
+    )
+    subprocess.run(
+        ["git", "-C", str(shield_root), "commit", "-qam", "change source"],
+        check=True,
+    )
+    shield_revision = subprocess.run(
+        ["git", "-C", str(shield_root), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    with pytest.raises(EnrollmentError, match="scheduled Quetzal source"):
+        render_fragments(
+            evidence(shield_revision=shield_revision),
+            ROOT,
+            shield_repo_root=shield_root,
         )
 
 

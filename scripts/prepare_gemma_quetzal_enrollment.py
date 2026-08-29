@@ -71,6 +71,19 @@ def _current_repository_revision(repo_root: Path, field: str) -> str:
     return _git_revision(result.stdout.strip(), f"current {field} checkout revision")
 
 
+def _shield_scheduled_quetzal_source_revision(shield_repo_root: Path) -> str:
+    workflow_path = shield_repo_root / ".github/workflows/dynamic-workflow.yml"
+    try:
+        workflow = yaml.safe_load(workflow_path.read_text())
+        trigger = workflow.get("on", workflow.get(True))
+        source = trigger["workflow_call"]["inputs"]["tt-quetzal-commit"]["default"]
+    except (OSError, AttributeError, KeyError, TypeError, yaml.YAMLError) as error:
+        raise EnrollmentError(
+            "cannot resolve Shield's scheduled Quetzal source contract"
+        ) from error
+    return _git_revision(source, "Shield scheduled Quetzal source")
+
+
 def _absolute(value: Any, field: str) -> str:
     if not isinstance(value, str) or not value:
         raise EnrollmentError(f"{field} must be a non-empty absolute path")
@@ -222,6 +235,11 @@ def validate_evidence(
 def render_fragments(
     data: dict[str, Any], repo_root: Path, *, shield_repo_root: Path
 ) -> dict[str, Any]:
+    _need(
+        _shield_scheduled_quetzal_source_revision(shield_repo_root),
+        QUETZAL_SOURCE,
+        "Shield scheduled Quetzal source",
+    )
     exact = validate_evidence(
         data,
         ttis_revision=_current_repository_revision(repo_root, "TTIS"),
