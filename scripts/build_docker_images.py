@@ -1173,6 +1173,11 @@ def build_dev_image(
             ):
                 if not value or not re.fullmatch(r"[0-9a-f]{64}", value):
                     raise ValueError(f"{name} must be a lowercase SHA-256")
+            if tt_metal_patchset_sha256 != tt_metal_patchset_manifest_sha256:
+                raise ValueError(
+                    "tt_metal_patchset_sha256 must equal "
+                    "tt_metal_patchset_manifest_sha256"
+                )
             archive = subprocess.Popen(
                 ["git", "-C", str(source_dir), "archive", quetzal_commit],
                 stdout=subprocess.PIPE,

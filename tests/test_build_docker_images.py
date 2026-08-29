@@ -84,14 +84,32 @@ def test_build_dev_image_forwards_exact_quetzal_commit(tmp_path):
             quetzal_commit=source_commit,
             quetzal_source_dir=source_dir,
             tt_metal_patchset_sha256="c" * 64,
-            tt_metal_patchset_manifest_sha256="d" * 64,
+            tt_metal_patchset_manifest_sha256="c" * 64,
         )
 
     command = run.call_args.args[0]
     assert command.count("TT_QUETZAL_COMMIT_SHA=" + source_commit) == 1
     assert command.count("TT_METAL_PATCHSET_SHA256=" + "c" * 64) == 1
-    assert command.count("TT_METAL_PATCHSET_MANIFEST_SHA256=" + "d" * 64) == 1
+    assert command.count("TT_METAL_PATCHSET_MANIFEST_SHA256=" + "c" * 64) == 1
     assert "--build-context" in command
+
+    with patch(
+        "scripts.build_docker_images.get_repo_root_path", return_value=tmp_path
+    ), patch(
+        "scripts.build_docker_images.generate_model_specs_json",
+        return_value=tmp_path / "model_spec.json",
+    ), pytest.raises(ValueError, match="must equal"):
+        build_dev_image(
+            tags,
+            "a" * 40,
+            "b" * 40,
+            1000,
+            MagicMock(),
+            quetzal_commit=source_commit,
+            quetzal_source_dir=source_dir,
+            tt_metal_patchset_sha256="c" * 64,
+            tt_metal_patchset_manifest_sha256="d" * 64,
+        )
 
 
 class TestGetAvailableMemoryGb:

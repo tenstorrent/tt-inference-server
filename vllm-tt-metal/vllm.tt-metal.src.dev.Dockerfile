@@ -102,6 +102,7 @@ RUN set -eux; \
       test "$(cat /tmp/quetzal-source/.tt-quetzal-commit)" = "${TT_QUETZAL_COMMIT_SHA}"; \
       printf '%s' "${TT_METAL_PATCHSET_SHA256}" | grep -Eq '^[0-9a-f]{64}$'; \
       printf '%s' "${TT_METAL_PATCHSET_MANIFEST_SHA256}" | grep -Eq '^[0-9a-f]{64}$'; \
+      test "${TT_METAL_PATCHSET_SHA256}" = "${TT_METAL_PATCHSET_MANIFEST_SHA256}"; \
       echo "${TT_METAL_PATCHSET_MANIFEST_SHA256}  /tmp/quetzal-source/patches/tt-metal/gdn-productization-v1.json" | sha256sum --check -; \
       python3 /tmp/quetzal-source/tools/tt_metal_patchset.py \
         --repo "${TT_METAL_HOME}" \

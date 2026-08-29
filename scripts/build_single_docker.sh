@@ -225,6 +225,10 @@ if [[ -n "$TT_QUETZAL_COMMIT_SHA" ]]; then
         echo "⛔ Error: Quetzal builds require both immutable TT-Metal patchset identities."
         exit 1
     fi
+    if [[ "$TT_METAL_PATCHSET_SHA256" != "$TT_METAL_PATCHSET_MANIFEST_SHA256" ]]; then
+        echo "⛔ Error: Quetzal patchset identity must equal the applied manifest digest."
+        exit 1
+    fi
 fi
 cd "$repo_root"
 
