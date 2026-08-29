@@ -979,7 +979,13 @@ def test_real_repo_promote_against_prod_succeeds(tmp_path):
 
     prod_copy = tmp_path / "prod"
     shutil.copytree(DEFAULT_PROD_DIR, prod_copy)
-    report = promote(DEFAULT_CI_CONFIG, DEFAULT_DEV_DIR, prod_copy, **PINS)
+    report = promote(
+        DEFAULT_CI_CONFIG,
+        DEFAULT_DEV_DIR,
+        prod_copy,
+        **PINS,
+        quetzal_docker_image=QUETZAL_IMAGE,
+    )
     assert report["unmatched"] == set()
 
 
@@ -998,7 +1004,13 @@ def test_real_repo_promote_only_touches_release_blocks(tmp_path):
     shutil.copytree(DEFAULT_PROD_DIR, prod_copy)
     combos = collect_release_combos(json.loads(DEFAULT_CI_CONFIG.read_text()))
     matches_by_file, _ = find_matches(DEFAULT_DEV_DIR, combos)
-    report = promote(DEFAULT_CI_CONFIG, DEFAULT_DEV_DIR, prod_copy, **PINS)
+    report = promote(
+        DEFAULT_CI_CONFIG,
+        DEFAULT_DEV_DIR,
+        prod_copy,
+        **PINS,
+        quetzal_docker_image=QUETZAL_IMAGE,
+    )
 
     def blocks(text):
         return {
@@ -1027,8 +1039,20 @@ def test_real_repo_promote_is_idempotent(tmp_path):
 
     prod_copy = tmp_path / "prod"
     shutil.copytree(DEFAULT_PROD_DIR, prod_copy)
-    promote(DEFAULT_CI_CONFIG, DEFAULT_DEV_DIR, prod_copy, **PINS)
+    promote(
+        DEFAULT_CI_CONFIG,
+        DEFAULT_DEV_DIR,
+        prod_copy,
+        **PINS,
+        quetzal_docker_image=QUETZAL_IMAGE,
+    )
     snapshot = {p.name: p.read_text() for p in prod_copy.glob("*.yaml")}
-    report = promote(DEFAULT_CI_CONFIG, DEFAULT_DEV_DIR, prod_copy, **PINS)
+    report = promote(
+        DEFAULT_CI_CONFIG,
+        DEFAULT_DEV_DIR,
+        prod_copy,
+        **PINS,
+        quetzal_docker_image=QUETZAL_IMAGE,
+    )
     assert report["changed_files"] == []
     assert {p.name: p.read_text() for p in prod_copy.glob("*.yaml")} == snapshot

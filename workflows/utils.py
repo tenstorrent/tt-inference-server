@@ -394,7 +394,8 @@ def write_dotenv(env_vars, dotenv_path=default_dotenv_path, logger=logger):
 
 
 def map_configs_by_attr(
-    config_list: List[Config], attr: str
+    config_list: List[Config],  # noqa: F821
+    attr: str,
 ) -> Dict[str, Config]:  # noqa: F821
     """Returns a dictionary mapping the specified attribute to the Config instances.
 
