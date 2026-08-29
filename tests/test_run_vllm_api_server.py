@@ -428,9 +428,7 @@ def _materialized_quetzal_contract(monkeypatch, tmp_path, module):
     metal_home = tmp_path / "tt-metal"
     metal_home.mkdir()
     (metal_home / ".ttq-runtime-identity.json").write_text(
-        json.dumps(
-            {"base_revision": required_runtime, "patchset_sha256": patchset}
-        )
+        json.dumps({"base_revision": required_runtime, "patchset_sha256": patchset})
     )
     monkeypatch.setenv("TT_METAL_HOME", str(metal_home))
 

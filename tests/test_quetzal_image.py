@@ -218,9 +218,7 @@ def test_build_wrapper_exports_clean_exact_commit_as_named_context(tmp_path):
     assert "TT_METAL_BASE_REVISION=b534549300fe2af11e6ee828675294bc0e359555" in args
     assert "TT_METAL_BASE_FETCH_REF=qz/mixtral-epd2-wait-min-20260827" in args
     assert any(value.startswith("TT_METAL_PATCHSET_SHA256=") for value in args)
-    assert any(
-        value.startswith("TT_METAL_PATCHSET_MANIFEST_SHA256=") for value in args
-    )
+    assert any(value.startswith("TT_METAL_PATCHSET_MANIFEST_SHA256=") for value in args)
     # The wrapper cleans the ephemeral export after the build command returns.
     assert not Path(context.split("=", 1)[1]).exists()
 

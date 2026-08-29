@@ -304,9 +304,7 @@ def test_quetzal_dev_specs_use_content_store_contract(monkeypatch, model_name):
     env = quetzal.env_vars
 
     package_root = env["QUETZAL_PACKAGE_ROOT"]
-    assert package_root.startswith(
-        "/home/container_app_user/quetzal/packages/sha256-"
-    )
+    assert package_root.startswith("/home/container_app_user/quetzal/packages/sha256-")
     assert env["QZ_MODELS_ROOT"] == package_root
     assert env["QUETZAL_PACKAGE_ID"] == package_root.rsplit("/", 1)[-1]
     assert re.fullmatch(r"[0-9a-f]{64}", env["QUETZAL_BUNDLE_MANIFEST_SHA256"])

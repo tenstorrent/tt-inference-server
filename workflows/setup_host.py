@@ -168,9 +168,9 @@ class SetupConfig:
     def update_host_model_weights_snapshot_dir(
         self, host_model_weights_snapshot_dir, repo_path_filter=None
     ):
-        assert (
-            self.model_source == ModelSource.HUGGINGFACE.value
-        ), "⛔ update_host_model_weights_snapshot_dir only supported for huggingface model source."
+        assert self.model_source == ModelSource.HUGGINGFACE.value, (
+            "⛔ update_host_model_weights_snapshot_dir only supported for huggingface model source."
+        )
         if host_model_weights_snapshot_dir:
             if repo_path_filter:
                 self.host_model_weights_snapshot_dir = (
@@ -196,9 +196,9 @@ class SetupConfig:
             )
 
     def update_host_model_weights_mount_dir(self, host_model_weights_mount_dir):
-        assert (
-            self.model_source == ModelSource.LOCAL.value
-        ), "⛔ update_host_model_weights_mount_dir only supported for local model source."
+        assert self.model_source == ModelSource.LOCAL.value, (
+            "⛔ update_host_model_weights_mount_dir only supported for local model source."
+        )
         self.host_model_weights_mount_dir = host_model_weights_mount_dir
         if self.host_model_weights_mount_dir.exists():
             self.container_model_weights_mount_dir = (
@@ -467,9 +467,9 @@ class HostSetupManager:
         elif self.setup_config.model_source == ModelSource.LOCAL.value:
             if self.automatic:
                 _host_model_weights_mount_dir = os.getenv("MODEL_WEIGHTS_DIR")
-                assert (
-                    _host_model_weights_mount_dir
-                ), "⛔ MODEL_WEIGHTS_DIR environment variable is required for local model source in automatic mode."
+                assert _host_model_weights_mount_dir, (
+                    "⛔ MODEL_WEIGHTS_DIR environment variable is required for local model source in automatic mode."
+                )
             else:
                 _host_model_weights_mount_dir = (
                     os.getenv("MODEL_WEIGHTS_DIR")
@@ -565,9 +565,9 @@ class HostSetupManager:
         os.environ["HF_HUB_DOWNLOAD_TIMEOUT"] = "60"
         os.environ["HF_TOKEN"] = self.hf_token
         hf_exec = venv_config.venv_path / "bin" / "hf"
-        assert (
-            hf_exec.exists()
-        ), f"⛔ 'hf' CLI not found at: {hf_exec}. Check HF_SETUP venv installation."
+        assert hf_exec.exists(), (
+            f"⛔ 'hf' CLI not found at: {hf_exec}. Check HF_SETUP venv installation."
+        )
         hf_repo = self.model_spec.hf_weights_repo
         if self.setup_config.host_hf_cache:
             os.environ["HOST_HF_HOME"] = self.setup_config.host_hf_cache
