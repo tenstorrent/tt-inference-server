@@ -1,5 +1,3 @@
-from types import SimpleNamespace
-
 import pytest
 
 from workflows.model_spec import get_runtime_model_spec, load_templates_from_yaml
@@ -10,8 +8,6 @@ from workflows.utils import get_repo_root_path
 
 MODELS = {
     "Qwen3.6-27B": (8192, "6a9e13bd6fc8f0983b9b99948120bc37f49c13e9"),
-    "gemma-4-31B-it": (4096, "842da3794eaa0b77d5f08bae87a17459d91ff475"),
-    "gpt-oss-120b": (1024, "b5c939de8f754692c1647ca79fbf85e8c1e70f8a"),
 }
 
 
@@ -22,15 +18,7 @@ def _dev_quetzal_spec(model):
     template = next(
         item
         for item in templates
-        if item.impl.impl_id == "quetzal"
-        and item.weights
-        == [
-            {
-                "Qwen3.6-27B": "Qwen/Qwen3.6-27B",
-                "gemma-4-31B-it": "google/gemma-4-31B-it",
-                "gpt-oss-120b": "openai/gpt-oss-120b",
-            }[model]
-        ]
+        if item.impl.impl_id == "quetzal" and item.weights == ["Qwen/Qwen3.6-27B"]
     )
     return template.expand_to_specs()[0]
 
@@ -48,12 +36,10 @@ def test_dev_quetzal_specs_are_nondefault_and_revision_pinned(model):
     assert spec.device_model_spec.vllm_args["tokenizer_revision"] == revision
     assert spec.env_vars["VLLM_PLUGINS"] == "quetzal_model_registry,tt"
     assert spec.env_vars["TT_VLLM_BUILTIN_MODELS"] == "0"
-    if model == "Qwen3.6-27B":
-        assert spec.env_vars["TT_MESH_GRAPH_DESC_PATH"] == "auto"
-    else:
-        assert spec.env_vars["TT_MESH_GRAPH_DESC_PATH"].endswith(
-            "p150_x4_2ch_mesh_graph_descriptor.textproto"
-        )
+    assert spec.env_vars["TT_MESH_GRAPH_DESC_PATH"] == "auto"
+    assert spec.env_vars["QUETZAL_PACKAGE_ID"].startswith("sha256-")
+    assert len(spec.env_vars["QUETZAL_BUNDLE_MANIFEST_SHA256"]) == 64
+    assert len(spec.env_vars["QUETZAL_REQUIRED_TT_METAL_PATCHSET_SHA256"]) == 64
 
     native, native_impl, _ = get_runtime_model_spec(model=model, device="p300x2")
     assert native_impl != "quetzal"
@@ -61,10 +47,11 @@ def test_dev_quetzal_specs_are_nondefault_and_revision_pinned(model):
 
 
 def test_docker_command_mounts_quetzal_root_readonly_and_forwards_impl(tmp_path):
-    root = tmp_path / "sha256-artifact-root"
+    spec = _dev_quetzal_spec("Qwen3.6-27B")
+    package_id = spec.env_vars["QUETZAL_PACKAGE_ID"]
+    root = tmp_path / package_id
     root.mkdir()
     (root / "qualification_manifest.yaml").write_text("models: []\n")
-    spec = _dev_quetzal_spec("Qwen3.6-27B")
     runtime = RuntimeConfig(
         model="Qwen3.6-27B",
         workflow="server",
@@ -79,12 +66,15 @@ def test_docker_command_mounts_quetzal_root_readonly_and_forwards_impl(tmp_path)
 
     mount = (
         f"type=bind,src={root.resolve()},"
-        "dst=/home/container_app_user/quetzal_models,readonly"
+        f"dst=/home/container_app_user/quetzal/packages/{package_id},readonly"
     )
     assert mount in command
     assert command.count("--impl") == 1
     assert command[command.index("--impl") + 1] == "quetzal"
-    assert "QZ_MODELS_ROOT=/home/container_app_user/quetzal_models" in command
+    assert (
+        f"QZ_MODELS_ROOT=/home/container_app_user/quetzal/packages/{package_id}"
+        in command
+    )
     assert "VLLM_PLUGINS=quetzal_model_registry,tt" in command
     assert "TT_VLLM_BUILTIN_MODELS=0" in command
 
@@ -115,12 +105,16 @@ def test_docker_command_rejects_missing_or_misapplied_quetzal_root(tmp_path):
         generate_docker_run_command(native_spec, native_runtime)
 
 
-def test_quetzal_docker_hook_builds_one_wheel_from_commit_only():
+def test_quetzal_docker_hook_uses_clean_named_context_and_patched_runtime():
     dockerfile = (
         get_repo_root_path() / "vllm-tt-metal/vllm.tt-metal.src.dev.Dockerfile"
     ).read_text()
     assert 'ARG TT_QUETZAL_COMMIT_SHA=""' in dockerfile
     assert "^[0-9a-f]{40}$" in dockerfile
+    assert "COPY --from=quetzal_src / /tmp/quetzal-source/" in dockerfile
+    assert "TT_METAL_PATCHSET_SHA256" in dockerfile
+    assert "TT_METAL_PATCHSET_MANIFEST_SHA256" in dockerfile
+    assert "tt_metal_patchset.py" in dockerfile
     assert "uv build --wheel" in dockerfile
     assert 'uv pip install --no-cache-dir --no-deps "${quetzal_wheel}"' in dockerfile
     assert (
@@ -128,3 +122,4 @@ def test_quetzal_docker_hook_builds_one_wheel_from_commit_only():
         not in dockerfile
     )
     assert "TT_QUETZAL_COMMIT_SHA_OR_TAG" not in dockerfile
+    assert "git clone --filter=blob:none --no-checkout" not in dockerfile

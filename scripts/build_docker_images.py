@@ -409,6 +409,9 @@ def process_sha_combination(args_tuple):
         stdout_only,
         dry_run_build_duration,
         quetzal_commit,
+        quetzal_source_dir,
+        tt_metal_patchset_sha256,
+        tt_metal_patchset_manifest_sha256,
     ) = args_tuple
 
     # Set up individual logging for this combination
@@ -567,6 +570,9 @@ def process_sha_combination(args_tuple):
                         container_app_uid,
                         process_logger,
                         quetzal_commit=quetzal_commit,
+                        quetzal_source_dir=quetzal_source_dir,
+                        tt_metal_patchset_sha256=tt_metal_patchset_sha256,
+                        tt_metal_patchset_manifest_sha256=tt_metal_patchset_manifest_sha256,
                     )
                     image_status["dev"]["build_succeeded"] = True
                 except Exception as e:
@@ -1118,6 +1124,9 @@ def build_dev_image(
     container_app_uid,
     logger,
     quetzal_commit=None,
+    quetzal_source_dir=None,
+    tt_metal_patchset_sha256=None,
+    tt_metal_patchset_manifest_sha256=None,
 ):
     """
     Build the dev Docker image from the Dockerfile.
@@ -1139,33 +1148,77 @@ def build_dev_image(
 
     logger.info(f"Building dev image: {dev_image_tag}")
 
-    build_command = [
-        "docker",
-        "build",
-        "-t",
-        dev_image_tag,
-        "--build-arg",
-        f"TT_METAL_DOCKERFILE_URL={tt_metal_base_tag}",
-        "--build-arg",
-        f"TT_METAL_COMMIT_SHA_OR_TAG={tt_metal_commit}",
-        "--build-arg",
-        f"TT_VLLM_COMMIT_SHA_OR_TAG={vllm_commit}",
-    ]
-    if quetzal_commit:
-        if not re.fullmatch(r"[0-9a-f]{40}", quetzal_commit):
-            raise ValueError("quetzal_commit must be a lowercase 40-hex commit")
-        build_command.extend(["--build-arg", f"TT_QUETZAL_COMMIT_SHA={quetzal_commit}"])
-    build_command.extend(
-        [
+    with tempfile.TemporaryDirectory(prefix="ttis-quetzal-context-") as context_dir:
+        if quetzal_commit:
+            if not re.fullmatch(r"[0-9a-f]{40}", quetzal_commit):
+                raise ValueError("quetzal_commit must be a lowercase 40-hex commit")
+            source_dir = Path(quetzal_source_dir or "")
+            if not (source_dir / ".git").is_dir():
+                raise ValueError(
+                    "Quetzal builds require quetzal_source_dir from an authenticated checkout"
+                )
+            source_head = subprocess.check_output(
+                ["git", "-C", str(source_dir), "rev-parse", "HEAD"], text=True
+            ).strip()
+            if source_head != quetzal_commit:
+                raise ValueError(
+                    "Quetzal source checkout does not match quetzal_commit"
+                )
+            for value, name in (
+                (tt_metal_patchset_sha256, "tt_metal_patchset_sha256"),
+                (
+                    tt_metal_patchset_manifest_sha256,
+                    "tt_metal_patchset_manifest_sha256",
+                ),
+            ):
+                if not value or not re.fullmatch(r"[0-9a-f]{64}", value):
+                    raise ValueError(f"{name} must be a lowercase SHA-256")
+            archive = subprocess.Popen(
+                ["git", "-C", str(source_dir), "archive", quetzal_commit],
+                stdout=subprocess.PIPE,
+            )
+            extracted = subprocess.run(
+                ["tar", "-x", "-C", context_dir], stdin=archive.stdout, check=False
+            )
+            if archive.stdout:
+                archive.stdout.close()
+            archive_result = archive.wait()
+            if archive_result or extracted.returncode:
+                raise RuntimeError("failed to export clean Quetzal source context")
+            (Path(context_dir) / ".tt-quetzal-commit").write_text(quetzal_commit)
+
+        build_command = [
+            "docker",
+            "build",
+            "-t",
+            dev_image_tag,
+            "--build-context",
+            f"quetzal_src={context_dir}",
+            "--build-arg",
+            f"TT_METAL_DOCKERFILE_URL={tt_metal_base_tag}",
+            "--build-arg",
+            f"TT_METAL_COMMIT_SHA_OR_TAG={tt_metal_commit}",
+            "--build-arg",
+            f"TT_VLLM_COMMIT_SHA_OR_TAG={vllm_commit}",
+            "--build-arg",
+            f"TT_QUETZAL_COMMIT_SHA={quetzal_commit or ''}",
+            "--build-arg",
+            f"TT_METAL_PATCHSET_SHA256={tt_metal_patchset_sha256 or ''}",
+            "--build-arg",
+            (
+                "TT_METAL_PATCHSET_MANIFEST_SHA256="
+                f"{tt_metal_patchset_manifest_sha256 or ''}"
+            ),
             "--build-arg",
             f"CONTAINER_APP_UID={container_app_uid}",
             "-f",
             "vllm-tt-metal/vllm.tt-metal.src.dev.Dockerfile",
             ".",
         ]
-    )
 
-    run_command_with_logging(build_command, logger=logger, check=True, cwd=repo_root)
+        run_command_with_logging(
+            build_command, logger=logger, check=True, cwd=repo_root
+        )
     logger.info(f"Successfully built dev image: {dev_image_tag}")
 
 
@@ -1374,6 +1427,9 @@ def build_docker_images(
     disk_per_build_gb=DISK_PER_BUILD_GB,
     dry_run_build_duration=DRY_RUN_BUILD_DURATION_SECONDS,
     quetzal_commit=None,
+    quetzal_source_dir=None,
+    tt_metal_patchset_sha256=None,
+    tt_metal_patchset_manifest_sha256=None,
 ):
     """
     Builds all Docker images required by the provided ModelConfigs.
@@ -1399,6 +1455,8 @@ def build_docker_images(
     validate_inputs(ubuntu_version, container_app_uid)
     if quetzal_commit and not re.fullmatch(r"[0-9a-f]{40}", quetzal_commit):
         raise ValueError("quetzal_commit must be a lowercase 40-hex commit")
+    if quetzal_commit and not quetzal_source_dir:
+        raise ValueError("quetzal_source_dir is required with quetzal_commit")
 
     unique_sha_combinations = list_image_combinations(
         model_configs,
@@ -1432,6 +1490,9 @@ def build_docker_images(
             stdout_only,
             dry_run_build_duration,
             quetzal_commit,
+            quetzal_source_dir,
+            tt_metal_patchset_sha256,
+            tt_metal_patchset_manifest_sha256,
         )
         for tt_metal_commit, vllm_commit in unique_sha_combinations
     ]
@@ -1594,6 +1655,13 @@ if __name__ == "__main__":
         ),
     )
     parser.add_argument(
+        "--quetzal-source-dir",
+        type=Path,
+        help="Authenticated exact Quetzal checkout exported as a clean build context",
+    )
+    parser.add_argument("--tt-metal-patchset-sha256")
+    parser.add_argument("--tt-metal-patchset-manifest-sha256")
+    parser.add_argument(
         "--max-workers",
         type=int,
         help="Ceiling on parallel workers (resource-based auto-limit applies first)",
@@ -1635,6 +1703,7 @@ if __name__ == "__main__":
     logger.info(f"ubuntu_version: {args.ubuntu_version}")
     logger.info(f"build_metal_commit: {args.build_metal_commit}")
     logger.info(f"quetzal_commit: {args.quetzal_commit}")
+    logger.info(f"quetzal_source_dir: {args.quetzal_source_dir}")
     logger.info(f"max_workers: {args.max_workers}")
     logger.info(f"force_build: {args.force_build}")
     logger.info(f"release: {args.release}")
@@ -1663,4 +1732,7 @@ if __name__ == "__main__":
         disk_per_build_gb=args.disk_per_build,
         dry_run_build_duration=args.dry_run_build_duration,
         quetzal_commit=args.quetzal_commit,
+        quetzal_source_dir=args.quetzal_source_dir,
+        tt_metal_patchset_sha256=args.tt_metal_patchset_sha256,
+        tt_metal_patchset_manifest_sha256=args.tt_metal_patchset_manifest_sha256,
     )

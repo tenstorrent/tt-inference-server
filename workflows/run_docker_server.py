@@ -337,7 +337,7 @@ _RESERVED_WRAPPER_FLAGS = {
     "host",
 }
 
-_QUETZAL_CONTAINER_MODELS_ROOT = "/home/container_app_user/quetzal_models"
+_QUETZAL_CONTAINER_PACKAGE_PARENT = "/home/container_app_user/quetzal/packages"
 
 
 def _validate_quetzal_models_root(runtime_config, model_spec) -> Path | None:
@@ -354,7 +354,7 @@ def _validate_quetzal_models_root(runtime_config, model_spec) -> Path | None:
     supplied = Path(configured).expanduser()
     if supplied.is_symlink() or not supplied.is_dir():
         raise ValueError(
-            "--quetzal-models-root must be an existing real directory: " f"{supplied}"
+            f"--quetzal-models-root must be an existing real directory: {supplied}"
         )
     root = supplied.resolve()
     qualification = root / "qualification_manifest.yaml"
@@ -441,6 +441,19 @@ def generate_docker_run_command(
     mesh_device_str = device.to_mesh_device_str()
     container_name = f"tt-inference-server-{short_uuid()}"
     quetzal_models_root = _validate_quetzal_models_root(runtime_config, model_spec)
+    quetzal_container_root = None
+    if quetzal_models_root:
+        package_id = model_spec.env_vars.get("QUETZAL_PACKAGE_ID")
+        if not package_id or Path(package_id).name != package_id:
+            raise ValueError(
+                "Quetzal model spec requires a path-safe QUETZAL_PACKAGE_ID"
+            )
+        if quetzal_models_root.name != package_id:
+            raise ValueError(
+                "--quetzal-models-root basename must match QUETZAL_PACKAGE_ID: "
+                f"{quetzal_models_root.name!r} != {package_id!r}"
+            )
+        quetzal_container_root = f"{_QUETZAL_CONTAINER_PACKAGE_PARENT}/{package_id}"
 
     # TODO: remove this once https://github.com/tenstorrent/tt-metal/issues/23785 has been closed
     device_cache_dir = (
@@ -508,9 +521,11 @@ def generate_docker_run_command(
     if quetzal_models_root:
         docker_command.extend([
             "--mount",
-            "type=bind,"
-            f"src={quetzal_models_root},"
-            f"dst={_QUETZAL_CONTAINER_MODELS_ROOT},readonly",
+            (
+                "type=bind,"
+                f"src={quetzal_models_root},"
+                f"dst={quetzal_container_root},readonly"
+            ),
         ])
 
     if runtime_config.interactive:
@@ -524,18 +539,19 @@ def generate_docker_run_command(
         # tt_model_registry rather than changing providers after import.
         docker_env_vars.update({k: str(v) for k, v in model_spec.env_vars.items()})
         if quetzal_models_root:
-            docker_env_vars["QZ_MODELS_ROOT"] = _QUETZAL_CONTAINER_MODELS_ROOT
-            docker_env_vars[
-                "QZ_QUALIFICATION_MANIFEST"
-            ] = f"{_QUETZAL_CONTAINER_MODELS_ROOT}/qualification_manifest.yaml"
+            docker_env_vars["QUETZAL_PACKAGE_ROOT"] = quetzal_container_root
+            docker_env_vars["QZ_MODELS_ROOT"] = quetzal_container_root
+            docker_env_vars["QZ_QUALIFICATION_MANIFEST"] = (
+                f"{quetzal_container_root}/qualification_manifest.yaml"
+            )
     if setup_config:
         if (
             setup_config.container_model_weights_path
             and setup_config.host_model_weights_mount_dir
         ):
-            docker_env_vars[
-                "MODEL_WEIGHTS_DIR"
-            ] = setup_config.container_model_weights_path
+            docker_env_vars["MODEL_WEIGHTS_DIR"] = (
+                setup_config.container_model_weights_path
+            )
         if (
             setup_config.host_model_volume_root
             and setup_config.container_tt_metal_cache_dir
@@ -762,9 +778,9 @@ def run_docker_server(model_spec, runtime_config, setup_config, json_fpath):
         / f"{server_prefix}_{timestamp}_{runtime_config.model}_{runtime_config.device}_{runtime_config.workflow}.log"
     )
 
-    assert ensure_docker_image(
-        model_spec.docker_image
-    ), f"Docker image: {model_spec.docker_image} not found on GHCR or locally."
+    assert ensure_docker_image(model_spec.docker_image), (
+        f"Docker image: {model_spec.docker_image} not found on GHCR or locally."
+    )
 
     docker_command, container_name = generate_docker_run_command(
         model_spec, runtime_config, setup_config, json_fpath
@@ -1063,9 +1079,9 @@ def run_multihost_server(model_spec, runtime_config, setup_config, json_fpath):
             os.chmod(cache_path, 0o1777)  # Sticky bit + world-writable for UID 1000
 
     # Ensure Docker image is available
-    assert ensure_docker_image(
-        model_spec.docker_image
-    ), f"Docker image: {model_spec.docker_image} not found on GHCR or locally."
+    assert ensure_docker_image(model_spec.docker_image), (
+        f"Docker image: {model_spec.docker_image} not found on GHCR or locally."
+    )
 
     # Create orchestrator
     orchestrator = MultiHostOrchestrator(

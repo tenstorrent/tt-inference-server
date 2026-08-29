@@ -36,7 +36,7 @@ def test_duplicate_engine_requires_impl_and_unique_identity():
     )
 
 
-def test_quetzal_nightly_rows_preserve_native_vllm_rows():
+def test_only_qualified_qwen_is_enrolled_for_quetzal_nightly_and_release():
     config = json.loads(
         (REPO_ROOT / ".github/workflows/models-ci-config.json").read_text()
     )
@@ -47,32 +47,25 @@ def test_quetzal_nightly_rows_preserve_native_vllm_rows():
         "gemma-4-31B-it": "tt-transformers",
         "gpt-oss-120b": "gpt-oss",
     }
-    expected_revision = {
-        "Qwen3.6-27B": "6a9e13bd6fc8f0983b9b99948120bc37f49c13e9",
-        "gemma-4-31B-it": "842da3794eaa0b77d5f08bae87a17459d91ff475",
-        "gpt-oss-120b": "b5c939de8f754692c1647ca79fbf85e8c1e70f8a",
-    }
-    quetzal_commit = "49f103ad8f80523ba0d35c5825aee908507f196b"
     for model, native_impl in expected_native.items():
         rows = config["models"][model]["implementations"]
         by_impl = {row["impl"]: row for row in rows}
         assert native_impl in by_impl
-        assert "quetzal" in by_impl
-        qz_nightly = by_impl["quetzal"]["ci"]["nightly"]
-        assert qz_nightly["devices"] == ["P300X2"]
-        args = qz_nightly["device-args"]["P300X2"]["additional-args"]
-        # tt-shield forwards matrix.config.impl exactly once; duplicating it in
-        # additional-args would create two selectors at the run.py boundary.
-        assert "--impl" not in args
-        assert "--quetzal-models-root" in args
-        if model != "Qwen3.6-27B":
-            assert quetzal_commit in args
-            assert expected_revision[model] in args
+        if model == "Qwen3.6-27B":
+            assert "quetzal" in by_impl
+        else:
+            assert "quetzal" not in by_impl
 
-    qwen_args = config["models"]["Qwen3.6-27B"]["implementations"][1]["ci"][
-        "nightly"
-    ]["device-args"]["P300X2"]["additional-args"]
-    assert qwen_args == (
+    qwen = {
+        row["impl"]: row for row in config["models"]["Qwen3.6-27B"]["implementations"]
+    }["quetzal"]
+    expected_args = (
         "--quetzal-models-root "
         "/mnt/models/huggingface/quetzal/nkapre/packages/sha256-f1d6cebaf6cd432c78721ec3b81101ab86493f387b37f63bc11aca2fc6f6d8d8-0a8efa103ee378c7cd0e2fa25b0426cbb82752e270f8927bdf44eb2cfe68ce66"
     )
+    for schedule in ("nightly", "release"):
+        lane = qwen["ci"][schedule]
+        assert lane["devices"] == ["P300X2"]
+        args = lane["device-args"]["P300X2"]["additional-args"]
+        assert "--impl" not in args
+        assert args == expected_args

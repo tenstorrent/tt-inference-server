@@ -357,6 +357,16 @@
                   "additional-args": "--quetzal-models-root /mnt/models/huggingface/quetzal/nkapre/packages/sha256-f1d6cebaf6cd432c78721ec3b81101ab86493f387b37f63bc11aca2fc6f6d8d8-0a8efa103ee378c7cd0e2fa25b0426cbb82752e270f8927bdf44eb2cfe68ce66"
                 }
               }
+            },
+            "release": {
+              "devices": [
+                "P300X2"
+              ],
+              "device-args": {
+                "P300X2": {
+                  "additional-args": "--quetzal-models-root /mnt/models/huggingface/quetzal/nkapre/packages/sha256-f1d6cebaf6cd432c78721ec3b81101ab86493f387b37f63bc11aca2fc6f6d8d8-0a8efa103ee378c7cd0e2fa25b0426cbb82752e270f8927bdf44eb2cfe68ce66"
+                }
+              }
             }
           }
         }
@@ -573,22 +583,6 @@
               ]
             }
           }
-        },
-        {
-          "inference_engine": "vLLM",
-          "impl": "quetzal",
-          "ci": {
-            "nightly": {
-              "devices": [
-                "P300X2"
-              ],
-              "device-args": {
-                "P300X2": {
-                  "additional-args": "--quetzal-models-root /mnt/models/quetzal-runtime/49f103ad8f80523ba0d35c5825aee908507f196b/gemma4-842da3794eaa0b77d5f08bae87a17459d91ff475-p150x4-b1-s4096"
-                }
-              }
-            }
-          }
         }
       ]
     },
@@ -624,22 +618,6 @@
                 "P300X2",
                 "T3K"
               ]
-            }
-          }
-        },
-        {
-          "inference_engine": "vLLM",
-          "impl": "quetzal",
-          "ci": {
-            "nightly": {
-              "devices": [
-                "P300X2"
-              ],
-              "device-args": {
-                "P300X2": {
-                  "additional-args": "--quetzal-models-root /mnt/models/quetzal-runtime/49f103ad8f80523ba0d35c5825aee908507f196b/gpt-oss-b5c939de8f754692c1647ca79fbf85e8c1e70f8a-p150x4-b1-s1024"
-                }
-              }
             }
           }
         }

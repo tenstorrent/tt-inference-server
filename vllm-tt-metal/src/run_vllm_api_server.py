@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import argparse
+import hashlib
 import importlib
 import importlib.metadata
 import json
@@ -16,6 +17,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+import yaml
 from huggingface_hub import snapshot_download
 
 from utils.cache_monitor import get_container_cache_dir
@@ -40,6 +42,15 @@ QUETZAL_BACKEND = "generated_quetzal"
 QUETZAL_PLUGIN_NAME = "quetzal_model_registry"
 QUETZAL_PLUGIN_VALUE = "tt_quetzalcoatlus.vllm_plugin:register"
 QUETZAL_PLUGIN_ALLOWLIST = {QUETZAL_PLUGIN_NAME, "tt"}
+QUETZAL_ARTIFACT_ENV_VARS = (
+    "QZ_QUALIFICATION_MANIFEST",
+    "QUETZAL_PREFILL_GENERATED_PY",
+    "QUETZAL_DECODE_GENERATED_PY",
+    "QUETZAL_PREFILL_METADATA_JSON",
+    "QUETZAL_DECODE_METADATA_JSON",
+    "QUETZAL_WEIGHTS",
+)
+QUETZAL_BUNDLE_MANIFESTS_DIR = ".quetzal-bundle-manifests"
 
 
 def parse_args():
@@ -405,6 +416,127 @@ def _general_plugin_entry_points():
         )
 
 
+def _sha256_file(path: Path) -> tuple[str, int]:
+    digest = hashlib.sha256()
+    size = 0
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(8 * 1024 * 1024), b""):
+            digest.update(chunk)
+            size += len(chunk)
+    return digest.hexdigest(), size
+
+
+def _validate_quetzal_package_and_runtime(root: Path, model_id: str) -> None:
+    package_id = os.getenv("QUETZAL_PACKAGE_ID")
+    package_root_value = os.getenv("QUETZAL_PACKAGE_ROOT")
+    if not package_id or not package_root_value:
+        raise RuntimeError(
+            "impl=quetzal requires QUETZAL_PACKAGE_ID and QUETZAL_PACKAGE_ROOT"
+        )
+    package_root = Path(package_root_value).resolve()
+    if root != package_root or package_root.name != package_id:
+        raise RuntimeError(
+            "QZ_MODELS_ROOT must equal QUETZAL_PACKAGE_ROOT and its basename "
+            "must equal QUETZAL_PACKAGE_ID"
+        )
+
+    manifest_sha256 = os.getenv("QUETZAL_BUNDLE_MANIFEST_SHA256", "")
+    if re.fullmatch(r"[0-9a-f]{64}", manifest_sha256) is None:
+        raise RuntimeError(
+            "impl=quetzal requires QUETZAL_BUNDLE_MANIFEST_SHA256 as lowercase SHA-256"
+        )
+    trusted_manifest = (
+        package_root / QUETZAL_BUNDLE_MANIFESTS_DIR / f"{manifest_sha256}.json"
+    )
+    if trusted_manifest.is_symlink() or not trusted_manifest.is_file():
+        raise RuntimeError(
+            f"Quetzal package is missing trusted-root proof: {trusted_manifest}"
+        )
+    actual_manifest_sha256, manifest_size = _sha256_file(trusted_manifest)
+    if manifest_size > 16 * 1024 * 1024 or actual_manifest_sha256 != manifest_sha256:
+        raise RuntimeError("Quetzal trusted-root proof digest mismatch")
+    try:
+        bundle_manifest = json.loads(trusted_manifest.read_bytes())
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError("Quetzal trusted-root proof is invalid JSON") from exc
+    if bundle_manifest.get("schema") != "ttq.artifact_bundle/v1":
+        raise RuntimeError("Quetzal trusted-root proof has an invalid schema")
+
+    inventory = {}
+    for tree in bundle_manifest.get("trees", []):
+        role = tree.get("role")
+        name = tree.get("name")
+        for row in tree.get("files", []):
+            inventory[f"{role}/{name}/{row.get('path')}"] = row
+    inventory["qualification_manifest.yaml"] = bundle_manifest.get(
+        "qualification_manifest", {}
+    )
+    for env_name in QUETZAL_ARTIFACT_ENV_VARS:
+        value = os.getenv(env_name)
+        if not value:
+            raise RuntimeError(f"impl=quetzal requires {env_name}")
+        artifact = Path(value).resolve()
+        try:
+            relative = artifact.relative_to(package_root).as_posix()
+        except ValueError as exc:
+            raise RuntimeError(
+                f"{env_name} escapes QUETZAL_PACKAGE_ROOT: {artifact}"
+            ) from exc
+        if artifact.is_symlink() or not artifact.is_file():
+            raise RuntimeError(f"Quetzal artifact is not a regular file: {artifact}")
+        row = inventory.get(relative)
+        digest, size = _sha256_file(artifact)
+        if (
+            not isinstance(row, dict)
+            or row.get("size") != size
+            or row.get("sha256") != digest
+        ):
+            raise RuntimeError(f"{env_name} failed trusted-root verification")
+
+    qualification_path = Path(os.environ["QZ_QUALIFICATION_MANIFEST"])
+    try:
+        qualification = yaml.safe_load(qualification_path.read_text())
+    except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
+        raise RuntimeError("Quetzal qualification manifest is invalid YAML") from exc
+    rows = qualification.get("models", []) if isinstance(qualification, dict) else []
+    matches = [
+        row for row in rows if isinstance(row, dict) and row.get("model_id") == model_id
+    ]
+    if len(matches) != 1:
+        raise RuntimeError(
+            "Quetzal qualification manifest must contain exactly one model contract"
+        )
+    required_runtime = (
+        matches[0].get("charter_pcc", {}).get("required_runtime_tt_metal_commit")
+    )
+    actual_runtime = os.getenv("TT_METAL_COMMIT_SHA_OR_TAG")
+    if not required_runtime or actual_runtime != required_runtime:
+        raise RuntimeError(
+            "Quetzal TT-Metal runtime mismatch: package requires "
+            f"{required_runtime!r}, image provides {actual_runtime!r}"
+        )
+
+    required_patchset = os.getenv("QUETZAL_REQUIRED_TT_METAL_PATCHSET_SHA256")
+    actual_patchset = os.getenv("TT_METAL_PATCHSET_SHA256")
+    if not required_patchset or actual_patchset != required_patchset:
+        raise RuntimeError(
+            "Quetzal TT-Metal patchset mismatch: catalog requires "
+            f"{required_patchset!r}, image provides {actual_patchset!r}"
+        )
+    identity_path = Path(os.getenv("TT_METAL_HOME", "")) / ".ttq-runtime-identity.json"
+    if identity_path.is_symlink() or not identity_path.is_file():
+        raise RuntimeError("Quetzal image is missing TT-Metal runtime identity")
+    try:
+        identity = json.loads(identity_path.read_text())
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError("Quetzal TT-Metal runtime identity is invalid") from exc
+    if (
+        identity.get("base_revision") != actual_runtime
+        or identity.get("patchset_sha256") != actual_patchset
+    ):
+        raise RuntimeError("Quetzal TT-Metal runtime identity mismatch")
+
+
 def validate_quetzal_runtime(model_spec: dict) -> dict | None:
     """Fail closed before vLLM import for a generated Quetzal launch.
 
@@ -472,6 +604,8 @@ def validate_quetzal_runtime(model_spec: dict) -> dict | None:
             "Quetzal qualification manifest must be inside QZ_MODELS_ROOT"
         )
 
+    _validate_quetzal_package_and_runtime(root, model_id)
+
     entry_points = [
         entry
         for entry in _general_plugin_entry_points()
@@ -515,7 +649,7 @@ def validate_quetzal_runtime(model_spec: dict) -> dict | None:
             f"under {root}; refusing native fallback"
         )
     logger.info(
-        "Quetzal preflight admitted model=%s revision=%s backend=%s " "emit_hash=%s",
+        "Quetzal preflight admitted model=%s revision=%s backend=%s emit_hash=%s",
         model_id,
         revision,
         matching[0].get("backend"),

@@ -4,6 +4,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import argparse
+import hashlib
 import importlib.util
 import json
 import os
@@ -439,20 +440,81 @@ def test_ensure_weights_available_pins_quetzal_revision(
 def test_validate_quetzal_runtime_admits_only_generated_provider(
     monkeypatch, tmp_path, run_vllm_api_server_module
 ):
-    root = tmp_path / "quetzal"
-    root.mkdir()
+    package_id = "sha256-" + "1" * 64 + "-" + "2" * 64
+    root = tmp_path / package_id
+    root.mkdir(parents=True)
     manifest = root / "qualification_manifest.yaml"
-    manifest.write_text("models: []\n")
+    runtime_commit = "b534549300fe2af11e6ee828675294bc0e359555"
+    patchset = "22fb0bd2523b8a5c63fa20c3c8a1586dc9ead5150449d0eb02231fa8173a7edd"
     revision = "6a9e13bd6fc8f0983b9b99948120bc37f49c13e9"
     model = "Qwen/Qwen3.6-27B"
+    manifest.write_text(
+        "models:\n"
+        f"  - model_id: {model}\n"
+        "    charter_pcc:\n"
+        f"      required_runtime_tt_metal_commit: {runtime_commit}\n"
+    )
+
+    artifact_rows = {}
+    artifact_env = {
+        "QUETZAL_PREFILL_GENERATED_PY": "compiled/Qwen_Qwen3.6-27B/full/prefill/generated.py",
+        "QUETZAL_DECODE_GENERATED_PY": "compiled/Qwen_Qwen3.6-27B/full/decode/generated.py",
+        "QUETZAL_PREFILL_METADATA_JSON": "compiled/Qwen_Qwen3.6-27B/full/prefill/metadata.json",
+        "QUETZAL_DECODE_METADATA_JSON": "compiled/Qwen_Qwen3.6-27B/full/decode/metadata.json",
+        "QUETZAL_WEIGHTS": "compiled_weights/Qwen_Qwen3.6-27B/full/weights.pt",
+    }
+    for env_name, relative in artifact_env.items():
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = env_name.encode()
+        path.write_bytes(payload)
+        role, name, nested = relative.split("/", 2)
+        artifact_rows.setdefault((role, name), []).append(
+            {
+                "path": nested,
+                "size": len(payload),
+                "sha256": hashlib.sha256(payload).hexdigest(),
+            }
+        )
+    qualification_payload = manifest.read_bytes()
+    bundle = {
+        "schema": "ttq.artifact_bundle/v1",
+        "trees": [
+            {"role": role, "name": name, "files": rows}
+            for (role, name), rows in artifact_rows.items()
+        ],
+        "qualification_manifest": {
+            "size": len(qualification_payload),
+            "sha256": hashlib.sha256(qualification_payload).hexdigest(),
+        },
+    }
+    bundle_bytes = json.dumps(bundle, sort_keys=True).encode()
+    bundle_digest = hashlib.sha256(bundle_bytes).hexdigest()
+    trusted = root / ".quetzal-bundle-manifests" / f"{bundle_digest}.json"
+    trusted.parent.mkdir()
+    trusted.write_bytes(bundle_bytes)
+
+    metal_home = tmp_path / "tt-metal"
+    metal_home.mkdir()
+    (metal_home / ".ttq-runtime-identity.json").write_text(
+        json.dumps({"base_revision": runtime_commit, "patchset_sha256": patchset})
+    )
     for key, value in {
         "QUETZAL_VLLM": "1",
         "QUETZAL_MODEL": model,
         "QUETZAL_HF_REVISION": revision,
+        "QUETZAL_PACKAGE_ID": package_id,
+        "QUETZAL_PACKAGE_ROOT": str(root),
+        "QUETZAL_BUNDLE_MANIFEST_SHA256": bundle_digest,
+        "QUETZAL_REQUIRED_TT_METAL_PATCHSET_SHA256": patchset,
+        "TT_METAL_COMMIT_SHA_OR_TAG": runtime_commit,
+        "TT_METAL_PATCHSET_SHA256": patchset,
+        "TT_METAL_HOME": str(metal_home),
         "VLLM_PLUGINS": "quetzal_model_registry,tt",
         "TT_VLLM_BUILTIN_MODELS": "0",
         "QZ_MODELS_ROOT": str(root),
         "QZ_QUALIFICATION_MANIFEST": str(manifest),
+        **{key: str(root / value) for key, value in artifact_env.items()},
     }.items():
         monkeypatch.setenv(key, value)
     model_spec = {

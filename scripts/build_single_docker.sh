@@ -75,6 +75,9 @@ CONTAINER_APP_UID=1000
 TT_METAL_COMMIT_SHA_OR_TAG=v0.56.0-rc6
 TT_VLLM_COMMIT_SHA_OR_TAG=b9564bf364e95a3850619fc7b2ed968cc71e30b7
 TT_QUETZAL_COMMIT_SHA=""
+TT_QUETZAL_SOURCE_DIR=""
+TT_METAL_PATCHSET_SHA256=""
+TT_METAL_PATCHSET_MANIFEST_SHA256=""
 TAG_SUFFIX=""
 IMAGE_REPO="ghcr.io/tenstorrent/tt-inference-server"
 # ------------------------------------------------------------------------------
@@ -120,6 +123,30 @@ while [ $# -gt 0 ]; do
                 exit 1
             fi
             TT_QUETZAL_COMMIT_SHA="$2"
+            shift
+            ;;
+        --quetzal-source-dir)
+            if [ $# -lt 2 ]; then
+                echo "⛔ Error: --quetzal-source-dir requires a value."
+                exit 1
+            fi
+            TT_QUETZAL_SOURCE_DIR="$2"
+            shift
+            ;;
+        --tt-metal-patchset-sha256)
+            if [ $# -lt 2 ]; then
+                echo "⛔ Error: --tt-metal-patchset-sha256 requires a value."
+                exit 1
+            fi
+            TT_METAL_PATCHSET_SHA256="$2"
+            shift
+            ;;
+        --tt-metal-patchset-manifest-sha256)
+            if [ $# -lt 2 ]; then
+                echo "⛔ Error: --tt-metal-patchset-manifest-sha256 requires a value."
+                exit 1
+            fi
+            TT_METAL_PATCHSET_MANIFEST_SHA256="$2"
             shift
             ;;
         --ubuntu-version)
@@ -185,7 +212,32 @@ if [[ -n "$TT_QUETZAL_COMMIT_SHA" && ! "$TT_QUETZAL_COMMIT_SHA" =~ ^[0-9a-f]{40}
     echo "⛔ Error: --quetzal-commit must be a lowercase 40-hex commit."
     exit 1
 fi
+if [[ -n "$TT_QUETZAL_COMMIT_SHA" ]]; then
+    if [[ ! -d "$TT_QUETZAL_SOURCE_DIR/.git" ]]; then
+        echo "⛔ Error: Quetzal builds require --quetzal-source-dir pointing to an Actions checkout."
+        exit 1
+    fi
+    if [[ "$(git -C "$TT_QUETZAL_SOURCE_DIR" rev-parse HEAD)" != "$TT_QUETZAL_COMMIT_SHA" ]]; then
+        echo "⛔ Error: Quetzal source checkout does not match --quetzal-commit."
+        exit 1
+    fi
+    if [[ ! "$TT_METAL_PATCHSET_SHA256" =~ ^[0-9a-f]{64}$ || ! "$TT_METAL_PATCHSET_MANIFEST_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+        echo "⛔ Error: Quetzal builds require both immutable TT-Metal patchset identities."
+        exit 1
+    fi
+fi
 cd "$repo_root"
+
+QUETZAL_BUILD_CONTEXT=$(mktemp -d)
+cleanup_quetzal_context() {
+    rm -rf -- "$QUETZAL_BUILD_CONTEXT"
+}
+trap cleanup_quetzal_context EXIT
+if [[ -n "$TT_QUETZAL_COMMIT_SHA" ]]; then
+    git -C "$TT_QUETZAL_SOURCE_DIR" archive "$TT_QUETZAL_COMMIT_SHA" \
+        | tar -x -C "$QUETZAL_BUILD_CONTEXT"
+    printf '%s' "$TT_QUETZAL_COMMIT_SHA" > "$QUETZAL_BUILD_CONTEXT/.tt-quetzal-commit"
+fi
 
 # build image vars
 UBUNTU_VERSION="${UBUNTU_VERSION}"
@@ -293,10 +345,13 @@ generate_model_specs_json()
 
         docker build \
         -t ${dev_image_tag} \
+        --build-context quetzal_src="${QUETZAL_BUILD_CONTEXT}" \
         --build-arg TT_METAL_DOCKERFILE_URL="${TT_METAL_DOCKERFILE_URL}" \
         --build-arg TT_METAL_COMMIT_SHA_OR_TAG="${TT_METAL_COMMIT_SHA_OR_TAG}" \
         --build-arg TT_VLLM_COMMIT_SHA_OR_TAG="${TT_VLLM_COMMIT_SHA_OR_TAG}" \
         --build-arg TT_QUETZAL_COMMIT_SHA="${TT_QUETZAL_COMMIT_SHA}" \
+        --build-arg TT_METAL_PATCHSET_SHA256="${TT_METAL_PATCHSET_SHA256}" \
+        --build-arg TT_METAL_PATCHSET_MANIFEST_SHA256="${TT_METAL_PATCHSET_MANIFEST_SHA256}" \
         --build-arg CONTAINER_APP_UID="${CONTAINER_APP_UID}" \
         . -f vllm-tt-metal/vllm.tt-metal.src.dev.Dockerfile
 
