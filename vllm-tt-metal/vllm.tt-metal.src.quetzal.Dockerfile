@@ -14,6 +14,7 @@ FROM ${TT_INFERENCE_SERVER_BASE_IMAGE} AS quetzal_ttmetal_builder
 ARG TT_METAL_BASE_REVISION
 ARG TT_METAL_BASE_FETCH_REF
 ARG TT_METAL_PATCHSET_SHA256
+ARG TT_METAL_PATCHSET_MANIFEST_SHA256
 
 USER root
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
@@ -24,7 +25,8 @@ COPY --from=quetzal_src tools/tt_metal_patchset.py /tmp/quetzal-tt-metal/tt_meta
 RUN test "${TT_METAL_BASE_REVISION}" = "b534549300fe2af11e6ee828675294bc0e359555" \
     && test "${TT_METAL_BASE_FETCH_REF}" = "qz/mixtral-epd2-wait-min-20260827" \
     && test "${TT_METAL_PATCHSET_SHA256}" = "22fb0bd2523b8a5c63fa20c3c8a1586dc9ead5150449d0eb02231fa8173a7edd" \
-    && echo "${TT_METAL_PATCHSET_SHA256}  /tmp/quetzal-tt-metal/patches/gdn-productization-v1.json" \
+    && test "${TT_METAL_PATCHSET_MANIFEST_SHA256}" = "85599bb0c05d5a8b1e6607ec926ef344144657783eaa9b0db480d40e058d742e" \
+    && echo "${TT_METAL_PATCHSET_MANIFEST_SHA256}  /tmp/quetzal-tt-metal/patches/gdn-productization-v1.json" \
         | sha256sum --check -
 
 RUN --mount=type=cache,target=/root/.cache/ccache \
@@ -71,7 +73,7 @@ RUN --mount=type=cache,target=/root/.cache/ccache \
     python -c 'import ttnn, ttnn._ttnn, vllm; assert ttnn.__path__[0].startswith("/home/container_app_user/tt-metal"); assert ttnn._ttnn.__file__.startswith("/home/container_app_user/tt-metal/")'; \
     cp /tmp/patchset-probe.json "${TT_METAL_HOME}/.ttq-patchset-admission.json"; \
     printf '%s\n' \
-        "{\"base_revision\":\"${TT_METAL_BASE_REVISION}\",\"patchset\":\"gdn-productization-v1\",\"patchset_sha256\":\"${TT_METAL_PATCHSET_SHA256}\"}" \
+        "{\"base_revision\":\"${TT_METAL_BASE_REVISION}\",\"patchset\":\"gdn-productization-v1\",\"patchset_sha256\":\"${TT_METAL_PATCHSET_SHA256}\",\"manifest_sha256\":\"${TT_METAL_PATCHSET_MANIFEST_SHA256}\"}" \
         > "${TT_METAL_HOME}/.ttq-runtime-identity.json"; \
     sha256sum \
         "${TT_METAL_HOME}/build/lib/_ttnn.so" \
@@ -89,13 +91,15 @@ ARG TT_INFERENCE_SERVER_COMMIT_SHA
 ARG TT_QUETZAL_COMMIT_SHA
 ARG TT_METAL_BASE_REVISION
 ARG TT_METAL_PATCHSET_SHA256
+ARG TT_METAL_PATCHSET_MANIFEST_SHA256
 
 LABEL org.opencontainers.image.tt-inference-server.revision=${TT_INFERENCE_SERVER_COMMIT_SHA} \
       org.opencontainers.image.quetzal.source=https://github.com/tenstorrent/tt-quetzalcoatlus \
       org.opencontainers.image.quetzal.revision=${TT_QUETZAL_COMMIT_SHA} \
       org.opencontainers.image.tt-metal.revision=${TT_METAL_BASE_REVISION} \
       org.opencontainers.image.tt-metal.patchset=gdn-productization-v1 \
-      org.opencontainers.image.tt-metal.patchset.sha256=${TT_METAL_PATCHSET_SHA256}
+      org.opencontainers.image.tt-metal.patchset.sha256=${TT_METAL_PATCHSET_SHA256} \
+      org.opencontainers.image.tt-metal.patchset.manifest.sha256=${TT_METAL_PATCHSET_MANIFEST_SHA256}
 
 USER root
 RUN printf '%s' "${TT_INFERENCE_SERVER_BASE_IMAGE}" \
@@ -148,3 +152,4 @@ ENV TT_QUETZAL_COMMIT_SHA=${TT_QUETZAL_COMMIT_SHA}
 ENV TT_INFERENCE_SERVER_COMMIT_SHA=${TT_INFERENCE_SERVER_COMMIT_SHA}
 ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_BASE_REVISION}
 ENV TT_METAL_PATCHSET_SHA256=${TT_METAL_PATCHSET_SHA256}
+ENV TT_METAL_PATCHSET_MANIFEST_SHA256=${TT_METAL_PATCHSET_MANIFEST_SHA256}

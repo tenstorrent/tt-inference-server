@@ -11,6 +11,7 @@ import os
 import sys
 import types
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -417,7 +418,21 @@ def _materialized_quetzal_contract(monkeypatch, tmp_path, module):
         f"      required_runtime_tt_metal_commit: {required_runtime}\n"
     )
     monkeypatch.setenv("QUETZAL_MODEL", "Qwen/Qwen3.6-27B")
+    monkeypatch.setenv("QUETZAL_HF_REVISION", "c" * 40)
+    monkeypatch.setenv("VLLM_PLUGINS", "quetzal_model_registry,tt")
+    monkeypatch.setenv("TT_VLLM_BUILTIN_MODELS", "0")
     monkeypatch.setenv("TT_METAL_COMMIT_SHA_OR_TAG", required_runtime)
+    patchset = "d" * 64
+    monkeypatch.setenv("QUETZAL_REQUIRED_TT_METAL_PATCHSET_SHA256", patchset)
+    monkeypatch.setenv("TT_METAL_PATCHSET_SHA256", patchset)
+    metal_home = tmp_path / "tt-metal"
+    metal_home.mkdir()
+    (metal_home / ".ttq-runtime-identity.json").write_text(
+        json.dumps(
+            {"base_revision": required_runtime, "patchset_sha256": patchset}
+        )
+    )
+    monkeypatch.setenv("TT_METAL_HOME", str(metal_home))
 
     def row(relative):
         path = package_root / relative
@@ -473,7 +488,14 @@ def _quetzal_entry_points():
 
 
 def _quetzal_model_spec(model="Qwen/Qwen3.6-27B"):
-    return {"impl": {"impl_id": "quetzal"}, "hf_model_repo": model}
+    return {
+        "impl": {"impl_id": "quetzal"},
+        "hf_model_repo": model,
+        "device_model_spec": {
+            "max_context": 8192,
+            "vllm_args": {"revision": "c" * 40, "tokenizer_revision": "c" * 40},
+        },
+    }
 
 
 def test_main_validates_quetzal_before_runtime_and_skips_native_weight_setup(
@@ -518,7 +540,7 @@ def test_main_validates_quetzal_before_runtime_and_skips_native_weight_setup(
     )
     monkeypatch.setattr(
         run_vllm_api_server_module,
-        "validate_quetzal_runtime_contract",
+        "validate_quetzal_runtime",
         MagicMock(side_effect=lambda _spec: events.append("validation")),
     )
     monkeypatch.setattr(
@@ -543,22 +565,24 @@ def test_main_validates_quetzal_before_runtime_and_skips_native_weight_setup(
 def test_quetzal_runtime_contract_accepts_materialized_content_package(
     monkeypatch, tmp_path, run_vllm_api_server_module
 ):
-    _materialized_quetzal_contract(monkeypatch, tmp_path, run_vllm_api_server_module)
-    run_vllm_api_server_module.validate_quetzal_runtime_contract(
-        _quetzal_model_spec(),
-        entry_points=_quetzal_entry_points(),
+    package_root = _materialized_quetzal_contract(
+        monkeypatch, tmp_path, run_vllm_api_server_module
+    )
+    run_vllm_api_server_module._validate_quetzal_package_and_runtime(
+        package_root, "Qwen/Qwen3.6-27B"
     )
 
 
 def test_quetzal_runtime_contract_rejects_missing_package_file(
     monkeypatch, tmp_path, run_vllm_api_server_module
 ):
-    _materialized_quetzal_contract(monkeypatch, tmp_path, run_vllm_api_server_module)
+    package_root = _materialized_quetzal_contract(
+        monkeypatch, tmp_path, run_vllm_api_server_module
+    )
     Path(os.environ["QUETZAL_WEIGHTS"]).unlink()
-    with pytest.raises(RuntimeError, match="not materialized.*QUETZAL_WEIGHTS"):
-        run_vllm_api_server_module.validate_quetzal_runtime_contract(
-            _quetzal_model_spec(),
-            entry_points=_quetzal_entry_points(),
+    with pytest.raises(RuntimeError, match="not a regular file"):
+        run_vllm_api_server_module._validate_quetzal_package_and_runtime(
+            package_root, "Qwen/Qwen3.6-27B"
         )
 
 
@@ -570,36 +594,37 @@ def test_quetzal_runtime_contract_rejects_missing_trusted_root_proof(
     )
     digest = os.environ["QUETZAL_BUNDLE_MANIFEST_SHA256"]
     (package_root / ".quetzal-bundle-manifests" / f"{digest}.json").unlink()
-    with pytest.raises(RuntimeError, match="missing its installed trusted-root proof"):
-        run_vllm_api_server_module.validate_quetzal_runtime_contract(
-            _quetzal_model_spec(),
-            entry_points=_quetzal_entry_points(),
+    with pytest.raises(RuntimeError, match="missing trusted-root proof"):
+        run_vllm_api_server_module._validate_quetzal_package_and_runtime(
+            package_root, "Qwen/Qwen3.6-27B"
         )
 
 
 def test_quetzal_runtime_contract_rejects_tampered_executable(
     monkeypatch, tmp_path, run_vllm_api_server_module
 ):
-    _materialized_quetzal_contract(monkeypatch, tmp_path, run_vllm_api_server_module)
+    package_root = _materialized_quetzal_contract(
+        monkeypatch, tmp_path, run_vllm_api_server_module
+    )
     Path(os.environ["QUETZAL_DECODE_GENERATED_PY"]).write_text("evil")
     with pytest.raises(RuntimeError, match="trusted-root proof|verification"):
-        run_vllm_api_server_module.validate_quetzal_runtime_contract(
-            _quetzal_model_spec(),
-            entry_points=_quetzal_entry_points(),
+        run_vllm_api_server_module._validate_quetzal_package_and_runtime(
+            package_root, "Qwen/Qwen3.6-27B"
         )
 
 
 def test_quetzal_runtime_contract_rejects_path_escape(
     monkeypatch, tmp_path, run_vllm_api_server_module
 ):
-    _materialized_quetzal_contract(monkeypatch, tmp_path, run_vllm_api_server_module)
+    package_root = _materialized_quetzal_contract(
+        monkeypatch, tmp_path, run_vllm_api_server_module
+    )
     outside = tmp_path / "outside.py"
     outside.write_text("test")
     monkeypatch.setenv("QUETZAL_PREFILL_GENERATED_PY", str(outside))
     with pytest.raises(RuntimeError, match="escapes QUETZAL_PACKAGE_ROOT"):
-        run_vllm_api_server_module.validate_quetzal_runtime_contract(
-            _quetzal_model_spec(),
-            entry_points=_quetzal_entry_points(),
+        run_vllm_api_server_module._validate_quetzal_package_and_runtime(
+            package_root, "Qwen/Qwen3.6-27B"
         )
 
 
@@ -607,22 +632,23 @@ def test_quetzal_runtime_contract_rejects_missing_plugin(
     monkeypatch, tmp_path, run_vllm_api_server_module
 ):
     _materialized_quetzal_contract(monkeypatch, tmp_path, run_vllm_api_server_module)
-    with pytest.raises(RuntimeError, match="requires the Quetzal.*entry point"):
-        run_vllm_api_server_module.validate_quetzal_runtime_contract(
-            _quetzal_model_spec(),
-            entry_points={"vllm.general_plugins": []},
-        )
+    monkeypatch.setattr(
+        run_vllm_api_server_module, "_general_plugin_entry_points", lambda: []
+    )
+    with pytest.raises(RuntimeError, match="requires exactly one installed"):
+        run_vllm_api_server_module.validate_quetzal_runtime(_quetzal_model_spec())
 
 
 def test_quetzal_runtime_contract_rejects_tt_metal_revision_mismatch(
     monkeypatch, tmp_path, run_vllm_api_server_module
 ):
-    _materialized_quetzal_contract(monkeypatch, tmp_path, run_vllm_api_server_module)
+    package_root = _materialized_quetzal_contract(
+        monkeypatch, tmp_path, run_vllm_api_server_module
+    )
     monkeypatch.setenv("TT_METAL_COMMIT_SHA_OR_TAG", "b" * 40)
     with pytest.raises(RuntimeError, match="TT-Metal runtime mismatch"):
-        run_vllm_api_server_module.validate_quetzal_runtime_contract(
-            _quetzal_model_spec(),
-            entry_points=_quetzal_entry_points(),
+        run_vllm_api_server_module._validate_quetzal_package_and_runtime(
+            package_root, "Qwen/Qwen3.6-27B"
         )
 
 
@@ -630,18 +656,20 @@ def test_quetzal_runtime_contract_rejects_catalog_package_identity_mismatch(
     monkeypatch, tmp_path, run_vllm_api_server_module
 ):
     _materialized_quetzal_contract(monkeypatch, tmp_path, run_vllm_api_server_module)
-    with pytest.raises(RuntimeError, match="hf_model_repo to equal QUETZAL_MODEL"):
-        run_vllm_api_server_module.validate_quetzal_runtime_contract(
-            _quetzal_model_spec("other/model"),
-            entry_points=_quetzal_entry_points(),
+    with pytest.raises(RuntimeError, match="model identity mismatch"):
+        run_vllm_api_server_module.validate_quetzal_runtime(
+            _quetzal_model_spec("other/model")
         )
 
 
 def test_quetzal_runtime_contract_is_noop_for_native(
     run_vllm_api_server_module,
 ):
-    run_vllm_api_server_module.validate_quetzal_runtime_contract(
-        {"impl": {"impl_id": "tt_transformers"}}, entry_points={}
+    assert (
+        run_vllm_api_server_module.validate_quetzal_runtime(
+            {"impl": {"impl_id": "tt_transformers"}}
+        )
+        is None
     )
 
 
@@ -670,9 +698,149 @@ def test_ensure_weights_available_resumes_partial_download(
     run_vllm_api_server_module.snapshot_download.assert_called_once()
     kwargs = run_vllm_api_server_module.snapshot_download.call_args.kwargs
     assert kwargs["repo_id"] == spec["hf_model_repo"]
+    assert kwargs["revision"] is None
     assert Path(kwargs["local_dir"]) == weights_path
     assert result == weights_path
     assert os.environ["MODEL_WEIGHTS_DIR"] == str(weights_path)
+
+
+def test_ensure_weights_available_pins_quetzal_revision(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    monkeypatch.delenv("MODEL_WEIGHTS_DIR", raising=False)
+    monkeypatch.setenv("CACHE_ROOT", str(tmp_path))
+    revision = "6a9e13bd6fc8f0983b9b99948120bc37f49c13e9"
+    spec = _weights_spec()
+    spec["device_model_spec"] = {"vllm_args": {"revision": revision}}
+
+    run_vllm_api_server_module.ensure_weights_available(spec)
+
+    assert (
+        run_vllm_api_server_module.snapshot_download.call_args.kwargs["revision"]
+        == revision
+    )
+
+
+def test_validate_quetzal_runtime_admits_only_generated_provider(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    package_id = "sha256-" + "1" * 64 + "-" + "2" * 64
+    root = tmp_path / package_id
+    root.mkdir(parents=True)
+    manifest = root / "qualification_manifest.yaml"
+    runtime_commit = "b534549300fe2af11e6ee828675294bc0e359555"
+    patchset = "22fb0bd2523b8a5c63fa20c3c8a1586dc9ead5150449d0eb02231fa8173a7edd"
+    revision = "6a9e13bd6fc8f0983b9b99948120bc37f49c13e9"
+    model = "Qwen/Qwen3.6-27B"
+    manifest.write_text(
+        "models:\n"
+        f"  - model_id: {model}\n"
+        "    charter_pcc:\n"
+        f"      required_runtime_tt_metal_commit: {runtime_commit}\n"
+    )
+
+    artifact_rows = {}
+    artifact_env = {
+        "QUETZAL_PREFILL_GENERATED_PY": "compiled/Qwen_Qwen3.6-27B/full/prefill/generated.py",
+        "QUETZAL_DECODE_GENERATED_PY": "compiled/Qwen_Qwen3.6-27B/full/decode/generated.py",
+        "QUETZAL_PREFILL_METADATA_JSON": "compiled/Qwen_Qwen3.6-27B/full/prefill/metadata.json",
+        "QUETZAL_DECODE_METADATA_JSON": "compiled/Qwen_Qwen3.6-27B/full/decode/metadata.json",
+        "QUETZAL_WEIGHTS": "compiled_weights/Qwen_Qwen3.6-27B/full/weights.pt",
+    }
+    for env_name, relative in artifact_env.items():
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = env_name.encode()
+        path.write_bytes(payload)
+        role, name, nested = relative.split("/", 2)
+        artifact_rows.setdefault((role, name), []).append(
+            {
+                "path": nested,
+                "size": len(payload),
+                "sha256": hashlib.sha256(payload).hexdigest(),
+            }
+        )
+    qualification_payload = manifest.read_bytes()
+    bundle = {
+        "schema": "ttq.artifact_bundle/v1",
+        "trees": [
+            {"role": role, "name": name, "files": rows}
+            for (role, name), rows in artifact_rows.items()
+        ],
+        "qualification_manifest": {
+            "size": len(qualification_payload),
+            "sha256": hashlib.sha256(qualification_payload).hexdigest(),
+        },
+    }
+    bundle_bytes = json.dumps(bundle, sort_keys=True).encode()
+    bundle_digest = hashlib.sha256(bundle_bytes).hexdigest()
+    trusted = root / ".quetzal-bundle-manifests" / f"{bundle_digest}.json"
+    trusted.parent.mkdir()
+    trusted.write_bytes(bundle_bytes)
+
+    metal_home = tmp_path / "tt-metal"
+    metal_home.mkdir()
+    (metal_home / ".ttq-runtime-identity.json").write_text(
+        json.dumps({"base_revision": runtime_commit, "patchset_sha256": patchset})
+    )
+    for key, value in {
+        "QUETZAL_VLLM": "1",
+        "QUETZAL_MODEL": model,
+        "QUETZAL_HF_REVISION": revision,
+        "QUETZAL_PACKAGE_ID": package_id,
+        "QUETZAL_PACKAGE_ROOT": str(root),
+        "QUETZAL_BUNDLE_MANIFEST_SHA256": bundle_digest,
+        "QUETZAL_REQUIRED_TT_METAL_PATCHSET_SHA256": patchset,
+        "TT_METAL_COMMIT_SHA_OR_TAG": runtime_commit,
+        "TT_METAL_PATCHSET_SHA256": patchset,
+        "TT_METAL_HOME": str(metal_home),
+        "VLLM_PLUGINS": "quetzal_model_registry,tt",
+        "TT_VLLM_BUILTIN_MODELS": "0",
+        "QZ_MODELS_ROOT": str(root),
+        "QZ_QUALIFICATION_MANIFEST": str(manifest),
+        **{key: str(root / value) for key, value in artifact_env.items()},
+    }.items():
+        monkeypatch.setenv(key, value)
+    model_spec = {
+        "impl": {"impl_id": "quetzal"},
+        "hf_model_repo": model,
+        "device_model_spec": {
+            "max_context": 8192,
+            "vllm_args": {
+                "revision": revision,
+                "tokenizer_revision": revision,
+            },
+        },
+    }
+    monkeypatch.setattr(
+        run_vllm_api_server_module,
+        "_general_plugin_entry_points",
+        lambda: [
+            SimpleNamespace(
+                name="quetzal_model_registry",
+                value="tt_quetzalcoatlus.vllm_plugin:register",
+            )
+        ],
+    )
+    entry = {
+        "model_id": model,
+        "backend": "generated_quetzal",
+        "batch_size": 1,
+        "target_mesh": "p150x4",
+        "emit_hash": "a" * 64,
+        "prefill_buckets": [{"seq_len": 8192}],
+    }
+    monkeypatch.setattr(
+        run_vllm_api_server_module.importlib,
+        "import_module",
+        lambda name: SimpleNamespace(discover_models=lambda path: {"qwen": entry}),
+    )
+
+    assert run_vllm_api_server_module.validate_quetzal_runtime(model_spec) == entry
+
+    monkeypatch.setenv("VLLM_PLUGINS", "quetzal_model_registry,tt,tt_model_registry")
+    with pytest.raises(RuntimeError, match="requires exactly"):
+        run_vllm_api_server_module.validate_quetzal_runtime(model_spec)
 
 
 def test_ensure_weights_available_falls_back_when_hub_unreachable(

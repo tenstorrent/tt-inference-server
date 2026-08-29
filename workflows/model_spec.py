@@ -315,6 +315,12 @@ tt_vllm_plugin_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-inference-server/tree/dev/tt-vllm-plugin",
     code_path="tt_vllm_plugin",
 )
+quetzal_impl = ImplSpec(
+    impl_id="quetzal",
+    impl_name="quetzal",
+    repo_url="https://github.com/tenstorrent/tt-quetzalcoatlus",
+    code_path="serving/quetzal_vllm.py",
+)
 # Distinct impl for forge SDXL so its model_id does not collide with the media
 # SDXL spec (which uses tt_transformers_impl) on shared Blackhole devices.
 sdxl_forge_impl = ImplSpec(
@@ -394,6 +400,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "speecht5_tts": speecht5_impl,
     "forge_vllm_plugin": forge_vllm_plugin_impl,
     "tt_vllm_plugin": tt_vllm_plugin_impl,
+    "quetzal": quetzal_impl,
     "sdxl_forge": sdxl_forge_impl,
     "qwen36_blackhole": qwen36_blackhole_impl,
     "qwen36_blackhole_vlm": qwen36_blackhole_vlm_impl,

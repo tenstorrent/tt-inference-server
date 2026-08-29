@@ -3,12 +3,14 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import argparse
-from importlib import metadata as importlib_metadata
 import hashlib
+import importlib
+import importlib.metadata
 import json
 import logging
 import multiprocessing
 import os
+import re
 import runpy
 import shlex
 import sys
@@ -17,7 +19,6 @@ from typing import Optional
 
 import yaml
 from huggingface_hub import snapshot_download
-from vllm import ModelRegistry
 
 from utils.cache_monitor import get_container_cache_dir
 from utils.device_utils import get_mesh_device_name
@@ -36,6 +37,20 @@ logger = logging.getLogger(__name__)
 
 
 DEFAULT_VLLM_SERVER_PORT = "8000"
+QUETZAL_IMPL_ID = "quetzal"
+QUETZAL_BACKEND = "generated_quetzal"
+QUETZAL_PLUGIN_NAME = "quetzal_model_registry"
+QUETZAL_PLUGIN_VALUE = "tt_quetzalcoatlus.vllm_plugin:register"
+QUETZAL_PLUGIN_ALLOWLIST = {QUETZAL_PLUGIN_NAME, "tt"}
+QUETZAL_ARTIFACT_ENV_VARS = (
+    "QZ_QUALIFICATION_MANIFEST",
+    "QUETZAL_PREFILL_GENERATED_PY",
+    "QUETZAL_DECODE_GENERATED_PY",
+    "QUETZAL_PREFILL_METADATA_JSON",
+    "QUETZAL_DECODE_METADATA_JSON",
+    "QUETZAL_WEIGHTS",
+)
+QUETZAL_BUNDLE_MANIFESTS_DIR = ".quetzal-bundle-manifests"
 
 
 def parse_args():
@@ -314,11 +329,14 @@ def ensure_weights_available(model_spec: dict) -> Path:
     model_name = model_spec["model_name"]
     weights_path = cache_root / "weights" / model_name
     hf_repo = model_spec.get("hf_weights_repo") or model_spec["hf_model_repo"]
+    revision = (
+        model_spec.get("device_model_spec", {}).get("vllm_args", {}).get("revision")
+    )
 
     weights_path.mkdir(parents=True, exist_ok=True)
     logger.info(f"Downloading weights from {hf_repo} to {weights_path}")
     try:
-        snapshot_download(repo_id=hf_repo, local_dir=weights_path)
+        snapshot_download(repo_id=hf_repo, revision=revision, local_dir=weights_path)
     except Exception as e:
         if any(weights_path.iterdir()):
             logger.warning(
@@ -362,6 +380,12 @@ def register_tt_models(impl_id=None):
                  "tt_transformers".
     """
     impl_id = impl_id or "tt_transformers"
+    if impl_id == QUETZAL_IMPL_ID:
+        raise RuntimeError("native TT model registration is forbidden for impl=quetzal")
+
+    # Delay importing vLLM until model-spec environment and Quetzal admission
+    # have been applied. VLLM discovers plugins during import in some versions.
+    from vllm import ModelRegistry
 
     # Llama path selection based on impl_id
     if impl_id == "llama3_70b_galaxy":
@@ -380,6 +404,258 @@ def register_tt_models(impl_id=None):
         "TTArceeForCausalLM",
         "models.tt_transformers.tt.generator_vllm:TTArceeForCausalLM",
     )
+
+
+def _general_plugin_entry_points():
+    """Return installed vLLM general plugins across Python metadata APIs."""
+    try:
+        return list(importlib.metadata.entry_points(group="vllm.general_plugins"))
+    except TypeError:  # Python/importlib_metadata compatibility
+        return list(
+            importlib.metadata.entry_points().select(group="vllm.general_plugins")
+        )
+
+
+def _sha256_file(path: Path) -> tuple[str, int]:
+    digest = hashlib.sha256()
+    size = 0
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(8 * 1024 * 1024), b""):
+            digest.update(chunk)
+            size += len(chunk)
+    return digest.hexdigest(), size
+
+
+def _validate_quetzal_package_and_runtime(root: Path, model_id: str) -> None:
+    package_id = os.getenv("QUETZAL_PACKAGE_ID")
+    package_root_value = os.getenv("QUETZAL_PACKAGE_ROOT")
+    if not package_id or not package_root_value:
+        raise RuntimeError(
+            "impl=quetzal requires QUETZAL_PACKAGE_ID and QUETZAL_PACKAGE_ROOT"
+        )
+    package_root = Path(package_root_value).resolve()
+    if root != package_root or package_root.name != package_id:
+        raise RuntimeError(
+            "QZ_MODELS_ROOT must equal QUETZAL_PACKAGE_ROOT and its basename "
+            "must equal QUETZAL_PACKAGE_ID"
+        )
+
+    manifest_sha256 = os.getenv("QUETZAL_BUNDLE_MANIFEST_SHA256", "")
+    if re.fullmatch(r"[0-9a-f]{64}", manifest_sha256) is None:
+        raise RuntimeError(
+            "impl=quetzal requires QUETZAL_BUNDLE_MANIFEST_SHA256 as lowercase SHA-256"
+        )
+    trusted_manifest = (
+        package_root / QUETZAL_BUNDLE_MANIFESTS_DIR / f"{manifest_sha256}.json"
+    )
+    if trusted_manifest.is_symlink() or not trusted_manifest.is_file():
+        raise RuntimeError(
+            f"Quetzal package is missing trusted-root proof: {trusted_manifest}"
+        )
+    actual_manifest_sha256, manifest_size = _sha256_file(trusted_manifest)
+    if manifest_size > 16 * 1024 * 1024 or actual_manifest_sha256 != manifest_sha256:
+        raise RuntimeError("Quetzal trusted-root proof digest mismatch")
+    try:
+        bundle_manifest = json.loads(trusted_manifest.read_bytes())
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError("Quetzal trusted-root proof is invalid JSON") from exc
+    if bundle_manifest.get("schema") != "ttq.artifact_bundle/v1":
+        raise RuntimeError("Quetzal trusted-root proof has an invalid schema")
+
+    inventory = {}
+    for tree in bundle_manifest.get("trees", []):
+        role = tree.get("role")
+        name = tree.get("name")
+        for row in tree.get("files", []):
+            inventory[f"{role}/{name}/{row.get('path')}"] = row
+    inventory["qualification_manifest.yaml"] = bundle_manifest.get(
+        "qualification_manifest", {}
+    )
+    for env_name in QUETZAL_ARTIFACT_ENV_VARS:
+        value = os.getenv(env_name)
+        if not value:
+            raise RuntimeError(f"impl=quetzal requires {env_name}")
+        artifact = Path(value).resolve()
+        try:
+            relative = artifact.relative_to(package_root).as_posix()
+        except ValueError as exc:
+            raise RuntimeError(
+                f"{env_name} escapes QUETZAL_PACKAGE_ROOT: {artifact}"
+            ) from exc
+        if artifact.is_symlink() or not artifact.is_file():
+            raise RuntimeError(f"Quetzal artifact is not a regular file: {artifact}")
+        row = inventory.get(relative)
+        digest, size = _sha256_file(artifact)
+        if (
+            not isinstance(row, dict)
+            or row.get("size") != size
+            or row.get("sha256") != digest
+        ):
+            raise RuntimeError(f"{env_name} failed trusted-root verification")
+
+    qualification_path = Path(os.environ["QZ_QUALIFICATION_MANIFEST"])
+    try:
+        qualification = yaml.safe_load(qualification_path.read_text())
+    except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
+        raise RuntimeError("Quetzal qualification manifest is invalid YAML") from exc
+    rows = qualification.get("models", []) if isinstance(qualification, dict) else []
+    matches = [
+        row for row in rows if isinstance(row, dict) and row.get("model_id") == model_id
+    ]
+    if len(matches) != 1:
+        raise RuntimeError(
+            "Quetzal qualification manifest must contain exactly one model contract"
+        )
+    required_runtime = (
+        matches[0].get("charter_pcc", {}).get("required_runtime_tt_metal_commit")
+    )
+    actual_runtime = os.getenv("TT_METAL_COMMIT_SHA_OR_TAG")
+    if not required_runtime or actual_runtime != required_runtime:
+        raise RuntimeError(
+            "Quetzal TT-Metal runtime mismatch: package requires "
+            f"{required_runtime!r}, image provides {actual_runtime!r}"
+        )
+
+    required_patchset = os.getenv("QUETZAL_REQUIRED_TT_METAL_PATCHSET_SHA256")
+    actual_patchset = os.getenv("TT_METAL_PATCHSET_SHA256")
+    if not required_patchset or actual_patchset != required_patchset:
+        raise RuntimeError(
+            "Quetzal TT-Metal patchset mismatch: catalog requires "
+            f"{required_patchset!r}, image provides {actual_patchset!r}"
+        )
+    identity_path = Path(os.getenv("TT_METAL_HOME", "")) / ".ttq-runtime-identity.json"
+    if identity_path.is_symlink() or not identity_path.is_file():
+        raise RuntimeError("Quetzal image is missing TT-Metal runtime identity")
+    try:
+        identity = json.loads(identity_path.read_text())
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError("Quetzal TT-Metal runtime identity is invalid") from exc
+    if (
+        identity.get("base_revision") != actual_runtime
+        or identity.get("patchset_sha256") != actual_patchset
+    ):
+        raise RuntimeError("Quetzal TT-Metal runtime identity mismatch")
+
+
+def validate_quetzal_runtime(model_spec: dict) -> dict | None:
+    """Fail closed before vLLM import for a generated Quetzal launch.
+
+    The installed Quetzal plugin performs the definitive architecture
+    registration. This preflight proves the selected model spec cannot fall
+    through to the handcrafted registry while startup is still host-only.
+    """
+    impl_id = model_spec.get("impl", {}).get("impl_id")
+    if impl_id != QUETZAL_IMPL_ID:
+        return None
+
+    model_id = model_spec.get("hf_model_repo")
+    env_model = os.getenv("QUETZAL_MODEL")
+    if os.getenv("QUETZAL_VLLM") != "1":
+        raise RuntimeError("impl=quetzal requires QUETZAL_VLLM=1")
+    if not model_id or env_model != model_id:
+        raise RuntimeError(
+            "Quetzal model identity mismatch: catalog hf_model_repo must equal "
+            "QUETZAL_MODEL"
+        )
+
+    plugins = [item.strip() for item in os.getenv("VLLM_PLUGINS", "").split(",")]
+    plugins = [item for item in plugins if item]
+    if set(plugins) != QUETZAL_PLUGIN_ALLOWLIST or len(plugins) != 2:
+        raise RuntimeError(
+            "impl=quetzal requires exactly "
+            "VLLM_PLUGINS=quetzal_model_registry,tt; native model registries "
+            "are forbidden"
+        )
+    if os.getenv("TT_VLLM_BUILTIN_MODELS") != "0":
+        raise RuntimeError("impl=quetzal requires TT_VLLM_BUILTIN_MODELS=0")
+
+    vllm_args = model_spec.get("device_model_spec", {}).get("vllm_args", {})
+    revision = os.getenv("QUETZAL_HF_REVISION")
+    if not revision or re.fullmatch(r"[0-9a-f]{40}", revision) is None:
+        raise RuntimeError(
+            "Quetzal HF revision must be an immutable lowercase 40-hex commit"
+        )
+    if vllm_args.get("revision") != revision:
+        raise RuntimeError("Quetzal config revision does not match artifact revision")
+    if vllm_args.get("tokenizer_revision") != revision:
+        raise RuntimeError(
+            "Quetzal tokenizer revision does not match artifact revision"
+        )
+
+    root_value = os.getenv("QZ_MODELS_ROOT")
+    if not root_value:
+        raise RuntimeError("impl=quetzal requires QZ_MODELS_ROOT")
+    root = Path(root_value)
+    if root.is_symlink() or not root.is_dir():
+        raise RuntimeError(f"QZ_MODELS_ROOT must be a real directory: {root}")
+    root = root.resolve()
+
+    manifest_value = os.getenv("QZ_QUALIFICATION_MANIFEST")
+    if not manifest_value:
+        raise RuntimeError("impl=quetzal requires QZ_QUALIFICATION_MANIFEST")
+    manifest = Path(manifest_value)
+    if manifest.is_symlink() or not manifest.is_file():
+        raise RuntimeError(
+            f"QZ_QUALIFICATION_MANIFEST must be a regular file: {manifest}"
+        )
+    manifest = manifest.resolve()
+    if not manifest.is_relative_to(root):
+        raise RuntimeError(
+            "Quetzal qualification manifest must be inside QZ_MODELS_ROOT"
+        )
+
+    _validate_quetzal_package_and_runtime(root, model_id)
+
+    entry_points = [
+        entry
+        for entry in _general_plugin_entry_points()
+        if entry.name == QUETZAL_PLUGIN_NAME
+    ]
+    if len(entry_points) != 1:
+        raise RuntimeError(
+            "impl=quetzal requires exactly one installed "
+            f"{QUETZAL_PLUGIN_NAME!r} vLLM entry point; found {len(entry_points)}"
+        )
+    if entry_points[0].value != QUETZAL_PLUGIN_VALUE:
+        raise RuntimeError(
+            f"{QUETZAL_PLUGIN_NAME!r} must resolve to {QUETZAL_PLUGIN_VALUE!r}; "
+            f"found {entry_points[0].value!r}"
+        )
+
+    # Discovery is generated-only by default. It validates the qualification
+    # policy, prefill/decode pair, weights, runtime ABI, and backend identity.
+    quetzal_server = importlib.import_module("serving.quetzal_server")
+    entries = quetzal_server.discover_models(str(root))
+    required_context = model_spec.get("device_model_spec", {}).get("max_context")
+    matching = []
+    for entry in entries.values():
+        bucket_lengths = {
+            bucket.get("seq_len")
+            for bucket in entry.get("prefill_buckets", [])
+            if isinstance(bucket, dict)
+        }
+        if (
+            entry.get("model_id") == model_id
+            and entry.get("backend") == QUETZAL_BACKEND
+            and entry.get("batch_size") in (None, 1)
+            and entry.get("target_mesh") in ("p150x4", "4-chip")
+            and required_context in bucket_lengths
+        ):
+            matching.append(entry)
+    if not matching:
+        raise RuntimeError(
+            "no qualified generated_quetzal p150x4/B1 artifact with the "
+            f"catalog context {required_context} was discovered for {model_id} "
+            f"under {root}; refusing native fallback"
+        )
+    logger.info(
+        "Quetzal preflight admitted model=%s revision=%s backend=%s emit_hash=%s",
+        model_id,
+        revision,
+        matching[0].get("backend"),
+        matching[0].get("emit_hash"),
+    )
+    return matching[0]
 
 
 def model_setup(model_spec_json):
@@ -590,212 +866,6 @@ def set_runtime_env_vars(model_spec_json):
         os.environ[key] = value
 
 
-_QUETZAL_ARTIFACT_ENV_VARS = (
-    "QZ_QUALIFICATION_MANIFEST",
-    "QUETZAL_PREFILL_GENERATED_PY",
-    "QUETZAL_DECODE_GENERATED_PY",
-    "QUETZAL_PREFILL_METADATA_JSON",
-    "QUETZAL_DECODE_METADATA_JSON",
-    "QUETZAL_WEIGHTS",
-)
-_QUETZAL_BUNDLE_MANIFEST_ENV = "QUETZAL_BUNDLE_MANIFEST_SHA256"
-_QUETZAL_BUNDLE_MANIFESTS_DIR = ".quetzal-bundle-manifests"
-
-
-def _sha256_file(path: Path) -> tuple[str, int]:
-    digest = hashlib.sha256()
-    size = 0
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(8 * 1024 * 1024), b""):
-            digest.update(chunk)
-            size += len(chunk)
-    return digest.hexdigest(), size
-
-
-def validate_quetzal_runtime_contract(model_spec_json, entry_points=None):
-    """Fail before vLLM when an explicit Quetzal spec is not materialized.
-
-    Selecting ``impl=quetzal`` must never degrade into the native model registry
-    because a development image omitted the general plugin or its artifact
-    volume.  All artifact paths must be files below the declared immutable
-    package root; resolving paths also rejects symlink escapes.
-    """
-    impl_id = model_spec_json.get("impl", {}).get("impl_id")
-    if impl_id != "quetzal":
-        return
-
-    if os.getenv("QUETZAL_VLLM", "").lower() in ("", "0", "false"):
-        raise RuntimeError(
-            "impl=quetzal requires QUETZAL_VLLM=1; refusing native fallback"
-        )
-
-    declared_model = os.getenv("QUETZAL_MODEL")
-    spec_model = model_spec_json.get("hf_model_repo")
-    if not declared_model or spec_model != declared_model:
-        raise RuntimeError(
-            "impl=quetzal requires hf_model_repo to equal QUETZAL_MODEL; "
-            f"catalog declares {spec_model!r}, package declares {declared_model!r}"
-        )
-
-    package_id = os.getenv("QUETZAL_PACKAGE_ID")
-    package_root_value = os.getenv("QUETZAL_PACKAGE_ROOT")
-    if not package_id or not package_root_value:
-        raise RuntimeError(
-            "impl=quetzal requires QUETZAL_PACKAGE_ID and QUETZAL_PACKAGE_ROOT"
-        )
-    package_root = Path(package_root_value).resolve()
-    if package_root.name != package_id:
-        raise RuntimeError(
-            "QUETZAL_PACKAGE_ROOT basename must equal QUETZAL_PACKAGE_ID"
-        )
-    if Path(os.getenv("QZ_MODELS_ROOT", "")).resolve() != package_root:
-        raise RuntimeError(
-            "QZ_MODELS_ROOT must equal the declared QUETZAL_PACKAGE_ROOT"
-        )
-
-    manifest_sha256 = os.getenv(_QUETZAL_BUNDLE_MANIFEST_ENV, "")
-    if len(manifest_sha256) != 64 or any(
-        ch not in "0123456789abcdef" for ch in manifest_sha256
-    ):
-        raise RuntimeError(
-            "impl=quetzal requires a lowercase SHA-256 in "
-            f"{_QUETZAL_BUNDLE_MANIFEST_ENV}"
-        )
-    installed_manifest = (
-        package_root / _QUETZAL_BUNDLE_MANIFESTS_DIR / f"{manifest_sha256}.json"
-    )
-    if installed_manifest.is_symlink() or not installed_manifest.is_file():
-        raise RuntimeError(
-            "Quetzal package is missing its installed trusted-root proof: "
-            f"{installed_manifest}"
-        )
-    actual_manifest_sha256, manifest_size = _sha256_file(installed_manifest)
-    if manifest_size > 16 * 1024 * 1024 or actual_manifest_sha256 != manifest_sha256:
-        raise RuntimeError(
-            "Quetzal installed trusted-root proof does not match "
-            f"{_QUETZAL_BUNDLE_MANIFEST_ENV}"
-        )
-    try:
-        bundle_manifest = json.loads(installed_manifest.read_bytes())
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise RuntimeError(
-            "Quetzal installed trusted-root proof is invalid JSON"
-        ) from exc
-    if bundle_manifest.get("schema") != "ttq.artifact_bundle/v1":
-        raise RuntimeError("Quetzal installed trusted-root proof has an invalid schema")
-
-    missing = []
-    for env_name in _QUETZAL_ARTIFACT_ENV_VARS:
-        value = os.getenv(env_name)
-        if not value:
-            missing.append(f"{env_name}=<unset>")
-            continue
-        artifact_path = Path(value).resolve()
-        try:
-            artifact_path.relative_to(package_root)
-        except ValueError as exc:
-            raise RuntimeError(
-                f"{env_name} escapes QUETZAL_PACKAGE_ROOT: {artifact_path}"
-            ) from exc
-        if not artifact_path.is_file():
-            missing.append(f"{env_name}={artifact_path}")
-    if missing:
-        raise RuntimeError(
-            "Quetzal content package is not materialized; missing files: "
-            + ", ".join(missing)
-        )
-
-    # The trusted manifest binds every executable path and the weights archive
-    # to their installed tree. Recheck small executable/metadata files on each
-    # launch; the very large weights file is size-checked here after the
-    # installer has already performed its full SHA-256 reread.
-    inventory = {}
-    for tree in bundle_manifest.get("trees", []):
-        role = tree.get("role")
-        name = tree.get("name")
-        for row in tree.get("files", []):
-            inventory[f"{role}/{name}/{row.get('path')}"] = row
-    qualification = bundle_manifest.get("qualification_manifest", {})
-    inventory["qualification_manifest.yaml"] = qualification
-    for env_name in _QUETZAL_ARTIFACT_ENV_VARS:
-        artifact_path = Path(os.environ[env_name]).resolve()
-        relative = artifact_path.relative_to(package_root).as_posix()
-        row = inventory.get(relative)
-        if not isinstance(row, dict) or row.get("size") != artifact_path.stat().st_size:
-            raise RuntimeError(
-                f"{env_name} is not bound by the installed trusted-root proof"
-            )
-        if env_name != "QUETZAL_WEIGHTS":
-            digest, _ = _sha256_file(artifact_path)
-            if digest != row.get("sha256"):
-                raise RuntimeError(
-                    f"{env_name} failed installed trusted-root verification"
-                )
-
-    # Generated artifacts are allowed to bind a TT-Metal revision as part of
-    # their numerical qualification.  This is an execution contract, not
-    # bookkeeping: a Qwen package that passed PCC and generation on b5345493
-    # produced incorrect tokens on the release image's de59f8 runtime.  The
-    # qualification manifest is already covered by the trusted-root proof
-    # above, so enforce its runtime lock before opening a device.
-    qualification_path = Path(os.environ["QZ_QUALIFICATION_MANIFEST"])
-    try:
-        qualification_doc = yaml.safe_load(qualification_path.read_text())
-    except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
-        raise RuntimeError("Quetzal qualification manifest is invalid YAML") from exc
-    models = (
-        qualification_doc.get("models", [])
-        if isinstance(qualification_doc, dict)
-        else []
-    )
-    matching_models = [
-        row
-        for row in models
-        if isinstance(row, dict)
-        and (declared_model is None or row.get("model_id") == declared_model)
-    ]
-    if len(matching_models) != 1:
-        raise RuntimeError(
-            "Quetzal qualification manifest must contain exactly one runtime "
-            f"contract for QUETZAL_MODEL={declared_model!r}"
-        )
-    required_runtime = (
-        matching_models[0]
-        .get("charter_pcc", {})
-        .get("required_runtime_tt_metal_commit")
-    )
-    actual_runtime = os.getenv("TT_METAL_COMMIT_SHA_OR_TAG")
-    if not required_runtime or not actual_runtime:
-        raise RuntimeError(
-            "Quetzal qualification requires both "
-            "charter_pcc.required_runtime_tt_metal_commit and "
-            "TT_METAL_COMMIT_SHA_OR_TAG"
-        )
-    if actual_runtime != required_runtime:
-        raise RuntimeError(
-            "Quetzal TT-Metal runtime mismatch: package requires "
-            f"{required_runtime}, image provides {actual_runtime}"
-        )
-
-    discovered = (
-        importlib_metadata.entry_points() if entry_points is None else entry_points
-    )
-    plugins = (
-        discovered.select(group="vllm.general_plugins")
-        if hasattr(discovered, "select")
-        else discovered.get("vllm.general_plugins", ())
-    )
-    if not any(
-        ep.name == "quetzal_model_registry"
-        and ep.value == "tt_quetzalcoatlus.vllm_plugin:register"
-        for ep in plugins
-    ):
-        raise RuntimeError(
-            "impl=quetzal requires the Quetzal vllm.general_plugins entry point; "
-            "refusing native fallback"
-        )
-
-
 def start_trace_capture(
     model_spec_json, service_port: int, disable_trace_capture: bool = False
 ):
@@ -972,15 +1042,12 @@ def main():
         engine_arg=args.engine,
         impl_arg=args.impl,
     )
+    # Apply the catalog environment before any vLLM import. Quetzal's plugin
+    # allowlist is an admission boundary, not a setting that can be changed
+    # safely after vLLM has discovered model registries.
+    set_runtime_env_vars(model_spec)
+    quetzal_artifact = validate_quetzal_runtime(model_spec)
     impl_id = model_spec.get("impl", {}).get("impl_id")
-
-    # Quetzal packages are the weight/runtime identity. Validate their complete
-    # fail-closed contract before generic cache or Hugging Face setup can touch
-    # the network, materialize a native checkpoint, or open a device.
-    if impl_id == "quetzal":
-        set_runtime_env_vars(model_spec)
-        validate_quetzal_runtime_contract(model_spec)
-
     device_type = model_spec.get("device_type")
     if device_type:
         device_type = normalize_device_type(device_type)
@@ -995,7 +1062,7 @@ def main():
     # downloading weights to a location on shared storage beforehand. Therefore,
     # automatic weight download is skipped when MULTIHOST_ROLE is set.
     if (
-        impl_id != "quetzal"
+        impl_id != QUETZAL_IMPL_ID
         and not os.getenv("MODEL_WEIGHTS_DIR")
         and not os.getenv("MULTIHOST_ROLE")
     ):
@@ -1003,19 +1070,18 @@ def main():
 
     logger.info(f"Using model spec: {model_spec['model_id']}")
 
-    # Step 3: Register TT models (after lookup, with correct impl_id)
-    if impl_id == "quetzal":
-        # Quetzal's vllm.general_plugins entry point owns model registration.
-        # Registering the native TT providers as well makes an implementation
-        # collision capable of selecting the wrong backend before the package
-        # contract can protect us.
-        logger.info("Skipping native TT model registration for impl=quetzal")
-    else:
+    # Step 3: Register handcrafted TT models only for native implementations.
+    # Generated Quetzal is registered exclusively by its installed vLLM entry
+    # point; calling this function would create the forbidden fallback lane.
+    if impl_id != QUETZAL_IMPL_ID:
         register_tt_models(impl_id)
+    else:
+        logger.info(
+            "Skipping native TT model registration for Quetzal artifact %s",
+            quetzal_artifact.get("emit_hash") if quetzal_artifact else None,
+        )
 
     # Step 4: Set runtime environment variables and vLLM server args
-    if impl_id != "quetzal":
-        set_runtime_env_vars(model_spec)
     set_metal_timeout_env_vars()
     runtime_settings(model_spec, no_auth=args.no_auth)
     default_vllm_args = model_spec["device_model_spec"]["vllm_args"]

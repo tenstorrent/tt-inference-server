@@ -6,6 +6,7 @@ on:
     paths:
       - ".github/workflows/models-ci-config.json"
       - ".github/workflows/models-ci-config-schema.json"
+      - "scripts/validate_models_ci_config.py"
 
 jobs:
   validate:
@@ -26,23 +27,4 @@ jobs:
         run: pip install jsonschema
 
       - name: Validate against schema
-        run: |
-          python - <<'EOF'
-          import json
-          import jsonschema
-          import sys
-
-          with open(".github/workflows/models-ci-config-schema.json") as f:
-              schema = json.load(f)
-
-          with open(".github/workflows/models-ci-config.json") as f:
-              config = json.load(f)
-
-          try:
-              jsonschema.validate(instance=config, schema=schema)
-              print("✅ models-ci-config.json is valid")
-          except jsonschema.ValidationError as e:
-              print(f"❌ Validation failed: {e.message}")
-              print(f"   Path: {' -> '.join(str(p) for p in e.absolute_path)}")
-              sys.exit(1)
-          EOF
+        run: python scripts/validate_models_ci_config.py

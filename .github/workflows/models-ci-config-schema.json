@@ -88,6 +88,11 @@
                   "enum": ["vLLM", "MEDIA", "FORGE"],
                   "description": "The inference engine to use for this model"
                 },
+                "impl": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Optional model implementation name. Required by semantic validation when a model has more than one entry for the same inference_engine."
+                },
                 "ci": {
                   "type": "object",
                   "description": "CI configuration for different schedules. Must contain at least one schedule.",
@@ -132,6 +137,11 @@
                         "type": "string",
                         "enum": ["vLLM", "MEDIA", "FORGE"],
                         "description": "The inference engine for this implementation"
+                      },
+                      "impl": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Model implementation name. Required by semantic validation for duplicate inference_engine entries."
                       },
                       "ci": {
                         "type": "object",

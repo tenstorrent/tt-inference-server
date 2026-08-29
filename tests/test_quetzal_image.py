@@ -56,11 +56,13 @@ def test_quetzal_runtime_is_rebuilt_in_base_abi_and_atomically_replaced():
     source = DOCKERFILE.read_text()
     revision = "b534549300fe2af11e6ee828675294bc0e359555"
     patchset_sha = "22fb0bd2523b8a5c63fa20c3c8a1586dc9ead5150449d0eb02231fa8173a7edd"
+    manifest_sha = "85599bb0c05d5a8b1e6607ec926ef344144657783eaa9b0db480d40e058d742e"
 
     assert "AS quetzal_ttmetal_builder" in source
     assert source.count("FROM ${TT_INFERENCE_SERVER_BASE_IMAGE}") == 2
     assert revision in source
     assert patchset_sha in source
+    assert manifest_sha in source
     assert "COPY --from=quetzal_src patches/tt-metal/" in source
     assert "COPY --from=quetzal_src tools/tt_metal_patchset.py" in source
     assert source.index('git -C "${TT_METAL_HOME}" fetch') < source.index(
@@ -81,17 +83,18 @@ def test_quetzal_runtime_is_rebuilt_in_base_abi_and_atomically_replaced():
     assert "/var/tmp/nkapre" not in source
     assert "org.opencontainers.image.tt-metal.revision" in source
     assert "org.opencontainers.image.tt-metal.patchset.sha256" in source
+    assert "org.opencontainers.image.tt-metal.patchset.manifest.sha256" in source
     assert "ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_BASE_REVISION}" in source
     assert "ENV TT_METAL_PATCHSET_SHA256=${TT_METAL_PATCHSET_SHA256}" in source
 
 
 def test_quetzal_runner_skips_native_registration_and_validates_package():
     source = RUNNER.read_text()
-    assert 'if impl_id == "quetzal":' in source
-    assert "Skipping native TT model registration for impl=quetzal" in source
-    assert "validate_quetzal_runtime_contract(model_spec)" in source
-    assert source.index('if impl_id == "quetzal":') < source.index(
-        "validate_quetzal_runtime_contract(model_spec)"
+    assert "validate_quetzal_runtime(model_spec)" in source
+    assert "Skipping native TT model registration for Quetzal artifact" in source
+    assert "from vllm import ModelRegistry" in source
+    assert source.index("validate_quetzal_runtime(model_spec)") < source.index(
+        "register_tt_models(impl_id)"
     )
 
 
@@ -215,6 +218,9 @@ def test_build_wrapper_exports_clean_exact_commit_as_named_context(tmp_path):
     assert "TT_METAL_BASE_REVISION=b534549300fe2af11e6ee828675294bc0e359555" in args
     assert "TT_METAL_BASE_FETCH_REF=qz/mixtral-epd2-wait-min-20260827" in args
     assert any(value.startswith("TT_METAL_PATCHSET_SHA256=") for value in args)
+    assert any(
+        value.startswith("TT_METAL_PATCHSET_MANIFEST_SHA256=") for value in args
+    )
     # The wrapper cleans the ephemeral export after the build command returns.
     assert not Path(context.split("=", 1)[1]).exists()
 

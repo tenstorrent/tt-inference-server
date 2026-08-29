@@ -2,23 +2,96 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+import subprocess
 import textwrap
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from scripts.build_docker_images import (
-    get_available_memory_gb,
-    get_available_disk_gb,
-    get_docker_root_dir,
-    get_max_concurrent_builds,
-    check_resources_for_new_build,
-    log_resource_summary,
-    MEMORY_PER_BUILD_GB,
-    MEMORY_RESERVE_GB,
     DISK_PER_BUILD_GB,
     DISK_RESERVE_GB,
+    MEMORY_PER_BUILD_GB,
+    MEMORY_RESERVE_GB,
+    build_dev_image,
+    check_resources_for_new_build,
+    get_available_disk_gb,
+    get_available_memory_gb,
+    get_docker_root_dir,
+    get_image_tags,
+    get_max_concurrent_builds,
+    log_resource_summary,
 )
+
+
+QUETZAL_COMMIT = "49f103ad8f80523ba0d35c5825aee908507f196b"
+
+
+def test_quetzal_commit_is_part_of_image_identity():
+    tags = get_image_tags(
+        "a" * 40,
+        "b" * 40,
+        "22.04",
+        quetzal_commit=QUETZAL_COMMIT,
+    )
+    assert "-qz-49f103ad8f80" in tags["dev"]
+    assert "-qz-49f103ad8f80" in tags["release"]
+
+
+@pytest.mark.parametrize("bad_ref", ["main", "v1.0", "ABCDEF" * 6 + "ABCD"])
+def test_quetzal_commit_rejects_tags_branches_and_uppercase(bad_ref):
+    with pytest.raises(ValueError, match="lowercase 40-hex"):
+        get_image_tags("a" * 40, "b" * 40, "22.04", quetzal_commit=bad_ref)
+
+
+def test_build_dev_image_forwards_exact_quetzal_commit(tmp_path):
+    tags = {
+        "dev": "local/dev:qz",
+        "tt_metal_base": "local/metal:base",
+    }
+    source_dir = tmp_path / "quetzal-source"
+    source_dir.mkdir()
+    subprocess.run(["git", "init", "-q", str(source_dir)], check=True)
+    subprocess.run(
+        ["git", "-C", str(source_dir), "config", "user.email", "ci@example.com"],
+        check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(source_dir), "config", "user.name", "CI"], check=True
+    )
+    (source_dir / "pyproject.toml").write_text("[project]\nname='qz'\nversion='0'\n")
+    subprocess.run(["git", "-C", str(source_dir), "add", "."], check=True)
+    subprocess.run(
+        ["git", "-C", str(source_dir), "commit", "-q", "-m", "fixture"],
+        check=True,
+    )
+    source_commit = subprocess.check_output(
+        ["git", "-C", str(source_dir), "rev-parse", "HEAD"], text=True
+    ).strip()
+
+    with patch(
+        "scripts.build_docker_images.get_repo_root_path", return_value=tmp_path
+    ), patch(
+        "scripts.build_docker_images.generate_model_specs_json",
+        return_value=tmp_path / "model_spec.json",
+    ), patch("scripts.build_docker_images.run_command_with_logging") as run:
+        build_dev_image(
+            tags,
+            "a" * 40,
+            "b" * 40,
+            1000,
+            MagicMock(),
+            quetzal_commit=source_commit,
+            quetzal_source_dir=source_dir,
+            tt_metal_patchset_sha256="c" * 64,
+            tt_metal_patchset_manifest_sha256="d" * 64,
+        )
+
+    command = run.call_args.args[0]
+    assert command.count("TT_QUETZAL_COMMIT_SHA=" + source_commit) == 1
+    assert command.count("TT_METAL_PATCHSET_SHA256=" + "c" * 64) == 1
+    assert command.count("TT_METAL_PATCHSET_MANIFEST_SHA256=" + "d" * 64) == 1
+    assert "--build-context" in command
 
 
 class TestGetAvailableMemoryGb:

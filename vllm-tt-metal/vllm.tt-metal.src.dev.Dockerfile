@@ -13,6 +13,9 @@ FROM ${TT_METAL_DOCKERFILE_URL} AS builder
 # Build arguments
 ARG TT_METAL_COMMIT_SHA_OR_TAG
 ARG TT_VLLM_COMMIT_SHA_OR_TAG
+ARG TT_QUETZAL_COMMIT_SHA=""
+ARG TT_METAL_PATCHSET_SHA256=""
+ARG TT_METAL_PATCHSET_MANIFEST_SHA256=""
 ARG TT_SMI_COMMIT_SHA_OR_TAG=v3.1.1
 ARG CONTAINER_APP_UID=1000
 ARG DEBIAN_FRONTEND=noninteractive
@@ -66,6 +69,11 @@ RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_
     && mkdir -p ${HOME_DIR} \
     && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR}
 
+# BuildKit receives this named context from an Actions checkout exported with
+# git archive. It contains no .git directory or credentials. Native builds pass
+# an empty context and leave TT_QUETZAL_COMMIT_SHA unset.
+COPY --from=quetzal_src / /tmp/quetzal-source/
+
 # Give user write access to Rust directories (fail if env vars are missing)
 RUN if [ -z "${RUSTUP_HOME}" ] || [ -z "${CARGO_HOME}" ]; then echo "RUSTUP_HOME and CARGO_HOME must be set" >&2; exit 1; fi && \
     mkdir -p "${RUSTUP_HOME}" "${CARGO_HOME}" && \
@@ -86,17 +94,37 @@ ENV UV_HTTP_RETRIES=10
 # A full-history clone of tt-metal has taken over an hour on CI, connection dropped ("fatal: early
 # EOF"). Only the pinned commit is needed, so fetch just that (matches the shallow
 # clone already used by tt-media-server/Dockerfile).
-RUN /bin/bash -c "git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
-    && cd ${TT_METAL_HOME} \
-    && git fetch --depth 1 origin ${TT_METAL_COMMIT_SHA_OR_TAG} \
-    && git checkout ${TT_METAL_COMMIT_SHA_OR_TAG} \
-    && git submodule update --init --recursive \
-    && bash ./build_metal.sh \
-    && ( for i in 1 2 3 4 5; do CXX=clang++-17 CC=clang-17 bash ./create_venv.sh && exit 0; echo 'create_venv.sh failed, retrying in 30s'; sleep 30; done; exit 1 ) \
-    && source ${PYTHON_ENV_DIR}/bin/activate \
-    && if [ -f 'models/demos/qwen25_vl/requirements.txt' ]; then uv pip install -r models/demos/qwen25_vl/requirements.txt; fi \
-    && rm -rf ${TT_METAL_HOME}/.git \
-    && { uv cache clean || echo 'WARN: uv cache clean failed'; true; }"
+RUN set -eux; \
+    git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git "${TT_METAL_HOME}"; \
+    git -C "${TT_METAL_HOME}" fetch --depth 1 origin "${TT_METAL_COMMIT_SHA_OR_TAG}"; \
+    git -C "${TT_METAL_HOME}" checkout --detach "${TT_METAL_COMMIT_SHA_OR_TAG}"; \
+    if [ -n "${TT_QUETZAL_COMMIT_SHA}" ]; then \
+      test "$(cat /tmp/quetzal-source/.tt-quetzal-commit)" = "${TT_QUETZAL_COMMIT_SHA}"; \
+      printf '%s' "${TT_METAL_PATCHSET_SHA256}" | grep -Eq '^[0-9a-f]{64}$'; \
+      printf '%s' "${TT_METAL_PATCHSET_MANIFEST_SHA256}" | grep -Eq '^[0-9a-f]{64}$'; \
+      echo "${TT_METAL_PATCHSET_MANIFEST_SHA256}  /tmp/quetzal-source/patches/tt-metal/gdn-productization-v1.json" | sha256sum --check -; \
+      python3 /tmp/quetzal-source/tools/tt_metal_patchset.py \
+        --repo "${TT_METAL_HOME}" \
+        --manifest /tmp/quetzal-source/patches/tt-metal/gdn-productization-v1.json \
+        --apply > /tmp/patchset-apply.json; \
+      grep -q '"status": "pass"' /tmp/patchset-apply.json; \
+      python3 /tmp/quetzal-source/tools/tt_metal_patchset.py \
+        --repo "${TT_METAL_HOME}" \
+        --manifest /tmp/quetzal-source/patches/tt-metal/gdn-productization-v1.json \
+        > "${TT_METAL_HOME}/.ttq-patchset-admission.json"; \
+      grep -q '"status": "pass"' "${TT_METAL_HOME}/.ttq-patchset-admission.json"; \
+      printf '%s\n' \
+        "{\"base_revision\":\"${TT_METAL_COMMIT_SHA_OR_TAG}\",\"patchset\":\"gdn-productization-v1\",\"patchset_sha256\":\"${TT_METAL_PATCHSET_SHA256}\",\"manifest_sha256\":\"${TT_METAL_PATCHSET_MANIFEST_SHA256}\"}" \
+        > "${TT_METAL_HOME}/.ttq-runtime-identity.json"; \
+    fi; \
+    git -C "${TT_METAL_HOME}" submodule update --init --recursive; \
+    cd "${TT_METAL_HOME}"; \
+    bash ./build_metal.sh; \
+    ( for i in 1 2 3 4 5; do CXX=clang++-17 CC=clang-17 bash ./create_venv.sh && exit 0; echo 'create_venv.sh failed, retrying in 30s'; sleep 30; done; exit 1 ); \
+    . "${PYTHON_ENV_DIR}/bin/activate"; \
+    if [ -f 'models/demos/qwen25_vl/requirements.txt' ]; then uv pip install -r models/demos/qwen25_vl/requirements.txt; fi; \
+    rm -rf "${TT_METAL_HOME}/.git"; \
+    { uv cache clean || echo 'WARN: uv cache clean failed'; true; }
 
 # Build vllm-tt-plugin - clone with minimal history and clean.
 # The plugin owns the vLLM version pin and its dependency overrides, so the
@@ -109,6 +137,33 @@ RUN /bin/bash -c "git clone https://github.com/tenstorrent/vllm-tt-plugin.git ${
     && source docs/install-vllm-tt.sh \
     && rm -rf ${vllm_tt_plugin_dir}/.git \
     && { uv cache clean || echo 'WARN: uv cache clean failed'; true; }"
+
+# Optional generated-Quetzal image hook. A Quetzal-capable image must supply an
+# immutable 40-hex commit; ordinary native images leave the argument empty. We
+# retain the built wheel in the image build artifacts and install that exact
+# wheel without dependencies, so the source/ref and installed payload are both
+# auditable and cannot replace the image's pinned tt-metal/vLLM stack. vLLM
+# discovers quetzal_model_registry from the wheel's distribution metadata.
+RUN set -eu; \
+    mkdir -p "${HOME_DIR}/quetzal-runtime/mesh_graph_descriptors" \
+             "${HOME_DIR}/quetzal-runtime/wheels"; \
+    if [ -n "${TT_QUETZAL_COMMIT_SHA}" ]; then \
+      printf '%s' "${TT_QUETZAL_COMMIT_SHA}" | grep -Eq '^[0-9a-f]{40}$' \
+      || { echo 'TT_QUETZAL_COMMIT_SHA must be a lowercase 40-hex commit' >&2; exit 1; }; \
+      test "$(cat /tmp/quetzal-source/.tt-quetzal-commit)" = "${TT_QUETZAL_COMMIT_SHA}"; \
+      cd /tmp/quetzal-source; \
+      . "${PYTHON_ENV_DIR}/bin/activate"; \
+      uv build --wheel --out-dir "${HOME_DIR}/quetzal-runtime/wheels"; \
+      test "$(find "${HOME_DIR}/quetzal-runtime/wheels" -maxdepth 1 -type f -name '*.whl' | wc -l)" -eq 1; \
+      quetzal_wheel="$(find "${HOME_DIR}/quetzal-runtime/wheels" -maxdepth 1 -type f -name '*.whl')"; \
+      uv pip install --no-cache-dir --no-deps "${quetzal_wheel}"; \
+      cp serving/mesh_graph_descriptors/p150_x4_2ch_mesh_graph_descriptor.textproto \
+         "${HOME_DIR}/quetzal-runtime/mesh_graph_descriptors/"; \
+      rm -rf /tmp/quetzal-source; \
+      { uv cache clean || echo 'WARN: uv cache clean failed'; true; }; \
+    else \
+      echo 'Building native-only image (TT_QUETZAL_COMMIT_SHA unset)'; \
+    fi
 
 # Build tt-smi in separate venv to avoid conflicts with tt-metal venv
 RUN /bin/bash -c "git clone https://github.com/tenstorrent/tt-smi.git ${TT_SMI_DIR} \
@@ -131,14 +186,24 @@ LABEL maintainer="Tom Stesco <tstesco@tenstorrent.com>" \
 
 # IDENTICAL arguments and environment as builder stage
 ARG TT_METAL_COMMIT_SHA_OR_TAG
+ARG TT_QUETZAL_COMMIT_SHA=""
+ARG TT_METAL_PATCHSET_SHA256=""
+ARG TT_METAL_PATCHSET_MANIFEST_SHA256=""
 ARG CONTAINER_APP_UID=15863
 ARG DEBIAN_FRONTEND=noninteractive
 ARG CONTAINER_APP_USERNAME=container_app_user
 ARG HOME_DIR=/home/${CONTAINER_APP_USERNAME}
 ARG APP_DIR="${HOME_DIR}/app"
 
+LABEL org.opencontainers.image.quetzal.revision=${TT_QUETZAL_COMMIT_SHA} \
+    org.opencontainers.image.tt-metal.patchset.sha256=${TT_METAL_PATCHSET_SHA256} \
+    org.opencontainers.image.tt-metal.patchset.manifest.sha256=${TT_METAL_PATCHSET_MANIFEST_SHA256}
+
 # IDENTICAL environment variables as builder stage
 ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
+    TT_QUETZAL_COMMIT_SHA=${TT_QUETZAL_COMMIT_SHA} \
+    TT_METAL_PATCHSET_SHA256=${TT_METAL_PATCHSET_SHA256} \
+    TT_METAL_PATCHSET_MANIFEST_SHA256=${TT_METAL_PATCHSET_MANIFEST_SHA256} \
     SHELL=/bin/bash \
     TZ=America/Los_Angeles \
     CONTAINER_APP_USERNAME=${CONTAINER_APP_USERNAME} \
@@ -193,6 +258,17 @@ COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} 
 # inside ${PYTHON_ENV_DIR}/site-packages, already copied with TT_METAL_HOME above.
 COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     ${vllm_tt_plugin_dir} ${vllm_tt_plugin_dir}
+
+# Stable, catalog-owned locations for the P150x4 descriptor and the exact wheel
+# installed in the builder. Both directories remain empty for native-only
+# images; Quetzal admission still requires the installed entry point.
+RUN mkdir -p /opt/quetzal/mesh_graph_descriptors /opt/quetzal/wheels
+COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
+    ${HOME_DIR}/quetzal-runtime/mesh_graph_descriptors/ \
+    /opt/quetzal/mesh_graph_descriptors/
+COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
+    ${HOME_DIR}/quetzal-runtime/wheels/ \
+    /opt/quetzal/wheels/
 
 # Copy complete tt-smi installation  
 COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \

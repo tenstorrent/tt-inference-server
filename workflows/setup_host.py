@@ -35,6 +35,12 @@ from workflows.workflow_venvs import VENV_CONFIGS
 logger = logging.getLogger("run_log")
 
 
+def _quetzal_hf_revision(model_spec: ModelSpec) -> str | None:
+    if model_spec.impl.impl_id != "quetzal":
+        return None
+    return model_spec.device_model_spec.vllm_args.get("revision")
+
+
 @dataclass
 class SetupConfig:
     # Environment configuration parameters
@@ -119,7 +125,9 @@ class SetupConfig:
                 self.container_readonly_model_weights_dir / self.model_spec.model_name
             )
             snapshot_dir = resolve_hf_snapshot_dir(
-                self.model_spec.hf_weights_repo, Path(self.host_hf_cache)
+                self.model_spec.hf_weights_repo,
+                Path(self.host_hf_cache),
+                revision=_quetzal_hf_revision(self.model_spec),
             )
             if snapshot_dir:
                 self.update_host_model_weights_snapshot_dir(snapshot_dir)
@@ -160,9 +168,9 @@ class SetupConfig:
     def update_host_model_weights_snapshot_dir(
         self, host_model_weights_snapshot_dir, repo_path_filter=None
     ):
-        assert self.model_source == ModelSource.HUGGINGFACE.value, (
-            "⛔ update_host_model_weights_snapshot_dir only supported for huggingface model source."
-        )
+        assert (
+            self.model_source == ModelSource.HUGGINGFACE.value
+        ), "⛔ update_host_model_weights_snapshot_dir only supported for huggingface model source."
         if host_model_weights_snapshot_dir:
             if repo_path_filter:
                 self.host_model_weights_snapshot_dir = (
@@ -188,9 +196,9 @@ class SetupConfig:
             )
 
     def update_host_model_weights_mount_dir(self, host_model_weights_mount_dir):
-        assert self.model_source == ModelSource.LOCAL.value, (
-            "⛔ update_host_model_weights_mount_dir only supported for local model source."
-        )
+        assert (
+            self.model_source == ModelSource.LOCAL.value
+        ), "⛔ update_host_model_weights_mount_dir only supported for local model source."
         self.host_model_weights_mount_dir = host_model_weights_mount_dir
         if self.host_model_weights_mount_dir.exists():
             self.container_model_weights_mount_dir = (
@@ -459,9 +467,9 @@ class HostSetupManager:
         elif self.setup_config.model_source == ModelSource.LOCAL.value:
             if self.automatic:
                 _host_model_weights_mount_dir = os.getenv("MODEL_WEIGHTS_DIR")
-                assert _host_model_weights_mount_dir, (
-                    "⛔ MODEL_WEIGHTS_DIR environment variable is required for local model source in automatic mode."
-                )
+                assert (
+                    _host_model_weights_mount_dir
+                ), "⛔ MODEL_WEIGHTS_DIR environment variable is required for local model source in automatic mode."
             else:
                 _host_model_weights_mount_dir = (
                     os.getenv("MODEL_WEIGHTS_DIR")
@@ -557,9 +565,9 @@ class HostSetupManager:
         os.environ["HF_HUB_DOWNLOAD_TIMEOUT"] = "60"
         os.environ["HF_TOKEN"] = self.hf_token
         hf_exec = venv_config.venv_path / "bin" / "hf"
-        assert hf_exec.exists(), (
-            f"⛔ 'hf' CLI not found at: {hf_exec}. Check HF_SETUP venv installation."
-        )
+        assert (
+            hf_exec.exists()
+        ), f"⛔ 'hf' CLI not found at: {hf_exec}. Check HF_SETUP venv installation."
         hf_repo = self.model_spec.hf_weights_repo
         if self.setup_config.host_hf_cache:
             os.environ["HOST_HF_HOME"] = self.setup_config.host_hf_cache
@@ -568,6 +576,11 @@ class HostSetupManager:
                 str(hf_exec),
                 "download",
                 hf_repo,
+                *(
+                    ["--revision", _quetzal_hf_revision(self.model_spec)]
+                    if _quetzal_hf_revision(self.model_spec)
+                    else []
+                ),
                 "--exclude",
                 "original/**",
             ]
@@ -576,7 +589,9 @@ class HostSetupManager:
             result = subprocess.run(cmd)
             assert result.returncode == 0, f"⛔ Error during: {' '.join(cmd)}"
             snapshot_dir = resolve_hf_snapshot_dir(
-                self.model_spec.hf_weights_repo, Path(self.setup_config.host_hf_cache)
+                self.model_spec.hf_weights_repo,
+                Path(self.setup_config.host_hf_cache),
+                revision=_quetzal_hf_revision(self.model_spec),
             )
             self.setup_config.update_host_model_weights_snapshot_dir(snapshot_dir)
             logger.info(
@@ -597,6 +612,11 @@ class HostSetupManager:
             str(hf_exec),
             "download",
             hf_repo,
+            *(
+                ["--revision", _quetzal_hf_revision(self.model_spec)]
+                if _quetzal_hf_revision(self.model_spec)
+                else []
+            ),
             "--local-dir",
             str(host_weights_dir),
             "--exclude",

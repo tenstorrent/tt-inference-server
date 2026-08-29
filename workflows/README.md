@@ -214,6 +214,7 @@ Usage: python3 run.py --model <model> --workflow <workflow> [options]
 | `--host-volume` | None for Docker, repo `persistent_volume/` for local when omitted | Host directory for persistent cache/log/tensor storage. |
 | `--host-hf-cache` | None | Host HuggingFace cache directory to reuse for model weights. If the flag is given without a path, it defaults to `HOST_HF_HOME`, then `HF_HOME`, then `~/.cache/huggingface`. |
 | `--host-weights-dir` | None | Host directory with pre-downloaded model weights. |
+| `--quetzal-models-root` | None | Required with `--impl quetzal`; readonly host root containing `qualification_manifest.yaml` and its immutable generated Quetzal artifacts. Independent of the HuggingFace weights mount. |
 | `--image-user` | `1000` | UID passed to `docker run --user`. Docker only; `--local-server` ignores this flag and runs as the invoking host user. Must match the UID the image was built with. Default release images use UID `1000`. Only override when using a custom image built with a different UID. |
 
 Only one of `--host-volume`, `--host-hf-cache`, `--host-weights-dir` can be specified explicitly. For `--local-server`, omitting all three still uses the repo `persistent_volume/` path for TT caches and logs.
@@ -331,6 +332,33 @@ If the resolved `persistent_volume/` tree already exists from an earlier Docker 
 python3 run.py --model Llama-3.1-8B-Instruct --workflow server --local-server \
   --tt-metal-home /opt/tt-metal
 ```
+
+### Quetzal image and artifact contract
+
+Quetzal is a non-default vLLM implementation. Its code and generated model
+artifacts are pinned independently:
+
+- Build the image with a lowercase 40-hex source commit. The build creates and
+  installs one wheel and includes `qz-<commit[:12]>` in the image tag, preventing
+  a native-only image from satisfying the cache lookup. The current integration
+  pin is `49f103ad8f80523ba0d35c5825aee908507f196b`.
+- Provision the generated artifact tree separately and pass its root with
+  `--quetzal-models-root`. The root is mounted readonly and must contain a real,
+  non-symlink `qualification_manifest.yaml`. Startup validates the manifest's
+  model/revision/provider/mesh identity and fails closed before importing vLLM.
+
+```bash
+python3 scripts/build_docker_images.py \
+  --quetzal-commit 49f103ad8f80523ba0d35c5825aee908507f196b
+
+python3 run.py --model Qwen3.6-27B --tt-device p300x2 \
+  --engine vllm --impl quetzal --dev-mode --docker-server \
+  --quetzal-models-root \
+  /mnt/models/quetzal-runtime/49f103ad8f80523ba0d35c5825aee908507f196b/qwen36-6a9e13bd6fc8f0983b9b99948120bc37f49c13e9-p150x4-b1-s8192
+```
+
+The wheel pin does not provision model artifacts, and the artifact mount does
+not install provider code. Both inputs are required for a Quetzal lane.
 
 ### Print Docker Command
 

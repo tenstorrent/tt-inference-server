@@ -76,7 +76,8 @@ if ! git -C "${quetzal_source}" cat-file -e "${quetzal_commit}:${patchset_path}"
     echo "Quetzal commit does not contain ${patchset_path}" >&2
     exit 2
 fi
-tt_metal_patchset_sha256="$({
+tt_metal_patchset_sha256="22fb0bd2523b8a5c63fa20c3c8a1586dc9ead5150449d0eb02231fa8173a7edd"
+tt_metal_patchset_manifest_sha256="$({
     git -C "${quetzal_source}" show "${quetzal_commit}:${patchset_path}"
 } | sha256sum | awk '{print $1}')"
 if git -C "${quetzal_source}" ls-tree -r --name-only "${quetzal_commit}" \
@@ -120,5 +121,6 @@ docker buildx build --load \
     --build-arg "TT_METAL_BASE_REVISION=${tt_metal_base_revision}" \
     --build-arg "TT_METAL_BASE_FETCH_REF=${tt_metal_base_fetch_ref}" \
     --build-arg "TT_METAL_PATCHSET_SHA256=${tt_metal_patchset_sha256}" \
+    --build-arg "TT_METAL_PATCHSET_MANIFEST_SHA256=${tt_metal_patchset_manifest_sha256}" \
     --tag "${output_tag}" \
     "${repo_root}"

@@ -393,7 +393,9 @@ def write_dotenv(env_vars, dotenv_path=default_dotenv_path, logger=logger):
     return True
 
 
-def map_configs_by_attr(config_list: List[Config], attr: str) -> Dict[str, Config]:  # noqa: F821
+def map_configs_by_attr(
+    config_list: List[Config], attr: str
+) -> Dict[str, Config]:  # noqa: F821
     """Returns a dictionary mapping the specified attribute to the Config instances.
 
     Raises:
@@ -424,7 +426,9 @@ def get_default_persistent_volume_root(repo_root: Optional[Path] = None) -> Path
     return Path(root).resolve() / "persistent_volume"
 
 
-def resolve_hf_snapshot_dir(hf_repo: str, hf_home: Path) -> Optional[Path]:
+def resolve_hf_snapshot_dir(
+    hf_repo: str, hf_home: Path, revision: Optional[str] = None
+) -> Optional[Path]:
     local_repo_name = hf_repo.replace("/", "--")
     possible_snapshot_dirs = [
         hf_home / f"models--{local_repo_name}" / "snapshots",
@@ -435,6 +439,8 @@ def resolve_hf_snapshot_dir(hf_repo: str, hf_home: Path) -> Optional[Path]:
     for snapshot_dir in possible_snapshot_dirs:
         if snapshot_dir.is_dir():
             snapshots = list(snapshot_dir.glob("*"))
+            if revision:
+                snapshots = [path for path in snapshots if path.name == revision]
             if snapshots:
                 valid_snapshot_dir = snapshot_dir
                 break
@@ -443,6 +449,10 @@ def resolve_hf_snapshot_dir(hf_repo: str, hf_home: Path) -> Optional[Path]:
         return None
 
     snapshots = list(valid_snapshot_dir.glob("*"))
+    if revision:
+        snapshots = [path for path in snapshots if path.name == revision]
+    if not snapshots:
+        return None
     return max(snapshots, key=lambda p: p.stat().st_mtime)
 
 
