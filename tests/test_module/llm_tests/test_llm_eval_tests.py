@@ -81,6 +81,11 @@ def _diffusiongemma_eval_task(task_name):
     return next(task for task in tasks if task.task_name == task_name)
 
 
+def _qwen36_eval_task(task_name):
+    tasks = _eval_config_map["Qwen/Qwen3.6-27B"].tasks
+    return next(task for task in tasks if task.task_name == task_name)
+
+
 def _build_eval_test_command(task):
     model_spec = SimpleNamespace(
         model_id="diffusiongemma-26B-A4B-it",
@@ -204,6 +209,28 @@ class TestDiffusionGemmaEvalContract:
         assert config.agent_timeout_sec == 45 * 60
         assert config.agent_kwargs["model_info"]["max_output_tokens"] == 4 * 1024
         assert config.agent_kwargs["llm_kwargs"]["max_tokens"] == 4 * 1024
+
+
+class TestQwen36EvalContract:
+    def test_gsm8k_has_silicon_proven_bounded_generation_budget(self):
+        task = _qwen36_eval_task("gsm8k")
+        model_spec = SimpleNamespace(
+            model_id="Qwen3.6-27B",
+            model_name="Qwen3.6-27B",
+            hf_model_repo="Qwen/Qwen3.6-27B",
+            device_model_spec=SimpleNamespace(
+                max_context=8192,
+                max_concurrency=1,
+                eval_max_retries=0,
+            ),
+        )
+
+        command = build_eval_command(task, model_spec, "P300X2", "/tmp/evals", 8000)
+
+        assert _command_gen_kwargs(command)["max_gen_toks"] == "2048"
+        assert task.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 10
+        assert task.score is None
+        assert 2048 < model_spec.device_model_spec.max_context
 
 
 # --- scoring -> Block (the copied logic) -------------------------------------

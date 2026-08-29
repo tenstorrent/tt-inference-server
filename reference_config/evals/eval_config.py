@@ -1513,6 +1513,28 @@ _eval_config_list = [
         hf_model_repo="Qwen/Qwen3.6-27B",
         tasks=[
             EvalTask(
+                # The generated S8192 serving lane needs enough room for the
+                # model's reasoning plus its visible final answer. A silicon
+                # discriminator showed that 768 tokens truncated 9/10 GSM8K
+                # responses, while the same first sample stopped naturally at
+                # 1066 tokens with a 2048-token budget. This is a bounded
+                # collection task until a statistically useful GPU/TT baseline
+                # is recorded; one sample is not an accuracy reference.
+                task_name="gsm8k",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                max_concurrent=1,
+                gen_kwargs={
+                    "max_gen_toks": 2048,
+                    "do_sample": "false",
+                    "stream": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 10,
+                    EvalLimitMode.SMOKE_TEST: 1,
+                },
+            ),
+            EvalTask(
                 task_name="terminal_bench_2",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
