@@ -422,6 +422,9 @@ def _materialized_quetzal_contract(monkeypatch, tmp_path, module):
     monkeypatch.setenv("QUETZAL_HF_REVISION", "c" * 40)
     monkeypatch.setenv("VLLM_PLUGINS", "quetzal_model_registry,tt")
     monkeypatch.setenv("TT_VLLM_BUILTIN_MODELS", "0")
+    source_revision = "b" * 40
+    monkeypatch.setenv("QUETZAL_REQUIRED_SOURCE_REVISION", source_revision)
+    monkeypatch.setenv("TT_QUETZAL_COMMIT_SHA", source_revision)
     monkeypatch.setenv("TT_METAL_COMMIT_SHA_OR_TAG", required_runtime)
     patchset = "d" * 64
     monkeypatch.setenv("QUETZAL_REQUIRED_TT_METAL_PATCHSET_SHA256", patchset)
@@ -850,6 +853,8 @@ def test_validate_quetzal_runtime_admits_only_generated_provider(
         "TT_METAL_HOME": str(metal_home),
         "VLLM_PLUGINS": "quetzal_model_registry,tt",
         "TT_VLLM_BUILTIN_MODELS": "0",
+        "QUETZAL_REQUIRED_SOURCE_REVISION": "b" * 40,
+        "TT_QUETZAL_COMMIT_SHA": "b" * 40,
         "QZ_MODELS_ROOT": str(root),
         "QZ_QUALIFICATION_MANIFEST": str(manifest),
         **{key: str(root / value) for key, value in artifact_env.items()},
@@ -891,6 +896,11 @@ def test_validate_quetzal_runtime_admits_only_generated_provider(
     )
 
     assert run_vllm_api_server_module.validate_quetzal_runtime(model_spec) == entry
+
+    monkeypatch.setenv("TT_QUETZAL_COMMIT_SHA", "e" * 40)
+    with pytest.raises(RuntimeError, match="source identity mismatch"):
+        run_vllm_api_server_module.validate_quetzal_runtime(model_spec)
+    monkeypatch.setenv("TT_QUETZAL_COMMIT_SHA", "b" * 40)
 
     monkeypatch.setenv("TT_METAL_PATCHSET_MANIFEST_SHA256", "0" * 64)
     with pytest.raises(RuntimeError, match="patchset mismatch"):

@@ -351,6 +351,9 @@ def test_qwen_quetzal_dev_spec_binds_immutable_b534_22fb_successor(monkeypatch):
     assert env["QUETZAL_REQUIRED_TT_METAL_PATCHSET_SHA256"] == (
         "22fb0bd2523b8a5c63fa20c3c8a1586dc9ead5150449d0eb02231fa8173a7edd"
     )
+    assert env["QUETZAL_REQUIRED_SOURCE_REVISION"] == (
+        "8a3bebe4afdd58068d4190248c3f7b82cc27ae9f"
+    )
 
 
 def test_diffusiongemma_dev_spec_matches_validated_256k_contract():

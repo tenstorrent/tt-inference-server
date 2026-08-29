@@ -818,6 +818,19 @@ def validate_quetzal_runtime(model_spec: dict) -> dict | None:
     if os.getenv("TT_VLLM_BUILTIN_MODELS") != "0":
         raise RuntimeError("impl=quetzal requires TT_VLLM_BUILTIN_MODELS=0")
 
+    required_source = os.getenv("QUETZAL_REQUIRED_SOURCE_REVISION", "")
+    image_source = os.getenv("TT_QUETZAL_COMMIT_SHA", "")
+    if re.fullmatch(r"[0-9a-f]{40}", required_source) is None:
+        raise RuntimeError(
+            "impl=quetzal requires QUETZAL_REQUIRED_SOURCE_REVISION as an "
+            "immutable lowercase 40-hex commit"
+        )
+    if image_source != required_source:
+        raise RuntimeError(
+            "Quetzal source identity mismatch: catalog requires "
+            f"{required_source!r}, image provides {image_source!r}"
+        )
+
     vllm_args = model_spec.get("device_model_spec", {}).get("vllm_args", {})
     revision = os.getenv("QUETZAL_HF_REVISION")
     if not revision or re.fullmatch(r"[0-9a-f]{40}", revision) is None:
