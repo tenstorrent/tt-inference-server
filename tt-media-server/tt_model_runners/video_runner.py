@@ -155,6 +155,8 @@ def _attach_mpi_comm():
 def _create_dit_runner(model_runner: str, rank: int):
     """Create the appropriate DiT runner (lazy import to avoid loading ttnn globally)."""
     from tt_model_runners.dit_runners import (
+        TTMiniMaxH3FL2VARunner,
+        TTMiniMaxH3Ref2VARunner,
         TTMiniMaxH3Runner,
         TTMochi1Runner,
         TTWan22I2VAniSoraRunner,
@@ -178,6 +180,8 @@ def _create_dit_runner(model_runner: str, rank: int):
         ModelRunners.TT_WAN_2_2_I2V_LORA.value: TTWan22I2VLoRARunner,
         ModelRunners.TT_WAN_2_2_I2V_LIGHTNING.value: TTWan22I2VLightningRunner,
         ModelRunners.TT_MINIMAX_H3_T2VA.value: TTMiniMaxH3Runner,
+        ModelRunners.TT_MINIMAX_H3_FL2VA.value: TTMiniMaxH3FL2VARunner,
+        ModelRunners.TT_MINIMAX_H3_REF2VA.value: TTMiniMaxH3Ref2VARunner,
     }
     runner_class = runner_map.get(model_runner)
     if not runner_class:
@@ -189,13 +193,12 @@ def _create_dit_runner(model_runner: str, rank: int):
     return runner_class("")
 
 
-def _read_image_prompts_side_file(path: str, task_id: str) -> Optional[List[dict]]:
-    """Load the I2V image_prompts list written by ``SPRunner._write_image_side_file``.
+def _read_image_prompts_side_file(path: str, task_id: str):
+    """Load the side-file written by ``SPRunner._write_image_side_file``.
 
-    The cross-process contract is a JSON array of ``{"image", "frame_pos"}``
-    dicts (see ``ipc.video_shm.image_prompts_path`` and the SPRunner helper).
-    Returns the parsed list on success, or ``None`` on any failure (missing
-    file, parse error, unexpected top-level shape).
+    I2V: JSON array of ``{"image", "frame_pos"}``.
+    Ref2VA: JSON object with ``references`` (and optional aspect/duration).
+    Returns the parsed value, or ``None`` on failure.
     """
     try:
         with open(path, "r") as f:
@@ -205,13 +208,15 @@ def _read_image_prompts_side_file(path: str, task_id: str) -> Optional[List[dict
             f"Rank 0: failed to read I2V side-file {path!r} for task {task_id}: {e}"
         )
         return None
-    if not isinstance(data, list):
-        _log.warning(
-            f"Rank 0: I2V side-file {path!r} for task {task_id} is not a "
-            f"JSON list (got {type(data).__name__})"
-        )
-        return None
-    return data
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict) and "references" in data:
+        return data
+    _log.warning(
+        f"Rank 0: side-file {path!r} for task {task_id} is not an I2V list "
+        f"or a Ref2VA object (got {type(data).__name__})"
+    )
+    return None
 
 
 def _enqueue_rank0_error(
@@ -265,7 +270,7 @@ def _rank0_load_image_prompts(
             f"I2V conditioning side-file unreadable: "
             f"{raw_req.image_path!r} for task {raw_req.task_id}",
         )
-    if not prompts:
+    if isinstance(prompts, list) and not prompts:
         return _enqueue_rank0_error(
             encode_queue,
             raw_req.task_id,
@@ -289,6 +294,17 @@ def video_request_to_generate_request(
     common = shm_names & gen_names
     base_kwargs = {name: getattr(req, name) for name in common}
 
+    if isinstance(image_prompts, dict) and "references" in image_prompts:
+        from domain.video_ref2va_generate_request import VideoRef2VAGenerateRequest
+
+        if image_prompts.get("aspect_ratio") is not None:
+            base_kwargs["aspect_ratio"] = image_prompts["aspect_ratio"]
+        if image_prompts.get("duration_seconds") is not None:
+            base_kwargs["duration_seconds"] = image_prompts["duration_seconds"]
+        return VideoRef2VAGenerateRequest(
+            **base_kwargs,
+            references=image_prompts["references"],
+        )
     if image_prompts:
         return VideoI2VGenerateRequest(
             **base_kwargs,

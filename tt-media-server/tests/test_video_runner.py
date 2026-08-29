@@ -292,6 +292,27 @@ class TestVideoRequestToGenerateRequest:
         assert gen.image_prompts[0].frame_pos == 0
         assert gen.image_prompts[1].frame_pos == 40
 
+    def test_returns_ref2va_when_side_payload_has_references(self):
+        from domain.video_ref2va_generate_request import VideoRef2VAGenerateRequest
+
+        req = _make_request()
+        gen = video_request_to_generate_request(
+            req,
+            image_prompts={
+                "aspect_ratio": "16:9",
+                "duration_seconds": 5,
+                "references": {
+                    "images": [{"b64": _tiny_png_b64()}],
+                    "videos": [],
+                    "audios": [],
+                },
+            },
+        )
+        assert isinstance(gen, VideoRef2VAGenerateRequest)
+        assert gen.aspect_ratio == "16:9"
+        assert gen.duration_seconds == 5
+        assert len(gen.references.images) == 1
+
 
 class TestHandleSigterm:
     def test_sets_shutdown_flag(self):
