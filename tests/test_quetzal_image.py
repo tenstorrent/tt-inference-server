@@ -156,7 +156,7 @@ def _git_source(tmp_path):
                 "schema": "quetzal.qualified-environments.v2",
                 "base": {
                     "dependencies": {
-                        "transformers": "4.55.0",
+                        "transformers": "5.15.0",
                         "numpy": "1.26.4",
                     }
                 },
