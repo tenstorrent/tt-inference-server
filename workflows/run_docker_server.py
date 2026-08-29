@@ -7,6 +7,7 @@ import io
 import json
 import logging
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -338,6 +339,7 @@ _RESERVED_WRAPPER_FLAGS = {
 }
 
 _QUETZAL_CONTAINER_PACKAGE_PARENT = "/home/container_app_user/quetzal/packages"
+_QUETZAL_CONTAINER_AUXILIARY_PARENT = "/home/container_app_user/quetzal/auxiliary"
 
 
 def _validate_quetzal_models_root(runtime_config, model_spec) -> Path | None:
@@ -364,6 +366,39 @@ def _validate_quetzal_models_root(runtime_config, model_spec) -> Path | None:
             f"qualification_manifest.yaml: {root}"
         )
     return root
+
+
+def _validate_quetzal_auxiliary_roots(runtime_config, model_spec) -> dict[str, Path]:
+    """Resolve exact v2 external-reference mounts and reject ambiguous mappings."""
+    is_quetzal = model_spec.impl.impl_id == "quetzal"
+    configured = getattr(runtime_config, "quetzal_auxiliary_roots", None) or []
+    required_value = model_spec.env_vars.get("QUETZAL_REQUIRED_AUXILIARY_NAMES", "")
+    required = {name for name in required_value.split(",") if name}
+    if not is_quetzal:
+        if configured:
+            raise ValueError(
+                "--quetzal-auxiliary-root is only valid with --impl quetzal")
+        return {}
+
+    roots = {}
+    for value in configured:
+        if "=" not in value:
+            raise ValueError("--quetzal-auxiliary-root must be NAME=PATH")
+        name, path_value = value.split("=", 1)
+        if re.fullmatch(r"[A-Za-z0-9._@+-]+", name) is None:
+            raise ValueError(f"invalid Quetzal auxiliary name: {name!r}")
+        if name in roots:
+            raise ValueError(f"duplicate Quetzal auxiliary root: {name}")
+        supplied = Path(path_value).expanduser()
+        if supplied.is_symlink() or not supplied.is_dir():
+            raise ValueError(
+                f"Quetzal auxiliary root must be an existing real directory: {supplied}")
+        roots[name] = supplied.resolve()
+    if set(roots) != required:
+        raise ValueError(
+            "Quetzal auxiliary roots do not match the model spec: "
+            f"expected {sorted(required)}, got {sorted(roots)}")
+    return roots
 
 
 def _vllm_override_cli_args(vllm_override_args) -> List[str]:
@@ -441,6 +476,8 @@ def generate_docker_run_command(
     mesh_device_str = device.to_mesh_device_str()
     container_name = f"tt-inference-server-{short_uuid()}"
     quetzal_models_root = _validate_quetzal_models_root(runtime_config, model_spec)
+    quetzal_auxiliary_roots = _validate_quetzal_auxiliary_roots(
+        runtime_config, model_spec)
     quetzal_container_root = None
     if quetzal_models_root:
         package_id = model_spec.env_vars.get("QUETZAL_PACKAGE_ID")
@@ -517,6 +554,15 @@ def generate_docker_run_command(
         docker_command.extend([
             "--mount", f"type=bind,src={setup_config.host_model_weights_mount_dir},dst={setup_config.container_model_weights_mount_dir},readonly"
         ])
+    quetzal_container_auxiliary_roots = {}
+    for name, source in sorted(quetzal_auxiliary_roots.items()):
+        destination = (
+            f"{_QUETZAL_CONTAINER_AUXILIARY_PARENT}/{name}/{source.name}")
+        docker_command.extend([
+            "--mount",
+            f"type=bind,src={source},dst={destination},readonly",
+        ])
+        quetzal_container_auxiliary_roots[name] = destination
 
     if quetzal_models_root:
         docker_command.extend([
@@ -544,6 +590,12 @@ def generate_docker_run_command(
             docker_env_vars["QZ_QUALIFICATION_MANIFEST"] = (
                 f"{quetzal_container_root}/qualification_manifest.yaml"
             )
+            if quetzal_container_auxiliary_roots:
+                docker_env_vars["QUETZAL_AUXILIARY_ROOTS_JSON"] = json.dumps(
+                    quetzal_container_auxiliary_roots,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
     if setup_config:
         if (
             setup_config.container_model_weights_path

@@ -559,6 +559,106 @@ def test_validate_quetzal_runtime_admits_only_generated_provider(
         run_vllm_api_server_module.validate_quetzal_runtime(model_spec)
 
 
+def _v2_auxiliary_fixture(tmp_path, run_vllm_api_server_module):
+    name = "openai_gpt-oss-120b-streamed-cache"
+    payloads = {
+        "cache/layer-0.tensorbin": b"cache-payload",
+        "manifest/final.json": b"{}\n",
+    }
+    rows = [
+        {"path": path, "size": len(payload),
+         "sha256": hashlib.sha256(payload).hexdigest()}
+        for path, payload in sorted(payloads.items())
+    ]
+    tree_sha256 = run_vllm_api_server_module._tree_digest(rows)
+    root = tmp_path / f"sha256-{tree_sha256}"
+    for relative, payload in payloads.items():
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(payload)
+    for path in root.rglob("*"):
+        path.chmod(0o555 if path.is_dir() else 0o444)
+    root.chmod(0o555)
+    reference = {
+        "role": "streamed_cache",
+        "name": name,
+        "sha256": tree_sha256,
+        "files": rows,
+    }
+    compiled_sha = "1" * 64
+    weights_sha = "2" * 64
+    auxiliary_identity = hashlib.sha256(
+        run_vllm_api_server_module._canonical_json([{
+            "role": "streamed_cache", "name": name, "sha256": tree_sha256,
+        }])).hexdigest()
+    package_id = (
+        f"sha256-v2-{compiled_sha}-{weights_sha}-{auxiliary_identity}")
+    manifest = {
+        "schema": "ttq.artifact_bundle/v2",
+        "trees": [
+            {"role": "compiled", "sha256": compiled_sha},
+            {"role": "compiled_weights", "sha256": weights_sha},
+        ],
+        "auxiliary_references": [reference],
+        "external_total_files": len(rows),
+        "external_total_bytes": sum(row["size"] for row in rows),
+    }
+    return manifest, package_id, name, root
+
+
+def test_v2_auxiliary_validator_admits_without_reading_payloads(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    manifest, package_id, name, root = _v2_auxiliary_fixture(
+        tmp_path, run_vllm_api_server_module)
+    monkeypatch.setenv(
+        "QUETZAL_AUXILIARY_ROOTS_JSON", json.dumps({name: str(root)}))
+    monkeypatch.setattr(
+        run_vllm_api_server_module, "_sha256_file",
+        lambda _path: (_ for _ in ()).throw(AssertionError("payload read")))
+
+    run_vllm_api_server_module._validate_quetzal_auxiliary_references(
+        manifest, package_id)
+
+
+@pytest.mark.parametrize("mutation", [
+    "missing", "digest_address", "size", "symlink_escape", "parent_escape",
+])
+def test_v2_auxiliary_validator_fails_closed(
+    monkeypatch, tmp_path, run_vllm_api_server_module, mutation
+):
+    manifest, package_id, name, root = _v2_auxiliary_fixture(
+        tmp_path, run_vllm_api_server_module)
+    roots = {name: str(root)}
+    if mutation == "missing":
+        roots = {}
+    elif mutation == "digest_address":
+        wrong = root.with_name("sha256-" + "0" * 64)
+        root.rename(wrong)
+        roots[name] = str(wrong)
+    elif mutation == "size":
+        payload = root / "cache/layer-0.tensorbin"
+        payload.chmod(0o644)
+        payload.write_bytes(b"wrong-sized")
+        payload.chmod(0o444)
+    elif mutation == "symlink_escape":
+        payload = root / "cache/layer-0.tensorbin"
+        outside = tmp_path / "outside"
+        outside.write_bytes(b"cache-payload")
+        outside.chmod(0o444)
+        (root / "cache").chmod(0o755)
+        payload.unlink()
+        payload.symlink_to(outside)
+        (root / "cache").chmod(0o555)
+    else:
+        manifest["auxiliary_references"][0]["files"][0]["path"] = "../outside"
+    monkeypatch.setenv("QUETZAL_AUXILIARY_ROOTS_JSON", json.dumps(roots))
+
+    with pytest.raises(RuntimeError):
+        run_vllm_api_server_module._validate_quetzal_auxiliary_references(
+            manifest, package_id)
+
+
 def test_ensure_weights_available_falls_back_when_hub_unreachable(
     monkeypatch, tmp_path, run_vllm_api_server_module
 ):

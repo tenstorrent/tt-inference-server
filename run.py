@@ -392,6 +392,16 @@ def parse_arguments():
         ),
     )
     parser.add_argument(
+        "--quetzal-auxiliary-root",
+        action="append",
+        default=[],
+        metavar="NAME=PATH",
+        help=(
+            "Immutable external payload root for a Quetzal v2 package. "
+            "Repeat once per auxiliary reference; mounted read-only in Docker."
+        ),
+    )
+    parser.add_argument(
         "--custom-weights",
         type=str,
         default=None,
