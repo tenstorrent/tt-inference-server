@@ -2,6 +2,9 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
+import copy
+import json
+
 import pytest
 
 from workflows.model_spec import get_runtime_model_spec, load_templates_from_yaml
@@ -114,6 +117,40 @@ def test_docker_command_rejects_missing_or_misapplied_quetzal_root(tmp_path):
     )
     with pytest.raises(ValueError, match="only valid with --impl quetzal"):
         generate_docker_run_command(native_spec, native_runtime)
+
+
+def test_docker_command_mounts_exact_v2_auxiliary_root_readonly(tmp_path):
+    spec = copy.deepcopy(_dev_quetzal_spec("Qwen3.6-27B"))
+    package_id = "sha256-v2-" + "1" * 64 + "-" + "2" * 64 + "-" + "3" * 64
+    package = tmp_path / package_id
+    package.mkdir()
+    (package / "qualification_manifest.yaml").write_text("models: []\n")
+    name = "openai_gpt-oss-120b-streamed-cache"
+    spec.env_vars["QUETZAL_PACKAGE_ID"] = package_id
+    spec.env_vars["QUETZAL_REQUIRED_AUXILIARY_NAMES"] = name
+    cache = tmp_path / ("sha256-" + "4" * 64)
+    cache.mkdir()
+    runtime = RuntimeConfig(
+        model="Qwen3.6-27B",
+        workflow="server",
+        device="p300x2",
+        impl="quetzal",
+        engine="vLLM",
+        docker_server=True,
+        quetzal_models_root=str(package),
+        quetzal_auxiliary_roots=[f"{name}={cache}"],
+    )
+
+    command, _ = generate_docker_run_command(spec, runtime)
+
+    destination = f"/home/container_app_user/quetzal/auxiliary/{name}/{cache.name}"
+    assert f"type=bind,src={cache.resolve()},dst={destination},readonly" in command
+    expected_json = json.dumps({name: destination}, separators=(",", ":"))
+    assert f"QUETZAL_AUXILIARY_ROOTS_JSON={expected_json}" in command
+
+    runtime.quetzal_auxiliary_roots = []
+    with pytest.raises(ValueError, match="do not match the model spec"):
+        generate_docker_run_command(spec, runtime)
 
 
 def test_quetzal_docker_hook_uses_clean_named_context_and_patched_runtime():

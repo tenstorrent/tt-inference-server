@@ -51,6 +51,7 @@ QUETZAL_ARTIFACT_ENV_VARS = (
     "QUETZAL_WEIGHTS",
 )
 QUETZAL_BUNDLE_MANIFESTS_DIR = ".quetzal-bundle-manifests"
+QUETZAL_BUNDLE_SCHEMAS = {"ttq.artifact_bundle/v1", "ttq.artifact_bundle/v2"}
 
 
 def parse_args():
@@ -426,6 +427,198 @@ def _sha256_file(path: Path) -> tuple[str, int]:
     return digest.hexdigest(), size
 
 
+def _canonical_json(value) -> bytes:
+    return (json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n").encode()
+
+
+def _tree_digest(files: list[dict]) -> str:
+    identity = [
+        {"path": row.get("path"), "size": row.get("size"), "sha256": row.get("sha256")}
+        for row in files
+    ]
+    return hashlib.sha256(_canonical_json(identity)).hexdigest()
+
+
+def _safe_auxiliary_relative(value, label: str) -> Path:
+    if not isinstance(value, str) or not value or "\\" in value or "\x00" in value:
+        raise RuntimeError(f"{label} is not a portable relative path")
+    path = Path(value)
+    if path.is_absolute() or any(part in ("", ".", "..") for part in path.parts):
+        raise RuntimeError(f"{label} is not a canonical relative path")
+    if path.as_posix() != value:
+        raise RuntimeError(f"{label} is not a canonical relative path")
+    return path
+
+
+def _require_read_only_path(path: Path, *, directory: bool, label: str) -> None:
+    if path.is_symlink():
+        raise RuntimeError(f"{label} may not be a symlink: {path}")
+    try:
+        metadata = path.stat(follow_symlinks=False)
+    except OSError as exc:
+        raise RuntimeError(f"{label} is missing: {path}") from exc
+    if directory and not path.is_dir():
+        raise RuntimeError(f"{label} is not a directory: {path}")
+    if not directory and not path.is_file():
+        raise RuntimeError(f"{label} is not a regular file: {path}")
+    if metadata.st_mode & 0o222:
+        raise RuntimeError(f"{label} is mutable: {path}")
+
+
+def _validate_quetzal_auxiliary_references(
+    bundle_manifest: dict, package_id: str
+) -> None:
+    schema = bundle_manifest.get("schema")
+    roots_value = os.getenv("QUETZAL_AUXILIARY_ROOTS_JSON", "")
+    if schema == "ttq.artifact_bundle/v1":
+        if roots_value:
+            raise RuntimeError("v1 Quetzal package must not declare auxiliary roots")
+        return
+    if schema != "ttq.artifact_bundle/v2":
+        raise RuntimeError("Quetzal trusted-root proof has an invalid schema")
+
+    references = bundle_manifest.get("auxiliary_references")
+    if not isinstance(references, list) or not references:
+        raise RuntimeError("Quetzal v2 package requires auxiliary references")
+    try:
+        roots = json.loads(roots_value)
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise RuntimeError("QUETZAL_AUXILIARY_ROOTS_JSON is invalid JSON") from exc
+    if not isinstance(roots, dict) or not all(
+        isinstance(key, str) and isinstance(value, str) for key, value in roots.items()
+    ):
+        raise RuntimeError("QUETZAL_AUXILIARY_ROOTS_JSON must map names to paths")
+
+    names = []
+    external_files = 0
+    external_bytes = 0
+    for index, reference in enumerate(references):
+        label = f"auxiliary_references[{index}]"
+        if (
+            not isinstance(reference, dict)
+            or set(reference) != {"role", "name", "sha256", "files"}
+            or reference.get("role") != "streamed_cache"
+        ):
+            raise RuntimeError(f"{label} is not a streamed_cache reference")
+        name = reference.get("name")
+        if (
+            not isinstance(name, str)
+            or re.fullmatch(r"[A-Za-z0-9._@+-]+", name) is None
+        ):
+            raise RuntimeError(f"{label}.name is invalid")
+        files = reference.get("files")
+        if not isinstance(files, list) or not files:
+            raise RuntimeError(f"{label}.files must be non-empty")
+        paths = []
+        for row_index, row in enumerate(files):
+            row_label = f"{label}.files[{row_index}]"
+            if (
+                not isinstance(row, dict)
+                or set(row) != {"path", "size", "sha256"}
+                or not isinstance(row.get("size"), int)
+                or isinstance(row.get("size"), bool)
+                or row["size"] < 0
+                or re.fullmatch(r"[0-9a-f]{64}", str(row.get("sha256"))) is None
+            ):
+                raise RuntimeError(f"{row_label} is invalid")
+            _safe_auxiliary_relative(row["path"], f"{row_label}.path")
+            paths.append(row["path"])
+            external_files += 1
+            external_bytes += row["size"]
+        if paths != sorted(paths) or len(paths) != len(set(paths)):
+            raise RuntimeError(f"{label}.files must be sorted and unique")
+        if reference.get("sha256") != _tree_digest(files):
+            raise RuntimeError(f"{label} inventory digest mismatch")
+        names.append(name)
+    if names != sorted(names) or len(names) != len(set(names)):
+        raise RuntimeError("Quetzal auxiliary references must be sorted and unique")
+    if set(roots) != set(names):
+        raise RuntimeError(
+            "Quetzal auxiliary roots do not match the trusted manifest: "
+            f"expected {sorted(names)}, got {sorted(roots)}"
+        )
+    if (
+        bundle_manifest.get("external_total_files") != external_files
+        or bundle_manifest.get("external_total_bytes") != external_bytes
+    ):
+        raise RuntimeError("Quetzal auxiliary totals do not match the trusted manifest")
+
+    trees = bundle_manifest.get("trees")
+    if not isinstance(trees, list):
+        raise RuntimeError("Quetzal v2 package trees are invalid")
+    tree_digests = {
+        tree.get("role"): tree.get("sha256") for tree in trees if isinstance(tree, dict)
+    }
+    if set(tree_digests) != {"compiled", "compiled_weights"} or any(
+        re.fullmatch(r"[0-9a-f]{64}", str(value)) is None
+        for value in tree_digests.values()
+    ):
+        raise RuntimeError("Quetzal v2 package tree identities are invalid")
+    auxiliary_identity = hashlib.sha256(
+        _canonical_json(
+            [
+                {key: reference[key] for key in ("role", "name", "sha256")}
+                for reference in references
+            ]
+        )
+    ).hexdigest()
+    expected_package_id = (
+        f"sha256-v2-{tree_digests['compiled']}-"
+        f"{tree_digests['compiled_weights']}-{auxiliary_identity}"
+    )
+    if package_id != expected_package_id:
+        raise RuntimeError("Quetzal v2 package ID does not bind its auxiliary identity")
+
+    for reference in references:
+        name = reference["name"]
+        root = Path(roots[name])
+        _require_read_only_path(root, directory=True, label=f"auxiliary root {name}")
+        if root.name != f"sha256-{reference['sha256']}":
+            raise RuntimeError(f"auxiliary root {name} is not digest-addressed")
+        resolved_root = root.resolve(strict=True)
+        checked_directories = {resolved_root}
+        for row in reference["files"]:
+            relative = _safe_auxiliary_relative(row["path"], f"auxiliary object {name}")
+            current = root
+            for part in relative.parts[:-1]:
+                current = current / part
+                if current.is_symlink():
+                    raise RuntimeError(f"auxiliary path contains a symlink: {current}")
+                try:
+                    resolved = current.resolve(strict=True)
+                except OSError as exc:
+                    raise RuntimeError(
+                        f"auxiliary directory is missing: {current}"
+                    ) from exc
+                if not resolved.is_relative_to(resolved_root):
+                    raise RuntimeError(
+                        f"auxiliary directory escapes its root: {current}"
+                    )
+                if resolved not in checked_directories:
+                    _require_read_only_path(
+                        current,
+                        directory=True,
+                        label=f"auxiliary directory {name}/{relative.parent}",
+                    )
+                    checked_directories.add(resolved)
+            payload = root / relative
+            if payload.is_symlink():
+                raise RuntimeError(f"auxiliary path contains a symlink: {payload}")
+            try:
+                resolved_payload = payload.resolve(strict=True)
+            except OSError as exc:
+                raise RuntimeError(f"auxiliary object is missing: {payload}") from exc
+            if not resolved_payload.is_relative_to(resolved_root):
+                raise RuntimeError(f"auxiliary object escapes its root: {payload}")
+            _require_read_only_path(
+                payload, directory=False, label=f"auxiliary object {name}/{row['path']}"
+            )
+            if payload.stat(follow_symlinks=False).st_size != row["size"]:
+                raise RuntimeError(
+                    f"auxiliary object size mismatch: {name}/{row['path']}"
+                )
+
+
 def _validate_quetzal_package_and_runtime(root: Path, model_id: str) -> None:
     package_id = os.getenv("QUETZAL_PACKAGE_ID")
     package_root_value = os.getenv("QUETZAL_PACKAGE_ROOT")
@@ -459,8 +652,9 @@ def _validate_quetzal_package_and_runtime(root: Path, model_id: str) -> None:
         bundle_manifest = json.loads(trusted_manifest.read_bytes())
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise RuntimeError("Quetzal trusted-root proof is invalid JSON") from exc
-    if bundle_manifest.get("schema") != "ttq.artifact_bundle/v1":
+    if bundle_manifest.get("schema") not in QUETZAL_BUNDLE_SCHEMAS:
         raise RuntimeError("Quetzal trusted-root proof has an invalid schema")
+    _validate_quetzal_auxiliary_references(bundle_manifest, package_id)
 
     inventory = {}
     for tree in bundle_manifest.get("trees", []):
