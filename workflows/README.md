@@ -347,12 +347,11 @@ artifacts are pinned independently:
   `--quetzal-models-root`. The root is mounted readonly and must contain a real,
   non-symlink `qualification_manifest.yaml`. Startup validates the manifest's
   model/revision/provider/mesh identity and fails closed before importing vLLM.
-  The current exact Qwen package at
-  `/mnt/models/huggingface/quetzal/nkapre/packages/sha256-f1d6cebaf6cd432c78721ec3b81101ab86493f387b37f63bc11aca2fc6f6d8d8-0a8efa103ee378c7cd0e2fa25b0426cbb82752e270f8927bdf44eb2cfe68ce66`
-  is intentionally not shown as a runnable example: its qualification manifest
-  does not own the paired patchset requirement and its storage is not yet an
-  administrator-published immutable generation. Do not mutate its permissions;
-  publish a successor identity and use that exact path after qualification.
+  The current Qwen catalogue points at the requested immutable successor path
+  `/mnt/models/quetzal/immutable/v1/packages/sha256-f1d6cebaf6cd432c78721ec3b81101ab86493f387b37f63bc11aca2fc6f6d8d8-0a8efa103ee378c7cd0e2fa25b0426cbb82752e270f8927bdf44eb2cfe68ce66`
+  and root-manifest digest `1dc5aae55932...`. The path intentionally remains
+  fail-closed until the storage administrator publishes and attests that exact
+  generation. Do not mutate or relabel the historical writable package.
 
 ```bash
 python3 scripts/build_docker_images.py \

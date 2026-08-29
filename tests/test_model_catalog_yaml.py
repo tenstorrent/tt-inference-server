@@ -336,6 +336,23 @@ def test_qwen_quetzal_dev_spec_uses_portable_qb2_fabric_contract(monkeypatch):
     assert env["TTQ_TUNED_ROW_ALL_REDUCE"] == "1"
 
 
+def test_qwen_quetzal_dev_spec_binds_immutable_b534_22fb_successor(monkeypatch):
+    specs = _dev_llm_spec_map()
+    monkeypatch.setattr(model_spec_module, "MODEL_SPECS", specs)
+    monkeypatch.setattr(model_spec_module, "_MODEL_SPECS_ENV", "dev")
+    quetzal, _, _ = get_runtime_model_spec(
+        "Qwen3.6-27B", "p300x2", impl="quetzal"
+    )
+    env = quetzal.env_vars
+
+    assert env["QUETZAL_BUNDLE_MANIFEST_SHA256"] == (
+        "1dc5aae559321ad21ddcd0d0e91342107c8ab297011f7de2712e7116a359b990"
+    )
+    assert env["QUETZAL_REQUIRED_TT_METAL_PATCHSET_SHA256"] == (
+        "22fb0bd2523b8a5c63fa20c3c8a1586dc9ead5150449d0eb02231fa8173a7edd"
+    )
+
+
 def test_diffusiongemma_dev_spec_matches_validated_256k_contract():
     templates = load_templates_from_yaml(MODEL_SPECS_DIR / "dev" / "llm.yaml")
     template = next(
