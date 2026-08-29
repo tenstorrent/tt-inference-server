@@ -1,0 +1,20 @@
+{
+  "schema_version": "quetzal.gemma-models-ci-enrollment-blocker.v1",
+  "status": "blocked_not_dispatchable",
+  "model": "google/gemma-4-31B-it",
+  "exact_source": "bb02e1975437ee210578fd008721a7acff3f2dba",
+  "target_profile": "BFP8 B1 C1 S1024/C2048; endpoint ISL1024 + OSL512",
+  "target_runner": "qb2-p300x2-physical-2x2-ring-links2",
+  "active_catalogue_is_not_candidate": true,
+  "active_models_ci_enrollment_present": false,
+  "missing_fields": [
+    "approved administrator publication response",
+    "final content-addressed package id",
+    "final host and container immutable package roots",
+    "package manifest sha256 and exact four role-relative paths",
+    "fresh exact-package PCC >= 0.99",
+    "fresh endpoint ISL1024/OSL512 and clean lifecycle receipt",
+    "positive physical Ring/2 runner visibility attestation"
+  ],
+  "renderer": "scripts/prepare_gemma_quetzal_enrollment.py"
+}
