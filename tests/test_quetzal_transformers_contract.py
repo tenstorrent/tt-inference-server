@@ -1,0 +1,22 @@
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+PIN = "transformers==5.15.0"
+
+
+def test_server_and_models_ci_clients_share_quetzal_transformers_pin() -> None:
+    plugin = (ROOT / "tt-vllm-plugin" / "pyproject.toml").read_text()
+    workflow = (ROOT / "requirements" / "workflow-run-script.txt").read_text()
+    vllm_override = (ROOT / "requirements" / "llm-vllm-overrides.txt").read_text()
+    assert PIN in plugin
+    assert PIN in workflow
+    assert PIN in vllm_override
+
+
+def test_quetzal_image_rejects_frameworks_without_target_configs() -> None:
+    dockerfile = (
+        ROOT / "vllm-tt-metal" / "vllm.tt-metal.src.quetzal.Dockerfile"
+    ).read_text()
+    assert "m.version('transformers') == '5.15.0'" in dockerfile
+    assert "{'gemma4', 'qwen3_5', 'qwen3_5_moe'}" in dockerfile

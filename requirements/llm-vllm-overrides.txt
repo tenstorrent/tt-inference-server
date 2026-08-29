@@ -17,6 +17,6 @@
 # so this forces transformers 5.x past vllm's cap. transformers 5.x needs
 # torch>=2.5 (torch.distributed.tensor.device_mesh); the venv's torch already
 # satisfies that. `vllm bench serve` is a pure client (tokenizer + HTTP) and
-# was verified to install and run under vllm 0.13.0 + transformers 5.12.1, so
+# was verified to install and run under vllm 0.13.0 + transformers 5.15.0, so
 # the client tolerates the newer library while its CLI/behavior stay unchanged.
-transformers>=5.5.0,<6
+transformers==5.15.0
