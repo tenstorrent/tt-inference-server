@@ -32,17 +32,55 @@ def _files(tmp_path: Path, *, physical=None, captured="2026-08-29T12:19:02Z"):
     evidence_path = tmp_path / "topology-evidence.json"
     admission_path = tmp_path / "topology-admission.json"
     evidence = {
+        "schema": "quetzal.topology-evidence.v1",
+        "captured_at_utc": captured,
+        "node": "ring2-runner",
+        "slurm_job_id": 70001,
+        "slurm_state": "RUNNING",
+        "chip_count": 4,
+        "weights_loaded": False,
+        "provenance": {
+            "allocation_binding": "live_hostname_slurm_env_and_scontrol",
+            "captured_at_utc": "producer_clock_after_close_and_holder_scan",
+            "mesh_lifecycle": "bounded_mesh_smoke_log",
+            "chip_count": "bounded_mesh_smoke_log",
+            "weights_loaded": "exact_preweight_smoke_source",
+            "device_holders_after": "post_close_fuser_device_scan",
+            "mesh_shape": "bounded_mesh_smoke_log",
+            "logical_degree_histogram": "tt_metal_topology_output",
+            "physical_degree_histogram": "tt_metal_topology_output",
+            "descriptor_sha256": "sha256_of_selected_descriptor_bytes",
+            "collective_topology": "selected_qualified_artifact_configuration",
+            "collective_num_links": "selected_qualified_artifact_configuration",
+        },
+        "mesh_lifecycle": {
+            "opened": True,
+            "synchronized": True,
+            "closed": True,
+            "exit_code": 0,
+            "device_holders_after": 0,
+        },
+        "topology": {
+            "mesh_shape": [2, 2],
+            "logical_degree_histogram": {"2": 4},
+            "physical_degree_histogram": physical,
+            "descriptor_sha256": "f4c9fb5acf307e1b320525007035ed9e75039f793e4350120365243682e37792",
+            "collective_topology": "Ring",
+            "collective_num_links": 2,
+        },
         "producer": {
             "schema": "quetzal.topology-evidence-producer.v1",
+            "smoke_script_path": "/runner/serving/mesh_open_smoke.py",
             "smoke_script_sha256": "bf3311c685554105cb420239467f4e5c32e294be57b2a34fc6cbf7b0b84573fa",
+            "smoke_log_path": "/runner/output/mesh-open.log",
+            "smoke_log_sha256": "1" * 64,
+            "descriptor_path": "/runner/serving/mesh.textproto",
             "qualified_selection_sha256": "5ec9757ae74034c0cbc12569718c059b2b049416c736ad45a2048c5dda05b562",
+            "qualified_selection_path": "/runner/serving/gpt120_ring2_topology_selection.json",
             "descriptor_sha256": "f4c9fb5acf307e1b320525007035ed9e75039f793e4350120365243682e37792",
             "selected_model_id": "openai/gpt-oss-120b",
             "selected_emit_sha256": "5cab85f26fe64fdea2a89c302f848a43152dcbd673133a1bfdfbf7054ba5862f",
-        },
-        "provenance": {
-            "physical_degree_histogram": "tt_metal_topology_output",
-            "collective_topology": "selected_qualified_artifact_configuration",
+            "claim_boundary": "mesh lifecycle, count, shape, and degree histograms are observed; Ring and links=2 are selected qualified-artifact configuration",
         },
     }
     evidence_path.write_text(json.dumps(evidence))
@@ -76,6 +114,15 @@ def _environment(tmp_path, admission_path):
         "SLURM_JOB_ID": "70001",
         "SLURMD_NODENAME": "ring2-runner",
     }
+
+
+def _rewrite_evidence(admission_path, evidence_path, mutation):
+    evidence = json.loads(evidence_path.read_text())
+    mutation(evidence)
+    evidence_path.write_text(json.dumps(evidence))
+    admission = json.loads(admission_path.read_text())
+    admission["evidence_sha256"] = sha256(evidence_path.read_bytes()).hexdigest()
+    admission_path.write_text(json.dumps(admission))
 
 
 @pytest.fixture(autouse=True)
@@ -133,6 +180,105 @@ def test_wrong_admission_or_producer_identity_fails_closed(tmp_path, mutation, m
     evidence_path.write_text(json.dumps(evidence))
     admission["evidence_sha256"] = sha256(evidence_path.read_bytes()).hexdigest()
     admission_path.write_text(json.dumps(admission))
+    with pytest.raises(QuetzalTopologyAdmissionError, match=match):
+        validate_gpt120_quetzal_preweight_admission(
+            _spec(), environment=_environment(tmp_path, admission_path), now=NOW
+        )
+
+
+@pytest.mark.parametrize(
+    "mutation,match",
+    [
+        (lambda e: e.update(schema="fabricated.v1"), "evidence.schema"),
+        (
+            lambda e: e.update(captured_at_utc="2026-08-29T12:19:03Z"),
+            "evidence.captured_at_utc",
+        ),
+        (lambda e: e.update(node="other-runner"), "evidence.node"),
+        (lambda e: e.update(slurm_job_id=70002), "evidence.slurm_job_id"),
+        (lambda e: e.update(slurm_state="COMPLETED"), "evidence.slurm_state"),
+        (lambda e: e.update(chip_count=8), "evidence.chip_count"),
+        (lambda e: e.update(weights_loaded=True), "evidence.weights_loaded"),
+        (
+            lambda e: e["mesh_lifecycle"].update(closed=False),
+            "evidence.mesh_lifecycle",
+        ),
+        (
+            lambda e: e["mesh_lifecycle"].update(exit_code=1),
+            "evidence.mesh_lifecycle",
+        ),
+        (
+            lambda e: e["mesh_lifecycle"].update(device_holders_after=1),
+            "evidence.mesh_lifecycle",
+        ),
+        (
+            lambda e: e["topology"].update(mesh_shape=[1, 4]),
+            "evidence.topology",
+        ),
+        (
+            lambda e: e["topology"].update(logical_degree_histogram={"1": 4}),
+            "evidence.topology",
+        ),
+        (
+            lambda e: e["topology"].update(physical_degree_histogram={"1": 4}),
+            "evidence.topology",
+        ),
+        (
+            lambda e: e["topology"].update(descriptor_sha256="0" * 64),
+            "evidence.topology",
+        ),
+        (
+            lambda e: e["topology"].update(collective_topology="Linear"),
+            "evidence.topology",
+        ),
+        (
+            lambda e: e["topology"].update(collective_num_links=1),
+            "evidence.topology",
+        ),
+    ],
+)
+def test_rehashed_evidence_cannot_disagree_with_pass_admission(
+    tmp_path, mutation, match
+):
+    admission_path, evidence_path = _files(tmp_path)
+    _rewrite_evidence(admission_path, evidence_path, mutation)
+    with pytest.raises(QuetzalTopologyAdmissionError, match=match):
+        validate_gpt120_quetzal_preweight_admission(
+            _spec(), environment=_environment(tmp_path, admission_path), now=NOW
+        )
+
+
+@pytest.mark.parametrize(
+    "mutation,match",
+    [
+        (lambda e: e.pop("node"), "canonical fields"),
+        (lambda e: e.pop("captured_at_utc"), "canonical fields"),
+        (lambda e: e.pop("weights_loaded"), "canonical fields"),
+        (
+            lambda e: e["provenance"].pop("allocation_binding"),
+            "evidence.provenance",
+        ),
+        (
+            lambda e: e["provenance"].pop("collective_num_links"),
+            "evidence.provenance",
+        ),
+        (
+            lambda e: e["mesh_lifecycle"].pop("synchronized"),
+            "evidence.mesh_lifecycle",
+        ),
+        (
+            lambda e: e["topology"].pop("physical_degree_histogram"),
+            "evidence.topology",
+        ),
+        (
+            lambda e: e["producer"].pop("smoke_log_sha256"),
+            "producer canonical fields",
+        ),
+    ],
+)
+def test_rehashed_evidence_omissions_fail_closed(tmp_path, mutation, match):
+    admission_path, evidence_path = _files(tmp_path)
+    _rewrite_evidence(admission_path, evidence_path, mutation)
     with pytest.raises(QuetzalTopologyAdmissionError, match=match):
         validate_gpt120_quetzal_preweight_admission(
             _spec(), environment=_environment(tmp_path, admission_path), now=NOW

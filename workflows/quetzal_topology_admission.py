@@ -19,11 +19,30 @@ from pathlib import Path
 from typing import Mapping
 
 _MODEL_IDS = {"gpt-oss-120b", "openai/gpt-oss-120b"}
+_EVIDENCE_SCHEMA = "quetzal.topology-evidence.v1"
 _DESCRIPTOR_SHA256 = "f4c9fb5acf307e1b320525007035ed9e75039f793e4350120365243682e37792"
 _SMOKE_SHA256 = "bf3311c685554105cb420239467f4e5c32e294be57b2a34fc6cbf7b0b84573fa"
 _SELECTION_SHA256 = "5ec9757ae74034c0cbc12569718c059b2b049416c736ad45a2048c5dda05b562"
 _EMIT_SHA256 = "5cab85f26fe64fdea2a89c302f848a43152dcbd673133a1bfdfbf7054ba5862f"
 _MAX_AGE_SECONDS = 900
+_REQUIRED_FIELD_PROVENANCE = {
+    "allocation_binding": "live_hostname_slurm_env_and_scontrol",
+    "captured_at_utc": "producer_clock_after_close_and_holder_scan",
+    "mesh_lifecycle": "bounded_mesh_smoke_log",
+    "chip_count": "bounded_mesh_smoke_log",
+    "weights_loaded": "exact_preweight_smoke_source",
+    "device_holders_after": "post_close_fuser_device_scan",
+    "mesh_shape": "bounded_mesh_smoke_log",
+    "logical_degree_histogram": "tt_metal_topology_output",
+    "physical_degree_histogram": "tt_metal_topology_output",
+    "descriptor_sha256": "sha256_of_selected_descriptor_bytes",
+    "collective_topology": "selected_qualified_artifact_configuration",
+    "collective_num_links": "selected_qualified_artifact_configuration",
+}
+_CLAIM_BOUNDARY = (
+    "mesh lifecycle, count, shape, and degree histograms are observed; "
+    "Ring and links=2 are selected qualified-artifact configuration"
+)
 
 
 class QuetzalTopologyAdmissionError(RuntimeError):
@@ -51,6 +70,20 @@ def _exact(value, expected, field: str) -> None:
         raise QuetzalTopologyAdmissionError(
             f"{field} mismatch: expected {expected!r}, observed {value!r}"
         )
+
+
+def _sha256(value, field: str) -> None:
+    if (
+        not isinstance(value, str)
+        or len(value) != 64
+        or any(character not in "0123456789abcdef" for character in value)
+    ):
+        raise QuetzalTopologyAdmissionError(f"{field} must be a lowercase SHA-256")
+
+
+def _absolute_path(value, field: str) -> None:
+    if not isinstance(value, str) or not value or not Path(value).is_absolute():
+        raise QuetzalTopologyAdmissionError(f"{field} must be an absolute path")
 
 
 def _utc(value, field: str) -> datetime:
@@ -146,6 +179,115 @@ def _is_target(model_spec) -> bool:
     return bool(identities & _MODEL_IDS)
 
 
+def _validate_canonical_evidence(
+    evidence: Mapping,
+    admission: Mapping,
+    *,
+    node: str,
+    job_id: int,
+) -> None:
+    _exact(
+        set(evidence),
+        {
+            "schema",
+            "captured_at_utc",
+            "node",
+            "slurm_job_id",
+            "slurm_state",
+            "chip_count",
+            "weights_loaded",
+            "provenance",
+            "mesh_lifecycle",
+            "topology",
+            "producer",
+        },
+        "evidence canonical fields",
+    )
+    for field, expected in (
+        ("schema", _EVIDENCE_SCHEMA),
+        ("captured_at_utc", admission.get("captured_at_utc")),
+        ("node", node),
+        ("slurm_job_id", job_id),
+        ("slurm_state", "RUNNING"),
+        ("chip_count", admission.get("chip_count")),
+        ("weights_loaded", False),
+    ):
+        _exact(evidence.get(field), expected, f"evidence.{field}")
+    _utc(evidence.get("captured_at_utc"), "evidence.captured_at_utc")
+
+    provenance = _mapping(evidence.get("provenance"), "evidence.provenance")
+    _exact(
+        dict(provenance),
+        _REQUIRED_FIELD_PROVENANCE,
+        "evidence.provenance",
+    )
+
+    lifecycle = _mapping(evidence.get("mesh_lifecycle"), "evidence.mesh_lifecycle")
+    _exact(
+        dict(lifecycle),
+        {
+            "opened": True,
+            "synchronized": True,
+            "closed": True,
+            "exit_code": 0,
+            "device_holders_after": admission.get("device_holders_after"),
+        },
+        "evidence.mesh_lifecycle",
+    )
+
+    topology = _mapping(evidence.get("topology"), "evidence.topology")
+    _exact(
+        dict(topology),
+        {
+            "mesh_shape": admission.get("mesh_shape"),
+            "logical_degree_histogram": admission.get("logical_degree_histogram"),
+            "physical_degree_histogram": admission.get("physical_degree_histogram"),
+            "descriptor_sha256": admission.get("descriptor_sha256"),
+            "collective_topology": admission.get("collective_topology"),
+            "collective_num_links": admission.get("collective_num_links"),
+        },
+        "evidence.topology",
+    )
+
+    producer = _mapping(evidence.get("producer"), "evidence.producer")
+    _exact(
+        set(producer),
+        {
+            "schema",
+            "smoke_script_path",
+            "smoke_script_sha256",
+            "smoke_log_path",
+            "smoke_log_sha256",
+            "descriptor_path",
+            "descriptor_sha256",
+            "qualified_selection_path",
+            "qualified_selection_sha256",
+            "selected_model_id",
+            "selected_emit_sha256",
+            "claim_boundary",
+        },
+        "evidence.producer canonical fields",
+    )
+    for field, expected in (
+        ("schema", "quetzal.topology-evidence-producer.v1"),
+        ("smoke_script_sha256", _SMOKE_SHA256),
+        ("qualified_selection_sha256", _SELECTION_SHA256),
+        ("descriptor_sha256", admission.get("descriptor_sha256")),
+        ("selected_model_id", "openai/gpt-oss-120b"),
+        ("selected_emit_sha256", _EMIT_SHA256),
+        ("claim_boundary", _CLAIM_BOUNDARY),
+    ):
+        _exact(producer.get(field), expected, f"evidence.producer.{field}")
+    _sha256(producer.get("smoke_log_sha256"), "evidence.producer.smoke_log_sha256")
+    for field in (
+        "smoke_script_path",
+        "smoke_log_path",
+        "descriptor_path",
+        "qualified_selection_path",
+    ):
+        _absolute_path(producer.get(field), f"evidence.producer.{field}")
+
+
 def validate_gpt120_quetzal_preweight_admission(
     model_spec,
     *,
@@ -214,27 +356,7 @@ def validate_gpt120_quetzal_preweight_admission(
         evidence = _mapping(json.loads(evidence_bytes), "evidence")
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise QuetzalTopologyAdmissionError("evidence is not JSON") from exc
-    producer = _mapping(evidence.get("producer"), "evidence.producer")
-    provenance = _mapping(evidence.get("provenance"), "evidence.provenance")
-    for field, expected in (
-        ("schema", "quetzal.topology-evidence-producer.v1"),
-        ("smoke_script_sha256", _SMOKE_SHA256),
-        ("qualified_selection_sha256", _SELECTION_SHA256),
-        ("descriptor_sha256", _DESCRIPTOR_SHA256),
-        ("selected_model_id", "openai/gpt-oss-120b"),
-        ("selected_emit_sha256", _EMIT_SHA256),
-    ):
-        _exact(producer.get(field), expected, f"evidence.producer.{field}")
-    _exact(
-        provenance.get("physical_degree_histogram"),
-        "tt_metal_topology_output",
-        "evidence.provenance.physical_degree_histogram",
-    )
-    _exact(
-        provenance.get("collective_topology"),
-        "selected_qualified_artifact_configuration",
-        "evidence.provenance.collective_topology",
-    )
+    _validate_canonical_evidence(evidence, admission, node=node, job_id=job_id)
     _require_zero_holders()
     return {
         "status": "pass",
