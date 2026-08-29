@@ -35,10 +35,99 @@ from workflows.workflow_venvs import VENV_CONFIGS
 logger = logging.getLogger("run_log")
 
 
+_QUETZAL_HF_METADATA_ALLOWLIST = (
+    "config.json",
+    "generation_config.json",
+    "tokenizer.json",
+    "tokenizer_config.json",
+    "special_tokens_map.json",
+    "added_tokens.json",
+    "chat_template.json",
+    "chat_template.jinja",
+    "tokenizer.model",
+    "sentencepiece.bpe.model",
+    "vocab.json",
+    "vocab.txt",
+    "merges.txt",
+)
+_QUETZAL_HF_REQUIRED_METADATA = (
+    "config.json",
+    "tokenizer_config.json",
+    "tokenizer.json",
+)
+_QUETZAL_HF_CHECKPOINT_EXCLUDES = (
+    "original/**",
+    "*.safetensors",
+    "**/*.safetensors",
+    "*.bin",
+    "**/*.bin",
+    "*.pt",
+    "**/*.pt",
+    "*.pth",
+    "**/*.pth",
+    "*.gguf",
+    "**/*.gguf",
+    "*.ckpt",
+    "**/*.ckpt",
+)
+_QUETZAL_HF_REVISION_RECEIPT = ".quetzal-hf-revision"
+
+
 def _quetzal_hf_revision(model_spec: ModelSpec) -> str | None:
     if model_spec.impl.impl_id != "quetzal":
         return None
     return model_spec.device_model_spec.vllm_args.get("revision")
+
+
+def _required_quetzal_hf_revision(model_spec: ModelSpec) -> str:
+    revision = _quetzal_hf_revision(model_spec)
+    if (
+        not isinstance(revision, str)
+        or len(revision) != 40
+        or any(character not in "0123456789abcdef" for character in revision)
+    ):
+        raise ValueError(
+            "impl=quetzal requires an exact 40-character lowercase HF revision"
+        )
+    return revision
+
+
+def _validate_quetzal_hf_metadata(
+    metadata_dir: Path,
+    revision: str,
+    *,
+    revision_from_directory: bool = False,
+    verify_revision: bool = True,
+) -> None:
+    if not metadata_dir or not metadata_dir.is_dir():
+        raise ValueError("Quetzal HF metadata directory does not exist")
+
+    missing = [
+        name
+        for name in _QUETZAL_HF_REQUIRED_METADATA
+        if not (metadata_dir / name).is_file()
+        or (metadata_dir / name).stat().st_size == 0
+    ]
+    if missing:
+        raise ValueError(
+            "Quetzal HF metadata is incomplete; missing required files: "
+            + ", ".join(missing)
+        )
+
+    if not verify_revision:
+        return
+    if revision_from_directory:
+        resolved_revision = metadata_dir.name
+    else:
+        receipt = metadata_dir / _QUETZAL_HF_REVISION_RECEIPT
+        if not receipt.is_file():
+            raise ValueError("Quetzal HF metadata has no exact revision receipt")
+        resolved_revision = receipt.read_text().strip()
+    if resolved_revision != revision:
+        raise ValueError(
+            "Quetzal HF metadata revision mismatch: "
+            f"expected {revision}, got {resolved_revision or '<empty>'}"
+        )
 
 
 @dataclass
@@ -315,6 +404,41 @@ class HostSetupManager:
 
     def check_setup(self) -> bool:
         if self.setup_config.model_source == ModelSource.HUGGINGFACE.value:
+            if self.model_spec.impl.impl_id == "quetzal":
+                revision = _required_quetzal_hf_revision(self.model_spec)
+                if self.setup_config.host_hf_cache:
+                    metadata_dir = self.setup_config.host_model_weights_snapshot_dir
+                    if not metadata_dir:
+                        return False
+                    try:
+                        _validate_quetzal_hf_metadata(
+                            metadata_dir,
+                            revision,
+                            revision_from_directory=True,
+                        )
+                    except ValueError:
+                        return False
+                    return True
+                if self.setup_config.host_weights_dir:
+                    _validate_quetzal_hf_metadata(
+                        Path(self.setup_config.host_weights_dir), revision
+                    )
+                    return True
+                if self.setup_config.host_model_volume_root:
+                    metadata_dir = (
+                        self.setup_config.host_model_volume_root
+                        / "weights"
+                        / self.model_spec.model_name
+                    )
+                    try:
+                        _validate_quetzal_hf_metadata(metadata_dir, revision)
+                    except ValueError:
+                        return False
+                    return True
+                raise ValueError(
+                    "impl=quetzal requires host storage for exact-revision "
+                    "metadata-only setup"
+                )
             if (
                 not self.setup_config.host_hf_cache
                 and not self.setup_config.host_model_volume_root
@@ -417,9 +541,16 @@ class HostSetupManager:
         if status != 200:
             logger.error("⛔ HF_TOKEN rejected by Hugging Face.")
             return False
+        revision = (
+            _required_quetzal_hf_revision(self.model_spec)
+            if self.model_spec.impl.impl_id == "quetzal"
+            else None
+        )
         model_url = (
             f"https://huggingface.co/api/models/{self.model_spec.hf_weights_repo}"
         )
+        if revision:
+            model_url += f"/revision/{revision}"
         data, status, _ = http_request(
             model_url, headers={"Authorization": f"Bearer {token}"}
         )
@@ -436,7 +567,11 @@ class HostSetupManager:
         if not first_file:
             logger.error("⛔ Unexpected repository structure.")
             return False
-        head_url = f"https://huggingface.co/{self.model_spec.hf_weights_repo}/resolve/main/{first_file}"
+        resolved_revision = revision or "main"
+        head_url = (
+            f"https://huggingface.co/{self.model_spec.hf_weights_repo}"
+            f"/resolve/{resolved_revision}/{first_file}"
+        )
         _, _, head_headers = http_request(
             head_url, method="HEAD", headers={"Authorization": f"Bearer {token}"}
         )
@@ -543,6 +678,11 @@ class HostSetupManager:
 
     def setup_weights_huggingface(self):
         if self.setup_config.host_weights_dir:
+            if self.model_spec.impl.impl_id == "quetzal":
+                _validate_quetzal_hf_metadata(
+                    Path(self.setup_config.host_weights_dir),
+                    _required_quetzal_hf_revision(self.model_spec),
+                )
             logger.info(
                 f"Using pre-downloaded weights from --host-weights-dir: {self.setup_config.host_weights_dir}"
             )
@@ -569,6 +709,24 @@ class HostSetupManager:
             f"⛔ 'hf' CLI not found at: {hf_exec}. Check HF_SETUP venv installation."
         )
         hf_repo = self.model_spec.hf_weights_repo
+        quetzal_revision = (
+            _required_quetzal_hf_revision(self.model_spec)
+            if self.model_spec.impl.impl_id == "quetzal"
+            else None
+        )
+        quetzal_filters = (
+            [
+                item
+                for option, patterns in (
+                    ("--include", _QUETZAL_HF_METADATA_ALLOWLIST),
+                    ("--exclude", _QUETZAL_HF_CHECKPOINT_EXCLUDES),
+                )
+                for pattern in patterns
+                for item in (option, pattern)
+            ]
+            if quetzal_revision
+            else ["--exclude", "original/**"]
+        )
         if self.setup_config.host_hf_cache:
             os.environ["HOST_HF_HOME"] = self.setup_config.host_hf_cache
             os.environ["HF_HOME"] = self.setup_config.host_hf_cache
@@ -576,13 +734,8 @@ class HostSetupManager:
                 str(hf_exec),
                 "download",
                 hf_repo,
-                *(
-                    ["--revision", _quetzal_hf_revision(self.model_spec)]
-                    if _quetzal_hf_revision(self.model_spec)
-                    else []
-                ),
-                "--exclude",
-                "original/**",
+                *(["--revision", quetzal_revision] if quetzal_revision else []),
+                *quetzal_filters,
             ]
             logger.info(f"Downloading model to host HF cache: {hf_repo}")
             logger.info(f"Command: {shlex.join(cmd)}")
@@ -591,8 +744,14 @@ class HostSetupManager:
             snapshot_dir = resolve_hf_snapshot_dir(
                 self.model_spec.hf_weights_repo,
                 Path(self.setup_config.host_hf_cache),
-                revision=_quetzal_hf_revision(self.model_spec),
+                revision=quetzal_revision,
             )
+            if quetzal_revision:
+                _validate_quetzal_hf_metadata(
+                    snapshot_dir,
+                    quetzal_revision,
+                    revision_from_directory=True,
+                )
             self.setup_config.update_host_model_weights_snapshot_dir(snapshot_dir)
             logger.info(
                 f"✅ Using weights directory: {self.setup_config.host_model_weights_mount_dir}"
@@ -604,6 +763,35 @@ class HostSetupManager:
             / "weights"
             / self.model_spec.model_name
         )
+        if quetzal_revision:
+            host_weights_dir.mkdir(parents=True, exist_ok=True)
+            cmd = [
+                str(hf_exec),
+                "download",
+                hf_repo,
+                "--revision",
+                quetzal_revision,
+                "--local-dir",
+                str(host_weights_dir),
+                *quetzal_filters,
+            ]
+            logger.info(f"Downloading Quetzal runtime metadata: {hf_repo}")
+            logger.info(f"Command: {shlex.join(cmd)}")
+            result = subprocess.run(cmd)
+            if result.returncode != 0:
+                raise RuntimeError("Quetzal exact-revision metadata download failed")
+            _validate_quetzal_hf_metadata(
+                host_weights_dir,
+                quetzal_revision,
+                verify_revision=False,
+            )
+            (host_weights_dir / _QUETZAL_HF_REVISION_RECEIPT).write_text(
+                f"{quetzal_revision}\n"
+            )
+            _validate_quetzal_hf_metadata(host_weights_dir, quetzal_revision)
+            logger.info(f"✅ Using Quetzal runtime metadata: {host_weights_dir}")
+            return
+
         # Always run `hf download`; it resumes partial downloads and skips files
         # already present. weights_complete only gates the offline fallback below.
         weights_complete = self.check_model_weights_dir(host_weights_dir)
@@ -612,15 +800,10 @@ class HostSetupManager:
             str(hf_exec),
             "download",
             hf_repo,
-            *(
-                ["--revision", _quetzal_hf_revision(self.model_spec)]
-                if _quetzal_hf_revision(self.model_spec)
-                else []
-            ),
+            *(["--revision", quetzal_revision] if quetzal_revision else []),
             "--local-dir",
             str(host_weights_dir),
-            "--exclude",
-            "original/**",
+            *quetzal_filters,
         ]
         logger.info(f"Downloading model to host volume: {hf_repo}")
         logger.info(f"Command: {shlex.join(cmd)}")

@@ -352,6 +352,12 @@ artifacts are pinned independently:
   and root-manifest digest `1dc5aae55932...`. The path intentionally remains
   fail-closed until the storage administrator publishes and attests that exact
   generation. Do not mutate or relabel the historical writable package.
+- Quetzal's compiled package supplies model weights. Host setup therefore fetches
+  only an explicit allowlist of runtime config/tokenizer files at the catalogue's
+  exact Hugging Face commit and excludes checkpoint shard formats. A host-volume
+  acquisition records `.quetzal-hf-revision` only after all required files are
+  present; `--host-weights-dir` metadata snapshots require that exact receipt.
+  Native implementations retain the ordinary resumable full-checkpoint path.
 
 ```bash
 python3 scripts/build_docker_images.py \

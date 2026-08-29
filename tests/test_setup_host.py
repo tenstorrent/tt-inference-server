@@ -42,6 +42,7 @@ from workflows.workflow_types import (
 # A tiny public HF model (~500KB, no auth required) for testing
 TINY_HF_REPO = "hf-internal-testing/tiny-random-gpt2"
 TINY_MODEL_NAME = "tiny-random-gpt2"
+QUETZAL_HF_REVISION = "a" * 40
 
 
 @pytest.fixture
@@ -82,6 +83,25 @@ def tiny_model_spec(tiny_impl, tiny_device_model_spec):
         docker_image="test-image:latest",
         min_disk_gb=1,
         min_ram_gb=1,
+    )
+
+
+@pytest.fixture
+def quetzal_model_spec(tiny_model_spec):
+    """Generated model whose runtime still needs pinned HF config/tokenizer files."""
+    implementation = replace(
+        tiny_model_spec.impl,
+        impl_id="quetzal",
+        impl_name="quetzal",
+    )
+    device_spec = replace(
+        tiny_model_spec.device_model_spec,
+        vllm_args={"revision": QUETZAL_HF_REVISION},
+    )
+    return replace(
+        tiny_model_spec,
+        impl=implementation,
+        device_model_spec=device_spec,
     )
 
 
@@ -938,6 +958,144 @@ class TestSetupWeightsHostVolumeResume:
             mock_run.return_value.returncode = 1
             with pytest.raises(AssertionError):
                 manager.setup_weights_huggingface()
+
+
+class TestQuetzalMetadataOnlySetup:
+    """Quetzal acquires only pinned runtime metadata, never checkpoint shards."""
+
+    @pytest.fixture
+    def manager(self, quetzal_model_spec, temp_dir):
+        manager = HostSetupManager(
+            model_spec=quetzal_model_spec,
+            hf_token="hf_test_token_123456",
+            host_volume=str(temp_dir / "persistent_volume"),
+        )
+        venv = MagicMock()
+        venv.venv_path = temp_dir / "fake_venv"
+        (venv.venv_path / "bin").mkdir(parents=True, exist_ok=True)
+        (venv.venv_path / "bin" / "hf").write_text("#!/bin/bash")
+        with patch("workflows.setup_host.VENV_CONFIGS") as mock_venv_configs:
+            mock_venv_configs.__getitem__ = MagicMock(return_value=venv)
+            yield manager
+
+    @staticmethod
+    def _metadata_dir(manager):
+        return (
+            manager.setup_config.host_model_volume_root
+            / "weights"
+            / manager.model_spec.model_name
+        )
+
+    def test_download_is_allowlisted_and_excludes_checkpoint_shards(self, manager):
+        metadata_dir = self._metadata_dir(manager)
+
+        def download(command):
+            assert "--revision" in command
+            assert command[command.index("--revision") + 1] == QUETZAL_HF_REVISION
+            for name in ("config.json", "tokenizer_config.json", "tokenizer.json"):
+                (metadata_dir / name).write_text("{}")
+            return MagicMock(returncode=0)
+
+        with patch("subprocess.run", side_effect=download) as mock_run:
+            manager.setup_weights_huggingface()
+
+        command = mock_run.call_args.args[0]
+        includes = [
+            command[index + 1]
+            for index, argument in enumerate(command)
+            if argument == "--include"
+        ]
+        excludes = [
+            command[index + 1]
+            for index, argument in enumerate(command)
+            if argument == "--exclude"
+        ]
+        assert {"config.json", "tokenizer_config.json", "tokenizer.json"} <= set(
+            includes
+        )
+        assert "*.safetensors" in excludes
+        assert "**/*.safetensors" in excludes
+        assert "*.bin" in excludes
+        assert "**/*.bin" in excludes
+        assert not any(
+            pattern.endswith((".safetensors", ".bin", ".pt", ".pth", ".gguf"))
+            for pattern in includes
+        )
+        assert (metadata_dir / ".quetzal-hf-revision").read_text().strip() == (
+            QUETZAL_HF_REVISION
+        )
+        assert manager.check_setup() is True
+
+    def test_successful_download_missing_tokenizer_fails_closed(self, manager):
+        metadata_dir = self._metadata_dir(manager)
+
+        def incomplete_download(_command):
+            (metadata_dir / "config.json").write_text("{}")
+            (metadata_dir / "tokenizer_config.json").write_text("{}")
+            return MagicMock(returncode=0)
+
+        with patch("subprocess.run", side_effect=incomplete_download):
+            with pytest.raises(ValueError, match="tokenizer.json"):
+                manager.setup_weights_huggingface()
+
+        assert not (metadata_dir / ".quetzal-hf-revision").exists()
+
+    def test_access_check_resolves_the_exact_catalogue_revision(self, manager):
+        requested_urls = []
+
+        def request(url, method="GET", headers=None):
+            requested_urls.append((url, method, headers))
+            if "whoami-v2" in url:
+                return b'{"name":"test"}', 200, {}
+            if "/api/models/" in url:
+                return b'{"siblings":[{"rfilename":"config.json"}]}', 200, {}
+            return b"", 200, {}
+
+        with patch("workflows.setup_host.http_request", side_effect=request):
+            assert manager.check_hf_access("hf_test_token") is True
+
+        assert any(
+            f"/revision/{QUETZAL_HF_REVISION}" in url
+            for url, _method, _headers in requested_urls
+        )
+        assert any(
+            f"/resolve/{QUETZAL_HF_REVISION}/config.json" in url
+            for url, _method, _headers in requested_urls
+        )
+
+    def test_preseeded_metadata_requires_exact_revision_receipt(
+        self, quetzal_model_spec, temp_dir
+    ):
+        metadata_dir = temp_dir / "metadata"
+        metadata_dir.mkdir()
+        for name in ("config.json", "tokenizer_config.json", "tokenizer.json"):
+            (metadata_dir / name).write_text("{}")
+        (metadata_dir / ".quetzal-hf-revision").write_text(f"{'b' * 40}\n")
+        manager = HostSetupManager(
+            model_spec=quetzal_model_spec,
+            host_weights_dir=str(metadata_dir),
+        )
+
+        with pytest.raises(ValueError, match="revision mismatch"):
+            manager.check_setup()
+
+    def test_preseeded_metadata_with_exact_revision_is_admitted(
+        self, quetzal_model_spec, temp_dir
+    ):
+        metadata_dir = temp_dir / "metadata"
+        metadata_dir.mkdir()
+        for name in ("config.json", "tokenizer_config.json", "tokenizer.json"):
+            (metadata_dir / name).write_text("{}")
+        (metadata_dir / ".quetzal-hf-revision").write_text(f"{QUETZAL_HF_REVISION}\n")
+        manager = HostSetupManager(
+            model_spec=quetzal_model_spec,
+            host_weights_dir=str(metadata_dir),
+        )
+
+        assert manager.check_setup() is True
+        with patch("subprocess.run") as mock_run:
+            manager.setup_weights_huggingface()
+        mock_run.assert_not_called()
 
 
 CUSTOM_LABEL_HF = "myorg/llama-3.1-8b-finetune"
