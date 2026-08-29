@@ -340,9 +340,7 @@ def test_qwen_quetzal_dev_spec_binds_immutable_b534_22fb_successor(monkeypatch):
     specs = _dev_llm_spec_map()
     monkeypatch.setattr(model_spec_module, "MODEL_SPECS", specs)
     monkeypatch.setattr(model_spec_module, "_MODEL_SPECS_ENV", "dev")
-    quetzal, _, _ = get_runtime_model_spec(
-        "Qwen3.6-27B", "p300x2", impl="quetzal"
-    )
+    quetzal, _, _ = get_runtime_model_spec("Qwen3.6-27B", "p300x2", impl="quetzal")
     env = quetzal.env_vars
 
     assert env["QUETZAL_BUNDLE_MANIFEST_SHA256"] == (

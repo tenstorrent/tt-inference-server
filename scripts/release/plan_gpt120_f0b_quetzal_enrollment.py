@@ -35,7 +35,7 @@ AUXILIARY_NAME = "openai_gpt-oss-120b-streamed-cache"
 CONTAINER_PACKAGE_PARENT = "/home/container_app_user/quetzal/packages"
 CONTAINER_AUXILIARY_PARENT = "/home/container_app_user/quetzal/auxiliary"
 DESCRIPTOR_CONTAINER_PATH = (
-    "/opt/quetzal/mesh_graph_descriptors/" "p150_x4_2ch_mesh_graph_descriptor.textproto"
+    "/opt/quetzal/mesh_graph_descriptors/p150_x4_2ch_mesh_graph_descriptor.textproto"
 )
 AUXILIARY_TREE_SHA256 = (
     "2b2e528a75cae51a53db4a3e309f075553fe5f5f7fec7d2a29480f6572f2e416"
