@@ -25,6 +25,63 @@ _STANDARD_EVAL_VENVS = frozenset(
     }
 )
 
+# Aliases accepted by --agentic-benchmark.  Keep the selector in this
+# configuration module so preflight admission and the runtime agentic driver
+# cannot disagree about which tasks a command selected.
+_AGENTIC_BENCHMARK_PREFIX_ALIASES = {
+    "tau3": "tau3_bench_",
+    "swebench": "swe_bench_",
+}
+_AGENTIC_BENCHMARK_EXACT_ALIASES = {
+    "tb2.0": "terminal_bench_2",
+    "tb2.1": "terminal_bench_2_1",
+}
+
+
+def parse_agentic_benchmark(value: str) -> tuple[list[str], set[str]]:
+    """Parse --agentic-benchmark into task-name prefix and exact matchers."""
+    prefixes: list[str] = []
+    exacts: set[str] = set()
+    for token in (part.strip().lower() for part in value.split(",")):
+        if not token or token == "all":
+            continue
+        if token in _AGENTIC_BENCHMARK_PREFIX_ALIASES:
+            prefixes.append(_AGENTIC_BENCHMARK_PREFIX_ALIASES[token])
+        elif token in _AGENTIC_BENCHMARK_EXACT_ALIASES:
+            exacts.add(_AGENTIC_BENCHMARK_EXACT_ALIASES[token])
+        else:
+            exacts.add(token)
+    return prefixes, exacts
+
+
+def filter_agentic_tasks_by_benchmark(tasks: list, selection: str) -> list:
+    """Return exactly the configured agentic tasks selected by the CLI."""
+    prefixes, exacts = parse_agentic_benchmark(selection)
+    if not prefixes and not exacts:
+        return tasks
+    selected = [
+        task
+        for task in tasks
+        if task.task_name in exacts
+        or any(task.task_name.startswith(prefix) for prefix in prefixes)
+    ]
+    if not selected:
+        available = [task.task_name for task in tasks]
+        raise RuntimeError(
+            f"--agentic-benchmark {selection!r} matched no EVALS_AGENTIC tasks. "
+            f"Available for this model: {available}. Aliases: "
+            f"{sorted(_AGENTIC_BENCHMARK_PREFIX_ALIASES)} + "
+            f"{sorted(_AGENTIC_BENCHMARK_EXACT_ALIASES)}."
+        )
+    logger.info(
+        "--agentic-benchmark %r selected %d of %d agentic task(s): %s",
+        selection,
+        len(selected),
+        len(tasks),
+        [task.task_name for task in selected],
+    )
+    return selected
+
 
 def _select_tasks(tasks: list, runtime_config) -> list:
     """Apply --eval-samples / smoke-test task selection (real copy of
@@ -96,4 +153,8 @@ def get_llm_eval_tasks(model_spec, runtime_config=None) -> List:
     return _select_tasks(standard, runtime_config)
 
 
-__all__ = ["get_llm_eval_tasks"]
+__all__ = [
+    "filter_agentic_tasks_by_benchmark",
+    "get_llm_eval_tasks",
+    "parse_agentic_benchmark",
+]

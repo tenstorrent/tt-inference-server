@@ -19,6 +19,9 @@ from llm_module import (
     ServerConnection,
     make_agentic_driver,
 )
+from llm_module.eval_configs import (
+    filter_agentic_tasks_by_benchmark as _filter_agentic_tasks_by_benchmark,
+)
 from report_module.schema import Block
 from utils.auth_helpers import setup_tests_auth
 from workflows.workflow_types import WorkflowVenvType
@@ -60,69 +63,6 @@ def _external_launch_contract(ctx: MediaContext) -> dict | None:
         if not isinstance(contract.get(field), str) or not contract[field]:
             raise RuntimeError(f"external agentic contract needs non-empty {field}")
     return contract
-
-
-# Aliases accepted by --agentic-benchmark, mapped to the EVALS_AGENTIC task
-# names they select. ``_PREFIX_ALIASES`` match by task_name prefix (a family of
-# tasks, e.g. every tau3_bench_* variant); ``_EXACT_ALIASES`` match one task
-# exactly (tb2.0 must not also pick up terminal_bench_2_1).
-_AGENTIC_BENCHMARK_PREFIX_ALIASES = {
-    "tau3": "tau3_bench_",
-    "swebench": "swe_bench_",
-}
-_AGENTIC_BENCHMARK_EXACT_ALIASES = {
-    "tb2.0": "terminal_bench_2",
-    "tb2.1": "terminal_bench_2_1",
-}
-
-
-def _parse_agentic_benchmark(value: str) -> tuple:
-    """Parse a comma-separated --agentic-benchmark value into (prefixes, exacts).
-
-    Recognized aliases map to task-name prefixes/exact names; anything else is
-    treated as a raw task name matched exactly. Returns empty matchers for
-    "all"/blank so callers can skip filtering.
-    """
-    prefixes: list[str] = []
-    exacts: set = set()
-    for token in (t.strip().lower() for t in value.split(",")):
-        if not token or token == "all":
-            continue
-        if token in _AGENTIC_BENCHMARK_PREFIX_ALIASES:
-            prefixes.append(_AGENTIC_BENCHMARK_PREFIX_ALIASES[token])
-        elif token in _AGENTIC_BENCHMARK_EXACT_ALIASES:
-            exacts.add(_AGENTIC_BENCHMARK_EXACT_ALIASES[token])
-        else:
-            exacts.add(token)
-    return prefixes, exacts
-
-
-def _filter_agentic_tasks_by_benchmark(agentic: list, selection: str) -> list:
-    """Keep only the EVALS_AGENTIC tasks selected by --agentic-benchmark."""
-    prefixes, exacts = _parse_agentic_benchmark(selection)
-    if not prefixes and not exacts:
-        return agentic
-    selected = [
-        t
-        for t in agentic
-        if t.task_name in exacts or any(t.task_name.startswith(p) for p in prefixes)
-    ]
-    if not selected:
-        available = [t.task_name for t in agentic]
-        raise RuntimeError(
-            f"--agentic-benchmark {selection!r} matched no EVALS_AGENTIC tasks. "
-            f"Available for this model: {available}. Aliases: "
-            f"{sorted(_AGENTIC_BENCHMARK_PREFIX_ALIASES)} + "
-            f"{sorted(_AGENTIC_BENCHMARK_EXACT_ALIASES)}."
-        )
-    logger.info(
-        "--agentic-benchmark %r selected %d of %d agentic task(s): %s",
-        selection,
-        len(selected),
-        len(agentic),
-        [t.task_name for t in selected],
-    )
-    return selected
 
 
 def _select_agentic_tasks(ctx: MediaContext) -> list:

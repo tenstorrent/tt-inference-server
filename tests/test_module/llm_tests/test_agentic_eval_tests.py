@@ -15,6 +15,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from llm_module import DriverContext, ServerConnection
+from llm_module.eval_configs import (
+    parse_agentic_benchmark as _parse_agentic_benchmark,
+)
 from llm_module.drivers.agentic import (
     SWEbenchAgenticDriver,
     TerminalBenchAgenticDriver,
@@ -37,7 +40,6 @@ from llm_module.parsers.agentic import (
 )
 from test_module.llm_tests.agentic_eval_tests import (
     _filter_agentic_tasks_by_benchmark,
-    _parse_agentic_benchmark,
     _select_agentic_tasks,
     _server_connection as bridge_server_connection,
 )

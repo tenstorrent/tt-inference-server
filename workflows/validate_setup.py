@@ -2,13 +2,14 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+import json
 import logging
 import os
 import stat
 from pathlib import Path
 
+from llm_module.eval_configs import filter_agentic_tasks_by_benchmark
 from reference_config.benchmarking.benchmark_config import get_benchmark_config
-from workflows.workflow_dispatch import can_dispatch_to_engine
 from reference_config.evals.eval_config import EVAL_CONFIGS
 from workflows.model_spec import MODEL_SPECS
 from workflows.utils import (
@@ -22,6 +23,7 @@ from workflows.utils import (
     resolve_hf_snapshot_dir,
     run_command,
 )
+from workflows.workflow_dispatch import can_dispatch_to_engine
 from workflows.workflow_types import (
     DeviceTypes,
     InferenceEngine,
@@ -31,6 +33,168 @@ from workflows.workflow_types import (
 from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger("run_log")
+
+
+def _agentic_impl_id(model_spec) -> str:
+    impl = getattr(model_spec, "impl", None)
+    return str(getattr(impl, "impl_id", impl) or "unknown")
+
+
+def _external_agentic_task_name(model_spec, runtime_config) -> str | None:
+    """Return the task bound by an external launch contract, if configured.
+
+    The full cryptographic/live identity check remains in the agentic runner.
+    This small preflight read exists only to make capability admission select
+    the same one task before host setup or a device-backed server is started.
+    """
+    contract_path = getattr(runtime_config, "external_agentic_contract", None)
+    if not contract_path:
+        return None
+    try:
+        document = json.loads(Path(contract_path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(
+            f"cannot read external agentic contract {contract_path}: {exc}"
+        ) from exc
+    contract = document.get("contract") if isinstance(document, dict) else None
+    if not isinstance(contract, dict):
+        raise RuntimeError("external agentic contract has no contract object")
+    expected_repo = model_spec.hf_model_repo
+    if contract.get("hf_model_repo") != expected_repo:
+        raise RuntimeError(
+            "external agentic contract model differs from runtime model: "
+            f"expected {expected_repo!r}, got {contract.get('hf_model_repo')!r}"
+        )
+    task_name = contract.get("task")
+    if not isinstance(task_name, str) or not task_name:
+        raise RuntimeError("external agentic contract needs non-empty task")
+    return task_name
+
+
+def _selected_agentic_tasks(model_spec, runtime_config) -> list:
+    eval_config = EVAL_CONFIGS.get(model_spec.model_name)
+    if eval_config is None:
+        return []
+    tasks = [
+        task
+        for task in getattr(eval_config, "tasks", [])
+        if task.workflow_venv_type == WorkflowVenvType.EVALS_AGENTIC
+    ]
+    selection = getattr(runtime_config, "agentic_benchmark", None)
+    if isinstance(selection, str) and selection.strip():
+        tasks = filter_agentic_tasks_by_benchmark(tasks, selection)
+
+    exact_task = _external_agentic_task_name(model_spec, runtime_config)
+    if exact_task is None:
+        return tasks
+    selected = [task for task in tasks if task.task_name == exact_task]
+    if len(selected) != 1:
+        raise RuntimeError(
+            "external agentic contract must select exactly one configured "
+            f"agentic task {exact_task!r}; selected "
+            f"{[task.task_name for task in selected]!r}"
+        )
+    return selected
+
+
+def _positive_token_limit(value, *, field: str, task_name: str) -> int:
+    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+        raise ValueError(
+            "Agentic capability admission failed: "
+            f"task={task_name!r} required_context=undeclared; "
+            f"{field} must be a positive integer, got {value!r}"
+        )
+    return value
+
+
+def _agentic_context_requirement(task) -> tuple[int, int, int]:
+    """Return (required, max input, max output) from the harness contract."""
+    if task.agentic_eval_config is not None:
+        agent_kwargs = task.agentic_eval_config.agent_kwargs
+        model_info = (
+            agent_kwargs.get("model_info") if isinstance(agent_kwargs, dict) else None
+        )
+        if not isinstance(model_info, dict):
+            raise ValueError(
+                "Agentic capability admission failed: "
+                f"task={task.task_name!r} required_context=undeclared; "
+                "agentic_eval_config.agent_kwargs.model_info must be an object "
+                "declaring max_input_tokens and max_output_tokens"
+            )
+        max_input = model_info.get("max_input_tokens")
+        max_output = model_info.get("max_output_tokens")
+        source = "agentic_eval_config.agent_kwargs.model_info"
+    elif task.swebench_eval_config is not None:
+        max_input = task.swebench_eval_config.max_input_tokens
+        max_output = task.swebench_eval_config.max_output_tokens
+        source = "swebench_eval_config"
+    else:
+        raise ValueError(
+            "Agentic capability admission failed: "
+            f"task={task.task_name!r} required_context=undeclared; "
+            "selected EVALS_AGENTIC task has no agentic or SWE-bench config"
+        )
+
+    max_input = _positive_token_limit(
+        max_input,
+        field=f"{source}.max_input_tokens",
+        task_name=task.task_name,
+    )
+    max_output = _positive_token_limit(
+        max_output,
+        field=f"{source}.max_output_tokens",
+        task_name=task.task_name,
+    )
+    return max_input + max_output, max_input, max_output
+
+
+def validate_agentic_task_capabilities(model_spec, runtime_config) -> None:
+    """Fail before host/server/device setup if an agentic task cannot fit.
+
+    The task's input and output budgets are an end-to-end request envelope, so
+    their sum must fit the exact selected DeviceModelSpec context.  Harness
+    concurrency is deliberately not compared with max_concurrency: clients may
+    queue requests and that policy is independent from per-request context.
+    """
+    workflow_type = WorkflowType.from_string(runtime_config.workflow)
+    if workflow_type not in (WorkflowType.AGENTIC, WorkflowType.RELEASE):
+        return
+
+    tasks = _selected_agentic_tasks(model_spec, runtime_config)
+    if not tasks:
+        return
+
+    device_spec = getattr(model_spec, "device_model_spec", None)
+    available = getattr(device_spec, "max_context", None)
+    if not isinstance(available, int) or isinstance(available, bool) or available <= 0:
+        raise ValueError(
+            "Agentic capability admission failed: "
+            f"model={model_spec.model_name!r} "
+            f"implementation={_agentic_impl_id(model_spec)!r} "
+            "available_context=undeclared; selected DeviceModelSpec.max_context "
+            f"must be a positive integer, got {available!r}"
+        )
+
+    for task in tasks:
+        try:
+            required, max_input, max_output = _agentic_context_requirement(task)
+        except ValueError as exc:
+            raise ValueError(
+                f"model={model_spec.model_name!r} "
+                f"implementation={_agentic_impl_id(model_spec)!r} "
+                f"device={getattr(device_spec, 'device', 'unknown')!r} "
+                f"available_context={available}; {exc}"
+            ) from exc
+        if required > available:
+            raise ValueError(
+                "Agentic capability admission failed before host/server/device "
+                f"setup: model={model_spec.model_name!r} "
+                f"implementation={_agentic_impl_id(model_spec)!r} "
+                f"device={getattr(device_spec, 'device', 'unknown')!r} "
+                f"task={task.task_name!r} available_context={available} "
+                f"required_context={required} "
+                f"(max_input_tokens={max_input} + max_output_tokens={max_output})"
+            )
 
 
 def _uses_external_runtime_model_spec(runtime_config) -> bool:
@@ -107,6 +271,10 @@ def validate_runtime_args(model_spec, runtime_config):
         raise ValueError(
             f"model:={runtime_config.model} does not support device:={runtime_config.device}"
         )
+
+    # The exact ModelSpec and task selection are now known, while no host
+    # storage, server process, model payload, or device has been touched yet.
+    validate_agentic_task_capabilities(model_spec, runtime_config)
 
     # The image-version contract only matters when run.py actually launches the
     # vLLM docker image. Client-side / external-server runs (no --docker-server)

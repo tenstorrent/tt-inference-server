@@ -6,6 +6,7 @@
 
 import os
 from argparse import Namespace
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -14,16 +15,206 @@ from reference_config.agentic_traces.agentic_traces_config import (
     AGENTIC_TRACES_CONFIGS,
     TraceSource,
 )
+from reference_config.evals.eval_config import (
+    EvalConfig,
+    EvalTask,
+    SWEbenchEvalConfig,
+    TerminalBenchEvalConfig,
+)
 from workflows.runtime_config import RuntimeConfig
 from workflows.utils import check_path_permissions_for_uid
 from workflows.validate_setup import (
     _check_image_version_supported,
     _try_fix_path_permissions_for_uid,  # noqa: F401
+    validate_agentic_task_capabilities,
     validate_bind_mount_permissions,
     validate_local_setup,
     validate_local_server_paths,
     validate_runtime_args,
+    validate_setup,
 )
+from workflows.workflow_types import WorkflowVenvType
+
+
+class TestAgenticTaskCapabilityAdmission:
+    @staticmethod
+    def _runtime(workflow="release", **overrides):
+        values = {
+            "workflow": workflow,
+            "agentic_benchmark": None,
+            "external_agentic_contract": None,
+        }
+        values.update(overrides)
+        return SimpleNamespace(**values)
+
+    @staticmethod
+    def _spec(model_name, max_context, *, impl="quetzal"):
+        return SimpleNamespace(
+            model_id=f"id_{impl}_{model_name}_p300x2",
+            model_name=model_name,
+            hf_model_repo=f"test/{model_name}",
+            impl=SimpleNamespace(impl_id=impl),
+            device_model_spec=SimpleNamespace(
+                device="P300X2",
+                max_context=max_context,
+                # Deliberately smaller than the harness concurrency. The
+                # admission contract is per-request context, not client queueing.
+                max_concurrency=1,
+            ),
+        )
+
+    @staticmethod
+    def _terminal_task(*, max_input=128, max_output=64, model_info=True):
+        agent_kwargs = {}
+        if model_info:
+            agent_kwargs["model_info"] = {
+                "max_input_tokens": max_input,
+                "max_output_tokens": max_output,
+            }
+        return EvalTask(
+            task_name="terminal_bench_2",
+            workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+            agentic_eval_config=TerminalBenchEvalConfig(
+                dataset="terminal-bench/terminal-bench-2",
+                agent="terminus-2",
+                n_concurrent_trials=99,
+                agent_kwargs=agent_kwargs,
+            ),
+        )
+
+    def test_exact_qwen_quetzal_release_rejects_s8192(self):
+        # The generated row lives in the dev catalog while unit tests load the
+        # prod catalog by default. Bind its exact advertised C1/S8192 profile
+        # to the authoritative shared Qwen eval config.
+        spec = self._spec("Qwen3.6-27B", 8192)
+
+        with pytest.raises(ValueError) as exc:
+            validate_agentic_task_capabilities(spec, self._runtime())
+
+        message = str(exc.value)
+        assert "before host/server/device setup" in message
+        assert "model='Qwen3.6-27B'" in message
+        assert "implementation='quetzal'" in message
+        assert "task='terminal_bench_2'" in message
+        assert "available_context=8192" in message
+        assert "required_context=344064" in message
+        assert "max_input_tokens=262144 + max_output_tokens=81920" in message
+
+    def test_adequate_context_passes_without_concurrency_gate(self):
+        task = self._terminal_task(max_input=128, max_output=64)
+        spec = self._spec("adequate-model", 192, impl="native")
+        with patch.dict(
+            "workflows.validate_setup.EVAL_CONFIGS",
+            {spec.model_name: EvalConfig(spec.hf_model_repo, [task])},
+        ):
+            validate_agentic_task_capabilities(spec, self._runtime())
+
+    def test_swebench_uses_explicit_input_plus_output_budget(self):
+        task = EvalTask(
+            task_name="swe_bench_verified",
+            workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+            swebench_eval_config=SWEbenchEvalConfig(
+                dataset_name="SWE-bench/SWE-bench_Verified",
+                max_input_tokens=256,
+                max_output_tokens=128,
+                n_concurrent_trials=50,
+            ),
+        )
+        spec = self._spec("swe-model", 383, impl="native")
+        with patch.dict(
+            "workflows.validate_setup.EVAL_CONFIGS",
+            {spec.model_name: EvalConfig(spec.hf_model_repo, [task])},
+        ), pytest.raises(ValueError) as exc:
+            validate_agentic_task_capabilities(spec, self._runtime())
+
+        message = str(exc.value)
+        assert "task='swe_bench_verified'" in message
+        assert "available_context=383" in message
+        assert "required_context=384" in message
+        assert "max_input_tokens=256 + max_output_tokens=128" in message
+
+    def test_standalone_agentic_validates_only_cli_selected_task(self):
+        malformed_unselected = self._terminal_task(model_info=False)
+        selected = EvalTask(
+            task_name="swe_bench_verified",
+            workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+            swebench_eval_config=SWEbenchEvalConfig(
+                dataset_name="SWE-bench/SWE-bench_Verified",
+                max_input_tokens=256,
+                max_output_tokens=128,
+            ),
+        )
+        spec = self._spec("selected-model", 384, impl="native")
+        with patch.dict(
+            "workflows.validate_setup.EVAL_CONFIGS",
+            {
+                spec.model_name: EvalConfig(
+                    spec.hf_model_repo, [malformed_unselected, selected]
+                )
+            },
+        ):
+            validate_agentic_task_capabilities(
+                spec,
+                self._runtime(workflow="agentic", agentic_benchmark="swebench"),
+            )
+
+    @pytest.mark.parametrize(
+        "max_input,max_output,model_info,expected",
+        [
+            (128, 64, False, "model_info must be an object"),
+            (128, None, True, "max_output_tokens must be a positive integer"),
+            (True, 64, True, "max_input_tokens must be a positive integer"),
+        ],
+    )
+    def test_missing_or_malformed_task_budget_fails_closed(
+        self, max_input, max_output, model_info, expected
+    ):
+        task = self._terminal_task(
+            max_input=max_input,
+            max_output=max_output,
+            model_info=model_info,
+        )
+        spec = self._spec("malformed-model", 4096)
+        with patch.dict(
+            "workflows.validate_setup.EVAL_CONFIGS",
+            {spec.model_name: EvalConfig(spec.hf_model_repo, [task])},
+        ), pytest.raises(ValueError) as exc:
+            validate_agentic_task_capabilities(spec, self._runtime())
+
+        message = str(exc.value)
+        assert "model='malformed-model'" in message
+        assert "implementation='quetzal'" in message
+        assert "available_context=4096" in message
+        assert "required_context=undeclared" in message
+        assert expected in message
+
+    def test_rejection_precedes_every_later_setup_stage(self):
+        spec = self._spec("Qwen3.6-27B", 8192)
+        runtime = RuntimeConfig(
+            model="Qwen3.6-27B",
+            workflow="release",
+            device="p300x2",
+            impl="quetzal",
+            docker_server=True,
+        )
+        later_stages = (
+            "validate_custom_weights",
+            "validate_local_setup",
+            "validate_bind_mount_permissions",
+            "validate_local_server_paths",
+        )
+        mocks = [patch(f"workflows.validate_setup.{name}") for name in later_stages]
+        started = [mock.start() for mock in mocks]
+        try:
+            with patch.dict(
+                "workflows.validate_setup.MODEL_SPECS", {spec.model_id: spec}
+            ), pytest.raises(ValueError, match="required_context=344064"):
+                validate_setup(spec, runtime, "/unused/runtime-model-spec.json")
+        finally:
+            for mock in reversed(mocks):
+                mock.stop()
+
+        assert all(not mocked.called for mocked in started)
 
 
 class TestCheckPathPermissionsForUid:
