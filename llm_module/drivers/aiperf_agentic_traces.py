@@ -486,7 +486,24 @@ def parse_aiperf_output(
         if value:
             metrics[key] = value
 
-    metrics.update(_parse_prefix_cache_metrics(artifact_dir, metrics_urls))
+    cache_metrics = _parse_prefix_cache_metrics(artifact_dir, metrics_urls)
+    if "measured_prefix_cache_hit_pct" not in cache_metrics and not any(
+        u for u in metrics_urls if u
+    ):
+        # No --agentic-traces-metrics-url, and the default scrape of the load
+        # target did not yield engine counters (a Dynamo frontend does not
+        # export them). Use the API usage block's token-weighted cache-read
+        # share rather than dropping the column.
+        usage_cache = _usage_prefix_cache_metrics(summary)
+        if usage_cache:
+            logger.info(
+                "No engine prefix-cache counters; using "
+                "overall_usage_prompt_cache_read_pct (%.2f%%) from the API "
+                "usage block.",
+                usage_cache["measured_prefix_cache_hit_pct"],
+            )
+            cache_metrics = usage_cache
+    metrics.update(cache_metrics)
 
     return metrics
 
@@ -514,15 +531,17 @@ def _parse_prefix_cache_metrics(
     these counters would otherwise be summed with its workers and double-count
     every prompt.
 
-    Returns ``{}`` when the counters are absent, so the report drops the column
-    rather than publishing a misleading 0%.
+    Returns ``{}`` when the counters are absent. The caller then falls back to
+    the API usage cache-read percentage when ``--agentic-traces-metrics-url``
+    was not given, and otherwise omits the column rather than publishing a
+    misleading 0%.
     """
     candidates: List[Path] = [artifact_dir / "server_metrics_export.json"]
     candidates.extend(sorted(artifact_dir.rglob("*server_metrics_export.json")))
     export_path = next((p for p in candidates if p.exists()), None)
     if export_path is None:
         logger.debug(
-            "No server_metrics_export.json under %s; measured prefix-cache hit "
+            "No server_metrics_export.json under %s; engine prefix-cache hit "
             "rate unavailable.",
             artifact_dir,
         )
@@ -589,6 +608,7 @@ def _parse_prefix_cache_metrics(
     def _with_endpoints(metrics: Dict[str, Any]) -> Dict[str, Any]:
         # The endpoints the rate was actually computed from, which is narrower
         # than everything AIPerf reached whenever explicit URLs scoped the sum.
+        metrics["prefix_cache_hit_source"] = "engine_counters"
         counted = (
             sorted(wanted)
             if wanted
@@ -621,15 +641,23 @@ def _parse_prefix_cache_metrics(
     hits = _counter_total(PREFIX_CACHE_HITS_METRIC_ALIASES)
     queries = _counter_total(PREFIX_CACHE_QUERIES_METRIC_ALIASES)
     if hits is None or queries is None:
-        logger.warning(
-            "Prefix-cache counters (tt_prefix_cache_* / vllm:prefix_cache_*) not "
-            "found in %s%s; the measured hit rate is omitted. Reachable endpoints "
-            "were %s -- point --agentic-traces-metrics-url at a worker that "
-            "exports them.",
-            export_path,
-            f" for the requested endpoint(s) {sorted(wanted)}" if wanted else "",
-            (export.get("summary") or {}).get("endpoints_successful") or "none",
-        )
+        if wanted:
+            logger.warning(
+                "Prefix-cache counters (tt_prefix_cache_* / vllm:prefix_cache_*) "
+                "not found in %s for the requested endpoint(s) %s; the measured "
+                "hit rate is omitted. Reachable endpoints were %s.",
+                export_path,
+                sorted(wanted),
+                (export.get("summary") or {}).get("endpoints_successful") or "none",
+            )
+        else:
+            logger.debug(
+                "Prefix-cache counters (tt_prefix_cache_* / vllm:prefix_cache_*) "
+                "not found in %s; will fall back to API usage cache-read "
+                "percentage if present. Reachable endpoints were %s.",
+                export_path,
+                (export.get("summary") or {}).get("endpoints_successful") or "none",
+            )
         return {}
     if queries <= 0:
         return {}
@@ -644,6 +672,38 @@ def _parse_prefix_cache_metrics(
             "prefix_cache_queries_measured": queries,
         }
     )
+
+
+def _usage_prefix_cache_metrics(summary: Mapping[str, Any]) -> Dict[str, Any]:
+    """Token-weighted cache-hit share from the API ``usage`` block.
+
+    InferenceX's ``overall_usage_prompt_cache_read_pct`` is
+    ``sum(cached_tokens) / sum(prompt_tokens) * 100``, where ``cached_tokens``
+    is ``usage.prompt_tokens_details.cached_tokens`` on an OpenAI-shaped
+    server (and the equivalent vendor field otherwise). It is the measured
+    companion to ``theoretical_prefix_cache_hit_pct`` when the engine's own
+    counters were not scraped.
+
+    Returns ``{}`` when the tag is absent, so the report still drops the
+    column rather than publishing a 0% that reads like a broken cache.
+    """
+    block = summary.get("overall_usage_prompt_cache_read_pct")
+    if not isinstance(block, Mapping):
+        return {}
+    pct = block.get("avg")
+    if not isinstance(pct, (int, float)):
+        return {}
+    out: Dict[str, Any] = {
+        "measured_prefix_cache_hit_pct": float(pct),
+        "prefix_cache_hit_source": "api_usage",
+    }
+    read = summary.get("total_usage_prompt_cache_read_tokens")
+    prompt = summary.get("total_usage_prompt_tokens")
+    if isinstance(read, Mapping) and isinstance(read.get("avg"), (int, float)):
+        out["prefix_cache_hit_tokens_measured"] = float(read["avg"])
+    if isinstance(prompt, Mapping) and isinstance(prompt.get("avg"), (int, float)):
+        out["prefix_cache_prompt_tokens_measured"] = float(prompt["avg"])
+    return out
 
 
 def _summarize_errors(error_summary: List[Any]) -> List[Dict[str, Any]]:
@@ -791,9 +851,16 @@ def _log_run_summary(run: AgenticTracesRun, metrics: Mapping[str, Any]) -> None:
         float(metrics.get("total_token_throughput", 0) or 0),
     )
     measured_cache = metrics.get("measured_prefix_cache_hit_pct")
+    measured_s = (
+        f"{float(measured_cache):.1f}%" if measured_cache is not None else "n/a"
+    )
+    if measured_cache is not None and metrics.get("prefix_cache_hit_source") == (
+        "api_usage"
+    ):
+        measured_s += " (api usage)"
     logger.info(
         "[agentic-traces]   prefix-cache hit measured/theoretical = %s/%.1f%%",
-        f"{float(measured_cache):.1f}%" if measured_cache is not None else "n/a",
+        measured_s,
         float(metrics.get("theoretical_prefix_cache_hit_pct", 0) or 0),
     )
 

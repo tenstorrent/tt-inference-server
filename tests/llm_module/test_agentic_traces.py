@@ -770,6 +770,7 @@ class TestPrefixCacheMeasurement:
         )
         assert metrics["prefix_cache_hits_measured"] == 4544928.0
         assert metrics["prefix_cache_queries_measured"] == 4771106.0
+        assert metrics["prefix_cache_hit_source"] == "engine_counters"
 
     def test_warmup_traffic_is_excluded(self, tmp_path):
         """``metrics`` is the profiling phase; ``warmup_metrics`` must not count."""
@@ -805,10 +806,50 @@ class TestPrefixCacheMeasurement:
         )
 
     def test_absent_scrape_omits_the_metric_rather_than_reporting_zero(self, tmp_path):
+        """No engine scrape and no usage tag: drop the column, not a fake 0%."""
         metrics = parse_aiperf_output(_write_summary(tmp_path))
         assert "measured_prefix_cache_hit_pct" not in metrics
         # The theoretical bound comes from the summary and stays regardless.
         assert metrics["theoretical_prefix_cache_hit_pct"] == 95.74
+
+    def test_absent_scrape_falls_back_to_api_usage_cache_read_pct(self, tmp_path):
+        """No --agentic-traces-metrics-url and no engine scrape: use the
+        token-weighted share the API usage block reported as cache hits."""
+        metrics = parse_aiperf_output(
+            _write_summary(
+                tmp_path,
+                overall_usage_prompt_cache_read_pct={
+                    "unit": "%",
+                    "avg": 84.58146959704499,
+                },
+                total_usage_prompt_cache_read_tokens={
+                    "unit": "tokens",
+                    "avg": 41858208.0,
+                },
+                total_usage_prompt_tokens={"unit": "tokens", "avg": 49488627.0},
+            )
+        )
+        assert metrics["measured_prefix_cache_hit_pct"] == pytest.approx(
+            84.5815, abs=1e-3
+        )
+        assert metrics["prefix_cache_hit_source"] == "api_usage"
+        assert metrics["prefix_cache_hit_tokens_measured"] == 41858208.0
+        assert metrics["prefix_cache_prompt_tokens_measured"] == 49488627.0
+
+    def test_engine_counters_win_over_api_usage(self, tmp_path):
+        """A worker scrape is the cache the GPU actually used; usage is a
+        fallback, not a blend."""
+        _write_server_metrics(tmp_path)
+        metrics = parse_aiperf_output(
+            _write_summary(
+                tmp_path,
+                overall_usage_prompt_cache_read_pct={"unit": "%", "avg": 50.0},
+            )
+        )
+        assert metrics["measured_prefix_cache_hit_pct"] == pytest.approx(
+            95.26, abs=1e-2
+        )
+        assert metrics["prefix_cache_hit_source"] == "engine_counters"
 
     def test_a_server_without_cache_counters_omits_the_metric(self, tmp_path):
         _write_server_metrics(
@@ -816,6 +857,21 @@ class TestPrefixCacheMeasurement:
         )
         metrics = parse_aiperf_output(_write_summary(tmp_path))
         assert "measured_prefix_cache_hit_pct" not in metrics
+
+    def test_a_frontend_scrape_without_counters_falls_back_to_usage(self, tmp_path):
+        """The default scrape of a Dynamo frontend yields no cache counters;
+        without --agentic-traces-metrics-url, use the API usage figure."""
+        _write_server_metrics(
+            tmp_path, metrics={"vllm:num_requests_running": {"series": []}}
+        )
+        metrics = parse_aiperf_output(
+            _write_summary(
+                tmp_path,
+                overall_usage_prompt_cache_read_pct={"unit": "%", "avg": 84.58},
+            )
+        )
+        assert metrics["measured_prefix_cache_hit_pct"] == pytest.approx(84.58)
+        assert metrics["prefix_cache_hit_source"] == "api_usage"
 
     def test_explicit_endpoints_exclude_the_load_target(self, tmp_path):
         """AIPerf keeps scraping the load target; a frontend that also exports
@@ -859,10 +915,15 @@ class TestPrefixCacheMeasurement:
         ]
 
     def test_unmatched_endpoint_omits_the_metric(self, tmp_path):
-        """A typo'd worker URL must not silently fall back to the load target."""
+        """A typo'd worker URL must not silently fall back to the load target
+        or to the API usage figure."""
         _write_server_metrics(tmp_path)
         metrics = parse_aiperf_output(
-            _write_summary(tmp_path), metrics_urls=("http://typo:9999/metrics",)
+            _write_summary(
+                tmp_path,
+                overall_usage_prompt_cache_read_pct={"unit": "%", "avg": 84.58},
+            ),
+            metrics_urls=("http://typo:9999/metrics",),
         )
         assert "measured_prefix_cache_hit_pct" not in metrics
 

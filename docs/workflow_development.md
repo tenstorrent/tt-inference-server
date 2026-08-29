@@ -677,21 +677,30 @@ needs no flag: AIPerf scrapes `<url>/metrics` by default and writes
 counter's in-window delta pre-aggregated into `stats.total` — which is also why
 the cache-priming warmup does not drag the number down. Hits and queries are
 summed across endpoints before dividing, keeping a multi-worker rate
-token-weighted. When the counters are absent the field is omitted and the report
-drops the column, rather than publishing a 0% that reads like a broken cache.
+token-weighted.
 
-That is the expected outcome when the load target does not expose the counters —
-a Dynamo frontend does not aggregate its workers'. Point the scrape at the
-worker(s) with `--agentic-traces-metrics-url` (repeatable; accepts a URL,
-`host:port`, or `host:port/metrics`), which forwards to AIPerf's
-`--server-metrics`. That flag is additive: AIPerf always scrapes the load target
-too, so it cannot switch the default off, and an endpoint that 404s just drops
-out of `endpoints_successful`. Because of that, the parser narrows the sum to the
+When those counters are absent and `--agentic-traces-metrics-url` was not given,
+the parser falls back to InferenceX's `overall_usage_prompt_cache_read_pct`: the
+token-weighted share of prompt tokens the API `usage` block reported as cache
+hits (`usage.prompt_tokens_details.cached_tokens` on an OpenAI-shaped server).
+That is the typical Dynamo-frontend case — the load target does not aggregate
+its workers' counters, so the usage figure is the measurement that actually
+landed. The payload tags `prefix_cache_hit_source` as `api_usage` versus
+`engine_counters` so the two are not silently mixed. If the usage tag is also
+absent the field is omitted and the report drops the column, rather than
+publishing a 0% that reads like a broken cache.
+
+To get the engine number instead, point the scrape at the worker(s) with
+`--agentic-traces-metrics-url` (repeatable; accepts a URL, `host:port`, or
+`host:port/metrics`), which forwards to AIPerf's `--server-metrics`. That flag
+is additive: AIPerf always scrapes the load target too, so it cannot switch the
+default off, and an endpoint that 404s just drops out of
+`endpoints_successful`. Because of that, the parser narrows the sum to the
 requested endpoints whenever the flag is used, matching on each series'
 `endpoint_url` — otherwise a frontend that also exports these counters would be
 summed with its workers and double-count every prompt. A typo'd URL therefore
-matches nothing and reports no hit rate, which is intended: a wrong number here
-is worse than a missing one.
+matches nothing and does **not** fall back to the usage figure, which is
+intended: a wrong number here is worse than a missing one.
 
 No acceptance criteria are wired: there is no agreed pass/fail threshold for
 trace replay yet, so a bespoke check would only ever report NA. Instead the

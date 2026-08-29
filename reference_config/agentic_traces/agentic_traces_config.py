@@ -400,6 +400,17 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
             ),
         ),
     ),
+    AgenticTracesConfig(
+        model_id="id_tt-transformers_gemma-4-31B-it_super_cluster",
+        inferencex_git_ref="ddeb02eb9c5c89f44e2e4950e741b499d0b8190a",
+        runs=(
+            AgenticTracesRunSpec(
+                trace_source=TraceSource.INFERENCEX_AGENTX,
+                public_dataset="semianalysis_cc_traces_weka_062126_256k",
+                concurrency=8,
+            ),
+        ),
+    ),
 ]
 
 AGENTIC_TRACES_CONFIGS: Dict[str, AgenticTracesConfig] = map_configs_by_attr(
