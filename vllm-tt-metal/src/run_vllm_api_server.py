@@ -889,6 +889,20 @@ def validate_quetzal_runtime(model_spec: dict) -> dict | None:
     quetzal_server = importlib.import_module("serving.quetzal_server")
     entries = quetzal_server.discover_models(str(root))
     required_context = model_spec.get("device_model_spec", {}).get("max_context")
+    required_prefill_value = os.getenv("QUETZAL_REQUIRED_PREFILL_BUCKETS", "")
+    required_prefill_buckets = None
+    if required_prefill_value:
+        if (
+            re.fullmatch(r"[1-9][0-9]*(?:,[1-9][0-9]*)*", required_prefill_value)
+            is None
+        ):
+            raise RuntimeError(
+                "QUETZAL_REQUIRED_PREFILL_BUCKETS must be a canonical "
+                "comma-separated list of positive integers"
+            )
+        required_prefill_buckets = {
+            int(value) for value in required_prefill_value.split(",")
+        }
     matching = []
     for entry in entries.values():
         bucket_lengths = {
@@ -896,18 +910,49 @@ def validate_quetzal_runtime(model_spec: dict) -> dict | None:
             for bucket in entry.get("prefill_buckets", [])
             if isinstance(bucket, dict)
         }
+        if required_prefill_buckets is None:
+            bucket_contract_matches = required_context in bucket_lengths
+            context_contract_matches = True
+        else:
+            bucket_contract_matches = bucket_lengths == required_prefill_buckets
+            context_contract_matches = False
+            artifact_paths = entry.get("artifact_paths")
+            decode_metadata = (
+                artifact_paths.get("decode_metadata")
+                if isinstance(artifact_paths, dict)
+                else None
+            )
+            if isinstance(decode_metadata, str):
+                metadata_path = Path(decode_metadata)
+                try:
+                    resolved_metadata = metadata_path.resolve(strict=True)
+                    if resolved_metadata.is_relative_to(root):
+                        metadata = json.loads(resolved_metadata.read_text())
+                        context_contract_matches = (
+                            metadata.get("context_len") == required_context
+                        )
+                except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                    context_contract_matches = False
         if (
             entry.get("model_id") == model_id
             and entry.get("backend") == QUETZAL_BACKEND
             and entry.get("batch_size") in (None, 1)
             and entry.get("target_mesh") in ("p150x4", "4-chip")
-            and required_context in bucket_lengths
+            and bucket_contract_matches
+            and context_contract_matches
         ):
             matching.append(entry)
     if not matching:
+        if required_prefill_buckets is not None:
+            requirement = (
+                f"decode context {required_context} and exact prefill buckets "
+                f"{sorted(required_prefill_buckets)}"
+            )
+        else:
+            requirement = f"catalog context/prefill bucket {required_context}"
         raise RuntimeError(
             "no qualified generated_quetzal p150x4/B1 artifact with the "
-            f"catalog context {required_context} was discovered for {model_id} "
+            f"{requirement} was discovered for {model_id} "
             f"under {root}; refusing native fallback"
         )
     logger.info(

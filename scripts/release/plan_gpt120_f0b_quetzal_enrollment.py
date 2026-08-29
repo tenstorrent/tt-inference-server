@@ -32,6 +32,11 @@ TT_METAL_PATCHSET = "22fb0bd2523b8a5c63fa20c3c8a1586dc9ead5150449d0eb02231fa8173
 RUNNER_LABEL = "qb2-p300x2-physical-2x2-ring-links2"
 DESCRIPTOR_SHA256 = "f4c9fb5acf307e1b320525007035ed9e75039f793e4350120365243682e37792"
 AUXILIARY_NAME = "openai_gpt-oss-120b-streamed-cache"
+CONTAINER_PACKAGE_PARENT = "/home/container_app_user/quetzal/packages"
+CONTAINER_AUXILIARY_PARENT = "/home/container_app_user/quetzal/auxiliary"
+DESCRIPTOR_CONTAINER_PATH = (
+    "/opt/quetzal/mesh_graph_descriptors/" "p150_x4_2ch_mesh_graph_descriptor.textproto"
+)
 AUXILIARY_TREE_SHA256 = (
     "2b2e528a75cae51a53db4a3e309f075553fe5f5f7fec7d2a29480f6572f2e416"
 )
@@ -103,20 +108,26 @@ def _sha256(data: dict[str, Any], path: str) -> str:
     return value
 
 
-def _immutable_root(data: dict[str, Any], path: str) -> str:
+def _immutable_host_root(data: dict[str, Any], path: str) -> str:
     value = _non_placeholder(data, path)
     pure = PurePosixPath(value)
     if not pure.is_absolute() or ".." in pure.parts:
         raise ContractError(f"{path}: expected a contained absolute path")
-    allowed = (
-        "/mnt/models/quetzal/immutable/",
-        "/home/container_app_user/cache_root/quetzal/immutable/",
-    )
-    if not any(value.startswith(prefix) for prefix in allowed):
+    if not value.startswith("/mnt/models/quetzal/immutable/"):
         raise ContractError(
             f"{path}: path is outside an administered immutable namespace"
         )
     return value.rstrip("/")
+
+
+def _container_package_root(package_id: str) -> str:
+    return f"{CONTAINER_PACKAGE_PARENT}/{package_id}"
+
+
+def _container_auxiliary_root(host_root: str) -> str:
+    return (
+        f"{CONTAINER_AUXILIARY_PARENT}/{AUXILIARY_NAME}/{PurePosixPath(host_root).name}"
+    )
 
 
 def _relative_path(data: dict[str, Any], name: str) -> str:
@@ -155,13 +166,24 @@ def validate_response(data: dict[str, Any]) -> None:
     for role, entry in (("generated_model_tree", core), ("streamed_cache", auxiliary)):
         if not isinstance(entry, dict):
             raise ContractError(f"publication.{role}: expected an object")
-        _immutable_root(data, f"publication.{role}.host_root")
-        _immutable_root(data, f"publication.{role}.container_root")
+        _immutable_host_root(data, f"publication.{role}.host_root")
         _sha256(data, f"publication.{role}.tree_sha256")
         _exact(data, f"publication.{role}.immutable_generation_id", generation)
         _exact(data, f"publication.{role}.administrator_owned", True)
         _exact(data, f"publication.{role}.read_only", True)
     _exact(data, "publication.streamed_cache.name", AUXILIARY_NAME)
+    _exact(
+        data,
+        "publication.generated_model_tree.container_root",
+        _container_package_root(package_id),
+    )
+    _exact(
+        data,
+        "publication.streamed_cache.container_root",
+        _container_auxiliary_root(
+            _immutable_host_root(data, "publication.streamed_cache.host_root")
+        ),
+    )
     _exact(data, "publication.streamed_cache.tree_sha256", AUXILIARY_TREE_SHA256)
     _exact(data, "publication.full_streaming_verification.status", "pass")
     _sha256(data, "publication.full_streaming_verification.receipt_sha256")
@@ -184,7 +206,7 @@ def validate_response(data: dict[str, Any]) -> None:
     _exact(data, "runtime.provider_policy", "generated_quetzal_only")
     _exact(data, "runtime.native_fallback_allowed", False)
     _exact(data, "runtime.plugin_entrypoint", "quetzal_model_registry")
-    _immutable_root(data, "runtime.descriptor_container_path")
+    _exact(data, "runtime.descriptor_container_path", DESCRIPTOR_CONTAINER_PATH)
     _exact(data, "runtime.descriptor_sha256", DESCRIPTOR_SHA256)
 
     _exact(data, "topology.runner_label", RUNNER_LABEL)
@@ -215,9 +237,9 @@ def render_contract(data: dict[str, Any]) -> dict[str, Any]:
     relative = artifacts["relative_paths"]
     package_id = publication["package_id"]
     host_root = publication["generated_model_tree"]["host_root"].rstrip("/")
-    container_root = publication["generated_model_tree"]["container_root"].rstrip("/")
+    container_root = _container_package_root(package_id)
     aux_host = publication["streamed_cache"]["host_root"].rstrip("/")
-    aux_container = publication["streamed_cache"]["container_root"].rstrip("/")
+    aux_container = _container_auxiliary_root(aux_host)
 
     env = {
         "ARCH_NAME": "blackhole",
@@ -239,6 +261,8 @@ def render_contract(data: dict[str, Any]) -> dict[str, Any]:
         "QUETZAL_AUXILIARY_ROOTS_JSON": json.dumps(
             {AUXILIARY_NAME: aux_container}, separators=(",", ":")
         ),
+        "QUETZAL_REQUIRED_AUXILIARY_NAMES": AUXILIARY_NAME,
+        "QUETZAL_REQUIRED_PREFILL_BUCKETS": "128,1024",
         "QZ_MMAP_WEIGHTS": "1",
         "TTQ_STREAM_WEIGHTS": "1",
         "HF_HUB_OFFLINE": "1",

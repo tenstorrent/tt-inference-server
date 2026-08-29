@@ -4,6 +4,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import argparse
+import copy
 import hashlib
 import importlib.util
 import json
@@ -797,7 +798,10 @@ def test_validate_quetzal_runtime_admits_only_generated_provider(
     for env_name, relative in artifact_env.items():
         path = root / relative
         path.parent.mkdir(parents=True, exist_ok=True)
-        payload = env_name.encode()
+        if env_name == "QUETZAL_DECODE_METADATA_JSON":
+            payload = json.dumps({"context_len": 8192}).encode()
+        else:
+            payload = env_name.encode()
         path.write_bytes(payload)
         role, name, nested = relative.split("/", 2)
         artifact_rows.setdefault((role, name), []).append(
@@ -853,6 +857,7 @@ def test_validate_quetzal_runtime_admits_only_generated_provider(
         "TT_METAL_HOME": str(metal_home),
         "VLLM_PLUGINS": "quetzal_model_registry,tt",
         "TT_VLLM_BUILTIN_MODELS": "0",
+        "QUETZAL_REQUIRED_PREFILL_BUCKETS": "128,1024",
         "QUETZAL_REQUIRED_SOURCE_REVISION": "b" * 40,
         "TT_QUETZAL_COMMIT_SHA": "b" * 40,
         "QZ_MODELS_ROOT": str(root),
@@ -887,7 +892,10 @@ def test_validate_quetzal_runtime_admits_only_generated_provider(
         "batch_size": 1,
         "target_mesh": "p150x4",
         "emit_hash": "a" * 64,
-        "prefill_buckets": [{"seq_len": 8192}],
+        "prefill_buckets": [{"seq_len": 128}, {"seq_len": 1024}],
+        "artifact_paths": {
+            "decode_metadata": str(root / artifact_env["QUETZAL_DECODE_METADATA_JSON"])
+        },
     }
     monkeypatch.setattr(
         run_vllm_api_server_module.importlib,
@@ -896,6 +904,21 @@ def test_validate_quetzal_runtime_admits_only_generated_provider(
     )
 
     assert run_vllm_api_server_module.validate_quetzal_runtime(model_spec) == entry
+
+    entry["prefill_buckets"] = [{"seq_len": 128}]
+    with pytest.raises(RuntimeError, match="exact prefill buckets"):
+        run_vllm_api_server_module.validate_quetzal_runtime(model_spec)
+    entry["prefill_buckets"] = [{"seq_len": 128}, {"seq_len": 1024}]
+
+    wrong_context = copy.deepcopy(model_spec)
+    wrong_context["device_model_spec"]["max_context"] = 4096
+    with pytest.raises(RuntimeError, match="decode context 4096"):
+        run_vllm_api_server_module.validate_quetzal_runtime(wrong_context)
+
+    monkeypatch.setenv("QUETZAL_REQUIRED_PREFILL_BUCKETS", "128, 1024")
+    with pytest.raises(RuntimeError, match="canonical comma-separated"):
+        run_vllm_api_server_module.validate_quetzal_runtime(model_spec)
+    monkeypatch.setenv("QUETZAL_REQUIRED_PREFILL_BUCKETS", "128,1024")
 
     monkeypatch.setenv("TT_QUETZAL_COMMIT_SHA", "e" * 40)
     with pytest.raises(RuntimeError, match="source identity mismatch"):

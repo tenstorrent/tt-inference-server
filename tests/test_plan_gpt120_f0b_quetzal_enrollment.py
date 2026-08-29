@@ -10,6 +10,9 @@ from scripts.release.plan_gpt120_f0b_quetzal_enrollment import (
     AUXILIARY_TREE_SHA256,
     CHECKPOINT,
     COMPILER_COMMIT,
+    CONTAINER_AUXILIARY_PARENT,
+    CONTAINER_PACKAGE_PARENT,
+    DESCRIPTOR_CONTAINER_PATH,
     DESCRIPTOR_SHA256,
     EXPECTED_ARTIFACTS,
     MODEL_ID,
@@ -26,14 +29,13 @@ from scripts.release.plan_gpt120_f0b_quetzal_enrollment import (
 def publication_response():
     generation = "tt-ci-models-private-generation-314159"
     core_host = "/mnt/models/quetzal/immutable/v1/gpt120-f0b-core"
-    core_container = (
-        "/home/container_app_user/cache_root/quetzal/immutable/v1/gpt120-f0b-core"
-    )
     aux_host = "/mnt/models/quetzal/immutable/v1/gpt120-f0b-aux"
-    aux_container = (
-        "/home/container_app_user/cache_root/quetzal/immutable/v1/gpt120-f0b-aux"
-    )
     package_id = "sha256-v2-" + "a" * 64
+    core_container = f"{CONTAINER_PACKAGE_PARENT}/{package_id}"
+    aux_container = (
+        f"{CONTAINER_AUXILIARY_PARENT}/"
+        "openai_gpt-oss-120b-streamed-cache/gpt120-f0b-aux"
+    )
     return {
         "schema": SCHEMA,
         "model_id": MODEL_ID,
@@ -86,7 +88,7 @@ def publication_response():
             "provider_policy": "generated_quetzal_only",
             "native_fallback_allowed": False,
             "plugin_entrypoint": "quetzal_model_registry",
-            "descriptor_container_path": "/home/container_app_user/cache_root/quetzal/immutable/v1/descriptors/p150x4.textproto",
+            "descriptor_container_path": DESCRIPTOR_CONTAINER_PATH,
             "descriptor_sha256": DESCRIPTOR_SHA256,
         },
         "topology": {
@@ -133,9 +135,31 @@ def test_exact_response_renders_catalogue_ci_and_ring2_contract():
     assert env["TT_VLLM_BUILTIN_MODELS"] == "0"
     assert env["TTQ_ROW_ALL_REDUCE_TOPOLOGY"] == "Ring"
     assert env["TTQ_TUNED_ROW_ALL_REDUCE_LINKS"] == "2"
+    package_root = f"{CONTAINER_PACKAGE_PARENT}/{response['publication']['package_id']}"
+    assert env["QUETZAL_PACKAGE_ROOT"] == package_root
+    assert env["QZ_MODELS_ROOT"] == package_root
+    for name in (
+        "QZ_QUALIFICATION_MANIFEST",
+        "QUETZAL_PREFILL_GENERATED_PY",
+        "QUETZAL_PREFILL_METADATA_JSON",
+        "QUETZAL_DECODE_GENERATED_PY",
+        "QUETZAL_DECODE_METADATA_JSON",
+        "QUETZAL_WEIGHTS",
+    ):
+        assert env[name].startswith(package_root + "/")
     assert env["QUETZAL_DECODE_GENERATED_PY"].endswith(
         "/compiled/gpt120/full/decode/generated.py"
     )
+    assert env["QUETZAL_REQUIRED_AUXILIARY_NAMES"] == (
+        "openai_gpt-oss-120b-streamed-cache"
+    )
+    assert env["QUETZAL_REQUIRED_PREFILL_BUCKETS"] == "128,1024"
+    assert env["QUETZAL_AUXILIARY_ROOTS_JSON"] == (
+        '{"openai_gpt-oss-120b-streamed-cache":'
+        '"/home/container_app_user/quetzal/auxiliary/'
+        'openai_gpt-oss-120b-streamed-cache/gpt120-f0b-aux"}'
+    )
+    assert env["TT_MESH_GRAPH_DESC_PATH"] == DESCRIPTOR_CONTAINER_PATH
 
     ci = rendered["models_ci_implementation_fragment"]
     assert ci["impl"] == "quetzal"
@@ -167,6 +191,14 @@ def test_exact_response_renders_catalogue_ci_and_ring2_contract():
         ("topology.collective_topology_selected_not_measured", "Linear"),
         ("topology.collective_links_selected_not_measured", 1),
         ("publication.streamed_cache.tree_sha256", "0" * 64),
+        (
+            "publication.generated_model_tree.container_root",
+            "/home/container_app_user/cache_root/quetzal/immutable/v1/gpt120-f0b-core",
+        ),
+        (
+            "publication.streamed_cache.container_root",
+            "/home/container_app_user/cache_root/quetzal/immutable/v1/gpt120-f0b-aux",
+        ),
         ("publication.read_only", False),
         ("publication.runtime_principal_can_mutate", True),
         ("publication.full_streaming_verification.status", "not_run"),
