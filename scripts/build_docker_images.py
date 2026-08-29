@@ -28,6 +28,7 @@ if project_root not in sys.path:
 from workflows.log_setup import setup_workflow_script_logger
 from workflows.model_spec import MODEL_SPECS, export_model_specs_json
 from workflows.utils import get_repo_root_path
+from scripts.validate_quetzal_serve_environment import validate_contract
 
 logger = logging.getLogger(__file__)
 
@@ -1164,6 +1165,11 @@ def build_dev_image(
                 raise ValueError(
                     "Quetzal source checkout does not match quetzal_commit"
                 )
+            validate_contract(
+                source_dir,
+                quetzal_commit,
+                plugin_project=repo_root / "tt-vllm-plugin" / "pyproject.toml",
+            )
             for value, name in (
                 (tt_metal_patchset_sha256, "tt_metal_patchset_sha256"),
                 (

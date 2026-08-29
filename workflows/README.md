@@ -343,6 +343,13 @@ artifacts are pinned independently:
   a native-only image from satisfying the cache lookup. The current integration
   pin is `8a3bebe4afdd58068d4190248c3f7b82cc27ae9f`; this revision contains
   the exact `22fb0bd2...` 12-patch GDN manifest required by the package contract.
+  This exact source is the only legacy exception to the environment-profile
+  gate. Before advancing it, measure the official TTIS image and add a
+  `qwen36.serve` variant to Quetzal's `serving/qualified_environments.json`.
+  Every exact version in that profile must match the installed image and the
+  official plugin constraints, including `numpy>=1.24.4,<2`. The host build and
+  image build both reject a missing or incompatible profile before installing
+  Quetzal and preserve a content-addressed admission receipt in the image.
 - Provision the generated artifact tree separately and pass its root with
   `--quetzal-models-root`. The root is mounted readonly and must contain a real,
   non-symlink `qualification_manifest.yaml`. Startup validates the manifest's

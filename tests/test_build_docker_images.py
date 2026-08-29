@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+import json
 import subprocess
 import textwrap
 from unittest.mock import MagicMock, patch
@@ -60,6 +61,31 @@ def test_build_dev_image_forwards_exact_quetzal_commit(tmp_path):
         ["git", "-C", str(source_dir), "config", "user.name", "CI"], check=True
     )
     (source_dir / "pyproject.toml").write_text("[project]\nname='qz'\nversion='0'\n")
+    contract = source_dir / "serving" / "qualified_environments.json"
+    contract.parent.mkdir()
+    contract.write_text(
+        json.dumps(
+            {
+                "schema": "quetzal.qualified-environments.v2",
+                "base": {"dependencies": {"transformers": "4.55.0"}},
+                "variants": {
+                    "qwen36.serve": {
+                        "model_ids": ["Qwen/Qwen3.6-27B"],
+                        "lane": "serve",
+                        "overrides": {"numpy": "1.26.4"},
+                    }
+                },
+            }
+        )
+    )
+    plugin_project = tmp_path / "tt-vllm-plugin" / "pyproject.toml"
+    plugin_project.parent.mkdir()
+    plugin_project.write_text(
+        "[project]\n"
+        "name='tt-vllm-plugin'\n"
+        "version='0'\n"
+        "dependencies=['numpy>=1.24.4,<2', 'transformers==4.55.0']\n"
+    )
     subprocess.run(["git", "-C", str(source_dir), "add", "."], check=True)
     subprocess.run(
         ["git", "-C", str(source_dir), "commit", "-q", "-m", "fixture"],

@@ -127,6 +127,9 @@ COPY --from=ttis_src --chown=container_app_user:container_app_user \
 COPY --from=ttis_src --chown=container_app_user:container_app_user \
     model_spec.json \
     /home/container_app_user/model_specs/model_spec.json
+COPY --from=ttis_src --chown=container_app_user:container_app_user \
+    scripts/validate_quetzal_serve_environment.py \
+    /tmp/validate_quetzal_serve_environment.py
 
 # ``quetzal_src`` is a named BuildKit context exported from the exact clean
 # local commit by the wrapper. It contains neither .git nor authentication
@@ -138,7 +141,8 @@ RUN test "$(cat /tmp/quetzal-source/.tt-quetzal-commit)" = "${TT_QUETZAL_COMMIT_
     && rm /tmp/quetzal-source/.tt-quetzal-commit \
     && /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
         && (LC_ALL=C uv pip check 2>&1 || true) | sed -E '/^Using Python /d;/^Checked [0-9]+ packages in /d' > /tmp/pip-check.before \
-        && uv pip install /tmp/quetzal-source \
+        && python /tmp/validate_quetzal_serve_environment.py --source /tmp/quetzal-source --source-revision '${TT_QUETZAL_COMMIT_SHA}' --check-installed --receipt '${TT_METAL_HOME}/.ttq-serve-environment.json' \
+        && uv pip install --no-deps /tmp/quetzal-source \
         && (LC_ALL=C uv pip check 2>&1 || true) | sed -E '/^Using Python /d;/^Checked [0-9]+ packages in /d' > /tmp/pip-check.after \
         && cmp /tmp/pip-check.before /tmp/pip-check.after \
         && rm /tmp/pip-check.before /tmp/pip-check.after \
