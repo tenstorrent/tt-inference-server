@@ -17,7 +17,7 @@ from scripts.validate_quetzal_serve_environment import (
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def _source(tmp_path: Path, *, numpy: str, transformers: str = "4.55.0") -> Path:
+def _source(tmp_path: Path, *, numpy: str, transformers: str = "5.15.0") -> Path:
     source = tmp_path / "quetzal"
     contract = source / "serving" / "qualified_environments.json"
     contract.parent.mkdir(parents=True)
@@ -49,7 +49,7 @@ def test_accepts_profile_inside_official_plugin_contract(tmp_path: Path) -> None
     assert receipt["profile"] == "qwen36.serve"
     assert receipt["dependencies"] == {
         "numpy": "1.26.4",
-        "transformers": "4.55.0",
+        "transformers": "5.15.0",
     }
 
 
