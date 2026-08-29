@@ -37,6 +37,9 @@ from workflows.multihost_orchestrator import (
     is_multihost_deployment,
     setup_multihost_config,
 )
+from workflows.quetzal_topology_admission import (  # noqa: E402
+    validate_gpt120_quetzal_preweight_admission,
+)
 from workflows.run_docker_server import (
     collect_tt_triage_logs,
     format_docker_command,
@@ -1093,6 +1096,11 @@ def main():
     # step 1: build runtime config and resolve model spec atomically
     runtime_config, model_spec = resolve_runtime(args)
     model_id = model_spec.model_id
+
+    # This runs before setup_host can inspect/download weights and before a
+    # Docker command can be generated. It is target-specific: native GPT and
+    # other Quetzal models do not inherit the Ring/2 contract.
+    validate_gpt120_quetzal_preweight_admission(model_spec)
 
     # step 2: handle secrets
     handle_secrets(runtime_config)
