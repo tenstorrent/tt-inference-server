@@ -71,6 +71,10 @@ if [[ "${source_head}" != "${quetzal_commit}" ]]; then
     echo "--quetzal-source HEAD ${source_head} does not match --quetzal-commit ${quetzal_commit}" >&2
     exit 2
 fi
+python3 "${repo_root}/scripts/validate_quetzal_serve_environment.py" \
+    --source "${quetzal_source}" \
+    --source-revision "${quetzal_commit}" \
+    --plugin-project "${repo_root}/tt-vllm-plugin/pyproject.toml" >/dev/null
 patchset_path="patches/tt-metal/gdn-productization-v1.json"
 if ! git -C "${quetzal_source}" cat-file -e "${quetzal_commit}:${patchset_path}"; then
     echo "Quetzal commit does not contain ${patchset_path}" >&2

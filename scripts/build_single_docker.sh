@@ -238,6 +238,10 @@ cleanup_quetzal_context() {
 }
 trap cleanup_quetzal_context EXIT
 if [[ -n "$TT_QUETZAL_COMMIT_SHA" ]]; then
+    python3 "$repo_root/scripts/validate_quetzal_serve_environment.py" \
+        --source "$TT_QUETZAL_SOURCE_DIR" \
+        --source-revision "$TT_QUETZAL_COMMIT_SHA" \
+        --plugin-project "$repo_root/tt-vllm-plugin/pyproject.toml" >/dev/null
     git -C "$TT_QUETZAL_SOURCE_DIR" archive "$TT_QUETZAL_COMMIT_SHA" \
         | tar -x -C "$QUETZAL_BUILD_CONTEXT"
     printf '%s' "$TT_QUETZAL_COMMIT_SHA" > "$QUETZAL_BUILD_CONTEXT/.tt-quetzal-commit"

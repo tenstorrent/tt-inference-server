@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -31,7 +32,7 @@ def test_quetzal_is_installed_non_editably_and_entry_point_is_verified():
     install_line = next(
         line
         for line in source.splitlines()
-        if "uv pip install /tmp/quetzal-source" in line
+        if "uv pip install --no-deps /tmp/quetzal-source" in line
     )
     assert " -e " not in install_line
     assert "> /tmp/pip-check.before" in source
@@ -147,6 +148,28 @@ def _git_source(tmp_path):
     source.mkdir()
     subprocess.run(["git", "init", "-q", str(source)], check=True)
     (source / "pyproject.toml").write_text("[project]\nname='fixture'\nversion='0'\n")
+    serving_dir = source / "serving"
+    serving_dir.mkdir()
+    (serving_dir / "qualified_environments.json").write_text(
+        json.dumps(
+            {
+                "schema": "quetzal.qualified-environments.v2",
+                "base": {
+                    "dependencies": {
+                        "transformers": "4.55.0",
+                        "numpy": "1.26.4",
+                    }
+                },
+                "variants": {
+                    "qwen36.serve": {
+                        "model_ids": ["Qwen/Qwen3.6-27B"],
+                        "lane": "serve",
+                        "overrides": {},
+                    }
+                },
+            }
+        )
+    )
     patch_dir = source / "patches" / "tt-metal"
     patch_dir.mkdir(parents=True)
     (patch_dir / "gdn-productization-v1.json").write_text("{}\n")

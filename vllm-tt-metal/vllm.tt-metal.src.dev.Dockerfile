@@ -73,6 +73,8 @@ RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_
 # git archive. It contains no .git directory or credentials. Native builds pass
 # an empty context and leave TT_QUETZAL_COMMIT_SHA unset.
 COPY --from=quetzal_src / /tmp/quetzal-source/
+COPY scripts/validate_quetzal_serve_environment.py \
+    /tmp/validate_quetzal_serve_environment.py
 
 # Give user write access to Rust directories (fail if env vars are missing)
 RUN if [ -z "${RUSTUP_HOME}" ] || [ -z "${CARGO_HOME}" ]; then echo "RUSTUP_HOME and CARGO_HOME must be set" >&2; exit 1; fi && \
@@ -148,12 +150,19 @@ RUN /bin/bash -c "git clone https://github.com/tenstorrent/vllm-tt-plugin.git ${
 RUN set -eu; \
     mkdir -p "${HOME_DIR}/quetzal-runtime/mesh_graph_descriptors" \
              "${HOME_DIR}/quetzal-runtime/wheels"; \
+    printf '%s\n' '{"schema":"ttis.quetzal-serve-environment.v1","status":"native-only"}' \
+      > "${HOME_DIR}/quetzal-runtime/qualified-environment.json"; \
     if [ -n "${TT_QUETZAL_COMMIT_SHA}" ]; then \
       printf '%s' "${TT_QUETZAL_COMMIT_SHA}" | grep -Eq '^[0-9a-f]{40}$' \
       || { echo 'TT_QUETZAL_COMMIT_SHA must be a lowercase 40-hex commit' >&2; exit 1; }; \
       test "$(cat /tmp/quetzal-source/.tt-quetzal-commit)" = "${TT_QUETZAL_COMMIT_SHA}"; \
       cd /tmp/quetzal-source; \
       . "${PYTHON_ENV_DIR}/bin/activate"; \
+      python /tmp/validate_quetzal_serve_environment.py \
+        --source /tmp/quetzal-source \
+        --source-revision "${TT_QUETZAL_COMMIT_SHA}" \
+        --check-installed \
+        --receipt "${HOME_DIR}/quetzal-runtime/qualified-environment.json"; \
       uv build --wheel --out-dir "${HOME_DIR}/quetzal-runtime/wheels"; \
       test "$(find "${HOME_DIR}/quetzal-runtime/wheels" -maxdepth 1 -type f -name '*.whl' | wc -l)" -eq 1; \
       quetzal_wheel="$(find "${HOME_DIR}/quetzal-runtime/wheels" -maxdepth 1 -type f -name '*.whl')"; \
@@ -270,6 +279,9 @@ COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} 
 COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     ${HOME_DIR}/quetzal-runtime/wheels/ \
     /opt/quetzal/wheels/
+COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
+    ${HOME_DIR}/quetzal-runtime/qualified-environment.json \
+    /opt/quetzal/qualified-environment.json
 
 # Copy complete tt-smi installation  
 COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
