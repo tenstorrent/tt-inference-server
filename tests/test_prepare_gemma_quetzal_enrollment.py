@@ -43,7 +43,9 @@ def shield_checkout(tmp_path):
     root.mkdir()
     subprocess.run(["git", "init", "-q", str(root)], check=True)
     subprocess.run(["git", "-C", str(root), "config", "user.name", "test"], check=True)
-    subprocess.run(["git", "-C", str(root), "config", "user.email", "test@example.com"], check=True)
+    subprocess.run(
+        ["git", "-C", str(root), "config", "user.email", "test@example.com"], check=True
+    )
     (root / "identity").write_text("exact shield checkout\n")
     subprocess.run(["git", "-C", str(root), "add", "identity"], check=True)
     subprocess.run(["git", "-C", str(root), "commit", "-qm", "identity"], check=True)
@@ -58,29 +60,58 @@ def shield_checkout(tmp_path):
 
 def evidence(*, ttis_revision=None, shield_revision=SHIELD_REVISION):
     return {
-        "schema_version": SCHEMA, "decision": "approved", "administrator_owned": True,
-        "read_only": True, "no_writable_aliases": True, "revocation_status": "active",
-        "identity": {"model_id": MODEL, "hf_revision": HF_REVISION,
-                     "quetzal_source_revision": QUETZAL_SOURCE,
-                     "ttis_revision": ttis_revision or current_ttis_revision(),
-                     "shield_revision": shield_revision, "tt_metal_revision": TT_METAL,
-                     "tt_metal_patchset_sha256": PATCHSET, "patchset_applied_manifest_matches": True,
-                     "initialization_milestones_sha256": INIT_SHA256},
-        "package_id": PACKAGE_ID, "package_manifest_sha256": "3" * 64,
+        "schema_version": SCHEMA,
+        "decision": "approved",
+        "administrator_owned": True,
+        "read_only": True,
+        "no_writable_aliases": True,
+        "revocation_status": "active",
+        "identity": {
+            "model_id": MODEL,
+            "hf_revision": HF_REVISION,
+            "quetzal_source_revision": QUETZAL_SOURCE,
+            "ttis_revision": ttis_revision or current_ttis_revision(),
+            "shield_revision": shield_revision,
+            "tt_metal_revision": TT_METAL,
+            "tt_metal_patchset_sha256": PATCHSET,
+            "patchset_applied_manifest_matches": True,
+            "initialization_milestones_sha256": INIT_SHA256,
+        },
+        "package_id": PACKAGE_ID,
+        "package_manifest_sha256": "3" * 64,
         "host_package_root": f"/mnt/models/quetzal/immutable/v1/{PACKAGE_ID}",
         "container_package_root": f"/home/container_app_user/quetzal/packages/{PACKAGE_ID}",
-        "profile": {"batch_size": 1, "concurrency": 1, "prefill_capacity": 1024,
-                    "decode_capacity": 2048, "precision": "BFP8"},
-        "topology": {"chip_count": 4, "mesh_shape": [2, 2], "collective": "Ring",
-                     "links": 2, "runner_label": RUNNER},
-        "roles": {"compiled_weights": "compiled_weights/gemma/weights.pt",
-                  "generated_prefill": "compiled/gemma/prefill/generated.py",
-                  "generated_decode": "compiled/gemma/decode/generated.py",
-                  "qualification_manifest": "qualification_manifest.yaml"},
-        "qualification": {"pcc": 0.991, "fresh": True, "exact_package_identity": PACKAGE_ID,
-                          "endpoint_isl": 1024, "endpoint_osl": 512, "http_200": True,
-                          "clean_unload": True, "zero_device_holders_after": True,
-                          "initialization_terminal": {"event": "engine_ready", "state": "complete"}},
+        "profile": {
+            "batch_size": 1,
+            "concurrency": 1,
+            "prefill_capacity": 1024,
+            "decode_capacity": 2048,
+            "precision": "BFP8",
+        },
+        "topology": {
+            "chip_count": 4,
+            "mesh_shape": [2, 2],
+            "collective": "Ring",
+            "links": 2,
+            "runner_label": RUNNER,
+        },
+        "roles": {
+            "compiled_weights": "compiled_weights/gemma/weights.pt",
+            "generated_prefill": "compiled/gemma/prefill/generated.py",
+            "generated_decode": "compiled/gemma/decode/generated.py",
+            "qualification_manifest": "qualification_manifest.yaml",
+        },
+        "qualification": {
+            "pcc": 0.991,
+            "fresh": True,
+            "exact_package_identity": PACKAGE_ID,
+            "endpoint_isl": 1024,
+            "endpoint_osl": 512,
+            "http_200": True,
+            "clean_unload": True,
+            "zero_device_holders_after": True,
+            "initialization_terminal": {"event": "engine_ready", "state": "complete"},
+        },
     }
 
 
@@ -110,13 +141,22 @@ def test_exact_evidence_renders_schema_valid_non_dispatching_fragments(shield_ch
     "mutation,match",
     [
         (lambda x: x.update(decision="pending"), "decision"),
-        (lambda x: x["identity"].update(quetzal_source_revision="0" * 40), "quetzal_source_revision"),
+        (
+            lambda x: x["identity"].update(quetzal_source_revision="0" * 40),
+            "quetzal_source_revision",
+        ),
         (lambda x: x["profile"].update(decode_capacity=1024), "profile"),
         (lambda x: x["topology"].update(runner_label="p300x2"), "runner_label"),
         (lambda x: x["qualification"].update(pcc=0.989), "pcc"),
         (lambda x: x["qualification"].update(endpoint_osl=511), "endpoint_osl"),
-        (lambda x: x["qualification"].update(initialization_terminal=None), "initialization_terminal"),
-        (lambda x: x["roles"].update(generated_decode="../generated.py"), "contained relative"),
+        (
+            lambda x: x["qualification"].update(initialization_terminal=None),
+            "initialization_terminal",
+        ),
+        (
+            lambda x: x["roles"].update(generated_decode="../generated.py"),
+            "contained relative",
+        ),
     ],
 )
 def test_dispatch_critical_mismatch_fails_closed(mutation, match, shield_checkout):
@@ -149,7 +189,9 @@ def test_preconvergence_ttis_and_shield_evidence_is_rejected(shield_checkout):
 def test_shield_checkout_head_change_invalidates_prior_evidence(shield_checkout):
     shield_root, old_revision = shield_checkout
     (shield_root / "identity").write_text("new shield head\n")
-    subprocess.run(["git", "-C", str(shield_root), "commit", "-qam", "new head"], check=True)
+    subprocess.run(
+        ["git", "-C", str(shield_root), "commit", "-qam", "new head"], check=True
+    )
     with pytest.raises(EnrollmentError, match="identity.shield_revision"):
         render_fragments(
             evidence(shield_revision=old_revision), ROOT, shield_repo_root=shield_root
@@ -160,5 +202,9 @@ def test_active_config_intentionally_has_no_gemma_quetzal_lane():
     config = json.loads((ROOT / ".github/workflows/models-ci-config.json").read_text())
     rows = config["models"]["gemma-4-31B-it"]["implementations"]
     assert all(row.get("impl") != "quetzal" for row in rows)
-    blocker = json.loads((ROOT / "productization/gemma4_31b_models_ci_enrollment.blocked.json").read_text())
+    blocker = json.loads(
+        (
+            ROOT / "productization/gemma4_31b_models_ci_enrollment.blocked.json"
+        ).read_text()
+    )
     assert blocker["status"] == "blocked_not_dispatchable"
