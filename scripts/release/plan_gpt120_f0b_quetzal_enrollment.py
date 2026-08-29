@@ -63,11 +63,25 @@ REQUIRED_RELATIVE_PATHS = (
     "weights",
 )
 HEX64 = re.compile(r"[0-9a-f]{64}")
-OCI_DIGEST = re.compile(r"[^\s@:]+(?:/[^\s@:]+)+@sha256:[0-9a-f]{64}")
 
 
 class ContractError(ValueError):
     pass
+
+
+def _is_immutable_oci_digest(value: str) -> bool:
+    """Validate the supported digest form without regex backtracking."""
+    repository, separator, digest = value.partition("@sha256:")
+    if not separator or "@" in repository or ":" in repository:
+        return False
+    parts = repository.split("/")
+    if len(parts) < 2 or any(not part for part in parts):
+        return False
+    if any(character.isspace() for character in repository):
+        return False
+    return len(digest) == 64 and all(
+        character in "0123456789abcdef" for character in digest
+    )
 
 
 def _at(data: dict[str, Any], path: str) -> Any:
@@ -195,7 +209,7 @@ def validate_response(data: dict[str, Any]) -> None:
     )
 
     image = _non_placeholder(data, "runtime.image")
-    if not OCI_DIGEST.fullmatch(image):
+    if not _is_immutable_oci_digest(image):
         raise ContractError(
             "runtime.image: expected registry/path@sha256:<64 lowercase hex>"
         )

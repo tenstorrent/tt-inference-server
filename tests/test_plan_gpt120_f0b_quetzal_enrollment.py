@@ -230,6 +230,13 @@ def test_missing_role_and_unsafe_path_fail_closed():
         render_contract(unsafe)
 
 
+def test_adversarial_oci_reference_fails_closed_without_regex_backtracking():
+    response = publication_response()
+    response["runtime"]["image"] = "!/" * 10_000 + "!:@sha256:" + "f" * 64
+    with pytest.raises(ContractError, match="runtime.image"):
+        render_contract(response)
+
+
 def test_placeholders_are_never_rendered():
     response = publication_response()
     response["publication"]["package_id"] = "${TTQ_GPT120_F0B_PACKAGE_ID}"

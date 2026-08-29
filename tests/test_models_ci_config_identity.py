@@ -35,6 +35,15 @@ def test_implementation_image_must_be_an_immutable_oci_digest():
         "image must be an immutable" in validate_implementation_identities(mutable)[0]
     )
 
+    adversarial = json.loads(json.dumps(base))
+    adversarial["models"]["m"]["implementations"][0]["image"] = (
+        "!/" * 10_000 + "!:@sha256:" + "a" * 64
+    )
+    assert (
+        "image must be an immutable"
+        in validate_implementation_identities(adversarial)[0]
+    )
+
 
 def test_duplicate_engine_requires_impl_and_unique_identity():
     missing = {

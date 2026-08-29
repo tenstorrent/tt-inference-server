@@ -15,11 +15,25 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 from collections import Counter
 from pathlib import Path
 
-IMMUTABLE_OCI_IMAGE_RE = re.compile(r"^[^\s@:]+(?:/[^\s@:]+)+@sha256:[0-9a-f]{64}$")
+
+def is_immutable_oci_image(value: object) -> bool:
+    """Validate the supported digest form in linear time."""
+    if not isinstance(value, str):
+        return False
+    repository, separator, digest = value.partition("@sha256:")
+    if not separator or "@" in repository or ":" in repository:
+        return False
+    parts = repository.split("/")
+    if len(parts) < 2 or any(not part for part in parts):
+        return False
+    if any(character.isspace() for character in repository):
+        return False
+    return len(digest) == 64 and all(
+        character in "0123456789abcdef" for character in digest
+    )
 
 
 def iter_implementations(model_entry: dict):
@@ -50,9 +64,7 @@ def validate_implementation_identities(config: dict) -> list[str]:
                     f"(inference_engine={item.get('inference_engine')!r}, impl={impl!r})"
                 )
             identities.add(identity)
-            if image is not None and not (
-                isinstance(image, str) and IMMUTABLE_OCI_IMAGE_RE.fullmatch(image)
-            ):
+            if image is not None and not is_immutable_oci_image(image):
                 errors.append(
                     f"{model}.implementations[{index}]: image must be an immutable "
                     "registry/path@sha256:<64 lowercase hex> reference"
