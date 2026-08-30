@@ -29,6 +29,10 @@ from scripts.prepare_gemma_quetzal_enrollment import (
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_ID = "sha256-" + "1" * 64 + "-" + "2" * 64
+ACTIVE_PACKAGE_ID = (
+    "sha256-8373c1467294ed11e00ac791392eaa80c9cd1a1366f15200469bbdb4bc410522-"
+    "259ee130f4f1e259980f2dde67415f8692f4c16086f34edc1cdb98c496b68edc"
+)
 SHIELD_REVISION = "da43fee60603da9a3b7a6c1bf5643fe0928eab0f"
 
 
@@ -177,34 +181,14 @@ def evidence(*, ttis_revision=None, shield_revision=SHIELD_REVISION):
     }
 
 
-def test_exact_evidence_renders_schema_valid_non_dispatching_fragments(shield_checkout):
+def test_exact_evidence_refuses_duplicate_active_promotion(shield_checkout):
     shield_root, shield_revision = shield_checkout
-    rendered = render_fragments(
-        evidence(shield_revision=shield_revision), ROOT, shield_repo_root=shield_root
-    )
-    row = rendered["implementation"]
-    assert set(row["ci"]) == {"nightly", "release"}
-    device_spec = rendered["catalogue"]["templates"][0]["device_model_specs"][0]
-    assert device_spec["max_context"] == 4096
-    assert device_spec["vllm_args"]["max_model_len"] == 4096
-    env = device_spec["env_vars"]
-    assert env["TTQ_ROW_ALL_REDUCE_TOPOLOGY"] == "Ring"
-    assert env["TTQ_TUNED_ROW_ALL_REDUCE_LINKS"] == "2"
-    assert env["TT_MESH_GRAPH_DESC_PATH"] == DESCRIPTOR_CONTAINER_PATH
-    assert env["VLLM_PLUGINS"] == "quetzal_model_registry,tt"
-    assert env["TT_VLLM_BUILTIN_MODELS"] == "0"
-    assert env["QUETZAL_REQUIRED_SOURCE_REVISION"] == QUETZAL_SOURCE
-    assert env["QUETZAL_PREFILL_METADATA_JSON"].endswith(
-        "/compiled/gemma/prefill/metadata.json"
-    )
-    assert env["QUETZAL_DECODE_METADATA_JSON"].endswith(
-        "/compiled/gemma/decode/metadata.json"
-    )
-    assert rendered["handoff"]["quetzal_source_revision"] == QUETZAL_SOURCE
-    assert rendered["handoff"]["ttis_revision"] == current_ttis_revision()
-    assert rendered["handoff"]["shield_revision"] == shield_revision
-    assert rendered["handoff"]["fallback_allowed"] is False
-    assert row["image"] == evidence()["runtime"]["image"]
+    with pytest.raises(EnrollmentError, match="already has a Gemma Quetzal row"):
+        render_fragments(
+            evidence(shield_revision=shield_revision),
+            ROOT,
+            shield_repo_root=shield_root,
+        )
 
 
 @pytest.mark.parametrize(
@@ -318,13 +302,13 @@ def test_shield_checkout_must_contain_implementation_image_support(
         )
 
 
-def test_active_config_intentionally_has_no_gemma_quetzal_lane():
+def test_active_config_has_one_exact_gemma_quetzal_lane():
     config = json.loads((ROOT / ".github/workflows/models-ci-config.json").read_text())
     rows = config["models"]["gemma-4-31B-it"]["implementations"]
-    assert all(row.get("impl") != "quetzal" for row in rows)
-    blocker = json.loads(
-        (
-            ROOT / "productization/gemma4_31b_models_ci_enrollment.blocked.json"
-        ).read_text()
-    )
-    assert blocker["status"] == "blocked_not_dispatchable"
+    quetzal_rows = [row for row in rows if row.get("impl") == "quetzal"]
+    assert len(quetzal_rows) == 1
+    row = quetzal_rows[0]
+    assert set(row["ci"]) == {"nightly", "release"}
+    for schedule in ("nightly", "release"):
+        device = row["ci"][schedule]["device-args"]["P300X2"]
+        assert device["additional-args"].endswith(ACTIVE_PACKAGE_ID)

@@ -127,9 +127,9 @@ class _Session:
 def test_gpt120_plan_pins_exact_swe_shape_and_writes_quetzal_argv(tmp_path):
     contract, model_spec = _gpt120()
     assert contract.concurrency == 1
-    assert contract.max_input_tokens == 92 * 1024
-    assert contract.max_output_tokens == 32 * 1024
-    assert contract.required_context_tokens == 124 * 1024
+    assert contract.max_input_tokens == 6 * 1024
+    assert contract.max_output_tokens == 2 * 1024
+    assert contract.required_context_tokens == 8 * 1024
     assert contract.catalog_max_context_tokens == 128 * 1024
     assert contract.implementation == "quetzal"
     assert contract.serving_backend == "generated_quetzal"
@@ -171,7 +171,7 @@ def test_gpt120_plan_rejects_under_admitted_receipt(field, value, match):
 
 
 def test_gpt120_plan_rejects_coherent_but_insufficient_context():
-    receipt = _receipt(max_context_tokens=123 * 1024, kv_blocks=123)
+    receipt = _receipt(max_context_tokens=7 * 1024, kv_blocks=7)
     with pytest.raises(ContractError, match="total tokens"):
         _gpt120(capability_receipt=receipt)
 
