@@ -74,7 +74,7 @@ def test_duplicate_engine_requires_impl_and_unique_identity():
     )
 
 
-def test_qualified_qwen_and_gemma_are_enrolled_for_quetzal_nightly_and_release():
+def test_qualified_generated_models_are_enrolled_without_replacing_native_rows():
     config = json.loads(
         (REPO_ROOT / ".github/workflows/models-ci-config.json").read_text()
     )
@@ -89,10 +89,7 @@ def test_qualified_qwen_and_gemma_are_enrolled_for_quetzal_nightly_and_release()
         rows = config["models"][model]["implementations"]
         by_impl = {row["impl"]: row for row in rows}
         assert native_impl in by_impl
-        if model in {"Qwen3.6-27B", "gemma-4-31B-it"}:
-            assert "quetzal" in by_impl
-        else:
-            assert "quetzal" not in by_impl
+        assert "quetzal" in by_impl
 
     qwen = {
         row["impl"]: row for row in config["models"]["Qwen3.6-27B"]["implementations"]
@@ -124,3 +121,25 @@ def test_qualified_qwen_and_gemma_are_enrolled_for_quetzal_nightly_and_release()
         args = lane["device-args"]["P300X2"]["additional-args"]
         assert "--impl" not in args
         assert args == expected_gemma_args
+
+    gpt = {
+        row["impl"]: row
+        for row in config["models"]["gpt-oss-120b"]["implementations"]
+    }["quetzal"]
+    expected_gpt_args = (
+        "--quetzal-models-root "
+        "/mnt/models/quetzal/immutable/v1/packages/"
+        "sha256-v2-dacc0476febcaf6fb237d1446908e553b16a122b8d6392c933034bd9984c618b-"
+        "3086bdd6e0b5aaccaedfe5bdaa514c74409a15da96503395738b3bbee9ed35e2-"
+        "2cf6ad2acd9ca99e07ae3fd5dce462dd7ede7695529bfc5894893c82a85a0fc9 "
+        "--quetzal-auxiliary-root openai_gpt-oss-120b-streamed-cache="
+        "/mnt/models/quetzal/immutable/v1/auxiliary/"
+        "openai_gpt-oss-120b-streamed-cache/"
+        "sha256-2b2e528a75cae51a53db4a3e309f075553fe5f5f7fec7d2a29480f6572f2e416"
+    )
+    for schedule in ("nightly", "release"):
+        lane = gpt["ci"][schedule]
+        assert lane["devices"] == ["P300X2"]
+        args = lane["device-args"]["P300X2"]["additional-args"]
+        assert "--impl" not in args
+        assert args == expected_gpt_args

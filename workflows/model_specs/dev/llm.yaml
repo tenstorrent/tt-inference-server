@@ -167,6 +167,69 @@ templates:
       reasoning_parser_name: openai_gptoss
       tool_call_parser_name: openai
 
+# Generated GPT-OSS f0b development lane. This is deliberately non-default and
+# points only at the requested immutable publication identities. Until storage
+# administrators publish both roots, TTIS fails closed before image/device/
+# weight setup. The native gpt_oss rows below remain unchanged.
+- weights:
+    - openai/gpt-oss-120b
+  impl: quetzal
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities: [text]
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 1
+      max_context: 8192
+      default_impl: false
+      env_vars:
+        ARCH_NAME: blackhole
+        MESH_DEVICE: P150x4
+        QUETZAL_VLLM: "1"
+        QUETZAL_MODEL: openai/gpt-oss-120b
+        QUETZAL_HF_REVISION: b5c939de8f754692c1647ca79fbf85e8c1e70f8a
+        QUETZAL_REQUIRED_SOURCE_REVISION: 071e23cd264d4b0df67a0d3df4642378663002c4
+        QUETZAL_PACKAGE_ID: sha256-v2-dacc0476febcaf6fb237d1446908e553b16a122b8d6392c933034bd9984c618b-3086bdd6e0b5aaccaedfe5bdaa514c74409a15da96503395738b3bbee9ed35e2-2cf6ad2acd9ca99e07ae3fd5dce462dd7ede7695529bfc5894893c82a85a0fc9
+        QUETZAL_BUNDLE_MANIFEST_SHA256: d659407d3c4353658480c841551edc174148e158c7b46d0b8c4e5d78b10a641f
+        QUETZAL_REQUIRED_TT_METAL_PATCHSET_SHA256: 22fb0bd2523b8a5c63fa20c3c8a1586dc9ead5150449d0eb02231fa8173a7edd
+        QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/packages/sha256-v2-dacc0476febcaf6fb237d1446908e553b16a122b8d6392c933034bd9984c618b-3086bdd6e0b5aaccaedfe5bdaa514c74409a15da96503395738b3bbee9ed35e2-2cf6ad2acd9ca99e07ae3fd5dce462dd7ede7695529bfc5894893c82a85a0fc9
+        QZ_MODELS_ROOT: /home/container_app_user/quetzal/packages/sha256-v2-dacc0476febcaf6fb237d1446908e553b16a122b8d6392c933034bd9984c618b-3086bdd6e0b5aaccaedfe5bdaa514c74409a15da96503395738b3bbee9ed35e2-2cf6ad2acd9ca99e07ae3fd5dce462dd7ede7695529bfc5894893c82a85a0fc9
+        QZ_QUALIFICATION_MANIFEST: /home/container_app_user/quetzal/packages/sha256-v2-dacc0476febcaf6fb237d1446908e553b16a122b8d6392c933034bd9984c618b-3086bdd6e0b5aaccaedfe5bdaa514c74409a15da96503395738b3bbee9ed35e2-2cf6ad2acd9ca99e07ae3fd5dce462dd7ede7695529bfc5894893c82a85a0fc9/qualification_manifest.yaml
+        QUETZAL_PREFILL_GENERATED_PY: /home/container_app_user/quetzal/packages/sha256-v2-dacc0476febcaf6fb237d1446908e553b16a122b8d6392c933034bd9984c618b-3086bdd6e0b5aaccaedfe5bdaa514c74409a15da96503395738b3bbee9ed35e2-2cf6ad2acd9ca99e07ae3fd5dce462dd7ede7695529bfc5894893c82a85a0fc9/compiled/openai_gpt-oss-120b-s1024/full/prefill/generated.py
+        QUETZAL_PREFILL_METADATA_JSON: /home/container_app_user/quetzal/packages/sha256-v2-dacc0476febcaf6fb237d1446908e553b16a122b8d6392c933034bd9984c618b-3086bdd6e0b5aaccaedfe5bdaa514c74409a15da96503395738b3bbee9ed35e2-2cf6ad2acd9ca99e07ae3fd5dce462dd7ede7695529bfc5894893c82a85a0fc9/compiled/openai_gpt-oss-120b-s1024/full/prefill/metadata.json
+        QUETZAL_DECODE_GENERATED_PY: /home/container_app_user/quetzal/packages/sha256-v2-dacc0476febcaf6fb237d1446908e553b16a122b8d6392c933034bd9984c618b-3086bdd6e0b5aaccaedfe5bdaa514c74409a15da96503395738b3bbee9ed35e2-2cf6ad2acd9ca99e07ae3fd5dce462dd7ede7695529bfc5894893c82a85a0fc9/compiled/openai_gpt-oss-120b-s1024/full/decode/generated.py
+        QUETZAL_DECODE_METADATA_JSON: /home/container_app_user/quetzal/packages/sha256-v2-dacc0476febcaf6fb237d1446908e553b16a122b8d6392c933034bd9984c618b-3086bdd6e0b5aaccaedfe5bdaa514c74409a15da96503395738b3bbee9ed35e2-2cf6ad2acd9ca99e07ae3fd5dce462dd7ede7695529bfc5894893c82a85a0fc9/compiled/openai_gpt-oss-120b-s1024/full/decode/metadata.json
+        QUETZAL_WEIGHTS: /home/container_app_user/quetzal/packages/sha256-v2-dacc0476febcaf6fb237d1446908e553b16a122b8d6392c933034bd9984c618b-3086bdd6e0b5aaccaedfe5bdaa514c74409a15da96503395738b3bbee9ed35e2-2cf6ad2acd9ca99e07ae3fd5dce462dd7ede7695529bfc5894893c82a85a0fc9/compiled_weights/openai_gpt-oss-120b-s1024/full/weights.pt
+        QUETZAL_REQUIRED_AUXILIARY_NAMES: openai_gpt-oss-120b-streamed-cache
+        QUETZAL_AUXILIARY_ROOTS_JSON: '{"openai_gpt-oss-120b-streamed-cache":"/home/container_app_user/quetzal/auxiliary/openai_gpt-oss-120b-streamed-cache/sha256-2b2e528a75cae51a53db4a3e309f075553fe5f5f7fec7d2a29480f6572f2e416"}'
+        QUETZAL_REQUIRED_PREFILL_BUCKETS: "128,1024"
+        QZ_MMAP_WEIGHTS: "1"
+        TTQ_STREAM_WEIGHTS: "1"
+        HF_HUB_OFFLINE: "1"
+        TRANSFORMERS_OFFLINE: "1"
+        VLLM_PLUGINS: quetzal_model_registry,tt
+        TT_VLLM_BUILTIN_MODELS: "0"
+        TT_MESH_GRAPH_DESC_PATH: /opt/quetzal/mesh_graph_descriptors/p150_x4_2ch_mesh_graph_descriptor.textproto
+        TTQ_ROW_ALL_REDUCE_TOPOLOGY: Ring
+        TTQ_TUNED_ROW_ALL_REDUCE: "1"
+        TTQ_TUNED_ROW_ALL_REDUCE_LINKS: "2"
+      vllm_args:
+        block_size: 64
+        max_model_len: 8192
+        max_num_seqs: 1
+        revision: b5c939de8f754692c1647ca79fbf85e8c1e70f8a
+        tokenizer_revision: b5c939de8f754692c1647ca79fbf85e8c1e70f8a
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        l1_small_size: 16384
+        trace_region_size: 90000000
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  metadata:
+    openai/gpt-oss-120b:
+      reasoning_parser_name: openai_gptoss
+      tool_call_parser_name: openai
+
 - weights:
     - openai/gpt-oss-120b
   impl: gpt_oss

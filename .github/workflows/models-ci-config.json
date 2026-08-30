@@ -646,6 +646,32 @@
               ]
             }
           }
+        },
+        {
+          "inference_engine": "vLLM",
+          "impl": "quetzal",
+          "ci": {
+            "nightly": {
+              "devices": [
+                "P300X2"
+              ],
+              "device-args": {
+                "P300X2": {
+                  "additional-args": "--quetzal-models-root /mnt/models/quetzal/immutable/v1/packages/sha256-v2-dacc0476febcaf6fb237d1446908e553b16a122b8d6392c933034bd9984c618b-3086bdd6e0b5aaccaedfe5bdaa514c74409a15da96503395738b3bbee9ed35e2-2cf6ad2acd9ca99e07ae3fd5dce462dd7ede7695529bfc5894893c82a85a0fc9 --quetzal-auxiliary-root openai_gpt-oss-120b-streamed-cache=/mnt/models/quetzal/immutable/v1/auxiliary/openai_gpt-oss-120b-streamed-cache/sha256-2b2e528a75cae51a53db4a3e309f075553fe5f5f7fec7d2a29480f6572f2e416"
+                }
+              }
+            },
+            "release": {
+              "devices": [
+                "P300X2"
+              ],
+              "device-args": {
+                "P300X2": {
+                  "additional-args": "--quetzal-models-root /mnt/models/quetzal/immutable/v1/packages/sha256-v2-dacc0476febcaf6fb237d1446908e553b16a122b8d6392c933034bd9984c618b-3086bdd6e0b5aaccaedfe5bdaa514c74409a15da96503395738b3bbee9ed35e2-2cf6ad2acd9ca99e07ae3fd5dce462dd7ede7695529bfc5894893c82a85a0fc9 --quetzal-auxiliary-root openai_gpt-oss-120b-streamed-cache=/mnt/models/quetzal/immutable/v1/auxiliary/openai_gpt-oss-120b-streamed-cache/sha256-2b2e528a75cae51a53db4a3e309f075553fe5f5f7fec7d2a29480f6572f2e416"
+                }
+              }
+            }
+          }
         }
       ]
     },
