@@ -29,6 +29,8 @@ COMPILER_COMMIT = "3750c4872bcaf0c0c9404a4c99edcefb9e6d103d"
 QUETZAL_COMMIT = "f0b58c692a0a04af7631b6e8753af021fb08b746"
 TT_METAL_COMMIT = "b534549300fe2af11e6ee828675294bc0e359555"
 TT_METAL_PATCHSET = "22fb0bd2523b8a5c63fa20c3c8a1586dc9ead5150449d0eb02231fa8173a7edd"
+TTIS_REQUIRED_ANCESTOR = "eb7df50d90882b594be5ec2504f0e8fa6cc28851"
+SHIELD_REQUIRED_ANCESTOR = "628d36f26079d765bc38a9aad44d88be3ee9a1d3"
 RUNNER_LABEL = "qb2-p300x2-physical-2x2-ring-links2"
 DESCRIPTOR_SHA256 = "f4c9fb5acf307e1b320525007035ed9e75039f793e4350120365243682e37792"
 AUXILIARY_NAME = "openai_gpt-oss-120b-streamed-cache"
@@ -122,6 +124,13 @@ def _sha256(data: dict[str, Any], path: str) -> str:
     return value
 
 
+def _commit(data: dict[str, Any], path: str) -> str:
+    value = _non_placeholder(data, path)
+    if re.fullmatch(r"[0-9a-f]{40}", value) is None:
+        raise ContractError(f"{path}: expected 40 lowercase hexadecimal characters")
+    return value
+
+
 def _immutable_host_root(data: dict[str, Any], path: str) -> str:
     value = _non_placeholder(data, path)
     pure = PurePosixPath(value)
@@ -158,6 +167,22 @@ def validate_response(data: dict[str, Any]) -> None:
     _exact(data, "identity.checkpoint_revision", CHECKPOINT)
     _exact(data, "identity.compiler_source_commit", COMPILER_COMMIT)
     _exact(data, "identity.quetzal_source_commit", QUETZAL_COMMIT)
+
+    # Bind the handoff to reviewed integration ancestry without freezing the
+    # later enrollment commit itself. Shield 628d36f is the first
+    # manual-dispatch implementation that resolves and forwards both the
+    # generated package and auxiliary streamed-cache mounts without accepting
+    # caller substitutions. The reviewed administrative response supplies the
+    # exact descendant commits and attests both ancestry checks.
+    ttis_source_commit = _commit(data, "integration.ttis_source_commit")
+    _commit(data, "integration.shield_source_commit")
+    _exact(data, "integration.ttis_required_ancestor", TTIS_REQUIRED_ANCESTOR)
+    _exact(data, "integration.ttis_required_ancestor_verified", True)
+    _exact(data, "integration.shield_required_ancestor", SHIELD_REQUIRED_ANCESTOR)
+    _exact(data, "integration.shield_required_ancestor_verified", True)
+    _exact(data, "integration.runner_label", RUNNER_LABEL)
+    _exact(data, "integration.per_implementation_image_selection", True)
+    _exact(data, "integration.additional_args_forwarded_losslessly", True)
 
     _at(data, "publication")
     package_id = _non_placeholder(data, "publication.package_id")
@@ -214,12 +239,17 @@ def validate_response(data: dict[str, Any]) -> None:
             "runtime.image: expected registry/path@sha256:<64 lowercase hex>"
         )
     _exact(data, "runtime.quetzal_source_commit", QUETZAL_COMMIT)
+    _exact(data, "runtime.ttis_source_commit", ttis_source_commit)
     _exact(data, "runtime.tt_metal_commit", TT_METAL_COMMIT)
     _exact(data, "runtime.tt_metal_patchset_sha256", TT_METAL_PATCHSET)
+    _exact(data, "runtime.server_boundary", "official_ttis")
+    _exact(data, "runtime.platform_provider", "vllm-tt-plugin")
     _exact(data, "runtime.serving_backend", "generated_quetzal")
     _exact(data, "runtime.provider_policy", "generated_quetzal_only")
     _exact(data, "runtime.native_fallback_allowed", False)
     _exact(data, "runtime.plugin_entrypoint", "quetzal_model_registry")
+    _exact(data, "runtime.vllm_plugins", "quetzal_model_registry,tt")
+    _exact(data, "runtime.tt_vllm_builtin_models", "0")
     _exact(data, "runtime.descriptor_container_path", DESCRIPTOR_CONTAINER_PATH)
     _exact(data, "runtime.descriptor_sha256", DESCRIPTOR_SHA256)
 
@@ -261,6 +291,7 @@ def render_contract(data: dict[str, Any]) -> dict[str, Any]:
         "QUETZAL_VLLM": "1",
         "QUETZAL_MODEL": MODEL_ID,
         "QUETZAL_HF_REVISION": CHECKPOINT,
+        "QUETZAL_REQUIRED_SOURCE_REVISION": QUETZAL_COMMIT,
         "QUETZAL_PACKAGE_ID": package_id,
         "QUETZAL_BUNDLE_MANIFEST_SHA256": publication["bundle_manifest_sha256"],
         "QUETZAL_REQUIRED_TT_METAL_PATCHSET_SHA256": TT_METAL_PATCHSET,
@@ -315,6 +346,10 @@ def render_contract(data: dict[str, Any]) -> dict[str, Any]:
             "package_id": package_id,
             "bundle_manifest_sha256": publication["bundle_manifest_sha256"],
             "immutable_generation_id": publication["immutable_generation_id"],
+            "ttis_source_commit": data["integration"]["ttis_source_commit"],
+            "shield_source_commit": data["integration"]["shield_source_commit"],
+            "ttis_required_ancestor": TTIS_REQUIRED_ANCESTOR,
+            "shield_required_ancestor": SHIELD_REQUIRED_ANCESTOR,
         },
         "ttis_dev_catalogue_fragment": {
             "weights": [MODEL_ID],
@@ -359,6 +394,8 @@ def render_contract(data: dict[str, Any]) -> dict[str, Any]:
             "ci": {"nightly": schedule, "release": schedule},
         },
         "shield_required_contract": {
+            "source_commit": data["integration"]["shield_source_commit"],
+            "required_ancestor": SHIELD_REQUIRED_ANCESTOR,
             "runner_label": RUNNER_LABEL,
             "device_type": "p300x2",
             "image": runtime["image"],

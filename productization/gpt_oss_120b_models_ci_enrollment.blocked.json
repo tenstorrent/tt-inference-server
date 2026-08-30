@@ -1,0 +1,35 @@
+{
+  "schema_version": "quetzal.gpt-oss-120b-models-ci-enrollment-blocker.v1",
+  "status": "blocked_not_dispatchable",
+  "model": "openai/gpt-oss-120b",
+  "implementation": "quetzal",
+  "exact_source": "f0b58c692a0a04af7631b6e8753af021fb08b746",
+  "compiler_source": "3750c4872bcaf0c0c9404a4c99edcefb9e6d103d",
+  "checkpoint_revision": "b5c939de8f754692c1647ca79fbf85e8c1e70f8a",
+  "tt_metal_commit": "b534549300fe2af11e6ee828675294bc0e359555",
+  "tt_metal_patchset_sha256": "22fb0bd2523b8a5c63fa20c3c8a1586dc9ead5150449d0eb02231fa8173a7edd",
+  "target_profile": "C1/ISL1024/OSL512; generated Ring/2 artifact; S8192 catalogue envelope",
+  "target_runner": "qb2-p300x2-physical-2x2-ring-links2",
+  "ttis_required_ancestor": "eb7df50d90882b594be5ec2504f0e8fa6cc28851",
+  "shield_required_ancestor": "628d36f26079d765bc38a9aad44d88be3ee9a1d3",
+  "historical_evidence": {
+    "minimum_pcc": 0.982558,
+    "local_gate": "mixed BF16+BFP4; PCC >= 0.98; top1 >= 0.83; top5 >= 0.96",
+    "endpoint": "C1/ISL1024/OSL512 pass",
+    "eval": "GSM8K 19/20",
+    "transferable_to_new_runtime_identity": false
+  },
+  "active_catalogue_is_native_not_candidate": true,
+  "active_models_ci_enrollment_present": false,
+  "missing_fields": [
+    "administrator-owned immutable generated core publication",
+    "administrator-owned immutable auxiliary streamed-cache publication in the same generation",
+    "content-addressed package id and bundle-manifest sha256",
+    "immutable OCI image digest binding TTIS, vllm-tt-plugin, Quetzal, TT-Metal and patchset identities",
+    "post-publication full streamed-weight verification receipt",
+    "online runner attestation for qb2-p300x2-physical-2x2-ring-links2",
+    "fresh on-dispatch qualification for the published package and runtime identity",
+    "CS-owned release acceptance policy"
+  ],
+  "renderer": "scripts/release/plan_gpt120_f0b_quetzal_enrollment.py"
+}

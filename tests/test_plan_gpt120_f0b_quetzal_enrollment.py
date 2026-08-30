@@ -19,8 +19,10 @@ from scripts.release.plan_gpt120_f0b_quetzal_enrollment import (
     QUETZAL_COMMIT,
     RUNNER_LABEL,
     SCHEMA,
+    SHIELD_REQUIRED_ANCESTOR,
     TT_METAL_COMMIT,
     TT_METAL_PATCHSET,
+    TTIS_REQUIRED_ANCESTOR,
     ContractError,
     render_contract,
 )
@@ -43,6 +45,17 @@ def publication_response():
             "checkpoint_revision": CHECKPOINT,
             "compiler_source_commit": COMPILER_COMMIT,
             "quetzal_source_commit": QUETZAL_COMMIT,
+        },
+        "integration": {
+            "ttis_source_commit": TTIS_REQUIRED_ANCESTOR,
+            "shield_source_commit": SHIELD_REQUIRED_ANCESTOR,
+            "ttis_required_ancestor": TTIS_REQUIRED_ANCESTOR,
+            "ttis_required_ancestor_verified": True,
+            "shield_required_ancestor": SHIELD_REQUIRED_ANCESTOR,
+            "shield_required_ancestor_verified": True,
+            "runner_label": RUNNER_LABEL,
+            "per_implementation_image_selection": True,
+            "additional_args_forwarded_losslessly": True,
         },
         "publication": {
             "package_id": package_id,
@@ -82,12 +95,17 @@ def publication_response():
         "runtime": {
             "image": "ghcr.io/tenstorrent/ttis-quetzal@sha256:" + "f" * 64,
             "quetzal_source_commit": QUETZAL_COMMIT,
+            "ttis_source_commit": TTIS_REQUIRED_ANCESTOR,
             "tt_metal_commit": TT_METAL_COMMIT,
             "tt_metal_patchset_sha256": TT_METAL_PATCHSET,
+            "server_boundary": "official_ttis",
+            "platform_provider": "vllm-tt-plugin",
             "serving_backend": "generated_quetzal",
             "provider_policy": "generated_quetzal_only",
             "native_fallback_allowed": False,
             "plugin_entrypoint": "quetzal_model_registry",
+            "vllm_plugins": "quetzal_model_registry,tt",
+            "tt_vllm_builtin_models": "0",
             "descriptor_container_path": DESCRIPTOR_CONTAINER_PATH,
             "descriptor_sha256": DESCRIPTOR_SHA256,
         },
@@ -132,7 +150,9 @@ def test_exact_response_renders_catalogue_ci_and_ring2_contract():
     assert device["max_concurrency"] == 1
     assert device["default_impl"] is False
     env = device["env_vars"]
+    assert env["QUETZAL_REQUIRED_SOURCE_REVISION"] == QUETZAL_COMMIT
     assert env["TT_VLLM_BUILTIN_MODELS"] == "0"
+    assert env["VLLM_PLUGINS"] == "quetzal_model_registry,tt"
     assert env["TTQ_ROW_ALL_REDUCE_TOPOLOGY"] == "Ring"
     assert env["TTQ_TUNED_ROW_ALL_REDUCE_LINKS"] == "2"
     package_root = f"{CONTAINER_PACKAGE_PARENT}/{response['publication']['package_id']}"
@@ -176,6 +196,24 @@ def test_exact_response_renders_catalogue_ci_and_ring2_contract():
     assert shield["image_must_be_selected_per_model_implementation"] is True
     assert shield["forbid_shared_generic_quetzal_image"] is True
     assert shield["required_quetzal_source_commit"] == QUETZAL_COMMIT
+    assert shield["source_commit"] == SHIELD_REQUIRED_ANCESTOR
+    assert shield["required_ancestor"] == SHIELD_REQUIRED_ANCESTOR
+    assert rendered["exact_identity"]["ttis_source_commit"] == TTIS_REQUIRED_ANCESTOR
+
+
+def test_reviewed_descendant_sources_do_not_self_block_enrollment():
+    response = publication_response()
+    response["integration"]["ttis_source_commit"] = "1" * 40
+    response["runtime"]["ttis_source_commit"] = "1" * 40
+    response["integration"]["shield_source_commit"] = "2" * 40
+
+    rendered = render_contract(response)
+
+    assert rendered["exact_identity"]["ttis_source_commit"] == "1" * 40
+    assert rendered["exact_identity"]["shield_source_commit"] == "2" * 40
+    assert rendered["exact_identity"]["ttis_required_ancestor"] == (
+        TTIS_REQUIRED_ANCESTOR
+    )
 
 
 @pytest.mark.parametrize(
@@ -184,8 +222,22 @@ def test_exact_response_renders_catalogue_ci_and_ring2_contract():
         ("runtime.quetzal_source_commit", "8a3bebe4afdd58068d4190248c3f7b82cc27ae9f"),
         ("runtime.tt_metal_commit", "0" * 40),
         ("runtime.tt_metal_patchset_sha256", "0" * 64),
+        ("runtime.server_boundary", "standalone_quetzal"),
+        ("runtime.platform_provider", "native_model"),
         ("runtime.native_fallback_allowed", True),
+        ("runtime.vllm_plugins", "quetzal_model_registry"),
+        ("runtime.tt_vllm_builtin_models", "1"),
         ("runtime.image", "ghcr.io/tenstorrent/ttis-quetzal:latest"),
+        ("integration.ttis_source_commit", "not-a-commit"),
+        ("integration.shield_source_commit", "not-a-commit"),
+        ("integration.ttis_required_ancestor", "0" * 40),
+        ("integration.ttis_required_ancestor_verified", False),
+        ("integration.shield_required_ancestor", "0" * 40),
+        ("integration.shield_required_ancestor_verified", False),
+        ("runtime.ttis_source_commit", "0" * 40),
+        ("integration.runner_label", "bh-qb-ge"),
+        ("integration.per_implementation_image_selection", False),
+        ("integration.additional_args_forwarded_losslessly", False),
         ("topology.runner_label", "bh-qb-ge"),
         ("topology.mesh_shape", [1, 4]),
         ("topology.collective_topology_selected_not_measured", "Linear"),
