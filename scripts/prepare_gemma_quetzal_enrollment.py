@@ -48,11 +48,24 @@ EXPECTED_ARTIFACT_SHA256 = {
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 GIT_REVISION = re.compile(r"^[0-9a-f]{40}$")
 PACKAGE = re.compile(r"^sha256(?:-v[0-9]+)?(?:-[0-9a-f]{64}){2,3}$")
-OCI_IMAGE = re.compile(r"^[^\s@:]+(?:/[^\s@:]+)+@sha256:[0-9a-f]{64}$")
 
 
 class EnrollmentError(ValueError):
     pass
+
+
+def _is_immutable_oci_digest(value: str) -> bool:
+    repository, separator, digest = value.partition("@sha256:")
+    if not separator or "@" in repository or ":" in repository:
+        return False
+    parts = repository.split("/")
+    if len(parts) < 2 or any(not part for part in parts):
+        return False
+    if any(character.isspace() for character in repository):
+        return False
+    return len(digest) == 64 and all(
+        character in "0123456789abcdef" for character in digest
+    )
 
 
 def _need(value: Any, expected: Any, field: str) -> None:
@@ -175,7 +188,7 @@ def validate_evidence(
 
     runtime = data.get("runtime", {})
     image = runtime.get("image")
-    if not isinstance(image, str) or not OCI_IMAGE.fullmatch(image):
+    if not isinstance(image, str) or not _is_immutable_oci_digest(image):
         raise EnrollmentError(
             "runtime.image must be an immutable repository/path@sha256:<digest> reference"
         )
