@@ -350,7 +350,7 @@ def test_qwen_quetzal_dev_spec_binds_candidate_v2_publication(monkeypatch):
         "e240fa3880ea0c2597dd7df8ab657a69aca9fe215de58220ae96e47a48a29910"
     )
     assert env["QUETZAL_REQUIRED_SOURCE_REVISION"] == (
-        "9ef0ffab7ec5635b0fc1a56fbf998a9274297190"
+        "9fb41112535ee87140e91c1bba6f831e62c30d42"
     )
 
 

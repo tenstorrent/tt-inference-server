@@ -266,7 +266,12 @@ def validate_contract(
 
     base_dependencies = contract.get("base", {}).get("dependencies", {})
     overrides = variant.get("overrides", {})
-    if not isinstance(base_dependencies, dict) or not isinstance(overrides, dict):
+    installation_dependencies = variant.get("installation_dependencies", {})
+    if (
+        not isinstance(base_dependencies, dict)
+        or not isinstance(overrides, dict)
+        or not isinstance(installation_dependencies, dict)
+    ):
         raise ContractError(f"{PROFILE} dependencies must be mappings")
     qualified = {**base_dependencies, **overrides}
     if "numpy" not in qualified:
@@ -276,6 +281,16 @@ def validate_contract(
         canonicalize_name(name): _exact_version(name, version)
         for name, version in qualified.items()
     }
+    installation_versions = {
+        canonicalize_name(name): _exact_version(name, version)
+        for name, version in installation_dependencies.items()
+    }
+    duplicates = set(exact_versions) & set(installation_versions)
+    if duplicates:
+        raise ContractError(
+            f"{PROFILE} installation_dependencies duplicates a qualified dependency: "
+            + ", ".join(sorted(duplicates))
+        )
     qualified_numpy = exact_versions["numpy"]
     if qualified_numpy not in numpy_requirement.specifier:
         raise ContractError(
@@ -293,7 +308,7 @@ def validate_contract(
             )
 
     if check_installed:
-        for name, exact in exact_versions.items():
+        for name, exact in {**exact_versions, **installation_versions}.items():
             try:
                 installed = Version(importlib.metadata.version(name))
             except importlib.metadata.PackageNotFoundError as exc:
@@ -313,6 +328,9 @@ def validate_contract(
         "qualified_environments_sha256": hashlib.sha256(raw_contract).hexdigest(),
         "dependencies": {
             name: str(version) for name, version in exact_versions.items()
+        },
+        "installation_dependencies": {
+            name: str(version) for name, version in installation_versions.items()
         },
     }
     if plugin_identity is not None:
@@ -345,12 +363,18 @@ def main() -> int:
     rendered = json.dumps(receipt, indent=2, sort_keys=True) + "\n"
     if args.requirements_output:
         dependencies = receipt.get("dependencies")
+        installation_dependencies = receipt.get("installation_dependencies", {})
         if not isinstance(dependencies, dict) or not dependencies:
             parser.error(
                 "the selected source has no exact qualified requirements to install"
             )
+        if not isinstance(installation_dependencies, dict):
+            parser.error("the selected source has invalid installation dependencies")
         requirements = "".join(
-            f"{name}=={version}\n" for name, version in sorted(dependencies.items())
+            f"{name}=={version}\n"
+            for name, version in sorted(
+                {**dependencies, **installation_dependencies}.items()
+            )
         )
         args.requirements_output.write_text(requirements)
     if args.receipt:

@@ -341,7 +341,7 @@ artifacts are pinned independently:
 - Build the image with a lowercase 40-hex source commit. The build creates and
   installs one wheel and includes `qz-<commit[:12]>` in the image tag, preventing
   a native-only image from satisfying the cache lookup. Qwen candidate-v2 is
-  pinned to `9ef0ffab7ec5635b0fc1a56fbf998a9274297190` and the exact
+  pinned to `9fb41112535ee87140e91c1bba6f831e62c30d42` and the exact
   `e240fa38...` patchset manifest. That source provides the measured
   `qwen36.serve` environment profile, including `numpy>=1.24.4,<2` compatibility
   with the official plugin. The older `8a3bebe4...`/`22fb0bd2...` identity
@@ -368,7 +368,7 @@ artifacts are pinned independently:
 
 ```bash
 python3 scripts/build_docker_images.py \
-  --quetzal-commit 9ef0ffab7ec5635b0fc1a56fbf998a9274297190
+  --quetzal-commit 9fb41112535ee87140e91c1bba6f831e62c30d42
 ```
 
 The wheel pin does not provision model artifacts, and the artifact mount does

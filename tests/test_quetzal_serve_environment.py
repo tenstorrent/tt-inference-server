@@ -18,10 +18,16 @@ from scripts.validate_quetzal_serve_environment import (
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CURRENT_QWEN_SOURCE_REVISION = "9ef0ffab7ec5635b0fc1a56fbf998a9274297190"
+CURRENT_QWEN_SOURCE_REVISION = "9fb41112535ee87140e91c1bba6f831e62c30d42"
 
 
-def _source(tmp_path: Path, *, numpy: str, transformers: str = "5.15.0") -> Path:
+def _source(
+    tmp_path: Path,
+    *,
+    numpy: str,
+    transformers: str = "5.15.0",
+    installation_dependencies: dict[str, str] | None = None,
+) -> Path:
     source = tmp_path / "quetzal"
     contract = source / "serving" / "qualified_environments.json"
     contract.parent.mkdir(parents=True)
@@ -35,6 +41,7 @@ def _source(tmp_path: Path, *, numpy: str, transformers: str = "5.15.0") -> Path
                         "model_ids": ["Qwen/Qwen3.6-27B"],
                         "lane": "serve",
                         "overrides": {"numpy": numpy},
+                        "installation_dependencies": installation_dependencies or {},
                     }
                 },
             }
@@ -60,7 +67,11 @@ def test_accepts_profile_inside_official_plugin_contract(tmp_path: Path) -> None
 def test_cli_emits_sorted_exact_requirements_after_contract_validation(
     tmp_path: Path,
 ) -> None:
-    source = _source(tmp_path, numpy="1.26.4")
+    source = _source(
+        tmp_path,
+        numpy="1.26.4",
+        installation_dependencies={"click": "8.4.2"},
+    )
     requirements = tmp_path / "qualified.txt"
     completed = subprocess.run(
         [
@@ -80,7 +91,22 @@ def test_cli_emits_sorted_exact_requirements_after_contract_validation(
         check=False,
     )
     assert completed.returncode == 0, completed.stderr
-    assert requirements.read_text() == ("numpy==1.26.4\ntransformers==5.15.0\n")
+    assert requirements.read_text() == (
+        "click==8.4.2\nnumpy==1.26.4\ntransformers==5.15.0\n"
+    )
+
+
+def test_installation_dependency_cannot_replace_qualified_identity(tmp_path: Path) -> None:
+    with pytest.raises(ContractError, match="duplicates a qualified dependency"):
+        validate_contract(
+            _source(
+                tmp_path,
+                numpy="1.26.4",
+                installation_dependencies={"numpy": "1.26.4"},
+            ),
+            "a" * 40,
+            plugin_project=ROOT / "tt-vllm-plugin" / "pyproject.toml",
+        )
 
 
 def test_cli_refuses_to_install_unqualified_legacy_environment(tmp_path: Path) -> None:
