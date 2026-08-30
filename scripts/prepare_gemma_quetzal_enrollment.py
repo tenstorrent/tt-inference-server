@@ -238,11 +238,14 @@ def validate_evidence(
     if set(roles) != {
         "compiled_weights",
         "generated_prefill",
+        "prefill_metadata",
         "generated_decode",
+        "decode_metadata",
         "qualification_manifest",
     }:
         raise EnrollmentError(
-            "roles must bind exactly compiled_weights/generated_prefill/generated_decode/qualification_manifest"
+            "roles must bind exactly compiled_weights/generated_prefill/"
+            "prefill_metadata/generated_decode/decode_metadata/qualification_manifest"
         )
     role_paths = {
         name: _relative(value, f"roles.{name}") for name, value in roles.items()
@@ -340,7 +343,9 @@ def render_fragments(
         "QZ_MODELS_ROOT": root,
         "QZ_QUALIFICATION_MANIFEST": f"{root}/{roles['qualification_manifest']}",
         "QUETZAL_PREFILL_GENERATED_PY": f"{root}/{roles['generated_prefill']}",
+        "QUETZAL_PREFILL_METADATA_JSON": f"{root}/{roles['prefill_metadata']}",
         "QUETZAL_DECODE_GENERATED_PY": f"{root}/{roles['generated_decode']}",
+        "QUETZAL_DECODE_METADATA_JSON": f"{root}/{roles['decode_metadata']}",
         "QUETZAL_WEIGHTS": f"{root}/{roles['compiled_weights']}",
         "QZ_MMAP_WEIGHTS": "1",
         "TTQ_STREAM_WEIGHTS": "1",

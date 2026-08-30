@@ -141,7 +141,9 @@ def evidence(*, ttis_revision=None, shield_revision=SHIELD_REVISION):
         "roles": {
             "compiled_weights": "compiled_weights/gemma/weights.pt",
             "generated_prefill": "compiled/gemma/prefill/generated.py",
+            "prefill_metadata": "compiled/gemma/prefill/metadata.json",
             "generated_decode": "compiled/gemma/decode/generated.py",
+            "decode_metadata": "compiled/gemma/decode/metadata.json",
             "qualification_manifest": "qualification_manifest.yaml",
         },
         "qualification": {
@@ -182,6 +184,12 @@ def test_exact_evidence_renders_schema_valid_non_dispatching_fragments(shield_ch
     assert env["VLLM_PLUGINS"] == "quetzal_model_registry,tt"
     assert env["TT_VLLM_BUILTIN_MODELS"] == "0"
     assert env["QUETZAL_REQUIRED_SOURCE_REVISION"] == QUETZAL_SOURCE
+    assert env["QUETZAL_PREFILL_METADATA_JSON"].endswith(
+        "/compiled/gemma/prefill/metadata.json"
+    )
+    assert env["QUETZAL_DECODE_METADATA_JSON"].endswith(
+        "/compiled/gemma/decode/metadata.json"
+    )
     assert rendered["handoff"]["quetzal_source_revision"] == QUETZAL_SOURCE
     assert rendered["handoff"]["ttis_revision"] == current_ttis_revision()
     assert rendered["handoff"]["shield_revision"] == shield_revision
