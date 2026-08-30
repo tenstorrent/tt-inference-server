@@ -164,7 +164,10 @@ def test_quetzal_docker_hook_uses_clean_named_context_and_patched_runtime():
     assert "TT_METAL_PATCHSET_MANIFEST_SHA256" in dockerfile
     assert "tt_metal_patchset.py" in dockerfile
     assert "uv build --wheel" in dockerfile
-    assert 'uv pip install --no-cache-dir --no-deps "${quetzal_wheel}"' in dockerfile
+    assert (
+        'uv pip install --python "${PYTHON_ENV_DIR}/bin/python" '
+        '--no-cache-dir --no-deps "${quetzal_wheel}"'
+    ) in dockerfile
     assert (
         "uv pip install --no-cache-dir --no-deps --no-build-isolation ."
         not in dockerfile
