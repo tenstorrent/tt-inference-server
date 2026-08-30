@@ -118,6 +118,13 @@ def _absolute(value: Any, field: str) -> str:
     return value.rstrip("/")
 
 
+def _immutable_host_root(value: Any, field: str) -> str:
+    root = _absolute(value, field)
+    if not root.startswith("/mnt/models/quetzal/immutable/"):
+        raise EnrollmentError(f"{field} must be under /mnt/models/quetzal/immutable/")
+    return root
+
+
 def _relative(value: Any, field: str) -> str:
     if not isinstance(value, str) or not value:
         raise EnrollmentError(f"{field} must be a non-empty relative path")
@@ -220,7 +227,7 @@ def validate_evidence(
         raise EnrollmentError(
             "package_manifest_sha256 must be an exact lowercase SHA-256"
         )
-    host_root = _absolute(data.get("host_package_root"), "host_package_root")
+    host_root = _immutable_host_root(data.get("host_package_root"), "host_package_root")
     container_root = _absolute(
         data.get("container_package_root"), "container_package_root"
     )
@@ -231,6 +238,8 @@ def validate_evidence(
         raise EnrollmentError(
             "host/container package roots must end in the exact package_id"
         )
+    expected_container_root = f"/home/container_app_user/quetzal/packages/{package_id}"
+    _need(container_root, expected_container_root, "container_package_root")
 
     profile = data.get("profile", {})
     expected_profile = {
@@ -281,6 +290,16 @@ def validate_evidence(
         qualification.get("exact_package_identity"),
         package_id,
         "qualification.exact_package_identity",
+    )
+    _need(
+        qualification.get("endpoint_collective"),
+        "Ring",
+        "qualification.endpoint_collective",
+    )
+    _need(
+        qualification.get("endpoint_collective_links"),
+        2,
+        "qualification.endpoint_collective_links",
     )
     capacity = qualification.get("capacity_endpoint", {})
     _need(capacity.get("isl"), 4095, "qualification.capacity_endpoint.isl")

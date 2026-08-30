@@ -13,7 +13,7 @@
     "final host and container immutable package roots",
     "package manifest sha256 and exact generated/metadata/weights/qualification role-relative paths",
     "fresh exact-package PCC >= 0.99",
-    "fresh capacity endpoint ISL4095/OSL1, non-empty semantic endpoint, and clean lifecycle receipt",
+    "fresh target Ring/2 capacity endpoint ISL4095/OSL1, non-empty semantic endpoint, and clean lifecycle receipt",
     "positive physical Ring/2 runner visibility attestation",
     "digest-pinned Gemma-specific TTIS image built from exact cfaea6c1 source"
   ],

@@ -155,6 +155,8 @@ def evidence(*, ttis_revision=None, shield_revision=SHIELD_REVISION):
             "pcc": 0.991,
             "fresh": True,
             "exact_package_identity": PACKAGE_ID,
+            "endpoint_collective": "Ring",
+            "endpoint_collective_links": 2,
             "capacity_endpoint": {
                 "isl": 4095,
                 "osl": 1,
@@ -217,7 +219,19 @@ def test_exact_evidence_renders_schema_valid_non_dispatching_fragments(shield_ch
             lambda x: x["runtime"].update(descriptor_sha256="0" * 64),
             "descriptor_sha256",
         ),
+        (
+            lambda x: x.update(host_package_root=f"/data/user-packages/{PACKAGE_ID}"),
+            "host_package_root",
+        ),
+        (
+            lambda x: x.update(container_package_root=f"/tmp/quetzal/{PACKAGE_ID}"),
+            "container_package_root",
+        ),
         (lambda x: x["qualification"].update(pcc=0.989), "pcc"),
+        (
+            lambda x: x["qualification"].update(endpoint_collective="Linear"),
+            "endpoint_collective",
+        ),
         (
             lambda x: x["qualification"]["capacity_endpoint"].update(osl=2),
             "capacity_endpoint.osl",
