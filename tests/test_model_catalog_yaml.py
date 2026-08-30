@@ -344,7 +344,7 @@ def test_qwen_quetzal_dev_spec_binds_immutable_b534_22fb_successor(monkeypatch):
     env = quetzal.env_vars
 
     assert env["QUETZAL_BUNDLE_MANIFEST_SHA256"] == (
-        "1dc5aae559321ad21ddcd0d0e91342107c8ab297011f7de2712e7116a359b990"
+        "06c5fb2c200f7afd3b154d92501f00e8e4cf9a478e9b9e3df0bd051dc6241487"
     )
     assert env["QUETZAL_REQUIRED_TT_METAL_PATCHSET_SHA256"] == (
         "22fb0bd2523b8a5c63fa20c3c8a1586dc9ead5150449d0eb02231fa8173a7edd"
