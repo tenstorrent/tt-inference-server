@@ -1537,6 +1537,13 @@ _eval_config_list = [
             EvalTask(
                 task_name="terminal_bench_2",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                # The published TB2 contract reserves 256K input plus 80K
+                # output. Current Qwen device rows (including generated
+                # Quetzal S8192) cannot serve that request envelope. Keep the
+                # task available to an explicitly selected agentic run, where
+                # capability admission fails loudly, but do not schedule it as
+                # part of a default release below the exact 344064-token floor.
+                min_context_required=344064,
                 score=EvalTaskScore(
                     published_score=59.3,
                     published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",

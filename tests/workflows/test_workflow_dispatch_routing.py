@@ -15,7 +15,11 @@ from workflows.workflow_types import ModelType, WorkflowType
 
 
 def _spec(model_type, name="Llama-3.1-8B-Instruct"):
-    return SimpleNamespace(model_type=model_type, model_name=name)
+    return SimpleNamespace(
+        model_type=model_type,
+        model_name=name,
+        device_model_spec=SimpleNamespace(max_context=1024 * 1024),
+    )
 
 
 def _rc(workflow="benchmarks", **kw):

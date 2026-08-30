@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import replace
 import json
 import logging
 import os
@@ -163,6 +164,13 @@ def _build_context(
     output_path.mkdir(parents=True, exist_ok=True)
 
     eval_cfg = _resolve_eval_config(args.model)
+    if eval_cfg is not None and args.workflow == "release":
+        from llm_module.eval_configs import filter_tasks_by_min_context
+
+        eval_cfg = replace(
+            eval_cfg,
+            tasks=filter_tasks_by_min_context(eval_cfg.tasks, model_spec),
+        )
     all_params = eval_cfg if eval_cfg is not None else []
 
     return MediaContext(

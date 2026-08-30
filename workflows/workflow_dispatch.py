@@ -119,8 +119,11 @@ def _llm_release_includes_agentic(model_spec) -> bool:
     cfg = EVAL_CONFIGS.get(model_spec.model_name)
     if cfg is None:
         return False
+    from llm_module.eval_configs import filter_tasks_by_min_context
+
+    tasks = filter_tasks_by_min_context(cfg.tasks, model_spec)
     return any(
-        task.workflow_venv_type == WorkflowVenvType.EVALS_AGENTIC for task in cfg.tasks
+        task.workflow_venv_type == WorkflowVenvType.EVALS_AGENTIC for task in tasks
     )
 
 

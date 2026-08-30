@@ -8,7 +8,10 @@ import os
 import stat
 from pathlib import Path
 
-from llm_module.eval_configs import filter_agentic_tasks_by_benchmark
+from llm_module.eval_configs import (
+    filter_agentic_tasks_by_benchmark,
+    filter_tasks_by_min_context,
+)
 from reference_config.benchmarking.benchmark_config import get_benchmark_config
 from reference_config.evals.eval_config import EVAL_CONFIGS
 from workflows.model_spec import MODEL_SPECS
@@ -85,16 +88,27 @@ def _selected_agentic_tasks(model_spec, runtime_config) -> list:
         tasks = filter_agentic_tasks_by_benchmark(tasks, selection)
 
     exact_task = _external_agentic_task_name(model_spec, runtime_config)
-    if exact_task is None:
-        return tasks
-    selected = [task for task in tasks if task.task_name == exact_task]
-    if len(selected) != 1:
-        raise RuntimeError(
-            "external agentic contract must select exactly one configured "
-            f"agentic task {exact_task!r}; selected "
-            f"{[task.task_name for task in selected]!r}"
-        )
-    return selected
+    if exact_task is not None:
+        selected = [task for task in tasks if task.task_name == exact_task]
+        if len(selected) != 1:
+            raise RuntimeError(
+                "external agentic contract must select exactly one configured "
+                f"agentic task {exact_task!r}; selected "
+                f"{[task.task_name for task in selected]!r}"
+            )
+        return selected
+
+    # A default release may omit a task only when the catalogue explicitly
+    # declares a context floor. An explicit --agentic-benchmark selection and
+    # standalone agentic runs retain the task and fail capability admission,
+    # rather than silently turning a requested evaluation into a no-op.
+    if WorkflowType.from_string(
+        runtime_config.workflow
+    ) == WorkflowType.RELEASE and not (
+        isinstance(selection, str) and selection.strip()
+    ):
+        tasks = filter_tasks_by_min_context(tasks, model_spec)
+    return tasks
 
 
 def _positive_token_limit(value, *, field: str, task_name: str) -> int:

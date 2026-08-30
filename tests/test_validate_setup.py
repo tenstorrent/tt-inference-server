@@ -82,41 +82,44 @@ class TestAgenticTaskCapabilityAdmission:
             ),
         )
 
-    def test_exact_qwen_quetzal_release_rejects_s8192(self):
+    def test_exact_qwen_quetzal_release_omits_explicitly_ineligible_tb2(self):
         # The generated row lives in the dev catalog while unit tests load the
         # prod catalog by default. Bind its exact advertised C1/S8192 profile
         # to the authoritative shared Qwen eval config.
         spec = self._spec("Qwen3.6-27B", 8192)
 
+        validate_agentic_task_capabilities(spec, self._runtime())
+
+    def test_exact_qwen_native_release_omits_same_ineligible_tb2(self):
+        # The shared task contract is implementation-independent and also
+        # exceeds the native row. Both default release paths omit it through
+        # the task's explicit 344064-token catalogue floor.
+        spec = self._spec("Qwen3.6-27B", 262144, impl="qwen36_blackhole")
+        validate_agentic_task_capabilities(spec, self._runtime())
+
+    def test_explicit_qwen_tb2_selection_still_fails_closed(self):
+        spec = self._spec("Qwen3.6-27B", 8192)
         with pytest.raises(ValueError) as exc:
-            validate_agentic_task_capabilities(spec, self._runtime())
+            validate_agentic_task_capabilities(
+                spec,
+                self._runtime(agentic_benchmark="tb2.0"),
+            )
 
         message = str(exc.value)
         assert "before host/server/device setup" in message
-        assert "model='Qwen3.6-27B'" in message
         assert "implementation='quetzal'" in message
-        assert "task='terminal_bench_2'" in message
         assert "available_context=8192" in message
         assert "required_context=344064" in message
         assert "max_input_tokens=262144 + max_output_tokens=81920" in message
 
-    def test_exact_qwen_native_release_rejects_inconsistent_task_envelope(self):
-        # The shared task contract is implementation-independent.  Its
-        # configured 256K input plus 80K output envelope also exceeds the
-        # native catalogue's S262144 profile.  Keep this explicit so the
-        # Quetzal admission fix cannot accidentally hide an existing native
-        # release-contract mismatch or be weakened merely to preserve it.
-        spec = self._spec("Qwen3.6-27B", 262144, impl="qwen36_blackhole")
-
-        with pytest.raises(ValueError) as exc:
+    def test_unmarked_oversized_release_task_still_fails_closed(self):
+        task = self._terminal_task(max_input=128, max_output=64)
+        spec = self._spec("unmarked-model", 191)
+        with patch.dict(
+            "workflows.validate_setup.EVAL_CONFIGS",
+            {spec.model_name: EvalConfig(spec.hf_model_repo, [task])},
+        ), pytest.raises(ValueError, match="required_context=192"):
             validate_agentic_task_capabilities(spec, self._runtime())
-
-        message = str(exc.value)
-        assert "before host/server/device setup" in message
-        assert "implementation='qwen36_blackhole'" in message
-        assert "available_context=262144" in message
-        assert "required_context=344064" in message
-        assert "max_input_tokens=262144 + max_output_tokens=81920" in message
 
     def test_adequate_context_passes_without_concurrency_gate(self):
         task = self._terminal_task(max_input=128, max_output=64)
@@ -214,6 +217,7 @@ class TestAgenticTaskCapabilityAdmission:
             device="p300x2",
             impl="quetzal",
             docker_server=True,
+            agentic_benchmark="tb2.0",
         )
         later_stages = (
             "validate_custom_weights",

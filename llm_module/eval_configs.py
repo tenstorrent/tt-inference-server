@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import logging
-from typing import List
+from typing import Iterable, List
 
 from workflows.workflow_types import EvalLimitMode, WorkflowVenvType
 
@@ -36,6 +36,51 @@ _AGENTIC_BENCHMARK_EXACT_ALIASES = {
     "tb2.0": "terminal_bench_2",
     "tb2.1": "terminal_bench_2_1",
 }
+
+
+def filter_tasks_by_min_context(tasks: Iterable, model_spec) -> list:
+    """Return release tasks explicitly admitted by the selected device row.
+
+    ``EvalTask.min_context_required`` is an opt-in catalogue statement, not a
+    derived clamp.  Tasks without it remain selected and must pass their own
+    validators.  This distinction keeps malformed or oversized agentic
+    contracts fail closed unless the catalogue author deliberately marks the
+    task as unavailable below a specific context.
+    """
+    available = getattr(
+        getattr(model_spec, "device_model_spec", None), "max_context", None
+    )
+    selected = []
+    for task in tasks:
+        required = getattr(task, "min_context_required", None)
+        if required is None:
+            selected.append(task)
+            continue
+        if not isinstance(required, int) or isinstance(required, bool) or required <= 0:
+            raise ValueError(
+                f"Eval task {task.task_name!r} min_context_required must be a "
+                f"positive integer, got {required!r}"
+            )
+        if (
+            not isinstance(available, int)
+            or isinstance(available, bool)
+            or available <= 0
+        ):
+            raise ValueError(
+                "Cannot apply an eval task's min_context_required without a "
+                f"positive DeviceModelSpec.max_context, got {available!r}"
+            )
+        if available < required:
+            logger.info(
+                "Skipping release eval task %s: device max_context=%d is below "
+                "its explicit min_context_required=%d",
+                task.task_name,
+                available,
+                required,
+            )
+            continue
+        selected.append(task)
+    return selected
 
 
 def parse_agentic_benchmark(value: str) -> tuple[list[str], set[str]]:
@@ -154,6 +199,7 @@ def get_llm_eval_tasks(model_spec, runtime_config=None) -> List:
 
 
 __all__ = [
+    "filter_tasks_by_min_context",
     "filter_agentic_tasks_by_benchmark",
     "get_llm_eval_tasks",
     "parse_agentic_benchmark",
