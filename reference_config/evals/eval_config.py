@@ -4625,6 +4625,9 @@ _eval_config_list = [
         tasks=[
             EvalTask(
                 task_name="aime25",
+                # Preserve the qualified 128K reasoning recipe. Narrower
+                # generated rows skip it instead of silently shrinking 120K.
+                min_context_required=128 * 1024,
                 limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 0.05,  # 30 samples * 0.05 ~= 1 sample
                     EvalLimitMode.CI_NIGHTLY: 0.50,  # 30 samples * 0.5 = 15 samples
@@ -4663,6 +4666,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="gpqa_diamond_cot_zeroshot",
+                min_context_required=128 * 1024,
                 limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 0.006,  # 198 samples * 0.006 ~= 1 sample
                     EvalLimitMode.CI_NIGHTLY: 0.035,  # 198 samples * 0.035 ~= 6 samples
@@ -4695,6 +4699,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="mmlu_generative",  # base MMLU task in lm-eval-harness uses loglikelihood evaluation
+                min_context_required=128 * 1024,
                 limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 0.000063,  # 15,908 samples * 0.00006286 ~= 1 sample per sub-task
                     EvalLimitMode.CI_NIGHTLY: 0.15,  # 15% of 15,902 samples ~= 42 samples per sub-task
@@ -4737,6 +4742,10 @@ _eval_config_list = [
                 # five-instance reference) to turn this into a graded gate.
                 task_name="swe_bench_verified",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                # 6K input + 2K output consumes the entire S8192 row before
+                # chat-template and tool-definition overhead. Keep this
+                # report-only task off S8192 until it has explicit headroom.
+                min_context_required=9 * 1024,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,

@@ -22,6 +22,7 @@ from llm_module import (
 from llm_module.eval_configs import (
     filter_agentic_tasks_by_benchmark as _filter_agentic_tasks_by_benchmark,
 )
+from llm_module.eval_configs import filter_tasks_by_min_context
 from report_module.schema import Block
 from utils.auth_helpers import setup_tests_auth
 from workflows.workflow_types import WorkflowVenvType
@@ -83,6 +84,7 @@ def _select_agentic_tasks(ctx: MediaContext) -> list:
     agentic = [
         t for t in tasks if t.workflow_venv_type == WorkflowVenvType.EVALS_AGENTIC
     ]
+    agentic = filter_tasks_by_min_context(agentic, ctx.model_spec)
     non_agentic = [
         t for t in tasks if t.workflow_venv_type != WorkflowVenvType.EVALS_AGENTIC
     ]

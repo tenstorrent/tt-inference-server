@@ -90,9 +90,11 @@ def _run_sweep_task(logger, label: str, run_sweep) -> TaskOutcome:
 
 def _has_agentic_tasks(ctx) -> bool:
     """True if the run's eval tasks include any EVALS_AGENTIC task."""
+    from llm_module.eval_configs import filter_tasks_by_min_context
     from workflows.workflow_types import WorkflowVenvType
 
     tasks = getattr(getattr(ctx, "all_params", None), "tasks", None) or []
+    tasks = filter_tasks_by_min_context(tasks, ctx.model_spec)
     return any(
         getattr(t, "workflow_venv_type", None) == WorkflowVenvType.EVALS_AGENTIC
         for t in tasks

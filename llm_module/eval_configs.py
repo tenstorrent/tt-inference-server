@@ -132,7 +132,7 @@ def _select_tasks(tasks: list, runtime_config) -> list:
     """Apply --eval-samples / smoke-test task selection (real copy of
     ``run_evals._select_eval_config``, minus the EvalConfig wrapper)."""
     eval_samples = getattr(runtime_config, "eval_samples", None)
-    if eval_samples and tasks:
+    if eval_samples:
         mapping = _parse_eval_samples_mapping(eval_samples)
         if mapping:
             requested = set(mapping.keys())
@@ -195,7 +195,14 @@ def get_llm_eval_tasks(model_spec, runtime_config=None) -> List:
         )
         return []
 
-    return _select_tasks(standard, runtime_config)
+    admitted = filter_tasks_by_min_context(standard, model_spec)
+    if not admitted:
+        logger.info(
+            "Model %s has no standard eval tasks admitted at max_context=%s",
+            model_spec.model_name,
+            getattr(model_spec.device_model_spec, "max_context", None),
+        )
+    return _select_tasks(admitted, runtime_config)
 
 
 __all__ = [
