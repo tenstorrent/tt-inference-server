@@ -7,39 +7,135 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import importlib.metadata
+import io
 import json
 import re
+import token
+import tokenize
 from pathlib import Path
 
 from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
-try:
-    import tomllib
-except ModuleNotFoundError:  # pragma: no cover - Python 3.10 image support
-    import tomli as tomllib
-
-
 LEGACY_QWEN_SOURCE_REVISION = "8a3bebe4afdd58068d4190248c3f7b82cc27ae9f"
 PROFILE = "qwen36.serve"
 MODEL_ID = "Qwen/Qwen3.6-27B"
 CONTRACT_PATH = Path("serving/qualified_environments.json")
 REQUIRED_NUMPY_SPECIFIER = ">=1.24.4,<2"
+_TOML_TABLE = re.compile(r"^\s*\[([^]]+)]\s*(?:#.*)?$")
 
 
 class ContractError(ValueError):
     """The selected Quetzal source cannot run in the official TTIS runtime."""
 
 
+def _project_dependencies(project: Path) -> list[str]:
+    """Parse only ``[project].dependencies`` without a host TOML dependency.
+
+    The pre-image builder supports Python 3.10 and invokes this validator before
+    dependency installation. Keep that bootstrap dependency-free and accept only
+    the TOML string-array subset needed for Python package requirements. All other
+    syntax fails closed rather than weakening the environment check.
+    """
+
+    try:
+        lines = project.read_text().splitlines()
+    except (OSError, UnicodeDecodeError) as exc:
+        raise ContractError(f"cannot read plugin project: {project}") from exc
+
+    tables = [
+        (index, match.group(1))
+        for index, line in enumerate(lines)
+        if (match := _TOML_TABLE.fullmatch(line)) is not None
+    ]
+    project_tables = [index for index, name in tables if name == "project"]
+    if len(project_tables) != 1:
+        raise ContractError("plugin project must contain exactly one [project] table")
+
+    start = project_tables[0] + 1
+    end = next((index for index, _ in tables if index >= start), len(lines))
+    section = lines[start:end]
+    assignments = [
+        index
+        for index, line in enumerate(section)
+        if re.match(r"^\s*dependencies\s*=", line)
+    ]
+    if len(assignments) != 1:
+        raise ContractError(
+            "plugin [project] must contain exactly one dependencies assignment"
+        )
+
+    assignment = assignments[0]
+    expression = section[assignment].split("=", 1)[1] + "\n"
+    expression += "\n".join(section[assignment + 1 :])
+    expression_lines = expression.splitlines()
+    ignored = {
+        token.ENDMARKER,
+        token.INDENT,
+        token.DEDENT,
+        token.NEWLINE,
+        tokenize.NL,
+        tokenize.COMMENT,
+    }
+    dependencies: list[str] = []
+    started = False
+    expect_value = True
+    try:
+        tokens = tokenize.generate_tokens(io.StringIO(expression).readline)
+        for parsed in tokens:
+            if parsed.type in ignored:
+                continue
+            if not started:
+                if parsed.type != token.OP or parsed.string != "[":
+                    raise ContractError(
+                        "plugin [project].dependencies must be an array"
+                    )
+                started = True
+                continue
+            if parsed.type == token.OP and parsed.string == "]":
+                suffix = expression_lines[parsed.end[0] - 1][parsed.end[1] :].strip()
+                if suffix and not suffix.startswith("#"):
+                    raise ContractError(
+                        "plugin dependency array has unsupported trailing syntax"
+                    )
+                return dependencies
+            if expect_value:
+                if parsed.type != token.STRING:
+                    raise ContractError(
+                        "plugin dependencies must be literal requirement strings"
+                    )
+                try:
+                    dependency = ast.literal_eval(parsed.string)
+                except (SyntaxError, ValueError) as exc:
+                    raise ContractError(
+                        "plugin dependency is not a valid literal string"
+                    ) from exc
+                if not isinstance(dependency, str):
+                    raise ContractError(
+                        "plugin dependencies must be literal requirement strings"
+                    )
+                dependencies.append(dependency)
+                expect_value = False
+                continue
+            if parsed.type != token.OP or parsed.string != ",":
+                raise ContractError("plugin dependency array is missing a comma")
+            expect_value = True
+    except (IndentationError, tokenize.TokenError) as exc:
+        raise ContractError(
+            "plugin [project].dependencies contains unsupported TOML syntax"
+        ) from exc
+
+    raise ContractError("plugin [project].dependencies array is not terminated")
+
+
 def _requirements_from_project(project: Path) -> dict[str, Requirement]:
-    data = tomllib.loads(project.read_text())
-    dependencies = data.get("project", {}).get("dependencies", [])
     return {
         canonicalize_name(requirement.name): requirement
-        for raw in dependencies
+        for raw in _project_dependencies(project)
         for requirement in [Requirement(raw)]
     }
 

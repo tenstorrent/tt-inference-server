@@ -3,6 +3,8 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -51,6 +53,76 @@ def test_accepts_profile_inside_official_plugin_contract(tmp_path: Path) -> None
         "numpy": "1.26.4",
         "transformers": "5.15.0",
     }
+
+
+def test_cli_needs_no_tomllib_or_tomli_on_builder_python(tmp_path: Path) -> None:
+    source = tmp_path / "legacy-source"
+    source.mkdir()
+    block_toml_imports = """
+import builtins
+import sys
+
+real_import = builtins.__import__
+for module in ("tomllib", "tomli"):
+    sys.modules.pop(module, None)
+
+def blocked_import(name, *args, **kwargs):
+    if name.split(".", 1)[0] in {"tomllib", "tomli"}:
+        raise ModuleNotFoundError(f"{name} blocked for builder test")
+    return real_import(name, *args, **kwargs)
+
+builtins.__import__ = blocked_import
+"""
+
+    unavailable = subprocess.run(
+        [sys.executable, "-c", block_toml_imports + "\nimport tomllib"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert unavailable.returncode != 0
+    assert "tomllib blocked for builder test" in unavailable.stderr
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            block_toml_imports
+            + "\nimport runpy\nsys.argv = sys.argv[1:]\n"
+            + "runpy.run_path(sys.argv[0], run_name='__main__')",
+            str(ROOT / "scripts" / "validate_quetzal_serve_environment.py"),
+            "--source",
+            str(source),
+            "--source-revision",
+            LEGACY_QWEN_SOURCE_REVISION,
+            "--plugin-project",
+            str(ROOT / "tt-vllm-plugin" / "pyproject.toml"),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert json.loads(completed.stdout)["status"] == "legacy-pinned"
+
+
+def test_dependency_parser_fails_closed_on_missing_comma(tmp_path: Path) -> None:
+    plugin_project = tmp_path / "pyproject.toml"
+    plugin_project.write_text(
+        """
+[project]
+dependencies = [
+    "numpy>=1.24.4,<2"
+    "transformers==5.15.0",
+]
+""".lstrip()
+    )
+    with pytest.raises(ContractError, match="missing a comma"):
+        validate_contract(
+            _source(tmp_path, numpy="1.26.4"),
+            "d" * 40,
+            plugin_project=plugin_project,
+        )
 
 
 def test_rejects_numpy_2_profile_before_image_build(tmp_path: Path) -> None:
