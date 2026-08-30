@@ -45,6 +45,22 @@ DESCRIPTOR_CONTAINER_PATH = (
 AUXILIARY_TREE_SHA256 = (
     "2b2e528a75cae51a53db4a3e309f075553fe5f5f7fec7d2a29480f6572f2e416"
 )
+LOCAL_ON_DISPATCH_PROFILE = {
+    "max_concurrency": 1,
+    "actual_isl": 1024,
+    "requested_osl": 512,
+    "max_context": 8192,
+}
+GPT_RELEASE_EVALS = (
+    "aime25",
+    "gpqa_diamond_cot_zeroshot",
+    "mmlu_generative",
+    "swe_bench_verified",
+)
+GPT_SWEBENCH_INPUT_TOKENS = 92 * 1024
+GPT_SWEBENCH_OUTPUT_TOKENS = 32 * 1024
+LOCAL_TTFT_MS_RANGE = (3310, 3320)
+TTFT_TARGET_MS = 3000
 STALE_5CAB_PACKAGE_ID = (
     "sha256-v2-"
     "5fdf2a62f190469e3b113bf696ebb2a32cc804683fbee0e258186cf1fa5e1be5-"
@@ -418,6 +434,54 @@ def render_contract(data: dict[str, Any]) -> dict[str, Any]:
             "image": runtime["image"],
             "ci": {"nightly": schedule, "release": schedule},
         },
+        "qualification_frontier": {
+            "catalogue_activation": "disabled_until_validated_publication_response",
+            "initial_on_dispatch": {
+                "status_after_publication": "dispatchable_not_certified",
+                "profile": LOCAL_ON_DISPATCH_PROFILE,
+                "blocking_gates": [
+                    "immutable core and auxiliary admission",
+                    "exact image and runtime identity",
+                    "fresh Ring/2 topology admission before weights",
+                    "TTIS plus official vllm-tt-plugin startup",
+                    "generated-only provider and no native fallback",
+                    "capacity, non-empty response, and clean lifecycle",
+                ],
+            },
+            "nightly_and_release_entries": {
+                "rendered": True,
+                "activate_nightly_after_initial_on_dispatch": True,
+                "activate_release": False,
+                "release_activation_owner": "CS",
+            },
+            "defined_evals": list(GPT_RELEASE_EVALS),
+            "agentic_release_context": {
+                "task": "swe_bench_verified",
+                "max_input_tokens": GPT_SWEBENCH_INPUT_TOKENS,
+                "max_output_tokens": GPT_SWEBENCH_OUTPUT_TOKENS,
+                "required_context": (
+                    GPT_SWEBENCH_INPUT_TOKENS + GPT_SWEBENCH_OUTPUT_TOKENS
+                ),
+                "available_context": artifacts["max_context"],
+                "status": "blocked_must_not_clamp_mask_or_skip",
+            },
+            "performance": {
+                "local_ttft_ms_range": list(LOCAL_TTFT_MS_RANGE),
+                "ttft_target_ms": TTFT_TARGET_MS,
+                "status": "miss",
+            },
+            "required_repo_tests": [
+                "tests/test_plan_gpt120_f0b_quetzal_enrollment.py",
+                "tests/test_quetzal_topology_admission.py",
+                "tests/workflows/test_gpt120_swebench_contract.py",
+            ],
+            "claim_boundary": (
+                "A passing initial On-dispatch is functional Models CI evidence, not "
+                "full release. The release entry remains disabled until the exact "
+                "agentic-context and performance gates pass or CS records an explicit "
+                "implementation-specific acceptance contract."
+            ),
+        },
         "shield_required_contract": {
             "source_commit": data["integration"]["shield_source_commit"],
             "required_ancestor": SHIELD_REQUIRED_ANCESTOR,
@@ -452,7 +516,8 @@ def render_contract(data: dict[str, Any]) -> dict[str, Any]:
             "apply and schema-validate the TTIS dev catalogue and Models CI fragments",
             "run one guarded on-dispatch qualification",
             "enable nightly only after on-dispatch passes",
-            "enable release only after CS-owned acceptance policy is recorded",
+            "keep release disabled until the 124K agentic-context and 3-second TTFT "
+            "gates pass or CS records an explicit implementation-specific policy",
         ],
         "forbidden_claims": [
             "portable P300X2",

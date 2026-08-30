@@ -16,6 +16,11 @@ from scripts.release.plan_gpt120_f0b_quetzal_enrollment import (
     DESCRIPTOR_SHA256,
     EXPECTED_ARTIFACTS,
     EXPECTED_RELATIVE_PATHS,
+    GPT_RELEASE_EVALS,
+    GPT_SWEBENCH_INPUT_TOKENS,
+    GPT_SWEBENCH_OUTPUT_TOKENS,
+    LOCAL_ON_DISPATCH_PROFILE,
+    LOCAL_TTFT_MS_RANGE,
     MODEL_ID,
     QUETZAL_COMMIT,
     RUNNER_LABEL,
@@ -25,6 +30,7 @@ from scripts.release.plan_gpt120_f0b_quetzal_enrollment import (
     STALE_5CAB_PACKAGE_ID,
     TT_METAL_COMMIT,
     TT_METAL_PATCHSET,
+    TTFT_TARGET_MS,
     TTIS_REQUIRED_ANCESTOR,
     TOPOLOGY_SELECTION_SHA256,
     ContractError,
@@ -215,6 +221,37 @@ def test_exact_response_renders_catalogue_ci_and_ring2_contract():
     assert shield["source_commit"] == SHIELD_REQUIRED_ANCESTOR
     assert shield["required_ancestor"] == SHIELD_REQUIRED_ANCESTOR
     assert rendered["exact_identity"]["ttis_source_commit"] == TTIS_REQUIRED_ANCESTOR
+
+
+def test_gpt_pending_row_defines_all_ci_entries_without_weakening_release():
+    rendered = render_contract(publication_response())
+    frontier = rendered["qualification_frontier"]
+
+    assert frontier["catalogue_activation"] == (
+        "disabled_until_validated_publication_response"
+    )
+    assert frontier["initial_on_dispatch"]["status_after_publication"] == (
+        "dispatchable_not_certified"
+    )
+    assert frontier["initial_on_dispatch"]["profile"] == LOCAL_ON_DISPATCH_PROFILE
+    entries = frontier["nightly_and_release_entries"]
+    assert entries["rendered"] is True
+    assert entries["activate_nightly_after_initial_on_dispatch"] is True
+    assert entries["activate_release"] is False
+    assert frontier["defined_evals"] == list(GPT_RELEASE_EVALS)
+
+    agentic = frontier["agentic_release_context"]
+    assert agentic["max_input_tokens"] == GPT_SWEBENCH_INPUT_TOKENS
+    assert agentic["max_output_tokens"] == GPT_SWEBENCH_OUTPUT_TOKENS
+    assert agentic["required_context"] == 124 * 1024
+    assert agentic["available_context"] == 8192
+    assert agentic["status"] == "blocked_must_not_clamp_mask_or_skip"
+
+    performance = frontier["performance"]
+    assert performance["local_ttft_ms_range"] == list(LOCAL_TTFT_MS_RANGE)
+    assert performance["ttft_target_ms"] == TTFT_TARGET_MS
+    assert performance["status"] == "miss"
+    assert "not full release" in frontier["claim_boundary"]
 
 
 def test_reviewed_descendant_sources_do_not_self_block_enrollment():
