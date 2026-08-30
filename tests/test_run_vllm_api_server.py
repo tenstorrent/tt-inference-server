@@ -611,6 +611,11 @@ def test_quetzal_runtime_contract_wires_split_attestation_before_vllm(
     monkeypatch.setitem(
         sys.modules, "serving.runtime_compatibility_attestation", module
     )
+    environment_module = types.ModuleType("serving.qualified_environment_contract")
+    environment_module.profile_identity = lambda _profile: "f" * 64
+    monkeypatch.setitem(
+        sys.modules, "serving.qualified_environment_contract", environment_module
+    )
 
     run_vllm_api_server_module._validate_quetzal_package_and_runtime(
         package_root, "Qwen/Qwen3.6-27B"
@@ -621,6 +626,12 @@ def test_quetzal_runtime_contract_wires_split_attestation_before_vllm(
     assert observed["expected_integration_source_revision"] == "b" * 40
     assert observed["expected_serve_profile"] == "gpt_oss_120b.serve"
     assert observed["expected_serve_profile_sha256"] == "f" * 64
+
+    environment_module.profile_identity = lambda _profile: "d" * 64
+    with pytest.raises(RuntimeError, match="installed Quetzal serve profile differs"):
+        run_vllm_api_server_module._validate_quetzal_package_and_runtime(
+            package_root, "Qwen/Qwen3.6-27B"
+        )
 
 
 def test_quetzal_runtime_contract_rejects_split_attestation_generator_mismatch(
@@ -643,6 +654,11 @@ def test_quetzal_runtime_contract_rejects_split_attestation_generator_mismatch(
     }
     monkeypatch.setitem(
         sys.modules, "serving.runtime_compatibility_attestation", module
+    )
+    environment_module = types.ModuleType("serving.qualified_environment_contract")
+    environment_module.profile_identity = lambda _profile: "f" * 64
+    monkeypatch.setitem(
+        sys.modules, "serving.qualified_environment_contract", environment_module
     )
 
     with pytest.raises(RuntimeError, match="generator source differs"):
