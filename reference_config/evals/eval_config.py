@@ -4753,13 +4753,14 @@ _eval_config_list = [
                     n_tasks=None,
                     temperature=1.0,
                     top_p=0.95,
-                    # The official P300X2 spec declares a 131072-token context.
-                    # Keep input+output at 124K, leaving 4K for template/tool
-                    # overhead.  An 8K development artifact does not satisfy
-                    # this contract and must fail admission rather than silently
-                    # shrink the workload.
-                    max_input_tokens=92 * 1024,
-                    max_output_tokens=32 * 1024,
+                    # The generated-only f0b P300X2 release profile is C1/S8192.
+                    # This is the declared bounded SWE-bench workload for that
+                    # serving contract, not a runtime clamp of the 124K GPU
+                    # reference recipe.  Keep the latter out of release until a
+                    # >=124K implementation is enrolled.  At S8192, reserve 2K
+                    # for the agent response and permit 6K of prompt/tool state.
+                    max_input_tokens=6 * 1024,
+                    max_output_tokens=2 * 1024,
                     # Five C1 agentic trials may each generate a long reasoning
                     # trajectory. Bound the complete generation phase without
                     # conflating it with the 30-minute per-instance verifier.

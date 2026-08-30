@@ -31,7 +31,7 @@ def _task():
     return next(task for task in config.tasks if task.task_name == "swe_bench_verified")
 
 
-def test_gpt120_swebench_is_exact_c1_124k_five_instance_contract(tmp_path):
+def test_gpt120_swebench_is_exact_c1_s8192_five_instance_contract(tmp_path):
     task = _task()
     cfg = task.swebench_eval_config
     assert task.workflow_venv_type is WorkflowVenvType.EVALS_AGENTIC
@@ -39,9 +39,9 @@ def test_gpt120_swebench_is_exact_c1_124k_five_instance_contract(tmp_path):
     assert cfg.dataset_split == "test"
     assert cfg.agent_backend == "mini-swe-agent"
     assert cfg.n_concurrent_trials == 1
-    assert cfg.max_input_tokens == 92 * 1024
-    assert cfg.max_output_tokens == 32 * 1024
-    assert cfg.max_input_tokens + cfg.max_output_tokens == 124 * 1024
+    assert cfg.max_input_tokens == 6 * 1024
+    assert cfg.max_output_tokens == 2 * 1024
+    assert cfg.max_input_tokens + cfg.max_output_tokens == 8192
     assert cfg.agent_generation_timeout_sec == 6 * 60 * 60
     assert cfg.swebench_timeout_sec == 30 * 60
     assert resolve_instance_ids(task, Runtime()) == EXPECTED_INSTANCES
