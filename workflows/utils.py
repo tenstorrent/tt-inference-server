@@ -556,7 +556,14 @@ def get_groups_for_uid(uid: int) -> set[int]:
     import grp
     import pwd
 
+    # Slurm and container workers can launch a process with valid numeric
+    # credentials even when the node's NSS database has no passwd entry for
+    # that UID.  The kernel credentials are authoritative for the current
+    # process, so preserve them before attempting the richer NSS lookup.
     gids = set()
+    if uid == os.getuid():
+        gids.add(os.getgid())
+        gids.update(os.getgroups())
     try:
         pw = pwd.getpwuid(uid)
         gids.add(pw.pw_gid)

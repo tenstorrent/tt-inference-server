@@ -239,6 +239,20 @@ class TestGetGroupsForUid:
         groups = get_groups_for_uid(current_uid)
         assert len(groups) >= 1
 
+    def test_current_user_uses_kernel_groups_without_nss(self, monkeypatch):
+        """Numeric Slurm users retain their process groups without NSS."""
+        import pwd
+
+        def missing_passwd_entry(_uid):
+            raise KeyError
+
+        monkeypatch.setattr(os, "getuid", lambda: 4248)
+        monkeypatch.setattr(os, "getgid", lambda: 4248)
+        monkeypatch.setattr(os, "getgroups", lambda: [7500, 60103])
+        monkeypatch.setattr(pwd, "getpwuid", missing_passwd_entry)
+
+        assert get_groups_for_uid(4248) == {4248, 7500, 60103}
+
     def test_nonexistent_uid_returns_empty(self):
         """Non-existent UID should return empty set."""
         # Use a UID that almost certainly doesn't exist
