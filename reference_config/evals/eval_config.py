@@ -4900,7 +4900,11 @@ _eval_config_list = [
                     sweagent_subset="verified",
                     dataset_split="test",
                     agent_backend="mini-swe-agent",
-                    n_concurrent_trials=5,
+                    # One agent at a time: the QB2 server runs max_num_seqs=1,
+                    # so 5 concurrent agents each crawl at 1/5 speed and none
+                    # finished in 6 h on run 33176296979 (same reason
+                    # terminal_bench_2 runs n_concurrent_trials=1).
+                    n_concurrent_trials=1,
                     max_workers=8,
                     n_tasks=None,  # full dataset
                     temperature=1.0,
@@ -4918,7 +4922,7 @@ _eval_config_list = [
                     # mini-swe-agent's builtin swebench.yaml step_limit is
                     # sized for GPU-speed turns; cap explicitly so a stuck
                     # instance is bounded at QB2 decode speed.
-                    mini_agent_kwargs={"step_limit": 75},
+                    mini_agent_kwargs={"step_limit": 40},  # 75 -> 40: serial instances at ~2-3 min/step must stay bounded in wall time
                     completion_kwargs={
                         "extra_body": {
                             "top_k": 20,
