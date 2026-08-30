@@ -87,8 +87,7 @@ def test_quetzal_runtime_is_rebuilt_in_base_abi_and_atomically_replaced():
     assert source.count("tt_metal_patchset.py") >= 3
     assert (
         "--mount=type=cache,id=quetzal-tt-metal-cpm,"
-        "target=/root/.cache/tt-metal-cpm,sharing=locked"
-        in source
+        "target=/root/.cache/tt-metal-cpm,sharing=locked" in source
     )
     assert "CPM_SOURCE_CACHE=/root/.cache/tt-metal-cpm" in source
     assert "cmp /tmp/packages.before /tmp/packages.after" in source
