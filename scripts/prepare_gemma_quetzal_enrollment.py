@@ -30,14 +30,21 @@ SCHEMA = "quetzal.gemma-models-ci-enrollment-evidence.v1"
 MODEL = "google/gemma-4-31B-it"
 MODEL_KEY = "gemma-4-31B-it"
 HF_REVISION = "842da3794eaa0b77d5f08bae87a17459d91ff475"
-QUETZAL_SOURCE = "bb02e1975437ee210578fd008721a7acff3f2dba"
+QUETZAL_SOURCE = "cfaea6c1b610afb8fed34c542e9a6df944fee51d"
 TT_METAL = "b534549300fe2af11e6ee828675294bc0e359555"
 PATCHSET = "22fb0bd2523b8a5c63fa20c3c8a1586dc9ead5150449d0eb02231fa8173a7edd"
-INIT_SHA256 = "b0073851fe9142c62d1ff488c40b8e5a9307040d4e6e93d1ebcb365440a5a218"
 RUNNER = "qb2-p300x2-physical-2x2-ring-links2"
+SHIELD_IMAGE_ANCESTOR = "d97835a18ef6419e9bd12c5e60ffd87bdf7fe3c6"
+EXPECTED_ARTIFACT_SHA256 = {
+    "generated_prefill": "21da9a2b34c2645067d349081c0d6b263c5fd9cf091c536912f45f413474e1aa",
+    "prefill_metadata": "fdbf2b845242a6899c660eda9053bf69b46bf3a8324c3c4b2285b01433c3cf5f",
+    "generated_decode": "6aeef68c2bd0fc5750ef18eb32ffd0eb829333c80e5b0fc58d19595a330542cd",
+    "decode_metadata": "192851bc87432e2e4b4cde8ab614b32229233f3f7232eb580217246a08791351",
+}
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 GIT_REVISION = re.compile(r"^[0-9a-f]{40}$")
 PACKAGE = re.compile(r"^sha256(?:-v[0-9]+)?(?:-[0-9a-f]{64}){2,3}$")
+OCI_IMAGE = re.compile(r"^[^\s@:]+(?:/[^\s@:]+)+@sha256:[0-9a-f]{64}$")
 
 
 class EnrollmentError(ValueError):
@@ -71,17 +78,31 @@ def _current_repository_revision(repo_root: Path, field: str) -> str:
     return _git_revision(result.stdout.strip(), f"current {field} checkout revision")
 
 
-def _shield_scheduled_quetzal_source_revision(shield_repo_root: Path) -> str:
-    workflow_path = shield_repo_root / ".github/workflows/dynamic-workflow.yml"
+def _require_git_ancestor(repo_root: Path, ancestor: str, descendant: str) -> None:
     try:
-        workflow = yaml.safe_load(workflow_path.read_text())
-        trigger = workflow.get("on", workflow.get(True))
-        source = trigger["workflow_call"]["inputs"]["tt-quetzal-commit"]["default"]
-    except (OSError, AttributeError, KeyError, TypeError, yaml.YAMLError) as error:
+        result = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(repo_root),
+                "merge-base",
+                "--is-ancestor",
+                ancestor,
+                descendant,
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
         raise EnrollmentError(
-            "cannot resolve Shield's scheduled Quetzal source contract"
+            "cannot verify the Shield implementation-qualified image ancestry"
         ) from error
-    return _git_revision(source, "Shield scheduled Quetzal source")
+    if result.returncode != 0:
+        raise EnrollmentError(
+            "Shield checkout does not contain implementation-qualified immutable image support"
+        )
 
 
 def _absolute(value: Any, field: str) -> str:
@@ -136,9 +157,43 @@ def validate_evidence(
         "identity.patchset_applied_manifest_matches",
     )
     _need(
-        identity.get("initialization_milestones_sha256"),
-        INIT_SHA256,
-        "identity.initialization_milestones_sha256",
+        identity.get("artifact_sha256"),
+        EXPECTED_ARTIFACT_SHA256,
+        "identity.artifact_sha256",
+    )
+
+    runtime = data.get("runtime", {})
+    image = runtime.get("image")
+    if not isinstance(image, str) or not OCI_IMAGE.fullmatch(image):
+        raise EnrollmentError(
+            "runtime.image must be an immutable repository/path@sha256:<digest> reference"
+        )
+    _need(
+        runtime.get("quetzal_source_revision"),
+        QUETZAL_SOURCE,
+        "runtime.quetzal_source_revision",
+    )
+    _need(runtime.get("tt_metal_revision"), TT_METAL, "runtime.tt_metal_revision")
+    _need(
+        runtime.get("tt_metal_patchset_sha256"),
+        PATCHSET,
+        "runtime.tt_metal_patchset_sha256",
+    )
+    _need(runtime.get("server_boundary"), "official_ttis", "runtime.server_boundary")
+    _need(
+        runtime.get("platform_provider"), "vllm-tt-plugin", "runtime.platform_provider"
+    )
+    _need(
+        runtime.get("plugin_entrypoint"),
+        "quetzal_model_registry",
+        "runtime.plugin_entrypoint",
+    )
+    _need(
+        runtime.get("vllm_plugins"), "quetzal_model_registry,tt", "runtime.vllm_plugins"
+    )
+    _need(runtime.get("tt_vllm_builtin_models"), "0", "runtime.tt_vllm_builtin_models")
+    _need(
+        runtime.get("native_fallback_allowed"), False, "runtime.native_fallback_allowed"
     )
 
     package_id = data.get("package_id")
@@ -167,9 +222,9 @@ def validate_evidence(
     expected_profile = {
         "batch_size": 1,
         "concurrency": 1,
-        "prefill_capacity": 1024,
-        "decode_capacity": 2048,
-        "precision": "BFP8",
+        "prefill_capacity": 4096,
+        "decode_capacity": 4096,
+        "precision": "BF16",
     }
     _need(profile, expected_profile, "profile")
     topology = data.get("topology", {})
@@ -205,9 +260,31 @@ def validate_evidence(
         package_id,
         "qualification.exact_package_identity",
     )
-    _need(qualification.get("endpoint_isl"), 1024, "qualification.endpoint_isl")
-    _need(qualification.get("endpoint_osl"), 512, "qualification.endpoint_osl")
-    _need(qualification.get("http_200"), True, "qualification.http_200")
+    capacity = qualification.get("capacity_endpoint", {})
+    _need(capacity.get("isl"), 4095, "qualification.capacity_endpoint.isl")
+    _need(capacity.get("osl"), 1, "qualification.capacity_endpoint.osl")
+    _need(
+        capacity.get("total_tokens"),
+        4096,
+        "qualification.capacity_endpoint.total_tokens",
+    )
+    _need(capacity.get("http_200"), True, "qualification.capacity_endpoint.http_200")
+    semantic = qualification.get("semantic_endpoint", {})
+    _need(semantic.get("http_200"), True, "qualification.semantic_endpoint.http_200")
+    _need(
+        semantic.get("visible_nonempty"),
+        True,
+        "qualification.semantic_endpoint.visible_nonempty",
+    )
+    completion_tokens = semantic.get("completion_tokens")
+    if (
+        not isinstance(completion_tokens, int)
+        or isinstance(completion_tokens, bool)
+        or completion_tokens < 1
+    ):
+        raise EnrollmentError(
+            "qualification.semantic_endpoint.completion_tokens must be a positive integer"
+        )
     _need(qualification.get("clean_unload"), True, "qualification.clean_unload")
     _need(
         qualification.get("zero_device_holders_after"),
@@ -229,21 +306,23 @@ def validate_evidence(
         "pcc": float(pcc),
         "ttis_revision": ttis_revision,
         "shield_revision": shield_revision,
+        "image": image,
     }
 
 
 def render_fragments(
     data: dict[str, Any], repo_root: Path, *, shield_repo_root: Path
 ) -> dict[str, Any]:
-    _need(
-        _shield_scheduled_quetzal_source_revision(shield_repo_root),
-        QUETZAL_SOURCE,
-        "Shield scheduled Quetzal source",
+    shield_revision = _current_repository_revision(shield_repo_root, "Shield")
+    _require_git_ancestor(
+        shield_repo_root,
+        SHIELD_IMAGE_ANCESTOR,
+        shield_revision,
     )
     exact = validate_evidence(
         data,
         ttis_revision=_current_repository_revision(repo_root, "TTIS"),
-        shield_revision=_current_repository_revision(shield_repo_root, "Shield"),
+        shield_revision=shield_revision,
     )
     root = exact["container_root"]
     roles = exact["roles"]
@@ -283,17 +362,15 @@ def render_fragments(
                 "supported_modalities": ["text"],
                 "device_model_specs": [
                     {
-                        # TTIS discovery uses max_context to select the generated
-                        # prefill bucket.  Decode capacity remains 2048 below, so an
-                        # ISL1024 + OSL512 request fits without advertising S2048.
+                        # The exact generated pair is qualified only at S4096.
                         "device": "P300X2",
                         "max_concurrency": 1,
-                        "max_context": 1024,
+                        "max_context": 4096,
                         "default_impl": False,
                         "env_vars": env,
                         "vllm_args": {
                             "block_size": 64,
-                            "max_model_len": 2048,
+                            "max_model_len": 4096,
                             "max_num_seqs": 1,
                             "revision": HF_REVISION,
                             "tokenizer_revision": HF_REVISION,
@@ -320,6 +397,7 @@ def render_fragments(
     implementation = {
         "inference_engine": "vLLM",
         "impl": "quetzal",
+        "image": exact["image"],
         "ci": {
             schedule: {
                 "devices": ["P300X2"],

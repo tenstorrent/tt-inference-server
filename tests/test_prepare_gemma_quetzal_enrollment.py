@@ -9,10 +9,11 @@ from pathlib import Path
 
 import pytest
 
+import scripts.prepare_gemma_quetzal_enrollment as gemma_enrollment
 from scripts.prepare_gemma_quetzal_enrollment import (
+    EXPECTED_ARTIFACT_SHA256,
     EnrollmentError,
     HF_REVISION,
-    INIT_SHA256,
     MODEL,
     PATCHSET,
     QUETZAL_SOURCE,
@@ -82,6 +83,12 @@ def shield_checkout(tmp_path):
     return root, revision
 
 
+@pytest.fixture(autouse=True)
+def exact_shield_image_ancestor(shield_checkout, monkeypatch):
+    _, revision = shield_checkout
+    monkeypatch.setattr(gemma_enrollment, "SHIELD_IMAGE_ANCESTOR", revision)
+
+
 def evidence(*, ttis_revision=None, shield_revision=SHIELD_REVISION):
     return {
         "schema_version": SCHEMA,
@@ -99,7 +106,19 @@ def evidence(*, ttis_revision=None, shield_revision=SHIELD_REVISION):
             "tt_metal_revision": TT_METAL,
             "tt_metal_patchset_sha256": PATCHSET,
             "patchset_applied_manifest_matches": True,
-            "initialization_milestones_sha256": INIT_SHA256,
+            "artifact_sha256": EXPECTED_ARTIFACT_SHA256,
+        },
+        "runtime": {
+            "image": "ghcr.io/tenstorrent/ttis-quetzal-gemma@sha256:" + "a" * 64,
+            "quetzal_source_revision": QUETZAL_SOURCE,
+            "tt_metal_revision": TT_METAL,
+            "tt_metal_patchset_sha256": PATCHSET,
+            "server_boundary": "official_ttis",
+            "platform_provider": "vllm-tt-plugin",
+            "plugin_entrypoint": "quetzal_model_registry",
+            "vllm_plugins": "quetzal_model_registry,tt",
+            "tt_vllm_builtin_models": "0",
+            "native_fallback_allowed": False,
         },
         "package_id": PACKAGE_ID,
         "package_manifest_sha256": "3" * 64,
@@ -108,9 +127,9 @@ def evidence(*, ttis_revision=None, shield_revision=SHIELD_REVISION):
         "profile": {
             "batch_size": 1,
             "concurrency": 1,
-            "prefill_capacity": 1024,
-            "decode_capacity": 2048,
-            "precision": "BFP8",
+            "prefill_capacity": 4096,
+            "decode_capacity": 4096,
+            "precision": "BF16",
         },
         "topology": {
             "chip_count": 4,
@@ -129,9 +148,17 @@ def evidence(*, ttis_revision=None, shield_revision=SHIELD_REVISION):
             "pcc": 0.991,
             "fresh": True,
             "exact_package_identity": PACKAGE_ID,
-            "endpoint_isl": 1024,
-            "endpoint_osl": 512,
-            "http_200": True,
+            "capacity_endpoint": {
+                "isl": 4095,
+                "osl": 1,
+                "total_tokens": 4096,
+                "http_200": True,
+            },
+            "semantic_endpoint": {
+                "http_200": True,
+                "visible_nonempty": True,
+                "completion_tokens": 12,
+            },
             "clean_unload": True,
             "zero_device_holders_after": True,
             "initialization_terminal": {"event": "engine_ready", "state": "complete"},
@@ -147,8 +174,8 @@ def test_exact_evidence_renders_schema_valid_non_dispatching_fragments(shield_ch
     row = rendered["implementation"]
     assert set(row["ci"]) == {"nightly", "release"}
     device_spec = rendered["catalogue"]["templates"][0]["device_model_specs"][0]
-    assert device_spec["max_context"] == 1024
-    assert device_spec["vllm_args"]["max_model_len"] == 2048
+    assert device_spec["max_context"] == 4096
+    assert device_spec["vllm_args"]["max_model_len"] == 4096
     env = device_spec["env_vars"]
     assert env["TTQ_ROW_ALL_REDUCE_TOPOLOGY"] == "Ring"
     assert env["TTQ_TUNED_ROW_ALL_REDUCE_LINKS"] == "2"
@@ -159,6 +186,7 @@ def test_exact_evidence_renders_schema_valid_non_dispatching_fragments(shield_ch
     assert rendered["handoff"]["ttis_revision"] == current_ttis_revision()
     assert rendered["handoff"]["shield_revision"] == shield_revision
     assert rendered["handoff"]["fallback_allowed"] is False
+    assert row["image"] == evidence()["runtime"]["image"]
 
 
 @pytest.mark.parametrize(
@@ -169,10 +197,25 @@ def test_exact_evidence_renders_schema_valid_non_dispatching_fragments(shield_ch
             lambda x: x["identity"].update(quetzal_source_revision="0" * 40),
             "quetzal_source_revision",
         ),
-        (lambda x: x["profile"].update(decode_capacity=1024), "profile"),
+        (lambda x: x["profile"].update(decode_capacity=2048), "profile"),
         (lambda x: x["topology"].update(runner_label="p300x2"), "runner_label"),
         (lambda x: x["qualification"].update(pcc=0.989), "pcc"),
-        (lambda x: x["qualification"].update(endpoint_osl=511), "endpoint_osl"),
+        (
+            lambda x: x["qualification"]["capacity_endpoint"].update(osl=2),
+            "capacity_endpoint.osl",
+        ),
+        (
+            lambda x: x["qualification"]["semantic_endpoint"].update(
+                visible_nonempty=False
+            ),
+            "visible_nonempty",
+        ),
+        (
+            lambda x: x["runtime"].update(
+                image="ghcr.io/tenstorrent/ttis-quetzal-gemma:latest"
+            ),
+            "runtime.image",
+        ),
         (
             lambda x: x["qualification"].update(initialization_terminal=None),
             "initialization_terminal",
@@ -222,37 +265,14 @@ def test_shield_checkout_head_change_invalidates_prior_evidence(shield_checkout)
         )
 
 
-def test_shield_scheduled_image_source_must_match_gemma_evidence(shield_checkout):
-    shield_root, _ = shield_checkout
-    workflow = shield_root / ".github/workflows/dynamic-workflow.yml"
-    workflow.write_text(
-        json.dumps(
-            {
-                "on": {
-                    "workflow_call": {
-                        "inputs": {
-                            "tt-quetzal-commit": {
-                                "default": "8a3bebe4afdd58068d4190248c3f7b82cc27ae9f"
-                            }
-                        }
-                    }
-                }
-            }
-        )
-        + "\n"
-    )
-    subprocess.run(
-        ["git", "-C", str(shield_root), "commit", "-qam", "change source"],
-        check=True,
-    )
-    shield_revision = subprocess.run(
-        ["git", "-C", str(shield_root), "rev-parse", "HEAD"],
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
-
-    with pytest.raises(EnrollmentError, match="scheduled Quetzal source"):
+def test_shield_checkout_must_contain_implementation_image_support(
+    shield_checkout, monkeypatch
+):
+    shield_root, shield_revision = shield_checkout
+    monkeypatch.setattr(gemma_enrollment, "SHIELD_IMAGE_ANCESTOR", "f" * 40)
+    with pytest.raises(
+        EnrollmentError, match="implementation-qualified immutable image"
+    ):
         render_fragments(
             evidence(shield_revision=shield_revision),
             ROOT,
