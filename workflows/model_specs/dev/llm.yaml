@@ -177,6 +177,12 @@ templates:
   inference_engine: VLLM
   model_type: LLM
   supported_modalities: [text]
+  # Generated f0b streams the 66 GB expert cache and mmaps its 4.3 GB weights;
+  # it does not materialize a 120B bf16 checkpoint in host RAM. Exabox evidence
+  # measured 8,279,056 KiB peak compile RSS and 3,436,484 KiB resident endpoint
+  # RSS, so 32 GiB preserves >3.9x headroom over the measured peak. Keep the
+  # native GPT rows' inferred 300 GiB requirement unchanged.
+  min_ram_gb: 32
   device_model_specs:
     - device: P300X2
       max_concurrency: 1

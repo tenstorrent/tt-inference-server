@@ -335,6 +335,7 @@ def test_gpt_quetzal_dev_catalog_is_non_default_and_prod_remains_disabled():
     ]
     assert len(generated) == 1
     assert generated[0].status.name == "EXPERIMENTAL"
+    assert generated[0].min_ram_gb == 32
     device = generated[0].device_model_specs[0]
     assert device.device.name == "P300X2"
     assert device.default_impl is False
