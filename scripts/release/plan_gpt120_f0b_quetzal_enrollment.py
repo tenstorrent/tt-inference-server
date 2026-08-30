@@ -33,6 +33,9 @@ TTIS_REQUIRED_ANCESTOR = "eb7df50d90882b594be5ec2504f0e8fa6cc28851"
 SHIELD_REQUIRED_ANCESTOR = "628d36f26079d765bc38a9aad44d88be3ee9a1d3"
 RUNNER_LABEL = "qb2-p300x2-physical-2x2-ring-links2"
 DESCRIPTOR_SHA256 = "f4c9fb5acf307e1b320525007035ed9e75039f793e4350120365243682e37792"
+TOPOLOGY_SELECTION_SHA256 = (
+    "1852bfcc4a4acd234b83de0ce1b174b3334daa5f6f0361f835564a26f26291a7"
+)
 AUXILIARY_NAME = "openai_gpt-oss-120b-streamed-cache"
 CONTAINER_PACKAGE_PARENT = "/home/container_app_user/quetzal/packages"
 CONTAINER_AUXILIARY_PARENT = "/home/container_app_user/quetzal/auxiliary"
@@ -411,6 +414,7 @@ def render_contract(data: dict[str, Any]) -> dict[str, Any]:
                 "logical_degree_histogram": {"2": 4},
                 "physical_degree_histogram": {"2": 4},
                 "descriptor_sha256": DESCRIPTOR_SHA256,
+                "qualified_selection_sha256": TOPOLOGY_SELECTION_SHA256,
                 "selected_collective_topology_not_measured": "Ring",
                 "selected_collective_links_not_measured": 2,
             },

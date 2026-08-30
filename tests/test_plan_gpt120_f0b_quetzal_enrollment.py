@@ -23,9 +23,11 @@ from scripts.release.plan_gpt120_f0b_quetzal_enrollment import (
     TT_METAL_COMMIT,
     TT_METAL_PATCHSET,
     TTIS_REQUIRED_ANCESTOR,
+    TOPOLOGY_SELECTION_SHA256,
     ContractError,
     render_contract,
 )
+from workflows import quetzal_topology_admission
 
 
 def publication_response():
@@ -138,6 +140,18 @@ def publication_response():
     }
 
 
+def test_enrollment_and_runtime_topology_gate_bind_the_same_f0b_bytes():
+    """A planner/runtime mismatch creates a contract no image can satisfy."""
+    assert quetzal_topology_admission._DESCRIPTOR_SHA256 == DESCRIPTOR_SHA256
+    assert quetzal_topology_admission._EMIT_SHA256 == (
+        EXPECTED_ARTIFACTS["candidate_pair_emit_sha256"]
+    )
+    assert (
+        quetzal_topology_admission._SELECTION_SHA256
+        == TOPOLOGY_SELECTION_SHA256
+    )
+
+
 def test_exact_response_renders_catalogue_ci_and_ring2_contract():
     response = publication_response()
     rendered = render_contract(response)
@@ -196,6 +210,10 @@ def test_exact_response_renders_catalogue_ci_and_ring2_contract():
     assert shield["image_must_be_selected_per_model_implementation"] is True
     assert shield["forbid_shared_generic_quetzal_image"] is True
     assert shield["required_quetzal_source_commit"] == QUETZAL_COMMIT
+    assert (
+        shield["expected_topology"]["qualified_selection_sha256"]
+        == TOPOLOGY_SELECTION_SHA256
+    )
     assert shield["source_commit"] == SHIELD_REQUIRED_ANCESTOR
     assert shield["required_ancestor"] == SHIELD_REQUIRED_ANCESTOR
     assert rendered["exact_identity"]["ttis_source_commit"] == TTIS_REQUIRED_ANCESTOR

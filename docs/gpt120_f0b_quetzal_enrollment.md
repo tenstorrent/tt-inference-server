@@ -31,7 +31,8 @@ The response must bind, at minimum:
 - an immutable OCI image containing Quetzal f0b, tt-metal b534, patchset 22fb,
   generated-only plugin registration, and no native fallback; and
 - a Slurm-backed `qb2-p300x2-physical-2x2-ring-links2` runner with fresh
-  pre-weight four-chip 2x2 degree `{2:4}` admission and descriptor `f4c9...7792`.
+  pre-weight four-chip 2x2 degree `{2:4}` admission, descriptor
+  `f4c9fb5a...7792`, and f0b selection `1852bfcc...1a7`.
 
 The reviewed handoff requires TTIS `eb7df50d` and Shield `628d36f` as minimum
 ancestors. The publication response records the exact later TTIS and Shield

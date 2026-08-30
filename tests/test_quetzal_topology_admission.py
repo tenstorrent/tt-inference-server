@@ -75,11 +75,11 @@ def _files(tmp_path: Path, *, physical=None, captured="2026-08-29T12:19:02Z"):
             "smoke_log_path": "/runner/output/mesh-open.log",
             "smoke_log_sha256": "1" * 64,
             "descriptor_path": "/runner/serving/mesh.textproto",
-            "qualified_selection_sha256": "5ec9757ae74034c0cbc12569718c059b2b049416c736ad45a2048c5dda05b562",
+            "qualified_selection_sha256": "1852bfcc4a4acd234b83de0ce1b174b3334daa5f6f0361f835564a26f26291a7",
             "qualified_selection_path": "/runner/serving/gpt120_ring2_topology_selection.json",
             "descriptor_sha256": "f4c9fb5acf307e1b320525007035ed9e75039f793e4350120365243682e37792",
             "selected_model_id": "openai/gpt-oss-120b",
-            "selected_emit_sha256": "5cab85f26fe64fdea2a89c302f848a43152dcbd673133a1bfdfbf7054ba5862f",
+            "selected_emit_sha256": "f296b7049ad6c9bfb3876f51c5cd1e717b19ebb0a667585907779ef45019370d",
             "claim_boundary": "mesh lifecycle, count, shape, and degree histograms are observed; Ring and links=2 are selected qualified-artifact configuration",
         },
     }
