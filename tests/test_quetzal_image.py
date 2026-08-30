@@ -43,8 +43,9 @@ def test_quetzal_is_installed_non_editably_and_entry_point_is_verified():
     assert "--requirements /tmp/quetzal-serve-requirements.txt" in source
     assert "--upgrade --no-deps --requirements" in source
     assert source.count('uv pip check --python "${PYTHON_ENV_DIR}/bin/python"') >= 3
-    assert "cmp /tmp/pip-check.base /tmp/pip-check.qualified" in source
-    assert "cmp /tmp/pip-check.base /tmp/pip-check.after" in source
+    assert 'test -z "$(comm -13 /tmp/pip-check.base /tmp/pip-check.qualified)"' in source
+    assert "cmp /tmp/pip-check.qualified /tmp/pip-check.after" in source
+    assert "cmp /tmp/pip-check.base /tmp/pip-check.qualified" not in source
     assert '&& /bin/bash -c "export VIRTUAL_ENV=' not in source
     assert "quetzal_model_registry" in source
     assert "tt_quetzalcoatlus.vllm_plugin:register" in source
