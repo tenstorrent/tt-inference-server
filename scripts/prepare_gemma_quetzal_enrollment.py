@@ -30,7 +30,8 @@ SCHEMA = "quetzal.gemma-models-ci-enrollment-evidence.v1"
 MODEL = "google/gemma-4-31B-it"
 MODEL_KEY = "gemma-4-31B-it"
 HF_REVISION = "842da3794eaa0b77d5f08bae87a17459d91ff475"
-QUETZAL_SOURCE = "cfaea6c1b610afb8fed34c542e9a6df944fee51d"
+ARTIFACT_SOURCE = "cfaea6c1b610afb8fed34c542e9a6df944fee51d"
+QUETZAL_SOURCE = "78b62a92552b73203027b9a1bd3810e54dfa55e3"
 TT_METAL = "b534549300fe2af11e6ee828675294bc0e359555"
 PATCHSET = "22fb0bd2523b8a5c63fa20c3c8a1586dc9ead5150449d0eb02231fa8173a7edd"
 RUNNER = "qb2-p300x2-physical-2x2-ring-links2"
@@ -163,9 +164,14 @@ def validate_evidence(
     _need(identity.get("model_id"), MODEL, "identity.model_id")
     _need(identity.get("hf_revision"), HF_REVISION, "identity.hf_revision")
     _need(
-        identity.get("quetzal_source_revision"),
+        identity.get("artifact_source_revision"),
+        ARTIFACT_SOURCE,
+        "identity.artifact_source_revision",
+    )
+    _need(
+        identity.get("quetzal_runtime_revision"),
         QUETZAL_SOURCE,
-        "identity.quetzal_source_revision",
+        "identity.quetzal_runtime_revision",
     )
     _need(identity.get("ttis_revision"), ttis_revision, "identity.ttis_revision")
     _need(identity.get("shield_revision"), shield_revision, "identity.shield_revision")
@@ -484,6 +490,7 @@ def render_fragments(
         "device": "P300X2",
         "runner_label": RUNNER,
         "quetzal_source_revision": QUETZAL_SOURCE,
+        "artifact_source_revision": ARTIFACT_SOURCE,
         "ttis_revision": exact["ttis_revision"],
         "shield_revision": exact["shield_revision"],
         "tt_metal_revision": TT_METAL,

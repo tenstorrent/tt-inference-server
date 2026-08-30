@@ -11,6 +11,7 @@ import pytest
 
 import scripts.prepare_gemma_quetzal_enrollment as gemma_enrollment
 from scripts.prepare_gemma_quetzal_enrollment import (
+    ARTIFACT_SOURCE,
     DESCRIPTOR_CONTAINER_PATH,
     DESCRIPTOR_SHA256,
     EXPECTED_ARTIFACT_SHA256,
@@ -102,7 +103,8 @@ def evidence(*, ttis_revision=None, shield_revision=SHIELD_REVISION):
         "identity": {
             "model_id": MODEL,
             "hf_revision": HF_REVISION,
-            "quetzal_source_revision": QUETZAL_SOURCE,
+            "artifact_source_revision": ARTIFACT_SOURCE,
+            "quetzal_runtime_revision": QUETZAL_SOURCE,
             "ttis_revision": ttis_revision or current_ttis_revision(),
             "shield_revision": shield_revision,
             "tt_metal_revision": TT_METAL,
@@ -210,8 +212,12 @@ def test_exact_evidence_renders_schema_valid_non_dispatching_fragments(shield_ch
     [
         (lambda x: x.update(decision="pending"), "decision"),
         (
-            lambda x: x["identity"].update(quetzal_source_revision="0" * 40),
-            "quetzal_source_revision",
+            lambda x: x["identity"].update(artifact_source_revision="0" * 40),
+            "artifact_source_revision",
+        ),
+        (
+            lambda x: x["identity"].update(quetzal_runtime_revision="0" * 40),
+            "quetzal_runtime_revision",
         ),
         (lambda x: x["profile"].update(decode_capacity=2048), "profile"),
         (lambda x: x["topology"].update(runner_label="p300x2"), "runner_label"),
