@@ -35,7 +35,7 @@ RUN test "${TT_METAL_BASE_REVISION}" = "b534549300fe2af11e6ee828675294bc0e359555
        | sha256sum --check -
 
 RUN --mount=type=cache,target=/root/.cache/ccache \
-    --mount=type=cache,target=/root/.cache/tt-metal-cpm,sharing=locked \
+    --mount=type=cache,id=quetzal-tt-metal-cpm,target=/root/.cache/tt-metal-cpm,sharing=locked \
     set -eux; \
     old_python_env=/tmp/ttis-python-env; \
     source "${PYTHON_ENV_DIR}/bin/activate"; \
