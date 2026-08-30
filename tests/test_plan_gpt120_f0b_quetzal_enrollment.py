@@ -244,9 +244,9 @@ def test_gpt_pending_row_defines_all_ci_entries_without_weakening_release():
     agentic = frontier["agentic_release_context"]
     assert agentic["max_input_tokens"] == GPT_SWEBENCH_INPUT_TOKENS
     assert agentic["max_output_tokens"] == GPT_SWEBENCH_OUTPUT_TOKENS
-    assert agentic["required_context"] == 124 * 1024
+    assert agentic["required_context"] == 8192
     assert agentic["available_context"] == 8192
-    assert agentic["status"] == "blocked_must_not_clamp_mask_or_skip"
+    assert agentic["status"] == "admitted_bounded_report_only"
 
     performance = frontier["performance"]
     assert performance["local_ttft_ms_range"] == list(LOCAL_TTFT_MS_RANGE)

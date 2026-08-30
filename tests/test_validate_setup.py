@@ -121,6 +121,23 @@ class TestAgenticTaskCapabilityAdmission:
         ), pytest.raises(ValueError, match="required_context=192"):
             validate_agentic_task_capabilities(spec, self._runtime())
 
+    def test_exact_gpt_quetzal_release_admits_declared_s8192_envelope(self):
+        spec = self._spec("gpt-oss-120b", 8192)
+
+        validate_agentic_task_capabilities(spec, self._runtime())
+
+    def test_exact_gpt_quetzal_release_rejects_less_than_s8192(self):
+        spec = self._spec("gpt-oss-120b", 8191)
+
+        with pytest.raises(ValueError) as exc:
+            validate_agentic_task_capabilities(spec, self._runtime())
+
+        message = str(exc.value)
+        assert "task='swe_bench_verified'" in message
+        assert "available_context=8191" in message
+        assert "required_context=8192" in message
+        assert "max_input_tokens=6144 + max_output_tokens=2048" in message
+
     def test_adequate_context_passes_without_concurrency_gate(self):
         task = self._terminal_task(max_input=128, max_output=64)
         spec = self._spec("adequate-model", 192, impl="native")

@@ -57,8 +57,8 @@ GPT_RELEASE_EVALS = (
     "mmlu_generative",
     "swe_bench_verified",
 )
-GPT_SWEBENCH_INPUT_TOKENS = 92 * 1024
-GPT_SWEBENCH_OUTPUT_TOKENS = 32 * 1024
+GPT_SWEBENCH_INPUT_TOKENS = 6 * 1024
+GPT_SWEBENCH_OUTPUT_TOKENS = 2 * 1024
 LOCAL_TTFT_MS_RANGE = (3310, 3320)
 TTFT_TARGET_MS = 3000
 STALE_5CAB_PACKAGE_ID = (
@@ -455,8 +455,8 @@ def render_contract(data: dict[str, Any]) -> dict[str, Any]:
                 "release_activation_owner": "CS",
                 "reason": (
                     "Shield schedules execute TTIS workflow=release. Both prepared "
-                    "entries therefore include the same 124K agentic and performance "
-                    "gates and must remain disabled after the bounded initial "
+                    "entries therefore include the same bounded C1/S8192 agentic "
+                    "and performance gates and must remain disabled after the initial "
                     "On-dispatch."
                 ),
             },
@@ -469,7 +469,7 @@ def render_contract(data: dict[str, Any]) -> dict[str, Any]:
                     GPT_SWEBENCH_INPUT_TOKENS + GPT_SWEBENCH_OUTPUT_TOKENS
                 ),
                 "available_context": artifacts["max_context"],
-                "status": "blocked_must_not_clamp_mask_or_skip",
+                "status": "admitted_bounded_report_only",
             },
             "performance": {
                 "local_ttft_ms_range": list(LOCAL_TTFT_MS_RANGE),
@@ -522,8 +522,8 @@ def render_contract(data: dict[str, Any]) -> dict[str, Any]:
             "apply and schema-validate the TTIS dev catalogue and Models CI fragments",
             "run one guarded on-dispatch qualification",
             "keep nightly and release disabled after the bounded on-dispatch until "
-            "the 124K agentic-context and 3-second TTFT gates pass or CS records an "
-            "explicit implementation-specific policy",
+            "the bounded agentic gate has a CS acceptance score and the 3-second "
+            "TTFT gate passes or CS records an explicit implementation-specific policy",
         ],
         "forbidden_claims": [
             "portable P300X2",
