@@ -342,6 +342,16 @@
         }
       }
     },
+    "Qwen3.5-27B": {
+      "inference_engine": "vLLM",
+      "ci": {
+        "nightly": {
+          "devices": [
+            "P150X4"
+          ]
+        }
+      }
+    },
     "Qwen3-4B": {
       "inference_engine": "FORGE",
       "ci": {
