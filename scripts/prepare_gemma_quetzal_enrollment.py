@@ -23,14 +23,20 @@ from typing import Any
 import jsonschema
 import yaml
 
-from scripts.validate_models_ci_config import validate_implementation_identities
+from scripts.validate_models_ci_config import (
+    is_immutable_oci_image,
+    validate_implementation_identities,
+)
 
-
-SCHEMA = "quetzal.gemma-models-ci-enrollment-evidence.v1"
+SCHEMA = "quetzal.gemma-models-ci-enrollment-evidence.v2"
 MODEL = "google/gemma-4-31B-it"
 MODEL_KEY = "gemma-4-31B-it"
 HF_REVISION = "842da3794eaa0b77d5f08bae87a17459d91ff475"
-QUETZAL_SOURCE = "bb02e1975437ee210578fd008721a7acff3f2dba"
+DIAGNOSTIC_SOURCE = "4cc1d52c056d5c59277c90d32037c3f5537f44d1"
+DIAGNOSTIC_GENERATED_SHA256 = (
+    "cbe994b4034dae70db2862a24d02378a73f78641e051827701bcd0e6e2c8bdc8"
+)
+DIAGNOSTIC_PCC = 0.9930300712585449
 TT_METAL = "b534549300fe2af11e6ee828675294bc0e359555"
 PATCHSET = "22fb0bd2523b8a5c63fa20c3c8a1586dc9ead5150449d0eb02231fa8173a7edd"
 INIT_SHA256 = "b0073851fe9142c62d1ff488c40b8e5a9307040d4e6e93d1ebcb365440a5a218"
@@ -117,11 +123,15 @@ def validate_evidence(
     identity = data.get("identity", {})
     _need(identity.get("model_id"), MODEL, "identity.model_id")
     _need(identity.get("hf_revision"), HF_REVISION, "identity.hf_revision")
-    _need(
+    quetzal_source = _git_revision(
         identity.get("quetzal_source_revision"),
-        QUETZAL_SOURCE,
         "identity.quetzal_source_revision",
     )
+    if quetzal_source == DIAGNOSTIC_SOURCE:
+        raise EnrollmentError(
+            "identity.quetzal_source_revision must contain the structural compiler "
+            "fix, not the post-processed diagnostic source"
+        )
     _need(identity.get("ttis_revision"), ttis_revision, "identity.ttis_revision")
     _need(identity.get("shield_revision"), shield_revision, "identity.shield_revision")
     _need(identity.get("tt_metal_revision"), TT_METAL, "identity.tt_metal_revision")
@@ -141,6 +151,54 @@ def validate_evidence(
         "identity.initialization_milestones_sha256",
     )
 
+    compiler = data.get("compiler", {})
+    _need(
+        compiler.get("source_revision"),
+        quetzal_source,
+        "compiler.source_revision",
+    )
+    _need(compiler.get("generated_by_compiler"), True, "compiler.generated_by_compiler")
+    _need(
+        compiler.get("postprocessed_generated_code"),
+        False,
+        "compiler.postprocessed_generated_code",
+    )
+    for gate in (
+        "structural_exact_geglu_lowering_passed",
+        "positive_tests_passed",
+        "near_miss_tests_passed",
+        "golden_neutrality_passed",
+    ):
+        _need(compiler.get(gate), True, f"compiler.{gate}")
+    for digest in ("implementation_receipt_sha256", "golden_neutrality_sha256"):
+        value = compiler.get(digest)
+        if not isinstance(value, str) or not SHA256.fullmatch(value):
+            raise EnrollmentError(
+                f"compiler.{digest} must be an exact lowercase SHA-256"
+            )
+
+    diagnostic = data.get("diagnostic_basis", {})
+    _need(
+        diagnostic.get("source_revision"),
+        DIAGNOSTIC_SOURCE,
+        "diagnostic_basis.source_revision",
+    )
+    _need(
+        diagnostic.get("generated_sha256"),
+        DIAGNOSTIC_GENERATED_SHA256,
+        "diagnostic_basis.generated_sha256",
+    )
+    _need(diagnostic.get("pcc"), DIAGNOSTIC_PCC, "diagnostic_basis.pcc")
+    repeat_count = diagnostic.get("repeat_count")
+    if (
+        not isinstance(repeat_count, int)
+        or isinstance(repeat_count, bool)
+        or repeat_count < 2
+    ):
+        raise EnrollmentError("diagnostic_basis.repeat_count must be at least 2")
+    _need(diagnostic.get("generated_only"), True, "diagnostic_basis.generated_only")
+    _need(diagnostic.get("host_fallbacks"), [], "diagnostic_basis.host_fallbacks")
+
     package_id = data.get("package_id")
     if not isinstance(package_id, str) or not PACKAGE.fullmatch(package_id):
         raise EnrollmentError(
@@ -151,6 +209,33 @@ def validate_evidence(
         raise EnrollmentError(
             "package_manifest_sha256 must be an exact lowercase SHA-256"
         )
+    runtime = data.get("runtime", {})
+    image = runtime.get("image")
+    if not is_immutable_oci_image(image):
+        raise EnrollmentError(
+            "runtime.image must be an immutable registry/path@sha256:<64 lowercase hex> reference"
+        )
+    _need(
+        runtime.get("quetzal_source_revision"),
+        quetzal_source,
+        "runtime.quetzal_source_revision",
+    )
+    _need(
+        runtime.get("vllm_plugins"),
+        "quetzal_model_registry,tt",
+        "runtime.vllm_plugins",
+    )
+    _need(runtime.get("tt_vllm_builtin_models"), 0, "runtime.tt_vllm_builtin_models")
+    _need(
+        runtime.get("serving_backend"), "generated_quetzal", "runtime.serving_backend"
+    )
+    _need(
+        runtime.get("provider_policy"),
+        "generated_quetzal_only",
+        "runtime.provider_policy",
+    )
+    _need(runtime.get("fallback_allowed"), False, "runtime.fallback_allowed")
+    _need(runtime.get("image_qualified"), True, "runtime.image_qualified")
     host_root = _absolute(data.get("host_package_root"), "host_package_root")
     container_root = _absolute(
         data.get("container_package_root"), "container_package_root"
@@ -167,9 +252,10 @@ def validate_evidence(
     expected_profile = {
         "batch_size": 1,
         "concurrency": 1,
-        "prefill_capacity": 1024,
-        "decode_capacity": 2048,
-        "precision": "BFP8",
+        "prefill_sequence_length": 4096,
+        "decode_sequence_length": 1,
+        "decode_context_length": 4096,
+        "precision": "BF16",
     }
     _need(profile, expected_profile, "profile")
     topology = data.get("topology", {})
@@ -192,6 +278,14 @@ def validate_evidence(
     role_paths = {
         name: _relative(value, f"roles.{name}") for name, value in roles.items()
     }
+    role_sha256 = data.get("role_sha256", {})
+    if set(role_sha256) != set(roles):
+        raise EnrollmentError("role_sha256 must bind every role and no others")
+    for name, value in role_sha256.items():
+        if not isinstance(value, str) or not SHA256.fullmatch(value):
+            raise EnrollmentError(
+                f"role_sha256.{name} must be an exact lowercase SHA-256"
+            )
 
     qualification = data.get("qualification", {})
     pcc = qualification.get("pcc")
@@ -205,6 +299,16 @@ def validate_evidence(
         package_id,
         "qualification.exact_package_identity",
     )
+    _need(qualification.get("pcc_isl"), 4095, "qualification.pcc_isl")
+    _need(qualification.get("pcc_osl"), 1, "qualification.pcc_osl")
+    _need(qualification.get("replicas"), 4, "qualification.replicas")
+    _need(
+        qualification.get("replicas_bit_exact"),
+        True,
+        "qualification.replicas_bit_exact",
+    )
+    _need(qualification.get("generated_only"), True, "qualification.generated_only")
+    _need(qualification.get("host_fallbacks"), [], "qualification.host_fallbacks")
     _need(qualification.get("endpoint_isl"), 1024, "qualification.endpoint_isl")
     _need(qualification.get("endpoint_osl"), 512, "qualification.endpoint_osl")
     _need(qualification.get("http_200"), True, "qualification.http_200")
@@ -223,27 +327,29 @@ def validate_evidence(
     return {
         "package_id": package_id,
         "manifest_sha": manifest_sha,
+        "image": image,
         "host_root": host_root,
         "container_root": container_root,
         "roles": role_paths,
         "pcc": float(pcc),
         "ttis_revision": ttis_revision,
         "shield_revision": shield_revision,
+        "quetzal_source": quetzal_source,
     }
 
 
 def render_fragments(
     data: dict[str, Any], repo_root: Path, *, shield_repo_root: Path
 ) -> dict[str, Any]:
-    _need(
-        _shield_scheduled_quetzal_source_revision(shield_repo_root),
-        QUETZAL_SOURCE,
-        "Shield scheduled Quetzal source",
-    )
     exact = validate_evidence(
         data,
         ttis_revision=_current_repository_revision(repo_root, "TTIS"),
         shield_revision=_current_repository_revision(shield_repo_root, "Shield"),
+    )
+    _need(
+        _shield_scheduled_quetzal_source_revision(shield_repo_root),
+        exact["quetzal_source"],
+        "Shield scheduled Quetzal source",
     )
     root = exact["container_root"]
     roles = exact["roles"]
@@ -253,7 +359,7 @@ def render_fragments(
         "QUETZAL_VLLM": "1",
         "QUETZAL_MODEL": MODEL,
         "QUETZAL_HF_REVISION": HF_REVISION,
-        "QUETZAL_REQUIRED_SOURCE_REVISION": QUETZAL_SOURCE,
+        "QUETZAL_REQUIRED_SOURCE_REVISION": exact["quetzal_source"],
         "QUETZAL_PACKAGE_ID": exact["package_id"],
         "QUETZAL_BUNDLE_MANIFEST_SHA256": exact["manifest_sha"],
         "QUETZAL_REQUIRED_TT_METAL_PATCHSET_SHA256": PATCHSET,
@@ -283,17 +389,17 @@ def render_fragments(
                 "supported_modalities": ["text"],
                 "device_model_specs": [
                     {
-                        # TTIS discovery uses max_context to select the generated
-                        # prefill bucket.  Decode capacity remains 2048 below, so an
-                        # ISL1024 + OSL512 request fits without advertising S2048.
+                        # This advertises only the compiler-regenerated S4096
+                        # envelope. The endpoint qualification remains the bounded
+                        # ISL1024 + OSL512 release smoke within that envelope.
                         "device": "P300X2",
                         "max_concurrency": 1,
-                        "max_context": 1024,
+                        "max_context": 4096,
                         "default_impl": False,
                         "env_vars": env,
                         "vllm_args": {
                             "block_size": 64,
-                            "max_model_len": 2048,
+                            "max_model_len": 4096,
                             "max_num_seqs": 1,
                             "revision": HF_REVISION,
                             "tokenizer_revision": HF_REVISION,
@@ -320,6 +426,7 @@ def render_fragments(
     implementation = {
         "inference_engine": "vLLM",
         "impl": "quetzal",
+        "image": exact["image"],
         "ci": {
             schedule: {
                 "devices": ["P300X2"],
@@ -348,7 +455,7 @@ def render_fragments(
         "impl": "quetzal",
         "device": "P300X2",
         "runner_label": RUNNER,
-        "quetzal_source_revision": QUETZAL_SOURCE,
+        "quetzal_source_revision": exact["quetzal_source"],
         "ttis_revision": exact["ttis_revision"],
         "shield_revision": exact["shield_revision"],
         "tt_metal_revision": TT_METAL,
@@ -356,6 +463,7 @@ def render_fragments(
         "package_id": exact["package_id"],
         "host_package_root": exact["host_root"],
         "package_manifest_sha256": exact["manifest_sha"],
+        "runtime_image": exact["image"],
         "schedules": ["nightly", "release"],
         "generated_only": True,
         "fallback_allowed": False,
