@@ -64,6 +64,58 @@ def test_accepts_profile_inside_official_plugin_contract(tmp_path: Path) -> None
     }
 
 
+def test_accepts_multiple_model_profiles_with_one_exact_image_environment(
+    tmp_path: Path,
+) -> None:
+    source = _source(
+        tmp_path,
+        numpy="1.26.4",
+        installation_dependencies={"click": "8.4.2"},
+    )
+    contract_path = source / "serving" / "qualified_environments.json"
+    contract = json.loads(contract_path.read_text())
+    contract["variants"]["gpt_oss_120b.serve"] = {
+        "model_ids": ["openai/gpt-oss-120b"],
+        "lane": "serve",
+        "overrides": {"numpy": "1.26.4"},
+        "installation_dependencies": {"click": "8.4.2"},
+    }
+    contract_path.write_text(json.dumps(contract))
+
+    receipt = validate_contract(
+        source,
+        "a" * 40,
+        plugin_project=ROOT / "tt-vllm-plugin" / "pyproject.toml",
+    )
+
+    assert receipt["profiles"] == ["gpt_oss_120b.serve", "qwen36.serve"]
+    assert receipt["model_ids"] == ["Qwen/Qwen3.6-27B", "openai/gpt-oss-120b"]
+    assert receipt["dependencies"] == {
+        "numpy": "1.26.4",
+        "transformers": "5.15.0",
+    }
+    assert receipt["installation_dependencies"] == {"click": "8.4.2"}
+
+
+def test_rejects_ambiguous_multi_profile_image_environment(tmp_path: Path) -> None:
+    source = _source(tmp_path, numpy="1.26.4")
+    contract_path = source / "serving" / "qualified_environments.json"
+    contract = json.loads(contract_path.read_text())
+    contract["variants"]["gpt_oss_120b.serve"] = {
+        "model_ids": ["openai/gpt-oss-120b"],
+        "lane": "serve",
+        "overrides": {"numpy": "1.25.2"},
+    }
+    contract_path.write_text(json.dumps(contract))
+
+    with pytest.raises(ContractError, match="one exact image environment"):
+        validate_contract(
+            source,
+            "a" * 40,
+            plugin_project=ROOT / "tt-vllm-plugin" / "pyproject.toml",
+        )
+
+
 def test_cli_emits_sorted_exact_requirements_after_contract_validation(
     tmp_path: Path,
 ) -> None:

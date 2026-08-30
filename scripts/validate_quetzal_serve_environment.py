@@ -23,8 +23,6 @@ from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
 LEGACY_QWEN_SOURCE_REVISION = "8a3bebe4afdd58068d4190248c3f7b82cc27ae9f"
-PROFILE = "qwen36.serve"
-MODEL_ID = "Qwen/Qwen3.6-27B"
 CONTRACT_PATH = Path("serving/qualified_environments.json")
 REQUIRED_NUMPY_SPECIFIER = ">=1.24.4,<2"
 PLUGIN_DISTRIBUTION = "vllm-tt-plugin"
@@ -191,17 +189,78 @@ def _validate_plugin_numpy_contract(
     return numpy_requirement
 
 
-def _exact_version(distribution: str, raw: object) -> Version:
+def _exact_version(profile: str, distribution: str, raw: object) -> Version:
     if not isinstance(raw, str) or not re.fullmatch(
         r"[0-9]+(?:\.[0-9]+)*(?:[a-z0-9.+-]*)?", raw
     ):
-        raise ContractError(f"{PROFILE} must pin {distribution!r} to one exact version")
+        raise ContractError(f"{profile} must pin {distribution!r} to one exact version")
     try:
         return Version(raw)
     except InvalidVersion as exc:
         raise ContractError(
-            f"{PROFILE} contains invalid {distribution!r} version {raw!r}"
+            f"{profile} contains invalid {distribution!r} version {raw!r}"
         ) from exc
+
+
+def _serve_profile_versions(
+    profile: str,
+    variant: dict[str, object],
+    base_dependencies: object,
+    requirements: dict[str, Requirement],
+    numpy_requirement: Requirement,
+) -> tuple[dict[str, Version], dict[str, Version]]:
+    """Validate one serve profile and return its exact image requirements."""
+
+    model_ids = variant.get("model_ids")
+    if (
+        not isinstance(model_ids, list)
+        or not model_ids
+        or not all(isinstance(model_id, str) and model_id for model_id in model_ids)
+    ):
+        raise ContractError(f"{profile} must declare at least one model id")
+
+    overrides = variant.get("overrides", {})
+    installation_dependencies = variant.get("installation_dependencies", {})
+    if (
+        not isinstance(base_dependencies, dict)
+        or not isinstance(overrides, dict)
+        or not isinstance(installation_dependencies, dict)
+    ):
+        raise ContractError(f"{profile} dependencies must be mappings")
+    qualified = {**base_dependencies, **overrides}
+    if "numpy" not in qualified:
+        raise ContractError(f"{profile} must pin NumPy")
+
+    exact_versions = {
+        canonicalize_name(name): _exact_version(profile, name, version)
+        for name, version in qualified.items()
+    }
+    installation_versions = {
+        canonicalize_name(name): _exact_version(profile, name, version)
+        for name, version in installation_dependencies.items()
+    }
+    duplicates = set(exact_versions) & set(installation_versions)
+    if duplicates:
+        raise ContractError(
+            f"{profile} installation_dependencies duplicates a qualified dependency: "
+            + ", ".join(sorted(duplicates))
+        )
+    qualified_numpy = exact_versions["numpy"]
+    if qualified_numpy not in numpy_requirement.specifier:
+        raise ContractError(
+            f"{profile} pins numpy=={qualified_numpy}, outside tt-vllm-plugin "
+            f"constraint {numpy_requirement.specifier}"
+        )
+    for name, exact in exact_versions.items():
+        if name == "numpy":
+            continue
+        plugin_requirement = requirements.get(name)
+        if plugin_requirement is not None and exact not in plugin_requirement.specifier:
+            raise ContractError(
+                f"{profile} pins {name}=={exact}, outside tt-vllm-plugin "
+                f"constraint {plugin_requirement.specifier}"
+            )
+    return exact_versions, installation_versions
 
 
 def validate_contract(
@@ -258,54 +317,47 @@ def validate_contract(
     if contract.get("schema") != "quetzal.qualified-environments.v2":
         raise ContractError("unsupported Quetzal qualified-environments schema")
 
-    variant = contract.get("variants", {}).get(PROFILE)
-    if not isinstance(variant, dict):
-        raise ContractError(f"Quetzal source must define {PROFILE!r}")
-    if variant.get("lane") != "serve" or MODEL_ID not in variant.get("model_ids", []):
-        raise ContractError(f"{PROFILE} must be the serve lane for {MODEL_ID}")
-
+    variants = contract.get("variants")
+    if not isinstance(variants, dict):
+        raise ContractError("Quetzal qualified environments must define variants")
+    serve_variants = [
+        (name, variant)
+        for name, variant in sorted(variants.items())
+        if isinstance(name, str)
+        and isinstance(variant, dict)
+        and variant.get("lane") == "serve"
+    ]
+    if not serve_variants:
+        raise ContractError("Quetzal source must define at least one serve profile")
     base_dependencies = contract.get("base", {}).get("dependencies", {})
-    overrides = variant.get("overrides", {})
-    installation_dependencies = variant.get("installation_dependencies", {})
-    if (
-        not isinstance(base_dependencies, dict)
-        or not isinstance(overrides, dict)
-        or not isinstance(installation_dependencies, dict)
-    ):
-        raise ContractError(f"{PROFILE} dependencies must be mappings")
-    qualified = {**base_dependencies, **overrides}
-    if "numpy" not in qualified:
-        raise ContractError(f"{PROFILE} must pin NumPy")
-
-    exact_versions = {
-        canonicalize_name(name): _exact_version(name, version)
-        for name, version in qualified.items()
-    }
-    installation_versions = {
-        canonicalize_name(name): _exact_version(name, version)
-        for name, version in installation_dependencies.items()
-    }
-    duplicates = set(exact_versions) & set(installation_versions)
-    if duplicates:
-        raise ContractError(
-            f"{PROFILE} installation_dependencies duplicates a qualified dependency: "
-            + ", ".join(sorted(duplicates))
+    resolved = [
+        (
+            profile,
+            variant,
+            *_serve_profile_versions(
+                profile,
+                variant,
+                base_dependencies,
+                requirements,
+                numpy_requirement,
+            ),
         )
-    qualified_numpy = exact_versions["numpy"]
-    if qualified_numpy not in numpy_requirement.specifier:
+        for profile, variant in serve_variants
+    ]
+    profile, _, exact_versions, installation_versions = resolved[0]
+    expected_environment = (exact_versions, installation_versions)
+    divergent = [
+        candidate_profile
+        for candidate_profile, _, candidate_exact, candidate_installation in resolved[
+            1:
+        ]
+        if (candidate_exact, candidate_installation) != expected_environment
+    ]
+    if divergent:
         raise ContractError(
-            f"{PROFILE} pins numpy=={qualified_numpy}, outside tt-vllm-plugin "
-            f"constraint {numpy_requirement.specifier}"
+            "Quetzal serve profiles must resolve to one exact image environment; "
+            f"{profile!r} differs from {', '.join(repr(name) for name in divergent)}"
         )
-    for name, exact in exact_versions.items():
-        if name == "numpy":
-            continue
-        plugin_requirement = requirements.get(name)
-        if plugin_requirement is not None and exact not in plugin_requirement.specifier:
-            raise ContractError(
-                f"{PROFILE} pins {name}=={exact}, outside tt-vllm-plugin "
-                f"constraint {plugin_requirement.specifier}"
-            )
 
     if check_installed:
         for name, exact in {**exact_versions, **installation_versions}.items():
@@ -313,18 +365,26 @@ def validate_contract(
                 installed = Version(importlib.metadata.version(name))
             except importlib.metadata.PackageNotFoundError as exc:
                 raise ContractError(
-                    f"{PROFILE} requires installed {name}=={exact}"
+                    f"{profile} requires installed {name}=={exact}"
                 ) from exc
             if installed != exact:
                 raise ContractError(
-                    f"{PROFILE} requires {name}=={exact}; runtime has {installed}"
+                    f"{profile} requires {name}=={exact}; runtime has {installed}"
                 )
 
     receipt = {
         "schema": "ttis.quetzal-serve-environment.v1",
         "status": "qualified",
         "source_revision": source_revision,
-        "profile": PROFILE,
+        "profile": profile,
+        "profiles": [name for name, _ in serve_variants],
+        "model_ids": sorted(
+            {
+                model_id
+                for _, variant in serve_variants
+                for model_id in variant["model_ids"]
+            }
+        ),
         "qualified_environments_sha256": hashlib.sha256(raw_contract).hexdigest(),
         "dependencies": {
             name: str(version) for name, version in exact_versions.items()
