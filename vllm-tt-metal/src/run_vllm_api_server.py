@@ -8,6 +8,7 @@ import importlib
 import importlib.metadata
 import json
 import logging
+import math
 import multiprocessing
 import os
 import re
@@ -646,7 +647,91 @@ def _validate_quetzal_auxiliary_references(
                 )
 
 
-def _validate_quetzal_package_and_runtime(root: Path, model_id: str) -> None:
+def _quetzal_charter_pcc_floor(precision: object) -> float:
+    """Return CHARTER.md's floor for the least precise package component."""
+    value = str(precision or "").strip().lower().replace("-", "_")
+    if "bfp4" in value:
+        return 0.88
+    if "bfp8" in value:
+        return 0.98
+    if "int8" in value:
+        return 0.95
+    if value in {"bf16", "bfloat16"}:
+        return 0.99
+    raise RuntimeError(f"Quetzal qualification has unknown precision {precision!r}")
+
+
+def _validate_quetzal_qualification_row(row: dict, expected_context: int) -> dict:
+    """Reject stale or merely planned qualification metadata before device open."""
+    if row.get("qualification_state") != "ready":
+        raise RuntimeError("Quetzal qualification_state must be 'ready'")
+    if row.get("context_length") != expected_context:
+        raise RuntimeError(
+            "Quetzal qualification context mismatch: package declares "
+            f"{row.get('context_length')!r}, catalog requires {expected_context!r}"
+        )
+
+    transformations = row.get("allowed_lossy_transformations")
+    if not isinstance(transformations, list):
+        raise RuntimeError("Quetzal qualification must declare lossy transformations")
+    equivalence = row.get("artifact_equivalence")
+    if equivalence == "exact" and transformations:
+        raise RuntimeError(
+            "exact Quetzal artifacts may not declare lossy transformations"
+        )
+    if equivalence == "reduced" and not transformations:
+        raise RuntimeError(
+            "reduced Quetzal artifacts must disclose lossy transformations"
+        )
+    if equivalence not in {"exact", "reduced"}:
+        raise RuntimeError("Quetzal artifact_equivalence must be exact or reduced")
+
+    component_precisions = [row.get("precision")]
+    component_precisions.extend(
+        item.get("dtype") for item in transformations if isinstance(item, dict)
+    )
+    component_floors = [
+        _quetzal_charter_pcc_floor(value) for value in component_precisions
+    ]
+    expected_floor = min(component_floors)
+
+    charter_pcc = row.get("charter_pcc")
+    if not isinstance(charter_pcc, dict):
+        raise RuntimeError("Quetzal qualification is missing charter_pcc")
+    threshold = charter_pcc.get("threshold")
+    observed = charter_pcc.get("observed")
+    if (
+        isinstance(threshold, bool)
+        or not isinstance(threshold, (int, float))
+        or not math.isfinite(threshold)
+        or threshold != expected_floor
+    ):
+        raise RuntimeError(
+            "Quetzal charter PCC threshold does not match the artifact precision: "
+            f"expected {expected_floor}, got {threshold!r}"
+        )
+    if (
+        isinstance(observed, bool)
+        or not isinstance(observed, (int, float))
+        or not math.isfinite(observed)
+        or observed < threshold
+        or charter_pcc.get("status") != "pass"
+    ):
+        raise RuntimeError(
+            "Quetzal charter PCC must be a finite passing observation at or above "
+            f"{threshold}: got status={charter_pcc.get('status')!r}, "
+            f"observed={observed!r}"
+        )
+    if charter_pcc.get("native_silicon") is not True:
+        raise RuntimeError("Quetzal charter PCC must come from native silicon")
+    if charter_pcc.get("host_fallbacks") != []:
+        raise RuntimeError("Quetzal charter PCC must declare zero host fallbacks")
+    return charter_pcc
+
+
+def _validate_quetzal_package_and_runtime(
+    root: Path, model_id: str, expected_context: int | None = None
+) -> None:
     package_id = os.getenv("QUETZAL_PACKAGE_ID")
     package_root_value = os.getenv("QUETZAL_PACKAGE_ROOT")
     if not package_id or not package_root_value:
@@ -743,7 +828,10 @@ def _validate_quetzal_package_and_runtime(root: Path, model_id: str) -> None:
         raise RuntimeError(
             "Quetzal qualification manifest must contain exactly one model contract"
         )
-    charter_pcc = matches[0].get("charter_pcc", {})
+    if expected_context is None:
+        charter_pcc = matches[0].get("charter_pcc", {})
+    else:
+        charter_pcc = _validate_quetzal_qualification_row(matches[0], expected_context)
     required_runtime = charter_pcc.get("required_runtime_tt_metal_commit")
     package_required_patchset = charter_pcc.get(
         "required_runtime_tt_metal_patchset_sha256"
@@ -909,7 +997,14 @@ def validate_quetzal_runtime(model_spec: dict) -> dict | None:
             "Quetzal qualification manifest must be inside QZ_MODELS_ROOT"
         )
 
-    _validate_quetzal_package_and_runtime(root, model_id)
+    max_context = model_spec.get("device_model_spec", {}).get("max_context")
+    if (
+        not isinstance(max_context, int)
+        or isinstance(max_context, bool)
+        or max_context < 1
+    ):
+        raise RuntimeError("Quetzal catalog max_context must be a positive integer")
+    _validate_quetzal_package_and_runtime(root, model_id, max_context)
 
     entry_points = [
         entry

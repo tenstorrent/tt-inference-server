@@ -415,7 +415,18 @@ def _materialized_quetzal_contract(monkeypatch, tmp_path, module):
     (package_root / "qualification_manifest.yaml").write_text(
         "models:\n"
         "  - model_id: Qwen/Qwen3.6-27B\n"
+        "    context_length: 8192\n"
+        "    qualification_state: ready\n"
+        "    precision: bf16\n"
+        "    artifact_equivalence: exact\n"
+        "    allowed_lossy_transformations: []\n"
         "    charter_pcc:\n"
+        "      precision_class: bf16\n"
+        "      threshold: 0.99\n"
+        "      observed: 0.995\n"
+        "      status: pass\n"
+        "      native_silicon: true\n"
+        "      host_fallbacks: []\n"
         f"      required_runtime_tt_metal_commit: {required_runtime}\n"
         f"      required_runtime_tt_metal_patchset_sha256: {'d' * 64}\n"
     )
@@ -861,7 +872,18 @@ def test_validate_quetzal_runtime_admits_only_generated_provider(
     manifest.write_text(
         "models:\n"
         f"  - model_id: {model}\n"
+        "    context_length: 8192\n"
+        "    qualification_state: ready\n"
+        "    precision: bf16\n"
+        "    artifact_equivalence: exact\n"
+        "    allowed_lossy_transformations: []\n"
         "    charter_pcc:\n"
+        "      precision_class: bf16\n"
+        "      threshold: 0.99\n"
+        "      observed: 0.995\n"
+        "      status: pass\n"
+        "      native_silicon: true\n"
+        "      host_fallbacks: []\n"
         f"      required_runtime_tt_metal_commit: {runtime_commit}\n"
         f"      required_runtime_tt_metal_patchset_sha256: {patchset}\n"
     )
@@ -991,7 +1013,7 @@ def test_validate_quetzal_runtime_admits_only_generated_provider(
 
     wrong_context = copy.deepcopy(model_spec)
     wrong_context["device_model_spec"]["max_context"] = 4096
-    with pytest.raises(RuntimeError, match="decode context 4096"):
+    with pytest.raises(RuntimeError, match="qualification context mismatch"):
         run_vllm_api_server_module.validate_quetzal_runtime(wrong_context)
 
     monkeypatch.setenv("QUETZAL_REQUIRED_PREFILL_BUCKETS", "128, 1024")
@@ -1024,6 +1046,58 @@ def test_validate_quetzal_runtime_admits_only_generated_provider(
     monkeypatch.setenv("VLLM_PLUGINS", "quetzal_model_registry,tt,tt_model_registry")
     with pytest.raises(RuntimeError, match="requires exactly"):
         run_vllm_api_server_module.validate_quetzal_runtime(model_spec)
+
+
+def test_quetzal_qualification_semantics_fail_closed(run_vllm_api_server_module):
+    row = {
+        "context_length": 8192,
+        "qualification_state": "ready",
+        "precision": "bf16",
+        "artifact_equivalence": "reduced",
+        "allowed_lossy_transformations": [
+            {
+                "kind": "weight_quantization",
+                "weight_class": "experts",
+                "dtype": "bfp4_b",
+            }
+        ],
+        "charter_pcc": {
+            "precision_class": "bfp4_experts",
+            "threshold": 0.88,
+            "observed": 0.9825582504272461,
+            "status": "pass",
+            "native_silicon": True,
+            "host_fallbacks": [],
+        },
+    }
+
+    result = run_vllm_api_server_module._validate_quetzal_qualification_row(row, 8192)
+    assert result["observed"] == pytest.approx(0.9825582504272461)
+
+    mutations = (
+        ("qualification_state", "investigating", "qualification_state"),
+        ("context_length", 1024, "context mismatch"),
+        ("artifact_equivalence", "exact", "exact Quetzal artifacts"),
+    )
+    for field, value, match in mutations:
+        bad = copy.deepcopy(row)
+        bad[field] = value
+        with pytest.raises(RuntimeError, match=match):
+            run_vllm_api_server_module._validate_quetzal_qualification_row(bad, 8192)
+
+    pcc_mutations = (
+        ("threshold", 0.98, "does not match"),
+        ("observed", float("nan"), "finite passing observation"),
+        ("observed", 0.87, "finite passing observation"),
+        ("status", "pending", "finite passing observation"),
+        ("native_silicon", False, "native silicon"),
+        ("host_fallbacks", ["cpu"], "zero host fallbacks"),
+    )
+    for field, value, match in pcc_mutations:
+        bad = copy.deepcopy(row)
+        bad["charter_pcc"][field] = value
+        with pytest.raises(RuntimeError, match=match):
+            run_vllm_api_server_module._validate_quetzal_qualification_row(bad, 8192)
 
 
 def _v2_auxiliary_fixture(tmp_path, run_vllm_api_server_module):
