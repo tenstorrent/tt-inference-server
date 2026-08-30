@@ -9,16 +9,11 @@ from reference_config.evals.eval_config import EVAL_CONFIGS
 
 
 def _model_spec(max_context):
-    return SimpleNamespace(
-        device_model_spec=SimpleNamespace(max_context=max_context)
-    )
+    return SimpleNamespace(device_model_spec=SimpleNamespace(max_context=max_context))
 
 
 def test_gemma_long_context_evals_declare_their_unclamped_envelopes():
-    tasks = {
-        task.task_name: task
-        for task in EVAL_CONFIGS["gemma-4-31B-it"].tasks
-    }
+    tasks = {task.task_name: task for task in EVAL_CONFIGS["gemma-4-31B-it"].tasks}
     assert tasks["r1_gpqa_diamond"].min_context_required == 131072
     assert tasks["terminal_bench_2"].min_context_required == 200 * 1024
     assert tasks["swe_bench_verified"].min_context_required == 200 * 1024

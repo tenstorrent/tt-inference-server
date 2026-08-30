@@ -358,9 +358,7 @@ def test_gemma_quetzal_dev_spec_binds_exact_s4096_ring_candidate(monkeypatch):
     specs = _dev_llm_spec_map()
     monkeypatch.setattr(model_spec_module, "MODEL_SPECS", specs)
     monkeypatch.setattr(model_spec_module, "_MODEL_SPECS_ENV", "dev")
-    quetzal, _, _ = get_runtime_model_spec(
-        "gemma-4-31B-it", "p300x2", impl="quetzal"
-    )
+    quetzal, _, _ = get_runtime_model_spec("gemma-4-31B-it", "p300x2", impl="quetzal")
     env = quetzal.env_vars
 
     assert quetzal.device_model_spec.max_context == 4096
@@ -376,9 +374,7 @@ def test_gemma_quetzal_dev_spec_binds_exact_s4096_ring_candidate(monkeypatch):
     assert env["TTQ_ROW_ALL_REDUCE_TOPOLOGY"] == "Ring"
     assert env["TTQ_TUNED_ROW_ALL_REDUCE_LINKS"] == "2"
     assert env["QZ_LM_HEAD_UPLOAD_CHUNK_COLS"] == "8192"
-    assert "p300_x2_mesh_graph_descriptor.textproto" in env[
-        "TT_MESH_GRAPH_DESC_PATH"
-    ]
+    assert "p300_x2_mesh_graph_descriptor.textproto" in env["TT_MESH_GRAPH_DESC_PATH"]
 
 
 def test_diffusiongemma_dev_spec_matches_validated_256k_contract():

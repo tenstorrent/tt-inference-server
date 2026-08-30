@@ -350,8 +350,7 @@ def main() -> int:
                 "the selected source has no exact qualified requirements to install"
             )
         requirements = "".join(
-            f"{name}=={version}\n"
-            for name, version in sorted(dependencies.items())
+            f"{name}=={version}\n" for name, version in sorted(dependencies.items())
         )
         args.requirements_output.write_text(requirements)
     if args.receipt:

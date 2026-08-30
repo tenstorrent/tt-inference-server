@@ -80,10 +80,7 @@ def test_cli_emits_sorted_exact_requirements_after_contract_validation(
         check=False,
     )
     assert completed.returncode == 0, completed.stderr
-    assert requirements.read_text() == (
-        "numpy==1.26.4\n"
-        "transformers==5.15.0\n"
-    )
+    assert requirements.read_text() == ("numpy==1.26.4\ntransformers==5.15.0\n")
 
 
 def test_cli_refuses_to_install_unqualified_legacy_environment(tmp_path: Path) -> None:
@@ -274,7 +271,9 @@ def test_docker_builds_validate_before_installing_quetzal() -> None:
         normalized = dockerfile.replace(
             '"${PYTHON_ENV_DIR}/bin/python"', "${PYTHON_ENV_DIR}/bin/python"
         )
-        validator_command = "${PYTHON_ENV_DIR}/bin/python /tmp/validate_quetzal_serve_environment.py"
+        validator_command = (
+            "${PYTHON_ENV_DIR}/bin/python /tmp/validate_quetzal_serve_environment.py"
+        )
         validator = normalized.index(validator_command)
         install = (
             normalized.index("--no-deps /tmp/quetzal-source", validator)
@@ -284,8 +283,12 @@ def test_docker_builds_validate_before_installing_quetzal() -> None:
         assert validator < install
         assert "--plugin-project /tmp/ttis-vllm-plugin-pyproject.toml" in dockerfile
         if relative.endswith("src.quetzal.Dockerfile"):
-            qualified_install = normalized.index("--requirements /tmp/quetzal-serve-requirements.txt")
-            installed_validator = normalized.index("--check-installed", qualified_install)
+            qualified_install = normalized.index(
+                "--requirements /tmp/quetzal-serve-requirements.txt"
+            )
+            installed_validator = normalized.index(
+                "--check-installed", qualified_install
+            )
             assert validator < qualified_install < installed_validator < install
             assert "uv pip check --python" in normalized[qualified_install:install]
             assert "cmp /tmp/pip-check.base /tmp/pip-check.qualified" in normalized
