@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+
 from types import SimpleNamespace
 
 from llm_module.eval_configs import filter_tasks_by_min_context
