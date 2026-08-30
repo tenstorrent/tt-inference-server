@@ -126,11 +126,19 @@ class TestAgenticTaskCapabilityAdmission:
 
         validate_agentic_task_capabilities(spec, self._runtime())
 
-    def test_exact_gpt_quetzal_release_rejects_less_than_s8192(self):
+    def test_exact_gpt_quetzal_release_omits_task_below_s8192(self):
+        spec = self._spec("gpt-oss-120b", 8191)
+
+        validate_agentic_task_capabilities(spec, self._runtime())
+
+    def test_explicit_gpt_swe_selection_rejects_less_than_s8192(self):
         spec = self._spec("gpt-oss-120b", 8191)
 
         with pytest.raises(ValueError) as exc:
-            validate_agentic_task_capabilities(spec, self._runtime())
+            validate_agentic_task_capabilities(
+                spec,
+                self._runtime(agentic_benchmark="swe_bench_verified"),
+            )
 
         message = str(exc.value)
         assert "task='swe_bench_verified'" in message

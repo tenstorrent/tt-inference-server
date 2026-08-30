@@ -29,10 +29,6 @@ from scripts.prepare_gemma_quetzal_enrollment import (
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_ID = "sha256-" + "1" * 64 + "-" + "2" * 64
-ACTIVE_PACKAGE_ID = (
-    "sha256-8373c1467294ed11e00ac791392eaa80c9cd1a1366f15200469bbdb4bc410522-"
-    "259ee130f4f1e259980f2dde67415f8692f4c16086f34edc1cdb98c496b68edc"
-)
 SHIELD_REVISION = "da43fee60603da9a3b7a6c1bf5643fe0928eab0f"
 
 
@@ -181,14 +177,16 @@ def evidence(*, ttis_revision=None, shield_revision=SHIELD_REVISION):
     }
 
 
-def test_exact_evidence_refuses_duplicate_active_promotion(shield_checkout):
+def test_exact_evidence_renders_inactive_promotion(shield_checkout):
     shield_root, shield_revision = shield_checkout
-    with pytest.raises(EnrollmentError, match="already has a Gemma Quetzal row"):
-        render_fragments(
-            evidence(shield_revision=shield_revision),
-            ROOT,
-            shield_repo_root=shield_root,
-        )
+    rendered = render_fragments(
+        evidence(shield_revision=shield_revision),
+        ROOT,
+        shield_repo_root=shield_root,
+    )
+
+    assert rendered["implementation"]["impl"] == "quetzal"
+    assert set(rendered["implementation"]["ci"]) == {"nightly", "release"}
 
 
 @pytest.mark.parametrize(
@@ -302,13 +300,8 @@ def test_shield_checkout_must_contain_implementation_image_support(
         )
 
 
-def test_active_config_has_one_exact_gemma_quetzal_lane():
+def test_active_config_withholds_unqualified_gemma_quetzal_lane():
     config = json.loads((ROOT / ".github/workflows/models-ci-config.json").read_text())
     rows = config["models"]["gemma-4-31B-it"]["implementations"]
     quetzal_rows = [row for row in rows if row.get("impl") == "quetzal"]
-    assert len(quetzal_rows) == 1
-    row = quetzal_rows[0]
-    assert set(row["ci"]) == {"nightly", "release"}
-    for schedule in ("nightly", "release"):
-        device = row["ci"][schedule]["device-args"]["P300X2"]
-        assert device["additional-args"].endswith(ACTIVE_PACKAGE_ID)
+    assert quetzal_rows == []
