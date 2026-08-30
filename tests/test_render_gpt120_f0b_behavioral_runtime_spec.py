@@ -18,6 +18,8 @@ from scripts.dev.render_gpt120_f0b_behavioral_runtime_spec import (
 )
 from workflows.model_spec import ModelSpec
 
+IMAGE = "ghcr.io/tenstorrent/ttis-quetzal:local-shadow"
+
 
 def _candidate(tmp_path: Path) -> tuple[Path, Path]:
     package = tmp_path / "gpt120-multiprefill-s128-s1024-c8192-f0b"
@@ -32,7 +34,7 @@ def _candidate(tmp_path: Path) -> tuple[Path, Path]:
 
 def test_behavioral_spec_is_normal_quetzal_model_spec_but_never_certifiable(tmp_path):
     package, auxiliary = _candidate(tmp_path)
-    document = render(package, auxiliary)
+    document = render(package, auxiliary, IMAGE)
     spec = document["runtime_model_spec"]
     path = tmp_path / "runtime.json"
     path.write_text(json.dumps(document))
@@ -42,6 +44,7 @@ def test_behavioral_spec_is_normal_quetzal_model_spec_but_never_certifiable(tmp_
     assert document["certification_eligible"] is False
     assert document["package_trust_expected"] == "fail_closed"
     assert parsed.impl.impl_id == "quetzal"
+    assert parsed.docker_image == IMAGE
     assert parsed.hf_model_repo == MODEL_ID
     assert parsed.device_model_spec.max_context == 8192
     assert parsed.device_model_spec.max_concurrency == 1
@@ -64,7 +67,7 @@ def test_behavioral_spec_refuses_missing_exact_f0b_members(tmp_path):
     auxiliary = tmp_path / "auxiliary"
     auxiliary.mkdir()
     with pytest.raises(ContractError, match="exact f0b member is missing"):
-        render(package, auxiliary)
+        render(package, auxiliary, IMAGE)
 
 
 def test_behavioral_spec_refuses_official_namespace(monkeypatch, tmp_path):
@@ -75,13 +78,13 @@ def test_behavioral_spec_refuses_official_namespace(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(module, "OFFICIAL_PACKAGE_PREFIX", tmp_path)
     with pytest.raises(ContractError, match="refuses the official"):
-        render(package, auxiliary)
+        render(package, auxiliary, IMAGE)
 
 
 def test_document_round_trips_through_runtime_model_spec_json(tmp_path):
     package, auxiliary = _candidate(tmp_path)
     path = tmp_path / "runtime.json"
-    path.write_text(json.dumps(render(package, auxiliary)))
+    path.write_text(json.dumps(render(package, auxiliary, IMAGE)))
     parsed = ModelSpec.from_json(path)
     assert parsed.model_name == "gpt-oss-120b"
     assert parsed.impl.impl_name == "quetzal"

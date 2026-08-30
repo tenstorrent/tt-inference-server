@@ -94,7 +94,7 @@ def _validate_auxiliary_root(root: Path) -> Path:
     return root
 
 
-def render(package_root: Path, auxiliary_root: Path) -> dict:
+def render(package_root: Path, auxiliary_root: Path, image: str) -> dict:
     """Return a normal serialized ModelSpec with an explicit local-only marker."""
     # Load the source dev YAML explicitly: callers such as pytest may already
     # have imported workflows.model_spec with the production catalogue.
@@ -102,6 +102,8 @@ def render(package_root: Path, auxiliary_root: Path) -> dict:
 
     package_root = _validate_local_root(package_root)
     auxiliary_root = _validate_auxiliary_root(auxiliary_root)
+    if not image or any(character.isspace() for character in image):
+        raise ContractError("behavioral image must be non-empty and unambiguous")
     catalog_path = REPO_ROOT / "workflows/model_specs/dev/llm.yaml"
     catalog = get_model_spec_map(load_templates_from_yaml(catalog_path))
     matches = [
@@ -166,6 +168,10 @@ def render(package_root: Path, auxiliary_root: Path) -> dict:
             "hf_weights_repo": MODEL_ID,
             "param_count": 120,
             "has_builtin_warmup": False,
+            # External runtime specs win outright in run.py; CLI overrides are
+            # intentionally not applied. Carry the behavioral image in the
+            # spec itself so Docker launch cannot degrade to `docker pull None`.
+            "docker_image": image,
             "env_vars": env,
             "metadata": {
                 "reasoning_parser_name": "openai_gptoss",
@@ -200,6 +206,7 @@ def render(package_root: Path, auxiliary_root: Path) -> dict:
         "package_trust_expected": "fail_closed",
         "mutable_package_root": str(package_root),
         "mutable_auxiliary_root": str(auxiliary_root),
+        "behavioral_image": image,
         "runtime_model_spec": spec,
         # ModelSpec.from_json recognizes the normal combined TTIS envelope
         # only when both keys are present. run.py still builds its live runtime
@@ -212,13 +219,14 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--package-root", required=True, type=Path)
     parser.add_argument("--auxiliary-root", required=True, type=Path)
+    parser.add_argument("--image", required=True)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--acknowledge-mutable-local-only", action="store_true")
     args = parser.parse_args(argv)
     if not args.acknowledge_mutable_local_only:
         parser.error("--acknowledge-mutable-local-only is required")
     try:
-        document = render(args.package_root, args.auxiliary_root)
+        document = render(args.package_root, args.auxiliary_root, args.image)
     except ContractError as exc:
         parser.error(str(exc))
     args.output.parent.mkdir(parents=True, exist_ok=True)
