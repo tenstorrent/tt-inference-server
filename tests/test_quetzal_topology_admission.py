@@ -320,16 +320,36 @@ def test_run_hook_precedes_host_weight_setup_and_docker_generation():
     assert hook < source.index("generate_docker_run_command(", hook)
 
 
-def test_gpt_quetzal_catalog_remains_disabled():
+def test_gpt_quetzal_dev_catalog_is_non_default_and_prod_remains_disabled():
     from workflows.model_spec import load_templates_from_yaml
     from workflows.utils import get_repo_root_path
 
-    for environment in ("dev", "prod"):
-        templates = load_templates_from_yaml(
-            get_repo_root_path() / f"workflows/model_specs/{environment}/llm.yaml"
-        )
-        assert not any(
-            template.impl.impl_id == "quetzal"
-            and "openai/gpt-oss-120b" in template.weights
-            for template in templates
-        )
+    dev_templates = load_templates_from_yaml(
+        get_repo_root_path() / "workflows/model_specs/dev/llm.yaml"
+    )
+    generated = [
+        template
+        for template in dev_templates
+        if template.impl.impl_id == "quetzal"
+        and "openai/gpt-oss-120b" in template.weights
+    ]
+    assert len(generated) == 1
+    assert generated[0].status.name == "EXPERIMENTAL"
+    device = generated[0].device_model_specs[0]
+    assert device.device.name == "P300X2"
+    assert device.default_impl is False
+    assert device.max_concurrency == 1
+    assert device.max_context == 8192
+    assert device.env_vars["VLLM_PLUGINS"] == "quetzal_model_registry,tt"
+    assert device.env_vars["TT_VLLM_BUILTIN_MODELS"] == "0"
+    assert device.env_vars["TTQ_ROW_ALL_REDUCE_TOPOLOGY"] == "Ring"
+    assert device.env_vars["TTQ_TUNED_ROW_ALL_REDUCE_LINKS"] == "2"
+
+    prod_templates = load_templates_from_yaml(
+        get_repo_root_path() / "workflows/model_specs/prod/llm.yaml"
+    )
+    assert not any(
+        template.impl.impl_id == "quetzal"
+        and "openai/gpt-oss-120b" in template.weights
+        for template in prod_templates
+    )
