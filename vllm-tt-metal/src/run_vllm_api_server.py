@@ -785,6 +785,43 @@ def _validate_quetzal_package_and_runtime(root: Path, model_id: str) -> None:
     ):
         raise RuntimeError("Quetzal TT-Metal runtime identity mismatch")
 
+    attestation_value = os.getenv("QUETZAL_RUNTIME_ATTESTATION_PATH", "")
+    attestation_sha256 = os.getenv("QUETZAL_RUNTIME_ATTESTATION_SHA256", "")
+    generator_source = os.getenv("QUETZAL_GENERATOR_SOURCE_REVISION", "")
+    integration_source = os.getenv("QUETZAL_REQUIRED_SOURCE_REVISION", "")
+    serve_profile = os.getenv("QUETZAL_SERVE_PROFILE", "")
+    serve_profile_sha256 = os.getenv("QUETZAL_SERVE_PROFILE_SHA256", "")
+    if not attestation_sha256 and not attestation_value:
+        return
+    if not attestation_value:
+        raise RuntimeError("impl=quetzal requires QUETZAL_RUNTIME_ATTESTATION_PATH")
+    attestation_path = Path(attestation_value)
+    _require_read_only_path(
+        attestation_path,
+        directory=False,
+        label="Quetzal runtime compatibility attestation",
+    )
+    try:
+        from serving.runtime_compatibility_attestation import validate_files
+
+        runtime_attestation = validate_files(
+            attestation_path=attestation_path,
+            expected_attestation_sha256=attestation_sha256,
+            bundle_manifest_path=trusted_manifest,
+            package_root=package_root,
+            expected_integration_source_revision=integration_source,
+            expected_serve_profile=serve_profile,
+            expected_serve_profile_sha256=serve_profile_sha256,
+        )
+    except (ImportError, OSError, ValueError) as exc:
+        raise RuntimeError(
+            f"Quetzal runtime compatibility attestation rejected: {exc}"
+        ) from exc
+    if runtime_attestation.get("generator_source_revision") != generator_source:
+        raise RuntimeError(
+            "Quetzal generator source differs from the catalog attestation pin"
+        )
+
 
 def validate_quetzal_runtime(model_spec: dict) -> dict | None:
     """Fail closed before vLLM import for a generated Quetzal launch.
