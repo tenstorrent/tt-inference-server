@@ -415,5 +415,5 @@ def test_official_builder_selects_dependency_qualified_dev_image() -> None:
         requirements,
     )
     check_installed = dockerfile.index("--check-installed", install)
-    wheel = dockerfile.index('uv build --wheel', check_installed)
+    wheel = dockerfile.index("uv build --wheel", check_installed)
     assert requirements < install < check_installed < wheel

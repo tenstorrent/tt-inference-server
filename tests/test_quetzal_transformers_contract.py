@@ -28,9 +28,7 @@ def test_quetzal_image_rejects_frameworks_without_target_configs() -> None:
         assert "--requirements /tmp/quetzal-serve-requirements.txt" in dockerfile
         assert "--upgrade --no-deps --requirements" in dockerfile
         assert (
-            dockerfile.count(
-                'uv pip check --python "${PYTHON_ENV_DIR}/bin/python"'
-            )
+            dockerfile.count('uv pip check --python "${PYTHON_ENV_DIR}/bin/python"')
             >= 3
         )
         assert (

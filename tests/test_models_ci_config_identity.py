@@ -96,7 +96,7 @@ def test_qualified_generated_models_are_enrolled_without_replacing_native_rows()
     }["quetzal"]
     expected_args = (
         "--quetzal-models-root "
-        "/mnt/models/quetzal/immutable/v1/packages/sha256-f1d6cebaf6cd432c78721ec3b81101ab86493f387b37f63bc11aca2fc6f6d8d8-0a8efa103ee378c7cd0e2fa25b0426cbb82752e270f8927bdf44eb2cfe68ce66"
+        "/mnt/MLPerf/huggingface/quetzal/nkapre/packages/sha256-f1d6cebaf6cd432c78721ec3b81101ab86493f387b37f63bc11aca2fc6f6d8d8-0a8efa103ee378c7cd0e2fa25b0426cbb82752e270f8927bdf44eb2cfe68ce66"
     )
     for schedule in ("nightly", "release"):
         lane = qwen["ci"][schedule]
