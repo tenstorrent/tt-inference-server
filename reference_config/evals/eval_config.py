@@ -169,6 +169,10 @@ class SWEbenchEvalConfig:
     max_input_tokens: int = 200 * 1024
     max_output_tokens: Optional[int] = None
     completion_kwargs: Dict[str, Any] = field(default_factory=dict)
+    # Overrides merged into the generated mini-swe-agent config's "agent"
+    # section (layered after the builtin mini_config, so these win) --
+    # e.g. {"step_limit": 75}.
+    mini_agent_kwargs: Dict[str, Any] = field(default_factory=dict)
     sweagent_config: str = "config/default.yaml"
     mini_config: str = "swebench.yaml"
     mini_model_class: str = "litellm"
@@ -4822,22 +4826,36 @@ _eval_config_list = [
                     agent_kwargs={
                         "parser_name": "json",
                         "temperature": 1.0,
+                        # Terminus-2 defaults to effectively unlimited turns
+                        # (1,000,000), so without this the 3h timeout is the
+                        # only brake on a stuck trial. The verifier still
+                        # grades the container's end state after the cap.
+                        "max_turns": 50,
                         "model_info": {
-                            # gemma-4-31B native ctx is 256K (model card), but a
-                            # single H100 NVL (94GB, bf16 KV) only holds a
-                            # 210,605-token KV cache, so a request can't exceed
-                            # ~205K. We serve at --max-model-len 204800 (200K).
-                            # The agent sends ~max_input + max_output per
-                            # request, so keep them under 204800: 112K + 80K =
-                            # 196K (~8K headroom for chat template + tool defs).
-                            # SWE/Terminal prompts rarely approach 200K, so the
-                            # 256K->200K cap should not affect scores.
-                            "max_input_tokens": 112 * 1024,
-                            "max_output_tokens": 80 * 1024,
+                            # Sized for QB2 (P300X2), where gemma-4-31B serves
+                            # at max_model_len=49152 (Blackhole hybrid-off DRAM
+                            # ceiling, see workflows/model_specs). The agent
+                            # sends ~max_input + max_output per request, vLLM
+                            # up-front-rejects any request with max_tokens >
+                            # max_model_len (80K out zeroed the whole eval on
+                            # run 32355285037, tt-agentic-bringup-qb2#2), and
+                            # the prompt must stay under the 32768 prefill
+                            # bucket. NOTE: gpu_reference_score=44.94 was
+                            # measured at 112K in / 80K out on a 200K-window
+                            # H100 -- restore those budgets to re-collect the
+                            # GPU reference; QB2 scores under these budgets are
+                            # not directly comparable to it.
+                            # 8K out (not 16K): measured turns on run
+                            # 33095231523 -- productive turns median ~1.4K,
+                            # thinking-heavy turns median ~6.4K -- so 8K
+                            # bounds a turn at ~6 min on QB2 (~23 tok/s)
+                            # while truncating only the extreme tail.
+                            "max_input_tokens": 30 * 1024,
+                            "max_output_tokens": 8 * 1024,
                         },
                         "llm_kwargs": {
                             "top_p": 0.95,
-                            "max_tokens": 80 * 1024,
+                            "max_tokens": 8 * 1024,
                             "timeout": 60 * 60,
                             "extra_body": {
                                 "top_k": 20,
@@ -4882,21 +4900,29 @@ _eval_config_list = [
                     sweagent_subset="verified",
                     dataset_split="test",
                     agent_backend="mini-swe-agent",
-                    n_concurrent_trials=5,
+                    # One agent at a time: the QB2 server runs max_num_seqs=1,
+                    # so 5 concurrent agents each crawl at 1/5 speed and none
+                    # finished in 6 h on run 33176296979 (same reason
+                    # terminal_bench_2 runs n_concurrent_trials=1).
+                    n_concurrent_trials=1,
                     max_workers=8,
                     n_tasks=None,  # full dataset
                     temperature=1.0,
                     top_p=0.95,
-                    # gemma-4-31B native ctx is 256K (model card), but a single
-                    # H100 NVL (94GB, bf16 KV) only holds a 210,605-token KV
-                    # cache, so a request can't exceed ~205K. We serve at
-                    # --max-model-len 204800 (200K). mini-swe-agent sends
-                    # ~max_input + max_output per request, so keep under 204800:
-                    # 160K + 32K = 192K (~8K headroom). SWE prompts rarely
-                    # approach 200K, so the 256K->200K cap should not affect
-                    # scores.
-                    max_input_tokens=160 * 1024,
-                    max_output_tokens=32 * 1024,
+                    # Sized for QB2 (49152 window / 32768 prefill bucket),
+                    # same rationale as terminal_bench_2 above. NOTE:
+                    # gpu_reference_score=64.80 was measured at 160K in / 32K
+                    # out on a 200K-window H100 -- restore those budgets to
+                    # re-collect the GPU reference; QB2 scores under these
+                    # budgets are not directly comparable to it.
+                    max_input_tokens=30 * 1024,
+                    # 8K out, same measured-turn rationale as
+                    # terminal_bench_2 above.
+                    max_output_tokens=8 * 1024,
+                    # mini-swe-agent's builtin swebench.yaml step_limit is
+                    # sized for GPU-speed turns; cap explicitly so a stuck
+                    # instance is bounded at QB2 decode speed.
+                    mini_agent_kwargs={"step_limit": 40},  # 75 -> 40: serial instances at ~2-3 min/step must stay bounded in wall time
                     completion_kwargs={
                         "extra_body": {
                             "top_k": 20,
