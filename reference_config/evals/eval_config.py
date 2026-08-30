@@ -4877,6 +4877,11 @@ _eval_config_list = [
                 # reasoning model: its 5-shot examples demonstrate bare "(C)"
                 # answers, suppressing reasoning (gemma-4 scored only ~53%).
                 task_name="r1_gpqa_diamond",
+                # This task's published/reference recipe reserves a 131072
+                # token request window. Smaller device rows must skip it;
+                # clamping its 124K reasoning budget would define a different
+                # evaluation and make the resulting score incomparable.
+                min_context_required=131072,
                 score=EvalTaskScore(
                     published_score=84.3,
                     published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
@@ -4949,6 +4954,11 @@ _eval_config_list = [
             EvalTask(
                 task_name="terminal_bench_2",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                # The declared 112K input + 80K output contract needs the
+                # 200K server envelope documented below, including template
+                # and tool-definition headroom. Never silently shrink it for
+                # a narrower generated artifact.
+                min_context_required=200 * 1024,
                 score=EvalTaskScore(
                     published_score=42.9,
                     published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
@@ -5022,6 +5032,10 @@ _eval_config_list = [
             EvalTask(
                 task_name="swe_bench_verified",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                # The declared 160K input + 32K output contract likewise uses
+                # the 200K server envelope documented below. A smaller row
+                # needs a separately baselined eval, not a clamped score.
+                min_context_required=200 * 1024,
                 score=EvalTaskScore(
                     published_score=52.0,
                     published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
