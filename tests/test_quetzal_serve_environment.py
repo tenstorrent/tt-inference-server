@@ -96,7 +96,9 @@ def test_cli_emits_sorted_exact_requirements_after_contract_validation(
     )
 
 
-def test_installation_dependency_cannot_replace_qualified_identity(tmp_path: Path) -> None:
+def test_installation_dependency_cannot_replace_qualified_identity(
+    tmp_path: Path,
+) -> None:
     with pytest.raises(ContractError, match="duplicates a qualified dependency"):
         validate_contract(
             _source(
@@ -317,7 +319,10 @@ def test_docker_builds_validate_before_installing_quetzal() -> None:
             )
             assert validator < qualified_install < installed_validator < install
             assert "uv pip check --python" in normalized[qualified_install:install]
-            assert 'test -z "$(comm -13 /tmp/pip-check.base /tmp/pip-check.qualified)"' in normalized
+            assert (
+                'test -z "$(comm -13 /tmp/pip-check.base /tmp/pip-check.qualified)"'
+                in normalized
+            )
             assert "cmp /tmp/pip-check.qualified /tmp/pip-check.after" in normalized
             assert "--upgrade --no-deps --requirements" in normalized
         else:

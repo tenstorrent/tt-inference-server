@@ -28,5 +28,8 @@ def test_quetzal_image_rejects_frameworks_without_target_configs() -> None:
     assert "--requirements /tmp/quetzal-serve-requirements.txt" in dockerfile
     assert "--upgrade --no-deps --requirements" in dockerfile
     assert dockerfile.count('uv pip check --python "${PYTHON_ENV_DIR}/bin/python"') >= 3
-    assert 'test -z "$(comm -13 /tmp/pip-check.base /tmp/pip-check.qualified)"' in dockerfile
+    assert (
+        'test -z "$(comm -13 /tmp/pip-check.base /tmp/pip-check.qualified)"'
+        in dockerfile
+    )
     assert "cmp /tmp/pip-check.qualified /tmp/pip-check.after" in dockerfile
