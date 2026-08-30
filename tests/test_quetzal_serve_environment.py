@@ -358,27 +358,24 @@ def test_docker_builds_validate_before_installing_quetzal() -> None:
         install = (
             normalized.index("--no-deps /tmp/quetzal-source", validator)
             if relative.endswith("src.quetzal.Dockerfile")
-            else normalized.index("uv pip install", validator)
+            else normalized.index(
+                '--no-cache-dir --no-deps "${quetzal_wheel}"', validator
+            )
         )
         assert validator < install
         assert "--plugin-project /tmp/ttis-vllm-plugin-pyproject.toml" in dockerfile
-        if relative.endswith("src.quetzal.Dockerfile"):
-            qualified_install = normalized.index(
-                "--requirements /tmp/quetzal-serve-requirements.txt"
-            )
-            installed_validator = normalized.index(
-                "--check-installed", qualified_install
-            )
-            assert validator < qualified_install < installed_validator < install
-            assert "uv pip check --python" in normalized[qualified_install:install]
-            assert (
-                'test -z "$(comm -13 /tmp/pip-check.base /tmp/pip-check.qualified)"'
-                in normalized
-            )
-            assert "cmp /tmp/pip-check.qualified /tmp/pip-check.after" in normalized
-            assert "--upgrade --no-deps --requirements" in normalized
-        else:
-            assert "--check-installed" in normalized[validator:install]
+        qualified_install = normalized.index(
+            "--requirements /tmp/quetzal-serve-requirements.txt", validator
+        )
+        installed_validator = normalized.index("--check-installed", qualified_install)
+        assert validator < qualified_install < installed_validator < install
+        assert "uv pip check --python" in normalized[qualified_install:install]
+        assert (
+            'test -z "$(comm -13 /tmp/pip-check.base /tmp/pip-check.qualified)"'
+            in normalized
+        )
+        assert "cmp /tmp/pip-check.qualified /tmp/pip-check.after" in normalized
+        assert "--upgrade --no-deps --requirements" in normalized
     derivative = (
         ROOT / "vllm-tt-metal" / "vllm.tt-metal.src.quetzal.Dockerfile"
     ).read_text()
@@ -403,3 +400,20 @@ def test_dev_image_installer_and_validator_share_explicit_python_prefix() -> Non
         '${PYTHON_ENV_DIR}/bin/python -c \\"import importlib.metadata as m; '
         "assert m.distribution('vllm-tt-plugin').version\\\"" in dockerfile
     )
+
+
+def test_official_builder_selects_dependency_qualified_dev_image() -> None:
+    builder = (ROOT / "scripts" / "build_single_docker.sh").read_text()
+    dockerfile_name = "vllm-tt-metal/vllm.tt-metal.src.dev.Dockerfile"
+    assert f"-f {dockerfile_name}" in builder
+    dockerfile = (ROOT / dockerfile_name).read_text()
+    requirements = dockerfile.index(
+        "--requirements-output /tmp/quetzal-serve-requirements.txt"
+    )
+    install = dockerfile.index(
+        "--upgrade --no-deps --requirements /tmp/quetzal-serve-requirements.txt",
+        requirements,
+    )
+    check_installed = dockerfile.index("--check-installed", install)
+    wheel = dockerfile.index('uv build --wheel', check_installed)
+    assert requirements < install < check_installed < wheel

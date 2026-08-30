@@ -171,18 +171,45 @@ RUN set -eu; \
       export VIRTUAL_ENV="${PYTHON_ENV_DIR}"; \
       export PATH="${PYTHON_ENV_DIR}/bin:${PATH}"; \
       export UV_PYTHON="${PYTHON_ENV_DIR}/bin/python"; \
+      (LC_ALL=C uv pip check --python "${PYTHON_ENV_DIR}/bin/python" 2>&1 || true) \
+        | sed -E '/^Using Python /d;/^Checked [0-9]+ packages in /d' \
+        | LC_ALL=C sort > /tmp/pip-check.base; \
+      "${PYTHON_ENV_DIR}/bin/python" /tmp/validate_quetzal_serve_environment.py \
+        --source /tmp/quetzal-source \
+        --source-revision "${TT_QUETZAL_COMMIT_SHA}" \
+        --plugin-project /tmp/ttis-vllm-plugin-pyproject.toml \
+        --requirements-output /tmp/quetzal-serve-requirements.txt; \
+      uv pip install --python "${PYTHON_ENV_DIR}/bin/python" \
+        --upgrade --no-deps --requirements /tmp/quetzal-serve-requirements.txt; \
+      (LC_ALL=C uv pip check --python "${PYTHON_ENV_DIR}/bin/python" 2>&1 || true) \
+        | sed -E '/^Using Python /d;/^Checked [0-9]+ packages in /d' \
+        | LC_ALL=C sort > /tmp/pip-check.qualified; \
+      test -z "$(comm -13 /tmp/pip-check.base /tmp/pip-check.qualified)"; \
       "${PYTHON_ENV_DIR}/bin/python" /tmp/validate_quetzal_serve_environment.py \
         --source /tmp/quetzal-source \
         --source-revision "${TT_QUETZAL_COMMIT_SHA}" \
         --plugin-project /tmp/ttis-vllm-plugin-pyproject.toml \
         --check-installed \
         --receipt "${HOME_DIR}/quetzal-runtime/qualified-environment.json"; \
+      LC_ALL=C uv pip freeze --python "${PYTHON_ENV_DIR}/bin/python" \
+        | LC_ALL=C sort > /tmp/packages.before; \
       uv build --wheel --out-dir "${HOME_DIR}/quetzal-runtime/wheels"; \
       test "$(find "${HOME_DIR}/quetzal-runtime/wheels" -maxdepth 1 -type f -name '*.whl' | wc -l)" -eq 1; \
       quetzal_wheel="$(find "${HOME_DIR}/quetzal-runtime/wheels" -maxdepth 1 -type f -name '*.whl')"; \
       uv pip install --python "${PYTHON_ENV_DIR}/bin/python" --no-cache-dir --no-deps "${quetzal_wheel}"; \
+      (LC_ALL=C uv pip check --python "${PYTHON_ENV_DIR}/bin/python" 2>&1 || true) \
+        | sed -E '/^Using Python /d;/^Checked [0-9]+ packages in /d' \
+        | LC_ALL=C sort > /tmp/pip-check.after; \
+      cmp /tmp/pip-check.qualified /tmp/pip-check.after; \
+      LC_ALL=C uv pip freeze --python "${PYTHON_ENV_DIR}/bin/python" \
+        | sed -E '/^tt-quetzalcoatlus(==| @ |$)/d' \
+        | LC_ALL=C sort > /tmp/packages.after; \
+      cmp /tmp/packages.before /tmp/packages.after; \
       cp serving/mesh_graph_descriptors/p150_x4_2ch_mesh_graph_descriptor.textproto \
          "${HOME_DIR}/quetzal-runtime/mesh_graph_descriptors/"; \
+      rm /tmp/packages.before /tmp/packages.after \
+         /tmp/pip-check.base /tmp/pip-check.qualified /tmp/pip-check.after \
+         /tmp/quetzal-serve-requirements.txt; \
       rm -rf /tmp/quetzal-source; \
       { uv cache clean || echo 'WARN: uv cache clean failed'; true; }; \
     else \
