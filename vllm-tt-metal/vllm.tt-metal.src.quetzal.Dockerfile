@@ -35,6 +35,7 @@ RUN test "${TT_METAL_BASE_REVISION}" = "b534549300fe2af11e6ee828675294bc0e359555
        | sha256sum --check -
 
 RUN --mount=type=cache,target=/root/.cache/ccache \
+    --mount=type=cache,target=/root/.cache/tt-metal-cpm,sharing=locked \
     set -eux; \
     old_python_env=/tmp/ttis-python-env; \
     source "${PYTHON_ENV_DIR}/bin/activate"; \
@@ -65,7 +66,9 @@ RUN --mount=type=cache,target=/root/.cache/ccache \
         > /tmp/patchset-probe.json; \
     grep -q '"status": "pass"' /tmp/patchset-probe.json; \
     cd "${TT_METAL_HOME}"; \
-    CCACHE_DIR=/root/.cache/ccache ./build_metal.sh; \
+    CPM_SOURCE_CACHE=/root/.cache/tt-metal-cpm \
+    CCACHE_DIR=/root/.cache/ccache \
+    ./build_metal.sh; \
     mv "${old_python_env}" "${PYTHON_ENV_DIR}"; \
     source "${PYTHON_ENV_DIR}/bin/activate"; \
     uv pip uninstall ttnn; \

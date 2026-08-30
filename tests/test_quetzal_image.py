@@ -85,6 +85,11 @@ def test_quetzal_runtime_is_rebuilt_in_base_abi_and_atomically_replaced():
     )
     assert "--apply" in source
     assert source.count("tt_metal_patchset.py") >= 3
+    assert (
+        "--mount=type=cache,target=/root/.cache/tt-metal-cpm,sharing=locked"
+        in source
+    )
+    assert "CPM_SOURCE_CACHE=/root/.cache/tt-metal-cpm" in source
     assert "cmp /tmp/packages.before /tmp/packages.after" in source
     builder = source.split("FROM ${TT_INFERENCE_SERVER_BASE_IMAGE}", 2)[1]
     assert "> /tmp/pip-check.before" in builder
