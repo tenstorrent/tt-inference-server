@@ -350,7 +350,6 @@ def test_gpt_quetzal_dev_catalog_is_non_default_and_prod_remains_disabled():
         get_repo_root_path() / "workflows/model_specs/prod/llm.yaml"
     )
     assert not any(
-        template.impl.impl_id == "quetzal"
-        and "openai/gpt-oss-120b" in template.weights
+        template.impl.impl_id == "quetzal" and "openai/gpt-oss-120b" in template.weights
         for template in prod_templates
     )

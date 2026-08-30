@@ -123,8 +123,7 @@ def test_qualified_generated_models_are_enrolled_without_replacing_native_rows()
         assert args == expected_gemma_args
 
     gpt = {
-        row["impl"]: row
-        for row in config["models"]["gpt-oss-120b"]["implementations"]
+        row["impl"]: row for row in config["models"]["gpt-oss-120b"]["implementations"]
     }["quetzal"]
     expected_gpt_args = (
         "--quetzal-models-root "
