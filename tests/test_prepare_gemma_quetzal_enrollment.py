@@ -11,6 +11,8 @@ import pytest
 
 import scripts.prepare_gemma_quetzal_enrollment as gemma_enrollment
 from scripts.prepare_gemma_quetzal_enrollment import (
+    DESCRIPTOR_CONTAINER_PATH,
+    DESCRIPTOR_SHA256,
     EXPECTED_ARTIFACT_SHA256,
     EnrollmentError,
     HF_REVISION,
@@ -119,6 +121,8 @@ def evidence(*, ttis_revision=None, shield_revision=SHIELD_REVISION):
             "vllm_plugins": "quetzal_model_registry,tt",
             "tt_vllm_builtin_models": "0",
             "native_fallback_allowed": False,
+            "descriptor_container_path": DESCRIPTOR_CONTAINER_PATH,
+            "descriptor_sha256": DESCRIPTOR_SHA256,
         },
         "package_id": PACKAGE_ID,
         "package_manifest_sha256": "3" * 64,
@@ -137,6 +141,7 @@ def evidence(*, ttis_revision=None, shield_revision=SHIELD_REVISION):
             "collective": "Ring",
             "links": 2,
             "runner_label": RUNNER,
+            "descriptor_sha256": DESCRIPTOR_SHA256,
         },
         "roles": {
             "compiled_weights": "compiled_weights/gemma/weights.pt",
@@ -181,6 +186,7 @@ def test_exact_evidence_renders_schema_valid_non_dispatching_fragments(shield_ch
     env = device_spec["env_vars"]
     assert env["TTQ_ROW_ALL_REDUCE_TOPOLOGY"] == "Ring"
     assert env["TTQ_TUNED_ROW_ALL_REDUCE_LINKS"] == "2"
+    assert env["TT_MESH_GRAPH_DESC_PATH"] == DESCRIPTOR_CONTAINER_PATH
     assert env["VLLM_PLUGINS"] == "quetzal_model_registry,tt"
     assert env["TT_VLLM_BUILTIN_MODELS"] == "0"
     assert env["QUETZAL_REQUIRED_SOURCE_REVISION"] == QUETZAL_SOURCE
@@ -207,6 +213,10 @@ def test_exact_evidence_renders_schema_valid_non_dispatching_fragments(shield_ch
         ),
         (lambda x: x["profile"].update(decode_capacity=2048), "profile"),
         (lambda x: x["topology"].update(runner_label="p300x2"), "runner_label"),
+        (
+            lambda x: x["runtime"].update(descriptor_sha256="0" * 64),
+            "descriptor_sha256",
+        ),
         (lambda x: x["qualification"].update(pcc=0.989), "pcc"),
         (
             lambda x: x["qualification"]["capacity_endpoint"].update(osl=2),

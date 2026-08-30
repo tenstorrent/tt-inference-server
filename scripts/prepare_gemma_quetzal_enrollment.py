@@ -35,6 +35,10 @@ TT_METAL = "b534549300fe2af11e6ee828675294bc0e359555"
 PATCHSET = "22fb0bd2523b8a5c63fa20c3c8a1586dc9ead5150449d0eb02231fa8173a7edd"
 RUNNER = "qb2-p300x2-physical-2x2-ring-links2"
 SHIELD_IMAGE_ANCESTOR = "d97835a18ef6419e9bd12c5e60ffd87bdf7fe3c6"
+DESCRIPTOR_CONTAINER_PATH = (
+    "/opt/quetzal/mesh_graph_descriptors/p150_x4_2ch_mesh_graph_descriptor.textproto"
+)
+DESCRIPTOR_SHA256 = "f4c9fb5acf307e1b320525007035ed9e75039f793e4350120365243682e37792"
 EXPECTED_ARTIFACT_SHA256 = {
     "generated_prefill": "21da9a2b34c2645067d349081c0d6b263c5fd9cf091c536912f45f413474e1aa",
     "prefill_metadata": "fdbf2b845242a6899c660eda9053bf69b46bf3a8324c3c4b2285b01433c3cf5f",
@@ -195,6 +199,16 @@ def validate_evidence(
     _need(
         runtime.get("native_fallback_allowed"), False, "runtime.native_fallback_allowed"
     )
+    _need(
+        runtime.get("descriptor_container_path"),
+        DESCRIPTOR_CONTAINER_PATH,
+        "runtime.descriptor_container_path",
+    )
+    _need(
+        runtime.get("descriptor_sha256"),
+        DESCRIPTOR_SHA256,
+        "runtime.descriptor_sha256",
+    )
 
     package_id = data.get("package_id")
     if not isinstance(package_id, str) or not PACKAGE.fullmatch(package_id):
@@ -233,6 +247,11 @@ def validate_evidence(
     _need(topology.get("collective"), "Ring", "topology.collective")
     _need(topology.get("links"), 2, "topology.links")
     _need(topology.get("runner_label"), RUNNER, "topology.runner_label")
+    _need(
+        topology.get("descriptor_sha256"),
+        DESCRIPTOR_SHA256,
+        "topology.descriptor_sha256",
+    )
 
     roles = data.get("roles", {})
     if set(roles) != {
@@ -356,6 +375,7 @@ def render_fragments(
         "TTQ_ROW_ALL_REDUCE_TOPOLOGY": "Ring",
         "TTQ_TUNED_ROW_ALL_REDUCE_LINKS": "2",
         "TTQ_TUNED_ROW_ALL_REDUCE": "1",
+        "TT_MESH_GRAPH_DESC_PATH": DESCRIPTOR_CONTAINER_PATH,
     }
     catalogue = {
         "templates": [
