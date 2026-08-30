@@ -37,10 +37,11 @@ def test_quetzal_is_installed_non_editably_and_entry_point_is_verified():
         "/tmp/quetzal-source" in line
     )
     assert " -e " not in install_line
-    assert "> /tmp/pip-check.before" in source
-    assert "> /tmp/pip-check.after" in source
-    assert "sed -E '/^Using Python /d;/^Checked [0-9]+ packages in /d'" in source
-    assert "cmp /tmp/pip-check.before /tmp/pip-check.after" in source
+    assert "> /tmp/packages.before" in source
+    assert "> /tmp/packages.after" in source
+    assert "cmp /tmp/packages.before /tmp/packages.after" in source
+    assert "--requirements /tmp/quetzal-serve-requirements.txt" in source
+    assert source.count('uv pip check --python "${PYTHON_ENV_DIR}/bin/python"') >= 2
     assert '&& /bin/bash -c "export VIRTUAL_ENV=' not in source
     assert "quetzal_model_registry" in source
     assert "tt_quetzalcoatlus.vllm_plugin:register" in source

@@ -57,6 +57,59 @@ def test_accepts_profile_inside_official_plugin_contract(tmp_path: Path) -> None
     }
 
 
+def test_cli_emits_sorted_exact_requirements_after_contract_validation(
+    tmp_path: Path,
+) -> None:
+    source = _source(tmp_path, numpy="1.26.4")
+    requirements = tmp_path / "qualified.txt"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "validate_quetzal_serve_environment.py"),
+            "--source",
+            str(source),
+            "--source-revision",
+            "a" * 40,
+            "--plugin-project",
+            str(ROOT / "tt-vllm-plugin" / "pyproject.toml"),
+            "--requirements-output",
+            str(requirements),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert requirements.read_text() == (
+        "numpy==1.26.4\n"
+        "transformers==5.15.0\n"
+    )
+
+
+def test_cli_refuses_to_install_unqualified_legacy_environment(tmp_path: Path) -> None:
+    source = tmp_path / "legacy"
+    source.mkdir()
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "validate_quetzal_serve_environment.py"),
+            "--source",
+            str(source),
+            "--source-revision",
+            LEGACY_QWEN_SOURCE_REVISION,
+            "--plugin-project",
+            str(ROOT / "tt-vllm-plugin" / "pyproject.toml"),
+            "--requirements-output",
+            str(tmp_path / "must-not-exist.txt"),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 2
+    assert "no exact qualified requirements" in completed.stderr
+
+
 def test_cli_needs_no_tomllib_or_tomli_on_builder_python(tmp_path: Path) -> None:
     source = tmp_path / "legacy-source"
     source.mkdir()
@@ -221,19 +274,27 @@ def test_docker_builds_validate_before_installing_quetzal() -> None:
         normalized = dockerfile.replace(
             '"${PYTHON_ENV_DIR}/bin/python"', "${PYTHON_ENV_DIR}/bin/python"
         )
-        validator_command = (
-            "${PYTHON_ENV_DIR}/bin/python /tmp/validate_quetzal_serve_environment.py"
-        )
+        validator_command = "${PYTHON_ENV_DIR}/bin/python /tmp/validate_quetzal_serve_environment.py"
         validator = normalized.index(validator_command)
-        install = normalized.index(" install ", validator)
+        install = (
+            normalized.index("--no-deps /tmp/quetzal-source", validator)
+            if relative.endswith("src.quetzal.Dockerfile")
+            else normalized.index("uv pip install", validator)
+        )
         assert validator < install
         assert "--plugin-project /tmp/ttis-vllm-plugin-pyproject.toml" in dockerfile
-        assert "--check-installed" in normalized[validator:install]
+        if relative.endswith("src.quetzal.Dockerfile"):
+            qualified_install = normalized.index("--requirements /tmp/quetzal-serve-requirements.txt")
+            installed_validator = normalized.index("--check-installed", qualified_install)
+            assert validator < qualified_install < installed_validator < install
+            assert "uv pip check --python" in normalized[qualified_install:install]
+        else:
+            assert "--check-installed" in normalized[validator:install]
     derivative = (
         ROOT / "vllm-tt-metal" / "vllm.tt-metal.src.quetzal.Dockerfile"
     ).read_text()
     assert (
-        "uv pip install --python ${PYTHON_ENV_DIR}/bin/python --no-deps "
+        'uv pip install --python "${PYTHON_ENV_DIR}/bin/python" --no-deps '
         "/tmp/quetzal-source"
     ) in derivative
 

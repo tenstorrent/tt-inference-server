@@ -24,3 +24,6 @@ def test_quetzal_image_rejects_frameworks_without_target_configs() -> None:
     ).read_text()
     assert "m.version('transformers') == '5.15.0'" in dockerfile
     assert "{'gemma4', 'qwen3_5', 'qwen3_5_moe'}" in dockerfile
+    assert "--requirements-output /tmp/quetzal-serve-requirements.txt" in dockerfile
+    assert "--requirements /tmp/quetzal-serve-requirements.txt" in dockerfile
+    assert dockerfile.count('uv pip check --python "${PYTHON_ENV_DIR}/bin/python"') >= 2

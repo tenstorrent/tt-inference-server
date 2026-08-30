@@ -327,6 +327,11 @@ def main() -> int:
     parser.add_argument("--plugin-project", type=Path)
     parser.add_argument("--check-installed", action="store_true")
     parser.add_argument("--receipt", type=Path)
+    parser.add_argument(
+        "--requirements-output",
+        type=Path,
+        help="write the validated exact serving requirements for image installation",
+    )
     args = parser.parse_args()
     try:
         receipt = validate_contract(
@@ -338,6 +343,17 @@ def main() -> int:
     except ContractError as exc:
         parser.error(str(exc))
     rendered = json.dumps(receipt, indent=2, sort_keys=True) + "\n"
+    if args.requirements_output:
+        dependencies = receipt.get("dependencies")
+        if not isinstance(dependencies, dict) or not dependencies:
+            parser.error(
+                "the selected source has no exact qualified requirements to install"
+            )
+        requirements = "".join(
+            f"{name}=={version}\n"
+            for name, version in sorted(dependencies.items())
+        )
+        args.requirements_output.write_text(requirements)
     if args.receipt:
         args.receipt.write_text(rendered)
     else:
