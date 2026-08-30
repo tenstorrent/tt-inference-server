@@ -236,8 +236,9 @@ def test_gpt_pending_row_defines_all_ci_entries_without_weakening_release():
     assert frontier["initial_on_dispatch"]["profile"] == LOCAL_ON_DISPATCH_PROFILE
     entries = frontier["nightly_and_release_entries"]
     assert entries["rendered"] is True
-    assert entries["activate_nightly_after_initial_on_dispatch"] is True
+    assert entries["activate_nightly"] is False
     assert entries["activate_release"] is False
+    assert "workflow=release" in entries["reason"]
     assert frontier["defined_evals"] == list(GPT_RELEASE_EVALS)
 
     agentic = frontier["agentic_release_context"]

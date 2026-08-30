@@ -450,9 +450,15 @@ def render_contract(data: dict[str, Any]) -> dict[str, Any]:
             },
             "nightly_and_release_entries": {
                 "rendered": True,
-                "activate_nightly_after_initial_on_dispatch": True,
+                "activate_nightly": False,
                 "activate_release": False,
                 "release_activation_owner": "CS",
+                "reason": (
+                    "Shield schedules execute TTIS workflow=release. Both prepared "
+                    "entries therefore include the same 124K agentic and performance "
+                    "gates and must remain disabled after the bounded initial "
+                    "On-dispatch."
+                ),
             },
             "defined_evals": list(GPT_RELEASE_EVALS),
             "agentic_release_context": {
@@ -515,9 +521,9 @@ def render_contract(data: dict[str, Any]) -> dict[str, Any]:
             "verify Shield per-model+impl immutable image selection is deployed",
             "apply and schema-validate the TTIS dev catalogue and Models CI fragments",
             "run one guarded on-dispatch qualification",
-            "enable nightly only after on-dispatch passes",
-            "keep release disabled until the 124K agentic-context and 3-second TTFT "
-            "gates pass or CS records an explicit implementation-specific policy",
+            "keep nightly and release disabled after the bounded on-dispatch until "
+            "the 124K agentic-context and 3-second TTFT gates pass or CS records an "
+            "explicit implementation-specific policy",
         ],
         "forbidden_claims": [
             "portable P300X2",
