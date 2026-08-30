@@ -24,10 +24,15 @@ COPY --from=quetzal_src tools/tt_metal_patchset.py /tmp/quetzal-tt-metal/tt_meta
 
 RUN test "${TT_METAL_BASE_REVISION}" = "b534549300fe2af11e6ee828675294bc0e359555" \
     && test "${TT_METAL_BASE_FETCH_REF}" = "qz/mixtral-epd2-wait-min-20260827" \
-    && test "${TT_METAL_PATCHSET_SHA256}" = "22fb0bd2523b8a5c63fa20c3c8a1586dc9ead5150449d0eb02231fa8173a7edd" \
-    && test "${TT_METAL_PATCHSET_MANIFEST_SHA256}" = "22fb0bd2523b8a5c63fa20c3c8a1586dc9ead5150449d0eb02231fa8173a7edd" \
-    && echo "${TT_METAL_PATCHSET_MANIFEST_SHA256}  /tmp/quetzal-tt-metal/patches/gdn-productization-v1.json" \
-        | sha256sum --check -
+    && test "${TT_METAL_PATCHSET_SHA256}" = "${TT_METAL_PATCHSET_MANIFEST_SHA256}" \
+    && case "${TT_METAL_PATCHSET_MANIFEST_SHA256}" in \
+         22fb0bd2523b8a5c63fa20c3c8a1586dc9ead5150449d0eb02231fa8173a7edd) patchset_name=gdn-productization-v1 ;; \
+         e240fa3880ea0c2597dd7df8ab657a69aca9fe215de58220ae96e47a48a29910) patchset_name=gdn-productization-v2 ;; \
+         *) echo "unrecognized Quetzal TT-Metal patchset identity" >&2; exit 1 ;; \
+       esac \
+    && echo "${patchset_name}" > /tmp/quetzal-tt-metal/patchset-name \
+    && echo "${TT_METAL_PATCHSET_MANIFEST_SHA256}  /tmp/quetzal-tt-metal/patches/${patchset_name}.json" \
+       | sha256sum --check -
 
 RUN --mount=type=cache,target=/root/.cache/ccache \
     set -eux; \
@@ -48,13 +53,15 @@ RUN --mount=type=cache,target=/root/.cache/ccache \
     git -C "${TT_METAL_HOME}" checkout --detach "${TT_METAL_BASE_REVISION}"; \
     test "$(git -C "${TT_METAL_HOME}" rev-parse HEAD)" = "${TT_METAL_BASE_REVISION}"; \
     git -C "${TT_METAL_HOME}" submodule update --init --recursive; \
+    patchset_name="$(cat /tmp/quetzal-tt-metal/patchset-name)"; \
+    patchset_manifest="/tmp/quetzal-tt-metal/patches/${patchset_name}.json"; \
     python3 /tmp/quetzal-tt-metal/tt_metal_patchset.py \
         --repo "${TT_METAL_HOME}" \
-        --manifest /tmp/quetzal-tt-metal/patches/gdn-productization-v1.json \
+        --manifest "${patchset_manifest}" \
         --apply; \
     python3 /tmp/quetzal-tt-metal/tt_metal_patchset.py \
         --repo "${TT_METAL_HOME}" \
-        --manifest /tmp/quetzal-tt-metal/patches/gdn-productization-v1.json \
+        --manifest "${patchset_manifest}" \
         > /tmp/patchset-probe.json; \
     grep -q '"status": "pass"' /tmp/patchset-probe.json; \
     cd "${TT_METAL_HOME}"; \
@@ -73,7 +80,7 @@ RUN --mount=type=cache,target=/root/.cache/ccache \
     python -c 'import ttnn, ttnn._ttnn, vllm; assert ttnn.__path__[0].startswith("/home/container_app_user/tt-metal"); assert ttnn._ttnn.__file__.startswith("/home/container_app_user/tt-metal/")'; \
     cp /tmp/patchset-probe.json "${TT_METAL_HOME}/.ttq-patchset-admission.json"; \
     printf '%s\n' \
-        "{\"base_revision\":\"${TT_METAL_BASE_REVISION}\",\"patchset\":\"gdn-productization-v1\",\"patchset_sha256\":\"${TT_METAL_PATCHSET_SHA256}\",\"manifest_sha256\":\"${TT_METAL_PATCHSET_MANIFEST_SHA256}\"}" \
+        "{\"base_revision\":\"${TT_METAL_BASE_REVISION}\",\"patchset\":\"${patchset_name}\",\"patchset_sha256\":\"${TT_METAL_PATCHSET_SHA256}\",\"manifest_sha256\":\"${TT_METAL_PATCHSET_MANIFEST_SHA256}\"}" \
         > "${TT_METAL_HOME}/.ttq-runtime-identity.json"; \
     sha256sum \
         "${TT_METAL_HOME}/build/lib/_ttnn.so" \
@@ -97,7 +104,7 @@ LABEL org.opencontainers.image.tt-inference-server.revision=${TT_INFERENCE_SERVE
       org.opencontainers.image.quetzal.source=https://github.com/tenstorrent/tt-quetzalcoatlus \
       org.opencontainers.image.quetzal.revision=${TT_QUETZAL_COMMIT_SHA} \
       org.opencontainers.image.tt-metal.revision=${TT_METAL_BASE_REVISION} \
-      org.opencontainers.image.tt-metal.patchset=gdn-productization-v1 \
+      org.opencontainers.image.tt-metal.patchset=content-addressed \
       org.opencontainers.image.tt-metal.patchset.sha256=${TT_METAL_PATCHSET_SHA256} \
       org.opencontainers.image.tt-metal.patchset.manifest.sha256=${TT_METAL_PATCHSET_MANIFEST_SHA256}
 
@@ -153,7 +160,7 @@ RUN test "$(cat /tmp/quetzal-source/.tt-quetzal-commit)" = "${TT_QUETZAL_COMMIT_
         && rm /tmp/pip-check.before /tmp/pip-check.after \
         && ${PYTHON_ENV_DIR}/bin/python -c "import importlib.metadata as m; from transformers.models.auto.configuration_auto import CONFIG_MAPPING_NAMES; assert m.version('transformers') == '5.15.0'; assert {'gemma4', 'qwen3_5', 'qwen3_5_moe'} <= set(CONFIG_MAPPING_NAMES)" \
         && grep -q '^def validate_quetzal_runtime(' /home/container_app_user/app/src/run_vllm_api_server.py \
-        && grep -q '06c5fb2c200f7afd3b154d92501f00e8e4cf9a478e9b9e3df0bd051dc6241487' /home/container_app_user/model_specs/model_spec.json \
+        && grep -q 'c4c72b0774c97eeceba0481d7341915f8f3b6e352f4a3ab26eaab00077350cf5' /home/container_app_user/model_specs/model_spec.json \
         && grep -q '152a50f9a06a66e3f64f822e88b4a00bf76fbe9d02cf53094d702751970be8d0' /home/container_app_user/model_specs/model_spec.json \
         && ${PYTHON_ENV_DIR}/bin/python -c \"import importlib.metadata as m; eps=[e for e in m.entry_points(group='vllm.general_plugins') if e.name == 'quetzal_model_registry' and e.value == 'tt_quetzalcoatlus.vllm_plugin:register']; assert len(eps) == 1, eps; import serving.artifact_bundle\"" \
     && rm -rf /tmp/quetzal-source

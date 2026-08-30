@@ -11,6 +11,7 @@ Usage: build_quetzal_dev_image.sh \
   --base-image IMAGE@sha256:DIGEST \
   --quetzal-source PATH_TO_CLEAN_GIT_CHECKOUT \
   --quetzal-commit FULL_COMMIT_SHA \
+  --tt-metal-patchset {v1|v2} \
   --tag OUTPUT_TAG
 
 Builds a uniquely tagged TTIS development image containing a non-editable,
@@ -22,6 +23,7 @@ base_image=""
 quetzal_commit=""
 quetzal_source=""
 output_tag=""
+tt_metal_patchset="v1"
 tt_metal_base_revision="b534549300fe2af11e6ee828675294bc0e359555"
 tt_metal_base_fetch_ref="qz/mixtral-epd2-wait-min-20260827"
 while (($#)); do
@@ -29,6 +31,7 @@ while (($#)); do
         --base-image) base_image="${2:-}"; shift 2 ;;
         --quetzal-source) quetzal_source="${2:-}"; shift 2 ;;
         --quetzal-commit) quetzal_commit="${2:-}"; shift 2 ;;
+        --tt-metal-patchset) tt_metal_patchset="${2:-}"; shift 2 ;;
         --tag) output_tag="${2:-}"; shift 2 ;;
         -h|--help) usage; exit 0 ;;
         *) echo "Unknown argument: $1" >&2; usage >&2; exit 2 ;;
@@ -75,15 +78,26 @@ python3 "${repo_root}/scripts/validate_quetzal_serve_environment.py" \
     --source "${quetzal_source}" \
     --source-revision "${quetzal_commit}" \
     --plugin-project "${repo_root}/tt-vllm-plugin/pyproject.toml" >/dev/null
-patchset_path="patches/tt-metal/gdn-productization-v1.json"
+case "${tt_metal_patchset}" in
+    v1)
+        patchset_path="patches/tt-metal/gdn-productization-v1.json"
+        ;;
+    v2)
+        patchset_path="patches/tt-metal/gdn-productization-v2.json"
+        ;;
+    *)
+        echo "--tt-metal-patchset must be v1 or v2" >&2
+        exit 2
+        ;;
+esac
 if ! git -C "${quetzal_source}" cat-file -e "${quetzal_commit}:${patchset_path}"; then
     echo "Quetzal commit does not contain ${patchset_path}" >&2
     exit 2
 fi
-tt_metal_patchset_sha256="22fb0bd2523b8a5c63fa20c3c8a1586dc9ead5150449d0eb02231fa8173a7edd"
 tt_metal_patchset_manifest_sha256="$({
     git -C "${quetzal_source}" show "${quetzal_commit}:${patchset_path}"
 } | sha256sum | awk '{print $1}')"
+tt_metal_patchset_sha256="${tt_metal_patchset_manifest_sha256}"
 if git -C "${quetzal_source}" ls-tree -r --name-only "${quetzal_commit}" \
         | grep -Fxq '.tt-quetzal-commit'; then
     echo "Quetzal source reserves .tt-quetzal-commit for build identity" >&2

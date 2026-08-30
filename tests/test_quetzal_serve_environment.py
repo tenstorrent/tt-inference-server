@@ -18,6 +18,7 @@ from scripts.validate_quetzal_serve_environment import (
 
 
 ROOT = Path(__file__).resolve().parents[1]
+CURRENT_QWEN_SOURCE_REVISION = "41b9b16d6473973d2f9f65794330c25711dc7667"
 
 
 def _source(tmp_path: Path, *, numpy: str, transformers: str = "5.15.0") -> Path:
@@ -199,9 +200,9 @@ def test_check_installed_uses_upstream_distribution_name_and_prefix(
     }
 
 
-def test_qwen_catalog_keeps_known_good_source_and_package() -> None:
+def test_qwen_catalog_binds_candidate_v2_source_and_keeps_package_payload() -> None:
     catalog = (ROOT / "workflows" / "model_specs" / "dev" / "llm.yaml").read_text()
-    assert f"QUETZAL_REQUIRED_SOURCE_REVISION: {LEGACY_QWEN_SOURCE_REVISION}" in catalog
+    assert f"QUETZAL_REQUIRED_SOURCE_REVISION: {CURRENT_QWEN_SOURCE_REVISION}" in catalog
     assert (
         "QUETZAL_PACKAGE_ID: sha256-"
         "f1d6cebaf6cd432c78721ec3b81101ab86493f387b37f63bc11aca2fc6f6d8d8-"

@@ -60,8 +60,14 @@ scripts/build_quetzal_dev_image.sh \
   --base-image ghcr.io/tenstorrent/tt-inference-server/<image>@sha256:<digest> \
   --quetzal-source /path/to/tt-quetzalcoatlus \
   --quetzal-commit <full-40-character-commit> \
+  --tt-metal-patchset v1 \
   --tag <registry>/ttis-quetzal:<tt-metal>-<vllm>-<quetzal>
 ```
+
+Choose `v1` for the historical `22fb0bd...` runtime contract or `v2` for the
+Qwen candidate runtime `e240fa3...`. The builder accepts only those exact
+content digests; selecting `v2` does not change models that remain bound to
+`v1`.
 
 `vllm.tt-metal.src.quetzal.Dockerfile` installs a regular wheel with no editable
 source path, checks the resulting environment, and verifies the exact
@@ -101,6 +107,11 @@ and functional gates.
 This closes the development image-construction path, not release qualification.
 The catalog binds both models to content-addressed package IDs and trusted root
 manifest digests, but each runner must still materialize the matching bundle.
+The Qwen row is intentionally publication-gated on root manifest `c4c72b...`,
+Quetzal `41b9b16...`, and TT-Metal patchset `e240fa3...`; it must fail closed
+until an administrator publishes that exact immutable generation. Its S8192
+serving envelope also does not admit the current 344064-token Terminal-Bench
+declaration.
 An officially published immutable Quetzal image, clean-QB2 launch receipts,
 nightly results, and CS-owned acceptance rows are still required.
 

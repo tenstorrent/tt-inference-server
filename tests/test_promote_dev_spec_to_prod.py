@@ -952,7 +952,7 @@ def test_real_quetzal_templates_promote_with_exact_packages_and_image(tmp_path):
         "Qwen/Qwen3.6-27B": (
             "sha256-f1d6cebaf6cd432c78721ec3b81101ab86493f387b37f63bc11aca2fc6f6d8d8-"
             "0a8efa103ee378c7cd0e2fa25b0426cbb82752e270f8927bdf44eb2cfe68ce66",
-            "06c5fb2c200f7afd3b154d92501f00e8e4cf9a478e9b9e3df0bd051dc6241487",
+            "c4c72b0774c97eeceba0481d7341915f8f3b6e352f4a3ab26eaab00077350cf5",
         ),
         "google/gemma-4-31B-it": (
             "sha256-e4ebc6d59bc92279c9bbba365474d6ab4ce292013db1e5faf02b6ea9eb096f99-"

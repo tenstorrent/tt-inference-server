@@ -340,26 +340,25 @@ artifacts are pinned independently:
 
 - Build the image with a lowercase 40-hex source commit. The build creates and
   installs one wheel and includes `qz-<commit[:12]>` in the image tag, preventing
-  a native-only image from satisfying the cache lookup. The current integration
-  pin is `8a3bebe4afdd58068d4190248c3f7b82cc27ae9f`; this revision contains
-  the exact `22fb0bd2...` 12-patch GDN manifest required by the package contract.
-  This exact source is the only legacy exception to the environment-profile
-  gate. Before advancing it, measure the official TTIS image and add a
-  `qwen36.serve` variant to Quetzal's `serving/qualified_environments.json`.
-  Every exact version in that profile must match the installed image and the
-  official plugin constraints, including `numpy>=1.24.4,<2`. The host build and
-  image build both reject a missing or incompatible profile before installing
-  Quetzal and preserve a content-addressed admission receipt in the image.
+  a native-only image from satisfying the cache lookup. Qwen candidate-v2 is
+  pinned to `41b9b16d6473973d2f9f65794330c25711dc7667` and the exact
+  `e240fa38...` patchset manifest. That source provides the measured
+  `qwen36.serve` environment profile, including `numpy>=1.24.4,<2` compatibility
+  with the official plugin. The older `8a3bebe4...`/`22fb0bd2...` identity
+  remains admitted only for rows that explicitly retain it. The host and image
+  builds reject a missing or incompatible profile before installing Quetzal and
+  preserve a content-addressed admission receipt in the image.
 - Provision the generated artifact tree separately and pass its root with
   `--quetzal-models-root`. The root is mounted readonly and must contain a real,
   non-symlink `qualification_manifest.yaml`. Startup validates the manifest's
   model/revision/provider/mesh identity and fails closed before importing vLLM.
   The current Qwen catalogue points at the requested immutable successor path
   `/mnt/models/quetzal/immutable/v1/packages/sha256-f1d6cebaf6cd432c78721ec3b81101ab86493f387b37f63bc11aca2fc6f6d8d8-0a8efa103ee378c7cd0e2fa25b0426cbb82752e270f8927bdf44eb2cfe68ce66`
-  and topology-correct root-manifest digest `06c5fb2c200f...`. The path
-  intentionally remains
-  fail-closed until the storage administrator publishes and attests that exact
-  generation. Do not mutate or relabel the historical writable package.
+  and candidate-v2 root-manifest digest `c4c72b0774c9...`. The path
+  intentionally remains fail-closed until the storage administrator publishes
+  and attests that exact generation. This supersedes `06c5fb2c...` without
+  deleting that historical record. Do not mutate or relabel the historical
+  writable package.
 - Quetzal's compiled package supplies model weights. Host setup therefore fetches
   only an explicit allowlist of runtime config/tokenizer files at the catalogue's
   exact Hugging Face commit and excludes checkpoint shard formats. A host-volume
@@ -369,7 +368,7 @@ artifacts are pinned independently:
 
 ```bash
 python3 scripts/build_docker_images.py \
-  --quetzal-commit 8a3bebe4afdd58068d4190248c3f7b82cc27ae9f
+  --quetzal-commit 41b9b16d6473973d2f9f65794330c25711dc7667
 ```
 
 The wheel pin does not provision model artifacts, and the artifact mount does

@@ -336,7 +336,7 @@ def test_qwen_quetzal_dev_spec_uses_portable_qb2_fabric_contract(monkeypatch):
     assert env["TTQ_TUNED_ROW_ALL_REDUCE"] == "1"
 
 
-def test_qwen_quetzal_dev_spec_binds_immutable_b534_22fb_successor(monkeypatch):
+def test_qwen_quetzal_dev_spec_binds_candidate_v2_publication(monkeypatch):
     specs = _dev_llm_spec_map()
     monkeypatch.setattr(model_spec_module, "MODEL_SPECS", specs)
     monkeypatch.setattr(model_spec_module, "_MODEL_SPECS_ENV", "dev")
@@ -344,13 +344,13 @@ def test_qwen_quetzal_dev_spec_binds_immutable_b534_22fb_successor(monkeypatch):
     env = quetzal.env_vars
 
     assert env["QUETZAL_BUNDLE_MANIFEST_SHA256"] == (
-        "06c5fb2c200f7afd3b154d92501f00e8e4cf9a478e9b9e3df0bd051dc6241487"
+        "c4c72b0774c97eeceba0481d7341915f8f3b6e352f4a3ab26eaab00077350cf5"
     )
     assert env["QUETZAL_REQUIRED_TT_METAL_PATCHSET_SHA256"] == (
-        "22fb0bd2523b8a5c63fa20c3c8a1586dc9ead5150449d0eb02231fa8173a7edd"
+        "e240fa3880ea0c2597dd7df8ab657a69aca9fe215de58220ae96e47a48a29910"
     )
     assert env["QUETZAL_REQUIRED_SOURCE_REVISION"] == (
-        "8a3bebe4afdd58068d4190248c3f7b82cc27ae9f"
+        "41b9b16d6473973d2f9f65794330c25711dc7667"
     )
 
 

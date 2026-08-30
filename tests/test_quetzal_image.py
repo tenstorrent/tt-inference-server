@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
+import hashlib
 import json
 import os
 import subprocess
@@ -53,21 +54,22 @@ def test_quetzal_is_installed_non_editably_and_entry_point_is_verified():
     assert "grep -q '^def validate_quetzal_runtime('" in source
     assert "def validate_quetzal_runtime(" in runner
     assert "validate_quetzal_runtime_contract" not in source
-    assert "06c5fb2c200f7afd3b154d92501f00e8e4cf9a478e9b9e3df0bd051dc6241487" in source
+    assert "c4c72b0774c97eeceba0481d7341915f8f3b6e352f4a3ab26eaab00077350cf5" in source
     assert "152a50f9a06a66e3f64f822e88b4a00bf76fbe9d02cf53094d702751970be8d0" in source
 
 
 def test_quetzal_runtime_is_rebuilt_in_base_abi_and_atomically_replaced():
     source = DOCKERFILE.read_text()
     revision = "b534549300fe2af11e6ee828675294bc0e359555"
-    patchset_sha = "22fb0bd2523b8a5c63fa20c3c8a1586dc9ead5150449d0eb02231fa8173a7edd"
-    manifest_sha = patchset_sha
+    patchset_v1_sha = "22fb0bd2523b8a5c63fa20c3c8a1586dc9ead5150449d0eb02231fa8173a7edd"
+    patchset_v2_sha = "e240fa3880ea0c2597dd7df8ab657a69aca9fe215de58220ae96e47a48a29910"
 
     assert "AS quetzal_ttmetal_builder" in source
     assert source.count("FROM ${TT_INFERENCE_SERVER_BASE_IMAGE}") == 2
     assert revision in source
-    assert patchset_sha in source
-    assert manifest_sha in source
+    assert patchset_v1_sha in source
+    assert patchset_v2_sha in source
+    assert "unrecognized Quetzal TT-Metal patchset identity" in source
     assert "COPY --from=quetzal_src patches/tt-metal/" in source
     assert "COPY --from=quetzal_src tools/tt_metal_patchset.py" in source
     assert source.index('git -C "${TT_METAL_HOME}" fetch') < source.index(
@@ -174,6 +176,7 @@ def _git_source(tmp_path):
     patch_dir = source / "patches" / "tt-metal"
     patch_dir.mkdir(parents=True)
     (patch_dir / "gdn-productization-v1.json").write_text("{}\n")
+    (patch_dir / "gdn-productization-v2.json").write_text("{\"version\": 2}\n")
     tools_dir = source / "tools"
     tools_dir.mkdir()
     (tools_dir / "tt_metal_patchset.py").write_text("# fixture\n")
@@ -225,6 +228,8 @@ def test_build_wrapper_exports_clean_exact_commit_as_named_context(tmp_path):
             str(source),
             "--quetzal-commit",
             commit,
+            "--tt-metal-patchset",
+            "v2",
             "--tag",
             "example.invalid/quetzal:test",
         ],
@@ -244,8 +249,9 @@ def test_build_wrapper_exports_clean_exact_commit_as_named_context(tmp_path):
     assert "TT_INFERENCE_SERVER_COMMIT_SHA=" in "\n".join(args)
     assert "TT_METAL_BASE_REVISION=b534549300fe2af11e6ee828675294bc0e359555" in args
     assert "TT_METAL_BASE_FETCH_REF=qz/mixtral-epd2-wait-min-20260827" in args
-    assert any(value.startswith("TT_METAL_PATCHSET_SHA256=") for value in args)
-    assert any(value.startswith("TT_METAL_PATCHSET_MANIFEST_SHA256=") for value in args)
+    expected_patchset = hashlib.sha256(b'{"version": 2}\n').hexdigest()
+    assert f"TT_METAL_PATCHSET_SHA256={expected_patchset}" in args
+    assert f"TT_METAL_PATCHSET_MANIFEST_SHA256={expected_patchset}" in args
     # The wrapper cleans the ephemeral export after the build command returns.
     assert not Path(context.split("=", 1)[1]).exists()
 

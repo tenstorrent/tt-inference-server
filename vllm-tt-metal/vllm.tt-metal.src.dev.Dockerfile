@@ -107,19 +107,25 @@ RUN set -eux; \
       printf '%s' "${TT_METAL_PATCHSET_SHA256}" | grep -Eq '^[0-9a-f]{64}$'; \
       printf '%s' "${TT_METAL_PATCHSET_MANIFEST_SHA256}" | grep -Eq '^[0-9a-f]{64}$'; \
       test "${TT_METAL_PATCHSET_SHA256}" = "${TT_METAL_PATCHSET_MANIFEST_SHA256}"; \
-      echo "${TT_METAL_PATCHSET_MANIFEST_SHA256}  /tmp/quetzal-source/patches/tt-metal/gdn-productization-v1.json" | sha256sum --check -; \
+      case "${TT_METAL_PATCHSET_MANIFEST_SHA256}" in \
+        22fb0bd2523b8a5c63fa20c3c8a1586dc9ead5150449d0eb02231fa8173a7edd) patchset_name=gdn-productization-v1 ;; \
+        e240fa3880ea0c2597dd7df8ab657a69aca9fe215de58220ae96e47a48a29910) patchset_name=gdn-productization-v2 ;; \
+        *) echo "unrecognized Quetzal TT-Metal patchset identity" >&2; exit 1 ;; \
+      esac; \
+      patchset_manifest="/tmp/quetzal-source/patches/tt-metal/${patchset_name}.json"; \
+      echo "${TT_METAL_PATCHSET_MANIFEST_SHA256}  ${patchset_manifest}" | sha256sum --check -; \
       python3 /tmp/quetzal-source/tools/tt_metal_patchset.py \
         --repo "${TT_METAL_HOME}" \
-        --manifest /tmp/quetzal-source/patches/tt-metal/gdn-productization-v1.json \
+        --manifest "${patchset_manifest}" \
         --apply > /tmp/patchset-apply.json; \
       grep -q '"status": "pass"' /tmp/patchset-apply.json; \
       python3 /tmp/quetzal-source/tools/tt_metal_patchset.py \
         --repo "${TT_METAL_HOME}" \
-        --manifest /tmp/quetzal-source/patches/tt-metal/gdn-productization-v1.json \
+        --manifest "${patchset_manifest}" \
         > "${TT_METAL_HOME}/.ttq-patchset-admission.json"; \
       grep -q '"status": "pass"' "${TT_METAL_HOME}/.ttq-patchset-admission.json"; \
       printf '%s\n' \
-        "{\"base_revision\":\"${TT_METAL_COMMIT_SHA_OR_TAG}\",\"patchset\":\"gdn-productization-v1\",\"patchset_sha256\":\"${TT_METAL_PATCHSET_SHA256}\",\"manifest_sha256\":\"${TT_METAL_PATCHSET_MANIFEST_SHA256}\"}" \
+        "{\"base_revision\":\"${TT_METAL_COMMIT_SHA_OR_TAG}\",\"patchset\":\"${patchset_name}\",\"patchset_sha256\":\"${TT_METAL_PATCHSET_SHA256}\",\"manifest_sha256\":\"${TT_METAL_PATCHSET_MANIFEST_SHA256}\"}" \
         > "${TT_METAL_HOME}/.ttq-runtime-identity.json"; \
     fi; \
     git -C "${TT_METAL_HOME}" submodule update --init --recursive; \
