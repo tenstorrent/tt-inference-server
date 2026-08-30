@@ -179,10 +179,7 @@ def test_docker_command_mounts_exact_runtime_attestation_readonly(tmp_path):
 
     command, _ = generate_docker_run_command(spec, runtime)
 
-    destination = (
-        "/home/container_app_user/quetzal/runtime-attestations/"
-        f"{digest}.json"
-    )
+    destination = f"/home/container_app_user/quetzal/runtime-attestations/{digest}.json"
     assert (
         f"type=bind,src={attestation.resolve()},dst={destination},readonly" in command
     )

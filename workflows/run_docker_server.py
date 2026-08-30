@@ -422,9 +422,7 @@ def _validate_quetzal_runtime_attestation(runtime_config, model_spec) -> Path | 
     if not required and not configured:
         return None
     if re.fullmatch(r"[0-9a-f]{64}", required) is None:
-        raise ValueError(
-            "impl=quetzal requires QUETZAL_RUNTIME_ATTESTATION_SHA256"
-        )
+        raise ValueError("impl=quetzal requires QUETZAL_RUNTIME_ATTESTATION_SHA256")
     if not configured:
         raise ValueError("--impl quetzal requires --quetzal-runtime-attestation")
     supplied = Path(configured).expanduser()

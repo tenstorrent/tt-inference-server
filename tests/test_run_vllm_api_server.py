@@ -649,9 +649,7 @@ def test_quetzal_runtime_contract_rejects_split_attestation_generator_mismatch(
     monkeypatch.setenv("QUETZAL_SERVE_PROFILE", "gpt_oss_120b.serve")
     monkeypatch.setenv("QUETZAL_SERVE_PROFILE_SHA256", "f" * 64)
     module = types.ModuleType("serving.runtime_compatibility_attestation")
-    module.validate_files = lambda **_kwargs: {
-        "generator_source_revision": "c" * 40
-    }
+    module.validate_files = lambda **_kwargs: {"generator_source_revision": "c" * 40}
     monkeypatch.setitem(
         sys.modules, "serving.runtime_compatibility_attestation", module
     )
