@@ -395,6 +395,15 @@ def parse_arguments():
         ),
     )
     parser.add_argument(
+        "--quetzal-runtime-attestation",
+        type=str,
+        default=None,
+        help=(
+            "Exact runtime-compatibility attestation file for impl=quetzal; "
+            "mounted read-only and checked against the catalog SHA-256"
+        ),
+    )
+    parser.add_argument(
         "--quetzal-auxiliary-root",
         action="append",
         default=[],

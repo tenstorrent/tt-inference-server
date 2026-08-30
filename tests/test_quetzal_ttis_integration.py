@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 import copy
+import hashlib
 import json
 
 import pytest
@@ -150,6 +151,45 @@ def test_docker_command_mounts_exact_v2_auxiliary_root_readonly(tmp_path):
 
     runtime.quetzal_auxiliary_roots = []
     with pytest.raises(ValueError, match="do not match the model spec"):
+        generate_docker_run_command(spec, runtime)
+
+
+def test_docker_command_mounts_exact_runtime_attestation_readonly(tmp_path):
+    spec = copy.deepcopy(_dev_quetzal_spec("Qwen3.6-27B"))
+    package_id = spec.env_vars["QUETZAL_PACKAGE_ID"]
+    package = tmp_path / package_id
+    package.mkdir()
+    (package / "qualification_manifest.yaml").write_text("models: []\n")
+    payload = b'{"schema":"ttq.runtime_compatibility_attestation/v1"}\n'
+    digest = hashlib.sha256(payload).hexdigest()
+    attestation = tmp_path / f"{digest}.json"
+    attestation.write_bytes(payload)
+    attestation.chmod(0o444)
+    spec.env_vars["QUETZAL_RUNTIME_ATTESTATION_SHA256"] = digest
+    runtime = RuntimeConfig(
+        model="Qwen3.6-27B",
+        workflow="server",
+        device="p300x2",
+        impl="quetzal",
+        engine="vLLM",
+        docker_server=True,
+        quetzal_models_root=str(package),
+        quetzal_runtime_attestation=str(attestation),
+    )
+
+    command, _ = generate_docker_run_command(spec, runtime)
+
+    destination = (
+        "/home/container_app_user/quetzal/runtime-attestations/"
+        f"{digest}.json"
+    )
+    assert (
+        f"type=bind,src={attestation.resolve()},dst={destination},readonly" in command
+    )
+    assert f"QUETZAL_RUNTIME_ATTESTATION_PATH={destination}" in command
+
+    attestation.chmod(0o644)
+    with pytest.raises(ValueError, match="must be read-only"):
         generate_docker_run_command(spec, runtime)
 
 

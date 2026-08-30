@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import atexit
+import hashlib
 import io
 import json
 import logging
@@ -340,6 +341,9 @@ _RESERVED_WRAPPER_FLAGS = {
 
 _QUETZAL_CONTAINER_PACKAGE_PARENT = "/home/container_app_user/quetzal/packages"
 _QUETZAL_CONTAINER_AUXILIARY_PARENT = "/home/container_app_user/quetzal/auxiliary"
+_QUETZAL_CONTAINER_ATTESTATION_PARENT = (
+    "/home/container_app_user/quetzal/runtime-attestations"
+)
 
 
 def _validate_quetzal_models_root(runtime_config, model_spec) -> Path | None:
@@ -402,6 +406,41 @@ def _validate_quetzal_auxiliary_roots(runtime_config, model_spec) -> dict[str, P
             f"expected {sorted(required)}, got {sorted(roots)}"
         )
     return roots
+
+
+def _validate_quetzal_runtime_attestation(runtime_config, model_spec) -> Path | None:
+    """Resolve the independently pinned runtime/payload compatibility sidecar."""
+    is_quetzal = model_spec.impl.impl_id == "quetzal"
+    configured = getattr(runtime_config, "quetzal_runtime_attestation", None)
+    required = model_spec.env_vars.get("QUETZAL_RUNTIME_ATTESTATION_SHA256", "")
+    if not is_quetzal:
+        if configured:
+            raise ValueError(
+                "--quetzal-runtime-attestation is only valid with --impl quetzal"
+            )
+        return None
+    if not required and not configured:
+        return None
+    if re.fullmatch(r"[0-9a-f]{64}", required) is None:
+        raise ValueError(
+            "impl=quetzal requires QUETZAL_RUNTIME_ATTESTATION_SHA256"
+        )
+    if not configured:
+        raise ValueError("--impl quetzal requires --quetzal-runtime-attestation")
+    supplied = Path(configured).expanduser()
+    if supplied.is_symlink() or not supplied.is_file():
+        raise ValueError(
+            "--quetzal-runtime-attestation must be an existing regular file: "
+            f"{supplied}"
+        )
+    if supplied.stat(follow_symlinks=False).st_mode & 0o222:
+        raise ValueError("--quetzal-runtime-attestation must be read-only")
+    actual = hashlib.sha256(supplied.read_bytes()).hexdigest()
+    if actual != required or supplied.name != f"{required}.json":
+        raise ValueError(
+            "--quetzal-runtime-attestation does not match the catalog identity"
+        )
+    return supplied.resolve()
 
 
 def _vllm_override_cli_args(vllm_override_args) -> List[str]:
@@ -482,6 +521,9 @@ def generate_docker_run_command(
     quetzal_auxiliary_roots = _validate_quetzal_auxiliary_roots(
         runtime_config, model_spec
     )
+    quetzal_runtime_attestation = _validate_quetzal_runtime_attestation(
+        runtime_config, model_spec
+    )
     quetzal_container_root = None
     if quetzal_models_root:
         package_id = model_spec.env_vars.get("QUETZAL_PACKAGE_ID")
@@ -495,6 +537,12 @@ def generate_docker_run_command(
                 f"{quetzal_models_root.name!r} != {package_id!r}"
             )
         quetzal_container_root = f"{_QUETZAL_CONTAINER_PACKAGE_PARENT}/{package_id}"
+    quetzal_container_attestation = None
+    if quetzal_runtime_attestation:
+        quetzal_container_attestation = (
+            f"{_QUETZAL_CONTAINER_ATTESTATION_PARENT}/"
+            f"{quetzal_runtime_attestation.name}"
+        )
 
     # TODO: remove this once https://github.com/tenstorrent/tt-metal/issues/23785 has been closed
     device_cache_dir = (
@@ -577,6 +625,15 @@ def generate_docker_run_command(
                 f"dst={quetzal_container_root},readonly"
             ),
         ])
+    if quetzal_runtime_attestation:
+        docker_command.extend([
+            "--mount",
+            (
+                "type=bind,"
+                f"src={quetzal_runtime_attestation},"
+                f"dst={quetzal_container_attestation},readonly"
+            ),
+        ])
 
     if runtime_config.interactive:
         docker_command.append("-itd")
@@ -599,6 +656,10 @@ def generate_docker_run_command(
                     quetzal_container_auxiliary_roots,
                     sort_keys=True,
                     separators=(",", ":"),
+                )
+            if quetzal_container_attestation:
+                docker_env_vars["QUETZAL_RUNTIME_ATTESTATION_PATH"] = (
+                    quetzal_container_attestation
                 )
     if setup_config:
         if (

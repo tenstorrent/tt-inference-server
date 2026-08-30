@@ -586,6 +586,71 @@ def test_quetzal_runtime_contract_accepts_materialized_content_package(
     )
 
 
+def test_quetzal_runtime_contract_wires_split_attestation_before_vllm(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    package_root = _materialized_quetzal_contract(
+        monkeypatch, tmp_path, run_vllm_api_server_module
+    )
+    sidecar = tmp_path / f"{'e' * 64}.json"
+    sidecar.write_text("{}\n")
+    sidecar.chmod(0o444)
+    monkeypatch.setenv("QUETZAL_RUNTIME_ATTESTATION_PATH", str(sidecar))
+    monkeypatch.setenv("QUETZAL_RUNTIME_ATTESTATION_SHA256", "e" * 64)
+    monkeypatch.setenv("QUETZAL_GENERATOR_SOURCE_REVISION", "a" * 40)
+    monkeypatch.setenv("QUETZAL_SERVE_PROFILE", "gpt_oss_120b.serve")
+    monkeypatch.setenv("QUETZAL_SERVE_PROFILE_SHA256", "f" * 64)
+    observed = {}
+
+    def validate_files(**kwargs):
+        observed.update(kwargs)
+        return {"generator_source_revision": "a" * 40}
+
+    module = types.ModuleType("serving.runtime_compatibility_attestation")
+    module.validate_files = validate_files
+    monkeypatch.setitem(
+        sys.modules, "serving.runtime_compatibility_attestation", module
+    )
+
+    run_vllm_api_server_module._validate_quetzal_package_and_runtime(
+        package_root, "Qwen/Qwen3.6-27B"
+    )
+
+    assert observed["attestation_path"] == sidecar
+    assert observed["expected_attestation_sha256"] == "e" * 64
+    assert observed["expected_integration_source_revision"] == "b" * 40
+    assert observed["expected_serve_profile"] == "gpt_oss_120b.serve"
+    assert observed["expected_serve_profile_sha256"] == "f" * 64
+
+
+def test_quetzal_runtime_contract_rejects_split_attestation_generator_mismatch(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    package_root = _materialized_quetzal_contract(
+        monkeypatch, tmp_path, run_vllm_api_server_module
+    )
+    sidecar = tmp_path / f"{'e' * 64}.json"
+    sidecar.write_text("{}\n")
+    sidecar.chmod(0o444)
+    monkeypatch.setenv("QUETZAL_RUNTIME_ATTESTATION_PATH", str(sidecar))
+    monkeypatch.setenv("QUETZAL_RUNTIME_ATTESTATION_SHA256", "e" * 64)
+    monkeypatch.setenv("QUETZAL_GENERATOR_SOURCE_REVISION", "a" * 40)
+    monkeypatch.setenv("QUETZAL_SERVE_PROFILE", "gpt_oss_120b.serve")
+    monkeypatch.setenv("QUETZAL_SERVE_PROFILE_SHA256", "f" * 64)
+    module = types.ModuleType("serving.runtime_compatibility_attestation")
+    module.validate_files = lambda **_kwargs: {
+        "generator_source_revision": "c" * 40
+    }
+    monkeypatch.setitem(
+        sys.modules, "serving.runtime_compatibility_attestation", module
+    )
+
+    with pytest.raises(RuntimeError, match="generator source differs"):
+        run_vllm_api_server_module._validate_quetzal_package_and_runtime(
+            package_root, "Qwen/Qwen3.6-27B"
+        )
+
+
 def test_quetzal_runtime_contract_rejects_missing_package_file(
     monkeypatch, tmp_path, run_vllm_api_server_module
 ):

@@ -122,6 +122,9 @@ class RuntimeConfig:
     # Installed, content-addressed generated Quetzal artifact root. Docker only;
     # mounted read-only at a fixed container path for impl=quetzal.
     quetzal_models_root: Optional[str] = None
+    # Signed/trust-root-pinned runtime compatibility sidecar. This is a
+    # separate identity from the generated package and is mounted read-only.
+    quetzal_runtime_attestation: Optional[str] = None
     # NAME=PATH mappings for immutable external payloads authenticated by a
     # Quetzal artifact_bundle/v2 trusted root.
     quetzal_auxiliary_roots: Optional[List[str]] = None
@@ -224,6 +227,9 @@ class RuntimeConfig:
             host_hf_cache=args.host_hf_cache,
             host_weights_dir=args.host_weights_dir,
             quetzal_models_root=getattr(args, "quetzal_models_root", None),
+            quetzal_runtime_attestation=getattr(
+                args, "quetzal_runtime_attestation", None
+            ),
             quetzal_auxiliary_roots=getattr(args, "quetzal_auxiliary_root", None),
             custom_weights=getattr(args, "custom_weights", None),
             image_user=args.image_user,
