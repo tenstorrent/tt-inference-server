@@ -75,6 +75,8 @@ RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_
 COPY --from=quetzal_src / /tmp/quetzal-source/
 COPY scripts/validate_quetzal_serve_environment.py \
     /tmp/validate_quetzal_serve_environment.py
+COPY tt-vllm-plugin/pyproject.toml \
+    /tmp/ttis-vllm-plugin-pyproject.toml
 
 # Give user write access to Rust directories (fail if env vars are missing)
 RUN if [ -z "${RUSTUP_HOME}" ] || [ -z "${CARGO_HOME}" ]; then echo "RUSTUP_HOME and CARGO_HOME must be set" >&2; exit 1; fi && \
@@ -135,9 +137,12 @@ RUN set -eux; \
 RUN /bin/bash -c "git clone https://github.com/tenstorrent/vllm-tt-plugin.git ${vllm_tt_plugin_dir} \
     && cd ${vllm_tt_plugin_dir} \
     && git checkout ${TT_VLLM_COMMIT_SHA_OR_TAG} \
-    && source ${PYTHON_ENV_DIR}/bin/activate \
-    && uv pip install --upgrade pip \
+    && export VIRTUAL_ENV=${PYTHON_ENV_DIR} \
+    && export PATH=${PYTHON_ENV_DIR}/bin:\${PATH} \
+    && export UV_PYTHON=${PYTHON_ENV_DIR}/bin/python \
+    && uv pip install --python ${PYTHON_ENV_DIR}/bin/python --upgrade pip \
     && source docs/install-vllm-tt.sh \
+    && ${PYTHON_ENV_DIR}/bin/python -c \"import importlib.metadata as m; assert m.distribution('vllm-tt-plugin').version\" \
     && rm -rf ${vllm_tt_plugin_dir}/.git \
     && { uv cache clean || echo 'WARN: uv cache clean failed'; true; }"
 
@@ -157,16 +162,19 @@ RUN set -eu; \
       || { echo 'TT_QUETZAL_COMMIT_SHA must be a lowercase 40-hex commit' >&2; exit 1; }; \
       test "$(cat /tmp/quetzal-source/.tt-quetzal-commit)" = "${TT_QUETZAL_COMMIT_SHA}"; \
       cd /tmp/quetzal-source; \
-      . "${PYTHON_ENV_DIR}/bin/activate"; \
-      python /tmp/validate_quetzal_serve_environment.py \
+      export VIRTUAL_ENV="${PYTHON_ENV_DIR}"; \
+      export PATH="${PYTHON_ENV_DIR}/bin:${PATH}"; \
+      export UV_PYTHON="${PYTHON_ENV_DIR}/bin/python"; \
+      "${PYTHON_ENV_DIR}/bin/python" /tmp/validate_quetzal_serve_environment.py \
         --source /tmp/quetzal-source \
         --source-revision "${TT_QUETZAL_COMMIT_SHA}" \
+        --plugin-project /tmp/ttis-vllm-plugin-pyproject.toml \
         --check-installed \
         --receipt "${HOME_DIR}/quetzal-runtime/qualified-environment.json"; \
       uv build --wheel --out-dir "${HOME_DIR}/quetzal-runtime/wheels"; \
       test "$(find "${HOME_DIR}/quetzal-runtime/wheels" -maxdepth 1 -type f -name '*.whl' | wc -l)" -eq 1; \
       quetzal_wheel="$(find "${HOME_DIR}/quetzal-runtime/wheels" -maxdepth 1 -type f -name '*.whl')"; \
-      uv pip install --no-cache-dir --no-deps "${quetzal_wheel}"; \
+      uv pip install --python "${PYTHON_ENV_DIR}/bin/python" --no-cache-dir --no-deps "${quetzal_wheel}"; \
       cp serving/mesh_graph_descriptors/p150_x4_2ch_mesh_graph_descriptor.textproto \
          "${HOME_DIR}/quetzal-runtime/mesh_graph_descriptors/"; \
       rm -rf /tmp/quetzal-source; \

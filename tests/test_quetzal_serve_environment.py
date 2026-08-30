@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+import scripts.validate_quetzal_serve_environment as environment_validator
 from scripts.validate_quetzal_serve_environment import (
     LEGACY_QWEN_SOURCE_REVISION,
     ContractError,
@@ -155,6 +156,49 @@ def test_only_exact_known_good_legacy_source_can_omit_profile(tmp_path: Path) ->
         )
 
 
+def test_check_installed_uses_upstream_distribution_name_and_prefix(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    source = tmp_path / "legacy"
+    source.mkdir()
+    python_prefix = tmp_path / "python_env"
+    site_packages = python_prefix / "lib" / "python3.10" / "site-packages"
+    site_packages.mkdir(parents=True)
+
+    class InstalledPlugin:
+        version = "0.1.0"
+
+        @staticmethod
+        def locate_file(_path: str) -> Path:
+            return site_packages
+
+    def distribution(name: str) -> InstalledPlugin:
+        assert name == "vllm-tt-plugin"
+        return InstalledPlugin()
+
+    def version(name: str) -> str:
+        assert name == "numpy"
+        return "1.26.4"
+
+    monkeypatch.setattr(environment_validator.sys, "prefix", str(python_prefix))
+    monkeypatch.setattr(
+        environment_validator.importlib.metadata, "distribution", distribution
+    )
+    monkeypatch.setattr(environment_validator.importlib.metadata, "version", version)
+
+    receipt = validate_contract(
+        source,
+        LEGACY_QWEN_SOURCE_REVISION,
+        plugin_project=ROOT / "tt-vllm-plugin" / "pyproject.toml",
+        check_installed=True,
+    )
+    assert receipt["installed_plugin"] == {
+        "version": "0.1.0",
+        "python_prefix": str(python_prefix),
+        "metadata_root": str(site_packages),
+    }
+
+
 def test_qwen_catalog_keeps_known_good_source_and_package() -> None:
     catalog = (ROOT / "workflows" / "model_specs" / "dev" / "llm.yaml").read_text()
     assert f"QUETZAL_REQUIRED_SOURCE_REVISION: {LEGACY_QWEN_SOURCE_REVISION}" in catalog
@@ -171,12 +215,38 @@ def test_docker_builds_validate_before_installing_quetzal() -> None:
         "vllm-tt-metal/vllm.tt-metal.src.quetzal.Dockerfile",
     ):
         dockerfile = (ROOT / relative).read_text()
-        validator = dockerfile.index(
-            "python /tmp/validate_quetzal_serve_environment.py"
+        normalized = dockerfile.replace(
+            '"${PYTHON_ENV_DIR}/bin/python"', "${PYTHON_ENV_DIR}/bin/python"
         )
-        install = dockerfile.index("pip install", validator)
+        validator_command = (
+            "${PYTHON_ENV_DIR}/bin/python /tmp/validate_quetzal_serve_environment.py"
+        )
+        validator = normalized.index(validator_command)
+        install = normalized.index(" install ", validator)
         assert validator < install
+        assert "--plugin-project /tmp/ttis-vllm-plugin-pyproject.toml" in dockerfile
+        assert "--check-installed" in normalized[validator:install]
     derivative = (
         ROOT / "vllm-tt-metal" / "vllm.tt-metal.src.quetzal.Dockerfile"
     ).read_text()
-    assert "uv pip install --no-deps /tmp/quetzal-source" in derivative
+    assert (
+        "uv pip install --python ${PYTHON_ENV_DIR}/bin/python --no-deps "
+        "/tmp/quetzal-source"
+    ) in derivative
+
+
+def test_dev_image_installer_and_validator_share_explicit_python_prefix() -> None:
+    dockerfile = (
+        ROOT / "vllm-tt-metal" / "vllm.tt-metal.src.dev.Dockerfile"
+    ).read_text()
+    assert "export VIRTUAL_ENV=${PYTHON_ENV_DIR}" in dockerfile
+    assert "export PATH=${PYTHON_ENV_DIR}/bin:\\${PATH}" in dockerfile
+    assert "export UV_PYTHON=${PYTHON_ENV_DIR}/bin/python" in dockerfile
+    assert (
+        "uv pip install --python ${PYTHON_ENV_DIR}/bin/python --upgrade pip"
+        in dockerfile
+    )
+    assert (
+        '${PYTHON_ENV_DIR}/bin/python -c \\"import importlib.metadata as m; '
+        "assert m.distribution('vllm-tt-plugin').version\\\"" in dockerfile
+    )

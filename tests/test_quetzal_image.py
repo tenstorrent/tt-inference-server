@@ -32,7 +32,8 @@ def test_quetzal_is_installed_non_editably_and_entry_point_is_verified():
     install_line = next(
         line
         for line in source.splitlines()
-        if "uv pip install --no-deps /tmp/quetzal-source" in line
+        if "uv pip install --python ${PYTHON_ENV_DIR}/bin/python --no-deps "
+        "/tmp/quetzal-source" in line
     )
     assert " -e " not in install_line
     assert "> /tmp/pip-check.before" in source

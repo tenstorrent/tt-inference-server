@@ -13,6 +13,7 @@ import importlib.metadata
 import io
 import json
 import re
+import sys
 import token
 import tokenize
 from pathlib import Path
@@ -26,6 +27,7 @@ PROFILE = "qwen36.serve"
 MODEL_ID = "Qwen/Qwen3.6-27B"
 CONTRACT_PATH = Path("serving/qualified_environments.json")
 REQUIRED_NUMPY_SPECIFIER = ">=1.24.4,<2"
+PLUGIN_DISTRIBUTION = "vllm-tt-plugin"
 _TOML_TABLE = re.compile(r"^\s*\[([^]]+)]\s*(?:#.*)?$")
 
 
@@ -141,12 +143,36 @@ def _requirements_from_project(project: Path) -> dict[str, Requirement]:
 
 
 def _requirements_from_installed_plugin() -> dict[str, Requirement]:
-    raw_requirements = importlib.metadata.requires("tt-vllm-plugin") or []
+    raw_requirements = importlib.metadata.requires(PLUGIN_DISTRIBUTION) or []
     return {
         canonicalize_name(requirement.name): requirement
         for raw in raw_requirements
         for requirement in [Requirement(raw)]
         if requirement.marker is None or requirement.marker.evaluate()
+    }
+
+
+def _installed_plugin_identity() -> dict[str, str]:
+    """Prove that this interpreter owns the installed TT vLLM plugin."""
+
+    try:
+        distribution = importlib.metadata.distribution(PLUGIN_DISTRIBUTION)
+    except importlib.metadata.PackageNotFoundError as exc:
+        raise ContractError(
+            f"{PLUGIN_DISTRIBUTION} is not installed in the validator interpreter"
+        ) from exc
+    environment = Path(sys.prefix).resolve()
+    metadata_root = Path(distribution.locate_file("")).resolve()
+    if not metadata_root.is_relative_to(environment):
+        raise ContractError(
+            f"{PLUGIN_DISTRIBUTION} metadata is outside the validator "
+            "interpreter prefix: "
+            f"{metadata_root} is not under {environment}"
+        )
+    return {
+        "version": distribution.version,
+        "python_prefix": str(environment),
+        "metadata_root": str(metadata_root),
     }
 
 
@@ -192,6 +218,7 @@ def validate_contract(
     if not source.is_dir():
         raise ContractError(f"Quetzal source is not a directory: {source}")
 
+    plugin_identity = _installed_plugin_identity() if check_installed else None
     requirements = (
         _requirements_from_project(plugin_project)
         if plugin_project is not None
@@ -213,12 +240,15 @@ def validate_contract(
                     f"legacy Qwen runtime NumPy {installed_numpy} violates "
                     f"tt-vllm-plugin {numpy_requirement.specifier}"
                 )
-        return {
+        receipt: dict[str, object] = {
             "schema": "ttis.quetzal-serve-environment.v1",
             "status": "legacy-pinned",
             "source_revision": source_revision,
             "profile": None,
         }
+        if plugin_identity is not None:
+            receipt["installed_plugin"] = plugin_identity
+        return receipt
 
     raw_contract = contract_path.read_bytes()
     try:
@@ -275,7 +305,7 @@ def validate_contract(
                     f"{PROFILE} requires {name}=={exact}; runtime has {installed}"
                 )
 
-    return {
+    receipt = {
         "schema": "ttis.quetzal-serve-environment.v1",
         "status": "qualified",
         "source_revision": source_revision,
@@ -285,6 +315,9 @@ def validate_contract(
             name: str(version) for name, version in exact_versions.items()
         },
     }
+    if plugin_identity is not None:
+        receipt["installed_plugin"] = plugin_identity
+    return receipt
 
 
 def main() -> int:
