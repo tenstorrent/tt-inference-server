@@ -33,6 +33,15 @@ The response must bind, at minimum:
 - a Slurm-backed `qb2-p300x2-physical-2x2-ring-links2` runner with fresh
   pre-weight four-chip 2x2 degree `{2:4}` admission and descriptor `f4c9...7792`.
 
+The reviewed handoff requires TTIS `eb7df50d` and Shield `628d36f` as minimum
+ancestors. The publication response records the exact later TTIS and Shield
+commits and attests both ancestry checks, so applying the enrollment commit
+does not invalidate its own contract. Shield `628d36f` preserves the
+model/implementation-qualified image and losslessly forwards both
+`--quetzal-models-root` and `--quetzal-auxiliary-root`. A generic `bh-qb-ge`
+runner, a workflow-wide image, or an older manual-dispatch path is not
+equivalent and is rejected.
+
 On success the planner emits exact development-catalogue, nightly/release, and
 Shield fragments but changes no live configuration. The Models CI schema now
 supports an implementation-qualified `image` pinned by OCI digest. Shield must
