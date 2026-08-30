@@ -26,7 +26,7 @@ SCHEMA = "ttq.gpt120-f0b-publication-response/v1"
 MODEL_ID = "openai/gpt-oss-120b"
 CHECKPOINT = "b5c939de8f754692c1647ca79fbf85e8c1e70f8a"
 COMPILER_COMMIT = "3750c4872bcaf0c0c9404a4c99edcefb9e6d103d"
-QUETZAL_COMMIT = "f0b58c692a0a04af7631b6e8753af021fb08b746"
+QUETZAL_COMMIT = "071e23cd264d4b0df67a0d3df4642378663002c4"
 TT_METAL_COMMIT = "b534549300fe2af11e6ee828675294bc0e359555"
 TT_METAL_PATCHSET = "22fb0bd2523b8a5c63fa20c3c8a1586dc9ead5150449d0eb02231fa8173a7edd"
 TTIS_REQUIRED_ANCESTOR = "eb7df50d90882b594be5ec2504f0e8fa6cc28851"
@@ -45,6 +45,15 @@ DESCRIPTOR_CONTAINER_PATH = (
 AUXILIARY_TREE_SHA256 = (
     "2b2e528a75cae51a53db4a3e309f075553fe5f5f7fec7d2a29480f6572f2e416"
 )
+STALE_5CAB_PACKAGE_ID = (
+    "sha256-v2-"
+    "5fdf2a62f190469e3b113bf696ebb2a32cc804683fbee0e258186cf1fa5e1be5-"
+    "23ec5e0ea853af28beba16f79427f9901c8d37a0352516bc2633e68e65741035-"
+    "2cf6ad2acd9ca99e07ae3fd5dce462dd7ede7695529bfc5894893c82a85a0fc9"
+)
+STALE_5CAB_BUNDLE_MANIFEST_SHA256 = (
+    "b1d3bdb50b4c6eb8fda2da80e269c41eef7f25aaad202f9aec5d591928baca48"
+)
 
 EXPECTED_ARTIFACTS = {
     "bucket_set_emit_sha256": "6fc8be3dd87a8e31d0d86af454f013acc39bf4d00accda637f739b0eec04a1fd",
@@ -59,14 +68,18 @@ EXPECTED_ARTIFACTS = {
     "weights_file_sha256": "03756cbcd27540b80576f839b32b23b9648fc2623d4130246a785902a84a4dd8",
 }
 
-REQUIRED_RELATIVE_PATHS = (
-    "qualification_manifest",
-    "prefill_s1024_generated",
-    "prefill_s1024_metadata",
-    "decode_generated",
-    "decode_metadata",
-    "weights",
-)
+EXPECTED_RELATIVE_PATHS = {
+    "qualification_manifest": "qualification_manifest.yaml",
+    "prefill_s1024_generated": (
+        "compiled/openai_gpt-oss-120b-s1024/full/prefill/generated.py"
+    ),
+    "prefill_s1024_metadata": (
+        "compiled/openai_gpt-oss-120b-s1024/full/prefill/metadata.json"
+    ),
+    "decode_generated": ("compiled/openai_gpt-oss-120b-s1024/full/decode/generated.py"),
+    "decode_metadata": ("compiled/openai_gpt-oss-120b-s1024/full/decode/metadata.json"),
+    "weights": "compiled_weights/openai_gpt-oss-120b-s1024/full/weights.pt",
+}
 HEX64 = re.compile(r"[0-9a-f]{64}")
 
 
@@ -193,7 +206,15 @@ def validate_response(data: dict[str, Any]) -> None:
         raise ContractError(
             "publication.package_id: expected a digest-addressed package ID"
         )
-    _sha256(data, "publication.bundle_manifest_sha256")
+    if package_id == STALE_5CAB_PACKAGE_ID:
+        raise ContractError(
+            "publication.package_id: stale 5cab package identity is not the f0b core"
+        )
+    bundle_manifest_sha256 = _sha256(data, "publication.bundle_manifest_sha256")
+    if bundle_manifest_sha256 == STALE_5CAB_BUNDLE_MANIFEST_SHA256:
+        raise ContractError(
+            "publication.bundle_manifest_sha256: stale 5cab bundle is not the f0b core"
+        )
     generation = _non_placeholder(data, "publication.immutable_generation_id")
     _sha256(data, "publication.attestation_sha256")
     _non_placeholder(data, "publication.attestation_path")
@@ -272,7 +293,8 @@ def validate_response(data: dict[str, Any]) -> None:
     _exact(data, "artifacts.prefill_buckets", [128, 1024])
     for key, expected in EXPECTED_ARTIFACTS.items():
         _exact(data, f"artifacts.{key}", expected)
-    for name in REQUIRED_RELATIVE_PATHS:
+    for name, expected in EXPECTED_RELATIVE_PATHS.items():
+        _exact(data, f"artifacts.relative_paths.{name}", expected)
         _relative_path(data, name)
 
 

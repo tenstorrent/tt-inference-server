@@ -15,11 +15,14 @@ from scripts.release.plan_gpt120_f0b_quetzal_enrollment import (
     DESCRIPTOR_CONTAINER_PATH,
     DESCRIPTOR_SHA256,
     EXPECTED_ARTIFACTS,
+    EXPECTED_RELATIVE_PATHS,
     MODEL_ID,
     QUETZAL_COMMIT,
     RUNNER_LABEL,
     SCHEMA,
     SHIELD_REQUIRED_ANCESTOR,
+    STALE_5CAB_BUNDLE_MANIFEST_SHA256,
+    STALE_5CAB_PACKAGE_ID,
     TT_METAL_COMMIT,
     TT_METAL_PATCHSET,
     TTIS_REQUIRED_ANCESTOR,
@@ -128,14 +131,7 @@ def publication_response():
             "max_context": 8192,
             "prefill_buckets": [128, 1024],
             **EXPECTED_ARTIFACTS,
-            "relative_paths": {
-                "qualification_manifest": "qualification_manifest.yaml",
-                "prefill_s1024_generated": "compiled/gpt120/full/prefill/generated.py",
-                "prefill_s1024_metadata": "compiled/gpt120/full/prefill/metadata.json",
-                "decode_generated": "compiled/gpt120/full/decode/generated.py",
-                "decode_metadata": "compiled/gpt120/full/decode/metadata.json",
-                "weights": "compiled_weights/gpt120/full/weights.pt",
-            },
+            "relative_paths": EXPECTED_RELATIVE_PATHS,
         },
     }
 
@@ -158,6 +154,7 @@ def test_exact_response_renders_catalogue_ci_and_ring2_contract():
     spec = rendered["ttis_dev_catalogue_fragment"]
     device = spec["device_model_specs"][0]
     assert spec["impl"] == "quetzal"
+    assert QUETZAL_COMMIT == "071e23cd264d4b0df67a0d3df4642378663002c4"
     assert device["max_context"] == 8192
     assert device["max_concurrency"] == 1
     assert device["default_impl"] is False
@@ -180,7 +177,10 @@ def test_exact_response_renders_catalogue_ci_and_ring2_contract():
     ):
         assert env[name].startswith(package_root + "/")
     assert env["QUETZAL_DECODE_GENERATED_PY"].endswith(
-        "/compiled/gpt120/full/decode/generated.py"
+        "/compiled/openai_gpt-oss-120b-s1024/full/decode/generated.py"
+    )
+    assert env["QUETZAL_WEIGHTS"].endswith(
+        "/compiled_weights/openai_gpt-oss-120b-s1024/full/weights.pt"
     )
     assert env["QUETZAL_REQUIRED_AUXILIARY_NAMES"] == (
         "openai_gpt-oss-120b-streamed-cache"
@@ -272,6 +272,10 @@ def test_reviewed_descendant_sources_do_not_self_block_enrollment():
         ("publication.full_streaming_verification.status", "not_run"),
         ("artifacts.max_context", 1024),
         ("artifacts.decode_generated_sha256", "0" * 64),
+        (
+            "artifacts.relative_paths.prefill_s1024_generated",
+            "compiled/gpt120/full/prefill/generated.py",
+        ),
     ],
 )
 def test_identity_topology_and_publication_mismatches_fail_closed(path, value):
@@ -309,4 +313,19 @@ def test_placeholders_are_never_rendered():
     response = publication_response()
     response["publication"]["package_id"] = "${TTQ_GPT120_F0B_PACKAGE_ID}"
     with pytest.raises(ContractError, match="placeholder"):
+        render_contract(response)
+
+
+@pytest.mark.parametrize(
+    ("field", "stale_value"),
+    [
+        ("package_id", STALE_5CAB_PACKAGE_ID),
+        ("bundle_manifest_sha256", STALE_5CAB_BUNDLE_MANIFEST_SHA256),
+    ],
+)
+def test_stale_5cab_v2_package_identity_is_never_rendered(field, stale_value):
+    response = publication_response()
+    response["publication"][field] = stale_value
+
+    with pytest.raises(ContractError, match="stale 5cab"):
         render_contract(response)
