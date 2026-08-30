@@ -66,9 +66,12 @@ templates:
       reasoning_parser_name: qwen3
       tool_call_parser_name: qwen3_coder
 
-# Staged only: this S1024 package remains out of Models CI while Gemma S4096
-# is below the 0.99 PCC gate. Keeping the non-default catalogue entry preserves
-# the qualified-package plumbing without advertising the failed S4096 envelope.
+# Staged legacy only: this S1024/BFP8 package remains outside Models CI. The
+# separate exact cfaea6c1 BF16 S4096 candidate passed PCC >= 0.99, but it must
+# not replace this row until target-topology endpoint/lifecycle evidence and an
+# administrator-owned immutable publication response pass the enrollment
+# renderer. Keeping this non-default row preserves the older package plumbing
+# without misidentifying it as the current S4096 candidate.
 - weights:
     - google/gemma-4-31B-it
   impl: quetzal
