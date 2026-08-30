@@ -88,18 +88,18 @@ templates:
         QUETZAL_VLLM: "1"
         QUETZAL_MODEL: google/gemma-4-31B-it
         QUETZAL_HF_REVISION: 842da3794eaa0b77d5f08bae87a17459d91ff475
-        QUETZAL_REQUIRED_SOURCE_REVISION: cfaea6c1b610afb8fed34c542e9a6df944fee51d
-        QUETZAL_PACKAGE_ID: sha256-8373c1467294ed11e00ac791392eaa80c9cd1a1366f15200469bbdb4bc410522-259ee130f4f1e259980f2dde67415f8692f4c16086f34edc1cdb98c496b68edc
-        QUETZAL_BUNDLE_MANIFEST_SHA256: e3ecc5557a84955bf0b95615e4b8e9fa83bcc431c9755e969ba5c441fc8d94cf
+        QUETZAL_REQUIRED_SOURCE_REVISION: a3f1b67ba762c86c32540f00501af7462f2a721d
+        QUETZAL_PACKAGE_ID: sha256-v1-8373c1467294ed11e00ac791392eaa80c9cd1a1366f15200469bbdb4bc410522-259ee130f4f1e259980f2dde67415f8692f4c16086f34edc1cdb98c496b68edc-d7edfed9e0e19933ce5bdfb79a5b455cf71b091fe8ddef9c6c79160f925a3116
+        QUETZAL_BUNDLE_MANIFEST_SHA256: 73584013f203ed9add43508b5266d701bf390097de008e4acaed33e07c967fba
         QUETZAL_REQUIRED_TT_METAL_PATCHSET_SHA256: 22fb0bd2523b8a5c63fa20c3c8a1586dc9ead5150449d0eb02231fa8173a7edd
-        QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/packages/sha256-8373c1467294ed11e00ac791392eaa80c9cd1a1366f15200469bbdb4bc410522-259ee130f4f1e259980f2dde67415f8692f4c16086f34edc1cdb98c496b68edc
-        QZ_MODELS_ROOT: /home/container_app_user/quetzal/packages/sha256-8373c1467294ed11e00ac791392eaa80c9cd1a1366f15200469bbdb4bc410522-259ee130f4f1e259980f2dde67415f8692f4c16086f34edc1cdb98c496b68edc
-        QZ_QUALIFICATION_MANIFEST: /home/container_app_user/quetzal/packages/sha256-8373c1467294ed11e00ac791392eaa80c9cd1a1366f15200469bbdb4bc410522-259ee130f4f1e259980f2dde67415f8692f4c16086f34edc1cdb98c496b68edc/qualification_manifest.yaml
-        QUETZAL_PREFILL_GENERATED_PY: /home/container_app_user/quetzal/packages/sha256-8373c1467294ed11e00ac791392eaa80c9cd1a1366f15200469bbdb4bc410522-259ee130f4f1e259980f2dde67415f8692f4c16086f34edc1cdb98c496b68edc/compiled/google_gemma-4-31B-it/full/prefill/generated.py
-        QUETZAL_DECODE_GENERATED_PY: /home/container_app_user/quetzal/packages/sha256-8373c1467294ed11e00ac791392eaa80c9cd1a1366f15200469bbdb4bc410522-259ee130f4f1e259980f2dde67415f8692f4c16086f34edc1cdb98c496b68edc/compiled/google_gemma-4-31B-it/full/decode/generated.py
-        QUETZAL_PREFILL_METADATA_JSON: /home/container_app_user/quetzal/packages/sha256-8373c1467294ed11e00ac791392eaa80c9cd1a1366f15200469bbdb4bc410522-259ee130f4f1e259980f2dde67415f8692f4c16086f34edc1cdb98c496b68edc/compiled/google_gemma-4-31B-it/full/prefill/metadata.json
-        QUETZAL_DECODE_METADATA_JSON: /home/container_app_user/quetzal/packages/sha256-8373c1467294ed11e00ac791392eaa80c9cd1a1366f15200469bbdb4bc410522-259ee130f4f1e259980f2dde67415f8692f4c16086f34edc1cdb98c496b68edc/compiled/google_gemma-4-31B-it/full/decode/metadata.json
-        QUETZAL_WEIGHTS: /home/container_app_user/quetzal/packages/sha256-8373c1467294ed11e00ac791392eaa80c9cd1a1366f15200469bbdb4bc410522-259ee130f4f1e259980f2dde67415f8692f4c16086f34edc1cdb98c496b68edc/compiled_weights/google_gemma-4-31B-it/full/weights.pt
+        QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/packages/sha256-v1-8373c1467294ed11e00ac791392eaa80c9cd1a1366f15200469bbdb4bc410522-259ee130f4f1e259980f2dde67415f8692f4c16086f34edc1cdb98c496b68edc-d7edfed9e0e19933ce5bdfb79a5b455cf71b091fe8ddef9c6c79160f925a3116
+        QZ_MODELS_ROOT: /home/container_app_user/quetzal/packages/sha256-v1-8373c1467294ed11e00ac791392eaa80c9cd1a1366f15200469bbdb4bc410522-259ee130f4f1e259980f2dde67415f8692f4c16086f34edc1cdb98c496b68edc-d7edfed9e0e19933ce5bdfb79a5b455cf71b091fe8ddef9c6c79160f925a3116
+        QZ_QUALIFICATION_MANIFEST: /home/container_app_user/quetzal/packages/sha256-v1-8373c1467294ed11e00ac791392eaa80c9cd1a1366f15200469bbdb4bc410522-259ee130f4f1e259980f2dde67415f8692f4c16086f34edc1cdb98c496b68edc-d7edfed9e0e19933ce5bdfb79a5b455cf71b091fe8ddef9c6c79160f925a3116/qualification_manifest.yaml
+        QUETZAL_PREFILL_GENERATED_PY: /home/container_app_user/quetzal/packages/sha256-v1-8373c1467294ed11e00ac791392eaa80c9cd1a1366f15200469bbdb4bc410522-259ee130f4f1e259980f2dde67415f8692f4c16086f34edc1cdb98c496b68edc-d7edfed9e0e19933ce5bdfb79a5b455cf71b091fe8ddef9c6c79160f925a3116/compiled/google_gemma-4-31B-it/full/prefill/generated.py
+        QUETZAL_DECODE_GENERATED_PY: /home/container_app_user/quetzal/packages/sha256-v1-8373c1467294ed11e00ac791392eaa80c9cd1a1366f15200469bbdb4bc410522-259ee130f4f1e259980f2dde67415f8692f4c16086f34edc1cdb98c496b68edc-d7edfed9e0e19933ce5bdfb79a5b455cf71b091fe8ddef9c6c79160f925a3116/compiled/google_gemma-4-31B-it/full/decode/generated.py
+        QUETZAL_PREFILL_METADATA_JSON: /home/container_app_user/quetzal/packages/sha256-v1-8373c1467294ed11e00ac791392eaa80c9cd1a1366f15200469bbdb4bc410522-259ee130f4f1e259980f2dde67415f8692f4c16086f34edc1cdb98c496b68edc-d7edfed9e0e19933ce5bdfb79a5b455cf71b091fe8ddef9c6c79160f925a3116/compiled/google_gemma-4-31B-it/full/prefill/metadata.json
+        QUETZAL_DECODE_METADATA_JSON: /home/container_app_user/quetzal/packages/sha256-v1-8373c1467294ed11e00ac791392eaa80c9cd1a1366f15200469bbdb4bc410522-259ee130f4f1e259980f2dde67415f8692f4c16086f34edc1cdb98c496b68edc-d7edfed9e0e19933ce5bdfb79a5b455cf71b091fe8ddef9c6c79160f925a3116/compiled/google_gemma-4-31B-it/full/decode/metadata.json
+        QUETZAL_WEIGHTS: /home/container_app_user/quetzal/packages/sha256-v1-8373c1467294ed11e00ac791392eaa80c9cd1a1366f15200469bbdb4bc410522-259ee130f4f1e259980f2dde67415f8692f4c16086f34edc1cdb98c496b68edc-d7edfed9e0e19933ce5bdfb79a5b455cf71b091fe8ddef9c6c79160f925a3116/compiled_weights/google_gemma-4-31B-it/full/weights.pt
         QZ_MMAP_WEIGHTS: "1"
         TTQ_STREAM_WEIGHTS: "1"
         QZ_LM_HEAD_UPLOAD_CHUNK_COLS: "8192"
