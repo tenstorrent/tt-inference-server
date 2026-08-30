@@ -288,6 +288,9 @@ def test_docker_builds_validate_before_installing_quetzal() -> None:
             installed_validator = normalized.index("--check-installed", qualified_install)
             assert validator < qualified_install < installed_validator < install
             assert "uv pip check --python" in normalized[qualified_install:install]
+            assert "cmp /tmp/pip-check.base /tmp/pip-check.qualified" in normalized
+            assert "cmp /tmp/pip-check.base /tmp/pip-check.after" in normalized
+            assert "--upgrade --no-deps --requirements" in normalized
         else:
             assert "--check-installed" in normalized[validator:install]
     derivative = (
