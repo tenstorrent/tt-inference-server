@@ -802,7 +802,13 @@ def _validate_quetzal_package_and_runtime(root: Path, model_id: str) -> None:
         label="Quetzal runtime compatibility attestation",
     )
     try:
+        from serving.qualified_environment_contract import profile_identity
         from serving.runtime_compatibility_attestation import validate_files
+
+        if profile_identity(serve_profile) != serve_profile_sha256:
+            raise ValueError(
+                "installed Quetzal serve profile differs from the catalog pin"
+            )
 
         runtime_attestation = validate_files(
             attestation_path=attestation_path,
