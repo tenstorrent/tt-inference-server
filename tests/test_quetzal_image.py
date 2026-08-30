@@ -33,7 +33,7 @@ def test_quetzal_is_installed_non_editably_and_entry_point_is_verified():
     install_line = next(
         line
         for line in source.splitlines()
-        if "uv pip install --python ${PYTHON_ENV_DIR}/bin/python --no-deps "
+        if 'uv pip install --python "${PYTHON_ENV_DIR}/bin/python" --no-deps '
         "/tmp/quetzal-source" in line
     )
     assert " -e " not in install_line
@@ -41,6 +41,7 @@ def test_quetzal_is_installed_non_editably_and_entry_point_is_verified():
     assert "> /tmp/pip-check.after" in source
     assert "sed -E '/^Using Python /d;/^Checked [0-9]+ packages in /d'" in source
     assert "cmp /tmp/pip-check.before /tmp/pip-check.after" in source
+    assert '&& /bin/bash -c "export VIRTUAL_ENV=' not in source
     assert "quetzal_model_registry" in source
     assert "tt_quetzalcoatlus.vllm_plugin:register" in source
     assert "import serving.artifact_bundle" in source
@@ -55,7 +56,7 @@ def test_quetzal_is_installed_non_editably_and_entry_point_is_verified():
     assert "def validate_quetzal_runtime(" in runner
     assert "validate_quetzal_runtime_contract" not in source
     assert "c4c72b0774c97eeceba0481d7341915f8f3b6e352f4a3ab26eaab00077350cf5" in source
-    assert "152a50f9a06a66e3f64f822e88b4a00bf76fbe9d02cf53094d702751970be8d0" in source
+    assert "e3ecc5557a84955bf0b95615e4b8e9fa83bcc431c9755e969ba5c441fc8d94cf" in source
 
 
 def test_quetzal_runtime_is_rebuilt_in_base_abi_and_atomically_replaced():

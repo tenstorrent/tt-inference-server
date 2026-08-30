@@ -955,9 +955,9 @@ def test_real_quetzal_templates_promote_with_exact_packages_and_image(tmp_path):
             "c4c72b0774c97eeceba0481d7341915f8f3b6e352f4a3ab26eaab00077350cf5",
         ),
         "google/gemma-4-31B-it": (
-            "sha256-e4ebc6d59bc92279c9bbba365474d6ab4ce292013db1e5faf02b6ea9eb096f99-"
-            "32c815d68145964c942386b052f49dd088de89d72f8e5e5243b33d13dadb87da",
-            "152a50f9a06a66e3f64f822e88b4a00bf76fbe9d02cf53094d702751970be8d0",
+            "sha256-8373c1467294ed11e00ac791392eaa80c9cd1a1366f15200469bbdb4bc410522-"
+            "259ee130f4f1e259980f2dde67415f8692f4c16086f34edc1cdb98c496b68edc",
+            "e3ecc5557a84955bf0b95615e4b8e9fa83bcc431c9755e969ba5c441fc8d94cf",
         ),
     }
     for weight, (package_id, manifest_sha) in expected.items():

@@ -271,7 +271,7 @@ def _dev_llm_spec_map():
     "model_name,expected_context,expected_native_impl",
     [
         ("Qwen3.6-27B", 8192, "qwen36-blackhole"),
-        ("gemma-4-31B-it", 1024, "tt-transformers"),
+        ("gemma-4-31B-it", 4096, "tt-transformers"),
     ],
 )
 def test_quetzal_dev_specs_are_explicit_and_preserve_native_default(
@@ -352,6 +352,33 @@ def test_qwen_quetzal_dev_spec_binds_candidate_v2_publication(monkeypatch):
     assert env["QUETZAL_REQUIRED_SOURCE_REVISION"] == (
         "41b9b16d6473973d2f9f65794330c25711dc7667"
     )
+
+
+def test_gemma_quetzal_dev_spec_binds_exact_s4096_ring_candidate(monkeypatch):
+    specs = _dev_llm_spec_map()
+    monkeypatch.setattr(model_spec_module, "MODEL_SPECS", specs)
+    monkeypatch.setattr(model_spec_module, "_MODEL_SPECS_ENV", "dev")
+    quetzal, _, _ = get_runtime_model_spec(
+        "gemma-4-31B-it", "p300x2", impl="quetzal"
+    )
+    env = quetzal.env_vars
+
+    assert quetzal.device_model_spec.max_context == 4096
+    assert env["QUETZAL_BUNDLE_MANIFEST_SHA256"] == (
+        "e3ecc5557a84955bf0b95615e4b8e9fa83bcc431c9755e969ba5c441fc8d94cf"
+    )
+    assert env["QUETZAL_REQUIRED_SOURCE_REVISION"] == (
+        "bdd1f43bc18bf454bf06b6c71d239892c128d874"
+    )
+    assert env["QUETZAL_REQUIRED_TT_METAL_PATCHSET_SHA256"] == (
+        "22fb0bd2523b8a5c63fa20c3c8a1586dc9ead5150449d0eb02231fa8173a7edd"
+    )
+    assert env["TTQ_ROW_ALL_REDUCE_TOPOLOGY"] == "Ring"
+    assert env["TTQ_TUNED_ROW_ALL_REDUCE_LINKS"] == "2"
+    assert env["QZ_LM_HEAD_UPLOAD_CHUNK_COLS"] == "8192"
+    assert "p300_x2_mesh_graph_descriptor.textproto" in env[
+        "TT_MESH_GRAPH_DESC_PATH"
+    ]
 
 
 def test_diffusiongemma_dev_spec_matches_validated_256k_contract():

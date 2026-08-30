@@ -74,7 +74,7 @@ def test_duplicate_engine_requires_impl_and_unique_identity():
     )
 
 
-def test_only_qualified_qwen_is_enrolled_for_quetzal_nightly_and_release():
+def test_qualified_qwen_and_gemma_are_enrolled_for_quetzal_nightly_and_release():
     config = json.loads(
         (REPO_ROOT / ".github/workflows/models-ci-config.json").read_text()
     )
@@ -89,7 +89,7 @@ def test_only_qualified_qwen_is_enrolled_for_quetzal_nightly_and_release():
         rows = config["models"][model]["implementations"]
         by_impl = {row["impl"]: row for row in rows}
         assert native_impl in by_impl
-        if model == "Qwen3.6-27B":
+        if model in {"Qwen3.6-27B", "gemma-4-31B-it"}:
             assert "quetzal" in by_impl
         else:
             assert "quetzal" not in by_impl
@@ -107,3 +107,20 @@ def test_only_qualified_qwen_is_enrolled_for_quetzal_nightly_and_release():
         args = lane["device-args"]["P300X2"]["additional-args"]
         assert "--impl" not in args
         assert args == expected_args
+
+    gemma = {
+        row["impl"]: row
+        for row in config["models"]["gemma-4-31B-it"]["implementations"]
+    }["quetzal"]
+    expected_gemma_args = (
+        "--quetzal-models-root "
+        "/mnt/models/quetzal/immutable/v1/packages/"
+        "sha256-8373c1467294ed11e00ac791392eaa80c9cd1a1366f15200469bbdb4bc410522-"
+        "259ee130f4f1e259980f2dde67415f8692f4c16086f34edc1cdb98c496b68edc"
+    )
+    for schedule in ("nightly", "release"):
+        lane = gemma["ci"][schedule]
+        assert lane["devices"] == ["P300X2"]
+        args = lane["device-args"]["P300X2"]["additional-args"]
+        assert "--impl" not in args
+        assert args == expected_gemma_args

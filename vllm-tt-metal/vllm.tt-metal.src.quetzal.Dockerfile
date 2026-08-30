@@ -149,20 +149,20 @@ COPY --from=quetzal_src --chown=container_app_user:container_app_user / /tmp/que
 USER container_app_user
 RUN test "$(cat /tmp/quetzal-source/.tt-quetzal-commit)" = "${TT_QUETZAL_COMMIT_SHA}" \
     && rm /tmp/quetzal-source/.tt-quetzal-commit \
-    && /bin/bash -c "export VIRTUAL_ENV=${PYTHON_ENV_DIR} \
-        && export PATH=${PYTHON_ENV_DIR}/bin:\${PATH} \
-        && export UV_PYTHON=${PYTHON_ENV_DIR}/bin/python \
-        && (LC_ALL=C uv pip check --python ${PYTHON_ENV_DIR}/bin/python 2>&1 || true) | sed -E '/^Using Python /d;/^Checked [0-9]+ packages in /d' > /tmp/pip-check.before \
-        && ${PYTHON_ENV_DIR}/bin/python /tmp/validate_quetzal_serve_environment.py --source /tmp/quetzal-source --source-revision '${TT_QUETZAL_COMMIT_SHA}' --plugin-project /tmp/ttis-vllm-plugin-pyproject.toml --check-installed --receipt '${TT_METAL_HOME}/.ttq-serve-environment.json' \
-        && uv pip install --python ${PYTHON_ENV_DIR}/bin/python --no-deps /tmp/quetzal-source \
-        && (LC_ALL=C uv pip check --python ${PYTHON_ENV_DIR}/bin/python 2>&1 || true) | sed -E '/^Using Python /d;/^Checked [0-9]+ packages in /d' > /tmp/pip-check.after \
-        && cmp /tmp/pip-check.before /tmp/pip-check.after \
-        && rm /tmp/pip-check.before /tmp/pip-check.after \
-        && ${PYTHON_ENV_DIR}/bin/python -c "import importlib.metadata as m; from transformers.models.auto.configuration_auto import CONFIG_MAPPING_NAMES; assert m.version('transformers') == '5.15.0'; assert {'gemma4', 'qwen3_5', 'qwen3_5_moe'} <= set(CONFIG_MAPPING_NAMES)" \
-        && grep -q '^def validate_quetzal_runtime(' /home/container_app_user/app/src/run_vllm_api_server.py \
-        && grep -q 'c4c72b0774c97eeceba0481d7341915f8f3b6e352f4a3ab26eaab00077350cf5' /home/container_app_user/model_specs/model_spec.json \
-        && grep -q '152a50f9a06a66e3f64f822e88b4a00bf76fbe9d02cf53094d702751970be8d0' /home/container_app_user/model_specs/model_spec.json \
-        && ${PYTHON_ENV_DIR}/bin/python -c \"import importlib.metadata as m; eps=[e for e in m.entry_points(group='vllm.general_plugins') if e.name == 'quetzal_model_registry' and e.value == 'tt_quetzalcoatlus.vllm_plugin:register']; assert len(eps) == 1, eps; import serving.artifact_bundle\"" \
+    && export VIRTUAL_ENV="${PYTHON_ENV_DIR}" \
+    && export PATH="${PYTHON_ENV_DIR}/bin:${PATH}" \
+    && export UV_PYTHON="${PYTHON_ENV_DIR}/bin/python" \
+    && (LC_ALL=C uv pip check --python "${PYTHON_ENV_DIR}/bin/python" 2>&1 || true) | sed -E '/^Using Python /d;/^Checked [0-9]+ packages in /d' > /tmp/pip-check.before \
+    && "${PYTHON_ENV_DIR}/bin/python" /tmp/validate_quetzal_serve_environment.py --source /tmp/quetzal-source --source-revision "${TT_QUETZAL_COMMIT_SHA}" --plugin-project /tmp/ttis-vllm-plugin-pyproject.toml --check-installed --receipt "${TT_METAL_HOME}/.ttq-serve-environment.json" \
+    && uv pip install --python "${PYTHON_ENV_DIR}/bin/python" --no-deps /tmp/quetzal-source \
+    && (LC_ALL=C uv pip check --python "${PYTHON_ENV_DIR}/bin/python" 2>&1 || true) | sed -E '/^Using Python /d;/^Checked [0-9]+ packages in /d' > /tmp/pip-check.after \
+    && cmp /tmp/pip-check.before /tmp/pip-check.after \
+    && rm /tmp/pip-check.before /tmp/pip-check.after \
+    && "${PYTHON_ENV_DIR}/bin/python" -c "import importlib.metadata as m; from transformers.models.auto.configuration_auto import CONFIG_MAPPING_NAMES; assert m.version('transformers') == '5.15.0'; assert {'gemma4', 'qwen3_5', 'qwen3_5_moe'} <= set(CONFIG_MAPPING_NAMES)" \
+    && grep -q '^def validate_quetzal_runtime(' /home/container_app_user/app/src/run_vllm_api_server.py \
+    && grep -q 'c4c72b0774c97eeceba0481d7341915f8f3b6e352f4a3ab26eaab00077350cf5' /home/container_app_user/model_specs/model_spec.json \
+    && grep -q 'e3ecc5557a84955bf0b95615e4b8e9fa83bcc431c9755e969ba5c441fc8d94cf' /home/container_app_user/model_specs/model_spec.json \
+    && "${PYTHON_ENV_DIR}/bin/python" -c "import importlib.metadata as m; eps=[e for e in m.entry_points(group='vllm.general_plugins') if e.name == 'quetzal_model_registry' and e.value == 'tt_quetzalcoatlus.vllm_plugin:register']; assert len(eps) == 1, eps; import serving.artifact_bundle" \
     && rm -rf /tmp/quetzal-source
 
 ENV TT_QUETZAL_COMMIT_SHA=${TT_QUETZAL_COMMIT_SHA}

@@ -15,7 +15,7 @@ from workflows.utils import get_repo_root_path
 
 MODELS = {
     "Qwen3.6-27B": (8192, "6a9e13bd6fc8f0983b9b99948120bc37f49c13e9"),
-    "gemma-4-31B-it": (1024, "842da3794eaa0b77d5f08bae87a17459d91ff475"),
+    "gemma-4-31B-it": (4096, "842da3794eaa0b77d5f08bae87a17459d91ff475"),
 }
 
 MODEL_REPOS = {
