@@ -461,6 +461,13 @@ class HostSetupManager:
                 )
                 return self.check_model_weights_dir(host_weights_dir)
         elif self.setup_config.model_source == ModelSource.LOCAL.value:
+            if self.model_spec.impl.impl_id == "quetzal":
+                revision = _required_quetzal_hf_revision(self.model_spec)
+                _validate_quetzal_hf_metadata(
+                    self.setup_config.host_model_weights_mount_dir,
+                    revision,
+                    revision_from_directory=True,
+                )
             return self.check_model_weights_dir(
                 self.setup_config.host_model_weights_mount_dir
             )

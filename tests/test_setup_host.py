@@ -1097,6 +1097,41 @@ class TestQuetzalMetadataOnlySetup:
             manager.setup_weights_huggingface()
         mock_run.assert_not_called()
 
+    @pytest.mark.parametrize("snapshot_revision", ["b" * 40, "snapshot"])
+    def test_local_snapshot_requires_exact_catalogue_revision(
+        self, quetzal_model_spec, temp_dir, snapshot_revision
+    ):
+        snapshot_dir = temp_dir / snapshot_revision
+        snapshot_dir.mkdir()
+        for name in ("config.json", "tokenizer_config.json", "tokenizer.json"):
+            (snapshot_dir / name).write_text("{}")
+        manager = HostSetupManager(
+            model_spec=quetzal_model_spec,
+            host_weights_dir=str(snapshot_dir),
+        )
+        manager.setup_config.model_source = ModelSource.LOCAL.value
+        manager.setup_config._infer_data()
+
+        with pytest.raises(ValueError, match="revision mismatch"):
+            manager.check_setup()
+
+    def test_local_snapshot_with_exact_catalogue_revision_is_admitted(
+        self, quetzal_model_spec, temp_dir
+    ):
+        snapshot_dir = temp_dir / QUETZAL_HF_REVISION
+        snapshot_dir.mkdir()
+        for name in ("config.json", "tokenizer_config.json", "tokenizer.json"):
+            (snapshot_dir / name).write_text("{}")
+        manager = HostSetupManager(
+            model_spec=quetzal_model_spec,
+            host_weights_dir=str(snapshot_dir),
+        )
+        manager.setup_config.model_source = ModelSource.LOCAL.value
+        manager.setup_config._infer_data()
+
+        with patch.object(manager, "check_model_weights_dir", return_value=True):
+            assert manager.check_setup() is True
+
 
 CUSTOM_LABEL_HF = "myorg/llama-3.1-8b-finetune"
 CUSTOM_LABEL_HF_NAME = "llama-3.1-8b-finetune"
