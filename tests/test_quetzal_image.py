@@ -176,7 +176,7 @@ def _git_source(tmp_path):
     patch_dir = source / "patches" / "tt-metal"
     patch_dir.mkdir(parents=True)
     (patch_dir / "gdn-productization-v1.json").write_text("{}\n")
-    (patch_dir / "gdn-productization-v2.json").write_text("{\"version\": 2}\n")
+    (patch_dir / "gdn-productization-v2.json").write_text('{"version": 2}\n')
     tools_dir = source / "tools"
     tools_dir.mkdir()
     (tools_dir / "tt_metal_patchset.py").write_text("# fixture\n")

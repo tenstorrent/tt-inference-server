@@ -202,7 +202,9 @@ def test_check_installed_uses_upstream_distribution_name_and_prefix(
 
 def test_qwen_catalog_binds_candidate_v2_source_and_keeps_package_payload() -> None:
     catalog = (ROOT / "workflows" / "model_specs" / "dev" / "llm.yaml").read_text()
-    assert f"QUETZAL_REQUIRED_SOURCE_REVISION: {CURRENT_QWEN_SOURCE_REVISION}" in catalog
+    assert (
+        f"QUETZAL_REQUIRED_SOURCE_REVISION: {CURRENT_QWEN_SOURCE_REVISION}" in catalog
+    )
     assert (
         "QUETZAL_PACKAGE_ID: sha256-"
         "f1d6cebaf6cd432c78721ec3b81101ab86493f387b37f63bc11aca2fc6f6d8d8-"
