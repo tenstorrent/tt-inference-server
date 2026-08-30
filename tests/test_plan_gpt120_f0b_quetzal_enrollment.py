@@ -143,13 +143,11 @@ def publication_response():
 def test_enrollment_and_runtime_topology_gate_bind_the_same_f0b_bytes():
     """A planner/runtime mismatch creates a contract no image can satisfy."""
     assert quetzal_topology_admission._DESCRIPTOR_SHA256 == DESCRIPTOR_SHA256
-    assert quetzal_topology_admission._EMIT_SHA256 == (
-        EXPECTED_ARTIFACTS["candidate_pair_emit_sha256"]
-    )
     assert (
-        quetzal_topology_admission._SELECTION_SHA256
-        == TOPOLOGY_SELECTION_SHA256
+        quetzal_topology_admission._EMIT_SHA256
+        == (EXPECTED_ARTIFACTS["candidate_pair_emit_sha256"])
     )
+    assert quetzal_topology_admission._SELECTION_SHA256 == TOPOLOGY_SELECTION_SHA256
 
 
 def test_exact_response_renders_catalogue_ci_and_ring2_contract():
