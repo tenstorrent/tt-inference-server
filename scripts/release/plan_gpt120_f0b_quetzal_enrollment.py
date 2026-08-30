@@ -26,7 +26,18 @@ SCHEMA = "ttq.gpt120-f0b-publication-response/v1"
 MODEL_ID = "openai/gpt-oss-120b"
 CHECKPOINT = "b5c939de8f754692c1647ca79fbf85e8c1e70f8a"
 COMPILER_COMMIT = "3750c4872bcaf0c0c9404a4c99edcefb9e6d103d"
-QUETZAL_COMMIT = "071e23cd264d4b0df67a0d3df4642378663002c4"
+QUETZAL_COMMIT = "31f88519bd64595ede7d2ac3e5f883e39f5ef0a5"
+RUNTIME_ATTESTATION_SHA256 = (
+    "5f12696cdd958028dca60f87cd5fc1ff0e2add41d86129785b253efd5d0ea3db"
+)
+SERVE_PROFILE = "gpt_oss_120b.serve"
+SERVE_PROFILE_SHA256 = (
+    "d7f29d2ef00518c8ed7c726857a58f6f19fe64b4ea30e7244625fd940364b76e"
+)
+RUNTIME_ATTESTATION_HOST_PATH = (
+    "/mnt/models/quetzal/immutable/v1/runtime-attestations/"
+    f"{RUNTIME_ATTESTATION_SHA256}.json"
+)
 TT_METAL_COMMIT = "b534549300fe2af11e6ee828675294bc0e359555"
 TT_METAL_PATCHSET = "22fb0bd2523b8a5c63fa20c3c8a1586dc9ead5150449d0eb02231fa8173a7edd"
 TTIS_REQUIRED_ANCESTOR = "eb7df50d90882b594be5ec2504f0e8fa6cc28851"
@@ -333,6 +344,10 @@ def render_contract(data: dict[str, Any]) -> dict[str, Any]:
         "QUETZAL_MODEL": MODEL_ID,
         "QUETZAL_HF_REVISION": CHECKPOINT,
         "QUETZAL_REQUIRED_SOURCE_REVISION": QUETZAL_COMMIT,
+        "QUETZAL_GENERATOR_SOURCE_REVISION": COMPILER_COMMIT,
+        "QUETZAL_RUNTIME_ATTESTATION_SHA256": RUNTIME_ATTESTATION_SHA256,
+        "QUETZAL_SERVE_PROFILE": SERVE_PROFILE,
+        "QUETZAL_SERVE_PROFILE_SHA256": SERVE_PROFILE_SHA256,
         "QUETZAL_PACKAGE_ID": package_id,
         "QUETZAL_BUNDLE_MANIFEST_SHA256": publication["bundle_manifest_sha256"],
         "QUETZAL_REQUIRED_TT_METAL_PATCHSET_SHA256": TT_METAL_PATCHSET,
@@ -362,6 +377,7 @@ def render_contract(data: dict[str, Any]) -> dict[str, Any]:
     }
     extra_args = (
         f"--quetzal-models-root {host_root} "
+        f"--quetzal-runtime-attestation {RUNTIME_ATTESTATION_HOST_PATH} "
         f"--quetzal-auxiliary-root {AUXILIARY_NAME}={aux_host}"
     )
     schedule = {
@@ -381,6 +397,9 @@ def render_contract(data: dict[str, Any]) -> dict[str, Any]:
             "checkpoint_revision": CHECKPOINT,
             "quetzal_source_commit": QUETZAL_COMMIT,
             "compiler_source_commit": COMPILER_COMMIT,
+            "runtime_attestation_sha256": RUNTIME_ATTESTATION_SHA256,
+            "serve_profile": SERVE_PROFILE,
+            "serve_profile_sha256": SERVE_PROFILE_SHA256,
             "tt_metal_commit": TT_METAL_COMMIT,
             "tt_metal_patchset_sha256": TT_METAL_PATCHSET,
             "image": runtime["image"],

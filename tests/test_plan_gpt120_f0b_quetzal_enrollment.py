@@ -160,12 +160,15 @@ def test_exact_response_renders_catalogue_ci_and_ring2_contract():
     spec = rendered["ttis_dev_catalogue_fragment"]
     device = spec["device_model_specs"][0]
     assert spec["impl"] == "quetzal"
-    assert QUETZAL_COMMIT == "071e23cd264d4b0df67a0d3df4642378663002c4"
+    assert QUETZAL_COMMIT == "31f88519bd64595ede7d2ac3e5f883e39f5ef0a5"
     assert device["max_context"] == 8192
     assert device["max_concurrency"] == 1
     assert device["default_impl"] is False
     env = device["env_vars"]
     assert env["QUETZAL_REQUIRED_SOURCE_REVISION"] == QUETZAL_COMMIT
+    assert env["QUETZAL_GENERATOR_SOURCE_REVISION"] == COMPILER_COMMIT
+    assert len(env["QUETZAL_RUNTIME_ATTESTATION_SHA256"]) == 64
+    assert env["QUETZAL_SERVE_PROFILE"] == "gpt_oss_120b.serve"
     assert env["TT_VLLM_BUILTIN_MODELS"] == "0"
     assert env["VLLM_PLUGINS"] == "quetzal_model_registry,tt"
     assert env["TTQ_ROW_ALL_REDUCE_TOPOLOGY"] == "Ring"
@@ -207,6 +210,7 @@ def test_exact_response_renders_catalogue_ci_and_ring2_contract():
         assert schedule["devices"] == ["P300X2"]
         args = schedule["device-args"]["P300X2"]["additional-args"]
         assert "--quetzal-models-root /mnt/models/quetzal/immutable/" in args
+        assert "--quetzal-runtime-attestation /mnt/models/quetzal/immutable/" in args
         assert "--quetzal-auxiliary-root openai_gpt-oss-120b-streamed-cache=" in args
 
     shield = rendered["shield_required_contract"]
