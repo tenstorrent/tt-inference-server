@@ -329,6 +329,15 @@ if [ "$build" = true ]; then
         fi
         git checkout "${RESOLVED_TT_METAL_COMMIT}"
 
+        # The large base dependency install still uses Ubuntu mirrors even when
+        # all release-tool layers are content addressed. Restricted-proxy
+        # interruptions otherwise discard the failed BuildKit layer and force a
+        # complete rebuild. Add bounded APT acquisition retries to this
+        # ephemeral builder Dockerfile only; the TT-Metal source/runtime pin and
+        # the final image identity remain unchanged.
+        python3 "$repo_root/scripts/patch_tt_metal_builder_apt_retries.py" \
+            dockerfile/Dockerfile
+
         # Consume the exact checkout's published, content-addressed tool layers
         # instead of rebuilding them through GitHub release downloads.  Using
         # network=host would still route those downloads through the runner's
