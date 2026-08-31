@@ -5788,6 +5788,8 @@ models:
             env:
               - name: ARCH_NAME
                 value: wormhole_b0
+              - name: BENCHMARK_MAX_CONCURRENCY
+                value: '32'
               - name: DEFAULT_THROTTLE_LEVEL
                 value: '0'
               - name: MAX_BATCH_SIZE
