@@ -466,7 +466,12 @@ templates:
       max_tokens_all_users_override: 525312
       default_impl: true
       env_vars:
-        TT_QWEN35_TEXT_VER: qwen36_autoport
+        # Do NOT set TT_QWEN35_TEXT_VER=qwen36_autoport: the upstream plugin
+        # selector whitelists only qwen36_blackhole and raises on anything else.
+        # The autoport is selected by the vllm bundle below, which registers
+        # before the built-in map, so no plugin change is needed.
+        TT_QWEN35_TEXT_VER: qwen36_blackhole
+        EXTRA_MODELS_DIR: "../../tt-metal/models/autoports/vllm_bundles"
         # The autoport reads the checkpoint from these, so the 3.6 implementation
         # serves 3.8 weights. Revision pinned to the one the bringup validated.
         QWEN_AUTOPORT_MODEL_ID: Qwen/Qwen3.8-27B
