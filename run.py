@@ -405,6 +405,16 @@ def parse_arguments():
         ),
     )
     parser.add_argument(
+        "--quetzal-behavioral-topology",
+        choices=["p150x4-linear-1ch"],
+        default=None,
+        help=(
+            "Select an explicitly non-certifying Exabox topology profile. "
+            "Requires --quetzal-behavioral-package-admission, --dev-mode, "
+            "--docker-server, and impl=quetzal; forbidden in CI."
+        ),
+    )
+    parser.add_argument(
         "--quetzal-runtime-attestation",
         type=str,
         default=None,
@@ -1084,10 +1094,58 @@ def resolve_runtime(args):
         )
         model_spec.apply_overrides(runtime_config)
 
+    model_spec = apply_quetzal_behavioral_topology(runtime_config, model_spec)
+
     populate_model_spec_cli_args(model_spec, runtime_config)
     runtime_config.runtime_model_spec = model_spec.get_serialized_dict()
 
     return runtime_config, model_spec
+
+
+_BEHAVIORAL_TOPOLOGY_PROFILES = {
+    "p150x4-linear-1ch": {
+        "TT_MESH_GRAPH_DESC_PATH": (
+            "/home/container_app_user/app/reference_config/mesh_graph_descriptors/"
+            "p150_x4_linear_1ch_mesh_graph_descriptor.textproto"
+        ),
+        "TTQ_ROW_ALL_REDUCE_TOPOLOGY": "Linear",
+        "TTQ_TUNED_ROW_ALL_REDUCE_LINKS": "1",
+        "TTQ_TUNED_ROW_ALL_REDUCE": "1",
+    }
+}
+
+
+def apply_quetzal_behavioral_topology(runtime_config, model_spec):
+    """Apply one reviewed local topology without changing catalogue defaults."""
+    profile = getattr(runtime_config, "quetzal_behavioral_topology", None)
+    if profile is None:
+        return model_spec
+    if not getattr(runtime_config, "quetzal_behavioral_package_admission", False):
+        raise ValueError(
+            "--quetzal-behavioral-topology requires "
+            "--quetzal-behavioral-package-admission"
+        )
+    if not runtime_config.dev_mode or not runtime_config.docker_server:
+        raise ValueError(
+            "--quetzal-behavioral-topology requires --dev-mode --docker-server"
+        )
+    if runtime_config.ci_mode:
+        raise ValueError("--quetzal-behavioral-topology is forbidden in CI mode")
+    if runtime_config.runtime_model_spec_json:
+        raise ValueError(
+            "--quetzal-behavioral-topology cannot override a runtime model spec"
+        )
+    if runtime_config.impl != "quetzal" or model_spec.impl.impl_id != "quetzal":
+        raise ValueError("--quetzal-behavioral-topology requires --impl quetzal")
+
+    from dataclasses import replace
+
+    overrides = _BEHAVIORAL_TOPOLOGY_PROFILES[profile]
+    device_spec = replace(
+        model_spec.device_model_spec,
+        env_vars={**model_spec.device_model_spec.env_vars, **overrides},
+    )
+    return replace(model_spec, device_model_spec=device_spec)
 
 
 def handle_maintenance_args(args):

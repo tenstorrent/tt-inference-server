@@ -10,6 +10,7 @@ from pathlib import PurePosixPath
 import pytest
 
 import workflows.run_docker_server as run_docker_server_module
+from run import apply_quetzal_behavioral_topology
 from workflows.model_spec import get_runtime_model_spec, load_templates_from_yaml
 from workflows.run_docker_server import (
     _vllm_override_cli_args,
@@ -194,6 +195,66 @@ def test_docker_command_behavioral_admission_rejects_non_candidate_root(
 
     with pytest.raises(ValueError, match="behavioral Quetzal package must be under"):
         generate_docker_run_command(spec, runtime)
+
+
+def test_behavioral_topology_is_local_explicit_and_does_not_mutate_catalogue():
+    spec = _dev_quetzal_spec("gemma-4-31B-it")
+    original_env = copy.deepcopy(spec.env_vars)
+    runtime = RuntimeConfig(
+        model="gemma-4-31B-it",
+        workflow="server",
+        device="p300x2",
+        impl="quetzal",
+        engine="vLLM",
+        docker_server=True,
+        dev_mode=True,
+        quetzal_behavioral_package_admission=True,
+        quetzal_behavioral_topology="p150x4-linear-1ch",
+    )
+
+    resolved = apply_quetzal_behavioral_topology(runtime, spec)
+
+    assert resolved is not spec
+    assert spec.env_vars == original_env
+    assert spec.env_vars["TTQ_ROW_ALL_REDUCE_TOPOLOGY"] == "Ring"
+    assert spec.env_vars["TTQ_TUNED_ROW_ALL_REDUCE_LINKS"] == "2"
+    assert resolved.env_vars["TTQ_ROW_ALL_REDUCE_TOPOLOGY"] == "Linear"
+    assert resolved.env_vars["TTQ_TUNED_ROW_ALL_REDUCE_LINKS"] == "1"
+    assert resolved.env_vars["TT_MESH_GRAPH_DESC_PATH"].endswith(
+        "/reference_config/mesh_graph_descriptors/"
+        "p150_x4_linear_1ch_mesh_graph_descriptor.textproto"
+    )
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"quetzal_behavioral_package_admission": False}, "requires .*admission"),
+        ({"dev_mode": False}, "requires --dev-mode --docker-server"),
+        ({"docker_server": False}, "requires --dev-mode --docker-server"),
+        ({"ci_mode": True}, "forbidden in CI mode"),
+        ({"runtime_model_spec_json": "/tmp/spec.json"}, "cannot override"),
+        ({"impl": "vllm"}, "requires --impl quetzal"),
+    ],
+)
+def test_behavioral_topology_fails_closed(overrides, message):
+    spec = _dev_quetzal_spec("gemma-4-31B-it")
+    kwargs = {
+        "model": "gemma-4-31B-it",
+        "workflow": "server",
+        "device": "p300x2",
+        "impl": "quetzal",
+        "engine": "vLLM",
+        "docker_server": True,
+        "dev_mode": True,
+        "quetzal_behavioral_package_admission": True,
+        "quetzal_behavioral_topology": "p150x4-linear-1ch",
+    }
+    kwargs.update(overrides)
+    runtime = RuntimeConfig(**kwargs)
+
+    with pytest.raises(ValueError, match=message):
+        apply_quetzal_behavioral_topology(runtime, spec)
 
 
 def test_docker_command_rejects_missing_or_misapplied_quetzal_root(tmp_path):
