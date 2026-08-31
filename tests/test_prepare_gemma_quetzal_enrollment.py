@@ -310,8 +310,7 @@ def test_active_config_withholds_unqualified_gemma_quetzal_lane():
 def test_blocker_uses_current_runtime_and_preserves_banked_local_gates():
     blocker = json.loads(
         (
-            ROOT
-            / "productization/gemma4_31b_models_ci_enrollment.blocked.json"
+            ROOT / "productization/gemma4_31b_models_ci_enrollment.blocked.json"
         ).read_text()
     )
     assert QUETZAL_SOURCE == "9dbfdfc41ca9d90999882b490b135ef6f822b1bd"
