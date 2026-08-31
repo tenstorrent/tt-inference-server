@@ -5,7 +5,7 @@
 
 set -euo pipefail  # Exit on error, print commands, unset variables treated as errors, and exit on pipeline failure
 
-check_image_not_exists_remote() {
+image_exists_remote() {
     local image_tag="$1"
     if docker manifest inspect "${image_tag}" > /dev/null 2>&1; then
         echo "✅ The image exists on GHCR: ${image_tag}"
@@ -16,7 +16,7 @@ check_image_not_exists_remote() {
     fi
 }
 
-check_image_not_exists_local() {
+image_exists_local() {
     local image_tag="$1"
     if docker inspect --type=image "${image_tag}" > /dev/null 2>&1; then
         echo "✅ The image exists locally: ${image_tag}"
@@ -206,7 +206,8 @@ fi
 if [[ "$CONTAINER_APP_UID" =~ ^[0-9]+$ ]] && (( $CONTAINER_APP_UID >= 1000 && $CONTAINER_APP_UID < 60000 )); then
     echo "CONTAINER_APP_UID=${CONTAINER_APP_UID} is within expected range."
 else
-    echo "CONTAINER_APP_UID=${CONTAINER_APP_UID} is not a number or outside expected range of 1000 to 59999."
+    echo "⛔ Error: CONTAINER_APP_UID=${CONTAINER_APP_UID} is not a number or outside expected range of 1000 to 59999."
+    exit 1
 fi
 if [[ -n "$TT_QUETZAL_COMMIT_SHA" && ! "$TT_QUETZAL_COMMIT_SHA" =~ ^[0-9a-f]{40}$ ]]; then
     echo "⛔ Error: --quetzal-commit must be a lowercase 40-hex commit."
@@ -278,10 +279,10 @@ if [ "$force_build" = true ]; then
     echo "Force build option provided (--force-build). Skipping remote image checks; all images will be built locally."
 else
     # Check for the images independently, negating check_image_exists return
-    if check_image_not_exists_remote "${dev_image_tag}" || check_image_not_exists_local "${dev_image_tag}"; then
+    if image_exists_remote "${dev_image_tag}" || image_exists_local "${dev_image_tag}"; then
         build_dev_image=false
     fi
-    if check_image_not_exists_remote "${release_image_tag}" || check_image_not_exists_local "${release_image_tag}"; then
+    if image_exists_remote "${release_image_tag}" || image_exists_local "${release_image_tag}"; then
         build_release_image=false
     fi
 fi
@@ -290,7 +291,10 @@ if [ "$build" = true ]; then
 
     echo "using TT_METAL_DOCKERFILE_URL: ${TT_METAL_DOCKERFILE_URL}"
 
-    if ! check_image_not_exists_local "${TT_METAL_DOCKERFILE_URL}"; then
+    # A remote final image is already the immutable build product.  Do not
+    # rebuild the much larger TT-Metal base merely to discover that there is no
+    # downstream image work left on this ephemeral runner.
+    if [ "$build_dev_image" = true ] && ! image_exists_local "${TT_METAL_DOCKERFILE_URL}"; then
         echo "Image ${TT_METAL_DOCKERFILE_URL} does not exist, building it ..."
 
         # Resolve short SHA / tag to full commit SHA
@@ -392,7 +396,7 @@ generate_model_specs_json()
         echo "✅ Generated model_spec.json"
 
         docker build \
-        -t ${dev_image_tag} \
+        -t "${dev_image_tag}" \
         --build-context quetzal_src="${QUETZAL_BUILD_CONTEXT}" \
         --build-arg TT_METAL_DOCKERFILE_URL="${TT_METAL_DOCKERFILE_URL}" \
         --build-arg TT_METAL_COMMIT_SHA_OR_TAG="${TT_METAL_COMMIT_SHA_OR_TAG}" \
@@ -411,6 +415,10 @@ generate_model_specs_json()
     # tag release image (identical to dev image, just different tag)
     # NOTE: release image is only tagged during release flow
     if [ "$release" = true ] && [ "$build_release_image" = true ]; then
+        if ! image_exists_local "${dev_image_tag}"; then
+            echo "Pulling the existing immutable dev image before release tagging: ${dev_image_tag}"
+            docker pull "${dev_image_tag}"
+        fi
         echo "tagging: ${dev_image_tag} -> ${release_image_tag}"
         docker tag "${dev_image_tag}" "${release_image_tag}"
     else
@@ -429,13 +437,13 @@ should_push_image() {
     local image_tag="$1"
     echo "checking: should_push_image ${image_tag}"
 
-    check_image_not_exists_local "$image_tag"
-    local local_not_exists=$?
+    image_exists_local "$image_tag"
+    local local_exists=$?
 
-    check_image_not_exists_remote "$image_tag"
-    local remote_not_exists=$?
-    echo "local_not_exists=$local_not_exists, remote_not_exists=$remote_not_exists, force_push=$force_push"
-    if [[ $local_not_exists -eq 0 && ( $remote_not_exists -ne 0 || "$force_push" == true ) ]]; then
+    image_exists_remote "$image_tag"
+    local remote_exists=$?
+    echo "local_exists=$local_exists, remote_exists=$remote_exists, force_push=$force_push"
+    if [[ $local_exists -eq 0 && ( $remote_exists -ne 0 || "$force_push" == true ) ]]; then
         return 0
     else
         return 1
@@ -461,5 +469,5 @@ if [ "${push_images}" = true ]; then
     done
 fi
 
-
+echo "TTIS_IMAGE_RESULT dev_image_tag=${dev_image_tag}"
 echo "✅ build_docker.sh completed successfully!"

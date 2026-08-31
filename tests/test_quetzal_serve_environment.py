@@ -457,3 +457,24 @@ def test_official_builder_retries_with_a_fresh_tt_metal_checkout() -> None:
     assert cleanup < clone
     assert 'rm -rf -- "$TT_METAL_BUILD_DIR"' in builder[cleanup:clone]
     assert 'tt_metal_build_dir="temp_docker_build_dir_' not in builder
+
+
+def test_official_builder_reuses_an_existing_final_image_before_base_build() -> None:
+    builder = (ROOT / "scripts" / "build_single_docker.sh").read_text()
+    remote_probe = builder.index('image_exists_remote "${dev_image_tag}"')
+    build_flag = builder.index("build_dev_image=false", remote_probe)
+    base_build = builder.index(
+        'if [ "$build_dev_image" = true ] && ! image_exists_local '
+        '"${TT_METAL_DOCKERFILE_URL}"',
+        build_flag,
+    )
+    assert remote_probe < build_flag < base_build
+    assert 'TTIS_IMAGE_RESULT dev_image_tag=${dev_image_tag}' in builder
+
+
+def test_official_builder_rejects_an_invalid_container_uid() -> None:
+    builder = (ROOT / "scripts" / "build_single_docker.sh").read_text()
+    invalid_uid = builder.index(
+        'Error: CONTAINER_APP_UID=${CONTAINER_APP_UID} is not a number'
+    )
+    assert "exit 1" in builder[invalid_uid : invalid_uid + 240]
