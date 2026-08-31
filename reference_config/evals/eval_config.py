@@ -4115,6 +4115,37 @@ _eval_config_list = [
             )
         ],
     ),
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen3-ASR-1.7B",
+        tasks=[
+            EvalTask(
+                task_name="librispeech_test_other",
+                eval_class="whisper_tt",
+                batch_size=1,
+                max_concurrent=1,
+                apply_chat_template=False,
+                workflow_venv_type=WorkflowVenvType.EVALS_AUDIO,
+                score=EvalTaskScore(
+                    # No traceable published librispeech WER for this repo, and
+                    # the model targets Japanese first; the accuracy check
+                    # renders N/A until a CI run establishes a reference.
+                    published_score=None,
+                    published_score_ref="",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "wer,none",
+                        ],
+                        "unit": "WER",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.20,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            )
+        ],
+    ),
     # VIDEO models (Mochi, Wan2.2 T2V/I2V) are served by the v2 engine (routed
     # via workflows/workflow_dispatch.can_dispatch_to_engine); the actual eval runs in v2's
     # test_module, and ModelType.VIDEO is not in EVAL_TASK_TYPES (evals/run_evals.py),

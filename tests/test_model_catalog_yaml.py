@@ -31,6 +31,7 @@ from workflows.workflow_types import (
 def test_impl_registry_is_populated():
     """Every ImplSpec instance defined at module scope must be in _IMPL_REGISTRY."""
     assert _IMPL_REGISTRY["tt_transformers"] is tt_transformers_impl
+    assert _IMPL_REGISTRY["qwen3_asr"].code_path == "models/demos/audio/qwen3_asr"
     # impl_id of each registry entry must match its key
     for impl_id, impl in _IMPL_REGISTRY.items():
         assert impl.impl_id == impl_id
