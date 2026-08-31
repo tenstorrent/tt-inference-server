@@ -187,6 +187,19 @@ def test_exact_evidence_renders_inactive_promotion(shield_checkout):
 
     assert rendered["implementation"]["impl"] == "quetzal"
     assert set(rendered["implementation"]["ci"]) == {"nightly", "release"}
+    device = rendered["catalogue"]["templates"][0]["device_model_specs"][0]
+    assert device["env_vars"]["QZ_LM_HEAD_UPLOAD_CHUNK_COLS"] == "8192"
+    assert device["vllm_args"] == {
+        "block_size": 64,
+        "max_model_len": 4096,
+        "max_num_seqs": 1,
+        "revision": HF_REVISION,
+        "tokenizer_revision": HF_REVISION,
+        "enable-auto-tool-choice": True,
+        "tool-call-parser": "gemma4",
+        "default-chat-template-kwargs": '{"enable_thinking": true}',
+        "reasoning-parser": "gemma4",
+    }
 
 
 @pytest.mark.parametrize(
@@ -321,6 +334,9 @@ def test_blocker_uses_current_runtime_and_preserves_banked_local_gates():
     assert banked["semantic_endpoint"] == "Gemma is ready."
     assert banked["clean_lifecycle"] is True
     assert banked["official_ttis_or_models_ci"] is False
+    candidate = blocker["requested_publication_candidate"]
+    assert candidate["package_id"].startswith("sha256-v1-")
+    assert candidate["qualification_manifest_sha256"] in candidate["package_id"]
     missing = "\n".join(blocker["missing_fields"])
     assert "fresh exact-package PCC" not in missing
     assert "publication-time proof" in missing
