@@ -363,6 +363,36 @@ def test_build_llm_bench_cmd_forwards_tools_and_jwt():
     assert cmd_jwt[cmd_jwt.index("--jwt-secret") + 1] == "sek"
 
 
+def _build_training(enforce_acceptance):
+    # The training expectation registry is keyed on ("Llama-3.1-8B", "p150").
+    return workflow_dispatch._build_training_cmd(
+        get_repo_root_path(),
+        _spec(ModelType.TRAINING, name="Llama-3.1-8B"),
+        _rc(
+            workflow="training_tests",
+            device="p150",
+            enforce_acceptance=enforce_acceptance,
+        ),
+        "/tmp/spec.json",
+        Path("/tmp/out"),
+    )
+
+
+def test_build_training_cmd_forwards_enforce_acceptance_when_set():
+    cmd = _build_training(True)
+    assert str(get_repo_root_path() / "launchers" / "run_training_test.py") in cmd
+    assert cmd[cmd.index("--workflow") + 1] == "training_tests"
+    # The golden path is resolved by the registry, not passed on the CLI.
+    assert "reference_config/training" in cmd[cmd.index("--expected-config") + 1]
+    assert "--enforce-acceptance" in cmd
+
+
+def test_build_training_cmd_omits_enforce_acceptance_by_default():
+    # Advisory by default: the launcher keeps its status-quo exit code so the
+    # always-enforced spec_tests gate does not fire on placeholder goldens.
+    assert "--enforce-acceptance" not in _build_training(False)
+
+
 def test_llm_benchmark_builds_launcher_command(monkeypatch, tmp_path):
     spec, rc = _spec(ModelType.LLM), _rc(server_url="https://console.example.com")
     monkeypatch.setattr(

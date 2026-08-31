@@ -576,6 +576,10 @@ def _build_training_cmd(repo_root, model_spec, runtime_config, json_fpath, outpu
             str(expected_config_path(model_spec.model_name, runtime_config.device)),
         ]
     )
+    # Boolean opt-in: only append when set so the launcher's advisory default
+    # (goldens are placeholders) holds unless CI explicitly asks to enforce.
+    if getattr(runtime_config, "enforce_acceptance", False):
+        cmd.append("--enforce-acceptance")
     _forward_jwt(cmd, runtime_config)
     return cmd
 

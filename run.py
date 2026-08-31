@@ -454,6 +454,22 @@ def parse_arguments():
         help="List matching tests without running them (dry-run)",
     )
 
+    # Training-tests (LoRA fine-tune loss gate)
+    training_tests_group = parser.add_argument_group(
+        "training_tests workflow",
+        "Arguments for --workflow training_tests (LoRA fine-tune loss gate driven "
+        "through the forge inference-server path)",
+    )
+    training_tests_group.add_argument(
+        "--enforce-acceptance",
+        action="store_true",
+        help="Make the acceptance verdict (which always enforces spec_tests — i.e. "
+        "the loss-trajectory checks) drive the launcher exit code. Off by default "
+        "while the checked-in goldens are placeholders "
+        "(reference_config/training/*.yaml); enable once real P150 losses land so a "
+        "failing trajectory blocks CI instead of only being surfaced.",
+    )
+
     # Serving-bench shell benchmark suites
     serving_bench_group = parser.add_argument_group(
         "serving_bench workflow",

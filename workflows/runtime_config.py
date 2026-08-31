@@ -102,6 +102,12 @@ class RuntimeConfig:
     # workflow N times (drives the engine's generic ``--repeat`` loop).
     repeat_evals: int = 1
 
+    # Training-tests (--workflow training_tests). When set, the training driver
+    # gates its exit code on the acceptance verdict (spec_tests are always
+    # enforced) instead of only surfacing it. Off by default while the goldens
+    # are placeholders.
+    enforce_acceptance: bool = False
+
     agentic_traces: bool = False
     agentic_traces_mode: str = "full"
     agentic_traces_sources: Optional[str] = None
@@ -202,6 +208,7 @@ class RuntimeConfig:
             ),
             agentic_benchmark=getattr(args, "agentic_benchmark", None),
             repeat_evals=getattr(args, "repeat_evals", 1) or 1,
+            enforce_acceptance=getattr(args, "enforce_acceptance", False),
             agentic_traces=getattr(args, "agentic_traces", False),
             agentic_traces_mode=getattr(args, "agentic_traces_mode", None) or "full",
             agentic_traces_sources=getattr(args, "agentic_traces_sources", None),
