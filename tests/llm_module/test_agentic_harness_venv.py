@@ -16,6 +16,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
+
 from llm_module.agentic import swebench, terminal_bench
 
 _VENV_PY = Path("/opt/venvs/evals_agentic/bin/python")
@@ -137,3 +139,38 @@ def test_swebench_harness_command_falls_back_to_sys_executable(tmp_path):
             config, tmp_path / "preds.jsonl", "run-1"
         )
     assert cmd[0] == "/cur/bin/python"
+
+
+def test_swebench_sitecustomize_pins_exact_dataset_revision(tmp_path):
+    dataset_name = "SWE-bench/SWE-bench_Verified"
+    revision = "78f471bf655a3137b2e8a75af1501690ec009ec3"
+    patch_dir = swebench._write_swebench_harness_patch(
+        tmp_path,
+        dataset_name=dataset_name,
+        dataset_revision=revision,
+    )
+    source = (patch_dir / "sitecustomize.py").read_text()
+
+    assert f"_PINNED_DATASET_NAME = {dataset_name!r}" in source
+    assert f"_PINNED_DATASET_REVISION = {revision!r}" in source
+    assert 'kwargs["revision"] = _PINNED_DATASET_REVISION' in source
+
+
+@pytest.mark.parametrize(
+    ("dataset_name", "revision"),
+    [
+        ("SWE-bench/SWE-bench_Verified", "main"),
+        ("SWE-bench/SWE-bench_Verified", "A" * 40),
+        ("SWE-bench/SWE-bench_Verified", None),
+        (None, "78f471bf655a3137b2e8a75af1501690ec009ec3"),
+    ],
+)
+def test_swebench_sitecustomize_rejects_ambiguous_dataset_pin(
+    tmp_path, dataset_name, revision
+):
+    with pytest.raises(ValueError):
+        swebench._write_swebench_harness_patch(
+            tmp_path,
+            dataset_name=dataset_name,
+            dataset_revision=revision,
+        )

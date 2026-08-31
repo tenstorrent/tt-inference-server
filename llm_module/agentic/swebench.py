@@ -72,6 +72,9 @@ class SWEbenchRunConfig:
     # (standalone ``run_agentic.py`` re-execs into the EVALS_AGENTIC venv); set
     # on the release path where the harness runs as a child of the engine.
     venv_python: Optional[Path] = None
+    # Exact Hugging Face dataset source revision. When set, both the agent and
+    # verifier subprocesses fail closed onto this revision through sitecustomize.
+    dataset_revision: Optional[str] = None
 
 
 def _interpreter(config: SWEbenchRunConfig) -> Path:
@@ -284,12 +287,49 @@ def _run_command_with_retries(
         attempt += 1
 
 
-def _write_swebench_harness_patch(output_dir: Path) -> Path:
+def _write_swebench_harness_patch(
+    output_dir: Path,
+    *,
+    dataset_name: Optional[str] = None,
+    dataset_revision: Optional[str] = None,
+) -> Path:
+    if dataset_revision is not None and not re.fullmatch(
+        r"[0-9a-f]{40}", dataset_revision
+    ):
+        raise ValueError("dataset_revision must be a lowercase 40-hex commit")
+    if (dataset_name is None) != (dataset_revision is None):
+        raise ValueError("dataset_name and dataset_revision must be set together")
     patch_dir = output_dir / "swebench_harness_patch"
     patch_dir.mkdir(parents=True, exist_ok=True)
     patch_path = patch_dir / "sitecustomize.py"
+    dataset_pin = ""
+    if dataset_revision is not None:
+        dataset_pin = f"""
+import datasets
+
+_PINNED_DATASET_NAME = {dataset_name!r}
+_PINNED_DATASET_REVISION = {dataset_revision!r}
+_ORIGINAL_LOAD_DATASET = datasets.load_dataset
+
+
+def _load_pinned_dataset(path, *args, **kwargs):
+    if path == _PINNED_DATASET_NAME:
+        supplied = kwargs.get("revision")
+        if supplied not in (None, _PINNED_DATASET_REVISION):
+            raise RuntimeError(
+                f"SWE-bench dataset revision drifted: {{supplied!r}} != "
+                f"{{_PINNED_DATASET_REVISION!r}}"
+            )
+        kwargs["revision"] = _PINNED_DATASET_REVISION
+    return _ORIGINAL_LOAD_DATASET(path, *args, **kwargs)
+
+
+datasets.load_dataset = _load_pinned_dataset
+"""
     patch_path.write_text(
-        """
+        (
+            dataset_pin
+            + """
 import logging
 import re
 
@@ -331,17 +371,22 @@ try:
     ImageCollection.push = _best_effort_push
 except Exception:  # noqa: BLE001
     pass
-""".lstrip(),
+"""
+        ).lstrip(),
         encoding="utf-8",
     )
     return patch_dir
 
 
 def _add_swebench_harness_patch_to_env(
-    output_dir: Path, env: dict[str, str]
+    output_dir: Path, env: dict[str, str], config: SWEbenchRunConfig
 ) -> dict[str, str]:
     patched_env = dict(env)
-    patch_dir = _write_swebench_harness_patch(output_dir)
+    patch_dir = _write_swebench_harness_patch(
+        output_dir,
+        dataset_name=(config.dataset_name if config.dataset_revision else None),
+        dataset_revision=config.dataset_revision,
+    )
     python_path = patched_env.get("PYTHONPATH")
     patched_env["PYTHONPATH"] = (
         str(patch_dir) if not python_path else f"{patch_dir}{os.pathsep}{python_path}"
@@ -863,6 +908,7 @@ def run(config: SWEbenchRunConfig) -> int:
     env["PYTHONPATH"] = repo_root + (
         os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else ""
     )
+    env = _add_swebench_harness_patch_to_env(config.output_dir, env, config)
     sweagent_source_dir = _get_sweagent_source_dir(_interpreter(config))
     if sweagent_source_dir is not None:
         env.setdefault("SWE_AGENT_CONFIG_DIR", str(sweagent_source_dir / "config"))
@@ -940,7 +986,6 @@ def run(config: SWEbenchRunConfig) -> int:
         convert_sweagent_preds_to_jsonl(preds_path, predictions_path, config.model_name)
 
     harness_cmd = build_swebench_harness_command(config, predictions_path, run_id)
-    env = _add_swebench_harness_patch_to_env(config.output_dir, env)
     rc = _run_command_with_retries(
         harness_cmd,
         cwd=config.output_dir,

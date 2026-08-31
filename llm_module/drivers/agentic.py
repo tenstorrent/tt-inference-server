@@ -215,6 +215,7 @@ def build_swebench_config(
         instance_ids=resolve_instance_ids(task, runtime_config),
         tokenizer_name=server.tokenizer,
         venv_python=venv_python,
+        dataset_revision=getattr(cfg, "dataset_revision", None),
     )
 
 
