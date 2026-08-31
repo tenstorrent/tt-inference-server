@@ -160,6 +160,7 @@ templates:
         VLLM__MAX_MODEL_LENGTH: "1024"
         VLLM__MIN_CONTEXT_LENGTH: "32"
         VLLM__MAX_NUM_SEQS: "1"
+        BENCHMARK_MAX_CONCURRENCY: "32"  # 32 workers x 1 seq each
 
 - weights:
     - Qwen/Qwen3-Embedding-4B

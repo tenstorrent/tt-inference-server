@@ -70,6 +70,7 @@ RUN apt-get update && apt-get install -y \
     unzip \
     zip \
     curl \
+    libcurl4-openssl-dev \
     iputils-ping \
     rsync \
     && rm -rf /var/lib/apt/lists/* \
@@ -85,15 +86,26 @@ RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.26.4/cmake-
 # download.pytorch.org intermittently returns 503 during dependency installs;
 # raise uv's HTTP retry count (default 3) for every uv invocation in create_venv.sh.
 ENV UV_HTTP_RETRIES=10
+# Newer tt-metal revisions use uv-managed Python. Keep that interpreter under
+# TT_METAL_HOME so it is copied into the runtime stage with the virtualenv.
+ENV UV_PYTHON_INSTALL_DIR=${TT_METAL_HOME}/uv-python
 
 # build tt-metal
+#
+# Build-only content is reclaimed at the end of THIS RUN rather than in the cleanup
+# step at the end of the builder stage. Deleting a file in a later layer only writes a
+# whiteout: the bytes stay in this layer's snapshot and occupy /var/lib/containerd for
+# the whole build, including the final export and unpack where the build has been
+# running out of disk. Removing them here means they are never committed at all.
+# The resulting image is unchanged -- this only lowers disk during the build.
 RUN git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
     && cd ${TT_METAL_HOME} \
     && git fetch --depth 1 origin ${TT_METAL_COMMIT_SHA_OR_TAG} \
     && git checkout ${TT_METAL_COMMIT_SHA_OR_TAG} \
     && git submodule update --init --recursive --depth 1 \
     && ./install_dependencies.sh --docker \
-    && CXX=clang++-17 CC=clang-17 bash ./create_venv.sh --bundle-python \
+    && CXX=clang++-17 CC=clang-17 bash ./create_venv.sh \
+    && test -f "${PYTHON_ENV_DIR}/bin/activate" \
     && echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc \
     && uv pip install --upgrade setuptools wheel \
     && bash ./build_metal.sh --release -e \
@@ -101,7 +113,16 @@ RUN git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_M
     && cmake --build build_Release --target test_system_health -j$(nproc) \
     && uv pip install --upgrade cmake \
     && hash -r \
-    && find ${TT_METAL_HOME} -name ".git" -type d -exec rm -rf {} + 2>/dev/null || true
+    && rm -rf ${TT_METAL_HOME}/.cpmcache \
+    && rm -rf ${TT_METAL_HOME}/docs \
+    && rm -rf ${TT_METAL_HOME}/tests \
+    && rm -rf ${TT_METAL_HOME}/tech_reports \
+    && rm -rf ${TT_METAL_HOME}/contributing \
+    && rm -rf ${TT_METAL_HOME}/releases \
+    && rm -rf ${TT_METAL_HOME}/dockerfile \
+    && rm -rf ${TT_METAL_HOME}/infra/tests \
+    && rm -rf ${TT_METAL_HOME}/tt-train \
+    && (find ${TT_METAL_HOME} -name ".git" -type d -exec rm -rf {} + 2>/dev/null || true)
 
 RUN mkdir -p ${HOME_DIR} \
     && mkdir -p /run/sshd \
@@ -117,7 +138,7 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && . ${HOME_DIR}/.cargo/env \
     && rustup update \
     && uv pip install git+https://github.com/tenstorrent/tt-smi \
-    && find ${HOME_DIR} -name '.git' -type d -exec rm -rf {} + 2>/dev/null || true"
+    && (find ${HOME_DIR} -name '.git' -type d -exec rm -rf {} + 2>/dev/null || true)"
 
 WORKDIR ${HOME_DIR}
 
@@ -170,6 +191,14 @@ RUN apt-get clean && rm -rf /var/lib/apt/lists/* \
 RUN cd ${TT_METAL_HOME}/server/cpp_server && ./install_dependencies.sh
 
 # Build C++ server (requires Rust for tokenizers-cpp and Clang-20)
+#
+# The build tree is pruned in this same RUN. build/ is ~2GB, of which only the
+# 79MB tt_media_server_cpp binary is used: run_cpp.sh executes it and nothing else,
+# and the binary's RUNPATH is build_Release/lib:/usr/local/lib:/usr/local/share/uv/...
+# -- it never loads anything from its own build directory. The rest is build output:
+# object files, static archives already linked into the binary, FetchContent sources,
+# and ~30 test/benchmark executables. Pruning here (rather than in a later RUN) keeps
+# those bytes out of the layer entirely, so it lowers both image size and peak build disk.
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && export CARGO_HOME=${HOME_DIR}/.cargo \
     && export RUSTUP_HOME=${HOME_DIR}/.rustup \
@@ -177,28 +206,33 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && export CXX=clang++-20 \
     && export CC=clang-20 \
     && cd ${TT_METAL_HOME}/server/cpp_server \
-    && ./build.sh"
+    && ./build.sh \
+    && rm -rf build/CMakeFiles build/_deps \
+    && find build -maxdepth 1 -type f -name '*_test' -delete \
+    && find build -maxdepth 1 -type f -name '*_benchmark' -delete \
+    && find build -maxdepth 1 -type f -name '*.a' -delete \
+    && find build -name '*.o' -delete \
+    && test -x build/tt_media_server_cpp"
 
 # Add script for running C++ server
 COPY "tt-media-server/run_cpp.sh" "${TT_METAL_HOME}/server/run_cpp.sh"
 RUN chmod +x ${TT_METAL_HOME}/server/run_cpp.sh
 
-# Cleanup build-only directories
+# Cleanup build-only directories.
+#
+# Only content that is still needed *above* this point stays here; everything with no
+# later consumer is now reclaimed inside the RUN that creates it (see the tt-metal build).
+# Do not move these earlier:
+#   .cargo / .rustup / /usr/local/rustup  tokenizers-cpp needs Rust during the cpp_server build
+#   tt-metal/cmake                        cpp_server/build.sh reads the clang-20 toolchain file from it
+#   /usr/include                          every C++ compile above needs it
+#   tt-metal/server/*                     only exists after the COPY that follows the tt-metal build
 RUN rm -rf ${HOME_DIR}/.rustup \
     && rm -rf ${HOME_DIR}/.cargo \
     && rm -rf ${HOME_DIR}/.cache \
-    && rm -rf ${HOME_DIR}/tt-metal/.cpmcache \
-    && rm -rf ${HOME_DIR}/tt-metal/docs \
-    && rm -rf ${HOME_DIR}/tt-metal/tests \
-    && rm -rf ${HOME_DIR}/tt-metal/tech_reports \
     && rm -rf ${HOME_DIR}/tt-metal/.github \
-    && rm -rf ${HOME_DIR}/tt-metal/contributing \
-    && rm -rf ${HOME_DIR}/tt-metal/releases \
-    && rm -rf ${HOME_DIR}/tt-metal/dockerfile \
     && rm -rf ${HOME_DIR}/tt-metal/cmake \
     && rm -rf ${HOME_DIR}/tt-metal/scripts \
-    && rm -rf ${HOME_DIR}/tt-metal/infra/tests \
-    && rm -rf ${HOME_DIR}/tt-metal/tt-train \
     && rm -rf ${HOME_DIR}/tt-metal/server/tests \
     && rm -rf ${HOME_DIR}/tt-metal/server/scripts \
     && rm -rf /usr/local/rustup \

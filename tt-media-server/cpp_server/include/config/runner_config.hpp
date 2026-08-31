@@ -155,6 +155,10 @@ struct TtsConfig : RunnerConfigBase {
   uint32_t audioSampleRateHz = defaults::TTS_AUDIO_SAMPLE_RATE_HZ;
   uint16_t audioChannels = defaults::TTS_AUDIO_CHANNELS;
 
+  // Literal BOS token prepended to the compiled prompt; empty = none.
+  // Read from the tokenizer's tokenizer_config.json in ttsEngineConfig().
+  std::string bosToken;
+
   // Socket descriptor prefixes written by the model launcher into /dev/shm.
   std::string encoderSocketDescriptorPrefix =
       defaults::TTS_ENCODER_SOCKET_DESCRIPTOR_PREFIX;

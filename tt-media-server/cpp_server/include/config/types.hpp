@@ -55,6 +55,7 @@ enum class ModelType {
   GLM_5_1,
   GLM_5_2,
   DEEPSEEK_V4_PRO,
+  GEMMA_4_31B_IT,
 };
 
 enum class LLMMode {
@@ -109,6 +110,7 @@ enum class Model {
   GLM_5_1,
   GLM_5_2,
   DEEPSEEK_V4_PRO,
+  GEMMA_4_31B_IT,
 };
 
 struct ModelMapping {
@@ -127,6 +129,7 @@ static constexpr ModelMapping MODEL_MAPPINGS[] = {
     {Model::GLM_5_1, "zai-org/GLM-5.1"},
     {Model::GLM_5_2, "zai-org/GLM-5.2"},
     {Model::DEEPSEEK_V4_PRO, "deepseek-ai/DeepSeek-V4-Pro"},
+    {Model::GEMMA_4_31B_IT, "google/gemma-4-31B-it"},
 };
 
 inline std::string toString(Model m) {
