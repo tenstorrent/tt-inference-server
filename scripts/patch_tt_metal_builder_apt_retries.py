@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+
 """Add bounded APT acquisition retries to an exact TT-Metal Dockerfile.
 
 This changes only the ephemeral builder image's package-manager policy. It
