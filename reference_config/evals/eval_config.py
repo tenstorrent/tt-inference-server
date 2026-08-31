@@ -1619,6 +1619,76 @@ _eval_config_list = [
         ],
     ),
     EvalConfig(
+        # Qwen3.8-27B reuses the Qwen3.6-27B architecture byte-for-byte (same
+        # model_type qwen3_5), so it serves through the qwen36_blackhole impl
+        # and takes the same eval setup as Qwen3.6-27B above. This entry is
+        # what puts the model into EVAL_CONFIGS; without it the release
+        # workflow fails fast in validate_setup (evals are required).
+        hf_model_repo="Qwen/Qwen3.8-27B",
+        tasks=[
+            EvalTask(
+                task_name="terminal_bench_2",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                # Scores are left unset for this first bring-up: Qwen3.8-27B has
+                # no published terminal_bench_2 number we can cite and no TT
+                # measurement of its own yet, so the task runs and reports its
+                # score but the accuracy check reports NA rather than grading
+                # against another model's bar. For reference, Qwen3.6-27B sits
+                # at 59.3 published / 53.9 GPU, which is the expected ballpark
+                # given architecture parity. Fill both in once a 3.8 run lands.
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2",
+                    agent="terminus-2",
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=89,
+                    override_cpus=16,
+                    override_memory_mb=48 * 1024,
+                    agent_timeout_sec=3 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            "max_input_tokens": 256 * 1024,
+                            "max_output_tokens": 80 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 80 * 1024,
+                            "timeout": 60 * 60,
+                            "extra_body": {
+                                "top_k": 20,
+                            },
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/break-filter-js-from-html",
+                            "terminal-bench/cobol-modernization",
+                            "terminal-bench/compile-compcert",
+                            "terminal-bench/feal-differential-cryptanalysis",
+                            "terminal-bench/qemu-startup",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+        ],
+    ),
+    EvalConfig(
         hf_model_repo="arcee-ai/AFM-4.5B",
         tasks=[
             EvalTask(
