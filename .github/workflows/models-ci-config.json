@@ -799,6 +799,11 @@
                         "N300",
                         "GALAXY"
                     ]
+                },
+                "release": {
+                    "devices": [
+                        "N150"
+                    ]
                 }
             }
         }
