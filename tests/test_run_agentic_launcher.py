@@ -25,9 +25,7 @@ def _load_launcher(monkeypatch):
     return module
 
 
-def test_direct_agentic_launcher_bootstraps_uv_before_venv_setup(
-    monkeypatch, tmp_path
-):
+def test_direct_agentic_launcher_bootstraps_uv_before_venv_setup(monkeypatch, tmp_path):
     """A cold external-plan launch must not assume run.py already bootstrapped uv."""
     launcher = _load_launcher(monkeypatch)
     bootstrap_uv = tmp_path / ".workflow_venvs/.venv_bootstrap_uv/bin/uv"
