@@ -1,6 +1,6 @@
 {
   "schema_version": "0.1.0",
-  "release_version": "0.20.0",
+  "release_version": "0.21.0",
   "model_specs": {
     "openai/gpt-oss-20b": {
       "T3K": {
@@ -1776,7 +1776,12 @@
                 "max-log-len": "32",
                 "seed": "9472",
                 "additional_config": "{\"tt\": {\"dispatch_core_axis\": \"col\", \"sample_on_device_mode\": \"all\", \"fabric_config\": \"FABRIC_1D_RING\", \"worker_l1_size\": 1344544, \"trace_region_size\": 184915840}}",
-                "data_parallel_size": 4
+                "data_parallel_size": 4,
+                "structured-outputs-config": "{\"backend\": \"xgrammar\", \"disable_any_whitespace\": true}",
+                "enable_auto_tool_choice": true,
+                "reasoning_parser": "qwen3",
+                "tool_call_parser": "hermes",
+                "default_chat_template_kwargs": "{\"enable_thinking\": false}"
               },
               "override_tt_config": {
                 "dispatch_core_axis": "col",
@@ -1815,18 +1820,18 @@
               "ARCH_NAME": "wormhole_b0",
               "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1
             },
-            "tt_metal_commit": "bac8b34",
-            "vllm_commit": "7c6685a",
+            "tt_metal_commit": "bc4c4df",
+            "vllm_commit": "be7d805",
             "hf_weights_repo": "Qwen/Qwen3-32B",
             "param_count": 32,
             "min_disk_gb": 84,
             "min_ram_gb": 80.0,
             "model_type": "LLM",
             "repacked": 0,
-            "version": "0.11.1",
-            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.11.1-bac8b34-7c6685a",
+            "version": "0.21.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.21.0-bc4c4df-be7d805",
             "status": "COMPLETE",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/bac8b34/models/demos/llama3_70b_galaxy",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/bc4c4df/models/demos/llama3_70b_galaxy",
             "override_tt_config": {
               "dispatch_core_axis": "col",
               "sample_on_device_mode": "all",
@@ -12633,6 +12638,133 @@
             "metadata": {
               "reasoning_parser_name": "qwen3",
               "tool_call_parser_name": "qwen3_coder"
+            },
+            "cli_args": {}
+          }
+        }
+      }
+    },
+    "google/diffusiongemma-26B-A4B-it": {
+      "P300X2": {
+        "vLLM": {
+          "diffusion_gemma": {
+            "model_id": "id_diffusion-gemma_diffusiongemma-26B-A4B-it_p300x2",
+            "impl": {
+              "impl_id": "diffusion_gemma",
+              "impl_name": "diffusion-gemma",
+              "repo_url": "https://github.com/tenstorrent/tt-metal",
+              "code_path": "models/experimental/diffusion_gemma"
+            },
+            "hf_model_repo": "google/diffusiongemma-26B-A4B-it",
+            "model_name": "diffusiongemma-26B-A4B-it",
+            "inference_engine": "vLLM",
+            "device_type": "P300X2",
+            "device_model_spec": {
+              "device": "P300X2",
+              "max_concurrency": 1,
+              "max_context": 262144,
+              "max_tokens_all_users_override": null,
+              "perf_targets_map": {},
+              "default_impl": true,
+              "perf_reference": [],
+              "vllm_args": {
+                "model": "google/diffusiongemma-26B-A4B-it",
+                "block_size": "64",
+                "max_model_len": "262144",
+                "max_num_seqs": "1",
+                "max_num_batched_tokens": "262144",
+                "max-log-len": "32",
+                "seed": "9472",
+                "additional_config": "{\"tt\": {\"sample_on_device_mode\": \"all\", \"enable_model_warmup\": true, \"trace_mode\": \"all\", \"trace_region_size\": 3758096384}}",
+                "generation-config": "vllm",
+                "default-chat-template-kwargs": "{\"enable_thinking\": true}",
+                "no-enable-prefix-caching": true,
+                "no-enable-chunked-prefill": true,
+                "no-async-scheduling": true
+              },
+              "override_tt_config": {
+                "sample_on_device_mode": "all",
+                "enable_model_warmup": true,
+                "trace_mode": "all",
+                "trace_region_size": 3758096384
+              },
+              "env_vars": {
+                "MESH_DEVICE": "P150x4",
+                "ARCH_NAME": "blackhole",
+                "VLLM_RPC_TIMEOUT": "1800000",
+                "VLLM_ENABLE_V1_MULTIPROCESSING": "0",
+                "DISABLE_METAL_OP_TIMEOUT": "1",
+                "DG_VLLM_GUMBEL_MODE": "device",
+                "DG_UPFRONT_CAPTURE": "1",
+                "DG_MODEL_OWNED_HYBRID_KV": "1",
+                "DG_UPFRONT_COARSE_PREFILL_BUCKETS": "1",
+                "DG_UPFRONT_LAZY_PREFILL_RECAPTURE": "1",
+                "DG_PREFILL_FIXED_CHUNKS": "1",
+                "DG_PREFILL_CHUNK_SIZE": "4096",
+                "DG_PREFILL_RAGGED_CHUNK": "1024",
+                "DG_DENOISE_REVEAL_PMAX": "262144",
+                "DG_DENOISE_SLIDING_WINDOW": "1",
+                "DG_UPFRONT_PREFILL_WARMUP_LENS": "32,64,96",
+                "DG_TRACE_REGION_SIZE": "3758096384"
+              },
+              "tensor_cache_timeout": 3600.0,
+              "system_requirements": null,
+              "known_issues": [],
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
+            },
+            "system_requirements": null,
+            "env_vars": {
+              "VLLM_CONFIGURE_LOGGING": "1",
+              "VLLM_RPC_TIMEOUT": "1800000",
+              "VLLM_TARGET_DEVICE": "tt",
+              "TORCHDYNAMO_DISABLE": "1",
+              "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+              "MESH_DEVICE": "P150x4",
+              "ARCH_NAME": "blackhole",
+              "VLLM_ENABLE_V1_MULTIPROCESSING": "0",
+              "DISABLE_METAL_OP_TIMEOUT": "1",
+              "DG_VLLM_GUMBEL_MODE": "device",
+              "DG_UPFRONT_CAPTURE": "1",
+              "DG_MODEL_OWNED_HYBRID_KV": "1",
+              "DG_UPFRONT_COARSE_PREFILL_BUCKETS": "1",
+              "DG_UPFRONT_LAZY_PREFILL_RECAPTURE": "1",
+              "DG_PREFILL_FIXED_CHUNKS": "1",
+              "DG_PREFILL_CHUNK_SIZE": "4096",
+              "DG_PREFILL_RAGGED_CHUNK": "1024",
+              "DG_DENOISE_REVEAL_PMAX": "262144",
+              "DG_DENOISE_SLIDING_WINDOW": "1",
+              "DG_UPFRONT_PREFILL_WARMUP_LENS": "32,64,96",
+              "DG_TRACE_REGION_SIZE": "3758096384"
+            },
+            "tt_metal_commit": "bc4c4df",
+            "vllm_commit": "be7d805",
+            "hf_weights_repo": "google/diffusiongemma-26B-A4B-it",
+            "param_count": 4,
+            "min_disk_gb": 28,
+            "min_ram_gb": 10.0,
+            "model_type": "LLM",
+            "repacked": 0,
+            "version": "0.21.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.21.0-bc4c4df-be7d805",
+            "status": "EXPERIMENTAL",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/bc4c4df/models/experimental/diffusion_gemma",
+            "override_tt_config": {
+              "sample_on_device_mode": "all",
+              "enable_model_warmup": true,
+              "trace_mode": "all",
+              "trace_region_size": 3758096384
+            },
+            "supported_modalities": [
+              "text"
+            ],
+            "subdevice_type": null,
+            "uses_tensor_model_cache": true,
+            "has_builtin_warmup": true,
+            "metadata": {
+              "tokenizer_trust_remote_code": true,
+              "output_block_size": 256,
+              "max_effective_input_tokens": 261888
             },
             "cli_args": {}
           }
