@@ -443,3 +443,17 @@ def test_official_builder_does_not_bypass_runner_network_isolation() -> None:
         line for line in builder.splitlines() if not line.lstrip().startswith("#")
     ]
     assert not any("network=host" in line for line in executable_lines)
+
+
+def test_official_builder_retries_with_a_fresh_tt_metal_checkout() -> None:
+    builder = (ROOT / "scripts" / "build_single_docker.sh").read_text()
+    assert 'TT_METAL_BUILD_DIR=""' in builder
+    assert (
+        'TT_METAL_BUILD_DIR=$(mktemp -d '
+        '"${repo_root}/temp_docker_build_dir.XXXXXX")' in builder
+    )
+    cleanup = builder.index('if [[ -n "$TT_METAL_BUILD_DIR" ]]')
+    clone = builder.index("git clone --depth 1 https://github.com/tenstorrent/tt-metal.git")
+    assert cleanup < clone
+    assert 'rm -rf -- "$TT_METAL_BUILD_DIR"' in builder[cleanup:clone]
+    assert 'tt_metal_build_dir="temp_docker_build_dir_' not in builder

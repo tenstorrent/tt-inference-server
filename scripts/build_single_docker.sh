@@ -233,8 +233,12 @@ fi
 cd "$repo_root"
 
 QUETZAL_BUILD_CONTEXT=$(mktemp -d)
+TT_METAL_BUILD_DIR=""
 cleanup_quetzal_context() {
     rm -rf -- "$QUETZAL_BUILD_CONTEXT"
+    if [[ -n "$TT_METAL_BUILD_DIR" ]]; then
+        rm -rf -- "$TT_METAL_BUILD_DIR"
+    fi
 }
 trap cleanup_quetzal_context EXIT
 if [[ -n "$TT_QUETZAL_COMMIT_SHA" ]]; then
@@ -295,9 +299,11 @@ if [ "$build" = true ]; then
         echo "Resolved commit: ${RESOLVED_TT_METAL_COMMIT}"
 
         # build tt-metal base-image
-        tt_metal_build_dir="temp_docker_build_dir_${TT_METAL_COMMIT_SHA_OR_TAG}"
-        mkdir -p "${tt_metal_build_dir}"
-        cd "${tt_metal_build_dir}"
+        # A failed BuildKit invocation must not poison the workflow-level retry
+        # with an existing clone.  Use a fresh bounded directory and let the
+        # EXIT trap remove it on every failure path.
+        TT_METAL_BUILD_DIR=$(mktemp -d "${repo_root}/temp_docker_build_dir.XXXXXX")
+        cd "${TT_METAL_BUILD_DIR}"
         git clone --depth 1 https://github.com/tenstorrent/tt-metal.git
         cd tt-metal
         if git fetch --depth 1 origin tag "${RESOLVED_TT_METAL_COMMIT}" 2>/dev/null; then
@@ -311,7 +317,8 @@ if [ "$build" = true ]; then
             if ! git fetch origin 2>/dev/null; then
                 echo "⛔ Error: Could not fetch ${TT_METAL_COMMIT_SHA_OR_TAG} (resolved: ${RESOLVED_TT_METAL_COMMIT}) from tt-metal."
                 cd "$repo_root"
-                rm -rf "${tt_metal_build_dir}"
+                rm -rf -- "${TT_METAL_BUILD_DIR}"
+                TT_METAL_BUILD_DIR=""
                 exit 1
             fi
             echo "Fetched full repository history."
@@ -358,7 +365,8 @@ if [ "$build" = true ]; then
             --load \
             ci-build
         cd "$repo_root"
-        rm -rf "${tt_metal_build_dir}"
+        rm -rf -- "${TT_METAL_BUILD_DIR}"
+        TT_METAL_BUILD_DIR=""
     fi
     
     # build dev image
