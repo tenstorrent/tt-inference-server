@@ -134,8 +134,11 @@ def _absolute(value: Any, field: str) -> str:
 
 def _immutable_host_root(value: Any, field: str) -> str:
     root = _absolute(value, field)
-    if not root.startswith("/mnt/models/quetzal/immutable/"):
-        raise EnrollmentError(f"{field} must be under /mnt/models/quetzal/immutable/")
+    if not root.startswith("/mnt/models/huggingface/quetzal/nkapre/packages/"):
+        raise EnrollmentError(
+            f"{field} must be under "
+            "/mnt/models/huggingface/quetzal/nkapre/packages/"
+        )
     return root
 
 

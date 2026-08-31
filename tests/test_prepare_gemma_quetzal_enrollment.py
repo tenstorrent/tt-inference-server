@@ -128,7 +128,9 @@ def evidence(*, ttis_revision=None, shield_revision=SHIELD_REVISION):
         },
         "package_id": PACKAGE_ID,
         "package_manifest_sha256": "3" * 64,
-        "host_package_root": f"/mnt/models/quetzal/immutable/v1/{PACKAGE_ID}",
+        "host_package_root": (
+            f"/mnt/models/huggingface/quetzal/nkapre/packages/{PACKAGE_ID}"
+        ),
         "container_package_root": f"/home/container_app_user/quetzal/packages/{PACKAGE_ID}",
         "profile": {
             "batch_size": 1,

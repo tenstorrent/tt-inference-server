@@ -35,7 +35,7 @@ SERVE_PROFILE_SHA256 = (
     "d7f29d2ef00518c8ed7c726857a58f6f19fe64b4ea30e7244625fd940364b76e"
 )
 RUNTIME_ATTESTATION_HOST_PATH = (
-    "/mnt/models/quetzal/immutable/v1/runtime-attestations/"
+    "/mnt/models/huggingface/quetzal/nkapre/packages/runtime-attestations/"
     f"{RUNTIME_ATTESTATION_SHA256}.json"
 )
 TT_METAL_COMMIT = "b534549300fe2af11e6ee828675294bc0e359555"
@@ -180,7 +180,7 @@ def _immutable_host_root(data: dict[str, Any], path: str) -> str:
     pure = PurePosixPath(value)
     if not pure.is_absolute() or ".." in pure.parts:
         raise ContractError(f"{path}: expected a contained absolute path")
-    if not value.startswith("/mnt/models/quetzal/immutable/"):
+    if not value.startswith("/mnt/models/huggingface/quetzal/nkapre/packages/"):
         raise ContractError(
             f"{path}: path is outside an administered immutable namespace"
         )

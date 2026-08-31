@@ -353,7 +353,7 @@ artifacts are pinned independently:
   non-symlink `qualification_manifest.yaml`. Startup validates the manifest's
   model/revision/provider/mesh identity and fails closed before importing vLLM.
   The current Qwen catalogue points at the requested immutable successor path
-  `/mnt/models/quetzal/immutable/v1/packages/sha256-f1d6cebaf6cd432c78721ec3b81101ab86493f387b37f63bc11aca2fc6f6d8d8-0a8efa103ee378c7cd0e2fa25b0426cbb82752e270f8927bdf44eb2cfe68ce66`
+  `/mnt/models/huggingface/quetzal/nkapre/packages/sha256-f1d6cebaf6cd432c78721ec3b81101ab86493f387b37f63bc11aca2fc6f6d8d8-0a8efa103ee378c7cd0e2fa25b0426cbb82752e270f8927bdf44eb2cfe68ce66`
   and candidate-v2 root-manifest digest `c4c72b0774c9...`. The path
   intentionally remains fail-closed until the storage administrator publishes
   and attests that exact generation. This supersedes `06c5fb2c...` without

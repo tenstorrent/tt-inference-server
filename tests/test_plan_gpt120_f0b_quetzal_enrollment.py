@@ -42,8 +42,8 @@ from workflows import quetzal_topology_admission
 
 def publication_response():
     generation = "tt-ci-models-private-generation-314159"
-    core_host = "/mnt/models/quetzal/immutable/v1/gpt120-f0b-core"
-    aux_host = "/mnt/models/quetzal/immutable/v1/gpt120-f0b-aux"
+    core_host = "/mnt/models/huggingface/quetzal/nkapre/packages/gpt120-f0b-core"
+    aux_host = "/mnt/models/huggingface/quetzal/nkapre/packages/gpt120-f0b-aux"
     package_id = "sha256-v2-" + "a" * 64
     core_container = f"{CONTAINER_PACKAGE_PARENT}/{package_id}"
     aux_container = (
@@ -73,7 +73,10 @@ def publication_response():
             "package_id": package_id,
             "bundle_manifest_sha256": "b" * 64,
             "immutable_generation_id": generation,
-            "attestation_path": "/mnt/models/quetzal/immutable/v1/attestations/gpt120-f0b.json",
+            "attestation_path": (
+                "/mnt/models/huggingface/quetzal/nkapre/packages/"
+                "runtime-attestations/gpt120-f0b.json"
+            ),
             "attestation_sha256": "c" * 64,
             "administrator_owned": True,
             "read_only": True,
@@ -213,8 +216,14 @@ def test_exact_response_renders_catalogue_ci_and_ring2_contract():
     for schedule in ci["ci"].values():
         assert schedule["devices"] == ["P300X2"]
         args = schedule["device-args"]["P300X2"]["additional-args"]
-        assert "--quetzal-models-root /mnt/models/quetzal/immutable/" in args
-        assert "--quetzal-runtime-attestation /mnt/models/quetzal/immutable/" in args
+        assert (
+            "--quetzal-models-root "
+            "/mnt/models/huggingface/quetzal/nkapre/packages/" in args
+        )
+        assert (
+            "--quetzal-runtime-attestation "
+            "/mnt/models/huggingface/quetzal/nkapre/packages/" in args
+        )
         assert "--quetzal-auxiliary-root openai_gpt-oss-120b-streamed-cache=" in args
 
     shield = rendered["shield_required_contract"]
