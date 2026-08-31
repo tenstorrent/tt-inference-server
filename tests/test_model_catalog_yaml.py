@@ -457,10 +457,7 @@ def test_qwen_quetzal_dev_spec_binds_canonical_package_identity(monkeypatch):
         "sha256": "914cdb2ec37e31938a7ef2ed55801758b81eb9b03d7552b7808f3b1b4d851967",
     }
     assert env["QUETZAL_PACKAGE_ID"] == identity["package_id"]
-    assert (
-        env["QUETZAL_BUNDLE_MANIFEST_SHA256"]
-        == identity["bundle_manifest_sha256"]
-    )
+    assert env["QUETZAL_BUNDLE_MANIFEST_SHA256"] == identity["bundle_manifest_sha256"]
     assert env["QUETZAL_HF_REVISION"] == identity["checkpoint_revision"]
     assert env["QUETZAL_REQUIRED_SOURCE_REVISION"] == source["revision"]
     assert env["QUETZAL_REQUIRED_TT_METAL_PATCHSET_SHA256"] == (
