@@ -21,6 +21,7 @@ from workflows.model_spec import (
     VersionRequirement,
     export_model_specs_json,
     get_model_spec_map,
+    resolve_model_spec,
     spec_templates,
     SystemRequirements,
 )
@@ -634,6 +635,169 @@ class TestModelSpecSystem:
 class TestSystemIntegration:
     """Integration tests for the model spec system."""
 
+    @staticmethod
+    def _impl(impl_id):
+        return ImplSpec(
+            impl_id=impl_id,
+            impl_name=impl_id,
+            repo_url=f"https://github.com/test/{impl_id}",
+            code_path=f"models/{impl_id}",
+        )
+
+    @staticmethod
+    def _template(
+        impl,
+        *,
+        weights=None,
+        device=DeviceTypes.N150,
+        engine=InferenceEngine.VLLM.value,
+        default_impl=False,
+        model_display_name=None,
+    ):
+        return ProdModelSpecTemplate(
+            impl=impl,
+            version="0.0.0",
+            tt_metal_commit="v1.0.0",
+            vllm_commit="abc123",
+            inference_engine=engine,
+            device_model_specs=[
+                DeviceModelSpec(
+                    device=device,
+                    max_concurrency=16,
+                    max_context=64 * 1024,
+                    default_impl=default_impl,
+                ),
+            ],
+            weights=weights or ["test/model-A"],
+            model_display_name=model_display_name,
+        )
+
+    def test_performance_reference_is_looked_up_per_weight(self, monkeypatch):
+        """Every weight is graded against the targets measured for itself.
+
+        Keying the lookup on the family name applied one member's numbers to all
+        of its siblings, so a model built to be faster or slower than the family
+        head was judged at a bar that had never been measured for it.
+        """
+        lookups = []
+        monkeypatch.setattr(
+            "workflows.model_spec.get_perf_reference_map",
+            lambda model_name, targets: lookups.append(model_name) or {},
+        )
+        template = self._template(
+            self._impl("impl-a"),
+            weights=["org/model-base", "org/model-instruct"],
+            model_display_name="stable-model-family",
+        )
+
+        template.expand_to_specs()
+
+        assert lookups == ["model-base", "model-instruct"]
+
+    def _template_with_device_targets(self, device_targets, template_targets=None):
+        """A two-device template where only the second device overrides its tiers."""
+        impl = self._impl("impl-a")
+        return ProdModelSpecTemplate(
+            impl=impl,
+            version="0.0.0",
+            tt_metal_commit="v1.0.0",
+            vllm_commit="abc123",
+            inference_engine=InferenceEngine.VLLM.value,
+            perf_targets_map=template_targets or {},
+            device_model_specs=[
+                DeviceModelSpec(
+                    device=DeviceTypes.N150, max_concurrency=16, max_context=1024
+                ),
+                DeviceModelSpec(
+                    device=DeviceTypes.N300,
+                    max_concurrency=16,
+                    max_context=1024,
+                    perf_targets_map=device_targets,
+                ),
+            ],
+            weights=["test/model-A"],
+        )
+
+    def test_device_perf_targets_override_the_template_tiers(self, monkeypatch):
+        """A device can be graded at a different fraction of theoretical.
+
+        The theoretical reference is a property of the model and the hardware, so
+        it stays shared; what a device may differ in is how much of it counts as
+        passing. Before this the field existed on `DeviceModelSpec`, was accepted
+        from catalog YAML, and was never read -- the tiers always came from the
+        template.
+        """
+        calls = []
+        monkeypatch.setattr(
+            "workflows.model_spec.get_perf_reference_map",
+            lambda model_name, targets: calls.append(dict(targets)) or {},
+        )
+
+        self._template_with_device_targets({"complete": 0.30}).expand_to_specs()
+
+        template_default = {"functional": 0.10, "complete": 0.50, "target": 1.0}
+        assert calls == [
+            template_default,
+            # tier-by-tier: `complete` loosened, the others inherited
+            {**template_default, "complete": 0.30},
+        ]
+
+    def test_a_device_without_an_override_reuses_the_template_map(self, monkeypatch):
+        """The common case must not pay for the feature: one lookup per weight."""
+        calls = []
+        monkeypatch.setattr(
+            "workflows.model_spec.get_perf_reference_map",
+            lambda model_name, targets: calls.append(dict(targets)) or {},
+        )
+
+        self._template_with_device_targets({}).expand_to_specs()
+
+        assert calls == [{"functional": 0.10, "complete": 0.50, "target": 1.0}]
+
+    def _real_reference_template(self, device_targets):
+        """A template on a weight that actually has reference data, so the tiers
+        are computed from real numbers rather than a monkeypatched map."""
+        return ProdModelSpecTemplate(
+            impl=self._impl("impl-a"),
+            version="0.0.0",
+            tt_metal_commit="v1.0.0",
+            vllm_commit="abc123",
+            inference_engine=InferenceEngine.VLLM.value,
+            device_model_specs=[
+                DeviceModelSpec(
+                    device=DeviceTypes.P300X2,
+                    max_concurrency=16,
+                    max_context=1024,
+                    perf_targets_map=device_targets,
+                ),
+            ],
+            weights=["google/gemma-4-31b-it"],
+        )
+
+    def test_device_override_reaches_the_expanded_targets(self):
+        """End to end against the real reference data, not a monkeypatch.
+
+        `tput` scales with the percentage and `ttft_ms` divides by it, so halving
+        `complete` halves the throughput bar and doubles the latency budget, while
+        the untouched tiers stay put.
+        """
+        base = self._real_reference_template({}).expand_to_specs()[0]
+        halved = self._real_reference_template({"complete": 0.25}).expand_to_specs()[0]
+
+        base_targets = base.device_model_spec.perf_reference[0].targets
+        halved_targets = halved.device_model_spec.perf_reference[0].targets
+
+        assert base_targets["complete"].tput == pytest.approx(37 * 0.50)
+        assert halved_targets["complete"].tput == pytest.approx(37 * 0.25)
+        assert halved_targets["complete"].ttft_ms == pytest.approx(46 / 0.25)
+        # tier-by-tier: `functional` and `target` are inherited unchanged
+        assert halved_targets["functional"].tput == pytest.approx(
+            base_targets["functional"].tput
+        )
+        assert halved_targets["target"].tput == pytest.approx(
+            base_targets["target"].tput
+        )
+
     def test_model_spec_map_generation(self, sample_impl):
         """Test spec map generation from templates."""
         templates = [
@@ -661,6 +825,238 @@ class TestSystemIntegration:
             assert isinstance(spec, ModelSpec)
             assert model_id.startswith("id_")
             assert spec.model_id == model_id
+
+    def test_model_spec_map_rejects_duplicate_leaf_identity(self):
+        template = self._template(self._impl("impl-a"))
+
+        with pytest.raises(ValueError) as exc_info:
+            get_model_spec_map([template, template])
+
+        message = str(exc_info.value)
+        assert "Duplicate model spec leaf identity" in message
+        assert "test/model-A" in message
+        assert DeviceTypes.N150.to_string() in message
+        assert InferenceEngine.VLLM.value in message
+        assert "impl-a" in message
+
+    def test_model_spec_map_rejects_multiple_default_implementations(self):
+        templates = [
+            self._template(self._impl("impl-a"), default_impl=True),
+            self._template(self._impl("impl-b"), default_impl=True),
+        ]
+
+        with pytest.raises(ValueError) as exc_info:
+            get_model_spec_map(templates)
+
+        message = str(exc_info.value)
+        assert "Multiple default implementations" in message
+        assert "test/model-A" in message
+        assert DeviceTypes.N150.to_string() in message
+        assert InferenceEngine.VLLM.value in message
+        assert "impl-a" in message
+        assert "impl-b" in message
+
+    def test_model_spec_map_accepts_one_default_implementation(self):
+        templates = [
+            self._template(self._impl("impl-a"), default_impl=True),
+            self._template(self._impl("impl-b")),
+        ]
+
+        assert len(get_model_spec_map(templates)) == 2
+
+    def test_model_spec_map_accepts_no_default_implementation(self):
+        templates = [
+            self._template(self._impl("impl-a")),
+            self._template(self._impl("impl-b")),
+        ]
+
+        assert len(get_model_spec_map(templates)) == 2
+
+    def test_model_spec_map_accepts_distinct_leaf_groups(self):
+        templates = [
+            self._template(self._impl("impl-a"), default_impl=True),
+            self._template(
+                self._impl("impl-a"),
+                device=DeviceTypes.N300,
+                default_impl=True,
+            ),
+            self._template(
+                self._impl("impl-b"),
+                weights=["test/model-B"],
+                engine=InferenceEngine.MEDIA.value,
+                default_impl=True,
+            ),
+        ]
+
+        assert len(get_model_spec_map(templates)) == 3
+
+    def test_model_spec_map_rejects_distinct_leaves_with_same_model_id(self):
+        impl = self._impl("impl-a")
+        templates = [
+            self._template(impl, weights=["org-one/model-A"]),
+            self._template(impl, weights=["org-two/model-A"]),
+        ]
+
+        with pytest.raises(ValueError) as exc_info:
+            get_model_spec_map(templates)
+
+        message = str(exc_info.value)
+        assert "maps to multiple leaf identities" in message
+        assert "org-one/model-A" in message
+        assert "org-two/model-A" in message
+
+    def test_resolve_model_spec_selects_engine_scoped_default(self):
+        specs = [
+            spec
+            for template in [
+                self._template(self._impl("impl-a")),
+                self._template(self._impl("impl-b"), default_impl=True),
+            ]
+            for spec in template.expand_to_specs()
+        ]
+
+        selected = resolve_model_spec(
+            specs,
+            model="test/model-A",
+            device="n150",
+            engine="vllm",
+            catalog_name="test dev catalog",
+        )
+
+        assert selected.impl.impl_id == "impl-b"
+
+    def test_resolve_model_spec_selects_explicit_non_default_impl(self):
+        specs = [
+            spec
+            for template in [
+                self._template(self._impl("impl-a"), default_impl=True),
+                self._template(self._impl("impl-b")),
+            ]
+            for spec in template.expand_to_specs()
+        ]
+
+        selected = resolve_model_spec(
+            specs,
+            model="model-A",
+            device=DeviceTypes.N150,
+            engine=InferenceEngine.VLLM,
+            impl="impl-b",
+        )
+
+        assert selected.impl.impl_id == "impl-b"
+
+    def test_resolve_model_spec_rejects_engine_scoped_order_fallback(self):
+        specs = [
+            spec
+            for template in [
+                self._template(self._impl("impl-a")),
+                self._template(self._impl("impl-b")),
+            ]
+            for spec in template.expand_to_specs()
+        ]
+
+        with pytest.raises(ValueError, match="No unique default implementation"):
+            resolve_model_spec(
+                specs,
+                model="model-A",
+                device="N150",
+                engine="VLLM",
+            )
+
+    def test_resolve_model_spec_accepts_sole_engine_candidate_without_default(self):
+        [spec] = self._template(self._impl("impl-a")).expand_to_specs()
+
+        assert (
+            resolve_model_spec(
+                [spec],
+                model="model-A",
+                device="N150",
+                engine="VLLM",
+            )
+            is spec
+        )
+
+    def test_resolve_model_spec_preserves_cross_engine_default_precedence(self):
+        [vllm_spec] = self._template(
+            self._impl("impl-a"), default_impl=True
+        ).expand_to_specs()
+        [media_spec] = self._template(
+            self._impl("impl-b"),
+            engine=InferenceEngine.MEDIA.value,
+            default_impl=True,
+        ).expand_to_specs()
+
+        assert (
+            resolve_model_spec(
+                [vllm_spec, media_spec],
+                model="model-A",
+                device="N150",
+            )
+            is vllm_spec
+        )
+
+    def test_resolve_model_spec_rejects_basename_collision(self):
+        specs = [
+            spec
+            for template in [
+                self._template(self._impl("impl-a"), weights=["org-one/model-A"]),
+                self._template(self._impl("impl-b"), weights=["org-two/model-A"]),
+            ]
+            for spec in template.expand_to_specs()
+        ]
+
+        with pytest.raises(ValueError) as exc_info:
+            resolve_model_spec(
+                specs,
+                model="model-A",
+                device="N150",
+                engine="VLLM",
+            )
+
+        message = str(exc_info.value)
+        assert "ambiguous" in message
+        assert "org-one/model-A" in message
+        assert "org-two/model-A" in message
+
+    def test_resolve_model_spec_full_repo_disambiguates_basename_collision(self):
+        specs = [
+            spec
+            for template in [
+                self._template(
+                    self._impl("impl-a"),
+                    weights=["org-one/model-A"],
+                    default_impl=True,
+                ),
+                self._template(
+                    self._impl("impl-b"),
+                    weights=["org-two/model-A"],
+                    default_impl=True,
+                ),
+            ]
+            for spec in template.expand_to_specs()
+        ]
+
+        selected = resolve_model_spec(
+            specs,
+            model="org-two/model-A",
+            device="N150",
+            engine="VLLM",
+        )
+
+        assert selected.hf_model_repo == "org-two/model-A"
+
+    def test_resolve_model_spec_rejects_missing_leaf(self):
+        [spec] = self._template(
+            self._impl("impl-a"), default_impl=True
+        ).expand_to_specs()
+
+        with pytest.raises(ValueError, match="No model spec matches"):
+            resolve_model_spec(
+                [spec],
+                model="model-A",
+                device="N300",
+                engine="VLLM",
+            )
 
     def test_export_model_specs_json_includes_metadata(
         self, sample_impl, sample_device_model_spec, tmp_path
