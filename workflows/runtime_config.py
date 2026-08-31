@@ -125,6 +125,8 @@ class RuntimeConfig:
     # Explicit local-Exabox behavioral admission. This does not weaken the
     # default/CI immutable-package contract and may only be used in dev mode.
     quetzal_behavioral_package_admission: bool = False
+    # Reviewed non-certifying topology profile for local Exabox shadows.
+    quetzal_behavioral_topology: Optional[str] = None
     # Signed/trust-root-pinned runtime compatibility sidecar. This is a
     # separate identity from the generated package and is mounted read-only.
     quetzal_runtime_attestation: Optional[str] = None
@@ -232,6 +234,9 @@ class RuntimeConfig:
             quetzal_models_root=getattr(args, "quetzal_models_root", None),
             quetzal_behavioral_package_admission=getattr(
                 args, "quetzal_behavioral_package_admission", False
+            ),
+            quetzal_behavioral_topology=getattr(
+                args, "quetzal_behavioral_topology", None
             ),
             quetzal_runtime_attestation=getattr(
                 args, "quetzal_runtime_attestation", None
