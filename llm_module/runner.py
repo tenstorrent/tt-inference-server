@@ -60,8 +60,8 @@ class LLMPerformanceRunner:
         server_controller: Optional[ServerController] = None,
         *,
         inter_run_sleep_s: float = 2.0,
-        capture_trace_timeout_s: float = 1200.0,
-        wait_healthy_timeout_s: float = 1200.0,
+        capture_trace_timeout_s: Optional[float] = None,
+        wait_healthy_timeout_s: Optional[float] = None,
     ) -> None:
         self.driver = driver
         self.server_controller = server_controller
