@@ -445,6 +445,38 @@ def test_official_builder_does_not_bypass_runner_network_isolation() -> None:
     assert not any("network=host" in line for line in executable_lines)
 
 
+def test_official_builder_adds_bounded_apt_retries() -> None:
+    builder = (ROOT / "scripts" / "build_single_docker.sh").read_text()
+    checkout = builder.index('git checkout "${RESOLVED_TT_METAL_COMMIT}"')
+    patch = builder.index("patch_tt_metal_builder_apt_retries.py", checkout)
+    bake = builder.index("docker buildx bake", patch)
+    assert checkout < patch < bake
+
+
+def test_tt_metal_builder_apt_retry_patch_is_fail_closed_and_idempotent(
+    tmp_path: Path,
+) -> None:
+    from scripts.patch_tt_metal_builder_apt_retries import MARKER, patch
+
+    dockerfile = tmp_path / "Dockerfile"
+    dockerfile.write_text(
+        'FROM ubuntu:22.04\nENV UV_PYTHON_INSTALL_DIR="/usr/local/share/uv"\n'
+        "RUN apt-get update\n"
+    )
+    assert patch(dockerfile) is True
+    patched = dockerfile.read_text()
+    assert patched.count(MARKER) == 1
+    assert 'Acquire::Retries "10";' in patched
+    assert 'Acquire::http::Timeout "30";' in patched
+    assert patch(dockerfile) is False
+    assert dockerfile.read_text() == patched
+
+    unsupported = tmp_path / "UnsupportedDockerfile"
+    unsupported.write_text("FROM ubuntu:22.04\n")
+    with pytest.raises(ValueError, match="expected exactly one"):
+        patch(unsupported)
+
+
 def test_official_builder_retries_with_a_fresh_tt_metal_checkout() -> None:
     builder = (ROOT / "scripts" / "build_single_docker.sh").read_text()
     assert 'TT_METAL_BUILD_DIR=""' in builder
