@@ -4714,7 +4714,7 @@ _eval_config_list = [
                     # short enough that the stall watchdog fires within an hour.
                     # Grace windows are tight because startup here is a warm
                     # image pull, not a cold build.
-                    mini_container_timeout_sec=30 * 60,
+                    mini_container_timeout_sec=2 * 60 * 60,
                     startup_grace_sec=60,
                     stall_grace_sec=60,
                     progress_log_interval_sec=60,
