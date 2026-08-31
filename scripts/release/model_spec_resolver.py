@@ -67,18 +67,18 @@ def iter_implementations(model_entry: dict) -> Iterable[dict]:
     implementations = model_entry.get("implementations")
     if implementations is None:
         yield model_entry
-    else:
-        if not isinstance(implementations, list) or not implementations:
+        return
+    if not isinstance(implementations, list) or not implementations:
+        raise ValueError(
+            f"Model implementations must be a non-empty list, got "
+            f"{implementations!r}"
+        )
+    for implementation in implementations:
+        if not isinstance(implementation, dict):
             raise ValueError(
-                f"Model implementations must be a non-empty list, got "
-                f"{implementations!r}"
+                f"Model implementation must be an object, got {implementation!r}"
             )
-        for implementation in implementations:
-            if not isinstance(implementation, dict):
-                raise ValueError(
-                    f"Model implementation must be an object, got {implementation!r}"
-                )
-            yield implementation
+        yield implementation
 
 
 def _release_device(raw_device: str) -> DeviceTypes:
