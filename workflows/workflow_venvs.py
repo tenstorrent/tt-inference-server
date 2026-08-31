@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Optional, Tuple
@@ -180,14 +181,34 @@ def setup_evals_agentic(
         return False
 
     harbor_dir = venv_config.venv_path / "harbor"
-    harbor_tag = "v0.6.5"
+    harbor_repo = "https://github.com/ipastalTT/harbor.git"
+    harbor_commit = "9e593134e070d8f13d6fa775405779b677ee9c6f"
     if not harbor_dir.exists():
+        harbor_dir_arg = shlex.quote(str(harbor_dir))
         clone_return_code = run_command(
-            "git clone --depth 1 --branch "
-            f"{harbor_tag} https://github.com/harbor-framework/harbor.git {harbor_dir}",
+            f"git clone --filter=blob:none --no-checkout "
+            f"{shlex.quote(harbor_repo)} {harbor_dir_arg}",
             logger=logger,
         )
         if clone_return_code != 0:
+            return False
+
+    checkout_commands = (
+        ["git", "-C", str(harbor_dir), "remote", "set-url", "origin", harbor_repo],
+        [
+            "git",
+            "-C",
+            str(harbor_dir),
+            "fetch",
+            "--depth",
+            "1",
+            "origin",
+            harbor_commit,
+        ],
+        ["git", "-C", str(harbor_dir), "checkout", "--detach", "FETCH_HEAD"],
+    )
+    for checkout_command in checkout_commands:
+        if run_command(checkout_command, logger=logger) != 0:
             return False
 
     return_code = run_command(
