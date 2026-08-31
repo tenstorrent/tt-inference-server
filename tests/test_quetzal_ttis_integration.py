@@ -10,7 +10,10 @@ from pathlib import PurePosixPath
 import pytest
 
 from workflows.model_spec import get_runtime_model_spec, load_templates_from_yaml
-from workflows.run_docker_server import generate_docker_run_command
+from workflows.run_docker_server import (
+    _vllm_override_cli_args,
+    generate_docker_run_command,
+)
 from workflows.runtime_config import RuntimeConfig
 from workflows.utils import get_repo_root_path
 
@@ -62,6 +65,18 @@ def test_dev_quetzal_specs_are_nondefault_and_revision_pinned(model):
     native, native_impl, _ = get_runtime_model_spec(model=model, device="p300x2")
     assert native_impl != "quetzal"
     assert native.device_model_spec.default_impl is True
+
+
+def test_gpt_quetzal_forwards_required_agentic_parsers():
+    spec = _dev_quetzal_spec("gpt-oss-120b")
+    args = spec.device_model_spec.vllm_args
+    assert args["enable-auto-tool-choice"] is True
+    assert args["tool-call-parser"] == "openai"
+    assert args["reasoning-parser"] == "openai_gptoss"
+    rendered = _vllm_override_cli_args(json.dumps(args))
+    assert "--enable-auto-tool-choice" in rendered
+    assert rendered[rendered.index("--tool-call-parser") + 1] == "openai"
+    assert rendered[rendered.index("--reasoning-parser") + 1] == "openai_gptoss"
 
 
 def test_docker_command_mounts_quetzal_root_readonly_and_forwards_impl(tmp_path):

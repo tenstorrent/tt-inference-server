@@ -231,6 +231,12 @@ templates:
         max_num_seqs: 1
         revision: b5c939de8f754692c1647ca79fbf85e8c1e70f8a
         tokenizer_revision: b5c939de8f754692c1647ca79fbf85e8c1e70f8a
+        # Metadata parser names are catalogue/UI data; TTIS does not derive
+        # vLLM CLI flags from them. mini-swe-agent sends tool_choice="auto",
+        # which vLLM rejects unless these flags are explicit.
+        enable-auto-tool-choice: true
+        tool-call-parser: openai
+        reasoning-parser: openai_gptoss
       override_tt_config:
         fabric_config: FABRIC_1D
         l1_small_size: 16384

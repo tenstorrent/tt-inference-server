@@ -165,6 +165,9 @@ def test_exact_response_renders_catalogue_ci_and_ring2_contract():
     assert device["max_context"] == 8192
     assert device["max_concurrency"] == 1
     assert device["default_impl"] is False
+    assert device["vllm_args"]["enable-auto-tool-choice"] is True
+    assert device["vllm_args"]["tool-call-parser"] == "openai"
+    assert device["vllm_args"]["reasoning-parser"] == "openai_gptoss"
     env = device["env_vars"]
     assert env["QUETZAL_REQUIRED_SOURCE_REVISION"] == QUETZAL_COMMIT
     assert env["QUETZAL_GENERATOR_SOURCE_REVISION"] == COMPILER_COMMIT

@@ -35,9 +35,11 @@ from llm_module.drivers.agentic import (  # noqa: E402
 )
 from reference_config.evals.eval_config import EVAL_CONFIGS  # noqa: E402
 from workflows.model_spec import (  # noqa: E402
+    get_model_spec_map,
     get_model_id,
-    get_runtime_model_spec,
+    load_templates_from_yaml,
     quetzal_impl,
+    resolve_model_spec,
 )
 from workflows.runtime_config import RuntimeConfig  # noqa: E402
 from workflows.workflow_types import WorkflowVenvType  # noqa: E402
@@ -55,6 +57,38 @@ _QUETZAL_TARGET_MESH_BY_DEVICE = {
     # generated artifact to the endpoint's reported target_mesh.
     "p300x2": "p150x4",
 }
+_QUETZAL_REDUCED_ARTIFACT_POLICIES = {
+    "openai/gpt-oss-120b": {
+        "artifact_equivalence": "reduced",
+        "lossy_transformations": [
+            {
+                "kind": "weight_quantization",
+                "weight_class": "experts",
+                "dtype": "bfp4_b",
+            }
+        ],
+    }
+}
+
+
+def _resolve_quetzal_dev_spec(model: str, device: str):
+    """Resolve the explicit generated row from the dev catalogue.
+
+    Generated candidates are intentionally absent from prod until certified;
+    resolving the process-global prod catalogue would either fail or select a
+    native row and silently corrupt the launch contract.
+    """
+    templates = load_templates_from_yaml(
+        _REPO_ROOT / "workflows" / "model_specs" / "dev" / "llm.yaml"
+    )
+    specs = get_model_spec_map(templates)
+    return resolve_model_spec(
+        specs.values(),
+        model=model,
+        device=device,
+        impl="quetzal",
+        catalog_name="explicit dev generated-Quetzal catalogue",
+    )
 
 
 def _require_sha256(value: object, field: str) -> str:
@@ -117,10 +151,16 @@ def _validate_capability_receipt(receipt: dict, expected_model: str) -> None:
         "decode_emit_hash",
     ):
         _require_sha256(identity.get(field), f"artifact_identity.{field}")
-    if identity.get("artifact_equivalence") != "exact":
-        raise ContractError("artifact_identity.artifact_equivalence must be 'exact'")
-    if identity.get("lossy_transformations") != []:
-        raise ContractError("artifact_identity.lossy_transformations must be empty")
+    expected_artifact_policy = _QUETZAL_REDUCED_ARTIFACT_POLICIES.get(
+        expected_model,
+        {"artifact_equivalence": "exact", "lossy_transformations": []},
+    )
+    for field, expected in expected_artifact_policy.items():
+        if identity.get(field) != expected:
+            raise ContractError(
+                f"artifact_identity.{field} must exactly match the admitted "
+                f"policy for {expected_model!r}: {expected!r}"
+            )
     if not isinstance(identity.get("target_mesh"), str) or not identity["target_mesh"]:
         raise ContractError("artifact_identity.target_mesh must be non-empty")
     if identity.get("batch_size") != 1:
@@ -360,7 +400,16 @@ def build_contract(
     server_url: str,
     service_port: int,
 ) -> tuple[AgenticLaunchContract, object]:
-    catalog_spec, _, _ = get_runtime_model_spec(model=model, device=device)
+    catalog_spec = _resolve_quetzal_dev_spec(model, device)
+    if (
+        catalog_spec.impl.impl_name != "quetzal"
+        or catalog_spec.impl.impl_id != "quetzal"
+    ):
+        raise ContractError(
+            "external generated endpoint must resolve the explicit Quetzal "
+            f"catalogue row, got impl_name={catalog_spec.impl.impl_name!r} "
+            f"impl_id={catalog_spec.impl.impl_id!r}"
+        )
     _validate_capability_receipt(capability_receipt, catalog_spec.hf_model_repo)
     expected_mesh = _QUETZAL_TARGET_MESH_BY_DEVICE.get(device.lower())
     if expected_mesh is None:

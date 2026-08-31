@@ -25,17 +25,24 @@ _DIGESTS = {
     "prefill_emit_hash": "4" * 64,
     "decode_emit_hash": "5" * 64,
 }
+_GPT_REDUCTION = [
+    {
+        "kind": "weight_quantization",
+        "weight_class": "experts",
+        "dtype": "bfp4_b",
+    }
+]
 
 
 def _receipt(**capability_overrides):
     capabilities = {
         "schema": "ttq.serving_capabilities/v1",
-        "max_context_tokens": 128 * 1024,
+        "max_context_tokens": 8 * 1024,
         "max_concurrency": 1,
         "batch_size": 1,
         "chunked_prefill": True,
         "chunk_size": 1024,
-        "kv_blocks": 128,
+        "kv_blocks": 8,
     }
     capabilities.update(capability_overrides)
     return {
@@ -50,8 +57,8 @@ def _receipt(**capability_overrides):
             "serving_backend": "generated_quetzal",
             "target_mesh": "p150x4",
             "batch_size": 1,
-            "artifact_equivalence": "exact",
-            "lossy_transformations": [],
+            "artifact_equivalence": "reduced",
+            "lossy_transformations": deepcopy(_GPT_REDUCTION),
             **_DIGESTS,
         },
         "capabilities": capabilities,
@@ -130,7 +137,7 @@ def test_gpt120_plan_pins_exact_swe_shape_and_writes_quetzal_argv(tmp_path):
     assert contract.max_input_tokens == 5 * 1024
     assert contract.max_output_tokens == 2 * 1024
     assert contract.required_context_tokens == 8 * 1024
-    assert contract.catalog_max_context_tokens == 128 * 1024
+    assert contract.catalog_max_context_tokens == 8 * 1024
     assert contract.implementation == "quetzal"
     assert contract.serving_backend == "generated_quetzal"
     assert len(contract.instance_ids) == 5
@@ -201,17 +208,17 @@ def test_plan_rejects_non_quetzal_or_wrong_receipt(field, value, match):
     [
         ("target_mesh", "1chip", "target_mesh"),
         ("batch_size", 2, "batch_size"),
-        ("artifact_equivalence", "reduced", "artifact_equivalence"),
+        ("artifact_equivalence", "exact", "artifact_equivalence"),
         (
             "lossy_transformations",
-            [{"kind": "weight_quantization"}],
+            [],
             "lossy_transformations",
         ),
         ("prefill_emit_hash", None, "prefill_emit_hash"),
         ("decode_emit_hash", None, "decode_emit_hash"),
     ],
 )
-def test_plan_rejects_wrong_topology_or_reduced_artifact(field, value, match):
+def test_plan_rejects_wrong_topology_or_unattested_artifact_policy(field, value, match):
     receipt = _receipt()
     receipt["artifact_identity"][field] = value
     with pytest.raises(ContractError, match=match):

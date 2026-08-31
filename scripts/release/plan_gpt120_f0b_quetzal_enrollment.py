@@ -431,6 +431,9 @@ def render_contract(data: dict[str, Any]) -> dict[str, Any]:
                         "max_num_seqs": 1,
                         "revision": CHECKPOINT,
                         "tokenizer_revision": CHECKPOINT,
+                        "enable-auto-tool-choice": True,
+                        "tool-call-parser": "openai",
+                        "reasoning-parser": "openai_gptoss",
                     },
                     "override_tt_config": {
                         "fabric_config": "FABRIC_1D",

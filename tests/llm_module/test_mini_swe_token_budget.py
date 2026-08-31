@@ -121,6 +121,7 @@ def _mini_config(tmp_path, **overrides):
         "max_input_tokens": 92 * 1024,
         "max_output_tokens": 32 * 1024,
         "completion_kwargs": {},
+        "mini_agent_kwargs": {},
         "agent_generation_timeout_sec": 3600,
         "instance_ids": ["case-a", "case-b"],
         "n_tasks": None,
@@ -151,6 +152,19 @@ def test_generated_mini_config_selects_authoritative_wrapper(tmp_path):
     assert generated["environment"] == {
         "run_args": ["--rm", "--label", _agentic_container_label(config)]
     }
+
+
+def test_generated_mini_config_applies_positive_step_limit(tmp_path):
+    config = _mini_config(tmp_path, mini_agent_kwargs={"step_limit": 8})
+    generated = json.loads(_write_mini_sweagent_model_config(config).read_text())
+    assert generated["agent"] == {"step_limit": 8}
+
+
+@pytest.mark.parametrize("value", [0, -1, True, "8"])
+def test_generated_mini_config_rejects_invalid_step_limit(tmp_path, value):
+    config = _mini_config(tmp_path, mini_agent_kwargs={"step_limit": value})
+    with pytest.raises(ValueError, match="positive integer"):
+        _write_mini_sweagent_model_config(config)
 
 
 def test_non_litellm_mini_model_cannot_bypass_budget_wrapper(tmp_path):

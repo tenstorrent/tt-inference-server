@@ -63,6 +63,7 @@ class SWEbenchRunConfig:
     random_delay_multiplier: float
     score_existing_predictions: bool
     instance_ids: list[str] = field(default_factory=list)
+    mini_agent_kwargs: dict[str, Any] = field(default_factory=dict)
     # Exact Hugging Face tokenizer used to render/count each mini-swe request.
     # Kept separate from model_name, which includes LiteLLM's provider prefix.
     tokenizer_name: Optional[str] = None
@@ -395,7 +396,7 @@ def _write_mini_sweagent_model_config(config: SWEbenchRunConfig) -> Path:
     if config.completion_kwargs:
         model_kwargs.update(config.completion_kwargs)
 
-    model_config = {
+    model_config: dict[str, Any] = {
         "model": {
             "model_name": config.model_name,
             "model_class": _TOKEN_BUDGET_MODEL_CLASS,
@@ -412,6 +413,17 @@ def _write_mini_sweagent_model_config(config: SWEbenchRunConfig) -> Path:
         model_config["environment"] = {
             "run_args": ["--rm", "--label", _agentic_container_label(config)]
         }
+    if config.mini_agent_kwargs:
+        if not isinstance(config.mini_agent_kwargs, dict):
+            raise ValueError("mini_agent_kwargs must be a dictionary")
+        step_limit = config.mini_agent_kwargs.get("step_limit")
+        if step_limit is not None and (
+            not isinstance(step_limit, int)
+            or isinstance(step_limit, bool)
+            or step_limit <= 0
+        ):
+            raise ValueError("mini_agent_kwargs.step_limit must be a positive integer")
+        model_config["agent"] = dict(config.mini_agent_kwargs)
     config_path = config.output_dir / "mini_sweagent_model_config.yaml"
     config_path.write_text(json.dumps(model_config, indent=2), encoding="utf-8")
     return config_path

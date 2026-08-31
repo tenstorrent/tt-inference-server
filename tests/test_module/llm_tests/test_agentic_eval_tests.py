@@ -93,6 +93,7 @@ class FakeSWEbenchConfig:
     max_input_tokens: int = 200 * 1024
     max_output_tokens: Optional[int] = 32 * 1024
     completion_kwargs: Dict[str, Any] = field(default_factory=dict)
+    mini_agent_kwargs: Dict[str, Any] = field(default_factory=dict)
     sweagent_config: str = "config/default.yaml"
     mini_config: str = "swebench.yaml"
     mini_model_class: str = "litellm"
