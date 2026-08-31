@@ -344,15 +344,25 @@ _QUETZAL_CONTAINER_AUXILIARY_PARENT = "/home/container_app_user/quetzal/auxiliar
 _QUETZAL_CONTAINER_ATTESTATION_PARENT = (
     "/home/container_app_user/quetzal/runtime-attestations"
 )
+_QUETZAL_EXABOX_CANDIDATE_ROOT = Path("/mnt/models/huggingface/quetzal")
+_QUETZAL_CONTENT_ADDRESSED_PACKAGE_RE = re.compile(
+    r"(?:sha256-[0-9a-f]{64}-[0-9a-f]{64}|"
+    r"sha256-v2-[0-9a-f]{64}-[0-9a-f]{64}-[0-9a-f]{64})"
+)
 
 
 def _validate_quetzal_models_root(runtime_config, model_spec) -> Path | None:
     """Resolve the generated-artifact mount and reject ambiguous launches."""
     is_quetzal = model_spec.impl.impl_id == "quetzal"
     configured = getattr(runtime_config, "quetzal_models_root", None)
+    behavioral = bool(
+        getattr(runtime_config, "quetzal_behavioral_package_admission", False)
+    )
     if not is_quetzal:
-        if configured:
-            raise ValueError("--quetzal-models-root is only valid with --impl quetzal")
+        if configured or behavioral:
+            raise ValueError(
+                "Quetzal package options are only valid with --impl quetzal"
+            )
         return None
     if not configured:
         raise ValueError("--impl quetzal requires --quetzal-models-root")
@@ -363,6 +373,38 @@ def _validate_quetzal_models_root(runtime_config, model_spec) -> Path | None:
             f"--quetzal-models-root must be an existing real directory: {supplied}"
         )
     root = supplied.resolve()
+    if behavioral:
+        if not getattr(runtime_config, "docker_server", False):
+            raise ValueError(
+                "--quetzal-behavioral-package-admission requires --docker-server"
+            )
+        if not getattr(runtime_config, "dev_mode", False):
+            raise ValueError(
+                "--quetzal-behavioral-package-admission requires --dev-mode"
+            )
+        if getattr(runtime_config, "ci_mode", False):
+            raise ValueError(
+                "--quetzal-behavioral-package-admission is forbidden in CI mode"
+            )
+        try:
+            relative = root.relative_to(_QUETZAL_EXABOX_CANDIDATE_ROOT)
+        except ValueError as exc:
+            raise ValueError(
+                "behavioral Quetzal package must be under "
+                "/mnt/models/huggingface/quetzal/<owner>/candidates/<package-id>"
+            ) from exc
+        if (
+            len(relative.parts) != 3
+            or relative.parts[1] != "candidates"
+            or not relative.parts[0]
+            or _QUETZAL_CONTENT_ADDRESSED_PACKAGE_RE.fullmatch(relative.parts[2])
+            is None
+        ):
+            raise ValueError(
+                "behavioral Quetzal package must be under "
+                "/mnt/models/huggingface/quetzal/<owner>/candidates/"
+                "<content-addressed-package-id>"
+            )
     qualification = root / "qualification_manifest.yaml"
     if qualification.is_symlink() or not qualification.is_file():
         raise ValueError(
@@ -716,6 +758,8 @@ def generate_docker_run_command(
             docker_env_vars["QZ_QUALIFICATION_MANIFEST"] = (
                 f"{quetzal_container_root}/qualification_manifest.yaml"
             )
+            if getattr(runtime_config, "quetzal_behavioral_package_admission", False):
+                docker_env_vars["TTIS_QUETZAL_BEHAVIORAL_PACKAGE_ADMISSION"] = "1"
             if quetzal_container_auxiliary_roots:
                 docker_env_vars["QUETZAL_AUXILIARY_ROOTS_JSON"] = json.dumps(
                     quetzal_container_auxiliary_roots,

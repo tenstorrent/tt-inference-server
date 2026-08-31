@@ -122,6 +122,9 @@ class RuntimeConfig:
     # Installed, content-addressed generated Quetzal artifact root. Docker only;
     # mounted read-only at a fixed container path for impl=quetzal.
     quetzal_models_root: Optional[str] = None
+    # Explicit local-Exabox behavioral admission. This does not weaken the
+    # default/CI immutable-package contract and may only be used in dev mode.
+    quetzal_behavioral_package_admission: bool = False
     # Signed/trust-root-pinned runtime compatibility sidecar. This is a
     # separate identity from the generated package and is mounted read-only.
     quetzal_runtime_attestation: Optional[str] = None
@@ -227,6 +230,9 @@ class RuntimeConfig:
             host_hf_cache=args.host_hf_cache,
             host_weights_dir=args.host_weights_dir,
             quetzal_models_root=getattr(args, "quetzal_models_root", None),
+            quetzal_behavioral_package_admission=getattr(
+                args, "quetzal_behavioral_package_admission", False
+            ),
             quetzal_runtime_attestation=getattr(
                 args, "quetzal_runtime_attestation", None
             ),

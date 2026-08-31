@@ -9,6 +9,7 @@ from pathlib import PurePosixPath
 
 import pytest
 
+import workflows.run_docker_server as run_docker_server_module
 from workflows.model_spec import get_runtime_model_spec, load_templates_from_yaml
 from workflows.run_docker_server import (
     _validate_quetzal_models_root,
@@ -124,6 +125,89 @@ def test_docker_command_mounts_quetzal_root_readonly_and_forwards_impl(tmp_path)
     )
     assert "VLLM_PLUGINS=quetzal_model_registry,tt" in command
     assert "TT_VLLM_BUILTIN_MODELS=0" in command
+    assert not any(
+        isinstance(arg, str) and "TTIS_QUETZAL_BEHAVIORAL_PACKAGE_ADMISSION=" in arg
+        for arg in command
+    )
+
+
+def test_docker_command_behavioral_admission_is_local_explicit_and_readonly(
+    monkeypatch, tmp_path
+):
+    spec = copy.deepcopy(_dev_quetzal_spec("Qwen3.6-27B"))
+    package_id = "sha256-" + "1" * 64 + "-" + "2" * 64
+    candidate_root = tmp_path / "quetzal"
+    package = candidate_root / "nkapre" / "candidates" / package_id
+    package.mkdir(parents=True)
+    (package / "qualification_manifest.yaml").write_text("models: []\n")
+    spec.env_vars["QUETZAL_PACKAGE_ID"] = package_id
+    monkeypatch.setattr(
+        run_docker_server_module,
+        "_QUETZAL_EXABOX_CANDIDATE_ROOT",
+        candidate_root,
+    )
+    runtime = RuntimeConfig(
+        model="Qwen3.6-27B",
+        workflow="server",
+        device="p300x2",
+        impl="quetzal",
+        engine="vLLM",
+        docker_server=True,
+        dev_mode=True,
+        quetzal_models_root=str(package),
+        quetzal_behavioral_package_admission=True,
+    )
+
+    command, _ = generate_docker_run_command(spec, runtime)
+
+    assert (
+        f"type=bind,src={package.resolve()},"
+        f"dst=/home/container_app_user/quetzal/packages/{package_id},readonly"
+        in command
+    )
+    assert "TTIS_QUETZAL_BEHAVIORAL_PACKAGE_ADMISSION=1" in command
+
+    runtime.dev_mode = False
+    with pytest.raises(ValueError, match="requires --dev-mode"):
+        generate_docker_run_command(spec, runtime)
+    runtime.dev_mode = True
+    runtime.docker_server = False
+    with pytest.raises(ValueError, match="requires --docker-server"):
+        generate_docker_run_command(spec, runtime)
+    runtime.docker_server = True
+    runtime.ci_mode = True
+    with pytest.raises(ValueError, match="forbidden in CI mode"):
+        generate_docker_run_command(spec, runtime)
+
+
+def test_docker_command_behavioral_admission_rejects_non_candidate_root(
+    monkeypatch, tmp_path
+):
+    spec = copy.deepcopy(_dev_quetzal_spec("Qwen3.6-27B"))
+    package_id = "sha256-" + "1" * 64 + "-" + "2" * 64
+    package = tmp_path / package_id
+    package.mkdir()
+    (package / "qualification_manifest.yaml").write_text("models: []\n")
+    spec.env_vars["QUETZAL_PACKAGE_ID"] = package_id
+    monkeypatch.setattr(
+        run_docker_server_module,
+        "_QUETZAL_EXABOX_CANDIDATE_ROOT",
+        tmp_path / "other-root",
+    )
+    runtime = RuntimeConfig(
+        model="Qwen3.6-27B",
+        workflow="server",
+        device="p300x2",
+        impl="quetzal",
+        engine="vLLM",
+        docker_server=True,
+        dev_mode=True,
+        quetzal_models_root=str(package),
+        quetzal_behavioral_package_admission=True,
+    )
+
+    with pytest.raises(ValueError, match="behavioral Quetzal package must be under"):
+        generate_docker_run_command(spec, runtime)
 
 
 def test_docker_command_rejects_missing_or_misapplied_quetzal_root(tmp_path):

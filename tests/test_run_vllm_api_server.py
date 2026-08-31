@@ -415,9 +415,13 @@ def test_main_passes_passthrough_port_to_trace_capture(
 
 
 def _materialized_quetzal_contract(
-    monkeypatch, tmp_path, module, *, patchset_status="applied"
+    monkeypatch,
+    tmp_path,
+    module,
+    package_id="sha256-test-artifact-test-weights",
+    *,
+    patchset_status="applied",
 ):
-    package_id = "sha256-test-artifact-test-weights"
     package_root = tmp_path / package_id
     package_root.mkdir()
     monkeypatch.setenv("QUETZAL_VLLM", "1")
@@ -829,6 +833,82 @@ def test_quetzal_runtime_contract_labels_mutable_package_state_user_sealed(
         package_root, "Qwen/Qwen3.6-27B"
     )
     assert "[user_sealed]" in caplog.text
+
+
+def test_quetzal_behavioral_admission_allows_only_mutable_backing_modes(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    package_id = "sha256-" + "1" * 64 + "-" + "2" * 64
+    package_root = _materialized_quetzal_contract(
+        monkeypatch,
+        tmp_path,
+        run_vllm_api_server_module,
+        package_id=package_id,
+    )
+    for path in package_root.rglob("*"):
+        path.chmod(0o755 if path.is_dir() else 0o644)
+    package_root.chmod(0o755)
+    monkeypatch.setenv("TTIS_QUETZAL_BEHAVIORAL_PACKAGE_ADMISSION", "1")
+    monkeypatch.setattr(
+        run_vllm_api_server_module,
+        "_is_read_only_mountpoint",
+        lambda path: path == package_root,
+    )
+
+    run_vllm_api_server_module._validate_quetzal_package_and_runtime(
+        package_root, "Qwen/Qwen3.6-27B"
+    )
+
+
+@pytest.mark.parametrize(
+    ("env", "value", "match"),
+    [
+        ("TTIS_QUETZAL_BEHAVIORAL_PACKAGE_ADMISSION", "true", "exactly '1'"),
+        ("CI", "true", "forbidden in CI"),
+        ("GITHUB_ACTIONS", "1", "forbidden in CI"),
+    ],
+)
+def test_quetzal_behavioral_admission_fails_closed_in_ci_or_on_invalid_flag(
+    monkeypatch, tmp_path, run_vllm_api_server_module, env, value, match
+):
+    package_id = "sha256-" + "1" * 64 + "-" + "2" * 64
+    package_root = _materialized_quetzal_contract(
+        monkeypatch,
+        tmp_path,
+        run_vllm_api_server_module,
+        package_id=package_id,
+    )
+    monkeypatch.setenv("TTIS_QUETZAL_BEHAVIORAL_PACKAGE_ADMISSION", "1")
+    monkeypatch.setenv(env, value)
+    monkeypatch.setattr(
+        run_vllm_api_server_module, "_is_read_only_mountpoint", lambda _path: True
+    )
+
+    with pytest.raises(RuntimeError, match=match):
+        run_vllm_api_server_module._validate_quetzal_package_and_runtime(
+            package_root, "Qwen/Qwen3.6-27B"
+        )
+
+
+def test_quetzal_behavioral_admission_requires_exact_read_only_mountpoint(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    package_id = "sha256-" + "1" * 64 + "-" + "2" * 64
+    package_root = _materialized_quetzal_contract(
+        monkeypatch,
+        tmp_path,
+        run_vllm_api_server_module,
+        package_id=package_id,
+    )
+    monkeypatch.setenv("TTIS_QUETZAL_BEHAVIORAL_PACKAGE_ADMISSION", "1")
+    monkeypatch.setattr(
+        run_vllm_api_server_module, "_is_read_only_mountpoint", lambda _path: False
+    )
+
+    with pytest.raises(RuntimeError, match="exact read-only mountpoint"):
+        run_vllm_api_server_module._validate_quetzal_package_and_runtime(
+            package_root, "Qwen/Qwen3.6-27B"
+        )
 
 
 def test_quetzal_runtime_contract_rejects_path_escape(

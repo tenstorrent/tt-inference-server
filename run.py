@@ -395,6 +395,16 @@ def parse_arguments():
         ),
     )
     parser.add_argument(
+        "--quetzal-behavioral-package-admission",
+        action="store_true",
+        help=(
+            "Allow a content-addressed local Exabox candidate whose backing "
+            "filesystem modes are mutable, but only in --dev-mode and only "
+            "when Docker mounts it read-only. This is behavioral evidence, "
+            "not Models CI certification or immutable publication."
+        ),
+    )
+    parser.add_argument(
         "--quetzal-runtime-attestation",
         type=str,
         default=None,
