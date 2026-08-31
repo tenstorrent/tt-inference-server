@@ -20,6 +20,7 @@ EXPECTED_INSTANCES = [
     "sympy__sympy-13551",
     "scikit-learn__scikit-learn-14629",
 ]
+EXPECTED_SMOKE_INSTANCES = ["django__django-11299"]
 
 
 class Runtime:
@@ -39,9 +40,14 @@ def test_gpt120_swebench_is_exact_c1_s8192_five_instance_contract(tmp_path):
     assert cfg.dataset_split == "test"
     assert cfg.agent_backend == "mini-swe-agent"
     assert cfg.n_concurrent_trials == 1
-    assert cfg.max_input_tokens == 6 * 1024
+    assert cfg.max_input_tokens == 5 * 1024
     assert cfg.max_output_tokens == 2 * 1024
-    assert cfg.max_input_tokens + cfg.max_output_tokens == 8192
+    assert cfg.max_input_tokens + cfg.max_output_tokens == 7 * 1024
+    assert task.min_context_required == 8 * 1024
+    assert (
+        task.min_context_required - (cfg.max_input_tokens + cfg.max_output_tokens)
+        == 1024
+    )
     assert cfg.agent_generation_timeout_sec == 6 * 60 * 60
     assert cfg.swebench_timeout_sec == 30 * 60
     assert resolve_instance_ids(task, Runtime()) == EXPECTED_INSTANCES
@@ -60,6 +66,13 @@ def test_gpt120_swebench_is_exact_c1_s8192_five_instance_contract(tmp_path):
     assert run.instance_ids == EXPECTED_INSTANCES
     assert run.api_base == "http://127.0.0.1:18091/v1"
     assert run.n_concurrent_trials == 1
+
+
+def test_gpt120_swebench_smoke_is_one_fixed_instance():
+    class SmokeRuntime:
+        limit_samples_mode = "smoke-test"
+
+    assert resolve_instance_ids(_task(), SmokeRuntime()) == EXPECTED_SMOKE_INSTANCES
 
 
 def test_gpt120_swebench_accuracy_is_report_only_until_cs_sets_reference():

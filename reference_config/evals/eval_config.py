@@ -4763,10 +4763,13 @@ _eval_config_list = [
                 # five-instance reference) to turn this into a graded gate.
                 task_name="swe_bench_verified",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
-                # 6K input + 2K output consumes the entire S8192 row before
-                # chat-template and tool-definition overhead. Keep this
-                # report-only task off S8192 until it has explicit headroom.
-                min_context_required=9 * 1024,
+                # This is a separate, report-only S8192 collection envelope,
+                # not a clamp of any published long-context SWE recipe.  The
+                # authoritative input counter includes the rendered chat
+                # template and Bash tool schema.  Reserve 5K for that complete
+                # input, 2K for output, and the final 1K of the device row as
+                # server-side context headroom.
+                min_context_required=8 * 1024,
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -4793,10 +4796,12 @@ _eval_config_list = [
                     # The generated-only f0b P300X2 release profile is C1/S8192.
                     # This is the declared bounded SWE-bench workload for that
                     # serving contract, not a runtime clamp of the 124K GPU
-                    # reference recipe.  Keep the latter out of release until a
-                    # >=124K implementation is enrolled.  At S8192, reserve 2K
-                    # for the agent response and permit 6K of prompt/tool state.
-                    max_input_tokens=6 * 1024,
+                    # reference recipe. Keep the latter out of release until a
+                    # >=124K implementation is enrolled. The 5K input limit is
+                    # enforced against the complete, untruncated conversation
+                    # including the tool schema; over-budget trajectories fail
+                    # closed and remain visible collection failures.
+                    max_input_tokens=5 * 1024,
                     max_output_tokens=2 * 1024,
                     # Five C1 agentic trials may each generate a long reasoning
                     # trajectory. Bound the complete generation phase without
@@ -4807,10 +4812,6 @@ _eval_config_list = [
                     instance_ids_map={
                         EvalLimitMode.SMOKE_TEST: [
                             "django__django-11299",
-                            "astropy__astropy-14096",
-                            "matplotlib__matplotlib-25332",
-                            "sympy__sympy-13551",
-                            "scikit-learn__scikit-learn-14629",
                         ],
                         EvalLimitMode.CI_NIGHTLY: [
                             "django__django-11299",
@@ -4822,7 +4823,7 @@ _eval_config_list = [
                     },
                 ),
                 limit_samples_map={
-                    EvalLimitMode.SMOKE_TEST: 5,
+                    EvalLimitMode.SMOKE_TEST: 1,
                 },
             ),
         ],

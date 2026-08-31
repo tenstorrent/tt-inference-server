@@ -68,9 +68,9 @@ GPT_RELEASE_EVALS = (
     "mmlu_generative",
     "swe_bench_verified",
 )
-GPT_SWEBENCH_INPUT_TOKENS = 6 * 1024
+GPT_SWEBENCH_INPUT_TOKENS = 5 * 1024
 GPT_SWEBENCH_OUTPUT_TOKENS = 2 * 1024
-GPT_SWEBENCH_MIN_CONTEXT = 9 * 1024
+GPT_SWEBENCH_MIN_CONTEXT = 8 * 1024
 LOCAL_TTFT_MS_RANGE = (3310, 3320)
 TTFT_TARGET_MS = 3000
 STALE_5CAB_PACKAGE_ID = (
@@ -487,7 +487,7 @@ def render_contract(data: dict[str, Any]) -> dict[str, Any]:
                 "max_output_tokens": GPT_SWEBENCH_OUTPUT_TOKENS,
                 "required_context": (GPT_SWEBENCH_MIN_CONTEXT),
                 "available_context": artifacts["max_context"],
-                "status": "blocked_insufficient_context_headroom_report_only",
+                "status": "admitted_bounded_collection_report_only",
             },
             "performance": {
                 "local_ttft_ms_range": list(LOCAL_TTFT_MS_RANGE),

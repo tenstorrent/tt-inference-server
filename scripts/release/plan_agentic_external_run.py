@@ -399,7 +399,17 @@ def build_contract(
         raise ContractError(f"task {task_name!r} needs a finite positive output cap")
     if cfg.max_input_tokens <= 0:
         raise ContractError(f"task {task_name!r} needs a positive input cap")
-    required_context = cfg.max_input_tokens + max_output
+    payload_context = cfg.max_input_tokens + max_output
+    minimum_context = getattr(task, "min_context_required", None)
+    if minimum_context is not None and (
+        not isinstance(minimum_context, int)
+        or isinstance(minimum_context, bool)
+        or minimum_context <= 0
+    ):
+        raise ContractError(
+            f"task {task_name!r} has invalid min_context_required {minimum_context!r}"
+        )
+    required_context = max(payload_context, minimum_context or 0)
     catalog_context = int(model_spec.device_model_spec.max_context)
     if required_context > catalog_context:
         raise ContractError(

@@ -44,12 +44,14 @@ def test_gemma_s4096_selects_context_compatible_gsm8k_only():
     assert _select_agentic_tasks(ctx) == []
 
 
-def test_gpt_s8192_selects_context_compatible_gsm8k_only():
+def test_gpt_s8192_selects_gsm8k_and_bounded_swe_smoke():
     ctx = _context("gpt-oss-120b", "openai/gpt-oss-120b", 8192)
 
     assert [task.task_name for task in get_llm_eval_tasks(ctx.model_spec)] == ["gsm8k"]
-    assert _has_agentic_tasks(ctx) is False
-    assert _select_agentic_tasks(ctx) == []
+    assert _has_agentic_tasks(ctx) is True
+    assert [task.task_name for task in _select_agentic_tasks(ctx)] == [
+        "swe_bench_verified"
+    ]
 
 
 def test_explicit_inadmissible_agentic_task_fails_instead_of_clamping():
