@@ -62,7 +62,7 @@ def test_quetzal_is_installed_non_editably_and_entry_point_is_verified():
     assert "grep -q '^def validate_quetzal_runtime('" in source
     assert "def validate_quetzal_runtime(" in runner
     assert "validate_quetzal_runtime_contract" not in source
-    assert "c4c72b0774c97eeceba0481d7341915f8f3b6e352f4a3ab26eaab00077350cf5" in source
+    assert "d71abb2865d94511a1aaafbb02fabe1adfc5bd658ff9b876412f5f558111db4a" in source
     assert "e3ecc5557a84955bf0b95615e4b8e9fa83bcc431c9755e969ba5c441fc8d94cf" in source
 
 

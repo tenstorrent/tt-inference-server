@@ -438,21 +438,33 @@ def test_qwen_quetzal_dev_spec_uses_portable_qb2_fabric_contract(monkeypatch):
     assert env["TTQ_TUNED_ROW_ALL_REDUCE"] == "1"
 
 
-def test_qwen_quetzal_dev_spec_binds_candidate_v2_publication(monkeypatch):
+def test_qwen_quetzal_dev_spec_binds_canonical_package_identity(monkeypatch):
     specs = _dev_llm_spec_map()
     monkeypatch.setattr(model_spec_module, "MODEL_SPECS", specs)
     monkeypatch.setattr(model_spec_module, "_MODEL_SPECS_ENV", "dev")
     quetzal, _, _ = get_runtime_model_spec("Qwen3.6-27B", "p300x2", impl="quetzal")
     env = quetzal.env_vars
 
-    assert env["QUETZAL_BUNDLE_MANIFEST_SHA256"] == (
-        "c4c72b0774c97eeceba0481d7341915f8f3b6e352f4a3ab26eaab00077350cf5"
+    identity_path = MODEL_SPECS_DIR / "dev" / "quetzal_package_identities.json"
+    identities = json.loads(identity_path.read_text())
+    source = identities["source"]
+    identity = identities["models"]["Qwen/Qwen3.6-27B"]
+
+    assert source == {
+        "repository": "tenstorrent/tt-quetzalcoatlus",
+        "revision": "9fb41112535ee87140e91c1bba6f831e62c30d42",
+        "path": "productization/release_matrix.json",
+        "sha256": "914cdb2ec37e31938a7ef2ed55801758b81eb9b03d7552b7808f3b1b4d851967",
+    }
+    assert env["QUETZAL_PACKAGE_ID"] == identity["package_id"]
+    assert (
+        env["QUETZAL_BUNDLE_MANIFEST_SHA256"]
+        == identity["bundle_manifest_sha256"]
     )
+    assert env["QUETZAL_HF_REVISION"] == identity["checkpoint_revision"]
+    assert env["QUETZAL_REQUIRED_SOURCE_REVISION"] == source["revision"]
     assert env["QUETZAL_REQUIRED_TT_METAL_PATCHSET_SHA256"] == (
         "e240fa3880ea0c2597dd7df8ab657a69aca9fe215de58220ae96e47a48a29910"
-    )
-    assert env["QUETZAL_REQUIRED_SOURCE_REVISION"] == (
-        "9fb41112535ee87140e91c1bba6f831e62c30d42"
     )
 
 

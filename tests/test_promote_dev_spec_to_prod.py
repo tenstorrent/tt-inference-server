@@ -192,7 +192,7 @@ def test_real_quetzal_candidates_promote_without_losing_package_identity(tmp_pat
         "Qwen/Qwen3.6-27B": (
             "sha256-f1d6cebaf6cd432c78721ec3b81101ab86493f387b37f63bc11aca2fc6f6d8d8-"
             "0a8efa103ee378c7cd0e2fa25b0426cbb82752e270f8927bdf44eb2cfe68ce66",
-            "c4c72b0774c97eeceba0481d7341915f8f3b6e352f4a3ab26eaab00077350cf5",
+            "d71abb2865d94511a1aaafbb02fabe1adfc5bd658ff9b876412f5f558111db4a",
         ),
         "google/gemma-4-31B-it": (
             "sha256-8373c1467294ed11e00ac791392eaa80c9cd1a1366f15200469bbdb4bc410522-"

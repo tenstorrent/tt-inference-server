@@ -28,7 +28,10 @@ templates:
         QUETZAL_HF_REVISION: 6a9e13bd6fc8f0983b9b99948120bc37f49c13e9
         QUETZAL_REQUIRED_SOURCE_REVISION: 9fb41112535ee87140e91c1bba6f831e62c30d42
         QUETZAL_PACKAGE_ID: sha256-f1d6cebaf6cd432c78721ec3b81101ab86493f387b37f63bc11aca2fc6f6d8d8-0a8efa103ee378c7cd0e2fa25b0426cbb82752e270f8927bdf44eb2cfe68ce66
-        QUETZAL_BUNDLE_MANIFEST_SHA256: c4c72b0774c97eeceba0481d7341915f8f3b6e352f4a3ab26eaab00077350cf5
+        # Canonical manifest embedded by this package ID in Quetzal 9fb41112's
+        # release matrix. Do not substitute an administrator-publication
+        # successor digest until that generation exists at the catalog path.
+        QUETZAL_BUNDLE_MANIFEST_SHA256: d71abb2865d94511a1aaafbb02fabe1adfc5bd658ff9b876412f5f558111db4a
         QUETZAL_REQUIRED_TT_METAL_PATCHSET_SHA256: e240fa3880ea0c2597dd7df8ab657a69aca9fe215de58220ae96e47a48a29910
         QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/packages/sha256-f1d6cebaf6cd432c78721ec3b81101ab86493f387b37f63bc11aca2fc6f6d8d8-0a8efa103ee378c7cd0e2fa25b0426cbb82752e270f8927bdf44eb2cfe68ce66
         QZ_MODELS_ROOT: /home/container_app_user/quetzal/packages/sha256-f1d6cebaf6cd432c78721ec3b81101ab86493f387b37f63bc11aca2fc6f6d8d8-0a8efa103ee378c7cd0e2fa25b0426cbb82752e270f8927bdf44eb2cfe68ce66

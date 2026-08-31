@@ -170,7 +170,7 @@ RUN test "$(cat /tmp/quetzal-source/.tt-quetzal-commit)" = "${TT_QUETZAL_COMMIT_
     && rm /tmp/packages.before /tmp/packages.after /tmp/pip-check.base /tmp/pip-check.qualified /tmp/pip-check.after /tmp/quetzal-serve-requirements.txt \
     && "${PYTHON_ENV_DIR}/bin/python" -c "import importlib.metadata as m; from transformers.models.auto.configuration_auto import CONFIG_MAPPING_NAMES; assert m.version('transformers') == '5.15.0'; assert {'gemma4', 'qwen3_5', 'qwen3_5_moe'} <= set(CONFIG_MAPPING_NAMES)" \
     && grep -q '^def validate_quetzal_runtime(' /home/container_app_user/app/src/run_vllm_api_server.py \
-    && grep -q 'c4c72b0774c97eeceba0481d7341915f8f3b6e352f4a3ab26eaab00077350cf5' /home/container_app_user/model_specs/model_spec.json \
+    && grep -q 'd71abb2865d94511a1aaafbb02fabe1adfc5bd658ff9b876412f5f558111db4a' /home/container_app_user/model_specs/model_spec.json \
     && grep -q 'e3ecc5557a84955bf0b95615e4b8e9fa83bcc431c9755e969ba5c441fc8d94cf' /home/container_app_user/model_specs/model_spec.json \
     && "${PYTHON_ENV_DIR}/bin/python" -c "import importlib.metadata as m; eps=[e for e in m.entry_points(group='vllm.general_plugins') if e.name == 'quetzal_model_registry' and e.value == 'tt_quetzalcoatlus.vllm_plugin:register']; assert len(eps) == 1, eps; import serving.artifact_bundle" \
     && rm -rf /tmp/quetzal-source
