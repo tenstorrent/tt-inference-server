@@ -147,7 +147,9 @@ def test_gpt120_plan_pins_exact_swe_shape_and_writes_quetzal_argv(tmp_path):
     runtime = json.loads(runtime_path.read_text())
     assert plan["argv"] == command
     assert command[command.index("--model") + 1] == "gpt-oss-120b"
-    assert command[command.index("--server-url") + 1] == "http://qb2-120-p06t07"
+    assert command[command.index("--server-url") + 1] == ("http://qb2-120-p06t07:18091")
+    assert plan["contract"]["server_url"] == "http://qb2-120-p06t07:18091"
+    assert runtime["runtime_config"]["server_url"] == ("http://qb2-120-p06t07:18091")
     assert runtime["runtime_config"]["limit_samples_mode"] == "ci-nightly"
     assert runtime["runtime_config"]["workflow"] == "agentic"
     assert runtime["runtime_config"]["impl"] == "quetzal"
@@ -163,6 +165,27 @@ def test_gpt120_plan_pins_exact_swe_shape_and_writes_quetzal_argv(tmp_path):
     assert runtime["runtime_model_spec"]["code_link"] is None
     assert len(plan["contract"]["endpoint_evidence_sha256"]) == 64
     assert plan["contract"]["endpoint_evidence"] == _evidence()
+
+
+def test_external_plan_canonicalizes_service_port_for_remote_runtime(tmp_path):
+    contract, model_spec = _gpt120(server_url="http://127.0.0.1", service_port=18159)
+    plan_path, runtime_path, command = write_plan(contract, model_spec, tmp_path)
+    plan = json.loads(plan_path.read_text())
+    runtime = json.loads(runtime_path.read_text())
+
+    expected = "http://127.0.0.1:18159"
+    assert contract.server_url == expected
+    assert plan["contract"]["server_url"] == expected
+    assert runtime["runtime_config"]["server_url"] == expected
+    assert command[command.index("--server-url") + 1] == expected
+
+    # Explicit --server-url selects RemoteOpenAIController, which consumes the
+    # URL verbatim instead of appending service_port. Prove the emitted value
+    # reaches the intended port rather than the HTTP default (80).
+    from llm_module.server_control import RemoteOpenAIController
+
+    controller = RemoteOpenAIController(base_url=expected)
+    assert controller.models_url == f"{expected}/v1/models"
 
 
 @pytest.mark.parametrize(

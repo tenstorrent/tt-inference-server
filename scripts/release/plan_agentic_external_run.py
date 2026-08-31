@@ -518,7 +518,11 @@ def build_contract(
         # no caller-authored max-input capacity is trusted.
         admitted_max_input_tokens=cfg.max_input_tokens,
         admitted_max_context_tokens=admitted_max_context_tokens,
-        server_url=server_url.rstrip("/"),
+        # Runtime treats an explicit --server-url as a remote endpoint and
+        # therefore consumes it verbatim; it does not append --service-port.
+        # Persist the same canonical host:port that the identity probe used so
+        # the emitted launcher cannot silently fall back to port 80/443.
+        server_url=_endpoint_base(server_url, service_port),
         service_port=service_port,
     )
     return contract, model_spec
