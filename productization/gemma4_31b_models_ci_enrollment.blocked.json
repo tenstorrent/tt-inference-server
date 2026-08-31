@@ -3,7 +3,7 @@
   "status": "blocked_not_dispatchable",
   "model": "google/gemma-4-31B-it",
   "exact_artifact_source": "cfaea6c1b610afb8fed34c542e9a6df944fee51d",
-  "exact_serving_runtime_source": "9dbfdfc41ca9d90999882b490b135ef6f822b1bd",
+  "exact_serving_runtime_source": "76a15d4cdd0c2b400ef9b89499a334a6b748e56b",
   "target_profile": "exact BF16 B1 C1 S4096; capacity endpoint ISL4095 + OSL1 plus a separate visibly non-empty semantic endpoint",
   "target_runner": "qb2-p300x2-physical-2x2-ring-links2",
   "active_catalogue_is_not_candidate": true,
@@ -12,8 +12,8 @@
     "exact_package_identity": "sha256-v1-8373c1467294ed11e00ac791392eaa80c9cd1a1366f15200469bbdb4bc410522-259ee130f4f1e259980f2dde67415f8692f4c16086f34edc1cdb98c496b68edc-d7edfed9e0e19933ce5bdfb79a5b455cf71b091fe8ddef9c6c79160f925a3116",
     "pcc": 0.9942054152488708,
     "pcc_jobs": [68271, 68288],
-    "endpoint_job": 68682,
-    "endpoint_receipt": "tt-quetzalcoatlus/productization/exabox_gemma31_exact_endpoint_repeat_68682_20260831.json",
+    "endpoint_job": 70548,
+    "endpoint_receipt": "tt-quetzalcoatlus/productization/exabox_p01_gemma31_current_main_requests_70548_20260831.json",
     "capacity_endpoint": "ISL4095/OSL1 HTTP 200",
     "semantic_endpoint": "Gemma is ready.",
     "clean_lifecycle": true,
@@ -26,7 +26,7 @@
     "package manifest sha256 and exact generated/metadata/weights/qualification role-relative paths",
     "publication-time proof that the immutable package preserves the exact executable role digests bound by the banked PCC and endpoint receipts; otherwise refresh only the changed gates",
     "positive physical Ring/2 runner visibility attestation",
-    "digest-pinned Gemma-specific TTIS image built from exact artifact source cfaea6c1 and serving runtime 9dbfdfc4",
+    "digest-pinned Gemma-specific TTIS image built from exact artifact source cfaea6c1 and serving runtime 76a15d4c",
     "passing official target-device On-dispatch result and one qualifying nightly"
   ],
   "renderer": "scripts/prepare_gemma_quetzal_enrollment.py"

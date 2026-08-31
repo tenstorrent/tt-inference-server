@@ -161,7 +161,7 @@ def test_exact_response_renders_catalogue_ci_and_ring2_contract():
     spec = rendered["ttis_dev_catalogue_fragment"]
     device = spec["device_model_specs"][0]
     assert spec["impl"] == "quetzal"
-    assert QUETZAL_COMMIT == "31f88519bd64595ede7d2ac3e5f883e39f5ef0a5"
+    assert QUETZAL_COMMIT == "76a15d4cdd0c2b400ef9b89499a334a6b748e56b"
     assert device["max_context"] == 8192
     assert device["max_concurrency"] == 1
     assert device["default_impl"] is False
