@@ -6,7 +6,8 @@ run-name: ${{ inputs.version && format('Release automation v{0}', inputs.version
 # Automates the release pipeline (dispatch-only). In order:
 #   - Guard: only the sanctioned release branch may run.
 #   - Validate inputs: version == VERSION file; vllm-commit present when the
-#     release ships vLLM; tt-metal/vllm commits match the tt-shield run.
+#     release ships vLLM; a digest-pinned Quetzal image is present when the
+#     release ships Quetzal; tt-metal/vllm commits match the tt-shield run.
 #   1. promote_dev_spec_to_prod.py  (dev -> prod model specs, release-scoped)
 #   1b. assert no shadowed duplicate model_id in the promoted prod catalogue
 #   2. export_model_spec.py         (docs/model_support + release_model_spec.json)
@@ -38,6 +39,10 @@ on:
         type: string
       vllm-commit:
         description: "vLLM commit SHA (needed for LLM models)"
+        required: false
+        type: string
+      quetzal-docker-image:
+        description: "Digest-pinned package-capable Quetzal image (required when a Quetzal implementation is in release scope)"
         required: false
         type: string
       tag-suffix:
@@ -122,6 +127,7 @@ jobs:
           IN_VERSION: ${{ github.event.inputs.version }}
           IN_TT_METAL_COMMIT: ${{ github.event.inputs['tt-metal-commit'] }}
           IN_VLLM_COMMIT: ${{ github.event.inputs['vllm-commit'] }}
+          IN_QUETZAL_DOCKER_IMAGE: ${{ github.event.inputs['quetzal-docker-image'] }}
           IN_TT_SHIELD_RUN_ID: ${{ github.event.inputs['tt-shield-run-id'] }}
           IN_TAG_SUFFIX: ${{ github.event.inputs['tag-suffix'] }}
           IN_POST_RELEASE_SUFFIX: ${{ github.event.inputs['post-release-suffix'] }}
@@ -153,10 +159,20 @@ jobs:
                 exit 1
               fi ;;
           esac
+          RELEASE_IMPLS=$(python3 -c "import json; c=json.load(open('.github/workflows/models-ci-config.json')); print(' '.join(sorted({i.get('impl','') for _n,e in c['models'].items() for i in e.get('implementations',[e]) if i.get('ci',{}).get('release')})))")
+          echo "Release implementations: ${RELEASE_IMPLS:-<default only>}"
+          case " ${RELEASE_IMPLS} " in
+            *" quetzal "*)
+              if [ -z "$IN_QUETZAL_DOCKER_IMAGE" ]; then
+                echo "::error::this release ships a Quetzal implementation but quetzal-docker-image is empty — provide its immutable OCI digest."
+                exit 1
+              fi ;;
+          esac
           {
             echo "RELEASE_VERSION=${RELEASE_VERSION}"
             echo "TT_METAL_COMMIT=${IN_TT_METAL_COMMIT}"
             echo "VLLM_COMMIT=${IN_VLLM_COMMIT}"
+            echo "QUETZAL_DOCKER_IMAGE=${IN_QUETZAL_DOCKER_IMAGE}"
             echo "TT_SHIELD_RUN_ID=${IN_TT_SHIELD_RUN_ID}"
           } >> "$GITHUB_ENV"
           # Suffixes: use the dispatch inputs verbatim (empty = real release).
@@ -170,6 +186,7 @@ jobs:
           echo "version          = ${RELEASE_VERSION}"
           echo "tt-metal-commit  = ${TT_METAL_COMMIT}"
           echo "vllm-commit      = ${VLLM_COMMIT}"
+          echo "quetzal-image    = ${QUETZAL_DOCKER_IMAGE:-<not in release scope>}"
           echo "tt-shield-run-id = ${TT_SHIELD_RUN_ID}"
           echo "commit/tag       = v${RELEASE_VERSION}${TAG_SUFFIX}"
           echo "post-release br  = post-release-v${RELEASE_VERSION}${POST_RELEASE_SUFFIX} (from main)"
@@ -189,37 +206,15 @@ jobs:
       # ----- Step 1: promote dev model specs -> prod (release-scoped only) -----
       - name: "Step 1 — promote dev specs to prod"
         run: |
+          QUETZAL_IMAGE_ARGS=()
+          if [ -n "${QUETZAL_DOCKER_IMAGE}" ]; then
+            QUETZAL_IMAGE_ARGS=(--quetzal-docker-image "${QUETZAL_DOCKER_IMAGE}")
+          fi
           python3 scripts/release/promote_dev_spec_to_prod.py \
             --version "${RELEASE_VERSION}" \
             --tt-metal-commit "${TT_METAL_COMMIT}" \
-            --vllm-commit "${VLLM_COMMIT}"
-
-      # ----- Step 1b: fail if promotion produced a shadowed duplicate model_id.
-      #       promote_dev_spec_to_prod.py keys its upsert on the device SET, so
-      #       adding a device appends a new prod block instead of replacing the
-      #       old one; both then expand to the same model_id and the docs
-      #       generator renders the dead one (hit Qwen3.6-27B / Qwen3-Embedding-4B
-      #       at v0.20.0). Inspect the just-promoted PROD catalogue directly (the
-      #       JSON export dedupes via a {model_id: spec} dict and would hide it). -----
-      - name: "Step 1b — assert promotion produced no shadowed duplicates"
-        env:
-          MODEL_SPECS_ENV: prod
-        run: |
-          python3 - <<'PY'
-          import collections, sys
-          from workflows.model_spec import spec_templates
-          seen = collections.defaultdict(list)
-          for t in spec_templates:
-              for s in t.expand_to_specs():
-                  seen[s.model_id].append(getattr(t, "version", None))
-          dups = {k: v for k, v in seen.items() if len(v) > 1}
-          for k, v in sorted(dups.items()):
-              print(f"::error::duplicate model_id {k} produced by prod templates {v} - "
-                    "the older block is unreachable and will be rendered into the docs")
-          if dups:
-              sys.exit(f"{len(dups)} shadowed duplicate model_id(s) in the prod catalogue")
-          print(f"OK - {len(seen)} unique model_ids, no duplicates")
-          PY
+            --vllm-commit "${VLLM_COMMIT}" \
+            "${QUETZAL_IMAGE_ARGS[@]}"
 
       # ----- Step 2: regenerate model-support docs + release_model_spec.json ----
       - name: "Step 2 — export model spec (docs + JSON)"
@@ -696,10 +691,15 @@ jobs:
       - name: "Post-release: regenerate artifacts (same 4 steps, on post-release branch)"
         run: |
           python -m pip install -r requirements-dev.txt
+          QUETZAL_IMAGE_ARGS=()
+          if [ -n "${QUETZAL_DOCKER_IMAGE}" ]; then
+            QUETZAL_IMAGE_ARGS=(--quetzal-docker-image "${QUETZAL_DOCKER_IMAGE}")
+          fi
           python3 scripts/release/promote_dev_spec_to_prod.py \
             --version "${RELEASE_VERSION}" \
             --tt-metal-commit "${TT_METAL_COMMIT}" \
-            --vllm-commit "${VLLM_COMMIT}"
+            --vllm-commit "${VLLM_COMMIT}" \
+            "${QUETZAL_IMAGE_ARGS[@]}"
           python3 scripts/release/export_model_spec.py
           python -m workflows.helm_generator
           helm-docs \

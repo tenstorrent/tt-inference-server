@@ -10,7 +10,7 @@ import re
 import yaml
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Dict, Iterable, List, Optional, Tuple, Union
 
 from workflows.utils import (
     get_repo_root_path,
@@ -1040,6 +1040,10 @@ class ModelSpecTemplate:
     )
     has_builtin_warmup: bool = False
     metadata: Dict[str, Dict] = field(default_factory=dict)
+    # Leaf-granular prod entries retain their source model family, which a
+    # single-weight entry cannot imply. This keeps documentation grouping
+    # stable; performance targets are looked up per weight and do not use it.
+    model_display_name: Optional[str] = None
 
     def __post_init__(self):
         self._validate_data()
@@ -1078,13 +1082,11 @@ class ModelSpecTemplate:
         """Expand this template into individual ModelSpec instances."""
         specs = []
 
-        # Generate performance reference map
-        main_model_name = model_weights_to_model_name(self.weights[0])
-        perf_reference_map = get_perf_reference_map(
-            main_model_name, self.perf_targets_map
-        )
-
         for weight in self.weights:
+            weight_model_name = model_weights_to_model_name(weight)
+            template_reference_map = get_perf_reference_map(
+                weight_model_name, self.perf_targets_map
+            )
             for device_model_spec in self.device_model_specs:
                 device_type = device_model_spec.device
                 model_name = Path(weight).name
@@ -1092,28 +1094,33 @@ class ModelSpecTemplate:
                     self.impl.impl_name, model_name, device_type.name.lower()
                 )
 
+                # A device may be graded against a different fraction of
+                # theoretical than the rest of the template -- one board where
+                # this impl is known to reach less. Its map overrides the
+                # template's tier by tier, so a device can loosen `complete`
+                # without restating the others, and the theoretical reference
+                # itself stays shared (it is a property of the model and the
+                # hardware, not of the stack). Recomputed only when the device
+                # actually overrides; otherwise this is one map per weight.
+                if device_model_spec.perf_targets_map:
+                    perf_reference_map = get_perf_reference_map(
+                        weight_model_name,
+                        {
+                            **self.perf_targets_map,
+                            **device_model_spec.perf_targets_map,
+                        },
+                    )
+                else:
+                    perf_reference_map = template_reference_map
+
                 # Perf reference for this device accounting for impl features
                 # e.g. data parallelism factor
                 perf_reference = get_perf_reference(
                     device_model_spec, perf_reference_map
                 )
 
-                # Create a new device_model_spec with performance reference data
-                device_model_spec_with_perf = DeviceModelSpec(
-                    device=device_model_spec.device,
-                    max_concurrency=device_model_spec.max_concurrency,
-                    max_context=device_model_spec.max_context,
-                    max_tokens_all_users_override=device_model_spec.max_tokens_all_users_override,
-                    perf_targets_map=device_model_spec.perf_targets_map,
-                    default_impl=device_model_spec.default_impl,
-                    perf_reference=perf_reference,
-                    vllm_args=device_model_spec.vllm_args,
-                    override_tt_config=device_model_spec.override_tt_config,
-                    env_vars=device_model_spec.env_vars,
-                    tensor_cache_timeout=device_model_spec.tensor_cache_timeout,
-                    system_requirements=device_model_spec.system_requirements,
-                    known_issues=device_model_spec.known_issues,
-                    eval_max_retries=device_model_spec.eval_max_retries,
+                device_model_spec_with_perf = replace(
+                    device_model_spec, perf_reference=perf_reference
                 )
                 spec = ModelSpec(
                     # Core identity
@@ -1189,6 +1196,11 @@ def _build_system_requirements(data: Optional[Dict]) -> Optional["SystemRequirem
 def _build_device_model_spec(data: Dict) -> "DeviceModelSpec":
     kwargs = dict(data)
     kwargs["device"] = DeviceTypes.from_string(kwargs["device"])
+    if "perf_reference" in kwargs:
+        raise ValueError(
+            "Catalog YAML must not define perf_reference; it is derived from "
+            "model_performance_reference.json"
+        )
     if "system_requirements" in kwargs:
         kwargs["system_requirements"] = _build_system_requirements(
             kwargs["system_requirements"]
@@ -1247,12 +1259,23 @@ def _build_template(data: Dict, env: str = "prod") -> "ModelSpecTemplate":
         raise ValueError(f"{env} template {weights}: {exc}") from exc
 
 
-def load_templates_from_yaml(path: Path) -> List["ModelSpecTemplate"]:
+def load_templates_from_yaml(
+    path: Path, env: Optional[str] = None
+) -> List["ModelSpecTemplate"]:
+    """Load one catalog file as templates for the given catalog environment.
+
+    ``env`` selects the template contract -- "prod" requires release pins, dev
+    rejects them -- so callers that already know which catalog they are reading
+    should pass it. It defaults to the parent directory name because the runtime
+    catalogs live in ``model_specs/<env>/``, but relying on that default makes
+    the contract depend on where a file happens to sit.
+    """
     with open(path, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f)
     if not data or "templates" not in data:
         raise ValueError(f"YAML file {path} is empty or missing 'templates' key")
-    env = path.parent.name
+    if env is None:
+        env = path.parent.name
     return [_build_template(t, env) for t in data["templates"]]
 
 
@@ -1269,8 +1292,9 @@ if _MODEL_SPECS_ENV not in _VALID_MODEL_SPECS_ENVS:
     )
 
 # One catalog file per model category. Load order determines spec_templates
-# order, which in turn determines MODEL_SPECS dict insertion order.
-_CATALOG_FILES = (
+# order, which in turn determines MODEL_SPECS dict insertion order. Release
+# resolution uses this same list so it cannot discover specs runtime ignores.
+MODEL_SPEC_CATALOG_FILES = (
     "llm.yaml",
     "vlm.yaml",
     "video.yaml",
@@ -1283,11 +1307,57 @@ _CATALOG_FILES = (
 
 spec_templates: List["ModelSpecTemplate"] = [
     template
-    for fname in _CATALOG_FILES
+    for fname in MODEL_SPEC_CATALOG_FILES
     for template in load_templates_from_yaml(
-        _MODEL_SPECS_DIR / _MODEL_SPECS_ENV / fname
+        _MODEL_SPECS_DIR / _MODEL_SPECS_ENV / fname, env=_MODEL_SPECS_ENV
     )
 ]
+
+
+def model_spec_leaf_identity(spec: ModelSpec) -> Tuple[str, str, str, str]:
+    """Return the exact identity of one expanded catalog leaf."""
+    return (
+        spec.hf_model_repo,
+        spec.device_type.to_string(),
+        spec.inference_engine,
+        spec.impl.impl_id,
+    )
+
+
+def validate_model_specs(specs: List[ModelSpec]) -> None:
+    """Reject catalog identities that would resolve or collapse ambiguously."""
+    specs_by_identity: Dict[Tuple[str, str, str, str], ModelSpec] = {}
+    identities_by_model_id: Dict[str, Tuple[str, str, str, str]] = {}
+
+    for spec in specs:
+        identity = model_spec_leaf_identity(spec)
+        if identity in specs_by_identity:
+            raise ValueError(f"Duplicate model spec leaf identity: {identity!r}")
+        specs_by_identity[identity] = spec
+
+        previous_identity = identities_by_model_id.get(spec.model_id)
+        if previous_identity is not None and previous_identity != identity:
+            raise ValueError(
+                f"Model ID {spec.model_id!r} maps to multiple leaf identities: "
+                f"{previous_identity!r} and {identity!r}"
+            )
+        identities_by_model_id[spec.model_id] = identity
+
+    defaults_by_group: Dict[Tuple[str, str, str], List[str]] = {}
+    for spec in specs:
+        if not spec.device_model_spec.default_impl:
+            continue
+        # Implementation alternatives share everything but impl_id, so trimming
+        # it off the leaf identity yields the group that must hold one default.
+        group = model_spec_leaf_identity(spec)[:3]
+        defaults_by_group.setdefault(group, []).append(spec.impl.impl_id)
+
+    for group, impl_ids in defaults_by_group.items():
+        if len(impl_ids) > 1:
+            raise ValueError(
+                f"Multiple default implementations for model spec group {group!r}: "
+                f"{impl_ids!r}"
+            )
 
 
 def get_model_spec_map(
@@ -1302,11 +1372,9 @@ def get_model_spec_map(
     Returns:
         Dictionary mapping model_id to ModelSpec instances
     """
-    model_spec_map = {}
-    for template in templates:
-        for spec in template.expand_to_specs():
-            model_spec_map[spec.model_id] = spec
-    return model_spec_map
+    specs = [spec for template in templates for spec in template.expand_to_specs()]
+    validate_model_specs(specs)
+    return {spec.model_id: spec for spec in specs}
 
 
 def export_model_specs_json(model_specs: dict, output_path: Path) -> int:
@@ -1373,6 +1441,104 @@ IMAGE_PINNED_MODEL_SPECS: List[ModelSpec] = [
 ]
 
 
+def resolve_model_spec(
+    specs: Iterable[ModelSpec],
+    *,
+    model: str,
+    device: Union[str, DeviceTypes],
+    engine: Optional[Union[str, InferenceEngine]] = None,
+    impl: Optional[str] = None,
+    catalog_name: str = "catalog",
+) -> ModelSpec:
+    """Resolve one model request from an explicit set of expanded specs."""
+    if not isinstance(model, str) or not model:
+        raise ValueError(
+            f"Model selector must be a non-empty string for {catalog_name}"
+        )
+    model_name = Path(model).name
+    try:
+        device_type = (
+            device
+            if isinstance(device, DeviceTypes)
+            else DeviceTypes.from_string(device)
+        )
+    except (AttributeError, ValueError) as exc:
+        raise ValueError(f"Invalid device {device!r} for {catalog_name}") from exc
+
+    try:
+        engine_value = (
+            engine.value
+            if isinstance(engine, InferenceEngine)
+            else InferenceEngine.from_string(engine).value
+            if engine
+            else None
+        )
+    except (AttributeError, KeyError, ValueError) as exc:
+        raise ValueError(
+            f"Invalid inference engine {engine!r} for {catalog_name}"
+        ) from exc
+
+    spec_list = list(specs)
+    if "/" in model:
+        model_specs = [spec for spec in spec_list if spec.hf_model_repo == model]
+    else:
+        model_specs = [spec for spec in spec_list if spec.model_name == model_name]
+        hf_repos = sorted({spec.hf_model_repo for spec in model_specs})
+        if len(hf_repos) > 1:
+            raise ValueError(
+                f"Model basename {model_name!r} is ambiguous in {catalog_name}; "
+                f"matching Hugging Face repositories: {hf_repos!r}; "
+                "use the full Hugging Face repository"
+            )
+
+    candidates = [
+        spec
+        for spec in model_specs
+        if spec.device_type == device_type
+        and (engine_value is None or spec.inference_engine == engine_value)
+        and (impl is None or spec.impl.impl_name == impl)
+    ]
+    query = (
+        f"model={model_name!r}, device={device_type.to_string()!r}, "
+        f"engine={engine_value!r}, impl={impl!r}"
+    )
+    if not candidates:
+        raise ValueError(f"No model spec matches {query} in {catalog_name}")
+
+    default_specs = [spec for spec in candidates if spec.device_model_spec.default_impl]
+
+    # Preserve the existing no-engine runtime behavior. Defaults in different
+    # engines are valid and engine inference historically follows catalog order.
+    if engine_value is None:
+        selected_spec = next(iter(default_specs), None)
+        if selected_spec is not None:
+            return selected_spec
+        if impl is not None:
+            return candidates[0]
+        raise ValueError(
+            f"Model {model_name!r} does not have a default impl for "
+            f"device={device_type.to_string()!r} in {catalog_name}; "
+            "pass --impl or --engine"
+        )
+
+    if len(default_specs) == 1:
+        return default_specs[0]
+    if len(default_specs) > 1:
+        identities = sorted(model_spec_leaf_identity(spec) for spec in default_specs)
+        raise ValueError(
+            f"Multiple default implementations match {query} in {catalog_name}: "
+            f"{identities!r}"
+        )
+    if len(candidates) == 1:
+        return candidates[0]
+
+    identities = sorted(model_spec_leaf_identity(spec) for spec in candidates)
+    raise ValueError(
+        f"No unique default implementation matches {query} in {catalog_name}; "
+        f"candidates: {identities!r}"
+    )
+
+
 def get_runtime_model_spec(
     model: str,
     device: str,
@@ -1392,42 +1558,16 @@ def get_runtime_model_spec(
     Returns ``(model_spec, resolved_impl, resolved_engine)`` so the caller
     can construct a fully-initialised RuntimeConfig in one step.
     """
-    device_type = DeviceTypes.from_string(device)
-
-    candidate_specs = [
-        spec
-        for spec in MODEL_SPECS.values()
-        if spec.model_name == model
-        and spec.device_type == device_type
-        and (not engine or spec.inference_engine == engine)
-        and (not impl or spec.impl.impl_name == impl)
-    ]
-
-    if not candidate_specs:
-        engine_msg = f", engine={engine}" if engine else ""
-        impl_msg = f", impl={impl}" if impl else ""
-        raise ValueError(
-            f"Model:={model} does not support device:={device}{engine_msg}{impl_msg} "
-            f"in the {_MODEL_SPECS_ENV!r} catalog"
-        )
-
-    default_spec = next(
-        (spec for spec in candidate_specs if spec.device_model_spec.default_impl),
-        None,
+    model_spec = resolve_model_spec(
+        MODEL_SPECS.values(),
+        model=model,
+        device=device,
+        engine=engine,
+        impl=impl,
+        catalog_name=f"{_MODEL_SPECS_ENV!r} catalog",
     )
-    selected_spec = default_spec or (candidate_specs[0] if (impl or engine) else None)
-
-    if selected_spec is None:
-        raise ValueError(
-            f"Model:={model} does not have a default impl for "
-            f"device:={device}, engine:={engine} in the {_MODEL_SPECS_ENV!r} catalog; "
-            f"you must pass --impl or --engine"
-        )
-
-    resolved_impl = selected_spec.impl.impl_name
-    resolved_engine = engine if engine else selected_spec.inference_engine
-
-    model_spec = MODEL_SPECS[selected_spec.model_id]
+    resolved_impl = model_spec.impl.impl_name
+    resolved_engine = model_spec.inference_engine
     return model_spec, resolved_impl, resolved_engine
 
 

@@ -3,276 +3,52 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
-"""
-Promote dev model specs to prod for every model-device combination marked
-``release`` in models-ci-config.json.
-
-For each (model, inference_engine, implementation, device) under ``ci.release``
-in the CI config, the matching template in workflows/model_specs/dev/ is copied
-into the same-named file in workflows/model_specs/prod/, upserting by (impl,
-inference_engine, weights, devices) identity.
-
-Dev templates intentionally omit the release pins (``version``,
-``tt_metal_commit`` and ``vllm_commit``); promotion injects them from CLI flags
-into each promoted prod block. ``--version`` and ``--tt-metal-commit`` are
-required; ``--vllm-commit`` is required only when one or more promoted templates
-use the VLLM inference engine and is injected only into those templates.
-Quetzal templates additionally require ``--quetzal-docker-image`` with an OCI
-digest; that exact package-capable image is injected only into Quetzal blocks.
-
-The catalogue YAML files are hand-authored with inconsistent block-sequence
-indentation (top-level list items at column 0, nested lists indented to column 4),
-which no single ruamel.yaml indent setting can reproduce. Round-tripping a whole
-file therefore reformats every untouched template. To preserve formatting exactly,
-this tool splices template TEXT blocks: each catalogue file is segmented into
-top-level ``- ...`` template blocks and the filler between them; only the specific
-blocks that change are replaced/appended, so untouched templates stay byte-identical.
-"""
+"""Promote exact release-scoped dev leaves into a leaf-granular prod catalog."""
 
 import argparse
 import json
 import re
 import sys
-from collections import namedtuple
+import tempfile
+from copy import deepcopy
+from io import StringIO
 from pathlib import Path
 
-import yaml
+from ruamel.yaml import YAML
+from ruamel.yaml.comments import CommentedMap, CommentedSeq
+from ruamel.yaml.error import YAMLError as RuamelYAMLError
+from ruamel.yaml.scalarstring import DoubleQuotedScalarString
+from yaml import YAMLError as PyYAMLError
 
-# Add repo root to path for imports
+# Add repo root to path for direct script execution.
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
+from scripts.release.model_spec_resolver import (  # noqa: E402
+    LeafIdentity,
+    collect_release_combos,
+    load_dev_model_spec_sources,
+    resolve_release_combos,
+)
+from workflows.model_spec import (  # noqa: E402
+    MODEL_SPEC_CATALOG_FILES,
+    get_model_spec_map,
+    load_templates_from_yaml,
+    model_spec_leaf_identity,
+)
 from workflows.workflow_types import DeviceTypes, InferenceEngine  # noqa: E402
+
 
 REPO_ROOT = Path(__file__).parent.parent.parent
 DEFAULT_CI_CONFIG = REPO_ROOT / ".github" / "workflows" / "models-ci-config.json"
 DEFAULT_DEV_DIR = REPO_ROOT / "workflows" / "model_specs" / "dev"
 DEFAULT_PROD_DIR = REPO_ROOT / "workflows" / "model_specs" / "prod"
 
-ReleaseCombo = namedtuple(
-    "ReleaseCombo", ["model_name", "engine", "device", "impl"], defaults=[None]
-)
-
-# A matched dev template: its upsert identity, parsed dict, and exact source lines.
-MatchedBlock = namedtuple("MatchedBlock", ["identity", "template", "lines"])
-
-# A top-level template item starts with "- " (or a bare "-") at column 0.
-_TEMPLATE_ITEM_RE = re.compile(r"^-(\s|$)")
-
-
-def model_name_from_weight(weight: str) -> str:
-    """Extract the model name (basename) from a HuggingFace repo path."""
-    return Path(weight).name
-
-
-def iter_implementations(model_entry: dict):
-    """Yield each implementation dict for a CI-config model entry.
-
-    Handles both the flat shape ({inference_engine, ci}) and the
-    implementations:[...] array shape.
-    """
-    if "implementations" in model_entry:
-        yield from model_entry["implementations"]
-    else:
-        yield model_entry
-
-
-def collect_release_combos(ci_config: dict) -> set:
-    """Return release combinations, preserving an optional impl selector.
-
-    The selector prevents release promotion from silently matching every dev
-    template when multiple implementations use the same inference engine.
-    """
-    combos = set()
-    for model_name, entry in ci_config.get("models", {}).items():
-        for impl in iter_implementations(entry):
-            release = impl.get("ci", {}).get("release")
-            if not release:
-                continue
-            engine = InferenceEngine.from_string(impl["inference_engine"])
-            impl_selector = impl.get("impl")
-            for device in release.get("devices", []):
-                combos.add(
-                    ReleaseCombo(
-                        model_name,
-                        engine,
-                        DeviceTypes.from_string(device),
-                        impl_selector,
-                    )
-                )
-    return combos
-
-
-def template_engine(template: dict) -> InferenceEngine:
-    return InferenceEngine.from_string(template["inference_engine"])
-
-
-def template_devices(template: dict) -> set:
-    return {
-        DeviceTypes.from_string(d["device"])
-        for d in template.get("device_model_specs", [])
-    }
-
-
-def template_model_names(template: dict) -> set:
-    return {model_name_from_weight(w) for w in template.get("weights", [])}
-
-
-def template_impl_selector(template: dict) -> str:
-    """Return the user-facing ``run.py --impl`` name for a YAML template."""
-    return template["impl"].replace("_", "-")
-
-
-def template_matches(template: dict, combo: ReleaseCombo) -> bool:
-    """True if the template provides the given release combo."""
-    return (
-        combo.model_name in template_model_names(template)
-        and combo.engine == template_engine(template)
-        and combo.device in template_devices(template)
-        and (combo.impl is None or combo.impl == template_impl_selector(template))
-    )
-
-
-def template_identity(template: dict):
-    """Upsert identity for a template block: (impl, engine, weights, devices).
-
-    The device set is part of the identity because the catalogue intentionally
-    holds multiple blocks per (impl, engine, weights) — one per device group
-    (e.g. the same model validated on different hardware at different commits).
-    Without devices, distinct blocks would collide and overwrite each other.
-    """
-    return (
-        template["impl"],
-        template_engine(template),
-        frozenset(template.get("weights", [])),
-        frozenset(template_devices(template)),
-    )
-
-
-def split_into_blocks(text: str):
-    """Segment catalogue text into ("block", lines) and ("filler", lines) parts.
-
-    A "block" is a top-level ``- ...`` template item: its first line plus all
-    following indented body lines. "filler" is everything else (the ``templates:``
-    header, column-0 comment banners, blank lines). Concatenating every segment's
-    lines reproduces ``text`` exactly.
-    """
-    lines = text.splitlines(keepends=True)
-    segments = []
-    i = 0
-    while i < len(lines):
-        if _TEMPLATE_ITEM_RE.match(lines[i].rstrip("\n")):
-            block = [lines[i]]
-            i += 1
-            # Body lines are indented. A blank line is interior to the block only
-            # if an indented line follows it (after any run of blanks); otherwise
-            # it separates this block from the next template and stays filler.
-            while i < len(lines):
-                if lines[i].startswith((" ", "\t")):
-                    block.append(lines[i])
-                    i += 1
-                elif lines[i].strip() == "":
-                    j = i
-                    while j < len(lines) and lines[j].strip() == "":
-                        j += 1
-                    if j < len(lines) and lines[j].startswith((" ", "\t")):
-                        block.extend(lines[i:j])
-                        i = j
-                    else:
-                        break
-                else:
-                    break
-            segments.append(("block", block))
-        else:
-            segments.append(("filler", [lines[i]]))
-            i += 1
-    return segments
-
-
-def parse_block(block_lines) -> dict:
-    """Parse a template block's text into a plain dict."""
-    parsed = yaml.safe_load("".join(block_lines))
-    assert isinstance(parsed, list) and len(parsed) == 1, (
-        f"expected a single-item YAML list, got: {''.join(block_lines)!r}"
-    )
-    return parsed[0]
-
-
-def find_matches(dev_dir: Path, combos: set):
-    """Scan dev catalogue files for templates matching any release combo.
-
-    Returns (matches_by_file, unmatched):
-      - matches_by_file: dict filename -> list of MatchedBlock, in file order,
-        de-duplicated by identity.
-      - unmatched: set of combos that matched no dev template.
-    """
-    matched_combos = set()
-    matches_by_file = {}
-    for dev_file in sorted(Path(dev_dir).glob("*.yaml")):
-        picked = []
-        picked_ids = set()
-        for kind, lines in split_into_blocks(dev_file.read_text()):
-            if kind != "block":
-                continue
-            template = parse_block(lines)
-            hits = [c for c in combos if template_matches(template, c)]
-            if not hits:
-                continue
-            matched_combos.update(hits)
-            identity = template_identity(template)
-            if identity not in picked_ids:
-                picked.append(MatchedBlock(identity, template, lines))
-                picked_ids.add(identity)
-        if picked:
-            matches_by_file[dev_file.name] = picked
-    unmatched = combos - matched_combos
-    return matches_by_file, unmatched
-
-
-def upsert_block(segments, identity, lines) -> str:
-    """Replace the block segment with matching identity, else append a new one.
-
-    Operates in place on the ``segments`` list from split_into_blocks. Returns
-    "updated" if an existing same-identity block was replaced, else "appended".
-    """
-    for idx, (kind, seg_lines) in enumerate(segments):
-        if kind == "block" and template_identity(parse_block(seg_lines)) == identity:
-            segments[idx] = ("block", list(lines))
-            return "updated"
-
-    last_block_idx = None
-    for idx, (kind, _) in enumerate(segments):
-        if kind == "block":
-            last_block_idx = idx
-    new_segment = ("block", _ensure_trailing_newline(list(lines)))
-    if last_block_idx is None:
-        segments.append(new_segment)
-    else:
-        # Ensure the block we insert after ends in a newline so the two don't
-        # fuse onto one line.
-        _ensure_trailing_newline(segments[last_block_idx][1])
-        segments.insert(last_block_idx + 1, new_segment)
-    return "appended"
-
-
-def _ensure_trailing_newline(lines):
-    """Guarantee the block's last line ends with a newline (safe to append after)."""
-    if lines and not lines[-1].endswith("\n"):
-        lines[-1] += "\n"
-    return lines
-
-
-# Release-pin keys, matched at the template's top-level (2-space) indent.
-_PIN_LINE_RE = re.compile(r"^  (version|tt_metal_commit|vllm_commit):")
-_DOCKER_IMAGE_LINE_RE = re.compile(r"^  docker_image:")
-_SHA256_DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
+_PIN_FIELDS = ("version", "tt_metal_commit", "vllm_commit")
+_SHA256_DIGEST_RE = re.compile(r"[0-9a-f]{64}")
 
 
 def validate_digest_pinned_image(image: str) -> str:
-    """Return an immutable OCI image reference or raise ``ValueError``.
-
-    Release promotion must not turn a mutable tag into the authority for the
-    generated runtime. Registry ports are allowed, but a tag on the final path
-    component is not: callers must supply ``registry/path@sha256:<64 hex>``.
-    """
+    """Return a canonical immutable OCI image reference or fail closed."""
     if not isinstance(image, str) or not image.strip() or image != image.strip():
         raise ValueError(
             "--quetzal-docker-image must be an immutable "
@@ -294,44 +70,309 @@ def validate_digest_pinned_image(image: str) -> str:
     return image
 
 
-def inject_pin_fields(
-    lines, *, version, tt_metal_commit, vllm_commit=None, docker_image=None
-):
-    """Return the block's lines with the release pins injected.
+def _round_trip_yaml() -> YAML:
+    yaml = YAML(typ="rt")
+    yaml.allow_duplicate_keys = False
+    yaml.preserve_quotes = True
+    yaml.indent(mapping=2, sequence=4, offset=2)
+    return yaml
 
-    Any pre-existing pin line is dropped first, so the result is deterministic and
-    idempotent. The new lines are inserted right after the ``weights`` block (before
-    the first other top-level key), at the template's 2-space indent. Values are
-    quoted so commit-like strings (e.g. ``1e23``) are never parsed as numbers.
 
-    ``vllm_commit`` is injected only when provided (the caller passes it solely for
-    VLLM templates).
-    """
-    body = [
-        ln
-        for ln in lines
-        if not _PIN_LINE_RE.match(ln)
-        and not (docker_image is not None and _DOCKER_IMAGE_LINE_RE.match(ln))
-    ]
+def _load_document(path: Path) -> CommentedMap:
+    document = _round_trip_yaml().load(path.read_text())
+    if not isinstance(document, CommentedMap) or not isinstance(
+        document.get("templates"), CommentedSeq
+    ):
+        raise ValueError(f"Catalog {path} must contain a templates sequence")
+    return document
+
+
+def split_into_blocks(text: str):
+    """Split catalog text into top-level template blocks and untouched filler."""
+    lines = text.splitlines(keepends=True)
+    segments = []
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        if line.startswith("- ") or line.rstrip("\n") == "-":
+            block = [line]
+            index += 1
+            while index < len(lines):
+                if lines[index].startswith((" ", "\t")):
+                    block.append(lines[index])
+                    index += 1
+                elif lines[index].strip() == "":
+                    lookahead = index
+                    while lookahead < len(lines) and lines[lookahead].strip() == "":
+                        lookahead += 1
+                    if lookahead < len(lines) and lines[lookahead].startswith(
+                        (" ", "\t")
+                    ):
+                        block.extend(lines[index:lookahead])
+                        index = lookahead
+                    else:
+                        break
+                else:
+                    break
+            segments.append(("block", block))
+        else:
+            segments.append(("filler", [line]))
+            index += 1
+    return segments
+
+
+def _parse_block(lines) -> CommentedMap:
+    parsed = _round_trip_yaml().load("".join(lines))
+    if (
+        not isinstance(parsed, CommentedSeq)
+        or len(parsed) != 1
+        or not isinstance(parsed[0], CommentedMap)
+    ):
+        raise ValueError(f"Expected one YAML template block, got {''.join(lines)!r}")
+    return parsed[0]
+
+
+def _render_block(template: CommentedMap) -> list[str]:
+    """Render one template using the repository's top-level list indentation."""
+    stream = StringIO()
+    _round_trip_yaml().dump(template, stream)
+    lines = stream.getvalue().splitlines(keepends=True)
+    if not lines:
+        raise ValueError("Cannot render an empty template")
+    rendered = [f"- {lines[0]}"] + [f"  {line}" for line in lines[1:]]
+    return ["\n" if line.strip() == "" else line for line in rendered]
+
+
+def _template_identity(
+    template: CommentedMap,
+    weight: str,
+    device_spec: CommentedMap,
+) -> LeafIdentity:
+    try:
+        device = DeviceTypes.from_string(str(device_spec["device"])).to_string()
+        engine = InferenceEngine.from_string(str(template["inference_engine"])).value
+        impl_id = str(template["impl"])
+    except (AttributeError, KeyError, ValueError) as exc:
+        raise ValueError(
+            f"Invalid catalog leaf for weight {weight!r}: {template!r}"
+        ) from exc
+    return (str(weight), device, engine, impl_id)
+
+
+def _filter_metadata(template: CommentedMap, weight: str) -> None:
+    metadata = template.get("metadata")
+    if not metadata:
+        template.pop("metadata", None)
+        return
+    selected = metadata.get(weight)
+    if selected is None:
+        template.pop("metadata", None)
+        return
+    filtered = CommentedMap()
+    filtered[weight] = deepcopy(selected)
+    template["metadata"] = filtered
+
+
+def _make_leaf(
+    template: CommentedMap,
+    weight_index: int,
+    device_index: int,
+) -> tuple[LeafIdentity, CommentedMap]:
+    weights = template.get("weights")
+    devices = template.get("device_model_specs")
+    if not isinstance(weights, list) or not isinstance(devices, list):
+        raise ValueError("Template must contain weights and device_model_specs lists")
+    try:
+        weight = str(weights[weight_index])
+        device_spec = devices[device_index]
+    except IndexError as exc:
+        raise ValueError(
+            f"Leaf indexes out of range: weight={weight_index}, device={device_index}"
+        ) from exc
+    if not isinstance(device_spec, CommentedMap):
+        raise ValueError(f"Device model spec must be a mapping: {device_spec!r}")
+
+    leaf = deepcopy(template)
+    leaf["weights"] = CommentedSeq([deepcopy(weights[weight_index])])
+    leaf["device_model_specs"] = CommentedSeq([deepcopy(device_spec)])
+    _filter_metadata(leaf, weight)
+    return _template_identity(leaf, weight, leaf["device_model_specs"][0]), leaf
+
+
+def _flat_template_identity(template: CommentedMap) -> LeafIdentity:
+    weights = template.get("weights")
+    devices = template.get("device_model_specs")
+    if not isinstance(weights, list) or len(weights) != 1:
+        raise ValueError("Prod template must contain exactly one weight")
+    if not isinstance(devices, list) or len(devices) != 1:
+        raise ValueError("Prod template must contain exactly one device")
+    return _template_identity(template, str(weights[0]), devices[0])
+
+
+def _has_unsafe_yaml_structure(value) -> bool:
+    anchor = getattr(value, "anchor", None)
+    if anchor is not None and anchor.value is not None:
+        return True
+    if isinstance(value, CommentedMap):
+        if getattr(value, "merge", None):
+            return True
+        return any(
+            _has_unsafe_yaml_structure(key) or _has_unsafe_yaml_structure(item)
+            for key, item in value.items()
+        )
+    if isinstance(value, (list, tuple)):
+        return any(_has_unsafe_yaml_structure(item) for item in value)
+    return False
+
+
+def _inject_pins(
+    leaf: CommentedMap,
+    *,
+    version: str,
+    tt_metal_commit: str,
+    vllm_commit: str | None,
+    docker_image: str | None = None,
+) -> None:
+    for field in _PIN_FIELDS:
+        leaf.pop(field, None)
+    if docker_image is not None:
+        leaf.pop("docker_image", None)
+
+    keys = list(leaf)
+    insert_at = (
+        keys.index("device_model_specs") if "device_model_specs" in keys else len(keys)
+    )
     pins = [
-        f'  version: "{version}"\n',
-        f'  tt_metal_commit: "{tt_metal_commit}"\n',
+        ("version", version),
+        ("tt_metal_commit", tt_metal_commit),
     ]
     if vllm_commit is not None:
-        pins.append(f'  vllm_commit: "{vllm_commit}"\n')
+        pins.append(("vllm_commit", vllm_commit))
     if docker_image is not None:
-        pins.append(f'  docker_image: "{docker_image}"\n')
+        pins.append(("docker_image", docker_image))
+    for offset, (key, value) in enumerate(pins):
+        leaf.insert(
+            insert_at + offset,
+            key,
+            DoubleQuotedScalarString(value),
+        )
 
-    insert_at = len(body)
-    for idx in range(1, len(body)):
-        if re.match(r"^  \S", body[idx]):
-            insert_at = idx
-            break
-    return body[:insert_at] + pins + body[insert_at:]
+
+def _semantic_value(value):
+    if isinstance(value, dict):
+        return {str(key): _semantic_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_semantic_value(item) for item in value]
+    return value
 
 
-def _render(segments) -> str:
-    return "".join(line for _, seg_lines in segments for line in seg_lines)
+def _append_block(segments, lines) -> None:
+    last_block_index = next(
+        (
+            index
+            for index in range(len(segments) - 1, -1, -1)
+            if segments[index][0] == "block"
+        ),
+        None,
+    )
+    segment = ("block", lines)
+    if last_block_index is None:
+        for index, (kind, filler_lines) in enumerate(segments):
+            if kind == "filler" and any(
+                line.strip() == "templates: []" for line in filler_lines
+            ):
+                segments[index] = (
+                    "filler",
+                    [
+                        "templates:\n" if line.strip() == "templates: []" else line
+                        for line in filler_lines
+                    ],
+                )
+        segments.append(segment)
+    else:
+        if segments[last_block_index][1] and not segments[last_block_index][1][
+            -1
+        ].endswith("\n"):
+            segments[last_block_index][1][-1] += "\n"
+        segments.insert(last_block_index + 1, segment)
+
+
+def _render_segments(segments) -> str:
+    return "".join(line for _, lines in segments for line in lines)
+
+
+def _validate_candidate_catalog(candidate_text: dict[str, str]):
+    with tempfile.TemporaryDirectory() as temp_dir:
+        prod_dir = Path(temp_dir) / "prod"
+        prod_dir.mkdir()
+        for filename in MODEL_SPEC_CATALOG_FILES:
+            (prod_dir / filename).write_text(candidate_text[filename])
+            _load_document(prod_dir / filename)
+        templates = [
+            template
+            for filename in MODEL_SPEC_CATALOG_FILES
+            for template in load_templates_from_yaml(prod_dir / filename, env="prod")
+        ]
+        return get_model_spec_map(templates)
+
+
+def _identity_json(identity: LeafIdentity) -> list[str]:
+    return list(identity)
+
+
+def report_to_jsonable(report: dict) -> dict:
+    """Convert the structured promotion report into deterministic JSON data."""
+    return {
+        "ok": True,
+        "dry_run": report["dry_run"],
+        "configured_combos": [
+            {
+                "model_name": combo.model_name,
+                "engine": combo.engine.value,
+                "device": combo.device.to_string(),
+                "impl": combo.impl,
+            }
+            for combo in report["configured_combos"]
+        ],
+        "requested_identities": [
+            _identity_json(identity) for identity in report["requested_identities"]
+        ],
+        "resolved": [
+            {
+                "identity": _identity_json(item.identity),
+                "source_path": str(item.source_path),
+                "template_index": item.template_index,
+                "weight_index": item.weight_index,
+                "device_index": item.device_index,
+            }
+            for item in report["resolved"]
+        ],
+        "actions": [
+            {"identity": _identity_json(identity), "action": action}
+            for identity, action in report["actions"].items()
+        ],
+        "added_identities": [
+            _identity_json(identity) for identity in report["added_identities"]
+        ],
+        "updated_identities": [
+            _identity_json(identity) for identity in report["updated_identities"]
+        ],
+        "unchanged_identities": [
+            _identity_json(identity) for identity in report["unchanged_identities"]
+        ],
+        "retained_identities": [
+            _identity_json(identity) for identity in report["retained_identities"]
+        ],
+        "changed_files": report["changed_files"],
+        "leaf_count_before": report["leaf_count_before"],
+        "leaf_count_after": report["leaf_count_after"],
+    }
+
+
+def _require_non_empty(name: str, value: str | None) -> str:
+    if value is None or not value.strip():
+        raise ValueError(f"{name} must be a non-empty value")
+    return value
 
 
 def promote(
@@ -343,101 +384,238 @@ def promote(
     version,
     vllm_commit=None,
     quetzal_docker_image=None,
+    dry_run=False,
 ) -> dict:
-    """Promote release-marked dev templates into prod.
+    """Plan, validate, and optionally write exact leaf promotion."""
+    version = _require_non_empty("version", version)
+    tt_metal_commit = _require_non_empty("tt_metal_commit", tt_metal_commit)
 
-    ``version`` and ``tt_metal_commit`` are injected into every promoted block.
-    ``vllm_commit`` is injected only into VLLM-engine templates and is required
-    when any promoted template uses the VLLM engine (raises ValueError otherwise).
-
-    Returns a report dict:
-      - combos: set of all release combos
-      - matches_by_file: dict filename -> list of MatchedBlock
-      - unmatched: set of combos with no dev template
-      - actions: dict filename -> list of (identity, "appended"|"updated")
-      - changed_files: list of prod filenames whose content would change
-    """
     ci_config = json.loads(Path(ci_config_path).read_text())
     combos = collect_release_combos(ci_config)
-    matches_by_file, unmatched = find_matches(Path(dev_dir), combos)
+    sources = load_dev_model_spec_sources(Path(dev_dir))
+    resolved = resolve_release_combos(combos, sources)
 
-    # Quetzal is installed in a distinct, package-capable derivative image.  It
-    # must never inherit the ordinary synthesized tt-metal/vLLM image.  Require
-    # the exact OCI digest before changing any prod file, then inject it only
-    # into Quetzal blocks; native promotion remains byte-for-byte unchanged.
-    quetzal_combos = sorted(
-        (combo for combo in combos if combo.impl == "quetzal"),
-        key=lambda combo: (combo.model_name, combo.engine.name, combo.device.name),
-    )
-    if quetzal_combos and quetzal_docker_image is None:
-        rendered = ", ".join(_combo_str(combo) for combo in quetzal_combos)
+    quetzal_items = [item for item in resolved if item.identity[3] == "quetzal"]
+    if quetzal_items and quetzal_docker_image is None:
+        identities = ", ".join(str(item.identity) for item in quetzal_items)
         raise ValueError(
             "Quetzal release promotion requires an explicit immutable "
             "package-capable image via --quetzal-docker-image; refusing to "
-            "synthesize the standard vLLM "
-            f"image for: {rendered}"
+            f"synthesize the standard vLLM image for: {identities}"
         )
     if quetzal_docker_image is not None:
         quetzal_docker_image = validate_digest_pinned_image(quetzal_docker_image)
 
+    # resolve_release_combos() rejects two selectors that collide on one
+    # identity, so this index keeps every resolved entry.
+    resolved_by_identity = {item.identity: item for item in resolved}
+
     needs_vllm = any(
-        template_engine(block.template) == InferenceEngine.VLLM
-        for matched in matches_by_file.values()
-        for block in matched
+        item.combo.engine == InferenceEngine.VLLM
+        for item in resolved_by_identity.values()
     )
-    if needs_vllm and vllm_commit is None:
+    if needs_vllm:
+        vllm_commit = _require_non_empty("vllm_commit", vllm_commit)
+
+    raw_dev_documents = {}
+    promoted_leaves = {}
+    target_filenames = {}
+    for identity, item in resolved_by_identity.items():
+        document = raw_dev_documents.setdefault(
+            item.source_path,
+            _load_document(item.source_path),
+        )
+        try:
+            raw_template = document["templates"][item.template_index]
+        except IndexError as exc:
+            raise ValueError(
+                f"Source template index changed for release identity {identity!r}"
+            ) from exc
+        if _has_unsafe_yaml_structure(raw_template):
+            raise ValueError(
+                f"Source template for {identity!r} uses YAML anchors or merge keys"
+            )
+        actual_identity, leaf = _make_leaf(
+            raw_template,
+            item.weight_index,
+            item.device_index,
+        )
+        if actual_identity != identity:
+            raise ValueError(
+                f"Source provenance mismatch: expected {identity!r}, "
+                f"found {actual_identity!r}"
+            )
+        _inject_pins(
+            leaf,
+            version=version,
+            tt_metal_commit=tt_metal_commit,
+            vllm_commit=vllm_commit
+            if item.combo.engine == InferenceEngine.VLLM
+            else None,
+            docker_image=(
+                quetzal_docker_image if identity[3] == "quetzal" else None
+            ),
+        )
+        promoted_leaves[identity] = leaf
+        target_filenames[identity] = item.source_path.name
+
+    prod_dir = Path(prod_dir)
+    before_templates = [
+        template
+        for filename in MODEL_SPEC_CATALOG_FILES
+        for template in load_templates_from_yaml(prod_dir / filename, env="prod")
+    ]
+    before_payloads = {
+        model_spec_leaf_identity(spec): spec.get_serialized_dict()
+        for spec in get_model_spec_map(before_templates).values()
+    }
+    original_text = {}
+    candidate_segments = {}
+    prod_locations = {}
+
+    for filename in MODEL_SPEC_CATALOG_FILES:
+        path = prod_dir / filename
+        text = path.read_text()
+        original_text[filename] = text
+        segments = split_into_blocks(text)
+        candidate_segments[filename] = [(kind, list(lines)) for kind, lines in segments]
+
+        for segment_index, (kind, lines) in enumerate(segments):
+            if kind != "block":
+                continue
+            raw_template = _parse_block(lines)
+            identity = _flat_template_identity(raw_template)
+            prod_locations[identity] = (filename, segment_index, raw_template)
+
+    for identity, (filename, _, _) in prod_locations.items():
+        if identity in target_filenames and filename != target_filenames[identity]:
+            raise ValueError(
+                f"Release identity {identity!r} belongs to {filename!r}, "
+                f"but dev source is {target_filenames[identity]!r}"
+            )
+
+    for identity, leaf in promoted_leaves.items():
+        location = prod_locations.get(identity)
+        if location is not None:
+            filename, segment_index, current = location
+            if _semantic_value(current) != _semantic_value(leaf):
+                candidate_segments[filename][segment_index] = (
+                    "block",
+                    _render_block(leaf),
+                )
+            continue
+        filename = target_filenames[identity]
+        if filename not in candidate_segments:
+            raise ValueError(
+                f"No prod catalog file {filename!r} for release identity {identity!r}"
+            )
+        _append_block(candidate_segments[filename], _render_block(leaf))
+
+    candidate_text = {
+        filename: _render_segments(segments)
+        for filename, segments in candidate_segments.items()
+    }
+
+    requested = tuple(promoted_leaves)
+    requested_set = set(requested)
+    candidate_model_specs = _validate_candidate_catalog(candidate_text)
+    after_payloads = {
+        model_spec_leaf_identity(spec): spec.get_serialized_dict()
+        for spec in candidate_model_specs.values()
+    }
+    after_set = set(after_payloads)
+    if not requested_set <= after_set:
         raise ValueError(
-            "--vllm-commit is required: one or more promoted templates use the VLLM inference engine."
+            f"Candidate prod is missing requested identities "
+            f"{sorted(requested_set - after_set)!r}"
         )
 
+    # A release may only move the identities it asked for. Everything else in
+    # prod must survive byte-identical, so a block-splitting or rendering defect
+    # that damages a neighbouring leaf fails the promotion instead of shipping.
+    for identity in sorted(after_set - requested_set):
+        if identity not in before_payloads:
+            raise ValueError(f"Promotion introduced unrequested identity {identity!r}")
+        if before_payloads[identity] != after_payloads[identity]:
+            raise ValueError(f"Promotion changed retained identity {identity!r}")
+    dropped = sorted(set(before_payloads) - after_set)
+    if dropped:
+        raise ValueError(f"Promotion dropped existing identities {dropped!r}")
+
     actions = {}
-    changed_files = []
-    for filename, matched in matches_by_file.items():
-        prod_file = Path(prod_dir) / filename
-        original = prod_file.read_text() if prod_file.exists() else ""
-        segments = split_into_blocks(original)
+    for identity in requested:
+        if identity not in before_payloads:
+            actions[identity] = "added"
+        elif before_payloads[identity] != after_payloads[identity]:
+            actions[identity] = "updated"
+        else:
+            actions[identity] = "unchanged"
 
-        file_actions = []
-        for block in matched:
-            is_vllm = template_engine(block.template) == InferenceEngine.VLLM
-            lines = inject_pin_fields(
-                block.lines,
-                version=version,
-                tt_metal_commit=tt_metal_commit,
-                vllm_commit=vllm_commit if is_vllm else None,
-                docker_image=(
-                    quetzal_docker_image
-                    if block.template.get("impl") == "quetzal"
-                    else None
-                ),
-            )
-            action = upsert_block(segments, block.identity, lines)
-            file_actions.append((block.identity, action))
-        actions[filename] = file_actions
-
-        new_text = _render(segments)
-        if new_text != original:
-            changed_files.append(filename)
-            prod_file.parent.mkdir(parents=True, exist_ok=True)
-            prod_file.write_text(new_text)
+    changed_files = [
+        filename
+        for filename in MODEL_SPEC_CATALOG_FILES
+        if candidate_text[filename] != original_text[filename]
+    ]
+    if not dry_run:
+        staged_paths = {}
+        try:
+            for filename in changed_files:
+                staged_path = prod_dir / f".{filename}.promotion.tmp"
+                staged_path.write_text(candidate_text[filename])
+                staged_paths[filename] = staged_path
+            for filename, staged_path in staged_paths.items():
+                staged_path.replace(prod_dir / filename)
+        finally:
+            for staged_path in staged_paths.values():
+                if staged_path.exists():
+                    staged_path.unlink()
 
     return {
-        "combos": combos,
-        "matches_by_file": matches_by_file,
-        "unmatched": unmatched,
+        "dry_run": dry_run,
+        "configured_combos": combos,
+        "resolved": tuple(resolved_by_identity.values()),
+        "requested_identities": requested,
         "actions": actions,
+        "added_identities": tuple(
+            identity for identity, action in actions.items() if action == "added"
+        ),
+        "updated_identities": tuple(
+            identity for identity, action in actions.items() if action == "updated"
+        ),
+        "unchanged_identities": tuple(
+            identity for identity, action in actions.items() if action == "unchanged"
+        ),
+        "retained_identities": tuple(sorted(after_set - requested_set)),
         "changed_files": changed_files,
+        "leaf_count_before": len(before_payloads),
+        "leaf_count_after": len(after_payloads),
     }
 
 
-def _combo_str(combo: ReleaseCombo) -> str:
-    impl = f", impl={combo.impl}" if combo.impl else ""
-    return f"{combo.model_name} [{combo.engine.name}{impl}] on {combo.device.name}"
+def _print_human_report(report: dict) -> None:
+    mode = "DRY RUN" if report["dry_run"] else "APPLIED"
+    print(f"{mode}: {len(report['configured_combos'])} configured release combos")
+    for item in report["resolved"]:
+        print(
+            f"RESOLVED  {item.combo.model_name} [{item.combo.engine.value}] "
+            f"impl={item.combo.impl or '<default>'} "
+            f"on {item.combo.device.to_string()} -> {item.identity} "
+            f"({item.source_path}:{item.template_index}/"
+            f"{item.weight_index}/{item.device_index})"
+        )
+    for identity, action in report["actions"].items():
+        print(f"{action.upper():9} {identity}")
+    print(f"RETAINED  {len(report['retained_identities'])} existing identities")
+    print(f"Prod leaves: {report['leaf_count_before']} -> {report['leaf_count_after']}")
+    print(
+        f"{len(report['changed_files'])} prod file(s) changed: "
+        f"{report['changed_files']}"
+    )
 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
-        description="Promote release-marked dev model specs into the prod catalogue."
+        description="Promote exact dev leaves into a leaf-granular prod catalog."
     )
     parser.add_argument("--ci-config", type=Path, default=DEFAULT_CI_CONFIG)
     parser.add_argument("--dev-dir", type=Path, default=DEFAULT_DEV_DIR)
@@ -453,6 +631,8 @@ def main(argv=None) -> int:
             "registry/path@sha256:<64 lowercase hex>"
         ),
     )
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--json", action="store_true", dest="json_output")
     args = parser.parse_args(argv)
 
     try:
@@ -464,28 +644,28 @@ def main(argv=None) -> int:
             version=args.version,
             vllm_commit=args.vllm_commit,
             quetzal_docker_image=args.quetzal_docker_image,
+            dry_run=args.dry_run,
         )
-    except ValueError as exc:
+    except (OSError, PyYAMLError, RuamelYAMLError, ValueError) as exc:
+        if args.json_output:
+            print(
+                json.dumps(
+                    {
+                        "ok": False,
+                        "error": str(exc),
+                        "error_type": type(exc).__name__,
+                    },
+                    indent=2,
+                )
+            )
+            return 2
         parser.error(str(exc))
 
-    for filename, file_actions in sorted(report["actions"].items()):
-        for identity, action in file_actions:
-            impl, engine, weights, devices = identity
-            print(
-                f"{action.upper():8} {filename}: "
-                f"{impl} [{engine.name}] {sorted(weights)} "
-                f"on {sorted(d.name for d in devices)}"
-            )
-    changed = report["changed_files"]
-    print(f"{len(changed)} prod file(s) changed: {sorted(changed)}")
-
-    for combo in sorted(
-        report["unmatched"],
-        key=lambda c: (c.model_name, c.engine.name, c.device.name, c.impl or ""),
-    ):
-        print(f"WARNING: no dev template found for {_combo_str(combo)}")
-
-    return 1 if report["unmatched"] else 0
+    if args.json_output:
+        print(json.dumps(report_to_jsonable(report), indent=2))
+    else:
+        _print_human_report(report)
+    return 0
 
 
 if __name__ == "__main__":
