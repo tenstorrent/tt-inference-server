@@ -53,6 +53,11 @@ QUETZAL_ARTIFACT_ENV_VARS = (
 )
 QUETZAL_BUNDLE_MANIFESTS_DIR = ".quetzal-bundle-manifests"
 QUETZAL_BUNDLE_SCHEMAS = {"ttq.artifact_bundle/v1", "ttq.artifact_bundle/v2"}
+QUETZAL_BEHAVIORAL_PACKAGE_ADMISSION_ENV = "TTIS_QUETZAL_BEHAVIORAL_PACKAGE_ADMISSION"
+QUETZAL_CONTENT_ADDRESSED_PACKAGE_RE = re.compile(
+    r"(?:sha256-[0-9a-f]{64}-[0-9a-f]{64}|"
+    r"sha256-v2-[0-9a-f]{64}-[0-9a-f]{64}-[0-9a-f]{64})"
+)
 
 
 def parse_args():
@@ -451,7 +456,9 @@ def _safe_auxiliary_relative(value, label: str) -> Path:
     return path
 
 
-def _require_read_only_path(path: Path, *, directory: bool, label: str) -> None:
+def _require_read_only_path(
+    path: Path, *, directory: bool, label: str, allow_mutable_mode: bool = False
+) -> None:
     if path.is_symlink():
         raise RuntimeError(f"{label} may not be a symlink: {path}")
     try:
@@ -462,12 +469,16 @@ def _require_read_only_path(path: Path, *, directory: bool, label: str) -> None:
         raise RuntimeError(f"{label} is not a directory: {path}")
     if not directory and not path.is_file():
         raise RuntimeError(f"{label} is not a regular file: {path}")
-    if metadata.st_mode & 0o222:
+    if not allow_mutable_mode and metadata.st_mode & 0o222:
         raise RuntimeError(f"{label} is mutable: {path}")
 
 
 def _require_read_only_package_member(
-    package_root: Path, value: str, *, label: str
+    package_root: Path,
+    value: str,
+    *,
+    label: str,
+    allow_mutable_mode: bool = False,
 ) -> tuple[Path, str]:
     """Resolve one package member without hiding symlink or mutable-parent state."""
     member = Path(value)
@@ -481,8 +492,18 @@ def _require_read_only_package_member(
     current = package_root
     for part in relative.parts[:-1]:
         current = current / part
-        _require_read_only_path(current, directory=True, label=f"{label} parent")
-    _require_read_only_path(member, directory=False, label=label)
+        _require_read_only_path(
+            current,
+            directory=True,
+            label=f"{label} parent",
+            allow_mutable_mode=allow_mutable_mode,
+        )
+    _require_read_only_path(
+        member,
+        directory=False,
+        label=label,
+        allow_mutable_mode=allow_mutable_mode,
+    )
     try:
         resolved = member.resolve(strict=True)
     except OSError as exc:
@@ -490,6 +511,62 @@ def _require_read_only_package_member(
     if not resolved.is_relative_to(package_root):
         raise RuntimeError(f"{label} escapes QUETZAL_PACKAGE_ROOT: {member}")
     return member, relative.as_posix()
+
+
+def _mountinfo_unescape(value: str) -> str:
+    """Decode the octal escapes used for path fields in /proc/self/mountinfo."""
+    return re.sub(r"\\([0-7]{3})", lambda match: chr(int(match.group(1), 8)), value)
+
+
+def _is_read_only_mountpoint(path: Path) -> bool:
+    """Return true only when *path* itself is a read-only mountpoint."""
+    try:
+        rows = Path("/proc/self/mountinfo").read_text().splitlines()
+    except OSError:
+        return False
+    wanted = str(path)
+    for row in rows:
+        before, separator, _after = row.partition(" - ")
+        if not separator:
+            continue
+        fields = before.split()
+        if len(fields) < 6:
+            continue
+        mountpoint = _mountinfo_unescape(fields[4])
+        mount_options = fields[5].split(",")
+        if mountpoint == wanted:
+            return "ro" in mount_options
+    return False
+
+
+def _behavioral_package_admission(package_root: Path, package_id: str) -> bool:
+    value = os.getenv(QUETZAL_BEHAVIORAL_PACKAGE_ADMISSION_ENV)
+    if value is None:
+        return False
+    if value != "1":
+        raise RuntimeError(
+            f"{QUETZAL_BEHAVIORAL_PACKAGE_ADMISSION_ENV} must be exactly '1'"
+        )
+    if any(
+        os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
+        for name in ("CI", "GITHUB_ACTIONS")
+    ):
+        raise RuntimeError("behavioral Quetzal package admission is forbidden in CI")
+    if QUETZAL_CONTENT_ADDRESSED_PACKAGE_RE.fullmatch(package_id) is None:
+        raise RuntimeError(
+            "behavioral Quetzal package admission requires a content-addressed "
+            "package id"
+        )
+    if not _is_read_only_mountpoint(package_root):
+        raise RuntimeError(
+            "behavioral Quetzal package admission requires QUETZAL_PACKAGE_ROOT "
+            "to be an exact read-only mountpoint"
+        )
+    logger.warning(
+        "Using local behavioral Quetzal package admission; this run is "
+        "non-certifying and does not establish immutable publication"
+    )
+    return True
 
 
 def _validate_quetzal_auxiliary_references(
@@ -754,7 +831,13 @@ def _validate_quetzal_package_and_runtime(
             "QZ_MODELS_ROOT must equal QUETZAL_PACKAGE_ROOT and its basename "
             "must equal QUETZAL_PACKAGE_ID"
         )
-    _require_read_only_path(package_root, directory=True, label="Quetzal package root")
+    behavioral_admission = _behavioral_package_admission(package_root, package_id)
+    _require_read_only_path(
+        package_root,
+        directory=True,
+        label="Quetzal package root",
+        allow_mutable_mode=behavioral_admission,
+    )
 
     manifest_sha256 = os.getenv("QUETZAL_BUNDLE_MANIFEST_SHA256", "")
     if re.fullmatch(r"[0-9a-f]{64}", manifest_sha256) is None:
@@ -766,6 +849,7 @@ def _validate_quetzal_package_and_runtime(
         trusted_manifest_dir,
         directory=True,
         label="Quetzal trusted-root proof directory",
+        allow_mutable_mode=behavioral_admission,
     )
     trusted_manifest = trusted_manifest_dir / f"{manifest_sha256}.json"
     try:
@@ -773,6 +857,7 @@ def _validate_quetzal_package_and_runtime(
             trusted_manifest,
             directory=False,
             label="Quetzal trusted-root proof",
+            allow_mutable_mode=behavioral_admission,
         )
     except RuntimeError as exc:
         raise RuntimeError(
@@ -804,7 +889,10 @@ def _validate_quetzal_package_and_runtime(
         if not value:
             raise RuntimeError(f"impl=quetzal requires {env_name}")
         artifact, relative = _require_read_only_package_member(
-            package_root, value, label=env_name
+            package_root,
+            value,
+            label=env_name,
+            allow_mutable_mode=behavioral_admission,
         )
         row = inventory.get(relative)
         digest, size = _sha256_file(artifact)
