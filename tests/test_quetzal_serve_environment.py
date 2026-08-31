@@ -430,7 +430,7 @@ def test_official_builder_uses_exact_tt_metal_tool_images() -> None:
         "^ghcr\\.io/tenstorrent/tt-metal/tt-metalium/tools/${tool}:", tools
     )
     context = builder.index(
-        'ci-build.contexts.${tool}-layer=docker-image://${tool_tag}', validation
+        "ci-build.contexts.${tool}-layer=docker-image://${tool_tag}", validation
     )
     bake = builder.index("docker buildx bake", context)
     assert checkout < tags < tools < validation < context < bake
@@ -449,11 +449,13 @@ def test_official_builder_retries_with_a_fresh_tt_metal_checkout() -> None:
     builder = (ROOT / "scripts" / "build_single_docker.sh").read_text()
     assert 'TT_METAL_BUILD_DIR=""' in builder
     assert (
-        'TT_METAL_BUILD_DIR=$(mktemp -d '
+        "TT_METAL_BUILD_DIR=$(mktemp -d "
         '"${repo_root}/temp_docker_build_dir.XXXXXX")' in builder
     )
     cleanup = builder.index('if [[ -n "$TT_METAL_BUILD_DIR" ]]')
-    clone = builder.index("git clone --depth 1 https://github.com/tenstorrent/tt-metal.git")
+    clone = builder.index(
+        "git clone --depth 1 https://github.com/tenstorrent/tt-metal.git"
+    )
     assert cleanup < clone
     assert 'rm -rf -- "$TT_METAL_BUILD_DIR"' in builder[cleanup:clone]
     assert 'tt_metal_build_dir="temp_docker_build_dir_' not in builder
@@ -469,12 +471,12 @@ def test_official_builder_reuses_an_existing_final_image_before_base_build() -> 
         build_flag,
     )
     assert remote_probe < build_flag < base_build
-    assert 'TTIS_IMAGE_RESULT dev_image_tag=${dev_image_tag}' in builder
+    assert "TTIS_IMAGE_RESULT dev_image_tag=${dev_image_tag}" in builder
 
 
 def test_official_builder_rejects_an_invalid_container_uid() -> None:
     builder = (ROOT / "scripts" / "build_single_docker.sh").read_text()
     invalid_uid = builder.index(
-        'Error: CONTAINER_APP_UID=${CONTAINER_APP_UID} is not a number'
+        "Error: CONTAINER_APP_UID=${CONTAINER_APP_UID} is not a number"
     )
     assert "exit 1" in builder[invalid_uid : invalid_uid + 240]
