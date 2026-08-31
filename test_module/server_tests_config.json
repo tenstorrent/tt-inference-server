@@ -244,6 +244,26 @@
                 "blackhole_galaxy"
             ]
         },
+        "minimax_h3_fl2va": {
+            "id_name": "minimax-h3-fl2va",
+            "weights": [
+                "MiniMax-H3-FL2VA"
+            ],
+            "category": "VIDEO",
+            "compatible_devices": [
+                "blackhole_galaxy"
+            ]
+        },
+        "minimax_h3_ref2va": {
+            "id_name": "minimax-h3-ref2va",
+            "weights": [
+                "MiniMax-H3-Ref2VA"
+            ],
+            "category": "VIDEO",
+            "compatible_devices": [
+                "blackhole_galaxy"
+            ]
+        },
         "sdxl": {
             "weights": [
                 "stable-diffusion-xl-base-1.0"
@@ -1007,6 +1027,63 @@
                 "timeout": 3600,
                 "retry_attempts": 0,
                 "retry_delay": 10,
+                "break_on_failure": false,
+                "mock_mode": false
+            }
+        },
+        "MiniMaxH3Fl2vaContractTest": {
+            "module": "test_module.load_param_tests.minimax_h3_fl2va_contract_test",
+            "markers": [
+                "param",
+                "e2e"
+            ],
+            "test_config": {
+                "timeout": 900,
+                "retry_attempts": 0,
+                "retry_delay": 0,
+                "break_on_failure": false,
+                "mock_mode": false
+            }
+        },
+        "MiniMaxH3Ref2vaContractTest": {
+            "module": "test_module.load_param_tests.minimax_h3_ref2va_contract_test",
+            "markers": [
+                "param",
+                "e2e"
+            ],
+            "test_config": {
+                "timeout": 900,
+                "retry_attempts": 0,
+                "retry_delay": 0,
+                "break_on_failure": false,
+                "mock_mode": false
+            }
+        },
+        "MiniMaxH3PromptContractTest": {
+            "module": "test_module.load_param_tests.minimax_h3_prompt_contract_test",
+            "markers": [
+                "param",
+                "e2e"
+            ],
+            "test_config": {
+                "timeout": 300,
+                "retry_attempts": 0,
+                "retry_delay": 0,
+                "break_on_failure": false,
+                "mock_mode": false
+            }
+        },
+        "MiniMaxH3AdmissionTest": {
+            "module": "test_module.load_param_tests.minimax_h3_admission_test",
+            "markers": [
+                "param",
+                "e2e",
+                "slow"
+            ],
+            "test_config": {
+                "timeout": 900,
+                "retry_attempts": 0,
+                "retry_delay": 0,
                 "break_on_failure": false,
                 "mock_mode": false
             }

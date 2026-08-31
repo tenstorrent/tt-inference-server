@@ -167,6 +167,10 @@ class TestVideoMatrixExpansion:
         "mochi-p150x8",
         "mochi-p300x2",
         "minimax-h3-blackhole_galaxy",
+        # FL2VA and Ref2VA need their own deployment -- the MODEL_RUNNER differs and a process
+        # serves one task -- so they are separate suites rather than cases in the t2va one.
+        "minimax-h3-fl2va-blackhole_galaxy",
+        "minimax-h3-ref2va-blackhole_galaxy",
     }
 
     # Expected VideoGenerationLoadTest targets per expanded suite: the base
@@ -280,6 +284,25 @@ class TestVideoMatrixExpansion:
             "MiniMaxH3LifecycleDownloadTest",
             "MiniMaxH3CancelLifecycleTest",
             "MiniMaxH3VideoQualityTest",
+            "MiniMaxH3PromptContractTest",
+            "MiniMaxH3AdmissionTest",
+        ]
+
+    def test_fl2va_and_ref2va_suites_carry_their_own_contract(self):
+        """Each modality is graded on the deployment that serves it.
+
+        Dropped into the t2va suite these would run against whichever runner is booted, where a
+        keyframe at frame_pos=5 or a references object is simply an unknown field -- so nearly
+        every case would be graded against a server that was never asked to serve that modality.
+        """
+        suite_map = self._suite_map()
+        assert [tc["template"] for tc in suite_map["minimax-h3-fl2va-blackhole_galaxy"]["test_cases"]] == [
+            "MiniMaxH3Fl2vaContractTest",
+            "MiniMaxH3PromptContractTest",
+        ]
+        assert [tc["template"] for tc in suite_map["minimax-h3-ref2va-blackhole_galaxy"]["test_cases"]] == [
+            "MiniMaxH3Ref2vaContractTest",
+            "MiniMaxH3PromptContractTest",
         ]
 
     def test_all_video_suites_single_device(self):
