@@ -228,6 +228,7 @@ struct ChatCompletionStreamChunk {
     ChatCompletionStreamChoice choice;
     choice.index = completionChoice.index;
     choice.delta.content = completionChoice.text;
+    choice.logprobs = completionChoice.logprobs;
 
     if (completionChoice.finish_reason.has_value()) {
       const std::string& reason = completionChoice.finish_reason.value();

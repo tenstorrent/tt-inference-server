@@ -17,6 +17,9 @@ struct SharedToken {
   uint32_t task_id = 0;
   uint32_t spec_accepts = 0;
   uint32_t spec_rejects = 0;
+  // Logit of the chosen (argmax/sampled) token, forwarded from the engine's
+  // OutputMessage.top1_logit. Emitted to clients as the per-token logprob.
+  float top1_logit = 0.0f;
 
   static constexpr uint32_t FLAG_FINAL = 1;
   static constexpr uint32_t FLAG_ERROR = 2;
@@ -39,6 +42,7 @@ struct SharedToken {
              sizeof(spec_accepts));
     os.write(reinterpret_cast<const char*>(&spec_rejects),
              sizeof(spec_rejects));
+    os.write(reinterpret_cast<const char*>(&top1_logit), sizeof(top1_logit));
   }
 
   static SharedToken deserialize(std::istream& is) {
@@ -52,6 +56,8 @@ struct SharedToken {
             sizeof(token.spec_accepts));
     is.read(reinterpret_cast<char*>(&token.spec_rejects),
             sizeof(token.spec_rejects));
+    is.read(reinterpret_cast<char*>(&token.top1_logit),
+            sizeof(token.top1_logit));
     return token;
   }
 };

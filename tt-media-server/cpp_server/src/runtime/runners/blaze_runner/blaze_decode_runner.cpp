@@ -659,7 +659,7 @@ void BlazeDecodeRunner::handleSchedulerOutput(const ds::OutputMessage& output) {
   }
   uint32_t flag = finished ? ipc::SharedToken::FLAG_FINAL : 0;
   ipc::helpers::pushToken(*resultQueue, taskId, output.token_id, flag,
-                          spec.accepts, spec.rejects);
+                          spec.accepts, spec.rejects, output.top1_logit);
 }
 
 void BlazeDecodeRunner::checkOutputHang() {

@@ -13,13 +13,15 @@ namespace tt::ipc::helpers {
 
 inline void pushToken(tt::ipc::IResultQueue& queue, uint32_t taskId,
                       uint32_t tokenId, uint32_t flag = 0,
-                      uint32_t specAccepts = 0, uint32_t specRejects = 0) {
+                      uint32_t specAccepts = 0, uint32_t specRejects = 0,
+                      float top1Logit = 0.0f) {
   tt::ipc::SharedToken token{};
   token.task_id = taskId;
   token.token_id = tokenId;
   token.flags = flag;
   token.spec_accepts = specAccepts;
   token.spec_rejects = specRejects;
+  token.top1_logit = top1Logit;
   if (flag & tt::ipc::SharedToken::FLAG_FINAL) {
     TT_LOG_DEBUG("pushed final token for task_id={}", taskId);
   }

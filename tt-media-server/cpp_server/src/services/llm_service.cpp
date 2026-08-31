@@ -167,6 +167,21 @@ LLMStreamChunk buildStreamChunk(
   choice.token_id = static_cast<uint32_t>(token.token_id);
   choice.spec_accepts = token.spec_accepts;
   choice.spec_rejects = token.spec_rejects;
+
+  // Emit the chosen token's logit in OpenAI chat-completions logprobs shape:
+  //   logprobs.content[] = [{ token, logprob, bytes: null, top_logprobs: [] }]
+  // Note: this is a raw logit forwarded from the engine, not a normalized
+  // log-probability; clients read it as a per-token confidence signal.
+  Json::Value contentEntry;
+  contentEntry["token"] = delta;
+  contentEntry["logprob"] = token.top1_logit;
+  contentEntry["bytes"] = Json::nullValue;
+  contentEntry["top_logprobs"] = Json::arrayValue;
+  Json::Value logprobs;
+  logprobs["content"] = Json::arrayValue;
+  logprobs["content"].append(contentEntry);
+  choice.logprobs = std::move(logprobs);
+
   if (token.isFinal()) {
     bool isStop = stopTokenSet.count(static_cast<uint32_t>(token.token_id)) > 0;
     choice.finish_reason = isStop ? "stop" : "length";
