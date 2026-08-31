@@ -121,8 +121,14 @@ def _positive_token_limit(value, *, field: str, task_name: str) -> int:
     return value
 
 
-def _agentic_context_requirement(task) -> tuple[int, int, int]:
-    """Return (required, max input, max output) from the harness contract."""
+def _agentic_context_requirement(task) -> tuple[int, int, int, int | None]:
+    """Return the effective context floor and its declared components.
+
+    ``max_input_tokens + max_output_tokens`` is the request payload.  A task's
+    optional ``min_context_required`` can reserve additional chat-template,
+    tool-definition, or harness headroom, and therefore takes precedence when
+    it is larger than the raw payload.
+    """
     if task.agentic_eval_config is not None:
         agent_kwargs = task.agentic_eval_config.agent_kwargs
         model_info = (
@@ -159,7 +165,17 @@ def _agentic_context_requirement(task) -> tuple[int, int, int]:
         field=f"{source}.max_output_tokens",
         task_name=task.task_name,
     )
-    return max_input + max_output, max_input, max_output
+    minimum = getattr(task, "min_context_required", None)
+    if minimum is not None and (
+        not isinstance(minimum, int) or isinstance(minimum, bool) or minimum <= 0
+    ):
+        raise ValueError(
+            "Agentic capability admission failed: "
+            f"task={task.task_name!r} required_context=undeclared; "
+            f"min_context_required must be a positive integer, got {minimum!r}"
+        )
+    required = max(max_input + max_output, minimum or 0)
+    return required, max_input, max_output, minimum
 
 
 def validate_agentic_task_capabilities(model_spec, runtime_config) -> None:
@@ -191,7 +207,9 @@ def validate_agentic_task_capabilities(model_spec, runtime_config) -> None:
 
     for task in tasks:
         try:
-            required, max_input, max_output = _agentic_context_requirement(task)
+            required, max_input, max_output, minimum = (
+                _agentic_context_requirement(task)
+            )
         except ValueError as exc:
             raise ValueError(
                 f"model={model_spec.model_name!r} "
@@ -200,6 +218,9 @@ def validate_agentic_task_capabilities(model_spec, runtime_config) -> None:
                 f"available_context={available}; {exc}"
             ) from exc
         if required > available:
+            minimum_detail = (
+                f"; min_context_required={minimum}" if minimum is not None else ""
+            )
             raise ValueError(
                 "Agentic capability admission failed before host/server/device "
                 f"setup: model={model_spec.model_name!r} "
@@ -207,7 +228,8 @@ def validate_agentic_task_capabilities(model_spec, runtime_config) -> None:
                 f"device={getattr(device_spec, 'device', 'unknown')!r} "
                 f"task={task.task_name!r} available_context={available} "
                 f"required_context={required} "
-                f"(max_input_tokens={max_input} + max_output_tokens={max_output})"
+                f"(max_input_tokens={max_input} + max_output_tokens={max_output}"
+                f"{minimum_detail})"
             )
 
 

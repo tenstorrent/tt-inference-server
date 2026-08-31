@@ -18,6 +18,7 @@ from scripts.release.plan_gpt120_f0b_quetzal_enrollment import (
     EXPECTED_RELATIVE_PATHS,
     GPT_RELEASE_EVALS,
     GPT_SWEBENCH_INPUT_TOKENS,
+    GPT_SWEBENCH_MIN_CONTEXT,
     GPT_SWEBENCH_OUTPUT_TOKENS,
     LOCAL_ON_DISPATCH_PROFILE,
     LOCAL_TTFT_MS_RANGE,
@@ -248,9 +249,11 @@ def test_gpt_pending_row_defines_all_ci_entries_without_weakening_release():
     agentic = frontier["agentic_release_context"]
     assert agentic["max_input_tokens"] == GPT_SWEBENCH_INPUT_TOKENS
     assert agentic["max_output_tokens"] == GPT_SWEBENCH_OUTPUT_TOKENS
-    assert agentic["required_context"] == 8192
+    assert agentic["required_context"] == GPT_SWEBENCH_MIN_CONTEXT == 9216
     assert agentic["available_context"] == 8192
-    assert agentic["status"] == "admitted_bounded_report_only"
+    assert agentic["status"] == (
+        "blocked_insufficient_context_headroom_report_only"
+    )
 
     performance = frontier["performance"]
     assert performance["local_ttft_ms_range"] == list(LOCAL_TTFT_MS_RANGE)
