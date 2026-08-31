@@ -60,6 +60,8 @@ class Settings(BaseSettings):
     sdxl_image_resolution: tuple = (1024, 1024)
 
     # Queue and batch settings
+    # Outstanding work (queued + running) before HTTP 429. Wired into
+    # Scheduler.task_queue capacity and JobManager admission.
     max_queue_size: int = 5000
     max_batch_size: int = 1
     max_batch_delay_time_ms: Optional[int] = None
@@ -111,6 +113,7 @@ class Settings(BaseSettings):
     canary_deep_probe_timeout_seconds: float = 60.0
 
     # Job management settings
+    # In-memory job-record cap, including completed jobs. HTTP 503 when full.
     max_jobs: int = 10000
     job_cleanup_interval_seconds: int = 300
     job_retention_seconds: int = 86400
@@ -131,6 +134,25 @@ class Settings(BaseSettings):
     default_sample_rate: int = 16000
     audio_task: str = AudioTasks.TRANSCRIBE.value
     audio_language: str = "English"
+
+    # Client-supplied media URL download settings (#4974).
+    # Presigned S3/GCS GET URLs are plain https URLs: validation covers scheme
+    # and hostname only, so query-string auth passes through untouched.
+    media_url_download_enabled: bool = True
+    # Comma-separated hostnames, exact ("bucket.s3.us-east-1.amazonaws.com")
+    # or label-anchored wildcards ("*.s3.us-east-1.amazonaws.com"). REQUIRED
+    # for URL downloads: while empty, every URL-valued media field is refused
+    # with 400 — the allowlist is the SSRF guard, and it is checked again on
+    # every redirect hop.
+    media_url_allowed_domains: str = ""
+    # 7,500,000 bytes base64-encode to exactly MAX_BASE64_IMAGE_LEN
+    # (10,000,000 chars, domain/video_i2v_generate_request.py). A larger
+    # default would pass the endpoint and then fail the field cap when an
+    # SP-runner worker re-validates ImagePromptEntry mid-job.
+    media_url_max_bytes: int = 7_500_000
+    # Total deadline for one asset: covers redirects and the full body read.
+    media_url_timeout_seconds: float = 30.0
+    media_url_max_redirects: int = 5
 
     # Telemetry settings
     enable_telemetry: bool = True

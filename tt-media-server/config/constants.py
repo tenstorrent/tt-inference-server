@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+import os
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import NamedTuple, Optional, Tuple
@@ -530,6 +531,7 @@ TTS_RESPONSE_FORMATS = AUDIO_RESPONSE_FORMATS | frozenset(
 class JobTypes(Enum):
     VIDEO = "video"
     TRAINING = "training"
+    ADAPTER_MERGE = "adapter_merge"
 
 
 class DatasetLoaders(Enum):
@@ -557,8 +559,17 @@ class TrainingOptimizers(Enum):
     ADAMW = "adamw"
 
 
-# Base directory for storing fine-tuned adapter outputs.
-TRAINING_STORE_ADAPTERS_DIR = "model_store/"
+TRAINING_STORE_ADAPTERS_DIR = "adapters/"
+TRAINING_STORE_MERGED_MODELS_DIR = "merged_models/"
+
+
+# Adapters/merged models live under $CACHE_ROOT
+def adapters_root() -> str:
+    return os.path.join(os.getenv("CACHE_ROOT", "."), TRAINING_STORE_ADAPTERS_DIR)
+
+
+def merged_models_root() -> str:
+    return os.path.join(os.getenv("CACHE_ROOT", "."), TRAINING_STORE_MERGED_MODELS_DIR)
 
 
 # Helper function to create vLLM configuration with late import to avoid circular imports
@@ -1380,7 +1391,7 @@ ModelConfigs = {
         "queue_for_multiprocessing": QueueType.FasterFifo.value,
     },
     (ModelRunners.QWEN_EMBEDDING_8B, DeviceTypes.N300): {
-        "device_mesh_shape": (2, 1),
+        "device_mesh_shape": (1, 2),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_1.value,
         "max_batch_size": 2,
@@ -1396,7 +1407,7 @@ ModelConfigs = {
         "queue_for_multiprocessing": QueueType.FasterFifo.value,
     },
     (ModelRunners.QWEN_EMBEDDING_8B, DeviceTypes.T3K): {
-        "device_mesh_shape": (2, 1),
+        "device_mesh_shape": (1, 2),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 2,
