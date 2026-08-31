@@ -5,6 +5,7 @@
 import copy
 import hashlib
 import json
+from pathlib import PurePosixPath
 
 import pytest
 
@@ -17,11 +18,13 @@ from workflows.utils import get_repo_root_path
 MODELS = {
     "Qwen3.6-27B": (8192, "6a9e13bd6fc8f0983b9b99948120bc37f49c13e9"),
     "gemma-4-31B-it": (4096, "842da3794eaa0b77d5f08bae87a17459d91ff475"),
+    "gpt-oss-120b": (8192, "b5c939de8f754692c1647ca79fbf85e8c1e70f8a"),
 }
 
 MODEL_REPOS = {
     "Qwen3.6-27B": "Qwen/Qwen3.6-27B",
     "gemma-4-31B-it": "google/gemma-4-31B-it",
+    "gpt-oss-120b": "openai/gpt-oss-120b",
 }
 
 
@@ -152,6 +155,29 @@ def test_docker_command_mounts_exact_v2_auxiliary_root_readonly(tmp_path):
     runtime.quetzal_auxiliary_roots = []
     with pytest.raises(ValueError, match="do not match the model spec"):
         generate_docker_run_command(spec, runtime)
+
+
+def test_gpt_streamed_expert_paths_stay_beneath_exact_auxiliary_mount():
+    spec = _dev_quetzal_spec("gpt-oss-120b")
+    name = spec.env_vars["QUETZAL_REQUIRED_AUXILIARY_NAMES"]
+    auxiliary_roots = json.loads(spec.env_vars["QUETZAL_AUXILIARY_ROOTS_JSON"])
+
+    assert set(auxiliary_roots) == {name}
+    mounted_root = PurePosixPath(auxiliary_roots[name])
+    assert mounted_root == PurePosixPath(
+        "/home/container_app_user/quetzal/auxiliary/"
+        "openai_gpt-oss-120b-streamed-cache/"
+        "sha256-2b2e528a75cae51a53db4a3e309f075553fe5f5f7fec7d2a29480f6572f2e416"
+    )
+
+    expected_paths = {
+        "QZ_MOE_STREAMED_EXPERT_CACHE_ROOT": mounted_root / "cache",
+        "QZ_MOE_STREAMED_EXPERT_MANIFEST": mounted_root / "manifest/final.json",
+    }
+    for env_name, expected_path in expected_paths.items():
+        configured_path = PurePosixPath(spec.env_vars[env_name])
+        assert configured_path.is_relative_to(mounted_root)
+        assert configured_path == expected_path
 
 
 def test_docker_command_mounts_exact_runtime_attestation_readonly(tmp_path):

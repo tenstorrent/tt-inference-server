@@ -212,6 +212,8 @@ templates:
         QUETZAL_WEIGHTS: /home/container_app_user/quetzal/packages/sha256-v2-dacc0476febcaf6fb237d1446908e553b16a122b8d6392c933034bd9984c618b-3086bdd6e0b5aaccaedfe5bdaa514c74409a15da96503395738b3bbee9ed35e2-2cf6ad2acd9ca99e07ae3fd5dce462dd7ede7695529bfc5894893c82a85a0fc9/compiled_weights/openai_gpt-oss-120b-s1024/full/weights.pt
         QUETZAL_REQUIRED_AUXILIARY_NAMES: openai_gpt-oss-120b-streamed-cache
         QUETZAL_AUXILIARY_ROOTS_JSON: '{"openai_gpt-oss-120b-streamed-cache":"/home/container_app_user/quetzal/auxiliary/openai_gpt-oss-120b-streamed-cache/sha256-2b2e528a75cae51a53db4a3e309f075553fe5f5f7fec7d2a29480f6572f2e416"}'
+        QZ_MOE_STREAMED_EXPERT_CACHE_ROOT: /home/container_app_user/quetzal/auxiliary/openai_gpt-oss-120b-streamed-cache/sha256-2b2e528a75cae51a53db4a3e309f075553fe5f5f7fec7d2a29480f6572f2e416/cache
+        QZ_MOE_STREAMED_EXPERT_MANIFEST: /home/container_app_user/quetzal/auxiliary/openai_gpt-oss-120b-streamed-cache/sha256-2b2e528a75cae51a53db4a3e309f075553fe5f5f7fec7d2a29480f6572f2e416/manifest/final.json
         QUETZAL_REQUIRED_PREFILL_BUCKETS: "128,1024"
         QZ_MMAP_WEIGHTS: "1"
         TTQ_STREAM_WEIGHTS: "1"
