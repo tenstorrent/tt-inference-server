@@ -187,9 +187,7 @@ def _validate_capability_receipt(receipt: dict, expected_model: str) -> None:
         for field in ("chunk_size", "kv_blocks"):
             value = capabilities.get(field)
             if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
-                raise ContractError(
-                    f"capabilities.{field} must be a positive integer"
-                )
+                raise ContractError(f"capabilities.{field} must be a positive integer")
         if "prefill_buckets" in capabilities:
             raise ContractError(
                 "chunked capabilities must not declare one-shot prefill_buckets"
@@ -206,13 +204,9 @@ def _validate_capability_receipt(receipt: dict, expected_model: str) -> None:
             )
         buckets = capabilities.get("prefill_buckets")
         if not isinstance(buckets, list) or not buckets:
-            raise ContractError(
-                "one-shot capabilities need non-empty prefill_buckets"
-            )
+            raise ContractError("one-shot capabilities need non-empty prefill_buckets")
         if any(
-            not isinstance(value, int)
-            or isinstance(value, bool)
-            or value <= 0
+            not isinstance(value, int) or isinstance(value, bool) or value <= 0
             for value in buckets
         ):
             raise ContractError(
@@ -223,9 +217,7 @@ def _validate_capability_receipt(receipt: dict, expected_model: str) -> None:
                 "one-shot capabilities.prefill_buckets must be sorted and unique"
             )
         if buckets[-1] > capabilities["max_context_tokens"]:
-            raise ContractError(
-                "one-shot prefill bucket exceeds max_context_tokens"
-            )
+            raise ContractError("one-shot prefill bucket exceeds max_context_tokens")
 
 
 def _endpoint_base(server_url: str, service_port: int) -> str:
