@@ -305,3 +305,24 @@ def test_active_config_withholds_unqualified_gemma_quetzal_lane():
     rows = config["models"]["gemma-4-31B-it"]["implementations"]
     quetzal_rows = [row for row in rows if row.get("impl") == "quetzal"]
     assert quetzal_rows == []
+
+
+def test_blocker_uses_current_runtime_and_preserves_banked_local_gates():
+    blocker = json.loads(
+        (
+            ROOT
+            / "productization/gemma4_31b_models_ci_enrollment.blocked.json"
+        ).read_text()
+    )
+    assert QUETZAL_SOURCE == "9dbfdfc41ca9d90999882b490b135ef6f822b1bd"
+    assert blocker["exact_serving_runtime_source"] == QUETZAL_SOURCE
+    banked = blocker["banked_local_evidence"]
+    assert banked["pcc"] >= 0.99
+    assert banked["capacity_endpoint"] == "ISL4095/OSL1 HTTP 200"
+    assert banked["semantic_endpoint"] == "Gemma is ready."
+    assert banked["clean_lifecycle"] is True
+    assert banked["official_ttis_or_models_ci"] is False
+    missing = "\n".join(blocker["missing_fields"])
+    assert "fresh exact-package PCC" not in missing
+    assert "publication-time proof" in missing
+    assert "On-dispatch" in missing
