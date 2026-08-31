@@ -73,7 +73,7 @@ release=false
 UBUNTU_VERSION="20.04"
 CONTAINER_APP_UID=1000
 TT_METAL_COMMIT_SHA_OR_TAG=v0.56.0-rc6
-TT_VLLM_COMMIT_SHA_OR_TAG=b9564bf364e95a3850619fc7b2ed968cc71e30b7
+TT_VLLM_COMMIT_SHA_OR_TAG=d7a6008b03c7afba001444f2d7a4cfde9ef6d498
 TT_QUETZAL_COMMIT_SHA=""
 TT_QUETZAL_SOURCE_DIR=""
 TT_METAL_PATCHSET_SHA256=""
@@ -231,6 +231,32 @@ if [[ -n "$TT_QUETZAL_COMMIT_SHA" ]]; then
         exit 1
     fi
 fi
+
+# Fail before the multi-minute TT-Metal base build when the requested plugin
+# revision is stale, misspelled, or no longer reachable from the official
+# repository.  The Dockerfile used to discover this only after building the
+# base image, wasting a runner allocation before `git checkout` failed.
+VLLM_PREFLIGHT_DIR=$(mktemp -d "${TMPDIR:-/tmp}/tt-vllm-ref.XXXXXX")
+cleanup_vllm_preflight() {
+    rm -rf -- "$VLLM_PREFLIGHT_DIR"
+}
+git -C "$VLLM_PREFLIGHT_DIR" init -q
+if ! git -C "$VLLM_PREFLIGHT_DIR" fetch -q --depth 1 \
+        https://github.com/tenstorrent/vllm-tt-plugin.git \
+        "$TT_VLLM_COMMIT_SHA_OR_TAG"; then
+    echo "⛔ Error: vllm-tt-plugin revision is not reachable: ${TT_VLLM_COMMIT_SHA_OR_TAG}"
+    cleanup_vllm_preflight
+    exit 1
+fi
+RESOLVED_TT_VLLM_COMMIT=$(git -C "$VLLM_PREFLIGHT_DIR" rev-parse FETCH_HEAD)
+if [[ "$TT_VLLM_COMMIT_SHA_OR_TAG" =~ ^[0-9a-f]{40}$ \
+      && "$RESOLVED_TT_VLLM_COMMIT" != "$TT_VLLM_COMMIT_SHA_OR_TAG" ]]; then
+    echo "⛔ Error: vllm-tt-plugin revision resolved unexpectedly: ${RESOLVED_TT_VLLM_COMMIT}"
+    cleanup_vllm_preflight
+    exit 1
+fi
+cleanup_vllm_preflight
+echo "Resolved vllm-tt-plugin commit: ${RESOLVED_TT_VLLM_COMMIT}"
 cd "$repo_root"
 
 QUETZAL_BUILD_CONTEXT=$(mktemp -d)

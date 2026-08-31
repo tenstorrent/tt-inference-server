@@ -480,3 +480,23 @@ def test_official_builder_rejects_an_invalid_container_uid() -> None:
         "Error: CONTAINER_APP_UID=${CONTAINER_APP_UID} is not a number"
     )
     assert "exit 1" in builder[invalid_uid : invalid_uid + 240]
+
+
+def test_official_builder_preflights_vllm_revision_before_base_build() -> None:
+    builder = (ROOT / "scripts" / "build_single_docker.sh").read_text()
+    assert (
+        "TT_VLLM_COMMIT_SHA_OR_TAG="
+        "d7a6008b03c7afba001444f2d7a4cfde9ef6d498" in builder
+    )
+    preflight = builder.index(
+        "https://github.com/tenstorrent/vllm-tt-plugin.git"
+    )
+    resolution = builder.index(
+        'RESOLVED_TT_VLLM_COMMIT=$(git -C "$VLLM_PREFLIGHT_DIR" rev-parse FETCH_HEAD)',
+        preflight,
+    )
+    base_build = builder.index(
+        "git clone --depth 1 https://github.com/tenstorrent/tt-metal.git"
+    )
+    assert preflight < resolution < base_build
+    assert "vllm-tt-plugin revision is not reachable" in builder
