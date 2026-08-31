@@ -46,9 +46,15 @@ def main() -> int:
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
+    # Unlike the top-level run.py entry point, an external-endpoint launch plan
+    # invokes this launcher directly.  Establish the uv bootstrap precondition
+    # before VenvConfig.setup() tries to execute UV_EXEC from the repo-local
+    # bootstrap venv.  This is intentionally idempotent for warm CI checkouts.
+    from workflows.bootstrap_uv import bootstrap_uv
     from workflows.model_spec import get_runtime_model_spec
     from workflows.workflow_types import WorkflowVenvType
 
+    bootstrap_uv()
     args = _parse_launcher_args(sys.argv[1:])
     # EVALS_AGENTIC setup depends on the model, so resolve the spec first.
     model_spec, _, _ = get_runtime_model_spec(model=args.model, device=args.device)
