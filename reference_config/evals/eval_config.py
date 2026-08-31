@@ -157,6 +157,9 @@ class TerminalBenchEvalConfig:
 @dataclass(frozen=True)
 class SWEbenchEvalConfig:
     dataset_name: str
+    # Exact source commit for reproducible agent selection and verifier data.
+    # None preserves legacy catalogue rows; qualification rows should pin it.
+    dataset_revision: Optional[str] = None
     sweagent_subset: str = "verified"
     dataset_split: str = "test"
     agent_backend: str = "mini-swe-agent"
@@ -5113,6 +5116,7 @@ _eval_config_list = [
                 ),
                 swebench_eval_config=SWEbenchEvalConfig(
                     dataset_name="SWE-bench/SWE-bench_Verified",
+                    dataset_revision="78f471bf655a3137b2e8a75af1501690ec009ec3",
                     sweagent_subset="verified",
                     dataset_split="test",
                     agent_backend="mini-swe-agent",
