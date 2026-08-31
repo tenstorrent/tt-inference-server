@@ -21,7 +21,9 @@ def test_gemma_long_context_evals_declare_their_unclamped_envelopes():
 
 def test_gemma_s4096_skips_incomparable_long_context_evals():
     tasks = EVAL_CONFIGS["gemma-4-31B-it"].tasks
-    assert filter_tasks_by_min_context(tasks, _model_spec(4096)) == []
+    selected = filter_tasks_by_min_context(tasks, _model_spec(4096))
+    assert [task.task_name for task in selected] == ["gsm8k"]
+    assert selected[0].gen_kwargs["max_gen_toks"] == 768
 
 
 def test_gemma_native_200k_envelope_retains_all_declared_evals():

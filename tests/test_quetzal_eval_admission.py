@@ -36,18 +36,18 @@ def test_qwen_s8192_selects_only_context_compatible_gsm8k():
     assert _select_agentic_tasks(ctx) == []
 
 
-def test_gemma_s4096_selects_no_incomparable_release_eval():
+def test_gemma_s4096_selects_context_compatible_gsm8k_only():
     ctx = _context("gemma-4-31B-it", "google/gemma-4-31B-it", 4096)
 
-    assert get_llm_eval_tasks(ctx.model_spec) == []
+    assert [task.task_name for task in get_llm_eval_tasks(ctx.model_spec)] == ["gsm8k"]
     assert _has_agentic_tasks(ctx) is False
     assert _select_agentic_tasks(ctx) == []
 
 
-def test_gpt_s8192_selects_no_oversized_or_zero_headroom_eval():
+def test_gpt_s8192_selects_context_compatible_gsm8k_only():
     ctx = _context("gpt-oss-120b", "openai/gpt-oss-120b", 8192)
 
-    assert get_llm_eval_tasks(ctx.model_spec) == []
+    assert [task.task_name for task in get_llm_eval_tasks(ctx.model_spec)] == ["gsm8k"]
     assert _has_agentic_tasks(ctx) is False
     assert _select_agentic_tasks(ctx) == []
 

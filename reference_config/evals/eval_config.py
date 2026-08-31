@@ -4624,6 +4624,27 @@ _eval_config_list = [
         hf_model_repo="openai/gpt-oss-120b",
         tasks=[
             EvalTask(
+                # The generated C1/S8192 lane needs at least one reachable
+                # standard evaluation. A current-source QB2 discriminator at
+                # 512 output tokens scored 17/20 with zero empty responses but
+                # length-truncated 3/20 samples. Use a bounded 1024-token
+                # collection envelope here; it remains report-only until an
+                # independent Models CI/GPU reference is recorded.
+                task_name="gsm8k",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                max_concurrent=1,
+                gen_kwargs={
+                    "max_gen_toks": 1024,
+                    "do_sample": "false",
+                    "stream": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 20,
+                    EvalLimitMode.SMOKE_TEST: 1,
+                },
+            ),
+            EvalTask(
                 task_name="aime25",
                 # Preserve the qualified 128K reasoning recipe. Narrower
                 # generated rows skip it instead of silently shrinking 120K.
@@ -4877,6 +4898,27 @@ _eval_config_list = [
     EvalConfig(
         hf_model_repo="google/gemma-4-31B-it",
         tasks=[
+            EvalTask(
+                # The generated C1/S4096 lane cannot run the model's 131K+
+                # reference reasoning/agentic recipes, but it must not select
+                # an empty release eval set. Current-source QB2 evidence scored
+                # 19/20 with all responses naturally stopping under this
+                # 768-token envelope. Keep the task report-only until an
+                # independent Models CI/GPU reference is established.
+                task_name="gsm8k",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                max_concurrent=1,
+                gen_kwargs={
+                    "max_gen_toks": 768,
+                    "do_sample": "false",
+                    "stream": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 20,
+                    EvalLimitMode.SMOKE_TEST: 1,
+                },
+            ),
             EvalTask(
                 # R1-style zero-shot reasoning GPQA Diamond. This matches the
                 # thinking-mode methodology behind the Qwen3.6-27B table's
