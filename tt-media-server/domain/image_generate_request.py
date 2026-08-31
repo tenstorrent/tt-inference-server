@@ -6,7 +6,7 @@ from typing import List, Optional, Tuple, Union
 
 from config.settings import get_settings
 from domain.base_request import BaseRequest
-from pydantic import Field, PrivateAttr, field_validator
+from pydantic import Field, PrivateAttr, field_validator, model_validator
 
 # Flux models support fewer inference steps than other image models
 _FLUX_RUNNERS = {"tt-flux.1-dev", "tt-flux.1-schnell", "tt-flux.1-kontext-dev"}
@@ -52,6 +52,14 @@ class BaseImageRequest(BaseRequest):
                 f"num_inference_steps must be >= {min_steps} for {model_runner}, got {v}"
             )
         return v
+
+    @model_validator(mode="after")
+    def validate_resolution_pair(self):
+        # Both or neither: a lone width would pair with the runner's default
+        # height (and vice versa), silently changing the aspect ratio.
+        if (self.width is None) != (self.height is None):
+            raise ValueError("width and height must be provided together")
+        return self
 
     @field_validator("image_return_format")
     @classmethod

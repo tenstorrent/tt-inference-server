@@ -19,7 +19,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-from fastapi import UploadFile
+from fastapi import HTTPException, UploadFile
 
 from domain.image_edit_request import ImageEditRequest
 from domain.image_generate_request import ImageGenerateRequest
@@ -65,6 +65,12 @@ def _tmp_lora_dir(tmp_path, monkeypatch):
 
 def _upload(data: bytes, filename: str) -> UploadFile:
     return UploadFile(file=io.BytesIO(data), filename=filename)
+
+
+def _safetensors(payload: bytes = b"\x00" * 8) -> bytes:
+    # Minimal well-formed safetensors: u64-LE header length, JSON header, payload.
+    header = json.dumps({"__metadata__": {"format": "pt"}}).encode()
+    return len(header).to_bytes(8, "little") + header + payload
 
 
 def test_edit_returns_images(mock_service):
@@ -129,7 +135,7 @@ def test_generate_returns_images(mock_service):
 def test_lora_apply_records_active_and_rebuilds(mock_service, _tmp_lora_dir):
     resp = asyncio.run(
         image_mod.lora_apply(
-            file=_upload(b"LORA-BYTES", "style.safetensors"),
+            file=_upload(_safetensors(b"LORA-BYTES"), "style.safetensors"),
             scale=1.2,
             name="style.safetensors",
             service=mock_service,
@@ -141,7 +147,7 @@ def test_lora_apply_records_active_and_rebuilds(mock_service, _tmp_lora_dir):
     assert body["active"] == {"name": "style.safetensors", "scale": 1.2}
     mock_service.deep_reset.assert_awaited_once()
     saved = _tmp_lora_dir / "uploaded" / "active_lora.safetensors"
-    assert saved.read_bytes() == b"LORA-BYTES"
+    assert saved.read_bytes() == _safetensors(b"LORA-BYTES")
     state = json.loads((_tmp_lora_dir / "active_lora.json").read_text())
     assert state["path"] == str(saved) and state["scale"] == 1.2
 
@@ -150,21 +156,21 @@ def test_lora_apply_sanitizes_traversal_name(mock_service, _tmp_lora_dir):
     # A traversal name must not escape the uploaded dir (fixed server-side name).
     asyncio.run(
         image_mod.lora_apply(
-            file=_upload(b"X", "x.safetensors"),
+            file=_upload(_safetensors(), "x.safetensors"),
             scale=1.0,
-            name="../../etc/passwd",
+            name="../../etc/passwd.safetensors",
             service=mock_service,
             api_key="k",
         )
     )
     assert (_tmp_lora_dir / "uploaded" / "active_lora.safetensors").exists()
-    assert not (_tmp_lora_dir.parent / "passwd").exists()
+    assert not (_tmp_lora_dir.parent / "passwd.safetensors").exists()
 
 
 def test_lora_status_and_clear(mock_service, _tmp_lora_dir):
     asyncio.run(
         image_mod.lora_apply(
-            file=_upload(b"S", "s.safetensors"),
+            file=_upload(_safetensors(), "s.safetensors"),
             scale=0.8,
             name="s.safetensors",
             service=mock_service,
@@ -229,3 +235,111 @@ def test_constants_register_kontext():
 def test_request_has_resolution_fields():
     req = ImageGenerateRequest.model_construct(prompt="x", width=1024, height=1024)
     assert req.width == 1024 and req.height == 1024
+
+
+def test_lora_apply_rejects_non_safetensors_extension(mock_service, _tmp_lora_dir):
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(
+            image_mod.lora_apply(
+                file=_upload(_safetensors(), "style.ckpt"),
+                scale=1.0,
+                name="style.ckpt",
+                service=mock_service,
+                api_key="k",
+            )
+        )
+    assert exc.value.status_code == 400
+    mock_service.deep_reset.assert_not_awaited()
+    assert not (_tmp_lora_dir / "uploaded").exists()
+
+
+def test_lora_apply_rejects_out_of_range_scale(mock_service, _tmp_lora_dir):
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(
+            image_mod.lora_apply(
+                file=_upload(_safetensors(), "s.safetensors"),
+                scale=5.0,
+                name="s.safetensors",
+                service=mock_service,
+                api_key="k",
+            )
+        )
+    assert exc.value.status_code == 422
+    mock_service.deep_reset.assert_not_awaited()
+
+
+def test_lora_apply_rejects_oversized_upload(mock_service, _tmp_lora_dir, monkeypatch):
+    monkeypatch.setattr(image_mod, "_LORA_MAX_BYTES", 16)
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(
+            image_mod.lora_apply(
+                file=_upload(_safetensors(b"\x00" * 1024), "big.safetensors"),
+                scale=1.0,
+                name="big.safetensors",
+                service=mock_service,
+                api_key="k",
+            )
+        )
+    assert exc.value.status_code == 413
+    mock_service.deep_reset.assert_not_awaited()
+    # the partial write is cleaned up and nothing is activated
+    assert not (_tmp_lora_dir / "uploaded" / "active_lora.safetensors.part").exists()
+    assert not (_tmp_lora_dir / "active_lora.json").exists()
+
+
+def test_lora_apply_rejects_garbage_content(mock_service, _tmp_lora_dir):
+    # Right extension, but the bytes are not a safetensors file.
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(
+            image_mod.lora_apply(
+                file=_upload(b"not-a-real-lora", "fake.safetensors"),
+                scale=1.0,
+                name="fake.safetensors",
+                service=mock_service,
+                api_key="k",
+            )
+        )
+    assert exc.value.status_code == 400
+    mock_service.deep_reset.assert_not_awaited()
+    assert not (_tmp_lora_dir / "uploaded" / "active_lora.safetensors").exists()
+
+
+def test_lora_apply_rejection_keeps_previous_active(mock_service, _tmp_lora_dir):
+    # A rejected upload must not clobber the LoRA that is currently active.
+    asyncio.run(
+        image_mod.lora_apply(
+            file=_upload(_safetensors(b"GOOD"), "good.safetensors"),
+            scale=1.0,
+            name="good.safetensors",
+            service=mock_service,
+            api_key="k",
+        )
+    )
+    with pytest.raises(HTTPException):
+        asyncio.run(
+            image_mod.lora_apply(
+                file=_upload(b"garbage", "bad.safetensors"),
+                scale=1.0,
+                name="bad.safetensors",
+                service=mock_service,
+                api_key="k",
+            )
+        )
+    saved = _tmp_lora_dir / "uploaded" / "active_lora.safetensors"
+    assert saved.read_bytes() == _safetensors(b"GOOD")
+    state = json.loads((_tmp_lora_dir / "active_lora.json").read_text())
+    assert state["name"] == "good.safetensors"
+
+
+def test_resolution_requires_both_axes():
+    # width/height are a pair: one alone would silently pair with the runner
+    # default for the other axis and skew the aspect ratio.
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        ImageGenerateRequest(prompt="p", width=768)
+    with pytest.raises(ValidationError):
+        ImageGenerateRequest(prompt="p", height=768)
+    assert ImageGenerateRequest(prompt="p", width=768, height=1024).width == 768
+    # omitting both stays valid (runner falls back to its configured size)
+    assert ImageGenerateRequest(prompt="p").width is None

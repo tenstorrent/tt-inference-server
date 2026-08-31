@@ -9,7 +9,6 @@ from domain.image_generate_request import ImageGenerateRequest
 from domain.image_to_image_request import ImageToImageRequest
 import json
 import os
-import shutil
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Security, UploadFile
 from fastapi.responses import JSONResponse
@@ -19,6 +18,54 @@ from security.api_key_checker import get_api_key
 
 _LORA_DIR = os.environ.get("LORA_DIR", "/loras")
 _LORA_STATE = os.path.join(_LORA_DIR, "active_lora.json")
+# FLUX.1 LoRAs run ~20-300 MB; the cap stops a stray upload from filling the
+# container disk. Raise LORA_MAX_BYTES for unusually large adapters.
+_LORA_MAX_BYTES = int(os.environ.get("LORA_MAX_BYTES", 512 * 1024 * 1024))
+_LORA_CHUNK_BYTES = 1024 * 1024
+# Upper bound on the LoRA fusion weight, matching ImageGenerateRequest.lora_scale.
+_LORA_MAX_SCALE = 2.0
+# safetensors caps its JSON header at 100 MB; anything larger is not a real file.
+_SAFETENSORS_MAX_HEADER_BYTES = 100 * 1024 * 1024
+
+
+def _check_safetensors(path: str) -> None:
+    """Confirm the upload really is a safetensors file. The format is an 8-byte
+    little-endian header length followed by that many bytes of JSON metadata, so
+    this reads only the header — never the tensor payload."""
+    size = os.path.getsize(path)
+    with open(path, "rb") as f:
+        raw_len = f.read(8)
+        if len(raw_len) < 8:
+            raise ValueError("file is too small to be a safetensors file")
+        header_len = int.from_bytes(raw_len, "little")
+        if header_len == 0 or header_len > _SAFETENSORS_MAX_HEADER_BYTES:
+            raise ValueError("safetensors header length is out of range")
+        if 8 + header_len > size:
+            raise ValueError("safetensors header length exceeds the file size")
+        try:
+            header = json.loads(f.read(header_len))
+        except (UnicodeDecodeError, json.JSONDecodeError) as e:
+            raise ValueError("safetensors header is not valid JSON") from e
+    if not isinstance(header, dict):
+        raise ValueError("safetensors header is not a JSON object")
+
+
+async def _save_capped(upload: UploadFile, dest: str) -> int:
+    """Stream the upload to dest, aborting once it exceeds _LORA_MAX_BYTES.
+    Streaming (rather than upload.read() in one shot) keeps an oversized file
+    from being buffered in full before the limit is noticed."""
+    written = 0
+    with open(dest, "wb") as f:
+        while chunk := await upload.read(_LORA_CHUNK_BYTES):
+            written += len(chunk)
+            if written > _LORA_MAX_BYTES:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"LoRA exceeds the {_LORA_MAX_BYTES} byte limit",
+                )
+            f.write(chunk)
+    return written
+
 
 generate_image_router = APIRouter()
 
@@ -123,17 +170,36 @@ async def lora_apply(
     active LoRA, and restarts the device worker so the pipeline is rebuilt with
     the LoRA fused into the transformer. Returns immediately with status
     'rebuilding'; poll /v1/images/lora/status until model_ready is true again (~2-3 min)."""
+    # The client-supplied name is kept only as a display label — it never enters
+    # a filesystem path. The upload is written to a fixed, server-controlled
+    # filename so no user-controlled data is used in a path expression (avoids
+    # path traversal; satisfies CodeQL).
+    display_name = os.path.basename(name or file.filename or "lora.safetensors")
+
+    # Reject bad metadata before touching the disk.
+    if not display_name.endswith(".safetensors"):
+        raise HTTPException(status_code=400, detail="LoRA must be a .safetensors file")
+    if not 0.0 <= scale <= _LORA_MAX_SCALE:
+        raise HTTPException(
+            status_code=422,
+            detail=f"scale must be between 0.0 and {_LORA_MAX_SCALE}, got {scale}",
+        )
+
+    up = os.path.join(_LORA_DIR, "uploaded")
+    dest = os.path.join(up, "active_lora.safetensors")
+    # Stage under .part and swap only once the file validates, so a rejected
+    # upload leaves the currently active LoRA in place.
+    staged = dest + ".part"
     try:
-        up = os.path.join(_LORA_DIR, "uploaded")
         os.makedirs(up, exist_ok=True)
-        # The client-supplied name is kept only as a display label — it never
-        # enters a filesystem path. The upload is written to a fixed,
-        # server-controlled filename so no user-controlled data is used in a path
-        # expression (avoids path traversal; satisfies CodeQL).
-        display_name = os.path.basename(name or file.filename or "lora.safetensors")
-        dest = os.path.join(up, "active_lora.safetensors")
-        with open(dest, "wb") as f:
-            shutil.copyfileobj(file.file, f)
+        await _save_capped(file, staged)
+        try:
+            _check_safetensors(staged)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=400, detail=f"invalid safetensors file: {e}"
+            )
+        os.replace(staged, dest)
         with open(_LORA_STATE, "w") as f:
             json.dump({"path": dest, "scale": float(scale), "name": display_name}, f)
         await service.deep_reset()  # restart worker -> rebuild pipeline with LoRA
@@ -147,6 +213,9 @@ async def lora_apply(
         raise e
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if os.path.isfile(staged):
+            os.remove(staged)
 
 
 @lora_router.post("/lora/clear")

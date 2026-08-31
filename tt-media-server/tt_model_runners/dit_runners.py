@@ -369,14 +369,16 @@ class TTFluxKontextRunner(TTDiTRunner):
 
     def run(self, requests: list[ImageGenerateRequest]):
         request = requests[0]
-        # Per-request resolution (falls back to the pipeline's configured size;
-        # the pipeline snaps to the nearest Kontext preferred bucket).
-        width = getattr(request, "width", None) or getattr(
-            self.pipeline, "_width", 1024
-        )
-        height = getattr(request, "height", None) or getattr(
-            self.pipeline, "_height", 1024
-        )
+        # Per-request resolution. The request model enforces both-or-neither, so
+        # never mix one request axis with one pipeline default — that would skew
+        # the aspect ratio. The pipeline snaps to the nearest Kontext bucket.
+        req_width = getattr(request, "width", None)
+        req_height = getattr(request, "height", None)
+        if req_width and req_height:
+            width, height = req_width, req_height
+        else:
+            width = getattr(self.pipeline, "_width", None) or 1024
+            height = getattr(self.pipeline, "_height", None) or 1024
 
         # Edit mode = a reference image is supplied; otherwise text-to-image.
         image_b64 = getattr(request, "image", None)
