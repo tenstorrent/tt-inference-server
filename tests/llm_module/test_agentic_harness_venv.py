@@ -124,6 +124,19 @@ def test_mini_sweagent_command_uses_venv_python(tmp_path):
     assert cmd[0] == str(_VENV_PY.parent / "mini-extra")
 
 
+def test_mini_sweagent_pinned_run_uses_exact_dataset_identity(tmp_path):
+    config = _swe_config(tmp_path, _VENV_PY, backend="mini-swe-agent")
+    object.__setattr__(
+        config,
+        "dataset_revision",
+        "78f471bf655a3137b2e8a75af1501690ec009ec3",
+    )
+    cmd = swebench.build_mini_sweagent_command(
+        config, tmp_path / "cfg.yaml", tmp_path / "miniout"
+    )
+    assert cmd[cmd.index("--subset") + 1] == "princeton-nlp/SWE-bench_Verified"
+
+
 def test_swebench_harness_command_uses_venv_python(tmp_path):
     config = _swe_config(tmp_path, _VENV_PY)
     cmd = swebench.build_swebench_harness_command(

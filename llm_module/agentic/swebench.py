@@ -538,13 +538,20 @@ def build_mini_sweagent_command(
     instance_ids: Optional[list[str]] = None,
 ) -> list[str]:
     mini_exec = _interpreter(config).parent / "mini-extra"
+    # mini-swe-agent maps the shorthand ``verified`` to a different HF repo
+    # name than the verifier receives. A revision-pinned run must load the same
+    # explicit dataset identity in both phases so sitecustomize can enforce the
+    # pin rather than silently missing the agent-side alias.
+    dataset_selector = (
+        config.dataset_name if config.dataset_revision else config.sweagent_subset
+    )
     cmd = [
         str(mini_exec),
         "swebench",
         "--model",
         config.model_name,
         "--subset",
-        config.sweagent_subset,
+        dataset_selector,
         "--split",
         config.dataset_split,
         "--workers",
