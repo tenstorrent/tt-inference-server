@@ -687,7 +687,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.11.1-bac8b34-7c6685a
+              tag: 0.21.0-bc4c4df-be7d805
             resources:
               requests:
                 memory: 80Gi
@@ -6918,3 +6918,60 @@ models:
               - name: VLLM__MIN_CONTEXT_LENGTH
                 value: '32'
     defaultEngine: forge
+  diffusiongemma-26B-A4B-it:
+    vllm:
+      p300x2:
+        defaultImpl: diffusion_gemma
+        impls:
+          diffusion_gemma:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+              tag: 0.21.0-bc4c4df-be7d805
+            resources:
+              requests:
+                memory: 10Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: DG_DENOISE_REVEAL_PMAX
+                value: '262144'
+              - name: DG_DENOISE_SLIDING_WINDOW
+                value: '1'
+              - name: DG_MODEL_OWNED_HYBRID_KV
+                value: '1'
+              - name: DG_PREFILL_CHUNK_SIZE
+                value: '4096'
+              - name: DG_PREFILL_FIXED_CHUNKS
+                value: '1'
+              - name: DG_PREFILL_RAGGED_CHUNK
+                value: '1024'
+              - name: DG_TRACE_REGION_SIZE
+                value: '3758096384'
+              - name: DG_UPFRONT_CAPTURE
+                value: '1'
+              - name: DG_UPFRONT_COARSE_PREFILL_BUCKETS
+                value: '1'
+              - name: DG_UPFRONT_LAZY_PREFILL_RECAPTURE
+                value: '1'
+              - name: DG_UPFRONT_PREFILL_WARMUP_LENS
+                value: 32,64,96
+              - name: DG_VLLM_GUMBEL_MODE
+                value: device
+              - name: DISABLE_METAL_OP_TIMEOUT
+                value: '1'
+              - name: MESH_DEVICE
+                value: P150x4
+              - name: TORCHDYNAMO_DISABLE
+                value: '1'
+              - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
+                value: '1'
+              - name: VLLM_CONFIGURE_LOGGING
+                value: '1'
+              - name: VLLM_ENABLE_V1_MULTIPROCESSING
+                value: '0'
+              - name: VLLM_RPC_TIMEOUT
+                value: '1800000'
+              - name: VLLM_TARGET_DEVICE
+                value: tt
+    defaultEngine: vllm
