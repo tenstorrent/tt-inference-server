@@ -417,3 +417,29 @@ def test_official_builder_selects_dependency_qualified_dev_image() -> None:
     check_installed = dockerfile.index("--check-installed", install)
     wheel = dockerfile.index("uv build --wheel", check_installed)
     assert requirements < install < check_installed < wheel
+
+
+def test_official_builder_uses_exact_tt_metal_tool_images() -> None:
+    builder = (ROOT / "scripts" / "build_single_docker.sh").read_text()
+    checkout = builder.index('git checkout "${RESOLVED_TT_METAL_COMMIT}"')
+    tags = builder.index(
+        ".github/scripts/compute-tool-tags.sh tenstorrent/tt-metal", checkout
+    )
+    tools = builder.index(".github/scripts/get-target-tools.sh ci-build", tags)
+    validation = builder.index(
+        "^ghcr\\.io/tenstorrent/tt-metal/tt-metalium/tools/${tool}:", tools
+    )
+    context = builder.index(
+        'ci-build.contexts.${tool}-layer=docker-image://${tool_tag}', validation
+    )
+    bake = builder.index("docker buildx bake", context)
+    assert checkout < tags < tools < validation < context < bake
+    assert '"${TT_METAL_TOOL_CONTEXT_ARGS[@]}"' in builder[bake:]
+
+
+def test_official_builder_does_not_bypass_runner_network_isolation() -> None:
+    builder = (ROOT / "scripts" / "build_single_docker.sh").read_text()
+    executable_lines = [
+        line for line in builder.splitlines() if not line.lstrip().startswith("#")
+    ]
+    assert not any("network=host" in line for line in executable_lines)

@@ -316,12 +316,44 @@ if [ "$build" = true ]; then
             fi
             echo "Fetched full repository history."
         fi
-        git checkout ${RESOLVED_TT_METAL_COMMIT}
+        git checkout "${RESOLVED_TT_METAL_COMMIT}"
+
+        # Consume the exact checkout's published, content-addressed tool layers
+        # instead of rebuilding them through GitHub release downloads.  Using
+        # network=host would still route those downloads through the runner's
+        # restricted proxy and would weaken build isolation without making the
+        # inputs reproducible.
+        TT_METAL_TOOL_TAGS=$(
+            .github/scripts/compute-tool-tags.sh tenstorrent/tt-metal | jq -ce '.'
+        )
+        read -r -a TT_METAL_BUILD_TOOLS <<< "$(
+            .github/scripts/get-target-tools.sh ci-build
+        )"
+        if [ "${#TT_METAL_BUILD_TOOLS[@]}" -eq 0 ]; then
+            echo "⛔ Error: Exact TT-Metal checkout declared no tools for ci-build."
+            exit 1
+        fi
+        TT_METAL_TOOL_CONTEXT_ARGS=()
+        for tool in "${TT_METAL_BUILD_TOOLS[@]}"; do
+            tool_tag=$(
+                jq -er --arg key "${tool}-tag" \
+                    '.[$key] | select(type == "string" and length > 0)' \
+                    <<< "${TT_METAL_TOOL_TAGS}"
+            )
+            if [[ ! "${tool_tag}" =~ ^ghcr\.io/tenstorrent/tt-metal/tt-metalium/tools/${tool}:[A-Za-z0-9._-]+-[0-9a-f]{12}$ ]]; then
+                echo "⛔ Error: Invalid content-addressed tool image for ${tool}: ${tool_tag}"
+                exit 1
+            fi
+            TT_METAL_TOOL_CONTEXT_ARGS+=(
+                --set "ci-build.contexts.${tool}-layer=docker-image://${tool_tag}"
+            )
+        done
         # tt-metal's Dockerfile uses Docker Buildx Bake — plain `docker build` is not
         # supported because the cmake/zstd/openmpi tool layers are FROM scratch stubs
         # that Bake overrides with pre-built images (see dockerfile/docker-bake.hcl).
         UBUNTU_VERSION=${UBUNTU_VERSION} docker buildx bake \
             -f dockerfile/docker-bake.hcl \
+            "${TT_METAL_TOOL_CONTEXT_ARGS[@]}" \
             --set "ci-build.tags=local/tt-metal/tt-metalium/${OS_VERSION}:${TT_METAL_COMMIT_SHA_OR_TAG}" \
             --load \
             ci-build
