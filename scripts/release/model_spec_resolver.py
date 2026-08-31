@@ -70,8 +70,7 @@ def iter_implementations(model_entry: dict) -> Iterable[dict]:
         return
     if not isinstance(implementations, list) or not implementations:
         raise ValueError(
-            f"Model implementations must be a non-empty list, got "
-            f"{implementations!r}"
+            f"Model implementations must be a non-empty list, got {implementations!r}"
         )
     for implementation in implementations:
         if not isinstance(implementation, dict):
