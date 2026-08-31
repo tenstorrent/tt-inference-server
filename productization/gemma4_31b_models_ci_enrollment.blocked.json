@@ -19,9 +19,16 @@
     "clean_lifecycle": true,
     "official_ttis_or_models_ci": false
   },
+  "requested_publication_candidate": {
+    "package_id": "sha256-v1-8373c1467294ed11e00ac791392eaa80c9cd1a1366f15200469bbdb4bc410522-259ee130f4f1e259980f2dde67415f8692f4c16086f34edc1cdb98c496b68edc-f06973f91c44af9b3931be10dab9b966fa5c6748d48650ca37f94cb4d7938575",
+    "compiled_tree_sha256": "8373c1467294ed11e00ac791392eaa80c9cd1a1366f15200469bbdb4bc410522",
+    "compiled_weights_tree_sha256": "259ee130f4f1e259980f2dde67415f8692f4c16086f34edc1cdb98c496b68edc",
+    "qualification_manifest_sha256": "f06973f91c44af9b3931be10dab9b966fa5c6748d48650ca37f94cb4d7938575",
+    "status": "metadata_only_successor_ready_for_administrator_action_not_published"
+  },
   "missing_fields": [
     "approved administrator publication response",
-    "final content-addressed package id",
+    "administrator confirmation of the requested successor content-addressed package id",
     "final host and container immutable package roots",
     "package manifest sha256 and exact generated/metadata/weights/qualification role-relative paths",
     "publication-time proof that the immutable package preserves the exact executable role digests bound by the banked PCC and endpoint receipts; otherwise refresh only the changed gates",

@@ -1,0 +1,46 @@
+{
+  "schema": "ttis.quetzal.gemma_models_ci_current_heads_audit/v1",
+  "recorded_at": "2026-08-31",
+  "status": "blocked_not_dispatchable",
+  "audited_heads": {
+    "tt_inference_server": "f515a464",
+    "tt_shield": "6a9ec748"
+  },
+  "model": {
+    "model_id": "google/gemma-4-31B-it",
+    "models_ci_key": "gemma-4-31B-it",
+    "artifact_source_revision": "cfaea6c1b610afb8fed34c542e9a6df944fee51d",
+    "quetzal_runtime_revision": "76a15d4cdd0c2b400ef9b89499a334a6b748e56b",
+    "tt_metal_revision": "b534549300fe2af11e6ee828675294bc0e359555",
+    "tt_metal_patchset_sha256": "22fb0bd2523b8a5c63fa20c3c8a1586dc9ead5150449d0eb02231fa8173a7edd",
+    "profile": "B1/C1/S4096 exact BF16 Ring/2"
+  },
+  "banked_local_evidence": {
+    "pcc": 0.9942054152488708,
+    "pcc_jobs": [68271, 68288],
+    "endpoint_job": 70548,
+    "capacity_endpoint": "ISL4095/OSL1 HTTP 200",
+    "semantic_endpoint": "Gemma is ready.",
+    "clean_teardown": true,
+    "official_ttis_vllm": false,
+    "models_ci": false
+  },
+  "control_plane": {
+    "ttis_dev_catalogue_source_matches_evidence": true,
+    "shield_on_dispatch_source_matches_ttis": true,
+    "shield_patchset_matches_ttis": true,
+    "shield_runner_label": "bh-qb-ge",
+    "shield_device_type": "p300x2",
+    "active_quetzal_models_ci_rows": 0,
+    "administrator_publication_present": false
+  },
+  "promotion_renderer_corrections": [
+    "preserve QZ_LM_HEAD_UPLOAD_CHUNK_COLS=8192",
+    "preserve Gemma4 reasoning and tool parser arguments"
+  ],
+  "requested_publication_candidate": {
+    "package_id": "sha256-v1-8373c1467294ed11e00ac791392eaa80c9cd1a1366f15200469bbdb4bc410522-259ee130f4f1e259980f2dde67415f8692f4c16086f34edc1cdb98c496b68edc-f06973f91c44af9b3931be10dab9b966fa5c6748d48650ca37f94cb4d7938575",
+    "publication_completed": false
+  },
+  "shortest_blocker": "administrator-owned immutable publication response binding the requested successor package, runner visibility, and an exact digest-pinned TTIS image; only then may the renderer add nightly and release rows"
+}

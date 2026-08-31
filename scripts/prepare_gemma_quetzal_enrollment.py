@@ -406,6 +406,10 @@ def render_fragments(
         "QUETZAL_WEIGHTS": f"{root}/{roles['compiled_weights']}",
         "QZ_MMAP_WEIGHTS": "1",
         "TTQ_STREAM_WEIGHTS": "1",
+        # The 262144x5376 BF16 head is too large to transpose and stage as one
+        # host allocation. Preserve the bounded upload contract proven by the
+        # current-main readiness and endpoint runs.
+        "QZ_LM_HEAD_UPLOAD_CHUNK_COLS": "8192",
         "HF_HUB_OFFLINE": "1",
         "TRANSFORMERS_OFFLINE": "1",
         "VLLM_PLUGINS": "quetzal_model_registry,tt",
@@ -437,6 +441,12 @@ def render_fragments(
                             "max_num_seqs": 1,
                             "revision": HF_REVISION,
                             "tokenizer_revision": HF_REVISION,
+                            "enable-auto-tool-choice": True,
+                            "tool-call-parser": "gemma4",
+                            "default-chat-template-kwargs": (
+                                '{"enable_thinking": true}'
+                            ),
+                            "reasoning-parser": "gemma4",
                         },
                         "override_tt_config": {
                             "fabric_config": "FABRIC_1D",
