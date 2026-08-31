@@ -485,9 +485,7 @@ def render_contract(data: dict[str, Any]) -> dict[str, Any]:
                 "task": "swe_bench_verified",
                 "max_input_tokens": GPT_SWEBENCH_INPUT_TOKENS,
                 "max_output_tokens": GPT_SWEBENCH_OUTPUT_TOKENS,
-                "required_context": (
-                    GPT_SWEBENCH_MIN_CONTEXT
-                ),
+                "required_context": (GPT_SWEBENCH_MIN_CONTEXT),
                 "available_context": artifacts["max_context"],
                 "status": "blocked_insufficient_context_headroom_report_only",
             },

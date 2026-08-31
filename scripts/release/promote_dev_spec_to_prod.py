@@ -452,9 +452,7 @@ def promote(
             vllm_commit=vllm_commit
             if item.combo.engine == InferenceEngine.VLLM
             else None,
-            docker_image=(
-                quetzal_docker_image if identity[3] == "quetzal" else None
-            ),
+            docker_image=(quetzal_docker_image if identity[3] == "quetzal" else None),
         )
         promoted_leaves[identity] = leaf
         target_filenames[identity] = item.source_path.name

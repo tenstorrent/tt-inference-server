@@ -136,12 +136,9 @@ def collect_release_combos(ci_config: dict) -> List[ReleaseCombo]:
                 ) from exc
 
             impl = implementation.get("impl")
-            if impl is not None and (
-                not isinstance(impl, str) or not impl.strip()
-            ):
+            if impl is not None and (not isinstance(impl, str) or not impl.strip()):
                 raise ValueError(
-                    f"Invalid release implementation {impl!r} "
-                    f"for model {model_name!r}"
+                    f"Invalid release implementation {impl!r} for model {model_name!r}"
                 )
 
             for raw_device in raw_devices:

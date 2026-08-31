@@ -207,8 +207,8 @@ def validate_agentic_task_capabilities(model_spec, runtime_config) -> None:
 
     for task in tasks:
         try:
-            required, max_input, max_output, minimum = (
-                _agentic_context_requirement(task)
+            required, max_input, max_output, minimum = _agentic_context_requirement(
+                task
             )
         except ValueError as exc:
             raise ValueError(
