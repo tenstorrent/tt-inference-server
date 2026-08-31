@@ -1913,6 +1913,28 @@ templates:
       reasoning_parser_name: glm45
       tool_call_parser_name: glm47
 
+# Remote-served model: evaluated against an external OpenAI-compatible
+# endpoint via `--server-url`. Same base as GLM-5.2; gains are post-training.
+# The device entry is a placeholder so the model resolves through MODEL_SPECS
+# / EVAL_CONFIGS; no local TT serving is implied.
+- weights:
+    - zai-org/GLM-5.3
+  impl: tt_transformers
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: SUPER_CLUSTER
+      max_concurrency: 80
+      max_context: 1048576  # 1024 * 1024;
+      default_impl: true
+  status: EXPERIMENTAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    zai-org/GLM-5.3:
+      remote_api_model: zai-org/GLM-5.3
+      reasoning_parser_name: glm45
+      tool_call_parser_name: glm47
+
 - weights:
     - Qwen/Qwen3.5-27B
   impl: qwen36_blackhole  # the same model structure as 3.6
