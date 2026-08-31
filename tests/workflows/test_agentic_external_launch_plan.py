@@ -65,6 +65,16 @@ def _receipt(**capability_overrides):
     }
 
 
+def _one_shot_receipt(*buckets):
+    receipt = _receipt()
+    capabilities = receipt["capabilities"]
+    capabilities.pop("chunk_size")
+    capabilities.pop("kv_blocks")
+    capabilities["chunked_prefill"] = False
+    capabilities["prefill_buckets"] = list(buckets)
+    return receipt
+
+
 def _evidence(receipt=None):
     receipt = receipt or _receipt()
     return {
@@ -188,11 +198,21 @@ def test_external_plan_canonicalizes_service_port_for_remote_runtime(tmp_path):
     assert controller.models_url == f"{expected}/v1/models"
 
 
+def test_gpt120_plan_accepts_truthful_one_shot_s8192_receipt():
+    receipt = _one_shot_receipt(8192)
+    contract, _ = _gpt120(
+        capability_receipt=receipt,
+        endpoint_evidence=_evidence(receipt),
+    )
+    assert contract.max_input_tokens == 5 * 1024
+    assert contract.admitted_max_context_tokens == 8 * 1024
+
+
 @pytest.mark.parametrize(
     "field,value,match",
     [
         ("max_concurrency", 0, "positive integer"),
-        ("chunked_prefill", False, "chunked_prefill"),
+        ("chunked_prefill", "false", "boolean"),
     ],
 )
 def test_gpt120_plan_rejects_under_admitted_receipt(field, value, match):
@@ -204,6 +224,54 @@ def test_gpt120_plan_rejects_coherent_but_insufficient_context():
     receipt = _receipt(max_context_tokens=7 * 1024, kv_blocks=7)
     with pytest.raises(ContractError, match="total tokens"):
         _gpt120(capability_receipt=receipt)
+
+
+@pytest.mark.parametrize(
+    "receipt,match",
+    [
+        (_one_shot_receipt(), "non-empty prefill_buckets"),
+        (_one_shot_receipt(8192, 1024), "sorted and unique"),
+        (_one_shot_receipt(1024, 1024), "sorted and unique"),
+        (_one_shot_receipt(0, 8192), "positive integers"),
+        (_one_shot_receipt(8193), "exceeds max_context_tokens"),
+        (_one_shot_receipt(4096), "does not cover"),
+    ],
+)
+def test_gpt120_plan_rejects_invalid_or_too_small_one_shot_buckets(receipt, match):
+    with pytest.raises(ContractError, match=match):
+        _gpt120(
+            capability_receipt=receipt,
+            endpoint_evidence=_evidence(receipt),
+        )
+
+
+def test_gpt120_plan_rejects_one_shot_context_above_catalog():
+    receipt = _one_shot_receipt(8192)
+    receipt["capabilities"]["max_context_tokens"] = 16 * 1024
+    with pytest.raises(ContractError, match="must exactly match catalog context"):
+        _gpt120(
+            capability_receipt=receipt,
+            endpoint_evidence=_evidence(receipt),
+        )
+
+
+def test_gpt120_plan_rejects_one_shot_receipt_with_chunk_geometry():
+    receipt = _one_shot_receipt(8192)
+    receipt["capabilities"]["chunk_size"] = 8192
+    with pytest.raises(ContractError, match="must not declare chunk_size"):
+        _gpt120(
+            capability_receipt=receipt,
+            endpoint_evidence=_evidence(receipt),
+        )
+
+
+def test_gpt120_plan_preserves_strict_chunked_geometry():
+    receipt = _receipt(kv_blocks=7)
+    with pytest.raises(ContractError, match="KV geometry"):
+        _gpt120(
+            capability_receipt=receipt,
+            endpoint_evidence=_evidence(receipt),
+        )
 
 
 @pytest.mark.parametrize(

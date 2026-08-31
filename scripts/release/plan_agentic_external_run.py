@@ -174,19 +174,58 @@ def _validate_capability_receipt(receipt: dict, expected_model: str) -> None:
         "max_context_tokens",
         "max_concurrency",
         "batch_size",
-        "chunk_size",
-        "kv_blocks",
     ):
         value = capabilities.get(field)
         if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
             raise ContractError(f"capabilities.{field} must be a positive integer")
     if capabilities.get("batch_size") != 1:
         raise ContractError("capabilities.batch_size must be 1")
-    if capabilities.get("chunked_prefill") is not True:
-        raise ContractError("capabilities.chunked_prefill must be true")
-    physical_capacity = capabilities["chunk_size"] * capabilities["kv_blocks"]
-    if physical_capacity != capabilities["max_context_tokens"]:
-        raise ContractError("capability KV geometry differs from max_context_tokens")
+    chunked_prefill = capabilities.get("chunked_prefill")
+    if not isinstance(chunked_prefill, bool):
+        raise ContractError("capabilities.chunked_prefill must be a boolean")
+    if chunked_prefill:
+        for field in ("chunk_size", "kv_blocks"):
+            value = capabilities.get(field)
+            if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+                raise ContractError(
+                    f"capabilities.{field} must be a positive integer"
+                )
+        if "prefill_buckets" in capabilities:
+            raise ContractError(
+                "chunked capabilities must not declare one-shot prefill_buckets"
+            )
+        physical_capacity = capabilities["chunk_size"] * capabilities["kv_blocks"]
+        if physical_capacity != capabilities["max_context_tokens"]:
+            raise ContractError(
+                "capability KV geometry differs from max_context_tokens"
+            )
+    else:
+        if "chunk_size" in capabilities or "kv_blocks" in capabilities:
+            raise ContractError(
+                "one-shot capabilities must not declare chunk_size or kv_blocks"
+            )
+        buckets = capabilities.get("prefill_buckets")
+        if not isinstance(buckets, list) or not buckets:
+            raise ContractError(
+                "one-shot capabilities need non-empty prefill_buckets"
+            )
+        if any(
+            not isinstance(value, int)
+            or isinstance(value, bool)
+            or value <= 0
+            for value in buckets
+        ):
+            raise ContractError(
+                "one-shot capabilities.prefill_buckets must contain positive integers"
+            )
+        if buckets != sorted(set(buckets)):
+            raise ContractError(
+                "one-shot capabilities.prefill_buckets must be sorted and unique"
+            )
+        if buckets[-1] > capabilities["max_context_tokens"]:
+            raise ContractError(
+                "one-shot prefill bucket exceeds max_context_tokens"
+            )
 
 
 def _endpoint_base(server_url: str, service_port: int) -> str:
@@ -469,6 +508,18 @@ def build_contract(
             f"artifact admits {admitted_max_context_tokens} total tokens; "
             f"task requires {required_context}"
         )
+    if not capabilities["chunked_prefill"]:
+        if admitted_max_context_tokens != catalog_context:
+            raise ContractError(
+                f"one-shot artifact context {admitted_max_context_tokens} must "
+                f"exactly match catalog context {catalog_context}"
+            )
+        largest_bucket = capabilities["prefill_buckets"][-1]
+        if largest_bucket < cfg.max_input_tokens:
+            raise ContractError(
+                f"largest one-shot prefill bucket {largest_bucket} does not cover "
+                f"the task's {cfg.max_input_tokens}-token complete-input cap"
+            )
     if cfg.n_concurrent_trials <= 0:
         raise ContractError("agentic concurrency must be positive")
     if cfg.n_concurrent_trials > model_spec.device_model_spec.max_concurrency:
