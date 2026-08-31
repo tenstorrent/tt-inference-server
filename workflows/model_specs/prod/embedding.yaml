@@ -99,8 +99,9 @@ templates:
         MAX_BATCH_SIZE: "8"
         DEFAULT_THROTTLE_LEVEL: "0"
         USE_DYNAMIC_BATCHER: "false"
-            # Disable Inspector RPC to prevent port conflicts with 32 concurrent workers
-            # Each worker would otherwise try to bind to the same port (50051)
+        BENCHMARK_MAX_CONCURRENCY: "32"
+        # Disable Inspector RPC to prevent port conflicts with 32 concurrent workers
+        # Each worker would otherwise try to bind to the same port (50051)
         TT_METAL_INSPECTOR_RPC: "0"
 
 - weights:
