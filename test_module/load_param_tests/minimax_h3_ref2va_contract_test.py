@@ -653,9 +653,33 @@ async def _cancel_created_job(
 
 
 def _missing_detail_fragments(data: Any, case: _Ref2vaCase) -> tuple[str, ...]:
+    """Fragments the refusal detail failed to name.
+
+    Matched against ``loc``/``msg``/``type`` only. tt-media-server installs no
+    RequestValidationError handler, so a JSON endpoint returns FastAPI's default
+    detail, whose ``input`` key echoes the offending value back -- and for
+    ``_reject_unknown_fields``, a ``mode="before"`` validator, that value is the whole
+    raw request body. Rendering the entire detail would let a fragment match the
+    payload we just sent instead of anything the server said: ``frame_pos`` is a token
+    the server can never legitimately utter, so the echo is the only way that guard
+    could ever be satisfied, and one unknown-field refusal would satisfy every
+    ``images``/``videos``/``references`` fragment at once.
+    """
     if not isinstance(data, dict) or "detail" not in data:
         return case.detail_contains
-    rendered = json.dumps(data["detail"], default=str).lower()
+    detail = data["detail"]
+    if isinstance(detail, list):
+        rendered = json.dumps(
+            [
+                {k: v for k, v in entry.items() if k in ("loc", "msg", "type")}
+                if isinstance(entry, dict)
+                else entry
+                for entry in detail
+            ],
+            default=str,
+        ).lower()
+    else:
+        rendered = json.dumps(detail, default=str).lower()
     return tuple(
         fragment
         for fragment in case.detail_contains
@@ -738,13 +762,18 @@ async def _run_case(
                     "server accepted a request it must refuse; the created job "
                     + ("was cancelled" if cancellation else "could not be cancelled")
                 )
-            elif case.requires_job_id:
+            elif case.requires_job_id and response.status == 202:
+                # Gated on 202: reached on a 500/429/503 this arm would report
+                # "accepted response did not include a non-empty id", describing an
+                # acceptance that never happened. The status mismatch above is already
+                # the verdict; this only refines the diagnostic for a real acceptance.
                 if task_id is None:
                     passed = False
                     message = "accepted response did not include a non-empty id"
                 elif cancellation is None:
-                    passed = False
-                    message = "accepted job could not be cancelled"
+                    # Reported, not scored -- see the prompt suite: a cancel may 404
+                    # because the job already went terminal on the device.
+                    message = "cleanup: accepted job could not be cancelled"
             elif response.status >= 400:
                 if not isinstance(data, dict) or "detail" not in data:
                     passed = False

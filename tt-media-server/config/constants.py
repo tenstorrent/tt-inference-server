@@ -1001,7 +1001,7 @@ ModelConfigs = {
         "download_weights_from_service": True,
         "request_processing_timeout_seconds": 5000,
     },
-    (ModelRunners.TT_MINIMAX_H3_FL2VA, DeviceTypes.GALAXY): {
+    (ModelRunners.TT_MINIMAX_H3_FL2VA, DeviceTypes.BLACKHOLE_GALAXY): {
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
@@ -1009,7 +1009,7 @@ ModelConfigs = {
         "download_weights_from_service": False,
         "request_processing_timeout_seconds": 5000,
     },
-    (ModelRunners.TT_MINIMAX_H3_REF2VA, DeviceTypes.GALAXY): {
+    (ModelRunners.TT_MINIMAX_H3_REF2VA, DeviceTypes.BLACKHOLE_GALAXY): {
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,

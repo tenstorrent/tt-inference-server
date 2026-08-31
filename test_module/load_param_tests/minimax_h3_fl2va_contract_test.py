@@ -76,6 +76,11 @@ _DEPLOYMENTS = frozenset({"t2va", "fl2va", "ref2va"})
 # deployment this file was written for. No case requires it, so every case
 # skips with a reason.
 UNIDENTIFIED_DEPLOYMENT = "unidentified"
+# Distinct from UNIDENTIFIED: nothing answered at all. Kept apart because the two deserve
+# opposite verdicts -- "this endpoint is a different H3 variant" is a legitimate absence of
+# observation, while "the deployment is dead or still loading weights" is a failed run, and
+# collapsing them reports a spent bring-up in the same non-blocking grey as a skip.
+UNREACHABLE_DEPLOYMENT = "unreachable"
 
 I2V_CREATE_PATH = f"{CREATE_PATH}/i2v"
 I2V_UPLOAD_PATH = f"{I2V_CREATE_PATH}/upload"
@@ -537,6 +542,34 @@ def _body_text(data: Any, response_text: str) -> str:
     return json.dumps(data).lower()
 
 
+def _match_text(data: Any, response_text: str) -> str:
+    """Render a body for keyword matching, with pydantic's input echo removed.
+
+    tt-media-server installs no RequestValidationError handler, so a JSON endpoint
+    returns FastAPI's default detail -- a list of error dicts each carrying an
+    ``input`` key holding the offending value. For ``_reject_unknown_fields``, a
+    ``mode="before"`` validator, that value is the *entire raw request body*. Matched
+    against the whole rendered detail, a keyword drawn from the payload therefore
+    matches the request being read back rather than anything the server said, and any
+    H3 unknown-field refusal would satisfy every keyword at once.
+
+    Only ``loc``/``msg``/``type`` are the server's own words. A non-list detail (a
+    plain HTTPException string, which is what the deployment probe reads) is passed
+    through unchanged.
+    """
+    if isinstance(data, dict) and isinstance(data.get("detail"), list):
+        return json.dumps(
+            [
+                {k: v for k, v in entry.items() if k in ("loc", "msg", "type")}
+                if isinstance(entry, dict)
+                else entry
+                for entry in data["detail"]
+            ],
+            default=str,
+        ).lower()
+    return _body_text(data, response_text)
+
+
 def _response_excerpt(response_text: str) -> str:
     """Truncate a response body before it reaches the report.
 
@@ -672,7 +705,7 @@ async def _run_case(
                     passed = False
                     messages.append("error response did not include FastAPI detail")
                 if case.body_keywords:
-                    body = _body_text(data, response_text)
+                    body = _match_text(data, response_text)
                     if not any(word in body for word in case.body_keywords):
                         passed = False
                         messages.append(
@@ -773,7 +806,7 @@ async def _probe_deployment(
     except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as exc:
         return {
             "status": "request_error",
-            "identified_as": UNIDENTIFIED_DEPLOYMENT,
+            "identified_as": UNREACHABLE_DEPLOYMENT,
             "body_excerpt": f"{type(exc).__name__}: {exc}",
         }
 
@@ -835,13 +868,24 @@ async def run_fl2va_contract(
         "success": bool(evaluated) and passed == len(evaluated),
     }
     if not evaluated:
-        # Nothing was graded: say so rather than reporting a green run.
-        report["status"] = "skip"
-        report["reason"] = (
-            f"no FL2VA keyframe case could be graded against {endpoint_url}: "
-            f"aimed at {normalized_deployment}, endpoint identified itself as "
-            f"{probe['identified_as']} (profile={normalized_profile})"
-        )
+        # Nothing was graded. Which of the two reasons it was decides the verdict.
+        if probe["identified_as"] == UNREACHABLE_DEPLOYMENT:
+            # The request never got an answer. Report FAIL: `status: "skip"` is
+            # non-blocking (report_module/status.py), so leaving it grey here means a
+            # pod that died or is still loading weights reads exactly like a correctly
+            # skipped sibling deployment -- and by then the bring-up is already spent.
+            report["success"] = False
+            report["reason"] = (
+                f"{endpoint_url} could not be reached, so no FL2VA keyframe case was "
+                f"graded: {probe['body_excerpt']}"
+            )
+        else:
+            report["status"] = "skip"
+            report["reason"] = (
+                f"no FL2VA keyframe case could be graded against {endpoint_url}: "
+                f"aimed at {normalized_deployment}, endpoint identified itself as "
+                f"{probe['identified_as']} (profile={normalized_profile})"
+            )
     return report
 
 

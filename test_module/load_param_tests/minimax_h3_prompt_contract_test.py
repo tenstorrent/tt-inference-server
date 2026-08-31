@@ -371,9 +371,15 @@ async def _run_case(
                     passed = False
                     message = "accepted response did not include a non-empty id"
                 elif task_id is not None and cancellation is None:
-                    passed = False
+                    # Reported, not scored. A cancel can legitimately 404 because the
+                    # job already reached a terminal state on the device before the
+                    # POST landed, and these four acceptance cases are the controls
+                    # that tell a correct blank-prompt fix from an over-reaching one:
+                    # failing them on cleanup would indict the server for the one
+                    # behaviour they exist to confirm. Same policy as the admission
+                    # suite, which keeps cleanup out of `success` explicitly.
                     message = (
-                        f"accepted job {task_id} could not be cancelled; "
+                        f"cleanup: accepted job {task_id} could not be cancelled; "
                         "it may still be generating"
                     )
             elif response.status >= 400:

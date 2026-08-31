@@ -789,10 +789,19 @@ async def run_admission(
     }
     if not graded:
         reason = "; ".join(sorted(set(unmet.values()))) or "no cases were gradable"
-        result["status"] = "skip"
-        result["skipped"] = True
         result["reason"] = reason
-        result["summary"] = f"skipped: {reason}"
+        if saturation.submit_error is not None:
+            # Nothing was graded because submission itself broke -- either the
+            # deployment never answered, or it returned 202 without a job id. Neither
+            # is a missing observation, and `status: "skip"` is non-blocking, so
+            # leaving it grey means a dead or still-warming pod reports the same as a
+            # queue that simply never filled. By then the bring-up is already spent.
+            result["success"] = False
+            result["summary"] = f"failed: {reason}"
+        else:
+            result["status"] = "skip"
+            result["skipped"] = True
+            result["summary"] = f"skipped: {reason}"
     return result
 
 

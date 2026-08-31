@@ -294,16 +294,49 @@ class TestVideoMatrixExpansion:
         Dropped into the t2va suite these would run against whichever runner is booted, where a
         keyframe at frame_pos=5 or a references object is simply an unknown field -- so nearly
         every case would be graded against a server that was never asked to serve that modality.
+
+        The converse is why MiniMaxH3PromptContractTest is *not* listed here. Its payloads are
+        text-only, and `reject_text_to_video_on_i2v_deployment` refuses those at the route on an
+        FL2VA or Ref2VA deployment -- a route-level dependency, so it fires before the body is
+        bound, for every case. Graded there, its six rejection cases bank a PASS for a 422 that
+        never looked at the prompt, and its four acceptance cases can never pass however
+        completely #5039 is implemented. The t2va suite is the only deployment on which those
+        payloads are legal.
         """
         suite_map = self._suite_map()
-        assert [tc["template"] for tc in suite_map["minimax-h3-fl2va-blackhole_galaxy"]["test_cases"]] == [
+        assert [
+            tc["template"]
+            for tc in suite_map["minimax-h3-fl2va-blackhole_galaxy"]["test_cases"]
+        ] == [
             "MiniMaxH3Fl2vaContractTest",
-            "MiniMaxH3PromptContractTest",
         ]
-        assert [tc["template"] for tc in suite_map["minimax-h3-ref2va-blackhole_galaxy"]["test_cases"]] == [
+        assert [
+            tc["template"]
+            for tc in suite_map["minimax-h3-ref2va-blackhole_galaxy"]["test_cases"]
+        ] == [
             "MiniMaxH3Ref2vaContractTest",
-            "MiniMaxH3PromptContractTest",
         ]
+
+    def test_modality_suites_pin_the_targets_their_grading_depends_on(self):
+        """Assert the per-case `targets`, not just the template list.
+
+        The template list alone cannot tell a suite that grades its contract from one that skips
+        it: `profile` decides whether the FL2VA acceptance cases -- including the in-spec 10 MB
+        keyframe regression the file calls its headline case -- are sent at all, and a suite that
+        skips every one of them still reports PASS on the refusals it did run.
+        """
+        fl2va = self._case_targets(
+            "minimax-h3-fl2va-blackhole_galaxy", "MiniMaxH3Fl2vaContractTest"
+        )
+        assert fl2va["deployment"] == "fl2va"
+        assert fl2va["profile"] == "smoke", (
+            "under 'validation' every expected-202 case is skipped, so the block grades only "
+            "refusals and a server that rejects every keyframe scores green"
+        )
+        ref2va = self._case_targets(
+            "minimax-h3-ref2va-blackhole_galaxy", "MiniMaxH3Ref2vaContractTest"
+        )
+        assert ref2va["profile"] == "validation"
 
     def test_all_video_suites_single_device(self):
         for suite in self._suite_map().values():
