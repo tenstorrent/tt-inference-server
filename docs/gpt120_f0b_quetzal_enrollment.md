@@ -41,8 +41,8 @@ The response must bind, at minimum:
   receipt;
 - an immutable OCI image containing Quetzal `071e23cd`, tt-metal b534, patchset 22fb,
   generated-only plugin registration, and no native fallback; and
-- a Slurm-backed `qb2-p300x2-physical-2x2-ring-links2` runner with fresh
-  pre-weight four-chip 2x2 degree `{2:4}` admission, descriptor
+- the official `bh-qb-ge` Models CI QB pool, plus runtime/package enforcement
+  of the four-chip 2x2 degree `{2:4}` topology contract, descriptor
   `f4c9fb5a...7792`, and f0b selection `1852bfcc...1a7`.
 
 The reviewed handoff requires TTIS `eb7df50d` and Shield `628d36f` as minimum
@@ -50,9 +50,10 @@ ancestors. The publication response records the exact later TTIS and Shield
 commits and attests both ancestry checks, so applying the enrollment commit
 does not invalidate its own contract. Shield `628d36f` preserves the
 model/implementation-qualified image and losslessly forwards both
-`--quetzal-models-root` and `--quetzal-auxiliary-root`. A generic `bh-qb-ge`
-runner, a workflow-wide image, or an older manual-dispatch path is not
-equivalent and is rejected.
+`--quetzal-models-root` and `--quetzal-auxiliary-root`. The `bh-qb-ge` label is
+only the official scheduling boundary; it does not prove Ring/2. A workflow-wide
+image, missing runtime/package topology enforcement, or an older manual-dispatch
+path is not equivalent and is rejected.
 
 Do not reuse package
 `sha256-v2-5fdf2a62...2cf6ad2a...0fc9` or bundle manifest
@@ -73,5 +74,5 @@ administrator attestation; install the exact image and immutable roots on the
 Ring/2 runner class; apply and validate the catalogue/config fragments; run one
 guarded on-dispatch qualification; then enable nightly. Release remains blocked
 until the CS-owned acceptance policy is recorded. A missing field, mutable tag,
-generic P300X2 label, Linear/1-link substitution, or portable-P300X2 claim is a
+wrong runner pool, Linear/1-link substitution, or portable-P300X2 claim is a
 hard failure.

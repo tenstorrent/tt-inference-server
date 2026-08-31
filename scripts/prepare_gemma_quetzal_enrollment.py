@@ -34,7 +34,7 @@ ARTIFACT_SOURCE = "cfaea6c1b610afb8fed34c542e9a6df944fee51d"
 QUETZAL_SOURCE = "76a15d4cdd0c2b400ef9b89499a334a6b748e56b"
 TT_METAL = "b534549300fe2af11e6ee828675294bc0e359555"
 PATCHSET = "22fb0bd2523b8a5c63fa20c3c8a1586dc9ead5150449d0eb02231fa8173a7edd"
-RUNNER = "qb2-p300x2-physical-2x2-ring-links2"
+RUNNER = "bh-qb-ge"
 SHIELD_IMAGE_ANCESTOR = "d97835a18ef6419e9bd12c5e60ffd87bdf7fe3c6"
 DESCRIPTOR_CONTAINER_PATH = (
     "/opt/quetzal/mesh_graph_descriptors/p150_x4_2ch_mesh_graph_descriptor.textproto"
