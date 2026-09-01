@@ -1257,9 +1257,25 @@ def set_metal_timeout_env_vars():
         f"tee {log_dir}/tt-triage-$(date +%Y%m%d-%H%M%S).log"
     )
 
-    os.environ["TT_METAL_OPERATION_TIMEOUT_SECONDS"] = "5.0"
+    configured_timeout = os.getenv("TTIS_METAL_OP_TIMEOUT_SECONDS", "5.0")
+    try:
+        timeout_seconds = float(configured_timeout)
+    except ValueError as error:
+        raise RuntimeError(
+            "TTIS_METAL_OP_TIMEOUT_SECONDS must be a finite number in [1, 3600]"
+        ) from error
+    if not math.isfinite(timeout_seconds) or not 1 <= timeout_seconds <= 3600:
+        raise RuntimeError(
+            "TTIS_METAL_OP_TIMEOUT_SECONDS must be a finite number in [1, 3600]"
+        )
+
+    normalized_timeout = str(timeout_seconds)
+    os.environ["TT_METAL_OPERATION_TIMEOUT_SECONDS"] = normalized_timeout
     os.environ["TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE"] = timeout_cmd
-    logger.info("Set TT_METAL_OPERATION_TIMEOUT_SECONDS=5.0")
+    logger.info(
+        "Set TT_METAL_OPERATION_TIMEOUT_SECONDS=%s",
+        normalized_timeout,
+    )
     logger.info(f"Set TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE={timeout_cmd}")
 
 

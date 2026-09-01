@@ -329,6 +329,30 @@ def test_model_spec_can_disable_and_clear_inherited_metal_timeout(
     assert "TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE" not in os.environ
 
 
+def test_model_spec_can_extend_metal_timeout_for_cold_generated_jit(
+    monkeypatch, run_vllm_api_server_module
+):
+    monkeypatch.setenv("TTIS_METAL_OP_TIMEOUT_SECONDS", "300")
+
+    run_vllm_api_server_module.set_metal_timeout_env_vars()
+
+    assert os.environ["TT_METAL_OPERATION_TIMEOUT_SECONDS"] == "300.0"
+    assert "TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE" in os.environ
+
+
+@pytest.mark.parametrize("value", ["invalid", "nan", "inf", "0", "3601"])
+def test_metal_timeout_override_rejects_invalid_values(
+    monkeypatch, run_vllm_api_server_module, value
+):
+    monkeypatch.setenv("TTIS_METAL_OP_TIMEOUT_SECONDS", value)
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"TTIS_METAL_OP_TIMEOUT_SECONDS must be a finite number in \[1, 3600\]",
+    ):
+        run_vllm_api_server_module.set_metal_timeout_env_vars()
+
+
 def test_main_passes_passthrough_port_to_trace_capture(
     monkeypatch, run_vllm_api_server_module
 ):

@@ -51,6 +51,10 @@ templates:
         TRANSFORMERS_OFFLINE: "1"
         VLLM_PLUGINS: quetzal_model_registry,tt
         TT_VLLM_BUILTIN_MODELS: "0"
+        # A cold generated S8192 prefill JIT can legitimately exceed the
+        # server-wide 5 second hang detector before its kernel cache exists.
+        # Keep detection enabled, but use the measured cold-start envelope.
+        TTIS_METAL_OP_TIMEOUT_SECONDS: "300"
         # Leave TT_MESH_GRAPH_DESC_PATH unset so pinned b534 performs physical
         # discovery. b534 treats the newer `auto` sentinel as a literal file.
         TTQ_ROW_ALL_REDUCE_TOPOLOGY: Linear
