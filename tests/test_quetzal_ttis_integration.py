@@ -429,6 +429,7 @@ def test_release_labels_user_sealed_and_unattested_provenance_without_blocking(
 
     assert _validate_quetzal_models_root(runtime, spec) == package.resolve()
     assert "[user_sealed]" in caplog.text
+    assert str(package.resolve()) not in caplog.text
 
     qualification.chmod(0o444)
     package.chmod(0o555)

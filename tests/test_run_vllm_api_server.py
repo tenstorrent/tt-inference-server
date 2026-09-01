@@ -834,6 +834,7 @@ def test_quetzal_runtime_contract_labels_mutable_package_state_user_sealed(
         package_root, "Qwen/Qwen3.6-27B"
     )
     assert "[user_sealed]" in caplog.text
+    assert str(package_root) not in caplog.text
 
 
 def test_quetzal_behavioral_admission_allows_only_mutable_backing_modes(

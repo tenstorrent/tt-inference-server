@@ -490,9 +490,8 @@ def _require_read_only_path(
     if metadata.st_mode & 0o222:
         logger.warning(
             "Quetzal publication provenance warning [user_sealed]: %s is "
-            "mutable; exact content hashes remain mandatory: %s",
+            "mutable; exact content hashes remain mandatory",
             label,
-            path,
         )
 
 
