@@ -112,6 +112,7 @@ git -C "${quetzal_source}" archive --format=tar "${quetzal_commit}" \
 printf '%s\n' "${quetzal_commit}" > "${export_root}/.tt-quetzal-commit"
 git -C "${repo_root}" archive --format=tar "${ttis_commit}" \
     | tar -xf - -C "${ttis_export_root}"
+printf '%s\n' "${ttis_commit}" > "${ttis_export_root}/.tt-ttis-commit"
 # workflows.utils locates the repository root by its .git marker. The export is
 # still an exact git archive (and contains no repository metadata); an empty
 # temporary marker is sufficient while generating the development catalog.

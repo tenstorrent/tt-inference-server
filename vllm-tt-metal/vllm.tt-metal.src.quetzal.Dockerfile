@@ -156,6 +156,9 @@ COPY --from=ttis_src \
 COPY --from=ttis_src \
     tt-vllm-plugin/pyproject.toml \
     /tmp/ttis-vllm-plugin-pyproject.toml
+COPY --from=ttis_src \
+    .tt-ttis-commit \
+    /tmp/.tt-ttis-commit
 
 # ``quetzal_src`` is a named BuildKit context exported from the exact clean
 # local commit by the wrapper. It contains neither .git nor authentication
@@ -166,7 +169,9 @@ COPY --from=ttis_src \
 COPY --from=quetzal_src / /tmp/quetzal-source/
 
 USER ${TTIS_IMAGE_BUILD_USER}
-RUN test "$(cat /tmp/quetzal-source/.tt-quetzal-commit)" = "${TT_QUETZAL_COMMIT_SHA}" \
+RUN test "$(cat /tmp/.tt-ttis-commit)" = "${TT_INFERENCE_SERVER_COMMIT_SHA}" \
+    && rm /tmp/.tt-ttis-commit \
+    && test "$(cat /tmp/quetzal-source/.tt-quetzal-commit)" = "${TT_QUETZAL_COMMIT_SHA}" \
     && rm /tmp/quetzal-source/.tt-quetzal-commit \
     && export VIRTUAL_ENV="${PYTHON_ENV_DIR}" \
     && export PATH="${PYTHON_ENV_DIR}/bin:${PATH}" \

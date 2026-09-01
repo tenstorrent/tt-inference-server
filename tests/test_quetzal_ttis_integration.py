@@ -492,3 +492,19 @@ def test_quetzal_runtime_image_has_bounded_single_uid_build_mode():
     )
     assert "TT_QUETZAL_COMMIT_SHA_OR_TAG" not in dockerfile
     assert "git clone --filter=blob:none --no-checkout" not in dockerfile
+
+
+def test_quetzal_image_binds_ttis_label_to_exact_named_context_marker():
+    dockerfile = (
+        get_repo_root_path() / "vllm-tt-metal/vllm.tt-metal.src.quetzal.Dockerfile"
+    ).read_text()
+    builder = (get_repo_root_path() / "scripts/build_quetzal_dev_image.sh").read_text()
+    assert (
+        'printf \'%s\\n\' "${ttis_commit}" > "${ttis_export_root}/.tt-ttis-commit"'
+        in builder
+    )
+    assert ".tt-ttis-commit" in dockerfile
+    assert (
+        'test "$(cat /tmp/.tt-ttis-commit)" = "${TT_INFERENCE_SERVER_COMMIT_SHA}"'
+        in dockerfile
+    )
