@@ -434,7 +434,17 @@ def validate_runtime_args(model_spec, runtime_config):
         args.host_hf_cache,
         getattr(args, "host_weights_dir", None),
     ]
-    if sum(1 for a in weight_source_args if a) > 1:
+    behavioral_split_storage = (
+        args.host_volume
+        and getattr(args, "host_weights_dir", None)
+        and not args.host_hf_cache
+        and getattr(args, "quetzal_behavioral_package_admission", False)
+        and args.dev_mode
+        and args.docker_server
+        and args.impl == "quetzal"
+        and not args.ci_mode
+    )
+    if sum(1 for a in weight_source_args if a) > 1 and not behavioral_split_storage:
         raise ValueError(
             "Only one of --host-volume, --host-hf-cache, --host-weights-dir can be specified."
         )
