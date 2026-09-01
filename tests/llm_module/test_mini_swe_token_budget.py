@@ -74,6 +74,44 @@ def test_count_includes_generation_prompt_and_exact_tool_schema():
     ]
 
 
+def test_count_normalizes_openai_tool_argument_strings_without_mutating_history():
+    tokenizer = Tokenizer([10, 20])
+    messages = [
+        {
+            "role": "assistant",
+            "tool_calls": [
+                {
+                    "function": {
+                        "name": "bash",
+                        "arguments": '{"command":"pwd"}',
+                    }
+                }
+            ],
+        }
+    ]
+
+    assert count_chat_input_tokens(tokenizer, messages, []) == 2
+    rendered = tokenizer.calls[0][0]
+    assert rendered[0]["tool_calls"][0]["function"]["arguments"] == {
+        "command": "pwd"
+    }
+    assert messages[0]["tool_calls"][0]["function"]["arguments"] == (
+        '{"command":"pwd"}'
+    )
+
+
+@pytest.mark.parametrize("arguments", ["not-json", "[]"])
+def test_count_rejects_invalid_or_nonobject_tool_argument_strings(arguments):
+    messages = [
+        {
+            "role": "assistant",
+            "tool_calls": [{"function": {"name": "bash", "arguments": arguments}}],
+        }
+    ]
+    with pytest.raises(TokenBudgetConfigurationError, match="tool-call arguments"):
+        count_chat_input_tokens(Tokenizer([]), messages, [])
+
+
 def test_count_accepts_batch_encoding_shape_and_rejects_ambiguous_batch():
     assert (
         count_chat_input_tokens(Tokenizer({"input_ids": [[1, 2, 3, 4]]}), [], []) == 4

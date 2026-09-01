@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -50,9 +51,26 @@ def count_chat_input_tokens(
     """Count the exact rendered chat input, including generation prompt and tools."""
     if not getattr(tokenizer, "chat_template", None):
         raise TokenBudgetConfigurationError("configured tokenizer has no chat_template")
+    rendered_messages = deepcopy(messages)
+    for message in rendered_messages:
+        for tool_call in message.get("tool_calls") or []:
+            function = tool_call.get("function") or {}
+            arguments = function.get("arguments")
+            if isinstance(arguments, str):
+                try:
+                    arguments = json.loads(arguments)
+                except json.JSONDecodeError as exc:
+                    raise TokenBudgetConfigurationError(
+                        "tool-call arguments are not valid JSON"
+                    ) from exc
+                if not isinstance(arguments, dict):
+                    raise TokenBudgetConfigurationError(
+                        "tool-call arguments JSON must decode to an object"
+                    )
+                function["arguments"] = arguments
     try:
         encoded = tokenizer.apply_chat_template(
-            messages,
+            rendered_messages,
             tools=tools,
             tokenize=True,
             add_generation_prompt=True,
