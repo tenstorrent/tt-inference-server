@@ -68,6 +68,14 @@ class SWEbenchRunConfig:
     # The exact tokenizer still counts the complete retained request and
     # remains the authoritative input-envelope gate.
     mini_observation_chars: Optional[int] = None
+    # Qualification identity copied from the catalogue into the detached
+    # verifier result. Local/report-only runs remain runnable, but only a
+    # models_ci_graded result is eligible to support release promotion.
+    qualification_claim: str = "local_behavioral_only"
+    selection_policy: Optional[str] = None
+    instance_selection_provenance: Optional[str] = None
+    dataset_revision: Optional[str] = None
+    ordered_instance_ids_sha256: Optional[str] = None
     # Exact Hugging Face tokenizer used to render/count each mini-swe request.
     # Kept separate from model_name, which includes LiteLLM's provider prefix.
     tokenizer_name: Optional[str] = None
@@ -442,19 +450,26 @@ def _write_mini_sweagent_model_config(config: SWEbenchRunConfig) -> Path:
         half = max_observation_chars // 2
         model_config["model"]["observation_template"] = (
             "{% if output.exception_info -%}\n"
-            "<exception>{{output.exception_info}}</exception>\n"
+            "{% set observation_type = 'exception_and_output' -%}\n"
+            "{% set payload = 'exception: ' ~ output.exception_info ~ "
+            "'\\noutput: ' ~ output.output -%}\n"
+            "{% else -%}\n"
+            "{% set observation_type = 'command_output' -%}\n"
+            "{% set payload = output.output -%}\n"
             "{% endif -%}\n"
             "<returncode>{{output.returncode}}</returncode>\n"
-            f"{{% if output.output | length <= {max_observation_chars} -%}}\n"
-            "<output>\n{{ output.output -}}\n</output>\n"
+            '<observation type="{{ observation_type }}">\n'
+            f"{{% if payload | length <= {max_observation_chars} -%}}\n"
+            "<payload>\n{{ payload -}}\n</payload>\n"
             "{%- else -%}\n"
-            "<warning>Command output exceeded the declared observation budget; "
+            "<warning>Observation payload exceeded the declared budget; "
             "an equal head/tail sample follows.</warning>\n"
-            f"<output_head>\n{{{{ output.output[:{half}] }}}}\n</output_head>\n"
-            "<elided_chars>{{ output.output | length - "
+            f"<payload_head>\n{{{{ payload[:{half}] }}}}\n</payload_head>\n"
+            "<elided_chars>{{ payload | length - "
             f"{max_observation_chars} }}}}</elided_chars>\n"
-            f"<output_tail>\n{{{{ output.output[-{half}:] }}}}\n</output_tail>\n"
-            "{%- endif -%}"
+            f"<payload_tail>\n{{{{ payload[-{half}:] }}}}\n</payload_tail>\n"
+            "{%- endif -%}\n"
+            "</observation>"
         )
     if config.mini_environment_class == "docker":
         model_config["environment"] = {
@@ -811,8 +826,36 @@ def normalize_swebench_report(
 ) -> dict[str, Any]:
     """Normalize the SWE-bench harness report into harbor-format result.json."""
     report = json.loads(harness_report_path.read_text(encoding="utf-8"))
-    submitted_ids = set(report.get("submitted_ids", []))
-    resolved_ids = set(report.get("resolved_ids", []))
+    submitted_rows = report.get("submitted_ids", [])
+    resolved_rows = report.get("resolved_ids", [])
+    if not isinstance(submitted_rows, list) or not isinstance(resolved_rows, list):
+        raise RuntimeError("SWE-bench verifier ID fields must be lists")
+    submitted_ids = set(submitted_rows)
+    resolved_ids = set(resolved_rows)
+
+    graded = config.qualification_claim == "models_ci_graded"
+    expected_ids = set(config.instance_ids)
+    if graded and not submitted_ids:
+        raise RuntimeError(
+            "graded SWE-bench verifier report must contain nonempty submitted_ids; "
+            "aggregate-only counts cannot support release promotion"
+        )
+    if graded and (
+        len(submitted_ids) != len(submitted_rows)
+        or not all(
+            isinstance(instance_id, str) and instance_id
+            for instance_id in submitted_rows
+        )
+    ):
+        raise RuntimeError(
+            "graded SWE-bench verifier submitted_ids must be unique nonempty strings"
+        )
+    if graded and expected_ids and submitted_ids != expected_ids:
+        raise RuntimeError(
+            "graded SWE-bench verifier submitted_ids differ from the exact "
+            "predeclared run set: "
+            f"expected={sorted(expected_ids)}, submitted={sorted(submitted_ids)}"
+        )
 
     if not submitted_ids:
         submitted_count = int(report.get("submitted_instances", 0))
@@ -872,6 +915,17 @@ def normalize_swebench_report(
             ],
             "predictions_path": str(predictions_path),
             "swebench_report_path": str(harness_report_path),
+            "qualification_contract": {
+                "qualification_claim": config.qualification_claim,
+                "selection_policy": config.selection_policy,
+                "instance_selection_provenance": (config.instance_selection_provenance),
+                "dataset_revision": config.dataset_revision,
+                "ordered_instance_ids_sha256": (config.ordered_instance_ids_sha256),
+                "predeclared_instance_ids": sorted(expected_ids),
+                "mini_observation_chars": config.mini_observation_chars,
+                "max_input_tokens": config.max_input_tokens,
+                "max_output_tokens": config.max_output_tokens,
+            },
         },
         "stats": {
             "evals": {

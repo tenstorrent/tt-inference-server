@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import dataclasses
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
@@ -95,6 +96,12 @@ class FakeSWEbenchConfig:
     max_output_tokens: Optional[int] = 32 * 1024
     completion_kwargs: Dict[str, Any] = field(default_factory=dict)
     mini_agent_kwargs: Dict[str, Any] = field(default_factory=dict)
+    mini_observation_chars: Optional[int] = None
+    qualification_claim: str = "local_behavioral_only"
+    selection_policy: Optional[str] = None
+    instance_selection_provenance: Optional[str] = None
+    dataset_revision: Optional[str] = None
+    ordered_instance_ids_sha256: Optional[str] = None
     sweagent_config: str = "config/default.yaml"
     mini_config: str = "swebench.yaml"
     mini_model_class: str = "litellm"
@@ -637,6 +644,113 @@ class TestRunCommandWithRetries:
 
 
 class TestSWEbenchReportNormalization:
+    def test_graded_report_rejects_aggregate_only_counts(self, tmp_path):
+        cfg = build_swebench_config(
+            _swebench_task(),
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+        cfg = dataclasses.replace(
+            cfg,
+            qualification_claim="models_ci_graded",
+            selection_policy="reviewed_fixed_subset",
+            instance_selection_provenance="reviewed fixture",
+            instance_ids=["django__django-11299"],
+        )
+        cfg.output_dir.mkdir(parents=True)
+        harness_report = cfg.output_dir / "harness_report.json"
+        harness_report.write_text(
+            json.dumps({"submitted_instances": 1, "resolved_instances": 1}),
+            encoding="utf-8",
+        )
+
+        with pytest.raises(RuntimeError, match="aggregate-only"):
+            normalize_swebench_report(
+                harness_report,
+                cfg.output_dir / "result.json",
+                cfg,
+                cfg.output_dir / "predictions.jsonl",
+            )
+
+    def test_graded_result_carries_contract_and_exact_submitted_set(self, tmp_path):
+        cfg = build_swebench_config(
+            _swebench_task(),
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+        cfg = dataclasses.replace(
+            cfg,
+            qualification_claim="models_ci_graded",
+            selection_policy="reviewed_fixed_subset",
+            instance_selection_provenance="reviewed fixture",
+            dataset_revision="a" * 40,
+            ordered_instance_ids_sha256="b" * 64,
+            instance_ids=["django__django-11299"],
+            mini_observation_chars=2048,
+            max_input_tokens=5120,
+            max_output_tokens=2048,
+        )
+        cfg.output_dir.mkdir(parents=True)
+        harness_report = cfg.output_dir / "harness_report.json"
+        harness_report.write_text(
+            json.dumps(
+                {
+                    "submitted_ids": ["django__django-11299"],
+                    "resolved_ids": ["django__django-11299"],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        normalized = normalize_swebench_report(
+            harness_report,
+            cfg.output_dir / "result.json",
+            cfg,
+            cfg.output_dir / "predictions.jsonl",
+        )
+
+        contract = normalized["config"]["qualification_contract"]
+        assert contract == {
+            "qualification_claim": "models_ci_graded",
+            "selection_policy": "reviewed_fixed_subset",
+            "instance_selection_provenance": "reviewed fixture",
+            "dataset_revision": "a" * 40,
+            "ordered_instance_ids_sha256": "b" * 64,
+            "predeclared_instance_ids": ["django__django-11299"],
+            "mini_observation_chars": 2048,
+            "max_input_tokens": 5120,
+            "max_output_tokens": 2048,
+        }
+
+    def test_graded_report_rejects_wrong_submitted_set(self, tmp_path):
+        cfg = build_swebench_config(
+            _swebench_task(),
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+        cfg = dataclasses.replace(
+            cfg,
+            qualification_claim="models_ci_graded",
+            instance_ids=["django__django-11299"],
+        )
+        cfg.output_dir.mkdir(parents=True)
+        harness_report = cfg.output_dir / "harness_report.json"
+        harness_report.write_text(
+            json.dumps({"submitted_ids": ["sympy__sympy-13551"], "resolved_ids": []}),
+            encoding="utf-8",
+        )
+
+        with pytest.raises(RuntimeError, match="predeclared run set"):
+            normalize_swebench_report(
+                harness_report,
+                cfg.output_dir / "result.json",
+                cfg,
+                cfg.output_dir / "predictions.jsonl",
+            )
+
     def test_zero_submissions_fail_instead_of_becoming_zero_percent(self, tmp_path):
         cfg = build_swebench_config(
             _swebench_task(),
@@ -1059,9 +1173,7 @@ class TestAgenticRunTimestamp:
 
 
 class TestAgenticBridge:
-    def test_remote_readiness_uses_service_port_when_url_omits_it(
-        self, monkeypatch
-    ):
+    def test_remote_readiness_uses_service_port_when_url_omits_it(self, monkeypatch):
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         ctx = MagicMock()
         ctx.remote_server = True

@@ -414,7 +414,9 @@ def test_main_passes_passthrough_port_to_trace_capture(
     assert env_setup_order == ["runtime_env", "metal_timeout"]
 
 
-def _materialized_quetzal_contract(monkeypatch, tmp_path, module):
+def _materialized_quetzal_contract(
+    monkeypatch, tmp_path, module, *, patchset_status="applied"
+):
     package_id = "sha256-test-artifact-test-weights"
     package_root = tmp_path / package_id
     package_root.mkdir()
@@ -436,6 +438,12 @@ def _materialized_quetzal_contract(monkeypatch, tmp_path, module):
         artifact.write_text("test")
         monkeypatch.setenv(env_name, str(artifact))
     required_runtime = "a" * 40
+    patchset = "d" * 64 if patchset_status == "applied" else None
+    patchset_manifest_row = (
+        f"      required_runtime_tt_metal_patchset_sha256: {patchset}\n"
+        if patchset is not None
+        else ""
+    )
     (package_root / "qualification_manifest.yaml").write_text(
         "models:\n"
         "  - model_id: Qwen/Qwen3.6-27B\n"
@@ -452,7 +460,7 @@ def _materialized_quetzal_contract(monkeypatch, tmp_path, module):
         "      native_silicon: true\n"
         "      host_fallbacks: []\n"
         f"      required_runtime_tt_metal_commit: {required_runtime}\n"
-        f"      required_runtime_tt_metal_patchset_sha256: {'d' * 64}\n"
+        f"{patchset_manifest_row}"
     )
     monkeypatch.setenv("QUETZAL_MODEL", "Qwen/Qwen3.6-27B")
     monkeypatch.setenv("QUETZAL_HF_REVISION", "c" * 40)
@@ -462,18 +470,30 @@ def _materialized_quetzal_contract(monkeypatch, tmp_path, module):
     monkeypatch.setenv("QUETZAL_REQUIRED_SOURCE_REVISION", source_revision)
     monkeypatch.setenv("TT_QUETZAL_COMMIT_SHA", source_revision)
     monkeypatch.setenv("TT_METAL_COMMIT_SHA_OR_TAG", required_runtime)
-    patchset = "d" * 64
-    monkeypatch.setenv("QUETZAL_REQUIRED_TT_METAL_PATCHSET_SHA256", patchset)
-    monkeypatch.setenv("TT_METAL_PATCHSET_SHA256", patchset)
-    monkeypatch.setenv("TT_METAL_PATCHSET_MANIFEST_SHA256", patchset)
+    monkeypatch.setenv("QUETZAL_TT_METAL_PATCHSET_STATUS", patchset_status)
+    for name in (
+        "QUETZAL_REQUIRED_TT_METAL_PATCHSET_SHA256",
+        "TT_METAL_PATCHSET_SHA256",
+        "TT_METAL_PATCHSET_MANIFEST_SHA256",
+    ):
+        if patchset is None:
+            monkeypatch.delenv(name, raising=False)
+        else:
+            monkeypatch.setenv(name, patchset)
     metal_home = tmp_path / "tt-metal"
     metal_home.mkdir()
     (metal_home / ".ttq-runtime-identity.json").write_text(
         json.dumps(
             {
                 "base_revision": required_runtime,
-                "patchset_sha256": patchset,
-                "manifest_sha256": patchset,
+                **(
+                    {
+                        "patchset_sha256": patchset,
+                        "manifest_sha256": patchset,
+                    }
+                    if patchset is not None
+                    else {}
+                ),
             }
         )
     )
@@ -621,6 +641,27 @@ def test_quetzal_runtime_contract_accepts_materialized_content_package(
     )
 
 
+def test_quetzal_runtime_contract_accepts_explicit_unpatched_runtime(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    package_root = _materialized_quetzal_contract(
+        monkeypatch,
+        tmp_path,
+        run_vllm_api_server_module,
+        patchset_status="none",
+    )
+
+    run_vllm_api_server_module._validate_quetzal_package_and_runtime(
+        package_root, "Qwen/Qwen3.6-27B"
+    )
+
+    monkeypatch.setenv("TT_METAL_PATCHSET_SHA256", "d" * 64)
+    with pytest.raises(RuntimeError, match="status 'none'"):
+        run_vllm_api_server_module._validate_quetzal_package_and_runtime(
+            package_root, "Qwen/Qwen3.6-27B"
+        )
+
+
 def test_quetzal_runtime_contract_wires_split_attestation_before_vllm(
     monkeypatch, tmp_path, run_vllm_api_server_module
 ):
@@ -667,6 +708,22 @@ def test_quetzal_runtime_contract_wires_split_attestation_before_vllm(
         run_vllm_api_server_module._validate_quetzal_package_and_runtime(
             package_root, "Qwen/Qwen3.6-27B"
         )
+
+
+def test_quetzal_runtime_contract_labels_missing_attestation_nonblocking(
+    monkeypatch, tmp_path, run_vllm_api_server_module, caplog
+):
+    package_root = _materialized_quetzal_contract(
+        monkeypatch, tmp_path, run_vllm_api_server_module
+    )
+    monkeypatch.setenv("QUETZAL_RUNTIME_ATTESTATION_SHA256", "e" * 64)
+
+    run_vllm_api_server_module._validate_quetzal_package_and_runtime(
+        package_root, "Qwen/Qwen3.6-27B"
+    )
+
+    assert "[unattested]" in caplog.text
+    assert "admission remains valid" in caplog.text
 
 
 def test_quetzal_runtime_contract_rejects_split_attestation_generator_mismatch(
@@ -752,8 +809,8 @@ def test_quetzal_runtime_contract_rejects_tampered_executable(
 
 
 @pytest.mark.parametrize("mutation", ["root", "parent", "payload", "proof"])
-def test_quetzal_runtime_contract_rejects_mutable_package_state(
-    monkeypatch, tmp_path, run_vllm_api_server_module, mutation
+def test_quetzal_runtime_contract_labels_mutable_package_state_user_sealed(
+    monkeypatch, tmp_path, run_vllm_api_server_module, mutation, caplog
 ):
     package_root = _materialized_quetzal_contract(
         monkeypatch, tmp_path, run_vllm_api_server_module
@@ -768,10 +825,10 @@ def test_quetzal_runtime_contract_rejects_mutable_package_state(
         digest = os.environ["QUETZAL_BUNDLE_MANIFEST_SHA256"]
         (package_root / ".quetzal-bundle-manifests" / f"{digest}.json").chmod(0o644)
 
-    with pytest.raises(RuntimeError, match="mutable"):
-        run_vllm_api_server_module._validate_quetzal_package_and_runtime(
-            package_root, "Qwen/Qwen3.6-27B"
-        )
+    run_vllm_api_server_module._validate_quetzal_package_and_runtime(
+        package_root, "Qwen/Qwen3.6-27B"
+    )
+    assert "[user_sealed]" in caplog.text
 
 
 def test_quetzal_runtime_contract_rejects_path_escape(
@@ -975,6 +1032,7 @@ def test_validate_quetzal_runtime_admits_only_generated_provider(
         "QUETZAL_PACKAGE_ID": package_id,
         "QUETZAL_PACKAGE_ROOT": str(root),
         "QUETZAL_BUNDLE_MANIFEST_SHA256": bundle_digest,
+        "QUETZAL_TT_METAL_PATCHSET_STATUS": "applied",
         "QUETZAL_REQUIRED_TT_METAL_PATCHSET_SHA256": patchset,
         "TT_METAL_COMMIT_SHA_OR_TAG": runtime_commit,
         "TT_METAL_PATCHSET_SHA256": patchset,

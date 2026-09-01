@@ -193,9 +193,7 @@ def test_count_normalizes_nested_tool_arguments_without_mutating_history():
     assert count_chat_input_tokens(tokenizer, messages, []) == 2
     rendered = tokenizer.calls[0][0]
     assert rendered[0]["content"] == ""
-    assert rendered[0]["tool_calls"][0]["function"]["arguments"] == {
-        "command": "pwd"
-    }
+    assert rendered[0]["tool_calls"][0]["function"]["arguments"] == {"command": "pwd"}
     assert messages[0]["content"] is None
     assert messages[0]["tool_calls"][0]["function"]["arguments"] == (
         '{"command":"pwd"}'
@@ -207,9 +205,7 @@ def test_count_rejects_invalid_or_nonobject_tool_argument_strings(arguments):
     messages = [
         {
             "role": "assistant",
-            "tool_calls": [
-                {"function": {"name": "bash", "arguments": arguments}}
-            ],
+            "tool_calls": [{"function": {"name": "bash", "arguments": arguments}}],
         }
     ]
     with pytest.raises(TokenBudgetConfigurationError, match="tool-call arguments"):
@@ -351,6 +347,36 @@ def test_qwen_8627_char_observation_is_bounded_before_next_exact_count(tmp_path)
     tokenizer = Tokenizer([1, 2, 3])
     assert count_chat_input_tokens(tokenizer, messages, []) == 3
     assert messages == original
+
+
+def test_exception_and_output_share_one_observation_payload_budget(tmp_path):
+    config = _mini_config(tmp_path, mini_observation_chars=2048)
+    generated = json.loads(_write_mini_sweagent_model_config(config).read_text())
+    template = Template(generated["model"]["observation_template"])
+    middle = "EXCEPTION_MIDDLE_MUST_BE_ELIDED"
+    exception = "E" * 1400 + middle + "X" * 1400
+    output = "O" * 3000
+
+    rendered = template.render(
+        output=SimpleNamespace(
+            exception_info=exception,
+            returncode=1,
+            output=output,
+        )
+    )
+
+    assert 'type="exception_and_output"' in rendered
+    assert middle not in rendered
+    assert "<elided_chars>" in rendered
+    assert "exception: " in rendered
+    retained_head = rendered.split("<payload_head>\n", 1)[1].split(
+        "\n</payload_head>", 1
+    )[0]
+    retained_tail = rendered.split("<payload_tail>\n", 1)[1].split(
+        "\n</payload_tail>", 1
+    )[0]
+    assert len(retained_head) == 1024
+    assert len(retained_tail) == 1024
 
 
 @pytest.mark.parametrize(

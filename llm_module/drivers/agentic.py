@@ -208,6 +208,15 @@ def build_swebench_config(
         completion_kwargs=cfg.completion_kwargs,
         mini_agent_kwargs=cfg.mini_agent_kwargs,
         mini_observation_chars=getattr(cfg, "mini_observation_chars", None),
+        qualification_claim=getattr(
+            cfg, "qualification_claim", "local_behavioral_only"
+        ),
+        selection_policy=getattr(cfg, "selection_policy", None),
+        instance_selection_provenance=getattr(
+            cfg, "instance_selection_provenance", None
+        ),
+        dataset_revision=getattr(cfg, "dataset_revision", None),
+        ordered_instance_ids_sha256=getattr(cfg, "ordered_instance_ids_sha256", None),
         swebench_timeout_sec=cfg.swebench_timeout_sec,
         agent_generation_timeout_sec=cfg.agent_generation_timeout_sec,
         shuffle=cfg.shuffle,

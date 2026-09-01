@@ -463,7 +463,12 @@ def _require_read_only_path(path: Path, *, directory: bool, label: str) -> None:
     if not directory and not path.is_file():
         raise RuntimeError(f"{label} is not a regular file: {path}")
     if metadata.st_mode & 0o222:
-        raise RuntimeError(f"{label} is mutable: {path}")
+        logger.warning(
+            "Quetzal publication provenance warning [user_sealed]: %s is "
+            "mutable; exact content hashes remain mandatory: %s",
+            label,
+            path,
+        )
 
 
 def _require_read_only_package_member(
@@ -843,21 +848,41 @@ def _validate_quetzal_package_and_runtime(
             f"{required_runtime!r}, image provides {actual_runtime!r}"
         )
 
+    patchset_status = os.getenv("QUETZAL_TT_METAL_PATCHSET_STATUS")
     required_patchset = os.getenv("QUETZAL_REQUIRED_TT_METAL_PATCHSET_SHA256")
     actual_patchset = os.getenv("TT_METAL_PATCHSET_SHA256")
     actual_manifest = os.getenv("TT_METAL_PATCHSET_MANIFEST_SHA256")
-    if (
-        not package_required_patchset
-        or not required_patchset
-        or package_required_patchset != required_patchset
-        or actual_patchset != required_patchset
-        or actual_manifest != required_patchset
-    ):
+    if patchset_status == "applied":
+        if (
+            not package_required_patchset
+            or not required_patchset
+            or package_required_patchset != required_patchset
+            or actual_patchset != required_patchset
+            or actual_manifest != required_patchset
+        ):
+            raise RuntimeError(
+                "Quetzal TT-Metal patchset mismatch: package requires "
+                f"{package_required_patchset!r}, catalog requires {required_patchset!r}, "
+                f"image provides patchset {actual_patchset!r} and applied manifest "
+                f"{actual_manifest!r}"
+            )
+    elif patchset_status == "none":
+        if any(
+            value
+            for value in (
+                package_required_patchset,
+                required_patchset,
+                actual_patchset,
+                actual_manifest,
+            )
+        ):
+            raise RuntimeError(
+                "Quetzal TT-Metal patchset mismatch: status 'none' requires "
+                "package, catalog, and image to carry no patchset digest"
+            )
+    else:
         raise RuntimeError(
-            "Quetzal TT-Metal patchset mismatch: package requires "
-            f"{package_required_patchset!r}, catalog requires {required_patchset!r}, "
-            f"image provides patchset {actual_patchset!r} and applied manifest "
-            f"{actual_manifest!r}"
+            "Quetzal TT-Metal patchset status must be exactly 'applied' or 'none'"
         )
     identity_path = Path(os.getenv("TT_METAL_HOME", "")) / ".ttq-runtime-identity.json"
     if identity_path.is_symlink() or not identity_path.is_file():
@@ -866,12 +891,19 @@ def _validate_quetzal_package_and_runtime(
         identity = json.loads(identity_path.read_text())
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise RuntimeError("Quetzal TT-Metal runtime identity is invalid") from exc
-    if (
-        identity.get("base_revision") != actual_runtime
-        or identity.get("patchset_sha256") != actual_patchset
-        or identity.get("manifest_sha256") != actual_manifest
+    identity_patchset = identity.get("patchset_sha256")
+    identity_manifest = identity.get("manifest_sha256")
+    if identity.get("base_revision") != actual_runtime:
+        raise RuntimeError("Quetzal TT-Metal runtime identity mismatch")
+    if patchset_status == "applied" and (
+        identity_patchset != actual_patchset or identity_manifest != actual_manifest
     ):
         raise RuntimeError("Quetzal TT-Metal runtime identity mismatch")
+    if patchset_status == "none" and (identity_patchset or identity_manifest):
+        raise RuntimeError(
+            "Quetzal TT-Metal runtime identity mismatch: unpatched runtime "
+            "must carry no patchset digest"
+        )
 
     attestation_value = os.getenv("QUETZAL_RUNTIME_ATTESTATION_PATH", "")
     attestation_sha256 = os.getenv("QUETZAL_RUNTIME_ATTESTATION_SHA256", "")
@@ -882,8 +914,28 @@ def _validate_quetzal_package_and_runtime(
     if not attestation_sha256 and not attestation_value:
         return
     if not attestation_value:
-        raise RuntimeError("impl=quetzal requires QUETZAL_RUNTIME_ATTESTATION_PATH")
+        logger.warning(
+            "Quetzal publication provenance warning [unattested]: catalogued "
+            "runtime attestation %s is not mounted; functional and quality "
+            "admission remains valid",
+            attestation_sha256,
+        )
+        return
     attestation_path = Path(attestation_value)
+    if not attestation_sha256:
+        if attestation_path.is_symlink() or not attestation_path.is_file():
+            raise RuntimeError(
+                "Quetzal runtime compatibility attestation is missing: "
+                f"{attestation_path}"
+            )
+        actual_attestation_sha256, _ = _sha256_file(attestation_path)
+        logger.warning(
+            "Quetzal publication provenance warning [unattested]: supplied "
+            "runtime attestation has no catalog pin; sha256=%s; functional and "
+            "quality admission remains valid",
+            actual_attestation_sha256,
+        )
+        return
     _require_read_only_path(
         attestation_path,
         directory=False,

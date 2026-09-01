@@ -245,8 +245,9 @@ def test_docker_command_mounts_exact_runtime_attestation_readonly(tmp_path):
         generate_docker_run_command(spec, runtime)
 
 
-def test_release_requires_readonly_package_admission_and_runtime_attestation(
+def test_release_labels_user_sealed_and_unattested_provenance_without_blocking(
     tmp_path,
+    caplog,
 ):
     spec = copy.deepcopy(_dev_quetzal_spec("Qwen3.6-27B"))
     package_id = spec.env_vars["QUETZAL_PACKAGE_ID"]
@@ -262,15 +263,15 @@ def test_release_requires_readonly_package_admission_and_runtime_attestation(
         quetzal_models_root=str(package),
     )
 
-    with pytest.raises(ValueError, match="read-only admission"):
-        _validate_quetzal_models_root(runtime, spec)
+    assert _validate_quetzal_models_root(runtime, spec) == package.resolve()
+    assert "[user_sealed]" in caplog.text
 
     qualification.chmod(0o444)
     package.chmod(0o555)
     try:
         assert _validate_quetzal_models_root(runtime, spec) == package.resolve()
-        with pytest.raises(ValueError, match="RUNTIME_ATTESTATION"):
-            _validate_quetzal_runtime_attestation(runtime, spec)
+        assert _validate_quetzal_runtime_attestation(runtime, spec) is None
+        assert "[unattested]" in caplog.text
 
         payload = b'{"schema":"ttq.runtime_compatibility_attestation/v1"}\n'
         digest = hashlib.sha256(payload).hexdigest()

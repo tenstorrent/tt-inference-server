@@ -376,9 +376,11 @@ def _validate_quetzal_models_root(runtime_config, model_spec) -> Path | None:
             if path.stat(follow_symlinks=False).st_mode & 0o222
         ]
         if writable:
-            raise ValueError(
-                "Quetzal Models-CI release read-only admission requires a "
-                f"package root and qualification manifest: {writable}"
+            logger.warning(
+                "Quetzal publication provenance warning [user_sealed]: package "
+                "root or qualification manifest remains writable; functional "
+                "and quality qualification will continue: %s",
+                writable,
             )
     return root
 
@@ -434,15 +436,38 @@ def _validate_quetzal_runtime_attestation(runtime_config, model_spec) -> Path | 
         WorkflowType.from_string(runtime_config.workflow) == WorkflowType.RELEASE
     )
     if is_release and not required:
-        raise ValueError(
-            "Quetzal Models-CI release requires QUETZAL_RUNTIME_ATTESTATION_SHA256"
+        logger.warning(
+            "Quetzal publication provenance warning [unattested]: no runtime "
+            "attestation is catalogued; functional and quality qualification "
+            "will continue"
         )
     if not required and not configured:
         return None
+    if required and not configured:
+        logger.warning(
+            "Quetzal publication provenance warning [unattested]: catalogued "
+            "runtime attestation %s is not mounted; functional and quality "
+            "qualification will continue",
+            required,
+        )
+        return None
+    if configured and not required:
+        supplied = Path(configured).expanduser()
+        if supplied.is_symlink() or not supplied.is_file():
+            raise ValueError(
+                "--quetzal-runtime-attestation must be an existing regular file: "
+                f"{supplied}"
+            )
+        actual = hashlib.sha256(supplied.read_bytes()).hexdigest()
+        logger.warning(
+            "Quetzal publication provenance warning [unattested]: supplied "
+            "runtime attestation has no catalog pin; sha256=%s; functional and "
+            "quality qualification will continue",
+            actual,
+        )
+        return None
     if re.fullmatch(r"[0-9a-f]{64}", required) is None:
         raise ValueError("impl=quetzal requires QUETZAL_RUNTIME_ATTESTATION_SHA256")
-    if not configured:
-        raise ValueError("--impl quetzal requires --quetzal-runtime-attestation")
     supplied = Path(configured).expanduser()
     if supplied.is_symlink() or not supplied.is_file():
         raise ValueError(

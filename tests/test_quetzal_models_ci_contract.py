@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -50,6 +51,10 @@ def _valid_env():
 
 
 def _valid_task():
+    nightly_ids = [
+        "django__django-11299",
+        "sympy__sympy-13551",
+    ]
     cfg = SimpleNamespace(
         agent_backend="mini-swe-agent",
         max_input_tokens=5 * 1024,
@@ -59,14 +64,16 @@ def _valid_task():
         instance_selection_provenance="reviewed fixed five-instance subset v1",
         qualification_claim="models_ci_graded",
         selection_policy="reviewed_fixed_subset",
-        dataset_revision=None,
+        dataset_revision="2" * 40,
+        ordered_instance_ids_sha256=hashlib.sha256(
+            json.dumps(nightly_ids, ensure_ascii=True, separators=(",", ":")).encode(
+                "utf-8"
+            )
+        ).hexdigest(),
         n_tasks=None,
         instance_ids_map={
             EvalLimitMode.SMOKE_TEST: ["django__django-11299"],
-            EvalLimitMode.CI_NIGHTLY: [
-                "django__django-11299",
-                "sympy__sympy-13551",
-            ],
+            EvalLimitMode.CI_NIGHTLY: nightly_ids,
         },
     )
     score = SimpleNamespace(
@@ -129,7 +136,9 @@ def test_unpatched_upstream_runtime_contract_passes(monkeypatch):
     validate_quetzal_models_ci_contract(spec, _runtime())
 
 
-def test_complete_full_dataset_contract_passes(monkeypatch):
+def test_full_dataset_contract_fails_until_complete_coverage_is_provable(
+    monkeypatch,
+):
     task = _valid_task()
     task.swebench_eval_config.selection_policy = "full_dataset"
     task.swebench_eval_config.dataset_revision = "2" * 40
@@ -141,15 +150,18 @@ def test_complete_full_dataset_contract_passes(monkeypatch):
     monkeypatch.setattr(
         "workflows.validate_setup._selected_agentic_tasks", lambda *_args: [task]
     )
-    validate_quetzal_models_ci_contract(_valid_spec(), _runtime())
+    with pytest.raises(ValueError, match="authoritative dataset cardinality"):
+        validate_quetzal_models_ci_contract(_valid_spec(), _runtime())
 
 
 @pytest.mark.parametrize(
     "mutation,match",
     [
         (
-            lambda spec, task: spec.env_vars.pop("QUETZAL_RUNTIME_ATTESTATION_SHA256"),
-            "missing",
+            lambda spec, task: spec.env_vars.update(
+                QUETZAL_RUNTIME_ATTESTATION_SHA256="bad"
+            ),
+            "RUNTIME_ATTESTATION",
         ),
         (
             lambda spec, task: spec.env_vars.pop("QUETZAL_REQUIRED_TT_METAL_COMMIT"),
@@ -215,6 +227,20 @@ def test_complete_full_dataset_contract_passes(monkeypatch):
             ),
             "positive measured score",
         ),
+        (
+            lambda spec, task: setattr(
+                task.swebench_eval_config, "dataset_revision", None
+            ),
+            "dataset revision",
+        ),
+        (
+            lambda spec, task: setattr(
+                task.swebench_eval_config,
+                "ordered_instance_ids_sha256",
+                "0" * 64,
+            ),
+            "canonical ordered",
+        ),
     ],
 )
 def test_incomplete_release_contracts_fail_closed(monkeypatch, mutation, match):
@@ -227,39 +253,6 @@ def test_incomplete_release_contracts_fail_closed(monkeypatch, mutation, match):
     )
     with pytest.raises(ValueError, match=match):
         validate_quetzal_models_ci_contract(spec, _runtime())
-
-
-@pytest.mark.parametrize(
-    "mutation,match",
-    [
-        (lambda cfg, score: setattr(cfg, "n_tasks", 1), "n_tasks=None"),
-        (lambda cfg, score: setattr(cfg, "dataset_revision", None), "dataset revision"),
-        (
-            lambda cfg, score: setattr(score, "gpu_reference_score", None),
-            "GPU full-dataset reference",
-        ),
-        (
-            lambda cfg, score: setattr(score, "gpu_reference_score_ref", ""),
-            "GPU full-dataset reference",
-        ),
-    ],
-)
-def test_incomplete_full_dataset_contracts_fail_closed(monkeypatch, mutation, match):
-    task = _valid_task()
-    cfg = task.swebench_eval_config
-    cfg.selection_policy = "full_dataset"
-    cfg.dataset_revision = "2" * 40
-    cfg.instance_ids_map.pop(EvalLimitMode.CI_NIGHTLY)
-    task.score.gpu_reference_score = 42.0
-    task.score.gpu_reference_score_ref = (
-        "independent full SWE-bench Verified run with the same harness"
-    )
-    mutation(cfg, task.score)
-    monkeypatch.setattr(
-        "workflows.validate_setup._selected_agentic_tasks", lambda *_args: [task]
-    )
-    with pytest.raises(ValueError, match=match):
-        validate_quetzal_models_ci_contract(_valid_spec(), _runtime())
 
 
 @pytest.mark.parametrize(
@@ -290,11 +283,25 @@ def test_missing_context_admitted_swe_is_not_a_release(monkeypatch):
         validate_quetzal_models_ci_contract(_valid_spec(), _runtime())
 
 
+def test_missing_runtime_attestation_is_a_provenance_warning(monkeypatch, caplog):
+    spec = _valid_spec()
+    spec.env_vars.pop("QUETZAL_RUNTIME_ATTESTATION_SHA256")
+    monkeypatch.setattr(
+        "workflows.validate_setup._selected_agentic_tasks",
+        lambda *_args: [_valid_task()],
+    )
+
+    validate_quetzal_models_ci_contract(spec, _runtime())
+
+    assert "[unattested]" in caplog.text
+    assert "qualification remains runnable" in caplog.text
+
+
 @pytest.mark.parametrize(
     "model_repo,expected",
     [
-        ("Qwen/Qwen3.6-27B", "RUNTIME_ATTESTATION"),
-        ("google/gemma-4-31B-it", "RUNTIME_ATTESTATION"),
+        ("Qwen/Qwen3.6-27B", "local/report-only"),
+        ("google/gemma-4-31B-it", "exactly one"),
         ("openai/gpt-oss-120b", "local/report-only"),
     ],
 )
@@ -327,5 +334,5 @@ def test_every_active_models_ci_quetzal_row_is_subject_to_release_gate():
         for item in templates
         if item.impl.impl_id == "quetzal" and item.weights == ["Qwen/Qwen3.6-27B"]
     )
-    with pytest.raises(ValueError, match="RUNTIME_ATTESTATION"):
+    with pytest.raises(ValueError, match="local/report-only"):
         validate_quetzal_models_ci_contract(template.expand_to_specs()[0], _runtime())

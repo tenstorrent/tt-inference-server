@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import json
+import hashlib
 import logging
 import os
 import re
@@ -62,7 +63,6 @@ def validate_quetzal_models_ci_contract(model_spec, runtime_config) -> None:
         "QUETZAL_REQUIRED_SOURCE_REVISION",
         "QUETZAL_REQUIRED_TT_METAL_COMMIT",
         "QUETZAL_TT_METAL_PATCHSET_STATUS",
-        "QUETZAL_RUNTIME_ATTESTATION_SHA256",
         "QUETZAL_PREFILL_GENERATED_PY",
         "QUETZAL_PREFILL_METADATA_JSON",
         "QUETZAL_DECODE_GENERATED_PY",
@@ -74,7 +74,7 @@ def validate_quetzal_models_ci_contract(model_spec, runtime_config) -> None:
         raise ValueError(
             "Quetzal Models-CI enrollment is incomplete: missing "
             f"{missing}; release rows require generated package, source, "
-            "patchset, and runtime-attestation identities"
+            "TT-Metal, and explicit patchset-status identities"
         )
     if env.get("VLLM_PLUGINS") != "quetzal_model_registry,tt":
         raise ValueError(
@@ -115,12 +115,21 @@ def validate_quetzal_models_ci_contract(model_spec, runtime_config) -> None:
     ):
         if not PurePosixPath(str(env[key])).is_relative_to(expected_root):
             raise ValueError(f"{key} must remain inside the exact Quetzal package")
-    for key in (
-        "QUETZAL_BUNDLE_MANIFEST_SHA256",
-        "QUETZAL_RUNTIME_ATTESTATION_SHA256",
-    ):
+    for key in ("QUETZAL_BUNDLE_MANIFEST_SHA256",):
         if _SHA256_RE.fullmatch(str(env[key])) is None:
             raise ValueError(f"{key} must be an exact lowercase SHA-256")
+    attestation_sha = env.get("QUETZAL_RUNTIME_ATTESTATION_SHA256")
+    if attestation_sha is None:
+        logger.warning(
+            "Quetzal Models-CI publication provenance warning [unattested]: "
+            "no runtime compatibility attestation is catalogued; functional "
+            "and quality qualification remains runnable"
+        )
+    elif _SHA256_RE.fullmatch(str(attestation_sha)) is None:
+        raise ValueError(
+            "Quetzal Models-CI functional blocker: "
+            "QUETZAL_RUNTIME_ATTESTATION_SHA256 must be an exact lowercase SHA-256"
+        )
     if _GIT_REVISION_RE.fullmatch(str(env["QUETZAL_REQUIRED_SOURCE_REVISION"])) is None:
         raise ValueError(
             "QUETZAL_REQUIRED_SOURCE_REVISION must be an exact lowercase git commit"
@@ -230,6 +239,24 @@ def validate_quetzal_models_ci_contract(model_spec, runtime_config) -> None:
                 "reviewed_fixed_subset requires an independently baselined "
                 "CI_NIGHTLY mode reference for the exact fixed SWE subset"
             )
+        if _GIT_REVISION_RE.fullmatch(str(cfg.dataset_revision or "")) is None:
+            raise ValueError(
+                "reviewed_fixed_subset requires an exact pinned dataset revision"
+            )
+        if len(set(nightly_ids)) != len(nightly_ids):
+            raise ValueError(
+                "reviewed_fixed_subset CI_NIGHTLY instance IDs must be unique"
+            )
+        expected_subset_digest = hashlib.sha256(
+            json.dumps(nightly_ids, ensure_ascii=True, separators=(",", ":")).encode(
+                "utf-8"
+            )
+        ).hexdigest()
+        if cfg.ordered_instance_ids_sha256 != expected_subset_digest:
+            raise ValueError(
+                "reviewed_fixed_subset requires the exact SHA-256 of its "
+                "canonical ordered CI_NIGHTLY instance IDs"
+            )
         subset_reference = mode_references[EvalLimitMode.CI_NIGHTLY]
         if (
             not isinstance(subset_reference.score, (int, float))
@@ -243,24 +270,11 @@ def validate_quetzal_models_ci_contract(model_spec, runtime_config) -> None:
                 "nonempty reference tied to the exact CI_NIGHTLY subset"
             )
     elif cfg.selection_policy == "full_dataset":
-        if cfg.n_tasks is not None:
-            raise ValueError("full_dataset SWE certification requires n_tasks=None")
-        if _GIT_REVISION_RE.fullmatch(str(cfg.dataset_revision or "")) is None:
-            raise ValueError(
-                "full_dataset SWE certification requires an exact pinned dataset revision"
-            )
-        if (
-            score is None
-            or not isinstance(score.gpu_reference_score, (int, float))
-            or isinstance(score.gpu_reference_score, bool)
-            or score.gpu_reference_score <= 0
-            or not isinstance(score.gpu_reference_score_ref, str)
-            or not score.gpu_reference_score_ref.strip()
-        ):
-            raise ValueError(
-                "full_dataset SWE certification requires a positive independent "
-                "GPU full-dataset reference from the same harness/protocol"
-            )
+        raise ValueError(
+            "full_dataset release qualification is disabled until the contract "
+            "binds authoritative dataset cardinality and an exact full ID-set "
+            "digest, then verifies complete report coverage"
+        )
     else:
         raise ValueError(
             "Quetzal Models-CI SWE enrollment requires selection_policy="
