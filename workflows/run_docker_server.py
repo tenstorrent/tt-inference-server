@@ -391,6 +391,21 @@ def _vllm_override_cli_args(vllm_override_args) -> List[str]:
     return cli_args
 
 
+# Ephemeral in-container store, discarded with the --rm container.
+_EPHEMERAL_TRAINING_STORE_ROOT = "/tmp/tt_training_store"
+
+
+def _resolve_training_store_root(setup_config) -> str:
+    """Container-side $TRAINING_STORE_ROOT for a TRAINING server.
+
+    --host-volume -> writable/persistent cache_root, so keep artifacts there.
+    Default named volume (e.g. CI) is not writable, so use an ephemeral dir.
+    """
+    if setup_config and setup_config.host_model_volume_root:
+        return str(setup_config.cache_root)
+    return _EPHEMERAL_TRAINING_STORE_ROOT
+
+
 def generate_docker_run_command(
     model_spec, runtime_config, setup_config=None, json_fpath=None, str_cmd=False
 ):
@@ -517,24 +532,11 @@ def generate_docker_run_command(
         elif api_key:
             docker_env_vars["API_KEY"] = api_key
         if model_spec.model_type == ModelType.TRAINING:
-            # Where LoRA adapters/merged-models get written is driven entirely by
-            # TRAINING_STORE_ROOT, chosen from how cache_root is mounted:
-            #   * --host-volume (e.g. tt-studio): cache_root is a writable,
-            #     persistent host bind mount, so keep the training outputs there
-            #     (TRAINING_STORE_ROOT = cache_root) so they survive --rm.
-            #   * default (named docker volume): root-owned and not writable by
-            #     the non-root container user, and not persisted — so redirect to
-            #     a writable, ephemeral in-container dir (discarded on --rm).
-            # A model spec can still override by setting TRAINING_STORE_ROOT in
-            # its env_vars.
-            if setup_config and setup_config.host_model_volume_root:
-                docker_env_vars.setdefault(
-                    "TRAINING_STORE_ROOT", str(setup_config.cache_root)
-                )
-            else:
-                docker_env_vars.setdefault(
-                    "TRAINING_STORE_ROOT", "/tmp/tt_training_store"
-                )
+            # A model spec can override by setting TRAINING_STORE_ROOT in its
+            # env_vars; otherwise pick it from how cache_root is mounted.
+            docker_env_vars.setdefault(
+                "TRAINING_STORE_ROOT", _resolve_training_store_root(setup_config)
+            )
         if _is_cpp_media_spec(model_spec):
             openai_api_key = os.getenv("OPENAI_API_KEY") or api_key
             if openai_api_key:
