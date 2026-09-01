@@ -96,17 +96,34 @@ def count_chat_input_tokens(
     """Count the exact rendered chat input, including generation prompt and tools."""
     if not getattr(tokenizer, "chat_template", None):
         raise TokenBudgetConfigurationError("configured tokenizer has no chat_template")
-    try:
-        encoded = tokenizer.apply_chat_template(
-            _normalize_messages_for_chat_template(messages),
-            tools=_normalize_tools_for_chat_template(tools),
-            tokenize=True,
-            add_generation_prompt=True,
-        )
-    except Exception as exc:
+    rendered_messages = _normalize_messages_for_chat_template(messages)
+    normalized_tools = _normalize_tools_for_chat_template(tools)
+    # HF templates are not uniform at this boundary. Qwen consumes bare JSON
+    # function schemas, while Gemma 4 consumes OpenAI's {type, function}
+    # wrapper. Prefer the historical bare form and retry the exact API wrapper
+    # only when the tokenizer itself rejects it. The request sent to LiteLLM is
+    # never changed.
+    tool_variants = [normalized_tools]
+    if tools and normalized_tools != tools:
+        tool_variants.append(deepcopy(tools))
+    failures: list[str] = []
+    encoded = None
+    for rendered_tools in tool_variants:
+        try:
+            encoded = tokenizer.apply_chat_template(
+                rendered_messages,
+                tools=rendered_tools,
+                tokenize=True,
+                add_generation_prompt=True,
+            )
+            break
+        except Exception as exc:
+            failures.append(str(exc))
+    if encoded is None:
+        detail = "; wrapper fallback: ".join(failures)
         raise TokenBudgetConfigurationError(
-            f"configured tokenizer could not render messages plus tool schema: {exc}"
-        ) from exc
+            f"configured tokenizer could not render messages plus tool schema: {detail}"
+        )
     if isinstance(encoded, dict):
         encoded = encoded.get("input_ids")
     elif hasattr(encoded, "input_ids"):

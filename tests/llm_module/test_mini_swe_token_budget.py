@@ -98,6 +98,46 @@ def test_qwen_count_unwraps_openai_tool_schema_without_mutating_api_request():
     assert tools == original
 
 
+def test_gemma_count_falls_back_to_openai_tool_wrapper_without_mutating_request():
+    class GemmaTokenizer(Tokenizer):
+        def apply_chat_template(self, messages, **kwargs):
+            rendered_tools = kwargs["tools"]
+            if not rendered_tools or "function" not in rendered_tools[0]:
+                raise RuntimeError("dict object has no attribute function")
+            return super().apply_chat_template(messages, **kwargs)
+
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "bash",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "command": {"type": "string"},
+                        "env": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "oneOf": [
+                                    {"type": "string"},
+                                    {"type": "array", "items": {"type": "integer"}},
+                                ]
+                            },
+                        },
+                    },
+                    "required": ["command"],
+                },
+            },
+        }
+    ]
+    original = deepcopy(tools)
+    tokenizer = GemmaTokenizer([1, 2, 3, 4])
+
+    assert count_chat_input_tokens(tokenizer, [], tools) == 4
+    assert tokenizer.calls[0][1]["tools"] == original
+    assert tools == original
+
+
 @pytest.mark.parametrize(
     "tokenizer_name",
     ["Qwen/Qwen3.6-27B", "google/gemma-4-31B-it", "openai/gpt-oss-120b"],

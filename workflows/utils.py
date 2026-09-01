@@ -64,6 +64,19 @@ def parse_image_version(image: str) -> Optional[Tuple[int, int, int]]:
 
 def get_repo_root_path(marker: str = ".git") -> Path:
     """Return the root directory of the repository by searching for a marker file or directory."""
+    override = os.environ.get("TTIS_REPO_ROOT")
+    if override:
+        root = Path(override)
+        if not root.is_absolute():
+            raise ValueError("TTIS_REPO_ROOT must be an absolute path")
+        root = root.resolve()
+        required = (root / "VERSION", root / "workflows", root / "llm_module")
+        if not root.is_dir() or not all(path.exists() for path in required):
+            raise FileNotFoundError(
+                "TTIS_REPO_ROOT is not a TTIS source root: "
+                f"{root} (requires VERSION, workflows, and llm_module)"
+            )
+        return root
     current_path = Path(__file__).resolve().parent  # Start from the script's directory
     for parent in current_path.parents:
         if (parent / marker).exists():

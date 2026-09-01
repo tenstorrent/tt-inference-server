@@ -12,7 +12,11 @@
 # is not shipped in the PyPI wheel) is importable by agent_import_path.
 
 mini-swe-agent==2.2.8
-transformers==4.57.1
+# Gemma 4 checkpoints encode ``extra_special_tokens`` as the transformers 5.x
+# list form.  Pin the agent's authoritative token counter to the same parser
+# generation as the LLM client/server boundary; 4.x crashes before any model
+# request with ``list has no attribute keys``.
+transformers==5.15.0
 # 2.1.0 built Docker container names from the full epoch image reference
 # (including slashes), so Docker rejected the verifier before applying tests.
 # 5.0.2 uses the canonical ``sweb.eval...`` runtime names.
