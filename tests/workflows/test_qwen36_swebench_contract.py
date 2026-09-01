@@ -27,9 +27,9 @@ def test_qwen36_swebench_is_bounded_to_c1_s8192(tmp_path):
     assert cfg.agent_backend == "mini-swe-agent"
     assert cfg.n_concurrent_trials == 1
     assert cfg.max_workers == 1
-    assert cfg.max_input_tokens == 5 * 1024
+    assert cfg.max_input_tokens == 6 * 1024
     assert cfg.max_output_tokens == 2 * 1024
-    assert cfg.max_input_tokens + cfg.max_output_tokens == 7 * 1024
+    assert cfg.max_input_tokens + cfg.max_output_tokens == 8 * 1024
     assert cfg.mini_agent_kwargs == {"step_limit": 16}
     assert cfg.mini_observation_chars == 2048
     assert cfg.completion_kwargs == {
