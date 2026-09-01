@@ -305,20 +305,14 @@ struct EmbeddingService::Impl {
     // every worker defaults to one thread per host core, and 32 sibling
     // workers oversubscribe the CPU so badly that the host-side part of each
     // request cycle (tokenization, tensor prep, result extraction) dominates
-    // latency. Python sized the pools by use_dynamic_batcher - a vLLM
-    // concept, auto-enabled when max_num_seqs > 1 unless USE_DYNAMIC_BATCHER
-    // overrides - and max_num_seqs equals max_batch_size for every embedding
-    // (model, device) row, so the same split is reproduced from
-    // max_batch_size. The runner reads TORCH_NUM_THREADS back to call
+    // latency. Python's wide-pool variant (16 threads) only applies to its
+    // dynamic batcher, a vLLM scheduling mode that does not exist on this
+    // path - the C++ service always forms fixed-size batches - so the
+    // non-batcher sizing (2 OMP/MKL threads, 1 torch thread) applies
+    // unconditionally. The runner reads TORCH_NUM_THREADS back to call
     // torch.set_num_threads, exactly like the Python worker did.
-    bool dynamicBatcher = cfg.max_batch_size > 1;
-    if (const char* flag = std::getenv("USE_DYNAMIC_BATCHER"); flag && *flag) {
-      std::string value = flag;
-      std::transform(value.begin(), value.end(), value.begin(), ::tolower);
-      dynamicBatcher = (value == "true" || value == "1");
-    }
-    const char* cpuThreads = dynamicBatcher ? "16" : "2";
-    const char* torchThreads = dynamicBatcher ? "16" : "1";
+    const char* cpuThreads = "2";
+    const char* torchThreads = "1";
     setenv("OMP_NUM_THREADS", cpuThreads, 1);
     setenv("MKL_NUM_THREADS", cpuThreads, 1);
     setenv("TORCH_NUM_THREADS", torchThreads, 1);
