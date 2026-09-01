@@ -218,6 +218,21 @@ def test_generated_mini_config_applies_positive_step_limit(tmp_path):
     assert generated["agent"] == {"step_limit": 8}
 
 
+def test_generated_mini_config_routes_observation_template_to_model(tmp_path):
+    config = _mini_config(
+        tmp_path,
+        mini_agent_kwargs={
+            "step_limit": 8,
+            "observation_template": "<output>{{ output.output }}</output>",
+        },
+    )
+    generated = json.loads(_write_mini_sweagent_model_config(config).read_text())
+    assert generated["agent"] == {"step_limit": 8}
+    assert generated["model"]["observation_template"] == (
+        "<output>{{ output.output }}</output>"
+    )
+
+
 @pytest.mark.parametrize("value", [0, -1, True, "8"])
 def test_generated_mini_config_rejects_invalid_step_limit(tmp_path, value):
     config = _mini_config(tmp_path, mini_agent_kwargs={"step_limit": value})

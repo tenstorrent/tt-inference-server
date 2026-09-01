@@ -461,14 +461,24 @@ def _write_mini_sweagent_model_config(config: SWEbenchRunConfig) -> Path:
     if config.mini_agent_kwargs:
         if not isinstance(config.mini_agent_kwargs, dict):
             raise ValueError("mini_agent_kwargs must be a dictionary")
-        step_limit = config.mini_agent_kwargs.get("step_limit")
+        agent_kwargs = dict(config.mini_agent_kwargs)
+        step_limit = agent_kwargs.get("step_limit")
         if step_limit is not None and (
             not isinstance(step_limit, int)
             or isinstance(step_limit, bool)
             or step_limit <= 0
         ):
             raise ValueError("mini_agent_kwargs.step_limit must be a positive integer")
-        model_config["agent"] = dict(config.mini_agent_kwargs)
+        observation_template = agent_kwargs.pop("observation_template", None)
+        if observation_template is not None:
+            if not isinstance(observation_template, str) or not observation_template:
+                raise ValueError(
+                    "mini_agent_kwargs.observation_template must be a nonempty string"
+                )
+            # mini-swe-agent owns tool-result rendering on the model config,
+            # even though the surrounding prompt/step controls live on agent.
+            model_config["model"]["observation_template"] = observation_template
+        model_config["agent"] = agent_kwargs
     config_path = config.output_dir / "mini_sweagent_model_config.yaml"
     config_path.write_text(json.dumps(model_config, indent=2), encoding="utf-8")
     return config_path
