@@ -1655,7 +1655,11 @@ _eval_config_list = [
                             },
                         },
                     },
-                    mini_agent_kwargs={"step_limit": 8},
+                    # Single-variable follow-up to the exact 57d cap-only run:
+                    # eight fully admitted steps exhausted during repository
+                    # inspection before any mutation. Keep the 5120/2048
+                    # request envelope and 2048-char observation cap fixed.
+                    mini_agent_kwargs={"step_limit": 16},
                     mini_observation_chars=2048,
                     instance_selection_provenance=(
                         "predeclared TTIS smoke/CI set; not independently "
