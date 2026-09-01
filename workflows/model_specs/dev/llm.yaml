@@ -81,6 +81,12 @@ templates:
     - device: P300X2
       max_concurrency: 1
       max_context: 4096
+      # Cold generated admission verifies the 61 GiB content-addressed package
+      # before device upload.  The default 1200 s watcher raced a healthy first
+      # start by five seconds on QB2 and incorrectly reported timeout even as
+      # the API became ready.  Match the established large-model timeout used
+      # by other TTIS rows.
+      tensor_cache_timeout: 5400.0
       default_impl: false
       env_vars:
         ARCH_NAME: blackhole
