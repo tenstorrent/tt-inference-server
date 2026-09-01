@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
-"""Run a predeclared, pinned Gemma S4096 local behavioral SWE gate.
+"""Run a predeclared, pinned Gemma local behavioral SWE gate.
 
 This is intentionally not a Models CI graded result.  It exercises the real
 mini-swe agent and isolated SWE-bench verifier against a generated-only local
@@ -27,9 +27,8 @@ DATASET_REVISION = "78f471bf655a3137b2e8a75af1501690ec009ec3"
 # First S4096 candidate in a predeclared TTIS nightly list.  This was fixed
 # before this run and was not chosen from its gold patch or Gemma output.
 INSTANCE_IDS = ["scikit-learn__scikit-learn-14629"]
-MAX_CONTEXT = 4096
-MAX_INPUT = 3584
-MAX_OUTPUT = 512
+DEFAULT_MAX_CONTEXT = 4096
+DEFAULT_MAX_OUTPUT = 512
 STEP_LIMIT = 12
 OBSERVATION_CHARS = 2048
 INSTANCE_TEMPLATE = """<pr_description>
@@ -75,6 +74,15 @@ def resolve_ttis_source_revision(repo_root: Path) -> str:
     return revision
 
 
+def resolve_token_budget(max_context: int, max_output: int) -> tuple[int, int, int]:
+    """Return an exact context budget without silently truncating SWE input."""
+    if max_context <= 0:
+        raise ValueError("max context must be positive")
+    if max_output <= 0 or max_output >= max_context:
+        raise ValueError("max output must be positive and smaller than max context")
+    return max_context, max_context - max_output, max_output
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--endpoint", required=True)
@@ -82,20 +90,23 @@ def main() -> int:
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--slurm-job-id", required=True)
     parser.add_argument("--node", required=True)
+    parser.add_argument("--max-context", type=int, default=DEFAULT_MAX_CONTEXT)
+    parser.add_argument("--max-output-tokens", type=int, default=DEFAULT_MAX_OUTPUT)
     args = parser.parse_args()
+    max_context, max_input, max_output = resolve_token_budget(
+        args.max_context, args.max_output_tokens
+    )
     repo_root = Path(__file__).resolve().parents[2]
     ttis_source_revision = resolve_ttis_source_revision(repo_root)
     if str(repo_root) not in sys.path:
         sys.path.insert(0, str(repo_root))
 
-    if MAX_INPUT + MAX_OUTPUT != MAX_CONTEXT:
-        raise RuntimeError("Gemma local gate no longer exactly binds S4096")
     with urlopen(args.endpoint.rstrip("/") + "/v1/models", timeout=30) as response:
         models = json.load(response)
     rows = models.get("data", [])
     if [row.get("id") for row in rows] != [MODEL]:
         raise RuntimeError(f"endpoint model mismatch: {rows!r}")
-    if rows[0].get("max_model_len") != MAX_CONTEXT:
+    if rows[0].get("max_model_len") != max_context:
         raise RuntimeError(f"endpoint context mismatch: {rows[0]!r}")
 
     from datasets import load_dataset
@@ -115,7 +126,7 @@ def main() -> int:
     out = args.output_dir.resolve()
     out.mkdir(parents=True, exist_ok=True)
     predeclared = {
-        "schema": "ttis.gemma-s4096-local-swe-gate/v1",
+        "schema": "ttis.gemma-local-swe-gate/v2",
         "created_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "qualification_claim": "local_behavioral_only",
         "quality_status": "ungraded",
@@ -131,9 +142,9 @@ def main() -> int:
         "selected_instances_sha256": selected_sha,
         "serving": {
             "concurrency": 1,
-            "max_context": MAX_CONTEXT,
-            "max_input_tokens": MAX_INPUT,
-            "max_output_tokens": MAX_OUTPUT,
+            "max_context": max_context,
+            "max_input_tokens": max_input,
+            "max_output_tokens": max_output,
         },
         "agent": {
             "backend": "mini-swe-agent",
@@ -171,7 +182,7 @@ def main() -> int:
     )
     cfg = task.swebench_eval_config
     run_cfg = SWEbenchRunConfig(
-        task_name="gemma-s4096-local-swe-gate",
+        task_name=f"gemma-s{max_context}-local-swe-gate",
         dataset_name=DATASET,
         dataset_split="test",
         sweagent_subset=cfg.sweagent_subset,
@@ -188,8 +199,8 @@ def main() -> int:
         n_tasks=None,
         temperature=0.0,
         top_p=1.0,
-        max_input_tokens=MAX_INPUT,
-        max_output_tokens=MAX_OUTPUT,
+        max_input_tokens=max_input,
+        max_output_tokens=max_output,
         completion_kwargs={
             "extra_body": {
                 "top_k": 20,
