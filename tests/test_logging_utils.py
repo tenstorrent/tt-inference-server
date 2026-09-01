@@ -29,6 +29,26 @@ def cleanup_handler():
 
 
 class TestAsyncLogHandler:
+    def test_formatter_import_precedes_handler_registration(self, monkeypatch):
+        """A vLLM import may reconfigure logging during handler construction."""
+        registered_before = sum(
+            isinstance(ref(), AsyncLogHandler) for ref in logging._handlerList
+        )
+        observed = []
+
+        def formatter():
+            observed.append(
+                sum(isinstance(ref(), AsyncLogHandler) for ref in logging._handlerList)
+            )
+            return logging.Formatter()
+
+        monkeypatch.setattr("utils.logging_utils._create_vllm_formatter", formatter)
+        handler = AsyncLogHandler()
+        try:
+            assert observed == [registered_before]
+        finally:
+            handler.close()
+
     def test_handler_emits_to_file(self, tmp_path):
         log_file = tmp_path / "test.log"
         handler = AsyncLogHandler(filename=str(log_file))

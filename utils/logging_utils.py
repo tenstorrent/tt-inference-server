@@ -58,12 +58,16 @@ class AsyncLogHandler(logging.Handler):
     _active_listener = None
 
     def __init__(self, filename=None, max_bytes=104857600, backup_count=5):
+        # Importing vLLM's formatter may reconfigure logging and close every
+        # registered handler. Resolve it before Handler.__init__ registers this
+        # partially constructed instance in logging._handlerList.
+        formatter = _create_vllm_formatter()
         super().__init__()
+        self._listener = None
         _safe_stop_listener(AsyncLogHandler._active_listener)
         AsyncLogHandler._active_listener = None
 
         self._queue = Queue(-1)
-        formatter = _create_vllm_formatter()
 
         console = logging.StreamHandler(sys.stdout)
         console.setFormatter(formatter)
@@ -87,8 +91,9 @@ class AsyncLogHandler(logging.Handler):
         self._queue.put_nowait(record)
 
     def close(self):
-        _safe_stop_listener(self._listener)
-        if AsyncLogHandler._active_listener is self._listener:
+        listener = getattr(self, "_listener", None)
+        _safe_stop_listener(listener)
+        if AsyncLogHandler._active_listener is listener:
             AsyncLogHandler._active_listener = None
         super().close()
 
