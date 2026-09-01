@@ -279,7 +279,7 @@ templates:
       # 100,462 and 104,954; garbled at 100,793 / 109,857 / 127,574. The map is
       # non-monotonic, so no max_context value can express it; treat ~100k as
       # the last verified-clean prose point until the ticket closes.
-      max_context: 32768  # 32 * 1024 — unbounded sliding (multi-request safe)
+      max_context: 131072  # validated on T3K; 262144 OOMs (one full-attn K pool = 270532608B x 10 layers x K+V = 5.4GB + 3.87GB weights > 12GB/chip)  # 32 * 1024 — unbounded sliding (multi-request safe)
       default_impl: true
       env_vars:
         MESH_DEVICE: "T3K"
@@ -287,7 +287,7 @@ templates:
         # (models/demos/gemma4/tt/ccl.py default_ccl_topology).
         GEMMA4_CCL_TOPOLOGY: "linear"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
-        GEMMA4_MAX_TOKENS_ALL_USERS: "32768"
+        GEMMA4_MAX_TOKENS_ALL_USERS: "131072"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
         GEMMA4_CHUNKED_PREFILL_TRACE: "1"
         # KNOWN BAD ON WORMHOLE — concurrent decode returns nondeterministic
@@ -460,7 +460,7 @@ templates:
       # Long-prose ceiling (tt-metal#55102, WH-local): 12B verified clean to
       # ~106k encoded; rep-divergent at ~120k, degenerate at 127,574. See 31B
       # note - non-monotonic map, ~106k is the last verified-clean prose point.
-      max_context: 131072  # 128 * 1024 — unbounded sliding (see comment)
+      max_context: 262144  # validated on T3K (bounded sliding): b1@256k coherent, 147s TTFT / 16.4 t/s/u; primes-verified only above ~110k (tt-metal#55102)  # 128 * 1024 — unbounded sliding (see comment)
       default_impl: true
       env_vars:
         MESH_DEVICE: "T3K"
@@ -468,7 +468,7 @@ templates:
         # (models/demos/gemma4/tt/ccl.py default_ccl_topology).
         GEMMA4_CCL_TOPOLOGY: "linear"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
-        GEMMA4_MAX_TOKENS_ALL_USERS: "131072"
+        GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
         GEMMA4_CHUNKED_PREFILL_TRACE: "1"
         # KNOWN BAD ON WORMHOLE — concurrent decode returns nondeterministic
