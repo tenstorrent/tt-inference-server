@@ -110,12 +110,14 @@ constexpr size_t LOG_FILE_MAX_BYTES = 50 * 1024 * 1024;      // 50 MB
 constexpr size_t LOG_FILE_MAX_COUNT = 5;
 constexpr size_t EMBEDDING_MAX_PIPE_BYTES = 100 * 1024 * 1024;  // 100 MB
 /**
- * Budget for one embedding worker's warmup, fork to READY handshake. Must
- * cover the worst case first boot, where warmup converts the HF weights and
- * writes the shared tensor cache (tens of minutes for an 8B model); later
- * boots just read the cache and finish in a couple of minutes.
+ * Budget for one embedding startup phase, fork to READY handshake
+ * (overridable via the EMBEDDING_WARMUP_TIMEOUT_MS env var). Must cover the
+ * worst case first boot, where warmup converts the HF weights and writes the
+ * shared tensor cache (~3-4 minutes for an 8B model); later boots just read
+ * the cache and finish in a couple of minutes. Workers that blow past this
+ * are terminated with a loud log instead of stalling startup.
  */
-constexpr unsigned EMBEDDING_WARMUP_TIMEOUT_MS = 3600 * 1000;
+constexpr unsigned EMBEDDING_WARMUP_TIMEOUT_MS = 600 * 1000;
 // Lower bound used when CALLBACK_POOL_THREADS env is unset or 0; preserves
 // the legacy default (16) for small (1-16 worker) deployments.
 constexpr size_t CALLBACK_POOL_THREADS_MIN = 16;

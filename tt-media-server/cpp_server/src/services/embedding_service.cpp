@@ -419,8 +419,7 @@ struct EmbeddingService::Impl {
    * has written the cache, the remaining workers warm up in parallel safely.
    */
   void runStartup() {
-    const unsigned warmupTimeoutMs =
-        tt::config::defaults::EMBEDDING_WARMUP_TIMEOUT_MS;
+    const unsigned warmupTimeoutMs = tt::config::embeddingWarmupTimeoutMs();
 
     // Phase 1: warm up a single worker with exclusive cache access. If it
     // fails, try the next one alone (a fast-failing worker doesn't burn the
@@ -448,14 +447,7 @@ struct EmbeddingService::Impl {
     for (; next < numWorkers && running.load(); ++next) {
       spawnWorkerAt(next);
     }
-    for (size_t i = phase2Begin; i < numWorkers && running.load(); ++i) {
-      if (workers[i]->pid.load() <= 0) continue;
-      if (workers[i]->waitUntilReady(warmupTimeoutMs, running)) {
-        launchDispatchThread(i);
-      } else {
-        workers[i]->terminate();
-      }
-    }
+    awaitWorkersReady(phase2Begin, warmupTimeoutMs);
 
     size_t readyCount = 0;
     for (const auto& w : workers) {
@@ -463,6 +455,89 @@ struct EmbeddingService::Impl {
     }
     TT_LOG_INFO("[EmbeddingService] Startup finished: {}/{} workers ready",
                 readyCount, numWorkers);
+  }
+
+  /**
+   * Wait for the READY handshake of every spawned worker in [begin,
+   * numWorkers) concurrently, via a single poll() over all response pipes.
+   * Each worker becomes ready (and gets its dispatch thread) the moment its
+   * own sentinel arrives, so one stuck worker cannot mask the others the way
+   * a sequential per-worker wait would. Workers that fail warmup (pipe EOF)
+   * or exceed the timeout are terminated with an explicit log line.
+   */
+  void awaitWorkersReady(size_t begin, unsigned timeoutMs) {
+    std::vector<size_t> pending;
+    for (size_t i = begin; i < numWorkers; ++i) {
+      if (workers[i]->pid.load() > 0) pending.push_back(i);
+    }
+
+    const auto deadline =
+        std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
+    while (!pending.empty() && running.load()) {
+      const auto remaining =
+          std::chrono::duration_cast<std::chrono::milliseconds>(
+              deadline - std::chrono::steady_clock::now())
+              .count();
+      if (remaining <= 0) break;
+
+      std::vector<struct pollfd> pfds;
+      pfds.reserve(pending.size());
+      for (size_t i : pending) {
+        pfds.push_back({workers[i]->readFd.get(), POLLIN, 0});
+      }
+
+      // 100ms slices keep the shutdown check (`running`) responsive.
+      const int rc = poll(pfds.data(), pfds.size(),
+                          static_cast<int>(std::min<int64_t>(remaining, 100)));
+      if (rc < 0) {
+        if (errno == EINTR) continue;
+        TT_LOG_ERROR("[EmbeddingService] Warmup poll failed: {}",
+                     strerror(errno));
+        break;
+      }
+      if (rc == 0) continue;
+
+      std::vector<size_t> stillPending;
+      for (size_t k = 0; k < pfds.size(); ++k) {
+        const size_t i = pending[k];
+        if (!(pfds[k].revents & (POLLIN | POLLHUP | POLLERR))) {
+          stillPending.push_back(i);
+          continue;
+        }
+        if (pfds[k].revents & POLLIN) {
+          const auto msg = pipeReadBinary(workers[i]->readFd.get());
+          constexpr size_t sentinelLen = sizeof(WORKER_READY_SENTINEL) - 1;
+          if (msg.size() == sentinelLen &&
+              std::memcmp(msg.data(), WORKER_READY_SENTINEL, sentinelLen) ==
+                  0) {
+            workers[i]->isReady.store(true);
+            TT_LOG_INFO("[EmbeddingService] Worker {} reported ready", i);
+            launchDispatchThread(i);
+            continue;
+          }
+          TT_LOG_ERROR(
+              "[EmbeddingService] Worker {} exited or sent unexpected data "
+              "during warmup",
+              i);
+        } else {
+          // POLLHUP/POLLERR without data: the child died before READY.
+          TT_LOG_ERROR(
+              "[EmbeddingService] Worker {} closed its pipe during warmup "
+              "(process exited)",
+              i);
+        }
+        workers[i]->terminate();
+      }
+      pending = std::move(stillPending);
+    }
+
+    for (size_t i : pending) {
+      TT_LOG_ERROR(
+          "[EmbeddingService] Worker {} stuck in warmup after {}ms; "
+          "terminating it",
+          i, timeoutMs);
+      workers[i]->terminate();
+    }
   }
 
   bool spawnWorkerAt(size_t idx) {
