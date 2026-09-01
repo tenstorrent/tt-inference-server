@@ -4803,6 +4803,13 @@ _eval_config_list = [
                     n_tasks=None,
                     temperature=1.0,
                     top_p=0.95,
+                    # GPT-OSS defaults aren't a sufficient contract for an
+                    # agentic coding run.  The bounded django smoke completed
+                    # all 16 shell turns with valid tool calls but spent every
+                    # turn re-reading source and never attempted a mutation.
+                    # Match the model's other reasoning evals and make the
+                    # endpoint request explicit and reproducible.
+                    completion_kwargs={"reasoning_effort": "high"},
                     # The generated-only f0b P300X2 release profile is C1/S8192.
                     # This is the declared bounded SWE-bench workload for that
                     # serving contract, not a runtime clamp of the 124K GPU

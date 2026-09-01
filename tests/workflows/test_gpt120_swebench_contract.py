@@ -2,15 +2,20 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
+import json
+
 from llm_module import DriverContext, ServerConnection
 from llm_module.drivers.agentic import (
     build_swebench_config,
     resolve_instance_ids,
     resolve_n_tasks,
 )
+from llm_module.agentic.swebench import _write_mini_sweagent_model_config
 from llm_module.parsers.agentic import compute_accuracy_check
 from reference_config.evals.eval_config import _eval_config_map
 from workflows.workflow_types import EvalLimitMode, ReportCheckTypes, WorkflowVenvType
+from workflows.model_spec import load_templates_from_yaml
+from workflows.utils import get_repo_root_path
 
 
 EXPECTED_INSTANCES = [
@@ -42,6 +47,7 @@ def test_gpt120_swebench_is_exact_c1_s8192_five_instance_contract(tmp_path):
     assert cfg.n_concurrent_trials == 1
     assert cfg.max_input_tokens == 7 * 1024
     assert cfg.max_output_tokens == 1 * 1024
+    assert cfg.completion_kwargs == {"reasoning_effort": "high"}
     assert cfg.mini_agent_kwargs == {"step_limit": 16}
     assert cfg.mini_observation_chars == 1024
     assert cfg.max_input_tokens + cfg.max_output_tokens == 8 * 1024
@@ -65,8 +71,27 @@ def test_gpt120_swebench_is_exact_c1_s8192_five_instance_contract(tmp_path):
     assert run.instance_ids == EXPECTED_INSTANCES
     assert run.api_base == "http://127.0.0.1:18091/v1"
     assert run.n_concurrent_trials == 1
+    assert run.model_name == "openai/openai/gpt-oss-120b"
+    assert run.completion_kwargs == {"reasoning_effort": "high"}
     assert run.mini_agent_kwargs == {"step_limit": 16}
     assert run.mini_observation_chars == 1024
+
+    run.output_dir.mkdir(parents=True)
+    generated = json.loads(
+        _write_mini_sweagent_model_config(run).read_text(encoding="utf-8")
+    )
+    assert generated["model"]["model_kwargs"]["reasoning_effort"] == "high"
+
+    templates = load_templates_from_yaml(
+        get_repo_root_path() / "workflows/model_specs/dev/llm.yaml"
+    )
+    generated_spec = next(
+        template
+        for template in templates
+        if template.impl.impl_id == "quetzal"
+        and template.weights == ["openai/gpt-oss-120b"]
+    )
+    assert generated_spec.expand_to_specs()[0].env_vars["TT_VLLM_BUILTIN_MODELS"] == "0"
 
 
 def test_gpt120_swebench_smoke_is_one_fixed_instance():
