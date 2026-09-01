@@ -5,8 +5,9 @@
 import json
 import logging
 import os
+import re
 import stat
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from llm_module.eval_configs import (
     filter_agentic_tasks_by_benchmark,
@@ -29,6 +30,7 @@ from workflows.utils import (
 from workflows.workflow_dispatch import can_dispatch_to_engine
 from workflows.workflow_types import (
     DeviceTypes,
+    EvalLimitMode,
     InferenceEngine,
     WorkflowType,
     WorkflowVenvType,
@@ -36,6 +38,234 @@ from workflows.workflow_types import (
 from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger("run_log")
+
+_SHA256_RE = re.compile(r"[0-9a-f]{64}")
+_GIT_REVISION_RE = re.compile(r"[0-9a-f]{40}")
+_PACKAGE_ID_RE = re.compile(r"sha256(?:-v[0-9]+)?(?:-[0-9a-f]{64}){2,3}")
+_QUETZAL_PACKAGE_PARENT = PurePosixPath("/home/container_app_user/quetzal/packages")
+
+
+def validate_quetzal_models_ci_contract(model_spec, runtime_config) -> None:
+    """Reject incomplete generated-only release enrollments before setup."""
+    if _agentic_impl_id(model_spec) != "quetzal":
+        return
+    if WorkflowType.from_string(runtime_config.workflow) != WorkflowType.RELEASE:
+        return
+
+    env = model_spec.env_vars
+    required = {
+        "QUETZAL_PACKAGE_ID",
+        "QUETZAL_PACKAGE_ROOT",
+        "QZ_MODELS_ROOT",
+        "QZ_QUALIFICATION_MANIFEST",
+        "QUETZAL_BUNDLE_MANIFEST_SHA256",
+        "QUETZAL_REQUIRED_SOURCE_REVISION",
+        "QUETZAL_REQUIRED_TT_METAL_COMMIT",
+        "QUETZAL_TT_METAL_PATCHSET_STATUS",
+        "QUETZAL_RUNTIME_ATTESTATION_SHA256",
+        "QUETZAL_PREFILL_GENERATED_PY",
+        "QUETZAL_PREFILL_METADATA_JSON",
+        "QUETZAL_DECODE_GENERATED_PY",
+        "QUETZAL_DECODE_METADATA_JSON",
+        "QUETZAL_WEIGHTS",
+    }
+    missing = sorted(name for name in required if not env.get(name))
+    if missing:
+        raise ValueError(
+            "Quetzal Models-CI enrollment is incomplete: missing "
+            f"{missing}; release rows require generated package, source, "
+            "patchset, and runtime-attestation identities"
+        )
+    if env.get("VLLM_PLUGINS") != "quetzal_model_registry,tt":
+        raise ValueError(
+            "Quetzal Models-CI enrollment requires "
+            "VLLM_PLUGINS=quetzal_model_registry,tt"
+        )
+    if str(env.get("TT_VLLM_BUILTIN_MODELS")) != "0":
+        raise ValueError(
+            "Quetzal Models-CI enrollment requires TT_VLLM_BUILTIN_MODELS=0"
+        )
+    if str(env.get("QUETZAL_VLLM")) != "1":
+        raise ValueError("Quetzal Models-CI enrollment requires QUETZAL_VLLM=1")
+
+    package_id = str(env["QUETZAL_PACKAGE_ID"])
+    if _PACKAGE_ID_RE.fullmatch(package_id) is None:
+        raise ValueError("Quetzal Models-CI package ID must be content-addressed")
+    package_root = PurePosixPath(str(env["QUETZAL_PACKAGE_ROOT"]))
+    expected_root = _QUETZAL_PACKAGE_PARENT / package_id
+    if (
+        package_root != expected_root
+        or PurePosixPath(str(env["QZ_MODELS_ROOT"])) != expected_root
+    ):
+        raise ValueError(
+            "Quetzal Models-CI package roots must name the exact content ID"
+        )
+    if PurePosixPath(str(env["QZ_QUALIFICATION_MANIFEST"])) != (
+        expected_root / "qualification_manifest.yaml"
+    ):
+        raise ValueError(
+            "Quetzal Models-CI qualification manifest must be inside the exact package"
+        )
+    for key in (
+        "QUETZAL_PREFILL_GENERATED_PY",
+        "QUETZAL_PREFILL_METADATA_JSON",
+        "QUETZAL_DECODE_GENERATED_PY",
+        "QUETZAL_DECODE_METADATA_JSON",
+        "QUETZAL_WEIGHTS",
+    ):
+        if not PurePosixPath(str(env[key])).is_relative_to(expected_root):
+            raise ValueError(f"{key} must remain inside the exact Quetzal package")
+    for key in (
+        "QUETZAL_BUNDLE_MANIFEST_SHA256",
+        "QUETZAL_RUNTIME_ATTESTATION_SHA256",
+    ):
+        if _SHA256_RE.fullmatch(str(env[key])) is None:
+            raise ValueError(f"{key} must be an exact lowercase SHA-256")
+    if _GIT_REVISION_RE.fullmatch(str(env["QUETZAL_REQUIRED_SOURCE_REVISION"])) is None:
+        raise ValueError(
+            "QUETZAL_REQUIRED_SOURCE_REVISION must be an exact lowercase git commit"
+        )
+    if _GIT_REVISION_RE.fullmatch(str(env["QUETZAL_REQUIRED_TT_METAL_COMMIT"])) is None:
+        raise ValueError(
+            "QUETZAL_REQUIRED_TT_METAL_COMMIT must be an exact lowercase git commit"
+        )
+    patchset_status = env["QUETZAL_TT_METAL_PATCHSET_STATUS"]
+    patchset_sha = env.get("QUETZAL_REQUIRED_TT_METAL_PATCHSET_SHA256")
+    if patchset_status == "applied":
+        if _SHA256_RE.fullmatch(str(patchset_sha or "")) is None:
+            raise ValueError(
+                "applied TT-Metal patchset requires an exact patchset SHA-256"
+            )
+    elif patchset_status == "none":
+        if patchset_sha:
+            raise ValueError(
+                "TT-Metal patchset status 'none' cannot carry a patchset SHA-256"
+            )
+    else:
+        raise ValueError("QUETZAL_TT_METAL_PATCHSET_STATUS must be 'applied' or 'none'")
+
+    selected = _selected_agentic_tasks(model_spec, runtime_config)
+    swe_tasks = [task for task in selected if task.task_name == "swe_bench_verified"]
+    if len(swe_tasks) != 1:
+        raise ValueError(
+            "Quetzal Models-CI release requires exactly one context-admitted "
+            "SWE-bench Verified task with a predeclared graded evaluation contract"
+        )
+    task = swe_tasks[0]
+    cfg = task.swebench_eval_config
+    if cfg is None or cfg.agent_backend != "mini-swe-agent":
+        raise ValueError(
+            "Quetzal Models-CI SWE enrollment must use the common "
+            "mini-swe-agent verifier path"
+        )
+    required_context, max_input, max_output, _ = _agentic_context_requirement(task)
+    available_context = getattr(model_spec.device_model_spec, "max_context", None)
+    if not isinstance(available_context, int) or required_context > available_context:
+        raise ValueError(
+            "Quetzal Models-CI SWE envelope exceeds the admitted serving profile: "
+            f"required={required_context}, available={available_context}, "
+            f"input={max_input}, output={max_output}"
+        )
+    if (
+        not isinstance(cfg.mini_observation_chars, int)
+        or isinstance(cfg.mini_observation_chars, bool)
+        or cfg.mini_observation_chars < 2
+    ):
+        raise ValueError(
+            "Quetzal Models-CI SWE enrollment requires an explicit positive "
+            "mini_observation_chars payload-retention cap"
+        )
+    step_limit = cfg.mini_agent_kwargs.get("step_limit")
+    if (
+        not isinstance(step_limit, int)
+        or isinstance(step_limit, bool)
+        or step_limit <= 0
+    ):
+        raise ValueError(
+            "Quetzal Models-CI SWE enrollment requires an explicit positive step_limit"
+        )
+    if (
+        not isinstance(cfg.instance_selection_provenance, str)
+        or not cfg.instance_selection_provenance.strip()
+    ):
+        raise ValueError(
+            "Quetzal Models-CI SWE enrollment requires reviewed, "
+            "model-output-independent instance selection provenance"
+        )
+    if cfg.qualification_claim != "models_ci_graded":
+        raise ValueError(
+            "Quetzal Models-CI release cannot use a local/report-only SWE claim; "
+            "qualification_claim must be 'models_ci_graded'"
+        )
+    score = task.score
+    mode_references = getattr(score, "mode_reference_scores", {}) if score else {}
+    smoke_ids = cfg.instance_ids_map.get(EvalLimitMode.SMOKE_TEST)
+    if (
+        not isinstance(smoke_ids, list)
+        or not smoke_ids
+        or not all(
+            isinstance(instance_id, str) and instance_id for instance_id in smoke_ids
+        )
+    ):
+        raise ValueError(
+            "Quetzal Models-CI SWE enrollment requires a predeclared nonempty "
+            "smoke diagnostic set independent of model output"
+        )
+    if cfg.selection_policy == "reviewed_fixed_subset":
+        nightly_ids = cfg.instance_ids_map.get(EvalLimitMode.CI_NIGHTLY)
+        if (
+            not isinstance(nightly_ids, list)
+            or not nightly_ids
+            or not all(
+                isinstance(instance_id, str) and instance_id
+                for instance_id in nightly_ids
+            )
+        ):
+            raise ValueError(
+                "reviewed_fixed_subset requires a predeclared nonempty "
+                "CI_NIGHTLY instance set"
+            )
+        if EvalLimitMode.CI_NIGHTLY not in mode_references:
+            raise ValueError(
+                "reviewed_fixed_subset requires an independently baselined "
+                "CI_NIGHTLY mode reference for the exact fixed SWE subset"
+            )
+        subset_reference = mode_references[EvalLimitMode.CI_NIGHTLY]
+        if (
+            not isinstance(subset_reference.score, (int, float))
+            or isinstance(subset_reference.score, bool)
+            or subset_reference.score <= 0
+            or not isinstance(subset_reference.ref, str)
+            or not subset_reference.ref.strip()
+        ):
+            raise ValueError(
+                "reviewed_fixed_subset requires a positive measured score and "
+                "nonempty reference tied to the exact CI_NIGHTLY subset"
+            )
+    elif cfg.selection_policy == "full_dataset":
+        if cfg.n_tasks is not None:
+            raise ValueError("full_dataset SWE certification requires n_tasks=None")
+        if _GIT_REVISION_RE.fullmatch(str(cfg.dataset_revision or "")) is None:
+            raise ValueError(
+                "full_dataset SWE certification requires an exact pinned dataset revision"
+            )
+        if (
+            score is None
+            or not isinstance(score.gpu_reference_score, (int, float))
+            or isinstance(score.gpu_reference_score, bool)
+            or score.gpu_reference_score <= 0
+            or not isinstance(score.gpu_reference_score_ref, str)
+            or not score.gpu_reference_score_ref.strip()
+        ):
+            raise ValueError(
+                "full_dataset SWE certification requires a positive independent "
+                "GPU full-dataset reference from the same harness/protocol"
+            )
+    else:
+        raise ValueError(
+            "Quetzal Models-CI SWE enrollment requires selection_policy="
+            "'reviewed_fixed_subset' or 'full_dataset'"
+        )
 
 
 def _agentic_impl_id(model_spec) -> str:
@@ -310,6 +540,7 @@ def validate_runtime_args(model_spec, runtime_config):
 
     # The exact ModelSpec and task selection are now known, while no host
     # storage, server process, model payload, or device has been touched yet.
+    validate_quetzal_models_ci_contract(model_spec, runtime_config)
     validate_agentic_task_capabilities(model_spec, runtime_config)
 
     # The image-version contract only matters when run.py actually launches the

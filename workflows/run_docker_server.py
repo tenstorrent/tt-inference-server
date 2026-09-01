@@ -369,6 +369,17 @@ def _validate_quetzal_models_root(runtime_config, model_spec) -> Path | None:
             "Quetzal artifact root must contain a regular "
             f"qualification_manifest.yaml: {root}"
         )
+    if WorkflowType.from_string(runtime_config.workflow) == WorkflowType.RELEASE:
+        writable = [
+            str(path)
+            for path in (root, qualification)
+            if path.stat(follow_symlinks=False).st_mode & 0o222
+        ]
+        if writable:
+            raise ValueError(
+                "Quetzal Models-CI release read-only admission requires a "
+                f"package root and qualification manifest: {writable}"
+            )
     return root
 
 
@@ -419,6 +430,13 @@ def _validate_quetzal_runtime_attestation(runtime_config, model_spec) -> Path | 
                 "--quetzal-runtime-attestation is only valid with --impl quetzal"
             )
         return None
+    is_release = (
+        WorkflowType.from_string(runtime_config.workflow) == WorkflowType.RELEASE
+    )
+    if is_release and not required:
+        raise ValueError(
+            "Quetzal Models-CI release requires QUETZAL_RUNTIME_ATTESTATION_SHA256"
+        )
     if not required and not configured:
         return None
     if re.fullmatch(r"[0-9a-f]{64}", required) is None:

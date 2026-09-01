@@ -11,6 +11,8 @@ import pytest
 
 from workflows.model_spec import get_runtime_model_spec, load_templates_from_yaml
 from workflows.run_docker_server import (
+    _validate_quetzal_models_root,
+    _validate_quetzal_runtime_attestation,
     _vllm_override_cli_args,
     generate_docker_run_command,
 )
@@ -241,6 +243,48 @@ def test_docker_command_mounts_exact_runtime_attestation_readonly(tmp_path):
     attestation.chmod(0o644)
     with pytest.raises(ValueError, match="must be read-only"):
         generate_docker_run_command(spec, runtime)
+
+
+def test_release_requires_readonly_package_admission_and_runtime_attestation(
+    tmp_path,
+):
+    spec = copy.deepcopy(_dev_quetzal_spec("Qwen3.6-27B"))
+    package_id = spec.env_vars["QUETZAL_PACKAGE_ID"]
+    package = tmp_path / package_id
+    package.mkdir()
+    qualification = package / "qualification_manifest.yaml"
+    qualification.write_text("models: []\n")
+    runtime = RuntimeConfig(
+        model="Qwen3.6-27B",
+        workflow="release",
+        device="p300x2",
+        impl="quetzal",
+        quetzal_models_root=str(package),
+    )
+
+    with pytest.raises(ValueError, match="read-only admission"):
+        _validate_quetzal_models_root(runtime, spec)
+
+    qualification.chmod(0o444)
+    package.chmod(0o555)
+    try:
+        assert _validate_quetzal_models_root(runtime, spec) == package.resolve()
+        with pytest.raises(ValueError, match="RUNTIME_ATTESTATION"):
+            _validate_quetzal_runtime_attestation(runtime, spec)
+
+        payload = b'{"schema":"ttq.runtime_compatibility_attestation/v1"}\n'
+        digest = hashlib.sha256(payload).hexdigest()
+        attestation = tmp_path / f"{digest}.json"
+        attestation.write_bytes(payload)
+        attestation.chmod(0o444)
+        spec.env_vars["QUETZAL_RUNTIME_ATTESTATION_SHA256"] = digest
+        runtime.quetzal_runtime_attestation = str(attestation)
+        assert _validate_quetzal_runtime_attestation(runtime, spec) == (
+            attestation.resolve()
+        )
+    finally:
+        package.chmod(0o755)
+        qualification.chmod(0o644)
 
 
 def test_quetzal_docker_hook_uses_clean_named_context_and_patched_runtime():
