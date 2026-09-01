@@ -862,9 +862,7 @@ class HostSetupManager:
             or self.setup_config.host_model_weights_mount_dir
         )
         if local_weights_dir.exists():
-            logger.info(
-                f"✅ Using weights directory: {local_weights_dir}"
-            )
+            logger.info(f"✅ Using weights directory: {local_weights_dir}")
             self.check_model_weights_dir(local_weights_dir)
         else:
             raise ValueError("⛔ Weights directory does not exist.")

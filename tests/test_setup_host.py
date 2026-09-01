@@ -1180,8 +1180,7 @@ class TestQuetzalMetadataOnlySetup:
         )
 
         container_repo = (
-            config.container_readonly_model_weights_dir
-            / quetzal_model_spec.model_name
+            config.container_readonly_model_weights_dir / quetzal_model_spec.model_name
         )
         assert config.host_model_weights_mount_dir == repository.resolve()
         assert config.host_model_weights_snapshot_dir == snapshot_dir.resolve()
