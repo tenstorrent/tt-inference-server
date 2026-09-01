@@ -281,15 +281,17 @@ def build_eval_command(
     lm_eval_prefix = [str(lm_eval_exec)]
     # TODO: remove this once diffusiongemma vLLM can ignore the seed gen kwarg
     # https://github.com/tenstorrent/tt-inference-server/issues/4993
-    if not getattr(task, "propagate_seed_to_gen_kwargs", True):
+    uses_lm_eval_payload_wrapper = not getattr(
+        task, "propagate_seed_to_gen_kwargs", True
+    ) or bool(getattr(task, "chat_template_kwargs", None))
+    if uses_lm_eval_payload_wrapper:
         if task.workflow_venv_type in [
             WorkflowVenvType.EVALS_VISION,
             WorkflowVenvType.EVALS_AUDIO,
         ]:
             raise ValueError(
-                f"propagate_seed_to_gen_kwargs=False on {task.task_name} needs "
-                "the lm-eval no-server-seed wrapper, which lmms-eval tasks "
-                "cannot use"
+                f"task {task.task_name} needs the scoped lm-eval payload "
+                "wrapper, which lmms-eval tasks cannot use"
             )
         # The pinned lm-eval adapters always copy their model seed into OpenAI
         # payloads, independently of --gen_kwargs. Use the scoped wrapper so

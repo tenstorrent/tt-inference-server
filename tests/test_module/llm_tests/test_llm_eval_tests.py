@@ -17,6 +17,7 @@ import pytest
 
 from llm_module.eval_command import build_eval_command
 from llm_module.lm_eval_no_server_seed import _drop_server_seed, _patch_api_adapters
+from llm_module.lm_eval_no_server_seed import _inject_chat_template_kwargs
 from reference_config.evals.eval_config import EvalTask, _eval_config_map
 from test_module._test_common import ReportCheckTypes, TestStatus
 from test_module.llm_tests import llm_eval_tests as mod
@@ -161,7 +162,7 @@ class TestEvalCommand:
             propagate_seed_to_gen_kwargs=False,
         )
 
-        with pytest.raises(ValueError, match="no-server-seed"):
+        with pytest.raises(ValueError, match="scoped lm-eval payload wrapper"):
             _build_eval_test_command(task)
 
     def test_seed_patch_covers_both_api_adapters(self, monkeypatch):
@@ -185,6 +186,38 @@ class TestEvalCommand:
 
         assert "seed" not in _Completions()._create_payload()
         assert "seed" not in _Chat()._create_payload()
+
+    def test_chat_template_kwargs_patch_preserves_nested_boolean_object(
+        self, monkeypatch
+    ):
+        class _Completions:
+            def _create_payload(self, *args, **kwargs):
+                return {"prompt": "p", "seed": 1234}
+
+        class _Chat(_Completions):
+            def _create_payload(self, *args, **kwargs):
+                return {"messages": [], "seed": 1234}
+
+        module = SimpleNamespace(
+            LocalCompletionsAPI=_Completions, LocalChatCompletion=_Chat
+        )
+        models_pkg = SimpleNamespace(openai_completions=module)
+        monkeypatch.setitem(sys.modules, "lm_eval", SimpleNamespace(models=models_pkg))
+        monkeypatch.setitem(sys.modules, "lm_eval.models", models_pkg)
+        monkeypatch.setitem(sys.modules, "lm_eval.models.openai_completions", module)
+
+        _patch_api_adapters(
+            drop_server_seed=False,
+            chat_template_kwargs={"enable_thinking": False},
+        )
+
+        payload = _Chat()._create_payload()
+        assert payload["seed"] == 1234
+        assert payload["chat_template_kwargs"] == {"enable_thinking": False}
+
+    def test_chat_template_kwargs_rejects_non_boolean_values(self):
+        with pytest.raises(ValueError, match="map non-empty string keys"):
+            _inject_chat_template_kwargs({"messages": []}, {"enable_thinking": "false"})
 
 
 class TestDiffusionGemmaEvalContract:
@@ -212,7 +245,20 @@ class TestDiffusionGemmaEvalContract:
 
 
 class TestQwen36EvalContract:
-    def test_gsm8k_has_silicon_proven_bounded_generation_budget(self):
+    def test_gsm8k_runner_serializes_chat_template_controls(self):
+        task = _qwen36_eval_task("gsm8k")
+
+        with patch(f"{_MOD}.build_eval_command", return_value=["lm-eval"]), patch(
+            f"{_MOD}.run_command", return_value=0
+        ) as run_command:
+            assert mod._run_eval_task(_ctx(max_context=8192), task, "") == 0
+
+        outgoing_env = run_command.call_args.kwargs["env"]
+        assert json.loads(outgoing_env["TTIS_LM_EVAL_CHAT_TEMPLATE_KWARGS_JSON"]) == {
+            "enable_thinking": False
+        }
+
+    def test_gsm8k_has_silicon_proven_bounded_generation_budget(self, monkeypatch):
         task = _qwen36_eval_task("gsm8k")
         model_spec = SimpleNamespace(
             model_id="Qwen3.6-27B",
@@ -228,9 +274,33 @@ class TestQwen36EvalContract:
         command = build_eval_command(task, model_spec, "P300X2", "/tmp/evals", 8000)
 
         assert _command_gen_kwargs(command)["max_gen_toks"] == "2048"
+        assert task.chat_template_kwargs == {"enable_thinking": False}
+        assert command[1].endswith("llm_module/lm_eval_no_server_seed.py")
         assert task.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 10
         assert task.score is None
         assert 2048 < model_spec.device_model_spec.max_context
+
+        class _Chat:
+            def _create_payload(self, *args, **kwargs):
+                return {"messages": [{"role": "user", "content": "2+2?"}]}
+
+        module = SimpleNamespace(
+            LocalCompletionsAPI=type("_Completions", (), {}),
+            LocalChatCompletion=_Chat,
+        )
+        models_pkg = SimpleNamespace(openai_completions=module)
+        monkeypatch.setitem(sys.modules, "lm_eval", SimpleNamespace(models=models_pkg))
+        monkeypatch.setitem(sys.modules, "lm_eval.models", models_pkg)
+        monkeypatch.setitem(sys.modules, "lm_eval.models.openai_completions", module)
+
+        _patch_api_adapters(
+            drop_server_seed=False,
+            chat_template_kwargs=task.chat_template_kwargs,
+        )
+
+        assert _Chat()._create_payload()["chat_template_kwargs"] == {
+            "enable_thinking": False
+        }
 
 
 # --- scoring -> Block (the copied logic) -------------------------------------
