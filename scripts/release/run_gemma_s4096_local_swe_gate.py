@@ -1,8 +1,7 @@
+#!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
-
-#!/usr/bin/env python3
 """Run a predeclared, pinned Gemma S4096 local behavioral SWE gate.
 
 This is intentionally not a Models CI graded result.  It exercises the real
@@ -16,14 +15,13 @@ import argparse
 import hashlib
 import json
 import os
-from pathlib import Path
+import subprocess
 import sys
 import time
+from pathlib import Path
 from urllib.request import urlopen
 
-
 MODEL = "google/gemma-4-31B-it"
-TTIS_SOURCE_REVISION = "4838ddbe"
 DATASET = "SWE-bench/SWE-bench_Verified"
 DATASET_REVISION = "78f471bf655a3137b2e8a75af1501690ec009ec3"
 # First S4096 candidate in a predeclared TTIS nightly list.  This was fixed
@@ -60,6 +58,23 @@ def write_json(path: Path, value: object) -> None:
     os.replace(temporary, path)
 
 
+def resolve_ttis_source_revision(repo_root: Path) -> str:
+    """Return the exact tracked TTIS revision used by this local gate."""
+    revision = subprocess.run(
+        ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    if len(revision) != 40 or any(char not in "0123456789abcdef" for char in revision):
+        raise RuntimeError(f"invalid TTIS Git revision: {revision!r}")
+    subprocess.run(
+        ["git", "-C", str(repo_root), "diff", "--quiet", "HEAD", "--"],
+        check=True,
+    )
+    return revision
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--endpoint", required=True)
@@ -68,6 +83,8 @@ def main() -> int:
     parser.add_argument("--slurm-job-id", required=True)
     parser.add_argument("--node", required=True)
     args = parser.parse_args()
+    repo_root = Path(__file__).resolve().parents[2]
+    ttis_source_revision = resolve_ttis_source_revision(repo_root)
 
     if MAX_INPUT + MAX_OUTPUT != MAX_CONTEXT:
         raise RuntimeError("Gemma local gate no longer exactly binds S4096")
@@ -126,14 +143,14 @@ def main() -> int:
         },
         "verifier": "swebench.harness.run_evaluation",
         "slurm": {"job_id": args.slurm_job_id, "node": args.node},
-        "source": {"ttis_revision": TTIS_SOURCE_REVISION},
+        "source": {"ttis_revision": ttis_source_revision},
         "endpoint_models_response": models,
     }
     write_json(out / "predeclared-contract.json", predeclared)
     print(json.dumps(predeclared, sort_keys=True), flush=True)
 
     os.environ["MODEL_SPECS_ENV"] = "dev"
-    os.environ.setdefault("TTIS_REPO_ROOT", str(Path(__file__).resolve().parents[2]))
+    os.environ.setdefault("TTIS_REPO_ROOT", str(repo_root))
     from llm_module.agentic.swebench import SWEbenchRunConfig, run
     from reference_config.evals.eval_config import EVAL_CONFIGS
 
