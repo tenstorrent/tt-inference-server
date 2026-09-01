@@ -4809,7 +4809,10 @@ _eval_config_list = [
                     # turn re-reading source and never attempted a mutation.
                     # Match the model's other reasoning evals and make the
                     # endpoint request explicit and reproducible.
-                    completion_kwargs={"reasoning_effort": "high"},
+                    # vLLM's pinned ChatCompletionRequest accepts `seed`; keep
+                    # it fixed so a default-vs-high reasoning replay can vary
+                    # only the reasoning contract.
+                    completion_kwargs={"reasoning_effort": "high", "seed": 42},
                     # The generated-only f0b P300X2 release profile is C1/S8192.
                     # This is the declared bounded SWE-bench workload for that
                     # serving contract, not a runtime clamp of the 124K GPU

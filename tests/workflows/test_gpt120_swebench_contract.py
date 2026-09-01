@@ -45,9 +45,11 @@ def test_gpt120_swebench_is_exact_c1_s8192_five_instance_contract(tmp_path):
     assert cfg.dataset_split == "test"
     assert cfg.agent_backend == "mini-swe-agent"
     assert cfg.n_concurrent_trials == 1
+    assert cfg.temperature == 1.0
+    assert cfg.top_p == 0.95
     assert cfg.max_input_tokens == 7 * 1024
     assert cfg.max_output_tokens == 1 * 1024
-    assert cfg.completion_kwargs == {"reasoning_effort": "high"}
+    assert cfg.completion_kwargs == {"reasoning_effort": "high", "seed": 42}
     assert cfg.mini_agent_kwargs == {"step_limit": 16}
     assert cfg.mini_observation_chars == 1024
     assert cfg.max_input_tokens + cfg.max_output_tokens == 8 * 1024
@@ -72,7 +74,9 @@ def test_gpt120_swebench_is_exact_c1_s8192_five_instance_contract(tmp_path):
     assert run.api_base == "http://127.0.0.1:18091/v1"
     assert run.n_concurrent_trials == 1
     assert run.model_name == "openai/openai/gpt-oss-120b"
-    assert run.completion_kwargs == {"reasoning_effort": "high"}
+    assert run.temperature == 1.0
+    assert run.top_p == 0.95
+    assert run.completion_kwargs == {"reasoning_effort": "high", "seed": 42}
     assert run.mini_agent_kwargs == {"step_limit": 16}
     assert run.mini_observation_chars == 1024
 
@@ -81,6 +85,7 @@ def test_gpt120_swebench_is_exact_c1_s8192_five_instance_contract(tmp_path):
         _write_mini_sweagent_model_config(run).read_text(encoding="utf-8")
     )
     assert generated["model"]["model_kwargs"]["reasoning_effort"] == "high"
+    assert generated["model"]["model_kwargs"]["seed"] == 42
 
     templates = load_templates_from_yaml(
         get_repo_root_path() / "workflows/model_specs/dev/llm.yaml"
