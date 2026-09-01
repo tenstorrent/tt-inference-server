@@ -556,12 +556,12 @@ TRAINING_STORE_ADAPTERS_DIR = "adapters/"
 TRAINING_STORE_MERGED_MODELS_DIR = "merged_models/"
 
 
-# Adapters/merged models live under $TRAINING_STORE_ROOT, which defaults to
-# $CACHE_ROOT so they persist in the mounted cache volume. Ephemeral/CI runs
-# that don't keep adapters — or where the cache volume is host-owned and not
-# writable by the non-root container user — can point $TRAINING_STORE_ROOT at a
-# writable in-container dir (e.g. /tmp), so nothing is written to the cache
-# volume and the output is discarded when the container is removed.
+# Root for LoRA adapters / merged models. Precedence, not redundancy — keep both:
+#   * $TRAINING_STORE_ROOT: set by the launcher for TRAINING servers — cache_root
+#     under --host-volume, else an ephemeral dir.
+#   * $CACHE_ROOT: fallback when TRAINING_STORE_ROOT is unset, e.g. inference
+#     servers reading adapters back from the cache volume.
+# "." is just a last resort so unconfigured callers (e.g. tests) don't crash.
 def _training_store_root() -> str:
     return os.getenv("TRAINING_STORE_ROOT") or os.getenv("CACHE_ROOT", ".")
 
