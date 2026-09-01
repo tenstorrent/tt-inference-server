@@ -100,6 +100,7 @@ def test_quetzal_runtime_is_rebuilt_in_base_abi_and_atomically_replaced():
     whiteout = "RUN rm -rf /home/container_app_user/tt-metal"
     runtime_copy = "COPY --from=quetzal_ttmetal_builder"
     assert source.index(whiteout) < source.index(runtime_copy)
+    assert "--chown=" not in source
     assert "/var/tmp/nkapre" not in source
     assert "org.opencontainers.image.tt-metal.revision" in source
     assert "org.opencontainers.image.tt-metal.patchset.sha256" in source
