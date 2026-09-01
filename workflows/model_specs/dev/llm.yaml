@@ -26,9 +26,9 @@ templates:
         QUETZAL_VLLM: "1"
         QUETZAL_MODEL: Qwen/Qwen3.6-27B
         QUETZAL_HF_REVISION: 6a9e13bd6fc8f0983b9b99948120bc37f49c13e9
-        QUETZAL_REQUIRED_SOURCE_REVISION: ed55b38cfaac3b14b59bc7e6110c1abbb61a9e8c
+        QUETZAL_REQUIRED_SOURCE_REVISION: 3b93e82a87c0664eab23da4b3bf355d12ff310cd
         QUETZAL_PACKAGE_ID: sha256-f1d6cebaf6cd432c78721ec3b81101ab86493f387b37f63bc11aca2fc6f6d8d8-0a8efa103ee378c7cd0e2fa25b0426cbb82752e270f8927bdf44eb2cfe68ce66
-        # Canonical manifest embedded by this package ID in Quetzal ed55b38c's
+        # Canonical manifest embedded by this package ID in Quetzal 3b93e82a's
         # release matrix. Do not substitute an administrator-publication
         # successor digest until that generation exists at the catalog path.
         QUETZAL_BUNDLE_MANIFEST_SHA256: d71abb2865d94511a1aaafbb02fabe1adfc5bd658ff9b876412f5f558111db4a
@@ -43,7 +43,7 @@ templates:
         QUETZAL_WEIGHTS: /home/container_app_user/quetzal/packages/sha256-f1d6cebaf6cd432c78721ec3b81101ab86493f387b37f63bc11aca2fc6f6d8d8-0a8efa103ee378c7cd0e2fa25b0426cbb82752e270f8927bdf44eb2cfe68ce66/compiled_weights/Qwen_Qwen3.6-27B/full/weights.pt
         QZ_MMAP_WEIGHTS: "1"
         TTQ_STREAM_WEIGHTS: "1"
-        # The trace warmup is not yet admitted on QB2. The exact ed55b38c
+        # The trace warmup is not yet admitted on QB2. The exact 3b93e82a
         # generated runtime is behaviorally green through the eager path; keep
         # CI on that same-token path until traced startup has its own gate.
         QUETZAL_NO_TRACE: "1"
