@@ -88,7 +88,7 @@ templates:
         QUETZAL_VLLM: "1"
         QUETZAL_MODEL: google/gemma-4-31B-it
         QUETZAL_HF_REVISION: 842da3794eaa0b77d5f08bae87a17459d91ff475
-        QUETZAL_REQUIRED_SOURCE_REVISION: 7163c11d244a72d8fafc55f6c892d625e81965ae
+        QUETZAL_REQUIRED_SOURCE_REVISION: 8ddb62c06bcd2c8fe1fbd3daad83424011c260cf
         QUETZAL_REQUIRED_TT_METAL_COMMIT: b534549300fe2af11e6ee828675294bc0e359555
         QUETZAL_PACKAGE_ID: sha256-8373c1467294ed11e00ac791392eaa80c9cd1a1366f15200469bbdb4bc410522-259ee130f4f1e259980f2dde67415f8692f4c16086f34edc1cdb98c496b68edc
         QUETZAL_BUNDLE_MANIFEST_SHA256: e3ecc5557a84955bf0b95615e4b8e9fa83bcc431c9755e969ba5c441fc8d94cf
@@ -119,9 +119,8 @@ templates:
         revision: 842da3794eaa0b77d5f08bae87a17459d91ff475
         tokenizer_revision: 842da3794eaa0b77d5f08bae87a17459d91ff475
         enable-auto-tool-choice: true
-        tool-call-parser: gemma4
+        tool-call-parser: quetzal_gemma4
         default-chat-template-kwargs: '{"enable_thinking": true}'
-        reasoning-parser: gemma4
       override_tt_config:
         fabric_config: FABRIC_1D
         l1_small_size: 16384
@@ -130,8 +129,7 @@ templates:
   has_builtin_warmup: false
   metadata:
     google/gemma-4-31B-it:
-      reasoning_parser_name: gemma4
-      tool_call_parser_name: gemma4
+      tool_call_parser_name: quetzal_gemma4
 
 - weights:
     - openai/gpt-oss-20b

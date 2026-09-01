@@ -196,9 +196,8 @@ def test_exact_evidence_renders_inactive_promotion(shield_checkout):
         "revision": HF_REVISION,
         "tokenizer_revision": HF_REVISION,
         "enable-auto-tool-choice": True,
-        "tool-call-parser": "gemma4",
+        "tool-call-parser": "quetzal_gemma4",
         "default-chat-template-kwargs": '{"enable_thinking": true}',
-        "reasoning-parser": "gemma4",
     }
 
 
@@ -326,7 +325,7 @@ def test_blocker_uses_current_runtime_and_preserves_banked_local_gates():
             ROOT / "productization/gemma4_31b_models_ci_enrollment.blocked.json"
         ).read_text()
     )
-    assert QUETZAL_SOURCE == "7163c11d244a72d8fafc55f6c892d625e81965ae"
+    assert QUETZAL_SOURCE == "8ddb62c06bcd2c8fe1fbd3daad83424011c260cf"
     assert blocker["exact_serving_runtime_source"] == QUETZAL_SOURCE
     banked = blocker["banked_local_evidence"]
     assert banked["pcc"] >= 0.99

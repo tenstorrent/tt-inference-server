@@ -31,7 +31,7 @@ MODEL = "google/gemma-4-31B-it"
 MODEL_KEY = "gemma-4-31B-it"
 HF_REVISION = "842da3794eaa0b77d5f08bae87a17459d91ff475"
 ARTIFACT_SOURCE = "cfaea6c1b610afb8fed34c542e9a6df944fee51d"
-QUETZAL_SOURCE = "7163c11d244a72d8fafc55f6c892d625e81965ae"
+QUETZAL_SOURCE = "8ddb62c06bcd2c8fe1fbd3daad83424011c260cf"
 TT_METAL = "b534549300fe2af11e6ee828675294bc0e359555"
 PATCHSET = "22fb0bd2523b8a5c63fa20c3c8a1586dc9ead5150449d0eb02231fa8173a7edd"
 RUNNER = "bh-qb-ge"
@@ -442,11 +442,10 @@ def render_fragments(
                             "revision": HF_REVISION,
                             "tokenizer_revision": HF_REVISION,
                             "enable-auto-tool-choice": True,
-                            "tool-call-parser": "gemma4",
+                            "tool-call-parser": "quetzal_gemma4",
                             "default-chat-template-kwargs": (
                                 '{"enable_thinking": true}'
                             ),
-                            "reasoning-parser": "gemma4",
                         },
                         "override_tt_config": {
                             "fabric_config": "FABRIC_1D",
