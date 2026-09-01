@@ -3,14 +3,13 @@
     "_category": "AUDIO",
     "test_matrices": [
         {
-            "_comment": "qwen3-asr: timings are uncalibrated first-run placeholders; the runner caps audio at a 28s bucket and sub-chunks longer windows, so the 60s case exercises the chunk-and-join path",
+            "_comment": "qwen3-asr n150/n300: timings are uncalibrated first-run placeholders; the runner caps audio at a 28s bucket and sub-chunks longer windows, so the 60s case exercises the chunk-and-join path",
             "models": [
                 "qwen3_asr"
             ],
             "devices": [
                 "n150",
-                "n300",
-                "galaxy"
+                "n300"
             ],
             "test_cases": [
                 {
@@ -27,6 +26,67 @@
                     "description": "Test audio 60s load",
                     "targets": {
                         "audio_transcription_time": 25,
+                        "dataset": "60s"
+                    }
+                },
+                {
+                    "template": "AudioTranscriptionParamTest",
+                    "enabled": true,
+                    "description": "Test audio transcription params"
+                }
+            ]
+        },
+        {
+            "_comment": "qwen3-asr galaxy (DP=32): mirrors the whisper galaxy list so chunking behaviour is comparable across models. The Dp2Chunk5/Dp2Chunk30 pair reads the server's AUDIO_CHUNK_DURATION_SECONDS, which the tests do not set, so both measure whatever the server was launched with and differ only in the chunk_duration_seconds they record. Timings are uncalibrated placeholders.",
+            "models": [
+                "qwen3_asr"
+            ],
+            "devices": [
+                "galaxy"
+            ],
+            "test_cases": [
+                {
+                    "template": "AudioTranscriptionLoadDp2Chunk5Test",
+                    "enabled": true,
+                    "description": "DP burst with 60s audio, chunk_duration_seconds=5",
+                    "targets": {
+                        "num_concurrent": 64,
+                        "dataset": "60s"
+                    }
+                },
+                {
+                    "template": "AudioTranscriptionLoadDp2Chunk30Test",
+                    "enabled": true,
+                    "description": "DP burst with 60s audio, chunk_duration_seconds=30",
+                    "targets": {
+                        "num_concurrent": 64,
+                        "dataset": "60s"
+                    }
+                },
+                {
+                    "template": "AudioTranscriptionLoadTest",
+                    "enabled": true,
+                    "description": "Test audio 30s load",
+                    "targets": {
+                        "audio_transcription_time": 15
+                    }
+                },
+                {
+                    "template": "AudioTranscriptionLoadTest",
+                    "enabled": true,
+                    "description": "Test audio 60s load",
+                    "targets": {
+                        "audio_transcription_time": 25,
+                        "dataset": "60s"
+                    }
+                },
+                {
+                    "template": "AudioTranscriptionLoadTest",
+                    "enabled": true,
+                    "description": "Test single audio 60s transcription and expect chunking",
+                    "targets": {
+                        "audio_transcription_time": 25,
+                        "num_concurrent_requests": 1,
                         "dataset": "60s"
                     }
                 },
