@@ -43,6 +43,28 @@ void ensureSysPath() {
               metalHome);
 }
 
+// Mirror utils/torch_utils.set_torch_thread_limits, which the Python worker
+// called before touching the model. TORCH_NUM_THREADS is exported by
+// embedding_service.cpp alongside OMP/MKL_NUM_THREADS; the env vars alone
+// only size torch's intra-op pool, the interop pool must be capped through
+// the API. Both setters throw once their pool has started, hence the get()
+// guards and the placement before anything else imports torch.
+void applyTorchThreadLimits() {
+  int numThreads = 1;
+  if (const char* env = std::getenv("TORCH_NUM_THREADS"); env && *env) {
+    const int parsed = std::atoi(env);
+    if (parsed > 0) numThreads = parsed;
+  }
+  py::module_ torch = py::module_::import("torch");
+  if (torch.attr("get_num_threads")().cast<int>() != numThreads) {
+    torch.attr("set_num_threads")(numThreads);
+  }
+  if (torch.attr("get_num_interop_threads")().cast<int>() != numThreads) {
+    torch.attr("set_num_interop_threads")(numThreads);
+  }
+  TT_LOG_INFO("[EmbeddingRunner] torch thread limits set to {}", numThreads);
+}
+
 }  // namespace
 
 namespace detail {
@@ -101,6 +123,7 @@ struct EmbeddingImpl {
       py::gil_scoped_acquire gil;
       try {
         ensureSysPath();
+        applyTorchThreadLimits();
 
         ttnn = py::module_::import("ttnn");
         openMeshDevice();
@@ -133,8 +156,9 @@ struct EmbeddingImpl {
 
         // One real forward pass so weight upload, tracing, and kernel
         // compilation happen now rather than on the first request.
-        py::object warm = tokenize(py::make_tuple("The capital of France is "
-                                                  "Paris"));
+        py::object warm =
+            tokenize(py::make_tuple("The capital of France is "
+                                    "Paris"));
         forwardAndSync(warm);
         ok = true;
         TT_LOG_INFO("[EmbeddingRunner] Warmup forward pass completed");
@@ -266,8 +290,8 @@ struct EmbeddingImpl {
     if (config.num_command_queues > 0) {
       params["num_command_queues"] = config.num_command_queues;
     }
-    device = ttnn.attr("open_mesh_device")("mesh_shape"_a = meshShape,
-                                           **params);
+    device =
+        ttnn.attr("open_mesh_device")("mesh_shape"_a = meshShape, **params);
     TT_LOG_INFO("[EmbeddingRunner] Opened mesh device with {} device(s)",
                 device.attr("get_num_devices")().cast<size_t>());
   }
@@ -281,10 +305,9 @@ struct EmbeddingImpl {
   }
 
   py::object forwardAndSync(const py::object& tokenized) {
-    py::object result =
-        model.attr("forward")(tokenized[py::str("input_ids")],
-                              "attention_mask"_a =
-                                  tokenized.attr("get")("attention_mask"));
+    py::object result = model.attr("forward")(
+        tokenized[py::str("input_ids")],
+        "attention_mask"_a = tokenized.attr("get")("attention_mask"));
     ttnn.attr("synchronize_device")(device);
     return result;
   }
@@ -353,9 +376,9 @@ std::unique_ptr<detail::EmbeddingImpl> makeImpl(
     case config::ModelRunnerType::TT_QWEN_EMBEDDING_8B:
       return std::make_unique<Qwen3Embedding8bImpl>(cfg);
     default:
-      throw std::runtime_error("[EmbeddingRunner] runner_type=" +
-                               config::toString(cfg.runner_type) +
-                               " is not a tt-metal embedding model");
+      throw std::runtime_error(
+          "[EmbeddingRunner] runner_type=" + config::toString(cfg.runner_type) +
+          " is not a tt-metal embedding model");
   }
 }
 

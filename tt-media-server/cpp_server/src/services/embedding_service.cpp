@@ -295,9 +295,46 @@ struct EmbeddingService::Impl {
     const std::string visibleDevices = tt::config::visibleDevicesForWorker(wid);
 
     // The runner drives tt-metal directly, so no Python-side config exists
-    // to feed: the only export is which chips this worker may open. Set in
-    // the child so sibling workers get their own values.
+    // to feed. What is exported here mirrors, item for item, what the Python
+    // server's BaseDeviceRunner/setup_runner_environment exported per worker:
+    // chip visibility, CPU thread caps, the matmul throttle, and the kernel
+    // cache path. Set in the child so sibling workers get their own values.
     setenv("TT_VISIBLE_DEVICES", visibleDevices.c_str(), 1);
+
+    // Mirror setup_cpu_threading_limits. Without these caps, torch/OpenMP in
+    // every worker defaults to one thread per host core, and 32 sibling
+    // workers oversubscribe the CPU so badly that the host-side part of each
+    // request cycle (tokenization, tensor prep, result extraction) dominates
+    // latency. Python sized the pools by use_dynamic_batcher - a vLLM
+    // concept, auto-enabled when max_num_seqs > 1 unless USE_DYNAMIC_BATCHER
+    // overrides - and max_num_seqs equals max_batch_size for every embedding
+    // (model, device) row, so the same split is reproduced from
+    // max_batch_size. The runner reads TORCH_NUM_THREADS back to call
+    // torch.set_num_threads, exactly like the Python worker did.
+    bool dynamicBatcher = cfg.max_batch_size > 1;
+    if (const char* flag = std::getenv("USE_DYNAMIC_BATCHER"); flag && *flag) {
+      std::string value = flag;
+      std::transform(value.begin(), value.end(), value.begin(), ::tolower);
+      dynamicBatcher = (value == "true" || value == "1");
+    }
+    const char* cpuThreads = dynamicBatcher ? "16" : "2";
+    const char* torchThreads = dynamicBatcher ? "16" : "1";
+    setenv("OMP_NUM_THREADS", cpuThreads, 1);
+    setenv("MKL_NUM_THREADS", cpuThreads, 1);
+    setenv("TORCH_NUM_THREADS", torchThreads, 1);
+
+    // Mirror setup_cpu_threading_limits' throttle export. Python resolved
+    // settings.default_throttle_level as the DEFAULT_THROTTLE_LEVEL env var
+    // when set, else the (model, device) row in config/constants.py - which
+    // is int 0 for every embedding model, falsy, so nothing was exported.
+    // Deployments pass the env var (the model specs set
+    // DEFAULT_THROTTLE_LEVEL explicitly); any non-empty value is forwarded
+    // verbatim - including "0", which Python also forwarded (a truthy
+    // string) and which tt-metal reads as "no throttle".
+    if (const char* throttle = std::getenv("DEFAULT_THROTTLE_LEVEL");
+        throttle && *throttle) {
+      setenv("TT_MM_THROTTLE_PERF", throttle, 1);
+    }
 
     // Per-worker kernel cache, mirroring the Python server's
     // setup_runner_environment. Without it every worker JIT-compiles into
@@ -315,12 +352,15 @@ struct EmbeddingService::Impl {
     }
 
     const char* metalCacheEnv = std::getenv("TT_METAL_CACHE");
+    const char* throttleEnv = std::getenv("TT_MM_THROTTLE_PERF");
     TT_LOG_INFO(
         "[Worker {}] Started (PID {}, runner_type={}, TT_VISIBLE_DEVICES={}, "
-        "TT_METAL_CACHE={}, DEVICE={}, max_batch_size={})",
+        "TT_METAL_CACHE={}, DEVICE={}, max_batch_size={}, OMP_NUM_THREADS={}, "
+        "TORCH_NUM_THREADS={}, TT_MM_THROTTLE_PERF={})",
         workerId, getpid(), tt::config::toString(cfg.runner_type),
-        visibleDevices, metalCacheEnv ? metalCacheEnv : "(default)",
-        cfg.device, cfg.max_batch_size);
+        visibleDevices, metalCacheEnv ? metalCacheEnv : "(default)", cfg.device,
+        cfg.max_batch_size, cpuThreads, torchThreads,
+        throttleEnv ? throttleEnv : "(unset)");
 
     std::unique_ptr<runners::IEmbeddingRunner> runner;
     try {
