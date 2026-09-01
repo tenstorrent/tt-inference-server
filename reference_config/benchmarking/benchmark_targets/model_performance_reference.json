@@ -5581,7 +5581,7 @@
             }
         ]
     },
-    "stabilityai/stable-diffusion-xl-1.0-inpainting-0.1": {
+    "diffusers/stable-diffusion-xl-1.0-inpainting-0.1": {
         "n150": [
             {
                 "max_concurrency": 1,

@@ -110,66 +110,60 @@ not the trailing impl. `rsplit("_", 1)` picks up `default` and looks like it
 worked. Use `split_workflow_logs_artifact_name`, which takes the model id
 because the grammar is not self-delimiting.
 
-## tt-shield side (not yet applied)
+## tt-shield side (applied — PR #927)
 
-As of the tt-shield checkout inspected on 2026-07-28, the producing side is
-inconsistent: one artifact name is escaped with a single `_`, another is not
-escaped at all. Steps are named below rather than only line-numbered, since
-line numbers drift.
+The producing side lives in **tt-shield** and now follows this contract. Rather
+than fetch this repo's module at CI time, tt-shield **vendors its own small copy**
+at `.github/scripts/model_naming.py` (stdlib-only, `/` ↔ `__`, plus a CLI).
+Fetching was deliberately rejected: it made matrix generation depend on the
+network and on interpolating a caller-supplied ref into a
+`raw.githubusercontent.com` path. The two copies are a cross-repo contract kept
+in agreement **by convention, not by shared code** — each side has its own
+`model_naming_test.py` with inline vectors, and the escape is a one-line pure
+function on both sides.
 
-### 1. Emit the token from the matrix generator (preferred)
+### 1. Emit the token from the matrix generator
 
-GitHub expressions have no `replace()`, so a token cannot be derived inside a
-`${{ }}`. Emit it alongside the identity instead, and every consumer downstream
-just interpolates it.
-
-`.github/workflows/dynamic-workflow.yml`, job `generate-matrix`, step *"Fetch
-model config files from tt-inference-server"* already pulls the config by
-`gh api`, pinned to `inputs.inference-server-sha`. Pull the contract the same
-way, at the same ref — no vendored copy, no drift:
-
-```yaml
-          gh api repos/tenstorrent/tt-inference-server/contents/utils/model_naming.py?ref=${{ inputs.inference-server-sha }} \
-            -H "Accept: application/vnd.github.v3.raw" > "$DEST/model_naming.py"
-```
-
-`generate_ci_matrix.py` runs with that directory as its cwd, so it imports
-directly:
+GitHub expressions have no `replace()`, and a job `name:` is evaluated before any
+step runs (so it cannot read a step output either) — the token has to arrive with
+the matrix. `.github/scripts/generate_model_ci_workflows/generate_ci_matrix.py`
+imports the vendored escape and emits both, per entry:
 
 ```python
 from model_naming import slugify_model_id
 
 config = {
     "model": model_name,                        # identity — verbatim, unchanged
-    "model_slug": slugify_model_id(model_name), # name token — new
+    "model_slug": slugify_model_id(model_name), # name token
     ...
 }
 ```
 
+Hand-written `run-matrix` blocks (dispatch workflows) must spell out `model_slug`
+themselves, or compute it in a small `model-token` step via the CLI
+(`python .github/scripts/model_naming.py slugify <id>`).
+
 ### 2. Use the token in every name, the identity in every payload
 
-`.github/workflows/workflow_run-tests-with-inference-server.yml`:
+| step / field | uses |
+|---|---|
+| `⬆️ Upload workflow logs` / any artifact `name:` | `${{ matrix.config.model_slug }}` — `upload-artifact` rejects `/` |
+| job `name:` (`run-<workflow>-<model>-<label>-<type>`) | `${{ matrix.config.model_slug }}` |
+| `--model` to `run.py`, `generate-empty-report.sh`, report payloads | `${{ matrix.config.model }}` — the identity |
 
-| step / field | current | change to |
-|---|---|---|
-| `⬆️ Upload workflow logs`, `name:` | `workflow_logs_…_${{ matrix.config.model }}_…` | `${{ matrix.config.model_slug }}` — **this is the actual breakage**: `upload-artifact` rejects `/` in a name |
-| job `name:` (`run-<workflow>-<model>-<label>-<type>`) | `${{ matrix.config.model }}` | `${{ matrix.config.model_slug }}` |
-| step *"Sanitize model name for artifacts"* (`${SANITIZED_MODEL//\//_}`) | single `_` | delete the step; use `${{ matrix.config.model_slug }}` in the `report_…` artifact name |
-| `--model` argument to `run.py`, `generate-empty-report.sh`, report payloads | `${{ matrix.config.model }}` | **unchanged** — these take the identity |
-
-If a name has to be built somewhere the matrix isn't reachable, call the CLI in
-that step instead (tt-inference-server is already checked out at
-`tt-inference-server/` in this workflow):
+The old *"Sanitize model name for artifacts"* steps (`${MODEL//\//_}`, a single
+`_`) were removed; the slug from the matrix is used directly. If a name has to be
+built where the matrix is not reachable, call the vendored CLI in that step:
 
 ```yaml
       - id: slug
         run: |
-          echo "model=$(python tt-inference-server/utils/model_naming.py \
+          echo "model=$(python .github/scripts/model_naming.py \
             slugify '${{ matrix.config.model }}')" >> "$GITHUB_OUTPUT"
 ```
 
-The reader tolerates the old forms during the transition, so these changes can
-land independently of a tt-inference-server release.
+The reader tolerates the old forms during the transition, so these changes landed
+independently of a tt-inference-server release.
 
 ## Where the prefix does and does not appear
 
