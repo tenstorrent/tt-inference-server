@@ -299,11 +299,28 @@ struct EmbeddingService::Impl {
     // the child so sibling workers get their own values.
     setenv("TT_VISIBLE_DEVICES", visibleDevices.c_str(), 1);
 
+    // Per-worker kernel cache, mirroring the Python server's
+    // setup_runner_environment. Without it every worker JIT-compiles into
+    // the same ~/.cache/tt-metal-cache build-key directory and the parallel
+    // warmup races: one worker mmaps an ELF another is still writing
+    // ("cannot map elf file into memory: Invalid argument") or silently
+    // runs a corrupted kernel.
+    if (const char* metalHome = std::getenv("TT_METAL_HOME");
+        metalHome && *metalHome) {
+      std::string deviceSuffix = visibleDevices;
+      std::replace(deviceSuffix.begin(), deviceSuffix.end(), ',', '_');
+      const std::string metalCache =
+          std::string(metalHome) + "/built/" + deviceSuffix;
+      setenv("TT_METAL_CACHE", metalCache.c_str(), 1);
+    }
+
+    const char* metalCacheEnv = std::getenv("TT_METAL_CACHE");
     TT_LOG_INFO(
         "[Worker {}] Started (PID {}, runner_type={}, TT_VISIBLE_DEVICES={}, "
-        "DEVICE={}, max_batch_size={})",
+        "TT_METAL_CACHE={}, DEVICE={}, max_batch_size={})",
         workerId, getpid(), tt::config::toString(cfg.runner_type),
-        visibleDevices, cfg.device, cfg.max_batch_size);
+        visibleDevices, metalCacheEnv ? metalCacheEnv : "(default)",
+        cfg.device, cfg.max_batch_size);
 
     std::unique_ptr<runners::IEmbeddingRunner> runner;
     try {
