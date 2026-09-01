@@ -274,6 +274,11 @@ templates:
       # tokens. Wormhole's 12 GB per ASIC therefore constrains max_context
       # below, not max_concurrency here.
       max_concurrency: 32
+      # Long-prose ceiling (tt-metal#55102, WH-local): deterministic garbled
+      # output at specific encoded lengths >=100k on T3K. 31B verified clean at
+      # 100,462 and 104,954; garbled at 100,793 / 109,857 / 127,574. The map is
+      # non-monotonic, so no max_context value can express it; treat ~100k as
+      # the last verified-clean prose point until the ticket closes.
       max_context: 32768  # 32 * 1024 — unbounded sliding (multi-request safe)
       default_impl: true
       env_vars:
@@ -452,6 +457,9 @@ templates:
       # tokens. Wormhole's 12 GB per ASIC therefore constrains max_context
       # below, not max_concurrency here.
       max_concurrency: 32
+      # Long-prose ceiling (tt-metal#55102, WH-local): 12B verified clean to
+      # ~106k encoded; rep-divergent at ~120k, degenerate at 127,574. See 31B
+      # note - non-monotonic map, ~106k is the last verified-clean prose point.
       max_context: 131072  # 128 * 1024 — unbounded sliding (see comment)
       default_impl: true
       env_vars:
