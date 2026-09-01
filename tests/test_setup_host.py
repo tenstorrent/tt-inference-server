@@ -849,6 +849,32 @@ class TestSetupHostValidation:
             ):
                 validate_runtime_args(mock_spec, runtime_config)
 
+    def test_behavioral_quetzal_may_split_job_cache_from_readonly_weights(self):
+        """Local Quetzal shadows need writable job cache plus shared weights."""
+        mock_spec, runtime_config = self._make_mock_model_spec_and_config(
+            host_volume="/tmp/job-cache",
+            host_weights_dir="/mnt/models/exact-weights",
+            quetzal_behavioral_package_admission=True,
+            dev_mode=True,
+            docker_server=True,
+            impl="quetzal",
+        )
+        mock_spec.impl.impl_id = "quetzal"
+        with patch.dict(
+            "workflows.validate_setup.MODEL_SPECS", {mock_spec.model_id: mock_spec}
+        ):
+            validate_runtime_args(mock_spec, runtime_config)
+
+        runtime_config.ci_mode = True
+        with patch.dict(
+            "workflows.validate_setup.MODEL_SPECS", {mock_spec.model_id: mock_spec}
+        ):
+            with pytest.raises(
+                ValueError,
+                match="Only one of --host-volume, --host-hf-cache, --host-weights-dir",
+            ):
+                validate_runtime_args(mock_spec, runtime_config)
+
     def test_mutual_exclusivity_hf_cache_and_weights_dir(self):
         """Setting both --host-hf-cache and --host-weights-dir should raise."""
         mock_spec, runtime_config = self._make_mock_model_spec_and_config(
