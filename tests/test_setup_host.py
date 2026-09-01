@@ -1158,6 +1158,46 @@ class TestQuetzalMetadataOnlySetup:
         with patch.object(manager, "check_model_weights_dir", return_value=True):
             assert manager.check_setup() is True
 
+    def test_local_hf_snapshot_mount_preserves_blob_symlink_topology(
+        self, quetzal_model_spec, temp_dir
+    ):
+        repository = temp_dir / "hub" / "models--org--model"
+        snapshot_dir = repository / "snapshots" / QUETZAL_HF_REVISION
+        blobs_dir = repository / "blobs"
+        snapshot_dir.mkdir(parents=True)
+        blobs_dir.mkdir()
+        for index, name in enumerate(
+            ("config.json", "tokenizer_config.json", "tokenizer.json")
+        ):
+            blob = blobs_dir / f"blob-{index}"
+            blob.write_text("{}")
+            (snapshot_dir / name).symlink_to(Path("../../blobs") / blob.name)
+
+        config = SetupConfig(
+            model_spec=quetzal_model_spec,
+            host_weights_dir=str(snapshot_dir),
+            model_source=ModelSource.LOCAL.value,
+        )
+
+        container_repo = (
+            config.container_readonly_model_weights_dir
+            / quetzal_model_spec.model_name
+        )
+        assert config.host_model_weights_mount_dir == repository.resolve()
+        assert config.host_model_weights_snapshot_dir == snapshot_dir.resolve()
+        assert config.container_model_weights_mount_dir == container_repo
+        assert config.container_model_weights_path == (
+            container_repo / "snapshots" / QUETZAL_HF_REVISION
+        )
+        manager = HostSetupManager(
+            model_spec=quetzal_model_spec,
+            host_weights_dir=str(snapshot_dir),
+        )
+        manager.setup_config.model_source = ModelSource.LOCAL.value
+        manager.setup_config._infer_data()
+        with patch.object(manager, "check_model_weights_dir", return_value=True):
+            assert manager.check_setup() is True
+
 
 CUSTOM_LABEL_HF = "myorg/llama-3.1-8b-finetune"
 CUSTOM_LABEL_HF_NAME = "llama-3.1-8b-finetune"
