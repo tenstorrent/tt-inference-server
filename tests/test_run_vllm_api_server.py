@@ -860,6 +860,40 @@ def test_quetzal_behavioral_admission_allows_only_mutable_backing_modes(
     )
 
 
+def test_quetzal_behavioral_investigating_candidate_uses_exact_catalog_runtime_pin(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    package_id = "sha256-" + "1" * 64 + "-" + "2" * 64
+    package_root = _materialized_quetzal_contract(
+        monkeypatch,
+        tmp_path,
+        run_vllm_api_server_module,
+        package_id=package_id,
+    )
+    monkeypatch.setenv("TTIS_QUETZAL_BEHAVIORAL_PACKAGE_ADMISSION", "1")
+    monkeypatch.setenv("QUETZAL_REQUIRED_TT_METAL_COMMIT", "a" * 40)
+    monkeypatch.setattr(
+        run_vllm_api_server_module,
+        "_is_read_only_mountpoint",
+        lambda path: path == package_root,
+    )
+    monkeypatch.setattr(
+        run_vllm_api_server_module,
+        "_validate_quetzal_qualification_row",
+        lambda *_args, **_kwargs: None,
+    )
+
+    run_vllm_api_server_module._validate_quetzal_package_and_runtime(
+        package_root, "Qwen/Qwen3.6-27B", 8192
+    )
+
+    monkeypatch.delenv("QUETZAL_REQUIRED_TT_METAL_COMMIT")
+    with pytest.raises(RuntimeError, match="exact catalog-pinned"):
+        run_vllm_api_server_module._validate_quetzal_package_and_runtime(
+            package_root, "Qwen/Qwen3.6-27B", 8192
+        )
+
+
 @pytest.mark.parametrize(
     ("env", "value", "match"),
     [
@@ -1235,6 +1269,28 @@ def test_quetzal_qualification_semantics_fail_closed(run_vllm_api_server_module)
 
     result = run_vllm_api_server_module._validate_quetzal_qualification_row(row, 8192)
     assert result["observed"] == pytest.approx(0.9825582504272461)
+
+    investigating = copy.deepcopy(row)
+    investigating["qualification_state"] = "investigating"
+    investigating["artifact_equivalence"] = "exact"
+    investigating["allowed_lossy_transformations"] = []
+    investigating["blocker"] = "endpoint and eval evidence not collected"
+    del investigating["charter_pcc"]
+    assert (
+        run_vllm_api_server_module._validate_quetzal_qualification_row(
+            investigating, 8192, allow_investigating=True
+        )
+        is None
+    )
+    with pytest.raises(RuntimeError, match="qualification_state"):
+        run_vllm_api_server_module._validate_quetzal_qualification_row(
+            investigating, 8192
+        )
+    investigating["blocker"] = ""
+    with pytest.raises(RuntimeError, match="promotion blocker"):
+        run_vllm_api_server_module._validate_quetzal_qualification_row(
+            investigating, 8192, allow_investigating=True
+        )
 
     mutations = (
         ("qualification_state", "investigating", "qualification_state"),
