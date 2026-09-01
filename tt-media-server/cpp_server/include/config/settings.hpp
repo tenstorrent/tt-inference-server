@@ -285,6 +285,11 @@ unsigned warmupTimeoutMs();
  * OUTPUT_HANG_TIMEOUT_MS. Default: defaults::OUTPUT_HANG_TIMEOUT_MS. */
 unsigned outputHangTimeoutMs();
 
+/** Warmup budget (ms) per embedding startup phase (fork to READY handshake).
+ * From EMBEDDING_WARMUP_TIMEOUT_MS. Default:
+ * defaults::EMBEDDING_WARMUP_TIMEOUT_MS. */
+unsigned embeddingWarmupTimeoutMs();
+
 /** Task queue name from TT_TASK_QUEUE. Default: defaults::TT_TASK_QUEUE. */
 std::string ttTaskQueueName();
 
