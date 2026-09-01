@@ -1474,6 +1474,41 @@ def set_vllm_sys_argv(args, remaining_sys_argv, default_vllm_args):
     logger.info(f"vLLM command:\n{format_vllm_serve_command(sys.argv)}")
 
 
+def use_local_quetzal_model_path(default_vllm_args):
+    """Point vLLM at the admitted local snapshot for generated Quetzal.
+
+    Quetzal admission is intentionally offline.  Passing the catalogue repo id
+    to vLLM makes its early model-path resolver attempt a Hugging Face lookup
+    before the generated model class can load, even though ``model_setup`` has
+    already created ``HF_MODEL`` from the read-only ``MODEL_WEIGHTS_DIR``.
+    Preserve the public served-model identity while replacing only the loader
+    path with that admitted local snapshot.
+    """
+    local_model_path = os.getenv("HF_MODEL")
+    if not local_model_path:
+        raise RuntimeError(
+            "Quetzal serving requires HF_MODEL to resolve to the admitted local snapshot"
+        )
+
+    local_model_path = str(Path(local_model_path).resolve())
+    if not Path(local_model_path).is_dir():
+        raise RuntimeError(
+            f"Quetzal HF_MODEL local snapshot does not exist: {local_model_path}"
+        )
+
+    rewritten_args = dict(default_vllm_args)
+    public_model_name = rewritten_args.get("model")
+    rewritten_args["model"] = local_model_path
+    if public_model_name:
+        rewritten_args.setdefault("served-model-name", public_model_name)
+    logger.info(
+        "Quetzal offline model path: loader=%s served_model_name=%s",
+        local_model_path,
+        public_model_name,
+    )
+    return rewritten_args
+
+
 def main():
     # Step 1: Parse --model argument (if provided)
     args, remaining_sys_argv = parse_args()
@@ -1530,6 +1565,8 @@ def main():
     set_metal_timeout_env_vars()
     runtime_settings(model_spec, no_auth=args.no_auth)
     default_vllm_args = model_spec["device_model_spec"]["vllm_args"]
+    if impl_id == QUETZAL_IMPL_ID:
+        default_vllm_args = use_local_quetzal_model_path(default_vllm_args)
     set_vllm_sys_argv(args, remaining_sys_argv, default_vllm_args)
 
     # Step 5: Start trace capture if needed

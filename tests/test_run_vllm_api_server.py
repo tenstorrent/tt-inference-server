@@ -525,6 +525,7 @@ def _quetzal_model_spec(model="Qwen/Qwen3.6-27B"):
 def test_main_validates_quetzal_before_runtime_and_skips_native_weight_setup(
     monkeypatch, run_vllm_api_server_module
 ):
+    monkeypatch.setenv("HF_MODEL", ".")
     args = argparse.Namespace(
         model="Qwen3.6-27B",
         tt_device="p300x2",
@@ -808,6 +809,39 @@ def test_quetzal_runtime_contract_is_noop_for_native(
         )
         is None
     )
+
+
+def test_use_local_quetzal_model_path_preserves_public_identity(
+    run_vllm_api_server_module, monkeypatch, tmp_path
+):
+    snapshot = tmp_path / "snapshot"
+    snapshot.mkdir()
+    symlink = tmp_path / "model"
+    symlink.symlink_to(snapshot, target_is_directory=True)
+    monkeypatch.setenv("HF_MODEL", str(symlink))
+
+    original = {
+        "model": "openai/gpt-oss-120b",
+        "max_model_len": "8192",
+    }
+    rewritten = run_vllm_api_server_module.use_local_quetzal_model_path(original)
+
+    assert rewritten == {
+        "model": str(snapshot.resolve()),
+        "served-model-name": "openai/gpt-oss-120b",
+        "max_model_len": "8192",
+    }
+    assert original["model"] == "openai/gpt-oss-120b"
+
+
+def test_use_local_quetzal_model_path_fails_closed_without_hf_model(
+    run_vllm_api_server_module, monkeypatch
+):
+    monkeypatch.delenv("HF_MODEL", raising=False)
+    with pytest.raises(RuntimeError, match="requires HF_MODEL"):
+        run_vllm_api_server_module.use_local_quetzal_model_path(
+            {"model": "openai/gpt-oss-120b"}
+        )
 
 
 def _weights_spec():
