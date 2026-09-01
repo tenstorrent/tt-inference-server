@@ -1113,6 +1113,10 @@ _BEHAVIORAL_TOPOLOGY_PROFILES = {
         "TTQ_TUNED_ROW_ALL_REDUCE_LINKS": "1",
         "TTQ_TUNED_ROW_ALL_REDUCE": "1",
         "TTIS_QUETZAL_BEHAVIORAL_MESH_DEVICE": "P150x4",
+        # QB2 firmware 19.7.1 exposes one live ERISC per link. Multi-ERISC
+        # startup waits for a heartbeat that never arrives and can wedge the
+        # next open; the documented Exabox recovery gate uses this exact flag.
+        "TT_METAL_DISABLE_MULTI_AERISC": "1",
         # Exabox allocations may run under a host UID absent from the image's
         # passwd database. Keep import-time caches in the job-owned cache mount.
         "HOME": "/home/container_app_user/cache_root/home",
@@ -1120,6 +1124,7 @@ _BEHAVIORAL_TOPOLOGY_PROFILES = {
         "LOGNAME": "container_app_user",
         "XDG_CACHE_HOME": "/home/container_app_user/cache_root/xdg-cache",
         "MPLCONFIGDIR": "/home/container_app_user/cache_root/matplotlib",
+        "TT_METAL_LOGS_PATH": "/home/container_app_user/cache_root/logs",
     }
 }
 

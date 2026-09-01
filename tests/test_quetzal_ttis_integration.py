@@ -240,6 +240,7 @@ def test_behavioral_topology_is_local_explicit_and_does_not_mutate_catalogue():
     assert resolved.env_vars["TTQ_ROW_ALL_REDUCE_TOPOLOGY"] == "Linear"
     assert resolved.env_vars["TTQ_TUNED_ROW_ALL_REDUCE_LINKS"] == "1"
     assert resolved.env_vars["TTIS_QUETZAL_BEHAVIORAL_MESH_DEVICE"] == "P150x4"
+    assert resolved.env_vars["TT_METAL_DISABLE_MULTI_AERISC"] == "1"
     assert resolved.env_vars["HOME"] == "/home/container_app_user/cache_root/home"
     assert resolved.env_vars["USER"] == "container_app_user"
     assert resolved.env_vars["LOGNAME"] == "container_app_user"
@@ -248,6 +249,9 @@ def test_behavioral_topology_is_local_explicit_and_does_not_mutate_catalogue():
     )
     assert resolved.env_vars["MPLCONFIGDIR"].startswith(
         "/home/container_app_user/cache_root/"
+    )
+    assert resolved.env_vars["TT_METAL_LOGS_PATH"] == (
+        "/home/container_app_user/cache_root/logs"
     )
     assert resolved.env_vars["TT_MESH_GRAPH_DESC_PATH"].endswith(
         "/reference_config/mesh_graph_descriptors/"
