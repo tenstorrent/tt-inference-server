@@ -326,7 +326,7 @@ def test_blocker_uses_current_runtime_and_preserves_banked_local_gates():
             ROOT / "productization/gemma4_31b_models_ci_enrollment.blocked.json"
         ).read_text()
     )
-    assert QUETZAL_SOURCE == "c872c6ae0344741da0a6d75a920e2fe5d6c4fccd"
+    assert QUETZAL_SOURCE == "7163c11d244a72d8fafc55f6c892d625e81965ae"
     assert blocker["exact_serving_runtime_source"] == QUETZAL_SOURCE
     banked = blocker["banked_local_evidence"]
     assert banked["pcc"] >= 0.99
