@@ -776,6 +776,28 @@ def test_quetzal_behavioral_admission_allows_only_mutable_backing_modes(
     )
 
 
+def test_behavioral_mesh_override_is_explicit_local_only(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    cache = tmp_path / "cache"
+    monkeypatch.setattr(
+        run_vllm_api_server_module,
+        "get_container_cache_dir",
+        lambda *_args, **_kwargs: cache,
+    )
+    monkeypatch.setenv("TTIS_QUETZAL_BEHAVIORAL_PACKAGE_ADMISSION", "1")
+    monkeypatch.setenv("TTIS_QUETZAL_BEHAVIORAL_MESH_DEVICE", "P150x4")
+
+    run_vllm_api_server_module.set_cache_paths({}, "P300X2")
+
+    assert os.environ["MESH_DEVICE"] == "P150x4"
+    assert cache.is_dir()
+
+    monkeypatch.setenv("CI", "true")
+    with pytest.raises(RuntimeError, match="forbidden in CI"):
+        run_vllm_api_server_module.set_cache_paths({}, "P300X2")
+
+
 def test_quetzal_behavioral_investigating_candidate_uses_exact_catalog_runtime_pin(
     monkeypatch, tmp_path, run_vllm_api_server_module
 ):
