@@ -29,6 +29,23 @@ def cleanup_handler():
 
 
 class TestAsyncLogHandler:
+    def test_vllm_import_logging_shutdown_during_init_is_safe(self, monkeypatch):
+        """A formatter import may close this handler before init completes."""
+
+        def formatter_that_reconfigures_logging():
+            logging.shutdown()
+            return logging.Formatter()
+
+        monkeypatch.setattr(
+            "utils.logging_utils._create_vllm_formatter",
+            formatter_that_reconfigures_logging,
+        )
+
+        handler = AsyncLogHandler()
+        assert handler._listener is not None
+        assert handler._listener._thread is not None
+        handler.close()
+
     def test_handler_emits_to_file(self, tmp_path):
         log_file = tmp_path / "test.log"
         handler = AsyncLogHandler(filename=str(log_file))
