@@ -25,6 +25,7 @@ if project_root not in sys.path:
 
 from workflows.model_spec import ModelSpec
 from workflows.utils import (
+    can_prompt_interactively,
     get_default_persistent_volume_root,
     resolve_hf_snapshot_dir,
 )
@@ -202,12 +203,12 @@ class SetupConfig:
 
 
 def http_request(
-    url: str, method: str = "GET", headers: Dict[str, str] = None
+    url: str, method: str = "GET", headers: Dict[str, str] = None, timeout: float = 30
 ) -> Tuple[bytes, int, dict]:
     headers = headers or {}
     req = urllib.request.Request(url, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(req) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
             return resp.read(), resp.getcode(), dict(resp.headers)
     except urllib.error.HTTPError as e:
         return e.read(), e.getcode(), dict(e.headers)
@@ -387,9 +388,19 @@ class HostSetupManager:
 
     def get_hf_env_vars(self):
         self.hf_token = self.hf_token or os.getenv("HF_TOKEN", "")
-        if not self.hf_token and not self.automatic:
-            self.hf_token = getpass.getpass("Enter your HF_TOKEN: ").strip()
+        # Prompt only on a real controlling terminal: headless callers (CI,
+        # systemd, TT-Studio's uvicorn worker) proceed without a token and
+        # check_hf_access decides — public repos pass anonymously, gated
+        # repos fail fast with an actionable error.
+        if not self.hf_token and not self.automatic and can_prompt_interactively():
+            self.hf_token = getpass.getpass(
+                "Enter your HF_TOKEN (leave empty for public models): "
+            ).strip()
         assert self.check_hf_access(self.hf_token), "⛔ HF_TOKEN validation failed."
+        if self.hf_token:
+            # Later stages (weights download venv, docker env construction)
+            # read HF_TOKEN from the process env — export a prompted token.
+            os.environ["HF_TOKEN"] = self.hf_token
 
         if self.setup_config.host_hf_cache:
             hf_home = Path(self.setup_config.host_hf_cache)
@@ -399,7 +410,52 @@ class HostSetupManager:
             logger.info(f"✅ HF_HOME set to {self.setup_config.host_hf_cache}")
 
     def check_hf_access(self, token: str) -> int:
-        if not token or not token.startswith("hf_"):
+        if not token:
+            # No token: usable iff the weights repo is public. The models API
+            # serves gated repos' metadata anonymously, so inspect the `gated`
+            # field rather than the HTTP status.
+            model_url = (
+                f"https://huggingface.co/api/models/{self.model_spec.hf_weights_repo}"
+            )
+            try:
+                data, status, _ = http_request(model_url)
+            except Exception:
+                # http_request already logged the underlying error.
+                logger.error(
+                    f"⛔ Could not reach Hugging Face to check "
+                    f"{self.model_spec.hf_weights_repo}. Check network "
+                    "connectivity, or set HF_TOKEN in .env or the environment."
+                )
+                return False
+            if status != 200:
+                logger.error(
+                    f"⛔ Could not look up {self.model_spec.hf_weights_repo} "
+                    f"on Hugging Face (HTTP {status})."
+                )
+                return False
+            try:
+                json_data = json.loads(data.decode("utf-8"))
+            except json.JSONDecodeError:
+                logger.error("⛔ Invalid JSON response from Hugging Face.")
+                return False
+            if json_data.get("gated"):
+                logger.error(
+                    f"⛔ {self.model_spec.hf_weights_repo} is a gated model and "
+                    "cannot be downloaded anonymously. Set HF_TOKEN in .env or "
+                    "the environment."
+                )
+                return False
+            if not json_data.get("siblings"):
+                logger.error("⛔ No files found in repository.")
+                return False
+            logger.info(
+                f"✅ No HF_TOKEN set — weights repo "
+                f"{self.model_spec.hf_weights_repo} is public, using anonymous "
+                "access. (Only the weights repo was checked; models that pull "
+                "additional gated assets at runtime may still need a token.)"
+            )
+            return True
+        if not token.startswith("hf_"):
             logger.error("⛔ Invalid HF_TOKEN.")
             return False
         data, status, _ = http_request(
@@ -474,7 +530,7 @@ class HostSetupManager:
 
         if not self.jwt_secret:
             self.jwt_secret = os.getenv("JWT_SECRET", "")
-        if not self.jwt_secret and not self.automatic:
+        if not self.jwt_secret and not self.automatic and can_prompt_interactively():
             self.jwt_secret = getpass.getpass("Enter your JWT_SECRET: ").strip()
 
         assert self.jwt_secret, "⛔ JWT_SECRET cannot be empty."
@@ -548,14 +604,19 @@ class HostSetupManager:
             )
             return
 
-        assert self.hf_token, "⛔ HF_TOKEN not set."
+        if not self.hf_token:
+            # check_hf_access already verified the repo is public; the `hf` CLI
+            # treats an empty HF_TOKEN env var as anonymous access.
+            logger.warning(
+                "HF_TOKEN not set — downloading weights anonymously (public repo)."
+            )
         if self.model_spec.repacked == 1:
             raise ValueError("⛔ Repacked models are not supported for Hugging Face.")
         # setup venv using uv
         venv_config = VENV_CONFIGS[WorkflowVenvType.HF_SETUP]
         venv_config.setup(model_spec=self.model_spec)
         os.environ["HF_HUB_DOWNLOAD_TIMEOUT"] = "60"
-        os.environ["HF_TOKEN"] = self.hf_token
+        os.environ["HF_TOKEN"] = self.hf_token or ""
         hf_exec = venv_config.venv_path / "bin" / "hf"
         assert hf_exec.exists(), (
             f"⛔ 'hf' CLI not found at: {hf_exec}. Check HF_SETUP venv installation."

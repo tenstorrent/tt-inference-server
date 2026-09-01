@@ -653,5 +653,80 @@ class TestMainWorkflowIntegration:
                 main()
 
 
+class TestCheckHfAccessAnonymous:
+    """check_hf_access with no token: the anonymous models-API lookup that
+    decides public (usable) vs gated (actionable failure)."""
+
+    @pytest.fixture
+    def manager(self):
+        model_id = "id_tt-transformers_Llama-3.1-8B-Instruct_n150"
+        return HostSetupManager(model_spec=MODEL_SPECS[model_id], automatic=True)
+
+    @staticmethod
+    def _api_response(payload, status=200):
+        return json.dumps(payload).encode(), status, {}
+
+    def test_public_repo_passes(self, manager):
+        with patch("workflows.setup_host.http_request") as mock_http:
+            mock_http.return_value = self._api_response(
+                {"gated": False, "siblings": [{"rfilename": "config.json"}]}
+            )
+            assert manager.check_hf_access("") is True
+
+    def test_gated_repo_fails(self, manager):
+        with patch("workflows.setup_host.http_request") as mock_http, patch(
+            "workflows.setup_host.logger"
+        ) as mock_logger:
+            mock_http.return_value = self._api_response(
+                {"gated": "manual", "siblings": [{"rfilename": "config.json"}]}
+            )
+            assert manager.check_hf_access("") is False
+        errors = " ".join(str(c.args[0]) for c in mock_logger.error.call_args_list)
+        assert "gated" in errors and "HF_TOKEN" in errors
+
+    def test_non_200_reports_status_not_json_error(self, manager):
+        """An HTML error body must report the HTTP status, not 'invalid JSON'."""
+        with patch("workflows.setup_host.http_request") as mock_http, patch(
+            "workflows.setup_host.logger"
+        ) as mock_logger:
+            mock_http.return_value = (b"<html>Too Many Requests</html>", 429, {})
+            assert manager.check_hf_access("") is False
+        errors = " ".join(str(c.args[0]) for c in mock_logger.error.call_args_list)
+        assert "HTTP 429" in errors
+        assert "Invalid JSON" not in errors
+
+    def test_empty_siblings_fails(self, manager):
+        with patch("workflows.setup_host.http_request") as mock_http:
+            mock_http.return_value = self._api_response(
+                {"gated": False, "siblings": []}
+            )
+            assert manager.check_hf_access("") is False
+
+    def test_network_error_fails_cleanly(self, manager):
+        """An offline/proxied host gets a clean failure, not a traceback."""
+        with patch("workflows.setup_host.http_request") as mock_http, patch(
+            "workflows.setup_host.logger"
+        ) as mock_logger:
+            mock_http.side_effect = Exception("connection refused")
+            assert manager.check_hf_access("") is False
+        errors = " ".join(str(c.args[0]) for c in mock_logger.error.call_args_list)
+        assert "Could not reach Hugging Face" in errors
+
+    def test_get_hf_env_vars_headless_never_prompts(self):
+        """Non-automatic setup with no controlling terminal must not call
+        getpass — it proceeds tokenless and check_hf_access decides."""
+        model_id = "id_tt-transformers_Llama-3.1-8B-Instruct_n150"
+        manager = HostSetupManager(model_spec=MODEL_SPECS[model_id], automatic=False)
+        manager.setup_config.host_hf_cache = None
+        with patch.dict(os.environ, {"HF_TOKEN": ""}), patch(
+            "workflows.setup_host.can_prompt_interactively", return_value=False
+        ), patch("getpass.getpass") as mock_getpass, patch.object(
+            manager, "check_hf_access", return_value=True
+        ) as mock_check:
+            manager.get_hf_env_vars()
+        mock_getpass.assert_not_called()
+        mock_check.assert_called_once_with("")
+
+
 if __name__ == "__main__":
     pytest.main([__file__])

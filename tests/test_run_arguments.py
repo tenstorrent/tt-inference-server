@@ -1258,19 +1258,83 @@ class TestSecretsHandling:
     def test_secrets_prompting(
         self, mock_getpass, mock_write_dotenv, mock_load_dotenv, mock_runtime_config
     ):
-        """Test prompting for missing secrets."""
+        """On a real controlling terminal, missing required secrets are
+        prompted for. HF_TOKEN is never prompted here — check_hf_access is the
+        authority on HF access."""
         mock_runtime_config.workflow = "server"
         mock_runtime_config.docker_server = True
         mock_runtime_config.interactive = False
 
         mock_load_dotenv.side_effect = [False, True]
-        mock_getpass.side_effect = ["test-jwt", "test-hf"]
+        mock_getpass.side_effect = ["test-jwt"]
 
         with patch.dict(os.environ, {}, clear=True):
-            handle_secrets(mock_runtime_config)
+            with patch("run.can_prompt_interactively", return_value=True):
+                handle_secrets(mock_runtime_config)
 
-        assert mock_getpass.call_count == 2
-        mock_write_dotenv.assert_called_once()
+        assert mock_getpass.call_count == 1
+        assert mock_getpass.call_args[0][0] == "Enter your JWT_SECRET: "
+        mock_write_dotenv.assert_called_once_with({"JWT_SECRET": "test-jwt"})
+
+    @patch("run.load_dotenv")
+    @patch("run.write_dotenv")
+    @patch("getpass.getpass")
+    def test_hf_token_never_prompted(
+        self, mock_getpass, mock_write_dotenv, mock_load_dotenv, mock_runtime_config
+    ):
+        """A missing HF_TOKEN must never prompt, even interactively: public
+        models deploy anonymously and setup_host prompts (at most) once."""
+        mock_runtime_config.workflow = "server"
+        mock_runtime_config.docker_server = True
+        mock_runtime_config.interactive = False
+
+        mock_load_dotenv.side_effect = [False, True]
+
+        with patch.dict(os.environ, {"JWT_SECRET": "test-jwt"}, clear=True):
+            with patch("run.can_prompt_interactively", return_value=True):
+                handle_secrets(mock_runtime_config)
+
+        mock_getpass.assert_not_called()
+        mock_write_dotenv.assert_called_once_with({"JWT_SECRET": "test-jwt"})
+
+    @patch("run.load_dotenv")
+    @patch("run.write_dotenv")
+    @patch("getpass.getpass")
+    def test_headless_missing_secret_fails_cleanly(
+        self, mock_getpass, mock_write_dotenv, mock_load_dotenv, mock_runtime_config
+    ):
+        """With no controlling terminal, a missing required secret must raise
+        an actionable error instead of blocking on getpass()."""
+        mock_runtime_config.workflow = "server"
+        mock_runtime_config.docker_server = True
+        mock_runtime_config.interactive = False
+
+        mock_load_dotenv.return_value = False
+
+        with patch.dict(os.environ, {}, clear=True):
+            with patch("run.can_prompt_interactively", return_value=False):
+                with pytest.raises(RuntimeError, match="JWT_SECRET"):
+                    handle_secrets(mock_runtime_config)
+
+        mock_getpass.assert_not_called()
+        mock_write_dotenv.assert_not_called()
+
+    @patch("run.logger")
+    def test_hf_token_optional_with_dotenv_loaded(
+        self, mock_logger, mock_runtime_config
+    ):
+        """A .env without HF_TOKEN must not fail a headless run — it proceeds
+        with a warning about anonymous access."""
+        mock_runtime_config.workflow = "server"
+        mock_runtime_config.docker_server = True
+        mock_runtime_config.interactive = False
+
+        with patch("run.load_dotenv", return_value=True):
+            with patch.dict(os.environ, {"JWT_SECRET": "test-jwt"}, clear=True):
+                handle_secrets(mock_runtime_config)
+
+        warnings = [str(c.args[0]) for c in mock_logger.warning.call_args_list]
+        assert any("HF_TOKEN is not set" in w for w in warnings)
 
 
 class TestUtilityFunctions:
