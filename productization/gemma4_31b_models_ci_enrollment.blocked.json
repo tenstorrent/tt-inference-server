@@ -3,7 +3,7 @@
   "status": "blocked_not_dispatchable",
   "model": "google/gemma-4-31B-it",
   "exact_artifact_source": "cfaea6c1b610afb8fed34c542e9a6df944fee51d",
-  "exact_serving_runtime_source": "76a15d4cdd0c2b400ef9b89499a334a6b748e56b",
+  "exact_serving_runtime_source": "7163c11d244a72d8fafc55f6c892d625e81965ae",
   "target_profile": "exact BF16 B1 C1 S4096; capacity endpoint ISL4095 + OSL1 plus a separate visibly non-empty semantic endpoint",
   "target_runner": "qb2-p300x2-physical-2x2-ring-links2",
   "active_catalogue_is_not_candidate": true,
