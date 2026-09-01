@@ -1,0 +1,144 @@
+{
+  "schema": "ttis.gpt120-s8192-local-gate-receipt/v1",
+  "created_at_utc": "2026-09-01T05:24:00Z",
+  "qualification_claim": "local_behavioral_only",
+  "release_promotable": false,
+  "substantive_blockers": [
+    "no source mutation",
+    "no patch submission",
+    "isolated verifier not reached"
+  ],
+  "provenance_warnings": [
+    "attestation is nonblocking by policy"
+  ],
+  "slurm": {
+    "job_id": "71822",
+    "node": "qb2-120-p01t01"
+  },
+  "endpoint": {
+    "url": "http://127.0.0.1:18082",
+    "model": "openai/gpt-oss-120b",
+    "concurrency": 1,
+    "context_tokens": 8192,
+    "implementation": "quetzal",
+    "native_registration_skipped": true,
+    "chips_opened": 4,
+    "topology": "Ring/2",
+    "image": "localhost/ttis-quetzal-gpt-oss:ttis-7f2f8c2a-qz-76a15d4c-b534-22fb-shadow",
+    "image_id": "sha256:0192d884e86ea13e9c6c53d5790adae3dee6d7b184026d53113a57d4dd5ae75f",
+    "ttis_revision": "7f2f8c2ae1fbd1fa938e32f94309313bcabf6446",
+    "quetzal_runtime_revision": "76a15d4cdd0c2b400ef9b89499a334a6b748e56b",
+    "generator_revision": "3a3873fefd4317d885c0602d3d7648db9e89f8e3",
+    "tt_metal_revision": "b534549300fe2af11e6ee828675294bc0e359555",
+    "tt_metal_patchset_sha256": "22fb0bd2523b8a5c63fa20c3c8a1586dc9ead5150449d0eb02231fa8173a7edd"
+  },
+  "package": {
+    "id": "sha256-v2-f24d53fe00ceab8af797d2dced45e7b073f6c0e328205f95c8d37a3e1783b29f-cc1b6f9b581f2ff115be908f267c4b98bec4ab9b433f6d87bb0dd893dd406d66-def12a5e31923879495445e77cfabe5f37991bb5723106c321a9120b5f1ae050",
+    "bundle_manifest_sha256": "012daa4f16bc108dd7d7e1ea582c5bb432d661fd934dea438ffdf6ee37a29769",
+    "auxiliary_tree_sha256": "2eef319a6e078c5c2497f252f7c4a0c32c363b2901e38a5a924b2456a5c9874c",
+    "full_exact_byte_verification": "pass",
+    "hardlink_zero_copy_admission": "pass"
+  },
+  "tool_smoke": {
+    "status": "pass",
+    "finish_reason": "tool_calls",
+    "tool_name": "shell",
+    "arguments": {
+      "command": "pwd"
+    },
+    "response_sha256": "a575499b7a574f5a4f5b252d91439efecb21f00689a383af38192f0edb4fe65f"
+  },
+  "swe_contract": {
+    "dataset": "SWE-bench/SWE-bench_Verified",
+    "dataset_revision": "78f471bf655a3137b2e8a75af1501690ec009ec3",
+    "instance_ids": [
+      "django__django-11299"
+    ],
+    "ordered_instance_ids_sha256": "6ff7c8506471cd97bfe303417f913598779d9559a5ec5a386dd3f198ebe44e91",
+    "selected_instances_sha256": "ff399278bc3091195b5dd95e72787f63c66e0ece811e0f40171a3041742ce7e2",
+    "max_input_tokens": 7168,
+    "max_output_tokens": 1024,
+    "step_limit": 16,
+    "observation_retained_payload_chars": 2048,
+    "temperature": 1.0,
+    "top_p": 0.95,
+    "seed": 42
+  },
+  "arms": {
+    "default_reasoning": {
+      "reasoning_effort": null,
+      "return_code": 65,
+      "exit_status": "LimitsExceeded",
+      "api_calls": 16,
+      "first_mutation_turn": null,
+      "patch_bytes": 0,
+      "verifier_invoked": false,
+      "trajectory_sha256": "604fc87d7876565489a45ff140e118a20d5247fa5b01817e04a7f9a97664c4cf",
+      "token_log_sha256": "c2bb27a082c460186a174d44f614fea4d4ac7a12b2160262f87e4c3e16eb6e1d",
+      "valid_command_stream_sha256": "0c87cfaa24214e604ff1023ee660462d7f52bd00ed9d053e6fff3ab501aaac8e"
+    },
+    "high_reasoning": {
+      "reasoning_effort": "high",
+      "return_code": 65,
+      "exit_status": "LimitsExceeded",
+      "api_calls": 16,
+      "first_mutation_turn": null,
+      "patch_bytes": 0,
+      "verifier_invoked": false,
+      "trajectory_sha256": "a9784674f340c031115a0dea6da7870243693b315e7bc4c601ec4aa400950812",
+      "token_log_sha256": "2b254edc16d647b23d9febd4f4ffce0789e4e10d22b79304ea408ccfcd7c3c3e",
+      "valid_command_stream_sha256": "0c87cfaa24214e604ff1023ee660462d7f52bd00ed9d053e6fff3ab501aaac8e"
+    },
+    "bounded_high_reasoning": {
+      "reasoning_effort": "high",
+      "generic_bounded_workflow": true,
+      "instance_template_sha256": "e5d7cff1e17667a48912cdfc509570f59157d2d08806b403a574adfef8e5e600",
+      "return_code": 65,
+      "exit_status": "LimitsExceeded",
+      "api_calls": 16,
+      "first_mutation_turn": null,
+      "patch_bytes": 0,
+      "verifier_invoked": false,
+      "trajectory_sha256": "7c9ec79ed20e80b37d01a7511038daef463a95fbc78ff48a3483af9309515024",
+      "token_log_sha256": "a5db921161f333dfcb8c2b432d98de22de853955d8ed5604cb16d0f7fa164ee4",
+      "terminal_receipt_sha256": "17314d0de6171b2018fe46d51a644f8eaa41afa9cbedf11c4d08e28a58f92d00",
+      "valid_command_stream_sha256": "5bc5e2e809cdc5a47b8f7542d8c95cae66453359325432c411d1348f3756e53e"
+    }
+  },
+  "default_and_high_valid_commands": [
+    "ls -R",
+    "grep -R \"CheckConstraint\" -n django | head",
+    "grep -R \"CHECK\" -n django/db/backends | head",
+    "sed -n '1,200p' django/db/models/constraints.py",
+    "sed -n '1,200p' django/db/models/constraints.py",
+    "grep -n \"class CheckConstraint\" -R django | wc -l",
+    "grep -R \"def constraint_sql\" -n django | head",
+    "sed -n '200,400p' django/db/models/constraints.py",
+    "sed -n '1,120p' django/db/models/constraints.py",
+    "grep -n \"class CheckConstraint\" -R django",
+    "grep -n \"CheckConstraint\" -R django/db/backends | head",
+    "grep -n \"def _get_condition_sql\" -R django/db/models/constraints.py",
+    "sed -n '60,120p' django/db/models/constraints.py"
+  ],
+  "bounded_high_valid_commands": [
+    "ls -R",
+    "grep -R \"class CheckConstraint\" -n django | head",
+    "sed -n '1,200p' django/db/models/constraints.py",
+    "grep -R \"CHECK\" -n django/db/backends | head",
+    "grep -R \"_constraint_sql\" -n django | head",
+    "sed -n '1,200p' django/db/backends/base/schema.py",
+    "grep -n \"check\" -R django/db/backends/base/schema.py | head",
+    "sed -n '1,200p' django/db/models/constraints.py",
+    "grep -R \"class SimpleCol\" -n django | head",
+    "sed -n '650,800p' django/db/models/expressions.py",
+    "grep -R \"CheckConstraint\" -n django | head",
+    "grep -R \"_check_sql\" -n django | head",
+    "grep -n \"def _get_check_sql\" -n django/db/models/constraints.py"
+  ],
+  "conclusion": {
+    "reasoning_effort_high_removed_failure": false,
+    "generic_bounded_prompt_removed_failure": false,
+    "integration_and_tooling_reached_terminal": true,
+    "agentic_quality_gate_passed": false
+  }
+}
