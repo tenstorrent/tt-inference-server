@@ -877,6 +877,11 @@ def test_behavioral_mesh_override_is_explicit_local_only(
     )
     monkeypatch.setenv("TTIS_QUETZAL_BEHAVIORAL_PACKAGE_ADMISSION", "1")
     monkeypatch.setenv("TTIS_QUETZAL_BEHAVIORAL_MESH_DEVICE", "P150x4")
+    # set_cache_paths intentionally writes these process-wide runtime values.
+    # Register both with monkeypatch first so this test cannot leak its cache
+    # into later PromptClient tests when the full suite runs in one process.
+    monkeypatch.setenv("MESH_DEVICE", "test-original")
+    monkeypatch.setenv("TT_CACHE_PATH", "test-original")
 
     run_vllm_api_server_module.set_cache_paths({}, "P300X2")
 
