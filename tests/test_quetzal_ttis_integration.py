@@ -79,6 +79,18 @@ def test_gpt_quetzal_forwards_required_agentic_parsers():
     assert rendered[rendered.index("--reasoning-parser") + 1] == "openai_gptoss"
 
 
+def test_qwen_quetzal_forwards_required_agentic_parsers():
+    spec = _dev_quetzal_spec("Qwen3.6-27B")
+    args = spec.device_model_spec.vllm_args
+    assert args["enable-auto-tool-choice"] is True
+    assert args["tool-call-parser"] == "qwen3_coder"
+    assert args["reasoning-parser"] == "qwen3"
+    rendered = _vllm_override_cli_args(json.dumps(args))
+    assert "--enable-auto-tool-choice" in rendered
+    assert rendered[rendered.index("--tool-call-parser") + 1] == "qwen3_coder"
+    assert rendered[rendered.index("--reasoning-parser") + 1] == "qwen3"
+
+
 def test_docker_command_mounts_quetzal_root_readonly_and_forwards_impl(tmp_path):
     spec = _dev_quetzal_spec("Qwen3.6-27B")
     package_id = spec.env_vars["QUETZAL_PACKAGE_ID"]

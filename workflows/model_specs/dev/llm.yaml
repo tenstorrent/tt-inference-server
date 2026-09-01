@@ -62,6 +62,12 @@ templates:
         max_num_seqs: 1
         revision: 6a9e13bd6fc8f0983b9b99948120bc37f49c13e9
         tokenizer_revision: 6a9e13bd6fc8f0983b9b99948120bc37f49c13e9
+        # Canonical mini-swe requires the OpenAI tools contract. Keep parser
+        # selection explicit so the generated provider cannot start a
+        # text-only endpoint that silently accepts but discards tool schemas.
+        enable-auto-tool-choice: true
+        tool-call-parser: qwen3_coder
+        reasoning-parser: qwen3
       override_tt_config:
         fabric_config: FABRIC_1D
         l1_small_size: 16384
