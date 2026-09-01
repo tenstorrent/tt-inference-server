@@ -21,6 +21,28 @@ class TokenBudgetConfigurationError(RuntimeError):
     """The configured tokenizer cannot authoritatively count the API input."""
 
 
+def _normalize_messages_for_chat_template(messages: list[dict]) -> list[dict]:
+    """Return a template-safe copy without changing the API request history.
+
+    OpenAI-compatible tool-call responses may represent absent assistant text as
+    ``content: null``. Some otherwise valid Hugging Face chat templates perform
+    string operations whenever the key is present and therefore cannot render
+    that representation. Empty text is token-equivalent here and lets the
+    authoritative tokenizer count the complete request, including tool calls.
+    """
+    normalized = []
+    for message in messages:
+        rendered_message = dict(message)
+        for text_field in ("content", "thinking"):
+            if (
+                rendered_message.get(text_field) is None
+                and text_field in rendered_message
+            ):
+                rendered_message[text_field] = ""
+        normalized.append(rendered_message)
+    return normalized
+
+
 def count_chat_input_tokens(
     tokenizer: Any, messages: list[dict], tools: list[dict]
 ) -> int:
@@ -29,7 +51,7 @@ def count_chat_input_tokens(
         raise TokenBudgetConfigurationError("configured tokenizer has no chat_template")
     try:
         encoded = tokenizer.apply_chat_template(
-            messages,
+            _normalize_messages_for_chat_template(messages),
             tools=tools,
             tokenize=True,
             add_generation_prompt=True,
