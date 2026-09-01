@@ -47,17 +47,28 @@ UNKNOWN = "unknown"
 # prometheus_client's defaults stop at 10s. A video VAE decode expands a latent
 # volume to tens of frames and reads them back to host, which runs seconds to
 # minutes, so everything would otherwise land in +Inf.
+# Same reasoning as _DENOISE_BUCKETS: narrow enough that a real regression
+# moves the quantile instead of being swallowed by a bucket.
 _VAE_DECODE_BUCKETS = (
     0.25,
     0.5,
     1,
     2,
+    3,
     5,
+    7.5,
     10,
+    12.5,
+    15,
     20,
+    25,
     30,
+    40,
+    50,
     60,
+    90,
     120,
+    180,
     300,
     600,
     float("inf"),
@@ -65,6 +76,14 @@ _VAE_DECODE_BUCKETS = (
 
 # The sampling loop runs tens of steps over a latent volume: minutes, not the
 # seconds a single decode takes.
+#
+# Geometric-ish, ratio <= 1.5 through the plausible range. A stage this
+# deterministic puts every observation of one shape into a single bucket, and
+# ``histogram_quantile`` then interpolates across that bucket's whole width --
+# so the quantile is pinned to a constant that depends on which bucket the
+# value fell in, not on the value. Wide buckets do not merely blur the answer,
+# they make it wrong and flat. Read the mean (``_sum / _count``, exact) for the
+# typical case and the quantiles for the tail.
 _DENOISE_BUCKETS = (
     1,
     2,
@@ -72,10 +91,16 @@ _DENOISE_BUCKETS = (
     10,
     20,
     30,
+    45,
     60,
+    90,
     120,
+    180,
+    240,
     300,
+    420,
     600,
+    900,
     1200,
     float("inf"),
 )

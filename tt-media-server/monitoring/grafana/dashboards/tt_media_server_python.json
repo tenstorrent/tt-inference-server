@@ -984,7 +984,7 @@
     },
 {
       "datasource": { "type": "prometheus", "uid": "$datasource" },
-      "description": "Time to decode one video's latents to pixels, p50 and p95, per resolution and device. One observation is a whole video, not a frame - divide by the frame count to reason per frame. Do not compare Wan against Mochi here: Wan's span includes the host readback, Mochi's instead includes a device remesh and excludes the PIL conversion. A resolution=\"unknown\" series means the produced frames could not be probed: its latency is still valid, its throughput is not recorded at all.",
+      "description": "Time to decode one video's latents to pixels, per resolution and device. The mean is _sum/_count and is exact; p95 is bucketed and is here for the tail only. Deliberately not p50: this stage is near-deterministic at a fixed shape, so every observation lands in one histogram bucket and the quantile reports that bucket's interpolated midpoint - a constant, and one that can sit 30% above the true value. A flat quantile line means the bucket, not the device. One observation is a whole video, not a frame - divide by the frame count to reason per frame. Do not compare Wan against Mochi here: Wan's span includes the host readback, Mochi's instead includes a device remesh and excludes the PIL conversion. A resolution=\"unknown\" series means the produced frames could not be probed: its latency is still valid, its throughput is not recorded at all.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -1004,8 +1004,8 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "$datasource" },
-          "expr": "histogram_quantile(0.50, sum by (le, resolution, device_id) (rate(tt_media_server_video_vae_decode_duration_seconds_bucket{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[5m])))",
-          "legendFormat": "{{resolution}} dev={{device_id}} p50",
+          "expr": "sum by (resolution, device_id) (rate(tt_media_server_video_vae_decode_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[5m])) / sum by (resolution, device_id) (rate(tt_media_server_video_vae_decode_duration_seconds_count{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[5m]))",
+          "legendFormat": "{{resolution}} dev={{device_id}} mean",
           "refId": "A"
         },
         {
@@ -1015,7 +1015,7 @@
           "refId": "B"
         }
       ],
-      "title": "VAE decode latency p50 / p95",
+      "title": "VAE decode time: mean and p95",
       "type": "timeseries"
     },
 {

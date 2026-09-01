@@ -382,6 +382,16 @@ Six things to know when reading these:
   single `_count`. Per-frame cost is `_sum / video_vae_frames_total`, not
   `_sum / _count`.
 
+* **Read the mean for stage time; treat the quantiles as tail-only.** At a fixed
+  shape these stages are close to deterministic, so every observation lands in
+  one histogram bucket and `histogram_quantile` returns that bucket's
+  interpolated midpoint — a value that does not move with the data and can sit
+  well above the truth. A perfectly flat p50 or p95 is reporting the bucket, not
+  the device. `rate(_sum) / rate(_count)` is not bucketed and stays exact, which
+  is what the decode-time panel plots. The buckets are sized so a real
+  regression crosses an edge rather than being swallowed, but no bucket set
+  makes a quantile exact on a narrow distribution.
+
 * **There is no per-step denoise latency for video.** Neither video pipeline
   emits the `denoising_step_<i>` sections the image ones do, so the loop is a
   single span. The two together cover the measured device time and nothing
