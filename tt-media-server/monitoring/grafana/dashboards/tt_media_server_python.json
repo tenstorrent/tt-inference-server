@@ -897,8 +897,162 @@
       "type": "table"
     },
 {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Frames the VAE converts from latents to pixels per second of VAE-busy time - its intrinsic decode rate, independent of how often it runs. Deliberately not rate(frames_total): that is fleet output rate, it tracks whatever the slowest stage is, and tt_media_server_video_frames_generated_total already reports it. A quiet window after traffic reads zero, not Infinity. Emitted by the Wan2.2 family and Mochi; the Prodia distills, LTX and MiniMax-H3 expose no VAE span.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] },
+          "unit": "cps",
+          "decimals": 2
+        }
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 66 },
+      "id": 851,
+      "options": { "colorMode": "background_solid", "graphMode": "area", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum(rate(tt_media_server_video_vae_frames_total{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[$__rate_interval])) / clamp_min(sum(rate(tt_media_server_video_vae_decode_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[$__rate_interval])), 1e-9)",
+          "legendFormat": "frames per VAE-s",
+          "refId": "A"
+        }
+      ],
+      "title": "VAE Throughput (frames/VAE-s)",
+      "type": "stat"
+    },
+{
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Megapixels the VAE converts per second of VAE-busy time. Resolution-independent view of reconstruction capacity - frames alone make a 480p model look faster than a 720p one at equal silicon cost. Same busy-time normalisation as the frames panel.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "purple", "value": null }] },
+          "unit": "short",
+          "decimals": 2
+        }
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 66 },
+      "id": 852,
+      "options": { "colorMode": "background_solid", "graphMode": "area", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum(rate(tt_media_server_video_vae_pixels_total{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[$__rate_interval])) / clamp_min(sum(rate(tt_media_server_video_vae_decode_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[$__rate_interval])), 1e-9) / 1e6",
+          "legendFormat": "MP per VAE-s",
+          "refId": "A"
+        }
+      ],
+      "title": "VAE Throughput (MP/VAE-s)",
+      "type": "stat"
+    },
+{
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "VAE decode rate per output resolution, per second of VAE-busy time. Read it with the Denoise vs VAE split: this panel says how fast reconstruction is, that one says how much of the device time it is eating. A resolution whose rate here falls while its pixel count is unchanged is a real regression, not a traffic change - busy-time normalisation removes the load signal.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 10, "lineWidth": 2, "drawStyle": "line", "showPoints": "never" },
+          "unit": "cps"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byRegexp", "options": ".*MP per VAE-s.*" },
+            "properties": [{ "id": "unit", "value": "short" }, { "id": "custom.axisPlacement", "value": "right" }]
+          }
+        ]
+      },
+      "gridPos": { "h": 5, "w": 12, "x": 12, "y": 66 },
+      "id": 853,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "mean"], "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum by (resolution) (rate(tt_media_server_video_vae_frames_total{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[$__rate_interval])) / clamp_min(sum by (resolution) (rate(tt_media_server_video_vae_decode_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[$__rate_interval])), 1e-9)",
+          "legendFormat": "{{resolution}} frames per VAE-s",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum by (resolution) (rate(tt_media_server_video_vae_pixels_total{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[$__rate_interval])) / clamp_min(sum by (resolution) (rate(tt_media_server_video_vae_decode_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[$__rate_interval])), 1e-9) / 1e6",
+          "legendFormat": "{{resolution}} MP per VAE-s",
+          "refId": "B"
+        }
+      ],
+      "title": "VAE decode rate by resolution (per VAE-busy second)",
+      "type": "timeseries"
+    },
+{
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Time to decode one video's latents to pixels, per resolution and device. The mean is _sum/_count and is exact; p95 is bucketed and is here for the tail only. Deliberately not p50: this stage is near-deterministic at a fixed shape, so every observation lands in one histogram bucket and the quantile reports that bucket's interpolated midpoint - a constant, and one that can sit 30% above the true value. A flat quantile line means the bucket, not the device. One observation is a whole video, not a frame - divide by the frame count to reason per frame. Do not compare Wan against Mochi here: Wan's span includes the host readback, Mochi's instead includes a device remesh and excludes the PIL conversion. A resolution=\"unknown\" series means the produced frames could not be probed: its latency is still valid, its throughput is not recorded at all.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 0, "lineWidth": 2, "drawStyle": "line", "showPoints": "never" },
+          "unit": "s"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byRegexp", "options": ".*p95.*" },
+            "properties": [{ "id": "custom.lineStyle", "value": { "dash": [10, 10], "fill": "dash" } }]
+          }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 71 },
+      "id": 854,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "max"], "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum by (resolution, device_id) (rate(tt_media_server_video_vae_decode_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[5m])) / sum by (resolution, device_id) (rate(tt_media_server_video_vae_decode_duration_seconds_count{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[5m]))",
+          "legendFormat": "{{resolution}} dev={{device_id}} mean",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.95, sum by (le, resolution, device_id) (rate(tt_media_server_video_vae_decode_duration_seconds_bucket{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[5m])))",
+          "legendFormat": "{{resolution}} dev={{device_id}} p95",
+          "refId": "B"
+        }
+      ],
+      "title": "VAE decode time: mean and p95",
+      "type": "timeseries"
+    },
+{
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "How the measured device time splits between the sampling loop and the decode. Denoising falling as a share while frames/s stays flat is the VAE becoming the limiter. Only these two stages are measured - text encoding and latent preparation are not - so this is the split between them, not of the whole request, and it always sums to 100%.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 60, "lineWidth": 1, "drawStyle": "line", "showPoints": "never", "stacking": { "mode": "normal", "group": "A" } },
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 71 },
+      "id": 855,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "mean"], "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum(rate(tt_media_server_video_denoise_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[5m])) / clamp_min(sum(rate(tt_media_server_video_denoise_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[5m])) + sum(rate(tt_media_server_video_vae_decode_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[5m])), 1e-9)",
+          "legendFormat": "denoising",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum(rate(tt_media_server_video_vae_decode_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[5m])) / clamp_min(sum(rate(tt_media_server_video_denoise_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[5m])) + sum(rate(tt_media_server_video_vae_decode_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[5m])), 1e-9)",
+          "legendFormat": "vae decode",
+          "refId": "B"
+        }
+      ],
+      "title": "Denoise vs VAE time split",
+      "type": "timeseries"
+    },
+{
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 66 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 79 },
       "id": 900,
       "title": "Image Generation (denoising / VAE decode / conditioning)",
       "type": "row"
@@ -921,7 +1075,7 @@
           "decimals": 2
         }
       },
-      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 67 },
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 80 },
       "id": 30,
       "options": { "colorMode": "background_solid", "graphMode": "area", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } },
       "targets": [
@@ -946,7 +1100,7 @@
           "decimals": 3
         }
       },
-      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 67 },
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 80 },
       "id": 31,
       "options": { "colorMode": "background_solid", "graphMode": "area", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } },
       "targets": [
@@ -971,7 +1125,7 @@
           "decimals": 2
         }
       },
-      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 67 },
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 80 },
       "id": 32,
       "options": { "colorMode": "background_solid", "graphMode": "area", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } },
       "targets": [
@@ -1005,7 +1159,7 @@
           "min": 0
         }
       },
-      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 67 },
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 80 },
       "id": 33,
       "options": { "colorMode": "background_solid", "graphMode": "area", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } },
       "targets": [
@@ -1029,7 +1183,7 @@
           "unit": "cps"
         }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 72 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 85 },
       "id": 34,
       "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "mean", "max"], "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
@@ -1053,7 +1207,7 @@
           "unit": "cps"
         }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 72 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 85 },
       "id": 35,
       "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "mean", "max"], "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
@@ -1083,7 +1237,7 @@
           }
         ]
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 80 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 93 },
       "id": 36,
       "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "max"], "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
@@ -1112,7 +1266,7 @@
           "unit": "s"
         }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 80 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 93 },
       "id": 37,
       "options": {
         "calculate": false,
@@ -1149,7 +1303,7 @@
           }
         ]
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 88 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 101 },
       "id": 38,
       "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "mean"], "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
@@ -1185,7 +1339,7 @@
           }
         ]
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 88 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 101 },
       "id": 39,
       "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "max"], "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
@@ -1221,7 +1375,7 @@
           }
         ]
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 96 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 109 },
       "id": 40,
       "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "max"], "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
@@ -1252,7 +1406,7 @@
           "min": 0
         }
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 96 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 109 },
       "id": 41,
       "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "mean", "max"], "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
@@ -1277,7 +1431,7 @@
           "min": 0
         }
       },
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 104 },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 117 },
       "id": 42,
       "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "mean"], "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
@@ -1305,7 +1459,7 @@
     },
 {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 112 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 125 },
       "id": 400,
       "title": "Multihost / Per-Device (video gen drill-down)",
       "type": "row"
@@ -1320,7 +1474,7 @@
           "unit": "s"
         }
       },
-      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 113 },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 126 },
       "id": 8,
       "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "max"], "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
@@ -1344,7 +1498,7 @@
           "unit": "reqps"
         }
       },
-      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 113 },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 126 },
       "id": 9,
       "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "mean"], "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
@@ -1367,7 +1521,7 @@
           "unit": "s"
         }
       },
-      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 122 },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 135 },
       "id": 10,
       "options": {
         "calculate": false,
@@ -1404,7 +1558,7 @@
           }
         ]
       },
-      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 122 },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 135 },
       "id": 11,
       "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "sum"], "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
@@ -1436,7 +1590,7 @@
           "unit": "s"
         }
       },
-      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 131 },
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 144 },
       "id": 12,
       "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
@@ -1452,7 +1606,7 @@
     },
 {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 138 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 151 },
       "id": 500,
       "title": "Lifecycle (warmup / model load / download)",
       "type": "row"
@@ -1467,7 +1621,7 @@
           "unit": "s"
         }
       },
-      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 139 },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 152 },
       "id": 13,
       "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["last", "max"], "showLegend": true } },
       "targets": [
@@ -1496,7 +1650,7 @@
           "custom": { "align": "auto", "displayMode": "color-text" }
         }
       },
-      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 139 },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 152 },
       "id": 14,
       "options": { "showHeader": true },
       "targets": [
@@ -1526,7 +1680,7 @@
           "custom": { "align": "auto", "displayMode": "color-text" }
         }
       },
-      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 139 },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 152 },
       "id": 15,
       "options": { "showHeader": true },
       "targets": [
@@ -1557,7 +1711,7 @@
           }
         ]
       },
-      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 146 },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 159 },
       "id": 16,
       "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "sum"], "showLegend": true } },
       "targets": [
@@ -1581,7 +1735,7 @@
           "unit": "s"
         }
       },
-      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 146 },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 159 },
       "id": 17,
       "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["last", "max"], "showLegend": true } },
       "targets": [
@@ -1597,7 +1751,7 @@
     },
 {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 153 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 166 },
       "id": 600,
       "title": "Infrastructure (per-process, host-wide)",
       "type": "row"
@@ -1612,7 +1766,7 @@
           "unit": "percent"
         }
       },
-      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 154 },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 167 },
       "id": 18,
       "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
       "targets": [
@@ -1636,7 +1790,7 @@
           "unit": "decmbytes"
         }
       },
-      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 154 },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 167 },
       "id": 19,
       "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
       "targets": [
@@ -1660,7 +1814,7 @@
           "unit": "none"
         }
       },
-      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 154 },
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 167 },
       "id": 20,
       "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
       "targets": [
@@ -1684,7 +1838,7 @@
           "unit": "none"
         }
       },
-      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 160 },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 173 },
       "id": 21,
       "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
       "targets": [
@@ -1708,7 +1862,7 @@
           "unit": "none"
         }
       },
-      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 160 },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 173 },
       "id": 22,
       "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
       "targets": [
@@ -1732,7 +1886,7 @@
           "unit": "ops"
         }
       },
-      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 160 },
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 173 },
       "id": 23,
       "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
       "targets": [
@@ -1754,7 +1908,7 @@
     },
 {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 166 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 179 },
       "id": 700,
       "title": "System Info",
       "type": "row"
@@ -1769,7 +1923,7 @@
           "custom": { "align": "auto", "displayMode": "auto" }
         }
       },
-      "gridPos": { "h": 5, "w": 24, "x": 0, "y": 167 },
+      "gridPos": { "h": 5, "w": 24, "x": 0, "y": 180 },
       "id": 24,
       "options": { "showHeader": true },
       "targets": [
@@ -1787,12 +1941,12 @@
         { "id": "organize", "options": { "excludeByName": { "Time": true, "Value": true, "__name__": true, "job": true, "instance": true } } }
       ]
     },
-    { "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 173 }, "id": 860, "panels": [], "title": "ASR Per-Chunk Latency (streaming only)", "type": "row" },
+    { "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 186 }, "id": 860, "panels": [], "title": "ASR Per-Chunk Latency (streaming only)", "type": "row" },
     {
       "datasource": { "type": "prometheus", "uid": "$datasource" },
       "description": "Time from chunk hand-off to the first emitted item. Bundles log-mel extraction (~2ms, constant because Whisper pads every chunk to a 30s frame), the encoder pass and the first decode step: tt-metal's WhisperGenerator fuses all three, so they cannot be separated. Unaffected by consumer backpressure.",
       "fieldConfig": { "defaults": { "custom": { "scaleDistribution": { "type": "log", "log": 10 } }, "unit": "s" } },
-      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 174 },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 187 },
       "id": 60,
       "options": {
         "calculate": false,
@@ -1817,7 +1971,7 @@
       "datasource": { "type": "prometheus", "uid": "$datasource" },
       "description": "Wall time to transcribe one chunk end to end. The streaming loop yields to its consumer inside this span, so a slow client inflates this without inflating the first-item metric.",
       "fieldConfig": { "defaults": { "custom": { "scaleDistribution": { "type": "log", "log": 10 } }, "unit": "s" } },
-      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 174 },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 187 },
       "id": 61,
       "options": {
         "calculate": false,
@@ -1842,7 +1996,7 @@
       "datasource": { "type": "prometheus", "uid": "$datasource" },
       "description": "Quantiles of both per-chunk spans. First-item is contained in processing by construction, so the first-item lines should always sit below their processing counterparts.",
       "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 0 }, "unit": "s" } },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 183 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 196 },
       "id": 62,
       "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
@@ -1878,7 +2032,7 @@
       "datasource": { "type": "prometheus", "uid": "$datasource" },
       "description": "Mean seconds per chunk, derived from _sum / _count rather than quantiles, alongside chunk fan-out. Fan-out is the multiplier that makes per-chunk cost matter: every chunk pays a full 30s-frame encoder pass regardless of how short it is, so a heavily diarized request does many times the encoder work of the same audio in fewer chunks.",
       "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 0 } } },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 183 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 196 },
       "id": 63,
       "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
@@ -1902,7 +2056,7 @@
       "datasource": { "type": "prometheus", "uid": "$datasource" },
       "description": "Cumulative observation count at or below each bucket boundary over the selected range. Buckets are cumulative, so the smallest `le` with a non-zero count is the real lower bound of the distribution: everything below it is wasted resolution and the floor can be raised to it.",
       "fieldConfig": { "defaults": { "unit": "short" } },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 191 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 204 },
       "id": 64,
       "options": { "showHeader": true, "sortBy": [{ "displayName": "le", "desc": false }] },
       "targets": [
@@ -1922,7 +2076,7 @@
       "datasource": { "type": "prometheus", "uid": "$datasource" },
       "description": "Cumulative observation count at or below each bucket boundary over the selected range. Read the top boundary the same way: if the largest finite bucket already holds every observation, the ceiling can be lowered.",
       "fieldConfig": { "defaults": { "unit": "short" } },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 191 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 204 },
       "id": 65,
       "options": { "showHeader": true, "sortBy": [{ "displayName": "le", "desc": false }] },
       "targets": [
@@ -1939,12 +2093,12 @@
       "type": "table"
     }
     ,
-    { "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 199 }, "id": 861, "panels": [], "title": "ASR Stage Throughput (feature extraction and encoder)", "type": "row" },
+    { "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 212 }, "id": 861, "panels": [], "title": "ASR Stage Throughput (feature extraction and encoder)", "type": "row" },
     {
       "datasource": { "type": "prometheus", "uid": "$datasource" },
       "description": "Recorded by the ASR runner only; empty for other model types. Also empty until tt-metal #53717 (PerfMetrics) is in the pinned tt-metal build: the runner probes for it at import and leaves these counters untouched when it is absent, so an empty row here means the dependency has not landed yet, not that the server is idle. Cross-check with the VAD and Input Preparation rows below, which do not depend on it. Audio seconds each stage converts per second **spent inside that stage** — the stage's own capacity, not the server's ingest rate. The denominator is stage-busy time, not wall-clock time, so this does NOT tell you whether the fleet keeps pace with live audio: an encoder busy 10% of the time reads ten times the real-time factor. Use `Ingest Rate` for the keeps-pace question and read this as headroom.\n\nFeature extraction is the preprocessing ceiling and normally sits well above the encoder — convergence means preprocessing has become the limit. The combined line is audio seconds over extraction plus encoder time.\n\nCapacity, not utilisation: short chunks are padded to the 30s frame, so both stages cost the same per chunk whatever its length and this falls with chunk length. A drop can mean fan-out rose, not that the device slowed — read against Chunk Fan-out above.",
       "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 0 }, "unit": "suffix:audio-s/s", "decimals": 1 } },
-      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 200 },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 213 },
       "id": 66,
       "options": { "legend": { "calcs": ["mean", "min"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
@@ -1974,7 +2128,7 @@
       "datasource": { "type": "prometheus", "uid": "$datasource" },
       "description": "Audio seconds per encoder-busy second, broken down. Batch: a larger batch amortises one encoder pass over more audio, so this should rise with it — a flat line means batching buys nothing. Device: divergence on the same model is the fleet-capacity signal. Both exclude the trace-capture call.\n\nSame stage-busy denominator as Stage Capacity, so these are per-device capacity figures and are independent of how loaded the device is.",
       "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 0 }, "unit": "suffix:audio-s/s", "decimals": 1 } },
-      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 200 },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 213 },
       "id": 67,
       "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
@@ -1998,7 +2152,7 @@
       "datasource": { "type": "prometheus", "uid": "$datasource" },
       "description": "Per-batch wall time in each stage. Extraction is host CPU over fixed-size frames, so it should be near-flat — a rising p95 points at host contention, not the model. The encoder spans device preprocessing, the encoder stack and the synchronize.",
       "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 0 }, "unit": "s" } },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 209 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 222 },
       "id": 68,
       "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
@@ -2034,7 +2188,7 @@
       "datasource": { "type": "prometheus", "uid": "$datasource" },
       "description": "Mean encoder time by trace_hit. trace_hit=\"false\" is the trace-capture call: it runs the encoder twice, so the per-stage lines filter it out. Two exceptions include it deliberately, because feature extraction carries no trace_hit label and a one-sided filter would divide mismatched sets: Stage Capacity's combined line and Ingest Rate. Kept visible for its rate — a steady stream of captures means the batch bucket keeps changing and traces are thrown away rather than replayed.\n\nExpect this to be flat after startup: the capture counter freezes once every batch bucket has a trace, so rate() over it goes to zero and target A's trace_hit=\"false\" series drops out.",
       "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 0 }, "unit": "s" }, "overrides": [{ "matcher": { "id": "byName", "options": "capture calls/s" }, "properties": [{ "id": "unit", "value": "reqps" }, { "id": "custom.axisPlacement", "value": "right" }] }] },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 209 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 222 },
       "id": 69,
       "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
@@ -2058,7 +2212,7 @@
       "datasource": { "type": "prometheus", "uid": "$datasource" },
       "description": "Audio seconds ingested per wall-clock second — the real-time factor, and the only panel in this row that answers \"can the fleet keep pace with live audio?\". Above 1.0 the server consumes audio faster than real time; below 1.0 a live stream falls behind and the backlog grows.\n\nThis is the bare numerator of Stage Capacity, with no stage-busy denominator, so it moves with offered load as well as device speed: a low value on an idle server means nothing was submitted, not that the encoder is slow. Read it against Stage Capacity — capacity high but ingest below 1.0 means the front end has headroom and the bottleneck is elsewhere.\n\nSourced from the feature-extraction counter, which carries no trace_hit label, so trace-capture batches are included.",
       "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "thresholdsStyle": { "mode": "line" } }, "unit": "suffix:audio-s/s", "decimals": 2, "thresholds": { "mode": "absolute", "steps": [{ "color": "text", "value": null }, { "color": "green", "value": 1 }] } } },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 217 },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 230 },
       "id": 70,
       "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
@@ -2082,7 +2236,7 @@
       "datasource": { "type": "prometheus", "uid": "$datasource" },
       "description": "Cumulative count at or below each bucket boundary, both stages joined on `le`. The smallest `le` with a non-zero count is the real lower bound — everything below is wasted resolution; if the largest finite bucket holds everything, the ceiling can come down. Re-read after any change to chunk length or device count.\n\n`le` is converted to a number before sorting: as the raw string label it sorts lexicographically, which puts `+Inf` first and `10.0` ahead of `2.5` and makes the \"smallest non-zero\" reading above wrong. `+Inf` does not parse and sorts last.",
       "fieldConfig": { "defaults": { "unit": "short" } },
-      "gridPos": { "h": 8, "w": 16, "x": 8, "y": 217 },
+      "gridPos": { "h": 8, "w": 16, "x": 8, "y": 230 },
       "id": 71,
       "options": { "showHeader": true, "sortBy": [{ "displayName": "le", "desc": false }] },
       "transformations": [
@@ -2117,7 +2271,7 @@
       "datasource": { "type": "prometheus", "uid": "$datasource" },
       "description": "Feature-extraction capacity split by the operating point the audio was submitted at. `sample_rate` and `channels` are the source values read off the container header, not the array the extractor sees — audio_manager downmixes to mono and resamples to 16 kHz before the runner is reached, so these are the only record of what arrived.\n\n`unknown` means the decode path normalised the source away before it could be read: ffmpeg is invoked with `-ar/-ac`, so every non-WAV format lands here until an ffprobe pass is added. `mixed` means a batch's items disagreed and the batch was credited under neither.\n\nA high-rate or multi-channel source costs more to decode but not more to extract — the array is mono 16 kHz by then — so a split here points at the decode stage, not the extractor.",
       "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 0 }, "unit": "suffix:audio-s/s", "decimals": 1 } },
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 225 },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 238 },
       "id": 72,
       "options": { "legend": { "calcs": ["mean", "min"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
@@ -2143,12 +2297,12 @@
       "title": "Feature Extraction Capacity by Source Rate, Channels and Batch",
       "type": "timeseries"
     },
-    { "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 233 }, "id": 862, "panels": [], "title": "ASR VAD Overhead", "type": "row" },
+    { "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 246 }, "id": 862, "panels": [], "title": "ASR VAD Overhead", "type": "row" },
     {
       "datasource": { "type": "prometheus", "uid": "$datasource" },
       "description": "Wall time to find speech and endpoint boundaries, per request. VAD gates when inference starts, so this is pure added latency ahead of the encoder — compare it against Chunk First-Item Latency to see which dominates. Quantiles cover successful runs only; a timeout shows up as delay under outcome=\"failed\", not as a non-event.",
       "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 0 }, "unit": "s" } },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 234 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 247 },
       "id": 73,
       "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
@@ -2178,7 +2332,7 @@
       "datasource": { "type": "prometheus", "uid": "$datasource" },
       "description": "CPU consumed by the VAD worker process divided by its wall time — cores in use, not the caller's clock. Above 1.0 the model went multi-threaded; well below 1.0 with a high latency means the worker was waiting, not computing. Mean CPU seconds per request is the number to multiply by request rate when sizing host cores.",
       "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 0, "thresholdsStyle": { "mode": "line" } }, "unit": "none", "decimals": 2, "thresholds": { "mode": "absolute", "steps": [{ "color": "text", "value": null }, { "color": "orange", "value": 1 }] } }, "overrides": [{ "matcher": { "id": "byName", "options": "mean CPU seconds" }, "properties": [{ "id": "unit", "value": "s" }, { "id": "custom.axisPlacement", "value": "right" }] }] },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 234 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 247 },
       "id": 74,
       "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
@@ -2202,7 +2356,7 @@
       "datasource": { "type": "prometheus", "uid": "$datasource" },
       "description": "Speech segments returned per request. This is the endpointing-health signal a duration alone will not show: a collapse toward 1 means VAD stopped splitting and the whole request becomes one long chunk, a jump into the hundreds means it is fragmenting and every fragment pays a full encoder frame. Read against Chunk Fan-out above, which is what these segments merge into.",
       "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 0 }, "unit": "short" } },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 242 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 255 },
       "id": 75,
       "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
@@ -2226,7 +2380,7 @@
       "datasource": { "type": "prometheus", "uid": "$datasource" },
       "description": "Share of VAD calls that returned nothing, against the call rate. A failure is not a dropped request — the caller falls back to one segment spanning the whole audio, so the cost lands downstream as one oversized chunk. Any sustained non-zero share means the audio venv worker is timing out or respawning.",
       "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10 }, "unit": "percentunit", "min": 0 }, "overrides": [{ "matcher": { "id": "byName", "options": "VAD calls/s" }, "properties": [{ "id": "unit", "value": "reqps" }, { "id": "custom.axisPlacement", "value": "right" }] }] },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 242 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 255 },
       "id": 76,
       "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
@@ -2248,12 +2402,12 @@
     }
 
     ,
-    { "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 250 }, "id": 863, "panels": [], "title": "ASR Input Preparation and Chunking", "type": "row" },
+    { "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 263 }, "id": 863, "panels": [], "title": "ASR Input Preparation and Chunking", "type": "row" },
     {
       "datasource": { "type": "prometheus", "uid": "$datasource" },
       "description": "Time to base64-decode, container-decode, resample and length-check submitted audio, before VAD sees it. Split by container: mp3 carries a real decode cost that wav does not, so a shift in the format mix moves this without anything regressing. Observed on success only — rejected uploads (unknown header, oversize) never reach it, so the call rate here is accepted requests, not offered load.",
       "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 0 }, "unit": "s" }, "overrides": [{ "matcher": { "id": "byName", "options": "accepted/s" }, "properties": [{ "id": "unit", "value": "reqps" }, { "id": "custom.axisPlacement", "value": "right" }] }] },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 251 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 264 },
       "id": 77,
       "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
@@ -2283,7 +2437,7 @@
       "datasource": { "type": "prometheus", "uid": "$datasource" },
       "description": "The segment-merge step only — VAD and diarization are inference and live in the row above, so this is pure host arithmetic and should stay in the microseconds. Per-chunk cost divides it by the chunks produced, which is the number to watch if merging ever stops being free. diarization mode merges within speaker boundaries and so does more work than vad_only.",
       "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 0 }, "unit": "s" } },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 251 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 264 },
       "id": 78,
       "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
@@ -2307,7 +2461,7 @@
       "datasource": { "type": "prometheus", "uid": "$datasource" },
       "description": "Chunk fan-out split by mode, the multiplier on every per-chunk cost downstream: each chunk pays a full 30s encoder frame however short it is. diarization should sit above vad_only because speaker changes force a chunk boundary that duration alone would not. A rise here with flat VAD segment counts means merging is splitting more, not that the audio changed.",
       "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 0 }, "unit": "short" } },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 259 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 272 },
       "id": 79,
       "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
@@ -2331,7 +2485,7 @@
       "datasource": { "type": "prometheus", "uid": "$datasource" },
       "description": "Mean host-side seconds per request for the three stages that run before the device is touched, stacked. All three are observed once per request, so the heights are directly comparable and the total is the fixed latency floor no device speed-up can remove. VAD normally dominates by orders of magnitude; if input preparation ever rivals it, look at the format mix.",
       "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 25, "stacking": { "mode": "normal", "group": "A" } }, "unit": "s" } },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 259 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 272 },
       "id": 80,
       "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "targets": [
