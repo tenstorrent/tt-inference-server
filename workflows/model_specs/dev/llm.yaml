@@ -208,10 +208,15 @@ templates:
         # --reasoning-parser separates the thought channel into reasoning_content.
         default-chat-template-kwargs: '{"enable_thinking": true}'
         reasoning-parser: gemma4
-        # Token-chunked prefill (tenstorrent/vllm#448). Match metal 2048 @ ≥128k.
+        # Token-chunked prefill (tenstorrent/vllm#448). Parity with the 12B spec
+        # (config-shadows lesson): the earlier 2048/2048 here was the shadow that
+        # produced the invalidated "19/32 coherent @ 0.8 tok/s/u" b32 number --
+        # chunked 4k prompts hit pre-gate batched prefill and 32x more scheduler
+        # rounds starved decode under async scheduling. 65536/4096 measured
+        # coherent and faster on QB2/LB (2026-08-31 battery; galaxy re-run 09-01).
         enable_chunked_prefill: true
-        max_num_batched_tokens: 2048
-        long_prefill_token_threshold: 2048
+        max_num_batched_tokens: 65536
+        long_prefill_token_threshold: 4096
     # LoudBox (8x P150). Metal policy: unbounded through 64k; auto-bounded at
     # ≥128k (generator_trace). Prefill chunk default 4096; at ≥128k + bounded
     # → 2048. Scheduler tokens stay 2048 to match metal at long ISL. B=32 needs
@@ -242,10 +247,15 @@ templates:
         tool-call-parser: gemma4
         default-chat-template-kwargs: '{"enable_thinking": true}'
         reasoning-parser: gemma4
-        # Token-chunked prefill (tenstorrent/vllm#448). Match metal 2048 @ ≥128k.
+        # Token-chunked prefill (tenstorrent/vllm#448). Parity with the 12B spec
+        # (config-shadows lesson): the earlier 2048/2048 here was the shadow that
+        # produced the invalidated "19/32 coherent @ 0.8 tok/s/u" b32 number --
+        # chunked 4k prompts hit pre-gate batched prefill and 32x more scheduler
+        # rounds starved decode under async scheduling. 65536/4096 measured
+        # coherent and faster on QB2/LB (2026-08-31 battery; galaxy re-run 09-01).
         enable_chunked_prefill: true
-        max_num_batched_tokens: 2048
-        long_prefill_token_threshold: 2048
+        max_num_batched_tokens: 65536
+        long_prefill_token_threshold: 4096
     # GPU (H100 NVL) bring-your-own vLLM server (see docs/gpu_workflows.md); used
     # to collect GPU reference eval scores for GPQA-Diamond, Terminal-Bench 2.0,
     # and SWE-Bench Verified. Dev-only; no tt_metal_commit/version pin needed
@@ -314,11 +324,14 @@ templates:
         tool-call-parser: gemma4
         default-chat-template-kwargs: '{"enable_thinking": true}'
         reasoning-parser: gemma4
-        # Token-chunked prefill (tenstorrent/vllm#448). Must equal the chunk the
-        # metal policy resolves for this (model, device) — 2048 on every WH board.
+        # Token-chunked prefill (tenstorrent/vllm#448). BH/WH parity values
+        # (standing policy #1, T3K reconfigured to full BH parity 2026-08-31):
+        # the parity re-run banked 9x b32@4k throughput (1.26 -> 11.7 tok/s/u)
+        # and cleared the corruption bands the old 2048/2048 scheduler shadow
+        # had masked.
         enable_chunked_prefill: true
-        max_num_batched_tokens: 2048
-        long_prefill_token_threshold: 2048
+        max_num_batched_tokens: 65536
+        long_prefill_token_threshold: 4096
     - device: GPU
       max_concurrency: 32
       max_context: 204800  # 200 * 1024; native ctx is 256K but a single H100 NVL (94GB, bf16 KV) caps servable ctx at ~205K (KV cache = 210,605 tokens)
@@ -489,11 +502,14 @@ templates:
         tool-call-parser: gemma4
         default-chat-template-kwargs: '{"enable_thinking": true}'
         reasoning-parser: gemma4
-        # Token-chunked prefill (tenstorrent/vllm#448). Must equal the chunk the
-        # metal policy resolves for this (model, device) — 2048 on every WH board.
+        # Token-chunked prefill (tenstorrent/vllm#448). BH/WH parity values
+        # (standing policy #1, T3K reconfigured to full BH parity 2026-08-31):
+        # the parity re-run banked 9x b32@4k throughput (1.26 -> 11.7 tok/s/u)
+        # and cleared the corruption bands the old 2048/2048 scheduler shadow
+        # had masked.
         enable_chunked_prefill: true
-        max_num_batched_tokens: 2048
-        long_prefill_token_threshold: 2048
+        max_num_batched_tokens: 65536
+        long_prefill_token_threshold: 4096
     # WH N300 (1x2 = one n300 card, 24 GB). 12B is the only Gemma4 variant that
     # fits a single WH card — 26B-A4B and 31B OOM here even at 4k. Measured
     # batch-1: 4k TTFT 11.4 s / 12.0 tok/s, 32k 60 s / 12.7 tok/s, 64k 99 s /
