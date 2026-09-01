@@ -364,7 +364,25 @@ def set_cache_paths(model_spec: dict, device_type: str):
         model_spec: The model specification dictionary
         device_type: Canonical device type name (e.g., "N300", "GALAXY")
     """
-    mesh_device = get_mesh_device_name(device=device_type)
+    behavioral_mesh = os.getenv("TTIS_QUETZAL_BEHAVIORAL_MESH_DEVICE")
+    if behavioral_mesh:
+        if os.getenv("TTIS_QUETZAL_BEHAVIORAL_PACKAGE_ADMISSION") != "1":
+            raise RuntimeError(
+                "behavioral MESH_DEVICE override requires behavioral package admission"
+            )
+        if os.getenv("CI") or os.getenv("GITHUB_ACTIONS"):
+            raise RuntimeError("behavioral MESH_DEVICE override is forbidden in CI")
+        if behavioral_mesh != "P150x4":
+            raise RuntimeError(
+                f"unsupported behavioral MESH_DEVICE override: {behavioral_mesh!r}"
+            )
+        mesh_device = behavioral_mesh
+        logger.warning(
+            "Using explicitly non-certifying behavioral MESH_DEVICE=%s",
+            mesh_device,
+        )
+    else:
+        mesh_device = get_mesh_device_name(device=device_type)
     tt_cache_path = get_container_cache_dir(model_spec, device=device_type)
     if tt_cache_path is None:
         raise RuntimeError("Could not resolve TT cache path from model spec.")
