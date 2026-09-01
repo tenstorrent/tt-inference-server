@@ -402,7 +402,10 @@ def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
 
     if ctx.remote_server:
         server = RemoteOpenAIController(
-            base_url=ctx.server_url,
+            # ``server_url`` may omit a port while ``service_port`` carries it
+            # separately. MediaContext is the canonical join point; probing
+            # the raw URL here silently targets port 80/443 instead.
+            base_url=ctx.base_url,
             auth_token=auth_token,
         )
     else:
