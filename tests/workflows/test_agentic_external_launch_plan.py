@@ -144,8 +144,8 @@ class _Session:
 def test_gpt120_plan_pins_exact_swe_shape_and_writes_quetzal_argv(tmp_path):
     contract, model_spec = _gpt120()
     assert contract.concurrency == 1
-    assert contract.max_input_tokens == 5 * 1024
-    assert contract.max_output_tokens == 2 * 1024
+    assert contract.max_input_tokens == 7 * 1024
+    assert contract.max_output_tokens == 1 * 1024
     assert contract.required_context_tokens == 8 * 1024
     assert contract.catalog_max_context_tokens == 8 * 1024
     assert contract.implementation == "quetzal"
@@ -204,7 +204,7 @@ def test_gpt120_plan_accepts_truthful_one_shot_s8192_receipt():
         capability_receipt=receipt,
         endpoint_evidence=_evidence(receipt),
     )
-    assert contract.max_input_tokens == 5 * 1024
+    assert contract.max_input_tokens == 7 * 1024
     assert contract.admitted_max_context_tokens == 8 * 1024
 
 

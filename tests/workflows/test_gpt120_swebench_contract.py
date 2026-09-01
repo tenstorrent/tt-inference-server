@@ -40,15 +40,12 @@ def test_gpt120_swebench_is_exact_c1_s8192_five_instance_contract(tmp_path):
     assert cfg.dataset_split == "test"
     assert cfg.agent_backend == "mini-swe-agent"
     assert cfg.n_concurrent_trials == 1
-    assert cfg.max_input_tokens == 5 * 1024
-    assert cfg.max_output_tokens == 2 * 1024
+    assert cfg.max_input_tokens == 7 * 1024
+    assert cfg.max_output_tokens == 1 * 1024
     assert cfg.mini_agent_kwargs == {"step_limit": 8}
-    assert cfg.max_input_tokens + cfg.max_output_tokens == 7 * 1024
+    assert cfg.max_input_tokens + cfg.max_output_tokens == 8 * 1024
     assert task.min_context_required == 8 * 1024
-    assert (
-        task.min_context_required - (cfg.max_input_tokens + cfg.max_output_tokens)
-        == 1024
-    )
+    assert task.min_context_required == cfg.max_input_tokens + cfg.max_output_tokens
     assert cfg.agent_generation_timeout_sec == 6 * 60 * 60
     assert cfg.swebench_timeout_sec == 30 * 60
     assert resolve_instance_ids(task, Runtime()) == EXPECTED_INSTANCES

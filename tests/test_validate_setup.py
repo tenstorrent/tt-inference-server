@@ -144,7 +144,7 @@ class TestAgenticTaskCapabilityAdmission:
         assert "task='swe_bench_verified'" in message
         assert "available_context=8191" in message
         assert "required_context=8192" in message
-        assert "max_input_tokens=5120 + max_output_tokens=2048" in message
+        assert "max_input_tokens=7168 + max_output_tokens=1024" in message
         assert "min_context_required=8192" in message
 
     def test_explicit_gpt_swe_selection_accepts_s8192(self):

@@ -4770,8 +4770,10 @@ _eval_config_list = [
                 # not a clamp of any published long-context SWE recipe.  The
                 # authoritative input counter includes the rendered chat
                 # template and Bash tool schema.  Reserve 5K for that complete
-                # input, 2K for output, and the final 1K of the device row as
-                # server-side context headroom.
+                # input and 1K for output. The pinned smoke instance measured
+                # 5,493 input tokens on its second tool turn, so the previous
+                # 5K input declaration rejected the task before its second
+                # endpoint request.
                 min_context_required=8 * 1024,
                 score=EvalTaskScore(
                     published_score=None,
@@ -4800,12 +4802,12 @@ _eval_config_list = [
                     # This is the declared bounded SWE-bench workload for that
                     # serving contract, not a runtime clamp of the 124K GPU
                     # reference recipe. Keep the latter out of release until a
-                    # >=124K implementation is enrolled. The 5K input limit is
+                    # >=124K implementation is enrolled. The 7K input limit is
                     # enforced against the complete, untruncated conversation
                     # including the tool schema; over-budget trajectories fail
                     # closed and remain visible collection failures.
-                    max_input_tokens=5 * 1024,
-                    max_output_tokens=2 * 1024,
+                    max_input_tokens=7 * 1024,
+                    max_output_tokens=1 * 1024,
                     # No comparable score exists for this narrow collection
                     # envelope. Eight steps is a conservative smoke bound, not
                     # a claim about full SWE task solvability.
