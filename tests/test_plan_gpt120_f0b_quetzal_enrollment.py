@@ -171,7 +171,7 @@ def test_exact_response_renders_catalogue_ci_and_ring2_contract():
     env = device["env_vars"]
     assert env["QUETZAL_REQUIRED_SOURCE_REVISION"] == QUETZAL_COMMIT
     assert env["QUETZAL_GENERATOR_SOURCE_REVISION"] == COMPILER_COMMIT
-    assert len(env["QUETZAL_RUNTIME_ATTESTATION_SHA256"]) == 64
+    assert "QUETZAL_RUNTIME_ATTESTATION_SHA256" not in env
     assert env["QUETZAL_SERVE_PROFILE"] == "gpt_oss_120b.serve"
     assert env["TT_VLLM_BUILTIN_MODELS"] == "0"
     assert env["VLLM_PLUGINS"] == "quetzal_model_registry,tt"
@@ -214,7 +214,7 @@ def test_exact_response_renders_catalogue_ci_and_ring2_contract():
         assert schedule["devices"] == ["P300X2"]
         args = schedule["device-args"]["P300X2"]["additional-args"]
         assert "--quetzal-models-root /mnt/models/quetzal/immutable/" in args
-        assert "--quetzal-runtime-attestation /mnt/models/quetzal/immutable/" in args
+        assert "--quetzal-runtime-attestation" not in args
         assert "--quetzal-auxiliary-root openai_gpt-oss-120b-streamed-cache=" in args
 
     shield = rendered["shield_required_contract"]
@@ -229,6 +229,19 @@ def test_exact_response_renders_catalogue_ci_and_ring2_contract():
     assert shield["source_commit"] == SHIELD_REQUIRED_ANCESTOR
     assert shield["required_ancestor"] == SHIELD_REQUIRED_ANCESTOR
     assert rendered["exact_identity"]["ttis_source_commit"] == TTIS_REQUIRED_ANCESTOR
+
+
+def test_attestation_metadata_is_not_required_for_enrollment_or_promotion():
+    response = publication_response()
+    response["publication"].pop("attestation_path")
+    response["publication"].pop("attestation_sha256")
+
+    rendered = render_contract(response)
+
+    assert "runtime_attestation_sha256" not in rendered["exact_identity"]
+    assert all(
+        "attestation" not in step.lower() for step in rendered["enablement_order"]
+    )
 
 
 def test_gpt_pending_row_defines_all_ci_entries_without_weakening_release():
