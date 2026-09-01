@@ -17,6 +17,11 @@ transformers==4.57.1
 # (including slashes), so Docker rejected the verifier before applying tests.
 # 5.0.2 uses the canonical ``sweb.eval...`` runtime names.
 swebench==5.0.2
+# The TTIS agentic driver imports reference_config.evals, whose catalogue is
+# YAML-backed.  Keep this in the agentic venv itself: importing the driver from
+# a generated-model behavioral run must not accidentally depend on the host
+# launcher's environment.
+pyyaml==6.0.3
 
 orjson>=3.11.6,<4.0
 backoff>=2.0
