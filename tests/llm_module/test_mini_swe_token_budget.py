@@ -56,6 +56,31 @@ def test_count_includes_generation_prompt_and_exact_tool_schema():
     ]
 
 
+def test_count_normalizes_null_text_without_mutating_tool_call_history():
+    tokenizer = Tokenizer([10, 20])
+    messages = [
+        {
+            "role": "assistant",
+            "content": None,
+            "thinking": None,
+            "tool_calls": [{"id": "call-1", "function": {"name": "bash"}}],
+        }
+    ]
+
+    assert count_chat_input_tokens(tokenizer, messages, []) == 2
+    rendered_messages = tokenizer.calls[0][0]
+    assert rendered_messages == [
+        {
+            "role": "assistant",
+            "content": "",
+            "thinking": "",
+            "tool_calls": [{"id": "call-1", "function": {"name": "bash"}}],
+        }
+    ]
+    assert messages[0]["content"] is None
+    assert messages[0]["thinking"] is None
+
+
 def test_count_accepts_batch_encoding_shape_and_rejects_ambiguous_batch():
     assert (
         count_chat_input_tokens(Tokenizer({"input_ids": [[1, 2, 3, 4]]}), [], []) == 4

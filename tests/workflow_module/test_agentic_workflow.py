@@ -93,3 +93,17 @@ class TestAgenticWorkflowRunTasks:
 
         assert len(outcomes) == 1
         assert outcomes[0].exit_code == 1
+
+    def test_failed_harness_block_propagates_nonzero_outcome(self):
+        wf = self._make_workflow()
+        failed = _fake_block()
+        failed.data.update({"success": False, "subprocess_rc": 65})
+        with patch(
+            "test_module.llm_tests.agentic_eval_tests.run_llm_agentic_eval",
+            return_value=[failed],
+        ):
+            outcomes = wf.run_tasks()
+
+        assert len(outcomes) == 1
+        assert outcomes[0].exit_code == 1
+        assert outcomes[0].block_kind == "evals"
