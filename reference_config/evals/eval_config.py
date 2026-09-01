@@ -4814,10 +4814,12 @@ _eval_config_list = [
                     max_input_tokens=7 * 1024,
                     max_output_tokens=1 * 1024,
                     # No comparable score exists for this narrow collection
-                    # envelope. Eight steps is a conservative smoke bound, not
-                    # a claim about full SWE task solvability.
-                    mini_agent_kwargs={"step_limit": 8},
-                    mini_observation_chars=2048,
+                    # envelope. Sixteen steps is a bounded smoke allowance,
+                    # not a claim about full SWE task solvability. Keep each
+                    # retained shell observation to 1K characters so the full
+                    # multi-turn history remains inside S8192.
+                    mini_agent_kwargs={"step_limit": 16},
+                    mini_observation_chars=1024,
                     # Five C1 agentic trials may each generate a long reasoning
                     # trajectory. Bound the complete generation phase without
                     # conflating it with the 30-minute per-instance verifier.
