@@ -18,7 +18,7 @@ from scripts.validate_quetzal_serve_environment import (
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CURRENT_QWEN_SOURCE_REVISION = "3b93e82a87c0664eab23da4b3bf355d12ff310cd"
+CURRENT_QWEN_SOURCE_REVISION = "374e94bfa4d742e0a4991683d7ccf4330b7cec3c"
 
 
 def _source(

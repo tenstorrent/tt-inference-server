@@ -452,7 +452,7 @@ def test_qwen_quetzal_dev_spec_binds_canonical_package_identity(monkeypatch):
 
     assert source == {
         "repository": "tenstorrent/tt-quetzalcoatlus",
-        "revision": "3b93e82a87c0664eab23da4b3bf355d12ff310cd",
+        "revision": "374e94bfa4d742e0a4991683d7ccf4330b7cec3c",
         "path": "productization/release_matrix.json",
         "sha256": "263742df557ca47e7f2658397cc06eea4a5386d91c93d7f69a6f46cd714adebd",
     }
