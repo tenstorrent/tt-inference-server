@@ -48,12 +48,65 @@ def test_count_includes_generation_prompt_and_exact_tool_schema():
         (
             messages,
             {
-                "tools": tools,
+                "tools": [{"name": "bash"}],
                 "tokenize": True,
                 "add_generation_prompt": True,
             },
         )
     ]
+    assert tools == [{"type": "function", "function": {"name": "bash"}}]
+
+
+def test_qwen_count_unwraps_openai_tool_schema_without_mutating_api_request():
+    class QwenTokenizer(Tokenizer):
+        def apply_chat_template(self, messages, **kwargs):
+            tools = kwargs["tools"]
+            # Qwen's template expects each entry to be the function mapping,
+            # not OpenAI's {type, function} request wrapper.
+            assert tools == [
+                {
+                    "name": "bash",
+                    "description": "Execute a bash command",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"command": {"type": "string"}},
+                        "required": ["command"],
+                    },
+                }
+            ]
+            return super().apply_chat_template(messages, **kwargs)
+
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "bash",
+                "description": "Execute a bash command",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"command": {"type": "string"}},
+                    "required": ["command"],
+                },
+            },
+        }
+    ]
+    original = json.loads(json.dumps(tools))
+
+    assert count_chat_input_tokens(QwenTokenizer([10, 20, 30]), [], tools) == 3
+    assert tools == original
+
+
+@pytest.mark.parametrize(
+    "tools",
+    [
+        ["bash"],
+        [{"type": "function"}],
+        [{"type": "not-a-function", "function": {}}],
+    ],
+)
+def test_count_rejects_malformed_openai_tool_schema(tools):
+    with pytest.raises(TokenBudgetConfigurationError, match="tool schema"):
+        count_chat_input_tokens(Tokenizer([]), [], tools)
 
 
 def test_count_normalizes_null_text_without_mutating_tool_call_history():
@@ -79,6 +132,50 @@ def test_count_normalizes_null_text_without_mutating_tool_call_history():
     ]
     assert messages[0]["content"] is None
     assert messages[0]["thinking"] is None
+
+
+def test_count_normalizes_nested_tool_arguments_without_mutating_history():
+    tokenizer = Tokenizer([10, 20])
+    messages = [
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call-1",
+                    "function": {
+                        "name": "bash",
+                        "arguments": '{"command":"pwd"}',
+                    },
+                }
+            ],
+        }
+    ]
+
+    assert count_chat_input_tokens(tokenizer, messages, []) == 2
+    rendered = tokenizer.calls[0][0]
+    assert rendered[0]["content"] == ""
+    assert rendered[0]["tool_calls"][0]["function"]["arguments"] == {
+        "command": "pwd"
+    }
+    assert messages[0]["content"] is None
+    assert messages[0]["tool_calls"][0]["function"]["arguments"] == (
+        '{"command":"pwd"}'
+    )
+
+
+@pytest.mark.parametrize("arguments", ["not-json", "[]"])
+def test_count_rejects_invalid_or_nonobject_tool_argument_strings(arguments):
+    messages = [
+        {
+            "role": "assistant",
+            "tool_calls": [
+                {"function": {"name": "bash", "arguments": arguments}}
+            ],
+        }
+    ]
+    with pytest.raises(TokenBudgetConfigurationError, match="tool-call arguments"):
+        count_chat_input_tokens(Tokenizer([]), messages, [])
 
 
 def test_count_accepts_batch_encoding_shape_and_rejects_ambiguous_batch():

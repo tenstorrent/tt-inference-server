@@ -1214,7 +1214,7 @@ class TestSecretsHandling:
             ("server", True, True, False, False, False),  # Interactive mode
             ("server", True, False, True, False, True),  # Server with docker + no-auth
             ("release", False, False, False, False, True),  # Non-client workflow
-            ("agentic", False, False, False, False, True),  # Non-client workflow
+            ("agentic", False, False, False, False, False),  # Client-side
         ],
     )
     def test_secrets_requirements(

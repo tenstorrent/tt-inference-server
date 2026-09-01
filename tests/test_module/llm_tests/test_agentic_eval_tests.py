@@ -40,6 +40,7 @@ from llm_module.parsers.agentic import (
 )
 from test_module.llm_tests.agentic_eval_tests import (
     _filter_agentic_tasks_by_benchmark,
+    _require_openai_server,
     _select_agentic_tasks,
     _server_connection as bridge_server_connection,
 )
@@ -1014,6 +1015,25 @@ class TestAgenticRunTimestamp:
 
 
 class TestAgenticBridge:
+    def test_remote_readiness_uses_service_port_when_url_omits_it(self):
+        ctx = MagicMock()
+        ctx.remote_server = True
+        ctx.server_url = "http://127.0.0.1"
+        ctx.base_url = "http://127.0.0.1:18081"
+        controller = MagicMock()
+        controller.wait_for_healthy.return_value = True
+        controller.models_url = "http://127.0.0.1:18081/v1/models"
+
+        with patch(
+            "test_module.llm_tests.agentic_eval_tests.RemoteOpenAIController",
+            return_value=controller,
+        ) as constructor:
+            _require_openai_server(ctx)
+
+        constructor.assert_called_once_with(
+            base_url="http://127.0.0.1:18081", auth_token=""
+        )
+
     def test_bridge_delegates_to_driver_and_accepts_blocks(self):
         from test_module.llm_tests.agentic_eval_tests import run_llm_agentic_eval
 

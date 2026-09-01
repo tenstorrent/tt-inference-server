@@ -172,7 +172,10 @@ def _require_openai_server(ctx: MediaContext) -> None:
     auth_token = os.getenv("OPENAI_API_KEY") or os.getenv("API_KEY") or ""
     if ctx.remote_server:
         controller = RemoteOpenAIController(
-            base_url=ctx.server_url,
+            # ``server_url`` may intentionally omit a port while the runtime
+            # carries it separately. MediaContext is the canonical join point;
+            # using the raw URL here silently probes port 80/443.
+            base_url=ctx.base_url,
             auth_token=auth_token,
         )
     else:

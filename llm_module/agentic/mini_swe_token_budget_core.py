@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,39 @@ class TokenBudgetConfigurationError(RuntimeError):
     """The configured tokenizer cannot authoritatively count the API input."""
 
 
+def _normalize_tools_for_chat_template(tools: list[dict]) -> list[dict]:
+    """Return Hugging Face tool schemas without changing the API payload.
+
+    mini-swe-agent sends tools to LiteLLM in OpenAI's wrapper form::
+
+        {"type": "function", "function": {"name": ..., "parameters": ...}}
+
+    Hugging Face chat templates consume the function JSON schema itself.  In
+    particular, Qwen3.6 iterates the schema's ``parameters.properties`` and
+    raises inside Jinja when handed the outer OpenAI wrapper.  Token counting
+    is a separate, local render; normalize a deep copy for that render only and
+    leave the request passed to LiteLLM byte-for-byte unchanged.
+    """
+    rendered_tools: list[dict] = []
+    for tool in deepcopy(tools):
+        if not isinstance(tool, dict):
+            raise TokenBudgetConfigurationError(
+                "tool schema must be an object for tokenizer rendering"
+            )
+        if "function" in tool or "type" in tool:
+            if tool.get("type") != "function" or not isinstance(
+                tool.get("function"), dict
+            ):
+                raise TokenBudgetConfigurationError(
+                    "OpenAI tool schema must contain type='function' and a "
+                    "function object"
+                )
+            rendered_tools.append(tool["function"])
+        else:
+            rendered_tools.append(tool)
+    return rendered_tools
+
+
 def _normalize_messages_for_chat_template(messages: list[dict]) -> list[dict]:
     """Return a template-safe copy without changing the API request history.
 
@@ -30,16 +64,29 @@ def _normalize_messages_for_chat_template(messages: list[dict]) -> list[dict]:
     that representation. Empty text is token-equivalent here and lets the
     authoritative tokenizer count the complete request, including tool calls.
     """
-    normalized = []
-    for message in messages:
-        rendered_message = dict(message)
+    normalized = deepcopy(messages)
+    for rendered_message in normalized:
         for text_field in ("content", "thinking"):
             if (
                 rendered_message.get(text_field) is None
                 and text_field in rendered_message
             ):
                 rendered_message[text_field] = ""
-        normalized.append(rendered_message)
+        for tool_call in rendered_message.get("tool_calls") or []:
+            function = tool_call.get("function") or {}
+            arguments = function.get("arguments")
+            if isinstance(arguments, str):
+                try:
+                    arguments = json.loads(arguments)
+                except json.JSONDecodeError as exc:
+                    raise TokenBudgetConfigurationError(
+                        "tool-call arguments are not valid JSON"
+                    ) from exc
+                if not isinstance(arguments, dict):
+                    raise TokenBudgetConfigurationError(
+                        "tool-call arguments JSON must decode to an object"
+                    )
+                function["arguments"] = arguments
     return normalized
 
 
@@ -52,7 +99,7 @@ def count_chat_input_tokens(
     try:
         encoded = tokenizer.apply_chat_template(
             _normalize_messages_for_chat_template(messages),
-            tools=tools,
+            tools=_normalize_tools_for_chat_template(tools),
             tokenize=True,
             add_generation_prompt=True,
         )
