@@ -33,7 +33,7 @@
     "apis": [
       "openai_chat_completions"
     ],
-    "notes": "Blaze OpenAI-compatible endpoint; commonly-required sampling/output parameters.",
+    "notes": "OpenAI-compatible LLM endpoint; commonly-required sampling/output parameters.",
     "parameters": {
       "level": "common"
     }

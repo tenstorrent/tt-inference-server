@@ -4,7 +4,7 @@
 
 """Requirements-driven adapters over the Tenstorrent validation content.
 
-A Blaze customer-requirements document (parsed by
+An LLM-serving requirements document (parsed by
 ``workflow_module.requirements_schema``) declares *what* to validate and the
 targets that gate it. These adapters map that declaration onto the concrete
 Tenstorrent content via the engine seams, wrapping the stock Tenstorrent

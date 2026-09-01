@@ -54,7 +54,7 @@ class RuntimeConfig:
     override_tt_config: Optional[str] = None
     vllm_override_args: Optional[str] = None
     runtime_model_spec_json: Optional[str] = None
-    # Path to the Blaze customer-requirements document driving this run, if
+    # Path to the LLM-serving requirements document driving this run, if
     # any. Carried so dispatched children can re-load the document and rebuild
     # the same off-catalog spec / eval + benchmark content the parent used.
     requirements_json: Optional[str] = None

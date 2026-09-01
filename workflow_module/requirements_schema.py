@@ -2,7 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-"""Engine-owned loader for the Blaze customer-requirements document.
+"""Engine-owned loader for the LLM-serving requirements document.
 
 A requirements document (``schemaVersion`` 2.x, e.g. ``acme-llm-serving.json``)
 is the vendor-neutral input that drives a validation run: which accuracy evals
@@ -10,7 +10,7 @@ to run and the reference scores that gate them, which benchmark sweep points to
 execute and the scalar targets / SLOs to compare against, plus enough model and
 deployment metadata to run a model that is not in the built-in catalog.
 
-The format is Blaze/llm-gauntlet business, not Tenstorrent business, so this
+The format is llm-gauntlet business, not Tenstorrent business, so this
 loader lives engine-side and produces plain, adapter-agnostic dataclasses. The
 Tenstorrent adapter (``workflows/requirements_target_pack.py``) maps these onto
 ``reference_config`` types via the :class:`~workflow_module.target_pack.TargetPack`
@@ -252,7 +252,7 @@ class Deployment:
 
 @dataclass(frozen=True)
 class RequirementsDoc:
-    """Parsed Blaze requirements document."""
+    """Parsed LLM-serving requirements document."""
 
     id: str
     schema_version: str

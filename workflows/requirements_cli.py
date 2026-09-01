@@ -5,7 +5,7 @@
 """Shared ``--requirements-json`` CLI plumbing for both entry points.
 
 ``run.py`` (full bring-up + dispatch) and ``run_workflows.py`` (standalone
-engine) both accept a Blaze customer-requirements document. Loading it,
+engine) both accept an LLM-serving requirements document. Loading it,
 defaulting ``--model``/``--device`` from it, relaxing the catalog gates, and
 overlaying it onto the engine seams must behave identically whichever entry
 point the operator uses -- and ``run.py`` dispatches *into* ``run_workflows.py``,
@@ -33,7 +33,7 @@ REQUIREMENTS_FLAG = "--requirements-json"
 DEFAULT_REQUIREMENTS_DEVICE = "super_cluster"
 
 REQUIREMENTS_HELP = (
-    "Path to a Blaze customer-requirements document (schemaVersion 2.x). "
+    "Path to an LLM-serving requirements document (schemaVersion 2.x). "
     "Drives the run from the document: the accuracy evals it lists (gated by "
     "their reference scores/tolerances), the benchmark sweep points and their "
     "scalar targets/SLOs, and the model + deployment metadata (so a model not "
