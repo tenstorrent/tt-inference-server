@@ -147,6 +147,7 @@ def _mini_config(tmp_path, **overrides):
         "max_output_tokens": 32 * 1024,
         "completion_kwargs": {},
         "mini_agent_kwargs": {},
+        "mini_observation_chars": None,
         "agent_generation_timeout_sec": 3600,
         "instance_ids": ["case-a", "case-b"],
         "n_tasks": None,
@@ -183,6 +184,22 @@ def test_generated_mini_config_applies_positive_step_limit(tmp_path):
     config = _mini_config(tmp_path, mini_agent_kwargs={"step_limit": 8})
     generated = json.loads(_write_mini_sweagent_model_config(config).read_text())
     assert generated["agent"] == {"step_limit": 8}
+
+
+def test_generated_mini_config_bounds_retained_shell_observation(tmp_path):
+    config = _mini_config(tmp_path, mini_observation_chars=2048)
+    generated = json.loads(_write_mini_sweagent_model_config(config).read_text())
+    template = generated["model"]["observation_template"]
+    assert "output.output | length <= 2048" in template
+    assert "output.output[:1024]" in template
+    assert "output.output[-1024:]" in template
+
+
+@pytest.mark.parametrize("value", [0, 1, True, "2048"])
+def test_generated_mini_config_rejects_invalid_observation_budget(tmp_path, value):
+    config = _mini_config(tmp_path, mini_observation_chars=value)
+    with pytest.raises(ValueError, match="mini_observation_chars"):
+        _write_mini_sweagent_model_config(config)
 
 
 @pytest.mark.parametrize("value", [0, -1, True, "8"])

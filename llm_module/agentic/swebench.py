@@ -64,6 +64,7 @@ class SWEbenchRunConfig:
     score_existing_predictions: bool
     instance_ids: list[str] = field(default_factory=list)
     mini_agent_kwargs: dict[str, Any] = field(default_factory=dict)
+    mini_observation_chars: Optional[int] = None
     # Exact Hugging Face tokenizer used to render/count each mini-swe request.
     # Kept separate from model_name, which includes LiteLLM's provider prefix.
     tokenizer_name: Optional[str] = None
@@ -409,6 +410,31 @@ def _write_mini_sweagent_model_config(config: SWEbenchRunConfig) -> Path:
             ),
         }
     }
+    if config.mini_observation_chars is not None:
+        max_chars = config.mini_observation_chars
+        if (
+            not isinstance(max_chars, int)
+            or isinstance(max_chars, bool)
+            or max_chars < 2
+        ):
+            raise ValueError("mini_observation_chars must be an integer >= 2")
+        half = max_chars // 2
+        model_config["model"]["observation_template"] = (
+            "{% if output.exception_info -%}\n"
+            "<exception>{{output.exception_info}}</exception>\n"
+            "{% endif -%}\n"
+            "<returncode>{{output.returncode}}</returncode>\n"
+            f"{{% if output.output | length <= {max_chars} -%}}\n"
+            "<output>\n{{ output.output -}}\n</output>\n"
+            "{%- else -%}\n"
+            "<warning>Command output exceeded the declared observation budget; "
+            "an equal head/tail sample follows.</warning>\n"
+            f"<output_head>\n{{{{ output.output[:{half}] }}}}\n</output_head>\n"
+            "<elided_chars>{{ output.output | length - "
+            f"{max_chars} }}}}</elided_chars>\n"
+            f"<output_tail>\n{{{{ output.output[-{half}:] }}}}\n</output_tail>\n"
+            "{%- endif -%}"
+        )
     if config.mini_environment_class == "docker":
         model_config["environment"] = {
             "run_args": ["--rm", "--label", _agentic_container_label(config)]

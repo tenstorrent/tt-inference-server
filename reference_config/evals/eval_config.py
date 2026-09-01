@@ -172,6 +172,11 @@ class SWEbenchEvalConfig:
     # Overrides merged into mini-swe-agent's agent section after the builtin
     # config, allowing catalogue-owned execution bounds such as step_limit.
     mini_agent_kwargs: Dict[str, Any] = field(default_factory=dict)
+    # Optional character budget for each shell observation retained in the
+    # model-visible history. The generated config preserves equal head/tail
+    # slices plus an explicit elision count; the token budget still counts the
+    # complete retained conversation without history truncation.
+    mini_observation_chars: Optional[int] = None
     sweagent_config: str = "config/default.yaml"
     mini_config: str = "swebench.yaml"
     mini_model_class: str = "litellm"
@@ -4812,6 +4817,7 @@ _eval_config_list = [
                     # envelope. Eight steps is a conservative smoke bound, not
                     # a claim about full SWE task solvability.
                     mini_agent_kwargs={"step_limit": 8},
+                    mini_observation_chars=2048,
                     # Five C1 agentic trials may each generate a long reasoning
                     # trajectory. Bound the complete generation phase without
                     # conflating it with the 30-minute per-instance verifier.

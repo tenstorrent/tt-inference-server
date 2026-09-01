@@ -43,6 +43,7 @@ def test_gpt120_swebench_is_exact_c1_s8192_five_instance_contract(tmp_path):
     assert cfg.max_input_tokens == 7 * 1024
     assert cfg.max_output_tokens == 1 * 1024
     assert cfg.mini_agent_kwargs == {"step_limit": 8}
+    assert cfg.mini_observation_chars == 2048
     assert cfg.max_input_tokens + cfg.max_output_tokens == 8 * 1024
     assert task.min_context_required == 8 * 1024
     assert task.min_context_required == cfg.max_input_tokens + cfg.max_output_tokens
@@ -65,6 +66,7 @@ def test_gpt120_swebench_is_exact_c1_s8192_five_instance_contract(tmp_path):
     assert run.api_base == "http://127.0.0.1:18091/v1"
     assert run.n_concurrent_trials == 1
     assert run.mini_agent_kwargs == {"step_limit": 8}
+    assert run.mini_observation_chars == 2048
 
 
 def test_gpt120_swebench_smoke_is_one_fixed_instance():
