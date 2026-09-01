@@ -19,6 +19,11 @@ import time
 from urllib.request import urlopen
 
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+
 MODEL = "openai/gpt-oss-120b"
 DATASET = "SWE-bench/SWE-bench_Verified"
 DATASET_REVISION = "78f471bf655a3137b2e8a75af1501690ec009ec3"
@@ -134,7 +139,7 @@ def main() -> int:
     print(json.dumps(predeclared, sort_keys=True), flush=True)
 
     os.environ["MODEL_SPECS_ENV"] = "dev"
-    os.environ.setdefault("TTIS_REPO_ROOT", str(Path(__file__).resolve().parents[2]))
+    os.environ.setdefault("TTIS_REPO_ROOT", str(REPO_ROOT))
     from llm_module.agentic.swebench import SWEbenchRunConfig, run
     from reference_config.evals.eval_config import EVAL_CONFIGS
 
