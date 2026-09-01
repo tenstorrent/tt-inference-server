@@ -99,6 +99,17 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--limit-samples-mode",
+        type=str,
+        choices=["ci-nightly", "ci-long", "ci-commit", "smoke-test"],
+        default=None,
+        help=(
+            "Select the configured bounded dataset/instance subset. This must "
+            "be forwarded by run.py for agentic workflows; omitting it can "
+            "silently expand a one-instance smoke run to the full dataset."
+        ),
+    )
+    parser.add_argument(
         "--num-prompts",
         type=int,
         default=None,

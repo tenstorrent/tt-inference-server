@@ -641,6 +641,22 @@ def test_agentic_forwards_benchmark_selection(monkeypatch, tmp_path):
     assert argv[argv.index("--agentic-benchmark") + 1] == "tau3"
 
 
+def test_agentic_forwards_bounded_limit_mode(monkeypatch, tmp_path):
+    spec = _spec(ModelType.LLM, name="gpt-oss-120b")
+    rc = _rc(
+        workflow="agentic",
+        agentic_benchmark="swebench",
+        limit_samples_mode="smoke-test",
+    )
+    monkeypatch.setattr(
+        workflow_dispatch, "get_default_workflow_root_log_dir", lambda: tmp_path
+    )
+
+    argv = workflow_dispatch.build_engine_commands(spec, rc, "/tmp/spec.json")[0].argv
+
+    assert argv[argv.index("--limit-samples-mode") + 1] == "smoke-test"
+
+
 def test_agentic_omits_benchmark_when_unset(monkeypatch, tmp_path):
     spec = _spec(ModelType.LLM, name="Kimi-K2.7-Code")
     rc = _rc(workflow="agentic")

@@ -549,6 +549,11 @@ def _build_agentic_cmd(repo_root, model_spec, runtime_config, json_fpath, output
         "--agentic-benchmark",
         getattr(runtime_config, "agentic_benchmark", None),
     )
+    _extend_if_set(
+        cmd,
+        "--limit-samples-mode",
+        getattr(runtime_config, "limit_samples_mode", None),
+    )
     _forward_jwt(cmd, runtime_config)
     return cmd
 
