@@ -180,10 +180,25 @@ def _prepare_pinned_swebench_dataset(
         os.fsync(stream.fileno())
     os.replace(temporary, snapshot_path)
 
+    # Exercise the same dataset loader the agent and verifier will use, but do
+    # not hash its inferred Python values.  Recent datasets releases infer ISO
+    # date strings in JSONL as ``datetime`` objects, which is neither JSON
+    # serializable nor byte-identical to the selected Hub rows.  The immutable
+    # JSONL bytes are the content boundary; the loader check only proves that
+    # it preserves the exact ordered instance identity.
     reloaded = [
         dict(row) for row in load_dataset(str(snapshot_dir), split=config.dataset_split)
     ]
-    reloaded_sha256 = hashlib.sha256(_canonical_selected_rows(reloaded)).hexdigest()
+    if [row.get("instance_id") for row in reloaded] != config.instance_ids:
+        raise RuntimeError("local SWE-bench snapshot changed instance identity/order")
+    snapshot_rows = [
+        json.loads(line)
+        for line in snapshot_path.read_text(encoding="utf-8").splitlines()
+        if line
+    ]
+    reloaded_sha256 = hashlib.sha256(
+        _canonical_selected_rows(snapshot_rows)
+    ).hexdigest()
     if reloaded_sha256 != content_sha256:
         raise RuntimeError("local SWE-bench snapshot changed during materialization")
     receipt = {

@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import dataclasses
 import hashlib
+from datetime import datetime
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
@@ -597,6 +598,36 @@ class TestSWEbenchHarness:
             RuntimeError, match="content digest mismatch"
         ):
             _prepare_pinned_swebench_dataset(cfg)
+
+    def test_pinned_dataset_digest_ignores_loader_datetime_coercion(self, tmp_path):
+        row = {
+            "instance_id": "django__django-11299",
+            "problem_statement": "exact",
+            "created_at": "2024-01-02T03:04:05Z",
+        }
+        digest = hashlib.sha256(
+            json.dumps(
+                [row], ensure_ascii=True, sort_keys=True, separators=(",", ":")
+            ).encode("utf-8")
+        ).hexdigest()
+        cfg = dataclasses.replace(
+            build_swebench_config(
+                _swebench_task(),
+                _server(),
+                DriverContext(output_dir=tmp_path, device="N150"),
+                n_tasks=1,
+            ),
+            qualification_claim="models_ci_graded",
+            dataset_revision="a" * 40,
+            instance_ids=["django__django-11299"],
+            selected_instances_sha256=digest,
+        )
+        coerced = [dict(row, created_at=datetime.fromisoformat("2024-01-02T03:04:05+00:00"))]
+
+        with patch("datasets.load_dataset", side_effect=[[row], coerced]):
+            _, actual = _prepare_pinned_swebench_dataset(cfg)
+
+        assert actual == digest
 
     def test_agent_failure_returns_nonzero_without_predictions(self, tmp_path):
         task = _swebench_task()
