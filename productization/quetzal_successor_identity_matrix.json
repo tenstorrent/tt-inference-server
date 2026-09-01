@@ -22,7 +22,11 @@
         "gsm8k_job": 70580,
         "gsm8k_flexible_exact": 0.95,
         "bounded_swe_job": 71437,
-        "bounded_swe_resolved": 1,
+        "bounded_swe_harness_resolved": 1,
+        "bounded_swe_selection_policy": "gold_patch_ranked_task_selection",
+        "bounded_swe_selection_leaked": true,
+        "bounded_swe_qualification": false,
+        "bounded_swe_evidence_scope": "harness_and_endpoint_execution_only_not_model_quality",
         "bounded_swe_runtime_source_revision": "8ddb62c06bcd2c8fe1fbd3daad83424011c260cf",
         "bounded_swe_transferable_to_catalog_runtime": false
       },
