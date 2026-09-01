@@ -360,7 +360,7 @@ def test_gpt_streamed_expert_paths_stay_beneath_exact_auxiliary_mount():
     assert mounted_root == PurePosixPath(
         "/home/container_app_user/quetzal/auxiliary/"
         "openai_gpt-oss-120b-streamed-cache/"
-        "sha256-2b2e528a75cae51a53db4a3e309f075553fe5f5f7fec7d2a29480f6572f2e416"
+        "sha256-2eef319a6e078c5c2497f252f7c4a0c32c363b2901e38a5a924b2456a5c9874c"
     )
 
     expected_paths = {

@@ -189,7 +189,7 @@ templates:
       reasoning_parser_name: openai_gptoss
       tool_call_parser_name: openai
 
-# Generated GPT-OSS f0b development lane. This is deliberately non-default and
+# Generated GPT-OSS V2 development lane. This is deliberately non-default and
 # points only at the requested immutable publication identities. Until storage
 # administrators publish both roots, TTIS fails closed before image/device/
 # weight setup. The native gpt_oss rows below remain unchanged.
@@ -199,7 +199,7 @@ templates:
   inference_engine: VLLM
   model_type: LLM
   supported_modalities: [text]
-  # Generated f0b streams the 66 GB expert cache and mmaps its 4.3 GB weights;
+  # Generated V2 streams the 66 GB expert cache and mmaps its 4.3 GB weights;
   # it does not materialize a 120B bf16 checkpoint in host RAM. Exabox evidence
   # measured 8,279,056 KiB peak compile RSS and 3,436,484 KiB resident endpoint
   # RSS, so 32 GiB preserves >3.9x headroom over the measured peak. Keep the
@@ -217,28 +217,28 @@ templates:
         QUETZAL_MODEL: openai/gpt-oss-120b
         QUETZAL_HF_REVISION: b5c939de8f754692c1647ca79fbf85e8c1e70f8a
         QUETZAL_REQUIRED_SOURCE_REVISION: 76a15d4cdd0c2b400ef9b89499a334a6b748e56b
-        QUETZAL_GENERATOR_SOURCE_REVISION: 3750c4872bcaf0c0c9404a4c99edcefb9e6d103d
-        QUETZAL_RUNTIME_ATTESTATION_SHA256: 5f12696cdd958028dca60f87cd5fc1ff0e2add41d86129785b253efd5d0ea3db
+        QUETZAL_GENERATOR_SOURCE_REVISION: 3a3873fefd4317d885c0602d3d7648db9e89f8e3
+        QUETZAL_RUNTIME_ATTESTATION_SHA256: 7c1e65c16897a54cd0b34ba49c185710575dc98667a07add89485648ce5443e3
         QUETZAL_SERVE_PROFILE: gpt_oss_120b.serve
         QUETZAL_SERVE_PROFILE_SHA256: d7f29d2ef00518c8ed7c726857a58f6f19fe64b4ea30e7244625fd940364b76e
-        QUETZAL_PACKAGE_ID: sha256-v2-dacc0476febcaf6fb237d1446908e553b16a122b8d6392c933034bd9984c618b-3086bdd6e0b5aaccaedfe5bdaa514c74409a15da96503395738b3bbee9ed35e2-2cf6ad2acd9ca99e07ae3fd5dce462dd7ede7695529bfc5894893c82a85a0fc9
-        QUETZAL_BUNDLE_MANIFEST_SHA256: d659407d3c4353658480c841551edc174148e158c7b46d0b8c4e5d78b10a641f
+        QUETZAL_PACKAGE_ID: sha256-v2-f24d53fe00ceab8af797d2dced45e7b073f6c0e328205f95c8d37a3e1783b29f-cc1b6f9b581f2ff115be908f267c4b98bec4ab9b433f6d87bb0dd893dd406d66-def12a5e31923879495445e77cfabe5f37991bb5723106c321a9120b5f1ae050
+        QUETZAL_BUNDLE_MANIFEST_SHA256: 012daa4f16bc108dd7d7e1ea582c5bb432d661fd934dea438ffdf6ee37a29769
         QUETZAL_REQUIRED_TT_METAL_COMMIT: b534549300fe2af11e6ee828675294bc0e359555
         QUETZAL_TT_METAL_PATCHSET_STATUS: applied
         QUETZAL_REQUIRED_TT_METAL_PATCHSET_SHA256: 22fb0bd2523b8a5c63fa20c3c8a1586dc9ead5150449d0eb02231fa8173a7edd
-        QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/packages/sha256-v2-dacc0476febcaf6fb237d1446908e553b16a122b8d6392c933034bd9984c618b-3086bdd6e0b5aaccaedfe5bdaa514c74409a15da96503395738b3bbee9ed35e2-2cf6ad2acd9ca99e07ae3fd5dce462dd7ede7695529bfc5894893c82a85a0fc9
-        QZ_MODELS_ROOT: /home/container_app_user/quetzal/packages/sha256-v2-dacc0476febcaf6fb237d1446908e553b16a122b8d6392c933034bd9984c618b-3086bdd6e0b5aaccaedfe5bdaa514c74409a15da96503395738b3bbee9ed35e2-2cf6ad2acd9ca99e07ae3fd5dce462dd7ede7695529bfc5894893c82a85a0fc9
-        QZ_QUALIFICATION_MANIFEST: /home/container_app_user/quetzal/packages/sha256-v2-dacc0476febcaf6fb237d1446908e553b16a122b8d6392c933034bd9984c618b-3086bdd6e0b5aaccaedfe5bdaa514c74409a15da96503395738b3bbee9ed35e2-2cf6ad2acd9ca99e07ae3fd5dce462dd7ede7695529bfc5894893c82a85a0fc9/qualification_manifest.yaml
-        QUETZAL_PREFILL_GENERATED_PY: /home/container_app_user/quetzal/packages/sha256-v2-dacc0476febcaf6fb237d1446908e553b16a122b8d6392c933034bd9984c618b-3086bdd6e0b5aaccaedfe5bdaa514c74409a15da96503395738b3bbee9ed35e2-2cf6ad2acd9ca99e07ae3fd5dce462dd7ede7695529bfc5894893c82a85a0fc9/compiled/openai_gpt-oss-120b-s1024/full/prefill/generated.py
-        QUETZAL_PREFILL_METADATA_JSON: /home/container_app_user/quetzal/packages/sha256-v2-dacc0476febcaf6fb237d1446908e553b16a122b8d6392c933034bd9984c618b-3086bdd6e0b5aaccaedfe5bdaa514c74409a15da96503395738b3bbee9ed35e2-2cf6ad2acd9ca99e07ae3fd5dce462dd7ede7695529bfc5894893c82a85a0fc9/compiled/openai_gpt-oss-120b-s1024/full/prefill/metadata.json
-        QUETZAL_DECODE_GENERATED_PY: /home/container_app_user/quetzal/packages/sha256-v2-dacc0476febcaf6fb237d1446908e553b16a122b8d6392c933034bd9984c618b-3086bdd6e0b5aaccaedfe5bdaa514c74409a15da96503395738b3bbee9ed35e2-2cf6ad2acd9ca99e07ae3fd5dce462dd7ede7695529bfc5894893c82a85a0fc9/compiled/openai_gpt-oss-120b-s1024/full/decode/generated.py
-        QUETZAL_DECODE_METADATA_JSON: /home/container_app_user/quetzal/packages/sha256-v2-dacc0476febcaf6fb237d1446908e553b16a122b8d6392c933034bd9984c618b-3086bdd6e0b5aaccaedfe5bdaa514c74409a15da96503395738b3bbee9ed35e2-2cf6ad2acd9ca99e07ae3fd5dce462dd7ede7695529bfc5894893c82a85a0fc9/compiled/openai_gpt-oss-120b-s1024/full/decode/metadata.json
-        QUETZAL_WEIGHTS: /home/container_app_user/quetzal/packages/sha256-v2-dacc0476febcaf6fb237d1446908e553b16a122b8d6392c933034bd9984c618b-3086bdd6e0b5aaccaedfe5bdaa514c74409a15da96503395738b3bbee9ed35e2-2cf6ad2acd9ca99e07ae3fd5dce462dd7ede7695529bfc5894893c82a85a0fc9/compiled_weights/openai_gpt-oss-120b-s1024/full/weights.pt
+        QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/packages/sha256-v2-f24d53fe00ceab8af797d2dced45e7b073f6c0e328205f95c8d37a3e1783b29f-cc1b6f9b581f2ff115be908f267c4b98bec4ab9b433f6d87bb0dd893dd406d66-def12a5e31923879495445e77cfabe5f37991bb5723106c321a9120b5f1ae050
+        QZ_MODELS_ROOT: /home/container_app_user/quetzal/packages/sha256-v2-f24d53fe00ceab8af797d2dced45e7b073f6c0e328205f95c8d37a3e1783b29f-cc1b6f9b581f2ff115be908f267c4b98bec4ab9b433f6d87bb0dd893dd406d66-def12a5e31923879495445e77cfabe5f37991bb5723106c321a9120b5f1ae050
+        QZ_QUALIFICATION_MANIFEST: /home/container_app_user/quetzal/packages/sha256-v2-f24d53fe00ceab8af797d2dced45e7b073f6c0e328205f95c8d37a3e1783b29f-cc1b6f9b581f2ff115be908f267c4b98bec4ab9b433f6d87bb0dd893dd406d66-def12a5e31923879495445e77cfabe5f37991bb5723106c321a9120b5f1ae050/qualification_manifest.yaml
+        QUETZAL_PREFILL_GENERATED_PY: /home/container_app_user/quetzal/packages/sha256-v2-f24d53fe00ceab8af797d2dced45e7b073f6c0e328205f95c8d37a3e1783b29f-cc1b6f9b581f2ff115be908f267c4b98bec4ab9b433f6d87bb0dd893dd406d66-def12a5e31923879495445e77cfabe5f37991bb5723106c321a9120b5f1ae050/compiled/openai_gpt-oss-120b-s8192-c8192-p150x4-b1/full/prefill/generated.py
+        QUETZAL_PREFILL_METADATA_JSON: /home/container_app_user/quetzal/packages/sha256-v2-f24d53fe00ceab8af797d2dced45e7b073f6c0e328205f95c8d37a3e1783b29f-cc1b6f9b581f2ff115be908f267c4b98bec4ab9b433f6d87bb0dd893dd406d66-def12a5e31923879495445e77cfabe5f37991bb5723106c321a9120b5f1ae050/compiled/openai_gpt-oss-120b-s8192-c8192-p150x4-b1/full/prefill/metadata.json
+        QUETZAL_DECODE_GENERATED_PY: /home/container_app_user/quetzal/packages/sha256-v2-f24d53fe00ceab8af797d2dced45e7b073f6c0e328205f95c8d37a3e1783b29f-cc1b6f9b581f2ff115be908f267c4b98bec4ab9b433f6d87bb0dd893dd406d66-def12a5e31923879495445e77cfabe5f37991bb5723106c321a9120b5f1ae050/compiled/openai_gpt-oss-120b-s8192-c8192-p150x4-b1/full/decode/generated.py
+        QUETZAL_DECODE_METADATA_JSON: /home/container_app_user/quetzal/packages/sha256-v2-f24d53fe00ceab8af797d2dced45e7b073f6c0e328205f95c8d37a3e1783b29f-cc1b6f9b581f2ff115be908f267c4b98bec4ab9b433f6d87bb0dd893dd406d66-def12a5e31923879495445e77cfabe5f37991bb5723106c321a9120b5f1ae050/compiled/openai_gpt-oss-120b-s8192-c8192-p150x4-b1/full/decode/metadata.json
+        QUETZAL_WEIGHTS: /home/container_app_user/quetzal/packages/sha256-v2-f24d53fe00ceab8af797d2dced45e7b073f6c0e328205f95c8d37a3e1783b29f-cc1b6f9b581f2ff115be908f267c4b98bec4ab9b433f6d87bb0dd893dd406d66-def12a5e31923879495445e77cfabe5f37991bb5723106c321a9120b5f1ae050/compiled_weights/openai_gpt-oss-120b-s8192-c8192-p150x4-b1/full/weights.pt
         QUETZAL_REQUIRED_AUXILIARY_NAMES: openai_gpt-oss-120b-streamed-cache
-        QUETZAL_AUXILIARY_ROOTS_JSON: '{"openai_gpt-oss-120b-streamed-cache":"/home/container_app_user/quetzal/auxiliary/openai_gpt-oss-120b-streamed-cache/sha256-2b2e528a75cae51a53db4a3e309f075553fe5f5f7fec7d2a29480f6572f2e416"}'
-        QZ_MOE_STREAMED_EXPERT_CACHE_ROOT: /home/container_app_user/quetzal/auxiliary/openai_gpt-oss-120b-streamed-cache/sha256-2b2e528a75cae51a53db4a3e309f075553fe5f5f7fec7d2a29480f6572f2e416/cache
-        QZ_MOE_STREAMED_EXPERT_MANIFEST: /home/container_app_user/quetzal/auxiliary/openai_gpt-oss-120b-streamed-cache/sha256-2b2e528a75cae51a53db4a3e309f075553fe5f5f7fec7d2a29480f6572f2e416/manifest/final.json
-        QUETZAL_REQUIRED_PREFILL_BUCKETS: "128,1024"
+        QUETZAL_AUXILIARY_ROOTS_JSON: '{"openai_gpt-oss-120b-streamed-cache":"/home/container_app_user/quetzal/auxiliary/openai_gpt-oss-120b-streamed-cache/sha256-2eef319a6e078c5c2497f252f7c4a0c32c363b2901e38a5a924b2456a5c9874c"}'
+        QZ_MOE_STREAMED_EXPERT_CACHE_ROOT: /home/container_app_user/quetzal/auxiliary/openai_gpt-oss-120b-streamed-cache/sha256-2eef319a6e078c5c2497f252f7c4a0c32c363b2901e38a5a924b2456a5c9874c/cache
+        QZ_MOE_STREAMED_EXPERT_MANIFEST: /home/container_app_user/quetzal/auxiliary/openai_gpt-oss-120b-streamed-cache/sha256-2eef319a6e078c5c2497f252f7c4a0c32c363b2901e38a5a924b2456a5c9874c/manifest/final.json
+        QUETZAL_REQUIRED_PREFILL_BUCKETS: "8192"
         QZ_MMAP_WEIGHTS: "1"
         TTQ_STREAM_WEIGHTS: "1"
         HF_HUB_OFFLINE: "1"
