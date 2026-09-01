@@ -6,8 +6,8 @@
 """Validate and render the exact GPT-OSS-120B f0b Models CI contract.
 
 This tool deliberately does not edit the development catalogue or Models CI
-configuration.  The historical f0b package is not published in an administered
-immutable namespace yet.  Once storage and runner administrators return the
+configuration.  The fully verified S8192 V2 package is not published in an
+administered immutable namespace yet.  Once storage and runner administrators return the
 response described here, this tool turns it into reviewable, deterministic
 fragments.  It is a patch planner, not a signature or attestation validator.
 Attestation metadata is optional provenance and never gates enrollment or
@@ -26,7 +26,7 @@ from typing import Any
 SCHEMA = "ttq.gpt120-f0b-publication-response/v1"
 MODEL_ID = "openai/gpt-oss-120b"
 CHECKPOINT = "b5c939de8f754692c1647ca79fbf85e8c1e70f8a"
-COMPILER_COMMIT = "3750c4872bcaf0c0c9404a4c99edcefb9e6d103d"
+COMPILER_COMMIT = "3a3873fefd4317d885c0602d3d7648db9e89f8e3"
 QUETZAL_COMMIT = "76a15d4cdd0c2b400ef9b89499a334a6b748e56b"
 SERVE_PROFILE = "gpt_oss_120b.serve"
 SERVE_PROFILE_SHA256 = (
@@ -49,6 +49,21 @@ DESCRIPTOR_CONTAINER_PATH = (
 )
 AUXILIARY_TREE_SHA256 = (
     "2b2e528a75cae51a53db4a3e309f075553fe5f5f7fec7d2a29480f6572f2e416"
+)
+PACKAGE_ID = (
+    "sha256-v2-"
+    "3eef8fbbf75e9ed050bd49058e7b2e12fe454463d0d8229ddaef91f95928a1c2-"
+    "3086bdd6e0b5aaccaedfe5bdaa514c74409a15da96503395738b3bbee9ed35e2-"
+    "2cf6ad2acd9ca99e07ae3fd5dce462dd7ede7695529bfc5894893c82a85a0fc9"
+)
+BUNDLE_MANIFEST_SHA256 = (
+    "2f0827218443fe0982388eef793041ce2415ddcdf3fc3abf94cb8d12a45277ad"
+)
+COMPILED_TREE_SHA256 = (
+    "3eef8fbbf75e9ed050bd49058e7b2e12fe454463d0d8229ddaef91f95928a1c2"
+)
+COMPILED_WEIGHTS_TREE_SHA256 = (
+    "3086bdd6e0b5aaccaedfe5bdaa514c74409a15da96503395738b3bbee9ed35e2"
 )
 LOCAL_ON_DISPATCH_PROFILE = {
     "max_concurrency": 1,
@@ -78,29 +93,25 @@ STALE_5CAB_BUNDLE_MANIFEST_SHA256 = (
 )
 
 EXPECTED_ARTIFACTS = {
-    "bucket_set_emit_sha256": "6fc8be3dd87a8e31d0d86af454f013acc39bf4d00accda637f739b0eec04a1fd",
-    "prefill_s128_generated_sha256": "567e94efaabf5469f569cee45def92402d8ecb96dab61fadba73379dab7f31a7",
-    "prefill_s1024_generated_sha256": "aa18fe6bef6756995307a4bce55d8e4278b7415dcd6d154024728297497e7922",
-    "prefill_s1024_metadata_sha256": "d479d2588ee20e810b0efa565778912a32ed08f5ff417bc5fa7c91f3206d566a",
-    "decode_generated_sha256": "19804ee667a47117e15be5ca1118c666d85c499063867020b0d8639001459b7e",
-    "decode_metadata_sha256": "25cb98544cb38c571092f8a69c89c66ed7a6f7e6d4afd1c043139e8d6f5e117c",
-    "candidate_pair_emit_sha256": "f296b7049ad6c9bfb3876f51c5cd1e717b19ebb0a667585907779ef45019370d",
-    "codegen_fingerprint": "31ce9a154bebca1edf0ccb159024dc52645eb055fc05ae277f2ad897e5dcfd60",
+    "candidate_pair_emit_sha256": "36ee31e273a66c478422fd2ff91bc4956f78d5ba6be1dd7b68f285b16c820489",
+    "prefill_emit_sha256": "35b9dce9889bbca89c5b2763c729a7905a43ce5bbb7b7248c778e830820ce5cf",
+    "decode_emit_sha256": "5bbfb0a60ce20e4b9daa0b60ed14caa7d4570731626909bfcde41ba3ff695cde",
+    "codegen_fingerprint": "cc8803616ccf9b57812f31b7b5c7524e5e9f8afd2c47d64699ad2f8241ab4c2a",
     "weights_fingerprint": "f75cbe891ecfe72c29c395cee959e350cae0eecdfa02353f739c6ff281ccabb3",
     "weights_file_sha256": "03756cbcd27540b80576f839b32b23b9648fc2623d4130246a785902a84a4dd8",
 }
 
 EXPECTED_RELATIVE_PATHS = {
     "qualification_manifest": "qualification_manifest.yaml",
-    "prefill_s1024_generated": (
-        "compiled/openai_gpt-oss-120b-s1024/full/prefill/generated.py"
+    "prefill_generated": (
+        "compiled/openai_gpt-oss-120b-s8192/full/prefill/generated.py"
     ),
-    "prefill_s1024_metadata": (
-        "compiled/openai_gpt-oss-120b-s1024/full/prefill/metadata.json"
+    "prefill_metadata": (
+        "compiled/openai_gpt-oss-120b-s8192/full/prefill/metadata.json"
     ),
-    "decode_generated": ("compiled/openai_gpt-oss-120b-s1024/full/decode/generated.py"),
-    "decode_metadata": ("compiled/openai_gpt-oss-120b-s1024/full/decode/metadata.json"),
-    "weights": "compiled_weights/openai_gpt-oss-120b-s1024/full/weights.pt",
+    "decode_generated": ("compiled/openai_gpt-oss-120b-s8192/full/decode/generated.py"),
+    "decode_metadata": ("compiled/openai_gpt-oss-120b-s8192/full/decode/metadata.json"),
+    "weights": "compiled_weights/openai_gpt-oss-120b-s8192/full/weights.pt",
 }
 HEX64 = re.compile(r"[0-9a-f]{64}")
 
@@ -224,18 +235,25 @@ def validate_response(data: dict[str, Any]) -> None:
 
     _at(data, "publication")
     package_id = _non_placeholder(data, "publication.package_id")
-    if not package_id.startswith("sha256-"):
-        raise ContractError(
-            "publication.package_id: expected a digest-addressed package ID"
-        )
     if package_id == STALE_5CAB_PACKAGE_ID:
         raise ContractError(
-            "publication.package_id: stale 5cab package identity is not the f0b core"
+            "publication.package_id: stale 5cab package identity is not the S8192 V2 core"
+        )
+    if package_id != PACKAGE_ID:
+        raise ContractError(
+            "publication.package_id: expected the fully verified S8192 V2 package "
+            f"{PACKAGE_ID!r}, got {package_id!r}"
         )
     bundle_manifest_sha256 = _sha256(data, "publication.bundle_manifest_sha256")
     if bundle_manifest_sha256 == STALE_5CAB_BUNDLE_MANIFEST_SHA256:
         raise ContractError(
-            "publication.bundle_manifest_sha256: stale 5cab bundle is not the f0b core"
+            "publication.bundle_manifest_sha256: stale 5cab bundle is not the S8192 V2 core"
+        )
+    if bundle_manifest_sha256 != BUNDLE_MANIFEST_SHA256:
+        raise ContractError(
+            "publication.bundle_manifest_sha256: expected the fully verified "
+            f"S8192 V2 manifest {BUNDLE_MANIFEST_SHA256!r}, got "
+            f"{bundle_manifest_sha256!r}"
         )
     generation = _non_placeholder(data, "publication.immutable_generation_id")
     _exact(data, "publication.administrator_owned", True)
@@ -254,7 +272,28 @@ def validate_response(data: dict[str, Any]) -> None:
         _exact(data, f"publication.{role}.immutable_generation_id", generation)
         _exact(data, f"publication.{role}.administrator_owned", True)
         _exact(data, f"publication.{role}.read_only", True)
+    core_host_root = _immutable_host_root(
+        data, "publication.generated_model_tree.host_root"
+    )
+    if PurePosixPath(core_host_root).name != PACKAGE_ID:
+        raise ContractError(
+            "publication.generated_model_tree.host_root must end in the exact "
+            "S8192 V2 package ID"
+        )
+    auxiliary_host_root = _immutable_host_root(
+        data, "publication.streamed_cache.host_root"
+    )
+    if PurePosixPath(auxiliary_host_root).name != f"sha256-{AUXILIARY_TREE_SHA256}":
+        raise ContractError(
+            "publication.streamed_cache.host_root must end in the exact auxiliary "
+            "tree digest"
+        )
     _exact(data, "publication.streamed_cache.name", AUXILIARY_NAME)
+    _exact(
+        data,
+        "publication.generated_model_tree.tree_sha256",
+        COMPILED_TREE_SHA256,
+    )
     _exact(
         data,
         "publication.generated_model_tree.container_root",
@@ -310,7 +349,12 @@ def validate_response(data: dict[str, Any]) -> None:
 
     _exact(data, "artifacts.batch_size", 1)
     _exact(data, "artifacts.max_context", 8192)
-    _exact(data, "artifacts.prefill_buckets", [128, 1024])
+    _exact(data, "artifacts.prefill_buckets", [8192])
+    _exact(
+        data,
+        "artifacts.compiled_weights_tree_sha256",
+        COMPILED_WEIGHTS_TREE_SHA256,
+    )
     for key, expected in EXPECTED_ARTIFACTS.items():
         _exact(data, f"artifacts.{key}", expected)
     for name, expected in EXPECTED_RELATIVE_PATHS.items():
@@ -342,12 +386,14 @@ def render_contract(data: dict[str, Any]) -> dict[str, Any]:
         "QUETZAL_SERVE_PROFILE_SHA256": SERVE_PROFILE_SHA256,
         "QUETZAL_PACKAGE_ID": package_id,
         "QUETZAL_BUNDLE_MANIFEST_SHA256": publication["bundle_manifest_sha256"],
+        "QUETZAL_REQUIRED_TT_METAL_COMMIT": TT_METAL_COMMIT,
+        "QUETZAL_TT_METAL_PATCHSET_STATUS": "applied",
         "QUETZAL_REQUIRED_TT_METAL_PATCHSET_SHA256": TT_METAL_PATCHSET,
         "QUETZAL_PACKAGE_ROOT": container_root,
         "QZ_MODELS_ROOT": container_root,
         "QZ_QUALIFICATION_MANIFEST": f"{container_root}/{relative['qualification_manifest']}",
-        "QUETZAL_PREFILL_GENERATED_PY": f"{container_root}/{relative['prefill_s1024_generated']}",
-        "QUETZAL_PREFILL_METADATA_JSON": f"{container_root}/{relative['prefill_s1024_metadata']}",
+        "QUETZAL_PREFILL_GENERATED_PY": f"{container_root}/{relative['prefill_generated']}",
+        "QUETZAL_PREFILL_METADATA_JSON": f"{container_root}/{relative['prefill_metadata']}",
         "QUETZAL_DECODE_GENERATED_PY": f"{container_root}/{relative['decode_generated']}",
         "QUETZAL_DECODE_METADATA_JSON": f"{container_root}/{relative['decode_metadata']}",
         "QUETZAL_WEIGHTS": f"{container_root}/{relative['weights']}",
@@ -355,7 +401,7 @@ def render_contract(data: dict[str, Any]) -> dict[str, Any]:
             {AUXILIARY_NAME: aux_container}, separators=(",", ":")
         ),
         "QUETZAL_REQUIRED_AUXILIARY_NAMES": AUXILIARY_NAME,
-        "QUETZAL_REQUIRED_PREFILL_BUCKETS": "128,1024",
+        "QUETZAL_REQUIRED_PREFILL_BUCKETS": "8192",
         "QZ_MMAP_WEIGHTS": "1",
         "TTQ_STREAM_WEIGHTS": "1",
         "HF_HUB_OFFLINE": "1",
