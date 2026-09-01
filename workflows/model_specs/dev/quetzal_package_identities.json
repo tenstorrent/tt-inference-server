@@ -2,9 +2,9 @@
   "schema": "ttis.quetzal-package-identities/v1",
   "source": {
     "repository": "tenstorrent/tt-quetzalcoatlus",
-    "revision": "70431b472a63ae02b5e2e5853edc5d715780546f",
+    "revision": "ed55b38cfaac3b14b59bc7e6110c1abbb61a9e8c",
     "path": "productization/release_matrix.json",
-    "sha256": "914cdb2ec37e31938a7ef2ed55801758b81eb9b03d7552b7808f3b1b4d851967"
+    "sha256": "263742df557ca47e7f2658397cc06eea4a5386d91c93d7f69a6f46cd714adebd"
   },
   "models": {
     "Qwen/Qwen3.6-27B": {

@@ -452,9 +452,9 @@ def test_qwen_quetzal_dev_spec_binds_canonical_package_identity(monkeypatch):
 
     assert source == {
         "repository": "tenstorrent/tt-quetzalcoatlus",
-        "revision": "70431b472a63ae02b5e2e5853edc5d715780546f",
+        "revision": "ed55b38cfaac3b14b59bc7e6110c1abbb61a9e8c",
         "path": "productization/release_matrix.json",
-        "sha256": "914cdb2ec37e31938a7ef2ed55801758b81eb9b03d7552b7808f3b1b4d851967",
+        "sha256": "263742df557ca47e7f2658397cc06eea4a5386d91c93d7f69a6f46cd714adebd",
     }
     assert env["QUETZAL_PACKAGE_ID"] == identity["package_id"]
     assert env["QUETZAL_BUNDLE_MANIFEST_SHA256"] == identity["bundle_manifest_sha256"]
