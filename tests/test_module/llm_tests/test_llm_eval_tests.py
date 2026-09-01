@@ -423,6 +423,31 @@ class TestRunLLMEval:
         assert score_task.call_args.kwargs["elapsed_seconds"] >= 0
         accept.assert_called_once()
 
+    def test_remote_readiness_uses_service_port_when_url_omits_it(self):
+        ctx = _ctx()
+        ctx.remote_server = True
+        ctx.server_url = "http://127.0.0.1"
+        ctx.base_url = "http://127.0.0.1:18081"
+        server = MagicMock()
+        server.wait_for_healthy.return_value = True
+        server.get_health.return_value = SimpleNamespace(status_code=200)
+        block = MagicMock()
+
+        with patch(f"{_MOD}.get_llm_eval_tasks", return_value=[_task()]), patch(
+            f"{_MOD}.RemoteOpenAIController", return_value=server
+        ) as constructor, patch(f"{_MOD}._run_eval_task", return_value=0), patch(
+            f"{_MOD}.discover_eval_results", return_value=["f.json"]
+        ), patch(f"{_MOD}.merge_eval_results", return_value={}), patch(
+            f"{_MOD}.collect_sample_counts", return_value={}
+        ), patch(f"{_MOD}.blocks_for_task", return_value=[block]), patch(
+            f"{_MOD}.accept_blocks"
+        ):
+            mod.run_llm_eval(ctx)
+
+        constructor.assert_called_once_with(
+            base_url="http://127.0.0.1:18081", auth_token=""
+        )
+
     def test_no_tasks(self):
         out, run_task, _score_task, accept = self._run([])
         assert out == []
