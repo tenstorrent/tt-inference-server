@@ -157,6 +157,9 @@ def _build_context(
     cli_agentic_benchmark = getattr(args, "agentic_benchmark", None)
     if cli_agentic_benchmark and runtime_config is not None:
         runtime_config.agentic_benchmark = cli_agentic_benchmark
+    cli_limit_samples_mode = getattr(args, "limit_samples_mode", None)
+    if cli_limit_samples_mode and runtime_config is not None:
+        runtime_config.limit_samples_mode = cli_limit_samples_mode
 
     if output_path is None:
         output_path = args.output_dir / f"{args.model}_{args.device}_{args.workflow}"
