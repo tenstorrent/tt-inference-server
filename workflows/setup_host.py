@@ -227,11 +227,41 @@ class SetupConfig:
             self.container_readonly_model_weights_dir = (
                 self.containter_user_home / "readonly_weights_mount"
             )
-            self.container_model_weights_mount_dir = (
-                self.container_readonly_model_weights_dir / host_weights_path.name
-            )
-            self.host_model_weights_mount_dir = host_weights_path
-            self.container_model_weights_path = self.container_model_weights_mount_dir
+            if (
+                self.model_source == ModelSource.LOCAL.value
+                and self.model_spec.impl.impl_id == "quetzal"
+                and host_weights_path.parent.name == "snapshots"
+                and host_weights_path.name
+                == _required_quetzal_hf_revision(self.model_spec)
+            ):
+                # HF snapshot entries are normally relative symlinks into the
+                # repository's sibling blobs/ directory. Mounting only the
+                # snapshot makes those exact config/tokenizer paths dangling
+                # inside the container. Preserve the complete cache-repository
+                # shape read-only while exposing only the admitted immutable
+                # snapshot through MODEL_WEIGHTS_DIR.
+                self.host_model_weights_snapshot_dir = host_weights_path
+                self.host_model_weights_mount_dir = host_weights_path.parent.parent
+                self.container_model_weights_mount_dir = (
+                    self.container_readonly_model_weights_dir
+                    / self.model_spec.model_name
+                )
+                self.container_model_weights_snapshot_dir = (
+                    self.container_model_weights_mount_dir
+                    / "snapshots"
+                    / host_weights_path.name
+                )
+                self.container_model_weights_path = (
+                    self.container_model_weights_snapshot_dir
+                )
+            else:
+                self.container_model_weights_mount_dir = (
+                    self.container_readonly_model_weights_dir / host_weights_path.name
+                )
+                self.host_model_weights_mount_dir = host_weights_path
+                self.container_model_weights_path = (
+                    self.container_model_weights_mount_dir
+                )
 
         # Local source: separate readonly bind mount
         elif self.model_source == ModelSource.LOCAL.value:
@@ -464,12 +494,14 @@ class HostSetupManager:
             if self.model_spec.impl.impl_id == "quetzal":
                 revision = _required_quetzal_hf_revision(self.model_spec)
                 _validate_quetzal_hf_metadata(
-                    self.setup_config.host_model_weights_mount_dir,
+                    self.setup_config.host_model_weights_snapshot_dir
+                    or self.setup_config.host_model_weights_mount_dir,
                     revision,
                     revision_from_directory=True,
                 )
             return self.check_model_weights_dir(
-                self.setup_config.host_model_weights_mount_dir
+                self.setup_config.host_model_weights_snapshot_dir
+                or self.setup_config.host_model_weights_mount_dir
             )
         elif self.setup_config.model_source == ModelSource.NOACTION.value:
             logger.info("Assuming that server self-provides the weights.")
@@ -825,11 +857,15 @@ class HostSetupManager:
         logger.info(f"✅ Using weights directory: {host_weights_dir}")
 
     def setup_weights_local(self):
-        if self.setup_config.host_model_weights_mount_dir.exists():
+        local_weights_dir = (
+            self.setup_config.host_model_weights_snapshot_dir
+            or self.setup_config.host_model_weights_mount_dir
+        )
+        if local_weights_dir.exists():
             logger.info(
-                f"✅ Using weights directory: {self.setup_config.host_model_weights_mount_dir}"
+                f"✅ Using weights directory: {local_weights_dir}"
             )
-            self.check_model_weights_dir(self.setup_config.host_model_weights_mount_dir)
+            self.check_model_weights_dir(local_weights_dir)
         else:
             raise ValueError("⛔ Weights directory does not exist.")
 
