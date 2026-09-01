@@ -25,7 +25,15 @@ logger = logging.getLogger(__name__)
 # Exact requirements-document ``deployment.hardware`` -> Tenstorrent device
 # taxonomy mappings for SKUs that don't follow a naming pattern. Matched
 # case-insensitively; an unmapped value fails loudly rather than guessing.
-_HARDWARE_TO_DEVICE = {}
+# The galaxy aliases cover the customer-facing names ("WH GLX") that the
+# DeviceTypes member names (GALAXY / BLACKHOLE_GALAXY) do not spell out.
+_HARDWARE_TO_DEVICE = {
+    "GLX": "GALAXY",
+    "WH GALAXY": "GALAXY",
+    "WH GLX": "GALAXY",
+    "BH GALAXY": "BLACKHOLE_GALAXY",
+    "BH GLX": "BLACKHOLE_GALAXY",
+}
 
 # Pattern-based mappings, tried in order after the exact table. The Super
 # Cluster ships in several node counts (SC8, SC12, SC20, ...); every ``SC<N>``

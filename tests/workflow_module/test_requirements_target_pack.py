@@ -54,6 +54,22 @@ def test_hardware_accepts_device_name_directly():
     assert hardware_to_device_name("galaxy") == "GALAXY"
 
 
+@pytest.mark.parametrize(
+    ("hardware", "device"),
+    [
+        ("GLX", "GALAXY"),
+        ("WH GALAXY", "GALAXY"),
+        ("WH GLX", "GALAXY"),
+        ("wh glx", "GALAXY"),
+        ("BH GALAXY", "BLACKHOLE_GALAXY"),
+        ("BH GLX", "BLACKHOLE_GALAXY"),
+    ],
+)
+def test_hardware_galaxy_aliases(hardware, device):
+    # Customer-facing galaxy names ("WH GLX") map to the DeviceTypes member.
+    assert hardware_to_device_name(hardware) == device
+
+
 @pytest.mark.parametrize("hardware", ["mystery-box", "SC", "SC8X", "8SC"])
 def test_hardware_unknown_raises(hardware):
     with pytest.raises(ValueError, match="Unknown deployment.hardware"):
