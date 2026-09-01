@@ -471,6 +471,17 @@ def test_quetzal_docker_hook_uses_clean_named_context_and_patched_runtime():
     assert "--no-cache-dir" in wheel_install
     assert "--no-deps" in wheel_install
     assert '"${quetzal_wheel}"' in wheel_install
+
+
+def test_quetzal_runtime_image_has_bounded_single_uid_build_mode():
+    dockerfile = (
+        get_repo_root_path() / "vllm-tt-metal/vllm.tt-metal.src.quetzal.Dockerfile"
+    ).read_text()
+    assert "ARG TTIS_IMAGE_BUILD_USER=container_app_user" in dockerfile
+    assert "ARG TAR_OPTIONS" in dockerfile
+    assert 'TTIS_IMAGE_BUILD_USER}" != "root"' in dockerfile
+    assert dockerfile.rstrip().endswith("USER container_app_user") is False
+    assert "# The build-time rootless workaround must never alter runtime privilege.\nUSER container_app_user" in dockerfile
     assert (
         "uv pip install --no-cache-dir --no-deps --no-build-isolation ."
         not in dockerfile

@@ -15,6 +15,13 @@ ARG TT_METAL_BASE_REVISION
 ARG TT_METAL_BASE_FETCH_REF
 ARG TT_METAL_PATCHSET_SHA256
 ARG TT_METAL_PATCHSET_MANIFEST_SHA256
+# Rootful/official builds keep the default. A rootless builder with only one
+# UID mapping cannot execute RUN as the image's uid 1000 or chown files to it;
+# it may opt into build-time root while the final image still restores the
+# canonical container_app_user below. TAR_OPTIONS is likewise empty by default
+# and can be set to --no-same-owner for single-UID archive extraction.
+ARG TTIS_IMAGE_BUILD_USER=container_app_user
+ARG TAR_OPTIONS
 
 USER root
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
@@ -92,7 +99,12 @@ RUN --mount=type=cache,target=/root/.cache/ccache \
         > "${TT_METAL_HOME}/.ttq-runtime-libraries.sha256"; \
     rm -rf "${TT_METAL_HOME}/.git"; \
     find "${TT_METAL_HOME}" -name .git -type f -delete; \
-    chown -R container_app_user:container_app_user "${TT_METAL_HOME}"
+    if [[ "${TTIS_IMAGE_BUILD_USER}" = "container_app_user" ]]; then \
+        chown -R container_app_user:container_app_user "${TT_METAL_HOME}"; \
+    elif [[ "${TTIS_IMAGE_BUILD_USER}" != "root" ]]; then \
+        echo "TTIS_IMAGE_BUILD_USER must be container_app_user or root" >&2; \
+        exit 1; \
+    fi
 
 FROM ${TT_INFERENCE_SERVER_BASE_IMAGE}
 
@@ -102,6 +114,8 @@ ARG TT_QUETZAL_COMMIT_SHA
 ARG TT_METAL_BASE_REVISION
 ARG TT_METAL_PATCHSET_SHA256
 ARG TT_METAL_PATCHSET_MANIFEST_SHA256
+ARG TTIS_IMAGE_BUILD_USER=container_app_user
+ARG TAR_OPTIONS
 
 LABEL org.opencontainers.image.tt-inference-server.revision=${TT_INFERENCE_SERVER_COMMIT_SHA} \
       org.opencontainers.image.quetzal.source=https://github.com/tenstorrent/tt-quetzalcoatlus \
@@ -149,7 +163,7 @@ COPY --from=ttis_src --chown=container_app_user:container_app_user \
 # material. The marker is generated after git-archive and checked in-image.
 COPY --from=quetzal_src --chown=container_app_user:container_app_user / /tmp/quetzal-source/
 
-USER container_app_user
+USER ${TTIS_IMAGE_BUILD_USER}
 RUN test "$(cat /tmp/quetzal-source/.tt-quetzal-commit)" = "${TT_QUETZAL_COMMIT_SHA}" \
     && rm /tmp/quetzal-source/.tt-quetzal-commit \
     && export VIRTUAL_ENV="${PYTHON_ENV_DIR}" \
@@ -174,6 +188,9 @@ RUN test "$(cat /tmp/quetzal-source/.tt-quetzal-commit)" = "${TT_QUETZAL_COMMIT_
     && grep -q 'e3ecc5557a84955bf0b95615e4b8e9fa83bcc431c9755e969ba5c441fc8d94cf' /home/container_app_user/model_specs/model_spec.json \
     && "${PYTHON_ENV_DIR}/bin/python" -c "import importlib.metadata as m; eps=[e for e in m.entry_points(group='vllm.general_plugins') if e.name == 'quetzal_model_registry' and e.value == 'tt_quetzalcoatlus.vllm_plugin:register']; assert len(eps) == 1, eps; import serving.artifact_bundle" \
     && rm -rf /tmp/quetzal-source
+
+# The build-time rootless workaround must never alter runtime privilege.
+USER container_app_user
 
 ENV TT_QUETZAL_COMMIT_SHA=${TT_QUETZAL_COMMIT_SHA}
 ENV TT_INFERENCE_SERVER_COMMIT_SHA=${TT_INFERENCE_SERVER_COMMIT_SHA}
