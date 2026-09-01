@@ -244,7 +244,7 @@
                     "enabled": true,
                     "description": "Validate the MiniMax-H3 Ref2VA multimodal reference contract",
                     "targets": {
-                        "profile": "validation",
+                        "profile": "smoke",
                         "request_timeout": 60
                     }
                 }

@@ -336,7 +336,12 @@ class TestVideoMatrixExpansion:
         ref2va = self._case_targets(
             "minimax-h3-ref2va-blackhole_galaxy", "MiniMaxH3Ref2vaContractTest"
         )
-        assert ref2va["profile"] == "validation"
+        assert ref2va["profile"] == "smoke", (
+            "the modality-combination cases -- image+video, video+audio, all "
+            "three at once, and the heaviest 5-reference split -- are the ones "
+            "that exercise omni-reference packing, and every one of them "
+            "expects 202, so under 'validation' they are all skipped"
+        )
 
     def test_all_video_suites_single_device(self):
         for suite in self._suite_map().values():

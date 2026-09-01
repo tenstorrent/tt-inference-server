@@ -281,6 +281,28 @@ def _refusal_cases(loaded: dict[str, str]) -> list:
             422,
             detail_contains=("audios",),
         ),
+        _Ref2vaCase(
+            "the_three_per_modality_maxima_together_exceed_the_total_cap",
+            (
+                "9 + 3 + 3 = 15, and the runner caps the total at 12 "
+                "(MINIMAX_H3_MAX_REFERENCES, references.py). So the three "
+                "published per-modality maxima cannot be held at once. Today "
+                "this is a 202 followed by 'H3 accepts at most 12 references "
+                "in total, got 15' from the worker; the caller reads the "
+                "schema, fills every modality to its stated maximum, and gets "
+                "a failed job. The total belongs in MultimodalReferences "
+                "beside the per-modality counts, refused here at admission."
+            ),
+            _payload(
+                {
+                    "images": _images(9),
+                    "videos": [{"b64": _NOT_MEDIA_B64} for _ in range(3)],
+                    "audios": [{"b64": _NOT_MEDIA_B64} for _ in range(3)],
+                }
+            ),
+            422,
+            detail_contains=("references",),
+        ),
         # --- media source shape --------------------------------------------
         _Ref2vaCase(
             "a_reference_source_with_both_b64_and_url_is_rejected",
@@ -508,9 +530,87 @@ def _acceptance_cases(loaded: dict[str, str]) -> list:
         ),
         _Ref2vaCase(
             "nine_reference_images_are_accepted",
-            "9 images is the documented cap, not one past it.",
+            (
+                "9 images is the documented cap, not one past it.\n\n"
+                "Known to fail on a 4x32 quad today: 9 dies in the runner "
+                "after ~110 s on 'Out of Memory: ... 2868903936 B DRAM "
+                "buffer', and 7 dies the same way after ~150 s -- six is the "
+                "largest all-image request the hardware currently serves. "
+                "That is the requirement failing, not the case being wrong: "
+                "either the memory cost comes down or the published cap does, "
+                "and both are #5039. Reference size is not the lever -- 9 "
+                "images OOM at 256px and 512px alike while three 1024px "
+                "images pass, so the cost is per-reference, not per-pixel."
+            ),
             _payload({"images": _images(9)}),
             202,
+            requires_job_id=True,
+        ),
+        _Ref2vaCase(
+            "an_image_and_a_video_reference_together_are_accepted",
+            "Two modalities in one request, the smallest mixed case.",
+            _payload(
+                {
+                    "images": _images(1),
+                    "videos": _clips(loaded, "video_2s", 1),
+                }
+            ),
+            202,
+            requires_clips=("video_2s",),
+            requires_job_id=True,
+        ),
+        _Ref2vaCase(
+            "a_video_and_an_audio_reference_together_are_accepted",
+            (
+                "Audio pairs with a video as well as with an image -- the "
+                "pairing rule is 'not alone', not 'needs an image'."
+            ),
+            _payload(
+                {
+                    "videos": _clips(loaded, "video_2s", 1),
+                    "audios": _clips(loaded, "audio_2s", 1),
+                }
+            ),
+            202,
+            requires_clips=("video_2s", "audio_2s"),
+            requires_job_id=True,
+        ),
+        _Ref2vaCase(
+            "all_three_modalities_in_one_request_are_accepted",
+            (
+                "The full omni-reference shape: image, video and audio "
+                "together. Nothing else in this file exercises all three at "
+                "once, and the packing order is images-then-videos-then-audios."
+            ),
+            _payload(
+                {
+                    "images": _images(1),
+                    "videos": _clips(loaded, "video_2s", 1),
+                    "audios": _clips(loaded, "audio_2s", 1),
+                }
+            ),
+            202,
+            requires_clips=("video_2s", "audio_2s"),
+            requires_job_id=True,
+        ),
+        _Ref2vaCase(
+            "five_references_split_two_images_three_videos_are_accepted",
+            (
+                "Well inside 9/3/3 and inside the total of 12, so it must be "
+                "served. Worth its own case because a video reference is "
+                "measurably more expensive than an image one -- six references "
+                "pass as all images but OOM as 3 images + 3 videos -- so a "
+                "mixed request can fail where an all-image one of the same "
+                "count succeeds."
+            ),
+            _payload(
+                {
+                    "images": _images(2),
+                    "videos": _clips(loaded, "video_2s", 3),
+                }
+            ),
+            202,
+            requires_clips=("video_2s",),
             requires_job_id=True,
         ),
         _Ref2vaCase(
