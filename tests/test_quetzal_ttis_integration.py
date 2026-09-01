@@ -481,7 +481,26 @@ def test_quetzal_runtime_image_has_bounded_single_uid_build_mode():
     assert "ARG TAR_OPTIONS" in dockerfile
     assert 'TTIS_IMAGE_BUILD_USER}" != "root"' in dockerfile
     assert dockerfile.rstrip().endswith("USER container_app_user") is False
-    assert "# The build-time rootless workaround must never alter runtime privilege.\nUSER container_app_user" in dockerfile
+    assert (
+        "# The build-time rootless workaround must never alter runtime privilege.\nUSER container_app_user"
+        in dockerfile
+    )
+
+
+def test_quetzal_image_binds_ttis_label_to_exact_named_context_marker():
+    dockerfile = (
+        get_repo_root_path() / "vllm-tt-metal/vllm.tt-metal.src.quetzal.Dockerfile"
+    ).read_text()
+    builder = (get_repo_root_path() / "scripts/build_quetzal_dev_image.sh").read_text()
+    assert (
+        'printf \'%s\\n\' "${ttis_commit}" > "${ttis_export_root}/.tt-ttis-commit"'
+        in builder
+    )
+    assert ".tt-ttis-commit" in dockerfile
+    assert (
+        'test "$(cat /tmp/.tt-ttis-commit)" = "${TT_INFERENCE_SERVER_COMMIT_SHA}"'
+        in dockerfile
+    )
     assert (
         "uv pip install --no-cache-dir --no-deps --no-build-isolation ."
         not in dockerfile
