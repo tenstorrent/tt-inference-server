@@ -452,7 +452,7 @@ def test_qwen_quetzal_dev_spec_binds_canonical_package_identity(monkeypatch):
 
     assert source == {
         "repository": "tenstorrent/tt-quetzalcoatlus",
-        "revision": "9fb41112535ee87140e91c1bba6f831e62c30d42",
+        "revision": "70431b472a63ae02b5e2e5853edc5d715780546f",
         "path": "productization/release_matrix.json",
         "sha256": "914cdb2ec37e31938a7ef2ed55801758b81eb9b03d7552b7808f3b1b4d851967",
     }
@@ -463,6 +463,7 @@ def test_qwen_quetzal_dev_spec_binds_canonical_package_identity(monkeypatch):
     assert env["QUETZAL_REQUIRED_TT_METAL_PATCHSET_SHA256"] == (
         "e240fa3880ea0c2597dd7df8ab657a69aca9fe215de58220ae96e47a48a29910"
     )
+    assert env["QUETZAL_NO_TRACE"] == "1"
 
 
 def test_gemma_quetzal_dev_spec_binds_exact_s4096_ring_candidate(monkeypatch):
