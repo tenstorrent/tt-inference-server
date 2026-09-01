@@ -26,8 +26,11 @@ DATASET_REVISION = "78f471bf655a3137b2e8a75af1501690ec009ec3"
 # before this run and was not chosen from its gold patch or Gemma output.
 INSTANCE_IDS = ["scikit-learn__scikit-learn-14629"]
 MAX_CONTEXT = 4096
-MAX_INPUT = 3584
-MAX_OUTPUT = 512
+# Bind the whole request to S4096 while leaving enough input room for the
+# complete 12-step retained history.  The earlier 3584/512 diagnostic profile
+# failed closed at 3,819 input tokens before its eleventh model call.
+MAX_INPUT = 3840
+MAX_OUTPUT = 256
 STEP_LIMIT = 12
 OBSERVATION_CHARS = 2048
 INSTANCE_TEMPLATE = """<pr_description>
@@ -115,6 +118,9 @@ def main() -> int:
             "temperature": 0.0,
             "top_p": 1.0,
             "enable_thinking": False,
+            "instance_template_sha256": hashlib.sha256(
+                INSTANCE_TEMPLATE.encode("utf-8")
+            ).hexdigest(),
         },
         "verifier": "swebench.harness.run_evaluation",
         "slurm": {"job_id": args.slurm_job_id, "node": args.node},
