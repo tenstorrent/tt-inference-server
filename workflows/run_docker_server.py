@@ -344,7 +344,8 @@ _QUETZAL_CONTAINER_AUXILIARY_PARENT = "/home/container_app_user/quetzal/auxiliar
 _QUETZAL_CONTAINER_ATTESTATION_PARENT = (
     "/home/container_app_user/quetzal/runtime-attestations"
 )
-_QUETZAL_EXABOX_CANDIDATE_ROOT = Path("/mnt/models/huggingface/quetzal")
+_QUETZAL_EXABOX_BEHAVIORAL_ROOT = Path("/mnt/models/huggingface/quetzal")
+_QUETZAL_EXABOX_BEHAVIORAL_NAMESPACES = frozenset({"candidates", "packages"})
 _QUETZAL_CONTENT_ADDRESSED_PACKAGE_RE = re.compile(
     r"(?:sha256-[0-9a-f]{64}-[0-9a-f]{64}|"
     r"sha256-v2-[0-9a-f]{64}-[0-9a-f]{64}-[0-9a-f]{64})"
@@ -387,22 +388,24 @@ def _validate_quetzal_models_root(runtime_config, model_spec) -> Path | None:
                 "--quetzal-behavioral-package-admission is forbidden in CI mode"
             )
         try:
-            relative = root.relative_to(_QUETZAL_EXABOX_CANDIDATE_ROOT)
+            relative = root.relative_to(_QUETZAL_EXABOX_BEHAVIORAL_ROOT)
         except ValueError as exc:
             raise ValueError(
                 "behavioral Quetzal package must be under "
-                "/mnt/models/huggingface/quetzal/<owner>/candidates/<package-id>"
+                "/mnt/models/huggingface/quetzal/<owner>/"
+                "{candidates,packages}/<package-id>"
             ) from exc
         if (
             len(relative.parts) != 3
-            or relative.parts[1] != "candidates"
+            or relative.parts[1] not in _QUETZAL_EXABOX_BEHAVIORAL_NAMESPACES
             or not relative.parts[0]
             or _QUETZAL_CONTENT_ADDRESSED_PACKAGE_RE.fullmatch(relative.parts[2])
             is None
         ):
             raise ValueError(
                 "behavioral Quetzal package must be under "
-                "/mnt/models/huggingface/quetzal/<owner>/candidates/"
+                "/mnt/models/huggingface/quetzal/<owner>/"
+                "{candidates,packages}/"
                 "<content-addressed-package-id>"
             )
     qualification = root / "qualification_manifest.yaml"

@@ -124,20 +124,21 @@ def test_docker_command_mounts_quetzal_root_readonly_and_forwards_impl(tmp_path)
     )
 
 
+@pytest.mark.parametrize("namespace", ["candidates", "packages"])
 def test_docker_command_behavioral_admission_is_local_explicit_and_readonly(
-    monkeypatch, tmp_path
+    monkeypatch, tmp_path, namespace
 ):
     spec = copy.deepcopy(_dev_quetzal_spec("Qwen3.6-27B"))
     package_id = "sha256-" + "1" * 64 + "-" + "2" * 64
-    candidate_root = tmp_path / "quetzal"
-    package = candidate_root / "nkapre" / "candidates" / package_id
+    behavioral_root = tmp_path / "quetzal"
+    package = behavioral_root / "nkapre" / namespace / package_id
     package.mkdir(parents=True)
     (package / "qualification_manifest.yaml").write_text("models: []\n")
     spec.env_vars["QUETZAL_PACKAGE_ID"] = package_id
     monkeypatch.setattr(
         run_docker_server_module,
-        "_QUETZAL_EXABOX_CANDIDATE_ROOT",
-        candidate_root,
+        "_QUETZAL_EXABOX_BEHAVIORAL_ROOT",
+        behavioral_root,
     )
     runtime = RuntimeConfig(
         model="Qwen3.6-27B",
@@ -184,7 +185,7 @@ def test_docker_command_behavioral_admission_rejects_non_candidate_root(
     spec.env_vars["QUETZAL_PACKAGE_ID"] = package_id
     monkeypatch.setattr(
         run_docker_server_module,
-        "_QUETZAL_EXABOX_CANDIDATE_ROOT",
+        "_QUETZAL_EXABOX_BEHAVIORAL_ROOT",
         tmp_path / "other-root",
     )
     runtime = RuntimeConfig(
