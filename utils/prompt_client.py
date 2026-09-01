@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import logging
 import json
+import os
 import time
 from typing import TYPE_CHECKING, List, Optional, Tuple, Union
 from pathlib import Path
@@ -409,7 +410,9 @@ class PromptClient:
                 num_prompts=1,
                 distribution="fixed",
                 dataset="random",
-                tokenizer_model=self.env_config.vllm_model,
+                tokenizer_model=resolve_trace_tokenizer_model(
+                    self.env_config.vllm_model
+                ),
                 template=None,
                 save_path=None,
                 print_prompts=False,
@@ -835,6 +838,28 @@ class PromptClient:
         return self._process_chat_response(
             response, req_time, response_idx, prompt, prompt_len, max_tokens, stream
         )
+
+
+def resolve_trace_tokenizer_model(public_model_id: str) -> str:
+    """Resolve trace prompt tokenization to the admitted local HF snapshot.
+
+    A generated-only server can run with Hub access disabled. Its background
+    trace process must therefore use the same mounted ``MODEL_WEIGHTS_DIR`` as
+    server bootstrap instead of resolving the public served-model identity.
+    Runs without that boundary retain the historical public-ID behavior.
+    """
+    configured = os.environ.get("MODEL_WEIGHTS_DIR")
+    if not configured:
+        return public_model_id
+    path = Path(configured)
+    if not path.is_absolute():
+        raise RuntimeError("MODEL_WEIGHTS_DIR must be absolute for trace tokenization")
+    resolved = path.resolve()
+    if not resolved.is_dir():
+        raise RuntimeError(
+            f"MODEL_WEIGHTS_DIR is unavailable for trace tokenization: {resolved}"
+        )
+    return str(resolved)
 
 
 def run_background_trace_capture(
