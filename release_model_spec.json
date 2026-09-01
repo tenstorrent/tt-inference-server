@@ -24078,6 +24078,91 @@
             "cli_args": {}
           }
         }
+      },
+      "N300": {
+        "media": {
+          "tt_vllm_plugin": {
+            "model_id": "id_tt-vllm-plugin_bge-m3_n300",
+            "impl": {
+              "impl_id": "tt_vllm_plugin",
+              "impl_name": "tt-vllm-plugin",
+              "repo_url": "https://github.com/tenstorrent/tt-inference-server/tree/dev/tt-vllm-plugin",
+              "code_path": "tt_vllm_plugin"
+            },
+            "hf_model_repo": "BAAI/bge-m3",
+            "model_name": "bge-m3",
+            "inference_engine": "media",
+            "device_type": "N300",
+            "device_model_spec": {
+              "device": "N300",
+              "max_concurrency": 12,
+              "max_context": 8192,
+              "max_tokens_all_users_override": null,
+              "perf_targets_map": {},
+              "default_impl": true,
+              "perf_reference": [],
+              "vllm_args": {
+                "model": "BAAI/bge-large-en-v1.5",
+                "block_size": "64",
+                "max_model_len": "65536",
+                "max_num_seqs": "1",
+                "max_num_batched_tokens": "65536",
+                "max-log-len": "32",
+                "seed": "9472",
+                "additional_config": "{\"tt\": {}}"
+              },
+              "override_tt_config": {},
+              "env_vars": {
+                "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
+                "MESH_DEVICE": "N300",
+                "ARCH_NAME": "wormhole_b0",
+                "VLLM__MAX_MODEL_LENGTH": "8192",
+                "VLLM__MAX_NUM_SEQS": "12",
+                "MAX_BATCH_SIZE": "12"
+              },
+              "tensor_cache_timeout": 3600.0,
+              "system_requirements": null,
+              "known_issues": [],
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
+            },
+            "system_requirements": null,
+            "env_vars": {
+              "WH_ARCH_YAML": "wormhole_b0_80_arch_eth_dispatch.yaml",
+              "MESH_DEVICE": "N300",
+              "ARCH_NAME": "wormhole_b0",
+              "VLLM__MAX_MODEL_LENGTH": "8192",
+              "VLLM__MAX_NUM_SEQS": "12",
+              "MAX_BATCH_SIZE": "12"
+            },
+            "tt_metal_commit": "bc294789ec3",
+            "vllm_commit": null,
+            "hf_weights_repo": "BAAI/bge-m3",
+            "param_count": null,
+            "min_disk_gb": 25,
+            "min_ram_gb": 16,
+            "model_type": "EMBEDDING",
+            "repacked": 0,
+            "version": "0.12.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756",
+            "status": "EXPERIMENTAL",
+            "code_link": "https://github.com/tenstorrent/tt-inference-server/tree/dev/tt-vllm-plugin/tree/65718bb/tt_vllm_plugin",
+            "override_tt_config": {},
+            "supported_modalities": [
+              "text"
+            ],
+            "subdevice_type": null,
+            "uses_tensor_model_cache": true,
+            "has_builtin_warmup": false,
+            "metadata": {},
+            "cli_args": {
+              "model": "BAAI/bge-m3",
+              "max_model_len": "8192",
+              "max_num_seqs": "12",
+              "max_num_batched_tokens": "98304"
+            }
+          }
+        }
       }
     },
     "Qwen/Qwen3-4B": {
