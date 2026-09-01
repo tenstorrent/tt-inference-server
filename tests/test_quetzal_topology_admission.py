@@ -79,7 +79,7 @@ def _files(tmp_path: Path, *, physical=None, captured="2026-08-29T12:19:02Z"):
             "qualified_selection_path": "/runner/serving/gpt120_ring2_topology_selection.json",
             "descriptor_sha256": "f4c9fb5acf307e1b320525007035ed9e75039f793e4350120365243682e37792",
             "selected_model_id": "openai/gpt-oss-120b",
-            "selected_emit_sha256": "f296b7049ad6c9bfb3876f51c5cd1e717b19ebb0a667585907779ef45019370d",
+            "selected_emit_sha256": "36ee31e273a66c478422fd2ff91bc4956f78d5ba6be1dd7b68f285b16c820489",
             "claim_boundary": "mesh lifecycle, count, shape, and degree histograms are observed; Ring and links=2 are selected qualified-artifact configuration",
         },
     }
