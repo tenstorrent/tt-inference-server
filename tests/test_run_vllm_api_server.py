@@ -840,6 +840,8 @@ def test_quetzal_runtime_contract_labels_mutable_package_state_user_sealed(
 def test_quetzal_behavioral_admission_allows_only_mutable_backing_modes(
     monkeypatch, tmp_path, run_vllm_api_server_module
 ):
+    monkeypatch.delenv("CI", raising=False)
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
     package_id = "sha256-" + "1" * 64 + "-" + "2" * 64
     package_root = _materialized_quetzal_contract(
         monkeypatch,
@@ -865,6 +867,8 @@ def test_quetzal_behavioral_admission_allows_only_mutable_backing_modes(
 def test_behavioral_mesh_override_is_explicit_local_only(
     monkeypatch, tmp_path, run_vllm_api_server_module
 ):
+    monkeypatch.delenv("CI", raising=False)
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
     cache = tmp_path / "cache"
     monkeypatch.setattr(
         run_vllm_api_server_module,
@@ -887,6 +891,8 @@ def test_behavioral_mesh_override_is_explicit_local_only(
 def test_quetzal_behavioral_investigating_candidate_uses_exact_catalog_runtime_pin(
     monkeypatch, tmp_path, run_vllm_api_server_module
 ):
+    monkeypatch.delenv("CI", raising=False)
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
     package_id = "sha256-" + "1" * 64 + "-" + "2" * 64
     package_root = _materialized_quetzal_contract(
         monkeypatch,
@@ -929,6 +935,8 @@ def test_quetzal_behavioral_investigating_candidate_uses_exact_catalog_runtime_p
 def test_quetzal_behavioral_admission_fails_closed_in_ci_or_on_invalid_flag(
     monkeypatch, tmp_path, run_vllm_api_server_module, env, value, match
 ):
+    monkeypatch.delenv("CI", raising=False)
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
     package_id = "sha256-" + "1" * 64 + "-" + "2" * 64
     package_root = _materialized_quetzal_contract(
         monkeypatch,
@@ -951,6 +959,8 @@ def test_quetzal_behavioral_admission_fails_closed_in_ci_or_on_invalid_flag(
 def test_quetzal_behavioral_admission_requires_exact_read_only_mountpoint(
     monkeypatch, tmp_path, run_vllm_api_server_module
 ):
+    monkeypatch.delenv("CI", raising=False)
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
     package_id = "sha256-" + "1" * 64 + "-" + "2" * 64
     package_root = _materialized_quetzal_contract(
         monkeypatch,

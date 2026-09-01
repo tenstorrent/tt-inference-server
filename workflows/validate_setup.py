@@ -567,8 +567,8 @@ def validate_runtime_args(model_spec, runtime_config):
 
     # The exact ModelSpec and task selection are now known, while no host
     # storage, server process, model payload, or device has been touched yet.
-    validate_quetzal_models_ci_contract(model_spec, runtime_config)
     validate_agentic_task_capabilities(model_spec, runtime_config)
+    validate_quetzal_models_ci_contract(model_spec, runtime_config)
 
     # The image-version contract only matters when run.py actually launches the
     # vLLM docker image. Client-side / external-server runs (no --docker-server)

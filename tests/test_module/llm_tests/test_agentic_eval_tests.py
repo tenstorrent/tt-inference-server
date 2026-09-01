@@ -8,9 +8,10 @@ from __future__ import annotations
 import json
 import dataclasses
 import hashlib
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from typing import Any, Dict, List, Optional
 from unittest.mock import MagicMock, patch
 
@@ -552,7 +553,10 @@ class TestSWEbenchHarness:
             selected_instances_sha256=digest,
         )
 
-        with patch("datasets.load_dataset", side_effect=[rows, selected]) as load:
+        datasets = ModuleType("datasets")
+        load = MagicMock(side_effect=[rows, selected])
+        datasets.load_dataset = load
+        with patch.dict(sys.modules, {"datasets": datasets}):
             dataset_source, actual = _prepare_pinned_swebench_dataset(cfg)
 
         assert actual == digest
@@ -593,10 +597,11 @@ class TestSWEbenchHarness:
             selected_instances_sha256="0" * 64,
         )
         rows = [{"instance_id": "django__django-11299", "problem_statement": "x"}]
-        with patch("datasets.load_dataset", return_value=rows), pytest.raises(
-            RuntimeError, match="content digest mismatch"
-        ):
-            _prepare_pinned_swebench_dataset(cfg)
+        datasets = ModuleType("datasets")
+        datasets.load_dataset = MagicMock(return_value=rows)
+        with patch.dict(sys.modules, {"datasets": datasets}):
+            with pytest.raises(RuntimeError, match="content digest mismatch"):
+                _prepare_pinned_swebench_dataset(cfg)
 
     def test_agent_failure_returns_nonzero_without_predictions(self, tmp_path):
         task = _swebench_task()
