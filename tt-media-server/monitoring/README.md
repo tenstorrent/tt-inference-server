@@ -337,10 +337,10 @@ queries:
 ```promql
 # how fast the VAE is: frames (and megapixels) per second of VAE-busy time
 sum(rate(tt_media_server_video_vae_frames_total[$__rate_interval]))
-  / sum(rate(tt_media_server_video_vae_decode_duration_seconds_sum[$__rate_interval]))
+  / clamp_min(sum(rate(tt_media_server_video_vae_decode_duration_seconds_sum[$__rate_interval])), 1e-9)
 
 sum(rate(tt_media_server_video_vae_pixels_total[$__rate_interval]))
-  / sum(rate(tt_media_server_video_vae_decode_duration_seconds_sum[$__rate_interval])) / 1e6
+  / clamp_min(sum(rate(tt_media_server_video_vae_decode_duration_seconds_sum[$__rate_interval])), 1e-9) / 1e6
 
 # how much of the device time it is eating: VAE's share of measured stage time
 sum(rate(tt_media_server_video_vae_decode_duration_seconds_sum[5m]))
@@ -402,10 +402,11 @@ Six things to know when reading these:
   than credited a guessed zero.
 
 * **Warmup is excluded, and only spans that closed are exported.** The recorder
-  is not created while `_warming_up` is set. A run that raised inside the decode
-  still reports its denoise loop, but records no decode latency and credits no
-  frames — so every frame counted has a timed decode behind it, and the two
-  series stay dividable.
+  is not created while `_warming_up` is set. Every run site flushes in a
+  `finally`, so a generation that dies inside the decode still reports the
+  denoise loop that completed before it — while recording no decode latency and
+  crediting no frames, since that span never closed. Every frame counted has a
+  timed decode behind it, and the two series stay dividable.
 
 ## Directory layout
 

@@ -251,7 +251,11 @@ class TTDiTRunner(BaseMetalDeviceRunner):
         return image
 
     def _video_stage_recorder(self, resolution=None):
-        """VAE-decode recorder for one video generation, or None during warmup.
+        """Denoise + VAE-decode recorder for one video generation, or None during warmup.
+
+        Callers must ``flush`` in a ``finally`` so a generation that dies inside
+        the decode still reports the denoise loop that closed. ``flush`` only
+        exports spans that actually closed.
 
         Only the tt_dit pipelines that emit a ``vae`` section can feed this: the
         Wan2.2 family (the I2V variants inherit ``WanPipeline.__call__``) and
@@ -396,21 +400,23 @@ class TTMochi1Runner(TTDiTRunner):
         # tt_dit pipeline refactor; num_frames/height/width/output_type moved to
         # MochiPipelineConfig defaults (168 frames, 480x848).
         recorder = self._video_stage_recorder()
-        frames = self.pipeline(
-            prompts=[request.prompt],
-            negative_prompts=[request.negative_prompt or ""],
-            num_inference_steps=request.num_inference_steps,
-            guidance_scale=3.5,
-            seed=int(request.seed or 0),
-            on_event=recorder,
-        )
-        # The pipeline returns PIL frames (or a tensor); the video exporter
-        # needs a (batch, frames, H, W, C) uint8 array.
-        #
-        # Flushed after the conversion, because the stacked array is the shape
-        # the probe reads best -- but in a finally, so a decode that succeeded
-        # is still recorded when the stack raises. The probe reads either form.
+        frames = None
+        # One try over the call and the frame stack, flushing in the finally:
+        # a generation that dies in the decode still reports its denoise loop,
+        # and one that dies converting still reports the decode. Flushed after
+        # the conversion because the stacked array is the shape the probe reads
+        # best, but the probe reads the raw PIL list too.
         try:
+            frames = self.pipeline(
+                prompts=[request.prompt],
+                negative_prompts=[request.negative_prompt or ""],
+                num_inference_steps=request.num_inference_steps,
+                guidance_scale=3.5,
+                seed=int(request.seed or 0),
+                on_event=recorder,
+            )
+            # The pipeline returns PIL frames (or a tensor); the video exporter
+            # needs a (batch, frames, H, W, C) uint8 array.
             if hasattr(frames, "cpu"):
                 frames = frames.cpu().numpy()
             elif isinstance(frames, list):
@@ -585,11 +591,14 @@ class TTWan22Runner(TTDiTRunner):
     def run(self, requests: list[VideoGenerateRequest]):
         self.logger.debug(f"Device {self.device_id}: Running inference")
         recorder = self._video_stage_recorder(self.resolution)
-        frames = self.pipeline(
-            **_wan22_pipeline_args(requests[0], self.resolution, on_event=recorder)
-        )
-        if recorder is not None:
-            recorder.flush(frames)
+        frames = None
+        try:
+            frames = self.pipeline(
+                **_wan22_pipeline_args(requests[0], self.resolution, on_event=recorder)
+            )
+        finally:
+            if recorder is not None:
+                recorder.flush(frames)
         self.logger.debug(f"Device {self.device_id}: Inference completed")
         return frames
 
@@ -841,9 +850,12 @@ class TTWan22I2VRunner(TTDiTRunner):
             image_prompt=self._build_image_prompt(request),
             on_event=recorder,
         )
-        frames = self.pipeline(**pipeline_args)
-        if recorder is not None:
-            recorder.flush(frames)
+        frames = None
+        try:
+            frames = self.pipeline(**pipeline_args)
+        finally:
+            if recorder is not None:
+                recorder.flush(frames)
         self.logger.debug(f"Device {self.device_id}: Inference completed")
         return frames
 
@@ -963,9 +975,12 @@ class TTWan22I2VAniSoraRunner(TTDiTRunner):
         pipeline_args["num_inference_steps"] = WAN22_ANISORA_NUM_STEPS
         pipeline_args["guidance_scale"] = WAN22_ANISORA_GUIDANCE_SCALE
         pipeline_args["guidance_scale_2"] = WAN22_ANISORA_GUIDANCE_SCALE
-        frames = self.pipeline(**pipeline_args)
-        if recorder is not None:
-            recorder.flush(frames)
+        frames = None
+        try:
+            frames = self.pipeline(**pipeline_args)
+        finally:
+            if recorder is not None:
+                recorder.flush(frames)
         self.logger.debug(f"Device {self.device_id}: AniSora inference completed")
         return frames
 
@@ -1058,9 +1073,12 @@ class TTWan22I2VDistillRunner(TTDiTRunner):
         recorder = self._video_stage_recorder(self.resolution)
         if recorder is not None:
             pipeline_args["on_event"] = recorder
-        frames = self.pipeline(**pipeline_args)
-        if recorder is not None:
-            recorder.flush(frames)
+        frames = None
+        try:
+            frames = self.pipeline(**pipeline_args)
+        finally:
+            if recorder is not None:
+                recorder.flush(frames)
         self.logger.debug(f"Device {self.device_id}: Distill inference completed")
         return frames
 
@@ -1146,9 +1164,12 @@ class TTWan22I2VLoRARunner(TTDiTRunner):
             image_prompt=self._build_image_prompt(request),
             on_event=recorder,
         )
-        frames = self.pipeline(**pipeline_args)
-        if recorder is not None:
-            recorder.flush(frames)
+        frames = None
+        try:
+            frames = self.pipeline(**pipeline_args)
+        finally:
+            if recorder is not None:
+                recorder.flush(frames)
         self.logger.debug(f"Device {self.device_id}: LoRA inference completed")
         return frames
 
@@ -1380,9 +1401,12 @@ class TTWan22I2VLightningRunner(TTDiTRunner):
         recorder = self._video_stage_recorder(self.resolution)
         if recorder is not None:
             pipeline_args["on_event"] = recorder
-        frames = self.pipeline(**pipeline_args)
-        if recorder is not None:
-            recorder.flush(frames)
+        frames = None
+        try:
+            frames = self.pipeline(**pipeline_args)
+        finally:
+            if recorder is not None:
+                recorder.flush(frames)
         self.logger.debug(f"Device {self.device_id}: Lightning inference completed")
         return frames
 

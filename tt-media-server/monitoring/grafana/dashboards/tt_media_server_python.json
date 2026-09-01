@@ -898,7 +898,7 @@
     },
 {
       "datasource": { "type": "prometheus", "uid": "$datasource" },
-      "description": "Frames the VAE converts from latents to pixels per second of VAE-busy time - its intrinsic decode rate, independent of how often it runs. Deliberately not rate(frames_total): that is fleet output rate, it tracks whatever the slowest stage is, and tt_media_server_video_frames_generated_total already reports it. No data (not zero) when nothing decoded in the window. Emitted by the Wan2.2 family and Mochi; the Prodia distills, LTX and MiniMax-H3 expose no VAE span.",
+      "description": "Frames the VAE converts from latents to pixels per second of VAE-busy time - its intrinsic decode rate, independent of how often it runs. Deliberately not rate(frames_total): that is fleet output rate, it tracks whatever the slowest stage is, and tt_media_server_video_frames_generated_total already reports it. A quiet window after traffic reads zero, not Infinity. Emitted by the Wan2.2 family and Mochi; the Prodia distills, LTX and MiniMax-H3 expose no VAE span.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -913,7 +913,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "$datasource" },
-          "expr": "sum(rate(tt_media_server_video_vae_frames_total{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[$__rate_interval])) / sum(rate(tt_media_server_video_vae_decode_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[$__rate_interval]))",
+          "expr": "sum(rate(tt_media_server_video_vae_frames_total{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[$__rate_interval])) / clamp_min(sum(rate(tt_media_server_video_vae_decode_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[$__rate_interval])), 1e-9)",
           "legendFormat": "frames per VAE-s",
           "refId": "A"
         }
@@ -938,7 +938,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "$datasource" },
-          "expr": "sum(rate(tt_media_server_video_vae_pixels_total{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[$__rate_interval])) / sum(rate(tt_media_server_video_vae_decode_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[$__rate_interval])) / 1e6",
+          "expr": "sum(rate(tt_media_server_video_vae_pixels_total{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[$__rate_interval])) / clamp_min(sum(rate(tt_media_server_video_vae_decode_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[$__rate_interval])), 1e-9) / 1e6",
           "legendFormat": "MP per VAE-s",
           "refId": "A"
         }
@@ -957,7 +957,7 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byRegexp", "options": ".*MP/s.*" },
+            "matcher": { "id": "byRegexp", "options": ".*MP per VAE-s.*" },
             "properties": [{ "id": "unit", "value": "short" }, { "id": "custom.axisPlacement", "value": "right" }]
           }
         ]
@@ -968,13 +968,13 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "$datasource" },
-          "expr": "sum by (resolution) (rate(tt_media_server_video_vae_frames_total{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[$__rate_interval])) / sum by (resolution) (rate(tt_media_server_video_vae_decode_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[$__rate_interval]))",
+          "expr": "sum by (resolution) (rate(tt_media_server_video_vae_frames_total{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[$__rate_interval])) / clamp_min(sum by (resolution) (rate(tt_media_server_video_vae_decode_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[$__rate_interval])), 1e-9)",
           "legendFormat": "{{resolution}} frames per VAE-s",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "$datasource" },
-          "expr": "sum by (resolution) (rate(tt_media_server_video_vae_pixels_total{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[$__rate_interval])) / sum by (resolution) (rate(tt_media_server_video_vae_decode_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[$__rate_interval])) / 1e6",
+          "expr": "sum by (resolution) (rate(tt_media_server_video_vae_pixels_total{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[$__rate_interval])) / clamp_min(sum by (resolution) (rate(tt_media_server_video_vae_decode_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[$__rate_interval])), 1e-9) / 1e6",
           "legendFormat": "{{resolution}} MP per VAE-s",
           "refId": "B"
         }
@@ -1015,12 +1015,12 @@
           "refId": "B"
         }
       ],
-      "title": "rate(tt_media_server_video_vae_decode_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[5m]) decode latency p50 / p95",
+      "title": "VAE decode latency p50 / p95",
       "type": "timeseries"
     },
 {
       "datasource": { "type": "prometheus", "uid": "$datasource" },
-      "description": "How the measured device time splits between the sampling loop and the decode. Denoising falling as a share while frames/s stays flat is the rate(tt_media_server_video_vae_decode_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[5m]) becoming the limiter. Only these two stages are measured - text encoding and latent preparation are not - so this is the split between them, not of the whole request, and it always sums to 100%.",
+      "description": "How the measured device time splits between the sampling loop and the decode. Denoising falling as a share while frames/s stays flat is the VAE becoming the limiter. Only these two stages are measured - text encoding and latent preparation are not - so this is the split between them, not of the whole request, and it always sums to 100%.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -1047,7 +1047,7 @@
           "refId": "B"
         }
       ],
-      "title": "Denoise vs rate(tt_media_server_video_vae_decode_duration_seconds_sum{service=~\"$service\",model_type=~\"$model_type\",device_id=~\"$device_id\"}[5m]) time split",
+      "title": "Denoise vs VAE time split",
       "type": "timeseries"
     },
 {

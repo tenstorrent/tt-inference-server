@@ -143,10 +143,15 @@ class FakeTensor:
 
 
 class StubPipeline:
-    """Replays the sections the real tt_dit video pipelines emit."""
+    """Replays the sections the real tt_dit video pipelines emit.
 
-    def __init__(self, frames):
+    ``raise_after`` opens that section and then raises without closing it,
+    which is what a device fault mid-stage looks like on the event stream.
+    """
+
+    def __init__(self, frames, raise_after=None):
         self.frames = frames
+        self.raise_after = raise_after
         self.kwargs = None
 
     def __call__(self, **kwargs):
@@ -155,6 +160,8 @@ class StubPipeline:
         if on_event is not None:
             for name in ("encoder", "denoising", "vae"):
                 on_event(SectionStart(name))
+                if name == self.raise_after:
+                    raise RuntimeError(f"device fault during {name}")
                 on_event(SectionEnd(name))
         return self.frames
 
@@ -232,6 +239,54 @@ class TestRunnerWiring:
         assert sample("tt_media_server_video_vae_frames_total", model_type) == 81
         assert sample("tt_media_server_video_vae_pixels_total", model_type) == (
             81 * 832 * 480
+        )
+
+    def test_a_generation_that_dies_in_the_decode_still_reports_denoise(
+        self, class_name
+    ):
+        """The flush has to be reachable when ``pipeline()`` raises.
+
+        Calling it on the line after the call looks equivalent and is not: the
+        denoise loop that already completed and closed its span would go
+        unreported on every failed generation.
+        """
+        model_type = f"wiring-crash-{class_name}"
+        runner = build_runner(class_name, model_type)
+        runner.pipeline = StubPipeline(
+            FakeTensor(1, 81, 480, 832, 3), raise_after="vae"
+        )
+
+        with pytest.raises(RuntimeError):
+            runner.run([a_request()])
+
+        # Nothing was returned to probe, so the label falls back to the
+        # runner's configured resolution -- which Mochi does not have, its
+        # shape living in the pipeline config rather than on the runner.
+        expected = "unknown" if class_name == "TTMochi1Runner" else "832x480"
+        assert (
+            sample(
+                "tt_media_server_video_denoise_duration_seconds_count",
+                model_type,
+                resolution=expected,
+            )
+            == 1
+        )
+        # The decode never closed its span: no latency, and no frames credited.
+        assert (
+            sample(
+                "tt_media_server_video_vae_decode_duration_seconds_count",
+                model_type,
+                resolution=expected,
+            )
+            is None
+        )
+        assert (
+            sample(
+                "tt_media_server_video_vae_frames_total",
+                model_type,
+                resolution=expected,
+            )
+            is None
         )
 
     def test_warmup_is_not_recorded(self, class_name):
