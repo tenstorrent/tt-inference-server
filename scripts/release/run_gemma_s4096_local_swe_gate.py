@@ -85,6 +85,8 @@ def main() -> int:
     args = parser.parse_args()
     repo_root = Path(__file__).resolve().parents[2]
     ttis_source_revision = resolve_ttis_source_revision(repo_root)
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
 
     if MAX_INPUT + MAX_OUTPUT != MAX_CONTEXT:
         raise RuntimeError("Gemma local gate no longer exactly binds S4096")
