@@ -1,0 +1,68 @@
+{
+  "agent": {
+    "backend": "mini-swe-agent",
+    "enable_thinking": false,
+    "instance_template_sha256": "224d1c1853f0264b35470a7e4ff0653392770445ab24209ba99781c2284410db",
+    "observation_char_limit": 2048,
+    "step_limit": 12,
+    "temperature": 0.0,
+    "top_p": 1.0
+  },
+  "created_at_utc": "2026-09-01T04:19:28Z",
+  "dataset": "SWE-bench/SWE-bench_Verified",
+  "dataset_revision": "78f471bf655a3137b2e8a75af1501690ec009ec3",
+  "endpoint_models_response": {
+    "data": [
+      {
+        "created": 1788236367,
+        "id": "google/gemma-4-31B-it",
+        "max_model_len": 4096,
+        "object": "model",
+        "owned_by": "vllm",
+        "parent": null,
+        "permission": [
+          {
+            "allow_create_engine": false,
+            "allow_fine_tuning": false,
+            "allow_logprobs": true,
+            "allow_sampling": true,
+            "allow_search_indices": false,
+            "allow_view": true,
+            "created": 1788236367,
+            "group": null,
+            "id": "modelperm-adbda0a8cfa51474",
+            "is_blocking": false,
+            "object": "model_permission",
+            "organization": "*"
+          }
+        ],
+        "root": "/home/container_app_user/readonly_weights_mount/gemma-4-31B-it/snapshots/842da3794eaa0b77d5f08bae87a17459d91ff475"
+      }
+    ],
+    "object": "list"
+  },
+  "instance_ids": [
+    "scikit-learn__scikit-learn-14629"
+  ],
+  "ordered_instance_ids_sha256": "337f630aa6be1bde004791d7c72e05791520a278016082f8d9364363a6eb5ab9",
+  "qualification_claim": "local_behavioral_only",
+  "quality_status": "ungraded",
+  "schema": "ttis.gemma-s4096-local-swe-gate/v1",
+  "selected_instances_sha256": "d6991caa831e2eed43a0427bf3cd35f63f5ec40ffa699efa29d4d06d680959e1",
+  "selection_policy": "predeclared_ordered_subset",
+  "selection_provenance": "fixed TTIS nightly instance; chosen before this model call without gold-patch ranking or prior Gemma output",
+  "serving": {
+    "concurrency": 1,
+    "max_context": 4096,
+    "max_input_tokens": 3840,
+    "max_output_tokens": 256
+  },
+  "slurm": {
+    "job_id": "71819",
+    "node": "qb2-120-p06t06"
+  },
+  "source": {
+    "ttis_revision": "4838ddbe"
+  },
+  "verifier": "swebench.harness.run_evaluation"
+}

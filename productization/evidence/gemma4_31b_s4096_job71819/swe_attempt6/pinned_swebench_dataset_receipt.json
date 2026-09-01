@@ -1,0 +1,12 @@
+{
+  "dataset_name": "SWE-bench/SWE-bench_Verified",
+  "dataset_revision": "78f471bf655a3137b2e8a75af1501690ec009ec3",
+  "dataset_split": "test",
+  "ordered_instance_ids": [
+    "scikit-learn__scikit-learn-14629"
+  ],
+  "ordered_instance_ids_sha256": "337f630aa6be1bde004791d7c72e05791520a278016082f8d9364363a6eb5ab9",
+  "schema": "ttis.pinned-swebench-dataset/v1",
+  "selected_instances_sha256": "d6991caa831e2eed43a0427bf3cd35f63f5ec40ffa699efa29d4d06d680959e1",
+  "snapshot_dir": "/tmp/nkapre/71819/gemma-unified/swe-gate-attempt6/pinned_swebench_dataset"
+}

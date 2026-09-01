@@ -1,0 +1,22 @@
+{
+  "apply_chat_template": true,
+  "catalog_score_contract": null,
+  "concurrency": 1,
+  "created_at_utc": "2026-09-01T04:25:36Z",
+  "endpoint": "http://127.0.0.1:18084/v1/chat/completions",
+  "grading_status": "catalog_ungraded",
+  "limit_mode": "ci-nightly",
+  "lm_eval_revision": "321e3bb68cb750a58c76606ab57832533302be73",
+  "max_context": 4096,
+  "max_generation_tokens": 768,
+  "model": "google/gemma-4-31B-it",
+  "num_fewshot": 0,
+  "prompt_reserve_tokens": 1024,
+  "qualification_claim": "local_behavioral_only",
+  "sample_count": 20,
+  "schema": "ttis.gemma-s4096-gsm8k-nightly/v1",
+  "seed": 42,
+  "task": "gsm8k",
+  "temperature_sampling": false,
+  "ttis_profile_revision": "4838ddbe+45aefa2c+dc8d8bdc"
+}

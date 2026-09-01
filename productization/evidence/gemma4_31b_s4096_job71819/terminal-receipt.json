@@ -1,0 +1,49 @@
+{
+  "artifacts": {
+    "log_sha256": "0f2f0384eba9cac99d519c76522bef0a94799eb2cd96cda24e1de1b8052de77e",
+    "result": "/tmp/nkapre/71819/gemma-unified/gsm8k-nightly20-attempt3/results/google__gemma-4-31B-it/results_2026-09-01T04-43-08.099695.json",
+    "result_sha256": "c2ed6a27b477c690f7c173befd71d7c40b9653412afa3f5803e6f9c3cbcbccf0",
+    "samples": "/tmp/nkapre/71819/gemma-unified/gsm8k-nightly20-attempt3/results/google__gemma-4-31B-it/samples_gsm8k_canonical_2026-09-01T04-43-08.099695.jsonl",
+    "samples_sha256": "c4fdc4b8447f62de1c4a1f08390d8e7e118e2fec933cac70da28dba6463e83b3"
+  },
+  "compatibility_overlay": {
+    "original_yaml_sha256": "442b817bc83138ec89bd30ea9d6b4acac977dfc4653c177ad778f354c8543d29",
+    "overlay_yaml_sha256": "bcf9c2ebc590bbebdaf841544707a98a7781dd94485a3b188f84bb60379b5001",
+    "reason": "pinned lm-eval uses retired dataset alias gsm8k incompatible with huggingface-hub 1.x; canonical namespace openai/gsm8k preserves task bytes/semantics"
+  },
+  "context_precheck": {
+    "fits_s4096": true,
+    "max_rendered_input_tokens": 129,
+    "max_total_tokens": 897,
+    "receipt_sha256": "0fad1b70f4a8765be09f779df825c1678184901c0b12b12a5934c21278cd34c8",
+    "selected_rows_sha256": "77aef24e07878a892c0669a30dc411c1b2de6071472b870705deefb2f25c7678"
+  },
+  "ended_at_utc": "2026-09-01T04:43:29Z",
+  "endpoint_http": 200,
+  "eval": {
+    "canonical_task_overlay": "gsm8k_canonical",
+    "flexible_exact_match": 0.6,
+    "lm_eval_revision": "321e3bb68cb750a58c76606ab57832533302be73",
+    "max_output_tokens": 768,
+    "num_fewshot": 0,
+    "sample_count": 20,
+    "strict_exact_match": 0.0,
+    "task": "gsm8k"
+  },
+  "grading_reason": "current Gemma GSM8K EvalTask.score is None; no threshold exists",
+  "grading_status": "catalog_ungraded",
+  "model": "google/gemma-4-31B-it",
+  "official_models_ci": false,
+  "postconditions": {
+    "agentic_containers": 0,
+    "endpoint_remains_ready": true,
+    "evaluator_processes": 0
+  },
+  "qualification_claim": "local_behavioral_only",
+  "schema": "ttis.gemma-s4096-gsm8k-nightly-result/v1",
+  "serving": {
+    "concurrency": 1,
+    "max_context": 4096
+  },
+  "status": "pass"
+}
