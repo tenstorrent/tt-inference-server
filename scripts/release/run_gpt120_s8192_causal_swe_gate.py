@@ -36,6 +36,19 @@ OBSERVATION_RETAINED_PAYLOAD_CHARS = 2048
 SEED = 42
 TEMPERATURE = 1.0
 TOP_P = 0.95
+BOUNDED_INSTANCE_TEMPLATE = """<pr_description>
+{{task}}
+</pr_description>
+
+Fix this bug in /testbed. Work concisely: inspect only likely files and do not
+run recursive repository listings. Avoid rereading the same file range unless
+new evidence requires it. By turn 8, if the likely source path is known, make
+the smallest plausible source edit. Modify source files only (not tests or
+configuration). Use at least one bash tool call in each response. When the fix
+is ready, create patch.txt with `git diff --` over only modified source files,
+inspect it in a separate command, then submit with exactly
+`echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && cat patch.txt`.
+"""
 
 
 def canonical(value: object) -> bytes:
@@ -64,6 +77,11 @@ def main() -> int:
     parser.add_argument("--tokenizer-root", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--reasoning-mode", choices=("default", "high"), required=True)
+    parser.add_argument(
+        "--agent-workflow",
+        choices=("upstream", "bounded"),
+        default="upstream",
+    )
     parser.add_argument("--slurm-job-id", required=True)
     parser.add_argument("--node", required=True)
     args = parser.parse_args()
@@ -100,8 +118,13 @@ def main() -> int:
         "created_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "qualification_claim": "local_behavioral_only",
         "quality_status": "ungraded",
-        "causal_factor": "reasoning_effort",
+        "causal_factor": (
+            "reasoning_effort"
+            if args.agent_workflow == "upstream"
+            else "generic_bounded_agent_workflow"
+        ),
         "reasoning_mode": args.reasoning_mode,
+        "agent_workflow": args.agent_workflow,
         "selection_policy": "predeclared_ordered_subset",
         "selection_provenance": (
             "fixed before both A/B arms; no gold-patch or model-output selection"
@@ -124,6 +147,11 @@ def main() -> int:
             "temperature": TEMPERATURE,
             "top_p": TOP_P,
             "completion_kwargs": request_kwargs,
+            "instance_template_sha256": (
+                hashlib.sha256(BOUNDED_INSTANCE_TEMPLATE.encode()).hexdigest()
+                if args.agent_workflow == "bounded"
+                else None
+            ),
         },
         "preregistered_gates": {
             "first_mutation_turn_lte": 8,
@@ -184,7 +212,14 @@ def main() -> int:
         random_delay_multiplier=0.0,
         score_existing_predictions=False,
         instance_ids=INSTANCE_IDS,
-        mini_agent_kwargs={"step_limit": STEP_LIMIT},
+        mini_agent_kwargs={
+            "step_limit": STEP_LIMIT,
+            **(
+                {"instance_template": BOUNDED_INSTANCE_TEMPLATE}
+                if args.agent_workflow == "bounded"
+                else {}
+            ),
+        },
         mini_observation_chars=OBSERVATION_RETAINED_PAYLOAD_CHARS,
         qualification_claim="local_behavioral_only",
         selection_policy="predeclared_ordered_subset",

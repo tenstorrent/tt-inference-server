@@ -34,3 +34,15 @@ def test_causal_arms_differ_only_by_reasoning_effort():
     assert module.OBSERVATION_RETAINED_PAYLOAD_CHARS == 2048
     assert module.INSTANCE_IDS == ["django__django-11299"]
     assert len(module.DATASET_REVISION) == 40
+
+
+def test_bounded_workflow_is_generic_and_enforces_preregistered_discipline():
+    module = _module()
+    template = module.BOUNDED_INSTANCE_TEMPLATE
+    assert "{{task}}" in template
+    assert "do not\nrun recursive repository listings" in template
+    assert "Avoid rereading the same file range" in template
+    assert "By turn 8" in template
+    assert "COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT" in template
+    assert "constraints.py" not in template
+    assert "CheckConstraint" not in template
