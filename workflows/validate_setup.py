@@ -126,9 +126,11 @@ def validate_quetzal_models_ci_contract(model_spec, runtime_config) -> None:
             "and quality qualification remains runnable"
         )
     elif _SHA256_RE.fullmatch(str(attestation_sha)) is None:
-        raise ValueError(
-            "Quetzal Models-CI functional blocker: "
-            "QUETZAL_RUNTIME_ATTESTATION_SHA256 must be an exact lowercase SHA-256"
+        logger.warning(
+            "Quetzal Models-CI publication provenance warning [unattested]: "
+            "catalogued runtime attestation identity %r is malformed; direct "
+            "image/package/source/runtime checks remain authoritative",
+            attestation_sha,
         )
     if _GIT_REVISION_RE.fullmatch(str(env["QUETZAL_REQUIRED_SOURCE_REVISION"])) is None:
         raise ValueError(
@@ -221,6 +223,12 @@ def validate_quetzal_models_ci_contract(model_spec, runtime_config) -> None:
             "smoke diagnostic set independent of model output"
         )
     if cfg.selection_policy == "reviewed_fixed_subset":
+        limit_mode = getattr(runtime_config, "limit_samples_mode", None)
+        if limit_mode not in ("ci-nightly", EvalLimitMode.CI_NIGHTLY):
+            raise ValueError(
+                "models_ci_graded SWE qualification requires effective "
+                "limit_samples_mode=ci-nightly; smoke/local modes are diagnostic"
+            )
         nightly_ids = cfg.instance_ids_map.get(EvalLimitMode.CI_NIGHTLY)
         if (
             not isinstance(nightly_ids, list)
@@ -256,6 +264,11 @@ def validate_quetzal_models_ci_contract(model_spec, runtime_config) -> None:
             raise ValueError(
                 "reviewed_fixed_subset requires the exact SHA-256 of its "
                 "canonical ordered CI_NIGHTLY instance IDs"
+            )
+        if _SHA256_RE.fullmatch(str(cfg.selected_instances_sha256 or "")) is None:
+            raise ValueError(
+                "reviewed_fixed_subset requires an exact SHA-256 of the selected "
+                "revision-pinned dataset row bytes"
             )
         subset_reference = mode_references[EvalLimitMode.CI_NIGHTLY]
         if (

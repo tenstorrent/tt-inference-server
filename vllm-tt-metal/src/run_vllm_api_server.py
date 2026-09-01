@@ -924,10 +924,13 @@ def _validate_quetzal_package_and_runtime(
     attestation_path = Path(attestation_value)
     if not attestation_sha256:
         if attestation_path.is_symlink() or not attestation_path.is_file():
-            raise RuntimeError(
-                "Quetzal runtime compatibility attestation is missing: "
-                f"{attestation_path}"
+            logger.warning(
+                "Quetzal publication provenance warning [unattested]: supplied "
+                "runtime attestation is missing or not a regular file: %s; "
+                "functional and quality admission remains valid",
+                attestation_path,
             )
+            return
         actual_attestation_sha256, _ = _sha256_file(attestation_path)
         logger.warning(
             "Quetzal publication provenance warning [unattested]: supplied "
@@ -936,11 +939,19 @@ def _validate_quetzal_package_and_runtime(
             actual_attestation_sha256,
         )
         return
-    _require_read_only_path(
-        attestation_path,
-        directory=False,
-        label="Quetzal runtime compatibility attestation",
-    )
+    try:
+        _require_read_only_path(
+            attestation_path,
+            directory=False,
+            label="Quetzal runtime compatibility attestation",
+        )
+    except RuntimeError as exc:
+        logger.warning(
+            "Quetzal publication provenance warning [unattested]: %s; "
+            "functional and quality admission remains valid",
+            exc,
+        )
+        return
     try:
         from serving.qualified_environment_contract import profile_identity
         from serving.runtime_compatibility_attestation import validate_files
@@ -960,12 +971,18 @@ def _validate_quetzal_package_and_runtime(
             expected_serve_profile_sha256=serve_profile_sha256,
         )
     except (ImportError, OSError, ValueError) as exc:
-        raise RuntimeError(
-            f"Quetzal runtime compatibility attestation rejected: {exc}"
-        ) from exc
+        logger.warning(
+            "Quetzal publication provenance warning [unattested]: runtime "
+            "compatibility attestation rejected: %s; direct image/package/"
+            "source/runtime identity checks remain authoritative",
+            exc,
+        )
+        return
     if runtime_attestation.get("generator_source_revision") != generator_source:
-        raise RuntimeError(
-            "Quetzal generator source differs from the catalog attestation pin"
+        logger.warning(
+            "Quetzal publication provenance warning [unattested]: generator "
+            "source differs from the catalog attestation pin; direct source "
+            "identity checks remain authoritative"
         )
 
 

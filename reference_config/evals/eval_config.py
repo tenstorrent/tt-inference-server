@@ -184,6 +184,9 @@ class SWEbenchEvalConfig:
     # SHA-256 of the canonical JSON encoding of the ordered CI_NIGHTLY IDs.
     # Required for a graded fixed-subset Quetzal release contract.
     ordered_instance_ids_sha256: Optional[str] = None
+    # SHA-256 of canonical JSON for the exact ordered selected dataset rows.
+    # Unlike an ID-only digest, this binds problem/test metadata bytes.
+    selected_instances_sha256: Optional[str] = None
     # Explicitly separates local behavioral collection from a graded Models-CI
     # release claim. The release validator accepts only ``models_ci_graded``.
     qualification_claim: str = "local_behavioral_only"

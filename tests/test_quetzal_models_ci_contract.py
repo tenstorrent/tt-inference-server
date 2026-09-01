@@ -17,9 +17,10 @@ from workflows.validate_setup import validate_quetzal_models_ci_contract
 from workflows.workflow_types import EvalLimitMode
 
 
-def _runtime(workflow="release"):
+def _runtime(workflow="release", limit_samples_mode="ci-nightly"):
     return SimpleNamespace(
         workflow=workflow,
+        limit_samples_mode=limit_samples_mode,
         agentic_benchmark=None,
         external_agentic_contract=None,
     )
@@ -70,6 +71,7 @@ def _valid_task():
                 "utf-8"
             )
         ).hexdigest(),
+        selected_instances_sha256="3" * 64,
         n_tasks=None,
         instance_ids_map={
             EvalLimitMode.SMOKE_TEST: ["django__django-11299"],
@@ -158,12 +160,6 @@ def test_full_dataset_contract_fails_until_complete_coverage_is_provable(
     "mutation,match",
     [
         (
-            lambda spec, task: spec.env_vars.update(
-                QUETZAL_RUNTIME_ATTESTATION_SHA256="bad"
-            ),
-            "RUNTIME_ATTESTATION",
-        ),
-        (
             lambda spec, task: spec.env_vars.pop("QUETZAL_REQUIRED_TT_METAL_COMMIT"),
             "missing",
         ),
@@ -241,6 +237,14 @@ def test_full_dataset_contract_fails_until_complete_coverage_is_provable(
             ),
             "canonical ordered",
         ),
+        (
+            lambda spec, task: setattr(
+                task.swebench_eval_config,
+                "selected_instances_sha256",
+                "bad",
+            ),
+            "selected.*row bytes",
+        ),
     ],
 )
 def test_incomplete_release_contracts_fail_closed(monkeypatch, mutation, match):
@@ -295,6 +299,31 @@ def test_missing_runtime_attestation_is_a_provenance_warning(monkeypatch, caplog
 
     assert "[unattested]" in caplog.text
     assert "qualification remains runnable" in caplog.text
+
+
+def test_malformed_runtime_attestation_is_a_provenance_warning(monkeypatch, caplog):
+    spec = _valid_spec()
+    spec.env_vars["QUETZAL_RUNTIME_ATTESTATION_SHA256"] = "bad"
+    monkeypatch.setattr(
+        "workflows.validate_setup._selected_agentic_tasks",
+        lambda *_args: [_valid_task()],
+    )
+
+    validate_quetzal_models_ci_contract(spec, _runtime())
+
+    assert "[unattested]" in caplog.text
+    assert "malformed" in caplog.text
+
+
+def test_smoke_mode_cannot_masquerade_as_models_ci_graded(monkeypatch):
+    monkeypatch.setattr(
+        "workflows.validate_setup._selected_agentic_tasks",
+        lambda *_args: [_valid_task()],
+    )
+    with pytest.raises(ValueError, match="effective.*ci-nightly"):
+        validate_quetzal_models_ci_contract(
+            _valid_spec(), _runtime(limit_samples_mode="smoke-test")
+        )
 
 
 @pytest.mark.parametrize(

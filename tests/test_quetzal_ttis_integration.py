@@ -241,8 +241,8 @@ def test_docker_command_mounts_exact_runtime_attestation_readonly(tmp_path):
     assert f"QUETZAL_RUNTIME_ATTESTATION_PATH={destination}" in command
 
     attestation.chmod(0o644)
-    with pytest.raises(ValueError, match="must be read-only"):
-        generate_docker_run_command(spec, runtime)
+    command, _ = generate_docker_run_command(spec, runtime)
+    assert destination not in command
 
 
 def test_release_labels_user_sealed_and_unattested_provenance_without_blocking(

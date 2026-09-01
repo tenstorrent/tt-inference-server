@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import dataclasses
+import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
@@ -29,7 +30,10 @@ from llm_module.drivers.agentic import (
     resolve_task_names,
 )
 from llm_module.agentic.swebench import (
+    _prepare_pinned_swebench_dataset,
     _run_command_with_retries,
+    build_mini_sweagent_command,
+    build_swebench_harness_command,
     normalize_swebench_report,
     run as run_swebench,
 )
@@ -102,6 +106,7 @@ class FakeSWEbenchConfig:
     instance_selection_provenance: Optional[str] = None
     dataset_revision: Optional[str] = None
     ordered_instance_ids_sha256: Optional[str] = None
+    selected_instances_sha256: Optional[str] = None
     sweagent_config: str = "config/default.yaml"
     mini_config: str = "swebench.yaml"
     mini_model_class: str = "litellm"
@@ -520,6 +525,79 @@ class TestTerminalBenchHarness:
 
 
 class TestSWEbenchHarness:
+    def test_graded_dataset_is_revision_and_content_pinned_for_both_consumers(
+        self, tmp_path
+    ):
+        rows = [
+            {"instance_id": "other", "problem_statement": "ignored"},
+            {"instance_id": "django__django-11299", "problem_statement": "exact"},
+        ]
+        selected = [rows[1]]
+        digest = hashlib.sha256(
+            json.dumps(
+                selected, ensure_ascii=True, sort_keys=True, separators=(",", ":")
+            ).encode("utf-8")
+        ).hexdigest()
+        cfg = dataclasses.replace(
+            build_swebench_config(
+                _swebench_task(),
+                _server(),
+                DriverContext(output_dir=tmp_path, device="N150"),
+                n_tasks=1,
+            ),
+            qualification_claim="models_ci_graded",
+            dataset_revision="a" * 40,
+            instance_ids=["django__django-11299"],
+            ordered_instance_ids_sha256="b" * 64,
+            selected_instances_sha256=digest,
+        )
+
+        with patch("datasets.load_dataset", side_effect=[rows, selected]) as load:
+            dataset_source, actual = _prepare_pinned_swebench_dataset(cfg)
+
+        assert actual == digest
+        assert load.call_args_list[0].kwargs["revision"] == "a" * 40
+        assert load.call_args_list[0].args == ("SWE-bench/SWE-bench_Verified",)
+        assert load.call_args_list[1].args == (dataset_source,)
+        receipt = json.loads(
+            (cfg.output_dir / "pinned_swebench_dataset_receipt.json").read_text()
+        )
+        assert receipt["selected_instances_sha256"] == digest
+        assert receipt["ordered_instance_ids"] == ["django__django-11299"]
+        mini = build_mini_sweagent_command(
+            cfg,
+            cfg.output_dir / "mini.yaml",
+            cfg.output_dir / "mini",
+            dataset_source=dataset_source,
+        )
+        harness = build_swebench_harness_command(
+            cfg,
+            cfg.output_dir / "predictions.jsonl",
+            "run-id",
+            dataset_source=dataset_source,
+        )
+        assert mini[mini.index("--subset") + 1] == dataset_source
+        assert harness[harness.index("--dataset_name") + 1] == dataset_source
+
+    def test_graded_dataset_content_mismatch_fails_before_agent(self, tmp_path):
+        cfg = dataclasses.replace(
+            build_swebench_config(
+                _swebench_task(),
+                _server(),
+                DriverContext(output_dir=tmp_path, device="N150"),
+                n_tasks=1,
+            ),
+            qualification_claim="models_ci_graded",
+            dataset_revision="a" * 40,
+            instance_ids=["django__django-11299"],
+            selected_instances_sha256="0" * 64,
+        )
+        rows = [{"instance_id": "django__django-11299", "problem_statement": "x"}]
+        with patch("datasets.load_dataset", return_value=rows), pytest.raises(
+            RuntimeError, match="content digest mismatch"
+        ):
+            _prepare_pinned_swebench_dataset(cfg)
+
     def test_agent_failure_returns_nonzero_without_predictions(self, tmp_path):
         task = _swebench_task()
         cfg = build_swebench_config(
@@ -687,6 +765,8 @@ class TestSWEbenchReportNormalization:
             instance_selection_provenance="reviewed fixture",
             dataset_revision="a" * 40,
             ordered_instance_ids_sha256="b" * 64,
+            selected_instances_sha256="c" * 64,
+            eval_limit_mode="ci-nightly",
             instance_ids=["django__django-11299"],
             mini_observation_chars=2048,
             max_input_tokens=5120,
@@ -709,6 +789,7 @@ class TestSWEbenchReportNormalization:
             cfg.output_dir / "result.json",
             cfg,
             cfg.output_dir / "predictions.jsonl",
+            "c" * 64,
         )
 
         contract = normalized["config"]["qualification_contract"]
@@ -718,7 +799,9 @@ class TestSWEbenchReportNormalization:
             "instance_selection_provenance": "reviewed fixture",
             "dataset_revision": "a" * 40,
             "ordered_instance_ids_sha256": "b" * 64,
+            "selected_instances_sha256": "c" * 64,
             "predeclared_instance_ids": ["django__django-11299"],
+            "eval_limit_mode": "ci-nightly",
             "mini_observation_chars": 2048,
             "max_input_tokens": 5120,
             "max_output_tokens": 2048,

@@ -76,6 +76,8 @@ class SWEbenchRunConfig:
     instance_selection_provenance: Optional[str] = None
     dataset_revision: Optional[str] = None
     ordered_instance_ids_sha256: Optional[str] = None
+    selected_instances_sha256: Optional[str] = None
+    eval_limit_mode: Optional[str] = None
     # Exact Hugging Face tokenizer used to render/count each mini-swe request.
     # Kept separate from model_name, which includes LiteLLM's provider prefix.
     tokenizer_name: Optional[str] = None
@@ -88,6 +90,121 @@ class SWEbenchRunConfig:
 
 def _interpreter(config: SWEbenchRunConfig) -> Path:
     return Path(config.venv_python) if config.venv_python else Path(sys.executable)
+
+
+def _canonical_selected_rows(rows: list[dict[str, Any]]) -> bytes:
+    return json.dumps(
+        rows, ensure_ascii=True, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+
+
+def _prepare_pinned_swebench_dataset(
+    config: SWEbenchRunConfig,
+) -> tuple[str, Optional[str]]:
+    """Materialize one revision-pinned, content-bound local dataset snapshot.
+
+    Both mini-swe-agent and the isolated verifier receive this same directory,
+    so neither independently resolves a mutable Hub alias. Legacy/local rows
+    without a declared revision keep their existing dataset source, while a
+    graded run fails closed unless the selected row bytes match the catalogue.
+    """
+    graded = config.qualification_claim == "models_ci_graded"
+    if not config.dataset_revision:
+        if graded:
+            raise RuntimeError(
+                "graded SWE-bench requires an exact dataset revision and "
+                "content-bound local snapshot"
+            )
+        return config.dataset_name, None
+    if not config.instance_ids:
+        raise RuntimeError(
+            "revision-pinned SWE-bench snapshot requires exact selected instance IDs"
+        )
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+", config.dataset_split):
+        raise RuntimeError("SWE-bench dataset split is not a safe local name")
+
+    from datasets import load_dataset
+
+    source = load_dataset(
+        config.dataset_name,
+        split=config.dataset_split,
+        revision=config.dataset_revision,
+    )
+    by_id: dict[str, dict[str, Any]] = {}
+    for raw in source:
+        row = dict(raw)
+        instance_id = row.get("instance_id")
+        if instance_id in config.instance_ids:
+            if instance_id in by_id:
+                raise RuntimeError(
+                    f"pinned SWE-bench dataset repeats instance {instance_id!r}"
+                )
+            by_id[instance_id] = row
+    missing = [
+        instance_id for instance_id in config.instance_ids if instance_id not in by_id
+    ]
+    if missing:
+        raise RuntimeError(
+            f"pinned SWE-bench dataset is missing selected instances: {missing}"
+        )
+    ordered_rows = [by_id[instance_id] for instance_id in config.instance_ids]
+    content_sha256 = hashlib.sha256(_canonical_selected_rows(ordered_rows)).hexdigest()
+    if graded and config.selected_instances_sha256 != content_sha256:
+        raise RuntimeError(
+            "graded SWE-bench selected-instance content digest mismatch: "
+            f"expected={config.selected_instances_sha256!r}, actual={content_sha256!r}"
+        )
+
+    snapshot_dir = config.output_dir / "pinned_swebench_dataset"
+    snapshot_dir.mkdir(parents=True, exist_ok=True)
+    snapshot_path = snapshot_dir / f"{config.dataset_split}.jsonl"
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        dir=snapshot_dir,
+        prefix=".dataset.",
+        delete=False,
+    ) as stream:
+        temporary = Path(stream.name)
+        for row in ordered_rows:
+            stream.write(
+                json.dumps(
+                    row,
+                    ensure_ascii=True,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+                + "\n"
+            )
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(temporary, snapshot_path)
+
+    reloaded = [
+        dict(row) for row in load_dataset(str(snapshot_dir), split=config.dataset_split)
+    ]
+    reloaded_sha256 = hashlib.sha256(_canonical_selected_rows(reloaded)).hexdigest()
+    if reloaded_sha256 != content_sha256:
+        raise RuntimeError("local SWE-bench snapshot changed during materialization")
+    receipt = {
+        "schema": "ttis.pinned-swebench-dataset/v1",
+        "dataset_name": config.dataset_name,
+        "dataset_split": config.dataset_split,
+        "dataset_revision": config.dataset_revision,
+        "ordered_instance_ids": config.instance_ids,
+        "ordered_instance_ids_sha256": config.ordered_instance_ids_sha256,
+        "selected_instances_sha256": content_sha256,
+        "snapshot_dir": str(snapshot_dir),
+    }
+    # Keep the receipt outside the dataset directory. Hugging Face treats every
+    # JSON/JSONL file in a local dataset directory as data; placing metadata
+    # beside ``test.jsonl`` would make the agent and verifier load different
+    # schemas on their second open.
+    (config.output_dir / "pinned_swebench_dataset_receipt.json").write_text(
+        json.dumps(receipt, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return str(snapshot_dir), content_sha256
 
 
 def _run_command(cmd: list[str], cwd: Path, env: dict[str, str]) -> int:
@@ -553,6 +670,7 @@ def build_mini_sweagent_command(
     mini_output_dir: Path,
     *,
     instance_ids: Optional[list[str]] = None,
+    dataset_source: Optional[str] = None,
 ) -> list[str]:
     mini_exec = _interpreter(config).parent / "mini-extra"
     cmd = [
@@ -561,7 +679,7 @@ def build_mini_sweagent_command(
         "--model",
         config.model_name,
         "--subset",
-        config.sweagent_subset,
+        dataset_source or config.sweagent_subset,
         "--split",
         config.dataset_split,
         "--workers",
@@ -590,6 +708,7 @@ def _run_fixed_mini_sweagent_samples(
     config: SWEbenchRunConfig,
     mini_config_path: Path,
     env: dict[str, str],
+    dataset_source: Optional[str] = None,
 ) -> tuple[int, Path]:
     """Run fixed IDs one at a time with atomic successful-sample resume state."""
     if not config.instance_ids:
@@ -640,6 +759,7 @@ def _run_fixed_mini_sweagent_samples(
             mini_config_path,
             sample_dir,
             instance_ids=[instance_id],
+            dataset_source=dataset_source,
         )
         rc = _run_bounded_process_group(
             command,
@@ -731,13 +851,14 @@ def build_swebench_harness_command(
     config: SWEbenchRunConfig,
     predictions_path: Path,
     run_id: str,
+    dataset_source: Optional[str] = None,
 ) -> list[str]:
     cmd = [
         str(_interpreter(config)),
         "-m",
         "swebench.harness.run_evaluation",
         "--dataset_name",
-        config.dataset_name,
+        dataset_source or config.dataset_name,
         "--split",
         config.dataset_split,
         "--predictions_path",
@@ -823,6 +944,7 @@ def normalize_swebench_report(
     result_path: Path,
     config: SWEbenchRunConfig,
     predictions_path: Path,
+    dataset_content_sha256: Optional[str] = None,
 ) -> dict[str, Any]:
     """Normalize the SWE-bench harness report into harbor-format result.json."""
     report = json.loads(harness_report_path.read_text(encoding="utf-8"))
@@ -921,7 +1043,9 @@ def normalize_swebench_report(
                 "instance_selection_provenance": (config.instance_selection_provenance),
                 "dataset_revision": config.dataset_revision,
                 "ordered_instance_ids_sha256": (config.ordered_instance_ids_sha256),
+                "selected_instances_sha256": dataset_content_sha256,
                 "predeclared_instance_ids": sorted(expected_ids),
+                "eval_limit_mode": config.eval_limit_mode,
                 "mini_observation_chars": config.mini_observation_chars,
                 "max_input_tokens": config.max_input_tokens,
                 "max_output_tokens": config.max_output_tokens,
@@ -967,6 +1091,7 @@ def normalize_swebench_report(
 
 def run(config: SWEbenchRunConfig) -> int:
     config.output_dir.mkdir(parents=True, exist_ok=True)
+    dataset_source, dataset_content_sha256 = _prepare_pinned_swebench_dataset(config)
 
     env = os.environ.copy()
     env.setdefault("OPENAI_API_KEY", "EMPTY")
@@ -1015,7 +1140,7 @@ def run(config: SWEbenchRunConfig) -> int:
         mini_output_dir = config.output_dir / "mini_sweagent"
         if config.instance_ids:
             rc, preds_path = _run_fixed_mini_sweagent_samples(
-                config, mini_config_path, env
+                config, mini_config_path, env, dataset_source
             )
         else:
             if (
@@ -1026,7 +1151,10 @@ def run(config: SWEbenchRunConfig) -> int:
                     "mini-swe-agent requires a positive agent generation timeout"
                 )
             mini_cmd = build_mini_sweagent_command(
-                config, mini_config_path, mini_output_dir
+                config,
+                mini_config_path,
+                mini_output_dir,
+                dataset_source=dataset_source,
             )
             rc = _run_bounded_process_group(
                 mini_cmd,
@@ -1057,7 +1185,12 @@ def run(config: SWEbenchRunConfig) -> int:
     if not config.score_existing_predictions:
         convert_sweagent_preds_to_jsonl(preds_path, predictions_path, config.model_name)
 
-    harness_cmd = build_swebench_harness_command(config, predictions_path, run_id)
+    harness_cmd = build_swebench_harness_command(
+        config,
+        predictions_path,
+        run_id,
+        dataset_source=dataset_source,
+    )
     env = _add_swebench_harness_patch_to_env(config.output_dir, env)
     rc = _run_command_with_retries(
         harness_cmd,
@@ -1075,7 +1208,11 @@ def run(config: SWEbenchRunConfig) -> int:
         config.output_dir, config.model_name, run_id
     )
     normalize_swebench_report(
-        harness_report_path, result_path, config, predictions_path
+        harness_report_path,
+        result_path,
+        config,
+        predictions_path,
+        dataset_content_sha256,
     )
     logger.info("Wrote SWE-bench normalized result to %s", result_path)
     return 0

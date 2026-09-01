@@ -454,10 +454,13 @@ def _validate_quetzal_runtime_attestation(runtime_config, model_spec) -> Path | 
     if configured and not required:
         supplied = Path(configured).expanduser()
         if supplied.is_symlink() or not supplied.is_file():
-            raise ValueError(
-                "--quetzal-runtime-attestation must be an existing regular file: "
-                f"{supplied}"
+            logger.warning(
+                "Quetzal publication provenance warning [unattested]: supplied "
+                "runtime attestation is missing or not a regular file: %s; "
+                "functional and quality qualification will continue",
+                supplied,
             )
+            return None
         actual = hashlib.sha256(supplied.read_bytes()).hexdigest()
         logger.warning(
             "Quetzal publication provenance warning [unattested]: supplied "
@@ -467,20 +470,41 @@ def _validate_quetzal_runtime_attestation(runtime_config, model_spec) -> Path | 
         )
         return None
     if re.fullmatch(r"[0-9a-f]{64}", required) is None:
-        raise ValueError("impl=quetzal requires QUETZAL_RUNTIME_ATTESTATION_SHA256")
+        logger.warning(
+            "Quetzal publication provenance warning [unattested]: catalogued "
+            "runtime attestation identity %r is malformed; functional and "
+            "quality qualification will continue",
+            required,
+        )
+        return None
     supplied = Path(configured).expanduser()
     if supplied.is_symlink() or not supplied.is_file():
-        raise ValueError(
-            "--quetzal-runtime-attestation must be an existing regular file: "
-            f"{supplied}"
+        logger.warning(
+            "Quetzal publication provenance warning [unattested]: supplied "
+            "runtime attestation is missing or not a regular file: %s; "
+            "functional and quality qualification will continue",
+            supplied,
         )
+        return None
     if supplied.stat(follow_symlinks=False).st_mode & 0o222:
-        raise ValueError("--quetzal-runtime-attestation must be read-only")
+        logger.warning(
+            "Quetzal publication provenance warning [unattested]: supplied "
+            "runtime attestation is writable; sha256 will be recorded but it "
+            "will not be mounted as trusted provenance"
+        )
+        return None
     actual = hashlib.sha256(supplied.read_bytes()).hexdigest()
     if actual != required or supplied.name != f"{required}.json":
-        raise ValueError(
-            "--quetzal-runtime-attestation does not match the catalog identity"
+        logger.warning(
+            "Quetzal publication provenance warning [unattested]: supplied "
+            "runtime attestation does not match the catalog identity; "
+            "expected=%s actual=%s path=%s; functional and quality "
+            "qualification will continue",
+            required,
+            actual,
+            supplied,
         )
+        return None
     return supplied.resolve()
 
 
