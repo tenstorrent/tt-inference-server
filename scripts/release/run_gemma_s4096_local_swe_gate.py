@@ -22,8 +22,10 @@ MODEL = "google/gemma-4-31B-it"
 TTIS_SOURCE_REVISION = "4838ddbe"
 DATASET = "SWE-bench/SWE-bench_Verified"
 DATASET_REVISION = "78f471bf655a3137b2e8a75af1501690ec009ec3"
-# First S4096 candidate in a predeclared TTIS nightly list.  This was fixed
-# before this run and was not chosen from its gold patch or Gemma output.
+# A member of the predeclared TTIS nightly list. It was fixed before this run
+# and was not chosen from its gold patch or from the current Gemma output. The
+# result is local/ungraded regardless of outcome; it is not a representative
+# subset baseline.
 INSTANCE_IDS = ["scikit-learn__scikit-learn-14629"]
 MAX_CONTEXT = 4096
 # Bind the whole request to S4096 while leaving enough input room for the
@@ -95,10 +97,14 @@ def main() -> int:
         "created_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "qualification_claim": "local_behavioral_only",
         "quality_status": "ungraded",
+        "representative_selection": False,
         "selection_policy": "predeclared_ordered_subset",
         "selection_provenance": (
             "fixed TTIS nightly instance; chosen before this model call without "
             "gold-patch ranking or prior Gemma output"
+        ),
+        "selection_limitations": (
+            "single task without an independently measured exact-subset baseline"
         ),
         "dataset": DATASET,
         "dataset_revision": DATASET_REVISION,
