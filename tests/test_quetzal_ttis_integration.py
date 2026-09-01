@@ -482,7 +482,10 @@ def test_quetzal_runtime_image_has_bounded_single_uid_build_mode():
     assert "ARG TAR_OPTIONS" in dockerfile
     assert 'TTIS_IMAGE_BUILD_USER}" != "root"' in dockerfile
     assert dockerfile.rstrip().endswith("USER container_app_user") is False
-    assert "# The build-time rootless workaround must never alter runtime privilege.\nUSER container_app_user" in dockerfile
+    assert (
+        "# The build-time rootless workaround must never alter runtime privilege.\nUSER container_app_user"
+        in dockerfile
+    )
     assert (
         "uv pip install --no-cache-dir --no-deps --no-build-isolation ."
         not in dockerfile
