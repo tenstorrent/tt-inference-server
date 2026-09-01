@@ -14,6 +14,15 @@ from typing import List
 
 DEFAULT_CHUNK_SIZE = 256  # Maximum characters per text chunk
 
+# Latin sentence terminators need trailing whitespace so decimals ("3.14") and
+# abbreviations don't split; CJK full-width terminators split unconditionally
+# because CJK scripts put no space between sentences (or words).
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+|(?<=[。！？])\s*")
+# Clause boundaries for oversized single sentences: ASCII ones keep the trailing
+# whitespace requirement (so "1,000" survives); the full-width CJK counterparts
+# (comma, ideographic comma, semicolon) split unconditionally.
+_CLAUSE_SPLIT_RE = re.compile(r"(?<=[,;])\s+|(?<=[，、；])\s*")
+
 
 def chunk_text(
     text: str,
@@ -24,15 +33,17 @@ def chunk_text(
     """Split text into chunks that always end at sentence boundaries.
 
     Sentences are packed greedily into chunks until adding the next sentence would exceed
-    max_chunk_size characters. A single sentence longer than the budget is split at clause
-    boundaries (, ;): with a `processor` (HF tokenizer, speecht5) the budget is `max_tokens`
-    tokens; without one (xtts) the budget is `max_chunk_size` characters, falling back to
-    word-boundary splits for a single over-long clause.
+    max_chunk_size characters. Sentence/clause boundaries cover Latin punctuation and the
+    CJK full-width terminators (。！？ and ，、；), which carry no trailing space. A single
+    sentence longer than the budget is split at clause boundaries: with a `processor`
+    (HF tokenizer, speecht5) the budget is `max_tokens` tokens; without one (xtts) the
+    budget is `max_chunk_size` characters, falling back to word-boundary splits (or hard
+    cuts for space-less scripts) for a single over-long clause.
     """
     if len(text) <= max_chunk_size:
         return [text]
 
-    sentences = re.split(r"(?<=[.!?])\s+", text.strip())
+    sentences = [s for s in _SENTENCE_SPLIT_RE.split(text.strip()) if s]
     if not sentences:
         return [text]
 
@@ -59,7 +70,7 @@ def chunk_text(
     def split_oversized(sentence):
         if not _too_big(sentence):
             return [sentence]
-        clauses = re.split(r"(?<=[,;])\s+", sentence)
+        clauses = [c for c in _CLAUSE_SPLIT_RE.split(sentence) if c]
         if processor is None:
             clauses = [p for c in clauses for p in _split_giant_clause(c)]
         parts = []

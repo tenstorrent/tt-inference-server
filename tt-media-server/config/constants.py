@@ -439,6 +439,12 @@ TTS_RESPONSE_FORMATS = AUDIO_RESPONSE_FORMATS | frozenset(
     (ResponseFormat.JSON.value, ResponseFormat.VERBOSE_JSON.value)
 )
 
+# Languages the XTTS-v2 pipeline supports. The XTTS runner asserts this stays
+# in sync with the pipeline's own list at warmup.
+XTTS_SUPPORTED_LANGUAGES = frozenset(
+    ("ar", "cs", "de", "en", "es", "fr", "hu", "it", "ko", "nl", "pl", "pt", "ru", "tr", "zh", "hi", "ja")
+)
+
 
 class JobTypes(Enum):
     VIDEO = "video"
@@ -1045,6 +1051,12 @@ ModelConfigs = {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_XTTS_V2, DeviceTypes.P150): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
         "max_batch_size": 1,
     },
     (ModelRunners.TT_XTTS_V2, DeviceTypes.P300X2): {

@@ -5,7 +5,7 @@
 from typing import Optional, Union
 
 import numpy as np
-from config.constants import TTS_RESPONSE_FORMATS
+from config.constants import TTS_RESPONSE_FORMATS, XTTS_SUPPORTED_LANGUAGES
 from domain.base_request import BaseRequest
 from pydantic import Field, PrivateAttr, field_validator
 
@@ -38,6 +38,24 @@ class TextToSpeechRequest(BaseRequest):
         None  # Base64-encoded or raw bytes of speaker embedding
     )
     speaker_id: Optional[str] = None  # ID for pre-configured speaker embeddings
+
+    # Synthesis language. Validated here so an unsupported code raises HTTP 422 early
+    # instead of raising inside a device worker. Region variants normalize to their
+    # base code ("pt-br" -> "pt", "zh-cn" -> "zh").
+    language: str = "en"
+
+    @field_validator("language", mode="before")
+    @classmethod
+    def validate_language(cls, v):
+        if v is None:
+            return "en"
+        base = str(v).strip().lower().split("-")[0]
+        if base not in XTTS_SUPPORTED_LANGUAGES:
+            raise ValueError(
+                f"Unsupported language {v!r}; supported: {sorted(XTTS_SUPPORTED_LANGUAGES)} "
+                "(region variants like 'pt-br' are accepted)"
+            )
+        return base
 
     # Optional sampling seed for stochastic TTS models (e.g. XTTS-v2): fixing it makes
     # identical text reproduce identical audio. None lets the model draw randomly.

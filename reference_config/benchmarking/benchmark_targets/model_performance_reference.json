@@ -6886,5 +6886,46 @@
                 }
             }
         ]
+    },
+    "XTTS-v2": {
+        "n150": [
+            {
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "tts",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 4000,
+                        "rtr": 2.0
+                    }
+                }
+            }
+        ],
+        "p150": [
+            {
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "tts",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 2000,
+                        "rtr": 5.0
+                    }
+                }
+            }
+        ],
+        "p300x2": [
+            {
+                "max_concurrency": 4,
+                "num_prompts": 8,
+                "task_type": "tts",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 2000,
+                        "rtr": 5.0
+                    }
+                }
+            }
+        ]
     }
 }

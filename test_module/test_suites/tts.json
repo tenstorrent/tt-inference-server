@@ -1,5 +1,5 @@
 {
-    "_description": "Test suites for TTS model category (SpeechT5)",
+    "_description": "Test suites for TTS model category (SpeechT5, XTTS-v2)",
     "_category": "TTS",
     "test_matrices": [
         {
@@ -24,6 +24,43 @@
                         "tts_generation_time": 10,
                         "sample_count": 10,
                         "compare_audio": true
+                    }
+                },
+                {
+                    "template": "TTSParamTest",
+                    "enabled": true,
+                    "description": "TTS parameter variations test"
+                },
+                {
+                    "template": "TTSIntegrationTest",
+                    "enabled": true,
+                    "description": "TTS error handling and validation test"
+                }
+            ]
+        },
+        {
+            "models": [
+                "xtts-v2"
+            ],
+            "devices": [
+                "n150",
+                "p150",
+                "p300x2"
+            ],
+            "test_cases": [
+                {
+                    "template": "XttsV2TTSTest",
+                    "enabled": true,
+                    "description": "XTTS-v2 functionality: basic synthesis, seed reproducibility, language handling"
+                },
+                {
+                    "template": "TTSLoadTest",
+                    "enabled": true,
+                    "description": "TTS load test",
+                    "targets": {
+                        "tts_generation_time": 15,
+                        "sample_count": 10,
+                        "compare_audio": false
                     }
                 },
                 {

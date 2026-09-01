@@ -8,7 +8,8 @@
 
 `xtts-v2` is also supported on hardware:
 
-- [BH QuietBox 2](xtts_v2_p300x2.md)
+- [P150](XTTS-v2_p150.md)
+- [BH QuietBox 2](XTTS-v2_p300x2.md)
 
 ## Quickstart - Deploy xtts-v2 Inference Server on n150
 
@@ -45,7 +46,15 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 Notes:
 
 - **License:** the XTTS-v2 checkpoint is distributed under the [Coqui Public Model License](https://coqui.ai/cpml) (non-commercial). Downloading implies acceptance (`COQUI_TOS_AGREED`). Review before production use.
-- **English only** in the current implementation; other language codes are rejected.
-- Long request texts are split at sentence boundaries (~240 chars per chunk) and synthesized per chunk with a short stitched pause — one request may take several seconds per ~10 s of audio.
+- **Languages:** the request's optional `language` field (default `"en"`) selects one of the
+  17 languages the pipeline supports: `ar cs de en es fr hi hu it ja ko nl pl pt ru tr zh`.
+  Region variants normalize to their base code (`pt-br` → `pt`, `zh-cn` → `zh`); an
+  unsupported code is rejected at the API (422). The ja/ko/zh romanizers
+  (`cutlet`/`hangul-romanize`/`pypinyin`) ship in the image and load on a language's
+  first request. The reference voice is cloned across languages — see `XTTS_REF_AUDIO`.
+- Long request texts are split at sentence boundaries (including CJK `。！？`) and
+  synthesized per chunk with a short stitched pause. The per-chunk budget follows coqui's
+  per-language character limits (en 240, ja 71, zh 82, ko 95, …), so non-Latin scripts
+  produce more, shorter chunks — one request may take several seconds per ~10 s of audio.
 - Fixing the request's `seed` makes identical text reproduce identical audio; omitting it draws randomly per request.
 - Voice cloning is fixed to the `XTTS_REF_AUDIO` voice at warmup; per-request `speaker_id`/`speaker_embedding` are not yet supported.

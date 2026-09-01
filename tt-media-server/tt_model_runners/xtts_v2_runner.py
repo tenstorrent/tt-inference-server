@@ -122,7 +122,20 @@ class XttsV2Runner(BaseMetalDeviceRunner):
         self.logger.info(f"Device {self.device_id}: Loading XTTS-v2 ...")
 
         def load_and_warmup():
+            from models.experimental.xtts_v2.frontend import SUPPORTED_LANGUAGES
             from models.experimental.xtts_v2.tt.ttnn_xtts_model import XttsV2
+
+            # The request schema validates against a mirrored copy of the pipeline's
+            # language list (config.constants.XTTS_SUPPORTED_LANGUAGES) so the domain
+            # layer needs no tt-metal import. Catch drift here, where both are visible.
+            from config.constants import XTTS_SUPPORTED_LANGUAGES
+
+            if XTTS_SUPPORTED_LANGUAGES != frozenset(SUPPORTED_LANGUAGES):
+                raise RuntimeError(
+                    "config.constants.XTTS_SUPPORTED_LANGUAGES is out of sync with the "
+                    f"pipeline's SUPPORTED_LANGUAGES: mirror={sorted(XTTS_SUPPORTED_LANGUAGES)} "
+                    f"pipeline={sorted(SUPPORTED_LANGUAGES)}"
+                )
 
             # Checkpoint precedence: explicit $XTTS_CKPT (dev override) > the server's own
             # weights-download location (settings.model_weights_path holds the downloaded
@@ -152,17 +165,26 @@ class XttsV2Runner(BaseMetalDeviceRunner):
         self.logger.info(f"Device {self.device_id}: XTTS-v2 warmup complete")
         return True
 
-    def _synthesize(self, text: str, base_seed: int) -> np.ndarray:
+    def _synthesize(self, text: str, base_seed: int, language: str = "en") -> np.ndarray:
         """Synthesize one request's text: chunk at sentence boundaries, generate per
         chunk (chunk i uses base_seed + i so chunks don't share sampling draws), stitch
-        with short silences. Returns float32 samples @ XTTS_SAMPLE_RATE."""
-        chunks = chunk_text(text, max_chunk_size=CHUNK_CHAR_LIMIT)
+        with short silences. Returns float32 samples @ XTTS_SAMPLE_RATE.
+
+        The chunk budget is per-language: coqui's CHAR_LIMITS mark where a single
+        generate() audibly truncates, and CJK/Korean romanize to far more tokens per
+        character than English (ja 71 chars vs en 240)."""
+        from models.experimental.xtts_v2.frontend import CHAR_LIMITS
+
+        budget = min(CHUNK_CHAR_LIMIT, CHAR_LIMITS.get(language, CHUNK_CHAR_LIMIT))
+        chunks = chunk_text(text, max_chunk_size=budget)
         pieces: list[np.ndarray] = []
         gap = np.zeros(
             int(INTER_CHUNK_SILENCE_SECONDS * XTTS_SAMPLE_RATE), dtype=np.float32
         )
         for i, chunk in enumerate(chunks):
-            wav = self.pipeline.generate(chunk, self.default_voice, seed=base_seed + i)
+            wav = self.pipeline.generate(
+                chunk, self.default_voice, language=language, seed=base_seed + i
+            )
             samples = wav.reshape(-1).detach().to(torch.float32).numpy()
             if samples.size == 0:
                 # Rare, seed-dependent: the model produced zero codes for this chunk
@@ -171,7 +193,7 @@ class XttsV2Runner(BaseMetalDeviceRunner):
                     f"Device {self.device_id}: empty generation for chunk {i}, retrying"
                 )
                 wav = self.pipeline.generate(
-                    chunk, self.default_voice, seed=base_seed + i + 7919
+                    chunk, self.default_voice, language=language, seed=base_seed + i + 7919
                 )
                 samples = wav.reshape(-1).detach().to(torch.float32).numpy()
             pieces.append(samples)
@@ -208,7 +230,9 @@ class XttsV2Runner(BaseMetalDeviceRunner):
             )
 
             t_start = time.time()
-            samples = self._synthesize(request.text, base_seed)
+            samples = self._synthesize(
+                request.text, base_seed, language=getattr(request, "language", "en")
+            )
             elapsed = time.time() - t_start
 
             audio_buffer = io.BytesIO()

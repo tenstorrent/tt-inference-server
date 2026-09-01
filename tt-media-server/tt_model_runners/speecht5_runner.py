@@ -783,6 +783,13 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
             if not request.text or not request.text.strip():
                 raise ValueError("Text cannot be empty")
 
+            # SpeechT5 is English-only.
+            language = getattr(request, "language", "en")
+            if language != "en":
+                raise ValueError(
+                    f"SpeechT5 supports only language 'en'; got {language!r}. "
+                )
+
             speaker_embedding, speaker_id = self._prepare_speaker_embedding(request)
             request._speaker_embedding_array = speaker_embedding.detach().numpy()
             # Compare by ID when available (avoids float-equality mismatch for same speaker).

@@ -154,6 +154,12 @@ templates:
   model_type: TEXT_TO_SPEECH
   inference_engine: MEDIA
   device_model_specs:
+    - device: P150
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+      env_vars:
+        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_mesh_graph_descriptor.textproto"
     - device: P300X2
       max_concurrency: 4  # 4 chips, one single-chip worker each (data parallel)
       max_context: 65536  # 64 * 1024
