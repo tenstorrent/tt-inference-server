@@ -63,6 +63,11 @@ def test_dev_quetzal_specs_are_nondefault_and_revision_pinned(model):
     assert spec.env_vars["QUETZAL_PACKAGE_ID"].startswith("sha256-")
     assert len(spec.env_vars["QUETZAL_BUNDLE_MANIFEST_SHA256"]) == 64
     assert len(spec.env_vars["QUETZAL_REQUIRED_TT_METAL_PATCHSET_SHA256"]) == 64
+    if model == "gemma-4-31B-it":
+        assert (
+            spec.env_vars["QUETZAL_REQUIRED_TT_METAL_COMMIT"]
+            == "b534549300fe2af11e6ee828675294bc0e359555"
+        )
 
     native, native_impl, _ = get_runtime_model_spec(model=model, device="p300x2")
     assert native_impl != "quetzal"

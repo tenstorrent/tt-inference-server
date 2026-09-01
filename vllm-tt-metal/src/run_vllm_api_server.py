@@ -738,10 +738,18 @@ def _quetzal_charter_pcc_floor(precision: object) -> float:
     raise RuntimeError(f"Quetzal qualification has unknown precision {precision!r}")
 
 
-def _validate_quetzal_qualification_row(row: dict, expected_context: int) -> dict:
+def _validate_quetzal_qualification_row(
+    row: dict, expected_context: int, *, allow_investigating: bool = False
+) -> dict | None:
     """Reject stale or merely planned qualification metadata before device open."""
-    if row.get("qualification_state") != "ready":
+    qualification_state = row.get("qualification_state")
+    investigating = allow_investigating and qualification_state == "investigating"
+    if qualification_state != "ready" and not investigating:
         raise RuntimeError("Quetzal qualification_state must be 'ready'")
+    if investigating and not str(row.get("blocker", "")).strip():
+        raise RuntimeError(
+            "behavioral Quetzal qualification must declare its promotion blocker"
+        )
     if row.get("context_length") != expected_context:
         raise RuntimeError(
             "Quetzal qualification context mismatch: package declares "
@@ -771,6 +779,14 @@ def _validate_quetzal_qualification_row(row: dict, expected_context: int) -> dic
         _quetzal_charter_pcc_floor(value) for value in component_precisions
     ]
     expected_floor = min(component_floors)
+
+    if investigating:
+        if row.get("charter_pcc") is not None:
+            raise RuntimeError(
+                "investigating behavioral Quetzal qualification may not embed "
+                "unpromoted charter_pcc"
+            )
+        return None
 
     charter_pcc = row.get("charter_pcc")
     if not isinstance(charter_pcc, dict):
@@ -919,11 +935,30 @@ def _validate_quetzal_package_and_runtime(
     if expected_context is None:
         charter_pcc = matches[0].get("charter_pcc", {})
     else:
-        charter_pcc = _validate_quetzal_qualification_row(matches[0], expected_context)
-    required_runtime = charter_pcc.get("required_runtime_tt_metal_commit")
-    package_required_patchset = charter_pcc.get(
-        "required_runtime_tt_metal_patchset_sha256"
-    )
+        charter_pcc = _validate_quetzal_qualification_row(
+            matches[0],
+            expected_context,
+            allow_investigating=behavioral_admission,
+        )
+    if charter_pcc is None:
+        required_runtime = os.getenv("QUETZAL_REQUIRED_TT_METAL_COMMIT")
+        package_required_patchset = os.getenv(
+            "QUETZAL_REQUIRED_TT_METAL_PATCHSET_SHA256"
+        )
+        if re.fullmatch(r"[0-9a-f]{40}", required_runtime or "") is None:
+            raise RuntimeError(
+                "behavioral Quetzal candidate requires an exact catalog-pinned "
+                "QUETZAL_REQUIRED_TT_METAL_COMMIT"
+            )
+        logger.warning(
+            "Admitting an investigating Quetzal candidate only to collect local "
+            "behavioral evidence; charter PCC and publication remain unqualified"
+        )
+    else:
+        required_runtime = charter_pcc.get("required_runtime_tt_metal_commit")
+        package_required_patchset = charter_pcc.get(
+            "required_runtime_tt_metal_patchset_sha256"
+        )
     actual_runtime = os.getenv("TT_METAL_COMMIT_SHA_OR_TAG")
     if not required_runtime or actual_runtime != required_runtime:
         raise RuntimeError(
