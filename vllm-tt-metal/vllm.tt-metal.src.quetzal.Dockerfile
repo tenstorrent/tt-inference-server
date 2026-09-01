@@ -137,7 +137,6 @@ RUN printf '%s' "${TT_INFERENCE_SERVER_BASE_IMAGE}" \
 # files would leave a mixed de59/b534 ABI in the final filesystem.
 RUN rm -rf /home/container_app_user/tt-metal
 COPY --from=quetzal_ttmetal_builder \
-    --chown=container_app_user:container_app_user \
     /home/container_app_user/tt-metal \
     /home/container_app_user/tt-metal
 
@@ -145,23 +144,26 @@ COPY --from=quetzal_ttmetal_builder \
 # plugin alone is insufficient: its embedded runner would still register the
 # native TT models and has no package validator. Carry the audited runner from
 # this exact, clean TTIS commit as part of the derivative image identity.
-COPY --from=ttis_src --chown=container_app_user:container_app_user \
+COPY --from=ttis_src \
     vllm-tt-metal/src/run_vllm_api_server.py \
     /home/container_app_user/app/src/run_vllm_api_server.py
-COPY --from=ttis_src --chown=container_app_user:container_app_user \
+COPY --from=ttis_src \
     model_spec.json \
     /home/container_app_user/model_specs/model_spec.json
-COPY --from=ttis_src --chown=container_app_user:container_app_user \
+COPY --from=ttis_src \
     scripts/validate_quetzal_serve_environment.py \
     /tmp/validate_quetzal_serve_environment.py
-COPY --from=ttis_src --chown=container_app_user:container_app_user \
+COPY --from=ttis_src \
     tt-vllm-plugin/pyproject.toml \
     /tmp/ttis-vllm-plugin-pyproject.toml
 
 # ``quetzal_src`` is a named BuildKit context exported from the exact clean
 # local commit by the wrapper. It contains neither .git nor authentication
 # material. The marker is generated after git-archive and checked in-image.
-COPY --from=quetzal_src --chown=container_app_user:container_app_user / /tmp/quetzal-source/
+# The builder stage sets canonical ownership for rootful builds. Preserving
+# source ownership here also permits a single-UID rootless build; explicit
+# --chown would require an unmapped uid and fail before any model code runs.
+COPY --from=quetzal_src / /tmp/quetzal-source/
 
 USER ${TTIS_IMAGE_BUILD_USER}
 RUN test "$(cat /tmp/quetzal-source/.tt-quetzal-commit)" = "${TT_QUETZAL_COMMIT_SHA}" \
