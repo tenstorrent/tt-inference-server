@@ -796,6 +796,29 @@ def absorb_plugin_config_into_additional_config(default_vllm_args):
     )
 
 
+def _additional_config_tt(default_vllm_args):
+    """Return ``(additional_config, additional_config['tt'])`` as mutable dicts.
+
+    The model spec serializes ``additional_config`` as a JSON *string*
+    (``'{"tt": {}}'``), while the ``inject_*`` helpers below build it as a dict.
+    Treating a string as "not a dict" and starting from ``{}`` silently discards
+    everything the spec asked for, so parse it instead. Unparseable or absent
+    values still fall back to an empty dict.
+    """
+    additional = default_vllm_args.get("additional_config")
+    if isinstance(additional, str):
+        try:
+            additional = json.loads(additional)
+        except (TypeError, ValueError):
+            additional = {}
+    if not isinstance(additional, dict):
+        additional = {}
+    tt_cfg = additional.get("tt")
+    if not isinstance(tt_cfg, dict):
+        tt_cfg = {}
+    return additional, tt_cfg
+
+
 def inject_tt_data_parallel(default_vllm_args):
     """Route ``TT_DATA_PARALLEL`` into ``additional_config['tt']['tt_data_parallel']``.
 
@@ -813,12 +836,7 @@ def inject_tt_data_parallel(default_vllm_args):
         return
     if n <= 1:
         return
-    additional = default_vllm_args.get("additional_config")
-    if not isinstance(additional, dict):
-        additional = {}
-    tt_cfg = additional.get("tt")
-    if not isinstance(tt_cfg, dict):
-        tt_cfg = {}
+    additional, tt_cfg = _additional_config_tt(default_vllm_args)
     tt_cfg["tt_data_parallel"] = n
     additional["tt"] = tt_cfg
     default_vllm_args["additional_config"] = additional
@@ -837,12 +855,7 @@ def inject_tt_weight_bridge_dir(default_vllm_args):
     bridge_dir = os.environ.get("TT_WEIGHT_BRIDGE_DIR")
     if not bridge_dir:
         return
-    additional = default_vllm_args.get("additional_config")
-    if not isinstance(additional, dict):
-        additional = {}
-    tt_cfg = additional.get("tt")
-    if not isinstance(tt_cfg, dict):
-        tt_cfg = {}
+    additional, tt_cfg = _additional_config_tt(default_vllm_args)
     tt_cfg["tt_weight_bridge_dir"] = bridge_dir
     additional["tt"] = tt_cfg
     default_vllm_args["additional_config"] = additional
@@ -863,12 +876,7 @@ def inject_tt_colocated_fabric_config(default_vllm_args):
     """
     if os.getenv("TT_COLOCATED_INFERENCE") != "1":
         return
-    additional = default_vllm_args.get("additional_config")
-    if not isinstance(additional, dict):
-        additional = {}
-    tt_cfg = additional.get("tt")
-    if not isinstance(tt_cfg, dict):
-        tt_cfg = {}
+    additional, tt_cfg = _additional_config_tt(default_vllm_args)
     if "fabric_config" not in tt_cfg:
         tt_cfg["fabric_config"] = "FABRIC_2D"
     # RL rollouts issue many prompts of varying lengths, so the model
