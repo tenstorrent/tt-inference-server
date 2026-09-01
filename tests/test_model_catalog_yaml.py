@@ -468,7 +468,7 @@ def test_gemma_quetzal_dev_spec_binds_exact_s4096_ring_candidate(monkeypatch):
         "e3ecc5557a84955bf0b95615e4b8e9fa83bcc431c9755e969ba5c441fc8d94cf"
     )
     assert env["QUETZAL_REQUIRED_SOURCE_REVISION"] == (
-        "76a15d4cdd0c2b400ef9b89499a334a6b748e56b"
+        "c872c6ae0344741da0a6d75a920e2fe5d6c4fccd"
     )
     assert env["QUETZAL_REQUIRED_TT_METAL_PATCHSET_SHA256"] == (
         "22fb0bd2523b8a5c63fa20c3c8a1586dc9ead5150449d0eb02231fa8173a7edd"
