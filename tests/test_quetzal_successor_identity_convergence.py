@@ -9,11 +9,11 @@ from pathlib import Path
 
 from workflows.model_spec import load_templates_from_yaml
 
-
 ROOT = Path(__file__).resolve().parents[1]
 MATRIX = ROOT / "productization/quetzal_successor_identity_matrix.json"
 CATALOGUE = ROOT / "workflows/model_specs/dev/llm.yaml"
 MODELS_CI = ROOT / ".github/workflows/models-ci-config.json"
+GEMMA_BLOCKER = ROOT / "productization/gemma4_31b_models_ci_enrollment.blocked.json"
 
 
 def _matrix() -> dict:
@@ -117,3 +117,20 @@ def test_attestation_is_informational_not_an_executable_identity_gate():
 
     assert matrix["openai/gpt-oss-120b"]["optional_runtime_attestation_sha256"]
     assert "QUETZAL_RUNTIME_ATTESTATION_SHA256" not in gpt.env_vars
+
+
+def test_selection_leaked_gemma_swe_is_never_qualification_evidence():
+    matrix_evidence = _matrix()["models"]["google/gemma-4-31B-it"]["local_evidence"]
+    blocker_evidence = json.loads(GEMMA_BLOCKER.read_text())["banked_local_evidence"]
+
+    for evidence in (matrix_evidence, blocker_evidence):
+        assert "bounded_swe_resolved" not in evidence
+        assert evidence["bounded_swe_harness_resolved"] == 1
+        assert evidence["bounded_swe_selection_policy"] == (
+            "gold_patch_ranked_task_selection"
+        )
+        assert evidence["bounded_swe_selection_leaked"] is True
+        assert evidence["bounded_swe_qualification"] is False
+        assert evidence["bounded_swe_evidence_scope"] == (
+            "harness_and_endpoint_execution_only_not_model_quality"
+        )
