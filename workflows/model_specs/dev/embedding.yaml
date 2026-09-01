@@ -24,6 +24,9 @@ templates:
         VLLM__MAX_NUM_SEQS: "8"
         MAX_BATCH_SIZE: "8"
         DEFAULT_THROTTLE_LEVEL: "0"
+        # EmbeddingRunner has no _run_async; keep the batched-sync device_worker
+        # instead of the auto-enabled dynamic-batch worker (max_num_seqs > 1).
+        USE_DYNAMIC_BATCHER: "false"
     - device: N300
       max_concurrency: 1
       max_context: 65536
@@ -35,6 +38,7 @@ templates:
         VLLM__MAX_NUM_SEQS: "16"
         MAX_BATCH_SIZE: "16"
         DEFAULT_THROTTLE_LEVEL: "0"
+        USE_DYNAMIC_BATCHER: "false"
     - device: T3K
       max_concurrency: 4
       max_context: 65536
@@ -46,6 +50,7 @@ templates:
         VLLM__MAX_NUM_SEQS: "16"
         MAX_BATCH_SIZE: "16"
         DEFAULT_THROTTLE_LEVEL: "0"
+        USE_DYNAMIC_BATCHER: "false"
     - device: GALAXY
       max_concurrency: 32
       max_context: 65536
@@ -57,6 +62,7 @@ templates:
         VLLM__MAX_NUM_SEQS: "8"
         MAX_BATCH_SIZE: "8"
         DEFAULT_THROTTLE_LEVEL: "0"
+        USE_DYNAMIC_BATCHER: "false"
         # Disable Inspector RPC to prevent port conflicts with 32 concurrent workers
         # Each worker would otherwise try to bind to the same port (50051)
         TT_METAL_INSPECTOR_RPC: "0"
