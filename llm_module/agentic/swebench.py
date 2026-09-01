@@ -64,6 +64,10 @@ class SWEbenchRunConfig:
     score_existing_predictions: bool
     instance_ids: list[str] = field(default_factory=list)
     mini_agent_kwargs: dict[str, Any] = field(default_factory=dict)
+    # Maximum command-output characters retained in model-visible history.
+    # The exact tokenizer still counts the complete retained request and
+    # remains the authoritative input-envelope gate.
+    mini_observation_chars: Optional[int] = None
     # Exact Hugging Face tokenizer used to render/count each mini-swe request.
     # Kept separate from model_name, which includes LiteLLM's provider prefix.
     tokenizer_name: Optional[str] = None
@@ -384,6 +388,21 @@ def _write_mini_sweagent_model_config(config: SWEbenchRunConfig) -> Path:
         raise ValueError(
             "mini-swe-agent input-budget enforcement requires tokenizer_name"
         )
+    max_input_tokens = config.max_input_tokens
+    max_output_tokens = config.max_output_tokens
+    if (
+        not isinstance(max_input_tokens, int)
+        or isinstance(max_input_tokens, bool)
+        or max_input_tokens <= 0
+    ):
+        raise ValueError("max_input_tokens must be a positive integer")
+    if max_output_tokens is not None:
+        if (
+            not isinstance(max_output_tokens, int)
+            or isinstance(max_output_tokens, bool)
+            or max_output_tokens <= 0
+        ):
+            raise ValueError("max_output_tokens must be a positive integer")
     model_kwargs: dict[str, Any] = {
         "api_base": config.api_base,
         "api_key": os.environ.get("OPENAI_API_KEY", "EMPTY"),
@@ -409,6 +428,34 @@ def _write_mini_sweagent_model_config(config: SWEbenchRunConfig) -> Path:
             ),
         }
     }
+    max_observation_chars = getattr(config, "mini_observation_chars", None)
+    if max_observation_chars is not None:
+        if (
+            not isinstance(max_observation_chars, int)
+            or isinstance(max_observation_chars, bool)
+            or max_observation_chars < 2
+        ):
+            raise ValueError("mini_observation_chars must be an integer >= 2")
+        model_config["model"]["observation_retained_payload_chars"] = (
+            max_observation_chars
+        )
+        half = max_observation_chars // 2
+        model_config["model"]["observation_template"] = (
+            "{% if output.exception_info -%}\n"
+            "<exception>{{output.exception_info}}</exception>\n"
+            "{% endif -%}\n"
+            "<returncode>{{output.returncode}}</returncode>\n"
+            f"{{% if output.output | length <= {max_observation_chars} -%}}\n"
+            "<output>\n{{ output.output -}}\n</output>\n"
+            "{%- else -%}\n"
+            "<warning>Command output exceeded the declared observation budget; "
+            "an equal head/tail sample follows.</warning>\n"
+            f"<output_head>\n{{{{ output.output[:{half}] }}}}\n</output_head>\n"
+            "<elided_chars>{{ output.output | length - "
+            f"{max_observation_chars} }}}}</elided_chars>\n"
+            f"<output_tail>\n{{{{ output.output[-{half}:] }}}}\n</output_tail>\n"
+            "{%- endif -%}"
+        )
     if config.mini_environment_class == "docker":
         model_config["environment"] = {
             "run_args": ["--rm", "--label", _agentic_container_label(config)]
@@ -776,7 +823,24 @@ def normalize_swebench_report(
         resolved_count = len(resolved_ids)
         unresolved_ids = submitted_ids - resolved_ids
 
-    accuracy = resolved_count / submitted_count if submitted_count else 0.0
+    if submitted_count <= 0:
+        raise RuntimeError(
+            "SWE-bench verifier report contains zero submitted instances; "
+            "refusing to normalize an unverified run as 0% success"
+        )
+    unexpected_resolved = resolved_ids - submitted_ids
+    if unexpected_resolved:
+        raise RuntimeError(
+            "SWE-bench verifier report resolved instances that were not "
+            f"submitted: {sorted(unexpected_resolved)}"
+        )
+    if resolved_count < 0 or resolved_count > submitted_count:
+        raise RuntimeError(
+            "SWE-bench verifier report has an invalid resolved/submitted count: "
+            f"resolved={resolved_count}, submitted={submitted_count}"
+        )
+
+    accuracy = resolved_count / submitted_count
     trial_results = [
         {
             "task_name": instance_id,

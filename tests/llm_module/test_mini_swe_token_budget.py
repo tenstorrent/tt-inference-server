@@ -6,9 +6,11 @@ from __future__ import annotations
 
 import json
 import subprocess
+from copy import deepcopy
 from types import SimpleNamespace
 
 import pytest
+from jinja2 import Template
 
 from llm_module.agentic.mini_swe_token_budget_core import (
     InputTokenBudgetExceeded,
@@ -94,6 +96,42 @@ def test_qwen_count_unwraps_openai_tool_schema_without_mutating_api_request():
 
     assert count_chat_input_tokens(QwenTokenizer([10, 20, 30]), [], tools) == 3
     assert tools == original
+
+
+@pytest.mark.parametrize(
+    "tokenizer_name",
+    ["Qwen/Qwen3.6-27B", "google/gemma-4-31B-it", "openai/gpt-oss-120b"],
+)
+def test_nested_tool_schema_survives_tokenizer_normalization(tokenizer_name):
+    schema = {
+        "type": "function",
+        "function": {
+            "name": "bash",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {"type": "string"},
+                    "env": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "oneOf": [
+                                {"type": "string"},
+                                {"type": "array", "items": {"type": "integer"}},
+                            ]
+                        },
+                    },
+                },
+                "required": ["command"],
+            },
+        },
+    }
+    original = deepcopy(schema)
+    tokenizer = Tokenizer([1])
+    tokenizer.name_or_path = tokenizer_name
+
+    assert count_chat_input_tokens(tokenizer, [], [schema]) == 1
+    assert tokenizer.calls[0][1]["tools"] == [original["function"]]
+    assert schema == original
 
 
 @pytest.mark.parametrize(
@@ -227,6 +265,7 @@ def test_receipt_contains_counts_but_no_prompt_content(tmp_path):
         "message_count": 2,
         "tool_schema_included": True,
         "history_truncated": False,
+        "observation_retained_payload_chars": None,
         "admitted": True,
     }
 
@@ -244,6 +283,7 @@ def _mini_config(tmp_path, **overrides):
         "max_output_tokens": 32 * 1024,
         "completion_kwargs": {},
         "mini_agent_kwargs": {},
+        "mini_observation_chars": 2048,
         "agent_generation_timeout_sec": 3600,
         "instance_ids": ["case-a", "case-b"],
         "n_tasks": None,
@@ -270,6 +310,7 @@ def test_generated_mini_config_selects_authoritative_wrapper(tmp_path):
     assert model["tokenizer_name"] == "openai/gpt-oss-120b"
     assert model["max_input_tokens"] == 92 * 1024
     assert model["model_kwargs"]["max_tokens"] == 32 * 1024
+    assert model["observation_retained_payload_chars"] == 2048
     assert model["token_count_log"].endswith("mini_sweagent_token_counts.jsonl")
     assert generated["environment"] == {
         "run_args": ["--rm", "--label", _agentic_container_label(config)]
@@ -280,6 +321,129 @@ def test_generated_mini_config_applies_positive_step_limit(tmp_path):
     config = _mini_config(tmp_path, mini_agent_kwargs={"step_limit": 8})
     generated = json.loads(_write_mini_sweagent_model_config(config).read_text())
     assert generated["agent"] == {"step_limit": 8}
+
+
+def test_qwen_8627_char_observation_is_bounded_before_next_exact_count(tmp_path):
+    config = _mini_config(
+        tmp_path,
+        tokenizer_name="Qwen/Qwen3.6-27B",
+        model_name="openai/Qwen/Qwen3.6-27B",
+        max_input_tokens=5 * 1024,
+        max_output_tokens=2 * 1024,
+    )
+    generated = json.loads(_write_mini_sweagent_model_config(config).read_text())
+    template = Template(generated["model"]["observation_template"])
+    middle = "MIDDLE_SENTINEL_MUST_NOT_SURVIVE"
+    output = "H" * 4300 + middle + "M" * (8627 - 4300 - len(middle) - 1024) + "T" * 1024
+    assert len(output) == 8627
+
+    rendered = template.render(
+        output=SimpleNamespace(exception_info=None, returncode=0, output=output)
+    )
+    assert middle not in rendered
+    assert "H" * 1024 in rendered
+    assert "T" * 1024 in rendered
+    assert "<elided_chars>6579</elided_chars>" in rendered
+    assert "equal head/tail sample" in rendered
+
+    messages = [{"role": "tool", "content": rendered}]
+    original = json.loads(json.dumps(messages))
+    tokenizer = Tokenizer([1, 2, 3])
+    assert count_chat_input_tokens(tokenizer, messages, []) == 3
+    assert messages == original
+
+
+@pytest.mark.parametrize(
+    "tokenizer_name,max_input,max_output,declared_context",
+    [
+        ("Qwen/Qwen3.6-27B", 5 * 1024, 2 * 1024, 8 * 1024),
+        ("openai/gpt-oss-120b", 5 * 1024, 2 * 1024, 8 * 1024),
+    ],
+)
+def test_all_target_models_use_one_bounded_observation_contract(
+    tmp_path, tokenizer_name, max_input, max_output, declared_context
+):
+    config = _mini_config(
+        tmp_path,
+        tokenizer_name=tokenizer_name,
+        max_input_tokens=max_input,
+        max_output_tokens=max_output,
+    )
+    generated = json.loads(_write_mini_sweagent_model_config(config).read_text())
+    assert generated["model"]["max_input_tokens"] == max_input
+    assert generated["model"]["model_kwargs"]["max_tokens"] == max_output
+    assert "equal head/tail sample" in generated["model"]["observation_template"]
+    assert max_input + max_output <= declared_context
+
+
+@pytest.mark.parametrize(
+    "overrides,match",
+    [({"mini_observation_chars": 1}, "mini_observation_chars")],
+)
+def test_generated_mini_config_rejects_invalid_common_contract(
+    tmp_path, overrides, match
+):
+    with pytest.raises(ValueError, match=match):
+        _write_mini_sweagent_model_config(_mini_config(tmp_path, **overrides))
+
+
+def test_legacy_profile_without_observation_cap_keeps_builtin_semantics(tmp_path):
+    generated = json.loads(
+        _write_mini_sweagent_model_config(
+            _mini_config(tmp_path, mini_observation_chars=None)
+        ).read_text()
+    )
+    assert "observation_template" not in generated["model"]
+
+
+def test_actual_litellm_dispatch_receives_original_history_and_kwargs(
+    tmp_path, monkeypatch
+):
+    from minisweagent.models.litellm_model import LitellmModel
+
+    from llm_module.agentic.mini_swe_token_budget import TokenBudgetLitellmModel
+
+    model = object.__new__(TokenBudgetLitellmModel)
+    model.config = SimpleNamespace(
+        tokenizer_name="Qwen/Qwen3.6-27B",
+        max_input_tokens=8192,
+        token_count_log=tmp_path / "counts.jsonl",
+        observation_retained_payload_chars=2048,
+    )
+    model._tokenizer = Tokenizer([1, 2, 3])
+    messages = [
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "function": {
+                        "name": "bash",
+                        "arguments": '{"command":"pwd"}',
+                    }
+                }
+            ],
+        }
+    ]
+    tools = [{"type": "function", "function": {"name": "custom"}}]
+    original_messages = deepcopy(messages)
+    original_tools = deepcopy(tools)
+    dispatched = {}
+
+    def fake_query(_self, outbound_messages, **kwargs):
+        dispatched["messages"] = outbound_messages
+        dispatched["kwargs"] = kwargs
+        return "response"
+
+    monkeypatch.setattr(LitellmModel, "_query", fake_query)
+    assert model._query(messages, tools=tools) == "response"
+    assert dispatched["messages"] is messages
+    assert dispatched["kwargs"]["tools"] is tools
+    assert messages == original_messages
+    assert tools == original_tools
+    receipt = json.loads((tmp_path / "counts.jsonl").read_text())
+    assert receipt["history_truncated"] is False
+    assert receipt["observation_retained_payload_chars"] == 2048
 
 
 @pytest.mark.parametrize("value", [0, -1, True, "8"])

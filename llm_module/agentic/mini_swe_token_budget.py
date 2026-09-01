@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Optional
 
 from minisweagent.models.litellm_model import LitellmModel, LitellmModelConfig
 from minisweagent.models.utils.actions_toolcall import BASH_TOOL
@@ -25,6 +26,7 @@ class TokenBudgetLitellmModelConfig(LitellmModelConfig):
     tokenizer_name: str
     max_input_tokens: int
     token_count_log: Path
+    observation_retained_payload_chars: Optional[int] = None
 
 
 class TokenBudgetLitellmModel(LitellmModel):
@@ -49,6 +51,9 @@ class TokenBudgetLitellmModel(LitellmModel):
             max_input_tokens=self.config.max_input_tokens,
             message_count=len(messages),
             admitted=admitted,
+            observation_retained_payload_chars=(
+                self.config.observation_retained_payload_chars
+            ),
         )
         enforce_token_budget(
             actual_input_tokens=actual,

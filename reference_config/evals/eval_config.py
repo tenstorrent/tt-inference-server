@@ -172,6 +172,18 @@ class SWEbenchEvalConfig:
     # Overrides merged into mini-swe-agent's agent section after the builtin
     # config, allowing catalogue-owned execution bounds such as step_limit.
     mini_agent_kwargs: Dict[str, Any] = field(default_factory=dict)
+    # Common mini-SWE contract: retain a bounded equal head/tail sample from
+    # every shell observation. Exact post-render token accounting remains the
+    # authoritative input gate and never truncates conversation history.
+    mini_observation_chars: Optional[int] = None
+    # Reviewed, model-output-independent origin for any fixed release subset.
+    # A local smoke ID alone is not certification evidence.
+    instance_selection_provenance: Optional[str] = None
+    selection_policy: Optional[str] = None
+    dataset_revision: Optional[str] = None
+    # Explicitly separates local behavioral collection from a graded Models-CI
+    # release claim. The release validator accepts only ``models_ci_graded``.
+    qualification_claim: str = "local_behavioral_only"
     sweagent_config: str = "config/default.yaml"
     mini_config: str = "swebench.yaml"
     mini_model_class: str = "litellm"
@@ -1638,6 +1650,12 @@ _eval_config_list = [
                         },
                     },
                     mini_agent_kwargs={"step_limit": 8},
+                    mini_observation_chars=2048,
+                    instance_selection_provenance=(
+                        "predeclared TTIS smoke/CI set; not independently "
+                        "baselined for certification"
+                    ),
+                    selection_policy="reviewed_fixed_subset",
                     agent_generation_timeout_sec=6 * 60 * 60,
                     swebench_timeout_sec=30 * 60,
                     shuffle=False,
@@ -4813,6 +4831,12 @@ _eval_config_list = [
                     # envelope. Eight steps is a conservative smoke bound, not
                     # a claim about full SWE task solvability.
                     mini_agent_kwargs={"step_limit": 8},
+                    mini_observation_chars=2048,
+                    instance_selection_provenance=(
+                        "predeclared TTIS smoke/CI set; not independently "
+                        "baselined for certification"
+                    ),
+                    selection_policy="reviewed_fixed_subset",
                     # Five C1 agentic trials may each generate a long reasoning
                     # trajectory. Bound the complete generation phase without
                     # conflating it with the 30-minute per-instance verifier.

@@ -139,6 +139,7 @@ def record_token_count(
     max_input_tokens: int,
     message_count: int,
     admitted: bool,
+    observation_retained_payload_chars: int | None = None,
 ) -> None:
     """Append one content-free, process-safe token admission receipt."""
     record = {
@@ -149,6 +150,7 @@ def record_token_count(
         "message_count": message_count,
         "tool_schema_included": True,
         "history_truncated": False,
+        "observation_retained_payload_chars": observation_retained_payload_chars,
         "admitted": admitted,
     }
     path.parent.mkdir(parents=True, exist_ok=True)

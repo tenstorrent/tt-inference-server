@@ -637,6 +637,50 @@ class TestRunCommandWithRetries:
 
 
 class TestSWEbenchReportNormalization:
+    def test_zero_submissions_fail_instead_of_becoming_zero_percent(self, tmp_path):
+        cfg = build_swebench_config(
+            _swebench_task(),
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+        cfg.output_dir.mkdir(parents=True)
+        harness_report = cfg.output_dir / "harness_report.json"
+        harness_report.write_text(
+            json.dumps({"submitted_ids": [], "resolved_ids": []}),
+            encoding="utf-8",
+        )
+
+        with pytest.raises(RuntimeError, match="zero submitted"):
+            normalize_swebench_report(
+                harness_report,
+                cfg.output_dir / "result.json",
+                cfg,
+                cfg.output_dir / "predictions.jsonl",
+            )
+
+    def test_resolved_instance_must_have_been_submitted(self, tmp_path):
+        cfg = build_swebench_config(
+            _swebench_task(),
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+        cfg.output_dir.mkdir(parents=True)
+        harness_report = cfg.output_dir / "harness_report.json"
+        harness_report.write_text(
+            json.dumps({"submitted_ids": ["a"], "resolved_ids": ["a", "b"]}),
+            encoding="utf-8",
+        )
+
+        with pytest.raises(RuntimeError, match="not submitted"):
+            normalize_swebench_report(
+                harness_report,
+                cfg.output_dir / "result.json",
+                cfg,
+                cfg.output_dir / "predictions.jsonl",
+            )
+
     def test_normalize_injects_timing_from_agent_log(self, tmp_path):
         cfg = build_swebench_config(
             _swebench_task(),
@@ -1015,7 +1059,10 @@ class TestAgenticRunTimestamp:
 
 
 class TestAgenticBridge:
-    def test_remote_readiness_uses_service_port_when_url_omits_it(self):
+    def test_remote_readiness_uses_service_port_when_url_omits_it(
+        self, monkeypatch
+    ):
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         ctx = MagicMock()
         ctx.remote_server = True
         ctx.server_url = "http://127.0.0.1"
