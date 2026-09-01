@@ -58,6 +58,10 @@ class AsyncLogHandler(logging.Handler):
     _active_listener = None
 
     def __init__(self, filename=None, max_bytes=104857600, backup_count=5):
+        # Handler.__init__ registers this instance in logging's global weakref
+        # list. Importing vLLM while constructing the formatter can call
+        # logging.shutdown(), so close() must be safe from that point onward.
+        self._listener = None
         super().__init__()
         _safe_stop_listener(AsyncLogHandler._active_listener)
         AsyncLogHandler._active_listener = None
@@ -87,8 +91,9 @@ class AsyncLogHandler(logging.Handler):
         self._queue.put_nowait(record)
 
     def close(self):
-        _safe_stop_listener(self._listener)
-        if AsyncLogHandler._active_listener is self._listener:
+        listener = getattr(self, "_listener", None)
+        _safe_stop_listener(listener)
+        if AsyncLogHandler._active_listener is listener:
             AsyncLogHandler._active_listener = None
         super().close()
 

@@ -29,6 +29,13 @@ def cleanup_handler():
 
 
 class TestAsyncLogHandler:
+    def test_close_is_safe_during_partial_initialization(self):
+        handler = AsyncLogHandler.__new__(AsyncLogHandler)
+        handler._listener = None
+        logging.Handler.__init__(handler)
+
+        handler.close()
+
     def test_handler_emits_to_file(self, tmp_path):
         log_file = tmp_path / "test.log"
         handler = AsyncLogHandler(filename=str(log_file))
