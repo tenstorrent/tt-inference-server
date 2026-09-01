@@ -17,6 +17,7 @@ from .mini_swe_token_budget_core import (
     TokenBudgetConfigurationError,
     count_chat_input_tokens,
     enforce_token_budget,
+    local_tokenizer_compat_kwargs,
     record_token_count,
 )
 
@@ -37,7 +38,10 @@ class TokenBudgetLitellmModel(LitellmModel):
 
     def __init__(self, **kwargs):
         super().__init__(config_class=TokenBudgetLitellmModelConfig, **kwargs)
-        self._tokenizer = AutoTokenizer.from_pretrained(self.config.tokenizer_name)
+        tokenizer_kwargs = local_tokenizer_compat_kwargs(self.config.tokenizer_name)
+        self._tokenizer = AutoTokenizer.from_pretrained(
+            self.config.tokenizer_name, **tokenizer_kwargs
+        )
 
     def _query(self, messages: list[dict[str, str]], **kwargs):
         actual = count_chat_input_tokens(self._tokenizer, messages, [BASH_TOOL])

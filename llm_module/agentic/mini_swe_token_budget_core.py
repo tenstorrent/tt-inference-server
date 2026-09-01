@@ -21,6 +21,29 @@ class TokenBudgetConfigurationError(RuntimeError):
     """The configured tokenizer cannot authoritatively count the API input."""
 
 
+def local_tokenizer_compat_kwargs(tokenizer_name: str) -> dict[str, object]:
+    """Normalize the reviewed Gemma 4 tokenizer metadata incompatibility.
+
+    The pinned Gemma 4 snapshot encodes ``extra_special_tokens`` as the legacy
+    one-item list ``["<|video|>"]``. Transformers 4.57 expects a name-to-token
+    mapping. Preserve the token and its semantic name explicitly; unknown
+    list-shaped metadata fails closed instead of changing token accounting.
+    """
+
+    config_path = Path(tokenizer_name) / "tokenizer_config.json"
+    if not config_path.is_file():
+        return {}
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    extra = config.get("extra_special_tokens")
+    if extra is None or isinstance(extra, dict):
+        return {}
+    if extra == ["<|video|>"]:
+        return {"extra_special_tokens": {"video_token": "<|video|>"}}
+    raise TokenBudgetConfigurationError(
+        f"unsupported local extra_special_tokens metadata: {extra!r}"
+    )
+
+
 def count_chat_input_tokens(
     tokenizer: Any, messages: list[dict], tools: list[dict]
 ) -> int:

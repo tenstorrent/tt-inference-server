@@ -15,6 +15,7 @@ from llm_module.agentic.mini_swe_token_budget_core import (
     TokenBudgetConfigurationError,
     count_chat_input_tokens,
     enforce_token_budget,
+    local_tokenizer_compat_kwargs,
     record_token_count,
 )
 from llm_module.agentic.swebench import (
@@ -36,6 +37,23 @@ class Tokenizer:
     def apply_chat_template(self, messages, **kwargs):
         self.calls.append((messages, kwargs))
         return self.result
+
+
+def test_local_gemma_legacy_video_token_metadata_is_normalized(tmp_path):
+    (tmp_path / "tokenizer_config.json").write_text(
+        json.dumps({"extra_special_tokens": ["<|video|>"]}), encoding="utf-8"
+    )
+    assert local_tokenizer_compat_kwargs(str(tmp_path)) == {
+        "extra_special_tokens": {"video_token": "<|video|>"}
+    }
+
+
+def test_unknown_local_tokenizer_list_metadata_fails_closed(tmp_path):
+    (tmp_path / "tokenizer_config.json").write_text(
+        json.dumps({"extra_special_tokens": ["<new-token>"]}), encoding="utf-8"
+    )
+    with pytest.raises(TokenBudgetConfigurationError, match="unsupported local"):
+        local_tokenizer_compat_kwargs(str(tmp_path))
 
 
 def test_count_includes_generation_prompt_and_exact_tool_schema():
@@ -130,6 +148,8 @@ def _mini_config(tmp_path, **overrides):
         "mini_environment_class": "docker",
         "n_concurrent_trials": 1,
         "sweagent_subset": "verified",
+        "dataset_name": "SWE-bench/SWE-bench_Verified",
+        "dataset_revision": None,
         "dataset_split": "test",
         "venv_python": None,
     }
