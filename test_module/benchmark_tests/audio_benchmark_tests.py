@@ -309,13 +309,20 @@ def _audio_target_checks(
     )
 
 
-def _is_whisper(ctx: MediaContext) -> bool:
+# ASR impls that serve /v1/audio/transcriptions and can take the 30s+60s sweep.
+# Anything not listed here is benchmarked on the single default clip only, so a
+# new ASR model must be added or it silently loses its 60s (chunking) coverage
+# and gates on the lighter 30s pass.
+_TRANSCRIPTION_SWEEP_IMPLS = frozenset({"whisper", "qwen3-asr"})
+
+
+def _supports_transcription_sweep(ctx: MediaContext) -> bool:
     impl = getattr(ctx.model_spec, "impl", None)
-    return getattr(impl, "impl_name", None) == "whisper"
+    return getattr(impl, "impl_name", None) in _TRANSCRIPTION_SWEEP_IMPLS
 
 
-def _run_whisper_benchmark_sweep(ctx: MediaContext, num_calls: int) -> Block:
-    """Multi-size audio benchmark for whisper: runs 30s and 60s clips and
+def _run_transcription_benchmark_sweep(ctx: MediaContext, num_calls: int) -> Block:
+    """Multi-size audio benchmark for ASR: runs 30s and 60s clips and
     emits one ``benchmarks`` block with a row per size.
 
     Target checks are computed from the 60s (heavier) pass and placed at
@@ -332,7 +339,7 @@ def _run_whisper_benchmark_sweep(ctx: MediaContext, num_calls: int) -> Block:
         ("Benchmarks 30s", dataset30s["file"]),
         ("Benchmarks 60s", dataset60s["file"]),
     ):
-        logger.info("Running whisper benchmark sweep: %s", label)
+        logger.info("Running transcription benchmark sweep: %s", label)
         status_list = _run_audio_transcription_benchmark(
             ctx, num_calls, audio_b64=audio_b64
         )
@@ -390,8 +397,8 @@ def run_audio_benchmark(ctx: MediaContext) -> Block:
 
     try:
         num_calls = get_num_calls(ctx)
-        if _is_whisper(ctx):
-            return _run_whisper_benchmark_sweep(ctx, num_calls)
+        if _supports_transcription_sweep(ctx):
+            return _run_transcription_benchmark_sweep(ctx, num_calls)
         status_list = _run_audio_transcription_benchmark(ctx, num_calls)
     except Exception as e:
         logger.error(f"Benchmark execution encountered an error: {e}")
