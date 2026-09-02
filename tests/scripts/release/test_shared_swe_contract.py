@@ -22,7 +22,11 @@ from pathlib import Path
 import pytest
 
 from llm_module.parsers.agentic import compute_accuracy_check
-from reference_config.evals.eval_config import EVAL_CONFIGS
+from reference_config.evals.eval_config import (
+    EVAL_CONFIGS,
+    SHARED_SWE_STEP_LIMIT,
+)
+from scripts.release import run_local_swe_gate
 from scripts.release.run_local_swe_gate import (
     build_gate_config,
     resolve_token_budget,
@@ -124,6 +128,37 @@ def test_step_limit_is_caller_owned(model):
         model, max_context=32768, max_output_tokens=2048, step_limit=12
     )
     assert other.mini_agent_kwargs == {"step_limit": 12}
+
+
+def test_one_shared_swe_step_budget_across_models():
+    # Harness coherence: every model's catalogue SWE row carries the SAME
+    # step budget, and that budget is the single shared constant. Upstream
+    # mini-swe-agent 2.2.8 defaults to 250 (config/benchmarks/swebench.yaml),
+    # which exceeds this harness's bounded envelope, hence the pinned 50.
+    limits = {
+        model: _swe_task(model).swebench_eval_config.mini_agent_kwargs.get(
+            "step_limit"
+        )
+        for model in MODELS
+    }
+    assert set(limits.values()) == {SHARED_SWE_STEP_LIMIT}, limits
+    assert SHARED_SWE_STEP_LIMIT == 50
+
+
+def test_gate_cli_default_step_limit_reads_the_shared_constant():
+    # The gate CLI's default and the catalogue rows must source the one
+    # constant; a drifted copy would let the gate and Models CI disagree.
+    assert run_local_swe_gate.SHARED_SWE_STEP_LIMIT is SHARED_SWE_STEP_LIMIT
+    source = GATE_SOURCE.read_text()
+    assert "default=SHARED_SWE_STEP_LIMIT" in source
+    assert "required=True" not in source.split('"--step-limit"')[1].split(")")[0]
+
+
+def test_step_budget_and_token_budget_stay_mutually_satisfiable():
+    # Worst-case observed input growth is ~420 tokens/step (jobs 72819/74777);
+    # guard at 512/step so the input budget can always feed a full-length run.
+    _, max_input, _ = resolve_token_budget(32768, 2048)
+    assert max_input >= SHARED_SWE_STEP_LIMIT * 512
 
 
 def test_unknown_model_fails_closed():

@@ -38,6 +38,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from reference_config.evals.eval_config import SHARED_SWE_STEP_LIMIT  # noqa: E402
+
 DATASET_REVISION = "78f471bf655a3137b2e8a75af1501690ec009ec3"
 OBSERVATION_RETAINED_PAYLOAD_CHARS = 2048
 SCHEMA = "ttis.local-swe-gate/v1"
@@ -226,7 +228,15 @@ def main() -> int:
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--max-context", type=int, required=True)
     parser.add_argument("--max-output-tokens", type=int, required=True)
-    parser.add_argument("--step-limit", type=int, required=True)
+    parser.add_argument(
+        "--step-limit",
+        type=int,
+        default=SHARED_SWE_STEP_LIMIT,
+        help=(
+            "agent step budget; defaults to the one shared "
+            "SHARED_SWE_STEP_LIMIT used by every catalogue SWE row"
+        ),
+    )
     parser.add_argument("--slurm-job-id", required=True)
     parser.add_argument("--node", required=True)
     parser.add_argument(

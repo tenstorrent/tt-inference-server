@@ -154,6 +154,18 @@ class TerminalBenchEvalConfig:
     verifier_env: Dict[str, str] = field(default_factory=dict)
 
 
+# One shared SWE-bench agent step budget for every catalogue model. Upstream
+# mini-swe-agent 2.2.8 ships step_limit=250 in config/benchmarks/swebench.yaml,
+# which exceeds this harness's bounded-collection envelope (>100), so the
+# shared value is pinned at 50: enough to reach first file edits (16 steps
+# expired during repository inspection on django__django-11299) while staying
+# jointly satisfiable with the 32K serving envelope at the observed ~420
+# tokens/step input growth. The harness-coherence contract
+# (tests/scripts/release/test_shared_swe_contract.py) forbids per-model tuning
+# of this number.
+SHARED_SWE_STEP_LIMIT = 50
+
+
 @dataclass(frozen=True)
 class SWEbenchEvalConfig:
     dataset_name: str
@@ -1662,11 +1674,13 @@ _eval_config_list = [
                     },
                     # Single-variable follow-up to the exact 57d cap-only run:
                     # eight fully admitted steps exhausted during repository
-                    # inspection before any mutation. The follow-up preserves
-                    # step_limit=16, OSL=2048, and the 2048-char observation
-                    # cap while using the remaining certified S8192 input
-                    # envelope (ISL=6144).
-                    mini_agent_kwargs={"step_limit": 16},
+                    # inspection before any mutation, and 16 still expired
+                    # before the first file edit (jobs 72819/74777). The step
+                    # budget is the one shared SHARED_SWE_STEP_LIMIT for every
+                    # model; OSL=2048 and the 2048-char observation cap are
+                    # preserved along with the certified S8192 input envelope
+                    # (ISL=6144).
+                    mini_agent_kwargs={"step_limit": SHARED_SWE_STEP_LIMIT},
                     mini_observation_chars=2048,
                     instance_selection_provenance=(
                         "predeclared TTIS smoke/CI set; not independently "
@@ -4845,9 +4859,11 @@ _eval_config_list = [
                     max_input_tokens=5 * 1024,
                     max_output_tokens=2 * 1024,
                     # No comparable score exists for this narrow collection
-                    # envelope. Eight steps is a conservative smoke bound, not
-                    # a claim about full SWE task solvability.
-                    mini_agent_kwargs={"step_limit": 8},
+                    # envelope. The step budget is the one shared
+                    # SHARED_SWE_STEP_LIMIT for every model (8 expired before
+                    # the first file edit on django__django-11299), not a claim
+                    # about full SWE task solvability.
+                    mini_agent_kwargs={"step_limit": SHARED_SWE_STEP_LIMIT},
                     mini_observation_chars=2048,
                     instance_selection_provenance=(
                         "predeclared TTIS smoke/CI set; not independently "
@@ -5180,6 +5196,9 @@ _eval_config_list = [
                             "top_k": 20,
                         },
                     },
+                    # One shared step budget for every model (harness-coherence
+                    # contract); no per-model tuning.
+                    mini_agent_kwargs={"step_limit": SHARED_SWE_STEP_LIMIT},
                     instance_ids_map={
                         EvalLimitMode.CI_NIGHTLY: [
                             "django__django-11299",
