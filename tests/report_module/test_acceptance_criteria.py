@@ -163,6 +163,56 @@ def test_eval_accuracy_check_fail():
     assert "Accuracy check failed" in blockers["evals:E"]
 
 
+def test_eval_should_priority_failure_is_informational():
+    # A failed eval marked priority="should" (requirements-driven) is waived,
+    # not a blocker, so acceptance still passes.
+    schema = _schema(_eval({"accuracy_check": 3, "priority": "should"}))
+    accepted, blockers, cats = acceptance_criteria_check(schema)
+    assert accepted is True and blockers == {}
+    evals_cat = next(c for c in cats if c.name == "Evals")
+    assert "evals:E" in evals_cat.waived
+
+
+def test_eval_must_priority_failure_still_blocks():
+    schema = _schema(_eval({"accuracy_check": 3, "priority": "must"}))
+    accepted, blockers, _ = acceptance_criteria_check(schema)
+    assert accepted is False
+    assert "Accuracy check failed" in blockers["evals:E"]
+
+
+def test_benchmark_should_priority_failure_is_informational():
+    block = Block(
+        kind="benchmarks",
+        title="B",
+        data={
+            "priority": "should",
+            "target_checks": {
+                "target": {"tput_check": 3, "tput": 12000, "tput_ratio": 0.5}
+            },
+        },
+    )
+    accepted, blockers, cats = acceptance_criteria_check(_schema(block))
+    assert accepted is True and blockers == {}
+    bench_cat = next(c for c in cats if c.name == "Benchmarks")
+    assert "benchmarks:B" in bench_cat.waived
+
+
+def test_benchmark_must_priority_failure_still_blocks():
+    block = Block(
+        kind="benchmarks",
+        title="B",
+        data={
+            "priority": "must",
+            "target_checks": {
+                "target": {"tput_check": 3, "tput": 12000, "tput_ratio": 0.5}
+            },
+        },
+    )
+    accepted, blockers, _ = acceptance_criteria_check(_schema(block))
+    assert accepted is False
+    assert "benchmarks:B.target.tput_check" in blockers
+
+
 def test_eval_known_issue_waives_blocker():
     # A failed eval whose task_name matches an EVALS known_issue is demoted to a
     # non-fatal waiver, so acceptance passes. Works with dict-shaped waivers.
