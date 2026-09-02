@@ -76,6 +76,12 @@ def build_vllm_bench_serve_argv(
         str(result_filename),
     ]
 
+    if config.goodput:
+        # --goodput takes space-separated KEY:VALUE SLO pairs as separate
+        # argv tokens (nargs="+"; keys ttft/tpot/e2el, milliseconds). With
+        # it the result JSON gains request_goodput (good requests/sec).
+        cmd.extend(["--goodput", *config.goodput.split()])
+
     if config.custom_dataset_path is not None:
         cmd.extend(
             [

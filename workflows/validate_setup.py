@@ -9,7 +9,6 @@ from pathlib import Path
 
 from reference_config.benchmarking.benchmark_config import get_benchmark_config
 from workflows.workflow_dispatch import can_dispatch_to_engine
-from reference_config.evals.eval_config import EVAL_CONFIGS
 from workflows.model_spec import MODEL_SPECS
 from workflows.utils import (
     MIN_SUPPORTED_IMAGE_VERSION,
@@ -34,7 +33,27 @@ logger = logging.getLogger("run_log")
 
 
 def _uses_external_runtime_model_spec(runtime_config) -> bool:
-    return bool(runtime_config.runtime_model_spec_json)
+    """Whether the spec came from outside the catalog.
+
+    Both sources describe a model the catalog need not know about: an explicit
+    --runtime-model-spec-json, or a requirements document the spec was
+    synthesized from.
+    """
+    return bool(runtime_config.runtime_model_spec_json) or bool(
+        getattr(runtime_config, "requirements_json", None)
+    )
+
+
+def _has_eval_config(model_name: str) -> bool:
+    """Whether the active target pack defines evals for ``model_name``.
+
+    Goes through the pack rather than EVAL_CONFIGS directly so a
+    requirements-driven run is gated on the document's accuracy evals, which
+    is where its eval content comes from.
+    """
+    from workflow_module.target_pack import get_target_pack
+
+    return get_target_pack().eval_config(model_name) is not None
 
 
 def _swarmone_license_available() -> bool:
@@ -121,7 +140,7 @@ def validate_runtime_args(model_spec, runtime_config):
     )
 
     if workflow_type == WorkflowType.EVALS:
-        assert model_spec.model_name in EVAL_CONFIGS, (
+        assert _has_eval_config(model_spec.model_name), (
             f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
         )
     if (
@@ -207,7 +226,7 @@ def validate_runtime_args(model_spec, runtime_config):
     if workflow_type == WorkflowType.RELEASE:
         # NOTE: fail fast for models without both defined evals and generated
         # benchmark tasks. A run_*.log file will be made for failed combinations.
-        assert model_spec.model_name in EVAL_CONFIGS, (
+        assert _has_eval_config(model_spec.model_name), (
             f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
         )
         if not can_dispatch_to_engine(model_spec, runtime_config):

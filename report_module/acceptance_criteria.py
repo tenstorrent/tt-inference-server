@@ -26,6 +26,21 @@ STATUS_PASS = "PASS"
 STATUS_FAIL = "FAIL"
 STATUS_NA = "NA"
 
+# Acceptance severity carried on a block by requirements-driven runs. A
+# "should" failure is informational (waived) rather than a blocker; anything
+# else (including absent) is treated as "must" and blocks acceptance.
+PRIORITY_SHOULD = "should"
+
+
+def _block_priority(block: Block) -> str:
+    """Severity for ``block`` from its data ``priority`` field (default must)."""
+    data = block.data if isinstance(block.data, Mapping) else {}
+    return str(data.get("priority") or "must").strip().lower()
+
+
+def _should_priority_suffix() -> str:
+    return "(informational: requirement priority=should)"
+
 
 def _enforced_benchmark_tiers(model_status: Optional[str]) -> Tuple[str, ...]:
     """Benchmark target tiers whose failures block acceptance for this model status.
@@ -280,7 +295,12 @@ def _check_benchmarks(
 
         explicit = _explicit_status(block)
         if explicit is not None:
-            if explicit.is_blocking:
+            if explicit.is_blocking and _block_priority(block) == PRIORITY_SHOULD:
+                waived[block_key] = (
+                    f"{block.title or block.kind} reported status={explicit.value} "
+                    f"{_should_priority_suffix()}"
+                )
+            elif explicit.is_blocking:
                 blockers[block_key] = (
                     f"{block.title or block.kind} reported status={explicit.value}"
                 )
@@ -293,6 +313,16 @@ def _check_benchmarks(
 
         block_blockers: Dict[str, str] = {}
         block_informational: Dict[str, str] = {}
+        # Per-metric severities stamped by apply_target_checks (requirements-
+        # driven runs mixing must/should targets in one sweep point), keyed by
+        # target_checks field name (e.g. "goodput").
+        metric_priorities = (
+            block.data.get("target_priorities")
+            if isinstance(block.data, Mapping)
+            else None
+        )
+        if not isinstance(metric_priorities, Mapping):
+            metric_priorities = {}
         target_checks = _resolve_nested(block.data, "target_checks")
         if not isinstance(target_checks, Mapping):
             block_blockers[f"{block_key}.target_checks"] = (
@@ -320,14 +350,30 @@ def _check_benchmarks(
                             lvl, check_name, metric, level_checks
                         )
                         key = f"{block_key}.{lvl}.{check_name}"
-                        if lvl in enforced_tiers:
-                            block_blockers[key] = failure
-                        else:
+                        if lvl not in enforced_tiers:
                             block_informational[key] = failure
+                        elif (
+                            str(metric_priorities.get(metric, "")).strip().lower()
+                            == PRIORITY_SHOULD
+                        ):
+                            # A "should" metric failure is informational even in
+                            # an enforced tier; the point's other (must) metrics
+                            # still block.
+                            block_informational[key] = (
+                                f"{failure} {_should_priority_suffix()}"
+                            )
+                        else:
+                            block_blockers[key] = failure
             if not any_check_seen:
                 block_blockers[f"{block_key}.target_checks"] = (
                     "No *_check fields found across any tier."
                 )
+
+        # A requirements-driven "should" sweep point never blocks: fold any
+        # would-be blockers into the informational set.
+        if block_blockers and _block_priority(block) == PRIORITY_SHOULD:
+            block_informational.update(block_blockers)
+            block_blockers = {}
 
         if block_blockers:
             failed += 1
@@ -388,13 +434,17 @@ def _check_evals(
                     f"{block.title or block.kind} reported status={explicit.value} "
                     f"(attempts={data.get('attempts', '?')})"
                 )
-                if evals_enforced:
-                    blockers[block_key] = explicit_message
-                    failed += 1
-                else:
+                if not evals_enforced:
                     waived[block_key] = (
                         f"{explicit_message} {_informational_suffix(model_status)}"
                     )
+                elif _block_priority(block) == PRIORITY_SHOULD:
+                    waived[block_key] = (
+                        f"{explicit_message} {_should_priority_suffix()}"
+                    )
+                else:
+                    blockers[block_key] = explicit_message
+                    failed += 1
             elif explicit is TestStatus.SKIP:
                 skipped += 1
             elif explicit is TestStatus.NA:
@@ -433,6 +483,11 @@ def _check_evals(
 
         if not evals_enforced:
             waived[block_key] = f"{message} {_informational_suffix(model_status)}"
+            continue
+
+        # A requirements-driven "should" eval is informational, not a blocker.
+        if _block_priority(block) == PRIORITY_SHOULD:
+            waived[block_key] = f"{message} {_should_priority_suffix()}"
             continue
 
         blockers[block_key] = message
