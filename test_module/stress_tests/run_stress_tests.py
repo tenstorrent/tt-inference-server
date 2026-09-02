@@ -25,7 +25,7 @@ sys.path.insert(0, str(test_module_dir))
 
 from stress_tests import StressTests
 from stress_tests.stress_tests_args import StressTestsArgs
-from workflows.model_spec import ModelSpec
+from workflow_module.model_catalog import get_model_spec_provider
 from workflows.runtime_config import RuntimeConfig
 from workflows.workflow_types import DeviceTypes
 from workflows.workflow_config import (
@@ -34,7 +34,6 @@ from workflows.workflow_config import (
 from workflows.log_setup import setup_workflow_script_logger
 import logging
 
-# Removed get_model_id - now using ModelSpec.from_json
 logger = logging.getLogger(__name__)
 
 
@@ -91,7 +90,13 @@ if __name__ == "__main__":
             "OPENAI_API_KEY environment variable set using provided JWT secret."
         )
 
-    model_spec = ModelSpec.from_json(args.runtime_model_spec_json)
+    model_spec = get_model_spec_provider().load_runtime_spec(
+        args.runtime_model_spec_json
+    )
+    if model_spec is None:
+        raise ValueError(
+            f"Could not load model spec from {args.runtime_model_spec_json!r}"
+        )
     runtime_config = RuntimeConfig.from_json(args.runtime_model_spec_json)
 
     # runtime config loaded from JSON
