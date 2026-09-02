@@ -368,6 +368,8 @@ def _run_lmms_eval_wer(ctx: MediaContext) -> Block:
     test.test_limit = None
     test.debug_mode = False
     test.mock_mode = False
+    device = getattr(ctx.device, "name", None) or getattr(ctx.device, "value", None)
+    test.device_name = str(device or "unknown").lower()
 
     if not test.lmms_eval_exec:
         logger.error(

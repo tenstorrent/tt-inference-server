@@ -31,6 +31,10 @@ class AudioProcessingRequest(BaseRequest):
     no_speech_threshold: Optional[float] = 0.6
     return_timestamps: Optional[bool] = False
     prompt: Optional[str] = ""
+    # Per-request override of settings.audio_chunk_duration_seconds. When set,
+    # the media-server worker splits the clip to this length so chunks can fan
+    # out across device runners. None keeps the worker-count default.
+    chunk_duration_seconds: Optional[int] = None
 
     # Private fields for internal processing
     _audio_array: Optional[np.ndarray] = PrivateAttr(default=None)

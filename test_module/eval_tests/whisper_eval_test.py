@@ -49,6 +49,7 @@ class WhisperEvalTest(BaseTest):
     test_limit: int = None  # Remove limit to match real run_evals.py behavior
     task_name: str = "librispeech_test_other"  # Same as run_evals.py
     num_concurrent: int = 1  # Added missing parameter
+    device_name: str = "n150"
 
     # Note: output_dir is now computed dynamically in _construct_output_directory()
     # instead of being a class variable
@@ -116,14 +117,14 @@ class WhisperEvalTest(BaseTest):
             model_id = self.config.get("model_id")
             logger.info(f"Using model_id from config: {model_id}")
         else:
-            # Construct model_id from model name and repo (fallback)
-            # Format: model_name_repo_device -> whisper_distil_large_v3_n150
+            # Construct model_id from repo + device (fallback).
+            # Format: repo_device -> Qwen3-ASR-1.7B_galaxy, distil-large-v3_n150
             repo_short = (
                 self.hf_model_repo.split("/")[-1]
                 if "/" in self.hf_model_repo
                 else self.hf_model_repo
             )
-            model_id = f"whisper_{repo_short}_n150"  # Assuming n150 device for now
+            model_id = f"{repo_short}_{self.device_name}"
             logger.info(f"Constructed fallback model_id: {model_id}")
 
         # Create base directory structure - lmms-eval will create the repo subdirectory

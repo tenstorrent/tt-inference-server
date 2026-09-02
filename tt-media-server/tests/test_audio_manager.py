@@ -875,3 +875,32 @@ def test_cpu_seconds_returns_none_without_a_process():
     worker = AudioVenvWorker(logger=Mock())
     worker._proc = None
     assert worker.cpu_seconds() is None
+
+
+@patch("utils.audio_manager.settings", new=DummySettings())
+def test_chunk_audio_by_duration_covers_full_span():
+    manager = AudioManager()
+    chunks = manager.chunk_audio_by_duration(60.0, target_chunk_duration=3)
+    assert len(chunks) == 20
+    assert chunks[0]["start"] == 0.0
+    assert chunks[-1]["end"] == 60.0
+
+
+@patch("utils.audio_manager.settings", new=DummySettings())
+def test_short_clip_is_not_split_below_target():
+    manager = AudioManager()
+    chunks = manager.chunk_audio_by_duration(2.5, target_chunk_duration=3)
+    assert len(chunks) == 1
+    assert chunks[0]["start"] == 0.0
+    assert chunks[0]["end"] == 2.5
+
+
+@patch("utils.audio_manager.settings", new=DummySettings())
+def test_chunk_audio_by_duration_none_target_keeps_whole():
+    """target=None is the 'keep whole' signal (short clip fits one runner);
+    it must NOT fall back to the settings chunk duration and subdivide."""
+    manager = AudioManager()
+    chunks = manager.chunk_audio_by_duration(20.0, target_chunk_duration=None)
+    assert len(chunks) == 1
+    assert chunks[0]["start"] == 0.0
+    assert chunks[0]["end"] == 20.0

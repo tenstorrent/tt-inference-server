@@ -68,3 +68,12 @@ def test_registered_asr_models_declare_the_lmms_eval_class(hf_model_repo):
     config = _eval_config_map.get(hf_model_repo)
     assert config is not None, f"{hf_model_repo} missing from the eval config list"
     assert config.tasks[0].eval_class == "whisper_tt"
+
+
+def test_qwen3_asr_librispeech_has_n150_reference_score():
+    """Galaxy WER 12.32 must fail the accuracy gate, not render NA."""
+    config = _eval_config_map.get("Qwen/Qwen3-ASR-1.7B")
+    assert config is not None
+    score = config.tasks[0].score
+    assert score.published_score == 96.46
+    assert score.gpu_reference_score == 96.46

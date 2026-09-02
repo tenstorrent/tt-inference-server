@@ -254,9 +254,17 @@ async def _transcribe_audio(
 
 
 def _run_audio_transcription_benchmark(
-    ctx: MediaContext, num_calls: int, audio_b64: Optional[str] = None
+    ctx: MediaContext,
+    num_calls: int,
+    audio_b64: Optional[str] = None,
+    warmup: bool = True,
 ) -> list[AudioTestStatus]:
     logger.info(f"Running audio transcription benchmark with {num_calls} calls.")
+    if warmup:
+        # First call absorbs compile/trace capture. Discard it so 30s vs 60s
+        # RTR is comparable (same contract as AudioTranscriptionLoadTest).
+        logger.info("Warmup transcription (discarded).")
+        asyncio.run(_transcribe_audio(ctx, audio_b64=audio_b64))
     status_list: list[AudioTestStatus] = []
     for i in range(num_calls):
         logger.info(f"Transcribing audio {i + 1}/{num_calls}...")
@@ -335,13 +343,15 @@ def _run_transcription_benchmark_sweep(ctx: MediaContext, num_calls: int) -> Blo
 
     records = []
     metrics_by_label: dict[str, tuple] = {}
+    logger.info("Warmup transcription on 30s clip (discarded) before sweep.")
+    asyncio.run(_transcribe_audio(ctx, audio_b64=dataset30s["file"]))
     for label, audio_b64 in (
         ("Benchmarks 30s", dataset30s["file"]),
         ("Benchmarks 60s", dataset60s["file"]),
     ):
         logger.info("Running transcription benchmark sweep: %s", label)
         status_list = _run_audio_transcription_benchmark(
-            ctx, num_calls, audio_b64=audio_b64
+            ctx, num_calls, audio_b64=audio_b64, warmup=False
         )
         ttft_value = _audio_avg(status_list, "ttft")
         rtr_value = _audio_avg(status_list, "rtr")
