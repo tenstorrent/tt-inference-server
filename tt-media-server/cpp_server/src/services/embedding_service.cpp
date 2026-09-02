@@ -447,30 +447,55 @@ struct EmbeddingService::Impl {
     for (; next < numWorkers && running.load(); ++next) {
       spawnWorkerAt(next);
     }
-    awaitWorkersReady(phase2Begin, warmupTimeoutMs);
+    std::vector<size_t> spawned;
+    for (size_t i = phase2Begin; i < numWorkers; ++i) {
+      if (workers[i]->pid.load() > 0) spawned.push_back(i);
+    }
+    awaitWorkersReady(std::move(spawned), warmupTimeoutMs);
+
+    // Retry rounds: a failed warmup is usually worth re-rolling, not a broken
+    // chip. BGE-large's warmup validates device output against a CPU
+    // reference (assert PCC >= 0.90) and the measured PCC varies run to run
+    // (observed 0.86-0.96 across one Galaxy), so each attempt is an
+    // independent draw. This also re-covers a worker that lost the phase-1
+    // slot above. Parity with the Python server, whose health monitor
+    // restarts dead workers up to max_worker_restart_count times.
+    const unsigned maxRetries = tt::config::embeddingWarmupMaxRetries();
+    for (unsigned round = 1; round <= maxRetries && running.load(); ++round) {
+      std::vector<size_t> respawned;
+      for (size_t i = 0; i < numWorkers; ++i) {
+        if (workers[i]->isReady.load()) continue;
+        if (spawnWorkerAt(i)) respawned.push_back(i);
+      }
+      if (respawned.empty()) break;
+      TT_LOG_INFO(
+          "[EmbeddingService] Warmup retry round {}/{}: respawning {} failed "
+          "workers",
+          round, maxRetries, respawned.size());
+      awaitWorkersReady(std::move(respawned), warmupTimeoutMs);
+    }
 
     size_t readyCount = 0;
     for (const auto& w : workers) {
       if (w->isReady.load()) ++readyCount;
     }
+    // Covers the corner where every phase-1 candidate failed but a retry
+    // round later succeeded (phase 1 is the only other place this is set).
+    if (readyCount > 0) isReady = true;
     TT_LOG_INFO("[EmbeddingService] Startup finished: {}/{} workers ready",
                 readyCount, numWorkers);
   }
 
   /**
-   * Wait for the READY handshake of every spawned worker in [begin,
-   * numWorkers) concurrently, via a single poll() over all response pipes.
-   * Each worker becomes ready (and gets its dispatch thread) the moment its
-   * own sentinel arrives, so one stuck worker cannot mask the others the way
-   * a sequential per-worker wait would. Workers that fail warmup (pipe EOF)
-   * or exceed the timeout are terminated with an explicit log line.
+   * Wait for the READY handshake of every listed worker concurrently, via a
+   * single poll() over all response pipes. Each worker becomes ready (and
+   * gets its dispatch thread) the moment its own sentinel arrives, so one
+   * stuck worker cannot mask the others the way a sequential per-worker wait
+   * would. Workers that fail warmup (pipe EOF) or exceed the timeout are
+   * terminated with an explicit log line; runStartup may respawn them in a
+   * retry round.
    */
-  void awaitWorkersReady(size_t begin, unsigned timeoutMs) {
-    std::vector<size_t> pending;
-    for (size_t i = begin; i < numWorkers; ++i) {
-      if (workers[i]->pid.load() > 0) pending.push_back(i);
-    }
-
+  void awaitWorkersReady(std::vector<size_t> pending, unsigned timeoutMs) {
     const auto deadline =
         std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
     while (!pending.empty() && running.load()) {

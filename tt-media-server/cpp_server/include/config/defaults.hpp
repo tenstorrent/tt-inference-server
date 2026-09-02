@@ -118,6 +118,17 @@ constexpr size_t EMBEDDING_MAX_PIPE_BYTES = 100 * 1024 * 1024;  // 100 MB
  * are terminated with a loud log instead of stalling startup.
  */
 constexpr unsigned EMBEDDING_WARMUP_TIMEOUT_MS = 600 * 1000;
+/**
+ * Extra warmup rounds for workers whose first warmup failed (overridable via
+ * the EMBEDDING_WARMUP_MAX_RETRIES env var). Some model warmups validate the
+ * device output against a CPU reference with a PCC threshold, and the result
+ * is not deterministic per chip (BGE-large on Galaxy spans ~0.86-0.96 against
+ * a 0.90 threshold), so a failed warmup is worth re-rolling rather than
+ * permanently losing the device. The Python server gets the same effect from
+ * its health monitor, which restarts dead workers up to
+ * max_worker_restart_count (5) times.
+ */
+constexpr unsigned EMBEDDING_WARMUP_MAX_RETRIES = 3;
 // Lower bound used when CALLBACK_POOL_THREADS env is unset or 0; preserves
 // the legacy default (16) for small (1-16 worker) deployments.
 constexpr size_t CALLBACK_POOL_THREADS_MIN = 16;
