@@ -273,9 +273,16 @@ templates:
         # Size the hybrid-off all-user KV pool to the full context on Galaxy DRAM.
         GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
       override_tt_config:
-        # Pinned for Milestone-0: 1D ring fabric on the Galaxy. Matches the vLLM
-        # plugin's 6U-cluster default (tt_worker.get_fabric_config).
-        fabric_config: FABRIC_1D_RING
+        # Must agree with TT_MESH_GRAPH_DESC_PATH above, which declares a 4x8 2D
+        # torus: 2D routing with deadlock avoidance on both wrapped axes. The
+        # plugin's 6U default is FABRIC_1D_RING, which is 1D routing and cannot
+        # carry a 2D collective on a non-degenerate mesh -- all_gather asserts
+        # fabric_is_2d (all_gather_device_operation.cpp:44). Measured on a
+        # 32-chip BH Galaxy with this descriptor: under FABRIC_1D_RING the mesh
+        # opens in 0.9s and all_gather raises that assert; under
+        # FABRIC_2D_TORUS_XY the mesh takes 10.6s to open -- the extra time is
+        # the 2D routers actually being built -- and all_gather completes.
+        fabric_config: FABRIC_2D_TORUS_XY
         trace_region_size: 200000000
         # On-device decode sampling so token ids >= 65536 are reachable (host
         # sampling only sees device 0's vocab shard on a TP mesh).
@@ -371,9 +378,11 @@ templates:
         # Logical mesh (MESH_DEVICE) is the operator's choice (RFP D.3); omit to
         # default to BH-Galaxy, or set per submission.
       override_tt_config:
-        # Pinned for Milestone-0: 1D ring fabric (matches the vLLM plugin's
-        # 6U-Galaxy default).
-        fabric_config: FABRIC_1D_RING
+        # Must agree with the 4x8 2D torus named by TT_MESH_GRAPH_DESC_PATH
+        # above. FABRIC_1D_RING -- the plugin's 6U default -- is 1D routing and
+        # cannot carry a 2D collective on a non-degenerate mesh; see the
+        # BLACKHOLE_GALAXY entry for gemma-4-31B-it for the measurements.
+        fabric_config: FABRIC_2D_TORUS_XY
       # [TBD — Partner] vllm_args (reasoning/tool-call parsers, chat-template kwargs)
       # and a metadata block with reasoning_parser_name / tool_call_parser_name.
   # Milestone-0: FUNCTIONAL, not EXPERIMENTAL. required_target_tiers is EMPTY at
@@ -432,9 +441,11 @@ templates:
         TT_MESH_GRAPH_DESC_PATH: "${TT_METAL_HOME}/tt_metal/fabric/mesh_graph_descriptors/single_bh_galaxy_torus_xy_graph_descriptor.textproto"
         # Logical mesh (MESH_DEVICE) is the operator's choice (RFP D.3).
       override_tt_config:
-        # Pinned for Milestone-0: 1D ring fabric (matches the vLLM plugin's
-        # 6U-Galaxy default).
-        fabric_config: FABRIC_1D_RING
+        # Must agree with the 4x8 2D torus named by TT_MESH_GRAPH_DESC_PATH
+        # above. FABRIC_1D_RING -- the plugin's 6U default -- is 1D routing and
+        # cannot carry a 2D collective on a non-degenerate mesh; see the
+        # BLACKHOLE_GALAXY entry for gemma-4-31B-it for the measurements.
+        fabric_config: FABRIC_2D_TORUS_XY
       # [TBD — Partner] vllm_args and a metadata block with the parser names.
   status: EXPERIMENTAL
 
