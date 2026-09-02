@@ -210,6 +210,41 @@ def _is_ref2va_deployment() -> bool:
         return False
 
 
+def _is_h3_t2va_deployment() -> bool:
+    """True when this process serves plain MiniMax-H3 T2VA (no conditioning).
+
+    Same resolution order as the two checks above: an in-process runner is
+    conclusive; the SP frontend only knows the peer's task through MODEL.
+    """
+    try:
+        runner = ModelRunners(settings.model_runner)
+    except ValueError:
+        return False
+    if runner is ModelRunners.TT_MINIMAX_H3_T2VA:
+        return True
+    if runner is not ModelRunners.SP_RUNNER:
+        return False
+    model_env = os.getenv("MODEL")
+    if not model_env:
+        return False
+    try:
+        return ModelNames(model_env) is ModelNames.MINIMAX_H3
+    except ValueError:
+        return False
+
+
+def _sp_peer_model_is_known() -> bool:
+    """SP frontend with a MODEL that names a known model: the peer's task is known."""
+    model_env = os.getenv("MODEL")
+    if not model_env:
+        return False
+    try:
+        ModelNames(model_env)
+    except ValueError:
+        return False
+    return True
+
+
 def reject_text_to_video_on_i2v_deployment() -> None:
     """Stop text-only generation at the API on an I2V-only deployment.
 
@@ -251,12 +286,34 @@ def reject_i2v_on_ref2va_deployment() -> None:
     )
 
 
-def reject_ref2va_on_wrong_deployment() -> None:
-    """Block /ref2va on an in-process T2VA/FL2VA runner.
+def reject_i2v_on_t2va_deployment() -> None:
+    """Block /i2v on a MiniMax-H3 T2VA deployment.
 
-    ``sp_runner`` is a SHM proxy: it does not load weights and does not set
-    ``MODEL``. The peer ``video_runner`` owns ``MODEL_RUNNER``. Same as /i2v
-    on a T2V SP frontend — do not require a second env var here.
+    ``TTMiniMaxH3Runner`` never reads ``image_prompts``: the request would be
+    accepted, run as plain text-to-video and return a video that ignores the
+    keyframes, after a full generation. Fail fast instead.
+    """
+    if not _is_h3_t2va_deployment():
+        return
+    raise HTTPException(
+        status_code=422,
+        detail=(
+            "This deployment is MiniMax-H3 T2VA and ignores image_prompts. Use "
+            "POST /generations, or deploy MODEL_RUNNER=tt-minimax-h3-fl2va for "
+            "first/last-frame conditioning."
+        ),
+    )
+
+
+def reject_ref2va_on_wrong_deployment() -> None:
+    """Block /ref2va on a deployment known to serve T2VA or FL2VA.
+
+    An in-process runner is conclusive. ``sp_runner`` is a SHM proxy that does
+    not load weights; the peer ``video_runner`` owns ``MODEL_RUNNER``, so the
+    frontend only knows the peer's task when MODEL is set (the same fallback
+    ``_is_i2v_only_deployment`` uses). Without MODEL it stays permissive; with
+    a MODEL that names a T2VA/FL2VA model the references would be silently
+    dropped by the peer, so refuse.
     """
     if _is_ref2va_deployment():
         return
@@ -264,7 +321,7 @@ def reject_ref2va_on_wrong_deployment() -> None:
         runner = ModelRunners(settings.model_runner)
     except ValueError:
         runner = None
-    if runner is ModelRunners.SP_RUNNER:
+    if runner is ModelRunners.SP_RUNNER and not _sp_peer_model_is_known():
         return
     raise HTTPException(
         status_code=422,
@@ -491,7 +548,10 @@ async def submit_generate_video_request(
 
 @router.post(
     "/generations/i2v",
-    dependencies=[Depends(reject_i2v_on_ref2va_deployment)],
+    dependencies=[
+        Depends(reject_i2v_on_ref2va_deployment),
+        Depends(reject_i2v_on_t2va_deployment),
+    ],
 )
 async def submit_generate_video_i2v_request(
     request: Annotated[VideoI2VGenerateRequest, Body(openapi_examples=_I2V_EXAMPLES)],
@@ -516,7 +576,10 @@ async def submit_generate_video_i2v_request(
 
 @router.post(
     "/generations/i2v/upload",
-    dependencies=[Depends(reject_i2v_on_ref2va_deployment)],
+    dependencies=[
+        Depends(reject_i2v_on_ref2va_deployment),
+        Depends(reject_i2v_on_t2va_deployment),
+    ],
 )
 async def submit_generate_video_i2v_upload(
     prompt: str = Form(...),
@@ -675,7 +738,12 @@ def cancel_video_job(
     api_key: str = Security(get_api_key),
 ):
     """
-    Permanently cancel a video job and its stored assets.
+    Cancel a queued or running video job.
+
+    The job record is kept (its status moves to ``cancelling`` / ``cancelled``)
+    so it can still be listed and inspected. To remove the record and any
+    stored video file, call ``DELETE /generations/{job_id}`` once the job has
+    reached a terminal state.
 
     Returns:
         JSONResponse: Cancelled video job metadata.
@@ -688,3 +756,32 @@ def cancel_video_job(
         raise HTTPException(status_code=404, detail="Video job not found")
 
     return JSONResponse(content=status)
+
+
+@router.delete("/generations/{job_id}")
+def delete_video_job(
+    job_id: str,
+    service: BaseJobService = Depends(service_resolver),
+    api_key: str = Security(get_api_key),
+):
+    """
+    Permanently delete a finished video job and its stored video file.
+
+    Only jobs in a terminal state (``completed``, ``failed``, ``cancelled``)
+    can be deleted. For a queued or running job, call
+    ``POST /generations/{job_id}/cancel`` first and delete once it has
+    reached a terminal state.
+
+    Returns:
+        JSONResponse: ``{"id": <job_id>, "object": "video", "deleted": true}``
+
+    Raises:
+        HTTPException: 404 if the job does not exist, 409 if it is still active.
+    """
+    deleted = service.delete_job(job_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Video job not found")
+
+    return JSONResponse(
+        content={"id": job_id, "object": JobTypes.VIDEO.value, "deleted": True}
+    )

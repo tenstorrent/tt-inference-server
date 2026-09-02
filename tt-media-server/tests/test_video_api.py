@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+import json
 import os
 import tempfile
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -22,6 +23,7 @@ from fastapi import HTTPException
 from open_ai_api.video import (
     _is_i2v_only_deployment,
     cancel_video_job,
+    delete_video_job,
     download_video_content,
     get_jobs_metadata,
     get_video_metadata,
@@ -390,7 +392,7 @@ class TestDownloadVideoContent:
 
 
 class TestCancelVideoJob:
-    """Tests for DELETE /generations/{job_id} endpoint"""
+    """Tests for POST /generations/{job_id}/cancel endpoint"""
 
     def test_cancel_video_job_success(self):
         """Test successful video job cancellation"""
@@ -427,6 +429,146 @@ class TestCancelVideoJob:
 
         assert exc_info.value.status_code == 404
         assert exc_info.value.detail == "Video job not found"
+
+
+class TestDeleteVideoJob:
+    """Tests for DELETE /generations/{job_id} endpoint"""
+
+    def test_route_is_registered_as_delete(self):
+        """The same path serves GET (metadata) and DELETE (remove)."""
+        from open_ai_api.video import router
+
+        methods = {
+            m
+            for r in router.routes
+            if getattr(r, "path", None) == "/generations/{job_id}"
+            for m in r.methods
+        }
+        assert {"GET", "DELETE"} <= methods
+
+    def test_delete_video_job_success(self):
+        """A finished job is deleted and the OpenAI-style receipt is returned."""
+        mock_service = MagicMock()
+        mock_service.delete_job = MagicMock(
+            return_value={
+                "id": "job_123",
+                "job_type": JobTypes.VIDEO.value,
+                "status": "completed",
+                "created_at": 1000,
+            }
+        )
+
+        response = delete_video_job(
+            job_id="job_123",
+            service=mock_service,
+            api_key="test_key",
+        )
+
+        assert response.status_code == 200
+        assert json.loads(response.body) == {
+            "id": "job_123",
+            "object": JobTypes.VIDEO.value,
+            "deleted": True,
+        }
+        mock_service.delete_job.assert_called_once_with("job_123")
+
+    def test_delete_video_job_not_found(self):
+        mock_service = MagicMock()
+        mock_service.delete_job = MagicMock(return_value=None)
+
+        with pytest.raises(HTTPException) as exc_info:
+            delete_video_job(
+                job_id="non_existent_job",
+                service=mock_service,
+                api_key="test_key",
+            )
+
+        assert exc_info.value.status_code == 404
+        assert exc_info.value.detail == "Video job not found"
+
+    def test_delete_video_job_active_conflict_propagates(self):
+        """The manager's 409 for an unfinished job reaches the client unchanged."""
+        mock_service = MagicMock()
+        mock_service.delete_job = MagicMock(
+            side_effect=HTTPException(status_code=409, detail="Job is in_progress")
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            delete_video_job(
+                job_id="job_123",
+                service=mock_service,
+                api_key="test_key",
+            )
+
+        assert exc_info.value.status_code == 409
+
+
+class TestDeleteVideoJobHTTP:
+    """DELETE through the real router, under both the /v1 and the legacy prefix."""
+
+    @pytest.fixture
+    def mock_service(self):
+        return MagicMock()
+
+    @pytest.fixture
+    def client(self, mock_service):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+        from open_ai_api.video import router
+        from resolver.service_resolver import service_resolver
+        from security.api_key_checker import get_api_key
+
+        app = FastAPI()
+        # Same shape as open_ai_api.__init__: primary /v1 prefix + deprecated alias.
+        app.include_router(router, prefix="/v1/videos")
+        app.include_router(router, prefix="/video", deprecated=True)
+        app.dependency_overrides[service_resolver] = lambda: mock_service
+        app.dependency_overrides[get_api_key] = lambda: "test-key"
+        return TestClient(app)
+
+    @pytest.mark.parametrize("prefix", ["/v1/videos", "/video"])
+    def test_delete_finished_job(self, client, mock_service, prefix):
+        mock_service.delete_job.return_value = {"id": "job_123", "status": "completed"}
+
+        response = client.delete(f"{prefix}/generations/job_123")
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "id": "job_123",
+            "object": JobTypes.VIDEO.value,
+            "deleted": True,
+        }
+        mock_service.delete_job.assert_called_once_with("job_123")
+
+    def test_delete_unknown_job_is_404(self, client, mock_service):
+        mock_service.delete_job.return_value = None
+
+        response = client.delete("/v1/videos/generations/nope")
+
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Video job not found"
+
+    def test_delete_active_job_is_409(self, client, mock_service):
+        mock_service.delete_job.side_effect = HTTPException(
+            status_code=409, detail="Job is in_progress; cancel it first"
+        )
+
+        response = client.delete("/v1/videos/generations/job_123")
+
+        assert response.status_code == 409
+        assert "in_progress" in response.json()["detail"]
+
+    def test_get_on_same_path_still_works(self, client, mock_service):
+        """Adding DELETE must not shadow the existing GET on /generations/{job_id}."""
+        mock_service.get_job_metadata.return_value = {
+            "id": "job_123",
+            "status": "queued",
+        }
+
+        response = client.get("/v1/videos/generations/job_123")
+
+        assert response.status_code == 200
+        assert response.json()["id"] == "job_123"
 
 
 class TestVideoGenerateRequestValidation:

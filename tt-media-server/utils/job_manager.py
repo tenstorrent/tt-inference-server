@@ -17,7 +17,11 @@ from config.constants import JobTypes
 from config.settings import get_settings
 from domain.base_request import BaseRequest
 from fastapi import HTTPException
-from starlette.status import HTTP_429_TOO_MANY_REQUESTS, HTTP_503_SERVICE_UNAVAILABLE
+from starlette.status import (
+    HTTP_409_CONFLICT,
+    HTTP_429_TOO_MANY_REQUESTS,
+    HTTP_503_SERVICE_UNAVAILABLE,
+)
 
 from utils.logger import TTLogger
 
@@ -311,6 +315,51 @@ class JobManager:
             self._logger.info(f"Job {job_id} cancellation initiated.")
             return job.to_public_dict()
 
+    def delete_job(self, job_id: str, org_id: Optional[str] = None) -> Optional[dict]:
+        """Permanently remove a finished job: its record (memory + DB) and its result file.
+
+        Returns the deleted job's public metadata, or None when the job does not
+        exist (or belongs to another org). A job that is still queued, in progress
+        or cancelling is refused with 409: cancel it first and delete once it has
+        reached a terminal state. This is the on-demand counterpart of the timed
+        removal in ``_cleanup_old_jobs``.
+        """
+        with self._jobs_lock:
+            job = self._get_job_if_authorized(job_id, org_id)
+            if not job:
+                self._logger.warning(f"Delete failed: Job {job_id} not found.")
+                return None
+
+            if not job.is_terminal():
+                self._logger.warning(
+                    f"Delete failed: Job {job_id} is still {job.status.value}."
+                )
+                raise HTTPException(
+                    status_code=HTTP_409_CONFLICT,
+                    detail=(
+                        f"Job is {job.status.value}; cancel it and wait for a "
+                        "terminal state before deleting"
+                    ),
+                )
+
+            # Delete the persisted row first: if that fails the job stays tracked
+            # (and the client gets a 5xx) instead of resurrecting on restart.
+            if self.db:
+                try:
+                    self.db.delete_job(job.id)
+                except Exception as e:
+                    self._logger.error(
+                        f"Database deletion failed for job {job.id}: {e}"
+                    )
+                    raise
+
+            self._jobs.pop(job.id, None)
+            metadata = job.to_public_dict()
+
+        self._remove_result_file(job)
+        self._logger.info(f"Job {job_id} deleted.")
+        return metadata
+
     async def shutdown(self):
         """Gracefully shutdown job manager and transition active jobs to terminal states."""
         self._logger.info("Shutting down job manager")
@@ -460,15 +509,7 @@ class JobManager:
                     error_message="Job was stuck and force-cancelled by cleanup",
                 )
                 self._sync_status_to_db(job)
-            if job.result_path and isinstance(job.result_path, str):
-                try:
-                    if os.path.exists(job.result_path):
-                        os.remove(job.result_path)
-                        self._logger.debug(
-                            f"Deleted file for job {job.id}: {job.result_path}"
-                        )
-                except Exception as e:
-                    self._logger.debug(f"Failed to delete file for job {job.id}: {e}")
+            self._remove_result_file(job)
 
         # Remove from storage under lock
         with self._jobs_lock:
@@ -485,6 +526,22 @@ class JobManager:
             self._logger.info(
                 f"Cleaned up {len(jobs_to_remove)} old job(s): {', '.join(job.id for job in jobs_to_remove)}"
             )
+
+    def _remove_result_file(self, job: Job) -> None:
+        """Best-effort removal of a job's result file.
+
+        Only regular files are removed. A directory result (training
+        checkpoints) is left alone: the training service owns that tree.
+        """
+        path = job.result_path
+        if not path or not isinstance(path, str):
+            return
+        try:
+            if os.path.isfile(path):
+                os.remove(path)
+                self._logger.debug(f"Deleted file for job {job.id}: {path}")
+        except Exception as e:
+            self._logger.warning(f"Failed to delete file for job {job.id}: {e}")
 
     def _cleanup_job(self, job: Job, force: bool = False):
         running_task = None

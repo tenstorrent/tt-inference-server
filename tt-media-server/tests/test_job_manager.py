@@ -1863,3 +1863,211 @@ class TestJobManager:
 
         assert job_manager.cancel_job("org-cancel-job", org_id="org-other") is None
         assert job_manager.cancel_job("org-cancel-job", org_id="org-abc") is not None
+
+    # ------------------------------------------------------------------
+    # delete_job: on-demand removal of a finished job (record + result file)
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_delete_job_not_found(self, job_manager):
+        """Deleting an unknown job returns None (-> 404 at the API layer)."""
+        assert job_manager.delete_job("nonexistent") is None
+
+    @pytest.mark.asyncio
+    async def test_delete_completed_job_removes_record_and_file(
+        self, job_manager, mock_request
+    ):
+        """A terminal job is dropped from memory + DB and its result file is removed."""
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as f:
+            file_path = f.name
+            f.write(b"video data")
+
+        try:
+
+            async def task_func(req):
+                return file_path
+
+            await job_manager.create_job(
+                job_id="job-del",
+                job_type=JobTypes.VIDEO,
+                model="test-model",
+                request=mock_request,
+                task_function=task_func,
+            )
+            await asyncio.sleep(0.2)
+            assert job_manager.get_job_metadata("job-del")["status"] == "completed"
+            assert os.path.exists(file_path)
+
+            result = job_manager.delete_job("job-del")
+
+            assert result is not None
+            assert result["id"] == "job-del"
+            assert result["status"] == "completed"
+            assert job_manager.get_job_metadata("job-del") is None
+            assert job_manager.get_all_jobs_metadata() == []
+            assert not os.path.exists(file_path)
+            if job_manager.db:
+                assert job_manager.db.get_job_by_id("job-del") is None
+        finally:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+
+    @pytest.mark.asyncio
+    async def test_delete_failed_job_without_result_file(
+        self, job_manager, mock_request
+    ):
+        """A failed job has no result file; deletion still removes the record."""
+
+        async def task_func(req):
+            raise RuntimeError("boom")
+
+        await job_manager.create_job(
+            job_id="job-failed",
+            job_type=JobTypes.VIDEO,
+            model="test-model",
+            request=mock_request,
+            task_function=task_func,
+        )
+        await asyncio.sleep(0.2)
+        assert job_manager.get_job_metadata("job-failed")["status"] == "failed"
+
+        result = job_manager.delete_job("job-failed")
+
+        assert result["status"] == "failed"
+        assert job_manager.get_job_metadata("job-failed") is None
+        if job_manager.db:
+            assert job_manager.db.get_job_by_id("job-failed") is None
+
+    @pytest.mark.asyncio
+    async def test_delete_in_progress_job_is_refused(self, job_manager, mock_request):
+        """An active job is not deleted: 409, and the job is left untouched."""
+        from fastapi import HTTPException
+
+        async def long_task(req):
+            await asyncio.sleep(10)
+            return "result.mp4"
+
+        await job_manager.create_job(
+            job_id="job-active",
+            job_type=JobTypes.VIDEO,
+            model="test-model",
+            request=mock_request,
+            task_function=long_task,
+        )
+        await asyncio.sleep(0.1)
+        assert job_manager.get_job_metadata("job-active")["status"] == "in_progress"
+
+        with pytest.raises(HTTPException) as exc_info:
+            job_manager.delete_job("job-active")
+
+        assert exc_info.value.status_code == 409
+        assert "in_progress" in exc_info.value.detail
+        assert job_manager.get_job_metadata("job-active")["status"] == "in_progress"
+        if job_manager.db:
+            assert job_manager.db.get_job_by_id("job-active") is not None
+
+    @pytest.mark.asyncio
+    async def test_delete_queued_job_is_refused(self, job_manager, mock_request):
+        """A queued job (start_event never set) is refused with 409 as well."""
+        from fastapi import HTTPException
+
+        async def long_task(req):
+            await asyncio.sleep(10)
+            return "result.mp4"
+
+        await job_manager.create_job(
+            job_id="job-queued",
+            job_type=JobTypes.VIDEO,
+            model="test-model",
+            request=mock_request,
+            task_function=long_task,
+            start_event=Event(),
+        )
+        await asyncio.sleep(0.1)
+        assert job_manager.get_job_metadata("job-queued")["status"] == "queued"
+
+        with pytest.raises(HTTPException) as exc_info:
+            job_manager.delete_job("job-queued")
+
+        assert exc_info.value.status_code == 409
+        assert job_manager.get_job_metadata("job-queued")["status"] == "queued"
+
+    @pytest.mark.asyncio
+    async def test_delete_after_cancel(self, job_manager, mock_request):
+        """cancel -> cancelled -> delete is the documented path for an active job."""
+
+        async def long_task(req):
+            await asyncio.sleep(10)
+            return "result.mp4"
+
+        await job_manager.create_job(
+            job_id="job-cd",
+            job_type=JobTypes.VIDEO,
+            model="test-model",
+            request=mock_request,
+            task_function=long_task,
+        )
+        await asyncio.sleep(0.1)
+
+        job_manager.cancel_job("job-cd")
+        await asyncio.sleep(0.1)  # let the CancelledError propagate
+        assert job_manager.get_job_metadata("job-cd")["status"] == "cancelled"
+
+        result = job_manager.delete_job("job-cd")
+
+        assert result["status"] == "cancelled"
+        assert job_manager.get_job_metadata("job-cd") is None
+        if job_manager.db:
+            assert job_manager.db.get_job_by_id("job-cd") is None
+
+    @pytest.mark.asyncio
+    async def test_delete_job_org_mismatch_returns_none(
+        self, job_manager, mock_request
+    ):
+        """Another org cannot delete the job; the owning org can."""
+
+        async def task_func(req):
+            return None
+
+        await job_manager.create_job(
+            job_id="org-del-job",
+            job_type=JobTypes.VIDEO,
+            model="test-model",
+            request=mock_request,
+            task_function=task_func,
+            org_id="org-abc",
+        )
+        await asyncio.sleep(0.2)
+        assert job_manager.get_job_metadata("org-del-job")["status"] == "completed"
+
+        assert job_manager.delete_job("org-del-job", org_id="org-other") is None
+        assert job_manager.get_job_metadata("org-del-job") is not None
+        assert job_manager.delete_job("org-del-job", org_id="org-abc") is not None
+        assert job_manager.get_job_metadata("org-del-job") is None
+
+    @pytest.mark.asyncio
+    async def test_delete_job_db_failure_keeps_job(self, job_manager, mock_request):
+        """If the DB row cannot be deleted the job stays tracked, so it cannot resurrect on restart."""
+        if not job_manager.db:
+            pytest.skip("persistence disabled")
+
+        async def task_func(req):
+            return None
+
+        await job_manager.create_job(
+            job_id="job-dbfail",
+            job_type=JobTypes.VIDEO,
+            model="test-model",
+            request=mock_request,
+            task_function=task_func,
+        )
+        await asyncio.sleep(0.2)
+
+        with patch.object(
+            job_manager.db, "delete_job", side_effect=RuntimeError("db down")
+        ):
+            with pytest.raises(RuntimeError):
+                job_manager.delete_job("job-dbfail")
+
+        assert job_manager.get_job_metadata("job-dbfail") is not None
+        assert job_manager.db.get_job_by_id("job-dbfail") is not None
