@@ -310,7 +310,15 @@ templates:
         # FABRIC_2D_TORUS_XY the mesh takes 10.6s to open -- the extra time is
         # the 2D routers actually being built -- and all_gather completes.
         fabric_config: FABRIC_2D_TORUS_XY
-        trace_region_size: 200000000
+        # Prefill trace capture on this mesh needs 222,085,120 B; at 200000000
+        # end_trace_capture aborts with
+        #   mesh_trace.cpp:81 get_trace_buffers_size() <= trace_region_size
+        # after the model has loaded, i.e. several minutes in. Warmup captures
+        # a trace per (batch size, sequence length) pair -- ISLs 128 through
+        # 4096 -- and the buffers accumulate, so this is sized with room for
+        # the set to grow rather than to the measured figure. 512 MiB is 1.6%
+        # of a P150's DRAM.
+        trace_region_size: 536870912  # 512 * 1024 * 1024
         # On-device decode sampling so token ids >= 65536 are reachable (host
         # sampling only sees device 0's vocab shard on a TP mesh).
         sample_on_device_mode: decode_only
