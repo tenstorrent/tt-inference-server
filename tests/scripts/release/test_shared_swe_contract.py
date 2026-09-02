@@ -139,3 +139,91 @@ def test_gate_script_has_no_model_branches():
     assert "if args.model ==" not in source
     assert "instance_template" not in source
     assert "system_template" not in source
+
+
+# --- planner/catalogue consistency: a SWE row must be satisfiable by the ---
+# --- artifact its catalogue template declares. -----------------------------
+
+REPO = Path(__file__).resolve().parents[3]
+DEV_CATALOGUE = REPO / "workflows/model_specs/dev/llm.yaml"
+
+
+def _quetzal_swe_pairs():
+    """Yield (model_repo, spec, swe_task) for every dev quetzal template
+    whose model declares a swe_bench_verified row."""
+    from reference_config.evals.eval_config import _eval_config_map
+    from workflows.model_spec import load_templates_from_yaml
+
+    for template in load_templates_from_yaml(DEV_CATALOGUE):
+        if template.impl.impl_id != "quetzal":
+            continue
+        model_repo = template.weights[0]
+        eval_config = _eval_config_map.get(model_repo)
+        if eval_config is None:
+            continue
+        swe_tasks = [
+            task
+            for task in eval_config.tasks
+            if task.task_name == "swe_bench_verified"
+        ]
+        if not swe_tasks:
+            continue
+        yield model_repo, template.expand_to_specs()[0], swe_tasks[0]
+
+
+def test_swe_rows_fit_their_declared_prefill_buckets():
+    checked = 0
+    for model_repo, spec, task in _quetzal_swe_pairs():
+        cfg = task.swebench_eval_config
+        max_context = spec.device_model_spec.max_context
+        if task.min_context_required and task.min_context_required > max_context:
+            # The row refuses to launch on this artifact (min-context gate);
+            # it cannot violate the bucket contract it never reaches.
+            continue
+        # An admissible row's complete envelope must fit the serving contract.
+        assert cfg.max_input_tokens + cfg.max_output_tokens <= max_context, (
+            f"{model_repo}: SWE envelope {cfg.max_input_tokens}+"
+            f"{cfg.max_output_tokens} exceeds the artifact's {max_context} context"
+        )
+        declared = spec.env_vars.get("QUETZAL_REQUIRED_PREFILL_BUCKETS")
+        if declared is None:
+            # No one-shot bucket contract is pinned in the template; the
+            # launch planner still refuses at run time from the endpoint's
+            # capabilities receipt (plan_agentic_external_run).
+            continue
+        buckets = sorted(int(value) for value in declared.split(","))
+        checked += 1
+        assert cfg.max_input_tokens <= buckets[-1], (
+            f"{model_repo}: SWE max_input_tokens {cfg.max_input_tokens} does "
+            f"not fit largest declared one-shot prefill bucket {buckets[-1]}"
+        )
+    assert checked >= 1, "no declared-bucket quetzal SWE row was checked"
+
+
+def test_gpt_f0b_planner_and_eval_row_agree():
+    from reference_config.evals.eval_config import _eval_config_map
+    from scripts.release import plan_gpt120_f0b_quetzal_enrollment as planner
+
+    task = next(
+        task
+        for task in _eval_config_map["openai/gpt-oss-120b"].tasks
+        if task.task_name == "swe_bench_verified"
+    )
+    cfg = task.swebench_eval_config
+
+    # One authoritative bucket set: the planner names it once and both its
+    # publication validator and rendered env derive from it.
+    buckets = planner.GPT_PREFILL_BUCKETS
+    assert buckets == (8192,)
+    assert list(planner.EXPECTED_ARTIFACTS_PREFILL_BUCKETS) == sorted(buckets)
+
+    # The eval row's bounded input derives from that bucket set: the complete
+    # rendered input must fit the largest one-shot bucket, and the envelope
+    # must fit the declared minimum context.
+    assert cfg.max_input_tokens == planner.GPT_SWEBENCH_INPUT_TOKENS
+    assert cfg.max_output_tokens == planner.GPT_SWEBENCH_OUTPUT_TOKENS
+    assert task.min_context_required == planner.GPT_SWEBENCH_MIN_CONTEXT
+    assert cfg.max_input_tokens <= max(buckets)
+    assert (
+        cfg.max_input_tokens + cfg.max_output_tokens <= task.min_context_required
+    )

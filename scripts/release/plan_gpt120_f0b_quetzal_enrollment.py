@@ -77,9 +77,21 @@ GPT_RELEASE_EVALS = (
     "mmlu_generative",
     "swe_bench_verified",
 )
+# The f0b artifact's declared one-shot prefill bucket set. This is the single
+# authority both the publication validator (artifacts.prefill_buckets) and the
+# rendered runtime env (QUETZAL_REQUIRED_PREFILL_BUCKETS) derive from, and the
+# bounded SWE input ceiling below must fit its largest bucket: an eval row
+# whose complete rendered input cannot be prefetched one-shot is not
+# satisfiable by this artifact.
+GPT_PREFILL_BUCKETS = (8192,)
+EXPECTED_ARTIFACTS_PREFILL_BUCKETS = sorted(GPT_PREFILL_BUCKETS)
 GPT_SWEBENCH_INPUT_TOKENS = 5 * 1024
 GPT_SWEBENCH_OUTPUT_TOKENS = 2 * 1024
 GPT_SWEBENCH_MIN_CONTEXT = 8 * 1024
+if GPT_SWEBENCH_INPUT_TOKENS > max(GPT_PREFILL_BUCKETS):
+    raise AssertionError(
+        "bounded SWE input exceeds the artifact's largest one-shot prefill bucket"
+    )
 LOCAL_TTFT_MS_RANGE = (3310, 3320)
 TTFT_TARGET_MS = 3000
 STALE_5CAB_PACKAGE_ID = (
@@ -349,7 +361,7 @@ def validate_response(data: dict[str, Any]) -> None:
 
     _exact(data, "artifacts.batch_size", 1)
     _exact(data, "artifacts.max_context", 8192)
-    _exact(data, "artifacts.prefill_buckets", [8192])
+    _exact(data, "artifacts.prefill_buckets", EXPECTED_ARTIFACTS_PREFILL_BUCKETS)
     _exact(
         data,
         "artifacts.compiled_weights_tree_sha256",
@@ -401,7 +413,9 @@ def render_contract(data: dict[str, Any]) -> dict[str, Any]:
             {AUXILIARY_NAME: aux_container}, separators=(",", ":")
         ),
         "QUETZAL_REQUIRED_AUXILIARY_NAMES": AUXILIARY_NAME,
-        "QUETZAL_REQUIRED_PREFILL_BUCKETS": "8192",
+        "QUETZAL_REQUIRED_PREFILL_BUCKETS": ",".join(
+            str(bucket) for bucket in EXPECTED_ARTIFACTS_PREFILL_BUCKETS
+        ),
         "QZ_MMAP_WEIGHTS": "1",
         "TTQ_STREAM_WEIGHTS": "1",
         "HF_HUB_OFFLINE": "1",
