@@ -90,7 +90,7 @@ def _run_sweep_task(logger, label: str, run_sweep) -> TaskOutcome:
 
 def _has_agentic_tasks(ctx) -> bool:
     """True if the run's eval tasks include any EVALS_AGENTIC task."""
-    from workflows.workflow_types import WorkflowVenvType
+    from .engine_types import WorkflowVenvType
 
     tasks = getattr(getattr(ctx, "all_params", None), "tasks", None) or []
     return any(

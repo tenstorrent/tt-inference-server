@@ -10,7 +10,7 @@ import logging
 from typing import List
 
 from workflow_module.engine_types import EvalLimitMode
-from workflows.workflow_types import WorkflowVenvType
+from workflow_module.engine_types import WorkflowVenvType
 
 from .eval_command import _get_limit_mode, _parse_eval_samples_mapping
 

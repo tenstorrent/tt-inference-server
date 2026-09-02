@@ -6,14 +6,14 @@
 
 Generic validation-framework enums (``WorkflowType``, ``ModelType``,
 ``ReportCheckTypes``, ``ModelStatusTypes``, ``EvalLimitMode``,
-``AgenticTracesMode``, ``BenchmarkTaskType``, ``VersionMode``) are owned by
-the engine in ``workflow_module/engine_types.py`` and re-exported here so
-existing ``workflows/`` callers keep working unchanged.
+``AgenticTracesMode``, ``BenchmarkTaskType``, ``VersionMode``,
+``WorkflowVenvType``) are owned by the engine in
+``workflow_module/engine_types.py`` and re-exported here so existing
+``workflows/`` callers keep working unchanged.
 
 The enums that remain defined in this module are Tenstorrent adapter
-concerns: hardware taxonomy (``DeviceTypes``, ``SystemTopology``), inference
-stack (``InferenceEngine``, ``ModelSource``), and TT host venv provisioning
-(``WorkflowVenvType``).
+concerns: hardware taxonomy (``DeviceTypes``, ``SystemTopology``) and
+inference stack (``InferenceEngine``, ``ModelSource``).
 """
 
 from enum import Enum, IntEnum, auto
@@ -27,6 +27,7 @@ from workflow_module.engine_types import (
     ReportCheckTypes,
     VersionMode,
     WorkflowType,
+    WorkflowVenvType,
 )
 
 __all__ = [
@@ -39,43 +40,13 @@ __all__ = [
     "ReportCheckTypes",
     "VersionMode",
     "WorkflowType",
-    # Tenstorrent-specific types defined here
     "WorkflowVenvType",
+    # Tenstorrent-specific types defined here
     "DeviceTypes",
     "SystemTopology",
     "InferenceEngine",
     "ModelSource",
 ]
-
-
-class WorkflowVenvType(IntEnum):
-    SYSTEM_SOFTWARE_VALIDATION = auto()
-    STRESS_TESTS_RUN_SCRIPT = auto()
-    STRESS_TESTS = auto()
-    EVALS_RUN_SCRIPT = auto()
-    TESTS_RUN_SCRIPT = auto()
-    BENCHMARKS_RUN_SCRIPT = auto()
-    REPORTS_RUN_SCRIPT = auto()
-    WORKFLOW_RUN_SCRIPT = auto()
-    PREFIX_CACHE = auto()
-    AGENTIC_TRACES = auto()
-    LLM_VLLM = auto()
-    LLM_GUIDELLM = auto()
-    LLM_AIPERF = auto()
-    SPEC_DECODE = auto()
-    EVALS_COMMON = auto()
-    EVALS_META = auto()
-    EVALS_VISION = auto()
-    EVALS_AUDIO = auto()
-    EVALS_EMBEDDING = auto()
-    EVALS_AGENTIC = auto()
-    BENCHMARKS_VLLM = auto()
-    BENCHMARKS_VLLM_FORGE = auto()
-    BENCHMARKS_GENAI_PERF = auto()
-    HF_SETUP = auto()
-    SERVER = auto()
-    TT_SMI = auto()
-    TT_TOPOLOGY = auto()
 
 
 class DeviceTypes(IntEnum):

@@ -27,7 +27,7 @@ from utils.sdxl_accuracy_utils.sdxl_accuracy_utils import (
     calculate_metrics,
     sdxl_get_prompts,
 )
-from workflows.utils import is_sdxl_num_prompts_enabled
+from workflow_module.context_helpers import is_sdxl_num_prompts_enabled
 
 from .._test_common import block_id
 from ..context import HardwareRequirement, MediaContext, require_health
