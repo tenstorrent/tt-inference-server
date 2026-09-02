@@ -165,6 +165,15 @@ class TerminalBenchEvalConfig:
 # of this number.
 SHARED_SWE_STEP_LIMIT = 50
 
+# The serving endpoint re-tokenizes the accumulated agent conversation and
+# counts more tokens than the gate client does: QB2 job 74920 observed a +1008
+# server-vs-client tokenizer delta before the vLLM engine's fail-closed
+# one-shot prefill check rejected P=17332 against a 16384 bucket mid-run.
+# Whenever a one-shot prefill bucket caps the input budget, reserve this
+# margin (the observed delta rounded up) below the bucket so runs end
+# deterministically client-side instead of dying server-side.
+SERVER_TOKENIZER_MARGIN_TOKENS = 1280
+
 
 @dataclass(frozen=True)
 class SWEbenchEvalConfig:
@@ -213,6 +222,16 @@ class SWEbenchEvalConfig:
     shuffle: bool = True
     random_delay_multiplier: float = 0.3
     instance_ids_map: Dict[EvalLimitMode, List[str]] = field(default_factory=dict)
+    # Declarative serving-artifact prefill contract (never a model-name
+    # branch). ``largest_prefill_bucket`` is the largest one-shot prefill
+    # bucket of the enrolled artifact; None means no one-shot bucket is
+    # declared and the gate's input budget stays context-derived.
+    largest_prefill_bucket: Optional[int] = None
+    # True when the enrolled artifact prefills arbitrary lengths via chunked
+    # prefill: the context-derived input budget then stands uncapped. A
+    # chunked row must not also declare a one-shot bucket (mirrors the
+    # capabilities-receipt contract in plan_agentic_external_run).
+    chunked_prefill: bool = False
 
 
 @dataclass(frozen=True)
@@ -1682,6 +1701,11 @@ _eval_config_list = [
                     # (ISL=6144).
                     mini_agent_kwargs={"step_limit": SHARED_SWE_STEP_LIMIT},
                     mini_observation_chars=2048,
+                    # The generated S8192 artifact prefills one-shot with a
+                    # single bucket equal to its context; the gate caps its
+                    # input budget at bucket - SERVER_TOKENIZER_MARGIN_TOKENS
+                    # unless the context-derived budget is already smaller.
+                    largest_prefill_bucket=8 * 1024,
                     instance_selection_provenance=(
                         "predeclared TTIS smoke/CI set; not independently "
                         "baselined for certification"
@@ -4865,6 +4889,13 @@ _eval_config_list = [
                     # about full SWE task solvability.
                     mini_agent_kwargs={"step_limit": SHARED_SWE_STEP_LIMIT},
                     mini_observation_chars=2048,
+                    # The GPT quetzal artifacts prefill one-shot; the C32768
+                    # artifact's largest bucket is 16384 (QB2 job 74920, where
+                    # P=17332 hit the vLLM fail-closed bucket check). The gate
+                    # caps its input budget at bucket -
+                    # SERVER_TOKENIZER_MARGIN_TOKENS unless the
+                    # context-derived budget is already smaller.
+                    largest_prefill_bucket=16 * 1024,
                     instance_selection_provenance=(
                         "predeclared TTIS smoke/CI set; not independently "
                         "baselined for certification"
@@ -5199,6 +5230,10 @@ _eval_config_list = [
                     # One shared step budget for every model (harness-coherence
                     # contract); no per-model tuning.
                     mini_agent_kwargs={"step_limit": SHARED_SWE_STEP_LIMIT},
+                    # The gemma artifact chunk-prefills at 32K: any prompt up
+                    # to the context fits, so no one-shot bucket is declared
+                    # and the gate's context-derived input budget stands.
+                    chunked_prefill=True,
                     instance_ids_map={
                         EvalLimitMode.CI_NIGHTLY: [
                             "django__django-11299",

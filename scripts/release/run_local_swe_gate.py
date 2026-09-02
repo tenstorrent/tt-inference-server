@@ -38,7 +38,10 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from reference_config.evals.eval_config import SHARED_SWE_STEP_LIMIT  # noqa: E402
+from reference_config.evals.eval_config import (  # noqa: E402
+    SERVER_TOKENIZER_MARGIN_TOKENS,
+    SHARED_SWE_STEP_LIMIT,
+)
 
 DATASET_REVISION = "78f471bf655a3137b2e8a75af1501690ec009ec3"
 OBSERVATION_RETAINED_PAYLOAD_CHARS = 2048
@@ -110,6 +113,10 @@ class GateConfig:
     selection_policy: Optional[str] = None
     instance_selection_provenance: Optional[str] = None
     catalogue_min_context_required: Optional[int] = None
+    # Catalogue-declared serving-artifact prefill contract; carried into the
+    # receipt so a bucket-capped max_input_tokens stays explainable.
+    largest_prefill_bucket: Optional[int] = None
+    chunked_prefill: bool = False
     qualification_claim: str = "local_behavioral_only"
     # A local gate never grades: no score exists until CS supplies thresholds,
     # so both references stay None and any accuracy reports NA downstream.
@@ -174,6 +181,27 @@ def build_gate_config(
     if cfg is None:
         raise ValueError(f"catalogue model {model!r} has no swebench_eval_config")
 
+    # A one-shot prefill artifact can only prefill up to its largest declared
+    # bucket, and the server-side tokenizer counts more tokens than the gate
+    # client (QB2 job 74920: +1008, P=17332 vs bucket 16384). Cap the input
+    # budget below the bucket so runs end deterministically client-side; a
+    # chunked-prefill artifact keeps the context-derived budget. The bucket
+    # comes from the catalogue row, never from a model-name branch.
+    if cfg.chunked_prefill and cfg.largest_prefill_bucket is not None:
+        raise ValueError(
+            f"catalogue model {model!r} declares chunked_prefill and a "
+            "one-shot largest_prefill_bucket; these are mutually exclusive"
+        )
+    if not cfg.chunked_prefill and cfg.largest_prefill_bucket is not None:
+        bucket_cap = cfg.largest_prefill_bucket - SERVER_TOKENIZER_MARGIN_TOKENS
+        if bucket_cap <= 0:
+            raise ValueError(
+                f"catalogue model {model!r} declares one-shot prefill bucket "
+                f"{cfg.largest_prefill_bucket}, which leaves no input budget "
+                "after the server tokenizer margin"
+            )
+        max_input = min(max_input, bucket_cap)
+
     declared = _declared_instance_ids(cfg)
     if instance_ids is None:
         selected = declared
@@ -217,6 +245,8 @@ def build_gate_config(
         selection_policy=cfg.selection_policy,
         instance_selection_provenance=cfg.instance_selection_provenance,
         catalogue_min_context_required=task.min_context_required,
+        largest_prefill_bucket=cfg.largest_prefill_bucket,
+        chunked_prefill=cfg.chunked_prefill,
     )
 
 

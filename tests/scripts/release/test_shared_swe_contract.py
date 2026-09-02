@@ -24,6 +24,7 @@ import pytest
 from llm_module.parsers.agentic import compute_accuracy_check
 from reference_config.evals.eval_config import (
     EVAL_CONFIGS,
+    SERVER_TOKENIZER_MARGIN_TOKENS,
     SHARED_SWE_STEP_LIMIT,
 )
 from scripts.release import run_local_swe_gate
@@ -61,14 +62,81 @@ def test_no_prompt_template_overrides(model):
 
 
 @pytest.mark.parametrize("model", MODELS)
-def test_budget_derived_from_context(model):
+def test_budget_derived_from_context_then_capped_by_declared_bucket(model):
     ctx, inp, out = resolve_token_budget(32768, 2048)
     assert (ctx, inp, out) == (32768, 30720, 2048)
     cfg = _gate(model)
+    catalogue = _swe_task(model).swebench_eval_config
+    expected_input = inp
+    if not catalogue.chunked_prefill and catalogue.largest_prefill_bucket is not None:
+        expected_input = min(
+            inp, catalogue.largest_prefill_bucket - SERVER_TOKENIZER_MARGIN_TOKENS
+        )
     assert cfg.max_context == 32768
-    assert cfg.max_input_tokens == 30720
+    assert cfg.max_input_tokens == expected_input
     assert cfg.max_output_tokens == 2048
-    assert cfg.max_input_tokens + cfg.max_output_tokens == cfg.max_context
+    assert cfg.max_input_tokens + cfg.max_output_tokens <= cfg.max_context
+
+
+# --- one-shot prefill bucket cap: the gate must end deterministically ------
+# --- client-side, never die on the server's fail-closed bucket check -------
+# --- (proven on QB2 job 74920: P=17332 vs largest bucket 16384). -----------
+
+
+def test_one_shot_bucket_caps_gate_input_below_context_budget():
+    # GPT C32768 artifact: one-shot prefill, largest bucket 16384 (job 74920).
+    # Context-derived input is 30720; the bucket minus the server-tokenizer
+    # margin must win.
+    cfg = _gate("gpt-oss-120b")
+    assert cfg.chunked_prefill is False
+    assert cfg.largest_prefill_bucket == 16384
+    assert cfg.max_input_tokens == 16384 - SERVER_TOKENIZER_MARGIN_TOKENS
+    assert cfg.max_input_tokens == 15104
+
+
+def test_chunked_prefill_artifact_keeps_context_derived_budget():
+    # Gemma's artifact chunk-prefills at 32K: no one-shot bucket exists, so
+    # the context-derived input budget stands uncapped.
+    cfg = _gate("gemma-4-31B-it")
+    assert cfg.chunked_prefill is True
+    assert cfg.largest_prefill_bucket is None
+    assert cfg.max_input_tokens == 30720
+
+
+def test_bucket_cap_never_raises_a_smaller_context_budget():
+    # Qwen's one-shot bucket equals its 8192 context: the bucket cap
+    # (8192 - 1280 = 6912) exceeds the context-derived 6144, so the smaller
+    # context-derived value stands.
+    cfg = build_gate_config(
+        "Qwen3.6-27B", max_context=8192, max_output_tokens=2048, step_limit=16
+    )
+    assert cfg.chunked_prefill is False
+    assert cfg.largest_prefill_bucket == 8192
+    assert cfg.largest_prefill_bucket - SERVER_TOKENIZER_MARGIN_TOKENS == 6912
+    assert cfg.max_input_tokens == 6144
+
+
+def test_server_tokenizer_margin_is_single_sourced():
+    # The margin lives with SHARED_SWE_STEP_LIMIT in the catalogue module; the
+    # gate must import it, never carry a drifted literal copy.
+    assert SERVER_TOKENIZER_MARGIN_TOKENS == 1280
+    assert (
+        run_local_swe_gate.SERVER_TOKENIZER_MARGIN_TOKENS
+        is SERVER_TOKENIZER_MARGIN_TOKENS
+    )
+    source = GATE_SOURCE.read_text()
+    assert "SERVER_TOKENIZER_MARGIN_TOKENS" in source
+    assert "1280" not in source
+
+
+def test_bucket_declaration_is_declarative_not_model_branched():
+    # The cap comes from catalogue fields; every SWE row carries the fields,
+    # and a chunked row never also declares a one-shot bucket.
+    for model in MODELS:
+        catalogue = _swe_task(model).swebench_eval_config
+        assert isinstance(catalogue.chunked_prefill, bool)
+        if catalogue.chunked_prefill:
+            assert catalogue.largest_prefill_bucket is None
 
 
 @pytest.mark.parametrize(
