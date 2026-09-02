@@ -111,12 +111,17 @@ def test_staged_and_active_catalogues_cannot_drift():
             assert enrollment["blocker"]
 
 
-def test_attestation_is_informational_not_an_executable_identity_gate():
+def test_attestation_pin_converges_with_the_recorded_identity():
+    # The dev row's executable attestation pin (validated by
+    # workflows/run_docker_server.py) and the matrix's recorded attestation
+    # must be the same bytes; a mismatch means the matrix row describes a
+    # different runtime/payload pairing than the one the catalogue launches.
     matrix = _matrix()["models"]
     gpt = _quetzal_templates()["openai/gpt-oss-120b"].expand_to_specs()[0]
 
-    assert matrix["openai/gpt-oss-120b"]["optional_runtime_attestation_sha256"]
-    assert "QUETZAL_RUNTIME_ATTESTATION_SHA256" not in gpt.env_vars
+    recorded = matrix["openai/gpt-oss-120b"]["optional_runtime_attestation_sha256"]
+    assert recorded
+    assert gpt.env_vars["QUETZAL_RUNTIME_ATTESTATION_SHA256"] == recorded
 
 
 def test_selection_leaked_gemma_swe_is_never_qualification_evidence():
