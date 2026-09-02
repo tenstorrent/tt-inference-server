@@ -5,7 +5,11 @@
 from typing import Optional, Union
 
 import numpy as np
-from config.constants import TTS_RESPONSE_FORMATS, XTTS_SUPPORTED_LANGUAGES
+from config.constants import (
+    DEFAULT_TTS_LANGUAGE,
+    TTS_RESPONSE_FORMATS,
+    XTTS_SUPPORTED_LANGUAGES,
+)
 from domain.base_request import BaseRequest
 from pydantic import Field, PrivateAttr, field_validator
 
@@ -39,16 +43,36 @@ class TextToSpeechRequest(BaseRequest):
     )
     speaker_id: Optional[str] = None  # ID for pre-configured speaker embeddings
 
+    # Voice cloning (XTTS-v2): base64-encoded reference AUDIO FILE (any soundfile-readable
+    # format) whose voice the synthesis should clone. The runner normalizes the clip to
+    # ~6 s and caches the computed voice by content hash, so repeats are free. Distinct
+    # from speaker_embedding, which carries a precomputed embedding vector (SpeechT5).
+    reference_audio: Optional[str] = None
+
+    @field_validator("reference_audio", mode="before")
+    @classmethod
+    def validate_reference_audio(cls, v):
+        if v is None:
+            return None
+        if not isinstance(v, str) or not v.strip():
+            raise ValueError("reference_audio must be a base64-encoded audio file")
+        # Cap the base64 string at 16 MB (~12 MB of audio file bytes after decoding).
+        # Deliberately generous: a 6 s WAV is ~1 MB, but the runner only conditions on
+        # the first 6 s anyway.
+        if len(v) > 16 * 1024 * 1024:
+            raise ValueError("reference_audio exceeds the 16 MB base64 limit")
+        return v
+
     # Synthesis language. Validated here so an unsupported code raises HTTP 422 early
     # instead of raising inside a device worker. Region variants normalize to their
     # base code ("pt-br" -> "pt", "zh-cn" -> "zh").
-    language: str = "en"
+    language: str = DEFAULT_TTS_LANGUAGE
 
     @field_validator("language", mode="before")
     @classmethod
     def validate_language(cls, v):
         if v is None:
-            return "en"
+            return DEFAULT_TTS_LANGUAGE
         base = str(v).strip().lower().split("-")[0]
         if base not in XTTS_SUPPORTED_LANGUAGES:
             raise ValueError(

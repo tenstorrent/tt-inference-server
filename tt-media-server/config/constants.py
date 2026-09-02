@@ -445,6 +445,9 @@ XTTS_SUPPORTED_LANGUAGES = frozenset(
     ("ar", "cs", "de", "en", "es", "fr", "hu", "it", "ko", "nl", "pl", "pt", "ru", "tr", "zh", "hi", "ja")
 )
 
+# Language a TTS request synthesizes in when none is given.
+DEFAULT_TTS_LANGUAGE = "en"
+
 
 class JobTypes(Enum):
     VIDEO = "video"

@@ -47,6 +47,7 @@ class XttsV2TTSTest(BaseTest):
             ("seed_reproducibility", self._test_seed_reproducibility),
             ("language_synthesis", self._test_language_synthesis),
             ("language_rejection", self._test_language_rejection),
+            ("voice_cloning", self._test_voice_cloning),
         )
         ok = True
         for name, fn in subtests:
@@ -135,6 +136,38 @@ class XttsV2TTSTest(BaseTest):
                 assert status == 200, f"language={lang!r}: expected 200, got {status}"
                 sizes[lang] = len(self._decoded_audio(result))
         return {"status": "success", "audio_size_bytes": sizes}
+
+    async def _test_voice_cloning(self):
+        """Per-request voice cloning via reference_audio: synthesize once with the
+        default voice, then feed that WAV back as the reference clip (self-clone).
+        Same text+seed with a different voice must produce different audio, and a
+        repeat with the same reference must reproduce it exactly (voice cache +
+        seeded sampling)."""
+        text = "The lighthouse keeper kept a careful log of every passing ship."
+        base = {"text": text, "response_format": "json", "seed": 99}
+        timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_S)
+        async with aiohttp.ClientSession(headers=HEADERS, timeout=timeout) as session:
+            status, default_result = await self._post(session, base)
+            assert status == 200, f"default-voice request failed: {status}"
+            self._decoded_audio(default_result)
+
+            cloned_payload = {**base, "reference_audio": default_result["audio"]}
+            status_a, clone_a = await self._post(session, cloned_payload)
+            assert status_a == 200, f"cloned-voice request failed: {status_a}"
+            self._decoded_audio(clone_a)
+            assert clone_a["audio"] != default_result["audio"], (
+                "cloned voice produced identical audio to the default voice"
+            )
+
+            status_b, clone_b = await self._post(session, cloned_payload)
+            assert status_b == 200, f"repeat cloned-voice request failed: {status_b}"
+            assert clone_b["audio"] == clone_a["audio"], (
+                "same reference clip + seed did not reproduce identical audio"
+            )
+        return {
+            "status": "success",
+            "audio_size_bytes": len(base64.b64decode(clone_a["audio"])),
+        }
 
     async def _test_language_rejection(self):
         """An unsupported language code must 422 at the API, before any device work."""

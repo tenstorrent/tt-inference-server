@@ -12,7 +12,7 @@ from typing import Any, AsyncGenerator, Dict, List
 import soundfile as sf
 import torch
 import ttnn
-from config.constants import SupportedModels
+from config.constants import DEFAULT_TTS_LANGUAGE, SupportedModels
 from config.settings import settings
 from domain.text_to_speech_request import TextToSpeechRequest
 from domain.text_to_speech_response import (
@@ -784,10 +784,10 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                 raise ValueError("Text cannot be empty")
 
             # SpeechT5 is English-only.
-            language = getattr(request, "language", "en")
-            if language != "en":
+            language = getattr(request, "language", DEFAULT_TTS_LANGUAGE)
+            if language != DEFAULT_TTS_LANGUAGE:
                 raise ValueError(
-                    f"SpeechT5 supports only language 'en'; got {language!r}. "
+                    f"SpeechT5 supports only language {DEFAULT_TTS_LANGUAGE!r}; got {language!r}. "
                 )
 
             speaker_embedding, speaker_id = self._prepare_speaker_embedding(request)

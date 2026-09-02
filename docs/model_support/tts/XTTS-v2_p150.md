@@ -57,4 +57,8 @@ Notes:
   per-language character limits (en 240, ja 71, zh 82, ko 95, …), so non-Latin scripts
   produce more, shorter chunks — one request may take several seconds per ~10 s of audio.
 - Fixing the request's `seed` makes identical text reproduce identical audio; omitting it draws randomly per request.
-- Voice cloning is fixed to the `XTTS_REF_AUDIO` voice at warmup; per-request `speaker_id`/`speaker_embedding` are not yet supported.
+- **Voice cloning:** the default voice comes from `XTTS_REF_AUDIO` at warmup; a request can
+  override it by sending `reference_audio` (a base64-encoded audio file, ~6 s clean mono
+  recommended). The clip is normalized to 6 s and the computed voice is cached per worker by
+  content hash, so the first request with a new voice pays the conditioning cost (~1 s) and
+  repeats don't. `speaker_id` is rejected (no named-speaker registry yet).

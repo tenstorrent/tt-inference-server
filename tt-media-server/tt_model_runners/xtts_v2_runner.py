@@ -4,13 +4,16 @@
 
 import asyncio
 import base64
+import hashlib
 import io
 import os
 import time
+from collections import OrderedDict
 
 import numpy as np
 import soundfile as sf
 import torch
+from config.constants import DEFAULT_TTS_LANGUAGE
 from config.settings import settings
 from domain.text_to_speech_request import TextToSpeechRequest
 from domain.text_to_speech_response import TextToSpeechResponse
@@ -36,6 +39,18 @@ INTER_CHUNK_SILENCE_SECONDS = 0.25
 # run.py --docker-server flow works with zero extra configuration.
 DEFAULT_VOICE_HF_FILE = "samples/en_sample.wav"
 
+# Per-request reference clips are truncated to REF_CLIP_MAX_SECONDS (coqui's
+# gpt_cond_len default — stock coqui conditions on up to 30 s, not just 6) and then
+# quantized DOWN to whole REF_CLIP_SECONDS chunks (clips under one chunk are padded up
+# to it). Blocks 1+2 JIT-compile per shape: full 6 s chunks reuse the shape warmup
+# compiled, and quantizing means Block 2 sees at most five clip durations instead of
+# one ~40 s first-compile per unique upload length.
+REF_CLIP_SECONDS = 6.0
+REF_CLIP_MAX_SECONDS = 30.0
+# Computed voices are two small host tensors (~130 KB); cache per worker, keyed by the
+# decoded clip's content hash, so repeat requests with the same voice skip Blocks 1+2.
+VOICE_CACHE_SIZE = 16
+
 
 class XttsV2Runner(BaseMetalDeviceRunner):
     """XTTS-v2 text-to-speech runner.
@@ -49,6 +64,9 @@ class XttsV2Runner(BaseMetalDeviceRunner):
         super().__init__(device_id)
         self.pipeline = None
         self.default_voice = None
+        # clip sha256 -> Voice, LRU. Per worker: each data-parallel worker computes and
+        # caches its own copy (Voice tensors are host-side and tiny).
+        self._voice_cache: OrderedDict = OrderedDict()
 
         # Explicitly disable fabric for non-galaxy devices (mirrors speecht5 runner)
         if not settings.is_galaxy:
@@ -165,7 +183,65 @@ class XttsV2Runner(BaseMetalDeviceRunner):
         self.logger.info(f"Device {self.device_id}: XTTS-v2 warmup complete")
         return True
 
-    def _synthesize(self, text: str, base_seed: int, language: str = "en") -> np.ndarray:
+    def _voice_for_request(self, request: TextToSpeechRequest):
+        """Resolve the Voice a request synthesizes with.
+
+        No voice fields -> the warmup default voice. `reference_audio` (base64 audio
+        file) -> clone that voice: decode, downmix to mono, use up to REF_CLIP_MAX_SECONDS
+        in whole REF_CLIP_SECONDS chunks (see the constants above for the shape-compile
+        rationale), compute_voice on the live pipeline (safe post-warmup), and LRU-cache
+        by content hash. `speaker_id` has no registry for XTTS yet and is rejected rather
+        than silently ignored."""
+        if getattr(request, "speaker_id", None):
+            raise ValueError(
+                "XTTS-v2 has no named-speaker registry; pass reference_audio "
+                "(base64 audio clip) to clone a voice, or omit it for the default voice."
+            )
+        ref_b64 = getattr(request, "reference_audio", None)
+        if not ref_b64:
+            return self.default_voice
+
+        try:
+            clip_bytes = base64.b64decode(ref_b64, validate=True)
+        except Exception as e:
+            raise ValueError(f"reference_audio is not valid base64: {e}")
+        key = hashlib.sha256(clip_bytes).hexdigest()
+        cached = self._voice_cache.get(key)
+        if cached is not None:
+            self._voice_cache.move_to_end(key)
+            return cached
+
+        try:
+            # Bounded read: decode only the first REF_CLIP_MAX_SECONDS of audio. Codecs
+            # decode sequentially, so an arbitrarily long upload costs the same RAM
+            # as a 30 s clip (~5 MB of PCM) instead of its full decoded length.
+            with sf.SoundFile(io.BytesIO(clip_bytes)) as clip:
+                sr = clip.samplerate
+                chunk = int(REF_CLIP_SECONDS * sr)
+                data = clip.read(
+                    frames=int(REF_CLIP_MAX_SECONDS * sr), dtype="float32", always_2d=True
+                )
+        except Exception as e:
+            raise ValueError(f"reference_audio is not a readable audio file: {e}")
+        data = data.mean(axis=1)  # downmix to mono
+        if len(data) < chunk:  # short clip: pad to the warmup-compiled 6 s shape
+            data = np.pad(data, (0, chunk - len(data)))
+        else:  # quantize down to whole 6 s chunks so Block 1 stays on the warm shape
+            data = data[: (len(data) // chunk) * chunk]
+        t0 = time.time()
+        voice = self.pipeline.compute_voice(torch.from_numpy(data), sr)
+        self.logger.info(
+            f"Device {self.device_id}: cloned request voice ({key[:12]}, sr={sr}) "
+            f"in {time.time() - t0:.2f}s"
+        )
+        self._voice_cache[key] = voice
+        if len(self._voice_cache) > VOICE_CACHE_SIZE:
+            self._voice_cache.popitem(last=False)
+        return voice
+
+    def _synthesize(
+        self, text: str, base_seed: int, language: str = DEFAULT_TTS_LANGUAGE, voice=None
+    ) -> np.ndarray:
         """Synthesize one request's text: chunk at sentence boundaries, generate per
         chunk (chunk i uses base_seed + i so chunks don't share sampling draws), stitch
         with short silences. Returns float32 samples @ XTTS_SAMPLE_RATE.
@@ -175,6 +251,8 @@ class XttsV2Runner(BaseMetalDeviceRunner):
         character than English (ja 71 chars vs en 240)."""
         from models.experimental.xtts_v2.frontend import CHAR_LIMITS
 
+        if voice is None:
+            voice = self.default_voice
         budget = min(CHUNK_CHAR_LIMIT, CHAR_LIMITS.get(language, CHUNK_CHAR_LIMIT))
         chunks = chunk_text(text, max_chunk_size=budget)
         pieces: list[np.ndarray] = []
@@ -183,7 +261,7 @@ class XttsV2Runner(BaseMetalDeviceRunner):
         )
         for i, chunk in enumerate(chunks):
             wav = self.pipeline.generate(
-                chunk, self.default_voice, language=language, seed=base_seed + i
+                chunk, voice, language=language, seed=base_seed + i
             )
             samples = wav.reshape(-1).detach().to(torch.float32).numpy()
             if samples.size == 0:
@@ -193,7 +271,7 @@ class XttsV2Runner(BaseMetalDeviceRunner):
                     f"Device {self.device_id}: empty generation for chunk {i}, retrying"
                 )
                 wav = self.pipeline.generate(
-                    chunk, self.default_voice, language=language, seed=base_seed + i + 7919
+                    chunk, voice, language=language, seed=base_seed + i + 7919
                 )
                 samples = wav.reshape(-1).detach().to(torch.float32).numpy()
             pieces.append(samples)
@@ -231,7 +309,10 @@ class XttsV2Runner(BaseMetalDeviceRunner):
 
             t_start = time.time()
             samples = self._synthesize(
-                request.text, base_seed, language=getattr(request, "language", "en")
+                request.text,
+                base_seed,
+                language=getattr(request, "language", DEFAULT_TTS_LANGUAGE),
+                voice=self._voice_for_request(request),
             )
             elapsed = time.time() - t_start
 
