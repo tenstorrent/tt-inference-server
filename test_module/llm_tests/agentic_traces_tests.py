@@ -47,7 +47,7 @@ from llm_module.parsers.aiperf_agentic_traces import AIPerfAgenticTracesParser
 from llm_module.parsers.swo_bench_agentic_traces import SwoBenchAgenticTracesParser
 from llm_module.runner import RunnerResult
 from llm_module.server_control import ServerController
-from reference_config.agentic_traces.agentic_traces_config import TraceSource
+from llm_module.agentic_traces.schema import TraceSource
 from workflow_module import accept_blocks
 from workflow_module.engine_types import AgenticTracesMode
 from workflow_module.target_pack import get_target_pack

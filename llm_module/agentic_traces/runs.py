@@ -17,14 +17,17 @@ every knob is a concrete value.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Tuple
 
-from reference_config.agentic_traces.agentic_traces_config import (
-    AgenticTracesConfig,
-    AgenticTracesRunSpec,
-    TraceSource,
-)
 from workflow_module.engine_types import AgenticTracesMode
+
+from .schema import TraceSource
+
+if TYPE_CHECKING:
+    from reference_config.agentic_traces.agentic_traces_config import (
+        AgenticTracesConfig,
+        AgenticTracesRunSpec,
+    )
 
 # Trace sources with a working client. Both the InferenceX AIPerf fork and the
 # SwarmOne ``swo-bench`` replay engine are wired; any source added to the config
