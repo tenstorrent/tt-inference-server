@@ -7,7 +7,7 @@ import base64
 import io
 import os
 import re
-from typing import Any, AsyncGenerator, Dict, List
+from typing import Any, AsyncGenerator, Dict, List, Optional
 
 import soundfile as sf
 import torch
@@ -775,8 +775,14 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
     async def _generate_audio_sync(
         self,
         text: str,
+        speaker_id: Optional[str] = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
-        """Generate audio with automatic chunking for long texts (matches demo_ttnn.py)."""
+        """Generate audio with automatic chunking for long texts (matches demo_ttnn.py).
+
+        ``speaker_id`` is the resolved catalog id (None for a client-supplied
+        embedding); it rides on the response so the API layer can report the
+        voice actually used, not just the one requested.
+        """
         try:
             text = normalize_text_for_tts(text)
             chunks = chunk_text(text, processor=self.processor)
@@ -834,6 +840,7 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                     duration=duration,
                     sample_rate=SpeechT5Constants.SAMPLE_RATE,
                     format="wav",
+                    speaker_id=speaker_id,
                 ),
                 "task_id": None,
             }
@@ -889,7 +896,9 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                 )
 
             final_result = None
-            async for result in self._generate_audio_sync(request.text):
+            async for result in self._generate_audio_sync(
+                request.text, speaker_id=speaker_id
+            ):
                 result["task_id"] = request._task_id
                 final_result = result
             if final_result and "result" in final_result:

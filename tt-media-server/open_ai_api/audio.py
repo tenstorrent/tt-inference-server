@@ -160,7 +160,12 @@ async def handle_audio_request(audio_request, service):
                 streaming=False,
                 status=status,
                 duration_seconds=time.perf_counter() - start,
-                audio_seconds=getattr(result, "duration", None),
+                # The full submitted duration (stamped by pre_process), NOT
+                # result.duration: after VAD fan-out the result carries
+                # speech-only seconds, which would make RTF incomparable
+                # with the streaming path and inflate it on silent audio.
+                audio_seconds=getattr(audio_request, "_duration", None)
+                or getattr(result, "duration", None),
                 characters=char_count(getattr(result, "text", None)),
                 sample_rate=getattr(audio_request, "_source_sample_rate", None),
                 channels=getattr(audio_request, "_source_channels", None),
@@ -209,13 +214,17 @@ async def handle_audio_request(audio_request, service):
                     yield json.dumps(get_dict_response(partial)) + "\n"
             status = STATUS_SUCCESS
         finally:
+            # Same denominator as the non-streaming path: the full submitted
+            # duration stamped by pre_process, so RTF is comparable across
+            # the streaming label. The final result's duration is only a
+            # fallback (for whisper streaming it is the same value).
+            audio_seconds = getattr(audio_request, "_duration", None) or (
+                final_result.duration if final_result is not None else None
+            )
             if final_result is not None:
-                audio_seconds = final_result.duration
                 characters = char_count(final_result.text)
             else:
-                # text format never yields the final result; preprocessing
-                # stored the input duration on the request.
-                audio_seconds = getattr(audio_request, "_duration", None)
+                # text format never yields the final result.
                 characters = streamed_characters
             record_stt_request(
                 model_type=settings.model_runner,

@@ -23,6 +23,7 @@ from telemetry.audio_metrics import (
     STATUS_SUCCESS,
     VOICE_CUSTOM,
     VOICE_DEFAULT,
+    VOICE_UNKNOWN,
     SttStreamProgress,
     TtsChunkProgress,
     char_count,
@@ -62,7 +63,7 @@ def stt_labels(model_type, **overrides):
 def stt_usage(model_type, **overrides):
     labels = dict(
         model_type=model_type,
-        task="transcription",
+        task=STT_TASK,
         language=LANGUAGE,
         streaming="false",
     )
@@ -164,7 +165,7 @@ class TestRecordSttRequest:
         model = "stt-success"
         record_stt_request(
             model_type=model,
-            task="transcription",
+            task=STT_TASK,
             language="English",
             streaming=False,
             status=STATUS_SUCCESS,
@@ -203,7 +204,7 @@ class TestRecordSttRequest:
             sample(
                 "tt_media_server_audio_stt_requests_by_audio_format_total",
                 model_type=model,
-                task="transcription",
+                task=STT_TASK,
                 language="English",
                 sample_rate="16000",
                 channels="1",
@@ -215,7 +216,7 @@ class TestRecordSttRequest:
         model = "stt-error"
         record_stt_request(
             model_type=model,
-            task="transcription",
+            task=STT_TASK,
             language="English",
             streaming=True,
             status=STATUS_ERROR,
@@ -241,7 +242,7 @@ class TestRecordSttRequest:
         for audio_seconds in (None, 0.0, object()):
             record_stt_request(
                 model_type=model,
-                task="transcription",
+                task=STT_TASK,
                 language="English",
                 streaming=False,
                 status=STATUS_SUCCESS,
@@ -269,7 +270,7 @@ class TestRecordSttRequest:
         model = "stt-format-unknown"
         record_stt_request(
             model_type=model,
-            task="transcription",
+            task=STT_TASK,
             language="English",
             streaming=False,
             status=STATUS_SUCCESS,
@@ -281,7 +282,7 @@ class TestRecordSttRequest:
             sample(
                 "tt_media_server_audio_stt_requests_by_audio_format_total",
                 model_type=model,
-                task="transcription",
+                task=STT_TASK,
                 language="English",
                 sample_rate="unknown",
                 channels="unknown",
@@ -293,7 +294,7 @@ class TestRecordSttRequest:
         model = "stt-format-error"
         record_stt_request(
             model_type=model,
-            task="transcription",
+            task=STT_TASK,
             language="English",
             streaming=False,
             status=STATUS_ERROR,
@@ -305,7 +306,7 @@ class TestRecordSttRequest:
             sample(
                 "tt_media_server_audio_stt_requests_by_audio_format_total",
                 model_type=model,
-                task="transcription",
+                task=STT_TASK,
                 language="English",
                 sample_rate="44100",
                 channels="2",
@@ -317,7 +318,7 @@ class TestRecordSttRequest:
         model = "stt-bad-language"
         record_stt_request(
             model_type=model,
-            task="transcription",
+            task=STT_TASK,
             language=None,
             streaming=False,
             status=STATUS_SUCCESS,
@@ -381,12 +382,12 @@ class TestSttStreamProgress:
     def test_first_update_then_intervals(self):
         model = "stt-stream-progress"
         progress = SttStreamProgress(
-            model_type=model, task="transcription", language="English"
+            model_type=model, task=STT_TASK, language="English"
         )
         progress.on_update()
         progress.on_update()
         progress.on_update()
-        labels = dict(model_type=model, task="transcription", language="English")
+        labels = dict(model_type=model, task=STT_TASK, language="English")
         assert (
             sample("tt_media_server_audio_stt_first_partial_seconds_count", **labels)
             == 1
@@ -398,8 +399,8 @@ class TestSttStreamProgress:
 
     def test_no_updates_records_nothing(self):
         model = "stt-stream-quiet"
-        SttStreamProgress(model_type=model, task="transcription", language="English")
-        labels = dict(model_type=model, task="transcription", language="English")
+        SttStreamProgress(model_type=model, task=STT_TASK, language="English")
+        labels = dict(model_type=model, task=STT_TASK, language="English")
         assert (
             sample("tt_media_server_audio_stt_first_partial_seconds_count", **labels)
             is None
@@ -408,11 +409,11 @@ class TestSttStreamProgress:
     def test_final_records_finalization_not_cadence(self):
         model = "stt-stream-final"
         progress = SttStreamProgress(
-            model_type=model, task="transcription", language="English"
+            model_type=model, task=STT_TASK, language="English"
         )
         progress.on_update()
         progress.on_final()
-        labels = dict(model_type=model, task="transcription", language="English")
+        labels = dict(model_type=model, task=STT_TASK, language="English")
         assert (
             sample("tt_media_server_audio_stt_finalization_seconds_count", **labels)
             == 1
@@ -425,10 +426,10 @@ class TestSttStreamProgress:
     def test_final_without_partials_measures_from_start(self):
         model = "stt-stream-final-only"
         progress = SttStreamProgress(
-            model_type=model, task="transcription", language="English"
+            model_type=model, task=STT_TASK, language="English"
         )
         progress.on_final()
-        labels = dict(model_type=model, task="transcription", language="English")
+        labels = dict(model_type=model, task=STT_TASK, language="English")
         assert (
             sample("tt_media_server_audio_stt_finalization_seconds_count", **labels)
             == 1
@@ -490,6 +491,14 @@ class TestConfidenceHelpers:
     def test_rejects_non_tuples_and_short_tuples(self):
         assert confidence_from_generator_output("text") == (None, None)
         assert confidence_from_generator_output(("text", -0.5)) == (None, None)
+
+    def test_zero_pair_is_unavailable_not_observed(self):
+        """Traced decode and all-temperatures-failed paths return hard zeros
+        for both signals; they must not land in the histograms."""
+        assert confidence_from_generator_output(("t", 0.0, 0.0, True)) == (None, None)
+        # A lone zero is kept: only the pair marks the unavailable case.
+        assert confidence_from_generator_output(("t", -0.5, 0.0, True)) == (-0.5, 0.0)
+        assert confidence_from_generator_output(("t", 0.0, 0.3, True)) == (0.0, 0.3)
 
     def test_compression_ratio_repetitive_text_is_higher(self):
         varied = transcript_compression_ratio("the quick brown fox jumps over it")
@@ -611,10 +620,12 @@ class TestRecordTtsRequest:
             characters=100,
             audio_seconds=2.0,
         )
+        # Error rows collapse voice to "unknown": success is what proves a
+        # client-named id exists, so failed requests never mint label values.
         labels = dict(
             model_type=model,
             response_format="mp3",
-            voice="bob",
+            voice=VOICE_UNKNOWN,
             status=STATUS_ERROR,
         )
         assert sample("tt_media_server_audio_tts_requests_total", **labels) == 1
@@ -690,9 +701,12 @@ class TestHandleAudioRequestMetrics:
         labels = stt_labels(model_runner_label)
         assert sample("tt_media_server_audio_stt_requests_total", **labels) == 1
         usage = stt_usage(model_runner_label)
+        # The request's full submitted duration (8.0), not the result's
+        # possibly speech-only duration (12.0) — the RTF denominator must be
+        # the same on both streaming paths.
         assert (
             sample("tt_media_server_audio_stt_input_audio_seconds_total", **usage)
-            == 12.0
+            == 8.0
         )
         assert sample(
             "tt_media_server_audio_stt_output_characters_total", **usage
@@ -701,7 +715,7 @@ class TestHandleAudioRequestMetrics:
             sample(
                 "tt_media_server_audio_stt_requests_by_audio_format_total",
                 model_type=model_runner_label,
-                task="transcription",
+                task=STT_TASK,
                 language=LANGUAGE,
                 sample_rate="16000",
                 channels="1",
@@ -746,9 +760,11 @@ class TestHandleAudioRequestMetrics:
         labels = stt_labels(model_runner_label, streaming="true")
         assert sample("tt_media_server_audio_stt_requests_total", **labels) == 1
         usage = stt_usage(model_runner_label, streaming="true")
+        # Submitted duration (8.0) rather than the final result's (5.0):
+        # same denominator as the non-streaming path.
         assert (
             sample("tt_media_server_audio_stt_input_audio_seconds_total", **usage)
-            == 5.0
+            == 8.0
         )
         # The final transcript supersedes the accumulated chunk count.
         assert sample(
@@ -757,7 +773,7 @@ class TestHandleAudioRequestMetrics:
         # Two partials then the final: one first-partial, one interval, and
         # the final feeds finalization instead of cadence.
         stream_labels = dict(
-            model_type=model_runner_label, task="transcription", language=LANGUAGE
+            model_type=model_runner_label, task=STT_TASK, language=LANGUAGE
         )
         assert (
             sample(
@@ -831,7 +847,7 @@ class TestHandleAudioRequestMetrics:
         )
         # The one chunk that did reach the client still counts as first partial.
         stream_labels = dict(
-            model_type=model_runner_label, task="transcription", language=LANGUAGE
+            model_type=model_runner_label, task=STT_TASK, language=LANGUAGE
         )
         assert (
             sample(
@@ -941,7 +957,7 @@ class TestHandleTtsRequestMetrics:
         labels = dict(
             model_type=model_runner_label,
             response_format="wav",
-            voice=VOICE_DEFAULT,
+            voice=VOICE_UNKNOWN,
             status=STATUS_ERROR,
         )
         assert sample("tt_media_server_audio_tts_requests_total", **labels) == 1

@@ -30,10 +30,12 @@ logger = TTLogger()
 STATUS_SUCCESS = "success"
 STATUS_ERROR = "error"
 
-# ``voice`` label fallbacks: a client-supplied raw embedding has no id, and a
-# request naming no speaker uses the model's built-in default voice.
+# ``voice`` label fallbacks: a client-supplied raw embedding has no id, a
+# request naming no speaker uses the model's built-in default voice, and a
+# failed request gets "unknown" (see record_tts_request).
 VOICE_DEFAULT = "default"
 VOICE_CUSTOM = "custom"
+VOICE_UNKNOWN = "unknown"
 
 # Wall time of the whole request, queue included. STT is bounded by input
 # length (a 30-minute file legitimately takes minutes), so the tail runs to
@@ -743,10 +745,22 @@ def confidence_from_generator_output(item) -> tuple[float | None, float | None]:
     sequences, and are coerced without importing torch — matched by position
     the way image_metrics matches tt_dit events by name, so tt-metal never
     has to be importable here.
+
+    A ``(0.0, 0.0)`` pair is treated as unavailable, not observed: the traced
+    decode path never computes these (no-speech extraction is un-traced-path
+    only, and avg_logprob falls back to ``torch.zeros``), and the
+    all-temperatures-failed path returns zero tensors. Recording those would
+    pile a fake spike at 0 on both histograms. A genuine simultaneous 0.0/0.0
+    (perfect confidence and exactly-zero no-speech) is not realistically
+    observable.
     """
     if not isinstance(item, tuple) or len(item) < 3:
         return None, None
-    return _scalar_mean(item[1]), _scalar_mean(item[2])
+    avg_logprob = _scalar_mean(item[1])
+    no_speech_prob = _scalar_mean(item[2])
+    if avg_logprob == 0.0 and no_speech_prob == 0.0:
+        return None, None
+    return avg_logprob, no_speech_prob
 
 
 def transcript_compression_ratio(text) -> float | None:
@@ -901,7 +915,14 @@ def record_tts_request(
         response_format = (
             response_format.lower() if isinstance(response_format, str) else "unknown"
         )
-        voice = _label_str(voice, VOICE_DEFAULT)
+        # Success is what proves a client-named speaker exists in the catalog;
+        # on the error path ``voice`` may be an arbitrary string from a
+        # request that failed precisely because the id was unknown, so error
+        # rows are collapsed to "unknown" to keep label cardinality bounded.
+        if status != STATUS_SUCCESS:
+            voice = VOICE_UNKNOWN
+        else:
+            voice = _label_str(voice, VOICE_DEFAULT)
         tts_requests_total.labels(
             model_type=model_type,
             response_format=response_format,
