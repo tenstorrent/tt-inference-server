@@ -166,13 +166,17 @@ class TerminalBenchEvalConfig:
 SHARED_SWE_STEP_LIMIT = 50
 
 # The serving endpoint re-tokenizes the accumulated agent conversation and
-# counts more tokens than the gate client does: QB2 job 74920 observed a +1008
-# server-vs-client tokenizer delta before the vLLM engine's fail-closed
-# one-shot prefill check rejected P=17332 against a 16384 bucket mid-run.
-# Whenever a one-shot prefill bucket caps the input budget, reserve this
-# margin (the observed delta rounded up) below the bucket so runs end
-# deterministically client-side instead of dying server-side.
-SERVER_TOKENIZER_MARGIN_TOKENS = 1280
+# counts more tokens than the gate client does: on QB2 job 75061 the client
+# input peaked at 13680 (never hit the 15104 cap, never truncated) yet the
+# server expanded that same request to P=16487 against a 16384 one-shot
+# bucket, killing the vLLM engine fail-closed before the agent could submit.
+# The measured client->server overhead is therefore 16487 - 13680 = 2807
+# tokens (~2.2x the old 1280 constant, which was calibrated below the real
+# tool-schema + chat-template + tokenizer-delta cost). Whenever a one-shot
+# prefill bucket caps the input budget, reserve this margin below the bucket
+# so runs end deterministically client-side instead of dying server-side.
+# 3072 covers the 2807 overhead with ~265 tokens of headroom.
+SERVER_TOKENIZER_MARGIN_TOKENS = 3072
 
 
 @dataclass(frozen=True)

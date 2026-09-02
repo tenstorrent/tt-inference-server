@@ -91,7 +91,7 @@ def test_one_shot_bucket_caps_gate_input_below_context_budget():
     assert cfg.chunked_prefill is False
     assert cfg.largest_prefill_bucket == 16384
     assert cfg.max_input_tokens == 16384 - SERVER_TOKENIZER_MARGIN_TOKENS
-    assert cfg.max_input_tokens == 15104
+    assert cfg.max_input_tokens == 13312
 
 
 def test_chunked_prefill_artifact_keeps_context_derived_budget():
@@ -104,29 +104,49 @@ def test_chunked_prefill_artifact_keeps_context_derived_budget():
 
 
 def test_bucket_cap_never_raises_a_smaller_context_budget():
-    # Qwen's one-shot bucket equals its 8192 context: the bucket cap
-    # (8192 - 1280 = 6912) exceeds the context-derived 6144, so the smaller
-    # context-derived value stands.
+    # Qwen's one-shot bucket equals its 8192 context, so the bucket cap is
+    # 8192 - SERVER_TOKENIZER_MARGIN_TOKENS = 5120. When the context-derived
+    # input (8192 - 4096 = 4096) is smaller than that cap, the min() keeps the
+    # context-derived value: the cap never raises a smaller budget.
     cfg = build_gate_config(
-        "Qwen3.6-27B", max_context=8192, max_output_tokens=2048, step_limit=16
+        "Qwen3.6-27B", max_context=8192, max_output_tokens=4096, step_limit=16
     )
     assert cfg.chunked_prefill is False
     assert cfg.largest_prefill_bucket == 8192
-    assert cfg.largest_prefill_bucket - SERVER_TOKENIZER_MARGIN_TOKENS == 6912
-    assert cfg.max_input_tokens == 6144
+    bucket_cap = cfg.largest_prefill_bucket - SERVER_TOKENIZER_MARGIN_TOKENS
+    assert bucket_cap == 5120
+    assert cfg.max_input_tokens == 4096
+    assert cfg.max_input_tokens < bucket_cap
 
 
 def test_server_tokenizer_margin_is_single_sourced():
     # The margin lives with SHARED_SWE_STEP_LIMIT in the catalogue module; the
     # gate must import it, never carry a drifted literal copy.
-    assert SERVER_TOKENIZER_MARGIN_TOKENS == 1280
+    assert SERVER_TOKENIZER_MARGIN_TOKENS == 3072
     assert (
         run_local_swe_gate.SERVER_TOKENIZER_MARGIN_TOKENS
         is SERVER_TOKENIZER_MARGIN_TOKENS
     )
     source = GATE_SOURCE.read_text()
     assert "SERVER_TOKENIZER_MARGIN_TOKENS" in source
-    assert "1280" not in source
+    assert "3072" not in source
+
+
+def test_server_margin_stays_below_every_declared_one_shot_bucket():
+    # The bucket cap is bucket - SERVER_TOKENIZER_MARGIN_TOKENS. If the margin
+    # ever met or exceeded the smallest declared one-shot bucket, the gate's
+    # fail-closed guard (run_local_swe_gate) would reject that row for leaving
+    # no input budget. Every catalogue SWE row with a one-shot bucket must keep
+    # a strictly positive budget after the margin.
+    declared = [
+        _swe_task(model).swebench_eval_config.largest_prefill_bucket
+        for model in MODELS
+        if _swe_task(model).swebench_eval_config.largest_prefill_bucket is not None
+    ]
+    assert declared, "no one-shot bucket row to check"
+    assert SERVER_TOKENIZER_MARGIN_TOKENS < min(declared)
+    for bucket in declared:
+        assert bucket - SERVER_TOKENIZER_MARGIN_TOKENS > 0
 
 
 def test_bucket_declaration_is_declarative_not_model_branched():
