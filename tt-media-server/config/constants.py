@@ -1225,15 +1225,19 @@ ModelConfigs = {
     },
     # Galaxy DP=32: 32 single-chip workers (DEVICE_IDS_32 -> one (N) group per chip).
     # Each worker opens a (1,1) mesh, so tt-metal sees num_devices==1 -> ModelArgs.is_galaxy
-    # is False and the full n150 68 tok/s decode path applies per chip. batch=1 (no batched
-    # decode); the scheduler fans requests/segments across the 32 workers for throughput.
-    # Mirrors the Whisper Galaxy entry (which uses batch=2); throttle 0 keeps 68 tok/s.
+    # is False and the n150 decode path applies per chip. batch=1 (no batched decode);
+    # the scheduler fans requests/segments across the 32 workers for throughput.
+    # Throttle 0 stays: on this WH-Galaxy chip, throttle 5 is byte-identical text
+    # and drops warm decode 68.6 -> 48.3 tok/s (2026-09-02 chip0 clip30 A/B).
+    # LibriSpeech eval is num_concurrent=1, so 32-chip droop is not in that path.
+    # BatchFifo matches whisper's Galaxy queue.
     (ModelRunners.TT_QWEN3_ASR, DeviceTypes.GALAXY): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": True,
         "device_ids": DeviceIds.DEVICE_IDS_32.value,
         "max_batch_size": 1,
         "default_throttle_level": 0,
+        "queue_for_multiprocessing": QueueType.BatchFifo.value,
         "request_processing_timeout_seconds": 5000,
     },
     (ModelRunners.VLLMForge_QWEN_EMBEDDING, DeviceTypes.N150): {

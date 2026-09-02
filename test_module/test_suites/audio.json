@@ -37,7 +37,7 @@
             ]
         },
         {
-            "_comment": "qwen3-asr galaxy (DP=32): mirrors the whisper galaxy list so chunking behaviour is comparable across models. The Dp2Chunk5/Dp2Chunk30 pair reads the server's AUDIO_CHUNK_DURATION_SECONDS, which the tests do not set, so both measure whatever the server was launched with and differ only in the chunk_duration_seconds they record. Timings are uncalibrated placeholders.",
+            "_comment": "qwen3-asr galaxy (DP=32): mirrors the whisper galaxy list so chunking behaviour is comparable across models. Dp2Chunk5/Dp2Chunk30 send chunk_duration_seconds on the request so the media-server worker actually splits to 5s vs 30s. Timings are uncalibrated placeholders.",
             "models": [
                 "qwen3_asr"
             ],

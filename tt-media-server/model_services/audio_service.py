@@ -18,21 +18,45 @@ def create_audio_worker_context():
 
 
 def audio_worker_function(
-    audio_manager, audio_file_data, is_preprocessing_enabled, perform_diarization=False
+    audio_manager,
+    audio_file_data,
+    is_preprocessing_enabled,
+    perform_diarization=False,
+    chunk_duration_seconds=None,
 ):
     """Process audio data using the initialized AudioManager"""
     from config.settings import settings
+
+    from config.constants import ModelRunners
 
     should_preprocess = settings.allow_audio_preprocessing and is_preprocessing_enabled
 
     # Process audio
     prepared = audio_manager.to_audio_array(audio_file_data, should_preprocess)
     audio_array = prepared.audio_array
-    segments = (
-        audio_manager.apply_diarization_with_vad(audio_array, perform_diarization)
-        if should_preprocess
-        else None
-    )
+
+    # Qwen3-ASR-only duration fan-out: split a long clip into contiguous windows so
+    # it occupies many device runners (linear RTR speedup on Galaxy DP=32). Short
+    # clips already fit one runner, so splitting them only adds boundary errors
+    # (measured +2.4 WER at 3s on librispeech) -> keep them whole. This path is
+    # deliberately NOT taken for Whisper/other ASR: their VAD chunking below is
+    # left exactly as in production. Diarization requests also use the shared path.
+    is_qwen3_asr = settings.model_runner == ModelRunners.TT_QWEN3_ASR.value
+    if is_qwen3_asr and not perform_diarization:
+        requested = chunk_duration_seconds or settings.audio_chunk_duration_seconds
+        if prepared.duration > settings.audio_min_split_duration_seconds:
+            segments = audio_manager.chunk_audio_by_duration(
+                prepared.duration, requested
+            )
+        else:
+            # Keep whole: one runner transcribes the clip (validated WER 2.63%).
+            segments = None
+    elif should_preprocess:
+        segments = audio_manager.apply_diarization_with_vad(
+            audio_array, perform_diarization
+        )
+    else:
+        segments = None
 
     return (
         audio_array,
@@ -75,6 +99,7 @@ class AudioService(BaseService):
                 request.file,
                 request.is_preprocessing_enabled,
                 request.perform_diarization,
+                request.chunk_duration_seconds,
             )
 
             request._audio_array = audio_array

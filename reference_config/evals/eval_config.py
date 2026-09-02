@@ -4126,11 +4126,19 @@ _eval_config_list = [
                 apply_chat_template=False,
                 workflow_venv_type=WorkflowVenvType.EVALS_AUDIO,
                 score=EvalTaskScore(
-                    # No traceable published librispeech WER for this repo, and
-                    # the model targets Japanese first; the accuracy check
-                    # renders N/A until a CI run establishes a reference.
-                    published_score=None,
-                    published_score_ref="",
+                    # N150 full librispeech_test_other (2939 samples), tt-metal
+                    # 62fba73, Models CI run 33605859543. WER 3.5381 → 96.46.
+                    # Galaxy at 12.32 / 87.68 fails this gate (ratio 0.91).
+                    published_score=96.46,
+                    gpu_reference_score=96.46,
+                    published_score_ref=(
+                        "N150 Models CI tt-metal 62fba73 "
+                        "https://github.com/tenstorrent/tt-shield/actions/runs/33605859543"
+                    ),
+                    gpu_reference_score_ref=(
+                        "N150 Models CI tt-metal 62fba73 "
+                        "https://github.com/tenstorrent/tt-shield/actions/runs/33605859543"
+                    ),
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [

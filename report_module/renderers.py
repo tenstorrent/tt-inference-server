@@ -352,6 +352,21 @@ def render_generic_table(
         if not table:
             return ""
         parts = [heading, table]
+        # Sweep blocks keep target_checks on the parent data dict, not in
+        # each row. Render them the same way the single-record path does
+        # so the target-tier failure is visible, not only the footnote.
+        data = block.data if isinstance(block.data, Mapping) else {}
+        target_checks = data.get(_TARGET_CHECKS_KEY)
+        if _is_subtable_value(target_checks):
+            sub_records = _extract_records(
+                Block(kind=_TARGET_CHECKS_KEY, data=target_checks)
+            )
+            if sub_records:
+                sub_table = _build_table(sub_records, header_fn=target_checks_header)
+                if sub_table:
+                    parts.append(
+                        f"#### {_humanize_key(_TARGET_CHECKS_KEY)}\n\n{sub_table}"
+                    )
         if footnote:
             parts.append(footnote)
         return "\n\n".join(parts)
