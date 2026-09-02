@@ -26,6 +26,18 @@ _TOKEN_BUDGET_MODEL_CLASS = (
     "llm_module.agentic.mini_swe_token_budget.TokenBudgetLitellmModel"
 )
 
+_MINI_SWE_BUDGET_DISCIPLINE_SYSTEM_TEMPLATE = """\
+You are a software engineering agent with a bounded interaction and context budget.
+Use repository evidence only; do not assume task-specific implementation details.
+Work in this order: reproduce the failure with the smallest useful check, locate the
+causal source, edit the source, run focused verification, inspect the diff, and submit.
+Do not repeat an identical or substantially overlapping read/search unless the prior
+result was truncated and the next command narrows the missing region. Prefer targeted
+searches and line ranges over full-file reads. By halfway through the allowed steps,
+select the best-supported causal location and begin the smallest general source change.
+Reserve the final four steps for mutation, verification, diff inspection, and submission.
+"""
+
 # The SWE-bench harness builds/pulls Docker images (a shared base image plus
 # per-instance images) from ghcr.io. Those transfers can fail transiently
 # mid-stream (e.g. ``ChunkedEncodingError: Response ended prematurely`` while
@@ -610,6 +622,15 @@ def _write_mini_sweagent_model_config(config: SWEbenchRunConfig) -> Path:
     if config.mini_agent_kwargs:
         if not isinstance(config.mini_agent_kwargs, dict):
             raise ValueError("mini_agent_kwargs must be a dictionary")
+        prompt_override_keys = {
+            "instance_template",
+            "system_template",
+        }.intersection(config.mini_agent_kwargs)
+        if prompt_override_keys:
+            raise ValueError(
+                "mini_agent_kwargs cannot override shared mini-swe prompt templates: "
+                f"{sorted(prompt_override_keys)}"
+            )
         step_limit = config.mini_agent_kwargs.get("step_limit")
         if step_limit is not None and (
             not isinstance(step_limit, int)
@@ -618,6 +639,9 @@ def _write_mini_sweagent_model_config(config: SWEbenchRunConfig) -> Path:
         ):
             raise ValueError("mini_agent_kwargs.step_limit must be a positive integer")
         model_config["agent"] = dict(config.mini_agent_kwargs)
+    model_config.setdefault("agent", {})["system_template"] = (
+        _MINI_SWE_BUDGET_DISCIPLINE_SYSTEM_TEMPLATE
+    )
     config_path = config.output_dir / "mini_sweagent_model_config.yaml"
     config_path.write_text(json.dumps(model_config, indent=2), encoding="utf-8")
     return config_path

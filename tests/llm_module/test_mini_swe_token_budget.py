@@ -20,6 +20,7 @@ from llm_module.agentic.mini_swe_token_budget_core import (
     record_token_count,
 )
 from llm_module.agentic.swebench import (
+    _MINI_SWE_BUDGET_DISCIPLINE_SYSTEM_TEMPLATE,
     _agentic_container_label,
     _cleanup_labeled_containers,
     _run_bounded_process_group,
@@ -356,7 +357,30 @@ def test_generated_mini_config_selects_authoritative_wrapper(tmp_path):
 def test_generated_mini_config_applies_positive_step_limit(tmp_path):
     config = _mini_config(tmp_path, mini_agent_kwargs={"step_limit": 8})
     generated = json.loads(_write_mini_sweagent_model_config(config).read_text())
-    assert generated["agent"] == {"step_limit": 8}
+    assert generated["agent"] == {
+        "step_limit": 8,
+        "system_template": _MINI_SWE_BUDGET_DISCIPLINE_SYSTEM_TEMPLATE,
+    }
+
+
+def test_generated_mini_config_adds_task_agnostic_budget_discipline(tmp_path):
+    generated = json.loads(
+        _write_mini_sweagent_model_config(_mini_config(tmp_path)).read_text()
+    )
+    template = generated["agent"]["system_template"]
+    assert template == _MINI_SWE_BUDGET_DISCIPLINE_SYSTEM_TEMPLATE
+    assert "reproduce the failure" in template
+    assert "Do not repeat an identical or substantially overlapping read" in template
+    assert "Reserve the final four steps" in template
+    assert "django" not in template.lower()
+    assert "simplecol" not in template.lower()
+
+
+@pytest.mark.parametrize("key", ["system_template", "instance_template"])
+def test_model_rows_cannot_override_shared_mini_swe_prompts(tmp_path, key):
+    config = _mini_config(tmp_path, mini_agent_kwargs={key: "task-specific hint"})
+    with pytest.raises(ValueError, match="cannot override shared mini-swe prompt"):
+        _write_mini_sweagent_model_config(config)
 
 
 def test_qwen_8627_char_observation_is_bounded_before_next_exact_count(tmp_path):

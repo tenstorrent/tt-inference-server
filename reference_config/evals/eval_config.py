@@ -1644,9 +1644,9 @@ _eval_config_list = [
                     temperature=0.0,
                     top_p=1.0,
                     # The complete rendered conversation and tool schema may
-                    # use 5K, generation may use 2K, and 1K remains as server
-                    # headroom inside the generated S8192 contract.
-                    max_input_tokens=5 * 1024,
+                    # use 6K and generation may use 2K, exactly filling the
+                    # generated S8192 request contract without exceeding it.
+                    max_input_tokens=6 * 1024,
                     max_output_tokens=2 * 1024,
                     completion_kwargs={
                         "extra_body": {
@@ -1655,7 +1655,13 @@ _eval_config_list = [
                             },
                         },
                     },
-                    mini_agent_kwargs={"step_limit": 8},
+                    # Single-variable follow-up to the exact 57d cap-only run:
+                    # eight fully admitted steps exhausted during repository
+                    # inspection before any mutation. The follow-up preserves
+                    # step_limit=16, OSL=2048, and the 2048-char observation
+                    # cap while using the remaining certified S8192 input
+                    # envelope (ISL=6144).
+                    mini_agent_kwargs={"step_limit": 16},
                     mini_observation_chars=2048,
                     instance_selection_provenance=(
                         "predeclared TTIS smoke/CI set; not independently "
