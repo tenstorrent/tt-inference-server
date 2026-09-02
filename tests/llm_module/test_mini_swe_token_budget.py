@@ -10,7 +10,7 @@ from copy import deepcopy
 from types import SimpleNamespace
 
 import pytest
-from jinja2 import Template
+from jinja2 import Environment, StrictUndefined, Template
 
 from llm_module.agentic.mini_swe_token_budget_core import (
     InputTokenBudgetExceeded,
@@ -20,12 +20,12 @@ from llm_module.agentic.mini_swe_token_budget_core import (
     record_token_count,
 )
 from llm_module.agentic.swebench import (
-    _MINI_SWE_BUDGET_DISCIPLINE_SYSTEM_TEMPLATE,
     _agentic_container_label,
     _cleanup_labeled_containers,
     _run_bounded_process_group,
     _run_fixed_mini_sweagent_samples,
     _write_mini_sweagent_model_config,
+    render_budget_discipline_template,
 )
 
 
@@ -359,7 +359,7 @@ def test_generated_mini_config_applies_positive_step_limit(tmp_path):
     generated = json.loads(_write_mini_sweagent_model_config(config).read_text())
     assert generated["agent"] == {
         "step_limit": 8,
-        "system_template": _MINI_SWE_BUDGET_DISCIPLINE_SYSTEM_TEMPLATE,
+        "system_template": render_budget_discipline_template(8),
     }
 
 
@@ -368,12 +368,82 @@ def test_generated_mini_config_adds_task_agnostic_budget_discipline(tmp_path):
         _write_mini_sweagent_model_config(_mini_config(tmp_path)).read_text()
     )
     template = generated["agent"]["system_template"]
-    assert template == _MINI_SWE_BUDGET_DISCIPLINE_SYSTEM_TEMPLATE
+    assert template == render_budget_discipline_template(None)
     assert "reproduce the failure" in template
     assert "Do not repeat an identical or substantially overlapping read" in template
-    assert "Reserve the final four steps" in template
     assert "django" not in template.lower()
     assert "simplecol" not in template.lower()
+
+
+def test_rendered_budget_discipline_carries_exact_step_numbers():
+    rendered = render_budget_discipline_template(50)
+    assert "You have exactly 50 interaction steps total" in rendered
+    assert "no later than step 25" in rendered
+    assert "Reserve steps 47–50" in rendered
+    assert "the final 4" in rendered
+
+
+@pytest.mark.parametrize("step_limit", [None, 8, 50])
+def test_rendered_budget_discipline_has_no_unrendered_braces(step_limit):
+    rendered = render_budget_discipline_template(step_limit)
+    assert "{" not in rendered
+    assert "}" not in rendered
+
+
+def test_budget_discipline_without_step_limit_makes_no_numeric_promises():
+    rendered = render_budget_discipline_template(None)
+    assert "halfway" not in rendered
+    assert "final four" not in rendered
+    assert not any(ch.isdigit() for ch in rendered)
+
+
+@pytest.mark.parametrize("value", [0, -3, True, 4.0, "50"])
+def test_rendered_budget_discipline_rejects_invalid_step_limit(value):
+    with pytest.raises(ValueError, match="step_limit"):
+        render_budget_discipline_template(value)
+
+
+def test_generated_mini_config_system_template_carries_run_step_budget(tmp_path):
+    config = _mini_config(tmp_path, mini_agent_kwargs={"step_limit": 50})
+    generated = json.loads(_write_mini_sweagent_model_config(config).read_text())
+    template = generated["agent"]["system_template"]
+    assert template == render_budget_discipline_template(50)
+    assert "You have exactly 50 interaction steps total" in template
+    assert "no later than step 25" in template
+    assert "Reserve steps 47–50" in template
+
+
+@pytest.mark.parametrize("key", ["system_template", "instance_template"])
+def test_step_budgeted_rows_still_cannot_override_shared_prompts(tmp_path, key):
+    config = _mini_config(
+        tmp_path,
+        mini_agent_kwargs={"step_limit": 50, key: "task-specific hint"},
+    )
+    with pytest.raises(ValueError, match="cannot override shared mini-swe prompt"):
+        _write_mini_sweagent_model_config(config)
+
+
+def test_observation_template_reports_step_progress(tmp_path):
+    config = _mini_config(tmp_path, mini_agent_kwargs={"step_limit": 50})
+    generated = json.loads(_write_mini_sweagent_model_config(config).read_text())
+    source = generated["model"]["observation_template"]
+    template = Environment(undefined=StrictUndefined).from_string(source)
+    rendered = template.render(
+        output=SimpleNamespace(exception_info=None, returncode=0, output="ok"),
+        n_model_calls=12,
+        step_limit=50,
+    )
+    assert rendered.endswith("[step 12 of 50]")
+
+    # mini-swe's AgentConfig defaults step_limit to 0 (unlimited); the step
+    # line must vanish rather than render "step 12 of 0".
+    unlimited = template.render(
+        output=SimpleNamespace(exception_info=None, returncode=0, output="ok"),
+        n_model_calls=12,
+        step_limit=0,
+    )
+    assert "[step" not in unlimited
+    assert unlimited.rstrip().endswith("</observation>")
 
 
 @pytest.mark.parametrize("key", ["system_template", "instance_template"])

@@ -26,17 +26,46 @@ _TOKEN_BUDGET_MODEL_CLASS = (
     "llm_module.agentic.mini_swe_token_budget.TokenBudgetLitellmModel"
 )
 
-_MINI_SWE_BUDGET_DISCIPLINE_SYSTEM_TEMPLATE = """\
+_MINI_SWE_BUDGET_DISCIPLINE_CORE = """\
 You are a software engineering agent with a bounded interaction and context budget.
 Use repository evidence only; do not assume task-specific implementation details.
 Work in this order: reproduce the failure with the smallest useful check, locate the
 causal source, edit the source, run focused verification, inspect the diff, and submit.
 Do not repeat an identical or substantially overlapping read/search unless the prior
 result was truncated and the next command narrows the missing region. Prefer targeted
-searches and line ranges over full-file reads. By halfway through the allowed steps,
-select the best-supported causal location and begin the smallest general source change.
-Reserve the final four steps for mutation, verification, diff inspection, and submission.
+searches and line ranges over full-file reads.
 """
+
+
+def render_budget_discipline_template(step_limit: Optional[int] = None) -> str:
+    """Render the shared mini-swe system template with the run's step budget.
+
+    mini-swe-agent 2.2.8 gives the model no step feedback of its own, so
+    schedule discipline is only actionable when the concrete numbers are
+    rendered into the prompt at config-write time. ``step_limit=None`` keeps
+    the budget-agnostic core text and makes no numeric promises.
+    """
+    if step_limit is None:
+        return _MINI_SWE_BUDGET_DISCIPLINE_CORE
+    if (
+        not isinstance(step_limit, int)
+        or isinstance(step_limit, bool)
+        or step_limit <= 0
+    ):
+        raise ValueError("step_limit must be a positive integer or None")
+    act_by = (step_limit + 1) // 2  # ceil(step_limit / 2)
+    reserve_from = max(1, step_limit - 3)
+    reserve_count = step_limit - reserve_from + 1
+    return _MINI_SWE_BUDGET_DISCIPLINE_CORE + (
+        f"You have exactly {step_limit} interaction steps total; each command "
+        "consumes one step and the run stops when they are spent.\n"
+        "Select the best-supported causal location and begin your smallest "
+        f"general source change no later than step {act_by}.\n"
+        f"Reserve steps {reserve_from}–{step_limit} (the final "
+        f"{reserve_count}) for mutation, verification, diff inspection, and "
+        "submission.\n"
+    )
+
 
 # The SWE-bench harness builds/pulls Docker images (a shared base image plus
 # per-instance images) from ghcr.io. Those transfers can fail transiently
@@ -614,11 +643,22 @@ def _write_mini_sweagent_model_config(config: SWEbenchRunConfig) -> Path:
             f"<payload_tail>\n{{{{ payload[-{half}:] }}}}\n</payload_tail>\n"
             "{%- endif -%}\n"
             "</observation>"
+            # Per-turn step feedback. mini-swe-agent 2.2.8 renders the
+            # observation template with the agent's template vars
+            # (minisweagent/agents/default.py: execute_actions passes
+            # get_template_vars(), which merges AgentConfig.model_dump() —
+            # step_limit — and n_model_calls, the number of model calls made
+            # so far, i.e. the step this observation concludes). AgentConfig
+            # defaults step_limit to 0 (unlimited), so guard the line rather
+            # than render "step k of 0".
+            "{% if step_limit %}\n[step {{ n_model_calls }} of "
+            "{{ step_limit }}]{% endif %}"
         )
     if config.mini_environment_class == "docker":
         model_config["environment"] = {
             "run_args": ["--rm", "--label", _agentic_container_label(config)]
         }
+    step_limit = None
     if config.mini_agent_kwargs:
         if not isinstance(config.mini_agent_kwargs, dict):
             raise ValueError("mini_agent_kwargs must be a dictionary")
@@ -640,7 +680,7 @@ def _write_mini_sweagent_model_config(config: SWEbenchRunConfig) -> Path:
             raise ValueError("mini_agent_kwargs.step_limit must be a positive integer")
         model_config["agent"] = dict(config.mini_agent_kwargs)
     model_config.setdefault("agent", {})["system_template"] = (
-        _MINI_SWE_BUDGET_DISCIPLINE_SYSTEM_TEMPLATE
+        render_budget_discipline_template(step_limit)
     )
     config_path = config.output_dir / "mini_sweagent_model_config.yaml"
     config_path.write_text(json.dumps(model_config, indent=2), encoding="utf-8")
