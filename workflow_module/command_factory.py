@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import List, Optional
 
 from workflows.runtime_config import RuntimeConfig
-from workflows.workflow_types import InferenceEngine
 
 from utils.url_helpers import is_remote_server, resolve_deploy_url
 
@@ -38,6 +37,7 @@ from .execution import (
     SpecDecodeOptions,
 )
 from .model_catalog import ModelSpecLike, get_model_spec_provider
+from .server_lifecycle import get_server_lifecycle
 
 # Workflows whose LLM path runs the standard-eval / perf-benchmark child.
 _LLM_BENCH_WORKFLOWS = frozenset({"benchmarks", "release"})
@@ -373,7 +373,7 @@ def _build_spec_decode_options(
 
 
 def _engine_from_runtime_spec_json(path: Optional[str]) -> Optional[str]:
-    """``inference_engine`` (enum value, e.g. ``"forge"``) from the runtime spec JSON."""
+    """``inference_engine`` (adapter value form, e.g. ``"forge"``) from the runtime spec JSON."""
     if not path:
         return None
     try:
@@ -383,10 +383,9 @@ def _engine_from_runtime_spec_json(path: Optional[str]) -> Optional[str]:
             )
     except (OSError, ValueError):
         return None
-    # Serialized as the enum value ("forge"/"media"/"vLLM"); tolerate the name form too.
-    if engine in InferenceEngine.__members__:
-        return InferenceEngine[engine].value
-    return engine or None
+    # Serialized as the enum value ("forge"/"media"/"vLLM"); the adapter
+    # tolerates the name form too.
+    return get_server_lifecycle().normalize_engine_value(engine)
 
 
 def _resolve_auth_token(args: argparse.Namespace) -> str:
@@ -410,7 +409,7 @@ def _resolve_auth_token(args: argparse.Namespace) -> str:
             engine = getattr(spec.inference_engine, "value", spec.inference_engine)
         except Exception:  # pragma: no cover - defensive
             engine = None
-    if engine in (InferenceEngine.FORGE.value, InferenceEngine.MEDIA.value):
+    if get_server_lifecycle().uses_literal_api_key(engine):
         return os.getenv("VLLM_API_KEY") or os.getenv("API_KEY") or "your-secret-key"
     return _mint_jwt_if_secret(getattr(args, "jwt_secret", None))
 
