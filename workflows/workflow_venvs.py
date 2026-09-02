@@ -253,10 +253,13 @@ def setup_agentic_traces(
     """
     from reference_config.agentic_traces.agentic_traces_config import (
         TraceSource,
-        get_agentic_traces_config,
+        get_agentic_traces_config_or_template,
     )
 
-    config = get_agentic_traces_config(model_spec)
+    # The _or_template variant borrows the Kimi K2.7-Code config for
+    # requirements-synthesized (off-catalog) specs, so the InferenceX pin is
+    # available for them too.
+    config = get_agentic_traces_config_or_template(model_spec)
     if config is None:
         logger.error(
             "No agentic-traces config registered for model_id=%s. Add an entry "
