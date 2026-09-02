@@ -532,6 +532,13 @@ def set_runtime_env_vars(model_spec_json):
     2. Nested: model_spec_json["device_model_spec"]["env_vars"] (raw JSON)
 
     Both locations are checked and merged, with top-level taking precedence.
+
+    Values may reference other environment variables in shell form ($VAR or
+    ${VAR}); they are expanded before being set. This lets a spec name a path
+    relative to an installation root that is only known at runtime — chiefly
+    TT_METAL_HOME, which differs between a local server (--tt-metal-home) and
+    a container image. Variables are expanded in spec order, so a later value
+    may reference one set earlier in the same spec.
     """
     env_vars = {}
 
@@ -562,6 +569,21 @@ def set_runtime_env_vars(model_spec_json):
                 f"env var value:={value} is not a string, converting to string: {value}"
             )
             value = str(value)
+
+        if "$" in value:
+            expanded = os.path.expandvars(value)
+            if "$" in expanded:
+                # expandvars leaves unknown names untouched, which would other-
+                # wise reach the consumer as a literal '$VAR' and fail somewhere
+                # far from here -- for a path, as a file that does not exist.
+                logger.warning(
+                    f"env var {key} still contains '$' after expansion: "
+                    f"{expanded!r} (from {value!r}); "
+                    "a referenced variable is not set"
+                )
+            else:
+                logger.info(f"expanded env var {key}: {value} -> {expanded}")
+            value = expanded
 
         original_value = os.getenv(key)
         if original_value is not None:

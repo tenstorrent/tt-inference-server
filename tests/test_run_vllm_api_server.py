@@ -344,3 +344,76 @@ def test_ensure_weights_available_raises_when_unreachable_and_no_weights(
 
     with pytest.raises(RuntimeError):
         run_vllm_api_server_module.ensure_weights_available(_weights_spec())
+
+
+def test_set_runtime_env_vars_expands_variable_references(
+    monkeypatch, run_vllm_api_server_module
+):
+    """A spec may name a path relative to an install root known only at runtime.
+
+    TT_MESH_GRAPH_DESC_PATH is the motivating case: tt-metal lives at
+    --tt-metal-home for a local server and somewhere else entirely in a
+    container image, so the spec cannot hard-code either.
+    """
+    monkeypatch.setenv("TT_METAL_HOME", "/opt/tt-metal")
+    monkeypatch.delenv("TT_MESH_GRAPH_DESC_PATH", raising=False)
+
+    run_vllm_api_server_module.set_runtime_env_vars(
+        {
+            "env_vars": {
+                "TT_MESH_GRAPH_DESC_PATH": (
+                    "${TT_METAL_HOME}/tt_metal/fabric/mesh_graph_descriptors/"
+                    "single_bh_galaxy_torus_xy_graph_descriptor.textproto"
+                )
+            }
+        }
+    )
+
+    assert os.environ["TT_MESH_GRAPH_DESC_PATH"] == (
+        "/opt/tt-metal/tt_metal/fabric/mesh_graph_descriptors/"
+        "single_bh_galaxy_torus_xy_graph_descriptor.textproto"
+    )
+
+
+def test_set_runtime_env_vars_leaves_plain_values_untouched(
+    monkeypatch, run_vllm_api_server_module
+):
+    monkeypatch.delenv("MESH_DEVICE", raising=False)
+
+    run_vllm_api_server_module.set_runtime_env_vars(
+        {"env_vars": {"MESH_DEVICE": "BH-Galaxy"}}
+    )
+
+    assert os.environ["MESH_DEVICE"] == "BH-Galaxy"
+
+
+def test_set_runtime_env_vars_warns_but_sets_when_reference_unresolved(
+    monkeypatch, run_vllm_api_server_module, caplog
+):
+    """An unset reference must be reported here, not surface later as a
+    mysteriously missing file."""
+    monkeypatch.delenv("NOT_SET_ANYWHERE", raising=False)
+    monkeypatch.delenv("SOME_PATH", raising=False)
+
+    with caplog.at_level("WARNING"):
+        run_vllm_api_server_module.set_runtime_env_vars(
+            {"env_vars": {"SOME_PATH": "${NOT_SET_ANYWHERE}/descriptor.textproto"}}
+        )
+
+    assert "NOT_SET_ANYWHERE" in os.environ["SOME_PATH"]
+    assert any("still contains '$'" in r.message for r in caplog.records)
+
+
+def test_set_runtime_env_vars_expands_in_spec_order(
+    monkeypatch, run_vllm_api_server_module
+):
+    """Values are applied as they are read, so a later entry may reference an
+    earlier one."""
+    monkeypatch.delenv("TT_ROOT", raising=False)
+    monkeypatch.delenv("TT_DESC", raising=False)
+
+    run_vllm_api_server_module.set_runtime_env_vars(
+        {"env_vars": {"TT_ROOT": "/opt/tt-metal", "TT_DESC": "${TT_ROOT}/desc.textproto"}}
+    )
+
+    assert os.environ["TT_DESC"] == "/opt/tt-metal/desc.textproto"

@@ -266,7 +266,7 @@ templates:
       default_impl: true
       env_vars:
         # Fixed 4x8 2D torus mesh graph descriptor (RFP D.2). Not a partner choice.
-        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/single_bh_galaxy_torus_xy_graph_descriptor.textproto"
+        TT_MESH_GRAPH_DESC_PATH: "${TT_METAL_HOME}/tt_metal/fabric/mesh_graph_descriptors/single_bh_galaxy_torus_xy_graph_descriptor.textproto"
         # The logical mesh (MESH_DEVICE) is deliberately left to the operator
         # (RFP D.3); omit here to default to BH-Galaxy, or override per submission.
         GEMMA4_PAGE_BLOCK_SIZE: "64"
@@ -367,7 +367,7 @@ templates:
       default_impl: true
       env_vars:
         # Fixed 4x8 2D torus mesh graph descriptor (RFP D.2). Not a partner choice.
-        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/single_bh_galaxy_torus_xy_graph_descriptor.textproto"
+        TT_MESH_GRAPH_DESC_PATH: "${TT_METAL_HOME}/tt_metal/fabric/mesh_graph_descriptors/single_bh_galaxy_torus_xy_graph_descriptor.textproto"
         # Logical mesh (MESH_DEVICE) is the operator's choice (RFP D.3); omit to
         # default to BH-Galaxy, or set per submission.
       override_tt_config:
@@ -429,7 +429,7 @@ templates:
       default_impl: true
       env_vars:
         # Fixed 4x8 2D torus mesh graph descriptor (RFP D.2). Not a partner choice.
-        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/single_bh_galaxy_torus_xy_graph_descriptor.textproto"
+        TT_MESH_GRAPH_DESC_PATH: "${TT_METAL_HOME}/tt_metal/fabric/mesh_graph_descriptors/single_bh_galaxy_torus_xy_graph_descriptor.textproto"
         # Logical mesh (MESH_DEVICE) is the operator's choice (RFP D.3).
       override_tt_config:
         # Pinned for Milestone-0: 1D ring fabric (matches the vLLM plugin's
