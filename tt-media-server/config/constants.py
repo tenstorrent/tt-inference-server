@@ -289,6 +289,17 @@ I2V_MODEL_NAMES = frozenset(
 # reach a worker that loaded ``transformer_ref/``.
 REF2VA_MODEL_RUNNERS = frozenset({ModelRunners.TT_MINIMAX_H3_REF2VA})
 REF2VA_MODEL_NAMES = frozenset({ModelNames.MINIMAX_H3_REF2VA})
+# The MiniMax-H3 tasks that are known NOT to serve Ref2VA. An SP frontend loads
+# no weights, so MODEL is its only signal about the peer's task; only these two
+# names prove the peer would drop a ``references`` payload. Any other value —
+# a Wan model, an unset MODEL, an unrecognised string — says nothing, and the
+# frontend must stay permissive rather than refuse a working deployment.
+NON_REF2VA_H3_MODEL_NAMES = frozenset(
+    {
+        ModelNames.MINIMAX_H3,
+        ModelNames.MINIMAX_H3_FL2VA,
+    }
+)
 
 # Client-facing video API bounds
 MIN_VIDEO_INFERENCE_STEPS = 4

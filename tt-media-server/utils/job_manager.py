@@ -425,6 +425,13 @@ class JobManager:
 
             if job.status == JobStatus.CANCELLING:
                 self._logger.info(f"Job {job.id} was cooperatively cancelled by runner")
+                # The runner can finish the file before the cancel reaches it.
+                # Record the path even though the job is not `completed`: without
+                # it neither delete_job nor the retention sweep can ever remove
+                # the file. get_job_result_path still returns None for a
+                # cancelled job, so /download stays 404.
+                if isinstance(result_path, str):
+                    job.result_path = result_path
                 job.mark_cancelled()
                 self._sync_status_to_db(job)
                 return  # we return here to avoid marking the job as completed

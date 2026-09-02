@@ -2071,3 +2071,92 @@ class TestJobManager:
 
         assert job_manager.get_job_metadata("job-dbfail") is not None
         assert job_manager.db.get_job_by_id("job-dbfail") is not None
+
+    @pytest.mark.asyncio
+    async def test_cooperative_cancel_keeps_the_result_path(
+        self, job_manager, mock_request
+    ):
+        """A runner that finished the mp4 before the cancel landed must not orphan it.
+
+        The cancel path never marks the job `completed`, so the file used to be
+        written while `result_path` stayed None -- and a file with no
+        result_path is unreachable by both delete_job and the retention sweep.
+        """
+        cancel_event = Event()
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as f:
+            file_path = f.name
+            f.write(b"video data")
+
+        try:
+
+            async def cooperative_task(req):
+                # The file is already on disk when the runner notices the cancel.
+                while not cancel_event.is_set():
+                    await asyncio.sleep(0.05)
+                return file_path
+
+            await job_manager.create_job(
+                job_id="job-coop-file",
+                job_type=JobTypes.VIDEO,
+                model="test-model",
+                request=mock_request,
+                task_function=cooperative_task,
+                cancel_event=cancel_event,
+            )
+            await asyncio.sleep(0.2)
+            assert (
+                job_manager.get_job_metadata("job-coop-file")["status"] == "in_progress"
+            )
+
+            job_manager.cancel_job("job-coop-file")
+            await asyncio.sleep(
+                0.5
+            )  # let the task return and the CANCELLING branch run
+
+            assert (
+                job_manager.get_job_metadata("job-coop-file")["status"]
+                == JobStatus.CANCELLED
+            )
+            with job_manager._jobs_lock:
+                assert job_manager._jobs["job-coop-file"].result_path == file_path
+            # Still not downloadable -- only a completed job hands out its path.
+            assert job_manager.get_job_result_path("job-coop-file") is None
+            assert os.path.exists(file_path)
+
+            # ...but now DELETE can actually reclaim the bytes.
+            assert job_manager.delete_job("job-coop-file") is not None
+            assert not os.path.exists(file_path)
+        finally:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+
+    @pytest.mark.asyncio
+    async def test_cooperative_cancel_with_no_file_is_unchanged(
+        self, job_manager, mock_request
+    ):
+        """A runner that produced nothing still leaves result_path None."""
+        cancel_event = Event()
+
+        async def cooperative_task(req):
+            while not cancel_event.is_set():
+                await asyncio.sleep(0.05)
+            return None
+
+        await job_manager.create_job(
+            job_id="job-coop-none",
+            job_type=JobTypes.VIDEO,
+            model="test-model",
+            request=mock_request,
+            task_function=cooperative_task,
+            cancel_event=cancel_event,
+        )
+        await asyncio.sleep(0.2)
+        job_manager.cancel_job("job-coop-none")
+        await asyncio.sleep(0.5)
+
+        assert (
+            job_manager.get_job_metadata("job-coop-none")["status"]
+            == JobStatus.CANCELLED
+        )
+        with job_manager._jobs_lock:
+            assert job_manager._jobs["job-coop-none"].result_path is None

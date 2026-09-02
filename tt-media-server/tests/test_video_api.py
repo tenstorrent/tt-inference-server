@@ -22,11 +22,13 @@ from domain.video_i2v_generate_request import (
 from fastapi import HTTPException
 from open_ai_api.video import (
     _is_i2v_only_deployment,
+    _sp_peer_is_known_non_ref2va,
     cancel_video_job,
     delete_video_job,
     download_video_content,
     get_jobs_metadata,
     get_video_metadata,
+    reject_ref2va_on_wrong_deployment,
     reject_text_to_video_on_i2v_deployment,
     submit_generate_video_i2v_request,
     submit_generate_video_request,
@@ -429,6 +431,157 @@ class TestCancelVideoJob:
 
         assert exc_info.value.status_code == 404
         assert exc_info.value.detail == "Video job not found"
+
+
+class TestRejectRef2vaOnWrongDeployment:
+    """/generations/ref2va must refuse only a deployment PROVEN not to serve it.
+
+    An SP frontend loads no weights, so MODEL is its only evidence about the
+    peer's task -- and MODEL is advisory there. Recognising any known model name
+    would 422 a working ref2va deployment whose MODEL happens to name something
+    else, so only the H3 T2VA/FL2VA names may trigger the refusal.
+    """
+
+    @staticmethod
+    def _refuses():
+        try:
+            reject_ref2va_on_wrong_deployment()
+        except HTTPException as e:
+            return e.status_code
+        return None
+
+    @patch("open_ai_api.video.settings.model_runner", "tt-minimax-h3-ref2va")
+    def test_in_process_ref2va_runner_is_allowed(self):
+        assert self._refuses() is None
+
+    @patch("open_ai_api.video.settings.model_runner", "tt-minimax-h3-t2va")
+    def test_in_process_t2va_runner_is_refused(self):
+        assert self._refuses() == 422
+
+    @patch.dict(os.environ, {"MODEL": "MiniMax-H3-Ref2VA"})
+    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
+    def test_sp_frontend_for_a_ref2va_peer_is_allowed(self):
+        assert self._refuses() is None
+
+    @patch.dict(os.environ, {"MODEL": "MiniMax-H3"})
+    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
+    def test_sp_frontend_naming_t2va_is_refused(self):
+        assert self._refuses() == 422
+
+    @patch.dict(os.environ, {"MODEL": "MiniMax-H3-FL2VA"})
+    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
+    def test_sp_frontend_naming_fl2va_is_refused(self):
+        assert self._refuses() == 422
+
+    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
+    def test_sp_frontend_without_model_stays_permissive(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("MODEL", None)
+            assert self._refuses() is None
+
+    @patch.dict(os.environ, {"MODEL": "Wan2.2-T2V-A14B-Diffusers"})
+    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
+    def test_sp_frontend_naming_an_unrelated_model_stays_permissive(self):
+        """The regression guard: a known name that says nothing about the H3
+        task must not refuse a peer that may well be serving Ref2VA."""
+        assert self._refuses() is None
+
+    @patch.dict(os.environ, {"MODEL": "not-a-model-name"})
+    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
+    def test_sp_frontend_with_an_unknown_model_stays_permissive(self):
+        assert self._refuses() is None
+
+
+class TestSpPeerIsKnownNonRef2va:
+    """The helper must recognise exactly the two H3 non-Ref2VA task names."""
+
+    @patch.dict(os.environ, {"MODEL": "MiniMax-H3"})
+    def test_t2va_name(self):
+        assert _sp_peer_is_known_non_ref2va() is True
+
+    @patch.dict(os.environ, {"MODEL": "MiniMax-H3-FL2VA"})
+    def test_fl2va_name(self):
+        assert _sp_peer_is_known_non_ref2va() is True
+
+    @patch.dict(os.environ, {"MODEL": "MiniMax-H3-Ref2VA"})
+    def test_ref2va_name_is_not_a_non_ref2va_model(self):
+        assert _sp_peer_is_known_non_ref2va() is False
+
+    @patch.dict(os.environ, {"MODEL": "Wan2.2-T2V-A14B-Diffusers"})
+    def test_a_known_but_unrelated_model_is_inconclusive(self):
+        assert _sp_peer_is_known_non_ref2va() is False
+
+    @patch.dict(os.environ, {"MODEL": "garbage"})
+    def test_unknown_string_is_inconclusive(self):
+        assert _sp_peer_is_known_non_ref2va() is False
+
+    def test_unset_model_is_inconclusive(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("MODEL", None)
+            assert _sp_peer_is_known_non_ref2va() is False
+
+
+class TestDownloadTempFileCleanup:
+    """The faststart copy is a per-response artefact and must not accumulate."""
+
+    @pytest.fixture
+    def client(self):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+        from open_ai_api.video import router
+        from resolver.service_resolver import service_resolver
+        from security.api_key_checker import get_api_key
+
+        self.service = MagicMock()
+        app = FastAPI()
+        app.include_router(router, prefix="/v1/videos")
+        app.dependency_overrides[service_resolver] = lambda: self.service
+        app.dependency_overrides[get_api_key] = lambda: "test-key"
+        return TestClient(app)
+
+    def test_remuxed_copy_is_removed_after_the_response(self, client, tmp_path):
+        src = tmp_path / "result.mp4"
+        src.write_bytes(b"original bytes")
+        self.service.get_job_result_path.return_value = str(src)
+        made = []
+
+        def fake_faststart(inp, out):
+            made.append(out)
+            with open(out, "wb") as f:
+                f.write(b"remuxed bytes")
+
+        with patch(
+            "open_ai_api.video.VideoManager.ensure_faststart",
+            side_effect=fake_faststart,
+        ):
+            response = client.get("/v1/videos/generations/job_123/download")
+
+        assert response.status_code == 200
+        assert response.content == b"remuxed bytes"  # the remux was served
+        assert len(made) == 1
+        assert not os.path.exists(made[0]), "faststart temp copy leaked"
+        assert src.exists(), "the job's own result must survive a download"
+
+    def test_temp_file_is_removed_when_the_remux_fails(self, client, tmp_path):
+        src = tmp_path / "result.mp4"
+        src.write_bytes(b"original bytes")
+        self.service.get_job_result_path.return_value = str(src)
+        made = []
+
+        def failing_faststart(inp, out):
+            made.append(out)
+            raise RuntimeError("ffmpeg exploded")
+
+        with patch(
+            "open_ai_api.video.VideoManager.ensure_faststart",
+            side_effect=failing_faststart,
+        ):
+            response = client.get("/v1/videos/generations/job_123/download")
+
+        assert response.status_code == 200
+        assert response.content == b"original bytes"  # fell back to the original
+        assert len(made) == 1
+        assert not os.path.exists(made[0]), "empty temp file leaked on the failure path"
 
 
 class TestDeleteVideoJob:

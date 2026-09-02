@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import base64
+import logging
 import os
 import tempfile
 import time as _time
@@ -14,6 +15,7 @@ from config.constants import (
     JobTypes,
     ModelNames,
     ModelRunners,
+    NON_REF2VA_H3_MODEL_NAMES,
     REF2VA_MODEL_NAMES,
     REF2VA_MODEL_RUNNERS,
 )
@@ -44,6 +46,7 @@ from model_services.base_job_service import BaseJobService
 from pydantic import ValidationError
 from resolver.service_resolver import service_resolver
 from security.api_key_checker import get_api_key
+from starlette.background import BackgroundTask
 from telemetry.telemetry_client import TelemetryEvent
 from utils.decorators import log_execution_time
 from utils.image_manager import ImageManager
@@ -56,6 +59,7 @@ from utils.media_downloader import (
 )
 from utils.video_manager import VideoManager
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -71,6 +75,19 @@ _OPENAPI_IMAGE_PLACEHOLDER = (
 _MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 _UPLOAD_READ_CHUNK = 64 * 1024
 _ALLOWED_IMAGE_CONTENT_TYPES = frozenset({"image/png", "image/jpeg", "image/webp"})
+
+
+def _unlink_quietly(path: str) -> None:
+    """Remove a temporary file, tolerating one that is already gone.
+
+    Runs as a response ``BackgroundTask``, i.e. after the body has been sent, so
+    an exception here would surface on an already-committed response. Every
+    OSError is swallowed; the file is a cache artefact, not the job's result.
+    """
+    try:
+        os.remove(path)
+    except OSError as e:
+        logger.warning(f"Failed to remove faststart temp file {path}: {e}")
 
 
 def _validate_image_content_type(upload: UploadFile) -> None:
@@ -233,16 +250,21 @@ def _is_h3_t2va_deployment() -> bool:
         return False
 
 
-def _sp_peer_model_is_known() -> bool:
-    """SP frontend with a MODEL that names a known model: the peer's task is known."""
+def _sp_peer_is_known_non_ref2va() -> bool:
+    """True only when MODEL names an H3 task that provably is not Ref2VA.
+
+    The SP frontend proxies to a peer whose ``MODEL_RUNNER`` it cannot see, so
+    ``MODEL`` is its only evidence. Recognising *any* model name is not enough:
+    MODEL is advisory on an SP frontend and may name something unrelated to the
+    peer's H3 task, so only the T2VA/FL2VA names are conclusive here.
+    """
     model_env = os.getenv("MODEL")
     if not model_env:
         return False
     try:
-        ModelNames(model_env)
+        return ModelNames(model_env) in NON_REF2VA_H3_MODEL_NAMES
     except ValueError:
         return False
-    return True
 
 
 def reject_text_to_video_on_i2v_deployment() -> None:
@@ -310,10 +332,9 @@ def reject_ref2va_on_wrong_deployment() -> None:
 
     An in-process runner is conclusive. ``sp_runner`` is a SHM proxy that does
     not load weights; the peer ``video_runner`` owns ``MODEL_RUNNER``, so the
-    frontend only knows the peer's task when MODEL is set (the same fallback
-    ``_is_i2v_only_deployment`` uses). Without MODEL it stays permissive; with
-    a MODEL that names a T2VA/FL2VA model the references would be silently
-    dropped by the peer, so refuse.
+    frontend only refuses when MODEL names a T2VA/FL2VA model, i.e. when the
+    peer would silently drop the references. Any other MODEL — unset, a Wan
+    model, an unrecognised string — leaves it permissive.
     """
     if _is_ref2va_deployment():
         return
@@ -321,7 +342,7 @@ def reject_ref2va_on_wrong_deployment() -> None:
         runner = ModelRunners(settings.model_runner)
     except ValueError:
         runner = None
-    if runner is ModelRunners.SP_RUNNER and not _sp_peer_model_is_known():
+    if runner is ModelRunners.SP_RUNNER and not _sp_peer_is_known_non_ref2va():
         return
     raise HTTPException(
         status_code=422,
@@ -712,14 +733,20 @@ def download_video_content(
     ):
         raise HTTPException(status_code=404, detail="Video content not available")
 
-    # Create a faststart temp file before serving
+    # Create a faststart temp file before serving. It exists only to serve this
+    # one response, so it is unlinked in a BackgroundTask rather than a finally:
+    # FileResponse streams the body *after* the handler returns.
     with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
         faststart_path = tmp.name
     try:
         VideoManager.ensure_faststart(file_path, faststart_path)
         serve_path = faststart_path
+        cleanup = BackgroundTask(_unlink_quietly, faststart_path)
     except Exception:
+        # Serving the original: the empty temp file has no further use.
         serve_path = file_path
+        cleanup = None
+        _unlink_quietly(faststart_path)
 
     return FileResponse(
         serve_path,
@@ -728,6 +755,7 @@ def download_video_content(
         headers={
             "Content-Disposition": f"attachment; filename={os.path.basename(file_path)}"
         },
+        background=cleanup,
     )
 
 
