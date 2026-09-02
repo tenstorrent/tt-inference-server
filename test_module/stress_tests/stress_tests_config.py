@@ -2,7 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
-from workflows.model_spec import MODEL_SPECS
+from workflow_module.model_catalog import get_model_spec_provider
 from workflows.workflow_types import DeviceTypes
 
 # Removed get_model_id - using MODEL_SPECS directly
@@ -122,38 +122,25 @@ class StressTestParamSpace:
 
     def _resolve_model_config(self):
         """Resolve the appropriate model configuration."""
-        # Find matching model spec in MODEL_SPECS
-        if True:  # Simplified logic - search through all specs
-            # For backward compatibility, try to find a config with default_impl=True
-            self.model_spec = None
-            for model_id, config in MODEL_SPECS.items():
-                if (
-                    config.model_name == self.model_name
-                    and config.device_type.name.lower() == self.device.lower()
-                    and config.device_model_spec.default_impl
-                ):
-                    self.model_id = model_id
-                    self.model_spec = config
-                    break
-
-            if not self.model_spec:
-                # Fall back to first matching model/device combination
-                for model_id, config in MODEL_SPECS.items():
-                    if (
-                        config.model_name == self.model_name
-                        and config.device_type.name.lower() == self.device.lower()
-                    ):
-                        self.model_id = model_id
-                        self.model_spec = config
-                        logger.warning(
-                            f"Using non-default implementation for {model_id}"
-                        )
-                        break
-
-            if not self.model_spec:
-                raise ValueError(
-                    f"No model configuration found for model: {self.model_name}, device: {self.device}"
-                )
+        # Prefer the default_impl spec; when none exists, stress tests
+        # historically accept the first matching impl — that policy lives
+        # here at the caller, not inside the provider.
+        provider = get_model_spec_provider()
+        try:
+            self.model_spec = provider.resolve(self.model_name, self.device)
+        except ValueError:
+            candidates = provider.resolve_candidates(self.model_name, self.device)
+            if not candidates:
+                raise
+            logger.warning(
+                "No default impl for model=%s device=%s; using non-default "
+                "implementation %s",
+                self.model_name,
+                self.device,
+                candidates[0].model_id,
+            )
+            self.model_spec = candidates[0]
+        self.model_id = self.model_spec.model_id
 
     def _extract_parameter_boundaries(self):
         """Extract parameter boundaries from model specification."""
