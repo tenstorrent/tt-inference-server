@@ -466,6 +466,7 @@ templates:
         MESH_DEVICE: "T3K"
         # Ring is a Blackhole >=8-device default only; WH must stay Linear
         # (models/demos/gemma4/tt/ccl.py default_ccl_topology).
+        GEMMA4_GEN_PREFILL_CHUNK: "4096"  # measured on T3K 12B @64k metal A/B: warm TTFT 19.8s (4096) vs 23.6s (2048), cold 35.9 vs 56.4 - matches BH direction; an earlier server-128k reading suggesting 2048 was a cold-capture artifact. NOTE: MAX_PREFILL_CHUNK_SIZE is a decoy knob for gemma4 (read by tt_transformers only); this env is the real one.
         GEMMA4_CCL_TOPOLOGY: "linear"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
         GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
