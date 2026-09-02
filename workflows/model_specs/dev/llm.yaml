@@ -270,8 +270,35 @@ templates:
         # The logical mesh (MESH_DEVICE) is deliberately left to the operator
         # (RFP D.3); omit here to default to BH-Galaxy, or override per submission.
         GEMMA4_PAGE_BLOCK_SIZE: "64"
-        # Size the hybrid-off all-user KV pool to the full context on Galaxy DRAM.
-        GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
+        # Hybrid-off all-user KV pool. Every layer allocates a full-length
+        # buffer here, and the buffer is replicated to every device
+        # (ReplicateTensorToMesh), so the pool is bounded by ONE chip's DRAM
+        # (32 GB on a P150), not by the mesh's aggregate.
+        #
+        # Per token, per device, over the 60 layers at TP=4:
+        #   50 sliding x 4 kv x 256 hd x 2 B x 2 (K+V) = 204,800 B
+        #   10 full    x 1 kv x 512 hd x 2 B x 2 (K+V) =  20,480 B
+        #                                        total = 225,280 B
+        #
+        # 65,536 tokens is 14.8 GiB/device, against ~13 GiB of TP-sharded
+        # weights and the 200 MB trace region.
+        #
+        # This read 262144 while the plugin was allocating 1 KV head per
+        # device instead of 4 (16 // 32 devices rather than 16 // TP 4). At
+        # 71,680 B/token that fit in 18.8 GiB and masked the sizing; with the
+        # head count corrected the same value asks for 59 GiB and cannot be
+        # allocated. 262144 was never a Galaxy measurement — the comment it
+        # replaces claimed the full context fits, and at the true head count
+        # it does not.
+        #
+        # [TBD — Performance: raise to the measured ceiling. This is a
+        # bring-up value chosen to load, not a tuned one, and it caps servable
+        # context well below the graded sweep's top input lengths. Appendix
+        # B.1's loaded corner needs 32 x 262,016 tokens, which is three orders
+        # of magnitude beyond one chip's DRAM at this layout — closing that
+        # gap needs data parallelism across the 8 mesh rows, which are today
+        # replicas. Tracked separately.]
+        GEMMA4_MAX_TOKENS_ALL_USERS: "65536"
       override_tt_config:
         # Must agree with TT_MESH_GRAPH_DESC_PATH above, which declares a 4x8 2D
         # torus: 2D routing with deadlock avoidance on both wrapped axes. The
@@ -288,6 +315,30 @@ templates:
         # sampling only sees device 0's vocab shard on a TP mesh).
         sample_on_device_mode: decode_only
       vllm_args:
+        # Served context, which must fit the device KV pool above. vLLM refuses
+        # to start unless one max-length request fits
+        # (_check_enough_kv_cache_memory): the bound is
+        # num_blocks * block_size = 1056 * 64 = 67,584 tokens at
+        # GEMMA4_MAX_TOKENS_ALL_USERS 65536.
+        #
+        # Without this, max_model_len defaults to max_context (262144) and the
+        # engine exits during startup with "estimated maximum model length is
+        # 67584". Note vLLM's own figure in that message (220 GiB) is computed
+        # at tensor_parallel_size=1, i.e. the UNSHARDED head counts; the device
+        # holds a quarter of that at TP=4. The ratio is why the number looks
+        # unrecognisable next to the pool arithmetic above.
+        #
+        # max_context stays at the Appendix B.0 value: 262144 is the target
+        # this system is meant to reach, and overriding it here would hide the
+        # shortfall rather than record it.
+        #
+        # [TBD — Performance: this caps served context at 64K against a graded
+        # sweep whose top input lengths are 131,072 and 262,016, so four of the
+        # eighteen points cannot be served at any concurrency, and the loaded
+        # corner exceeds the pool from 4096 upward (32 x 4096 > 65,536). Not
+        # closable by tuning: see the pool comment above.]
+        max_model_len: "65536"
+        max_num_batched_tokens: "65536"
         enable-auto-tool-choice: true
         tool-call-parser: gemma4
         default-chat-template-kwargs: '{"enable_thinking": true}'
