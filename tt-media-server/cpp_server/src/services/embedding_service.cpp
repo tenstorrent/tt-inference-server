@@ -240,11 +240,18 @@ struct WorkerProcess {
 };
 
 struct EmbeddingService::Impl {
+  // Carries the completion callback instead of a promise: nothing blocks
+  // waiting for the response, the dispatch thread that reads the worker pipe
+  // invokes onComplete directly. Every PendingRequest popped from the queue
+  // MUST have onComplete invoked exactly once on every path — a dropped
+  // callback leaves the HTTP client hanging until socket timeout (a dropped
+  // promise used to surface as broken_promise instead).
   struct PendingRequest {
     domain::EmbeddingRequest request;
-    std::promise<domain::EmbeddingResponse> promise;
-    explicit PendingRequest(domain::EmbeddingRequest req)
-        : request(std::move(req)) {}
+    std::function<void(domain::EmbeddingResponse&&)> onComplete;
+    PendingRequest(domain::EmbeddingRequest req,
+                   std::function<void(domain::EmbeddingResponse&&)> complete)
+        : request(std::move(req)), onComplete(std::move(complete)) {}
   };
 
   std::vector<std::unique_ptr<WorkerProcess>> workers;
@@ -612,12 +619,33 @@ struct EmbeddingService::Impl {
         w->dispatchThread->join();
       w->terminate();
     }
+    // All consumers are gone; anything still queued would leave its HTTP
+    // client hanging forever, so answer every request with an error now.
+    drainQueue("Server shutting down");
     {
       std::lock_guard lock(workersMutex);
       workers.clear();
     }
     isReady = false;
     TT_LOG_INFO("[EmbeddingService] Stopped");
+  }
+
+  /** Fail every request still waiting in the queue. Callbacks are invoked
+   * outside the queue lock: they build HTTP responses and must not serialize
+   * against submitters. */
+  void drainQueue(const std::string& error) {
+    std::queue<std::shared_ptr<PendingRequest>> drained;
+    {
+      std::lock_guard lock(queueMutex);
+      std::swap(drained, requestQueue);
+    }
+    while (!drained.empty()) {
+      auto& p = drained.front();
+      domain::EmbeddingResponse err(p->request.task_id);
+      err.error = error;
+      p->onComplete(std::move(err));
+      drained.pop();
+    }
   }
 
   void workerDispatchLoop(size_t workerIdx) {
@@ -688,6 +716,22 @@ struct EmbeddingService::Impl {
     TT_LOG_INFO(
         "[EmbeddingService] Worker {} dispatch thread exiting (isReady={})",
         workerIdx, worker->isReady.load());
+
+    // If this was the last ready worker, the queue has no consumer left and
+    // queued callbacks would never fire. During shutdown some workers are
+    // still marked ready (stop() only clears `running`), so this drain is
+    // skipped there and stop()'s own drain handles the remainder.
+    bool anyReady = false;
+    {
+      std::lock_guard lock(workersMutex);
+      for (const auto& w : workers) {
+        if (w && w->isReady.load()) {
+          anyReady = true;
+          break;
+        }
+      }
+    }
+    if (!anyReady) drainQueue("No workers available");
   }
 
   void dispatchBatchToWorker(
@@ -720,11 +764,11 @@ struct EmbeddingService::Impl {
     for (auto& pending : batch) {
       auto it = responseMap.find(pending->request.task_id);
       if (it != responseMap.end()) {
-        pending->promise.set_value(std::move(it->second));
+        pending->onComplete(std::move(it->second));
       } else {
         domain::EmbeddingResponse err(pending->request.task_id);
         err.error = "Response not found for task_id";
-        pending->promise.set_value(std::move(err));
+        pending->onComplete(std::move(err));
       }
     }
   }
@@ -734,22 +778,20 @@ struct EmbeddingService::Impl {
     for (auto& p : batch) {
       domain::EmbeddingResponse err(p->request.task_id);
       err.error = error;
-      p->promise.set_value(std::move(err));
+      p->onComplete(std::move(err));
     }
   }
 
-  std::future<domain::EmbeddingResponse> submitRequest(
-      domain::EmbeddingRequest request) {
-    auto pending = std::make_shared<PendingRequest>(std::move(request));
-    auto future = pending->promise.get_future();
-
+  void submitRequestAsync(
+      domain::EmbeddingRequest request,
+      std::function<void(domain::EmbeddingResponse&&)> onComplete) {
+    auto pending = std::make_shared<PendingRequest>(std::move(request),
+                                                    std::move(onComplete));
     {
       std::lock_guard lock(queueMutex);
       requestQueue.push(pending);
     }
     queueCv.notify_all();
-
-    return future;
   }
 };
 
@@ -774,9 +816,27 @@ std::vector<tt::worker::WorkerInfo> EmbeddingService::getWorkerInfo() const {
   return impl_->workerInfoSnapshot();
 }
 
+void EmbeddingService::submitRequestAsync(
+    domain::EmbeddingRequest request,
+    std::function<void(domain::EmbeddingResponse&&)> onComplete) {
+  // Capacity check runs synchronously on the caller's (IO) thread so
+  // back-pressure fails fast: QueueFullException propagates to the caller
+  // and is never delivered through onComplete.
+  preProcess(request);
+  impl_->submitRequestAsync(std::move(request), std::move(onComplete));
+}
+
 domain::EmbeddingResponse EmbeddingService::produceResponse(
     domain::EmbeddingRequest request) {
-  auto future = impl_->submitRequest(std::move(request));
+  // Compatibility adapter over the async path for BaseSyncService callers;
+  // the HTTP controller uses submitRequestAsync directly. The only allowed
+  // promise/future in the embedding path lives here.
+  std::promise<domain::EmbeddingResponse> promise;
+  auto future = promise.get_future();
+  impl_->submitRequestAsync(std::move(request),
+                            [&promise](domain::EmbeddingResponse&& resp) {
+                              promise.set_value(std::move(resp));
+                            });
   return future.get();
 }
 
