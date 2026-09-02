@@ -489,7 +489,8 @@ def test_legacy_profile_without_observation_cap_keeps_builtin_semantics(tmp_path
 def test_actual_litellm_dispatch_receives_original_history_and_kwargs(
     tmp_path, monkeypatch
 ):
-    from minisweagent.models.litellm_model import LitellmModel
+    litellm_model = pytest.importorskip("minisweagent.models.litellm_model")
+    LitellmModel = litellm_model.LitellmModel
 
     from llm_module.agentic.mini_swe_token_budget import TokenBudgetLitellmModel
 

@@ -188,7 +188,12 @@ def test_exact_evidence_renders_inactive_promotion(shield_checkout):
     assert rendered["implementation"]["impl"] == "quetzal"
     assert set(rendered["implementation"]["ci"]) == {"nightly", "release"}
     device = rendered["catalogue"]["templates"][0]["device_model_specs"][0]
-    assert device["env_vars"]["QZ_LM_HEAD_UPLOAD_CHUNK_COLS"] == "8192"
+    env = device["env_vars"]
+    assert env["QUETZAL_GENERATOR_SOURCE_REVISION"] == ARTIFACT_SOURCE
+    assert env["QUETZAL_REQUIRED_TT_METAL_COMMIT"] == TT_METAL
+    assert env["QUETZAL_TT_METAL_PATCHSET_STATUS"] == "applied"
+    assert env["QUETZAL_REQUIRED_PREFILL_BUCKETS"] == "4096"
+    assert env["QZ_LM_HEAD_UPLOAD_CHUNK_COLS"] == "8192"
     assert device["vllm_args"] == {
         "block_size": 64,
         "max_model_len": 4096,
@@ -327,17 +332,19 @@ def test_blocker_uses_current_runtime_and_preserves_banked_local_gates():
         ).read_text()
     )
     assert QUETZAL_SOURCE == "76a15d4cdd0c2b400ef9b89499a334a6b748e56b"
-    assert blocker["exact_serving_runtime_source"] == QUETZAL_SOURCE
+    assert blocker["runtime_source"] == QUETZAL_SOURCE
+    assert blocker["generator_source"] == ARTIFACT_SOURCE
     banked = blocker["banked_local_evidence"]
     assert banked["pcc"] >= 0.99
-    assert banked["capacity_endpoint"] == "ISL4095/OSL1 HTTP 200"
-    assert banked["semantic_endpoint"] == "Gemma is ready."
-    assert banked["clean_lifecycle"] is True
-    assert banked["official_ttis_or_models_ci"] is False
-    candidate = blocker["requested_publication_candidate"]
-    assert candidate["package_id"].startswith("sha256-v1-")
-    assert candidate["qualification_manifest_sha256"] in candidate["package_id"]
+    assert banked["capacity_endpoint"] == "ISL4095/OSL1"
+    assert banked["bounded_swe_selection_leaked"] is True
+    assert banked["bounded_swe_qualification"] is False
+    assert banked["bounded_swe_transferable_to_catalog_runtime"] is False
+    assert banked["models_ci"] is False
+    candidate = blocker["exact_staged_package"]
+    assert candidate["package_id"].startswith("sha256-")
+    assert candidate["bundle_manifest_sha256"]
+    assert candidate["administrator_owned"] is False
     missing = "\n".join(blocker["missing_fields"])
-    assert "fresh exact-package PCC" not in missing
-    assert "publication-time proof" in missing
+    assert "administrator-owned immutable publication" in missing
     assert "On-dispatch" in missing

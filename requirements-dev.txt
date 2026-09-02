@@ -7,4 +7,5 @@ requests
 imageio
 imageio-ffmpeg
 jsonschema
+jinja2
 ruamel.yaml==0.18.6

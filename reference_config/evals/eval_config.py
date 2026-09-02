@@ -227,6 +227,10 @@ class EvalTask:
     # reaches scoring; the eval launcher gates lm-eval via
     # LM_EVAL_PRESERVE_REASONING when this is True.
     capture_reasoning: bool = False
+    # Optional request-scoped tokenizer controls for chat-completion evals.
+    # The lm-eval adapter receives these through the scoped TTIS wrapper so
+    # nested JSON is preserved as an object rather than flattened CLI text.
+    chat_template_kwargs: Dict[str, bool] = field(default_factory=dict)
     gen_kwargs: Dict[str, str] = field(default_factory=lambda: {"stream": "False"})
     # Keep the harness RNG seed (--seed) while allowing model-owned samplers to
     # opt out of receiving it as an OpenAI request sampling parameter.
@@ -1550,6 +1554,7 @@ _eval_config_list = [
                     "do_sample": "false",
                     "stream": "false",
                 },
+                chat_template_kwargs={"enable_thinking": False},
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 10,
                     EvalLimitMode.SMOKE_TEST: 1,

@@ -8,7 +8,10 @@ import pytest
 
 from scripts.release.plan_gpt120_f0b_quetzal_enrollment import (
     AUXILIARY_TREE_SHA256,
+    BUNDLE_MANIFEST_SHA256,
     CHECKPOINT,
+    COMPILED_TREE_SHA256,
+    COMPILED_WEIGHTS_TREE_SHA256,
     COMPILER_COMMIT,
     CONTAINER_AUXILIARY_PARENT,
     CONTAINER_PACKAGE_PARENT,
@@ -23,6 +26,7 @@ from scripts.release.plan_gpt120_f0b_quetzal_enrollment import (
     LOCAL_ON_DISPATCH_PROFILE,
     LOCAL_TTFT_MS_RANGE,
     MODEL_ID,
+    PACKAGE_ID,
     QUETZAL_COMMIT,
     RUNNER_LABEL,
     SCHEMA,
@@ -42,13 +46,13 @@ from workflows import quetzal_topology_admission
 
 def publication_response():
     generation = "tt-ci-models-private-generation-314159"
-    core_host = "/mnt/models/quetzal/immutable/v1/gpt120-f0b-core"
-    aux_host = "/mnt/models/quetzal/immutable/v1/gpt120-f0b-aux"
-    package_id = "sha256-v2-" + "a" * 64
+    package_id = PACKAGE_ID
+    core_host = f"/mnt/models/quetzal/immutable/v1/{package_id}"
+    aux_host = f"/mnt/models/quetzal/immutable/v1/sha256-{AUXILIARY_TREE_SHA256}"
     core_container = f"{CONTAINER_PACKAGE_PARENT}/{package_id}"
     aux_container = (
         f"{CONTAINER_AUXILIARY_PARENT}/"
-        "openai_gpt-oss-120b-streamed-cache/gpt120-f0b-aux"
+        f"openai_gpt-oss-120b-streamed-cache/sha256-{AUXILIARY_TREE_SHA256}"
     )
     return {
         "schema": SCHEMA,
@@ -71,7 +75,7 @@ def publication_response():
         },
         "publication": {
             "package_id": package_id,
-            "bundle_manifest_sha256": "b" * 64,
+            "bundle_manifest_sha256": BUNDLE_MANIFEST_SHA256,
             "immutable_generation_id": generation,
             "attestation_path": "/mnt/models/quetzal/immutable/v1/attestations/gpt120-f0b.json",
             "attestation_sha256": "c" * 64,
@@ -83,7 +87,7 @@ def publication_response():
             "generated_model_tree": {
                 "host_root": core_host,
                 "container_root": core_container,
-                "tree_sha256": "d" * 64,
+                "tree_sha256": COMPILED_TREE_SHA256,
                 "immutable_generation_id": generation,
                 "administrator_owned": True,
                 "read_only": True,
@@ -136,7 +140,8 @@ def publication_response():
         "artifacts": {
             "batch_size": 1,
             "max_context": 8192,
-            "prefill_buckets": [128, 1024],
+            "prefill_buckets": [8192],
+            "compiled_weights_tree_sha256": COMPILED_WEIGHTS_TREE_SHA256,
             **EXPECTED_ARTIFACTS,
             "relative_paths": EXPECTED_RELATIVE_PATHS,
         },
@@ -177,6 +182,8 @@ def test_exact_response_renders_catalogue_ci_and_ring2_contract():
     assert env["VLLM_PLUGINS"] == "quetzal_model_registry,tt"
     assert env["TTQ_ROW_ALL_REDUCE_TOPOLOGY"] == "Ring"
     assert env["TTQ_TUNED_ROW_ALL_REDUCE_LINKS"] == "2"
+    assert env["QUETZAL_REQUIRED_TT_METAL_COMMIT"] == TT_METAL_COMMIT
+    assert env["QUETZAL_TT_METAL_PATCHSET_STATUS"] == "applied"
     package_root = f"{CONTAINER_PACKAGE_PARENT}/{response['publication']['package_id']}"
     assert env["QUETZAL_PACKAGE_ROOT"] == package_root
     assert env["QZ_MODELS_ROOT"] == package_root
@@ -190,19 +197,19 @@ def test_exact_response_renders_catalogue_ci_and_ring2_contract():
     ):
         assert env[name].startswith(package_root + "/")
     assert env["QUETZAL_DECODE_GENERATED_PY"].endswith(
-        "/compiled/openai_gpt-oss-120b-s1024/full/decode/generated.py"
+        "/compiled/openai_gpt-oss-120b-s8192/full/decode/generated.py"
     )
     assert env["QUETZAL_WEIGHTS"].endswith(
-        "/compiled_weights/openai_gpt-oss-120b-s1024/full/weights.pt"
+        "/compiled_weights/openai_gpt-oss-120b-s8192/full/weights.pt"
     )
     assert env["QUETZAL_REQUIRED_AUXILIARY_NAMES"] == (
         "openai_gpt-oss-120b-streamed-cache"
     )
-    assert env["QUETZAL_REQUIRED_PREFILL_BUCKETS"] == "128,1024"
+    assert env["QUETZAL_REQUIRED_PREFILL_BUCKETS"] == "8192"
     assert env["QUETZAL_AUXILIARY_ROOTS_JSON"] == (
         '{"openai_gpt-oss-120b-streamed-cache":'
         '"/home/container_app_user/quetzal/auxiliary/'
-        'openai_gpt-oss-120b-streamed-cache/gpt120-f0b-aux"}'
+        f'openai_gpt-oss-120b-streamed-cache/sha256-{AUXILIARY_TREE_SHA256}"}}'
     )
     assert env["TT_MESH_GRAPH_DESC_PATH"] == DESCRIPTOR_CONTAINER_PATH
 
@@ -318,6 +325,9 @@ def test_reviewed_descendant_sources_do_not_self_block_enrollment():
         ("topology.collective_topology_selected_not_measured", "Linear"),
         ("topology.collective_links_selected_not_measured", 1),
         ("publication.streamed_cache.tree_sha256", "0" * 64),
+        ("publication.package_id", "sha256-v2-" + "0" * 64),
+        ("publication.bundle_manifest_sha256", "0" * 64),
+        ("publication.generated_model_tree.tree_sha256", "0" * 64),
         (
             "publication.generated_model_tree.container_root",
             "/home/container_app_user/cache_root/quetzal/immutable/v1/gpt120-f0b-core",
@@ -330,9 +340,10 @@ def test_reviewed_descendant_sources_do_not_self_block_enrollment():
         ("publication.runtime_principal_can_mutate", True),
         ("publication.full_streaming_verification.status", "not_run"),
         ("artifacts.max_context", 1024),
-        ("artifacts.decode_generated_sha256", "0" * 64),
+        ("artifacts.compiled_weights_tree_sha256", "0" * 64),
+        ("artifacts.decode_emit_sha256", "0" * 64),
         (
-            "artifacts.relative_paths.prefill_s1024_generated",
+            "artifacts.relative_paths.prefill_generated",
             "compiled/gpt120/full/prefill/generated.py",
         ),
     ],

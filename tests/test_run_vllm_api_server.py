@@ -834,11 +834,14 @@ def test_quetzal_runtime_contract_labels_mutable_package_state_user_sealed(
         package_root, "Qwen/Qwen3.6-27B"
     )
     assert "[user_sealed]" in caplog.text
+    assert str(package_root) not in caplog.text
 
 
 def test_quetzal_behavioral_admission_allows_only_mutable_backing_modes(
     monkeypatch, tmp_path, run_vllm_api_server_module
 ):
+    monkeypatch.delenv("CI", raising=False)
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
     package_id = "sha256-" + "1" * 64 + "-" + "2" * 64
     package_root = _materialized_quetzal_contract(
         monkeypatch,
@@ -864,6 +867,8 @@ def test_quetzal_behavioral_admission_allows_only_mutable_backing_modes(
 def test_behavioral_mesh_override_is_explicit_local_only(
     monkeypatch, tmp_path, run_vllm_api_server_module
 ):
+    monkeypatch.delenv("CI", raising=False)
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
     cache = tmp_path / "cache"
     monkeypatch.setattr(
         run_vllm_api_server_module,
@@ -872,6 +877,11 @@ def test_behavioral_mesh_override_is_explicit_local_only(
     )
     monkeypatch.setenv("TTIS_QUETZAL_BEHAVIORAL_PACKAGE_ADMISSION", "1")
     monkeypatch.setenv("TTIS_QUETZAL_BEHAVIORAL_MESH_DEVICE", "P150x4")
+    # set_cache_paths intentionally writes these process-wide runtime values.
+    # Register both with monkeypatch first so this test cannot leak its cache
+    # into later PromptClient tests when the full suite runs in one process.
+    monkeypatch.setenv("MESH_DEVICE", "test-original")
+    monkeypatch.setenv("TT_CACHE_PATH", "test-original")
 
     run_vllm_api_server_module.set_cache_paths({}, "P300X2")
 
@@ -886,6 +896,8 @@ def test_behavioral_mesh_override_is_explicit_local_only(
 def test_quetzal_behavioral_investigating_candidate_uses_exact_catalog_runtime_pin(
     monkeypatch, tmp_path, run_vllm_api_server_module
 ):
+    monkeypatch.delenv("CI", raising=False)
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
     package_id = "sha256-" + "1" * 64 + "-" + "2" * 64
     package_root = _materialized_quetzal_contract(
         monkeypatch,
@@ -928,6 +940,8 @@ def test_quetzal_behavioral_investigating_candidate_uses_exact_catalog_runtime_p
 def test_quetzal_behavioral_admission_fails_closed_in_ci_or_on_invalid_flag(
     monkeypatch, tmp_path, run_vllm_api_server_module, env, value, match
 ):
+    monkeypatch.delenv("CI", raising=False)
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
     package_id = "sha256-" + "1" * 64 + "-" + "2" * 64
     package_root = _materialized_quetzal_contract(
         monkeypatch,
@@ -950,6 +964,8 @@ def test_quetzal_behavioral_admission_fails_closed_in_ci_or_on_invalid_flag(
 def test_quetzal_behavioral_admission_requires_exact_read_only_mountpoint(
     monkeypatch, tmp_path, run_vllm_api_server_module
 ):
+    monkeypatch.delenv("CI", raising=False)
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
     package_id = "sha256-" + "1" * 64 + "-" + "2" * 64
     package_root = _materialized_quetzal_contract(
         monkeypatch,

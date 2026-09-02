@@ -360,6 +360,22 @@ def _run_eval_task(ctx: MediaContext, task, auth_token: str) -> int:
         deploy_url=ctx.server_host,
     )
     env = dict(os.environ)
+    if not getattr(task, "propagate_seed_to_gen_kwargs", True):
+        env["TTIS_LM_EVAL_DROP_SERVER_SEED"] = "1"
+    chat_template_kwargs = getattr(task, "chat_template_kwargs", None)
+    if chat_template_kwargs:
+        if not isinstance(chat_template_kwargs, dict) or any(
+            not isinstance(key, str) or not key or not isinstance(value, bool)
+            for key, value in chat_template_kwargs.items()
+        ):
+            raise ValueError(
+                "chat_template_kwargs must map non-empty string keys to booleans"
+            )
+        env["TTIS_LM_EVAL_CHAT_TEMPLATE_KWARGS_JSON"] = json.dumps(
+            chat_template_kwargs,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
     if auth_token:
         # lm-eval local-completions reads the bearer token from OPENAI_API_KEY.
         env["OPENAI_API_KEY"] = auth_token
@@ -402,7 +418,10 @@ def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
 
     if ctx.remote_server:
         server = RemoteOpenAIController(
-            base_url=ctx.server_url,
+            # ``server_url`` may omit a port while ``service_port`` carries it
+            # separately. MediaContext is the canonical join point; probing
+            # the raw URL here silently targets port 80/443 instead.
+            base_url=ctx.base_url,
             auth_token=auth_token,
         )
     else:

@@ -421,8 +421,8 @@ def _validate_quetzal_models_root(runtime_config, model_spec) -> Path | None:
             logger.warning(
                 "Quetzal publication provenance warning [user_sealed]: package "
                 "root or qualification manifest remains writable; functional "
-                "and quality qualification will continue: %s",
-                writable,
+                "and quality qualification will continue (mutable_paths=%d)",
+                len(writable),
             )
     return root
 

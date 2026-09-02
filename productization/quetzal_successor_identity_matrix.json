@@ -1,0 +1,76 @@
+{
+  "schema": "ttis.quetzal.successor-identity-matrix/v1",
+  "recorded_at": "2026-09-01",
+  "claim_boundary": "Executable identities are bound to banked local evidence. Neither row is Models-CI-certified, and inactive rows must not appear in models-ci-config.json until the exact package is published on the selected runner.",
+  "models": {
+    "google/gemma-4-31B-it": {
+      "models_ci_key": "gemma-4-31B-it",
+      "checkpoint_revision": "842da3794eaa0b77d5f08bae87a17459d91ff475",
+      "runtime_source_revision": "76a15d4cdd0c2b400ef9b89499a334a6b748e56b",
+      "generator_source_revision": "cfaea6c1b610afb8fed34c542e9a6df944fee51d",
+      "tt_metal_revision": "b534549300fe2af11e6ee828675294bc0e359555",
+      "tt_metal_patchset_sha256": "22fb0bd2523b8a5c63fa20c3c8a1586dc9ead5150449d0eb02231fa8173a7edd",
+      "package_id": "sha256-8373c1467294ed11e00ac791392eaa80c9cd1a1366f15200469bbdb4bc410522-259ee130f4f1e259980f2dde67415f8692f4c16086f34edc1cdb98c496b68edc",
+      "bundle_manifest_sha256": "e3ecc5557a84955bf0b95615e4b8e9fa83bcc431c9755e969ba5c441fc8d94cf",
+      "artifact_slug": "google_gemma-4-31B-it",
+      "prefill_buckets": "4096",
+      "max_context": 4096,
+      "max_concurrency": 1,
+      "local_evidence": {
+        "pcc": 0.9942054152488708,
+        "generated_endpoint_job": 70548,
+        "gsm8k_job": 70580,
+        "gsm8k_flexible_exact": 0.95,
+        "bounded_swe_job": 71437,
+        "bounded_swe_harness_resolved": 1,
+        "bounded_swe_selection_policy": "gold_patch_ranked_task_selection",
+        "bounded_swe_selection_leaked": true,
+        "bounded_swe_qualification": false,
+        "bounded_swe_evidence_scope": "harness_and_endpoint_execution_only_not_model_quality",
+        "bounded_swe_runtime_source_revision": "8ddb62c06bcd2c8fe1fbd3daad83424011c260cf",
+        "bounded_swe_transferable_to_catalog_runtime": false
+      },
+      "publication": {
+        "administrator_owned": false,
+        "runner_visible_host_root": null
+      },
+      "models_ci_enrollment": {
+        "active": false,
+        "blocker": "Publish or administratively adopt this exact package ID on the selected Ring/2 QB runner, then provide its immutable host root and digest-pinned image."
+      }
+    },
+    "openai/gpt-oss-120b": {
+      "models_ci_key": "gpt-oss-120b",
+      "checkpoint_revision": "b5c939de8f754692c1647ca79fbf85e8c1e70f8a",
+      "runtime_source_revision": "76a15d4cdd0c2b400ef9b89499a334a6b748e56b",
+      "generator_source_revision": "3a3873fefd4317d885c0602d3d7648db9e89f8e3",
+      "tt_metal_revision": "b534549300fe2af11e6ee828675294bc0e359555",
+      "tt_metal_patchset_sha256": "22fb0bd2523b8a5c63fa20c3c8a1586dc9ead5150449d0eb02231fa8173a7edd",
+      "package_id": "sha256-v2-3eef8fbbf75e9ed050bd49058e7b2e12fe454463d0d8229ddaef91f95928a1c2-3086bdd6e0b5aaccaedfe5bdaa514c74409a15da96503395738b3bbee9ed35e2-2cf6ad2acd9ca99e07ae3fd5dce462dd7ede7695529bfc5894893c82a85a0fc9",
+      "bundle_manifest_sha256": "2f0827218443fe0982388eef793041ce2415ddcdf3fc3abf94cb8d12a45277ad",
+      "artifact_slug": "openai_gpt-oss-120b-s8192",
+      "prefill_buckets": "8192",
+      "max_context": 8192,
+      "max_concurrency": 1,
+      "optional_runtime_attestation_sha256": "89bbfc2d9b0dcd63b651744bcfa6900bb96728a51a77b99f6b058b79480b4d8d",
+      "local_evidence": {
+        "numerical_job": 70849,
+        "logits_pcc_min": 0.9887237548828125,
+        "logits_pcc_mean": 0.9938069581985474,
+        "s8192_device_job": 70851,
+        "generated_endpoint_job": 70900,
+        "generated_endpoint_pass": true,
+        "bounded_swe_pass": false
+      },
+      "publication": {
+        "administrator_owned": false,
+        "runner_visible_package_host_root": null,
+        "runner_visible_auxiliary_host_root": null
+      },
+      "models_ci_enrollment": {
+        "active": false,
+        "blocker": "Publish the exact V2 core and auxiliary tree on the selected Ring/2 QB runner and provide immutable host roots plus a digest-pinned image."
+      }
+    }
+  }
+}
