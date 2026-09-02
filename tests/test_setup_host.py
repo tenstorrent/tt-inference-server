@@ -797,8 +797,13 @@ class TestSetupHostValidation:
         runtime_config = RuntimeConfig(**cli_defaults)
         return mock_spec, runtime_config
 
-    def test_mutual_exclusivity_host_volume_and_hf_cache(self):
-        """Setting both --host-volume and --host-hf-cache should raise."""
+    def test_host_volume_with_hf_cache_is_allowed(self):
+        """--host-volume says where CACHE_ROOT goes, not where weights come from.
+
+        Pairing it with an explicit weight source is the only way to keep the
+        converted-weight cache off the filesystem holding the checkout while
+        still loading weights from an already-verified HF cache.
+        """
         mock_spec, runtime_config = self._make_mock_model_spec_and_config(
             host_volume="/tmp/vol",
             host_hf_cache="/tmp/hf",
@@ -806,14 +811,9 @@ class TestSetupHostValidation:
         with patch.dict(
             "workflows.validate_setup.MODEL_SPECS", {mock_spec.model_id: mock_spec}
         ):
-            with pytest.raises(
-                ValueError,
-                match="Only one of --host-volume, --host-hf-cache, --host-weights-dir",
-            ):
-                validate_runtime_args(mock_spec, runtime_config)
+            validate_runtime_args(mock_spec, runtime_config)
 
-    def test_mutual_exclusivity_host_volume_and_weights_dir(self):
-        """Setting both --host-volume and --host-weights-dir should raise."""
+    def test_host_volume_with_weights_dir_is_allowed(self):
         mock_spec, runtime_config = self._make_mock_model_spec_and_config(
             host_volume="/tmp/vol",
             host_weights_dir="/tmp/weights",
@@ -821,11 +821,7 @@ class TestSetupHostValidation:
         with patch.dict(
             "workflows.validate_setup.MODEL_SPECS", {mock_spec.model_id: mock_spec}
         ):
-            with pytest.raises(
-                ValueError,
-                match="Only one of --host-volume, --host-hf-cache, --host-weights-dir",
-            ):
-                validate_runtime_args(mock_spec, runtime_config)
+            validate_runtime_args(mock_spec, runtime_config)
 
     def test_mutual_exclusivity_hf_cache_and_weights_dir(self):
         """Setting both --host-hf-cache and --host-weights-dir should raise."""
@@ -838,12 +834,12 @@ class TestSetupHostValidation:
         ):
             with pytest.raises(
                 ValueError,
-                match="Only one of --host-volume, --host-hf-cache, --host-weights-dir",
+                match="Only one of --host-hf-cache, --host-weights-dir",
             ):
                 validate_runtime_args(mock_spec, runtime_config)
 
     def test_all_three_set_raises(self):
-        """Setting all three weight source options should raise."""
+        """Two explicit weight sources still conflict, host_volume or not."""
         mock_spec, runtime_config = self._make_mock_model_spec_and_config(
             host_volume="/tmp/vol",
             host_hf_cache="/tmp/hf",
@@ -854,7 +850,7 @@ class TestSetupHostValidation:
         ):
             with pytest.raises(
                 ValueError,
-                match="Only one of --host-volume, --host-hf-cache, --host-weights-dir",
+                match="Only one of --host-hf-cache, --host-weights-dir",
             ):
                 validate_runtime_args(mock_spec, runtime_config)
 

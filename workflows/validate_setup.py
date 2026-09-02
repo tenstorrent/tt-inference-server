@@ -220,15 +220,31 @@ def validate_runtime_args(model_spec, runtime_config):
             "--local-server requires --tt-metal-home or TT_METAL_HOME to be set"
         )
 
-    # Validate mutual exclusivity of weight source options
-    weight_source_args = [
-        args.host_volume,
+    # Validate mutual exclusivity of weight source options.
+    #
+    # --host-hf-cache and --host-weights-dir are both weight sources and naming
+    # two of them is ambiguous.
+    #
+    # --host-volume is not a weight source. It is where CACHE_ROOT lives: the
+    # converted-weight cache, the logs and the weight symlink map. It only
+    # *implies* a source, because absent any other, weights are downloaded to
+    # cache_root/weights. Once a source is named explicitly there is nothing
+    # ambiguous about also saying where the cache goes, and the two are already
+    # handled by independent branches in SetupConfig (setup_host.py:83 sets the
+    # volume paths, :98 sets the weights mount).
+    #
+    # Refusing the combination left no way to express "weights from a specific,
+    # already-verified HF cache; converted-weight cache on a different volume"
+    # — which is what a host with a small root filesystem and a large data
+    # volume needs, and the converted-weight cache is the big one: it is
+    # rewritten per model *and* per mesh geometry.
+    explicit_weight_sources = [
         args.host_hf_cache,
         getattr(args, "host_weights_dir", None),
     ]
-    if sum(1 for a in weight_source_args if a) > 1:
+    if sum(1 for a in explicit_weight_sources if a) > 1:
         raise ValueError(
-            "Only one of --host-volume, --host-hf-cache, --host-weights-dir can be specified."
+            "Only one of --host-hf-cache, --host-weights-dir can be specified."
         )
 
     if "ENABLE_AUTO_TOOL_CHOICE" in os.environ:
