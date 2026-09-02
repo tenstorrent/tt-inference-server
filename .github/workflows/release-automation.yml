@@ -467,7 +467,9 @@ jobs:
               echo "${cmd}"
               copy_cmds="${copy_cmds}${cmd}"$'\n'
               promoted="${promoted}${dst}"$'\n'
-              crane copy "${src}" "${dst}" || { echo "::error::crane copy failed: ${src} -> ${dst}"; exit 1; }
+              # TEMP(testing) improve-release-automation: real crane copy DISABLED — no publish to the
+              #   registry while iterating. REVERT: delete these two comment lines + uncomment the next.
+              # crane copy "${src}" "${dst}" || { echo "::error::crane copy failed: ${src} -> ${dst}"; exit 1; }
             fi
           done
 
@@ -546,7 +548,9 @@ jobs:
           cp model_spec.json /tmp/catalog/home/container_app_user/model_specs/
           tar --owner=1000 --group=1000 -C /tmp/catalog -cf /tmp/catalog-layer.tar home
 
-          crane append -b "${REPO}@${AMD64}" -f /tmp/catalog-layer.tar -t "${DST_VLLM}"
+          # TEMP(testing) improve-release-automation: crane append (re-bake) DISABLED — no image
+          #   mutation while iterating. REVERT: delete these two comment lines + uncomment the next.
+          # crane append -b "${REPO}@${AMD64}" -f /tmp/catalog-layer.tar -t "${DST_VLLM}"
           NEW_DIGEST=$(crane digest "${DST_VLLM}")
           echo "Re-baked ${DST_VLLM} -> ${NEW_DIGEST}"
 
@@ -709,3 +713,49 @@ jobs:
             --head-branch "${POST_RELEASE_BRANCH}" \
             --base main \
             --promoted-images "${PROMOTED_IMAGES}"
+
+      # ----- FINAL step: create a DRAFT GitHub Release named after the version,
+      #       referencing the tag pushed earlier in THIS run. (Verified: a Release
+      #       targets an existing tag by tag_name; a same-named branch does not
+      #       interfere.) Body is intentionally EMPTY (filled in later, e.g. from
+      #       the PR notes). Idempotent: skips if a Release for the tag already
+      #       exists (GitHub allows only one Release per tag). -----
+      - name: "Create draft GitHub Release (v<version>)"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v${RELEASE_VERSION}${TAG_SUFFIX}"
+          if gh release view "${TAG}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "::warning::Release '${TAG}' already exists — skipping creation."
+            exit 0
+          fi
+          gh release create "${TAG}" \
+            --repo "${{ github.repository }}" \
+            --draft \
+            --title "${TAG}" \
+            --notes ""
+          echo "Created draft Release '${TAG}' (references existing tag '${TAG}', empty body)."
+
+      # ----- Attach the release-artifacts zip to the Release as an asset. The zip
+      #       built earlier lives at ${RUNNER_TEMP}/release_artifacts/ (outside the
+      #       repo, so it survives the branch switches) and is uploaded DIRECTLY —
+      #       NOT via actions/upload-artifact, which wraps files in another zip.
+      #       So the asset is v<version>-release_artifacts.zip (single zip), not the
+      #       double-zipped release-artifacts-v<version>.zip. --clobber overwrites
+      #       the asset on re-runs. -----
+      - name: "Upload release-artifacts zip as a Release asset"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v${RELEASE_VERSION}${TAG_SUFFIX}"
+          ASSET="${RUNNER_TEMP}/release_artifacts/v${RELEASE_VERSION}-release_artifacts.zip"
+          if [ ! -f "${ASSET}" ]; then
+            # Fall back to any single zip in the dir if the exact name ever changes.
+            ASSET="$(ls "${RUNNER_TEMP}/release_artifacts/"*.zip 2>/dev/null | head -1 || true)"
+          fi
+          if [ -z "${ASSET}" ] || [ ! -f "${ASSET}" ]; then
+            echo "::warning::no release-artifacts zip under ${RUNNER_TEMP}/release_artifacts - nothing to upload."
+            exit 0
+          fi
+          gh release upload "${TAG}" "${ASSET}" --repo "${{ github.repository }}" --clobber
+          echo "Uploaded $(basename "${ASSET}") as an asset on Release '${TAG}'."
