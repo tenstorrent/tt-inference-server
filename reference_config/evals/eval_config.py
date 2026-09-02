@@ -4934,12 +4934,13 @@ _eval_config_list = [
                 agentic_eval_config=TerminalBenchEvalConfig(
                     dataset="terminal-bench/terminal-bench-2-1",
                     agent="terminus-2",
-                    # Low concurrency for a low-throughput gpt-oss-120b deploy.
                     n_concurrent_trials=4,
                     n_attempts=1,
                     n_tasks=89,
-                    override_cpus=16,
-                    override_memory_mb=32 * 1024,
+                    # Minimal per-trial footprint for the shared agentic-evals
+                    # node smoke run; raise for a real sweep.
+                    override_cpus=2,
+                    override_memory_mb=4 * 1024,
                     agent_timeout_sec=2 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
@@ -5001,8 +5002,10 @@ _eval_config_list = [
                     n_concurrent_trials=4,
                     n_attempts=1,
                     n_tasks=97,
-                    override_cpus=4,
-                    override_memory_mb=8 * 1024,
+                    # Minimal per-trial footprint for the shared agentic-evals
+                    # node smoke run; raise for a real sweep.
+                    override_cpus=2,
+                    override_memory_mb=4 * 1024,
                     agent_timeout_sec=3600,
                     agent_kwargs={
                         "tau2_trial_index": 0,
@@ -5063,8 +5066,10 @@ _eval_config_list = [
                     n_attempts=1,
                     n_tasks=None,
                     exclude_task_names=SWEBENCH_VERIFIED_KNOWN_BAD_TASKS,
-                    override_cpus=4,
-                    override_memory_mb=8 * 1024,
+                    # Minimal per-trial footprint for the shared agentic-evals
+                    # node smoke run; raise for a real sweep.
+                    override_cpus=2,
+                    override_memory_mb=4 * 1024,
                     agent_timeout_sec=2 * 60 * 60,
                     # Fresh pods install uv, mini-swe-agent, and proxy extras;
                     # allow 18 minutes instead of Harbor's 6-minute default.
