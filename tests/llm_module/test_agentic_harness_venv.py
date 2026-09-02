@@ -14,9 +14,6 @@ the task container, so there are no other binaries to resolve.
 
 from __future__ import annotations
 
-import dataclasses
-import json
-import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
@@ -50,13 +47,13 @@ def test_harbor_uses_venv_python(tmp_path):
     config = _harbor_config(tmp_path, _VENV_PY)
     captured = {}
 
-    def fake_run_with_timeout(cmd, timeout_sec=None):
+    def fake_run_with_progress(cmd, *a, **k):
         captured["cmd"] = cmd
         return 0
 
-    with patch.object(harbor, "_run_with_timeout", fake_run_with_timeout), patch.object(
-        harbor, "_annotate_result_file", lambda *_a, **_k: None
-    ):
+    with patch.object(
+        harbor, "run_with_progress", fake_run_with_progress
+    ), patch.object(harbor, "_annotate_result_file", lambda *_a, **_k: None):
         rc = harbor.run(config)
 
     assert rc == 0
@@ -67,11 +64,13 @@ def test_harbor_falls_back_to_sys_executable(tmp_path):
     config = _harbor_config(tmp_path, None)
     captured = {}
 
-    def fake_run_with_timeout(cmd, timeout_sec=None):
+    def fake_run_with_progress(cmd, *a, **k):
         captured["cmd"] = cmd
         return 0
 
-    with patch.object(harbor, "_run_with_timeout", fake_run_with_timeout), patch.object(
+    with patch.object(
+        harbor, "run_with_progress", fake_run_with_progress
+    ), patch.object(
         harbor, "_annotate_result_file", lambda *_a, **_k: None
     ), patch.object(harbor.sys, "executable", "/cur/bin/python"):
         harbor.run(config)

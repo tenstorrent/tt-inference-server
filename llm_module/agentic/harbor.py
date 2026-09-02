@@ -13,6 +13,7 @@ translate an eval config into a Harbor job config.
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import os
@@ -29,34 +30,16 @@ from llm_module.agentic.progress import (
 
 logger = logging.getLogger(__name__)
 
-HARBOR_SIGTERM_GRACE_SEC = 300
+# Conservative fallback per-trial agent budget when the config leaves
+# ``agent_timeout_sec`` unset (Harbor then uses each task's own default, which
+# we cannot see from here). Only feeds the deadline math; the stall watchdog is
+# the real protection, so err generous to avoid false kills.
+_DEFAULT_AGENT_TIMEOUT_SEC = 60 * 60
 
-
-def _run_with_timeout(cmd: list[str], timeout_sec: Optional[float]) -> int:
-    """Run harbor, terminating it *gracefully* if it overruns."""
-    with subprocess.Popen(cmd) as proc:
-        try:
-            return proc.wait(timeout=timeout_sec)
-        except subprocess.TimeoutExpired:
-            logger.warning(
-                "harbor exceeded %ss; sending SIGTERM and allowing %ss for "
-                "sandbox teardown before SIGKILL.",
-                timeout_sec,
-                HARBOR_SIGTERM_GRACE_SEC,
-            )
-            proc.terminate()
-            try:
-                proc.wait(timeout=HARBOR_SIGTERM_GRACE_SEC)
-                logger.info("harbor shut down cleanly after SIGTERM.")
-            except subprocess.TimeoutExpired:
-                logger.error(
-                    "harbor did not exit %ss after SIGTERM; sending SIGKILL. "
-                    "Sandboxes may be left behind.",
-                    HARBOR_SIGTERM_GRACE_SEC,
-                )
-                proc.kill()
-                proc.wait()
-            raise
+# Harbor's built-in agent name for mini-swe-agent. When this agent is used we
+# bring its generated model config to parity with the standalone SWE-bench
+# harness (see ``_apply_mini_swe_agent_defaults``).
+_MINI_SWE_AGENT = "mini-swe-agent"
 
 
 @dataclass(frozen=True)
@@ -98,12 +81,69 @@ class HarborRunConfig:
     # ... for the ``kubernetes`` environment). Only expressible through the
     # config file, so a non-empty value forces that path.
     environment_kwargs: dict[str, Any] = field(default_factory=dict)
+    # Per-request LLM read timeout, injected into a mini-swe-agent run as
+    # ``model.model_kwargs.timeout`` (see ``_apply_mini_swe_agent_defaults``).
+    # litellm's OpenAI-compatible path otherwise defaults to an infinite read
+    # timeout, so a never-answered request hangs the trial. ``None`` opts out.
+    # Ignored for every non-mini agent (terminus-2, tau3, ... carry their own
+    # timeout knob in ``agent_kwargs``).
+    llm_timeout_sec: Optional[int] = 10 * 60
+    # Wave-aware deadline model (see progress.py). Reserved allowance for
+    # Harbor's additive non-agent phases (env build, agent setup, verifier);
+    # currently NOT folded into the per-task budget -- B is just
+    # ``agent_timeout_sec``, and the stall watchdog is the real protection.
+    per_task_overhead_sec: int = 20 * 60
+    startup_grace_sec: int = 10 * 60
+    stall_grace_sec: int = 5 * 60
+    progress_log_interval_sec: int = 5 * 60
+    # When False the progress watchdog logs deadlines but never kills the harbor
+    # subprocess, letting it run to completion.
+    enforce_agent_deadline: bool = False
     # Interpreter whose bin/ holds the ``harbor`` CLI. When ``None`` the current
     # interpreter is used (standalone ``run_agentic.py`` already re-execs into
     # the EVALS_AGENTIC venv). Set on the release path, where the harness runs
     # as a child of the WORKFLOW_RUN_SCRIPT engine and must reach harbor explicitly.
     venv_python: Optional[Path] = None
     harbor_timeout_sec: Optional[float] = None
+
+
+def _apply_mini_swe_agent_defaults(
+    agent_kwargs: dict[str, Any], config: HarborRunConfig
+) -> None:
+    """Bring a mini-swe-agent run to parity with the standalone SWE-bench harness.
+
+    Harbor's ``mini-swe-agent`` agent takes an inline ``config`` mapping that it
+    dumps to a mini-swe-agent YAML and injects with ``-c``. The standalone
+    harness (``llm_module/agentic/swebench.py`` before the unification) always
+    wrote three model defaults that harbor does not add on its own; without them
+    a mini run inside harbor diverges from the standalone eval:
+
+    * ``model.model_kwargs.drop_params=True`` -- litellm drops params the server
+      rejects instead of erroring the whole request (needed for e.g. top_k in
+      ``extra_body``).
+    * ``model.model_kwargs.timeout`` -- litellm's OpenAI-compatible path defaults
+      to an infinite read timeout, so a never-answered request otherwise hangs
+      the trial until the whole-agent budget. ``llm_timeout_sec=None`` opts out.
+    * ``model.cost_tracking='ignore_errors'`` -- a cost-lookup miss must not
+      abort the run.
+
+    Each value is a ``setdefault``, so an explicit per-eval value in
+    ``agent_kwargs['config']`` always wins. ``agent_kwargs`` is mutated in place;
+    the caller passes a deep copy so the shared eval config is never touched.
+    """
+    cfg = agent_kwargs.setdefault("config", {})
+    if not isinstance(cfg, dict):
+        return
+    model = cfg.setdefault("model", {})
+    if not isinstance(model, dict):
+        return
+    model.setdefault("cost_tracking", "ignore_errors")
+    model_kwargs = model.setdefault("model_kwargs", {})
+    if not isinstance(model_kwargs, dict):
+        return
+    model_kwargs.setdefault("drop_params", True)
+    if config.llm_timeout_sec is not None:
+        model_kwargs.setdefault("timeout", config.llm_timeout_sec)
 
 
 def _get_agent_kwargs(config: HarborRunConfig) -> dict[str, Any]:
@@ -116,9 +156,14 @@ def _get_agent_kwargs(config: HarborRunConfig) -> dict[str, Any]:
     ``agentic_eval_tests._configure_openai_env`` has already exported them. Set
     ``agent_env`` to override that per eval. Agents implemented in Harbor itself
     (e.g. terminus-2) do read this kwarg, hence the unconditional default.
+
+    A deep copy is taken so the mini-swe-agent parity defaults never mutate the
+    shared, module-level eval config.
     """
-    agent_kwargs = dict(config.agent_kwargs)
+    agent_kwargs = copy.deepcopy(dict(config.agent_kwargs))
     agent_kwargs.setdefault("api_base", config.api_base)
+    if config.agent == _MINI_SWE_AGENT and config.agent_import_path is None:
+        _apply_mini_swe_agent_defaults(agent_kwargs, config)
     return agent_kwargs
 
 
@@ -289,17 +334,48 @@ def run(config: HarborRunConfig) -> int:
     if config.debug:
         cmd.append("--debug")
 
-    logger.info("Running command: %s", " ".join(cmd))
-    try:
-        returncode = _run_with_timeout(cmd, config.harbor_timeout_sec)
-    except subprocess.TimeoutExpired:
-        # A stuck harbor/trial otherwise hangs to the outer job cap.
+    job_dir = config.jobs_dir / config.task_name
+    agent_timeout = (
+        config.agent_timeout_sec
+        if config.agent_timeout_sec is not None
+        else _DEFAULT_AGENT_TIMEOUT_SEC
+    )
+    per_task_budget = agent_timeout
+    # ``harbor_timeout_sec`` is an optional flat backstop kept from the unified
+    # harness; the wave-aware stall/ceiling watchdog is the primary protection.
+    rc = run_with_progress(
+        cmd,
+        cwd=None,
+        env=os.environ.copy(),
+        probe=make_terminal_bench_probe(job_dir),
+        label=config.task_name,
+        per_task_budget_s=per_task_budget,
+        concurrency=config.n_concurrent_trials,
+        startup_grace_s=config.startup_grace_sec,
+        stall_grace_s=config.stall_grace_sec,
+        log_interval_s=config.progress_log_interval_sec,
+        hard_timeout_s=config.harbor_timeout_sec,
+        enforce_deadlines=config.enforce_agent_deadline,
+        log=logger,
+    )
+    # A watchdog timeout (124) still leaves harbor's per-trial results (each
+    # already graded inline) in result.json worth annotating; only a genuine
+    # harness error aborts before annotation.
+    if rc != 0 and rc != TIMEOUT_EXIT_CODE:
+        return rc
+    result_path = job_dir / "result.json"
+    if rc == TIMEOUT_EXIT_CODE and not result_path.exists():
         logger.error(
-            "harbor run exceeded harbor_timeout_sec=%s; terminated.",
-            config.harbor_timeout_sec,
+            "Harbor timed out before writing any results; nothing to annotate."
         )
-        return 124
-    if returncode != 0:
-        return returncode
-    _annotate_result_file(config.jobs_dir / config.task_name / "result.json")
-    return returncode
+        return rc
+    if rc == TIMEOUT_EXIT_CODE:
+        logger.warning(
+            "Harbor hit the deadline; annotating the partial results in %s.",
+            result_path,
+        )
+    _annotate_result_file(result_path)
+    # Partial results were graded and annotated; report success so downstream
+    # scoring reads the (lower) partial score instead of treating the run as a
+    # hard failure.
+    return 0

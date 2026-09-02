@@ -6,8 +6,6 @@
 from __future__ import annotations
 
 import json
-import subprocess
-import sys
 from dataclasses import dataclass, field
 
 import pytest
@@ -23,7 +21,8 @@ from llm_module.drivers.agentic import (
     resolve_n_tasks,
     resolve_task_names,
 )
-from llm_module.agentic.harbor import _run_with_timeout, run as run_harbor
+from llm_module.agentic import harbor
+from llm_module.agentic.harbor import run as run_harbor
 from llm_module.parsers.agentic import (
     AgenticEvalParser,
     compute_accuracy_check,
@@ -71,6 +70,12 @@ class FakeHarborConfig:
     verifier_env: Dict[str, str] = field(default_factory=dict)
     environment_kwargs: Dict[str, Any] = field(default_factory=dict)
     harbor_timeout_sec: Optional[float] = None
+    llm_timeout_sec: Optional[int] = 10 * 60
+    per_task_overhead_sec: int = 20 * 60
+    startup_grace_sec: int = 10 * 60
+    stall_grace_sec: int = 5 * 60
+    progress_log_interval_sec: int = 5 * 60
+    enforce_agent_deadline: bool = False
 
 
 def _runtime(limit_samples_mode: Optional[str] = None):
@@ -460,48 +465,10 @@ class TestHarborHarness:
             n_tasks=1,
         )
 
-        with patch("llm_module.agentic.harbor._run_with_timeout") as run_cmd:
+        with patch("llm_module.agentic.harbor.run_with_progress") as run_cmd:
             run_cmd.return_value = 17
 
             assert run_harbor(cfg) == 17
-
-    def test_timeout_still_annotates_partial_results(self, tmp_path):
-        # A watchdog timeout (124) must still annotate harbor's partial,
-        # already-graded result.json and report success (rc 0).
-        task = _terminal_task()
-        cfg = build_terminal_bench_config(
-            task,
-            _server(),
-            DriverContext(output_dir=tmp_path, device="N150"),
-            n_tasks=1,
-        )
-        result_path = cfg.jobs_dir / cfg.task_name / "result.json"
-        result_path.parent.mkdir(parents=True)
-        result_path.write_text('{"n_total_trials": 5}', encoding="utf-8")
-
-        with patch(
-            "llm_module.agentic.terminal_bench.run_with_progress", return_value=124
-        ):
-            assert run_terminal_bench(cfg) == 0
-
-        annotated = json.loads(result_path.read_text(encoding="utf-8"))
-        assert annotated["_result_format"] == "harbor"
-
-    def test_timeout_without_result_file_returns_124(self, tmp_path):
-        # Killed before harbor wrote any results -> nothing to annotate, so the
-        # timeout code propagates.
-        task = _terminal_task()
-        cfg = build_terminal_bench_config(
-            task,
-            _server(),
-            DriverContext(output_dir=tmp_path, device="N150"),
-            n_tasks=1,
-        )
-
-        with patch(
-            "llm_module.agentic.terminal_bench.run_with_progress", return_value=124
-        ):
-            assert run_terminal_bench(cfg) == 124
 
     def test_harbor_config_includes_adapter_and_env_overrides(self, tmp_path):
         task = _harbor_task()
@@ -522,7 +489,7 @@ class TestHarborHarness:
             n_tasks=1,
         )
 
-        with patch("llm_module.agentic.harbor._run_with_timeout") as run_cmd:
+        with patch("llm_module.agentic.harbor.run_with_progress") as run_cmd:
             run_cmd.return_value = 17
 
             assert run_harbor(cfg) == 17
@@ -566,7 +533,7 @@ class TestHarborHarness:
 
         # Nonzero so run() returns before _annotate_result_file, which would
         # otherwise demand a result.json no mocked harbor ever wrote.
-        with patch("llm_module.agentic.harbor._run_with_timeout") as run_cmd:
+        with patch("llm_module.agentic.harbor.run_with_progress") as run_cmd:
             run_cmd.return_value = 17
 
             assert run_harbor(cfg) == 17
@@ -583,7 +550,9 @@ class TestHarborHarness:
             "node_selector": {"tt-pool": "shield"},
         }
 
-    def test_harbor_timeout_is_passed_to_the_subprocess(self, tmp_path):
+    def test_harbor_timeout_is_passed_to_the_watchdog(self, tmp_path):
+        # ``harbor_timeout_sec`` is forwarded to the progress watchdog as the
+        # optional flat ``hard_timeout_s`` backstop.
         task = _harbor_task()
         task.agentic_eval_config.harbor_timeout_sec = 7200.0
         cfg = build_harbor_config(
@@ -593,17 +562,18 @@ class TestHarborHarness:
             n_tasks=1,
         )
 
-        with patch("llm_module.agentic.harbor._run_with_timeout") as run_cmd:
+        with patch("llm_module.agentic.harbor.run_with_progress") as run_cmd:
             run_cmd.return_value = 17
 
             assert run_harbor(cfg) == 17
 
-        assert run_cmd.call_args.args[1] == 7200.0
+        assert run_cmd.call_args.kwargs["hard_timeout_s"] == 7200.0
 
-    def test_timed_out_harbor_run_returns_124(self, tmp_path):
-        """A stuck harbor otherwise hangs to the outer job cap (70h in CI)."""
+    def test_watchdog_timeout_without_result_file_returns_124(self, tmp_path):
+        # The watchdog killed harbor (124) before it wrote any result.json, so
+        # there is nothing to annotate and the timeout code propagates. A stuck
+        # harbor otherwise hangs to the outer job cap (70h in CI).
         task = _harbor_task()
-        task.agentic_eval_config.harbor_timeout_sec = 1.0
         cfg = build_harbor_config(
             task,
             _server(),
@@ -611,109 +581,122 @@ class TestHarborHarness:
             n_tasks=1,
         )
 
-        with patch("llm_module.agentic.harbor._run_with_timeout") as run_cmd:
-            run_cmd.side_effect = subprocess.TimeoutExpired(cmd="harbor", timeout=1.0)
-
+        with patch("llm_module.agentic.harbor.run_with_progress", return_value=124):
             assert run_harbor(cfg) == 124
 
-    def test_overrunning_harbor_gets_sigterm_before_sigkill(self, tmp_path):
-        """Harbor must get a chance to delete its sandboxes on timeout.
-
-        ``subprocess.run(timeout=...)`` escalates straight to SIGKILL, which
-        harbor cannot trap, silently leaking every live sandbox -- for the
-        Kubernetes backend, orphaned pods that hold cluster capacity until
-        somebody notices. Drive a real child that traps SIGTERM and records
-        that it got to clean up.
-        """
-        marker = tmp_path / "cleanup-ran"
-        child = tmp_path / "traps_sigterm.py"
-        child.write_text(
-            "import signal, sys, time\n"
-            "def on_term(sig, frame):\n"
-            f"    open({str(marker)!r}, 'w').write('cleaned up')\n"
-            "    sys.exit(0)\n"
-            "signal.signal(signal.SIGTERM, on_term)\n"
-            "while True: time.sleep(0.05)\n"
-        )
-
-        with pytest.raises(subprocess.TimeoutExpired):
-            _run_with_timeout([sys.executable, str(child)], 0.5)
-
-        assert marker.exists(), "harbor was SIGKILLed before it could clean up"
-
-    def _normalize_with_report(self, tmp_path, report, instance_ids=None, **cfg_kwargs):
-        cfg = build_swebench_config(
-            _swebench_task(),
+    def test_watchdog_timeout_annotates_partial_results(self, tmp_path):
+        # A watchdog timeout (124) must still annotate harbor's partial,
+        # already-graded result.json and report success (rc 0) so downstream
+        # scoring reads the lower partial score instead of a hard failure.
+        task = _harbor_task()
+        cfg = build_harbor_config(
+            task,
             _server(),
             DriverContext(output_dir=tmp_path, device="N150"),
-            **cfg_kwargs,
+            n_tasks=1,
         )
-        if instance_ids is not None:
-            cfg = replace(cfg, instance_ids=instance_ids)
-        cfg.output_dir.mkdir(parents=True, exist_ok=True)
-        harness_report = cfg.output_dir / "harness_report.json"
-        harness_report.write_text(json.dumps(report), encoding="utf-8")
-        return normalize_swebench_report(
-            harness_report,
-            cfg.output_dir / "result.json",
-            cfg,
-            cfg.output_dir / "predictions.jsonl",
+        result_path = cfg.jobs_dir / cfg.task_name / "result.json"
+        result_path.parent.mkdir(parents=True)
+        result_path.write_text('{"n_total_trials": 5}', encoding="utf-8")
+
+        with patch("llm_module.agentic.harbor.run_with_progress", return_value=124):
+            assert run_harbor(cfg) == 0
+
+        annotated = json.loads(result_path.read_text(encoding="utf-8"))
+        assert annotated["_result_format"] == "harbor"
+
+
+class TestMiniSweAgentParity:
+    """The mini-swe-agent backend gets the standalone SWE-bench harness's model
+    defaults injected so a run through Harbor matches the old harness."""
+
+    def _agent_model_cfg(self, task, tmp_path):
+        cfg = build_harbor_config(
+            task,
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
         )
+        kwargs = harbor._get_agent_kwargs(cfg)
+        return kwargs["config"]["model"]
 
-    def _accuracy(self, normalized):
-        (evaluation,) = normalized["stats"]["evals"].values()
-        return evaluation["pass_at_k"]["1"]
-
-    def test_unfinished_instances_count_against_accuracy(self, tmp_path):
-        # 5 requested, only 2 finished, 1 of those resolved. Grading the 2 that
-        # happen to be in the report would report 50%; the run scored 1 of 5.
-        normalized = self._normalize_with_report(
-            tmp_path,
-            {"submitted_ids": ["a", "b"], "resolved_ids": ["a"]},
-            n_tasks=5,
+    def test_defaults_injected_for_mini_swe_agent(self, tmp_path):
+        task = _swebench_task(
+            agentic_eval_config=FakeHarborConfig(
+                dataset="swebench-verified",
+                agent="mini-swe-agent",
+                agent_kwargs={
+                    "version": "2.2.8",
+                    "config": {"model": {"model_kwargs": {"temperature": 1.0}}},
+                },
+            )
         )
+        model = self._agent_model_cfg(task, tmp_path)
+        assert model["cost_tracking"] == "ignore_errors"
+        assert model["model_kwargs"]["drop_params"] is True
+        assert model["model_kwargs"]["timeout"] == 10 * 60
+        # Per-eval sampling values are preserved alongside the injected defaults.
+        assert model["model_kwargs"]["temperature"] == 1.0
 
-        assert self._accuracy(normalized) == 1 / 5
-        assert normalized["n_total_trials"] == 5
-
-    def test_named_missing_instances_are_reported_unresolved(self, tmp_path):
-        normalized = self._normalize_with_report(
-            tmp_path,
-            {"submitted_ids": ["a"], "resolved_ids": ["a"]},
-            instance_ids=["a", "b", "c"],
+    def test_llm_timeout_none_opts_out_of_read_timeout(self, tmp_path):
+        task = _swebench_task(
+            agentic_eval_config=FakeHarborConfig(
+                dataset="swebench-verified",
+                agent="mini-swe-agent",
+                llm_timeout_sec=None,
+                agent_kwargs={"config": {"model": {"model_kwargs": {}}}},
+            )
         )
+        model = self._agent_model_cfg(task, tmp_path)
+        assert "timeout" not in model["model_kwargs"]
+        assert model["model_kwargs"]["drop_params"] is True
 
-        (evaluation,) = normalized["stats"]["evals"].values()
-        assert self._accuracy(normalized) == 1 / 3
-        assert evaluation["reward_stats"]["reward"]["0.0"] == ["b", "c"]
-        # Absent instances still get a zero-reward trial so per-task views agree.
-        assert [t["task_name"] for t in normalized["trial_results"]] == ["a", "b", "c"]
-        assert [
-            t["verifier_result"]["rewards"]["reward"]
-            for t in normalized["trial_results"]
-        ] == [1.0, 0.0, 0.0]
-
-    def test_complete_run_accuracy_is_unchanged(self, tmp_path):
-        normalized = self._normalize_with_report(
-            tmp_path,
-            {"submitted_ids": ["a", "b", "c", "d"], "resolved_ids": ["a", "c"]},
-            n_tasks=4,
+    def test_explicit_values_win_over_injected_defaults(self, tmp_path):
+        task = _swebench_task(
+            agentic_eval_config=FakeHarborConfig(
+                dataset="swebench-verified",
+                agent="mini-swe-agent",
+                llm_timeout_sec=600,
+                agent_kwargs={
+                    "config": {
+                        "model": {
+                            "cost_tracking": "raise",
+                            "model_kwargs": {"drop_params": False, "timeout": 42},
+                        }
+                    }
+                },
+            )
         )
+        model = self._agent_model_cfg(task, tmp_path)
+        assert model["cost_tracking"] == "raise"
+        assert model["model_kwargs"]["drop_params"] is False
+        assert model["model_kwargs"]["timeout"] == 42
 
-        assert self._accuracy(normalized) == 0.5
-        assert normalized["n_total_trials"] == 4
-
-    def test_extra_predictions_do_not_shrink_the_denominator(self, tmp_path):
-        # n_tasks is a cap, not a promise; if the harness graded more than we
-        # asked for, the larger count wins rather than clipping the denominator.
-        normalized = self._normalize_with_report(
-            tmp_path,
-            {"submitted_ids": ["a", "b", "c"], "resolved_ids": ["a"]},
-            n_tasks=2,
+    def test_injection_does_not_mutate_shared_eval_config(self, tmp_path):
+        task = _swebench_task(
+            agentic_eval_config=FakeHarborConfig(
+                dataset="swebench-verified",
+                agent="mini-swe-agent",
+                agent_kwargs={"config": {"model": {"model_kwargs": {}}}},
+            )
         )
+        self._agent_model_cfg(task, tmp_path)
+        # The original config object is untouched by the deep-copied injection.
+        original = task.agentic_eval_config.agent_kwargs["config"]["model"]
+        assert "cost_tracking" not in original
+        assert "drop_params" not in original["model_kwargs"]
 
-        assert self._accuracy(normalized) == 1 / 3
-        assert normalized["n_total_trials"] == 3
+    def test_non_mini_agent_is_untouched(self, tmp_path):
+        # terminus-2 carries its own config shape; mini defaults must not leak in.
+        task = _harbor_task()  # agent="terminus-2"
+        cfg = build_harbor_config(
+            task,
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+        kwargs = harbor._get_agent_kwargs(cfg)
+        assert "config" not in kwargs
 
 
 class TestAgenticLimitResolution:

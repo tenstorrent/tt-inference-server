@@ -205,6 +205,12 @@ def build_harbor_config(
         verifier_env=cfg.verifier_env,
         environment_kwargs=cfg.environment_kwargs,
         harbor_timeout_sec=cfg.harbor_timeout_sec,
+        llm_timeout_sec=cfg.llm_timeout_sec,
+        per_task_overhead_sec=cfg.per_task_overhead_sec,
+        startup_grace_sec=cfg.startup_grace_sec,
+        stall_grace_sec=cfg.stall_grace_sec,
+        progress_log_interval_sec=cfg.progress_log_interval_sec,
+        enforce_agent_deadline=cfg.enforce_agent_deadline,
         venv_python=venv_python,
     )
 

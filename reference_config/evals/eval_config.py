@@ -286,6 +286,26 @@ class HarborEvalConfig:
     verifier_env: Dict[str, str] = field(default_factory=dict)
     environment_kwargs: Dict[str, Any] = field(default_factory=_harbor_env_kwargs)
     harbor_timeout_sec: Optional[float] = field(default_factory=_harbor_timeout_sec)
+    # Per-request LLM read timeout for the mini-swe-agent backend, injected into
+    # the generated mini config as ``model.model_kwargs.timeout``. Brings a
+    # SWE-bench run through Harbor to parity with the standalone harness, whose
+    # litellm path otherwise defaults to an infinite read timeout. ``None`` opts
+    # out. Ignored by every non-mini agent (they carry their own timeout knob).
+    llm_timeout_sec: Optional[int] = 10 * 60
+    # Wave-aware deadline model (see llm_module/agentic/progress.py). Reserved
+    # allowance for Harbor's additive non-agent phases (env build ~600s, agent
+    # setup ~360s, verifier ~60s); currently NOT folded into the per-task budget,
+    # which is just ``agent_timeout_sec``.
+    per_task_overhead_sec: int = 20 * 60
+    # Grace before the first wave (dataset resolve + image pulls).
+    startup_grace_sec: int = 10 * 60
+    # Kill if no trial makes progress for ``B + stall_grace_sec``.
+    stall_grace_sec: int = 5 * 60
+    # Progress watchdog log cadence.
+    progress_log_interval_sec: int = 5 * 60
+    # When False the watchdog logs deadlines but never kills the harbor
+    # subprocess, letting it run to completion.
+    enforce_agent_deadline: bool = False
 
 
 TerminalBenchEvalConfig = HarborEvalConfig
