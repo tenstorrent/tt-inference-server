@@ -7,7 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
-from workflows.workflow_types import ModelStatusTypes
+from workflow_module.engine_types import ModelStatusTypes
 
 from .schema import Block, ReportSchema
 from .status import TestStatus, glyph_for_label
