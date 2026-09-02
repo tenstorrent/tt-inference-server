@@ -4934,7 +4934,8 @@ _eval_config_list = [
                 agentic_eval_config=TerminalBenchEvalConfig(
                     dataset="terminal-bench/terminal-bench-2-1",
                     agent="terminus-2",
-                    n_concurrent_trials=4,
+                    # Matches the Aug-28 known-good smoke run (2 concurrent trials).
+                    n_concurrent_trials=2,
                     n_attempts=1,
                     n_tasks=89,
                     # Minimal per-trial footprint for the shared agentic-evals
@@ -4999,7 +5000,8 @@ _eval_config_list = [
                     task_names=["sierra-research/tau3-bench__tau3-banking_knowledge-*"],
                     # A single served instance is shared by the agent,
                     # the simulated user, and the Natural Language verifier.
-                    n_concurrent_trials=4,
+                    # Matches the Aug-28 known-good smoke run (2 concurrent trials).
+                    n_concurrent_trials=2,
                     n_attempts=1,
                     n_tasks=97,
                     # Minimal per-trial footprint for the shared agentic-evals
@@ -5062,7 +5064,8 @@ _eval_config_list = [
                 agentic_eval_config=HarborEvalConfig(
                     dataset="swebench-verified",
                     agent="mini-swe-agent",
-                    n_concurrent_trials=4,
+                    # Matches the Aug-28 known-good smoke run (2 concurrent trials).
+                    n_concurrent_trials=2,
                     n_attempts=1,
                     n_tasks=None,
                     exclude_task_names=SWEBENCH_VERIFIED_KNOWN_BAD_TASKS,
