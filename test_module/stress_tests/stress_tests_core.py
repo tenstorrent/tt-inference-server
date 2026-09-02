@@ -34,7 +34,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Tuple
 
-from workflows.workflow_types import DeviceTypes
+from workflow_module.device_catalog import get_device_catalog
 from .stress_tests_config import StressTestParamSpace, enforce_context_limit
 from .stress_tests_args import StressTestsArgs
 
@@ -61,7 +61,7 @@ class StressTests:
         self._setup_environment_variables()
 
         # Setup device and concurrency configuration
-        self.device = DeviceTypes.from_string(self.test_args.device)
+        self.device = get_device_catalog().from_string(self.test_args.device)
         self.max_concurrent_value = self.model_spec.device_model_spec.max_concurrency
 
         # Configure endurance mode if specified
