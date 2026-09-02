@@ -415,12 +415,27 @@ templates:
       default_impl: true
       env_vars:
         MESH_DEVICE: "P150x8"
+        # 2026-09-02 prefill-config flip — THIS ENTRY ONLY (12B/P150x8):
+        # gated sequential+traced prefill deterministically wedges this
+        # quadrant under mixed prefill+decode (G7: 512-bucket trace replay,
+        # NOC1 stall at the sampling eltwise; benchmark sweep cannot finish).
+        # Bounded sliding disables prefill traces (no wedge class; ~87%
+        # sliding-KV freed) and batched prefill recovers short-ISL conc32
+        # TTFT (-68..-77%); full target sweep 24/24 at gated perf parity.
+        # KNOWN ISSUE (all bounded configs, open): ~1-3/32 outputs at
+        # conc32 small-ISL bursts after a prior wave show near-miss/stale
+        # corruption (wave-boundary ring/trace staleness family; repro:
+        # ~/g4cov/wave_smoke.sh). Gated cannot serve these shapes at all,
+        # so this is a strict availability improvement for this quadrant.
+        # Other gemma-4 BH entries stay gated until that issue is fixed.
+        G4_FORCE_BATCH_PREFILL: "1"
+        GEMMA4_BOUNDED_SLIDING_KV_CACHE: "1"
         GEMMA4_CCL_TOPOLOGY: "linear"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
         # Shared KV pool; 262144 is ~max that fits P150x8 12B DRAM (524288 OOMs).
         GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
-        GEMMA4_CHUNKED_PREFILL_TRACE: "1"
+        GEMMA4_CHUNKED_PREFILL_TRACE: "0"  # eager chunks: no prefill traces under bounded (see note)
       override_tt_config:
         fabric_config: FABRIC_1D
         trace_region_size: 512000000
