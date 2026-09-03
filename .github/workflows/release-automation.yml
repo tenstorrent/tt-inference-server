@@ -80,7 +80,7 @@ jobs:
           REF: ${{ github.ref_name }}
         run: |
           case "$REF" in
-            stable | vcankovic/automated-release-pipeline)
+            stable | vcankovic/improve-release-automation)
               echo "Branch '$REF' is allowed — proceeding." ;;
             *)
               echo "::error::Release automation may only run from 'stable', 'vcankovic/stable-automated-release-pipeline', or 'vcankovic/automated-release-pipeline'. Refusing to run on '$REF'."
@@ -709,3 +709,52 @@ jobs:
             --head-branch "${POST_RELEASE_BRANCH}" \
             --base main \
             --promoted-images "${PROMOTED_IMAGES}"
+
+      # ----- FINAL step: create a DRAFT GitHub Release named after the version,
+      #       referencing the tag pushed earlier in THIS run. (Verified: a Release
+      #       targets an existing tag by tag_name; a same-named branch does not
+      #       interfere.) Body is intentionally EMPTY (filled in later, e.g. from
+      #       the PR notes). Idempotent: skips if a Release for the tag already
+      #       exists (GitHub allows only one Release per tag). -----
+      - name: "Create draft GitHub Release (v<version>)"
+        env:
+          # Use the PAT (vcankovicTT) so the Release is created/owned by that user,
+          # not github-actions[bot] — matches publish-release.yml. Needs contents:write.
+          GH_TOKEN: ${{ secrets.TMP_VCANKOVIC_SHIELD_CRANE_PAT }}
+        run: |
+          TAG="v${RELEASE_VERSION}${TAG_SUFFIX}"
+          if gh release view "${TAG}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "::warning::Release '${TAG}' already exists — skipping creation."
+            exit 0
+          fi
+          gh release create "${TAG}" \
+            --repo "${{ github.repository }}" \
+            --draft \
+            --title "${TAG}" \
+            --notes ""
+          echo "Created draft Release '${TAG}' (references existing tag '${TAG}', empty body)."
+
+      # ----- Attach the release-artifacts zip to the Release as an asset. The zip
+      #       built earlier lives at ${RUNNER_TEMP}/release_artifacts/ (outside the
+      #       repo, so it survives the branch switches) and is uploaded DIRECTLY —
+      #       NOT via actions/upload-artifact, which wraps files in another zip.
+      #       So the asset is v<version>-release_artifacts.zip (single zip), not the
+      #       double-zipped release-artifacts-v<version>.zip. --clobber overwrites
+      #       the asset on re-runs. -----
+      - name: "Upload release-artifacts zip as a Release asset"
+        env:
+          # PAT (vcankovicTT) so the asset upload is attributed to that user too.
+          GH_TOKEN: ${{ secrets.TMP_VCANKOVIC_SHIELD_CRANE_PAT }}
+        run: |
+          TAG="v${RELEASE_VERSION}${TAG_SUFFIX}"
+          ASSET="${RUNNER_TEMP}/release_artifacts/v${RELEASE_VERSION}-release_artifacts.zip"
+          if [ ! -f "${ASSET}" ]; then
+            # Fall back to any single zip in the dir if the exact name ever changes.
+            ASSET="$(ls "${RUNNER_TEMP}/release_artifacts/"*.zip 2>/dev/null | head -1 || true)"
+          fi
+          if [ -z "${ASSET}" ] || [ ! -f "${ASSET}" ]; then
+            echo "::warning::no release-artifacts zip under ${RUNNER_TEMP}/release_artifacts - nothing to upload."
+            exit 0
+          fi
+          gh release upload "${TAG}" "${ASSET}" --repo "${{ github.repository }}" --clobber
+          echo "Uploaded $(basename "${ASSET}") as an asset on Release '${TAG}'."

@@ -53,6 +53,12 @@ if str(_REPO_ROOT) not in sys.path:
 
 from workflows.device_catalog_provider import TenstorrentDeviceCatalog  # noqa: E402
 from workflows.model_spec_provider import TenstorrentModelSpecProvider  # noqa: E402
+from workflows.requirements_cli import (  # noqa: E402
+    add_requirements_argument,
+    apply_requirements,
+    register_requirements_providers,
+    requirements_mode_in_argv,
+)
 
 from workflow_module import CommandFactory, WorkflowRunner  # noqa: E402
 from workflow_module.device_catalog import (  # noqa: E402
@@ -100,6 +106,11 @@ def parse_args() -> argparse.Namespace:
     valid_devices = get_device_catalog().device_names()
     valid_workflows = sorted(WORKFLOW_REGISTRY)
 
+    # A requirements-driven run supplies the model/device (and off-catalog
+    # models) from the requirements document, so the catalog ``choices`` gate is
+    # relaxed when --requirements-json is present.
+    requirements_mode = requirements_mode_in_argv()
+
     parser = argparse.ArgumentParser(
         description=(
             "Standalone CLI for the WorkflowRunner — drives a workflow "
@@ -109,9 +120,16 @@ def parse_args() -> argparse.Namespace:
         epilog="Available models:\n  " + "\n  ".join(valid_models),
         formatter_class=argparse.RawTextHelpFormatter,
     )
-    parser.add_argument("--model", required=True, choices=valid_models)
+    if requirements_mode:
+        # Un-gated and optional: defaults come from the requirements document
+        # after parsing (and the model may not be in the catalog at all).
+        parser.add_argument("--model", required=False, default=None)
+        parser.add_argument("--device", required=False, default=None)
+    else:
+        parser.add_argument("--model", required=True, choices=valid_models)
+        parser.add_argument("--device", required=True, choices=valid_devices)
     parser.add_argument("--workflow", required=True, choices=valid_workflows)
-    parser.add_argument("--device", required=True, choices=valid_devices)
+    add_requirements_argument(parser)
     parser.add_argument("--service-port", type=int, default=8000)
     parser.add_argument(
         "--server-url",
@@ -492,6 +510,9 @@ def parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     if args.repeat < 1:
         parser.error("--repeat must be >= 1")
+    args.requirements_doc = None
+    if args.requirements_json:
+        apply_requirements(args, parser)
     if args.server_url:
         from utils.url_helpers import normalize_server_url
 
@@ -558,6 +579,8 @@ def main() -> int:
     register_venv_provisioner(TenstorrentVenvProvisioner())
     register_target_pack(TenstorrentTargetPack())
     args = parse_args()
+    if args.requirements_doc is not None:
+        register_requirements_providers(args.requirements_doc)
     logging.basicConfig(
         level=_LOG_LEVELS[args.log_level],
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",

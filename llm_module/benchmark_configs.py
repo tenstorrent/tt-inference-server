@@ -65,6 +65,21 @@ def get_llm_configs(
         for params in text_params
         if params.targets
     }
+    priority_by_shape = {
+        (params.isl, params.osl, params.max_concurrency): params.priority
+        for params in text_params
+        if getattr(params, "priority", None)
+    }
+    target_priorities_by_shape = {
+        (params.isl, params.osl, params.max_concurrency): params.target_priorities
+        for params in text_params
+        if getattr(params, "target_priorities", None)
+    }
+    goodput_by_shape = {
+        (params.isl, params.osl, params.max_concurrency): params.goodput
+        for params in text_params
+        if getattr(params, "goodput", None)
+    }
 
     metadata = getattr(model_spec, "metadata", None) or {}
     output_block_size = int(metadata.get("output_block_size", 1) or 1)
@@ -75,6 +90,7 @@ def get_llm_configs(
         if key in seen:
             continue
         seen.add(key)
+        shape = (params.isl, params.osl, params.max_concurrency)
         configs.append(
             LLMRunConfig(
                 isl=params.isl,
@@ -94,6 +110,9 @@ def get_llm_configs(
                     if output_block_size > 1
                     else None
                 ),
+                priority=priority_by_shape.get(shape),
+                target_priorities=target_priorities_by_shape.get(shape),
+                goodput=goodput_by_shape.get(shape),
             )
         )
 
