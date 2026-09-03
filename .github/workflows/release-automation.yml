@@ -80,7 +80,7 @@ jobs:
           REF: ${{ github.ref_name }}
         run: |
           case "$REF" in
-            stable | vcankovic/improve-release-automation)
+            stable | vcankovic/improve-release-automation | dcvijetic/release-e2e-test)
               echo "Branch '$REF' is allowed — proceeding." ;;
             *)
               echo "::error::Release automation may only run from 'stable', 'vcankovic/stable-automated-release-pipeline', or 'vcankovic/automated-release-pipeline'. Refusing to run on '$REF'."
@@ -249,10 +249,11 @@ jobs:
           fi
 
       - name: "git push on stable branch"
-        if: env.COMMITTED == 'true'
+        if: false  # [E2E DUMMY] do not push generated files to the branch
         run: git push origin "HEAD:${{ github.ref_name }}"
 
       - name: "git tag + git push origin <tag>"
+        if: false  # [E2E DUMMY] do not create/push a release tag
         # Force so re-runs of the pipeline re-point/replace the (temp) tag
         # instead of failing on an already-existing tag.
         run: |
@@ -262,6 +263,7 @@ jobs:
           echo "Tagged HEAD and pushed '${TAG}'."
 
       - name: "git branch <tag> from release HEAD + push"
+        if: false  # [E2E DUMMY] do not create/push a release branch
         # README_MANUAL also cuts a v<version> BRANCH (besides the tag) from the
         # release HEAD. Use `git branch -f` (NOT switch/checkout) so HEAD stays on
         # the current release branch — later steps (crane copy / re-bake / verify /
@@ -291,6 +293,7 @@ jobs:
           retention-days: 7
 
       - name: "Build release artifacts zip (download from tt-shield)"
+        continue-on-error: true  # [E2E DUMMY] don't block the run if the source run lacks the release-scoped artifacts
         env:
           GH_TOKEN: ${{ secrets.TMP_VCANKOVIC_SHIELD_CRANE_PAT }}
         run: |
@@ -393,6 +396,7 @@ jobs:
       # ----- Install crane (google/go-containerregistry) — used to promote the
       #       release images from tt-shield to tt-inference-server
       - name: "Install crane"
+        if: false  # [E2E DUMMY] no image publishing, so crane is not needed
         run: |
           curl -fsSL "https://github.com/google/go-containerregistry/releases/download/v${CRANE_VERSION}/go-containerregistry_Linux_x86_64.tar.gz" \
             | sudo tar -xzf - -C /usr/local/bin crane
@@ -405,6 +409,7 @@ jobs:
       #       (needs read:packages) — an early diagnostic; the real crane copy
       #       below hard-fails if auth is insufficient. -----
       - name: "crane login to ghcr.io (real) + verify"
+        if: false  # [E2E DUMMY] no registry login / publishing
         env:
           CRANE_USER: vcankovicTT
           CRANE_PAT: ${{ secrets.TMP_VCANKOVIC_SHIELD_CRANE_PAT }}
@@ -467,7 +472,7 @@ jobs:
               echo "${cmd}"
               copy_cmds="${copy_cmds}${cmd}"$'\n'
               promoted="${promoted}${dst}"$'\n'
-              crane copy "${src}" "${dst}" || { echo "::error::crane copy failed: ${src} -> ${dst}"; exit 1; }
+              echo "[E2E DUMMY] would publish (skipped): crane copy ${src} ${dst}"
             fi
           done
 
@@ -506,6 +511,7 @@ jobs:
       #       vars and bake no catalogue.
       #       NOTE: must run AFTER the real vLLM `crane copy`.
       - name: "Re-bake model catalogue into the published vLLM image"
+        if: false  # [E2E DUMMY] nothing was published, so nothing to re-bake
         env:
           DST_VLLM: ${{ steps.image-mapping.outputs.vllm_dest }}
           SRC_VLLM: ${{ steps.image-mapping.outputs.vllm_source }}
@@ -565,6 +571,7 @@ jobs:
       #       every spec that points at it. Catches both known causes above and
       #       any future one.
       - name: "Verify published vLLM image resolves every spec pinned to it"
+        if: false  # [E2E DUMMY] nothing was published, so nothing to verify
         env:
           DST_VLLM: ${{ steps.image-mapping.outputs.vllm_dest }}
         run: |
@@ -717,6 +724,7 @@ jobs:
       #       the PR notes). Idempotent: skips if a Release for the tag already
       #       exists (GitHub allows only one Release per tag). -----
       - name: "Create draft GitHub Release (v<version>)"
+        if: false  # [E2E DUMMY] do not create a GitHub Release
         env:
           # Use the PAT (vcankovicTT) so the Release is created/owned by that user,
           # not github-actions[bot] — matches publish-release.yml. Needs contents:write.
@@ -742,6 +750,7 @@ jobs:
       #       double-zipped release-artifacts-v<version>.zip. --clobber overwrites
       #       the asset on re-runs. -----
       - name: "Upload release-artifacts zip as a Release asset"
+        if: false  # [E2E DUMMY] no GitHub Release to attach assets to
         env:
           # PAT (vcankovicTT) so the asset upload is attributed to that user too.
           GH_TOKEN: ${{ secrets.TMP_VCANKOVIC_SHIELD_CRANE_PAT }}
