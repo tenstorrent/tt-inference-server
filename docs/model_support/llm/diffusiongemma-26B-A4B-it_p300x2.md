@@ -22,7 +22,7 @@ docker run \
   --device /dev/tenstorrent \
   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
   --volume volume_id_diffusiongemma-26B-A4B-it:/home/container_app_user/cache_root \
-  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.21.0-bc4c4df-be7d805 \
+  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.22.0-bc4c4df-be7d805 \
   --model diffusiongemma-26B-A4B-it \
   --tt-device p300x2
 ```
@@ -45,4 +45,4 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Implementation Code | [diffusion-gemma](https://github.com/tenstorrent/tt-metal/tree/bc4c4df/models/experimental/diffusion_gemma) |
 | tt-metal Commit | `bc4c4df` |
 | vLLM Commit | `be7d805` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.21.0-bc4c4df-be7d805` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.22.0-bc4c4df-be7d805` |

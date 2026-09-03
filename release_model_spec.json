@@ -1,6 +1,6 @@
 {
   "schema_version": "0.1.0",
-  "release_version": "0.21.0",
+  "release_version": "0.22.0",
   "model_specs": {
     "openai/gpt-oss-20b": {
       "T3K": {
@@ -1828,8 +1828,8 @@
             "min_ram_gb": 80.0,
             "model_type": "LLM",
             "repacked": 0,
-            "version": "0.21.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.21.0-bc4c4df-be7d805",
+            "version": "0.22.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.22.0-bc4c4df-be7d805",
             "status": "COMPLETE",
             "code_link": "https://github.com/tenstorrent/tt-metal/tree/bc4c4df/models/demos/llama3_70b_galaxy",
             "override_tt_config": {
@@ -12745,8 +12745,8 @@
             "min_ram_gb": 10.0,
             "model_type": "LLM",
             "repacked": 0,
-            "version": "0.21.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.21.0-bc4c4df-be7d805",
+            "version": "0.22.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.22.0-bc4c4df-be7d805",
             "status": "EXPERIMENTAL",
             "code_link": "https://github.com/tenstorrent/tt-metal/tree/bc4c4df/models/experimental/diffusion_gemma",
             "override_tt_config": {
