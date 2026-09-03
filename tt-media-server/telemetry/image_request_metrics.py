@@ -18,9 +18,18 @@ several separate requests and misreport the arrival rate.
 
 from __future__ import annotations
 
-from domain.image_generate_request import ImageGenerateRequest
+from typing import TYPE_CHECKING
+
 from prometheus_client import Counter, Histogram
 from utils.logger import TTLogger
+
+if TYPE_CHECKING:  # pragma: no cover
+    # Import for typing only. Several test modules park a Mock under
+    # sys.modules["domain.image_generate_request"] (see tests/test_device_worker.py),
+    # and importing it at runtime here would bind this module to that Mock for
+    # the rest of the session. `from __future__ import annotations` makes the
+    # annotations below strings, so nothing is needed at runtime.
+    from domain.image_generate_request import ImageGenerateRequest
 
 logger = TTLogger()
 
