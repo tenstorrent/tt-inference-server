@@ -300,20 +300,27 @@ RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_
 # tt-shield run 33613146896 lost 5 consecutive attempts to it (38 of 41 layers
 # landed in under a minute; the remaining big one never finished).
 #
+# Split out ONLY paths this Dockerfile guarantees exist. A COPY of a missing path
+# is a hard build failure ("failed to compute cache key: ... not found"), and the
+# tt-metal tree is not ours - directories come and go with the metal commit.
+#   python_env    create_venv.sh (line ~107), and PYTHON_ENV_DIR is used throughout
+#   audio_venv    created by `python3 -m venv` below
+#   build_Release `cmake --build build_Release` runs against it
+#   server        COPY "tt-media-server" lands here
+# Everything else - including tt-metal/runtime and the uv-python that
+# `create_venv.sh --bundle-python` sometimes produces and sometimes does not -
+# rides in the catch-all, where a missing directory is a no-op instead of a
+# failed build. Run 33697382092 died exactly this way on tt-metal/uv-python.
+#
 # Ordering is load-bearing: a layer counts as "Already exists" on a pull only if
-# everything BENEATH it is unchanged too, so the subtrees that survive a rebuild
-# go first. python_env/audio_venv/uv-python change only when the requirements
-# files do - a metal-only bump leaves them byte-identical, so runners can reuse
-# them instead of re-fetching 9.6GB. Keep volatile subtrees last, and do not
-# reorder these without re-reading this comment.
+# everything BENEATH it is unchanged too, so the subtrees least likely to change
+# go first. Keep volatile subtrees last.
 #
 # Sizes at the time of writing (uncompressed, from `du -sh` inside the image):
-#   python_env 9.6G | build_Release 2.0G | audio_venv 1.6G | runtime 480M
-#   server 233M | uv-python 87M | everything else ~250M
+#   python_env 9.6G | build_Release 2.0G | audio_venv 1.6G | server 233M
+#   catch-all ~800M (runtime 480M + uv-python 87M + the rest)
 #
-# --- stable: reused across builds ---
-COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
-    /home/container_app_user/tt-metal/uv-python ${TT_METAL_HOME}/uv-python
+# --- least likely to change ---
 COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     /home/container_app_user/tt-metal/python_env ${PYTHON_ENV_DIR}
 # NB: AUDIO_VENV_DIR is set in the builder stage and ENV does not cross stages -
@@ -325,8 +332,6 @@ COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} 
 COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     /home/container_app_user/tt-metal/build_Release ${TT_METAL_HOME}/build_Release
 COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
-    /home/container_app_user/tt-metal/runtime ${TT_METAL_HOME}/runtime
-COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     /home/container_app_user/tt-metal/server ${TT_METAL_HOME}/server
 
 # --- everything else, minus what the layers above already hold ---
@@ -336,11 +341,9 @@ COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} 
 # would roughly double. `tt-metal/build` is a relative symlink to build_Release
 # and rides along here - it resolves because the target is copied above.
 COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
-    --exclude=tt-metal/uv-python \
     --exclude=tt-metal/python_env \
     --exclude=tt-metal/audio_venv \
     --exclude=tt-metal/build_Release \
-    --exclude=tt-metal/runtime \
     --exclude=tt-metal/server \
     /home/container_app_user ${HOME_DIR}
 
