@@ -28,17 +28,24 @@ def _request(duration_seconds: float, payload_chars: int) -> AudioProcessingRequ
     return request
 
 
+def _set_runner(monkeypatch, runner: str):
+    from config.settings import settings
+
+    monkeypatch.setattr(settings, "default_sample_rate", 16000, raising=False)
+    monkeypatch.setattr(settings, "model_runner", runner, raising=False)
+
+
 class TestCreateSegmentRequest:
-    def test_segment_does_not_carry_encoded_clip(self, service, monkeypatch):
-        """The base64 clip must not be copied onto each segment.
+    def test_qwen3_asr_segment_does_not_copy_encoded_clip(self, service, monkeypatch):
+        """The base64 clip must not be copied onto each Qwen3-ASR segment.
 
         model_dump() used to deep-copy the whole payload once per segment (~13MB
         x 32 segments on a 320s clip) before it was cleared, which serialised
         fan-out and made it cost duration x segment-count.
         """
-        from config.settings import settings
+        from config.constants import ModelRunners
 
-        monkeypatch.setattr(settings, "default_sample_rate", 16000, raising=False)
+        _set_runner(monkeypatch, ModelRunners.TT_QWEN3_ASR.value)
         original = _request(duration_seconds=60.0, payload_chars=100_000)
 
         segment = service.create_segment_request(
@@ -49,10 +56,28 @@ class TestCreateSegmentRequest:
         # The parent keeps its payload; only the copy is avoided.
         assert len(original.file) == 100_000
 
-    def test_segment_slices_audio_and_disables_reprocessing(self, service, monkeypatch):
-        from config.settings import settings
+    def test_whisper_segment_keeps_the_original_dump(self, service, monkeypatch):
+        """Whisper must go through the unmodified path.
 
-        monkeypatch.setattr(settings, "default_sample_rate", 16000, raising=False)
+        The payload skip is a Qwen3-ASR-only optimisation; Whisper is production
+        grade and its segmentation behaviour is deliberately left alone.
+        """
+        _set_runner(monkeypatch, "whisper")
+        original = _request(duration_seconds=60.0, payload_chars=1000)
+
+        segment = service.create_segment_request(
+            original, {"start": 10.0, "end": 20.0}, 1
+        )
+
+        # Same observable end state as before the optimisation existed.
+        assert segment.file is None
+        assert segment._duration == pytest.approx(10.0)
+        assert len(segment._audio_array) == 10 * 16000
+
+    def test_segment_slices_audio_and_disables_reprocessing(self, service, monkeypatch):
+        from config.constants import ModelRunners
+
+        _set_runner(monkeypatch, ModelRunners.TT_QWEN3_ASR.value)
         original = _request(duration_seconds=60.0, payload_chars=1000)
 
         segment = service.create_segment_request(
@@ -66,9 +91,9 @@ class TestCreateSegmentRequest:
         assert segment._audio_array[0] == pytest.approx(10 * 16000)
 
     def test_non_file_fields_are_preserved(self, service, monkeypatch):
-        from config.settings import settings
+        from config.constants import ModelRunners
 
-        monkeypatch.setattr(settings, "default_sample_rate", 16000, raising=False)
+        _set_runner(monkeypatch, ModelRunners.TT_QWEN3_ASR.value)
         original = _request(duration_seconds=60.0, payload_chars=10)
         original.response_format = "json"
         original.chunk_duration_seconds = 10
