@@ -149,7 +149,9 @@ def _canonicalize_cli_model(args: argparse.Namespace) -> None:
         args.model = override.hf_model_repo
         return
     try:
-        model_spec, _, _ = get_runtime_model_spec(model=args.model, device=args.device)
+        model_spec = get_model_spec_provider().resolve(
+            model=args.model, device=args.device
+        )
     except (ValueError, AssertionError, KeyError):
         return
     if model_spec.hf_model_repo:
@@ -184,7 +186,7 @@ def _build_context(
     output_path = Path(output_path)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    eval_cfg = _resolve_eval_config(args.model)
+    eval_cfg = _resolve_eval_config(model_spec.hf_model_repo)
     all_params = eval_cfg if eval_cfg is not None else []
 
     return MediaContext(
@@ -217,14 +219,14 @@ def _resolve_server_url(
     return resolve_deploy_url(runtime_config)
 
 
-def _resolve_eval_config(model_name: str):
+def _resolve_eval_config(hf_model_repo: str):
     from .target_pack import get_target_pack
 
-    cfg = get_target_pack().eval_config(model_name)
+    cfg = get_target_pack().eval_config(hf_model_repo)
     if cfg is None:
         logger.warning(
             "No EvalConfig registered for model=%r; eval task metadata will be empty.",
-            model_name,
+            hf_model_repo,
         )
     return cfg
 
