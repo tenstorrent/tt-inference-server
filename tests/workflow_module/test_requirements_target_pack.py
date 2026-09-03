@@ -144,7 +144,7 @@ def test_eval_config_maps_names_and_regates(pack, doc):
     # Terminal-Bench 2.0 is a "should" in the document.
     assert by_task["terminal_bench_2"].priority == "should"
     # Borrowed tasks keep their runnable harness config.
-    assert by_task["swe_bench_verified"].swebench_eval_config is not None
+    assert by_task["swe_bench_verified"].agentic_eval_config is not None
     assert by_task["terminal_bench_2"].agentic_eval_config is not None
 
 
@@ -203,9 +203,9 @@ def test_harness_concurrency_comes_from_the_document(doc, pack):
     is what the harnesses run at.
     """
     harness_tasks = {
-        task.task_name: (task.agentic_eval_config or task.swebench_eval_config)
+        task.task_name: task.agentic_eval_config
         for task in pack.eval_config(doc.model.name).tasks
-        if (task.agentic_eval_config or task.swebench_eval_config) is not None
+        if task.agentic_eval_config is not None
     }
     assert set(harness_tasks) == {"swe_bench_verified", "terminal_bench_2"}
     for cfg in harness_tasks.values():
