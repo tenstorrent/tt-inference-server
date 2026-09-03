@@ -5,6 +5,7 @@
 import asyncio
 from abc import ABC
 
+from config.constants import ModelRunners
 from config.settings import settings
 from domain.base_request import BaseRequest
 from fastapi import HTTPException
@@ -80,8 +81,54 @@ class BaseService(ABC):
         in_flight.inc()
         try:
             request = await self.pre_process(input_request)
-            async for result in self.process_streaming(request):
-                yield await self.post_process(result)
+
+            # Qwen3-ASR: fan segments out across device runners (same parallel
+            # dispatch as the non-streaming path) instead of streaming the whole
+            # clip from one runner. Without this a long streaming request runs on a
+            # single chip (measured 60s streaming RTR 15x vs 76x non-streaming),
+            # because model-level token streaming never used _segments. We yield
+            # each segment's result in transcript order as it completes, so wall
+            # time is the slowest segment (parallel) while output/WER match the
+            # validated batch path. Scoped to Qwen3-ASR so Whisper streaming is
+            # left exactly as before.
+            segments = getattr(request, "_segments", None)
+            is_qwen3_asr = settings.model_runner == ModelRunners.TT_QWEN3_ASR.value
+            if is_qwen3_asr and segments and len(segments) > 1:
+                segment_requests = []
+                for i, segment in enumerate(segments):
+                    seg_req = self.create_segment_request(request, segment, i)
+                    # Each segment is run through the non-streaming single-result
+                    # protocol (self.process); without clearing the inherited
+                    # stream flag the worker emits streaming chunks that process()
+                    # can't consume, producing an empty response.
+                    seg_req.stream = False
+                    segment_requests.append(seg_req)
+                tasks = [
+                    asyncio.ensure_future(self.process(req))
+                    for req in segment_requests
+                ]
+                # Each segment result only knows its own window length, but
+                # `duration` is read by clients (and the benchmark harness) as the
+                # clip length used to derive RTR. Reporting 10s instead of the full
+                # clip makes a parallel 60s request look like a 10s one. The
+                # non-streaming path already sums segments back up in
+                # combine_transcription_responses; mirror that here so both paths
+                # and the single-segment streaming path agree.
+                full_duration = getattr(request, "_duration", None)
+                try:
+                    for task in tasks:
+                        result = await task
+                        processed = await self.post_process(result)
+                        if full_duration is not None and hasattr(processed, "duration"):
+                            processed.duration = full_duration
+                        yield processed
+                except Exception:
+                    for pending in tasks:
+                        pending.cancel()
+                    raise
+            else:
+                async for result in self.process_streaming(request):
+                    yield await self.post_process(result)
         finally:
             in_flight.dec()
 

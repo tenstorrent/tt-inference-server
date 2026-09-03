@@ -50,6 +50,31 @@ def _audio_avg(status_list: list[AudioTestStatus], attr: str) -> Optional[float]
     return sum(valid) / len(valid) if valid else None
 
 
+# Below this, the first->last chunk window is not a measurable decode interval:
+# it means the response arrived as one burst (parallel segment fan-out, or a
+# single non-incremental chunk) rather than token-by-token.
+_MIN_STREAMING_WINDOW_S = 0.05
+
+
+def _squash(text: str) -> str:
+    return " ".join(text.split()).lower()
+
+
+def _join_stream_chunks(chunk_texts: list[str]) -> str:
+    """Rebuild the transcript from streamed chunks.
+
+    Two shapes reach us: token-level deltas followed by a final chunk repeating
+    the whole transcript, and one complete text per audio segment. Summing
+    tokens over every chunk counts the first shape twice, so reconstruct the
+    transcript first and count it once.
+    """
+    if len(chunk_texts) > 1:
+        deltas = "".join(chunk_texts[:-1])
+        if _squash(deltas) == _squash(chunk_texts[-1]):
+            return chunk_texts[-1].strip()
+    return " ".join(t.strip() for t in chunk_texts if t.strip())
+
+
 async def _transcribe_audio_streaming_off(
     ctx: MediaContext,
     is_preprocessing_enabled: bool,
@@ -140,7 +165,6 @@ async def _transcribe_audio_streaming_on(
     url = f"{ctx.base_url}/v1/audio/transcriptions"
     start_time = time.monotonic()
     ttft: Optional[float] = None
-    total_text = ""
     total_tokens = 0
     chunk_texts: list[str] = []
     audio_duration: Optional[float] = None
@@ -179,7 +203,6 @@ async def _transcribe_audio_streaming_on(
                     chunk_tokens = count_tokens(hf_model_repo, text)
 
                     if text.strip():
-                        total_text += text + " "
                         chunk_texts.append(text)
                         total_tokens += chunk_tokens
 
@@ -204,10 +227,19 @@ async def _transcribe_audio_streaming_on(
         end_time = time.monotonic()
         total_duration = end_time - start_time
         content_streaming_time = total_duration - (ttft if ttft is not None else 0)
-        final_tokens = total_tokens
-        final_tps = (
-            final_tokens / content_streaming_time if content_streaming_time > 0 else 0
+        # Count the reconstructed transcript once instead of summing per-chunk
+        # counts, which double-counts servers that resend the full text last.
+        total_text = _join_stream_chunks(chunk_texts)
+        final_tokens = count_tokens(hf_model_repo, total_text)
+        # A burst response leaves content_streaming_time at ~0, which previously
+        # produced a divide-by-zero (reported as 0) or a meaningless spike. The
+        # whole-request duration is the honest denominator in that case.
+        tps_window = (
+            content_streaming_time
+            if content_streaming_time >= _MIN_STREAMING_WINDOW_S
+            else total_duration
         )
+        final_tps = final_tokens / tps_window if tps_window > 0 else 0.0
         final_tokens_per_user_per_sec = final_tps
 
         rtr = None

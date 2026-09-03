@@ -713,6 +713,121 @@ class TestProcessStreamingRequest:
         assert results == ["post_chunk1", "post_chunk2"]
 
 
+class _SegResult:
+    """Stand-in for AudioTextResponse: only `duration` matters here."""
+
+    def __init__(self, text, duration):
+        self.text = text
+        self.duration = duration
+
+
+class TestQwen3AsrStreamingFanOut:
+    """Streaming fan-out for Qwen3-ASR (Whisper must keep the old path)."""
+
+    @staticmethod
+    def _wire(base_service, mock_settings, segments, clip_duration):
+        mock_settings.model_runner = "qwen3-asr"
+        request = MockRequest(
+            task_id="fanout", segments=segments, duration=clip_duration, stream=True
+        )
+
+        created = []
+
+        def create_segment_request(original, segment, index):
+            seg = MockRequest(task_id=f"seg{index}", stream=original.stream)
+            seg._segment = segment
+            created.append(seg)
+            return seg
+
+        async def process(req):
+            # Every segment reports only its own window length, like the runner.
+            return _SegResult(text=req._task_id, duration=10.0)
+
+        async def post_process(result, input_req=None):
+            return result
+
+        async def process_streaming(req):
+            yield "should-not-be-used"
+            raise AssertionError("fan-out must not fall back to process_streaming")
+
+        base_service.pre_process = AsyncMock(return_value=request)
+        base_service.create_segment_request = create_segment_request
+        base_service.process = process
+        base_service.post_process = post_process
+        base_service.process_streaming = process_streaming
+        return request, created
+
+    @pytest.mark.asyncio
+    async def test_segments_are_dispatched_non_streaming(
+        self, base_service, mock_settings
+    ):
+        """Segment requests must clear the inherited stream flag.
+
+        Leaving stream=True makes the worker emit streaming chunks that
+        process() cannot consume, which returned an empty transcript.
+        """
+        _, created = self._wire(
+            base_service, mock_settings, ["s0", "s1", "s2"], clip_duration=30.0
+        )
+
+        with patch("model_services.base_service.settings", mock_settings):
+            out = [
+                c async for c in base_service.process_streaming_request(MockRequest())
+            ]
+
+        assert len(created) == 3
+        assert all(seg.stream is False for seg in created)
+        assert [r.text for r in out] == ["seg0", "seg1", "seg2"]
+
+    @pytest.mark.asyncio
+    async def test_chunks_report_full_clip_duration_not_segment_duration(
+        self, base_service, mock_settings
+    ):
+        """`duration` drives RTR downstream, so it must be the whole clip.
+
+        Emitting the 10s segment length made a parallel 60s request measure as
+        a 10s one (RTR ~13x instead of ~85x).
+        """
+        _, _ = self._wire(
+            base_service, mock_settings, ["s0", "s1", "s2", "s3", "s4", "s5"], 59.075
+        )
+
+        with patch("model_services.base_service.settings", mock_settings):
+            out = [
+                c async for c in base_service.process_streaming_request(MockRequest())
+            ]
+
+        assert len(out) == 6
+        assert all(chunk.duration == 59.075 for chunk in out)
+
+    @pytest.mark.asyncio
+    async def test_non_qwen_runner_keeps_model_level_streaming(
+        self, base_service, mock_settings
+    ):
+        """Whisper must not take the fan-out path."""
+        mock_settings.model_runner = "whisper"
+        request = MockRequest(task_id="w", segments=["s0", "s1"], duration=40.0)
+
+        base_service.pre_process = AsyncMock(return_value=request)
+        base_service.post_process = AsyncMock(side_effect=lambda r, i=None: r)
+        base_service.create_segment_request = Mock(
+            side_effect=AssertionError("Whisper must not fan out")
+        )
+
+        async def process_streaming(req):
+            yield "whisper_chunk"
+
+        base_service.process_streaming = process_streaming
+
+        with patch("model_services.base_service.settings", mock_settings):
+            out = [
+                c async for c in base_service.process_streaming_request(MockRequest())
+            ]
+
+        assert out == ["whisper_chunk"]
+        base_service.create_segment_request.assert_not_called()
+
+
 class TestJobManagement:
     """Test job management methods - tests BaseJobService"""
 
