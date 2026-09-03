@@ -2,10 +2,34 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+from types import SimpleNamespace
+
 from test_module.benchmark_tests.audio_benchmark_tests import (
+    _is_qwen3_asr,
     _join_stream_chunks,
     _MIN_STREAMING_WINDOW_S,
 )
+
+
+def _ctx(impl_name):
+    return SimpleNamespace(model_spec=SimpleNamespace(impl=SimpleNamespace(impl_name=impl_name)))
+
+
+class TestQwenGate:
+    """The token/window fixes are scoped to Qwen3-ASR.
+
+    Whisper's reported T/S/U is the baseline its targets were calibrated
+    against, so it must keep the original computation.
+    """
+
+    def test_qwen3_asr_is_detected(self):
+        assert _is_qwen3_asr(_ctx("qwen3-asr")) is True
+
+    def test_whisper_is_not_qwen(self):
+        assert _is_qwen3_asr(_ctx("whisper")) is False
+
+    def test_missing_impl_is_not_qwen(self):
+        assert _is_qwen3_asr(SimpleNamespace(model_spec=SimpleNamespace())) is False
 
 
 class TestJoinStreamChunks:

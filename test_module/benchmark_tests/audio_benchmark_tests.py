@@ -56,6 +56,11 @@ def _audio_avg(status_list: list[AudioTestStatus], attr: str) -> Optional[float]
 _MIN_STREAMING_WINDOW_S = 0.05
 
 
+def _is_qwen3_asr(ctx: MediaContext) -> bool:
+    impl = getattr(ctx.model_spec, "impl", None)
+    return getattr(impl, "impl_name", None) == "qwen3-asr"
+
+
 def _squash(text: str) -> str:
     return " ".join(text.split()).lower()
 
@@ -227,19 +232,30 @@ async def _transcribe_audio_streaming_on(
         end_time = time.monotonic()
         total_duration = end_time - start_time
         content_streaming_time = total_duration - (ttft if ttft is not None else 0)
-        # Count the reconstructed transcript once instead of summing per-chunk
-        # counts, which double-counts servers that resend the full text last.
-        total_text = _join_stream_chunks(chunk_texts)
-        final_tokens = count_tokens(hf_model_repo, total_text)
-        # A burst response leaves content_streaming_time at ~0, which previously
-        # produced a divide-by-zero (reported as 0) or a meaningless spike. The
-        # whole-request duration is the honest denominator in that case.
-        tps_window = (
-            content_streaming_time
-            if content_streaming_time >= _MIN_STREAMING_WINDOW_S
-            else total_duration
-        )
-        final_tps = final_tokens / tps_window if tps_window > 0 else 0.0
+        if _is_qwen3_asr(ctx):
+            # Count the reconstructed transcript once instead of summing
+            # per-chunk counts, which double-counts a server that resends the
+            # full text last.
+            total_text = _join_stream_chunks(chunk_texts)
+            final_tokens = count_tokens(hf_model_repo, total_text)
+            # Parallel segment fan-out delivers every chunk at once, leaving
+            # content_streaming_time at ~0: previously a divide-by-zero reported
+            # as 0, or a meaningless spike. Fall back to the request duration.
+            tps_window = (
+                content_streaming_time
+                if content_streaming_time >= _MIN_STREAMING_WINDOW_S
+                else total_duration
+            )
+            final_tps = final_tokens / tps_window if tps_window > 0 else 0.0
+        else:
+            # Whisper is production grade and its reported T/S/U is the baseline
+            # its targets were calibrated against, so leave it exactly as it was.
+            final_tokens = total_tokens
+            final_tps = (
+                final_tokens / content_streaming_time
+                if content_streaming_time > 0
+                else 0
+            )
         final_tokens_per_user_per_sec = final_tps
 
         rtr = None
