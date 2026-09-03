@@ -176,3 +176,110 @@ TEST_F(ConversationHasherTest, RenderLastUserTurn_BosIncludedOnlyWithoutPrior) {
   EXPECT_NE(contDelta.compare(0, cfg.bos_token.size(), cfg.bos_token), 0)
       << "Continuations must not duplicate BOS already in the KV cache";
 }
+
+// ---------------------------------------------------------------------------
+// Think-row accounting (getPrefixCacheHashesByBlocksWithThinking)
+//
+// accumulatedThinkTokens is the correction that turns a block-aligned match
+// back into a KV row index: matched_tokens + accumulatedThinkTokens ==
+// kv_position_id, the first free KV index. So it must count every row the NEXT
+// turn's prompt will not re-supply — the reasoning content always, and each
+// delimiter only when this model's chat template drops it from history.
+//
+// The hashes must be identical under every policy: matching has to work across
+// a prompt that no longer carries the reasoning at all.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+constexpr uint32_t kThinkStart = 90001;
+constexpr uint32_t kThinkEnd = 90002;
+
+// [first block of ordinary tokens] <think> t t </think> [one more block]
+std::vector<uint32_t> tokensWithOneThinkBlock() {
+  const size_t firstBlockSize = tt::config::prefixCacheFirstBlockSize();
+  const size_t blockSize = tt::config::prefixCacheBlockSize();
+  std::vector<uint32_t> tokens;
+  tokens.reserve(firstBlockSize + blockSize + 4);
+  for (size_t i = 0; i < firstBlockSize; ++i) {
+    tokens.push_back(static_cast<uint32_t>(1000 + i));
+  }
+  tokens.push_back(kThinkStart);
+  tokens.push_back(70001);  // reasoning content
+  tokens.push_back(70002);  // reasoning content
+  tokens.push_back(kThinkEnd);
+  for (size_t i = 0; i < blockSize; ++i) {
+    tokens.push_back(static_cast<uint32_t>(2000 + i));
+  }
+  return tokens;
+}
+
+std::vector<BlockHashInfo> hashWithPolicy(bool startInHistory,
+                                          bool endInHistory) {
+  return getPrefixCacheHashesByBlocksWithThinking(tokensWithOneThinkBlock(),
+                                                  kThinkStart, kThinkEnd,
+                                                  startInHistory, endInHistory);
+}
+
+}  // namespace
+
+TEST(ConversationHasherThinkRows, CountsDelimitersDroppedFromHistory) {
+  // DeepSeek / Gemma / MiniMax-M2.7 shape: the next prompt carries neither
+  // delimiter, so both rows are this counter's responsibility.
+  auto blocks =
+      hashWithPolicy(/*startInHistory=*/false, /*endInHistory=*/false);
+  ASSERT_EQ(blocks.size(), 2u);
+  EXPECT_EQ(blocks[0].accumulatedThinkTokens, 0u)
+      << "the think block starts after the first block closes";
+  EXPECT_EQ(blocks[1].accumulatedThinkTokens, 4u)
+      << "2 reasoning tokens + both delimiters occupy KV rows the next "
+         "prompt will not contain";
+}
+
+TEST(ConversationHasherThinkRows, SkipsDelimitersKeptInHistory) {
+  // Kimi / GLM-5.2 shape: the template re-renders `<think></think>`, so those
+  // two rows arrive with the next prompt and must NOT be counted again.
+  auto blocks = hashWithPolicy(/*startInHistory=*/true, /*endInHistory=*/true);
+  ASSERT_EQ(blocks.size(), 2u);
+  EXPECT_EQ(blocks[1].accumulatedThinkTokens, 2u)
+      << "only the reasoning content is missing from the next prompt";
+}
+
+TEST(ConversationHasherThinkRows, CountsEachDelimiterIndependently) {
+  // GLM-5.1 / MiniMax-M3 shape: history keeps the closing delimiter only.
+  auto blocks = hashWithPolicy(/*startInHistory=*/false, /*endInHistory=*/true);
+  ASSERT_EQ(blocks.size(), 2u);
+  EXPECT_EQ(blocks[1].accumulatedThinkTokens, 3u)
+      << "2 reasoning tokens + the dropped opening delimiter";
+}
+
+TEST(ConversationHasherThinkRows, PolicyNeverChangesTheHashes) {
+  // The fingerprint side must stay policy-independent, otherwise a prompt that
+  // renders the delimiters differently stops matching its own session.
+  auto dropped = hashWithPolicy(false, false);
+  auto kept = hashWithPolicy(true, true);
+  auto mixed = hashWithPolicy(false, true);
+  ASSERT_EQ(dropped.size(), kept.size());
+  ASSERT_EQ(dropped.size(), mixed.size());
+  for (size_t i = 0; i < dropped.size(); ++i) {
+    EXPECT_EQ(dropped[i].hash, kept[i].hash) << "block " << i;
+    EXPECT_EQ(dropped[i].hash, mixed[i].hash) << "block " << i;
+  }
+}
+
+TEST(ConversationHasherThinkRows, MatchedPlusThinkEqualsKvRows) {
+  // The invariant the accounting exists to uphold, stated directly: for a
+  // prompt that re-renders neither delimiter, the matched (hashed) token count
+  // plus the think rows must equal the number of KV rows consumed.
+  const size_t firstBlockSize = tt::config::prefixCacheFirstBlockSize();
+  const size_t blockSize = tt::config::prefixCacheBlockSize();
+  const auto tokens = tokensWithOneThinkBlock();
+
+  auto blocks =
+      hashWithPolicy(/*startInHistory=*/false, /*endInHistory=*/false);
+  ASSERT_EQ(blocks.size(), 2u);
+
+  const size_t matchedTokens = firstBlockSize + blockSize;  // hashed tokens
+  EXPECT_EQ(matchedTokens + blocks.back().accumulatedThinkTokens, tokens.size())
+      << "kv_position_id must land on the first free KV row";
+}

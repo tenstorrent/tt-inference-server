@@ -92,8 +92,12 @@ std::string renderLastUserTurn(const std::vector<ChatMessage>& messages,
  */
 struct BlockHashInfo {
   uint64_t hash;
-  uint32_t
-      accumulatedThinkTokens;  // Thinking content tokens (excluding markers)
+  // KV rows occupied by thinking up to and including this block that a LATER
+  // turn's prompt will not contain: the reasoning content, plus each delimiter
+  // this model's chat template drops from history (see
+  // tokenizers::ThinkMarkersInHistory). This is the correction that turns a
+  // block-aligned match back into a KV row index, so it counts ROWS, not words.
+  uint32_t accumulatedThinkTokens;
 };
 
 /**
@@ -176,23 +180,34 @@ std::vector<uint64_t> getPrefixCacheHashesByBlocks(
 /**
  * Compute per-block KV cache hashes, filtering out thinking tokens.
  *
- * Thinking tokens (content between thinkStartId and thinkEndId markers) are
- * excluded from the hash computation but their count is tracked. The markers
- * themselves are also excluded from both the hash and the count.
+ * Thinking tokens (content between thinkStartId and thinkEndId markers) and
+ * the markers themselves are excluded from the hash computation — a later turn
+ * whose prompt no longer carries the reasoning must still match these blocks.
+ *
+ * The think COUNT is a different question: it exists to rebuild a KV row index
+ * from a block-aligned match, so it must count every row the later prompt will
+ * not supply. Reasoning content always counts. A delimiter counts only when
+ * this model's chat template drops it from history — pass
+ * thinkStartInHistory / thinkEndInHistory from
+ * tokenizers::thinkMarkersInHistory(). Counting a delimiter the next prompt
+ * still contains shifts every following turn forward; not counting one it
+ * drops shifts them back.
  *
  * Uses the same marker state machine as session tracking to classify tokens as
- * thinking or non-thinking.
+ * thinking or non-thinking; Session::addGeneratedToken must stay in step.
  *
  * @param tokens Token-id sequence to hash.
  * @param thinkStartId Token ID for <|begin_think|> (kNoThinkTokenId to disable)
  * @param thinkEndId Token ID for <|end_think|>
+ * @param thinkStartInHistory True iff later prompts re-render thinkStartId.
+ * @param thinkEndInHistory True iff later prompts re-render thinkEndId.
  * @param parentHash Optional seed hash from a prior block.
- * @param parentThinkCount Accumulated think tokens from prior blocks.
+ * @param parentThinkCount Accumulated think rows from prior blocks.
  * @return Vector of BlockHashInfo (one per full block of non-thinking tokens).
  */
 std::vector<BlockHashInfo> getPrefixCacheHashesByBlocksWithThinking(
     std::span<const uint32_t> tokens, uint32_t thinkStartId,
-    uint32_t thinkEndId, uint64_t parentHash = 0,
-    uint32_t parentThinkCount = 0);
+    uint32_t thinkEndId, bool thinkStartInHistory, bool thinkEndInHistory,
+    uint64_t parentHash = 0, uint32_t parentThinkCount = 0);
 
 }  // namespace tt::utils

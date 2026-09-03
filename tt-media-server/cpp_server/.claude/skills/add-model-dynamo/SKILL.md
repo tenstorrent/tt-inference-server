@@ -13,9 +13,12 @@ description: Checklist for onboarding a new LLM to the cpp_server inference back
 | 1 | `include/config/types.hpp` | `ModelType` + `Model` enum values, `MODEL_MAPPINGS` (`Model`→HF id), `modelTypeFromDeviceBackend` short-name branch |
 | 2 | `src/config/settings.cpp` | `modelType()` resolver: HF id → `ModelType` (else silently falls back to DeepSeek) |
 | 3 | `scripts/fetch_tokenizers.sh` | download **all** needed files into `tokenizers/<hf-id>/` |
-| 4 | `src/utils/tokenizers/tokenizer.cpp` | `tokenizerDirForModel`, `createTokenizer` (defaults to `DeepseekTokenizer`), `staticInfoFor` + a `StaticTokenizerInfo` (eos/stop/think token ids) |
+| 4 | `src/utils/tokenizers/tokenizer.cpp` | `tokenizerDirForModel`, `createTokenizer` (defaults to `DeepseekTokenizer`), `staticInfoFor` + a `StaticTokenizerInfo` (eos/stop/think token ids, **think-marker history flags**) |
 | 5 | `src/dynamo/discovery.cpp` | `runtimeParsersForModelType` (reasoning + tool-call parser ids), `buildMdcJson` (publishes `generation_config.json`) |
 | 6 | deploy + verify | `deploy.sh --hf-model-id <hf-id>`, confirm loads / registers / answers |
+
+Helper: `python3 render_think_history.py [<hf-id>]` (this directory) renders the
+fetched chat templates and prints the think ids and history flags step 4 needs.
 
 Reference: [tenstorrent/tt-inference-server#4143](https://github.com/tenstorrent/tt-inference-server/pull/4143) (and the GPT-OSS/MiniMax onboarding commits).
 
@@ -63,8 +66,49 @@ the model because `eos_token_id` is absent (model carries it only in
      - `eosTokenId` = `eos_token_id` from **config.json** (the single primary id),
      - `stopTokenIds` = the remaining ids from **generation_config.json** `eos_token_id`
        (often a list — e.g. gpt-oss `[200002, 199999, 200012]` → eos `200002`, stops `{199999, 200012}`),
-     - for reasoning models, `thinkStartTokenId`/`thinkEndTokenId` (`<think>`/`</think>`);
-       Harmony-style models (gpt-oss) have no think tokens.
+     - for reasoning models, `thinkStartTokenId`/`thinkEndTokenId` — **read the
+       pair out of the model's own chat template, do not copy a sibling's**
+       (MiniMax-M3 reasons in `<mm:think>`/`</mm:think>` while M2.7 uses
+       `<think>`/`</think>`, and both pairs exist in M3's vocab, so the wrong
+       ids parse fine and silently never match). Harmony-style models (gpt-oss)
+       have no think tokens: leave the ids unset, because `<|channel|>` there
+       also opens the `final` channel and would trip the marker state machine
+       on ordinary answers.
+     - `thinkStartInHistory` / `thinkEndInHistory` — see below.
+
+   **Think-marker history flags.** Every delimiter occupies a KV row, but the
+   prefix cache reconstructs "first free KV row" as
+   `matched_tokens + accumulatedThinkTokens`, where `matched_tokens` counts only
+   HASHED tokens. So each delimiter row must be counted — unless the chat
+   template re-renders that delimiter into later turns' prompts, in which case
+   the next prompt supplies the row itself and counting it again shifts the
+   turn. Get it wrong and nothing fails loudly: the conversation drifts a row or
+   two per turn and long multi-turn sessions degrade into nonsense.
+
+   Derive the values, don't guess — run from this directory:
+
+```bash
+python3 render_think_history.py <hf-id>     # omit the id to sweep every model
+```
+
+   It renders a two-turn conversation and reports, per delimiter, whether the
+   **past** assistant turn still contains it. Use the `reasoning NOT echoed`
+   block (clients rarely send `reasoning_content` back) and set the flags for
+   the pair you configured as `thinkStartTokenId`/`thinkEndTokenId` — the script
+   lists every think-like special token, and only that pair matters. The three
+   shapes seen so far:
+
+   | Template renders a past think block as | Flags |
+   |---|---|
+   | nothing (DeepSeek-R1, Gemma-4, MiniMax-M2.7) | `false, false` |
+   | a bare closing tag (GLM-5.1, MiniMax-M3) | `false, true` |
+   | empty `<think></think>` (Kimi, GLM-5.2) | `true, true` |
+
+   Known limitation: the flags are static, so a client that DOES echo
+   `reasoning_content` back changes the rendering (the script prints that case
+   too) and the accounting is off by the reasoning length for that request.
+   Pin whatever you choose in `ConversationHasherThinkRows`
+   (`tests/unit/model/conversation_hasher_test.cpp`).
 
 5. **Dynamo discovery** in `src/dynamo/discovery.cpp`:
    - `runtimeParsersForModelType` → return `{reasoning_parser, tool_call_parser}`
