@@ -467,9 +467,7 @@ jobs:
               echo "${cmd}"
               copy_cmds="${copy_cmds}${cmd}"$'\n'
               promoted="${promoted}${dst}"$'\n'
-              # TEMP(testing) improve-release-automation: real crane copy DISABLED — no publish to the
-              #   registry while iterating. REVERT: delete these two comment lines + uncomment the next.
-              # crane copy "${src}" "${dst}" || { echo "::error::crane copy failed: ${src} -> ${dst}"; exit 1; }
+              crane copy "${src}" "${dst}" || { echo "::error::crane copy failed: ${src} -> ${dst}"; exit 1; }
             fi
           done
 
@@ -548,9 +546,7 @@ jobs:
           cp model_spec.json /tmp/catalog/home/container_app_user/model_specs/
           tar --owner=1000 --group=1000 -C /tmp/catalog -cf /tmp/catalog-layer.tar home
 
-          # TEMP(testing) improve-release-automation: crane append (re-bake) DISABLED — no image
-          #   mutation while iterating. REVERT: delete these two comment lines + uncomment the next.
-          # crane append -b "${REPO}@${AMD64}" -f /tmp/catalog-layer.tar -t "${DST_VLLM}"
+          crane append -b "${REPO}@${AMD64}" -f /tmp/catalog-layer.tar -t "${DST_VLLM}"
           NEW_DIGEST=$(crane digest "${DST_VLLM}")
           echo "Re-baked ${DST_VLLM} -> ${NEW_DIGEST}"
 
