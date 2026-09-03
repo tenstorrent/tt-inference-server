@@ -213,6 +213,10 @@ curl -H 'Authorization: Bearer your-secret-key' \
 # download the muxed mp4
 curl -H 'Authorization: Bearer your-secret-key' \
   localhost:8000/v1/videos/generations/<job_id>/download -o out.mp4
+
+# optional: remove the finished job and its mp4 from the server (409 while it is still running)
+curl -X DELETE -H 'Authorization: Bearer your-secret-key' \
+  localhost:8000/v1/videos/generations/<job_id>
 ```
 
 Forward port 8000 to your machine for web access / the video request UI.
