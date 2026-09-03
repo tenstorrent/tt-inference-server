@@ -468,9 +468,7 @@ makePrefillKafkaMigrationClient(const tt::config::BlazeConfig& config) {
 inline std::unique_ptr<sch::MigrationClientInterface>
 makePrefillZmqMigrationClient(const tt::config::BlazeConfig& config) {
   tt::messaging::KvmZmqTransportConfig transportCfg{
-      .cmdEndpoint = config.kvmZmqCmdEndpoint,
-      .replyEndpoint = config.kvmZmqReplyEndpoint,
-      .topic = config.kvmZmqTopic,
+      .endpoint = config.kvmZmqEndpoint,
   };
   auto transport =
       std::make_unique<tt::messaging::KvmZmqTransport>(std::move(transportCfg));
@@ -481,9 +479,9 @@ makePrefillZmqMigrationClient(const tt::config::BlazeConfig& config) {
       static_cast<int>(tt::config::kvMigrationDrainPollMs()));
   TT_LOG_INFO(
       "makePrefillZmqMigrationClient: RemoteKVManagerAdapter over ZMQ wired "
-      "(cmd_endpoint={}, reply_endpoint={}, topic='{}'); no shmem loopback "
+      "(endpoint={}); no shmem loopback "
       "backend — kv_manager serves every migration this process issues",
-      config.kvmZmqCmdEndpoint, config.kvmZmqReplyEndpoint, config.kvmZmqTopic);
+      config.kvmZmqEndpoint);
   return std::make_unique<tt::services::RemoteKVManagerAdapter>(
       std::move(kvManager));
 }

@@ -1965,10 +1965,9 @@ if(ENABLE_BLAZE)
     )
     gtest_discover_tests(remote_kv_manager_zmq_impl_test)
 
-    # Integration test: real KvmZmqTransport over inproc:// with a mock
-    # kv_manager peer (SUB-connect / PUB-connect) to exercise the on-wire
-    # topic framing and the RemoteKVManagerZmqImpl status transitions
-    # end-to-end.
+    # Integration test: real KvmZmqTransport DEALER over TCP with a mock
+    # kv_manager ROUTER to exercise direct command/ack framing and
+    # RemoteKVManagerZmqImpl status transitions end-to-end.
     add_executable(kvm_zmq_transport_integration_test
         tests/integration/messaging/kvm_zmq_transport_integration_test.cpp
     )

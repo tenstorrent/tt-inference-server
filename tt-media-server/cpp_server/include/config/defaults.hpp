@@ -70,22 +70,8 @@ constexpr const char* KAFKA_MIGRATION_ACK_TOPIC = "kv-migration-acks";
 // opt-in fallback for those, gated on KAFKA_ENABLED=ON at build time.
 constexpr const char* PREFILL_KV_MANAGER_TRANSPORT = "zmq";
 
-// ZMQ endpoints kv_manager connects into (see plan doc: engine binds,
-// kv_manager connects). Both must be reachable by the kv_manager
-// prefill-leader; the reply endpoint is where we bind SUB for acks.
-constexpr const char* KVM_ZMQ_CMD_ENDPOINT = "tcp://0.0.0.0:5559";
-constexpr const char* KVM_ZMQ_REPLY_ENDPOINT = "tcp://0.0.0.0:5560";
-// Byte prefix used as the first ZMQ frame; kv_manager's SUB filters on
-// it and echoes it back on the ack. kv_manager REQUIRES the operator to
-// set KV_MANAGER_ZMQ_TOPICS explicitly (it throws when unset), so this
-// value must be one of the topics the operator subscribes to — kv_manager's
-// vocabulary is L1..L61 (per-layer) + M (metadata). "L1" matches the
-// smoke-test topic used in kv_manager's own unit tests and README
-// examples, and is present in every realistic operator config (L1-L61,M
-// etc), so it's the least surprising default here. The topic tag does
-// NOT drive kv_manager's internal routing — that comes from `layer_begin`
-// on the payload after the prefill-leader partitions the request.
-constexpr const char* KVM_ZMQ_TOPIC = "L1";
+// kv_manager binds its command ROUTER; the inference server connects DEALER.
+constexpr const char* KVM_ZMQ_ENDPOINT = "tcp://127.0.0.1:9093";
 
 // Mooncake KV Migration configuration.
 constexpr unsigned KV_MIGRATION_TIMEOUT_MS = 60000;

@@ -3,10 +3,8 @@
 
 // Integration test for the ZMQ transport + RemoteKVManagerZmqImpl.
 //
-// Wires up a real KvmZmqTransport (engine side, PUB+SUB bind on loopback
-// tcp:// URIs) and a mock kv_manager peer (SUB+PUB connect, mirroring
-// `kvm::cp::command::ZmqCommandTransport`) to exercise the on-wire
-// framing end-to-end without touching Kafka.
+// Wires up a real KvmZmqTransport (engine-side DEALER) and a mock
+// kv_manager command ROUTER to exercise the direct on-wire framing.
 //
 // Uses tcp:// on 127.0.0.1 with a probed ephemeral port range rather than
 // inproc:// because inproc requires a shared ZMQ context between the two
@@ -18,8 +16,6 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
-#include <cstring>
-#include <exception>
 #include <memory>
 #include <string>
 #include <thread>
@@ -45,8 +41,6 @@ using tt::services::MigrationRequest;
 using tt::services::MigrationStatus;
 using tt::services::RemoteKVManagerZmqImpl;
 
-constexpr const char* KVM_TOPIC = "L1";
-
 // Small deadline-based spin. Avoids fixed sleeps that either flake under
 // load or slow down the suite unnecessarily.
 template <typename Pred>
@@ -59,27 +53,15 @@ bool waitFor(Pred pred, std::chrono::milliseconds timeout = 2s) {
   return pred();
 }
 
-/**
- * Mock kv_manager peer. Uses cppzmq to `zmq_connect` a SUB to the engine's
- * cmd endpoint and a PUB to the engine's reply endpoint — same shape as
- * kv_manager's real `ZmqCommandTransport::open` (see
- * `tt-d-gen/kv_manager/src/control_plane/command/zmq_command_transport.cpp`).
- * Every command it receives triggers a scripted ack (default SUCCESSFUL)
- * with the same command_id + migration_id.
- */
+/** Mock of kv_manager's command ROUTER. */
 class MockKvManagerPeer {
  public:
-  MockKvManagerPeer(const std::string& cmdEndpoint,
-                    const std::string& replyEndpoint, zmq::context_t& ctx,
+  MockKvManagerPeer(zmq::context_t& ctx,
                     MigrationStatus ackStatus = MigrationStatus::SUCCESSFUL)
-      : sub(ctx, zmq::socket_type::sub),
-        pub(ctx, zmq::socket_type::pub),
-        ackStatus(ackStatus) {
-    sub.set(zmq::sockopt::linger, 0);
-    pub.set(zmq::sockopt::linger, 0);
-    sub.set(zmq::sockopt::subscribe, KVM_TOPIC);
-    sub.connect(cmdEndpoint);
-    pub.connect(replyEndpoint);
+      : router(ctx, zmq::socket_type::router), ackStatus(ackStatus) {
+    router.set(zmq::sockopt::linger, 0);
+    router.bind("tcp://127.0.0.1:*");
+    endpoint = router.get(zmq::sockopt::last_endpoint);
   }
 
   void start() {
@@ -100,20 +82,22 @@ class MockKvManagerPeer {
     return received.load(std::memory_order_relaxed);
   }
 
+  const std::string& getEndpoint() const { return endpoint; }
+
  private:
   void runLoop() {
     while (running.load(std::memory_order_relaxed)) {
-      zmq::pollitem_t items[] = {{static_cast<void*>(sub), 0, ZMQ_POLLIN, 0}};
+      zmq::pollitem_t items[] = {
+          {static_cast<void*>(router), 0, ZMQ_POLLIN, 0}};
       const int rc = zmq::poll(items, 1, 10ms);
       if (rc <= 0 || (items[0].revents & ZMQ_POLLIN) == 0) continue;
 
-      zmq::message_t topicMsg;
-      auto tr = sub.recv(topicMsg, zmq::recv_flags::none);
-      if (!tr.has_value()) continue;
-      if (!topicMsg.more()) continue;
+      zmq::message_t route;
+      auto routeResult = router.recv(route, zmq::recv_flags::none);
+      if (!routeResult.has_value() || !route.more()) continue;
       zmq::message_t payloadMsg;
-      auto pr = sub.recv(payloadMsg, zmq::recv_flags::none);
-      if (!pr.has_value()) continue;
+      auto payloadResult = router.recv(payloadMsg, zmq::recv_flags::none);
+      if (!payloadResult.has_value() || payloadMsg.more()) continue;
 
       const std::string payload(static_cast<const char*>(payloadMsg.data()),
                                 payloadMsg.size());
@@ -127,15 +111,14 @@ class MockKvManagerPeer {
           .status = ackStatus,
       });
 
-      zmq::message_t topicOut(KVM_TOPIC, std::strlen(KVM_TOPIC));
       zmq::message_t payloadOut(ack.data(), ack.size());
-      (void)pub.send(topicOut, zmq::send_flags::sndmore);
-      (void)pub.send(payloadOut, zmq::send_flags::none);
+      (void)router.send(route, zmq::send_flags::sndmore);
+      (void)router.send(payloadOut, zmq::send_flags::none);
     }
   }
 
-  zmq::socket_t sub;
-  zmq::socket_t pub;
+  zmq::socket_t router;
+  std::string endpoint;
   MigrationStatus ackStatus;
   std::atomic<bool> running{false};
   std::atomic<uint64_t> received{0};
@@ -171,28 +154,22 @@ class KvmZmqTcpFixture : public ::testing::Test {
     ctx.reset();
   }
 
-  KvmZmqTransportConfig endpoints(int port) const {
-    return KvmZmqTransportConfig{
-        .cmdEndpoint = "tcp://127.0.0.1:" + std::to_string(port),
-        .replyEndpoint = "tcp://127.0.0.1:" + std::to_string(port + 1),
-        .topic = KVM_TOPIC,
-    };
+  void connectTransport(
+      MigrationStatus ackStatus = MigrationStatus::SUCCESSFUL) {
+    peer = std::make_unique<MockKvManagerPeer>(*ctx, ackStatus);
+    transport = std::make_unique<KvmZmqTransport>(
+        KvmZmqTransportConfig{.endpoint = peer->getEndpoint()});
+    peer->start();
   }
 
-  // Bind a KvmZmqTransport on ephemeral port range, retrying on collision.
-  // Returns the config used so the peer can connect to the same endpoints.
-  KvmZmqTransportConfig bindTransport() {
-    for (int port = 25610; port < 25650; port += 2) {
-      auto cfg = endpoints(port);
-      try {
-        transport = std::make_unique<KvmZmqTransport>(cfg);
-        return cfg;
-      } catch (const std::exception&) {
-        continue;
-      }
-    }
-    ADD_FAILURE() << "failed to bind KvmZmqTransport on any test port";
-    return endpoints(0);
+  void connectWithoutPeer() {
+    zmq::socket_t probe(*ctx, zmq::socket_type::router);
+    probe.set(zmq::sockopt::linger, 0);
+    probe.bind("tcp://127.0.0.1:*");
+    const std::string endpoint = probe.get(zmq::sockopt::last_endpoint);
+    probe.close();
+    transport = std::make_unique<KvmZmqTransport>(
+        KvmZmqTransportConfig{.endpoint = endpoint});
   }
 
   std::unique_ptr<zmq::context_t> ctx;
@@ -202,23 +179,12 @@ class KvmZmqTcpFixture : public ::testing::Test {
 };
 
 TEST_F(KvmZmqTcpFixture, SingleMigrateGetsAcked) {
-  auto cfg = bindTransport();
+  connectTransport();
   ASSERT_TRUE(transport);
-
-  peer = std::make_unique<MockKvManagerPeer>(cfg.cmdEndpoint, cfg.replyEndpoint,
-                                             *ctx);
-  peer->start();
 
   manager = std::make_unique<RemoteKVManagerZmqImpl>(
       std::move(transport), /*timeout=*/2s, /*sweep=*/50ms,
       /*drainPollMs=*/5);
-
-  // PUB/SUB slow-joiner: kv_manager's SUB has to finish connecting before
-  // the engine's PUB emits or the first message is silently dropped. In
-  // production this is mitigated by the sweeper (FAILED after `timeout`);
-  // in the test we prefer a deterministic small wait so the ack path is
-  // what we're actually measuring.
-  std::this_thread::sleep_for(200ms);
 
   const uint64_t id = manager->migrate(makeRequest(0, 32));
   ASSERT_NE(id, 0u);
@@ -230,17 +196,11 @@ TEST_F(KvmZmqTcpFixture, SingleMigrateGetsAcked) {
 }
 
 TEST_F(KvmZmqTcpFixture, PerLayerBurstIsFullyAcked) {
-  auto cfg = bindTransport();
+  connectTransport();
   ASSERT_TRUE(transport);
-
-  peer = std::make_unique<MockKvManagerPeer>(cfg.cmdEndpoint, cfg.replyEndpoint,
-                                             *ctx);
-  peer->start();
 
   manager = std::make_unique<RemoteKVManagerZmqImpl>(std::move(transport), 5s,
                                                      50ms, /*drainPollMs=*/5);
-
-  std::this_thread::sleep_for(200ms);
 
   // Simulate the 61-layer burst the PrefillScheduler will issue: one
   // migrate() call per layer, each with layer_begin == layer_end - 1.
@@ -265,17 +225,12 @@ TEST_F(KvmZmqTcpFixture, PerLayerBurstIsFullyAcked) {
 }
 
 TEST_F(KvmZmqTcpFixture, FailedAckPropagates) {
-  auto cfg = bindTransport();
+  connectTransport(MigrationStatus::FAILED);
   ASSERT_TRUE(transport);
-
-  peer = std::make_unique<MockKvManagerPeer>(cfg.cmdEndpoint, cfg.replyEndpoint,
-                                             *ctx, MigrationStatus::FAILED);
-  peer->start();
 
   manager = std::make_unique<RemoteKVManagerZmqImpl>(std::move(transport), 5s,
                                                      50ms, 5);
 
-  std::this_thread::sleep_for(200ms);
   const uint64_t id = manager->migrate(makeRequest(0, 1));
   ASSERT_TRUE(waitFor([&] {
     return manager->getMigrationStatus(id) == MigrationStatus::FAILED;
@@ -283,8 +238,7 @@ TEST_F(KvmZmqTcpFixture, FailedAckPropagates) {
 }
 
 TEST_F(KvmZmqTcpFixture, TimeoutFiresWhenPeerNeverAcks) {
-  auto cfg = bindTransport();
-  (void)cfg;
+  connectWithoutPeer();
   ASSERT_TRUE(transport);
   // Deliberately no peer — no one echoes the ack. The sweeper should
   // eventually flip the migration to FAILED.

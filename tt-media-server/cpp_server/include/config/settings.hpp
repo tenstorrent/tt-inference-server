@@ -261,17 +261,8 @@ bool prefillUseRemoteKvManager();
  *  defaults::PREFILL_KV_MANAGER_TRANSPORT. */
 std::string prefillKvManagerTransport();
 
-/** ZMQ command endpoint that kv_manager's SUB connects into. From
- *  KVM_ZMQ_CMD_ENDPOINT. Default: defaults::KVM_ZMQ_CMD_ENDPOINT. */
-std::string kvmZmqCmdEndpoint();
-
-/** ZMQ reply endpoint that kv_manager's PUB connects into. From
- *  KVM_ZMQ_REPLY_ENDPOINT. Default: defaults::KVM_ZMQ_REPLY_ENDPOINT. */
-std::string kvmZmqReplyEndpoint();
-
-/** Byte-prefix topic used for kv_manager's SUB filter and echoed back on
- *  acks. From KVM_ZMQ_TOPIC. Default: defaults::KVM_ZMQ_TOPIC. */
-std::string kvmZmqTopic();
+/** ZMQ endpoint of kv_manager's command ROUTER. From KVM_ZMQ_ENDPOINT. */
+std::string kvmZmqEndpoint();
 
 /** Migration cmd queue name from MIGRATION_CMD_QUEUE_NAME. Default:
  * defaults::MIGRATION_CMD_QUEUE_NAME. */

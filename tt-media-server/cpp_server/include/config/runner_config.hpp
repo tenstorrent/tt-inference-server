@@ -68,12 +68,8 @@ struct BlazeConfig : RunnerConfigBase {
   // in blaze_utils.hpp for the dispatch logic.
   std::string prefillKvManagerTransport =
       defaults::PREFILL_KV_MANAGER_TRANSPORT;
-  // ZMQ endpoints for the kv_manager prefill-leader control channel. Both
-  // are ZMQ URIs (e.g. "tcp://0.0.0.0:5559"); this side binds and
-  // kv_manager connects.
-  std::string kvmZmqCmdEndpoint = defaults::KVM_ZMQ_CMD_ENDPOINT;
-  std::string kvmZmqReplyEndpoint = defaults::KVM_ZMQ_REPLY_ENDPOINT;
-  std::string kvmZmqTopic = defaults::KVM_ZMQ_TOPIC;
+  // ZMQ URI of the kv_manager prefill leader's command ROUTER.
+  std::string kvmZmqEndpoint = defaults::KVM_ZMQ_ENDPOINT;
   uint32_t migrationPrefillEndpointId = defaults::MIGRATION_PREFILL_ENDPOINT_ID;
   uint32_t migrationDecodeEndpointId = defaults::MIGRATION_DECODE_ENDPOINT_ID;
   std::string specDecodeMode = defaults::SPEC_DECODE_MODE;
