@@ -479,6 +479,16 @@ templates:
       default_impl: true
       env_vars:
         MESH_DEVICE: "T3K"
+        # 2026-09-03 flip (WH-endorsed after the T3K verification campaign):
+        # gated (traced sequential prefill) wedges 12B/T3K deterministically
+        # at the first b32@4k conc32 burst (G7 cross-platform; trace-bucket
+        # trim does not clear it). Bounded disables prefill traces (zero
+        # wedges, full battery x3 boots) and batched prefill engages (b32
+        # min-TTFT 1.4s). Known issue documented on the P150X8 entry applies
+        # here too: ~1-3/32 corrupt at conc32 small-ISL bursts after a prior
+        # wave (wave-boundary staleness; async-independent per WH A/B).
+        G4_FORCE_BATCH_PREFILL: "1"
+        GEMMA4_BOUNDED_SLIDING_KV_CACHE: "1"
         # Ring is a Blackhole >=8-device default only; WH must stay Linear
         # (models/demos/gemma4/tt/ccl.py default_ccl_topology).
         GEMMA4_GEN_PREFILL_CHUNK: "4096"  # measured on T3K 12B @64k metal A/B: warm TTFT 19.8s (4096) vs 23.6s (2048), cold 35.9 vs 56.4 - matches BH direction; an earlier server-128k reading suggesting 2048 was a cold-capture artifact. NOTE: MAX_PREFILL_CHUNK_SIZE is a decoy knob for gemma4 (read by tt_transformers only); this env is the real one.
