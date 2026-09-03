@@ -138,7 +138,7 @@ on first use). It decides *server-level* things:
 | Which devices / how many workers? | `DEVICE_IDS` | `(0)` |
 | Where is the tt-media-server Python code? | `TT_PYTHON_PATH` | `..` |
 | How many requests may be batched together? | `MAX_IN_FLIGHT_COUNT` | 32 |
-| How long to wait to fill a batch? | `MAX_BATCH_DELAY_TIME_MS` | 1 |
+| How long to wait to fill a batch? | `MAX_BATCH_DELAY_TIME_MS` | 5 |
 | What API key must clients send? | `OPENAI_API_KEY` (read in `main.cpp`) | `your-secret-key` |
 
 ### System 2: Python `Settings` (`tt-media-server/config/settings.py`)
