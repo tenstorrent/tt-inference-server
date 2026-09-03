@@ -205,9 +205,12 @@ class TestJobManager:
             mock_settings.return_value.max_queue_size = 1000
 
             mock_settings.return_value.enable_job_persistence = request.param
-            mock_settings.return_value.job_database_path = str(test_db_file)
 
-            manager = JobManager()
+            with patch(
+                "utils.job_manager.job_database_path",
+                return_value=str(test_db_file),
+            ):
+                manager = JobManager()
             yield manager
 
             await manager.shutdown()
@@ -1390,9 +1393,10 @@ class TestJobManager:
         utils.job_manager._job_manager_instance = None
 
         # Start the second manager pointing to the same DB
-        with patch("utils.job_manager.get_settings") as mock_settings:
+        with patch("utils.job_manager.get_settings") as mock_settings, patch(
+            "utils.job_manager.job_database_path", return_value=str(db_path)
+        ):
             mock_settings.return_value.enable_job_persistence = True
-            mock_settings.return_value.job_database_path = str(db_path)
 
             m2 = JobManager()
             try:
@@ -1425,9 +1429,10 @@ class TestJobManager:
         utils.job_manager._job_manager_instance = None
 
         # Start a new manager and verify its auto-restore behavior
-        with patch("utils.job_manager.get_settings") as mock_settings:
+        with patch("utils.job_manager.get_settings") as mock_settings, patch(
+            "utils.job_manager.job_database_path", return_value=str(db_path)
+        ):
             mock_settings.return_value.enable_job_persistence = True
-            mock_settings.return_value.job_database_path = str(db_path)
 
             m2 = JobManager()
             try:
@@ -1627,9 +1632,10 @@ class TestJobManager:
 
         utils.job_manager._job_manager_instance = None
 
-        with patch("utils.job_manager.get_settings") as mock_settings:
+        with patch("utils.job_manager.get_settings") as mock_settings, patch(
+            "utils.job_manager.job_database_path", return_value=str(db_path)
+        ):
             mock_settings.return_value.enable_job_persistence = True
-            mock_settings.return_value.job_database_path = str(db_path)
 
             m2 = JobManager()
             try:

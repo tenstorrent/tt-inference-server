@@ -9,6 +9,7 @@ templates:
 - weights:
     - stabilityai/stable-diffusion-xl-base-1.0
     - stabilityai/stable-diffusion-xl-base-1.0-img-2-img
+  model_display_name: stable-diffusion-xl-base-1.0
   impl: tt_transformers
   min_disk_gb: 15
   min_ram_gb: 6
@@ -147,6 +148,7 @@ templates:
 - weights:
     - black-forest-labs/FLUX.1-dev
     - black-forest-labs/FLUX.1-schnell
+  model_display_name: FLUX.1-dev
   impl: tt_transformers
   min_disk_gb: 15
   min_ram_gb: 6
@@ -174,6 +176,7 @@ templates:
 - weights:
     - black-forest-labs/FLUX.1-dev
     - black-forest-labs/FLUX.1-schnell
+  model_display_name: FLUX.1-dev
   impl: tt_transformers
   min_disk_gb: 15
   min_ram_gb: 6
@@ -247,6 +250,7 @@ templates:
 - weights:
     - Qwen/Qwen-Image
     - Qwen/Qwen-Image-2512
+  model_display_name: Qwen-Image
   impl: tt_transformers
   min_disk_gb: 15
   min_ram_gb: 6

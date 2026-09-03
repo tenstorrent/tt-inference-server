@@ -554,6 +554,7 @@ class TrainingOptimizers(Enum):
 
 TRAINING_STORE_ADAPTERS_DIR = "adapters/"
 TRAINING_STORE_MERGED_MODELS_DIR = "merged_models/"
+TRAINING_STORE_JOB_DATABASE_FILENAME = "jobs.db"
 
 
 # Root for LoRA adapters / merged models. Precedence, not redundancy — keep both:
@@ -572,6 +573,10 @@ def adapters_root() -> str:
 
 def merged_models_root() -> str:
     return os.path.join(_training_store_root(), TRAINING_STORE_MERGED_MODELS_DIR)
+
+
+def job_database_path() -> str:
+    return os.path.join(_training_store_root(), TRAINING_STORE_JOB_DATABASE_FILENAME)
 
 
 # Helper function to create vLLM configuration with late import to avoid circular imports
