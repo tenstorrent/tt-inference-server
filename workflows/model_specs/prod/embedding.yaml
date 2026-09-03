@@ -323,6 +323,34 @@ templates:
 - weights:
     - BAAI/bge-m3
   version: "0.20.0"
+  tt_metal_commit: "bc294789ec3"
+  impl: tt_vllm_plugin
+  min_disk_gb: 25
+  min_ram_gb: 16
+  model_type: EMBEDDING
+  inference_engine: VLLM
+  device_model_specs:
+    - device: N300
+      max_concurrency: 12
+      max_context: 8192
+      default_impl: true
+      env_vars:
+        # Both chips form one mesh. ModelArgs turns on the data-parallel serving
+        # modules at batch 12 over 8192 tokens, and each chip then runs 6 rows.
+        MESH_DEVICE: "(2,1)"
+        MAX_MODEL_LENGTH: "8192"
+        MAX_NUM_SEQS: "12"
+        MAX_BATCH_SIZE: "12"
+        # settings.py turns the dynamic batcher on whenever max_num_seqs > 1, but
+        # that worker sends one request per call to the runner. The serial worker
+        # collects up to MAX_BATCH_SIZE and runs them in one forward, which is what
+        # this fixed-shape path needs. Measured over 60 requests at 8192 tokens:
+        # 66.9 s with the dynamic batcher, 24.1 s without it.
+        USE_DYNAMIC_BATCHER: "false"
+        DEFAULT_THROTTLE_LEVEL: "0"
+- weights:
+    - BAAI/bge-m3
+  version: "0.20.0"
   tt_metal_commit: "de59f8a"
   impl: forge_vllm_plugin
   min_disk_gb: 15
