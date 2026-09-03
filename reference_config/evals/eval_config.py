@@ -598,6 +598,217 @@ _eval_config_list = [
         ],
     ),
     EvalConfig(
+        hf_model_repo="zai-org/GLM-5.3",
+        tasks=[
+            # Generate-then-answer LongBench v2 (chat API). Stock longbench2 is
+            # multiple_choice/loglikelihood and cannot run on chat-only servers.
+            EvalTask(
+                task_name="longbench2_generate",
+                max_concurrent=80,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=64.71,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5051#issuecomment-5480874649",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 512000,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "max_gen_toks": 112 * 1000,
+                    # Same tokenizer/eos as GLM-5.2 (shared base).
+                    # https://huggingface.co/zai-org/GLM-5.3
+                    "until": ["<|endoftext|>"],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "stream": "true",
+                },
+                # Select samples by input sequence length (ISL). ISL is measured
+                # by tokenizing each sample's context with `pretrained`; only
+                # samples with minimum_isl <= ISL <= maximum_isl are kept.
+                # Keep maximum_isl below max_model_len (512000) minus max_gen_toks
+                # so no selected prompt overflows the server context.
+                # Forwarded to the lm-eval fork loader via --metadata.
+                custom_dataset_kwargs={
+                    "minimum_isl": 256 * 1024,  # 256K
+                    "maximum_isl": 400 * 1000,  # 400K (< 512000 server limit on GPU)
+                    "pretrained": "zai-org/GLM-5.3",
+                    "tokenizer_num_proc": 32,  # pre-process up to 32 samples in parallel
+                },
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="gpqa_diamond_cot_zeroshot",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=80,
+                # The remote Tenstorrent console only exposes /v1/chat/completions
+                # (text /v1/completions returns 404), so use the chat API.
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=91.7,
+                    published_score_ref="https://artificialanalysis.ai/evaluations/gpqa-diamond?models=glm-5-3",
+                    gpu_reference_score=90.4,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5051#issuecomment-5480874649",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,flexible-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 400 * 1024,
+                    # Per-request HTTP timeout (lm-eval default 1800s). Long
+                    # reasoning generations on the shared console can exceed
+                    # 30min under load, so allow up to 2h before giving up.
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "max_gen_toks": 400 * 1024,
+                    # https://huggingface.co/zai-org/GLM-5.3
+                    "until": ["<|endoftext|>"],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "stream": "true",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.999,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="terminal_bench_2_1",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # Artificial Analysis runs Terminal-Bench with Terminus 2,
+                    # which is the harness configured below. Z.ai's own 88.2
+                    # is measured with Claude Code and is not comparable.
+                    published_score=83.9,
+                    published_score_ref="https://artificialanalysis.ai/evaluations/terminalbench-v2-1?models=glm-5-3",
+                    gpu_reference_score=86.52,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5051#issuecomment-5480874649",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2-1",
+                    agent="terminus-2",
+                    n_concurrent_trials=80,
+                    n_attempts=1,
+                    n_tasks=89,
+                    override_cpus=16,
+                    override_memory_mb=32 * 1024,
+                    agent_timeout_sec=2 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            "max_input_tokens": 512 * 1024,
+                            "max_output_tokens": 64 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 64 * 1024,
+                            "timeout": 60 * 60,
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/break-filter-js-from-html",
+                            "terminal-bench/cobol-modernization",
+                            "terminal-bench/compile-compcert",
+                            "terminal-bench/feal-differential-cryptanalysis",
+                            "terminal-bench/qemu-startup",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+            EvalTask(
+                task_name="tau3_bench_banking",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=50.3,
+                    published_score_ref="https://artificialanalysis.ai/evaluations/tau3-banking?models=glm-5-3",
+                    gpu_reference_score=35.05,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5051#issuecomment-5480874649",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                    tolerance=0.10,
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="sierra-research/tau3-bench",
+                    agent="tau3_llm_agent",
+                    agent_import_path="adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent",
+                    task_names=["sierra-research/tau3-bench__tau3-banking_knowledge-*"],
+                    # A single served instance is shared by the agent,
+                    # the simulated user, and the Natural Language verifier.
+                    n_concurrent_trials=2,
+                    n_attempts=1,
+                    n_tasks=40,
+                    override_cpus=4,
+                    override_memory_mb=8 * 1024,
+                    agent_timeout_sec=3600,
+                    agent_kwargs={
+                        "tau2_trial_index": 0,
+                        "temperature": 1.0,
+                        "max_steps": 200,
+                        # Default is 120s; a single reasoning user-sim turn under
+                        # load can exceed that and trip an MCP request timeout.
+                        "tool_timeout_sec": 900,
+                        "read_timeout_sec": 120,
+                    },
+                    # NOTE: values injected here are passed to the Harbor
+                    # container verbatim. Unlike the task.toml env, the
+                    # "${VAR:-default}" template syntax is NOT resolved on this
+                    # path, so use literal values -- a templated model name
+                    # reaches litellm unexpanded and fails with "LLM Provider
+                    # NOT provided". OPENAI_BASE_URL / OPENAI_API_KEY are
+                    # intentionally omitted: the task's docker-compose already
+                    # substitutes those from the launching shell env.
+                    environment_env={
+                        "TAU2_USER_MODEL": "openai/zai-org/GLM-5.3",
+                    },
+                    verifier_env={
+                        "TAU2_NL_ASSERTIONS_MODEL": "openai/zai-org/GLM-5.3",
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-031",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-032",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-052",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-002",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 3,
+                },
+            ),
+        ],
+    ),
+    EvalConfig(
         hf_model_repo="moonshotai/Kimi-K2.6",
         tasks=[
             EvalTask(
