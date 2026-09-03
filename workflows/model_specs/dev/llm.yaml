@@ -256,6 +256,50 @@ templates:
         enable_chunked_prefill: true
         max_num_batched_tokens: 65536
         long_prefill_token_threshold: 4096
+    # BH Galaxy (32x P150) native, DP=4 (2026-09-03 bring-up): the plugin's
+    # standard-DP discovery opens the native 8x4 mesh, create_submeshes
+    # reshapes to (4,8) and yields four physical-COLUMN (1,8) engines, each a
+    # separate process with TT_VISIBLE_DEVICES=<its column> and NO mesh-graph
+    # descriptor override (auto-discovery control plane handles constrained
+    # subsets; column-subset mesh_sanity byte-exact). Metal dp=4x tp=8 campaign:
+    # decode contention-free (31B b1 ~30 tok/s/u per replica), b32 TTFT within
+    # 2% of solo; 4 concurrent long prefills contend on HOST (TTFT up to 3.2x
+    # at 128k) — decode unaffected.
+    - device: BLACKHOLE_GALAXY
+      # Whole-box concurrency: 32 users x 4 DP engines. max_num_seqs below
+      # pins the per-engine ceiling (default inference would give 128/engine).
+      max_concurrency: 128
+      max_context: 262144  # 256 * 1024 per engine (same budget as P150X8)
+      default_impl: true
+      env_vars:
+        # Explicit linear CCL: topology settings do not transfer across device
+        # configs (the P150x8 entry inherits gemma4's ring default on the LB
+        # descriptor; the native galaxy column ring is unmeasured — A/B later).
+        GEMMA4_CCL_TOPOLOGY: "linear"
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+        GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
+        GEMMA4_VLLM_SINGLE_CHUNK: "0"
+        GEMMA4_CHUNKED_PREFILL_TRACE: "1"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 512000000
+        l1_small_size: 24576  # all_gather semaphores into L1_SMALL (metal demo parity)
+        # On-device decode sampling required on TP so token ids >= 65536 are
+        # reachable (host sampling only sees device 0's vocab shard).
+        sample_on_device_mode: decode_only
+      vllm_args:
+        data_parallel_size: 4
+        max_num_seqs: 32  # per-engine; max_concurrency above is whole-box
+        # Overlap host schedule with device decode (metal supports_async_decode; #51186).
+        async_scheduling: true
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: gemma4
+        # Token-chunked prefill; 65536/4096 parity with P150X8/P300X2.
+        enable_chunked_prefill: true
+        max_num_batched_tokens: 65536
+        long_prefill_token_threshold: 4096
     # GPU (H100 NVL) bring-your-own vLLM server (see docs/gpu_workflows.md); used
     # to collect GPU reference eval scores for GPQA-Diamond, Terminal-Bench 2.0,
     # and SWE-Bench Verified. Dev-only; no tt_metal_commit/version pin needed
@@ -454,6 +498,45 @@ templates:
         # 65536 = 32 users x 2048 ISL in one prefill step. Requires the trace cap
         # aligned to the shared planner (128Ki) so wide prefill stays TRACED;
         # at 4096 the batch-2 steps starve decode (TPOT 281ms -> 35ms measured).
+        max_num_batched_tokens: 65536
+        long_prefill_token_threshold: 4096
+    # BH Galaxy (32x P150) native, DP=4 (2026-09-03 bring-up): four physical-
+    # column (1,8) engines via the plugin's standard-DP discovery (see the 31B
+    # BLACKHOLE_GALAXY entry for the mechanism and gates). Config mirrors the
+    # 12B P150X8 target entry: bounded sliding + batched prefill + eager 4k
+    # chunks — gated/traced prefill wedges 12B under mixed prefill+decode
+    # concurrency (G7, cross-platform); same known wave-boundary issue applies.
+    - device: BLACKHOLE_GALAXY
+      # Whole-box concurrency: 32 users x 4 DP engines. max_num_seqs below
+      # pins the per-engine ceiling (default inference would give 128/engine).
+      max_concurrency: 128
+      max_context: 262144  # 256 * 1024 per engine (same budget as P150X8)
+      default_impl: true
+      env_vars:
+        G4_FORCE_BATCH_PREFILL: "1"
+        GEMMA4_BOUNDED_SLIDING_KV_CACHE: "1"
+        GEMMA4_CCL_TOPOLOGY: "linear"
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+        GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
+        GEMMA4_VLLM_SINGLE_CHUNK: "0"
+        GEMMA4_CHUNKED_PREFILL_TRACE: "0"  # eager chunks: no prefill traces under bounded
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 512000000
+        l1_small_size: 24576  # all_gather semaphores into L1_SMALL (metal demo parity)
+        # On-device decode sampling required on TP so token ids >= 65536 are
+        # reachable (host sampling only sees device 0's vocab shard).
+        sample_on_device_mode: decode_only
+      vllm_args:
+        data_parallel_size: 4
+        max_num_seqs: 32  # per-engine; max_concurrency above is whole-box
+        # Overlap host schedule with device decode (metal supports_async_decode; #51186).
+        async_scheduling: true
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: gemma4
+        enable_chunked_prefill: true
         max_num_batched_tokens: 65536
         long_prefill_token_threshold: 4096
     # GPU (H100 NVL) bring-your-own vLLM server (see docs/gpu_workflows.md); used
