@@ -154,16 +154,32 @@ class TerminalBenchEvalConfig:
     verifier_env: Dict[str, str] = field(default_factory=dict)
 
 
-# One shared SWE-bench agent step budget for every catalogue model. Upstream
-# mini-swe-agent 2.2.8 ships step_limit=250 in config/benchmarks/swebench.yaml,
-# which exceeds this harness's bounded-collection envelope (>100), so the
-# shared value is pinned at 50: enough to reach first file edits (16 steps
-# expired during repository inspection on django__django-11299) while staying
-# jointly satisfiable with the 32K serving envelope at the observed ~420
-# tokens/step input growth. The harness-coherence contract
+# One shared SWE-bench agent step budget for every catalogue model, pinned at
+# 100. Two facts set this number:
+#
+# (a) Wall-time feasibility. Each step costs ~65s on silicon, so 100 steps is
+#     ~108 min/instance -- it fits an 8h allocation once serving is up.
+#     Upstream mini-swe-agent 2.2.8 ships step_limit=250
+#     (config/benchmarks/swebench.yaml); 250 steps (~4.5h/instance) overrun
+#     that envelope, so we stay well below it. 100 is 2x the retired 50 and
+#     removes the "1/5 of upstream" epistemic objection while staying
+#     wall-feasible.
+#
+# (b) The step limit is the ACTIVE constraint only when the input bucket gives
+#     enough token runway. At a one-shot prefill bucket the TOKEN budget binds
+#     first: on QB2 job 75061-verified the GPT one-shot 16384-bucket run died
+#     at turn 28 via InputTokenBudgetExceeded (13368 > 13312 client cap) -- it
+#     never reached the (then 50-)step limit. Raising the step limit alone
+#     therefore does NOT change a one-shot/16K run; it only lengthens runs once
+#     a larger or chunked-prefill bucket supplies more token runway. So 100
+#     helps step-bound cases (small-context artifacts that hit the step wall
+#     before the token wall) and future-proofs chunked artifacts -- it is not a
+#     fix for the current 16K one-shot GPT token wall.
+#
+# The harness-coherence contract
 # (tests/scripts/release/test_shared_swe_contract.py) forbids per-model tuning
 # of this number.
-SHARED_SWE_STEP_LIMIT = 50
+SHARED_SWE_STEP_LIMIT = 100
 
 # The serving endpoint re-tokenizes the accumulated agent conversation and
 # counts more tokens than the gate client does: on QB2 job 75061 the client

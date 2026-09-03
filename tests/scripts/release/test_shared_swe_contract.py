@@ -221,8 +221,9 @@ def test_step_limit_is_caller_owned(model):
 def test_one_shared_swe_step_budget_across_models():
     # Harness coherence: every model's catalogue SWE row carries the SAME
     # step budget, and that budget is the single shared constant. Upstream
-    # mini-swe-agent 2.2.8 defaults to 250 (config/benchmarks/swebench.yaml),
-    # which exceeds this harness's bounded envelope, hence the pinned 50.
+    # mini-swe-agent 2.2.8 defaults to 250 (config/benchmarks/swebench.yaml);
+    # 250 steps (~4.5h/instance) overrun this harness's 8h post-serving
+    # allocation, so the shared budget is pinned at 100 (~108 min/instance).
     limits = {
         model: _swe_task(model).swebench_eval_config.mini_agent_kwargs.get(
             "step_limit"
@@ -230,7 +231,7 @@ def test_one_shared_swe_step_budget_across_models():
         for model in MODELS
     }
     assert set(limits.values()) == {SHARED_SWE_STEP_LIMIT}, limits
-    assert SHARED_SWE_STEP_LIMIT == 50
+    assert SHARED_SWE_STEP_LIMIT == 100
 
 
 def test_gate_cli_default_step_limit_reads_the_shared_constant():
@@ -242,11 +243,35 @@ def test_gate_cli_default_step_limit_reads_the_shared_constant():
     assert "required=True" not in source.split('"--step-limit"')[1].split(")")[0]
 
 
-def test_step_budget_and_token_budget_stay_mutually_satisfiable():
-    # Worst-case observed input growth is ~420 tokens/step (jobs 72819/74777);
-    # guard at 512/step so the input budget can always feed a full-length run.
+def test_step_budget_and_token_budget_bind_coherently():
+    # Two independent bounds cap a SWE run: the step limit and the input-token
+    # budget (worst-case observed input growth ~420 tokens/step on jobs
+    # 72819/74777; guarded here at a 512/step floor). Whichever is smaller binds
+    # first and terminates the run deterministically.
+    #
+    # At the retired SHARED_SWE_STEP_LIMIT=50 the 32K context-derived input
+    # budget (30720) could feed a whole 50-step run (50*512=25600 <= 30720):
+    # the *step* limit was the binding bound. At 100 the *token* budget binds
+    # first (100*512=51200 > 30720), so a one-shot/32K run cannot reach step
+    # 100 -- it ends on tokens first, exactly as silicon showed on QB2 job
+    # 75061-verified (died turn 28 on InputTokenBudgetExceeded; the 50-step
+    # limit was never reached). That is the safe, deterministic client-side
+    # fail mode, not a broken invariant: raising the step limit only lengthens
+    # runs once a larger/chunked-prefill bucket supplies more token runway.
+    #
+    # So the meaningful invariant is NOT the now-false "the token budget always
+    # feeds a full step-limited run" (max_input >= step_limit * floor). It is
+    # (1) the run stays deterministically bounded under one of the two bounds,
+    # and (2) at the 32K envelope the token budget is the one that binds.
     _, max_input, _ = resolve_token_budget(32768, 2048)
-    assert max_input >= SHARED_SWE_STEP_LIMIT * 512
+    per_step_floor = 512
+    token_feasible_steps = max_input // per_step_floor
+    # (1) Both bounds are strictly positive, so every run terminates under one.
+    assert token_feasible_steps > 0
+    assert SHARED_SWE_STEP_LIMIT > 0
+    # (2) At 32K the token budget binds before the step limit; asserting the
+    # reverse (steps always fit the token budget) would be the false invariant.
+    assert token_feasible_steps < SHARED_SWE_STEP_LIMIT
 
 
 def test_unknown_model_fails_closed():
