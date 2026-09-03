@@ -29,6 +29,9 @@ def _render(*set_args):
         str(CHART),
         "--set",
         "hfToken=fake",
+        # media/forge rows fail closed without an auth choice.
+        "--set",
+        "auth.apiKey=fake",
     ]
     for s in set_args:
         cmd.extend(["--set", s])

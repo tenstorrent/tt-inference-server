@@ -5,7 +5,7 @@ Supported weights variants for this model implementation are:
 - `Llama-3.2-3B`: [meta-llama/Llama-3.2-3B](https://huggingface.co/meta-llama/Llama-3.2-3B) **(default)** 
 - `Llama-3.2-3B-Instruct`: [meta-llama/Llama-3.2-3B-Instruct](https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct)
 
-To use non-default weights, replace `Llama-3.2-3B` in commands below.
+Weight variants use more than one released configuration; see the configuration table below.
 
 #### Useful links
 
@@ -58,3 +58,9 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | tt-metal Commit | `20edc39` |
 | vLLM Commit | `03cb300` |
 | Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.3.0-20edc39-03cb300` |
+
+#### Additional released configurations
+
+| Weights | Implementation | Max Batch Size | Max Context Length | tt-metal Commit | vLLM Commit | Docker Image |
+|---|---|---|---|---|---|---|
+| [meta-llama/Llama-3.2-3B](https://huggingface.co/meta-llama/Llama-3.2-3B) | `forge-vllm-plugin` | 1 | 2048 | `2496be4` | `-` | `ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756` |

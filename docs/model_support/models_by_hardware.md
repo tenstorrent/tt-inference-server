@@ -91,6 +91,7 @@ This page lists all supported models organized by hardware type.
 | 🛠️ Experimental | Embedding | [bge-m3](embedding/bge-m3_p300x2.md) |
 | 🛠️ Experimental | Embedding | [Qwen3-Embedding-0.6B](embedding/Qwen3-Embedding-0.6B_p300x2.md) |
 | 🛠️ Experimental | Embedding | [Qwen3-Embedding-4B](embedding/Qwen3-Embedding-4B_p300x2.md) |
+| 🛠️ Experimental | LLM | [diffusiongemma-26B-A4B-it](llm/diffusiongemma-26B-A4B-it_p300x2.md) |
 | 🛠️ Experimental | LLM | [gemma-4-31B-it](llm/gemma-4-31B-it_p300x2.md) |
 | 🛠️ Experimental | LLM | [gpt-oss-120b](llm/gpt-oss-120b_p300x2.md) |
 | 🛠️ Experimental | LLM | [Qwen3.6-27B](llm/Qwen3.6-27B_p300x2.md) |
