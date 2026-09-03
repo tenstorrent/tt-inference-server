@@ -15,9 +15,10 @@ namespace tt::config::defaults {
 
 constexpr const char* DEVICE_IDS = "(0)";
 constexpr const char* MODEL_SERVICE = "llm";
-// Within one client wave requests land ~40-80us apart, so 1ms is enough to
-// fill a batch of 8 while adding at most ~2.5% to a ~40ms inference.
-constexpr unsigned MAX_BATCH_DELAY_TIME_MS = 1;
+// Within one client wave requests land ~40-80us apart; 5ms gives headroom to
+// fill a batch of 8 even under scheduling jitter. Only partial batches pay
+// this wait (a full queue satisfies the predicate and exits early).
+constexpr unsigned MAX_BATCH_DELAY_TIME_MS = 5;
 constexpr const char* TT_PYTHON_PATH = "..";
 constexpr const char* LLM_MODE = "regular";  // "regular", "prefill", "decode"
 constexpr const char* SOCKET_HOST = "localhost";
