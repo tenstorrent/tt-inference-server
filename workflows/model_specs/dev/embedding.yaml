@@ -57,7 +57,7 @@ templates:
         VLLM__MAX_NUM_SEQS: "8"
         MAX_BATCH_SIZE: "8"
         DEFAULT_THROTTLE_LEVEL: "0"
-        BENCHMARK_MAX_CONCURRENCY: "256"
+        BENCHMARK_MAX_CONCURRENCY: "512"
         TT_METAL_INSPECTOR_RPC: "0"
 
 - weights:
