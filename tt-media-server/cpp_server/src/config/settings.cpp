@@ -308,13 +308,13 @@ unsigned outputHangTimeoutMs() {
 }
 
 unsigned embeddingWarmupTimeoutMs() {
-  return static_cast<unsigned>(envUlong(
-      "EMBEDDING_WARMUP_TIMEOUT_MS", defaults::EMBEDDING_WARMUP_TIMEOUT_MS));
+  return static_cast<unsigned>(envUlong("EMBEDDING_WARMUP_TIMEOUT_MS",
+                                        defaults::EMBEDDING_WARMUP_TIMEOUT_MS));
 }
 
 unsigned embeddingWarmupMaxRetries() {
-  return static_cast<unsigned>(envUlong("EMBEDDING_WARMUP_MAX_RETRIES",
-                                        defaults::EMBEDDING_WARMUP_MAX_RETRIES));
+  return static_cast<unsigned>(envUlong(
+      "EMBEDDING_WARMUP_MAX_RETRIES", defaults::EMBEDDING_WARMUP_MAX_RETRIES));
 }
 
 std::string ttTaskQueueName() {
