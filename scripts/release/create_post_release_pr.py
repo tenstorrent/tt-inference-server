@@ -68,6 +68,7 @@ from scripts.release.release_scope import (  # noqa: E402
     load_prod_leaves_from_ref,
 )
 from utils.model_naming import ci_job_matches_device  # noqa: E402
+from workflows.workflow_types import DeviceTypes  # noqa: E402
 
 DEFAULT_CI_CONFIG = REPO_ROOT / ".github" / "workflows" / "models-ci-config.json"
 DEFAULT_DEV_DIR = REPO_ROOT / "workflows" / "model_specs" / "dev"
@@ -77,12 +78,8 @@ DEFAULT_REPO = "tenstorrent/tt-inference-server"
 DEFAULT_TT_SHIELD_REPO = "tenstorrent/tt-shield"
 TOKEN_ENV_VARS = ("TMP_VCANKOVIC_SHIELD_CRANE_PAT", "GH_PAT", "GITHUB_TOKEN")
 
-STATIC_SW_VERSIONS = (
-    "# SW versions recommended for Wormhole Galaxy:\n\n"
-    "- tt-smi: 4.0.0\n"
-    "- Firmware: 19.8.1\n"
-    "- tt-kmd: 2.7.0\n"
-)
+# Strips ANSI colour codes from fetched job logs before parsing.
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 
 def _safe_repo_path(p) -> Path:
@@ -162,6 +159,40 @@ def fetch_run_jobs(repo: str, run_id: str, token: str) -> list[dict] | None:
         if len(batch) < 100:
             break
     return jobs
+
+
+def fetch_job_log(repo: str, job_id, token: str) -> str | None:
+    """A single job's raw log text, or None if unreachable.
+
+    Uses curl, NOT urllib: the logs endpoint 302-redirects to a signed blob URL,
+    and urllib re-sends the Authorization header on that cross-host redirect,
+    which the blob store rejects with 401 ("Server failed to authenticate the
+    request"). curl drops the Authorization header on a cross-host redirect, so
+    it succeeds — the same reason resolve_release_source_images.py fetches logs
+    with curl.
+    """
+    url = f"https://api.github.com/repos/{repo}/actions/jobs/{job_id}/logs"
+    try:
+        proc = subprocess.run(
+            [
+                "curl",
+                "-fsSL",
+                "-H",
+                f"Authorization: Bearer {token}",
+                "-H",
+                "Accept: application/vnd.github+json",
+                "-H",
+                "X-GitHub-Api-Version: 2022-11-28",
+                url,
+            ],
+            capture_output=True,
+            timeout=120,
+        )
+    except (subprocess.SubprocessError, OSError):
+        return None
+    if proc.returncode != 0:
+        return None
+    return proc.stdout.decode("utf-8", errors="replace")
 
 
 def _matching_ci_jobs(jobs, *, identity, scope_identities) -> list[dict]:
@@ -305,7 +336,102 @@ def _promoted_section(promoted_images) -> str:
     return "\n".join(lines) + "\n"
 
 
-def render_body(version: str, run_id, rows, promoted_images) -> str:
+def _is_galaxy(device) -> bool:
+    """True iff `device` is Wormhole GALAXY (BLACKHOLE_GALAXY is a distinct device)."""
+    try:
+        return DeviceTypes.from_string(device) == DeviceTypes.GALAXY
+    except (ValueError, KeyError, TypeError):
+        return False
+
+
+def _release_has_galaxy(rows) -> bool:
+    """True if any released spec targets Wormhole GALAXY (BLACKHOLE_GALAXY excluded)."""
+    return any(_is_galaxy(r["device"]) for r in rows)
+
+
+def _parse_galaxy_sw_versions(log_text: str) -> dict:
+    """Extract {tt_smi, firmware, kmd} from a galaxy job's setup tt-smi JSON dump.
+
+    The setup ("reset") step prints a pretty-printed JSON object on
+    timestamp-prefixed log lines; strip the prefixes and parse the first
+    top-level object that carries ``host_sw_vers``. Any field that cannot be
+    read comes back as None (rendered as UNKNOWN).
+      tt_smi   <- host_sw_vers.tt_smi
+      firmware <- device_info[].firmwares.fw_bundle_version (uniform across chips)
+      kmd      <- host_info.Driver "TT-KMD X.Y.Z" -> "X.Y.Z"
+    """
+    blank = {"tt_smi": None, "firmware": None, "kmd": None}
+    lines = [
+        re.sub(r"^[0-9T:.\-]+Z\s?", "", _ANSI_RE.sub("", raw.rstrip("\n")))
+        for raw in log_text.splitlines()
+    ]
+    data = None
+    for start in (i for i, line in enumerate(lines) if line == "{"):
+        end = next((j for j in range(start + 1, len(lines)) if lines[j] == "}"), None)
+        if end is None:
+            continue
+        try:
+            candidate = json.loads("\n".join(lines[start : end + 1]))
+        except json.JSONDecodeError:
+            continue
+        if isinstance(candidate, dict) and "host_sw_vers" in candidate:
+            data = candidate
+            break
+    if data is None:
+        return blank
+
+    tt_smi = (data.get("host_sw_vers") or {}).get("tt_smi") or None
+    fw_versions = {
+        (dev.get("firmwares") or {}).get("fw_bundle_version")
+        for dev in (data.get("device_info") or [])
+        if isinstance(dev, dict)
+    }
+    fw_versions.discard(None)
+    firmware = sorted(fw_versions)[0] if fw_versions else None
+    m = re.search(r"TT-KMD\s+(\S+)", (data.get("host_info") or {}).get("Driver") or "")
+    kmd = m.group(1) if m else None
+    return {"tt_smi": tt_smi, "firmware": firmware, "kmd": kmd}
+
+
+def resolve_galaxy_sw_versions(rows, jobs, tt_shield_repo, run_id, token) -> dict:
+    """SW versions from the release's GALAXY job setup log, or all-None if it
+    cannot be read. Host-level values are identical across galaxy jobs on the
+    same runner, so the first GALAXY release job is used. Best-effort: any
+    failure yields None fields, which render as UNKNOWN."""
+    blank = {"tt_smi": None, "firmware": None, "kmd": None}
+    if not jobs or not run_id or not token:
+        return blank
+    identities = [r["identity"] for r in rows]
+    galaxy = next((r["identity"] for r in rows if _is_galaxy(r["device"])), None)
+    if galaxy is None:
+        return blank
+    matches = _matching_ci_jobs(jobs, identity=galaxy, scope_identities=identities)
+    if not matches:
+        return blank
+    log = fetch_job_log(tt_shield_repo, matches[0]["id"], token)
+    if not log:
+        return blank
+    return _parse_galaxy_sw_versions(log)
+
+
+def _sw_versions_block(sw_versions) -> str:
+    sw = sw_versions or {}
+    return (
+        "# SW versions recommended for Wormhole Galaxy:\n\n"
+        f"- tt-smi: {sw.get('tt_smi') or UNKNOWN}\n"
+        f"- Firmware: {sw.get('firmware') or UNKNOWN}\n"
+        f"- tt-kmd: {sw.get('kmd') or UNKNOWN}\n"
+    )
+
+
+def render_body(version: str, run_id, rows, promoted_images, sw_versions=None) -> str:
+    # The recommended Wormhole-Galaxy SW versions only apply when the release
+    # ships a GALAXY model; omit the whole section otherwise (BLACKHOLE_GALAXY
+    # does not trigger it). Values are read from the galaxy job's setup log;
+    # any value that could not be read renders as UNKNOWN.
+    sw_block = (
+        (_sw_versions_block(sw_versions) + "\n") if _release_has_galaxy(rows) else ""
+    )
     return (
         # Machine-readable metadata block (parsed by downstream tooling); keep
         # it first, before the Summary. run_id = tt-shield Release run id,
@@ -317,8 +443,7 @@ def render_body(version: str, run_id, rows, promoted_images) -> str:
         "# Summary of Changes\n\n"
         "<!-- Fill in the summary of changes manually. -->\n"
         "- placeholder\n\n\n"
-        + STATIC_SW_VERSIONS
-        + "\n"
+        + sw_block
         + render_table(rows)
         + "\n\n\n# Release Artifacts Summary\n\n"
         + _promoted_section(promoted_images)
@@ -450,6 +575,7 @@ def main() -> None:
 
     # CI jobs (best-effort; UNKNOWN on any failure).
     jobs = None
+    token = None
     if args.tt_shield_run_id:
         token = resolve_token(args.token)
         if token:
@@ -489,7 +615,15 @@ def main() -> None:
     except (OSError, ValueError, yaml.YAMLError) as exc:
         sys.exit(f"ERROR: {exc}")
 
-    body = render_body(version, args.tt_shield_run_id, rows, promoted_images)
+    # Galaxy SW versions (best-effort; UNKNOWN per field on any failure). Only
+    # rendered when the release ships a GALAXY model.
+    sw_versions = resolve_galaxy_sw_versions(
+        rows, jobs, args.tt_shield_repo, args.tt_shield_run_id, token
+    )
+
+    body = render_body(
+        version, args.tt_shield_run_id, rows, promoted_images, sw_versions
+    )
 
     print(f"Version:      {version}", file=sys.stderr)
     print(f"Title:        {title}", file=sys.stderr)
