@@ -5,6 +5,7 @@
         {
             "models": [
                 "qwen3_32b",
+                "qwen36_27b",
                 "llama_3_1_8b",
                 "llama_70b_family",
                 "gpt_oss_20b"
@@ -64,6 +65,21 @@
                     "template": "VLLMQwen3StreamingParamConformanceTest",
                     "enabled": true,
                     "description": "Qwen3-32B streaming reasoning/tool-call regressions"
+                }
+            ]
+        },
+        {
+            "models": [
+                "qwen36_27b"
+            ],
+            "devices": [
+                "p300x2"
+            ],
+            "test_cases": [
+                {
+                    "template": "VLLMQwen36ToolCallTest",
+                    "enabled": true,
+                    "description": "Qwen3.6-27B tool-call / reasoning-parser regressions"
                 }
             ]
         },

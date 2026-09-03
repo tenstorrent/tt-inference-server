@@ -285,6 +285,15 @@ class VLLMQwen3StreamingParamConformanceTest(VLLMParamConformanceTest):
     REPORT_TASK_NAME = "vllm_qwen3_streaming"
 
 
+class VLLMQwen36ToolCallTest(VLLMParamConformanceTest):
+    """Run the Qwen3.6-27B tool-call / reasoning-parser regression suite."""
+
+    KIND = "vllm_qwen36_toolcall"
+    PYTEST_FILENAME = "test_vllm_qwen36_toolcall.py"
+    ENDPOINT_PATH = "/v1/chat/completions"
+    REPORT_TASK_NAME = "vllm_qwen36_toolcall"
+
+
 class VLLMDiffusionGemmaParamConformanceTest(VLLMParamConformanceTest):
     """Run DiffusionGemma's block-serving and admission regression suite."""
 

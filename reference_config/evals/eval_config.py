@@ -1843,6 +1843,33 @@ _eval_config_list = [
         hf_model_repo="Qwen/Qwen3.6-27B",
         tasks=[
             EvalTask(
+                # Second catalogue eval for Qwen3.6-27B (the onboarding
+                # checklist requires >=2 tasks); mirrors the gsm8k lane the
+                # nkapre/quetzal-swe-unified branch adds for this model,
+                # adapted to this branch's EvalTask API (that branch's
+                # chat_template_kwargs field does not exist here yet, so it is
+                # omitted). A bounded chat-API GSM8K collection lane: the
+                # reasoning plus visible final answer needs headroom, so
+                # max_gen_toks is 2048 (a silicon discriminator showed 768
+                # truncated 9/10 responses). This is a bounded collection task
+                # until a statistically useful TT/GPU baseline is recorded; it
+                # carries no published/reference score of its own -- the graded
+                # published/reference fields live on terminal_bench_2 below.
+                task_name="gsm8k",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                max_concurrent=1,
+                gen_kwargs={
+                    "max_gen_toks": 2048,
+                    "do_sample": "false",
+                    "stream": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 10,
+                    EvalLimitMode.SMOKE_TEST: 1,
+                },
+            ),
+            EvalTask(
                 task_name="terminal_bench_2",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(

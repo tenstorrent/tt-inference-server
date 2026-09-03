@@ -1,4 +1,41 @@
 {
+    "Qwen3.6-27B": {
+        "p300x2": [
+            {
+                "_comment": [
+                    "PLACEHOLDER theoretical skeleton for the Qwen3.6-27B",
+                    "(impl=qwen36_blackhole) EXPERIMENTAL onboarding. status is",
+                    "EXPERIMENTAL so benchmarks are not strictly required; this",
+                    "theoretical block exists only so a later status bump is",
+                    "unblocked. Numbers are mirrored from the same-device,",
+                    "same-class conc=1 isl/osl=128 anchor points (Qwen3-32B and",
+                    "gemma-4-31b-it both sit at ttft_ms=46, tput_user=37, tput=37",
+                    "on p300x2) and are NOT a measured or independently derived",
+                    "ceiling for this 27B model -- replace with real silicon",
+                    "measurement before grading against it.",
+                    "The functional(0.10)/complete(0.50)/target(1.0) status",
+                    "thresholds are NOT stored here: they come from the ModelSpec",
+                    "perf_targets_map default (workflows/model_spec.py) and can be",
+                    "loosened per device via perf_targets_map in the device YAML."
+                ],
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 46,
+                        "tput_user": 37,
+                        "tput": 37
+                    }
+                }
+            }
+        ]
+    },
     "gemma-4-31b-it": {
         "p300x2": [
             {

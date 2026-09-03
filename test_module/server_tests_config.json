@@ -40,6 +40,7 @@
         ],
         "LLM": [
             "Qwen3-32B",
+            "Qwen3.6-27B",
             "Llama-3.1-8B-Instruct",
             "Llama-3.3-70B-Instruct",
             "gpt-oss-20b",
@@ -400,6 +401,17 @@
                 "galaxy_t3k",
                 "p150x8",
                 "p300x2"
+            ]
+        },
+        "qwen36_27b": {
+            "id_name": "qwen3.6-27b",
+            "weights": [
+                "Qwen3.6-27B"
+            ],
+            "category": "LLM",
+            "compatible_devices": [
+                "p300x2",
+                "p150x8"
             ]
         },
         "llama_70b_family": {
@@ -895,6 +907,21 @@
             }
         },
         "VLLMQwen3StreamingParamConformanceTest": {
+            "module": "test_module.llm_tests.vllm_param_conformance_test",
+            "markers": [
+                "param",
+                "e2e",
+                "slow"
+            ],
+            "test_config": {
+                "test_timeout": 3600,
+                "retry_attempts": 0,
+                "retry_delay": 10,
+                "break_on_failure": false,
+                "mock_mode": false
+            }
+        },
+        "VLLMQwen36ToolCallTest": {
             "module": "test_module.llm_tests.vllm_param_conformance_test",
             "markers": [
                 "param",
