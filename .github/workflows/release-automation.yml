@@ -80,7 +80,7 @@ jobs:
           REF: ${{ github.ref_name }}
         run: |
           case "$REF" in
-            stable | vcankovic/automated-release-pipeline)
+            stable | vcankovic/improve-release-automation)
               echo "Branch '$REF' is allowed — proceeding." ;;
             *)
               echo "::error::Release automation may only run from 'stable', 'vcankovic/stable-automated-release-pipeline', or 'vcankovic/automated-release-pipeline'. Refusing to run on '$REF'."
