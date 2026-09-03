@@ -107,7 +107,9 @@ class TestEvaluate:
     def test_missing_expected_metric_fails(self):
         metrics = _metrics((5, "train_loss", 5.6))  # step10 missing
         result = evaluate(metrics, self._cfg(), model="m", device="p150")
-        step10 = next(r for r in result.records if r["test_name"] == "train_loss@step10")
+        step10 = next(
+            r for r in result.records if r["test_name"] == "train_loss@step10"
+        )
         assert step10["status"] == "fail"
         assert "missing" in step10["description"]
 
@@ -121,14 +123,18 @@ class TestEvaluate:
         metrics = _metrics((5, "train_loss", 4.0), (10, "train_loss", 9.0))
         cfg = self._cfg(expectations=[])  # isolate the decreasing check
         result = evaluate(metrics, cfg, model="m", device="p150")
-        dec = next(r for r in result.records if r["test_name"] == "train_loss_decreasing")
+        dec = next(
+            r for r in result.records if r["test_name"] == "train_loss_decreasing"
+        )
         assert dec["status"] == "fail"
 
     def test_decreasing_passes(self):
         metrics = _metrics((5, "train_loss", 9.0), (10, "train_loss", 4.0))
         cfg = self._cfg(expectations=[])
         result = evaluate(metrics, cfg, model="m", device="p150")
-        dec = next(r for r in result.records if r["test_name"] == "train_loss_decreasing")
+        dec = next(
+            r for r in result.records if r["test_name"] == "train_loss_decreasing"
+        )
         assert dec["status"] == "pass"
 
     def test_final_threshold(self):

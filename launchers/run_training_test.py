@@ -130,7 +130,9 @@ def _wait_for_health(session, base_url: str, headers, timeout: float) -> bool:
     return False
 
 
-def _build_request_body(device: str, request_overrides: Dict[str, Any]) -> Dict[str, Any]:
+def _build_request_body(
+    device: str, request_overrides: Dict[str, Any]
+) -> Dict[str, Any]:
     body = {"device_type": device}
     body.update(request_overrides)
     # device_type must match the server device; the expectation file should not
@@ -333,7 +335,9 @@ def main() -> int:
         {"verdict": "PASS" if passed else "FAIL", "summary": result.summary},
     )
 
-    logger.info("Training check summary: %s (job_status=%s)", result.summary, final_status)
+    logger.info(
+        "Training check summary: %s (job_status=%s)", result.summary, final_status
+    )
     if passed:
         logger.info("✅ Training workflow passed.")
         return 0

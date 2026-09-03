@@ -142,11 +142,9 @@ def _record(
 
 
 def _train_losses_in_step_order(
-    indexed: Mapping[Tuple[int, str], float]
+    indexed: Mapping[Tuple[int, str], float],
 ) -> List[Tuple[int, float]]:
-    steps = sorted(
-        step for (step, metric) in indexed if metric == TRAIN_LOSS
-    )
+    steps = sorted(step for (step, metric) in indexed if metric == TRAIN_LOSS)
     return [(step, indexed[(step, TRAIN_LOSS)]) for step in steps]
 
 
