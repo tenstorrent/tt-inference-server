@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, List, Optional
 
-from workflows.workflow_types import EvalLimitMode
+from workflow_module.engine_types import EvalLimitMode
 
 from ..agentic.swebench import SWEbenchRunConfig, run as run_swebench
 from ..agentic.terminal_bench import TerminalBenchRunConfig, run as run_terminal_bench
@@ -148,10 +148,10 @@ def _agentic_venv_python() -> Optional[Path]:
     behavior.
     """
     try:
-        from workflows.workflow_types import WorkflowVenvType
-        from workflows.workflow_venvs import VENV_CONFIGS
+        from workflow_module.engine_types import WorkflowVenvType
+        from workflow_module.venv_provisioner import get_venv_provisioner
 
-        return VENV_CONFIGS[WorkflowVenvType.EVALS_AGENTIC].venv_python
+        return Path(get_venv_provisioner().venv_python(WorkflowVenvType.EVALS_AGENTIC))
     except Exception as e:  # pragma: no cover - defensive
         logger.warning("Could not resolve EVALS_AGENTIC venv python (%s).", e)
         return None
@@ -207,6 +207,13 @@ def build_swebench_config(
         max_output_tokens=cfg.max_output_tokens,
         completion_kwargs=cfg.completion_kwargs,
         swebench_timeout_sec=cfg.swebench_timeout_sec,
+        llm_timeout_sec=cfg.llm_timeout_sec,
+        mini_container_timeout_sec=cfg.mini_container_timeout_sec,
+        startup_grace_sec=cfg.startup_grace_sec,
+        stall_grace_sec=cfg.stall_grace_sec,
+        progress_log_interval_sec=cfg.progress_log_interval_sec,
+        agent_subprocess_timeout_sec=cfg.agent_subprocess_timeout_sec,
+        enforce_agent_deadline=cfg.enforce_agent_deadline,
         shuffle=cfg.shuffle,
         random_delay_multiplier=cfg.random_delay_multiplier,
         score_existing_predictions=False,
@@ -260,6 +267,11 @@ def build_terminal_bench_config(
         agent_import_path=cfg.agent_import_path,
         environment_env=cfg.environment_env,
         verifier_env=cfg.verifier_env,
+        per_task_overhead_sec=cfg.per_task_overhead_sec,
+        startup_grace_sec=cfg.startup_grace_sec,
+        stall_grace_sec=cfg.stall_grace_sec,
+        progress_log_interval_sec=cfg.progress_log_interval_sec,
+        enforce_agent_deadline=cfg.enforce_agent_deadline,
         venv_python=venv_python,
     )
 

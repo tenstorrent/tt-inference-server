@@ -408,11 +408,46 @@ Release Notes must be added describing new supported engine features.
 
 ## Step 3: Downloading workflow artifacts and assets upload to Release Object
 
- We need to download all the workflow_logs from a given tt-shield runId job. Of course we should consider only models which are in the scope for the release. Afterwards, we zip them as `vx.xx.x-release_artifacts.zip` and upload that artifact to release object as an Asset.
+ We need to download all the workflow_logs from a given tt-shield runId job, for the
+models in scope for the release, and package them as `vx.x.x-release_artifacts.zip`
+to upload to the Release Object as an Asset.
 
-To do so we can use the script currently implemented in the tt-shield repository:
-Once we clone the tt-shield repository, we can find the script at this path:
-`.github/scripts/release_tools/build_release_artifact/build_release_artifacts.py`
+`scripts/release/build_release_artifacts.py` in **this** repository does that, and
+it is the copy `release-automation.yml` runs, so in the normal flow you take the
+`release-artifacts-v<version>` run artifact rather than running the script by hand.
+Run it directly to rebuild the package outside a pipeline run, or to override the
+scope.
+
+Use this copy. tt-shield carries a second one at
+`.github/scripts/release_tools/build_release_artifact/build_release_artifacts.py`,
+which earlier revisions of this document pointed at; it is not what the pipeline
+runs and the two will drift.
+
+### What the package contains
+
+```
+vx.x.x-release_artifacts.zip
+└── vx.x.x-release_artifacts/
+    ├── workflow_logs_release_<model>_<device>.zip      one per released leaf
+    ├── workflow_logs_release_<model>_<device>.zip
+    └── ...
+```
+
+Each inner zip is that job's tt-shield artifact bundle, carried byte for byte
+(`ai_summaries/`, `docker_server/`, `run_logs/`, `runtime_model_specs/`,
+`reports_output/`, and so on). The outer zip is uncompressed — the bundles are
+already deflate zips, so recompressing them buys under 1%.
+
+This layout has been identical since v0.13.0. Do not change it without checking
+who consumes it.
+
+> **Opening the package on macOS.** Off the Release page it is two archives deep and
+> double-clicking works. `release-automation.yml` also publishes it as the
+> `release-artifacts-v<version>` run artifact, and Actions wraps any artifact in a
+> zip of its own — that download is three archives deep, which macOS Archive
+> Utility refuses with "unsupported format". Use `unzip` on it, or take the asset
+> from the Release page once it is published. The package itself is fine; every
+> published asset from v0.13.0 on opens.
 
 As input properties we need to pass:
 - runId of the release job that contains our workflow logs uploaded
@@ -424,7 +459,7 @@ list `promote_dev_spec_to_prod.py` consumes), so the models no longer need to be
 listed by hand:
 
 ```bash
-python3 build_release_artifacts.py \
+python3 scripts/release/build_release_artifacts.py \
         --run-id 26592936143 \
         --version v0.15.0 \
         --output-dir .
@@ -435,7 +470,7 @@ that are not in the release list — pass one or more `--model MODEL=dev1,dev2`
 flags instead:
 
 ```bash
-python3 build_release_artifacts.py \
+python3 scripts/release/build_release_artifacts.py \
         --run-id 26592936143 \
         --version v0.15.0 \
         --model speecht5_tts=p150,p300x2 \

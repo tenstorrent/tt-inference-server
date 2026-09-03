@@ -190,6 +190,20 @@ def test_vllm_derives_isl_osl_and_maps_percentiles():
     assert data["error_request_count"] is None
 
 
+def test_vllm_goodput_pct_from_request_goodput():
+    # With --goodput, vLLM adds request_goodput (good req/s); divided by
+    # request_throughput (completed req/s) over the same window it is the
+    # share of requests meeting every SLO.
+    raw = {**VLLM_RAW, "request_goodput": 1.89}  # 90% of the 2.1 req/s
+    data = VLLMBenchParser().parse(raw, device="N150").data
+    assert data["goodput_pct"] == pytest.approx(90.0)
+
+
+def test_vllm_goodput_pct_is_none_without_the_flag():
+    data = VLLMBenchParser().parse(VLLM_RAW, device="N150").data
+    assert data["goodput_pct"] is None
+
+
 def test_vllm_throughputs_fall_back_to_token_totals():
     # Older vLLM dumps may lack total_token_throughput; recompute it (and
     # the input rate) from tokens/duration the same way vLLM derives it.
