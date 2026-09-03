@@ -159,3 +159,78 @@ def test_all_segments_transcribed_none_dropped(qwen_runner_module):
     assert len(resp.segments) == 3
     assert resp.speaker_count == 2
     assert resp.speakers == ["SPEAKER_00", "SPEAKER_01"]
+
+
+class _ByteTokenizer:
+    """Detokenizer that decodes the byte payloads of ids, like the real one.
+
+    A character whose UTF-8 bytes are spread over several tokens therefore
+    renders as U+FFFD until the remaining bytes arrive.
+    """
+
+    def __init__(self, payloads):
+        self._payloads = payloads
+
+    def decode(self, ids, skip_special_tokens=False):
+        joined = b"".join(self._payloads[i] for i in ids)
+        return joined.decode("utf-8", errors="replace")
+
+
+def _bound_stream_window_text(module, payloads):
+    runner = MagicMock()
+    runner._ASR_MARKER = module.TTQwen3AsrRunner._ASR_MARKER
+    runner.tok = _ByteTokenizer(payloads)
+    runner._encode_splice = lambda wav: "encoded"
+    runner.model.generate_iter = lambda inp, max_new_tokens: iter(range(len(payloads)))
+    return module.TTQwen3AsrRunner._stream_window_text.__get__(runner)
+
+
+def _payloads_for(marker: str, text: str, bytes_per_token: int):
+    """Marker as one token, then `text` split every `bytes_per_token` raw bytes,
+    which is what splits a multi-byte character across tokens."""
+    raw = text.encode("utf-8")
+    chunks = [raw[i : i + bytes_per_token] for i in range(0, len(raw), bytes_per_token)]
+    return [marker.encode("utf-8")] + chunks
+
+
+def test_multibyte_character_split_across_tokens_is_not_corrupted(qwen_runner_module):
+    """Regression: kanji split across tokens used to stream as U+FFFD.
+
+    The partial decode and the resolved decode have the same character length,
+    so a length-only check never re-emitted the corrected character and the
+    replacement char reached the client (and the final transcript, which is
+    built by joining these deltas).
+    """
+    marker = qwen_runner_module.TTQwen3AsrRunner._ASR_MARKER
+    text = "木曜日停戦会談は何の進展もないまま終了しました。"
+    # 2 bytes per token guarantees every 3-byte kanji straddles a boundary.
+    stream = _bound_stream_window_text(qwen_runner_module, _payloads_for(marker, text, 2))
+
+    deltas = list(stream(np.zeros(SR, dtype=np.float32), 128))
+
+    assert "\ufffd" not in "".join(deltas)
+    assert "".join(deltas) == text
+
+
+def test_ascii_still_streams_incrementally(qwen_runner_module):
+    """The placeholder guard must not batch single-byte text into one chunk."""
+    marker = qwen_runner_module.TTQwen3AsrRunner._ASR_MARKER
+    text = "the quick brown fox"
+    stream = _bound_stream_window_text(qwen_runner_module, _payloads_for(marker, text, 3))
+
+    deltas = list(stream(np.zeros(SR, dtype=np.float32), 128))
+
+    assert "".join(deltas) == text
+    assert len(deltas) > 1, "ASCII should still arrive as multiple deltas"
+
+
+def test_no_text_is_dropped_when_generation_ends(qwen_runner_module):
+    """Whatever was held back must be flushed once generation stops."""
+    marker = qwen_runner_module.TTQwen3AsrRunner._ASR_MARKER
+    text = "終了"
+    # 1 byte per token: the final character is incomplete until the very last id.
+    stream = _bound_stream_window_text(qwen_runner_module, _payloads_for(marker, text, 1))
+
+    deltas = list(stream(np.zeros(SR, dtype=np.float32), 128))
+
+    assert "".join(deltas) == text
