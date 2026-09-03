@@ -112,6 +112,9 @@ SUPER_CLUSTER_EXTRA_ISL_OSL_PAIRS = []
 # SUPER_CLUSTER sweep point sends at least this many multiples of the model's
 # batch size (the spec's max_concurrency).
 SUPER_CLUSTER_MIN_NUM_PROMPTS_BATCH_MULTIPLE = 2
+# Top of the concurrency pair every text sweep point runs at; the other is always 1. Capped per point by what
+# the context budget allows, so a high-ISL point falls back instead of overcommitting.
+SWEEP_TOP_CONCURRENCY = 32
 SMOKE_TEST_BENCHMARK_PAIR = (16, 4)
 
 
@@ -159,8 +162,9 @@ def _expand_text_sweep_params(
         isl, osl, max_context, max_tokens_all_users, model_max_concurrency
     )
     concurrencies = [1]
-    if allowed_max_concurrency > 1:
-        concurrencies.append(allowed_max_concurrency)
+    top = min(SWEEP_TOP_CONCURRENCY, allowed_max_concurrency)
+    if top > 1:
+        concurrencies.append(top)
 
     return [
         BenchmarkTaskParams(
