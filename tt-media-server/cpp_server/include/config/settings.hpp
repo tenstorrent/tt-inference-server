@@ -294,11 +294,6 @@ unsigned outputHangTimeoutMs();
  * defaults::EMBEDDING_WARMUP_TIMEOUT_MS. */
 unsigned embeddingWarmupTimeoutMs();
 
-/** Respawn rounds for embedding workers whose warmup failed (nondeterministic
- * PCC validation). From EMBEDDING_WARMUP_MAX_RETRIES. Default:
- * defaults::EMBEDDING_WARMUP_MAX_RETRIES. */
-unsigned embeddingWarmupMaxRetries();
-
 /** Task queue name from TT_TASK_QUEUE. Default: defaults::TT_TASK_QUEUE. */
 std::string ttTaskQueueName();
 

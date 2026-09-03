@@ -124,7 +124,7 @@ struct WorkerProcess {
 
     // Parent: close child ends, transfer ownership to members. The worker is
     // NOT ready yet: isReady only flips once the child sends the READY
-    // sentinel after warmup (see waitUntilReady).
+    // sentinel after warmup (see awaitWorkersReady).
     reqRead.reset();
     respWrite.reset();
     pid.store(child);
@@ -138,55 +138,6 @@ struct WorkerProcess {
         wid, child, tt::config::visibleDevicesForWorker(wid), writeFd.get(),
         readFd.get());
     return true;
-  }
-
-  /**
-   * Block until the child reports warmup completion via the READY sentinel.
-   * Returns false on child exit (pipe EOF), timeout, or unexpected data.
-   * keepWaiting lets service shutdown abort the wait within ~100ms.
-   */
-  bool waitUntilReady(unsigned timeoutMs,
-                      const std::atomic<bool>& keepWaiting) {
-    const auto deadline =
-        std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
-    while (keepWaiting.load()) {
-      const auto remaining =
-          std::chrono::duration_cast<std::chrono::milliseconds>(
-              deadline - std::chrono::steady_clock::now())
-              .count();
-      if (remaining <= 0) {
-        TT_LOG_ERROR("[EmbeddingService] Worker {} warmup timed out after {}ms",
-                     workerId, timeoutMs);
-        return false;
-      }
-
-      struct pollfd pfd = {readFd.get(), POLLIN, 0};
-      const int rc =
-          poll(&pfd, 1, static_cast<int>(std::min<int64_t>(remaining, 100)));
-      if (rc < 0) {
-        if (errno == EINTR) continue;
-        TT_LOG_ERROR("[EmbeddingService] Worker {} warmup poll failed: {}",
-                     workerId, strerror(errno));
-        return false;
-      }
-      if (rc == 0) continue;  // slice elapsed; re-check keepWaiting/deadline
-
-      const auto msg = pipeReadBinary(readFd.get());
-      constexpr size_t sentinelLen = sizeof(WORKER_READY_SENTINEL) - 1;
-      if (msg.size() == sentinelLen &&
-          std::memcmp(msg.data(), WORKER_READY_SENTINEL, sentinelLen) == 0) {
-        isReady.store(true);
-        TT_LOG_INFO("[EmbeddingService] Worker {} reported ready", workerId);
-        return true;
-      }
-      // EOF (child exited during warmup) or garbage on the pipe.
-      TT_LOG_ERROR(
-          "[EmbeddingService] Worker {} exited or sent unexpected data "
-          "during warmup",
-          workerId);
-      return false;
-    }
-    return false;
   }
 
   bool checkAlive() {
@@ -423,14 +374,14 @@ struct EmbeddingService::Impl {
 
     // Phase 1: warm up a single worker with exclusive cache access. If it
     // fails, try the next one alone (a fast-failing worker doesn't burn the
-    // timeout: pipe EOF aborts the wait immediately).
+    // timeout: pipe EOF resolves the wait immediately).
     size_t next = 0;
     bool haveReadyWorker = false;
     while (!haveReadyWorker && next < numWorkers && running.load()) {
       const size_t idx = next++;
       if (!spawnWorkerAt(idx)) continue;
-      if (workers[idx]->waitUntilReady(warmupTimeoutMs, running)) {
-        launchDispatchThread(idx);
+      awaitWorkersReady({idx}, warmupTimeoutMs);
+      if (workers[idx]->isReady.load()) {
         isReady = true;
         haveReadyWorker = true;
       } else {
@@ -438,7 +389,6 @@ struct EmbeddingService::Impl {
             "[EmbeddingService] Worker {} failed warmup; trying next worker "
             "alone",
             idx);
-        workers[idx]->terminate();
       }
     }
 
@@ -453,35 +403,10 @@ struct EmbeddingService::Impl {
     }
     awaitWorkersReady(std::move(spawned), warmupTimeoutMs);
 
-    // Retry rounds: a failed warmup is usually worth re-rolling, not a broken
-    // chip. BGE-large's warmup validates device output against a CPU
-    // reference (assert PCC >= 0.90) and the measured PCC varies run to run
-    // (observed 0.86-0.96 across one Galaxy), so each attempt is an
-    // independent draw. This also re-covers a worker that lost the phase-1
-    // slot above. Parity with the Python server, whose health monitor
-    // restarts dead workers up to max_worker_restart_count times.
-    const unsigned maxRetries = tt::config::embeddingWarmupMaxRetries();
-    for (unsigned round = 1; round <= maxRetries && running.load(); ++round) {
-      std::vector<size_t> respawned;
-      for (size_t i = 0; i < numWorkers; ++i) {
-        if (workers[i]->isReady.load()) continue;
-        if (spawnWorkerAt(i)) respawned.push_back(i);
-      }
-      if (respawned.empty()) break;
-      TT_LOG_INFO(
-          "[EmbeddingService] Warmup retry round {}/{}: respawning {} failed "
-          "workers",
-          round, maxRetries, respawned.size());
-      awaitWorkersReady(std::move(respawned), warmupTimeoutMs);
-    }
-
     size_t readyCount = 0;
     for (const auto& w : workers) {
       if (w->isReady.load()) ++readyCount;
     }
-    // Covers the corner where every phase-1 candidate failed but a retry
-    // round later succeeded (phase 1 is the only other place this is set).
-    if (readyCount > 0) isReady = true;
     TT_LOG_INFO("[EmbeddingService] Startup finished: {}/{} workers ready",
                 readyCount, numWorkers);
   }
@@ -492,12 +417,13 @@ struct EmbeddingService::Impl {
    * gets its dispatch thread) the moment its own sentinel arrives, so one
    * stuck worker cannot mask the others the way a sequential per-worker wait
    * would. Workers that fail warmup (pipe EOF) or exceed the timeout are
-   * terminated with an explicit log line; runStartup may respawn them in a
-   * retry round.
+   * terminated with an explicit log line. Phase 1 calls this with a single
+   * index; a lone fast-failing worker resolves immediately via pipe EOF.
    */
   void awaitWorkersReady(std::vector<size_t> pending, unsigned timeoutMs) {
     const auto deadline =
         std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
+
     while (!pending.empty() && running.load()) {
       const auto remaining =
           std::chrono::duration_cast<std::chrono::milliseconds>(

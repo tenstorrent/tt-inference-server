@@ -114,11 +114,6 @@ constexpr size_t EMBEDDING_MAX_PIPE_BYTES = 100 * 1024 * 1024;  // 100 MB
  * (overridable via the EMBEDDING_WARMUP_TIMEOUT_MS env var).
  */
 constexpr unsigned EMBEDDING_WARMUP_TIMEOUT_MS = 600 * 1000;
-/**
- * Extra warmup rounds for workers whose first warmup failed (overridable via
- * the EMBEDDING_WARMUP_MAX_RETRIES env var).
- */
-constexpr unsigned EMBEDDING_WARMUP_MAX_RETRIES = 3;
 // Lower bound used when CALLBACK_POOL_THREADS env is unset or 0; preserves
 // the legacy default (16) for small (1-16 worker) deployments.
 constexpr size_t CALLBACK_POOL_THREADS_MIN = 16;
