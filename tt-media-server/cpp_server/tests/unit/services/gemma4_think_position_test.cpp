@@ -27,8 +27,8 @@
 
 namespace {
 
-constexpr uint32_t kBlockSize = 32;
-constexpr uint32_t kContentBase =
+constexpr uint32_t K_BLOCK_SIZE = 32;
+constexpr uint32_t K_CONTENT_BASE =
     1000;  // ordinary tokens, far from the markers
 
 class Gemma4ThinkPositionTest : public ::testing::Test {
@@ -53,12 +53,12 @@ TEST_F(Gemma4ThinkPositionTest, ResumePositionMatchesResidentKvRows) {
 
   // 128 visible tokens = exactly 4 blocks at 32/32, so no partial-block
   // remainder muddies the arithmetic.
-  constexpr uint32_t kVisible = 4 * kBlockSize;
+  constexpr uint32_t kVisible = 4 * K_BLOCK_SIZE;
   constexpr uint32_t kThinkContent = 10;
   constexpr uint32_t kMarkers = 2;
 
   std::vector<uint32_t> tokens;
-  uint32_t next = kContentBase;
+  uint32_t next = K_CONTENT_BASE;
   for (uint32_t i = 0; i < 40; ++i) tokens.push_back(next++);
   tokens.push_back(thinkStart);
   for (uint32_t i = 0; i < kThinkContent; ++i) tokens.push_back(next++);
@@ -83,7 +83,7 @@ TEST_F(Gemma4ThinkPositionTest, ResumePositionMatchesResidentKvRows) {
 
 TEST_F(Gemma4ThinkPositionTest, DriftDoesNotAccumulateAcrossThoughtBlocks) {
   const auto [thinkStart, thinkEnd] = tt::utils::tokenizers::thinkTokenIds();
-  constexpr uint32_t kVisiblePerTurn = 2 * kBlockSize;
+  constexpr uint32_t kVisiblePerTurn = 2 * K_BLOCK_SIZE;
   constexpr uint32_t kThinkPerTurn = 8;
   constexpr uint32_t kMarkers = 2;
 
@@ -93,7 +93,7 @@ TEST_F(Gemma4ThinkPositionTest, DriftDoesNotAccumulateAcrossThoughtBlocks) {
   // reaches the same shape because the visible tokens of later turns follow it.
   for (uint32_t turns : {1u, 2u, 3u, 8u}) {
     std::vector<uint32_t> tokens;
-    uint32_t next = kContentBase;
+    uint32_t next = K_CONTENT_BASE;
     for (uint32_t t = 0; t < turns; ++t) {
       tokens.push_back(thinkStart);
       for (uint32_t i = 0; i < kThinkPerTurn; ++i) tokens.push_back(next++);
@@ -120,8 +120,8 @@ TEST_F(Gemma4ThinkPositionTest, DriftDoesNotAccumulateAcrossThoughtBlocks) {
 // Thinking disabled: no markers, no correction, position is the token count.
 TEST_F(Gemma4ThinkPositionTest, NoThinkingLeavesTheCountAtZero) {
   std::vector<uint32_t> tokens;
-  for (uint32_t i = 0; i < 4 * kBlockSize; ++i)
-    tokens.push_back(kContentBase + i);
+  for (uint32_t i = 0; i < 4 * K_BLOCK_SIZE; ++i)
+    tokens.push_back(K_CONTENT_BASE + i);
 
   const auto blocks = tt::utils::getPrefixCacheHashesByBlocksWithThinking(
       tokens, tt::utils::tokenizers::kNoTokenId,
