@@ -1935,7 +1935,7 @@ templates:
 # / EVAL_CONFIGS; no local TT serving is implied.
 - weights:
     - zai-org/GLM-5.3
-  impl: tt_transformers
+  impl: blaze
   inference_engine: MEDIA
   device_model_specs:
     - device: SUPER_CLUSTER
