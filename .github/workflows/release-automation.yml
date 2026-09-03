@@ -722,7 +722,9 @@ jobs:
       #       exists (GitHub allows only one Release per tag). -----
       - name: "Create draft GitHub Release (v<version>)"
         env:
-          GH_TOKEN: ${{ github.token }}
+          # Use the PAT (vcankovicTT) so the Release is created/owned by that user,
+          # not github-actions[bot] — matches publish-release.yml. Needs contents:write.
+          GH_TOKEN: ${{ secrets.TMP_VCANKOVIC_SHIELD_CRANE_PAT }}
         run: |
           TAG="v${RELEASE_VERSION}${TAG_SUFFIX}"
           if gh release view "${TAG}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
@@ -745,7 +747,8 @@ jobs:
       #       the asset on re-runs. -----
       - name: "Upload release-artifacts zip as a Release asset"
         env:
-          GH_TOKEN: ${{ github.token }}
+          # PAT (vcankovicTT) so the asset upload is attributed to that user too.
+          GH_TOKEN: ${{ secrets.TMP_VCANKOVIC_SHIELD_CRANE_PAT }}
         run: |
           TAG="v${RELEASE_VERSION}${TAG_SUFFIX}"
           ASSET="${RUNNER_TEMP}/release_artifacts/v${RELEASE_VERSION}-release_artifacts.zip"
