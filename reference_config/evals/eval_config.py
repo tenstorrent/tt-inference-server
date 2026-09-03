@@ -1721,11 +1721,16 @@ _eval_config_list = [
                     # (ISL=6144).
                     mini_agent_kwargs={"step_limit": SHARED_SWE_STEP_LIMIT},
                     mini_observation_chars=2048,
-                    # The generated S8192 artifact prefills one-shot with a
-                    # single bucket equal to its context; the gate caps its
-                    # input budget at bucket - SERVER_TOKENIZER_MARGIN_TOKENS
-                    # unless the context-derived budget is already smaller.
-                    largest_prefill_bucket=8 * 1024,
+                    # The Qwen3.6-27B C32768/S16384 artifact now serves chunked
+                    # prefill on silicon (paged-KV geometry blocker fixed:
+                    # tt-quetzalcoatlus PR #28 / main 4901ec41; a 19491-token
+                    # prompt chunk-prefills across 2 chunks and returns coherent
+                    # output). Declaring chunked_prefill=True (mutually exclusive
+                    # with largest_prefill_bucket in build_gate_config) drops the
+                    # one-shot bucket cap so the gate uses the context-derived
+                    # budget: max_input = max_context(32768) - max_output(2048)
+                    # = 30720.
+                    chunked_prefill=True,
                     instance_selection_provenance=(
                         "predeclared TTIS smoke/CI set; not independently "
                         "baselined for certification"
