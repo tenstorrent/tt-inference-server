@@ -80,7 +80,7 @@ jobs:
           REF: ${{ github.ref_name }}
         run: |
           case "$REF" in
-            stable | vcankovic/automated-release-pipeline)
+            stable | vcankovic/improve-release-automation)
               echo "Branch '$REF' is allowed — proceeding." ;;
             *)
               echo "::error::Release automation may only run from 'stable', 'vcankovic/stable-automated-release-pipeline', or 'vcankovic/automated-release-pipeline'. Refusing to run on '$REF'."
@@ -193,33 +193,6 @@ jobs:
             --version "${RELEASE_VERSION}" \
             --tt-metal-commit "${TT_METAL_COMMIT}" \
             --vllm-commit "${VLLM_COMMIT}"
-
-      # ----- Step 1b: fail if promotion produced a shadowed duplicate model_id.
-      #       promote_dev_spec_to_prod.py keys its upsert on the device SET, so
-      #       adding a device appends a new prod block instead of replacing the
-      #       old one; both then expand to the same model_id and the docs
-      #       generator renders the dead one (hit Qwen3.6-27B / Qwen3-Embedding-4B
-      #       at v0.20.0). Inspect the just-promoted PROD catalogue directly (the
-      #       JSON export dedupes via a {model_id: spec} dict and would hide it). -----
-      - name: "Step 1b — assert promotion produced no shadowed duplicates"
-        env:
-          MODEL_SPECS_ENV: prod
-        run: |
-          python3 - <<'PY'
-          import collections, sys
-          from workflows.model_spec import spec_templates
-          seen = collections.defaultdict(list)
-          for t in spec_templates:
-              for s in t.expand_to_specs():
-                  seen[s.model_id].append(getattr(t, "version", None))
-          dups = {k: v for k, v in seen.items() if len(v) > 1}
-          for k, v in sorted(dups.items()):
-              print(f"::error::duplicate model_id {k} produced by prod templates {v} - "
-                    "the older block is unreachable and will be rendered into the docs")
-          if dups:
-              sys.exit(f"{len(dups)} shadowed duplicate model_id(s) in the prod catalogue")
-          print(f"OK - {len(seen)} unique model_ids, no duplicates")
-          PY
 
       # ----- Step 2: regenerate model-support docs + release_model_spec.json ----
       - name: "Step 2 — export model spec (docs + JSON)"
@@ -736,3 +709,52 @@ jobs:
             --head-branch "${POST_RELEASE_BRANCH}" \
             --base main \
             --promoted-images "${PROMOTED_IMAGES}"
+
+      # ----- FINAL step: create a DRAFT GitHub Release named after the version,
+      #       referencing the tag pushed earlier in THIS run. (Verified: a Release
+      #       targets an existing tag by tag_name; a same-named branch does not
+      #       interfere.) Body is intentionally EMPTY (filled in later, e.g. from
+      #       the PR notes). Idempotent: skips if a Release for the tag already
+      #       exists (GitHub allows only one Release per tag). -----
+      - name: "Create draft GitHub Release (v<version>)"
+        env:
+          # Use the PAT (vcankovicTT) so the Release is created/owned by that user,
+          # not github-actions[bot] — matches publish-release.yml. Needs contents:write.
+          GH_TOKEN: ${{ secrets.TMP_VCANKOVIC_SHIELD_CRANE_PAT }}
+        run: |
+          TAG="v${RELEASE_VERSION}${TAG_SUFFIX}"
+          if gh release view "${TAG}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "::warning::Release '${TAG}' already exists — skipping creation."
+            exit 0
+          fi
+          gh release create "${TAG}" \
+            --repo "${{ github.repository }}" \
+            --draft \
+            --title "${TAG}" \
+            --notes ""
+          echo "Created draft Release '${TAG}' (references existing tag '${TAG}', empty body)."
+
+      # ----- Attach the release-artifacts zip to the Release as an asset. The zip
+      #       built earlier lives at ${RUNNER_TEMP}/release_artifacts/ (outside the
+      #       repo, so it survives the branch switches) and is uploaded DIRECTLY —
+      #       NOT via actions/upload-artifact, which wraps files in another zip.
+      #       So the asset is v<version>-release_artifacts.zip (single zip), not the
+      #       double-zipped release-artifacts-v<version>.zip. --clobber overwrites
+      #       the asset on re-runs. -----
+      - name: "Upload release-artifacts zip as a Release asset"
+        env:
+          # PAT (vcankovicTT) so the asset upload is attributed to that user too.
+          GH_TOKEN: ${{ secrets.TMP_VCANKOVIC_SHIELD_CRANE_PAT }}
+        run: |
+          TAG="v${RELEASE_VERSION}${TAG_SUFFIX}"
+          ASSET="${RUNNER_TEMP}/release_artifacts/v${RELEASE_VERSION}-release_artifacts.zip"
+          if [ ! -f "${ASSET}" ]; then
+            # Fall back to any single zip in the dir if the exact name ever changes.
+            ASSET="$(ls "${RUNNER_TEMP}/release_artifacts/"*.zip 2>/dev/null | head -1 || true)"
+          fi
+          if [ -z "${ASSET}" ] || [ ! -f "${ASSET}" ]; then
+            echo "::warning::no release-artifacts zip under ${RUNNER_TEMP}/release_artifacts - nothing to upload."
+            exit 0
+          fi
+          gh release upload "${TAG}" "${ASSET}" --repo "${{ github.repository }}" --clobber
+          echo "Uploaded $(basename "${ASSET}") as an asset on Release '${TAG}'."

@@ -634,6 +634,15 @@ void BlazePrefillRunner::handleSchedulerOutput(
   }
   auto taskId = slotContext.taskId.value();
   if (output.ctx_exhausted) {
+    // Prefill exhaustion means the prompt itself did not fit — unlike the
+    // decode-side case there is no partial answer to salvage, so FLAG_ERROR
+    // is correct. Log it loudly: this branch used to push the error token
+    // silently, leaving nothing in the server log to explain the client 500.
+    TT_LOG_WARN(
+        "[BlazePrefillRunner] handleSchedulerOutput: ctx_exhausted during "
+        "prefill for taskId={}, slotId={} (prompt does not fit the slot's "
+        "context); failing the request",
+        taskId, output.slot_id);
     slotManager.setSlotAsIdle(output.slot_id);
     tt::worker::SingleProcessWorkerMetrics::instance()
         .decrementActiveRequests();

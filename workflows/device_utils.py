@@ -85,6 +85,26 @@ def dra_device_board_counts() -> Dict[str, int]:
     )
 
 
+# Boards that carry two ASICs; every other board type is single-chip. Matches the
+# tt-dra-driver chipCount table (docs.tenstorrent.com/tt-dra-driver, single-host).
+_TWO_CHIP_BOARD_TYPES = {"n300", "p300"}
+
+
+def dra_device_chip_counts() -> Dict[str, int]:
+    """Map device_key (e.g. "t3k") -> number of ASICs the device shape has.
+
+    Drives the chart's hugepage sizing: tt-metal maps one 1Gi page per ASIC, so
+    a device needs board_count x chips_per_board pages. Same source and device
+    coverage as dra_device_board_counts (see _dra_single_board_type_devices).
+    """
+    return dict(
+        sorted(
+            (key, count * (2 if bt in _TWO_CHIP_BOARD_TYPES else 1))
+            for key, bt, count in _dra_single_board_type_devices()
+        )
+    )
+
+
 def dra_device_board_names() -> Dict[str, str]:
     """Map device_key (e.g. "t3k") -> the tt-dra-driver `boardName` a DRA
     ResourceClaim selects (via CEL). Same source and device coverage as
@@ -143,7 +163,7 @@ def _get_tt_smi_board_type_counts() -> Dict[str, int]:
         raw_board_type = _normalize_board_type(board_info.get("board_type", ""))
         board_type = raw_board_type.split(" ", 1)[0]
         if board_type:
-            if board_type in {"n300", "p300"}:
+            if board_type in _TWO_CHIP_BOARD_TYPES:
                 # tt-smi reports per-chip entries (e.g., n300 L/R), so convert chip
                 # counts to board counts after collapsing L/R suffixes.
                 board_chip_counts[board_type] = board_chip_counts.get(board_type, 0) + 1

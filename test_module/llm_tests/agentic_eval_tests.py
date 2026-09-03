@@ -20,7 +20,7 @@ from llm_module import (
 )
 from report_module.schema import Block
 from utils.auth_helpers import setup_tests_auth
-from workflows.workflow_types import WorkflowVenvType
+from workflow_module.engine_types import WorkflowVenvType
 from workflow_module import accept_blocks
 
 from .._test_common import sweep_envelope
