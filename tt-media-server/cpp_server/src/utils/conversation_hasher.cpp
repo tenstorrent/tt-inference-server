@@ -208,11 +208,13 @@ std::vector<BlockHashInfo> getPrefixCacheHashesByBlocksWithThinking(
       // Mirror the session-side think marker state machine.
       if (token == thinkStartId) {
         inThinking = true;
-        continue;  // Skip marker, don't count
+        ++thinkCount;  // Marker occupies a KV row
+        continue;      // Skip marker, don't hash
       }
       if (token == thinkEndId) {
         inThinking = false;
-        continue;  // Skip marker, don't count
+        ++thinkCount;  // Marker occupies a KV row
+        continue;      // Skip marker, don't hash
       }
       if (inThinking) {
         ++thinkCount;  // Count content token, don't hash

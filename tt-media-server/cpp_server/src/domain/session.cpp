@@ -90,10 +90,12 @@ void Session::addGeneratedToken(uint32_t tokenId) {
 
   if (tokenId == thinkStartTokenId_) {
     inThinkingBlock_ = true;
+    ++accumulatedThinkTokens_;  // Marker occupies a KV row
   } else if (tokenId == thinkEndTokenId_) {
     inThinkingBlock_ = false;
+    ++accumulatedThinkTokens_;  // Marker occupies a KV row
   } else if (inThinkingBlock_) {
-    ++accumulatedThinkTokens_;  // Only content tokens, not markers
+    ++accumulatedThinkTokens_;
   }
 }
 

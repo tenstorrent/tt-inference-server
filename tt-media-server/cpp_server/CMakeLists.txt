@@ -1282,6 +1282,17 @@ target_include_directories(prefix_cache_router_test PRIVATE
     ${prometheus-cpp_SOURCE_DIR}/core/include
 )
 
+add_executable(gemma4_think_position_test
+    tests/unit/services/gemma4_think_position_test.cpp
+    src/domain/prefix_cache/block_matcher.cpp
+)
+target_link_libraries(gemma4_think_position_test PRIVATE
+    llm_runner_lib Drogon::Drogon prometheus-cpp::core GTest::gtest_main)
+target_include_directories(gemma4_think_position_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${prometheus-cpp_SOURCE_DIR}/core/include
+)
+
 add_executable(mock_remote_kv_manager_test
     tests/unit/services/mock_remote_kv_manager_test.cpp
     src/services/mock_remote_kv_manager.cpp
@@ -1596,6 +1607,7 @@ gtest_discover_tests(worker_metrics_shm_test)
 gtest_discover_tests(concurrent_map_test)
 gtest_discover_tests(session_test)
 gtest_discover_tests(prefix_cache_router_test)
+gtest_discover_tests(gemma4_think_position_test)
 gtest_discover_tests(session_manager_test)
 gtest_discover_tests(worker_manager_test)
 gtest_discover_tests(llm_service_test)

@@ -93,7 +93,7 @@ std::string renderLastUserTurn(const std::vector<ChatMessage>& messages,
 struct BlockHashInfo {
   uint64_t hash;
   uint32_t
-      accumulatedThinkTokens;  // Thinking content tokens (excluding markers)
+      accumulatedThinkTokens;  // KV rows used by thinking, markers included
 };
 
 /**
@@ -178,7 +178,8 @@ std::vector<uint64_t> getPrefixCacheHashesByBlocks(
  *
  * Thinking tokens (content between thinkStartId and thinkEndId markers) are
  * excluded from the hash computation but their count is tracked. The markers
- * themselves are also excluded from both the hash and the count.
+ * are excluded from the hash too, but ARE counted: the count feeds a KV
+ * position, and a marker occupies a row like any other token.
  *
  * Uses the same marker state machine as session tracking to classify tokens as
  * thinking or non-thinking.
