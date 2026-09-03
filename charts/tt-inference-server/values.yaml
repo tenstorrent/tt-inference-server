@@ -687,7 +687,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.21.0-bc4c4df-be7d805
+              tag: 0.22.0-bc4c4df-be7d805
             resources:
               requests:
                 memory: 80Gi
@@ -6927,7 +6927,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.21.0-bc4c4df-be7d805
+              tag: 0.22.0-bc4c4df-be7d805
             resources:
               requests:
                 memory: 10Gi

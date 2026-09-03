@@ -322,7 +322,7 @@ templates:
     - Qwen/Qwen3-32B
   impl: qwen3_32b_galaxy
   inference_engine: VLLM
-  version: "0.21.0"
+  version: "0.22.0"
   tt_metal_commit: "bc4c4df"
   vllm_commit: "be7d805"
   device_model_specs:
@@ -373,6 +373,7 @@ templates:
     Qwen/Qwen3-32B:
       reasoning_parser_name: qwen3
       tool_call_parser_name: hermes
+
 
 
 - weights:
@@ -2830,7 +2831,7 @@ templates:
     - google/diffusiongemma-26B-A4B-it
   impl: diffusion_gemma
   inference_engine: VLLM
-  version: "0.21.0"
+  version: "0.22.0"
   tt_metal_commit: "bc4c4df"
   vllm_commit: "be7d805"
   device_model_specs:
@@ -2896,4 +2897,5 @@ templates:
       output_block_size: 256
         # A request must leave one full output canvas inside max_context.
       max_effective_input_tokens: 261888
+
 
