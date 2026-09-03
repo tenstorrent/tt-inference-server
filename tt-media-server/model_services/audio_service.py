@@ -141,7 +141,13 @@ class AudioService(BaseService):
             f"end={segment['end']}, speaker={segment.get('speaker_id', 'N/A')}"
         )
 
-        field_values = original_request.model_dump()
+        # Exclude the encoded audio payload from the dump. It is cleared below
+        # anyway, but model_dump() would deep-copy the full base64 clip once per
+        # segment first (~13MB x 32 segments for a 320s request), which is
+        # serial work on the event loop and made fan-out cost scale with
+        # duration x segment count.
+        field_values = original_request.model_dump(exclude={"file"})
+        field_values["file"] = ""  # placeholder; required field, cleared below
         new_request = type(original_request)(**field_values)
         new_request.is_preprocessing_enabled = False  # Skip double preprocessing
         new_request._segments = [segment]  # Single segment

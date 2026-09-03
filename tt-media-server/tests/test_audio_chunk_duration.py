@@ -2,8 +2,32 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
+import importlib.util
+import pathlib
+
 from config.constants import DeviceIds, DeviceTypes, ModelConfigs, ModelRunners
-from config.settings import audio_chunk_duration_for_worker_count
+
+
+def _real_settings_module():
+    """Load config/settings.py straight from disk.
+
+    Several test modules replace ``sys.modules["config.settings"]`` with a Mock
+    at import time and never restore it, so a plain import hands back a Mock
+    depending on collection order and every assertion below would pass
+    vacuously.
+    """
+    path = pathlib.Path(__file__).resolve().parents[1] / "config" / "settings.py"
+    spec = importlib.util.spec_from_file_location("_real_config_settings", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_settings_module = _real_settings_module()
+audio_chunk_duration_for_worker_count = (
+    _settings_module.audio_chunk_duration_for_worker_count
+)
+Settings = _settings_module.Settings
 
 
 def test_chunk_duration_scales_with_worker_count():
@@ -30,16 +54,12 @@ def test_qwen3_asr_galaxy_keeps_throttle_zero_and_32_workers():
 def test_audio_min_split_duration_default_is_single_runner_window():
     """Clips at/under this length stay whole (measured: 3s fan-out chunking
     costs +2.4 WER on short librispeech clips vs keeping them whole)."""
-    from config.settings import Settings
-
     assert Settings().audio_min_split_duration_seconds == 30
 
 
 def test_qwen3_asr_duration_cap_is_one_full_galaxy_wave():
     """Cap = 32 runners * 10s chunk = 320s, so a single request can fill all 32
     runners in one pass before spilling into extra waves."""
-    from config.settings import Settings
-
     s = Settings()
     workers = 32
     assert s.max_audio_duration_qwen3_asr_seconds == (
