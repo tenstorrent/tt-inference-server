@@ -69,6 +69,7 @@ class TTBatchFifoQueue(TTQueueInterface):
         max_messages_to_get: int = 100,
         block: bool = True,
         timeout: Optional[float] = None,
+        linger: float = 0.0,  # accepted for interface parity; this queue batches itself
     ) -> List:
         """
         Smart batching get_many that tries to get full batches.
