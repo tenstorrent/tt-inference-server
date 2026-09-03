@@ -672,6 +672,23 @@ struct EmbeddingService::Impl {
         if (!worker->running.load() || !worker->isReady) break;
         if (requestQueue.empty()) continue;
 
+        // The queue is non-empty but the batch may not be full: within one
+        // client wave requests arrive ~40-80us apart, so grabbing immediately
+        // fragments the wave into batches of 1. Wait up to batchTimeout for
+        // the queue to fill; a full queue satisfies the predicate and exits
+        // early, so only partial batches ever pay this wait. wait_until
+        // releases the mutex while sleeping, so producers keep enqueueing.
+        if (maxBatchSize > 1 && requestQueue.size() < maxBatchSize &&
+            batchTimeout.count() > 0) {
+          auto deadline = std::chrono::steady_clock::now() + batchTimeout;
+          queueCv.wait_until(lock, deadline, [this, &worker] {
+            return requestQueue.size() >= maxBatchSize ||
+                   !worker->running.load() || !worker->isReady;
+          });
+          if (!worker->running.load() || !worker->isReady) break;
+          if (requestQueue.empty()) continue;
+        }
+
         while (batch.size() < maxBatchSize && !requestQueue.empty()) {
           batch.push_back(requestQueue.front());
           requestQueue.pop();
