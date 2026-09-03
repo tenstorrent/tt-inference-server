@@ -390,7 +390,7 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
     # and the first ~5 min of profiling ran cold (aiperf b60d3a9a fixes it).
     # Keep every model on the same pin so numbers stay comparable.
     AgenticTracesConfig(
-        model_id="id_tt-transformers_Kimi-K2.7-Code_super_cluster",
+        model_id="id_blaze_Kimi-K2.7-Code_super_cluster",
         inferencex_git_ref=INFERENCEX_AGENTX_GIT_REF,
         runs=(
             AgenticTracesRunSpec(

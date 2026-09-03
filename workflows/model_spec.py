@@ -428,6 +428,15 @@ qwen38_27b_qb2_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/qwen38_27b_qb2",
 )
+# C++ Blaze media server. Remote SUPER_CLUSTER catalog entries use this so
+# they are not labeled as tt_transformers (the tt-metal vLLM path) or gpt_oss
+# (the tt-metal GPT-OSS demo). Selectable via --impl blaze.
+blaze_impl = ImplSpec(
+    impl_id="blaze",
+    impl_name="blaze",
+    repo_url="https://github.com/tenstorrent/tt-inference-server",
+    code_path="tt-media-server/cpp_server",
+)
 
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "quetzal": quetzal_impl,
@@ -450,6 +459,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "diffusion_gemma": diffusion_gemma_impl,
     "training_lora": training_lora_impl,
     "trainer_training_lora": trainer_training_lora_impl,
+    "blaze": blaze_impl,
 }
 
 
