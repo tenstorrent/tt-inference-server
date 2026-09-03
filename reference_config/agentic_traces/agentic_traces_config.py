@@ -347,7 +347,7 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
     # ``--warmup-requests-per-lane``. Do not lower this pin without also
     # restoring a time-bounded warmup: the flag does not exist earlier.
     AgenticTracesConfig(
-        model_id="id_tt-transformers_Kimi-K2.7-Code_super_cluster",
+        model_id="id_blaze_Kimi-K2.7-Code_super_cluster",
         inferencex_git_ref="ddeb02eb9c5c89f44e2e4950e741b499d0b8190a",
         runs=(
             AgenticTracesRunSpec(

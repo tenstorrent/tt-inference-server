@@ -1513,7 +1513,7 @@ templates:
 # no local TT serving is implied.
 - weights:
     - moonshotai/Kimi-K2.6
-  impl: tt_transformers
+  impl: blaze
   inference_engine: MEDIA
   device_model_specs:
     - device: SUPER_CLUSTER
@@ -1538,7 +1538,7 @@ templates:
 # no local TT serving is implied.
 - weights:
     - MiniMaxAI/MiniMax-M2.7
-  impl: tt_transformers
+  impl: blaze
   inference_engine: MEDIA
   device_model_specs:
     - device: SUPER_CLUSTER
@@ -1556,7 +1556,7 @@ templates:
 
 - weights:
     - openai/gpt-oss-120b
-  impl: gpt_oss
+  impl: blaze
   inference_engine: MEDIA
   device_model_specs:
     - device: SUPER_CLUSTER
@@ -1574,7 +1574,7 @@ templates:
 
 - weights:
     - moonshotai/Kimi-K2.7-Code
-  impl: tt_transformers
+  impl: blaze
   inference_engine: MEDIA
   device_model_specs:
     - device: SUPER_CLUSTER
@@ -1598,7 +1598,7 @@ templates:
 # resolves through MODEL_SPECS / EVAL_CONFIGS; no local TT serving is implied.
 - weights:
     - moonshotai/Kimi-K3
-  impl: tt_transformers
+  impl: blaze
   inference_engine: MEDIA
   device_model_specs:
     - device: SUPER_CLUSTER
@@ -1621,7 +1621,7 @@ templates:
 
 - weights:
     - MiniMaxAI/MiniMax-M3
-  impl: tt_transformers
+  impl: blaze
   inference_engine: MEDIA
   device_model_specs:
     - device: SUPER_CLUSTER
@@ -1913,7 +1913,7 @@ templates:
 
 - weights:
     - zai-org/GLM-5.2
-  impl: tt_transformers
+  impl: blaze
   inference_engine: MEDIA
   device_model_specs:
     - device: SUPER_CLUSTER

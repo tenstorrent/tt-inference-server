@@ -373,6 +373,15 @@ training_lora_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-inference-server",
     code_path="tt-media-server/tt_model_runners/forge_training_runners/training_lora_runner.py",
 )
+# C++ Blaze media server. Remote SUPER_CLUSTER catalog entries use this so
+# they are not labeled as tt_transformers (the tt-metal vLLM path) or gpt_oss
+# (the tt-metal GPT-OSS demo). Selectable via --impl blaze.
+blaze_impl = ImplSpec(
+    impl_id="blaze",
+    impl_name="blaze",
+    repo_url="https://github.com/tenstorrent/tt-inference-server",
+    code_path="tt-media-server/cpp_server",
+)
 
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "tt_transformers": tt_transformers_impl,
@@ -389,6 +398,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "qwen36_blackhole_vlm": qwen36_blackhole_vlm_impl,
     "diffusion_gemma": diffusion_gemma_impl,
     "training_lora": training_lora_impl,
+    "blaze": blaze_impl,
 }
 
 

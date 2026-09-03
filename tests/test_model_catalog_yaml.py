@@ -16,6 +16,7 @@ from workflows.model_spec import (
     _build_device_model_spec,
     _build_system_requirements,
     _build_template,
+    blaze_impl,
     get_model_spec_map,
     load_templates_from_yaml,
     tt_transformers_impl,
@@ -33,6 +34,7 @@ from workflows.workflow_types import (
 def test_impl_registry_is_populated():
     """Every ImplSpec instance defined at module scope must be in _IMPL_REGISTRY."""
     assert _IMPL_REGISTRY["tt_transformers"] is tt_transformers_impl
+    assert _IMPL_REGISTRY["blaze"] is blaze_impl
     # impl_id of each registry entry must match its key
     for impl_id, impl in _IMPL_REGISTRY.items():
         assert impl.impl_id == impl_id
@@ -415,3 +417,18 @@ def test_diffusiongemma_dev_spec_matches_validated_256k_contract():
     assert (
         int(env["DG_TRACE_REGION_SIZE"]) == additional_config["tt"]["trace_region_size"]
     )
+
+
+def test_super_cluster_dev_llm_templates_use_blaze_impl():
+    templates = load_templates_from_yaml(MODEL_SPECS_DIR / "dev" / "llm.yaml")
+    super_cluster = [
+        t
+        for t in templates
+        if any(d.device == DeviceTypes.SUPER_CLUSTER for d in t.device_model_specs)
+    ]
+    assert super_cluster, "expected SUPER_CLUSTER templates in dev/llm.yaml"
+    for template in super_cluster:
+        assert template.impl is blaze_impl, (
+            f"{template.weights} on SUPER_CLUSTER must use impl blaze, "
+            f"got {template.impl.impl_id}"
+        )

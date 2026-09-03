@@ -58,7 +58,7 @@ from reference_config.agentic_traces.agentic_traces_config import (
 )
 from workflows.workflow_types import AgenticTracesMode
 
-KIMI_MODEL_ID = "id_tt-transformers_Kimi-K2.7-Code_super_cluster"
+KIMI_MODEL_ID = "id_blaze_Kimi-K2.7-Code_super_cluster"
 KIMI_PINNED_REF = "ddeb02eb9c5c89f44e2e4950e741b499d0b8190a"
 
 
