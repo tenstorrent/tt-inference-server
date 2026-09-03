@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import subprocess
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -151,6 +151,28 @@ def test_healthy_advancing_run_is_not_killed():
     rc, proc = _run(probe, exit_after=60)  # 60 * 5s = 300s >> budget 100s
     assert rc == 0
     assert not proc.terminated and not proc.killed
+
+
+def test_first_progress_probe_and_log_follow_the_poll_interval():
+    calls = {"probe": 0}
+    log = MagicMock()
+
+    def probe():
+        calls["probe"] += 1
+        return ProgressSnapshot(completed=0, total=3, heartbeat=0, in_flight=0)
+
+    rc, proc = _run(probe, exit_after=1, log=log, log_interval_s=60)
+
+    assert rc == 0
+    assert not proc.terminated and not proc.killed
+    assert calls["probe"] == 1
+    assert proc._clock["t"] == 60
+    progress_calls = [
+        call
+        for call in log.info.call_args_list
+        if call.args and str(call.args[0]).startswith("[agentic progress]")
+    ]
+    assert len(progress_calls) == 1
 
 
 def test_stalled_run_is_killed_with_124():

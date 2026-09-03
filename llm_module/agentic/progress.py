@@ -151,6 +151,48 @@ def run_with_progress(
         # Fixed once the total is known from the first successful probe.
         ceiling_s: Optional[float] = None
 
+        def observe_progress(now: float):
+            nonlocal ceiling_s, first_progress_seen
+            nonlocal last_heartbeat, last_progress_time
+            elapsed = now - start
+            try:
+                snap = probe()
+            except Exception as exc:  # noqa: BLE001 - probe must not crash run
+                log.debug("[agentic progress] %s: probe error: %s", label, exc)
+                snap = None
+
+            if snap is not None and snap.heartbeat > last_heartbeat:
+                last_heartbeat = snap.heartbeat
+                last_progress_time = now
+                first_progress_seen = True
+
+            if snap is not None and snap.total and ceiling_s is None:
+                ceiling_s = worst_case_ceiling_s(
+                    snap.total,
+                    concurrency,
+                    per_task_budget_s,
+                    startup_grace_s=startup_grace_s,
+                )
+
+            # Allow one full per-task budget without progress. Before the first
+            # observed start/completion, include the one-time startup grace.
+            stall_allowance = per_task_budget_s + stall_grace_s
+            if not first_progress_seen:
+                stall_allowance += startup_grace_s
+            since_progress = now - last_progress_time
+
+            _log_progress(
+                log,
+                label=label,
+                snap=snap,
+                elapsed_s=elapsed,
+                per_task_budget_s=per_task_budget_s,
+                concurrency=concurrency,
+                ceiling_s=ceiling_s,
+                stall_kill_in_s=stall_allowance - since_progress,
+            )
+            return elapsed, since_progress, stall_allowance
+
         try:
             while True:
                 now = time.monotonic()
@@ -189,45 +231,7 @@ def run_with_progress(
                     _terminate(proc, log)
                     return TIMEOUT_EXIT_CODE
 
-                snap: Optional[ProgressSnapshot]
-                try:
-                    snap = probe()
-                except Exception as exc:  # noqa: BLE001 - probe must not crash run
-                    log.debug("[agentic progress] %s: probe error: %s", label, exc)
-                    snap = None
-
-                if snap is not None and snap.heartbeat > last_heartbeat:
-                    last_heartbeat = snap.heartbeat
-                    last_progress_time = now
-                    first_progress_seen = True
-
-                if snap is not None and snap.total and ceiling_s is None:
-                    ceiling_s = worst_case_ceiling_s(
-                        snap.total,
-                        concurrency,
-                        per_task_budget_s,
-                        startup_grace_s=startup_grace_s,
-                    )
-
-                # Stall allowance: a full per-task budget must elapse with no
-                # progress before the grace cushion is even added. Until the
-                # first observed start/completion, also allow one-time startup.
-                stall_allowance = per_task_budget_s + stall_grace_s
-                if not first_progress_seen:
-                    stall_allowance += startup_grace_s
-                since_progress = now - last_progress_time
-                stall_kill_in = stall_allowance - since_progress
-
-                _log_progress(
-                    log,
-                    label=label,
-                    snap=snap,
-                    elapsed_s=elapsed,
-                    per_task_budget_s=per_task_budget_s,
-                    concurrency=concurrency,
-                    ceiling_s=ceiling_s,
-                    stall_kill_in_s=stall_kill_in,
-                )
+                elapsed, since_progress, stall_allowance = observe_progress(now)
 
                 hard_timeout_exceeded = (
                     hard_timeout_s is not None and elapsed >= hard_timeout_s

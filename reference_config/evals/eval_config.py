@@ -300,7 +300,7 @@ class HarborEvalConfig:
     # Kill if no trial makes progress for ``B + stall_grace_sec``.
     stall_grace_sec: int = 5 * 60
     # Progress watchdog log cadence.
-    progress_log_interval_sec: int = 5 * 60
+    progress_log_interval_sec: int = 60
     # When False, heuristic wave/stall deadlines are log-only. An explicit
     # HARBOR_TIMEOUT_SEC remains an enforced wall-clock backstop.
     enforce_agent_deadline: bool = field(default_factory=_harbor_enforce_agent_deadline)

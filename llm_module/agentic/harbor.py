@@ -93,7 +93,7 @@ class HarborRunConfig:
     per_task_overhead_sec: int = 20 * 60
     startup_grace_sec: int = 10 * 60
     stall_grace_sec: int = 5 * 60
-    progress_log_interval_sec: int = 5 * 60
+    progress_log_interval_sec: int = 60
     # When False, heuristic wave/stall deadlines are log-only. Explicit hard
     # timeouts remain enforced.
     enforce_agent_deadline: bool = False

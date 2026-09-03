@@ -46,6 +46,7 @@ def test_defaults_to_docker_with_no_env(monkeypatch):
     # kubernetes-only keys, so they must not leak into a local run.
     assert cfg.environment_kwargs == {}
     assert cfg.harbor_timeout_sec is None
+    assert cfg.progress_log_interval_sec == 60
 
 
 def test_heuristic_deadlines_are_disabled_by_default(monkeypatch):

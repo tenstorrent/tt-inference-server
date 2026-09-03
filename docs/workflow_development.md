@@ -450,11 +450,11 @@ environment variables (`OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_API_BASE`),
 then runs each configured agentic task through the LLM driver/parser
 adapters.
 
-The progress watchdog reads Harbor's `result.json` file. It logs wave and stall
-deadlines by default. Set `HARBOR_ENFORCE_AGENT_DEADLINE=true` to enforce these
-heuristic deadlines. Each wave budget includes the agent timeout and the
-configured non-agent overhead. The maximum run time also includes one startup
-grace period.
+The progress watchdog reads Harbor's `result.json` file. It first polls and logs
+after one minute, then repeats every minute. It logs wave and stall deadlines by
+default. Set `HARBOR_ENFORCE_AGENT_DEADLINE=true` to enforce these heuristic
+deadlines. Each wave budget includes the agent timeout and the configured
+non-agent overhead. The maximum run time also includes one startup grace period.
 
 `HARBOR_TIMEOUT_SEC` sets an unconditional wall-clock limit. This limit applies
 when heuristic deadlines are disabled. On timeout, the workflow keeps the
