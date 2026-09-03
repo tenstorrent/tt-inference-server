@@ -2,8 +2,9 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+import logging
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Dict, List, Optional, Union
 
 from reference_config.evals.eval_utils import (
@@ -14,6 +15,8 @@ from reference_config.evals.eval_utils import (
 from workflows.model_spec import MODEL_SPECS
 from workflows.utils import map_configs_by_attr
 from workflows.workflow_types import EvalLimitMode, WorkflowVenvType
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -269,19 +272,43 @@ class EvalTask:
     allow_code_execution: bool = False
     agentic_eval_config: Optional[TerminalBenchEvalConfig] = None
     swebench_eval_config: Optional[SWEbenchEvalConfig] = None
+    # Acceptance severity for this eval ("must"/"should"). "must" failures block
+    # acceptance; "should" failures are informational. Set by requirements-driven
+    # runs from the document's per-eval priority; catalog tasks default to must.
+    priority: str = "must"
+    # Per-device overrides, keyed by device name (e.g. "GALAXY",
+    # "SUPER_CLUSTER"; matched case-insensitively). EvalTask fields follow a
+    # three-tier device-variance model:
+    #   1. semantic identity (device-INVARIANT, rejected here): task_name,
+    #      workflow_venv_type, eval_class, num_fewshot, seed, include_path;
+    #   2. transport/execution (device-variant): max_concurrent, batch_size,
+    #      use_chat_api, apply_chat_template, gen_kwargs, model_kwargs, ...;
+    #   3. measured baselines (device-variant): score.
+    # Only tier-2/3 fields may appear in an override block.
+    device_overrides: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
     def __post_init__(self):
         self.validate_data()
         self._infer_data()
 
     def _infer_data(self):
+        # Must stay idempotent: resolve_task_for_device() rebuilds the task via
+        # dataclasses.replace, which re-runs __post_init__ on already-inferred
+        # field values. Every inference here must be a fixed point.
         if self.use_chat_api and self.eval_class == "local-completions":
             object.__setattr__(self, "eval_class", "local-chat-completions")
+        elif not self.use_chat_api and self.eval_class == "local-chat-completions":
+            # Symmetric reverse: a device override can flip use_chat_api off on
+            # a task whose eval_class was already inferred to the chat variant.
+            object.__setattr__(self, "eval_class", "local-completions")
 
         if self.workflow_venv_type == WorkflowVenvType.EVALS_META:
             # max_concurrent is not supported in lm-eval==0.4.3
-            object.__setattr__(self, "batch_size", self.max_concurrent)
-            object.__setattr__(self, "max_concurrent", None)
+            # Guard on max_concurrent: after the first inference it is None, so
+            # re-inference must not copy None into batch_size.
+            if self.max_concurrent is not None:
+                object.__setattr__(self, "batch_size", self.max_concurrent)
+                object.__setattr__(self, "max_concurrent", None)
             # lm-eval 0.4.4's API models default add_bos_token=False. Llama is trained with a
             # leading BOS and regresses badly without it (meta_ifeval strict-format failures,
             # ~3pt drop crossing the 0.95 gate). Force BOS on for all meta tasks.
@@ -290,7 +317,62 @@ class EvalTask:
             object.__setattr__(self, "model_kwargs", mk)
 
     def validate_data(self):
-        pass
+        tier1_fields = {
+            "task_name",
+            "workflow_venv_type",
+            "eval_class",
+            "num_fewshot",
+            "seed",
+            "include_path",
+            "device_overrides",
+        }
+        for device_key, overrides in self.device_overrides.items():
+            if not isinstance(overrides, dict):
+                raise ValueError(
+                    f"EvalTask {self.task_name!r}: device_overrides[{device_key!r}] "
+                    "must be a dict of field overrides"
+                )
+            unknown = set(overrides) - set(self.__dataclass_fields__)
+            if unknown:
+                raise ValueError(
+                    f"EvalTask {self.task_name!r}: device_overrides[{device_key!r}] "
+                    f"names unknown EvalTask fields: {sorted(unknown)}"
+                )
+            tier1 = set(overrides) & tier1_fields
+            if tier1:
+                raise ValueError(
+                    f"EvalTask {self.task_name!r}: device_overrides[{device_key!r}] "
+                    f"cannot override tier-1 (device-invariant) fields: {sorted(tier1)}"
+                )
+
+
+def resolve_task_for_device(task: "EvalTask", device) -> "EvalTask":
+    """Apply ``task``'s per-device overrides for ``device`` (identity if none).
+
+    ``device`` may be a device enum member (uses ``.name``) or a plain string;
+    matching is case-insensitive. Only tier-2 (transport/execution) and tier-3
+    (measured baseline) fields are overridable — see ``EvalTask`` validation.
+    """
+    if not device or not task.device_overrides:
+        return task
+    device_name = getattr(device, "name", device)
+    overrides = {
+        k: v
+        for key, v in task.device_overrides.items()
+        if key.upper() == str(device_name).upper()
+        for k, v in v.items()
+    }
+    if not overrides:
+        return task
+    resolved = replace(task, **overrides)
+    logger.info(
+        "Applied %d device override(s) for task=%s device=%s: %s",
+        len(overrides),
+        task.task_name,
+        device_name,
+        sorted(overrides),
+    )
+    return resolved
 
 
 @dataclass(frozen=True)
@@ -551,6 +633,217 @@ _eval_config_list = [
                 ),
                 limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="zai-org/GLM-5.3",
+        tasks=[
+            # Generate-then-answer LongBench v2 (chat API). Stock longbench2 is
+            # multiple_choice/loglikelihood and cannot run on chat-only servers.
+            EvalTask(
+                task_name="longbench2_generate",
+                max_concurrent=80,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=64.71,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5051#issuecomment-5480874649",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 512000,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "max_gen_toks": 112 * 1000,
+                    # Same tokenizer/eos as GLM-5.2 (shared base).
+                    # https://huggingface.co/zai-org/GLM-5.3
+                    "until": ["<|endoftext|>"],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "stream": "true",
+                },
+                # Select samples by input sequence length (ISL). ISL is measured
+                # by tokenizing each sample's context with `pretrained`; only
+                # samples with minimum_isl <= ISL <= maximum_isl are kept.
+                # Keep maximum_isl below max_model_len (512000) minus max_gen_toks
+                # so no selected prompt overflows the server context.
+                # Forwarded to the lm-eval fork loader via --metadata.
+                custom_dataset_kwargs={
+                    "minimum_isl": 256 * 1024,  # 256K
+                    "maximum_isl": 400 * 1000,  # 400K (< 512000 server limit on GPU)
+                    "pretrained": "zai-org/GLM-5.3",
+                    "tokenizer_num_proc": 32,  # pre-process up to 32 samples in parallel
+                },
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="gpqa_diamond_cot_zeroshot",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=80,
+                # The remote Tenstorrent console only exposes /v1/chat/completions
+                # (text /v1/completions returns 404), so use the chat API.
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=91.7,
+                    published_score_ref="https://artificialanalysis.ai/evaluations/gpqa-diamond?models=glm-5-3",
+                    gpu_reference_score=90.4,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5051#issuecomment-5480874649",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,flexible-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 400 * 1024,
+                    # Per-request HTTP timeout (lm-eval default 1800s). Long
+                    # reasoning generations on the shared console can exceed
+                    # 30min under load, so allow up to 2h before giving up.
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "max_gen_toks": 400 * 1024,
+                    # https://huggingface.co/zai-org/GLM-5.3
+                    "until": ["<|endoftext|>"],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "stream": "true",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.999,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="terminal_bench_2_1",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # Artificial Analysis runs Terminal-Bench with Terminus 2,
+                    # which is the harness configured below. Z.ai's own 88.2
+                    # is measured with Claude Code and is not comparable.
+                    published_score=83.9,
+                    published_score_ref="https://artificialanalysis.ai/evaluations/terminalbench-v2-1?models=glm-5-3",
+                    gpu_reference_score=86.52,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5051#issuecomment-5480874649",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2-1",
+                    agent="terminus-2",
+                    n_concurrent_trials=80,
+                    n_attempts=1,
+                    n_tasks=89,
+                    override_cpus=16,
+                    override_memory_mb=32 * 1024,
+                    agent_timeout_sec=2 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            "max_input_tokens": 512 * 1024,
+                            "max_output_tokens": 64 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 64 * 1024,
+                            "timeout": 60 * 60,
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/break-filter-js-from-html",
+                            "terminal-bench/cobol-modernization",
+                            "terminal-bench/compile-compcert",
+                            "terminal-bench/feal-differential-cryptanalysis",
+                            "terminal-bench/qemu-startup",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+            EvalTask(
+                task_name="tau3_bench_banking",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=50.3,
+                    published_score_ref="https://artificialanalysis.ai/evaluations/tau3-banking?models=glm-5-3",
+                    gpu_reference_score=35.05,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5051#issuecomment-5480874649",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                    tolerance=0.10,
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="sierra-research/tau3-bench",
+                    agent="tau3_llm_agent",
+                    agent_import_path="adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent",
+                    task_names=["sierra-research/tau3-bench__tau3-banking_knowledge-*"],
+                    # A single served instance is shared by the agent,
+                    # the simulated user, and the Natural Language verifier.
+                    n_concurrent_trials=2,
+                    n_attempts=1,
+                    n_tasks=40,
+                    override_cpus=4,
+                    override_memory_mb=8 * 1024,
+                    agent_timeout_sec=3600,
+                    agent_kwargs={
+                        "tau2_trial_index": 0,
+                        "temperature": 1.0,
+                        "max_steps": 200,
+                        # Default is 120s; a single reasoning user-sim turn under
+                        # load can exceed that and trip an MCP request timeout.
+                        "tool_timeout_sec": 900,
+                        "read_timeout_sec": 120,
+                    },
+                    # NOTE: values injected here are passed to the Harbor
+                    # container verbatim. Unlike the task.toml env, the
+                    # "${VAR:-default}" template syntax is NOT resolved on this
+                    # path, so use literal values -- a templated model name
+                    # reaches litellm unexpanded and fails with "LLM Provider
+                    # NOT provided". OPENAI_BASE_URL / OPENAI_API_KEY are
+                    # intentionally omitted: the task's docker-compose already
+                    # substitutes those from the launching shell env.
+                    environment_env={
+                        "TAU2_USER_MODEL": "openai/zai-org/GLM-5.3",
+                    },
+                    verifier_env={
+                        "TAU2_NL_ASSERTIONS_MODEL": "openai/zai-org/GLM-5.3",
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-031",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-032",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-052",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-002",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 3,
                 },
             ),
         ],

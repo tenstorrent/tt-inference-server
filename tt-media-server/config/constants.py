@@ -554,15 +554,29 @@ class TrainingOptimizers(Enum):
 
 TRAINING_STORE_ADAPTERS_DIR = "adapters/"
 TRAINING_STORE_MERGED_MODELS_DIR = "merged_models/"
+TRAINING_STORE_JOB_DATABASE_FILENAME = "jobs.db"
 
 
-# Adapters/merged models live under $CACHE_ROOT
+# Root for LoRA adapters / merged models. Precedence, not redundancy — keep both:
+#   * $TRAINING_STORE_ROOT: set by the launcher for TRAINING servers — cache_root
+#     under --host-volume, else an ephemeral dir.
+#   * $CACHE_ROOT: fallback when TRAINING_STORE_ROOT is unset, e.g. inference
+#     servers reading adapters back from the cache volume.
+# "." is just a last resort so unconfigured callers (e.g. tests) don't crash.
+def _training_store_root() -> str:
+    return os.getenv("TRAINING_STORE_ROOT") or os.getenv("CACHE_ROOT", ".")
+
+
 def adapters_root() -> str:
-    return os.path.join(os.getenv("CACHE_ROOT", "."), TRAINING_STORE_ADAPTERS_DIR)
+    return os.path.join(_training_store_root(), TRAINING_STORE_ADAPTERS_DIR)
 
 
 def merged_models_root() -> str:
-    return os.path.join(os.getenv("CACHE_ROOT", "."), TRAINING_STORE_MERGED_MODELS_DIR)
+    return os.path.join(_training_store_root(), TRAINING_STORE_MERGED_MODELS_DIR)
+
+
+def job_database_path() -> str:
+    return os.path.join(_training_store_root(), TRAINING_STORE_JOB_DATABASE_FILENAME)
 
 
 # Helper function to create vLLM configuration with late import to avoid circular imports
