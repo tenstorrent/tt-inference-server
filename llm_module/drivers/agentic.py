@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any, List, Optional
@@ -30,6 +31,18 @@ def _openai_model_name(model: str) -> str:
     OpenAI provider and the remainder is sent unchanged to the server.
     """
     return f"openai/{model}"
+
+
+def _runtime_environment_env(configured_env: dict[str, str]) -> dict[str, str]:
+    """Add runtime credentials only for compose tasks that need interpolation."""
+    environment_env = dict(configured_env)
+    if "TAU2_USER_MODEL" not in environment_env:
+        return environment_env
+    for key in ("OPENAI_API_KEY", "OPENAI_BASE_URL"):
+        value = os.getenv(key)
+        if value:
+            environment_env.setdefault(key, value)
+    return environment_env
 
 
 class AgenticEvalDriver(LLMDriver):
@@ -201,9 +214,11 @@ def build_harbor_config(
         yes=cfg.yes,
         agent_import_path=cfg.agent_import_path,
         agent_env=cfg.agent_env,
-        environment_env=cfg.environment_env,
+        environment_env=_runtime_environment_env(cfg.environment_env),
         verifier_env=cfg.verifier_env,
-        environment_kwargs=cfg.environment_kwargs,
+        environment_kwargs=(
+            cfg.environment_kwargs if cfg.environment_type == "kubernetes" else {}
+        ),
         harbor_timeout_sec=cfg.harbor_timeout_sec,
         llm_timeout_sec=cfg.llm_timeout_sec,
         per_task_overhead_sec=cfg.per_task_overhead_sec,

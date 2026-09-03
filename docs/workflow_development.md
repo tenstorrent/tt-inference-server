@@ -125,10 +125,10 @@ process-global accumulator, runs acceptance, and generates the report.
 
 ```python
 WORKFLOW_REGISTRY = {
-    "evals":      EvalsWorkflow,       # task_types = (EVALUATION,)
+    "evals": EvalsWorkflow,  # task_types = (EVALUATION,)
     "benchmarks": BenchmarksWorkflow,  # task_types = (BENCHMARK,)
-    "spec_tests": SpecTestsWorkflow,   # task_types = (SPEC_TESTS,)
-    "release":    ReleaseWorkflow,     # composes the three above
+    "spec_tests": SpecTestsWorkflow,  # task_types = (SPEC_TESTS,)
+    "release": ReleaseWorkflow,  # composes the three above
 }
 ```
 
@@ -449,6 +449,16 @@ The workflow checks the server via `/v1/models`, sets OpenAI-compatible
 environment variables (`OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_API_BASE`),
 then runs each configured agentic task through the LLM driver/parser
 adapters.
+
+The progress watchdog reads Harbor's `result.json` file. It logs wave and stall
+deadlines by default. Set `HARBOR_ENFORCE_AGENT_DEADLINE=true` to enforce these
+heuristic deadlines. Each wave budget includes the agent timeout and the
+configured non-agent overhead. The maximum run time also includes one startup
+grace period.
+
+`HARBOR_TIMEOUT_SEC` sets an unconditional wall-clock limit. This limit applies
+when heuristic deadlines are disabled. On timeout, the workflow keeps the
+partial result for diagnostics and returns exit code 124.
 
 By default every `EVALS_AGENTIC` task configured for the model runs. To run only
 a subset, pass `--agentic-benchmark` (forwarded from `run.py`) with a

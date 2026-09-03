@@ -88,16 +88,14 @@ class HarborRunConfig:
     # Ignored for every non-mini agent (terminus-2, tau3, ... carry their own
     # timeout knob in ``agent_kwargs``).
     llm_timeout_sec: Optional[int] = 10 * 60
-    # Wave-aware deadline model (see progress.py). Reserved allowance for
-    # Harbor's additive non-agent phases (env build, agent setup, verifier);
-    # currently NOT folded into the per-task budget -- B is just
-    # ``agent_timeout_sec``, and the stall watchdog is the real protection.
+    # Allowance for Harbor's additive non-agent phases (environment build,
+    # agent setup, verifier). Added to the agent timeout for each trial wave.
     per_task_overhead_sec: int = 20 * 60
     startup_grace_sec: int = 10 * 60
     stall_grace_sec: int = 5 * 60
     progress_log_interval_sec: int = 5 * 60
-    # When False the progress watchdog logs deadlines but never kills the harbor
-    # subprocess, letting it run to completion.
+    # When False, heuristic wave/stall deadlines are log-only. Explicit hard
+    # timeouts remain enforced.
     enforce_agent_deadline: bool = False
     # Interpreter whose bin/ holds the ``harbor`` CLI. When ``None`` the current
     # interpreter is used (standalone ``run_agentic.py`` already re-execs into
@@ -340,7 +338,7 @@ def run(config: HarborRunConfig) -> int:
         if config.agent_timeout_sec is not None
         else _DEFAULT_AGENT_TIMEOUT_SEC
     )
-    per_task_budget = agent_timeout
+    per_task_budget = agent_timeout + config.per_task_overhead_sec
     # ``harbor_timeout_sec`` is an optional flat backstop kept from the unified
     # harness; the wave-aware stall/ceiling watchdog is the primary protection.
     rc = run_with_progress(
@@ -358,9 +356,10 @@ def run(config: HarborRunConfig) -> int:
         enforce_deadlines=config.enforce_agent_deadline,
         log=logger,
     )
-    # A watchdog timeout (124) still leaves harbor's per-trial results (each
-    # already graded inline) in result.json worth annotating; only a genuine
-    # harness error aborts before annotation.
+    # A watchdog timeout can still leave useful per-trial diagnostics in
+    # result.json. Annotate that file, but preserve rc=124: Harbor computes
+    # accuracy over completed trials, so treating a partial file as success can
+    # inflate its score by excluding unfinished trials from the denominator.
     if rc != 0 and rc != TIMEOUT_EXIT_CODE:
         return rc
     result_path = job_dir / "result.json"
@@ -374,8 +373,14 @@ def run(config: HarborRunConfig) -> int:
             "Harbor hit the deadline; annotating the partial results in %s.",
             result_path,
         )
-    _annotate_result_file(result_path)
-    # Partial results were graded and annotated; report success so downstream
-    # scoring reads the (lower) partial score instead of treating the run as a
-    # hard failure.
-    return 0
+    try:
+        _annotate_result_file(result_path)
+    except RuntimeError:
+        if rc != TIMEOUT_EXIT_CODE:
+            raise
+        logger.warning(
+            "Harbor timed out while result.json was incomplete; preserving rc=%d.",
+            rc,
+            exc_info=True,
+        )
+    return rc

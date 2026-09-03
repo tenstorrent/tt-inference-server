@@ -115,29 +115,26 @@ def _harbor_env_kwargs() -> Dict[str, Any]:
     return kwargs
 
 
-def _openai_creds_env() -> Dict[str, str]:
-    """Model-endpoint creds for agentic compose tasks, read from the shell.
-
-    tau3-bench's docker-compose interpolates ``${OPENAI_API_KEY}`` /
-    ``${OPENAI_BASE_URL}`` when the compose file is rendered. Harbor's
-    ``pods`` compose strategy renders with a curated environment (task env +
-    ``environment.env`` + Harbor infra vars) and deliberately does NOT seed
-    the Harbor host's ``os.environ``, so these must be threaded through
-    ``environment.env`` (the ``environment_env`` dict on each eval) rather
-    than relying on ambient shell interpolation. Vars absent from the shell
-    are simply omitted, so the docker path is unchanged.
-    """
-    return {
-        key: value
-        for key in ("OPENAI_API_KEY", "OPENAI_BASE_URL")
-        if (value := os.getenv(key))
-    }
-
-
 def _harbor_timeout_sec() -> Optional[float]:
     """Wall-clock ceiling for the ``harbor run`` subprocess (#4759), from env."""
     value = os.getenv("HARBOR_TIMEOUT_SEC")
     return float(value) if value else None
+
+
+def _harbor_enforce_agent_deadline() -> bool:
+    """Whether Harbor enforces heuristic wave and stall deadlines."""
+    value = os.getenv("HARBOR_ENFORCE_AGENT_DEADLINE")
+    if value is None:
+        return False
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(
+        "HARBOR_ENFORCE_AGENT_DEADLINE must be a boolean "
+        "(true/false, 1/0, yes/no, on/off)"
+    )
 
 
 @dataclass(frozen=True)
@@ -295,10 +292,8 @@ class HarborEvalConfig:
     # litellm path otherwise defaults to an infinite read timeout. ``None`` opts
     # out. Ignored by every non-mini agent (they carry their own timeout knob).
     llm_timeout_sec: Optional[int] = 10 * 60
-    # Wave-aware deadline model (see llm_module/agentic/progress.py). Reserved
-    # allowance for Harbor's additive non-agent phases (env build ~600s, agent
-    # setup ~360s, verifier ~60s); currently NOT folded into the per-task budget,
-    # which is just ``agent_timeout_sec``.
+    # Allowance for Harbor's additive non-agent phases (env build ~600s, agent
+    # setup ~360s, verifier ~60s), added to the agent budget for each wave.
     per_task_overhead_sec: int = 20 * 60
     # Grace before the first wave (dataset resolve + image pulls).
     startup_grace_sec: int = 10 * 60
@@ -306,9 +301,9 @@ class HarborEvalConfig:
     stall_grace_sec: int = 5 * 60
     # Progress watchdog log cadence.
     progress_log_interval_sec: int = 5 * 60
-    # When False the watchdog logs deadlines but never kills the harbor
-    # subprocess, letting it run to completion.
-    enforce_agent_deadline: bool = False
+    # When False, heuristic wave/stall deadlines are log-only. An explicit
+    # HARBOR_TIMEOUT_SEC remains an enforced wall-clock backstop.
+    enforce_agent_deadline: bool = field(default_factory=_harbor_enforce_agent_deadline)
 
 
 TerminalBenchEvalConfig = HarborEvalConfig
@@ -682,13 +677,10 @@ _eval_config_list = [
                     # path, so use literal values -- a templated model name
                     # reaches litellm unexpanded and fails with "LLM Provider
                     # NOT provided". OPENAI_BASE_URL / OPENAI_API_KEY are
-                    # threaded via environment.env (see _openai_creds_env): the
-                    # task's docker-compose interpolates them at render time,
-                    # and Harbor's pods strategy renders from environment.env,
-                    # not the host shell.
+                    # injected into environment.env by build_harbor_config after
+                    # runtime authentication configures the endpoint.
                     environment_env={
                         "TAU2_USER_MODEL": "openai/zai-org/GLM-5.2-FP8",
-                        **_openai_creds_env(),
                     },
                     verifier_env={
                         "TAU2_NL_ASSERTIONS_MODEL": "openai/zai-org/GLM-5.2-FP8",
@@ -952,8 +944,8 @@ _eval_config_list = [
                     # path, so use literal values -- a templated model name
                     # reaches litellm unexpanded and fails with "LLM Provider
                     # NOT provided". OPENAI_BASE_URL / OPENAI_API_KEY are
-                    # intentionally omitted: the task's docker-compose already
-                    # substitutes those from the launching shell env.
+                    # injected into environment.env by build_harbor_config after
+                    # runtime authentication configures the endpoint.
                     environment_env={
                         "TAU2_USER_MODEL": "openai/zai-org/GLM-5.3",
                     },
@@ -1284,13 +1276,10 @@ _eval_config_list = [
                     # path, so use literal values -- a templated model name
                     # reaches litellm unexpanded and fails with "LLM Provider
                     # NOT provided". OPENAI_BASE_URL / OPENAI_API_KEY are
-                    # threaded via environment.env (see _openai_creds_env): the
-                    # task's docker-compose interpolates them at render time,
-                    # and Harbor's pods strategy renders from environment.env,
-                    # not the host shell.
+                    # injected into environment.env by build_harbor_config after
+                    # runtime authentication configures the endpoint.
                     environment_env={
                         "TAU2_USER_MODEL": "openai/moonshotai/Kimi-K2.7-Code",
-                        **_openai_creds_env(),
                     },
                     verifier_env={
                         "TAU2_NL_ASSERTIONS_MODEL": "openai/moonshotai/Kimi-K2.7-Code",
@@ -1516,8 +1505,8 @@ _eval_config_list = [
                     # path, so use literal values -- a templated model name
                     # reaches litellm unexpanded and fails with "LLM Provider
                     # NOT provided". OPENAI_BASE_URL / OPENAI_API_KEY are
-                    # intentionally omitted: the task's docker-compose already
-                    # substitutes those from the launching shell env.
+                    # injected into environment.env by build_harbor_config after
+                    # runtime authentication configures the endpoint.
                     environment_env={
                         "TAU2_USER_MODEL": "openai/moonshotai/Kimi-K3",
                     },
@@ -1728,13 +1717,10 @@ _eval_config_list = [
                     # path, so use literal values -- a templated model name
                     # reaches litellm unexpanded and fails with "LLM Provider
                     # NOT provided". OPENAI_BASE_URL / OPENAI_API_KEY are
-                    # threaded via environment.env (see _openai_creds_env): the
-                    # task's docker-compose interpolates them at render time,
-                    # and Harbor's pods strategy renders from environment.env,
-                    # not the host shell.
+                    # injected into environment.env by build_harbor_config after
+                    # runtime authentication configures the endpoint.
                     environment_env={
                         "TAU2_USER_MODEL": "openai/MiniMaxAI/MiniMax-M2.7",
-                        **_openai_creds_env(),
                     },
                     verifier_env={
                         "TAU2_NL_ASSERTIONS_MODEL": "openai/MiniMaxAI/MiniMax-M2.7",
@@ -1938,7 +1924,6 @@ _eval_config_list = [
                     },
                     environment_env={
                         "TAU2_USER_MODEL": "openai/MiniMaxAI/MiniMax-M3",
-                        **_openai_creds_env(),
                     },
                     verifier_env={
                         "TAU2_NL_ASSERTIONS_MODEL": "openai/MiniMaxAI/MiniMax-M3",

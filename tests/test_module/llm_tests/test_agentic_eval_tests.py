@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass, field
 
 import pytest
@@ -454,6 +455,76 @@ class TestAgenticDriverConfigMapping:
 
         assert cfg.agent_env == {"OPENAI_BASE_URL": "http://alt/v1"}
 
+    def test_harbor_config_injects_runtime_openai_environment(self):
+        task = _harbor_task()
+        task.agentic_eval_config.environment_env = {"TAU2_USER_MODEL": "openai/Qwen"}
+
+        with patch.dict(
+            os.environ,
+            {
+                "OPENAI_API_KEY": "runtime-key",
+                "OPENAI_BASE_URL": "http://runtime.example/v1",
+            },
+            clear=False,
+        ):
+            cfg = build_harbor_config(task, _server(), _driver_context())
+
+        assert cfg.environment_env == {
+            "TAU2_USER_MODEL": "openai/Qwen",
+            "OPENAI_API_KEY": "runtime-key",
+            "OPENAI_BASE_URL": "http://runtime.example/v1",
+        }
+
+    def test_explicit_openai_environment_overrides_runtime_values(self):
+        task = _harbor_task()
+        task.agentic_eval_config.environment_env = {
+            "TAU2_USER_MODEL": "openai/Qwen",
+            "OPENAI_API_KEY": "explicit-key",
+            "OPENAI_BASE_URL": "http://explicit.example/v1",
+        }
+
+        with patch.dict(
+            os.environ,
+            {
+                "OPENAI_API_KEY": "runtime-key",
+                "OPENAI_BASE_URL": "http://runtime.example/v1",
+            },
+            clear=False,
+        ):
+            cfg = build_harbor_config(task, _server(), _driver_context())
+
+        assert cfg.environment_env == {
+            "TAU2_USER_MODEL": "openai/Qwen",
+            "OPENAI_API_KEY": "explicit-key",
+            "OPENAI_BASE_URL": "http://explicit.example/v1",
+        }
+
+    def test_runtime_credentials_are_not_exposed_to_regular_task_environments(self):
+        task = _harbor_task()
+
+        with patch.dict(
+            os.environ,
+            {
+                "OPENAI_API_KEY": "runtime-key",
+                "OPENAI_BASE_URL": "http://runtime.example/v1",
+            },
+            clear=False,
+        ):
+            cfg = build_harbor_config(task, _server(), _driver_context())
+
+        assert cfg.environment_env == {}
+
+    def test_non_kubernetes_environment_drops_kubernetes_kwargs(self):
+        task = _harbor_task()
+        task.agentic_eval_config.environment_type = "docker"
+        task.agentic_eval_config.environment_kwargs = {
+            "namespace": "must-not-reach-docker"
+        }
+
+        cfg = build_harbor_config(task, _server(), _driver_context())
+
+        assert cfg.environment_kwargs == {}
+
 
 class TestHarborHarness:
     def test_nonzero_return_code_does_not_require_result_file(self, tmp_path):
@@ -569,6 +640,24 @@ class TestHarborHarness:
 
         assert run_cmd.call_args.kwargs["hard_timeout_s"] == 7200.0
 
+    def test_watchdog_budget_includes_non_agent_trial_overhead(self, tmp_path):
+        task = _harbor_task()
+        task.agentic_eval_config.agent_timeout_sec = 3600
+        task.agentic_eval_config.per_task_overhead_sec = 1200
+        cfg = build_harbor_config(
+            task,
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+
+        with patch("llm_module.agentic.harbor.run_with_progress") as run_cmd:
+            run_cmd.return_value = 17
+
+            assert run_harbor(cfg) == 17
+
+        assert run_cmd.call_args.kwargs["per_task_budget_s"] == 4800
+
     def test_watchdog_timeout_without_result_file_returns_124(self, tmp_path):
         # The watchdog killed harbor (124) before it wrote any result.json, so
         # there is nothing to annotate and the timeout code propagates. A stuck
@@ -585,9 +674,9 @@ class TestHarborHarness:
             assert run_harbor(cfg) == 124
 
     def test_watchdog_timeout_annotates_partial_results(self, tmp_path):
-        # A watchdog timeout (124) must still annotate harbor's partial,
-        # already-graded result.json and report success (rc 0) so downstream
-        # scoring reads the lower partial score instead of a hard failure.
+        # Keep partial output for diagnostics, but preserve the timeout status.
+        # Harbor computes accuracy over completed trials only, so treating this
+        # file as success can inflate one completion out of five to 100%.
         task = _harbor_task()
         cfg = build_harbor_config(
             task,
@@ -600,10 +689,27 @@ class TestHarborHarness:
         result_path.write_text('{"n_total_trials": 5}', encoding="utf-8")
 
         with patch("llm_module.agentic.harbor.run_with_progress", return_value=124):
-            assert run_harbor(cfg) == 0
+            assert run_harbor(cfg) == 124
 
         annotated = json.loads(result_path.read_text(encoding="utf-8"))
         assert annotated["_result_format"] == "harbor"
+
+    def test_watchdog_timeout_preserves_124_for_malformed_partial_result(
+        self, tmp_path
+    ):
+        task = _harbor_task()
+        cfg = build_harbor_config(
+            task,
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+        result_path = cfg.jobs_dir / cfg.task_name / "result.json"
+        result_path.parent.mkdir(parents=True)
+        result_path.write_text('{"n_total_trials":', encoding="utf-8")
+
+        with patch("llm_module.agentic.harbor.run_with_progress", return_value=124):
+            assert run_harbor(cfg) == 124
 
 
 class TestMiniSweAgentParity:

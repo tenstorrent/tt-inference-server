@@ -48,6 +48,26 @@ def test_defaults_to_docker_with_no_env(monkeypatch):
     assert cfg.harbor_timeout_sec is None
 
 
+def test_heuristic_deadlines_are_disabled_by_default(monkeypatch):
+    monkeypatch.delenv("HARBOR_ENFORCE_AGENT_DEADLINE", raising=False)
+
+    assert _config().enforce_agent_deadline is False
+
+
+@pytest.mark.parametrize("value", ["1", "true", "yes", "on", "TRUE"])
+def test_heuristic_deadlines_can_be_enabled_from_env(monkeypatch, value):
+    monkeypatch.setenv("HARBOR_ENFORCE_AGENT_DEADLINE", value)
+
+    assert _config().enforce_agent_deadline is True
+
+
+def test_invalid_heuristic_deadline_flag_is_rejected(monkeypatch):
+    monkeypatch.setenv("HARBOR_ENFORCE_AGENT_DEADLINE", "sometimes")
+
+    with pytest.raises(ValueError, match="HARBOR_ENFORCE_AGENT_DEADLINE"):
+        _config()
+
+
 def test_kubernetes_env_type_emits_namespace_and_image_mode(monkeypatch):
     monkeypatch.setenv("HARBOR_ENV_TYPE", "kubernetes")
     for var in (
