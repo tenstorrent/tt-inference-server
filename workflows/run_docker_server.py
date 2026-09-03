@@ -113,8 +113,8 @@ def _is_cpp_media_spec(model_spec) -> bool:
     return False
 
 
-def _get_cpp_media_server_docker_env_vars(model_spec):
-    """Build the env-var set the cpp_server binary needs at startup."""
+def _get_cpp_image_server_docker_env_vars(model_spec):
+    """Build the env-var set the cpp_server image (SDXL) service needs."""
     device = model_spec.device_type.name.lower()
     model_name = model_spec.model_name
     runner = _CPP_SDXL_RUNNER_BY_MODEL_NAME[model_name]
@@ -177,6 +177,13 @@ def _get_cpp_embedding_server_docker_env_vars(model_spec):
     return env_vars
 
 
+def _get_cpp_server_docker_env_vars(model_spec):
+    """Dispatch to the per-service env-var builder for the cpp_server backend."""
+    if model_spec.model_name in _CPP_EMBEDDING_RUNNER_BY_MODEL_NAME:
+        return _get_cpp_embedding_server_docker_env_vars(model_spec)
+    return _get_cpp_image_server_docker_env_vars(model_spec)
+
+
 def _media_server_dev_mounts(repo_root_path, user_home_path, model_spec) -> List[str]:
     src_root = Path(repo_root_path) / "tt-media-server"
     dst_root = f"{user_home_path}/tt-metal/server"
@@ -200,9 +207,7 @@ def _media_server_dev_mounts(repo_root_path, user_home_path, model_spec) -> List
 def get_media_server_docker_env_vars(model_spec):
     """Get media server environment variables for Docker container."""
     if _is_cpp_media_spec(model_spec):
-        if model_spec.model_name in _CPP_EMBEDDING_RUNNER_BY_MODEL_NAME:
-            return _get_cpp_embedding_server_docker_env_vars(model_spec)
-        return _get_cpp_media_server_docker_env_vars(model_spec)
+        return _get_cpp_server_docker_env_vars(model_spec)
 
     env_vars = {
         "CACHE_ROOT": "/home/container_app_user/cache_root",  # TODO: remove this
