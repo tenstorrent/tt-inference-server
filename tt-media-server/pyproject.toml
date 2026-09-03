@@ -8,4 +8,5 @@ norecursedirs = ["*"]
 asyncio_mode = "auto"
 markers = [
     "performance: marks tests as performance tests (requires running server)",
+    "live: real-hardware tests against a running MiniMax-H3 deployment (opt-in via H3_LIVE_URL)",
 ]
