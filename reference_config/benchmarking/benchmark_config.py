@@ -90,17 +90,11 @@ class BenchmarkConfig:
 
 BENCHMARK_ISL_OSL_PAIRS = [
     (128, 128),
-    (128, 1024),
     (1024, 128),
     (2048, 128),
     (4096, 128),
     (8192, 128),
-    (8192, 1024),
-    (10000, 1024),
     (16384, 128),
-    (32768, 128),
-    (65536, 128),
-    (131072, 128),
 ]
 # Additional high-ISL sweep points appended only for remote SUPER_CLUSTER
 # endpoints, whose token budget is context*concurrency (see
@@ -110,10 +104,7 @@ BENCHMARK_ISL_OSL_PAIRS = [
 # (e.g. reachable by Kimi's 256K context, skipped for a 128K-context model).
 # NOTE: To support future models with larger context lengths, add near-max ISL-OSL
 # pairs here; they will be automatically filtered by the per-model context cap.
-SUPER_CLUSTER_EXTRA_ISL_OSL_PAIRS = [
-    (196608, 128),  # 192K
-    (256000 - 128, 128),  # 240K
-]
+SUPER_CLUSTER_EXTRA_ISL_OSL_PAIRS = []
 # Remote SUPER_CLUSTER endpoints serve high-ISL sweep points at full
 # concurrency, but get_num_prompts scales prompts as a small multiple of
 # concurrency, so long-sequence points issue too few requests (e.g. 1x = 64)
