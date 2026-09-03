@@ -214,6 +214,10 @@ class Session {
   uint32_t accumulatedThinkTokens_ = 0;
   uint32_t thinkStartTokenId_ = 0;
   uint32_t thinkEndTokenId_ = 0;
+  // Whether this model's chat template re-renders each delimiter into later
+  // turns' prompts; a delimiter it drops is a KV row only this counter tracks.
+  bool thinkStartInHistory_ = false;
+  bool thinkEndInHistory_ = false;
 
   static std::string generateUuid();
 };

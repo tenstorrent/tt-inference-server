@@ -62,9 +62,9 @@ void Session::initTokenAccumulator(
   initialBlocks_ = std::move(initialBlocks);
   parentHash_ = initialBlocks_.empty() ? 0 : initialBlocks_.back().hash;
   // Think tokens live in the KV cache but are excluded from block hashes, so
-  // re-hashing the prompt cannot recover the count from earlier turns (the
-  // prompt does not re-encode prior <think> markers). Seed it explicitly from
-  // the matched KV prefix on a HIT so the count accumulates across turns.
+  // re-hashing the prompt cannot recover the count from earlier turns (a later
+  // prompt no longer carries the prior turn's reasoning). Seed it explicitly
+  // from the matched KV prefix on a HIT so the count accumulates across turns.
   parentThinkCount_ = parentThinkCount;
   onComplete_ = std::move(onComplete);
   onNoHashes_ = std::move(onNoHashes);
@@ -75,6 +75,9 @@ void Session::initTokenAccumulator(
   auto [thinkStart, thinkEnd] = utils::tokenizers::thinkTokenIds();
   thinkStartTokenId_ = thinkStart;
   thinkEndTokenId_ = thinkEnd;
+  const auto markersInHistory = utils::tokenizers::thinkMarkersInHistory();
+  thinkStartInHistory_ = markersInHistory.start;
+  thinkEndInHistory_ = markersInHistory.end;
   inThinkingBlock_ = false;
   accumulatedThinkTokens_ = parentThinkCount_;
 }
@@ -90,10 +93,14 @@ void Session::addGeneratedToken(uint32_t tokenId) {
 
   if (tokenId == thinkStartTokenId_) {
     inThinkingBlock_ = true;
+    // The delimiter occupies a KV row. It is this counter's job unless the
+    // chat template re-renders it into later prompts (mirrors the hasher).
+    if (!thinkStartInHistory_) ++accumulatedThinkTokens_;
   } else if (tokenId == thinkEndTokenId_) {
     inThinkingBlock_ = false;
+    if (!thinkEndInHistory_) ++accumulatedThinkTokens_;
   } else if (inThinkingBlock_) {
-    ++accumulatedThinkTokens_;  // Only content tokens, not markers
+    ++accumulatedThinkTokens_;  // Reasoning content
   }
 }
 
@@ -108,8 +115,8 @@ void Session::finalizeAndRegisterHashes() {
   // Compute new block info continuing from parent (avoids re-hashing matched
   // prefix). Uses thinking-aware hashing to exclude thinking tokens from hash.
   auto newBlocks = utils::getPrefixCacheHashesByBlocksWithThinking(
-      allDeltaTokens, thinkStartTokenId_, thinkEndTokenId_, parentHash_,
-      parentThinkCount_);
+      allDeltaTokens, thinkStartTokenId_, thinkEndTokenId_,
+      thinkStartInHistory_, thinkEndInHistory_, parentHash_, parentThinkCount_);
 
   // Only register if new blocks were formed
   if (!newBlocks.empty()) {

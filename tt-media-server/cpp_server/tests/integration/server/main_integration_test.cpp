@@ -408,6 +408,16 @@ TEST_F(MainIntegrationTest,
   // Pre-fix, the matched prefix plateaued (corrupt blocks past the matched
   // prefix); the shared helper asserts it instead advances by a full block
   // every turn.
+  //
+  // Caveat on the borrowed tokenizer: think-row accounting is now per model
+  // (tokenizers::ThinkMarkersInHistory), and DeepSeek is registered as dropping
+  // both delimiters from history — while this conversation feeds them back like
+  // Kimi does. So the delimiter rows are counted here even though the next
+  // prompt re-supplies them, which is the Kimi mis-accounting this harness
+  // cannot express. The assertions below are deliberately shape-only (the
+  // prefix advances, never plateaus) and hold either way; the exact row
+  // arithmetic is pinned per policy in conversation_hasher_test's
+  // ConversationHasherThinkRows suite.
   const std::vector<std::string> userMessages = {
       "opening reasoning turn for the think-marker multiturn prefix cache test "
       "with plenty of words so this first message tokenizes to well over "
