@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+import json
 import os
 import tempfile
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -21,10 +22,13 @@ from domain.video_i2v_generate_request import (
 from fastapi import HTTPException
 from open_ai_api.video import (
     _is_i2v_only_deployment,
+    _sp_peer_is_known_non_ref2va,
     cancel_video_job,
+    delete_video_job,
     download_video_content,
     get_jobs_metadata,
     get_video_metadata,
+    reject_ref2va_on_wrong_deployment,
     reject_text_to_video_on_i2v_deployment,
     submit_generate_video_i2v_request,
     submit_generate_video_request,
@@ -390,7 +394,7 @@ class TestDownloadVideoContent:
 
 
 class TestCancelVideoJob:
-    """Tests for DELETE /generations/{job_id} endpoint"""
+    """Tests for POST /generations/{job_id}/cancel endpoint"""
 
     def test_cancel_video_job_success(self):
         """Test successful video job cancellation"""
@@ -427,6 +431,297 @@ class TestCancelVideoJob:
 
         assert exc_info.value.status_code == 404
         assert exc_info.value.detail == "Video job not found"
+
+
+class TestRejectRef2vaOnWrongDeployment:
+    """/generations/ref2va must refuse only a deployment PROVEN not to serve it.
+
+    An SP frontend loads no weights, so MODEL is its only evidence about the
+    peer's task -- and MODEL is advisory there. Recognising any known model name
+    would 422 a working ref2va deployment whose MODEL happens to name something
+    else, so only the H3 T2VA/FL2VA names may trigger the refusal.
+    """
+
+    @staticmethod
+    def _refuses():
+        try:
+            reject_ref2va_on_wrong_deployment()
+        except HTTPException as e:
+            return e.status_code
+        return None
+
+    @patch("open_ai_api.video.settings.model_runner", "tt-minimax-h3-ref2va")
+    def test_in_process_ref2va_runner_is_allowed(self):
+        assert self._refuses() is None
+
+    @patch("open_ai_api.video.settings.model_runner", "tt-minimax-h3-t2va")
+    def test_in_process_t2va_runner_is_refused(self):
+        assert self._refuses() == 422
+
+    @patch.dict(os.environ, {"MODEL": "MiniMax-H3-Ref2VA"})
+    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
+    def test_sp_frontend_for_a_ref2va_peer_is_allowed(self):
+        assert self._refuses() is None
+
+    @patch.dict(os.environ, {"MODEL": "MiniMax-H3"})
+    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
+    def test_sp_frontend_naming_t2va_is_refused(self):
+        assert self._refuses() == 422
+
+    @patch.dict(os.environ, {"MODEL": "MiniMax-H3-FL2VA"})
+    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
+    def test_sp_frontend_naming_fl2va_is_refused(self):
+        assert self._refuses() == 422
+
+    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
+    def test_sp_frontend_without_model_stays_permissive(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("MODEL", None)
+            assert self._refuses() is None
+
+    @patch.dict(os.environ, {"MODEL": "Wan2.2-T2V-A14B-Diffusers"})
+    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
+    def test_sp_frontend_naming_an_unrelated_model_stays_permissive(self):
+        """The regression guard: a known name that says nothing about the H3
+        task must not refuse a peer that may well be serving Ref2VA."""
+        assert self._refuses() is None
+
+    @patch.dict(os.environ, {"MODEL": "not-a-model-name"})
+    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
+    def test_sp_frontend_with_an_unknown_model_stays_permissive(self):
+        assert self._refuses() is None
+
+
+class TestSpPeerIsKnownNonRef2va:
+    """The helper must recognise exactly the two H3 non-Ref2VA task names."""
+
+    @patch.dict(os.environ, {"MODEL": "MiniMax-H3"})
+    def test_t2va_name(self):
+        assert _sp_peer_is_known_non_ref2va() is True
+
+    @patch.dict(os.environ, {"MODEL": "MiniMax-H3-FL2VA"})
+    def test_fl2va_name(self):
+        assert _sp_peer_is_known_non_ref2va() is True
+
+    @patch.dict(os.environ, {"MODEL": "MiniMax-H3-Ref2VA"})
+    def test_ref2va_name_is_not_a_non_ref2va_model(self):
+        assert _sp_peer_is_known_non_ref2va() is False
+
+    @patch.dict(os.environ, {"MODEL": "Wan2.2-T2V-A14B-Diffusers"})
+    def test_a_known_but_unrelated_model_is_inconclusive(self):
+        assert _sp_peer_is_known_non_ref2va() is False
+
+    @patch.dict(os.environ, {"MODEL": "garbage"})
+    def test_unknown_string_is_inconclusive(self):
+        assert _sp_peer_is_known_non_ref2va() is False
+
+    def test_unset_model_is_inconclusive(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("MODEL", None)
+            assert _sp_peer_is_known_non_ref2va() is False
+
+
+class TestDownloadTempFileCleanup:
+    """The faststart copy is a per-response artefact and must not accumulate."""
+
+    @pytest.fixture
+    def client(self):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+        from open_ai_api.video import router
+        from resolver.service_resolver import service_resolver
+        from security.api_key_checker import get_api_key
+
+        self.service = MagicMock()
+        app = FastAPI()
+        app.include_router(router, prefix="/v1/videos")
+        app.dependency_overrides[service_resolver] = lambda: self.service
+        app.dependency_overrides[get_api_key] = lambda: "test-key"
+        return TestClient(app)
+
+    def test_remuxed_copy_is_removed_after_the_response(self, client, tmp_path):
+        src = tmp_path / "result.mp4"
+        src.write_bytes(b"original bytes")
+        self.service.get_job_result_path.return_value = str(src)
+        made = []
+
+        def fake_faststart(inp, out):
+            made.append(out)
+            with open(out, "wb") as f:
+                f.write(b"remuxed bytes")
+
+        with patch(
+            "open_ai_api.video.VideoManager.ensure_faststart",
+            side_effect=fake_faststart,
+        ):
+            response = client.get("/v1/videos/generations/job_123/download")
+
+        assert response.status_code == 200
+        assert response.content == b"remuxed bytes"  # the remux was served
+        assert len(made) == 1
+        assert not os.path.exists(made[0]), "faststart temp copy leaked"
+        assert src.exists(), "the job's own result must survive a download"
+
+    def test_temp_file_is_removed_when_the_remux_fails(self, client, tmp_path):
+        src = tmp_path / "result.mp4"
+        src.write_bytes(b"original bytes")
+        self.service.get_job_result_path.return_value = str(src)
+        made = []
+
+        def failing_faststart(inp, out):
+            made.append(out)
+            raise RuntimeError("ffmpeg exploded")
+
+        with patch(
+            "open_ai_api.video.VideoManager.ensure_faststart",
+            side_effect=failing_faststart,
+        ):
+            response = client.get("/v1/videos/generations/job_123/download")
+
+        assert response.status_code == 200
+        assert response.content == b"original bytes"  # fell back to the original
+        assert len(made) == 1
+        assert not os.path.exists(made[0]), "empty temp file leaked on the failure path"
+
+
+class TestDeleteVideoJob:
+    """Tests for DELETE /generations/{job_id} endpoint"""
+
+    def test_route_is_registered_as_delete(self):
+        """The same path serves GET (metadata) and DELETE (remove)."""
+        from open_ai_api.video import router
+
+        methods = {
+            m
+            for r in router.routes
+            if getattr(r, "path", None) == "/generations/{job_id}"
+            for m in r.methods
+        }
+        assert {"GET", "DELETE"} <= methods
+
+    def test_delete_video_job_success(self):
+        """A finished job is deleted and the OpenAI-style receipt is returned."""
+        mock_service = MagicMock()
+        mock_service.delete_job = MagicMock(
+            return_value={
+                "id": "job_123",
+                "job_type": JobTypes.VIDEO.value,
+                "status": "completed",
+                "created_at": 1000,
+            }
+        )
+
+        response = delete_video_job(
+            job_id="job_123",
+            service=mock_service,
+            api_key="test_key",
+        )
+
+        assert response.status_code == 200
+        assert json.loads(response.body) == {
+            "id": "job_123",
+            "object": JobTypes.VIDEO.value,
+            "deleted": True,
+        }
+        mock_service.delete_job.assert_called_once_with("job_123")
+
+    def test_delete_video_job_not_found(self):
+        mock_service = MagicMock()
+        mock_service.delete_job = MagicMock(return_value=None)
+
+        with pytest.raises(HTTPException) as exc_info:
+            delete_video_job(
+                job_id="non_existent_job",
+                service=mock_service,
+                api_key="test_key",
+            )
+
+        assert exc_info.value.status_code == 404
+        assert exc_info.value.detail == "Video job not found"
+
+    def test_delete_video_job_active_conflict_propagates(self):
+        """The manager's 409 for an unfinished job reaches the client unchanged."""
+        mock_service = MagicMock()
+        mock_service.delete_job = MagicMock(
+            side_effect=HTTPException(status_code=409, detail="Job is in_progress")
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            delete_video_job(
+                job_id="job_123",
+                service=mock_service,
+                api_key="test_key",
+            )
+
+        assert exc_info.value.status_code == 409
+
+
+class TestDeleteVideoJobHTTP:
+    """DELETE through the real router, under both the /v1 and the legacy prefix."""
+
+    @pytest.fixture
+    def mock_service(self):
+        return MagicMock()
+
+    @pytest.fixture
+    def client(self, mock_service):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+        from open_ai_api.video import router
+        from resolver.service_resolver import service_resolver
+        from security.api_key_checker import get_api_key
+
+        app = FastAPI()
+        # Same shape as open_ai_api.__init__: primary /v1 prefix + deprecated alias.
+        app.include_router(router, prefix="/v1/videos")
+        app.include_router(router, prefix="/video", deprecated=True)
+        app.dependency_overrides[service_resolver] = lambda: mock_service
+        app.dependency_overrides[get_api_key] = lambda: "test-key"
+        return TestClient(app)
+
+    @pytest.mark.parametrize("prefix", ["/v1/videos", "/video"])
+    def test_delete_finished_job(self, client, mock_service, prefix):
+        mock_service.delete_job.return_value = {"id": "job_123", "status": "completed"}
+
+        response = client.delete(f"{prefix}/generations/job_123")
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "id": "job_123",
+            "object": JobTypes.VIDEO.value,
+            "deleted": True,
+        }
+        mock_service.delete_job.assert_called_once_with("job_123")
+
+    def test_delete_unknown_job_is_404(self, client, mock_service):
+        mock_service.delete_job.return_value = None
+
+        response = client.delete("/v1/videos/generations/nope")
+
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Video job not found"
+
+    def test_delete_active_job_is_409(self, client, mock_service):
+        mock_service.delete_job.side_effect = HTTPException(
+            status_code=409, detail="Job is in_progress; cancel it first"
+        )
+
+        response = client.delete("/v1/videos/generations/job_123")
+
+        assert response.status_code == 409
+        assert "in_progress" in response.json()["detail"]
+
+    def test_get_on_same_path_still_works(self, client, mock_service):
+        """Adding DELETE must not shadow the existing GET on /generations/{job_id}."""
+        mock_service.get_job_metadata.return_value = {
+            "id": "job_123",
+            "status": "queued",
+        }
+
+        response = client.get("/v1/videos/generations/job_123")
+
+        assert response.status_code == 200
+        assert response.json()["id"] == "job_123"
 
 
 class TestVideoGenerateRequestValidation:
