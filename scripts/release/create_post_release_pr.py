@@ -162,23 +162,37 @@ def fetch_run_jobs(repo: str, run_id: str, token: str) -> list[dict] | None:
 
 
 def fetch_job_log(repo: str, job_id, token: str) -> str | None:
-    """A single job's raw log text, or None if unreachable. urllib follows the
-    logs endpoint's redirect to the signed blob URL automatically."""
+    """A single job's raw log text, or None if unreachable.
+
+    Uses curl, NOT urllib: the logs endpoint 302-redirects to a signed blob URL,
+    and urllib re-sends the Authorization header on that cross-host redirect,
+    which the blob store rejects with 401 ("Server failed to authenticate the
+    request"). curl drops the Authorization header on a cross-host redirect, so
+    it succeeds — the same reason resolve_release_source_images.py fetches logs
+    with curl.
+    """
     url = f"https://api.github.com/repos/{repo}/actions/jobs/{job_id}/logs"
-    request = urllib.request.Request(
-        url,
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/vnd.github+json",
-            "User-Agent": "create-post-release-pr",
-            "X-GitHub-Api-Version": "2022-11-28",
-        },
-    )
     try:
-        with urllib.request.urlopen(request, timeout=120) as response:
-            return response.read().decode("utf-8", errors="replace")
-    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError):
+        proc = subprocess.run(
+            [
+                "curl",
+                "-fsSL",
+                "-H",
+                f"Authorization: Bearer {token}",
+                "-H",
+                "Accept: application/vnd.github+json",
+                "-H",
+                "X-GitHub-Api-Version: 2022-11-28",
+                url,
+            ],
+            capture_output=True,
+            timeout=120,
+        )
+    except (subprocess.SubprocessError, OSError):
         return None
+    if proc.returncode != 0:
+        return None
+    return proc.stdout.decode("utf-8", errors="replace")
 
 
 def _matching_ci_jobs(jobs, *, identity, scope_identities) -> list[dict]:
