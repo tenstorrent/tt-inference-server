@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field, replace
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from llm_module.agentic_traces.schema import TraceSource
 from workflows.utils import map_configs_by_attr
@@ -386,6 +386,17 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
             ),
         ),
     ),
+    AgenticTracesConfig(
+        model_id="id_tt-transformers_gemma-4-31B-it_super_cluster",
+        inferencex_git_ref="ddeb02eb9c5c89f44e2e4950e741b499d0b8190a",
+        runs=(
+            AgenticTracesRunSpec(
+                trace_source=TraceSource.INFERENCEX_AGENTX,
+                public_dataset="semianalysis_cc_traces_weka_062126_256k",
+                concurrency=8,
+            ),
+        ),
+    ),
 ]
 
 AGENTIC_TRACES_CONFIGS: Dict[str, AgenticTracesConfig] = map_configs_by_attr(
@@ -471,6 +482,28 @@ def get_agentic_traces_config_or_template(model_spec) -> Optional[AgenticTracesC
     return replace(template, model_id=model_id)
 
 
+def replace_agentic_runs(
+    config: AgenticTracesConfig,
+    concurrencies: Sequence[int],
+) -> AgenticTracesConfig:
+    """Replay ``config``'s runs at each of ``concurrencies``.
+
+    A requirements document sweeps concurrency while holding the run shape
+    fixed, so each configured run is duplicated once per concurrency rather
+    than replaced: a config carrying both an InferenceX and a SwarmOne spec
+    still sweeps both. An empty ``concurrencies`` leaves the config alone, so a
+    document with no agentic sweep keeps the catalog's single operating point.
+    """
+    if not concurrencies:
+        return config
+    runs = tuple(
+        replace(run, concurrency=concurrency)
+        for run in config.runs
+        for concurrency in concurrencies
+    )
+    return replace(config, runs=runs)
+
+
 def default_run_specs(
     config: AgenticTracesConfig,
 ) -> Tuple[AgenticTracesRunSpec, ...]:
@@ -536,5 +569,6 @@ __all__ = [
     "for_model_ids",
     "get_agentic_traces_config",
     "get_agentic_traces_config_or_template",
+    "replace_agentic_runs",
     "resolve_run_specs",
 ]
