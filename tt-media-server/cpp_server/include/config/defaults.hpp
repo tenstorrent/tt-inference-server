@@ -111,22 +111,12 @@ constexpr size_t LOG_FILE_MAX_COUNT = 5;
 constexpr size_t EMBEDDING_MAX_PIPE_BYTES = 100 * 1024 * 1024;  // 100 MB
 /**
  * Budget for one embedding startup phase, fork to READY handshake
- * (overridable via the EMBEDDING_WARMUP_TIMEOUT_MS env var). Must cover the
- * worst case first boot, where warmup converts the HF weights and writes the
- * shared tensor cache (~3-4 minutes for an 8B model); later boots just read
- * the cache and finish in a couple of minutes. Workers that blow past this
- * are terminated with a loud log instead of stalling startup.
+ * (overridable via the EMBEDDING_WARMUP_TIMEOUT_MS env var).
  */
 constexpr unsigned EMBEDDING_WARMUP_TIMEOUT_MS = 600 * 1000;
 /**
  * Extra warmup rounds for workers whose first warmup failed (overridable via
- * the EMBEDDING_WARMUP_MAX_RETRIES env var). Some model warmups validate the
- * device output against a CPU reference with a PCC threshold, and the result
- * is not deterministic per chip (BGE-large on Galaxy spans ~0.86-0.96 against
- * a 0.90 threshold), so a failed warmup is worth re-rolling rather than
- * permanently losing the device. The Python server gets the same effect from
- * its health monitor, which restarts dead workers up to
- * max_worker_restart_count (5) times.
+ * the EMBEDDING_WARMUP_MAX_RETRIES env var).
  */
 constexpr unsigned EMBEDDING_WARMUP_MAX_RETRIES = 3;
 // Lower bound used when CALLBACK_POOL_THREADS env is unset or 0; preserves
