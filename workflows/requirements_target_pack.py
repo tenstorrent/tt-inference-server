@@ -507,7 +507,11 @@ class RequirementsTargetPack(TargetPack):
         ) or get_agentic_traces_config_or_template(model_spec)
         if base is None:
             return None
-        return replace_agentic_runs(base, self._agentic_concurrencies())
+        return replace_agentic_runs(
+            base,
+            self._agentic_concurrencies(),
+            goodput=self.agentic_traces_goodput() or "",
+        )
 
     def _agentic_concurrencies(self) -> List[int]:
         """Concurrencies the document's agentic workloads ask for, in order.
@@ -524,13 +528,13 @@ class RequirementsTargetPack(TargetPack):
         return sorted(seen)
 
     def agentic_traces_goodput(self) -> Optional[str]:
-        """``--goodput`` constraints from the agentic workloads' SLOs.
+        """AIPerf ``--goodput`` constraints from the agentic workloads' SLOs.
 
         Without SLOs there is nothing defining a "good" request, so AIPerf can
         report no goodput -- even when the document sets a goodputPct target.
         """
         for workload in self._doc.agentic_workloads:
-            constraints = _slo_constraints(workload.slo)
+            constraints = _aiperf_slo_constraints(workload.slo)
             if constraints:
                 return constraints
         return None
@@ -633,29 +637,46 @@ def _capability_attach_points(scenario: Scenario, gates: dict) -> dict:
     return attach
 
 
-def _slo_constraints(slo: Optional[Slo]) -> Optional[str]:
-    """``--goodput`` constraint string for a set of SLOs.
+def _slo_constraints(slo: Optional[Slo], keys: Mapping[str, str]) -> Optional[str]:
+    """``--goodput`` constraint string for a set of SLOs, using ``keys``.
 
-    vLLM's and AIPerf's keys are ttft/tpot/e2el in milliseconds — exactly the
-    document's SLO metrics. Returns None when there are no SLOs, in which case
-    goodput cannot be measured: nothing defines a "good" request.
+    Returns None when there are no SLOs, in which case goodput cannot be
+    measured: nothing defines a "good" request.
     """
     if slo is None:
         return None
-    parts = []
-    for key, value in (
-        ("ttft", slo.ttft_ms),
-        ("tpot", slo.tpot_ms),
-        ("e2el", slo.e2el_ms),
-    ):
-        if value is not None:
-            parts.append(f"{key}:{value:g}")
+    values = {"ttft": slo.ttft_ms, "tpot": slo.tpot_ms, "e2el": slo.e2el_ms}
+    parts = [
+        f"{keys[metric]}:{values[metric]:g}"
+        for metric in ("ttft", "tpot", "e2el")
+        if values[metric] is not None
+    ]
     return " ".join(parts) or None
+
+
+# vLLM names the per-request bars after the metrics themselves, so its keys are
+# the document's SLO metrics verbatim.
+_VLLM_GOODPUT_KEYS = {"ttft": "ttft", "tpot": "tpot", "e2el": "e2el"}
+
+# AIPerf spells the same three bars out in full, and has no per-output-token
+# tag: inter-token latency is the same measurement under another name, and a
+# request's end-to-end latency is its request latency. Both remain in ms, as
+# the document states them.
+_AIPERF_GOODPUT_KEYS = {
+    "ttft": "time_to_first_token",
+    "tpot": "inter_token_latency",
+    "e2el": "request_latency",
+}
 
 
 def _goodput_constraints(scenario: Scenario) -> Optional[str]:
     """``vllm bench serve --goodput`` constraint string from a scenario's SLOs."""
-    return _slo_constraints(scenario.slo)
+    return _slo_constraints(scenario.slo, _VLLM_GOODPUT_KEYS)
+
+
+def _aiperf_slo_constraints(slo: Optional[Slo]) -> Optional[str]:
+    """AIPerf ``--goodput`` constraint string for a set of SLOs."""
+    return _slo_constraints(slo, _AIPERF_GOODPUT_KEYS)
 
 
 def _scenario_targets_goodput(scenario: Scenario) -> bool:

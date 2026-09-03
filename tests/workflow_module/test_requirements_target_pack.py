@@ -18,6 +18,7 @@ from workflows.model_spec_provider import (
 from workflows.requirements_target_pack import (
     RequirementsModelSpecProvider,
     RequirementsTargetPack,
+    _goodput_constraints,
 )
 from workflows.target_pack_provider import TenstorrentTargetPack
 from workflows.workflow_types import DeviceTypes
@@ -550,7 +551,17 @@ def test_agentic_goodput_needs_slos():
     assert _agentic_pack([1]).agentic_traces_goodput() is None
 
 
-def test_agentic_goodput_built_from_workload_slos():
+def test_agentic_goodput_uses_aiperf_tag_names():
+    """AIPerf spells the bars out; vLLM's ttft/tpot/e2el keys are rejected."""
     pack = _agentic_pack([1], slo={"ttftMs": 2000, "tpotMs": 20, "e2elMs": 20000})
 
-    assert pack.agentic_traces_goodput() == "ttft:2000 tpot:20 e2el:20000"
+    assert pack.agentic_traces_goodput() == (
+        "time_to_first_token:2000 inter_token_latency:20 request_latency:20000"
+    )
+
+
+def test_vllm_goodput_keys_are_unchanged_by_the_aiperf_mapping():
+    """The benchmark sweep keeps naming the bars after the metrics themselves."""
+    (scenario,) = load_requirements(_FIXTURE).scenarios
+
+    assert _goodput_constraints(scenario) == "ttft:2000 tpot:20 e2el:20000"

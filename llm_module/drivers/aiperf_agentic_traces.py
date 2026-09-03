@@ -124,6 +124,7 @@ class AIPerfAgenticTracesDriver:
             artifact_dir=artifact_dir,
             auth_token=server.auth_token,
             metrics_urls=metrics_urls,
+            goodput=trace_run.goodput,
         )
         _log_run_header(trace_run)
 
@@ -194,6 +195,7 @@ def build_aiperf_cmd(
     artifact_dir: Path,
     auth_token: str = "",
     metrics_urls: Sequence[str] = (),
+    goodput: str = "",
 ) -> List[str]:
     """Construct the ``aiperf profile`` CLI for one agentic-trace run.
 
@@ -206,6 +208,11 @@ def build_aiperf_cmd(
     ``--server-metrics`` is additive, not a replacement: AIPerf always scrapes
     ``<url>/metrics`` from the load target and appends ``metrics_urls``, so
     passing them cannot turn the default scrape off.
+
+    ``goodput`` is a space-separated ``TAG:VALUE`` SLO string (AIPerf's tags:
+    ``time_to_first_token``, ``inter_token_latency``, ``request_latency`` in ms,
+    ``output_token_throughput_per_user`` in tokens/s). AIPerf reports goodput
+    only when it is passed, so an empty string means the run measures none.
     """
     if not url.startswith("http"):
         url = f"http://{url}"
@@ -266,6 +273,13 @@ def build_aiperf_cmd(
     if normalized_metrics_urls:
         cmd.append("--server-metrics")
         cmd.extend(normalized_metrics_urls)
+    # Unlike --server-metrics above, --goodput is NOT consume_multiple: its
+    # validator splits the one string itself, so the whole SLO must be a
+    # single argv element. Splitting it would make every pair after the first
+    # fall through as a positional arg. Same handling as the prefix-cache
+    # driver.
+    if goodput.strip():
+        cmd.extend(["--goodput", goodput.strip()])
     if run.streaming:
         cmd.append("--streaming")
     if run.use_server_token_count:
@@ -381,6 +395,9 @@ def parse_aiperf_output(
         "input_token_throughput": _stat("input_token_throughput"),
         "total_token_throughput": _stat("total_token_throughput"),
         "request_throughput": _stat("request_throughput"),
+        # Requests/sec meeting every --goodput SLO. AIPerf emits this only
+        # when those bars were passed, so it stays 0 for a run with no SLOs.
+        "goodput": _stat("goodput"),
         # Prefill/decode split, which is the main serving insight for
         # long-context agentic replay. "effective" averages over the whole run
         # including idle time; "active" only counts windows where that phase was
@@ -732,6 +749,9 @@ def _build_payload(
         "slice_duration": run.slice_duration,
         "max_context_length": run.max_context_length,
         "random_seed": run.random_seed,
+        # The SLO bars goodput was graded against, so a goodput number is
+        # never read without the definition of "good" that produced it.
+        "goodput_slo": run.goodput,
         "failed_request_threshold": run.failed_request_threshold,
         "trajectory_start_min_ratio": run.trajectory_start_min_ratio,
         "trajectory_start_max_ratio": run.trajectory_start_max_ratio,

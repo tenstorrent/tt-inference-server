@@ -89,15 +89,30 @@ class TestToAgenticSweepPoint:
 
         assert point == {"concurrency": 8, "ttftMeanMs": 100.0}
 
-    def test_omits_goodput_that_the_run_never_measured(self):
-        """AIPerf reports goodput only when the command passes --goodput SLOs.
-
-        The agentic-traces command passes none, so there is nothing to map. If
-        those constraints are ever threaded through, this is the test to change.
-        """
-        point = to_agentic_sweep_point({**_METRICS, "goodput_pct": 90}, concurrency=1)
+    def test_omits_goodput_when_no_slos_graded_the_run(self):
+        """AIPerf reports goodput only when the command passes --goodput SLOs."""
+        point = to_agentic_sweep_point({**_METRICS, "goodput": 0}, concurrency=1)
 
         assert "goodputPct" not in point
+
+    def test_derives_goodput_share_from_the_rate(self):
+        """AIPerf reports good requests/sec; the document wants a share."""
+        point = to_agentic_sweep_point(
+            {**_METRICS, "goodput_slo": "time_to_first_token:2000", "goodput": 0.06},
+            concurrency=1,
+        )
+
+        # 0.06 good req/s out of 0.07416 total.
+        assert point["goodputPct"] == 80.91
+
+    def test_reports_a_graded_zero_as_zero(self):
+        """No request meeting the SLOs is a measurement, not a missing value."""
+        point = to_agentic_sweep_point(
+            {**_METRICS, "goodput_slo": "time_to_first_token:1", "goodput": 0.0},
+            concurrency=1,
+        )
+
+        assert point["goodputPct"] == 0.0
 
     def test_prefers_the_measured_cache_hit_rate(self):
         point = to_agentic_sweep_point(

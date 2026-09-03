@@ -18,11 +18,8 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 # agenticSweep key -> the metric key produced by ``parse_aiperf_output``.
 #
-# Only measurements appear here. ``goodputPct`` is absent because this run
-# never asks for it, not because it is unmeasurable: AIPerf reports goodput
-# only when the command carries ``--goodput`` SLO constraints, which the
-# benchmark driver passes and ``build_aiperf_cmd`` does not. Until those
-# constraints are threaded through, the export has no goodput to map.
+# Only measurements appear here. ``goodputPct`` is derived rather than mapped:
+# see ``_goodput_pct``.
 _SWEEP_FIELD_TO_METRIC: Tuple[Tuple[str, str], ...] = (
     ("ttftMeanMs", "mean_ttft_ms"),
     ("ttftP50Ms", "median_ttft_ms"),
@@ -65,6 +62,27 @@ def _number(value: Any) -> Optional[float]:
     return float(value)
 
 
+def _goodput_pct(metrics: Mapping[str, Any]) -> Optional[float]:
+    """Percentage of requests that met every SLO, or None if not graded.
+
+    AIPerf reports goodput as a rate (good requests/sec) while the document
+    states it as a share of requests, so the two are reconciled against total
+    request throughput.
+
+    A zero rate is reported honestly as 0% -- "no request met the SLOs" is a
+    measurement, not a gap. That is only distinguishable from "never graded"
+    because the run records the SLO bars it used: without them AIPerf emits no
+    goodput at all, and there is nothing to report.
+    """
+    if not str(metrics.get("goodput_slo") or "").strip():
+        return None
+    good = _number(metrics.get("goodput"))
+    total = _number(metrics.get("request_throughput"))
+    if good is None or not total:
+        return None
+    return round(good / total * 100, 2)
+
+
 def to_agentic_sweep_point(
     metrics: Mapping[str, Any],
     *,
@@ -80,6 +98,10 @@ def to_agentic_sweep_point(
         value = _number(metrics.get(metric))
         if value is not None:
             point[field] = value
+
+    goodput_pct = _goodput_pct(metrics)
+    if goodput_pct is not None:
+        point["goodputPct"] = goodput_pct
 
     for metric in _CACHE_HIT_METRICS:
         value = _number(metrics.get(metric))
