@@ -4785,6 +4785,56 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
+            EvalTask(
+                # Leaderboard MMLU-Pro: 5-shot chain-of-thought, generative,
+                # scored by the task's own answer extractor. Unlike bare
+                # n-shot GPQA, the few-shot examples demonstrate reasoning
+                # before the final answer, so they do not suppress thinking.
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=85.2,
+                    published_score_ref="https://huggingface.co/google/gemma-4-31B",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                # Chat endpoint for the same reason as r1_gpqa_diamond above:
+                # only the server-side template applies enable_thinking=true.
+                use_chat_api=True,
+                model_kwargs={
+                    "max_length": 49152,
+                    "timeout": "3600",
+                },
+                # Same thinking-mode sampling as the GPQA task; stream=false is
+                # required by lm-eval's local-chat-completions parser. 32K of
+                # output leaves ~16K for the 5-shot prompt inside the QB2
+                # 49152-token serving window.
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                # Absolute counts, not fractions: mmlu_pro has ~12K test
+                # questions, so even 0.05 would be ~600 sequential batch-1
+                # reasoning samples. 40 keeps a nightly run bounded; treat the
+                # small-N score as indicative, not a tight accuracy gate.
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 40,
+                    EvalLimitMode.SMOKE_TEST: 4,
+                },
+            ),
         ],
     ),
     EvalConfig(
