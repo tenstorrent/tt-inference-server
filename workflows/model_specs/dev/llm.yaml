@@ -496,7 +496,7 @@ templates:
         GEMMA4_PAGE_BLOCK_SIZE: "64"
         GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
-        GEMMA4_CHUNKED_PREFILL_TRACE: "1"
+        GEMMA4_CHUNKED_PREFILL_TRACE: "0"  # inert under bounded (prefill traces disabled); pinned 0 to mirror the P150X8 entry
         # KNOWN BAD ON WORMHOLE — concurrent decode returns nondeterministic
         # garbage. Measured on T3K 12B (distinct arithmetic prompts, temp 0,
         # 3 repeats): every request completes, but correctness swings run to run
