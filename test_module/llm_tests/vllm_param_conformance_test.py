@@ -294,6 +294,24 @@ class VLLMQwen36ToolCallTest(VLLMParamConformanceTest):
     REPORT_TASK_NAME = "vllm_qwen36_toolcall"
 
 
+class VLLMGemma4ToolCallTest(VLLMParamConformanceTest):
+    """Run the gemma-4-31B-it tool-call / reasoning-parser regression suite."""
+
+    KIND = "vllm_gemma4_toolcall"
+    PYTEST_FILENAME = "test_vllm_gemma4_toolcall.py"
+    ENDPOINT_PATH = "/v1/chat/completions"
+    REPORT_TASK_NAME = "vllm_gemma4_toolcall"
+
+
+class VLLMGptOss120bToolCallTest(VLLMParamConformanceTest):
+    """Run the gpt-oss-120b tool-call / reasoning-parser regression suite."""
+
+    KIND = "vllm_gptoss120b_toolcall"
+    PYTEST_FILENAME = "test_vllm_gptoss120b_toolcall.py"
+    ENDPOINT_PATH = "/v1/chat/completions"
+    REPORT_TASK_NAME = "vllm_gptoss120b_toolcall"
+
+
 class VLLMDiffusionGemmaParamConformanceTest(VLLMParamConformanceTest):
     """Run DiffusionGemma's block-serving and admission regression suite."""
 

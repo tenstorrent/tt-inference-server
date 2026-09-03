@@ -41,6 +41,8 @@
         "LLM": [
             "Qwen3-32B",
             "Qwen3.6-27B",
+            "gemma-4-31B-it",
+            "gpt-oss-120b",
             "Llama-3.1-8B-Instruct",
             "Llama-3.3-70B-Instruct",
             "gpt-oss-20b",
@@ -411,7 +413,28 @@
             "category": "LLM",
             "compatible_devices": [
                 "p300x2",
-                "p150x8"
+                "p150x8",
+                "p150x4"
+            ]
+        },
+        "gemma_4_31b": {
+            "id_name": "gemma-4-31b-it",
+            "weights": [
+                "gemma-4-31B-it"
+            ],
+            "category": "LLM",
+            "compatible_devices": [
+                "p300x2"
+            ]
+        },
+        "gpt_oss_120b": {
+            "id_name": "gpt-oss-120b",
+            "weights": [
+                "gpt-oss-120b"
+            ],
+            "category": "LLM",
+            "compatible_devices": [
+                "p300x2"
             ]
         },
         "llama_70b_family": {
@@ -922,6 +945,36 @@
             }
         },
         "VLLMQwen36ToolCallTest": {
+            "module": "test_module.llm_tests.vllm_param_conformance_test",
+            "markers": [
+                "param",
+                "e2e",
+                "slow"
+            ],
+            "test_config": {
+                "test_timeout": 3600,
+                "retry_attempts": 0,
+                "retry_delay": 10,
+                "break_on_failure": false,
+                "mock_mode": false
+            }
+        },
+        "VLLMGemma4ToolCallTest": {
+            "module": "test_module.llm_tests.vllm_param_conformance_test",
+            "markers": [
+                "param",
+                "e2e",
+                "slow"
+            ],
+            "test_config": {
+                "test_timeout": 3600,
+                "retry_attempts": 0,
+                "retry_delay": 10,
+                "break_on_failure": false,
+                "mock_mode": false
+            }
+        },
+        "VLLMGptOss120bToolCallTest": {
             "module": "test_module.llm_tests.vllm_param_conformance_test",
             "markers": [
                 "param",

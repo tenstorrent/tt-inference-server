@@ -6,6 +6,8 @@
             "models": [
                 "qwen3_32b",
                 "qwen36_27b",
+                "gemma_4_31b",
+                "gpt_oss_120b",
                 "llama_3_1_8b",
                 "llama_70b_family",
                 "gpt_oss_20b"
@@ -73,13 +75,45 @@
                 "qwen36_27b"
             ],
             "devices": [
-                "p300x2"
+                "p300x2",
+                "p150x8",
+                "p150x4"
             ],
             "test_cases": [
                 {
                     "template": "VLLMQwen36ToolCallTest",
                     "enabled": true,
                     "description": "Qwen3.6-27B tool-call / reasoning-parser regressions"
+                }
+            ]
+        },
+        {
+            "models": [
+                "gemma_4_31b"
+            ],
+            "devices": [
+                "p300x2"
+            ],
+            "test_cases": [
+                {
+                    "template": "VLLMGemma4ToolCallTest",
+                    "enabled": true,
+                    "description": "gemma-4-31B-it tool-call / reasoning-parser regressions"
+                }
+            ]
+        },
+        {
+            "models": [
+                "gpt_oss_120b"
+            ],
+            "devices": [
+                "p300x2"
+            ],
+            "test_cases": [
+                {
+                    "template": "VLLMGptOss120bToolCallTest",
+                    "enabled": true,
+                    "description": "gpt-oss-120b tool-call / reasoning-parser regressions"
                 }
             ]
         },
