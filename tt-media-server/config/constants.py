@@ -528,7 +528,25 @@ TTS_RESPONSE_FORMATS = AUDIO_RESPONSE_FORMATS | frozenset(
 # Languages the XTTS-v2 pipeline supports. The XTTS runner asserts this stays
 # in sync with the pipeline's own list at warmup.
 XTTS_SUPPORTED_LANGUAGES = frozenset(
-    ("ar", "cs", "de", "en", "es", "fr", "hu", "it", "ko", "nl", "pl", "pt", "ru", "tr", "zh", "hi", "ja")
+    (
+        "ar",
+        "cs",
+        "de",
+        "en",
+        "es",
+        "fr",
+        "hu",
+        "it",
+        "ko",
+        "nl",
+        "pl",
+        "pt",
+        "ru",
+        "tr",
+        "zh",
+        "hi",
+        "ja",
+    )
 )
 
 # Language a TTS request synthesizes in when none is given.

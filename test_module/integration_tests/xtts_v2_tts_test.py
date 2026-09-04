@@ -72,7 +72,9 @@ class XttsV2TTSTest(BaseTest):
             assert field in result, f"Response should contain {field!r} field"
         audio_bytes = base64.b64decode(result["audio"])
         assert len(audio_bytes) > 0, "Decoded audio should not be empty"
-        assert result["duration"] > 0, f"Duration should be positive, got {result['duration']}"
+        assert result["duration"] > 0, (
+            f"Duration should be positive, got {result['duration']}"
+        )
         return audio_bytes
 
     async def _test_basic_tts(self):
@@ -117,7 +119,10 @@ class XttsV2TTSTest(BaseTest):
             assert result_a["audio"] == result_b["audio"], (
                 "Same text and seed produced different audio"
             )
-            return {"status": "success", "audio_size_bytes": len(base64.b64decode(result_a["audio"]))}
+            return {
+                "status": "success",
+                "audio_size_bytes": len(base64.b64decode(result_a["audio"])),
+            }
 
     async def _test_language_synthesis(self):
         """One non-Latin language (zh: pypinyin romanizer + CJK chunking) and one
@@ -131,7 +136,12 @@ class XttsV2TTSTest(BaseTest):
             ):
                 status, result = await self._post(
                     session,
-                    {"text": text, "language": lang, "response_format": "json", "seed": 0},
+                    {
+                        "text": text,
+                        "language": lang,
+                        "response_format": "json",
+                        "seed": 0,
+                    },
                 )
                 assert status == 200, f"language={lang!r}: expected 200, got {status}"
                 sizes[lang] = len(self._decoded_audio(result))

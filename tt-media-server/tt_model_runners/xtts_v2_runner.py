@@ -202,7 +202,9 @@ class XttsV2Runner(BaseMetalDeviceRunner):
                 sr = clip.samplerate
                 chunk = int(REF_CLIP_SECONDS * sr)
                 data = clip.read(
-                    frames=int(REF_CLIP_MAX_SECONDS * sr), dtype="float32", always_2d=True
+                    frames=int(REF_CLIP_MAX_SECONDS * sr),
+                    dtype="float32",
+                    always_2d=True,
                 )
         except Exception as e:
             raise ValueError(f"reference_audio is not a readable audio file: {e}")
@@ -223,7 +225,11 @@ class XttsV2Runner(BaseMetalDeviceRunner):
         return voice
 
     def _synthesize(
-        self, text: str, base_seed: int, language: str = DEFAULT_TTS_LANGUAGE, voice=None
+        self,
+        text: str,
+        base_seed: int,
+        language: str = DEFAULT_TTS_LANGUAGE,
+        voice=None,
     ) -> np.ndarray:
         """Synthesize one request's text: chunk at sentence boundaries, generate per
         chunk (chunk i uses base_seed + i so chunks don't share sampling draws), stitch

@@ -7,7 +7,7 @@ import base64
 import io
 import os
 import re
-from typing import Any, AsyncGenerator, Dict, List
+from typing import Any, AsyncGenerator, Dict
 
 import soundfile as sf
 import torch
