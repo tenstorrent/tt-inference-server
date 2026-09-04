@@ -209,11 +209,37 @@ struct StaticTokenizerInfo {
   std::vector<uint32_t> assistantHeaderSequence;
   uint32_t thinkStartTokenId = kNoTokenId;
   uint32_t thinkEndTokenId = kNoTokenId;
+  // Does this model's chat template re-render the think delimiter into LATER
+  // turns' prompts? See ThinkMarkersInHistory below. Default false ("dropped")
+  // because that is both the common case and the safe one: a delimiter the
+  // next prompt does not carry is a KV row nothing else accounts for.
+  bool thinkStartInHistory = false;
+  bool thinkEndInHistory = false;
 };
 
 /** Per-model thinking marker token IDs (O(1), no tokenizer.json parse). */
 std::pair<uint32_t, uint32_t> thinkTokenIdsFor(config::ModelType model);
 std::pair<uint32_t, uint32_t> thinkTokenIds();
+
+/**
+ * Which think delimiters this model's chat template re-renders into the
+ * prompts of LATER turns (i.e. when the finished think block has become
+ * history).
+ *
+ * This drives prefix-cache position accounting, not tokenization. Every
+ * delimiter occupies a KV row, but only the ones the next turn's prompt no
+ * longer contains have to be added back when reconstructing "first free KV
+ * index" from a block-aligned match — the ones the template still emits are
+ * supplied by the prompt itself and would be double-counted. Verified per
+ * model by rendering `tokenizers/<hf-id>/chat_template.jinja` for a two-turn
+ * conversation (see the `add-model-dynamo` skill).
+ */
+struct ThinkMarkersInHistory {
+  bool start = false;
+  bool end = false;
+};
+ThinkMarkersInHistory thinkMarkersInHistoryFor(config::ModelType model);
+ThinkMarkersInHistory thinkMarkersInHistory();
 
 /**
  * Static constants for `model`. Throws std::invalid_argument if no entry
