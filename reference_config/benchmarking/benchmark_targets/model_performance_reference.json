@@ -326,6 +326,86 @@
                 }
             }
         ],
+        "blackhole_galaxy": [
+            {
+                "_comment": [
+                    "BLACKHOLE_GALAXY at data_parallel_size=4. Declaring data_parallel",
+                    "makes get_perf_reference() use this entry verbatim. Without a",
+                    "blackhole_galaxy row it fell through to the legacy subdevice remap,",
+                    "which maps (BLACKHOLE_GALAXY, 4) -> P150X8; there is no p150x8 row",
+                    "for this model, so every target resolved to NA and the benchmark",
+                    "checks reported 0/18 passed while looking green.",
+                    "These are deliberately LOOSE floors that pass on CI hardware, not",
+                    "the achievable numbers. On g03blx02 this point measures 99-125 ms",
+                    "TTFT and 32.3-32.5 tok/s, but tt-shield run 33354423812 on",
+                    "g08blx01 reported 648.4 ms / 28.4 tok/s and went red.",
+                    "The TTFT gap there is an artifact of num_prompts=8: P50 was 81.4 ms",
+                    "-- better than the dev box -- while P99 was 4297.9 ms, so one cold",
+                    "first request moves the mean by ~540 ms. Until this point either",
+                    "grades a percentile instead of the mean or uses enough prompts to",
+                    "dilute the cold request, the target has to absorb that outlier.",
+                    "Tighten once that is fixed; see tt-inference-server#5041.",
+                    "At conc=1 tput ~= tput_user, as it must be with a single user.",
+                    "No 'theoretical' block: no hardware ceiling has been derived for",
+                    "Blackhole Galaxy, and copying the Wormhole numbers would assert a",
+                    "ceiling that was never measured on this device. The functional/",
+                    "complete tiers are therefore not emitted for this device rather",
+                    "than being emitted against an invented ceiling."
+                ],
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 900.0,
+                        "tput_user": 30.0,
+                        "tput": 26.0,
+                        "tolerance": 0.05
+                    }
+                }
+            },
+            {
+                "_comment": [
+                    "BLACKHOLE_GALAXY at data_parallel_size=4, 32 concurrent users: the",
+                    "point that exercises all four data-parallel groups.",
+                    "Loose floors that pass on CI hardware, as for the conc=1 entry.",
+                    "g03blx02 measures 518-546 ms TTFT and 914-920 tok/s across 7",
+                    "sweeps; tt-shield run 33354423812 on g08blx01 reported 1243.6 ms",
+                    "and 787.2 tok/s. Unlike conc=1 this is not an outlier effect --",
+                    "P50 1282.1 / P99 1290.7 is a tight distribution -- and TPOT was",
+                    "unchanged (31.2 vs 31.0 ms), so decode matches and the whole gap",
+                    "is in prefill scheduling. That difference is not yet explained, so",
+                    "these floors only assert 'no worse than the CI baseline'; tighten",
+                    "them once it is. See tt-inference-server#5041.",
+                    "For scale, the Wormhole GALAXY rows above are 4360.9 ms / 617.1",
+                    "tok/s at this point.",
+                    "No 'theoretical' block, for the same reason as the conc=1 entry."
+                ],
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 256,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 1500.0,
+                        "tput_user": 30.0,
+                        "tput": 720.0,
+                        "tolerance": 0.05
+                    }
+                }
+            }
+        ],
         "t3k": [
             {
                 "isl": 128,
