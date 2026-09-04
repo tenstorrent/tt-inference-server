@@ -5,9 +5,13 @@
 from typing import Optional, Union
 
 import numpy as np
-from config.constants import TTS_RESPONSE_FORMATS
+from config.constants import (
+    DEFAULT_TTS_LANGUAGE,
+    TTS_RESPONSE_FORMATS,
+    XTTS_SUPPORTED_LANGUAGES,
+)
 from domain.base_request import BaseRequest
-from pydantic import PrivateAttr, field_validator
+from pydantic import Field, PrivateAttr, field_validator
 
 # Default max text length (runner handles chunking internally)
 DEFAULT_MAX_TTS_TEXT_LENGTH = 20000
@@ -38,6 +42,45 @@ class TextToSpeechRequest(BaseRequest):
         None  # Base64-encoded or raw bytes of speaker embedding
     )
     speaker_id: Optional[str] = None  # ID for pre-configured speaker embeddings
+
+    # Voice cloning: base64-encoded reference AUDIO FILE (any soundfile-readable
+    # format) whose voice the synthesis should clone.
+    reference_audio: Optional[str] = None
+
+    @field_validator("reference_audio", mode="before")
+    @classmethod
+    def validate_reference_audio(cls, v):
+        if v is None:
+            return None
+        if not isinstance(v, str) or not v.strip():
+            raise ValueError("reference_audio must be a base64-encoded audio file")
+        # Cap the base64 string at 16 MB (~12 MB of audio file bytes after decoding).
+        # Deliberately generous: a 30 s WAV is ~5 MB.
+        if len(v) > 16 * 1024 * 1024:
+            raise ValueError("reference_audio exceeds the 16 MB base64 limit")
+        return v
+
+    # Synthesis language. Validated here so an unsupported code raises HTTP 422 early
+    # instead of raising inside a device worker. Region variants normalize to their
+    # base code ("pt-br" -> "pt", "zh-cn" -> "zh").
+    language: str = DEFAULT_TTS_LANGUAGE
+
+    @field_validator("language", mode="before")
+    @classmethod
+    def validate_language(cls, v):
+        if v is None:
+            return DEFAULT_TTS_LANGUAGE
+        base = str(v).strip().lower().split("-")[0]
+        if base not in XTTS_SUPPORTED_LANGUAGES:
+            raise ValueError(
+                f"Unsupported language {v!r}; supported: {sorted(XTTS_SUPPORTED_LANGUAGES)} "
+                "(region variants like 'pt-br' are accepted)"
+            )
+        return base
+
+    # Optional sampling seed for stochastic TTS models: fixing it makes
+    # identical text reproduce identical audio. None lets the model draw randomly.
+    seed: Optional[int] = Field(default=None, ge=0, lt=2**31)
 
     # Response format: wav (default), mp3, ogg, json, or verbose_json
     response_format: str = "wav"

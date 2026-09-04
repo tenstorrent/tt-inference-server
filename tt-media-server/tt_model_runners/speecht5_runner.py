@@ -7,12 +7,12 @@ import base64
 import io
 import os
 import re
-from typing import Any, AsyncGenerator, Dict, List
+from typing import Any, AsyncGenerator, Dict
 
 import soundfile as sf
 import torch
 import ttnn
-from config.constants import SupportedModels
+from config.constants import DEFAULT_TTS_LANGUAGE, SupportedModels
 from config.settings import settings
 from domain.text_to_speech_request import TextToSpeechRequest
 from domain.text_to_speech_response import (
@@ -43,9 +43,9 @@ from telemetry.telemetry_client import TelemetryEvent
 from transformers import SpeechT5ForTextToSpeech, SpeechT5HifiGan, SpeechT5Processor
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
 from utils.decorators import log_execution_time
+from utils.text_chunking import chunk_text
 from utils.speaker_embeddings import SpeakerEmbeddingsManager
 
-DEFAULT_CHUNK_SIZE = 256  # Maximum characters per text chunk
 
 # Maximum KV cache slots pre-allocated in the generator.
 # ~3 mel frames per input token * 256 max tokens = 768, rounded up to 800.
@@ -55,73 +55,6 @@ MAX_KV_STEPS = 800
 # 32/64 cover short texts; 128/256 cover typical chunked inputs.
 # 384 causes L1 OOM on N150 — max supported is 256.
 WARMUP_ENCODER_SIZES = [32, 64, 128, 160, 192, 256]
-
-
-def chunk_text(
-    text: str, max_chunk_size: int = DEFAULT_CHUNK_SIZE, processor=None
-) -> List[str]:
-    """Split text into chunks that always end at sentence boundaries.
-
-    Sentences are packed greedily into chunks until adding the next sentence
-    would exceed max_chunk_size characters. A single sentence that exceeds
-    max_chunk_size is kept as one chunk (never split mid-sentence).
-
-    The only exception: if a sentence exceeds MAX_ENCODER_TOKENS tokens (hard
-    device limit), it is split at the last clause boundary (,;) within that
-    token budget to avoid L1 OOM.
-    """
-    MAX_ENCODER_TOKENS = 250  # conservative limit below the 256 padded size
-
-    if len(text) <= max_chunk_size:
-        return [text]
-
-    sentences = re.split(r"(?<=[.!?])\s+", text.strip())
-    if not sentences:
-        return [text]
-
-    def split_oversized(sentence):
-        if processor is None:
-            return [sentence]
-        n_tokens = processor(text=sentence, return_tensors="pt")["input_ids"].shape[1]
-        if n_tokens <= MAX_ENCODER_TOKENS:
-            return [sentence]
-        clauses = re.split(r"(?<=[,;])\s+", sentence)
-        parts = []
-        current = ""
-        for clause in clauses:
-            candidate = (current + " " + clause).strip() if current else clause
-            n = processor(text=candidate, return_tensors="pt")["input_ids"].shape[1]
-            if n <= MAX_ENCODER_TOKENS:
-                current = candidate
-            else:
-                if current:
-                    parts.append(current)
-                current = clause
-        if current:
-            parts.append(current)
-        return parts if parts else [sentence]
-
-    flat_sentences = []
-    for s in sentences:
-        s = s.strip()
-        if s:
-            flat_sentences.extend(split_oversized(s))
-
-    chunks = []
-    current = ""
-    for sentence in flat_sentences:
-        if not current:
-            current = sentence
-        elif len(current) + 1 + len(sentence) <= max_chunk_size:
-            current = current + " " + sentence
-        else:
-            chunks.append(current)
-            current = sentence
-
-    if current:
-        chunks.append(current)
-
-    return chunks
 
 
 def normalize_text_for_tts(text: str) -> str:
@@ -849,6 +782,13 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                 raise ValueError("Request cannot be None")
             if not request.text or not request.text.strip():
                 raise ValueError("Text cannot be empty")
+
+            # SpeechT5 is English-only.
+            language = getattr(request, "language", DEFAULT_TTS_LANGUAGE)
+            if language != DEFAULT_TTS_LANGUAGE:
+                raise ValueError(
+                    f"SpeechT5 supports only language {DEFAULT_TTS_LANGUAGE!r}; got {language!r}. "
+                )
 
             speaker_embedding, speaker_id = self._prepare_speaker_embedding(request)
             request._speaker_embedding_array = speaker_embedding.detach().numpy()

@@ -93,6 +93,7 @@
             "bge": "BGE embedding model tests",
             "qwen3_emb": "Qwen3 embedding model tests",
             "speecht5": "SpeechT5 TTS model tests",
+            "xtts-v2": "XTTS-v2 TTS model tests",
             "wan": "Wan video generation model tests",
             "wan_i2v": "Wan image-to-video generation model tests",
             "mochi": "Mochi video generation model tests",
@@ -364,6 +365,17 @@
             "compatible_devices": [
                 "n150",
                 "p150"
+            ]
+        },
+        "xtts-v2": {
+            "weights": [
+                "XTTS-v2"
+            ],
+            "category": "TTS",
+            "compatible_devices": [
+                "n150",
+                "p150",
+                "p300x2"
             ]
         },
         "diffusiongemma_26b": {
@@ -748,6 +760,20 @@
         },
         "SpeechT5TTSTest": {
             "module": "test_module.integration_tests.speecht5_tts_test",
+            "markers": [
+                "e2e",
+                "slow"
+            ],
+            "test_config": {
+                "test_timeout": 3600,
+                "retry_attempts": 1,
+                "retry_delay": 60,
+                "break_on_failure": false,
+                "mock_mode": false
+            }
+        },
+        "XttsV2TTSTest": {
+            "module": "test_module.integration_tests.xtts_v2_tts_test",
             "markers": [
                 "e2e",
                 "slow"
