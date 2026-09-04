@@ -64,6 +64,7 @@ class TTFasterFifoQueue(TTQueueInterface):
         max_messages_to_get: int = 100,
         block: bool = True,
         timeout: Optional[float] = None,
+        linger: float = 0.0,  # accepted for interface parity; this queue batches itself
     ) -> List:
         """
         Get multiple items at once - much faster than individual gets.
