@@ -12,7 +12,9 @@ from test_module.benchmark_tests.audio_benchmark_tests import (
 
 
 def _ctx(impl_name):
-    return SimpleNamespace(model_spec=SimpleNamespace(impl=SimpleNamespace(impl_name=impl_name)))
+    return SimpleNamespace(
+        model_spec=SimpleNamespace(impl=SimpleNamespace(impl_name=impl_name))
+    )
 
 
 class TestQwenGate:
