@@ -91,6 +91,20 @@ def temp_dir():
         yield Path(tmp_dir)
 
 
+def test_modular_diffusers_snapshot_is_detected(tiny_model_spec, temp_dir):
+    (temp_dir / "transformer").mkdir()
+    (temp_dir / "transformer" / "model.safetensors").write_bytes(b"weights")
+    (temp_dir / "modular_model_index.json").write_text("{}", encoding="utf-8")
+
+    manager = HostSetupManager(
+        model_spec=tiny_model_spec,
+        host_weights_dir=str(temp_dir),
+    )
+
+    assert manager.check_model_weights_dir(temp_dir)
+    assert manager.setup_config.model_weights_format == "diffusers_modular"
+
+
 @pytest.fixture
 def mock_env_vars(temp_dir):
     """Set up mock environment variables for setup_host."""
