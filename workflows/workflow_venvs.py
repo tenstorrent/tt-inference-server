@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Optional, Tuple
@@ -28,6 +29,50 @@ default_venv_path = get_repo_root_path() / ".workflow_venvs"
 
 # Per-venv pip lists live under <repo_root>/requirements/, sharing constraints.txt.
 REQUIREMENTS_DIR = get_repo_root_path() / "requirements"
+
+# Tenstorrent fork of Harbor carrying the provider-neutral `kubernetes`
+# environment (generic RKE2/EKS/... support abstracted out of what gke.py did),
+# used to schedule agentic-eval trial pods on our clusters. Temporary: revert to
+# harbor-framework/harbor at a release tag once the environment lands upstream.
+HARBOR_REPO = "https://github.com/dcvijeticTT/harbor.git"
+HARBOR_REF = "a7f80f9baf674909b98da952e102b37b0a846b0d"
+
+
+def checkout_pinned_repo(dest: Path, repo: str, ref: str) -> bool:
+    """Materialize *repo* at exactly *ref* in *dest*. Returns success.
+
+    Idempotent, and converging rather than incremental: the directory may be
+    absent, already at *ref*, left at a different revision by an earlier job,
+    or not a git repository at all. Self-hosted runners keep the venv tree
+    between jobs, so a "clone only when missing" shortcut would keep
+    installing whatever the previous pin was.
+    """
+    if not (dest / ".git").is_dir():
+        if dest.exists():
+            logger.info("Discarding non-git directory at %s", dest)
+            shutil.rmtree(dest)
+        if (
+            run_command(
+                f"git clone --filter=blob:none --no-checkout {repo} {dest}",
+                logger=logger,
+            )
+            != 0
+        ):
+            return False
+
+    # `fetch <sha>` rather than a full mirror fetch: uploadpack.allowAnySHA1InWant
+    # is on for GitHub, so a single commit and its trees come down without the
+    # rest of the history. --depth 1 keeps a bumped pin from accumulating it.
+    steps = (
+        f"git -C {dest} remote set-url origin {repo}",
+        f"git -C {dest} fetch --depth 1 origin {ref}",
+        f"git -C {dest} checkout --detach --force FETCH_HEAD",
+    )
+    for step in steps:
+        if run_command(step, logger=logger) != 0:
+            logger.error("Failed to pin %s to %s (%s)", dest, ref, step)
+            return False
+    return True
 
 
 def install_requirements(
@@ -154,45 +199,28 @@ def setup_evals_agentic(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
 ) -> bool:
-    """Hook for EVALS_AGENTIC: clone + editable-install SWE-agent and Harbor.
+    """Hook for EVALS_AGENTIC: clone + editable-install Harbor.
 
-    Other deps (mini-swe-agent, epoch SWE-bench) are in requirements/evals-agentic.txt.
+    Harbor is the only agentic harness on the host: it acquires the tasks,
+    sandboxes them, runs the agent, and scores. The agents themselves (e.g.
+    mini-swe-agent) are installed by Harbor *inside* the task container, so
+    they are deliberately absent from requirements/evals-agentic.txt.
 
     Harbor is cloned and installed editable so its top-level ``adapters/`` directory
     is available on disk. The adapters are not part of the Harbor wheel and live
     outside ``src/``, so a ``.pth`` file exposes the repo root to Python imports.
     """
-    sweagent_dir = venv_config.venv_path / "SWE-agent"
-    if not sweagent_dir.exists():
-        clone_return_code = run_command(
-            f"git clone https://github.com/SWE-agent/SWE-agent.git {sweagent_dir}",
-            logger=logger,
-        )
-        if clone_return_code != 0:
-            return False
-
-    return_code = run_command(
-        f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} "
-        f"-e {sweagent_dir}",
-        logger=logger,
-    )
-    if return_code != 0:
+    harbor_dir = venv_config.venv_path / "harbor"
+    if not checkout_pinned_repo(harbor_dir, HARBOR_REPO, HARBOR_REF):
         return False
 
-    harbor_dir = venv_config.venv_path / "harbor"
-    harbor_tag = "v0.6.5"
-    if not harbor_dir.exists():
-        clone_return_code = run_command(
-            "git clone --depth 1 --branch "
-            f"{harbor_tag} https://github.com/harbor-framework/harbor.git {harbor_dir}",
-            logger=logger,
-        )
-        if clone_return_code != 0:
-            return False
-
+    # Install with the `kubernetes` extra so the Python k8s client comes in: the
+    # kubernetes environment needs it, and it is declared as an optional extra,
+    # so a plain editable install omits it. Quoted so the shell does not
+    # glob-expand `[kubernetes]`.
     return_code = run_command(
         f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} "
-        f"-e {harbor_dir}",
+        f"-e '{harbor_dir}[kubernetes]'",
         logger=logger,
     )
     if return_code != 0:

@@ -8,14 +8,13 @@ from __future__ import annotations
 
 import json
 import subprocess
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from llm_module.agentic import progress
 from llm_module.agentic.progress import (
     ProgressSnapshot,
-    make_swebench_probe,
     make_terminal_bench_probe,
     projected_remaining_s,
     run_with_progress,
@@ -54,6 +53,18 @@ def test_worst_case_ceiling_single_wave():
 
 def test_worst_case_ceiling_many_waves():
     assert worst_case_ceiling_s(500, 8, 7200) == 63 * 7200
+
+
+def test_worst_case_ceiling_includes_one_time_startup_grace():
+    assert (
+        worst_case_ceiling_s(
+            5,
+            8,
+            7200,
+            startup_grace_s=600,
+        )
+        == 7800
+    )
 
 
 def test_projection_shrinks_as_tasks_complete():
@@ -142,6 +153,28 @@ def test_healthy_advancing_run_is_not_killed():
     assert not proc.terminated and not proc.killed
 
 
+def test_first_progress_probe_and_log_follow_the_poll_interval():
+    calls = {"probe": 0}
+    log = MagicMock()
+
+    def probe():
+        calls["probe"] += 1
+        return ProgressSnapshot(completed=0, total=3, heartbeat=0, in_flight=0)
+
+    rc, proc = _run(probe, exit_after=1, log=log, log_interval_s=60)
+
+    assert rc == 0
+    assert not proc.terminated and not proc.killed
+    assert calls["probe"] == 1
+    assert proc._clock["t"] == 60
+    progress_calls = [
+        call
+        for call in log.info.call_args_list
+        if call.args and str(call.args[0]).startswith("[agentic progress]")
+    ]
+    assert len(progress_calls) == 1
+
+
 def test_stalled_run_is_killed_with_124():
     # Heartbeat never advances -> after budget + grace (+ startup, no first
     # progress) elapses, the watchdog kills it.
@@ -190,6 +223,58 @@ def test_hard_timeout_override_kills():
     assert proc.terminated
 
 
+def test_hard_timeout_is_enforced_when_heuristic_deadlines_are_disabled():
+    state = {"h": 0, "probe_calls": 0}
+
+    def probe():
+        state["probe_calls"] += 1
+        state["h"] += 1
+        return ProgressSnapshot(completed=state["h"], total=100, heartbeat=state["h"])
+
+    rc, proc = _run(
+        probe,
+        hard_timeout_s=12,
+        enforce_deadlines=False,
+        log_interval_s=30,
+        stall_grace_s=999,
+        startup_grace_s=999,
+    )
+
+    assert rc == progress.TIMEOUT_EXIT_CODE
+    assert proc.terminated
+    assert proc._clock["t"] == 12
+    assert state["probe_calls"] == 0
+
+
+def test_harness_starts_in_its_own_process_session():
+    clock = {"t": 0.0}
+    proc = _FakeProc(clock, exit_after=0)
+    popen_kwargs = {}
+
+    def fake_popen(*args, **kwargs):
+        popen_kwargs.update(kwargs)
+        return proc
+
+    with patch.object(progress.time, "monotonic", lambda: clock["t"]), patch.object(
+        progress.subprocess, "Popen", fake_popen
+    ):
+        rc = run_with_progress(
+            ["fake"],
+            cwd=None,
+            env={},
+            probe=lambda: None,
+            label="test",
+            per_task_budget_s=100,
+            concurrency=1,
+            startup_grace_s=20,
+            stall_grace_s=10,
+            log_interval_s=5,
+        )
+
+    assert rc == 0
+    assert popen_kwargs["start_new_session"] is True
+
+
 def test_interrupt_terminates_harness_instead_of_orphaning_it():
     # If the engine is interrupted (Ctrl-C / crash) the harness must be reaped,
     # otherwise it is re-parented to init and keeps running invisibly.
@@ -226,17 +311,23 @@ def test_kill_escalates_to_sigkill_when_terminate_ignored():
         def wait(self, timeout=None):
             if self.terminated and not self.killed:
                 # Ignore SIGTERM: force the SIGKILL escalation path.
+                self._clock["t"] += timeout or 0
                 raise subprocess.TimeoutExpired(cmd=["fake"], timeout=timeout)
             return super().wait(timeout=timeout)
+
+        def poll(self):
+            if self.terminated and not self.killed:
+                return None
+            return super().poll()
 
     proc = _StubbornProc(clock)
 
     def probe():
         return ProgressSnapshot(completed=0, total=5, heartbeat=0)
 
-    with patch.object(progress.time, "monotonic", lambda: clock["t"]), patch.object(
-        progress.subprocess, "Popen", lambda *a, **k: proc
-    ):
+    with patch.object(progress, "_TERMINATE_GRACE_SEC", 1), patch.object(
+        progress.time, "monotonic", lambda: clock["t"]
+    ), patch.object(progress.subprocess, "Popen", lambda *a, **k: proc):
         rc = run_with_progress(
             ["fake"],
             cwd=None,
@@ -254,87 +345,48 @@ def test_kill_escalates_to_sigkill_when_terminate_ignored():
     assert proc.terminated and proc.killed
 
 
-# --------------------------------------------------------------------------- #
-# Probes
-# --------------------------------------------------------------------------- #
+def test_terminate_signals_the_harness_process_group():
+    clock = {"t": 0.0}
+    proc = _FakeProc(clock)
+    proc.pid = 1234
+
+    def signal_group(_pid, sig):
+        if sig == 0:
+            if proc.terminated:
+                raise ProcessLookupError
+            return
+        if sig == progress.signal.SIGTERM:
+            proc.terminated = True
+
+    with patch.object(progress.os, "killpg", side_effect=signal_group) as killpg:
+        progress._terminate(proc, progress.logger)
+
+    killpg.assert_any_call(1234, progress.signal.SIGTERM)
 
 
-def test_swebench_probe_counts_preds_incrementally(tmp_path):
-    mini_dir = tmp_path / "mini_sweagent"
-    mini_dir.mkdir()
-    probe = make_swebench_probe(mini_dir, total=5)
+def test_terminate_kills_descendants_that_outlive_the_harbor_leader():
+    clock = {"t": 0.0}
+    proc = _FakeProc(clock)
+    descendants_alive = {"value": True}
+    signals = []
 
-    # No preds yet -> zero completed, total from caller.
-    snap = probe()
-    assert snap.completed == 0 and snap.total == 5 and snap.in_flight is None
+    def signal_tree(_proc, sig):
+        signals.append(sig)
+        if sig == progress.signal.SIGTERM:
+            proc.terminated = True
+        else:
+            descendants_alive["value"] = False
 
-    (mini_dir / "preds.json").write_text(
-        json.dumps({"a": {}, "b": {}}), encoding="utf-8"
-    )
-    snap = probe()
-    assert snap.completed == 2 and snap.heartbeat == 2
+    with patch.object(progress, "_TERMINATE_GRACE_SEC", 0), patch.object(
+        progress, "_signal_process_tree", side_effect=signal_tree
+    ), patch.object(
+        progress,
+        "_process_group_exists",
+        side_effect=lambda _proc: descendants_alive["value"],
+    ):
+        progress._terminate(proc, progress.logger)
 
-
-def _write_mini_log(mini_dir, *, started, total=5):
-    lines = [f"2026-08-27 - minisweagent - INFO - Running on {total} instances...\n"]
-    for i in range(started):
-        lines.append(
-            "2026-08-27 - minisweagent.environment - INFO - "
-            f"Started container minisweagent-{i:08x} with ID deadbeef{i}\n"
-        )
-    (mini_dir / "minisweagent.log").write_text("".join(lines), encoding="utf-8")
-
-
-def test_swebench_probe_counts_started_containers_as_in_flight(tmp_path):
-    # The pool picks up 3 of 5 instances; 1 has finished. The other 2 are queued
-    # and must not be reported as running.
-    mini_dir = tmp_path / "mini_sweagent"
-    mini_dir.mkdir()
-    _write_mini_log(mini_dir, started=3)
-    (mini_dir / "preds.json").write_text(json.dumps({"a": {}}), encoding="utf-8")
-
-    snap = make_swebench_probe(mini_dir, total=5)()
-    assert snap.completed == 1
-    assert snap.in_flight == 2
-
-
-def test_swebench_probe_in_flight_never_goes_negative(tmp_path):
-    # An instance that dies before its container starts still lands in
-    # preds.json, so completed can exceed the started-container count.
-    mini_dir = tmp_path / "mini_sweagent"
-    mini_dir.mkdir()
-    _write_mini_log(mini_dir, started=1)
-    (mini_dir / "preds.json").write_text(
-        json.dumps({"a": {}, "b": {}, "c": {}}), encoding="utf-8"
-    )
-
-    snap = make_swebench_probe(mini_dir, total=5)()
-    assert snap.in_flight == 0
-
-
-def test_swebench_probe_in_flight_drops_as_instances_finish(tmp_path):
-    mini_dir = tmp_path / "mini_sweagent"
-    mini_dir.mkdir()
-    _write_mini_log(mini_dir, started=5)
-    probe = make_swebench_probe(mini_dir, total=5)
-
-    assert probe().in_flight == 5
-    (mini_dir / "preds.json").write_text(
-        json.dumps({"a": {}, "b": {}}), encoding="utf-8"
-    )
-    assert probe().in_flight == 3
-
-
-def test_swebench_probe_falls_back_to_log_for_total(tmp_path):
-    mini_dir = tmp_path / "mini_sweagent"
-    mini_dir.mkdir()
-    (mini_dir / "minisweagent.log").write_text(
-        "2026-08-27 - minisweagent - INFO - Running on 5 instances...\n",
-        encoding="utf-8",
-    )
-    probe = make_swebench_probe(mini_dir, total=None)
-    snap = probe()
-    assert snap.total == 5 and snap.completed == 0
+    assert signals == [progress.signal.SIGTERM, progress.signal.SIGKILL]
 
 
 def test_terminal_bench_probe_reads_job_result(tmp_path):

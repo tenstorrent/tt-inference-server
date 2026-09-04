@@ -1,14 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-from .swebench import SWEbenchRunConfig, run as run_swebench
-from .terminal_bench import TerminalBenchRunConfig, run as run_terminal_bench
+from .harbor import HarborRunConfig, run as run_harbor
 
 __all__ = [
-    "SWEbenchRunConfig",
-    "run_swebench",
-    "TerminalBenchRunConfig",
-    "run_terminal_bench",
+    "HarborRunConfig",
+    "run_harbor",
     "_extract_harbor_summary_metrics",
     "_add_harbor_pass_at_metrics",
     "process_agentic_eval_files",

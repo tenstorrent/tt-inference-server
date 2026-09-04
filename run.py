@@ -887,6 +887,7 @@ def handle_secrets(runtime_config):
         WorkflowType.SPEC_TESTS,
         WorkflowType.SERVING_BENCH,
         WorkflowType.PREFILL_DECODE,
+        WorkflowType.AGENTIC,
     }
     # --docker-server requires the HF_TOKEN env var to be available
     huggingface_required = (
