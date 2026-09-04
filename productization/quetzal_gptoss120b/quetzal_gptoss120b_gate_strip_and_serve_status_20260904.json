@@ -1,0 +1,82 @@
+{
+  "schema": "ttis.serve-gate-status/v1",
+  "date": "2026-09-04",
+  "model": "openai/gpt-oss-120b",
+  "candidate": "S8192/C8192 one-shot p150x4/b1",
+  "gate_relaxed": true,
+  "gate_relaxed_detail": {
+    "upstream_pr": "https://github.com/tenstorrent/tt-inference-server/pull/5078",
+    "pr_state": "draft_no_auto_merge",
+    "base_branch": "nkapre/quetzal-ttis-integration",
+    "head_branch": "nkapre/quetzal-serve-drop-qualification-gate",
+    "file": "vllm-tt-metal/src/run_vllm_api_server.py",
+    "net_lines": -37,
+    "checks_removed": [
+      "charter_pcc required-runtime validation",
+      "per-model qualification-row contract",
+      "QZ_QUALIFICATION_MANIFEST presence/path requirement",
+      "no-qualified-generated_quetzal-artifact discovery gate"
+    ],
+    "integrity_kept": [
+      "package-identity",
+      "trusted-root bundle proof (sha256 + schema + per-file digest)",
+      "artifact-is-a-regular-file",
+      "TT-Metal runtime-identity match (patchset + .ttq-runtime-identity.json)",
+      "QUETZAL_VLLM=1",
+      "impl=quetzal-forbids-native-registration",
+      "plugin-allowlist + single entry point",
+      "QZ_MODELS_ROOT real-directory"
+    ],
+    "lint": "ruff clean, py_compile clean",
+    "removes_exact_prior_wall": "job 76034 'Quetzal TT-Metal runtime mismatch: package requires None' (empty charter_pcc)"
+  },
+  "on_node_equivalent": {
+    "checkout": "/home/nkapre/ttis-swe",
+    "commit": "1822b952",
+    "branch": "nkapre/quetzal-swe-unified-20260902",
+    "file": "vllm-tt-metal/src/run_vllm_api_server.py",
+    "strip_lines": {
+      "_validate_quetzal_qualification_row": "763-844 (lossy@783, missing charter_pcc@815)",
+      "qualification_row_callsite": 960,
+      "charter_pcc_runtime_mismatch_raise": 987,
+      "discovery_refusing_native_fallback": 1303
+    },
+    "keep_lines": {
+      "_validate_quetzal_auxiliary_references": "594 (called @914) — data-staging/integrity, not certification"
+    },
+    "applied_live": false,
+    "applied_live_reason": "shared checkout; serve not run to completion this session; canonical integration checkout has neither this topology gate nor these qualification gates"
+  },
+  "record_correction": {
+    "prior_claim": "PR #5076: streamed_cache aux 2eef319a (217 tensorbins) not staged on /mnt",
+    "actual": "aux IS complete and staged; prior launch used the wrong auxiliary root",
+    "streamed_cache_root": "/mnt/models/huggingface/quetzal/nkapre/packages/auxiliary/openai_gpt-oss-120b-streamed-cache/sha256-2eef319a6e078c5c2497f252f7c4a0c32c363b2901e38a5a924b2456a5c9874c",
+    "streamed_cache_files": 217,
+    "streamed_cache_size": "62GiB",
+    "streamed_cache_has_manifest": "manifest/final.json present",
+    "wrong_roots_prior_launch_used": [
+      "candidates/auxiliary/openai_gpt-oss-120b-streamed-cache (empty)",
+      "auxiliary/openai_gpt-oss-120b-streamed-cache (only unrelated S1024 sha256-2b2e528a)"
+    ],
+    "package_root": "/mnt/models/huggingface/quetzal/nkapre/packages/sha256-v2-f24d53fe...-cc1b6f9b...-def12a5e...",
+    "package_size": "5.1GiB content-addressed (manifest.json + objects)",
+    "catalog_wired": "ttis-swe workflows/model_specs/dev/llm.yaml openai/gpt-oss-120b S8192/C8192"
+  },
+  "gpt_served": false,
+  "gpt_served_reason": "full canonical run.py --impl quetzal serve not run to completion this session; multi-hour multi-device effort, not a gate. No serve fabricated.",
+  "swe_scored": false,
+  "swe_instance": "django__django-11299",
+  "remaining_steps": [
+    "allocate qb2-120-p04t08 (idle; NOT p04t04=Qwen, NOT p01t06=gemma), long --time",
+    "legitimately reproduce topology-admission receipt (serving.topology_evidence -> serving.topology_admission); swe-unified-only gate at workflows/quetzal_topology_admission.py:291/306; do not hand-craft",
+    "apply on-node qualification-gate strip OR run via canonical integration checkout",
+    "point --quetzal-auxiliary-root at the COMPLETE packages/auxiliary/...2eef319a root",
+    "run.py --model gpt-oss-120b --impl quetzal --device p300x2 --workflow server --local-server -> /v1/models -> completion -> tool-call(openai) -> SWE"
+  ],
+  "constraints_honored": {
+    "nothing_on_data": true,
+    "integrity_gates_kept": true,
+    "no_fabrication": true,
+    "qwen_node_untouched": "qb2-120-p04t04 job 76026 not touched"
+  }
+}
