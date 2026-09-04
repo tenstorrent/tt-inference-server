@@ -7,7 +7,7 @@ templates:
 # =============================================================================
 - weights:
     - BAAI/bge-large-en-v1.5
-  tt_metal_commit: "65718bb"
+  tt_metal_commit: "71c49f23"
   version: "0.12.0"
   impl: tt_vllm_plugin
   min_disk_gb: 15
@@ -93,8 +93,11 @@ templates:
         VLLM__MAX_NUM_SEQS: "8"
         MAX_BATCH_SIZE: "8"
         DEFAULT_THROTTLE_LEVEL: "0"
-            # Disable Inspector RPC to prevent port conflicts with 32 concurrent workers
-            # Each worker would otherwise try to bind to the same port (50051)
+
+        BENCHMARK_MAX_CONCURRENCY: "32"
+        # Disable Inspector RPC to prevent port conflicts with 32 concurrent workers
+        # Each worker would otherwise try to bind to the same port (50051)
+
         TT_METAL_INSPECTOR_RPC: "0"
 
 - weights:
