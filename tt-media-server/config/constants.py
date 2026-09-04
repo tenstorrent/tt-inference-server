@@ -1665,6 +1665,14 @@ for runner in [
         "device_ids": DeviceIds.DEVICE_IDS_1.value,
         "download_weights_from_service": False,
     }
+    # P300X2 (QB2): data-parallel, one single-chip worker per die, matching the
+    # TT_SPEECHT5_TTS P300X2 config. Each worker still sees a (1,1) mesh.
+    ModelConfigs[(runner, DeviceTypes.P300X2)] = {
+        "is_galaxy": False,
+        "device_mesh_shape": (1, 1),
+        "device_ids": DeviceIds.DEVICE_IDS_4.value,
+        "download_weights_from_service": False,
+    }
 
 
 # Per-model overrides applied after device config (keyed by ModelNames enum value)
