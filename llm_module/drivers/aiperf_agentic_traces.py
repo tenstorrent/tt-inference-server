@@ -327,6 +327,7 @@ def parse_aiperf_output(
     itl = _block("inter_token_latency")
     e2el = _block("request_latency")
     per_user = _block("output_token_throughput_per_user")
+    e2e_per_user = _block("e2e_output_token_throughput")
     metadata = summary.get("metadata") or {}
     dataset = metadata.get("dataset") or {} if isinstance(metadata, Mapping) else {}
 
@@ -362,13 +363,21 @@ def parse_aiperf_output(
         "median_effective_latency_ms": _stat("effective_latency", "p50"),
         "p99_effective_latency_ms": _stat("effective_latency", "p99"),
         # Throughput. output_token_throughput_per_user is decode speed while a
-        # request is streaming; e2e_output_token_throughput divides by the whole
-        # request wall-clock, so it is the honest user-visible speed for a
-        # long-prefill agentic turn (40 vs 119 tok/s/user in practice).
+        # request is streaming; e2e normalized interactivity divides by the
+        # whole request wall-clock, so it is the honest user-visible speed for
+        # a long-prefill agentic turn (40 vs 119 tok/s/user in practice).
         "output_token_throughput": _stat("output_token_throughput"),
         "output_token_throughput_per_user": per_user.get("avg", 0),
         "median_output_token_throughput_per_user": per_user.get("p50", 0),
-        "e2e_output_token_throughput_per_user": _stat("e2e_output_token_throughput"),
+        "mean_e2e_norm_intvty": e2e_per_user.get("avg", 0),
+        # Tail percentiles read off the low end: this is a rate, so the slow
+        # tail is the bottom of the distribution. A "p90" here means what the
+        # slowest 10% of requests saw, matching p90_e2el_ms above (and
+        # InferenceX's e2e_norm_intvty, which grades the same way). Reading
+        # AIPerf's own p90 would report the *fastest* decile instead.
+        "p75_e2e_norm_intvty": e2e_per_user.get("p25", 0),
+        "p90_e2e_norm_intvty": e2e_per_user.get("p10", 0),
+        "p95_e2e_norm_intvty": e2e_per_user.get("p5", 0),
         "input_token_throughput": _stat("input_token_throughput"),
         "total_token_throughput": _stat("total_token_throughput"),
         "request_throughput": _stat("request_throughput"),
@@ -787,7 +796,7 @@ def _log_run_summary(run: AgenticTracesRun, metrics: Mapping[str, Any]) -> None:
         "[agentic-traces]   output tok/s/user streaming/e2e = %.1f/%.1f; "
         "total tok/s = %.1f",
         float(metrics.get("output_token_throughput_per_user", 0) or 0),
-        float(metrics.get("e2e_output_token_throughput_per_user", 0) or 0),
+        float(metrics.get("mean_e2e_norm_intvty", 0) or 0),
         float(metrics.get("total_token_throughput", 0) or 0),
     )
     measured_cache = metrics.get("measured_prefix_cache_hit_pct")

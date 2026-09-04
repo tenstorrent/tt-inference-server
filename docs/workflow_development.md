@@ -647,9 +647,11 @@ correctly), both prefix-cache hit rates (see below), the `branch_stats` subagent
 fan-out counters, and a ranked `error_summary` so a
 run dominated by one failure mode is obvious. `output_token_throughput_per_user`
 is decode speed while a request streams, whereas
-`e2e_output_token_throughput_per_user` divides by whole-request wall clock and is
-the honest user-visible speed for a long-prefill agentic turn — the two differ by
-roughly 3x in practice.
+e2e normalized interactivity (`mean_e2e_norm_intvty`) divides by whole-request
+wall clock and is the honest user-visible speed for a long-prefill agentic turn —
+the two differ by roughly 3x in practice. Its `p75`/`p90`/`p95` companions are
+read off the bottom of the distribution, since for a rate the slow tail is the
+low end.
 
 Several of the fork's tags come in pairs that only mean something together, and
 all halves are kept for that reason. `effective_*` throughput averages over the
