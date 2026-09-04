@@ -376,6 +376,5 @@ def test_streaming_json_object_no_reasoning_leak(report_test, api_client, reques
         f"{len(failures)}/{completed} streaming runs leaked the Harmony "
         "analysis channel / a control token into content or produced invalid "
         "JSON (expected reasoning to stay in reasoning_content and content to "
-        "be a clean, parseable JSON object). Failing runs:\n"
-        + "\n".join(failures)
+        "be a clean, parseable JSON object). Failing runs:\n" + "\n".join(failures)
     )
