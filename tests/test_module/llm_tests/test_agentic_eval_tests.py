@@ -105,8 +105,8 @@ def _swebench_task(**overrides):
             dataset="swebench-verified",
             agent="mini-swe-agent",
             n_tasks=None,
-            override_cpus=4,
-            override_memory_mb=8 * 1024,
+            override_cpus=None,
+            override_memory_mb=None,
         ),
     )
     for key, value in overrides.items():

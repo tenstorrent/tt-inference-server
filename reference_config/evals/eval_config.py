@@ -308,21 +308,6 @@ class HarborEvalConfig:
 
 TerminalBenchEvalConfig = HarborEvalConfig
 
-# SWE-bench Verified instances that fail even under Harbor's oracle agent, so a
-# run that includes them measures the harness rather than the model. The first
-# four are dataset/environment defects in SWE-bench itself; the two sphinx ones
-# are the upstream harness bug in SWE-bench PR #475 (the targeted test passes,
-# the harness still reports failure). Sourced from the adapter's own sweep:
-# https://github.com/laude-institute/harbor/blob/main/adapters/swebench/README.md
-SWEBENCH_VERIFIED_KNOWN_BAD_TASKS = [
-    "astropy__astropy-8872",
-    "astropy__astropy-7606",
-    "astropy__astropy-8707",
-    "django__django-10097",
-    "sphinx-doc__sphinx-8595",
-    "sphinx-doc__sphinx-9711",
-]
-
 MINI_SWE_AGENT_VERSION = "2.2.8"
 
 
@@ -718,12 +703,6 @@ _eval_config_list = [
                     n_concurrent_trials=64,
                     n_attempts=1,
                     n_tasks=None,
-                    exclude_task_names=SWEBENCH_VERIFIED_KNOWN_BAD_TASKS,
-                    # The dataset's task.toml requests 1 CPU / 4 GB, which is
-                    # thin for the heavier repo test suites (scikit-learn's
-                    # gradient-boosting tests are CPU-bound for minutes).
-                    override_cpus=4,
-                    override_memory_mb=8 * 1024,
                     # task.toml ships a 3000s agent budget sized on GPU runs;
                     # TT decode is slower, so raise it rather than have trials
                     # truncate into a silent zero.
@@ -1090,9 +1069,6 @@ _eval_config_list = [
                     n_concurrent_trials=16,
                     n_attempts=1,
                     n_tasks=None,
-                    exclude_task_names=SWEBENCH_VERIFIED_KNOWN_BAD_TASKS,
-                    override_cpus=4,
-                    override_memory_mb=8 * 1024,
                     agent_timeout_sec=2 * 60 * 60,
                     agent_kwargs={
                         "version": MINI_SWE_AGENT_VERSION,
@@ -1318,9 +1294,6 @@ _eval_config_list = [
                     n_concurrent_trials=6,
                     n_attempts=1,
                     n_tasks=None,
-                    exclude_task_names=SWEBENCH_VERIFIED_KNOWN_BAD_TASKS,
-                    override_cpus=4,
-                    override_memory_mb=8 * 1024,
                     agent_timeout_sec=2 * 60 * 60,
                     agent_kwargs={
                         "version": MINI_SWE_AGENT_VERSION,
@@ -1758,9 +1731,6 @@ _eval_config_list = [
                     n_concurrent_trials=8,
                     n_attempts=1,
                     n_tasks=None,
-                    exclude_task_names=SWEBENCH_VERIFIED_KNOWN_BAD_TASKS,
-                    override_cpus=4,
-                    override_memory_mb=8 * 1024,
                     agent_timeout_sec=2 * 60 * 60,
                     agent_kwargs={
                         "version": MINI_SWE_AGENT_VERSION,
@@ -1961,9 +1931,6 @@ _eval_config_list = [
                     n_concurrent_trials=8,
                     n_attempts=1,
                     n_tasks=None,
-                    exclude_task_names=SWEBENCH_VERIFIED_KNOWN_BAD_TASKS,
-                    override_cpus=4,
-                    override_memory_mb=8 * 1024,
                     agent_timeout_sec=2 * 60 * 60,
                     agent_kwargs={
                         "version": MINI_SWE_AGENT_VERSION,
@@ -2073,9 +2040,6 @@ _eval_config_list = [
             #         n_concurrent_trials=5,
             #         n_attempts=1,
             #         n_tasks=None,
-            #         exclude_task_names=SWEBENCH_VERIFIED_KNOWN_BAD_TASKS,
-            #         override_cpus=4,
-            #         override_memory_mb=8 * 1024,
             #         agent_timeout_sec=2 * 60 * 60,
             #         agent_kwargs={
             #             "version": MINI_SWE_AGENT_VERSION,
@@ -5444,9 +5408,6 @@ _eval_config_list = [
                     n_concurrent_trials=5,
                     n_attempts=1,
                     n_tasks=None,  # full dataset
-                    exclude_task_names=SWEBENCH_VERIFIED_KNOWN_BAD_TASKS,
-                    override_cpus=4,
-                    override_memory_mb=8 * 1024,
                     agent_timeout_sec=2 * 60 * 60,
                     agent_kwargs={
                         "version": MINI_SWE_AGENT_VERSION,
@@ -5607,9 +5568,6 @@ _eval_config_list = [
                     n_concurrent_trials=5,
                     n_attempts=1,
                     n_tasks=None,
-                    exclude_task_names=SWEBENCH_VERIFIED_KNOWN_BAD_TASKS,
-                    override_cpus=4,
-                    override_memory_mb=8 * 1024,
                     agent_timeout_sec=2 * 60 * 60,
                     agent_kwargs={
                         "version": MINI_SWE_AGENT_VERSION,
@@ -5775,9 +5733,6 @@ _eval_config_list = [
                     n_concurrent_trials=5,
                     n_attempts=1,
                     n_tasks=None,
-                    exclude_task_names=SWEBENCH_VERIFIED_KNOWN_BAD_TASKS,
-                    override_cpus=4,
-                    override_memory_mb=8 * 1024,
                     agent_timeout_sec=2 * 60 * 60,
                     agent_kwargs={
                         "version": MINI_SWE_AGENT_VERSION,
@@ -5933,9 +5888,6 @@ _eval_config_list = [
                     n_concurrent_trials=5,
                     n_attempts=1,
                     n_tasks=None,
-                    exclude_task_names=SWEBENCH_VERIFIED_KNOWN_BAD_TASKS,
-                    override_cpus=4,
-                    override_memory_mb=8 * 1024,
                     agent_timeout_sec=2 * 60 * 60,
                     agent_kwargs={
                         "version": MINI_SWE_AGENT_VERSION,
@@ -6091,9 +6043,6 @@ _eval_config_list = [
                     n_concurrent_trials=5,
                     n_attempts=1,
                     n_tasks=None,
-                    exclude_task_names=SWEBENCH_VERIFIED_KNOWN_BAD_TASKS,
-                    override_cpus=4,
-                    override_memory_mb=8 * 1024,
                     agent_timeout_sec=2 * 60 * 60,
                     agent_kwargs={
                         "version": MINI_SWE_AGENT_VERSION,
