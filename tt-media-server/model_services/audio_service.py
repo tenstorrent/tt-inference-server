@@ -17,6 +17,29 @@ def create_audio_worker_context():
     return AudioManager()
 
 
+def qwen3_asr_chunk_plan(duration, chunk_override, settings):
+    """Pick the fan-out chunk window for a Qwen3-ASR clip (None => keep whole).
+
+    Two-tier so we only pay word-boundary accuracy cost where it buys speed we
+    need (measured: chunking is never free, and Japanese is ~2.7x more sensitive
+    to boundaries than English):
+      * duration <= audio_min_split_duration_seconds -> whole (one runner);
+      * short-clip tier (<= audio_short_clip_max_seconds) -> the gentler
+        audio_short_clip_chunk_seconds window (~2 runners, ~no accuracy cost);
+      * longer -> audio_chunk_duration_seconds (worker-count default, 10s on
+        DP=32) for maximum fan-out.
+    An explicit per-request ``chunk_override`` always wins once the clip is long
+    enough to split (keeps the Dp2Chunk5/Chunk30 spec tests meaningful).
+    """
+    if duration <= settings.audio_min_split_duration_seconds:
+        return None
+    if chunk_override:
+        return chunk_override
+    if duration > settings.audio_short_clip_max_seconds:
+        return settings.audio_chunk_duration_seconds
+    return settings.audio_short_clip_chunk_seconds
+
+
 def audio_worker_function(
     audio_manager,
     audio_file_data,
@@ -43,11 +66,11 @@ def audio_worker_function(
     # left exactly as in production. Diarization requests also use the shared path.
     is_qwen3_asr = settings.model_runner == ModelRunners.TT_QWEN3_ASR.value
     if is_qwen3_asr and not perform_diarization:
-        requested = chunk_duration_seconds or settings.audio_chunk_duration_seconds
-        if prepared.duration > settings.audio_min_split_duration_seconds:
-            segments = audio_manager.chunk_audio_by_duration(
-                prepared.duration, requested
-            )
+        target = qwen3_asr_chunk_plan(
+            prepared.duration, chunk_duration_seconds, settings
+        )
+        if target:
+            segments = audio_manager.chunk_audio_by_duration(prepared.duration, target)
         else:
             # Keep whole: one runner transcribes the clip (validated WER 2.63%).
             segments = None
