@@ -52,6 +52,11 @@ Deployment control (all optional, ``{task}`` is substituted)::
                             "bash /home/zni/h3-deploy/h3ctl.sh reset"
     H3_LIVE_RESET_SETTLE_S  seconds to let the inter-host links retrain after a reset (45)
     H3_LIVE_START_RETRIES   reset + start cycles after a failed start (2)
+    H3_LIVE_RESET_FIRST     1 (default): reset the chips before this session's first start too.
+                            Twice on the quad a run killed mid-request left the fabric in a state
+                            where the next process hung 300 s into loading the vision tower
+                            ("device timeout in fetch queue wait" at blocks.16.mlp.linear_fc2);
+                            a reset first costs ~110 s once. 0 skips it.
 
 When a start command is configured every combination begins with fresh workers
 (a failed job does not release device memory, so anything measured after a
@@ -104,6 +109,7 @@ WAIT_CMD = os.environ.get("H3_LIVE_WAIT_CMD") or None
 RESET_CMD = os.environ.get("H3_LIVE_RESET_CMD") or None
 RESET_SETTLE_S = float(os.environ.get("H3_LIVE_RESET_SETTLE_S", "45"))
 START_RETRIES = int(os.environ.get("H3_LIVE_START_RETRIES", "2"))
+RESET_FIRST = os.environ.get("H3_LIVE_RESET_FIRST", "1") == "1"
 
 ENDPOINT = {
     "t2va": "/v1/videos/generations",
@@ -212,7 +218,9 @@ class Deployment:
     def __init__(self) -> None:
         self.controllable = bool(START_CMD)
         self.task: str | None = None
-        self.poisoned = False  # a job failed / hung since the last fresh start
+        # A job failed / hung since the last fresh start -> reset before the next one. Starts True
+        # when RESET_FIRST: whatever ran before this session may have been killed mid-request.
+        self.poisoned = RESET_FIRST
         self.log: list[str] = []
 
     def _say(self, msg: str) -> None:
@@ -256,7 +264,8 @@ class Deployment:
         if not self.controllable:
             return
         if self.poisoned:
-            self._say(f"previous job failed or hung; resetting before starting {task}")
+            why = "a job failed or hung" if self.task else "first start of this session (H3_LIVE_RESET_FIRST)"
+            self._say(f"{why}; resetting before starting {task}")
             self.reset_chips()
         self._say(f"starting fresh {task} workers")
         ok, detail = self._start_once(task)
@@ -381,16 +390,25 @@ REF2VA_COMBOS = [
     Combo("img1", "ref2va", images=1),
     Combo("aud3_img1", "ref2va", images=1, audios=3, note="audio modality cap"),
     Combo("mix_2i_3v", "ref2va", images=2, videos=3, note="5 visual refs"),
-    Combo("img6", "ref2va", images=6, note="image cap that repeats"),
+    Combo("img6", "ref2va", images=6),
+    # These four completed once per worker process and OOMed on the second request until metal
+    # zni/h3-ref2va-serving-fixes (piecewise VAE readback, transient conditioner gathers,
+    # policy-sized arena caps); measured 4/4 on OM Quad1 2026-09-04.
+    Combo("mix_3i_3v", "ref2va", images=3, videos=3, note="67,584 condition rows, needs the 92,160 cap"),
+    Combo("img7", "ref2va", images=7),
+    Combo("img9", "ref2va", images=9, note="policy maximum images; 36,946 presentation tokens"),
 ]
 SECOND_REQUEST_OOM = pytest.mark.xfail(
-    reason="tt-inference-server#5044: >= 6 visual references with videos, or 7 images, "
-    "complete once per worker process and OOM on the second request",
+    reason="tt-inference-server#5044: at the 176,128 rung the DiT's per-rung resident state leaves "
+    "~350 MB too little for the conditioner's second pass (full-sequence [1, L, 5120] "
+    "embedding gather), so the mix completes once per worker process and OOMs on the next request",
     strict=False,
 )
 REF2VA_LIMIT_COMBOS = [
-    pytest.param(Combo("mix_3i_3v", "ref2va", images=3, videos=3), marks=SECOND_REQUEST_OOM, id="mix_3i_3v"),
-    pytest.param(Combo("img7", "ref2va", images=7), marks=SECOND_REQUEST_OOM, id="img7"),
+    pytest.param(Combo("img8", "ref2va", images=8), marks=SECOND_REQUEST_OOM, id="img8"),
+    # 6 images + 3 clips = 79,872 condition video rows: the heaviest mixed case the policy admits
+    # short of 9 + 3; admitted by the 92,160 cap, first request completes (413 s), second OOMs.
+    pytest.param(Combo("mix_6i_3v", "ref2va", images=6, videos=3), marks=SECOND_REQUEST_OOM, id="mix_6i_3v"),
 ]
 REF2VA_OVER_LIMIT = Combo("img9", "ref2va", images=9, note="OOMs on the first request")
 
