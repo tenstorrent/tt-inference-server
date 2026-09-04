@@ -68,7 +68,8 @@
                     "targets": {
                         "num_inference_steps": 40,
                         "poll_timeout": 1200,
-                        "poll_interval": 5
+                        "poll_interval": 5,
+                        "image_url": "https://images-assets.nasa.gov/image/PIA00342/PIA00342~medium.jpg"
                     },
                     "model_targets": {
                         "wan_i2v+t3k": {

@@ -206,31 +206,39 @@ class TestVideoMatrixExpansion:
     }
     # Expected VideoGenerationI2VTest targets per expanded suite. p150x4 keeps
     # the base poll_timeout (no per-device override).
+    WAN_I2V_IMAGE_URL = (
+        "https://images-assets.nasa.gov/image/PIA00342/PIA00342~medium.jpg"
+    )
     WAN_I2V_TARGETS = {
         "wan-i2v-t3k": {
             "num_inference_steps": 40,
             "poll_timeout": 1500,
             "poll_interval": 5,
+            "image_url": WAN_I2V_IMAGE_URL,
         },
         "wan-i2v-galaxy": {
             "num_inference_steps": 40,
             "poll_timeout": 550,
             "poll_interval": 5,
+            "image_url": WAN_I2V_IMAGE_URL,
         },
         "wan-i2v-p150x4": {
             "num_inference_steps": 40,
             "poll_timeout": 1200,
             "poll_interval": 5,
+            "image_url": WAN_I2V_IMAGE_URL,
         },
         "wan-i2v-p150x8": {
             "num_inference_steps": 40,
             "poll_timeout": 900,
             "poll_interval": 5,
+            "image_url": WAN_I2V_IMAGE_URL,
         },
         "wan-i2v-p300x2": {
             "num_inference_steps": 40,
             "poll_timeout": 800,
             "poll_interval": 5,
+            "image_url": WAN_I2V_IMAGE_URL,
         },
     }
 
