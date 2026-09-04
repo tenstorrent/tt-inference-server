@@ -407,6 +407,11 @@ def parse_aiperf_output(
         "error_rate_pct": _stat("request_error_rate"),
         "mean_isl": _stat("input_sequence_length"),
         "mean_osl": _stat("output_sequence_length"),
+        # Trace replay draws prompts of wildly different sizes from the trace
+        # pool, so the mean alone hides the long-context tail that sets KV
+        # pressure.
+        "p95_isl": _stat("input_sequence_length", "p95"),
+        "p95_osl": _stat("output_sequence_length", "p95"),
         "total_input_tokens": _int("total_isl"),
         "total_output_tokens": _int("total_osl"),
         # Measured, not requested: confirms the run actually profiled for the
