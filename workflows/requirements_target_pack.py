@@ -197,7 +197,7 @@ class RequirementsTargetPack(TargetPack):
         self._delegate = delegate
 
     # --- eval configs ---
-    def eval_config(self, model_name: str) -> Optional[Any]:
+    def eval_config(self, hf_model_repo: str) -> Optional[Any]:
         from reference_config.evals.eval_config import EvalConfig
 
         if not self._doc.accuracy_evals:

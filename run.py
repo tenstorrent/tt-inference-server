@@ -92,9 +92,9 @@ def _placeholder_llm(device):
     if device:
         want = device.lower()
         match = next((s for s in llms if s.device_type.name.lower() == want), None)
-        return (match.model_name, device) if match else None
+        return (match.hf_model_repo, device) if match else None
     spec = llms[0]
-    return spec.model_name, spec.device_type.name.lower()
+    return spec.hf_model_repo, spec.device_type.name.lower()
 
 
 def parse_arguments():
@@ -102,9 +102,15 @@ def parse_arguments():
     valid_devices = {device.name.lower() for device in DeviceTypes}
     valid_engines = {engine.to_string() for engine in InferenceEngine}
 
-    # Build valid models set, including full HF repo names for whisper models
+    # Build valid models set. The canonical model identifier is the full HF
+    # repo id (e.g. "meta-llama/Llama-3.1-8B-Instruct"); the bare basename
+    # (e.g. "Llama-3.1-8B-Instruct") is still accepted for backwards
+    # compatibility. Only full repo ids are listed as "Available models".
+    full_repo_models = set()
     valid_models = set()
     for _, config in MODEL_SPECS.items():
+        full_repo_models.add(config.hf_model_repo)
+        valid_models.add(config.hf_model_repo)
         valid_models.add(config.model_name)
 
     valid_impls = {config.impl.impl_name for _, config in MODEL_SPECS.items()}
@@ -117,18 +123,26 @@ def parse_arguments():
     # required
     parser = argparse.ArgumentParser(
         description="A CLI for running workflows with optional docker, device, and workflow-args.",
-        epilog="\nAvailable models:\n  " + "\n  ".join(valid_models),
+        epilog="\nAvailable models:\n  " + "\n  ".join(sorted(full_repo_models)),
         formatter_class=argparse.RawTextHelpFormatter,
     )
+    # Not required at the argparse level: prefill_decode serves a mock stack
+    # chosen by --served-model and only needs a placeholder spec. Every other
+    # workflow still requires it -- enforced after parsing, where the
+    # workflow is known.
     parser.add_argument(
         "--model",
         required=False,
         default=None,
         choices=None if requirements_mode else valid_models,
-        help="Model to run. Required for every workflow except prefill_decode, "
-        "which serves a mock stack chosen by --served-model and only needs a "
-        "placeholder spec (auto-picked when --model is omitted). Defaults from "
-        "the document when --requirements-json is given.",
+        # metavar because `choices` holds every full HF repo id; without it
+        # argparse prints all of them in the usage line.
+        metavar="MODEL",
+        help="Model to run (full HF repo id, e.g. meta-llama/Llama-3.1-8B-Instruct). "
+        "Required for every workflow except prefill_decode, which serves a mock "
+        "stack chosen by --served-model and only needs a placeholder spec "
+        "(auto-picked when --model is omitted). Defaults from the document "
+        "when --requirements-json is given.",
     )
     add_requirements_argument(parser)
     parser.add_argument(
@@ -1035,6 +1049,8 @@ def resolve_runtime(args):
         )
         model_spec = ModelSpec.from_json(args.runtime_model_spec_json)
         runtime_config = RuntimeConfig.from_args(args)
+        if model_spec.hf_model_repo:
+            args.model = model_spec.hf_model_repo
     else:
         try:
             model_spec, resolved_impl, resolved_engine = get_runtime_model_spec(
@@ -1067,6 +1083,10 @@ def resolve_runtime(args):
             model_spec = provider.resolve(args.model, args.device)
             resolved_impl = model_spec.impl.impl_name
             resolved_engine = model_spec.inference_engine
+        # Canonicalize bare --model to the HF identity so RuntimeConfig /
+        # run_command / report metadata all carry the same spelling.
+        if model_spec.hf_model_repo:
+            args.model = model_spec.hf_model_repo
         if args.custom_weights:
             # With --host-weights-dir, point vLLM's --model at the container
             # mount so weights load offline (the label is not a real HF repo).

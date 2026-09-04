@@ -1,5 +1,5 @@
 {
-    "gemma-4-31b-it": {
+    "google/gemma-4-31b-it": {
         "p300x2": [
             {
                 "isl": 128,
@@ -20,7 +20,7 @@
             }
         ]
     },
-    "Qwen3-VL-32B-Instruct": {
+    "Qwen/Qwen3-VL-32B-Instruct": {
         "t3k": [
             {
                 "isl": 128,
@@ -40,7 +40,7 @@
             }
         ]
     },
-    "Qwen2.5-VL-3B-Instruct": {
+    "Qwen/Qwen2.5-VL-3B-Instruct": {
         "n150": [
             {
                 "isl": 128,
@@ -96,7 +96,7 @@
             }
         ]
     },
-    "Qwen2.5-VL-7B-Instruct": {
+    "Qwen/Qwen2.5-VL-7B-Instruct": {
         "n150": [
             {
                 "isl": 128,
@@ -152,7 +152,7 @@
             }
         ]
     },
-    "Qwen2.5-VL-32B-Instruct": {
+    "Qwen/Qwen2.5-VL-32B-Instruct": {
         "t3k": [
             {
                 "isl": 128,
@@ -172,7 +172,7 @@
             }
         ]
     },
-    "Qwen2.5-VL-72B-Instruct": {
+    "Qwen/Qwen2.5-VL-72B-Instruct": {
         "t3k": [
             {
                 "isl": 128,
@@ -212,7 +212,7 @@
             }
         ]
     },
-    "Qwen3-32B": {
+    "Qwen/Qwen3-32B": {
         "galaxy": [
             {
                 "_comment": [
@@ -365,7 +365,7 @@
             }
         ]
     },
-    "Mistral-Small-3.1-24B-Instruct-2503": {
+    "mistralai/Mistral-Small-3.1-24B-Instruct-2503": {
         "t3k": [
             {
                 "isl": 128,
@@ -443,7 +443,7 @@
             }
         ]
     },
-    "Qwen2.5-72B-Instruct": {
+    "Qwen/Qwen2.5-72B-Instruct": {
         "t3k": [
             {
                 "isl": 128,
@@ -483,7 +483,7 @@
             }
         ]
     },
-    "Llama-3.1-8B-Instruct": {
+    "meta-llama/Llama-3.1-8B-Instruct": {
         "t3k": [
             {
                 "isl": 128,
@@ -599,7 +599,7 @@
             }
         ]
     },
-    "gemma-2-27b-it": {
+    "google/gemma-2-27b-it": {
         "galaxy": [
             {
                 "isl": 128,
@@ -639,7 +639,7 @@
             }
         ]
     },
-    "Llama-3.3-70B-Instruct": {
+    "meta-llama/Llama-3.3-70B-Instruct": {
         "p300x2": [
             {
                 "isl": 128,
@@ -659,21 +659,44 @@
                 }
             }
         ],
+        "p150x4": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 96,
+                        "tput_user": 20
+                    }
+                }
+            }
+        ],
+        "p150x8": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 256,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 64,
+                        "tput_user": 18
+                    }
+                }
+            }
+        ],
         "t3k": [
             {
                 "isl": 128,
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "text",
-                "image_height": null,
-                "image_width": null,
-                "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 113.0,
-                        "tput_user": 19.0,
-                        "tput": 610.0
+                        "ttft_ms": 38,
+                        "tput_user": 28
                     }
                 }
             }
@@ -684,15 +707,10 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "text",
-                "image_height": null,
-                "image_width": null,
-                "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 50.0,
-                        "tput_user": 73.0,
-                        "tput": 2438.0
+                        "ttft_ms": 50,
+                        "tput_user": 80
                     }
                 }
             },
@@ -708,23 +726,9 @@
                     }
                 }
             }
-        ],
-        "p150x4": [
-            {
-                "isl": 128,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 8,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 96,
-                        "tput_user": 20
-                    }
-                }
-            }
         ]
     },
-    "Qwen3-30B-A3B": {
+    "Qwen/Qwen3-30B-A3B": {
         "galaxy": [
             {
                 "isl": 128,
@@ -764,98 +768,22 @@
             }
         ]
     },
-    "Mistral-7B-Instruct-v0.3": {
+    "mistralai/Mistral-7B-Instruct-v0.3": {
         "n150": [
             {
                 "isl": 128,
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "text",
-                "image_height": null,
-                "image_width": null,
-                "images_per_prompt": null,
+                "task_type": "vlm",
+                "image_height": 896,
+                "image_width": 896,
+                "images_per_prompt": 1,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 45.0,
-                        "tput_user": 24.0,
-                        "tput": 744.0
-                    }
-                }
-            }
-        ],
-        "n300": [
-            {
-                "isl": 128,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 8,
-                "task_type": "text",
-                "image_height": null,
-                "image_width": null,
-                "images_per_prompt": null,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 36.0,
-                        "tput_user": 47.0,
-                        "tput": 1488.0
-                    }
-                }
-            }
-        ],
-        "t3k": [
-            {
-                "isl": 128,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 8,
-                "task_type": "text",
-                "image_height": null,
-                "image_width": null,
-                "images_per_prompt": null,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 19.0,
-                        "tput_user": 94.0,
-                        "tput": 5954.0
-                    }
-                }
-            }
-        ],
-        "p150": [
-            {
-                "isl": 128,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 8,
-                "task_type": "text",
-                "image_height": null,
-                "image_width": null,
-                "images_per_prompt": null,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 27.0,
-                        "tput_user": 43.0,
-                        "tput": 1323.0
-                    }
-                }
-            }
-        ],
-        "p100": [
-            {
-                "isl": 128,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 8,
-                "task_type": "text",
-                "image_height": null,
-                "image_width": null,
-                "images_per_prompt": null,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 30.0,
-                        "tput_user": 37.0,
-                        "tput": 1158.0
+                        "ttft_ms": 78.0,
+                        "tput_user": 70.0,
+                        "tput": 2091.0
                     }
                 }
             }
@@ -866,21 +794,40 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "text",
-                "image_height": null,
-                "image_width": null,
-                "images_per_prompt": null,
+                "task_type": "vlm",
+                "image_height": 896,
+                "image_width": 896,
+                "images_per_prompt": 1,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 10.0,
-                        "tput_user": 687.0,
-                        "tput": 23815.0
+                        "ttft_ms": 23.0,
+                        "tput_user": 1344.0,
+                        "tput": 43008.0
+                    }
+                }
+            }
+        ],
+        "p150": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "vlm",
+                "image_height": 896,
+                "image_width": 896,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 72.0,
+                        "tput_user": 80.0,
+                        "tput": 2389.0
                     }
                 }
             }
         ]
     },
-    "Llama-3.1-70B": {
+    "meta-llama/Llama-3.1-70B": {
         "p300x2": [
             {
                 "isl": 128,
@@ -939,7 +886,7 @@
             }
         ]
     },
-    "Qwen3-8B": {
+    "Qwen/Qwen3-8B": {
         "t3k": [
             {
                 "isl": 128,
@@ -1055,7 +1002,7 @@
             }
         ]
     },
-    "gpt-oss-120b": {
+    "openai/gpt-oss-120b": {
         "t3k": [
             {
                 "isl": 128,
@@ -1131,7 +1078,7 @@
             }
         ]
     },
-    "gpt-oss-20b": {
+    "openai/gpt-oss-20b": {
         "n300": [
             {
                 "isl": 128,
@@ -1228,7 +1175,7 @@
             }
         ]
     },
-    "QwQ-32B": {
+    "Qwen/QwQ-32B": {
         "t3k": [
             {
                 "isl": 128,
@@ -1268,7 +1215,7 @@
             }
         ]
     },
-    "Qwen2.5-Coder-32B-Instruct": {
+    "Qwen/Qwen2.5-Coder-32B-Instruct": {
         "t3k": [
             {
                 "isl": 128,
@@ -1308,7 +1255,7 @@
             }
         ]
     },
-    "Mistral-Small-3.2-24B-Instruct-2506": {
+    "mistralai/Mistral-Small-3.2-24B-Instruct-2506": {
         "t3k": [
             {
                 "isl": 128,
@@ -1367,7 +1314,7 @@
             }
         ]
     },
-    "Mistral-Small-24B-Instruct-2501": {
+    "mistralai/Mistral-Small-24B-Instruct-2501": {
         "galaxy": [
             {
                 "isl": 128,
@@ -1426,7 +1373,7 @@
             }
         ]
     },
-    "Llama-3.2-3B-Instruct": {
+    "meta-llama/Llama-3.2-3B-Instruct": {
         "n150": [
             {
                 "isl": 128,
@@ -1542,7 +1489,7 @@
             }
         ]
     },
-    "Qwen3-14B": {
+    "Qwen/Qwen3-14B": {
         "n300": [
             {
                 "isl": 128,
@@ -1639,7 +1586,7 @@
             }
         ]
     },
-    "Qwen3-4B": {
+    "Qwen/Qwen3-4B": {
         "galaxy": [
             {
                 "isl": 128,
@@ -1755,7 +1702,7 @@
             }
         ]
     },
-    "Qwen3-1.7B": {
+    "Qwen/Qwen3-1.7B": {
         "galaxy": [
             {
                 "isl": 128,
@@ -1871,7 +1818,7 @@
             }
         ]
     },
-    "Qwen3-0.6B": {
+    "Qwen/Qwen3-0.6B": {
         "t3k": [
             {
                 "isl": 128,
@@ -1987,7 +1934,7 @@
             }
         ]
     },
-    "gemma-2-9b-it": {
+    "google/gemma-2-9b-it": {
         "t3k": [
             {
                 "isl": 128,
@@ -2103,7 +2050,7 @@
             }
         ]
     },
-    "Mistral-Nemo-Instruct-2407": {
+    "mistralai/Mistral-Nemo-Instruct-2407": {
         "p100": [
             {
                 "isl": 128,
@@ -2200,7 +2147,7 @@
             }
         ]
     },
-    "Qwen2.5-0.5B-Instruct": {
+    "Qwen/Qwen2.5-0.5B-Instruct": {
         "n300": [
             {
                 "isl": 128,
@@ -2316,7 +2263,7 @@
             }
         ]
     },
-    "Qwen2.5-1.5B-Instruct": {
+    "Qwen/Qwen2.5-1.5B-Instruct": {
         "n150": [
             {
                 "isl": 128,
@@ -2432,7 +2379,7 @@
             }
         ]
     },
-    "Qwen2.5-3B-Instruct": {
+    "Qwen/Qwen2.5-3B-Instruct": {
         "t3k": [
             {
                 "isl": 128,
@@ -2548,7 +2495,7 @@
             }
         ]
     },
-    "Qwen2.5-7B-Instruct": {
+    "Qwen/Qwen2.5-7B-Instruct": {
         "n300": [
             {
                 "isl": 128,
@@ -2664,7 +2611,7 @@
             }
         ]
     },
-    "Qwen2.5-14B-Instruct": {
+    "Qwen/Qwen2.5-14B-Instruct": {
         "n300": [
             {
                 "isl": 128,
@@ -2761,7 +2708,7 @@
             }
         ]
     },
-    "Qwen2.5-32B-Instruct": {
+    "Qwen/Qwen2.5-32B-Instruct": {
         "galaxy": [
             {
                 "isl": 128,
@@ -2801,7 +2748,7 @@
             }
         ]
     },
-    "Llama-3.2-1B-Instruct": {
+    "meta-llama/Llama-3.2-1B-Instruct": {
         "n300": [
             {
                 "isl": 128,
@@ -2917,7 +2864,7 @@
             }
         ]
     },
-    "gemma-1.1-2b-it": {
+    "google/gemma-1.1-2b-it": {
         "n150": [
             {
                 "isl": 128,
@@ -3033,7 +2980,7 @@
             }
         ]
     },
-    "gemma-1.1-7b-it": {
+    "google/gemma-1.1-7b-it": {
         "galaxy": [
             {
                 "isl": 128,
@@ -3149,7 +3096,7 @@
             }
         ]
     },
-    "gemma-2-2b-it": {
+    "google/gemma-2-2b-it": {
         "t3k": [
             {
                 "isl": 128,
@@ -3265,7 +3212,7 @@
             }
         ]
     },
-    "phi-1": {
+    "microsoft/phi-1": {
         "p100": [
             {
                 "isl": 128,
@@ -3381,7 +3328,7 @@
             }
         ]
     },
-    "phi-1_5": {
+    "microsoft/phi-1_5": {
         "n150": [
             {
                 "isl": 128,
@@ -3497,7 +3444,7 @@
             }
         ]
     },
-    "phi-2": {
+    "microsoft/phi-2": {
         "n300": [
             {
                 "isl": 128,
@@ -3613,7 +3560,7 @@
             }
         ]
     },
-    "Phi-3-mini-4k-instruct": {
+    "microsoft/Phi-3-mini-4k-instruct": {
         "t3k": [
             {
                 "isl": 128,
@@ -3729,7 +3676,7 @@
             }
         ]
     },
-    "Phi-3.5-mini-instruct": {
+    "microsoft/Phi-3.5-mini-instruct": {
         "p100": [
             {
                 "isl": 128,
@@ -3845,7 +3792,7 @@
             }
         ]
     },
-    "phi-4": {
+    "microsoft/phi-4": {
         "p100": [
             {
                 "isl": 128,
@@ -3942,7 +3889,7 @@
             }
         ]
     },
-    "Ministral-8B-Instruct-2410": {
+    "mistralai/Ministral-8B-Instruct-2410": {
         "n150": [
             {
                 "isl": 128,
@@ -4058,7 +4005,7 @@
             }
         ]
     },
-    "Mistral-Large-Instruct-2411": {
+    "mistralai/Mistral-Large-Instruct-2411": {
         "galaxy": [
             {
                 "isl": 128,
@@ -4079,7 +4026,7 @@
             }
         ]
     },
-    "SOLAR-10.7B-Instruct-v1.0": {
+    "upstage/SOLAR-10.7B-Instruct-v1.0": {
         "n300": [
             {
                 "isl": 128,
@@ -4176,7 +4123,7 @@
             }
         ]
     },
-    "Falcon3-1B-Base": {
+    "tiiuae/Falcon3-1B-Base": {
         "n150": [
             {
                 "isl": 128,
@@ -4292,7 +4239,7 @@
             }
         ]
     },
-    "Falcon3-3B-Base": {
+    "tiiuae/Falcon3-3B-Base": {
         "n150": [
             {
                 "isl": 128,
@@ -4408,7 +4355,7 @@
             }
         ]
     },
-    "Falcon3-7B-Base": {
+    "tiiuae/Falcon3-7B-Base": {
         "n150": [
             {
                 "isl": 128,
@@ -4524,7 +4471,7 @@
             }
         ]
     },
-    "Falcon3-7B-Instruct": {
+    "tiiuae/Falcon3-7B-Instruct": {
         "p150": [
             {
                 "isl": 128,
@@ -4545,7 +4492,7 @@
             }
         ]
     },
-    "Falcon3-10B-Base": {
+    "tiiuae/Falcon3-10B-Base": {
         "t3k": [
             {
                 "isl": 128,
@@ -4642,7 +4589,7 @@
             }
         ]
     },
-    "Llama-3.1-70B-Instruct": {
+    "meta-llama/Llama-3.1-70B-Instruct": {
         "t3k": [
             {
                 "isl": 128,
@@ -4701,7 +4648,7 @@
             }
         ]
     },
-    "Llama-3.2-11B-Vision-Instruct": {
+    "meta-llama/Llama-3.2-11B-Vision-Instruct": {
         "n300": [
             {
                 "isl": 128,
@@ -4798,7 +4745,7 @@
             }
         ]
     },
-    "Llama-3.2-90B-Vision-Instruct": {
+    "meta-llama/Llama-3.2-90B-Vision-Instruct": {
         "t3k": [
             {
                 "isl": 128,
@@ -4838,7 +4785,7 @@
             }
         ]
     },
-    "gemma-3-4b-it": {
+    "google/gemma-3-4b-it": {
         "n150": [
             {
                 "isl": 128,
@@ -4949,66 +4896,7 @@
             }
         ]
     },
-    "Mistral-7B-Instruct-v0.3": {
-        "n150": [
-            {
-                "isl": 128,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 8,
-                "task_type": "vlm",
-                "image_height": 896,
-                "image_width": 896,
-                "images_per_prompt": 1,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 78.0,
-                        "tput_user": 70.0,
-                        "tput": 2091.0
-                    }
-                }
-            }
-        ],
-        "galaxy": [
-            {
-                "isl": 128,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 8,
-                "task_type": "vlm",
-                "image_height": 896,
-                "image_width": 896,
-                "images_per_prompt": 1,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 23.0,
-                        "tput_user": 1344.0,
-                        "tput": 43008.0
-                    }
-                }
-            }
-        ],
-        "p150": [
-            {
-                "isl": 128,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 8,
-                "task_type": "vlm",
-                "image_height": 896,
-                "image_width": 896,
-                "images_per_prompt": 1,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 72.0,
-                        "tput_user": 80.0,
-                        "tput": 2389.0
-                    }
-                }
-            }
-        ]
-    },
-    "gemma-3-27b-it": {
+    "google/gemma-3-27b-it": {
         "t3k": [
             {
                 "isl": 128,
@@ -5067,7 +4955,7 @@
             }
         ]
     },
-    "Qwen2.5-72B": {
+    "Qwen/Qwen2.5-72B": {
         "t3k": [
             {
                 "isl": 128,
@@ -5123,7 +5011,7 @@
             }
         ]
     },
-    "Qwen2.5-7B": {
+    "Qwen/Qwen2.5-7B": {
         "n300": [
             {
                 "isl": 128,
@@ -5153,7 +5041,7 @@
             }
         ]
     },
-    "Llama-3.2-90B-Vision": {
+    "meta-llama/Llama-3.2-90B-Vision": {
         "t3k": [
             {
                 "isl": 128,
@@ -5173,7 +5061,7 @@
             }
         ]
     },
-    "Llama-3.2-11B-Vision": {
+    "meta-llama/Llama-3.2-11B-Vision": {
         "n300": [
             {
                 "isl": 128,
@@ -5211,7 +5099,7 @@
             }
         ]
     },
-    "Llama-3.2-1B": {
+    "meta-llama/Llama-3.2-1B": {
         "n150": [
             {
                 "isl": 128,
@@ -5255,7 +5143,7 @@
             }
         ]
     },
-    "Llama-3.2-3B": {
+    "meta-llama/Llama-3.2-3B": {
         "n150": [
             {
                 "isl": 128,
@@ -5318,115 +5206,7 @@
             }
         ]
     },
-    "Llama-3.3-70B-Instruct": {
-        "p300x2": [
-            {
-                "isl": 128,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 8,
-                "task_type": "text",
-                "image_height": null,
-                "image_width": null,
-                "images_per_prompt": null,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 89.0,
-                        "tput_user": 17.0,
-                        "tput": 17.0
-                    }
-                }
-            }
-        ],
-        "p150x4": [
-            {
-                "isl": 128,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 8,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 96,
-                        "tput_user": 20
-                    }
-                }
-            }
-        ],
-        "p150x8": [
-            {
-                "isl": 128,
-                "osl": 128,
-                "max_concurrency": 32,
-                "num_prompts": 256,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 64,
-                        "tput_user": 18
-                    }
-                }
-            }
-        ],
-        "p300x2": [
-            {
-                "isl": 128,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 8,
-                "task_type": "text",
-                "image_height": null,
-                "image_width": null,
-                "images_per_prompt": null,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 89.0,
-                        "tput_user": 17.0,
-                        "tput": 17.0
-                    }
-                }
-            }
-        ],
-        "t3k": [
-            {
-                "isl": 128,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 8,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 38,
-                        "tput_user": 28
-                    }
-                }
-            }
-        ],
-        "galaxy": [
-            {
-                "isl": 128,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 8,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 50,
-                        "tput_user": 80
-                    }
-                }
-            },
-            {
-                "isl": 2048,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 8,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 800,
-                        "tput_user": 80
-                    }
-                }
-            }
-        ]
-    },
-    "Llama-3.1-8B": {
+    "meta-llama/Llama-3.1-8B": {
         "n150": [
             {
                 "isl": 128,
@@ -5575,7 +5355,7 @@
             }
         ]
     },
-    "stable-diffusion-xl-base-1.0": {
+    "stabilityai/stable-diffusion-xl-base-1.0": {
         "n150": [
             {
                 "max_concurrency": 1,
@@ -5673,7 +5453,7 @@
             }
         ]
     },
-    "stable-diffusion-3.5-large": {
+    "stabilityai/stable-diffusion-3.5-large": {
         "t3k": [
             {
                 "max_concurrency": 1,
@@ -5703,7 +5483,7 @@
             }
         ]
     },
-    "stable-diffusion-xl-base-1.0-img-2-img": {
+    "stabilityai/stable-diffusion-xl-base-1.0-img-2-img": {
         "n150": [
             {
                 "max_concurrency": 1,
@@ -5801,7 +5581,7 @@
             }
         ]
     },
-    "stable-diffusion-xl-1.0-inpainting-0.1": {
+    "diffusers/stable-diffusion-xl-1.0-inpainting-0.1": {
         "n150": [
             {
                 "max_concurrency": 1,
@@ -5899,7 +5679,7 @@
             }
         ]
     },
-    "FLUX.1-dev": {
+    "black-forest-labs/FLUX.1-dev": {
         "t3k": [
             {
                 "max_concurrency": 1,
@@ -5979,7 +5759,7 @@
             }
         ]
     },
-    "FLUX.1-schnell": {
+    "black-forest-labs/FLUX.1-schnell": {
         "t3k": [
             {
                 "max_concurrency": 1,
@@ -6059,7 +5839,7 @@
             }
         ]
     },
-    "Motif-Image-6B-Preview": {
+    "Motif-Technologies/Motif-Image-6B-Preview": {
         "t3k": [
             {
                 "max_concurrency": 1,
@@ -6113,7 +5893,7 @@
             }
         ]
     },
-    "Z-Image-Turbo": {
+    "Tongyi-MAI/Z-Image-Turbo": {
         "p300x2": [
             {
                 "max_concurrency": 1,
@@ -6128,7 +5908,7 @@
             }
         ]
     },
-    "whisper-large-v3": {
+    "openai/whisper-large-v3": {
         "n150": [
             {
                 "max_concurrency": 1,
@@ -6154,7 +5934,7 @@
                     "theoretical": {
                         "ttft_ms": 800,
                         "ttft_streaming_ms": 1310.0,
-                        "tput_user": 53.80,
+                        "tput_user": 53.8,
                         "rtr": 8.315,
                         "tolerance": 0.05
                     }
@@ -6210,7 +5990,7 @@
             }
         ]
     },
-    "distil-large-v3": {
+    "distil-whisper/distil-large-v3": {
         "n150": [
             {
                 "max_concurrency": 1,
@@ -6236,7 +6016,7 @@
                     "theoretical": {
                         "ttft_ms": 400,
                         "ttft_streaming_ms": 655.0,
-                        "tput_user": 107.60,
+                        "tput_user": 107.6,
                         "rtr": 16.63,
                         "tolerance": 0.05
                     }
@@ -6252,7 +6032,7 @@
                     "theoretical": {
                         "ttft_ms": 400,
                         "ttft_streaming_ms": 450,
-                        "tput_user": 131.10,
+                        "tput_user": 131.1,
                         "rtr": 21.81,
                         "tolerance": 0.05
                     }
@@ -6292,7 +6072,7 @@
             }
         ]
     },
-    "mochi-1-preview": {
+    "genmo/mochi-1-preview": {
         "t3k": [
             {
                 "max_concurrency": 1,
@@ -6359,7 +6139,7 @@
             }
         ]
     },
-    "Wan2.2-T2V-A14B-Diffusers": {
+    "Wan-AI/Wan2.2-T2V-A14B-Diffusers": {
         "t3k": [
             {
                 "max_concurrency": 1,
@@ -6436,7 +6216,7 @@
             }
         ]
     },
-    "Wan2.2-I2V-A14B-Diffusers": {
+    "Wan-AI/Wan2.2-I2V-A14B-Diffusers": {
         "t3k": [
             {
                 "max_concurrency": 1,
@@ -6625,7 +6405,7 @@
             }
         ]
     },
-    "bge-large-en-v1.5": {
+    "BAAI/bge-large-en-v1.5": {
         "n150": [
             {
                 "max_concurrency": 1,
@@ -6679,7 +6459,7 @@
             }
         ]
     },
-    "bge-m3": {
+    "BAAI/bge-m3": {
         "p300x2": [
             {
                 "max_concurrency": 32,
@@ -6746,7 +6526,7 @@
             }
         ]
     },
-    "Qwen3-Embedding-0.6B": {
+    "Qwen/Qwen3-Embedding-0.6B": {
         "p300x2": [
             {
                 "max_concurrency": 32,
@@ -6761,7 +6541,7 @@
             }
         ]
     },
-    "Qwen3-Embedding-8B": {
+    "Qwen/Qwen3-Embedding-8B": {
         "n150": [
             {
                 "max_concurrency": 1,
@@ -6815,7 +6595,7 @@
             }
         ]
     },
-    "Qwen3-Embedding-4B": {
+    "Qwen/Qwen3-Embedding-4B": {
         "p300x2": [
             {
                 "max_concurrency": 32,
@@ -6994,7 +6774,7 @@
             }
         ]
     },
-    "speecht5_tts": {
+    "microsoft/speecht5_tts": {
         "n150": [
             {
                 "max_concurrency": 1,

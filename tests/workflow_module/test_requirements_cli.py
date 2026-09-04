@@ -173,7 +173,7 @@ def test_run_py_without_requirements_still_gates_unknown_model(monkeypatch):
     monkeypatch.setattr(
         sys,
         "argv",
-        ["run.py", "--workflow", "agentic", "--model", _DOC_MODEL],
+        ["run.py", "--workflow", "agentic", "--model", "acme/not-in-catalog"],
     )
     with pytest.raises(SystemExit):
         run.parse_arguments()

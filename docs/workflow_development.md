@@ -12,7 +12,7 @@ do.
 
 ```bash
 python run_workflows.py \
-    --model stable-diffusion-xl-base-1.0 \
+    --model stabilityai/stable-diffusion-xl-base-1.0 \
     --workflow release \
     --device n150 \
     --service-port 8000
@@ -30,7 +30,7 @@ aggregated summary report on top of the per-run reports:
 
 ```bash
 python run_workflows.py \
-    --model stable-diffusion-xl-base-1.0 \
+    --model stabilityai/stable-diffusion-xl-base-1.0 \
     --workflow benchmarks \
     --device n150 \
     --repeat 10
@@ -236,7 +236,7 @@ manual venv setup required:
 
 ```bash
 python launchers/run_prefix_cache.py \
-    --model Llama-3.1-8B-Instruct \
+    --model meta-llama/Llama-3.1-8B-Instruct \
     --workflow benchmarks \
     --device gpu \
     --service-port 8000 \
@@ -334,7 +334,7 @@ worker(s) with `--prefix-cache-metrics-url` (forwarded to AIPerf's
 
 ```bash
 python launchers/run_prefix_cache.py \
-    --model Llama-3.1-8B-Instruct --workflow benchmarks --device gpu \
+    --model meta-llama/Llama-3.1-8B-Instruct --workflow benchmarks --device gpu \
     --service-port 8000 --prefix-cache --prefix-cache-preset ci \
     --prefix-cache-metrics-url bh-glx-120-a03u08.exabox.tenstorrent.com:9000 \
     --jwt-secret "$JWT_SECRET"
@@ -379,7 +379,7 @@ re-execs `run_workflows.py` inside it:
 
 ```bash
 python launchers/run_spec_decode.py \
-    --model Llama-3.1-8B-Instruct \
+    --model meta-llama/Llama-3.1-8B-Instruct \
     --runtime-model-spec-json [spec_decode_runtime_spec.json] \
     --workflow benchmarks \
     --device gpu \
@@ -409,7 +409,7 @@ inside it:
 
 ```bash
 MODEL_SPECS_ENV=dev python launchers/run_agentic.py \
-    --model Qwen3.6-27B \
+    --model Qwen/Qwen3.6-27B \
     --workflow agentic \
     --device gpu \
     --service-port 8000 \

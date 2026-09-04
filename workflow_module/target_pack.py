@@ -44,7 +44,7 @@ class TargetPack(Protocol):
     """Vendor validation content: configs, scoring policy, reference targets."""
 
     # --- eval configs ---
-    def eval_config(self, model_name: str) -> Optional[Any]:
+    def eval_config(self, hf_model_repo: str) -> Optional[Any]:
         """The model's eval config (``.tasks`` list), or None if not onboarded."""
         ...
 

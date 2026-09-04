@@ -62,6 +62,7 @@ class TestInjectMetadata:
             tmp_path,
             {
                 "model_id": "id_tt-transformers_Llama-3.1-8B-Instruct_galaxy",
+                "model_name": "Llama-3.1-8B-Instruct",
                 "hf_model_repo": "meta-llama/Llama-3.1-8B-Instruct",
                 "inference_engine": "vLLM",
                 "tt_metal_commit": "6593e60",
@@ -85,6 +86,9 @@ class TestInjectMetadata:
             "id_tt-transformers_Llama-3.1-8B-Instruct_galaxy"
         )
         assert schema.metadata["model_repo"] == "meta-llama/Llama-3.1-8B-Instruct"
+        assert schema.metadata["model_name"] == "Llama-3.1-8B-Instruct"
+        # Display property prefers the full HF repo.
+        assert schema.model_name == "meta-llama/Llama-3.1-8B-Instruct"
         assert schema.metadata["inference_engine"] == "vLLM"
         assert schema.metadata["tt_metal_commit"] == "6593e60"
         assert schema.metadata["vllm_commit"] == "9a72cb9"
@@ -97,6 +101,7 @@ class TestInjectMetadata:
             tmp_path,
             {
                 "model_id": "id_tt-transformers_FLUX.1-schnell_p300x2",
+                "model_name": "FLUX.1-schnell",
                 "hf_model_repo": "black-forest-labs/FLUX.1-schnell",
                 "inference_engine": "media",
                 "impl": {"impl_name": "tt-transformers"},
@@ -110,6 +115,8 @@ class TestInjectMetadata:
         _make_workflow(meta).inject_metadata(schema)
 
         assert schema.metadata["model_repo"] == "black-forest-labs/FLUX.1-schnell"
+        assert schema.metadata["model_name"] == "FLUX.1-schnell"
+        assert schema.model_name == "black-forest-labs/FLUX.1-schnell"
         assert schema.metadata["inference_engine"] == "media"
         assert schema.metadata["model_impl"] == "tt-transformers"
         assert schema.metadata["tt_metal_commit"] is None

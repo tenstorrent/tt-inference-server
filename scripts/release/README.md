@@ -47,17 +47,9 @@ git checkout -b pre-release-vx.x.x
 
 ## Step 1: parse Models CI run data
 
-```bash
-# iterate backwards through On Nightly runs
-python3 scripts/release/models_ci_reader.py --max-runs 90
-# or, use a specific Run ID
-python3 scripts/release/models_ci_reader.py --run-id 19339722549
-```
-
-#### outputs
-The outputs have the Models CI run numbers to demark the span of release
-- `release_logs/models_ci_all_results_190_to_293.json`: this has full Models CI parsed data for analysis
-- `release_logs/models_ci_last_good_190_to_293.json`: this is used downstream for release process
+See `README_AUTOMATION.md` for the automated release pipeline. The manual
+`models_ci_reader.py` script is deprecated; its functionality is covered
+by the automated release scope and workflow-logs parser.
 
 ## step 2: update model_spec.py
 

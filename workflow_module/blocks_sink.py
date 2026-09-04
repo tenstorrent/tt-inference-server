@@ -19,6 +19,7 @@ import logging
 from typing import Any, List, Mapping, Optional, Sequence
 
 from report_module.schema import Block, ReportSchema
+from utils.model_naming import slugify_model_id
 
 logger = logging.getLogger(__name__)
 
@@ -84,11 +85,17 @@ class BlockAccumulator:
 
         ``metadata`` overrides the recorded sweep envelope. When absent,
         the envelope passed to :meth:`accept` is used directly. ``report_id``
-        is synthesised from ``model_name`` + ``generated_at`` if missing.
+        is synthesised from ``model_repo`` (the full HF identity, escaped) +
+        ``generated_at`` if missing, falling back to ``model_name`` when no
+        repo is recorded. Using the full identity keeps the report id aligned
+        with the block ids, which are ``slugify_name_parts(model_repo, device)``.
         """
         meta: dict = dict(metadata or self._envelope)
         meta.setdefault(
-            "report_id", _synthesize_report_id(meta.get("model_name", ""), meta)
+            "report_id",
+            _synthesize_report_id(
+                meta.get("model_repo") or meta.get("model_name", ""), meta
+            ),
         )
         return ReportSchema(metadata=meta, sections=list(self._blocks))
 
@@ -117,12 +124,14 @@ def get_default_accumulator() -> BlockAccumulator:
     return _DEFAULT_ACCUMULATOR
 
 
-def _synthesize_report_id(model_name: str, meta: Mapping[str, Any]) -> str:
-    base = (
-        model_name.replace("/", "__").replace("\\", "__").replace(" ", "_")
-        if model_name
-        else "report"
-    )
+def _synthesize_report_id(model: str, meta: Mapping[str, Any]) -> str:
+    """Synthesise a report id from a model identity (escaped) + timestamp.
+
+    ``model`` is the full HF repo id where available; ``slugify_model_id``
+    escapes the org separator so the id is filename-safe and matches the
+    escaped model token that block ids carry.
+    """
+    base = slugify_model_id(model) if model else "report"
     ts = str(meta.get("generated_at") or "").replace(" ", "_").replace(":", "")
     return f"{base}_{ts}" if ts else base
 
