@@ -10,6 +10,13 @@
     "                    hit-rate target ~90.9% = 50000/(50000+5000). Pairs shared_system",
     "                    (100% reuse) with a matched zero-prefix baseline so the report",
     "                    isolates the TTFT (P50/P90/P99) uplift from prefix caching.",
+    "  - highcache_55k_c64  : 90% prefix ratio at mean ISL 55K, concurrency 64. 49.5K",
+    "                    shared prefix + 5.5K new ISL + 500 OSL (49500/55000 = 90.0%).",
+    "                    512 requests (8 waves of 64). shared_system + matched baseline.",
+    "  - highcache_256k_c64 : 90% prefix ratio at mean ISL 256K, concurrency 64. 230.4K",
+    "                    shared prefix + 25.6K new ISL + 500 OSL (230400/256000 = 90.0%;",
+    "                    total 256500 tokens <= 256K context). 256 requests (4 waves of",
+    "                    64). shared_system + matched baseline.",
     "Scenarios:",
     "  - shared_system  : single shared system prompt (100% prefix reuse).",
     "  - prefix_pool    : pool of N distinct prefixes; reuse_ratio = request_count / N.",
@@ -184,6 +191,67 @@
           "synthesis_grid": [
             {"name": "as_is"}
           ]
+        },
+        "baseline": {
+          "arrival_patterns": [{"pattern": "constant"}]
+        }
+      }
+    },
+    "highcache_55k_c64": {
+      "_comment": [
+        "90% prefix ratio at mean ISL 55K, concurrency 64.",
+        "49.5K shared (cacheable) prefix + 5.5K new ISL + 500 OSL.",
+        "Steady-state per-session KV-cache hit-rate = 49500/(49500+5500) = 90.0%.",
+        "shared_system sends the 49.5K prefix as an identical system message across",
+        "every session (100% reuse); its P50 TTFT reads the warm/cache-hit path and",
+        "its P99 TTFT reads the cold/first-touch tail. The matched zero-prefix baseline",
+        "(same 5.5K ISL / 500 OSL / c64) isolates the TTFT uplift from prefix caching.",
+        "request_count=512 (8 waves of 64) gives usable TTFT percentiles incl. P99.",
+        "Scrape the worker tt_prefix_cache_* counters with --prefix-cache-metrics-url",
+        "to populate the hit-rate column. Override the SLA bar with --prefix-cache-goodput."
+      ],
+      "request_count": 512,
+      "concurrencies": [64],
+      "goodput": "time_to_first_token:4000 output_token_throughput_per_user:45",
+      "isl_profiles": [
+        {"name": "new5500", "isl_mean": 5500, "isl_stddev": 0}
+      ],
+      "osl_mean": 500,
+      "osl_stddev": 0,
+      "scenarios": {
+        "shared_system": {
+          "shared_system_prompt_length": 49500,
+          "arrival_patterns": [{"pattern": "constant"}]
+        },
+        "baseline": {
+          "arrival_patterns": [{"pattern": "constant"}]
+        }
+      }
+    },
+    "highcache_256k_c64": {
+      "_comment": [
+        "90% prefix ratio at mean ISL 256K, concurrency 64.",
+        "230.4K shared (cacheable) prefix + 25.6K new ISL + 500 OSL.",
+        "Steady-state per-session KV-cache hit-rate = 230400/(230400+25600) = 90.0%.",
+        "Total tokens/request = 256500 <= 262144 (256K) context, so it fits with headroom.",
+        "shared_system P50 reads warm/cache-hit TTFT, P99 reads the cold/first-touch tail;",
+        "the matched zero-prefix baseline isolates the prefix-caching TTFT uplift.",
+        "request_count=256 (4 waves of 64) bounds the very heavy 256K-context runtime while",
+        "keeping usable percentiles. The 4000ms TTFT goodput bar is not meaningful for a",
+        "256K cold prompt -- override it per run with --prefix-cache-goodput if needed."
+      ],
+      "request_count": 256,
+      "concurrencies": [64],
+      "goodput": "time_to_first_token:4000 output_token_throughput_per_user:45",
+      "isl_profiles": [
+        {"name": "new25600", "isl_mean": 25600, "isl_stddev": 0}
+      ],
+      "osl_mean": 500,
+      "osl_stddev": 0,
+      "scenarios": {
+        "shared_system": {
+          "shared_system_prompt_length": 230400,
+          "arrival_patterns": [{"pattern": "constant"}]
         },
         "baseline": {
           "arrival_patterns": [{"pattern": "constant"}]
