@@ -3805,6 +3805,75 @@ _eval_config_list = [
                     },
                 ),
             ),
+            # Agentic coding eval. Evals are keyed by model NAME with no impl
+            # or min_context dimension, so this task dispatches on EVERY 1B
+            # lane: the impl: quetzal lane (P300X2 / QB2) AND the native
+            # tt_transformers lanes (N150 / N300 / T3K). That cross-lane
+            # dispatch is intentional and accepted -- it establishes the
+            # SWE-bench eval pattern in the quetzal Model-CI flow so future,
+            # larger quetzal models inherit it. A 1B model is too weak for SWE
+            # at any context (~0 valid tool calls on silicon), so both the
+            # quetzal and native 1B lanes are expected to score ~0; this task
+            # exists to DEFINE a dispatchable agentic eval for the pattern, NOT
+            # because 1B is expected to pass. meta_gpqa (present above, fits
+            # 8192) remains the meaningful 1B eval; intake is serve-ability +
+            # a dispatchable eval, not a passing score.
+            # The running 1B quetzal serve (job 76426, qb2-120-p04t04) has a
+            # VERIFIED max_model_len=8192 (four sources: live /v1/models,
+            # runtime_model_spec, compiled decode metadata, and the package
+            # qualification_manifest context_length). The budget below fits
+            # 8192 with ~1K headroom so requests never exceed the serve. A real
+            # SWE-bench trajectory (~13K-30K input tokens) cannot fit at 8192
+            # and is not expected to pass; likewise the longbench_* tasks above
+            # (min_context_required=16384) will not run on this serve. Both are
+            # deliberately left defined-but-not-passing for the EXPERIMENTAL
+            # intake. mini_model_class="litellm" is set explicitly for
+            # comparability with the native lanes and so this 1B gate exercises
+            # the same client path as the larger quetzal lanes (per PR #27 the
+            # vLLM boundary rejects over-length requests before silicon, so the
+            # class choice is client-side accounting, not device safety).
+            EvalTask(
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                swebench_eval_config=SWEbenchEvalConfig(
+                    dataset_name="SWE-bench/SWE-bench_Verified",
+                    sweagent_subset="verified",
+                    dataset_split="test",
+                    agent_backend="mini-swe-agent",
+                    n_concurrent_trials=64,
+                    max_workers=24,
+                    n_tasks=None,
+                    temperature=1.0,
+                    top_p=0.95,
+                    mini_model_class="litellm",
+                    # Fits the verified 8192 serve context with ~1K headroom.
+                    max_input_tokens=6144,
+                    max_output_tokens=1024,
+                    instance_ids_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-12143",
+                            "pytest-dev__pytest-5262",
+                            "django__django-14672",
+                            "sympy__sympy-13551",
+                            "sphinx-doc__sphinx-9281",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
         ],
     ),
     EvalConfig(

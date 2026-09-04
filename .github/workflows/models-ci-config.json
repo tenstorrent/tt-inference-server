@@ -83,16 +83,37 @@
       }
     },
     "Llama-3.2-1B-Instruct": {
-      "inference_engine": "vLLM",
-      "ci": {
-        "weekly": {
-          "devices": [
-            "N150",
-            "N300",
-            "T3K"
-          ]
+      "implementations": [
+        {
+          "inference_engine": "vLLM",
+          "impl": "tt-transformers",
+          "ci": {
+            "weekly": {
+              "devices": [
+                "N150",
+                "N300",
+                "T3K"
+              ]
+            }
+          }
+        },
+        {
+          "inference_engine": "vLLM",
+          "impl": "quetzal",
+          "ci": {
+            "nightly": {
+              "devices": [
+                "P300X2"
+              ],
+              "device-args": {
+                "P300X2": {
+                  "additional-args": "--quetzal-models-root /mnt/models/huggingface/quetzal/nkapre/packages/sha256-39b457511b7f55b51b9eed44dae0013d21a085e63b0a28ce8324dc25e1949e4a-1f7aaded6376be65d2f1f280547dd2160b334165792a87bab1ba14ecd8a3a032"
+                }
+              }
+            }
+          }
         }
-      }
+      ]
     },
     "Llama-3.2-3B-Instruct": {
       "implementations": [
