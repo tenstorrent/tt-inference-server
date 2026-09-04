@@ -374,6 +374,17 @@ training_lora_impl = ImplSpec(
     code_path="tt-media-server/tt_model_runners/forge_training_runners/training_lora_runner.py",
 )
 
+quetzal_impl = ImplSpec(
+    impl_id="quetzal",
+    impl_name="quetzal",
+    repo_url="https://github.com/tenstorrent/tt-quetzalcoatlus",
+    # Serves the quetzal-GENERATED (compiler-lite HF->TTNN) artifact through
+    # the real vLLM tt-plugin. QuetzalLlamaForCausalLM (serving/quetzal_vllm.py)
+    # is bound inside the vLLM process by the vllm-tt-plugin registration patch
+    # (QUETZAL_VLLM=1); code_path is doc-link only (dev catalog, no tt_metal_commit).
+    code_path="serving/quetzal_vllm.py",
+)
+
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "tt_transformers": tt_transformers_impl,
     "llama3_70b_galaxy": llama3_70b_galaxy_impl,
@@ -389,6 +400,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "qwen36_blackhole_vlm": qwen36_blackhole_vlm_impl,
     "diffusion_gemma": diffusion_gemma_impl,
     "training_lora": training_lora_impl,
+    "quetzal": quetzal_impl,
 }
 
 

@@ -353,6 +353,34 @@ templates:
       tool_call_parser_name: gemma4
 
 - weights:
+    - google/gemma-4-31B-it
+  # QUETZAL-GENERATED artifact served via impl:quetzal (vllm-tt-plugin, QUETZAL_VLLM=1).
+  # EXPERIMENTAL / status: investigating -- gemma-4-31B-it quetzal artifact is BELOW the
+  # 0.99 PCC bar (diffuse bf16 residual-stream accumulation over ~60 sandwich-norm layers).
+  # Measured on native silicon 2026-09-04 (job 75983, QB2 p150x4): S4096 monolithic prefill
+  # PCC = 0.98449 vs CPU bf16 reference; nearest chunked S1024/C32768 PCC = 0.96962 (job 75449).
+  # This row exists for REPRODUCIBILITY of the --impl quetzal serve path; it is NOT a qualified
+  # release. Parsers mirror the native gemma-4-31B-it row (gemma4).
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P300X2  # QB2 (2x P300, 4-chip TP mesh == P150x4)
+      max_concurrency: 1  # generated vLLM adapter owns one recurrent KV row (B1); PR #27 get_max_tokens_all_users
+      max_context: 4096   # S4096 monolithic serve pair; chunked 32K (C32768) is emit-proven, serve-unproven
+      default_impl: false
+      env_vars:
+        MESH_DEVICE: "P150x4"
+        QUETZAL_VLLM: "1"
+        TTQ_ROPE_INV_FREQ_FP32: "1"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+      vllm_args:
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        reasoning-parser: gemma4
+  status: EXPERIMENTAL
+  has_builtin_warmup: false
+- weights:
     - google/gemma-4-12B-it
   impl: tt_transformers
   # Dev specs omit tt_metal_commit/vllm_commit (base ModelSpecTemplate rejects
