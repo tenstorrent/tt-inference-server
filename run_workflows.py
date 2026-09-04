@@ -361,6 +361,27 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--spec-decode-metrics-url",
+        type=str,
+        action="append",
+        default=None,
+        metavar="URL",
+        help=(
+            "Worker Prometheus /metrics endpoint holding the "
+            "vllm:spec_decode_* counters, scraped directly by the "
+            "spec-decode driver before/after each AIPerf run. Load still "
+            "targets --service-port (the Dynamo frontend); this only "
+            "redirects the counter scrape to the worker(s), which the "
+            "spec-decode-unaware frontend does not aggregate. Accepts a "
+            "full URL, host:port, or host:port/metrics (http:// and "
+            "/metrics are added if missing). Repeat for multi-worker "
+            "(KV-routed) deployments; before/after deltas are summed "
+            "across endpoints. Without the flag the scrape hits "
+            "--service-port and the acceptance columns come back 0/null "
+            "in a Dynamo deployment."
+        ),
+    )
+    parser.add_argument(
         "--jwt-secret",
         type=str,
         default=None,

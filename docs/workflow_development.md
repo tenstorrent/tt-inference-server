@@ -370,6 +370,34 @@ so acceptance rate and mean accepted length are per-run deltas. Note the TT
 backend (`tt-vllm-plugin`) does not support speculative decoding yet, so a
 spec-enabled target currently requires a reference GPU vLLM.
 
+By default the counter scrape targets the load target (`--service-port`). In a
+Dynamo deployment that target is the spec-decode-unaware frontend, which does
+not expose or aggregate the workers' spec-decode counters, so the
+acceptance-rate / mean-accepted-length / per-position columns would render
+`0`/`null`. Point the scrape at the worker(s) with `--spec-decode-metrics-url`
+while load stays on the frontend. It accepts a full URL, `host:port`, or
+`host:port/metrics` (`http://` and `/metrics` are added if missing), and is
+repeatable for multi-worker (KV-routed) deployments — the before/after deltas
+are summed across endpoints before computing
+`acceptance_rate = accepted/draft` and
+`mean_accepted_length = 1 + accepted/num_drafts`:
+
+```bash
+python launchers/run_spec_decode.py \
+    --model Llama-3.1-8B-Instruct --workflow benchmarks --device gpu \
+    --service-port 8000 --spec-decode --spec-decode-preset ci \
+    --spec-decode-metrics-url worker-a:9000 \
+    --spec-decode-metrics-url worker-b:9000 \
+    --jwt-secret "$JWT_SECRET"
+```
+
+The scraper also recognizes the `tt_spec_decode_*` spellings alongside
+`vllm:spec_decode_*` (mirroring the prefix-cache benchmark's
+`tt_prefix_cache_*` coverage), so a future cpp_server spec-decode
+implementation lights up the acceptance columns without a benchmark-side
+change. Until a TT server actually emits those counters, the metrics columns
+are populated only against a vLLM reference server.
+
 `run_workflows.py` must run inside the dedicated `SPEC_DECODE` venv (aiperf >= 0.8
 for the SPEED-Bench dataset plugins — its pillow requirement conflicts with the
 shared `constraints.txt` pin, hence the separate venv). Use the thin launcher

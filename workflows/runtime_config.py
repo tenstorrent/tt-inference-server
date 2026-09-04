@@ -92,6 +92,7 @@ class RuntimeConfig:
     spec_decode: bool = False
     spec_decode_preset: str = "full"
     spec_decode_warmup_requests: Optional[int] = None
+    spec_decode_metrics_url: Optional[List[str]] = None
 
     # Agentic-traces benchmark. The benchmark parameters themselves live in
     # reference_config/agentic_traces (per ModelSpec); these are only the
@@ -205,6 +206,7 @@ class RuntimeConfig:
             spec_decode_warmup_requests=getattr(
                 args, "spec_decode_warmup_requests", None
             ),
+            spec_decode_metrics_url=getattr(args, "spec_decode_metrics_url", None),
             agentic_benchmark=getattr(args, "agentic_benchmark", None),
             repeat_evals=getattr(args, "repeat_evals", 1) or 1,
             agentic_traces=getattr(args, "agentic_traces", False),

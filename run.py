@@ -690,6 +690,20 @@ def parse_arguments():
         help="Short chat-completion warmup requests sent before the spec-decode sweep "
         "(default: 4; 0 disables).",
     )
+    spec_decode_group.add_argument(
+        "--spec-decode-metrics-url",
+        type=str,
+        action="append",
+        default=None,
+        metavar="URL",
+        help="Worker /metrics endpoint with the vllm:spec_decode_* counters, scraped "
+        "directly by the spec-decode driver before/after each AIPerf run (load stays "
+        "on the frontend). Accepts a full URL, host:port, or host:port/metrics. "
+        "Repeatable for multi-worker deployments; before/after deltas are summed "
+        "across endpoints. Without it the scrape hits --service-port, which in a "
+        "Dynamo deployment is the spec-decode-unaware frontend and yields 0/null "
+        "acceptance metrics.",
+    )
 
     args = parser.parse_args()
 

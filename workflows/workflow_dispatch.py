@@ -539,6 +539,18 @@ def _forward_spec_decode(cmd, runtime_config) -> None:
     _extend_if_set(
         cmd, "--spec-decode-warmup-requests", runtime_config.spec_decode_warmup_requests
     )
+    _forward_spec_decode_metrics_urls(cmd, runtime_config)
+
+
+def _forward_spec_decode_metrics_urls(cmd, runtime_config) -> None:
+    """Emit one ``--spec-decode-metrics-url`` per configured endpoint.
+
+    The flag is ``action="append"`` (a list), so stringifying the whole list
+    would forward a bogus ``"['http://...']"`` URL and leave the acceptance
+    columns null.
+    """
+    for metrics_url in getattr(runtime_config, "spec_decode_metrics_url", None) or []:
+        _extend_if_set(cmd, "--spec-decode-metrics-url", metrics_url)
 
 
 def _stress_argv(repo_root, model_spec, runtime_config, json_fpath):
@@ -660,6 +672,7 @@ def _build_spec_decode_cmd(
     _extend_if_set(
         cmd, "--spec-decode-warmup-requests", runtime_config.spec_decode_warmup_requests
     )
+    _forward_spec_decode_metrics_urls(cmd, runtime_config)
     _forward_jwt(cmd, runtime_config)
     return cmd
 
