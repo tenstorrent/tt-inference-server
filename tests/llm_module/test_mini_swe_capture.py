@@ -15,12 +15,20 @@ end. No container, no model, no device; runs in milliseconds.
 
 from __future__ import annotations
 
+import json
+import os
+import subprocess
 import sys
+import textwrap
 import types
+from pathlib import Path
 
 import pytest
 
 from llm_module.agentic import mini_swe_capture as cap
+from llm_module.agentic import swebench as ttis_swebench
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 class _FakeEnv:
@@ -190,3 +198,90 @@ def test_install_returns_false_without_runner(monkeypatch):
     ]:
         monkeypatch.setitem(sys.modules, name, None)  # force ImportError
     assert cap.install() is False
+
+
+# --- injection wiring: the generated sitecustomize actually auto-installs -------
+
+# The unit/integration tests above prove install() + the wrappers in-process. This
+# proves the *wiring*: that ttis's committed generator lands a sitecustomize on the
+# agent subprocess's PYTHONPATH and that a fresh interpreter auto-imports it and
+# runs install(). Without this, a broken injection would be indistinguishable from
+# success (both yield an empty patch), because the generated sitecustomize and
+# recover_patch_from_env both swallow exceptions.
+
+_FAKE_MINISWEAGENT_RUNNER = """
+def get_sb_environment(config, instance):
+    return None
+
+
+def update_preds_file(output_path, instance_id, model_name, result):
+    return None
+"""
+
+# Runs in the spawned interpreter *after* startup (so sitecustomize has already
+# run). Reports whether the real capture module was imported and whether the fake
+# runner's seams were actually wrapped by install().
+_SUBPROCESS_PROBE = textwrap.dedent(
+    """
+    import json, sys
+    import minisweagent.run.benchmarks.swebench as r
+
+    print(json.dumps({
+        "capture_imported": "llm_module.agentic.mini_swe_capture" in sys.modules,
+        "get_wrapped": getattr(r.get_sb_environment, "_ttis_capture_wrapped", False),
+        "update_wrapped": getattr(r.update_preds_file, "_ttis_capture_wrapped", False),
+    }))
+    """
+)
+
+
+def _write_fake_minisweagent(root: Path) -> Path:
+    """Create an importable stub ``minisweagent.run.benchmarks.swebench`` on disk
+    so the spawned interpreter's ``install()`` has a runner to wrap."""
+    pkg = root / "fake_minisweagent"
+    swebench_dir = pkg / "minisweagent" / "run" / "benchmarks"
+    swebench_dir.mkdir(parents=True)
+    (pkg / "minisweagent" / "__init__.py").write_text("")
+    (pkg / "minisweagent" / "run" / "__init__.py").write_text("")
+    (swebench_dir / "__init__.py").write_text("")
+    (swebench_dir / "swebench.py").write_text(_FAKE_MINISWEAGENT_RUNNER)
+    return pkg
+
+
+def test_generated_sitecustomize_auto_installs_in_subprocess(tmp_path):
+    # 1) Generate the real sitecustomize and put its dir on PYTHONPATH via the
+    #    real ttis helpers -- exactly what run() does for the agent subprocess.
+    base_env = os.environ.copy()
+    base_env["PYTHONPATH"] = os.pathsep.join(
+        [str(_REPO_ROOT), str(_write_fake_minisweagent(tmp_path))]
+    )
+    env = ttis_swebench._add_mini_swe_capture_patch_to_env(tmp_path, base_env)
+
+    # The generator must have written a sitecustomize that imports+installs.
+    sitecustomize = tmp_path / "mini_swe_capture_patch" / "sitecustomize.py"
+    assert sitecustomize.exists()
+    assert "from llm_module.agentic.mini_swe_capture import install" in (
+        sitecustomize.read_text()
+    )
+    # And its dir must be first on the subprocess PYTHONPATH.
+    assert env["PYTHONPATH"].split(os.pathsep)[0] == str(
+        tmp_path / "mini_swe_capture_patch"
+    )
+
+    # 2) Spawn a fresh interpreter with that env and confirm the shim auto-installed.
+    result = subprocess.run(
+        [sys.executable, "-c", _SUBPROCESS_PROBE],
+        env=env,
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert result.returncode == 0, (
+        f"probe failed: rc={result.returncode}\n"
+        f"stdout={result.stdout}\nstderr={result.stderr}"
+    )
+    report = json.loads(result.stdout.strip().splitlines()[-1])
+    assert report["capture_imported"] is True, result.stderr
+    assert report["get_wrapped"] is True, result.stderr
+    assert report["update_wrapped"] is True, result.stderr

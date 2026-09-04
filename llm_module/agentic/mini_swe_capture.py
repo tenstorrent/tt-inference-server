@@ -129,6 +129,17 @@ def make_update_preds_file_wrapper(original: Callable[..., Any]) -> Callable[...
                     instance_id,
                 )
                 result = recovered
+        elif not result and env is None:
+            # Empty prediction with no live environment to recover from: either a
+            # genuine pre-environment failure, or -- if this ever fires for an
+            # instance that reached the agent -- a sign the injection did not take
+            # (register_environment never ran). Log it so a broken shim is visible
+            # in the agent log instead of silently degrading to an empty patch.
+            logger.warning(
+                "mini-swe capture: empty prediction for %s and no live environment "
+                "was registered; cannot recover an in-container patch",
+                instance_id,
+            )
         return original(output_path, instance_id, model_name, result)
 
     wrapper._ttis_capture_wrapped = True  # type: ignore[attr-defined]
@@ -164,4 +175,11 @@ def install() -> bool:
             runner.update_preds_file
         )
     _INSTALLED = True
+    # Activation breadcrumb: makes a working injection visible in the agent log,
+    # so a run that produces an empty patch can be told apart from one where the
+    # shim never installed.
+    logger.info(
+        "mini-swe capture: installed in-container patch-recovery wrappers on the "
+        "mini-swe-agent SWE-bench runner"
+    )
     return True
