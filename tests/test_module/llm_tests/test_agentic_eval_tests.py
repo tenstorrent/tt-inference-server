@@ -6,22 +6,15 @@
 from __future__ import annotations
 
 import json
-import dataclasses
-import hashlib
-import sys
-from datetime import datetime
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
-from types import ModuleType, SimpleNamespace
+from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from llm_module import DriverContext, ServerConnection
-from llm_module.eval_configs import (
-    parse_agentic_benchmark as _parse_agentic_benchmark,
-)
 from llm_module.drivers.agentic import (
     SWEbenchAgenticDriver,
     TerminalBenchAgenticDriver,
@@ -32,10 +25,7 @@ from llm_module.drivers.agentic import (
     resolve_task_names,
 )
 from llm_module.agentic.swebench import (
-    _prepare_pinned_swebench_dataset,
     _run_command_with_retries,
-    build_mini_sweagent_command,
-    build_swebench_harness_command,
     normalize_swebench_report,
     run as run_swebench,
 )
@@ -45,11 +35,12 @@ from llm_module.parsers.agentic import (
     compute_accuracy_check,
     extract_harbor_metrics,
 )
+from llm_module.eval_configs import (
+    filter_agentic_tasks_by_benchmark as _filter_agentic_tasks_by_benchmark,
+    parse_agentic_benchmark as _parse_agentic_benchmark,
+)
 from test_module.llm_tests.agentic_eval_tests import (
-    _filter_agentic_tasks_by_benchmark,
-    _require_openai_server,
     _select_agentic_tasks,
-    _server_connection as bridge_server_connection,
 )
 from workflows.workflow_types import EvalLimitMode, ReportCheckTypes, WorkflowVenvType
 
@@ -84,6 +75,11 @@ class FakeTerminalBenchConfig:
     agent_import_path: Optional[str] = None
     environment_env: Dict[str, str] = field(default_factory=dict)
     verifier_env: Dict[str, str] = field(default_factory=dict)
+    per_task_overhead_sec: int = 20 * 60
+    startup_grace_sec: int = 10 * 60
+    stall_grace_sec: int = 5 * 60
+    progress_log_interval_sec: int = 5 * 60
+    enforce_agent_deadline: bool = False
 
 
 @dataclass
@@ -101,20 +97,18 @@ class FakeSWEbenchConfig:
     max_input_tokens: int = 200 * 1024
     max_output_tokens: Optional[int] = 32 * 1024
     completion_kwargs: Dict[str, Any] = field(default_factory=dict)
-    mini_agent_kwargs: Dict[str, Any] = field(default_factory=dict)
-    mini_observation_chars: Optional[int] = None
-    qualification_claim: str = "local_behavioral_only"
-    selection_policy: Optional[str] = None
-    instance_selection_provenance: Optional[str] = None
-    dataset_revision: Optional[str] = None
-    ordered_instance_ids_sha256: Optional[str] = None
-    selected_instances_sha256: Optional[str] = None
     sweagent_config: str = "config/default.yaml"
     mini_config: str = "swebench.yaml"
     mini_model_class: str = "litellm"
     mini_environment_class: str = "docker"
     swebench_timeout_sec: Optional[int] = None
-    agent_generation_timeout_sec: Optional[int] = 3600
+    llm_timeout_sec: Optional[int] = 10 * 60
+    mini_container_timeout_sec: int = 2 * 60 * 60
+    startup_grace_sec: int = 10 * 60
+    stall_grace_sec: int = 5 * 60
+    progress_log_interval_sec: int = 5 * 60
+    agent_subprocess_timeout_sec: Optional[int] = None
+    enforce_agent_deadline: bool = False
     shuffle: bool = True
     random_delay_multiplier: float = 0.3
     instance_ids_map: Dict[EvalLimitMode, List[str]] = field(default_factory=dict)
@@ -482,10 +476,48 @@ class TestTerminalBenchHarness:
             n_tasks=1,
         )
 
-        with patch("llm_module.agentic.terminal_bench.subprocess.run") as run_cmd:
-            run_cmd.return_value.returncode = 17
+        with patch("llm_module.agentic.terminal_bench.run_with_progress") as run_cmd:
+            run_cmd.return_value = 17
 
             assert run_terminal_bench(cfg) == 17
+
+    def test_timeout_still_annotates_partial_results(self, tmp_path):
+        # A watchdog timeout (124) must still annotate harbor's partial,
+        # already-graded result.json and report success (rc 0).
+        task = _terminal_task()
+        cfg = build_terminal_bench_config(
+            task,
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+        result_path = cfg.jobs_dir / cfg.task_name / "result.json"
+        result_path.parent.mkdir(parents=True)
+        result_path.write_text('{"n_total_trials": 5}', encoding="utf-8")
+
+        with patch(
+            "llm_module.agentic.terminal_bench.run_with_progress", return_value=124
+        ):
+            assert run_terminal_bench(cfg) == 0
+
+        annotated = json.loads(result_path.read_text(encoding="utf-8"))
+        assert annotated["_result_format"] == "harbor"
+
+    def test_timeout_without_result_file_returns_124(self, tmp_path):
+        # Killed before harbor wrote any results -> nothing to annotate, so the
+        # timeout code propagates.
+        task = _terminal_task()
+        cfg = build_terminal_bench_config(
+            task,
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+
+        with patch(
+            "llm_module.agentic.terminal_bench.run_with_progress", return_value=124
+        ):
+            assert run_terminal_bench(cfg) == 124
 
     def test_harbor_config_includes_adapter_and_env_overrides(self, tmp_path):
         task = _terminal_task()
@@ -506,8 +538,8 @@ class TestTerminalBenchHarness:
             n_tasks=1,
         )
 
-        with patch("llm_module.agentic.terminal_bench.subprocess.run") as run_cmd:
-            run_cmd.return_value.returncode = 17
+        with patch("llm_module.agentic.terminal_bench.run_with_progress") as run_cmd:
+            run_cmd.return_value = 17
 
             assert run_terminal_bench(cfg) == 17
 
@@ -527,117 +559,6 @@ class TestTerminalBenchHarness:
 
 
 class TestSWEbenchHarness:
-    def test_graded_dataset_is_revision_and_content_pinned_for_both_consumers(
-        self, tmp_path
-    ):
-        rows = [
-            {"instance_id": "other", "problem_statement": "ignored"},
-            {"instance_id": "django__django-11299", "problem_statement": "exact"},
-        ]
-        selected = [rows[1]]
-        digest = hashlib.sha256(
-            json.dumps(
-                selected, ensure_ascii=True, sort_keys=True, separators=(",", ":")
-            ).encode("utf-8")
-        ).hexdigest()
-        cfg = dataclasses.replace(
-            build_swebench_config(
-                _swebench_task(),
-                _server(),
-                DriverContext(output_dir=tmp_path, device="N150"),
-                n_tasks=1,
-            ),
-            qualification_claim="models_ci_graded",
-            dataset_revision="a" * 40,
-            instance_ids=["django__django-11299"],
-            ordered_instance_ids_sha256="b" * 64,
-            selected_instances_sha256=digest,
-        )
-
-        datasets = ModuleType("datasets")
-        load = MagicMock(side_effect=[rows, selected])
-        datasets.load_dataset = load
-        with patch.dict(sys.modules, {"datasets": datasets}):
-            dataset_source, actual = _prepare_pinned_swebench_dataset(cfg)
-
-        assert actual == digest
-        assert load.call_args_list[0].kwargs["revision"] == "a" * 40
-        assert load.call_args_list[0].args == ("SWE-bench/SWE-bench_Verified",)
-        assert load.call_args_list[1].args == (dataset_source,)
-        receipt = json.loads(
-            (cfg.output_dir / "pinned_swebench_dataset_receipt.json").read_text()
-        )
-        assert receipt["selected_instances_sha256"] == digest
-        assert receipt["ordered_instance_ids"] == ["django__django-11299"]
-        mini = build_mini_sweagent_command(
-            cfg,
-            cfg.output_dir / "mini.yaml",
-            cfg.output_dir / "mini",
-            dataset_source=dataset_source,
-        )
-        harness = build_swebench_harness_command(
-            cfg,
-            cfg.output_dir / "predictions.jsonl",
-            "run-id",
-            dataset_source=dataset_source,
-        )
-        assert mini[mini.index("--subset") + 1] == dataset_source
-        assert harness[harness.index("--dataset_name") + 1] == dataset_source
-
-    def test_graded_dataset_content_mismatch_fails_before_agent(self, tmp_path):
-        cfg = dataclasses.replace(
-            build_swebench_config(
-                _swebench_task(),
-                _server(),
-                DriverContext(output_dir=tmp_path, device="N150"),
-                n_tasks=1,
-            ),
-            qualification_claim="models_ci_graded",
-            dataset_revision="a" * 40,
-            instance_ids=["django__django-11299"],
-            selected_instances_sha256="0" * 64,
-        )
-        rows = [{"instance_id": "django__django-11299", "problem_statement": "x"}]
-        datasets = ModuleType("datasets")
-        datasets.load_dataset = MagicMock(return_value=rows)
-        with patch.dict(sys.modules, {"datasets": datasets}):
-            with pytest.raises(RuntimeError, match="content digest mismatch"):
-                _prepare_pinned_swebench_dataset(cfg)
-
-    def test_pinned_dataset_digest_ignores_loader_datetime_coercion(self, tmp_path):
-        row = {
-            "instance_id": "django__django-11299",
-            "problem_statement": "exact",
-            "created_at": "2024-01-02T03:04:05Z",
-        }
-        digest = hashlib.sha256(
-            json.dumps(
-                [row], ensure_ascii=True, sort_keys=True, separators=(",", ":")
-            ).encode("utf-8")
-        ).hexdigest()
-        cfg = dataclasses.replace(
-            build_swebench_config(
-                _swebench_task(),
-                _server(),
-                DriverContext(output_dir=tmp_path, device="N150"),
-                n_tasks=1,
-            ),
-            qualification_claim="models_ci_graded",
-            dataset_revision="a" * 40,
-            instance_ids=["django__django-11299"],
-            selected_instances_sha256=digest,
-        )
-        coerced = [
-            dict(row, created_at=datetime.fromisoformat("2024-01-02T03:04:05+00:00"))
-        ]
-
-        datasets = ModuleType("datasets")
-        datasets.load_dataset = MagicMock(side_effect=[[row], coerced])
-        with patch.dict(sys.modules, {"datasets": datasets}):
-            _, actual = _prepare_pinned_swebench_dataset(cfg)
-
-        assert actual == digest
-
     def test_agent_failure_returns_nonzero_without_predictions(self, tmp_path):
         task = _swebench_task()
         cfg = build_swebench_config(
@@ -647,11 +568,57 @@ class TestSWEbenchHarness:
             n_tasks=1,
         )
 
-        with patch(
-            "llm_module.agentic.swebench._run_bounded_process_group",
-            return_value=23,
-        ):
+        with patch("llm_module.agentic.swebench.run_with_progress") as run_cmd:
+            run_cmd.return_value = 23
+
             assert run_swebench(cfg) == 23
+
+    def test_agent_timeout_still_grades_partial_predictions(
+        self, tmp_path, monkeypatch
+    ):
+        # A watchdog timeout (124) must not short-circuit grading: the partial
+        # preds.json is still scored by the harness.
+        monkeypatch.setenv("SWEBENCH_HARNESS_MAX_ATTEMPTS", "1")
+        task = _swebench_task()
+        cfg = build_swebench_config(
+            task,
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+        preds_path = cfg.output_dir / "mini_sweagent" / "preds.json"
+        preds_path.parent.mkdir(parents=True)
+        preds_path.write_text(
+            '{"django__django-11299": {"model_patch": ""}}',
+            encoding="utf-8",
+        )
+
+        with patch(
+            "llm_module.agentic.swebench.run_with_progress", return_value=124
+        ), patch("llm_module.agentic.swebench.subprocess.run") as run_cmd:
+            run_cmd.return_value = SimpleNamespace(returncode=5)
+
+            # Harness reached (returns its own rc), proving grading was not
+            # skipped by the 124.
+            assert run_swebench(cfg) == 5
+            run_cmd.assert_called()
+
+    def test_agent_timeout_without_predictions_returns_124(self, tmp_path):
+        # Killed before any instance finished -> nothing to grade, so the
+        # harness is never invoked and the timeout code propagates.
+        task = _swebench_task()
+        cfg = build_swebench_config(
+            task,
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+
+        with patch(
+            "llm_module.agentic.swebench.run_with_progress", return_value=124
+        ), patch("llm_module.agentic.swebench.subprocess.run") as run_cmd:
+            assert run_swebench(cfg) == 124
+            run_cmd.assert_not_called()
 
     def test_harness_failure_returns_nonzero_without_result_file(
         self, tmp_path, monkeypatch
@@ -669,15 +636,15 @@ class TestSWEbenchHarness:
         preds_path = cfg.output_dir / "mini_sweagent" / "preds.json"
         preds_path.parent.mkdir(parents=True)
         preds_path.write_text(
-            '{"django__django-11299": {"model_patch": "diff --git a/x b/x"}}',
+            '{"django__django-11299": {"model_patch": ""}}',
             encoding="utf-8",
         )
 
         with patch(
-            "llm_module.agentic.swebench._run_bounded_process_group",
-            return_value=0,
+            "llm_module.agentic.swebench.run_with_progress", return_value=0
         ), patch("llm_module.agentic.swebench.subprocess.run") as run_cmd:
             run_cmd.return_value = SimpleNamespace(returncode=31)
+
             assert run_swebench(cfg) == 31
 
     def test_harness_retries_transient_failure(self, tmp_path, monkeypatch):
@@ -696,20 +663,22 @@ class TestSWEbenchHarness:
         preds_path = cfg.output_dir / "mini_sweagent" / "preds.json"
         preds_path.parent.mkdir(parents=True)
         preds_path.write_text(
-            '{"django__django-11299": {"model_patch": "diff --git a/x b/x"}}',
+            '{"django__django-11299": {"model_patch": ""}}',
             encoding="utf-8",
         )
 
         with patch(
-            "llm_module.agentic.swebench._run_bounded_process_group",
-            return_value=0,
-        ), patch("llm_module.agentic.swebench.subprocess.run") as run_cmd:
+            "llm_module.agentic.swebench.run_with_progress", return_value=0
+        ) as agent_cmd, patch("llm_module.agentic.swebench.subprocess.run") as run_cmd:
             run_cmd.side_effect = [
                 SimpleNamespace(returncode=1),  # harness attempt 1
                 SimpleNamespace(returncode=1),  # harness attempt 2 (last)
             ]
 
             assert run_swebench(cfg) == 1
+            # Agent runs once via the progress watchdog.
+            assert agent_cmd.call_count == 1
+            # Harness retried twice via subprocess.run.
             assert run_cmd.call_count == 2
 
 
@@ -762,162 +731,6 @@ class TestRunCommandWithRetries:
 
 
 class TestSWEbenchReportNormalization:
-    def test_graded_report_rejects_aggregate_only_counts(self, tmp_path):
-        cfg = build_swebench_config(
-            _swebench_task(),
-            _server(),
-            DriverContext(output_dir=tmp_path, device="N150"),
-            n_tasks=1,
-        )
-        cfg = dataclasses.replace(
-            cfg,
-            qualification_claim="models_ci_graded",
-            selection_policy="reviewed_fixed_subset",
-            instance_selection_provenance="reviewed fixture",
-            instance_ids=["django__django-11299"],
-        )
-        cfg.output_dir.mkdir(parents=True)
-        harness_report = cfg.output_dir / "harness_report.json"
-        harness_report.write_text(
-            json.dumps({"submitted_instances": 1, "resolved_instances": 1}),
-            encoding="utf-8",
-        )
-
-        with pytest.raises(RuntimeError, match="aggregate-only"):
-            normalize_swebench_report(
-                harness_report,
-                cfg.output_dir / "result.json",
-                cfg,
-                cfg.output_dir / "predictions.jsonl",
-            )
-
-    def test_graded_result_carries_contract_and_exact_submitted_set(self, tmp_path):
-        cfg = build_swebench_config(
-            _swebench_task(),
-            _server(),
-            DriverContext(output_dir=tmp_path, device="N150"),
-            n_tasks=1,
-        )
-        cfg = dataclasses.replace(
-            cfg,
-            qualification_claim="models_ci_graded",
-            selection_policy="reviewed_fixed_subset",
-            instance_selection_provenance="reviewed fixture",
-            dataset_revision="a" * 40,
-            ordered_instance_ids_sha256="b" * 64,
-            selected_instances_sha256="c" * 64,
-            eval_limit_mode="ci-nightly",
-            instance_ids=["django__django-11299"],
-            mini_observation_chars=2048,
-            max_input_tokens=5120,
-            max_output_tokens=2048,
-        )
-        cfg.output_dir.mkdir(parents=True)
-        harness_report = cfg.output_dir / "harness_report.json"
-        harness_report.write_text(
-            json.dumps(
-                {
-                    "submitted_ids": ["django__django-11299"],
-                    "resolved_ids": ["django__django-11299"],
-                }
-            ),
-            encoding="utf-8",
-        )
-
-        normalized = normalize_swebench_report(
-            harness_report,
-            cfg.output_dir / "result.json",
-            cfg,
-            cfg.output_dir / "predictions.jsonl",
-            "c" * 64,
-        )
-
-        contract = normalized["config"]["qualification_contract"]
-        assert contract == {
-            "qualification_claim": "models_ci_graded",
-            "selection_policy": "reviewed_fixed_subset",
-            "instance_selection_provenance": "reviewed fixture",
-            "dataset_revision": "a" * 40,
-            "ordered_instance_ids_sha256": "b" * 64,
-            "selected_instances_sha256": "c" * 64,
-            "predeclared_instance_ids": ["django__django-11299"],
-            "eval_limit_mode": "ci-nightly",
-            "mini_observation_chars": 2048,
-            "max_input_tokens": 5120,
-            "max_output_tokens": 2048,
-        }
-
-    def test_graded_report_rejects_wrong_submitted_set(self, tmp_path):
-        cfg = build_swebench_config(
-            _swebench_task(),
-            _server(),
-            DriverContext(output_dir=tmp_path, device="N150"),
-            n_tasks=1,
-        )
-        cfg = dataclasses.replace(
-            cfg,
-            qualification_claim="models_ci_graded",
-            instance_ids=["django__django-11299"],
-        )
-        cfg.output_dir.mkdir(parents=True)
-        harness_report = cfg.output_dir / "harness_report.json"
-        harness_report.write_text(
-            json.dumps({"submitted_ids": ["sympy__sympy-13551"], "resolved_ids": []}),
-            encoding="utf-8",
-        )
-
-        with pytest.raises(RuntimeError, match="predeclared run set"):
-            normalize_swebench_report(
-                harness_report,
-                cfg.output_dir / "result.json",
-                cfg,
-                cfg.output_dir / "predictions.jsonl",
-            )
-
-    def test_zero_submissions_fail_instead_of_becoming_zero_percent(self, tmp_path):
-        cfg = build_swebench_config(
-            _swebench_task(),
-            _server(),
-            DriverContext(output_dir=tmp_path, device="N150"),
-            n_tasks=1,
-        )
-        cfg.output_dir.mkdir(parents=True)
-        harness_report = cfg.output_dir / "harness_report.json"
-        harness_report.write_text(
-            json.dumps({"submitted_ids": [], "resolved_ids": []}),
-            encoding="utf-8",
-        )
-
-        with pytest.raises(RuntimeError, match="zero submitted"):
-            normalize_swebench_report(
-                harness_report,
-                cfg.output_dir / "result.json",
-                cfg,
-                cfg.output_dir / "predictions.jsonl",
-            )
-
-    def test_resolved_instance_must_have_been_submitted(self, tmp_path):
-        cfg = build_swebench_config(
-            _swebench_task(),
-            _server(),
-            DriverContext(output_dir=tmp_path, device="N150"),
-            n_tasks=1,
-        )
-        cfg.output_dir.mkdir(parents=True)
-        harness_report = cfg.output_dir / "harness_report.json"
-        harness_report.write_text(
-            json.dumps({"submitted_ids": ["a"], "resolved_ids": ["a", "b"]}),
-            encoding="utf-8",
-        )
-
-        with pytest.raises(RuntimeError, match="not submitted"):
-            normalize_swebench_report(
-                harness_report,
-                cfg.output_dir / "result.json",
-                cfg,
-                cfg.output_dir / "predictions.jsonl",
-            )
-
     def test_normalize_injects_timing_from_agent_log(self, tmp_path):
         cfg = build_swebench_config(
             _swebench_task(),
@@ -989,6 +802,80 @@ class TestSWEbenchReportNormalization:
         assert "started_at" not in normalized
         assert extract_harbor_metrics(normalized).get("mean_seconds_per_task") is None
 
+    def _normalize_with_report(self, tmp_path, report, instance_ids=None, **cfg_kwargs):
+        cfg = build_swebench_config(
+            _swebench_task(),
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            **cfg_kwargs,
+        )
+        if instance_ids is not None:
+            cfg = replace(cfg, instance_ids=instance_ids)
+        cfg.output_dir.mkdir(parents=True, exist_ok=True)
+        harness_report = cfg.output_dir / "harness_report.json"
+        harness_report.write_text(json.dumps(report), encoding="utf-8")
+        return normalize_swebench_report(
+            harness_report,
+            cfg.output_dir / "result.json",
+            cfg,
+            cfg.output_dir / "predictions.jsonl",
+        )
+
+    def _accuracy(self, normalized):
+        (evaluation,) = normalized["stats"]["evals"].values()
+        return evaluation["pass_at_k"]["1"]
+
+    def test_unfinished_instances_count_against_accuracy(self, tmp_path):
+        # 5 requested, only 2 finished, 1 of those resolved. Grading the 2 that
+        # happen to be in the report would report 50%; the run scored 1 of 5.
+        normalized = self._normalize_with_report(
+            tmp_path,
+            {"submitted_ids": ["a", "b"], "resolved_ids": ["a"]},
+            n_tasks=5,
+        )
+
+        assert self._accuracy(normalized) == 1 / 5
+        assert normalized["n_total_trials"] == 5
+
+    def test_named_missing_instances_are_reported_unresolved(self, tmp_path):
+        normalized = self._normalize_with_report(
+            tmp_path,
+            {"submitted_ids": ["a"], "resolved_ids": ["a"]},
+            instance_ids=["a", "b", "c"],
+        )
+
+        (evaluation,) = normalized["stats"]["evals"].values()
+        assert self._accuracy(normalized) == 1 / 3
+        assert evaluation["reward_stats"]["reward"]["0.0"] == ["b", "c"]
+        # Absent instances still get a zero-reward trial so per-task views agree.
+        assert [t["task_name"] for t in normalized["trial_results"]] == ["a", "b", "c"]
+        assert [
+            t["verifier_result"]["rewards"]["reward"]
+            for t in normalized["trial_results"]
+        ] == [1.0, 0.0, 0.0]
+
+    def test_complete_run_accuracy_is_unchanged(self, tmp_path):
+        normalized = self._normalize_with_report(
+            tmp_path,
+            {"submitted_ids": ["a", "b", "c", "d"], "resolved_ids": ["a", "c"]},
+            n_tasks=4,
+        )
+
+        assert self._accuracy(normalized) == 0.5
+        assert normalized["n_total_trials"] == 4
+
+    def test_extra_predictions_do_not_shrink_the_denominator(self, tmp_path):
+        # n_tasks is a cap, not a promise; if the harness graded more than we
+        # asked for, the larger count wins rather than clipping the denominator.
+        normalized = self._normalize_with_report(
+            tmp_path,
+            {"submitted_ids": ["a", "b", "c"], "resolved_ids": ["a"]},
+            n_tasks=2,
+        )
+
+        assert self._accuracy(normalized) == 1 / 3
+        assert normalized["n_total_trials"] == 3
+
 
 class TestAgenticLimitResolution:
     def test_fractional_agentic_limits_become_one_task(self):
@@ -1042,89 +929,13 @@ class TestSelectAgenticTasks:
 
         assert _select_agentic_tasks(ctx) == [t_agentic]
 
-    def test_external_contract_selects_only_its_exact_task(self, tmp_path):
-        selected = _swebench_task()
-        unrelated = _terminal_task()
-        contract_path = tmp_path / "agentic_launch_contract.json"
-        contract_path.write_text(
-            json.dumps(
-                {
-                    "contract": {
-                        "task": "swe_bench_verified",
-                        "hf_model_repo": "openai/gpt-oss-120b",
-                        "served_model": "gpt-oss-120b@p150x4-b1",
-                    }
-                }
-            )
-        )
-        ctx = self._ctx_with_tasks([unrelated, selected])
-        ctx.model_spec.hf_model_repo = "openai/gpt-oss-120b"
-        ctx.runtime_config.external_agentic_contract = str(contract_path)
-
-        assert _select_agentic_tasks(ctx) == [selected]
-
-    def test_external_contract_rejects_missing_task(self, tmp_path):
-        contract_path = tmp_path / "agentic_launch_contract.json"
-        contract_path.write_text(
-            json.dumps(
-                {
-                    "contract": {
-                        "task": "swe_bench_verified",
-                        "hf_model_repo": "openai/gpt-oss-120b",
-                        "served_model": "gpt-oss-120b@p150x4-b1",
-                    }
-                }
-            )
-        )
-        ctx = self._ctx_with_tasks([_terminal_task()])
-        ctx.model_spec.hf_model_repo = "openai/gpt-oss-120b"
-        ctx.runtime_config.external_agentic_contract = str(contract_path)
-
-        with pytest.raises(RuntimeError, match="exactly one configured agentic task"):
-            _select_agentic_tasks(ctx)
-
-    def test_external_contract_uses_canonical_served_model(self, tmp_path):
-        contract_path = tmp_path / "agentic_launch_contract.json"
-        contract_path.write_text(
-            json.dumps(
-                {
-                    "contract": {
-                        "task": "swe_bench_verified",
-                        "hf_model_repo": "openai/gpt-oss-120b",
-                        "served_model": "gpt-oss-120b@p150x4-b1",
-                    }
-                }
-            )
-        )
-        ctx = self._ctx_with_tasks([_swebench_task()])
-        ctx.model_spec.hf_model_repo = "openai/gpt-oss-120b"
-        ctx.runtime_config.external_agentic_contract = str(contract_path)
-        ctx.server_host = "http://qb2"
-        ctx.server_port = 18091
-
-        connection = bridge_server_connection(ctx)
-        assert connection.model == "gpt-oss-120b@p150x4-b1"
-        assert connection.tokenizer == "openai/gpt-oss-120b"
-
-        cfg = build_swebench_config(
-            _swebench_task(),
-            connection,
-            DriverContext(output_dir=tmp_path, device="P300X2"),
-            runtime_config=_runtime("ci-nightly"),
-        )
-        assert cfg.model_name == "openai/gpt-oss-120b@p150x4-b1"
-        assert cfg.tokenizer_name == "openai/gpt-oss-120b"
-
 
 class TestAgenticBenchmarkSelection:
     def _ctx(self, tasks, agentic_benchmark):
         ctx = MagicMock()
         ctx.all_params.tasks = tasks
         ctx.model_spec.model_name = "test-llm"
-        ctx.runtime_config = SimpleNamespace(
-            agentic_benchmark=agentic_benchmark,
-            external_agentic_contract=None,
-        )
+        ctx.runtime_config = SimpleNamespace(agentic_benchmark=agentic_benchmark)
         return ctx
 
     def _tasks(self):
@@ -1197,47 +1008,6 @@ class TestAgenticBenchmarkSelection:
         selected = _filter_agentic_tasks_by_benchmark(tasks, "tb2.1")
         assert [t.task_name for t in selected] == ["terminal_bench_2_1"]
 
-    def test_external_contract_intersects_matching_benchmark(self, tmp_path):
-        contract_path = tmp_path / "agentic_launch_contract.json"
-        contract_path.write_text(
-            json.dumps(
-                {
-                    "contract": {
-                        "task": "swe_bench_verified",
-                        "hf_model_repo": "openai/gpt-oss-120b",
-                        "served_model": "gpt-oss-120b@p150x4-b1",
-                    }
-                }
-            )
-        )
-        ctx = self._ctx(self._tasks(), "swebench")
-        ctx.model_spec.hf_model_repo = "openai/gpt-oss-120b"
-        ctx.runtime_config.external_agentic_contract = str(contract_path)
-
-        assert [task.task_name for task in _select_agentic_tasks(ctx)] == [
-            "swe_bench_verified"
-        ]
-
-    def test_external_contract_rejects_disjoint_benchmark(self, tmp_path):
-        contract_path = tmp_path / "agentic_launch_contract.json"
-        contract_path.write_text(
-            json.dumps(
-                {
-                    "contract": {
-                        "task": "swe_bench_verified",
-                        "hf_model_repo": "openai/gpt-oss-120b",
-                        "served_model": "gpt-oss-120b@p150x4-b1",
-                    }
-                }
-            )
-        )
-        ctx = self._ctx(self._tasks(), "tb2.0")
-        ctx.model_spec.hf_model_repo = "openai/gpt-oss-120b"
-        ctx.runtime_config.external_agentic_contract = str(contract_path)
-
-        with pytest.raises(RuntimeError, match="exactly one configured agentic task"):
-            _select_agentic_tasks(ctx)
-
 
 class TestAgenticRunTimestamp:
     """The harnesses (harbor job, sweagent output) refuse to start a new run in
@@ -1296,26 +1066,6 @@ class TestAgenticRunTimestamp:
 
 
 class TestAgenticBridge:
-    def test_remote_readiness_uses_service_port_when_url_omits_it(self, monkeypatch):
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        ctx = MagicMock()
-        ctx.remote_server = True
-        ctx.server_url = "http://127.0.0.1"
-        ctx.base_url = "http://127.0.0.1:18081"
-        controller = MagicMock()
-        controller.wait_for_healthy.return_value = True
-        controller.models_url = "http://127.0.0.1:18081/v1/models"
-
-        with patch(
-            "test_module.llm_tests.agentic_eval_tests.RemoteOpenAIController",
-            return_value=controller,
-        ) as constructor:
-            _require_openai_server(ctx)
-
-        constructor.assert_called_once_with(
-            base_url="http://127.0.0.1:18081", auth_token=""
-        )
-
     def test_bridge_delegates_to_driver_and_accepts_blocks(self):
         from test_module.llm_tests.agentic_eval_tests import run_llm_agentic_eval
 

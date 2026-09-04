@@ -921,7 +921,8 @@ class TestAgenticTracesRegistration:
         """Without the opt-in there is no agentic-traces child to protect."""
         spec = self._spec(self.UNREGISTERED_ID)
         monkeypatch.setattr(
-            "workflows.validate_setup.EVAL_CONFIGS", {spec.model_name: object()}
+            "reference_config.evals.eval_config.EVAL_CONFIGS",
+            {spec.model_name: object()},
         )
         monkeypatch.setattr(
             "workflows.validate_setup.can_dispatch_to_engine", lambda *a, **k: True

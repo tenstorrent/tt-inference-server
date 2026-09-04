@@ -632,15 +632,23 @@ void BlazeDecodeRunner::handleSchedulerOutput(const ds::OutputMessage& output) {
   slotContext.lastProgressTime = std::chrono::steady_clock::now();
   auto taskId = slotContext.taskId.value();
   if (output.ctx_exhausted) {
-    TT_LOG_INFO(
+    // Context exhaustion mid-decode is a normal end of generation for OpenAI
+    // clients: everything up to this token was produced correctly, so finish
+    // the stream with FLAG_FINAL only and let the service report
+    // finish_reason="length". FLAG_ERROR here used to surface through the
+    // dynamo transport as a bare {"code":500,"message":"error"} body, which
+    // the frontend cannot parse as a completion — a fully generated answer
+    // was dropped on the floor with no server-side log above INFO.
+    TT_LOG_WARN(
         "[BlazeDecodeRunner] handleSchedulerOutput: ctx_exhausted for "
-        "slotId={}",
-        output.slot_id);
+        "taskId={}, slotId={} at position_id={} after {} generated tokens; "
+        "finishing stream with reason=length",
+        taskId, output.slot_id, output.position_id,
+        slotContext.tokensGenerated);
     slotManager.setSlotAsIdle(output.slot_id);
     metrics.decrementActiveRequests();
-    ipc::helpers::pushToken(
-        *resultQueue, taskId, output.token_id,
-        ipc::SharedToken::FLAG_ERROR | ipc::SharedToken::FLAG_FINAL, 0, 0);
+    ipc::helpers::pushToken(*resultQueue, taskId, output.token_id,
+                            ipc::SharedToken::FLAG_FINAL, 0, 0);
     return;
   }
   bool finished = output.is_complete;

@@ -32,6 +32,7 @@ def _parse_launcher_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--model", required=True)
     parser.add_argument("--workflow", required=True)
     parser.add_argument("--device", required=True)
+    parser.add_argument("--requirements-json", default=None)
     args, _ = parser.parse_known_args(argv)
     if args.workflow != "agentic":
         parser.error(
@@ -51,13 +52,20 @@ def main() -> int:
     # before VenvConfig.setup() tries to execute UV_EXEC from the repo-local
     # bootstrap venv.  This is intentionally idempotent for warm CI checkouts.
     from workflows.bootstrap_uv import bootstrap_uv
-    from workflows.model_spec import get_runtime_model_spec
+    from workflow_module.model_catalog import get_model_spec_provider
     from workflows.workflow_types import WorkflowVenvType
 
     bootstrap_uv()
     args = _parse_launcher_args(sys.argv[1:])
+    if args.requirements_json:
+        # This is a separate process from run.py, so the document has to be
+        # loaded again for the provider to synthesize an off-catalog spec.
+        from workflow_module.requirements_schema import load_requirements
+        from workflows.requirements_cli import register_requirements_providers
+
+        register_requirements_providers(load_requirements(args.requirements_json))
     # EVALS_AGENTIC setup depends on the model, so resolve the spec first.
-    model_spec, _, _ = get_runtime_model_spec(model=args.model, device=args.device)
+    model_spec = get_model_spec_provider().resolve(model=args.model, device=args.device)
     return setup_venv_and_exec(
         WorkflowVenvType.EVALS_AGENTIC,
         logger,

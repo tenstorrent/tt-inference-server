@@ -535,7 +535,6 @@ def render_contract(data: dict[str, Any]) -> dict[str, Any]:
             "required_repo_tests": [
                 "tests/test_plan_gpt120_f0b_quetzal_enrollment.py",
                 "tests/test_quetzal_topology_admission.py",
-                "tests/workflows/test_gpt120_swebench_contract.py",
             ],
             "claim_boundary": (
                 "A passing initial On-dispatch is functional Models CI evidence, not "

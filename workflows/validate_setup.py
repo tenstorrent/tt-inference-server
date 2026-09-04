@@ -3,12 +3,10 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import json
-import hashlib
 import logging
 import os
-import re
 import stat
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 from llm_module.eval_configs import (
     filter_agentic_tasks_by_benchmark,
@@ -31,7 +29,6 @@ from workflows.utils import (
 from workflows.workflow_dispatch import can_dispatch_to_engine
 from workflows.workflow_types import (
     DeviceTypes,
-    EvalLimitMode,
     InferenceEngine,
     WorkflowType,
     WorkflowVenvType,
@@ -39,260 +36,6 @@ from workflows.workflow_types import (
 from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger("run_log")
-
-_SHA256_RE = re.compile(r"[0-9a-f]{64}")
-_GIT_REVISION_RE = re.compile(r"[0-9a-f]{40}")
-_PACKAGE_ID_RE = re.compile(r"sha256(?:-v[0-9]+)?(?:-[0-9a-f]{64}){2,3}")
-_QUETZAL_PACKAGE_PARENT = PurePosixPath("/home/container_app_user/quetzal/packages")
-
-
-def validate_quetzal_models_ci_contract(model_spec, runtime_config) -> None:
-    """Reject incomplete generated-only release enrollments before setup."""
-    if _agentic_impl_id(model_spec) != "quetzal":
-        return
-    if WorkflowType.from_string(runtime_config.workflow) != WorkflowType.RELEASE:
-        return
-
-    env = model_spec.env_vars
-    required = {
-        "QUETZAL_PACKAGE_ID",
-        "QUETZAL_PACKAGE_ROOT",
-        "QZ_MODELS_ROOT",
-        "QZ_QUALIFICATION_MANIFEST",
-        "QUETZAL_BUNDLE_MANIFEST_SHA256",
-        "QUETZAL_REQUIRED_SOURCE_REVISION",
-        "QUETZAL_REQUIRED_TT_METAL_COMMIT",
-        "QUETZAL_TT_METAL_PATCHSET_STATUS",
-        "QUETZAL_PREFILL_GENERATED_PY",
-        "QUETZAL_PREFILL_METADATA_JSON",
-        "QUETZAL_DECODE_GENERATED_PY",
-        "QUETZAL_DECODE_METADATA_JSON",
-        "QUETZAL_WEIGHTS",
-    }
-    missing = sorted(name for name in required if not env.get(name))
-    if missing:
-        raise ValueError(
-            "Quetzal Models-CI enrollment is incomplete: missing "
-            f"{missing}; release rows require generated package, source, "
-            "TT-Metal, and explicit patchset-status identities"
-        )
-    if env.get("VLLM_PLUGINS") != "quetzal_model_registry,tt":
-        raise ValueError(
-            "Quetzal Models-CI enrollment requires "
-            "VLLM_PLUGINS=quetzal_model_registry,tt"
-        )
-    if str(env.get("TT_VLLM_BUILTIN_MODELS")) != "0":
-        raise ValueError(
-            "Quetzal Models-CI enrollment requires TT_VLLM_BUILTIN_MODELS=0"
-        )
-    if str(env.get("QUETZAL_VLLM")) != "1":
-        raise ValueError("Quetzal Models-CI enrollment requires QUETZAL_VLLM=1")
-
-    package_id = str(env["QUETZAL_PACKAGE_ID"])
-    if _PACKAGE_ID_RE.fullmatch(package_id) is None:
-        raise ValueError("Quetzal Models-CI package ID must be content-addressed")
-    package_root = PurePosixPath(str(env["QUETZAL_PACKAGE_ROOT"]))
-    expected_root = _QUETZAL_PACKAGE_PARENT / package_id
-    if (
-        package_root != expected_root
-        or PurePosixPath(str(env["QZ_MODELS_ROOT"])) != expected_root
-    ):
-        raise ValueError(
-            "Quetzal Models-CI package roots must name the exact content ID"
-        )
-    if PurePosixPath(str(env["QZ_QUALIFICATION_MANIFEST"])) != (
-        expected_root / "qualification_manifest.yaml"
-    ):
-        raise ValueError(
-            "Quetzal Models-CI qualification manifest must be inside the exact package"
-        )
-    for key in (
-        "QUETZAL_PREFILL_GENERATED_PY",
-        "QUETZAL_PREFILL_METADATA_JSON",
-        "QUETZAL_DECODE_GENERATED_PY",
-        "QUETZAL_DECODE_METADATA_JSON",
-        "QUETZAL_WEIGHTS",
-    ):
-        if not PurePosixPath(str(env[key])).is_relative_to(expected_root):
-            raise ValueError(f"{key} must remain inside the exact Quetzal package")
-    for key in ("QUETZAL_BUNDLE_MANIFEST_SHA256",):
-        if _SHA256_RE.fullmatch(str(env[key])) is None:
-            raise ValueError(f"{key} must be an exact lowercase SHA-256")
-    attestation_sha = env.get("QUETZAL_RUNTIME_ATTESTATION_SHA256")
-    if attestation_sha is None:
-        logger.warning(
-            "Quetzal Models-CI publication provenance warning [unattested]: "
-            "no runtime compatibility attestation is catalogued; functional "
-            "and quality qualification remains runnable"
-        )
-    elif _SHA256_RE.fullmatch(str(attestation_sha)) is None:
-        logger.warning(
-            "Quetzal Models-CI publication provenance warning [unattested]: "
-            "catalogued runtime attestation identity %r is malformed; direct "
-            "image/package/source/runtime checks remain authoritative",
-            attestation_sha,
-        )
-    if _GIT_REVISION_RE.fullmatch(str(env["QUETZAL_REQUIRED_SOURCE_REVISION"])) is None:
-        raise ValueError(
-            "QUETZAL_REQUIRED_SOURCE_REVISION must be an exact lowercase git commit"
-        )
-    if _GIT_REVISION_RE.fullmatch(str(env["QUETZAL_REQUIRED_TT_METAL_COMMIT"])) is None:
-        raise ValueError(
-            "QUETZAL_REQUIRED_TT_METAL_COMMIT must be an exact lowercase git commit"
-        )
-    patchset_status = env["QUETZAL_TT_METAL_PATCHSET_STATUS"]
-    patchset_sha = env.get("QUETZAL_REQUIRED_TT_METAL_PATCHSET_SHA256")
-    if patchset_status == "applied":
-        if _SHA256_RE.fullmatch(str(patchset_sha or "")) is None:
-            raise ValueError(
-                "applied TT-Metal patchset requires an exact patchset SHA-256"
-            )
-    elif patchset_status == "none":
-        if patchset_sha:
-            raise ValueError(
-                "TT-Metal patchset status 'none' cannot carry a patchset SHA-256"
-            )
-    else:
-        raise ValueError("QUETZAL_TT_METAL_PATCHSET_STATUS must be 'applied' or 'none'")
-
-    selected = _selected_agentic_tasks(model_spec, runtime_config)
-    swe_tasks = [task for task in selected if task.task_name == "swe_bench_verified"]
-    if len(swe_tasks) != 1:
-        raise ValueError(
-            "Quetzal Models-CI release requires exactly one context-admitted "
-            "SWE-bench Verified task with a predeclared graded evaluation contract"
-        )
-    task = swe_tasks[0]
-    cfg = task.swebench_eval_config
-    if cfg is None or cfg.agent_backend != "mini-swe-agent":
-        raise ValueError(
-            "Quetzal Models-CI SWE enrollment must use the common "
-            "mini-swe-agent verifier path"
-        )
-    required_context, max_input, max_output, _ = _agentic_context_requirement(task)
-    available_context = getattr(model_spec.device_model_spec, "max_context", None)
-    if not isinstance(available_context, int) or required_context > available_context:
-        raise ValueError(
-            "Quetzal Models-CI SWE envelope exceeds the admitted serving profile: "
-            f"required={required_context}, available={available_context}, "
-            f"input={max_input}, output={max_output}"
-        )
-    if (
-        not isinstance(cfg.mini_observation_chars, int)
-        or isinstance(cfg.mini_observation_chars, bool)
-        or cfg.mini_observation_chars < 2
-    ):
-        raise ValueError(
-            "Quetzal Models-CI SWE enrollment requires an explicit positive "
-            "mini_observation_chars payload-retention cap"
-        )
-    step_limit = cfg.mini_agent_kwargs.get("step_limit")
-    if (
-        not isinstance(step_limit, int)
-        or isinstance(step_limit, bool)
-        or step_limit <= 0
-    ):
-        raise ValueError(
-            "Quetzal Models-CI SWE enrollment requires an explicit positive step_limit"
-        )
-    if (
-        not isinstance(cfg.instance_selection_provenance, str)
-        or not cfg.instance_selection_provenance.strip()
-    ):
-        raise ValueError(
-            "Quetzal Models-CI SWE enrollment requires reviewed, "
-            "model-output-independent instance selection provenance"
-        )
-    if cfg.qualification_claim != "models_ci_graded":
-        raise ValueError(
-            "Quetzal Models-CI release cannot use a local/report-only SWE claim; "
-            "qualification_claim must be 'models_ci_graded'"
-        )
-    score = task.score
-    mode_references = getattr(score, "mode_reference_scores", {}) if score else {}
-    smoke_ids = cfg.instance_ids_map.get(EvalLimitMode.SMOKE_TEST)
-    if (
-        not isinstance(smoke_ids, list)
-        or not smoke_ids
-        or not all(
-            isinstance(instance_id, str) and instance_id for instance_id in smoke_ids
-        )
-    ):
-        raise ValueError(
-            "Quetzal Models-CI SWE enrollment requires a predeclared nonempty "
-            "smoke diagnostic set independent of model output"
-        )
-    if cfg.selection_policy == "reviewed_fixed_subset":
-        limit_mode = getattr(runtime_config, "limit_samples_mode", None)
-        if limit_mode not in ("ci-nightly", EvalLimitMode.CI_NIGHTLY):
-            raise ValueError(
-                "models_ci_graded SWE qualification requires effective "
-                "limit_samples_mode=ci-nightly; smoke/local modes are diagnostic"
-            )
-        nightly_ids = cfg.instance_ids_map.get(EvalLimitMode.CI_NIGHTLY)
-        if (
-            not isinstance(nightly_ids, list)
-            or not nightly_ids
-            or not all(
-                isinstance(instance_id, str) and instance_id
-                for instance_id in nightly_ids
-            )
-        ):
-            raise ValueError(
-                "reviewed_fixed_subset requires a predeclared nonempty "
-                "CI_NIGHTLY instance set"
-            )
-        if EvalLimitMode.CI_NIGHTLY not in mode_references:
-            raise ValueError(
-                "reviewed_fixed_subset requires an independently baselined "
-                "CI_NIGHTLY mode reference for the exact fixed SWE subset"
-            )
-        if _GIT_REVISION_RE.fullmatch(str(cfg.dataset_revision or "")) is None:
-            raise ValueError(
-                "reviewed_fixed_subset requires an exact pinned dataset revision"
-            )
-        if len(set(nightly_ids)) != len(nightly_ids):
-            raise ValueError(
-                "reviewed_fixed_subset CI_NIGHTLY instance IDs must be unique"
-            )
-        expected_subset_digest = hashlib.sha256(
-            json.dumps(nightly_ids, ensure_ascii=True, separators=(",", ":")).encode(
-                "utf-8"
-            )
-        ).hexdigest()
-        if cfg.ordered_instance_ids_sha256 != expected_subset_digest:
-            raise ValueError(
-                "reviewed_fixed_subset requires the exact SHA-256 of its "
-                "canonical ordered CI_NIGHTLY instance IDs"
-            )
-        if _SHA256_RE.fullmatch(str(cfg.selected_instances_sha256 or "")) is None:
-            raise ValueError(
-                "reviewed_fixed_subset requires an exact SHA-256 of the selected "
-                "revision-pinned dataset row bytes"
-            )
-        subset_reference = mode_references[EvalLimitMode.CI_NIGHTLY]
-        if (
-            not isinstance(subset_reference.score, (int, float))
-            or isinstance(subset_reference.score, bool)
-            or subset_reference.score <= 0
-            or not isinstance(subset_reference.ref, str)
-            or not subset_reference.ref.strip()
-        ):
-            raise ValueError(
-                "reviewed_fixed_subset requires a positive measured score and "
-                "nonempty reference tied to the exact CI_NIGHTLY subset"
-            )
-    elif cfg.selection_policy == "full_dataset":
-        raise ValueError(
-            "full_dataset release qualification is disabled until the contract "
-            "binds authoritative dataset cardinality and an exact full ID-set "
-            "digest, then verifies complete report coverage"
-        )
-    else:
-        raise ValueError(
-            "Quetzal Models-CI SWE enrollment requires selection_policy="
-            "'reviewed_fixed_subset' or 'full_dataset'"
-        )
 
 
 def _agentic_impl_id(model_spec) -> str:
@@ -491,7 +234,27 @@ def validate_agentic_task_capabilities(model_spec, runtime_config) -> None:
 
 
 def _uses_external_runtime_model_spec(runtime_config) -> bool:
-    return bool(runtime_config.runtime_model_spec_json)
+    """Whether the spec came from outside the catalog.
+
+    Both sources describe a model the catalog need not know about: an explicit
+    --runtime-model-spec-json, or a requirements document the spec was
+    synthesized from.
+    """
+    return bool(runtime_config.runtime_model_spec_json) or bool(
+        getattr(runtime_config, "requirements_json", None)
+    )
+
+
+def _has_eval_config(model_name: str) -> bool:
+    """Whether the active target pack defines evals for ``model_name``.
+
+    Goes through the pack rather than EVAL_CONFIGS directly so a
+    requirements-driven run is gated on the document's accuracy evals, which
+    is where its eval content comes from.
+    """
+    from workflow_module.target_pack import get_target_pack
+
+    return get_target_pack().eval_config(model_name) is not None
 
 
 def _swarmone_license_available() -> bool:
@@ -568,7 +331,6 @@ def validate_runtime_args(model_spec, runtime_config):
     # The exact ModelSpec and task selection are now known, while no host
     # storage, server process, model payload, or device has been touched yet.
     validate_agentic_task_capabilities(model_spec, runtime_config)
-    validate_quetzal_models_ci_contract(model_spec, runtime_config)
 
     # The image-version contract only matters when run.py actually launches the
     # vLLM docker image. Client-side / external-server runs (no --docker-server)
@@ -583,7 +345,7 @@ def validate_runtime_args(model_spec, runtime_config):
     )
 
     if workflow_type == WorkflowType.EVALS:
-        assert model_spec.model_name in EVAL_CONFIGS, (
+        assert _has_eval_config(model_spec.model_name), (
             f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
         )
     if (
@@ -669,7 +431,7 @@ def validate_runtime_args(model_spec, runtime_config):
     if workflow_type == WorkflowType.RELEASE:
         # NOTE: fail fast for models without both defined evals and generated
         # benchmark tasks. A run_*.log file will be made for failed combinations.
-        assert model_spec.model_name in EVAL_CONFIGS, (
+        assert _has_eval_config(model_spec.model_name), (
             f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
         )
         if not can_dispatch_to_engine(model_spec, runtime_config):

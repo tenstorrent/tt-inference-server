@@ -9,7 +9,8 @@ from __future__ import annotations
 import logging
 from typing import Iterable, List
 
-from workflows.workflow_types import EvalLimitMode, WorkflowVenvType
+from workflow_module.engine_types import EvalLimitMode
+from workflow_module.engine_types import WorkflowVenvType
 
 from .eval_command import _get_limit_mode, _parse_eval_samples_mapping
 
@@ -169,17 +170,20 @@ def _select_tasks(tasks: list, runtime_config) -> list:
     return [selected_task]
 
 
-def get_llm_eval_tasks(model_spec, runtime_config=None) -> List:
+def get_llm_eval_tasks(model_spec, runtime_config=None, device=None) -> List:
     """Return the standard eval tasks for ``model_spec`` (empty if none).
 
-    Looks the model up in ``EVAL_CONFIGS`` by ``model_name``, drops non-standard
-    (agentic/media) task venvs, then applies --eval-samples / smoke-test
-    selection. Returns ``[]`` when the model has no standard eval tasks so the
-    caller can no-op cleanly (e.g. a model with only agentic evals).
+    Looks the model up in the registered target pack by ``model_name``, drops
+    non-standard (agentic/media) task venvs, applies per-device tier-2/3
+    overrides when ``device`` is given, then applies --eval-samples /
+    smoke-test selection. Returns ``[]`` when the model has no standard eval
+    tasks so the caller can no-op cleanly (e.g. a model with only agentic
+    evals).
     """
-    from reference_config.evals.eval_config import EVAL_CONFIGS
+    from workflow_module.target_pack import get_target_pack
 
-    eval_config = EVAL_CONFIGS.get(model_spec.model_name)
+    pack = get_target_pack()
+    eval_config = pack.eval_config(model_spec.model_name)
     if eval_config is None or not eval_config.tasks:
         logger.info("No EVAL_CONFIGS entry / tasks for model=%s", model_spec.model_name)
         return []
@@ -194,6 +198,9 @@ def get_llm_eval_tasks(model_spec, runtime_config=None) -> List:
             model_spec.model_name,
         )
         return []
+
+    if device is not None:
+        standard = [pack.resolve_eval_task_for_device(t, device) for t in standard]
 
     admitted = filter_tasks_by_min_context(standard, model_spec)
     if not admitted:

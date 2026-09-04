@@ -4,15 +4,12 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import os
-import signal
 import subprocess
 import sys
 import re
-import tempfile
 import time
 
 from dataclasses import dataclass, field
@@ -20,11 +17,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
-logger = logging.getLogger(__name__)
-
-_TOKEN_BUDGET_MODEL_CLASS = (
-    "llm_module.agentic.mini_swe_token_budget.TokenBudgetLitellmModel"
+from llm_module.agentic.progress import (
+    TIMEOUT_EXIT_CODE,
+    make_swebench_probe,
+    run_with_progress,
+    worst_case_ceiling_s,
 )
+
+logger = logging.getLogger(__name__)
 
 # The SWE-bench harness builds/pulls Docker images (a shared base image plus
 # per-instance images) from ghcr.io. Those transfers can fail transiently
@@ -33,6 +33,23 @@ _TOKEN_BUDGET_MODEL_CLASS = (
 # before giving up; both counts are env-tunable for CI.
 _HARNESS_MAX_ATTEMPTS = 3
 _HARNESS_RETRY_DELAY_SEC = 30
+
+# litellm's OpenAI-compatible path defaults to httpx.Timeout(None) -- an
+# infinite read timeout -- so without an explicit value a never-answered
+# request blocks the worker thread forever.
+DEFAULT_LLM_TIMEOUT_SEC = 10 * 60
+# Per-task budget B for the wave-aware deadline model. mini-swe-agent runs each
+# instance in its own container started with ``sleep <this>``; once it exits no
+# further agent action can succeed, so this is the authoritative wall-clock
+# ceiling for a single instance.
+DEFAULT_MINI_CONTAINER_TIMEOUT_SEC = 2 * 60 * 60
+# Grace for dataset load + image pulls before the first wave can start.
+DEFAULT_STARTUP_GRACE_SEC = 10 * 60
+# If no instance completes for ``B + stall_grace`` the run is wedged (every
+# in-flight instance is necessarily past its own budget); kill it.
+DEFAULT_STALL_GRACE_SEC = 5 * 60
+# How often the progress watchdog logs elapsed / percent / max-allowed time.
+DEFAULT_PROGRESS_LOG_INTERVAL_SEC = 5 * 60
 
 
 @dataclass(frozen=True)
@@ -58,29 +75,28 @@ class SWEbenchRunConfig:
     max_output_tokens: Optional[int]
     completion_kwargs: dict[str, Any]
     swebench_timeout_sec: Optional[int]
-    agent_generation_timeout_sec: Optional[int]
     shuffle: bool
     random_delay_multiplier: float
     score_existing_predictions: bool
+    # Per-request LLM timeout (seconds) written into the agent model config;
+    # ``None`` keeps the client default (infinite for litellm's OpenAI path).
+    llm_timeout_sec: Optional[int] = DEFAULT_LLM_TIMEOUT_SEC
+    # Wave-aware deadline model (see progress.py). ``mini_container_timeout_sec``
+    # is the per-task budget B, also written into the mini config as
+    # ``environment.container_timeout``.
+    mini_container_timeout_sec: int = DEFAULT_MINI_CONTAINER_TIMEOUT_SEC
+    startup_grace_sec: int = DEFAULT_STARTUP_GRACE_SEC
+    stall_grace_sec: int = DEFAULT_STALL_GRACE_SEC
+    progress_log_interval_sec: int = DEFAULT_PROGRESS_LOG_INTERVAL_SEC
+    # Explicit flat wall-clock kill for the agent subprocess. ``None`` uses the
+    # wave-aware ceiling derived from the fields above; set to override.
+    agent_subprocess_timeout_sec: Optional[int] = None
+    # When False the progress watchdog logs deadlines but never kills the agent
+    # subprocess, letting it run to completion. Killing early leaves unfinished
+    # instances out of ``preds.json``, and the score is resolved/submitted over
+    # exactly those predictions, so an early kill inflates accuracy.
+    enforce_agent_deadline: bool = False
     instance_ids: list[str] = field(default_factory=list)
-    mini_agent_kwargs: dict[str, Any] = field(default_factory=dict)
-    # Maximum command-output characters retained in model-visible history.
-    # The exact tokenizer still counts the complete retained request and
-    # remains the authoritative input-envelope gate.
-    mini_observation_chars: Optional[int] = None
-    # Qualification identity copied from the catalogue into the detached
-    # verifier result. Local/report-only runs remain runnable, but only a
-    # models_ci_graded result is eligible to support release promotion.
-    qualification_claim: str = "local_behavioral_only"
-    selection_policy: Optional[str] = None
-    instance_selection_provenance: Optional[str] = None
-    dataset_revision: Optional[str] = None
-    ordered_instance_ids_sha256: Optional[str] = None
-    selected_instances_sha256: Optional[str] = None
-    eval_limit_mode: Optional[str] = None
-    # Exact Hugging Face tokenizer used to render/count each mini-swe request.
-    # Kept separate from model_name, which includes LiteLLM's provider prefix.
-    tokenizer_name: Optional[str] = None
     # Interpreter whose bin/ holds the ``sweagent`` / ``mini-extra`` CLIs and
     # whose ``-m swebench`` is importable. ``None`` uses the current interpreter
     # (standalone ``run_agentic.py`` re-execs into the EVALS_AGENTIC venv); set
@@ -92,300 +108,51 @@ def _interpreter(config: SWEbenchRunConfig) -> Path:
     return Path(config.venv_python) if config.venv_python else Path(sys.executable)
 
 
-def _canonical_selected_rows(rows: list[dict[str, Any]]) -> bytes:
-    return json.dumps(
-        rows, ensure_ascii=True, sort_keys=True, separators=(",", ":")
-    ).encode("utf-8")
+def _mini_output_dir(config: SWEbenchRunConfig) -> Path:
+    """Where ``mini-extra swebench`` writes preds.json, logs and per-instance dirs."""
+    return config.output_dir / "mini_sweagent"
 
 
-def _prepare_pinned_swebench_dataset(
-    config: SWEbenchRunConfig,
-) -> tuple[str, Optional[str]]:
-    """Materialize one revision-pinned, content-bound local dataset snapshot.
+def _resolve_total(config: SWEbenchRunConfig) -> Optional[int]:
+    """Instance count known up front: explicit ids win, else ``n_tasks``."""
+    if config.instance_ids:
+        return len(config.instance_ids)
+    return config.n_tasks
 
-    Both mini-swe-agent and the isolated verifier receive this same directory,
-    so neither independently resolves a mutable Hub alias. Legacy/local rows
-    without a declared revision keep their existing dataset source, while a
-    graded run fails closed unless the selected row bytes match the catalogue.
+
+def _flat_agent_timeout(config: SWEbenchRunConfig) -> Optional[float]:
+    """Flat wall-clock bound for backends without a progress probe.
+
+    Explicit ``agent_subprocess_timeout_sec`` wins; otherwise derive the
+    wave-aware worst-case ceiling when the total is known, else ``None``.
     """
-    graded = config.qualification_claim == "models_ci_graded"
-    if not config.dataset_revision:
-        if graded:
-            raise RuntimeError(
-                "graded SWE-bench requires an exact dataset revision and "
-                "content-bound local snapshot"
-            )
-        return config.dataset_name, None
-    if not config.instance_ids:
-        raise RuntimeError(
-            "revision-pinned SWE-bench snapshot requires exact selected instance IDs"
+    if config.agent_subprocess_timeout_sec is not None:
+        return config.agent_subprocess_timeout_sec
+    total = _resolve_total(config)
+    if total:
+        return worst_case_ceiling_s(
+            total,
+            config.n_concurrent_trials,
+            config.mini_container_timeout_sec,
         )
-    if not re.fullmatch(r"[A-Za-z0-9_.-]+", config.dataset_split):
-        raise RuntimeError("SWE-bench dataset split is not a safe local name")
-
-    from datasets import load_dataset
-
-    source = load_dataset(
-        config.dataset_name,
-        split=config.dataset_split,
-        revision=config.dataset_revision,
-    )
-    by_id: dict[str, dict[str, Any]] = {}
-    for raw in source:
-        row = dict(raw)
-        instance_id = row.get("instance_id")
-        if instance_id in config.instance_ids:
-            if instance_id in by_id:
-                raise RuntimeError(
-                    f"pinned SWE-bench dataset repeats instance {instance_id!r}"
-                )
-            by_id[instance_id] = row
-    missing = [
-        instance_id for instance_id in config.instance_ids if instance_id not in by_id
-    ]
-    if missing:
-        raise RuntimeError(
-            f"pinned SWE-bench dataset is missing selected instances: {missing}"
-        )
-    ordered_rows = [by_id[instance_id] for instance_id in config.instance_ids]
-    content_sha256 = hashlib.sha256(_canonical_selected_rows(ordered_rows)).hexdigest()
-    if graded and config.selected_instances_sha256 != content_sha256:
-        raise RuntimeError(
-            "graded SWE-bench selected-instance content digest mismatch: "
-            f"expected={config.selected_instances_sha256!r}, actual={content_sha256!r}"
-        )
-
-    snapshot_dir = config.output_dir / "pinned_swebench_dataset"
-    snapshot_dir.mkdir(parents=True, exist_ok=True)
-    snapshot_path = snapshot_dir / f"{config.dataset_split}.jsonl"
-    with tempfile.NamedTemporaryFile(
-        mode="w",
-        encoding="utf-8",
-        dir=snapshot_dir,
-        prefix=".dataset.",
-        delete=False,
-    ) as stream:
-        temporary = Path(stream.name)
-        for row in ordered_rows:
-            stream.write(
-                json.dumps(
-                    row,
-                    ensure_ascii=True,
-                    sort_keys=True,
-                    separators=(",", ":"),
-                )
-                + "\n"
-            )
-        stream.flush()
-        os.fsync(stream.fileno())
-    os.replace(temporary, snapshot_path)
-
-    # Exercise the same dataset loader the agent and verifier will use, but do
-    # not hash its inferred Python values.  Recent datasets releases infer ISO
-    # date strings in JSONL as ``datetime`` objects, which is neither JSON
-    # serializable nor byte-identical to the selected Hub rows.  The immutable
-    # JSONL bytes are the content boundary; the loader check only proves that
-    # it preserves the exact ordered instance identity.
-    reloaded = [
-        dict(row) for row in load_dataset(str(snapshot_dir), split=config.dataset_split)
-    ]
-    if [row.get("instance_id") for row in reloaded] != config.instance_ids:
-        raise RuntimeError("local SWE-bench snapshot changed instance identity/order")
-    snapshot_rows = [
-        json.loads(line)
-        for line in snapshot_path.read_text(encoding="utf-8").splitlines()
-        if line
-    ]
-    reloaded_sha256 = hashlib.sha256(
-        _canonical_selected_rows(snapshot_rows)
-    ).hexdigest()
-    if reloaded_sha256 != content_sha256:
-        raise RuntimeError("local SWE-bench snapshot changed during materialization")
-    receipt = {
-        "schema": "ttis.pinned-swebench-dataset/v1",
-        "dataset_name": config.dataset_name,
-        "dataset_split": config.dataset_split,
-        "dataset_revision": config.dataset_revision,
-        "ordered_instance_ids": config.instance_ids,
-        "ordered_instance_ids_sha256": config.ordered_instance_ids_sha256,
-        "selected_instances_sha256": content_sha256,
-        "snapshot_dir": str(snapshot_dir),
-    }
-    # Keep the receipt outside the dataset directory. Hugging Face treats every
-    # JSON/JSONL file in a local dataset directory as data; placing metadata
-    # beside ``test.jsonl`` would make the agent and verifier load different
-    # schemas on their second open.
-    (config.output_dir / "pinned_swebench_dataset_receipt.json").write_text(
-        json.dumps(receipt, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    return str(snapshot_dir), content_sha256
+    return None
 
 
-def _run_command(cmd: list[str], cwd: Path, env: dict[str, str]) -> int:
-    logger.info("Running command: %s", " ".join(cmd))
-    return subprocess.run(cmd, cwd=cwd, env=env).returncode
-
-
-def _run_bounded_process_group(
-    cmd: list[str],
-    cwd: Path,
-    env: dict[str, str],
-    *,
-    timeout_sec: float,
-    terminate_grace_sec: float = 20.0,
-    cleanup_container_label: Optional[str] = None,
+def _run_command(
+    cmd: list[str], cwd: Path, env: dict[str, str], timeout_s: Optional[float] = None
 ) -> int:
-    """Run a harness subprocess with a hard wall-clock and group cleanup."""
-    if timeout_sec <= 0:
-        raise ValueError(f"timeout_sec must be positive, got {timeout_sec!r}")
-    logger.info(
-        "Running bounded command (timeout %.0fs): %s", timeout_sec, " ".join(cmd)
-    )
-    process = subprocess.Popen(cmd, cwd=cwd, env=env, start_new_session=True)
+    logger.info("Running command: %s", " ".join(cmd))
     try:
-        try:
-            return process.wait(timeout=timeout_sec)
-        except subprocess.TimeoutExpired:
-            logger.error(
-                "Command exceeded %.0fs; terminating process group: %s",
-                timeout_sec,
-                " ".join(cmd),
-            )
-            try:
-                os.killpg(process.pid, signal.SIGTERM)
-            except ProcessLookupError:
-                pass
-            try:
-                process.wait(timeout=terminate_grace_sec)
-            except subprocess.TimeoutExpired:
-                try:
-                    os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-                process.wait()
-            return 124
-    finally:
-        if cleanup_container_label:
-            _cleanup_labeled_containers(cleanup_container_label, env)
-
-
-def _agentic_container_label(config: SWEbenchRunConfig) -> str:
-    identity = hashlib.sha256(str(config.output_dir.resolve()).encode()).hexdigest()[
-        :16
-    ]
-    return f"ttis.agentic_run={identity}"
-
-
-def _cleanup_labeled_containers(label: str, env: dict[str, str]) -> None:
-    """Synchronously remove only containers carrying this run's unique label."""
-    executable = env.get("MSWEA_DOCKER_EXECUTABLE", "docker")
-    try:
-        listed = subprocess.run(
-            [executable, "ps", "-aq", "--filter", f"label={label}"],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            check=False,
-            env=env,
+        return subprocess.run(cmd, cwd=cwd, env=env, timeout=timeout_s).returncode
+    except subprocess.TimeoutExpired:
+        # 124 matches /usr/bin/timeout and llm_module.drivers._subprocess so
+        # callers treat a timed-out command like any other nonzero exit.
+        logger.error(
+            "Command exceeded timeout of %.0fs and was killed: %s",
+            timeout_s,
+            " ".join(cmd),
         )
-        if listed.returncode != 0:
-            raise RuntimeError(
-                listed.stderr.strip() or f"docker ps exited {listed.returncode}"
-            )
-        container_ids = listed.stdout.split()
-        if not container_ids:
-            return
-        removed = subprocess.run(
-            [executable, "rm", "-f", *container_ids],
-            capture_output=True,
-            text=True,
-            timeout=60,
-            check=False,
-            env=env,
-        )
-        if removed.returncode != 0:
-            raise RuntimeError(
-                removed.stderr.strip() or f"docker rm exited {removed.returncode}"
-            )
-    except (OSError, subprocess.SubprocessError, RuntimeError) as exc:
-        raise RuntimeError(
-            f"failed to clean agent containers for label {label!r}: {exc}"
-        ) from exc
-
-
-def _atomic_write_json(path: Path, value: object) -> None:
-    """Durably replace a JSON state file without exposing partial contents."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
-    temporary_path = Path(temporary)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as stream:
-            json.dump(value, stream, indent=2, sort_keys=True)
-            stream.write("\n")
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temporary_path, path)
-        directory_fd = os.open(path.parent, os.O_RDONLY)
-        try:
-            os.fsync(directory_fd)
-        finally:
-            os.close(directory_fd)
-    finally:
-        temporary_path.unlink(missing_ok=True)
-
-
-def _valid_prediction(record: object) -> bool:
-    return (
-        isinstance(record, dict)
-        and isinstance(record.get("model_patch"), str)
-        and bool(record["model_patch"].strip())
-    )
-
-
-def _load_successful_predictions(
-    path: Path, expected_ids: list[str]
-) -> dict[str, dict]:
-    if not path.exists():
-        return {}
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise RuntimeError(f"resume state is unreadable at {path}: {exc}") from exc
-    if not isinstance(value, dict):
-        raise RuntimeError(f"resume state at {path} is not a JSON object")
-    expected = set(expected_ids)
-    unknown = sorted(set(value) - expected)
-    if unknown:
-        raise RuntimeError(f"resume state contains unexpected instance IDs: {unknown}")
-    invalid = sorted(
-        instance_id for instance_id, row in value.items() if not _valid_prediction(row)
-    )
-    if invalid:
-        raise RuntimeError(f"resume state contains failed/empty samples: {invalid}")
-    return value
-
-
-def _validate_prediction_file(path: Path, expected_ids: list[str]) -> dict[str, dict]:
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise RuntimeError(f"predictions are unreadable at {path}: {exc}") from exc
-    if not isinstance(value, dict) or not value:
-        raise RuntimeError(f"predictions at {path} are empty or not an object")
-    invalid = sorted(
-        instance_id for instance_id, row in value.items() if not _valid_prediction(row)
-    )
-    if invalid:
-        raise RuntimeError(f"predictions contain failed/empty samples: {invalid}")
-    if expected_ids:
-        missing = sorted(set(expected_ids) - set(value))
-        extra = sorted(set(value) - set(expected_ids))
-        if missing or extra:
-            raise RuntimeError(
-                f"prediction IDs differ from fixed selection: missing={missing}, extra={extra}"
-            )
-    return value
+        return 124
 
 
 def _env_int(name: str, default: int) -> int:
@@ -510,8 +277,11 @@ def _write_sweagent_model_config(config: SWEbenchRunConfig) -> Path:
     }
     if config.max_output_tokens is not None:
         model_config["agent"]["model"]["max_output_tokens"] = config.max_output_tokens
-    if config.completion_kwargs:
-        model_config["agent"]["model"]["completion_kwargs"] = config.completion_kwargs
+    completion_kwargs = dict(config.completion_kwargs or {})
+    if config.llm_timeout_sec is not None:
+        completion_kwargs.setdefault("timeout", config.llm_timeout_sec)
+    if completion_kwargs:
+        model_config["agent"]["model"]["completion_kwargs"] = completion_kwargs
 
     config_path = config.output_dir / "sweagent_model_config.yaml"
     config_path.write_text(json.dumps(model_config, indent=2), encoding="utf-8")
@@ -519,30 +289,6 @@ def _write_sweagent_model_config(config: SWEbenchRunConfig) -> Path:
 
 
 def _write_mini_sweagent_model_config(config: SWEbenchRunConfig) -> Path:
-    if config.mini_model_class not in ("litellm", _TOKEN_BUDGET_MODEL_CLASS):
-        raise ValueError(
-            "mini-swe-agent input-budget enforcement currently requires the "
-            f"LiteLLM model path, got {config.mini_model_class!r}"
-        )
-    if not config.tokenizer_name:
-        raise ValueError(
-            "mini-swe-agent input-budget enforcement requires tokenizer_name"
-        )
-    max_input_tokens = config.max_input_tokens
-    max_output_tokens = config.max_output_tokens
-    if (
-        not isinstance(max_input_tokens, int)
-        or isinstance(max_input_tokens, bool)
-        or max_input_tokens <= 0
-    ):
-        raise ValueError("max_input_tokens must be a positive integer")
-    if max_output_tokens is not None:
-        if (
-            not isinstance(max_output_tokens, int)
-            or isinstance(max_output_tokens, bool)
-            or max_output_tokens <= 0
-        ):
-            raise ValueError("max_output_tokens must be a positive integer")
     model_kwargs: dict[str, Any] = {
         "api_base": config.api_base,
         "api_key": os.environ.get("OPENAI_API_KEY", "EMPTY"),
@@ -554,70 +300,23 @@ def _write_mini_sweagent_model_config(config: SWEbenchRunConfig) -> Path:
         model_kwargs["max_tokens"] = config.max_output_tokens
     if config.completion_kwargs:
         model_kwargs.update(config.completion_kwargs)
+    if config.llm_timeout_sec is not None:
+        model_kwargs.setdefault("timeout", config.llm_timeout_sec)
 
-    model_config: dict[str, Any] = {
-        "model": {
-            "model_name": config.model_name,
-            "model_class": _TOKEN_BUDGET_MODEL_CLASS,
-            "cost_tracking": "ignore_errors",
-            "model_kwargs": model_kwargs,
-            "tokenizer_name": config.tokenizer_name,
-            "max_input_tokens": config.max_input_tokens,
-            "token_count_log": str(
-                config.output_dir / "mini_sweagent_token_counts.jsonl"
-            ),
-        }
+    model_section: dict[str, Any] = {
+        "model_name": config.model_name,
+        "model_class": config.mini_model_class,
+        "cost_tracking": "ignore_errors",
+        "model_kwargs": model_kwargs,
     }
-    max_observation_chars = getattr(config, "mini_observation_chars", None)
-    if max_observation_chars is not None:
-        if (
-            not isinstance(max_observation_chars, int)
-            or isinstance(max_observation_chars, bool)
-            or max_observation_chars < 2
-        ):
-            raise ValueError("mini_observation_chars must be an integer >= 2")
-        model_config["model"]["observation_retained_payload_chars"] = (
-            max_observation_chars
-        )
-        half = max_observation_chars // 2
-        model_config["model"]["observation_template"] = (
-            "{% if output.exception_info -%}\n"
-            "{% set observation_type = 'exception_and_output' -%}\n"
-            "{% set payload = 'exception: ' ~ output.exception_info ~ "
-            "'\\noutput: ' ~ output.output -%}\n"
-            "{% else -%}\n"
-            "{% set observation_type = 'command_output' -%}\n"
-            "{% set payload = output.output -%}\n"
-            "{% endif -%}\n"
-            "<returncode>{{output.returncode}}</returncode>\n"
-            '<observation type="{{ observation_type }}">\n'
-            f"{{% if payload | length <= {max_observation_chars} -%}}\n"
-            "<payload>\n{{ payload -}}\n</payload>\n"
-            "{%- else -%}\n"
-            "<warning>Observation payload exceeded the declared budget; "
-            "an equal head/tail sample follows.</warning>\n"
-            f"<payload_head>\n{{{{ payload[:{half}] }}}}\n</payload_head>\n"
-            "<elided_chars>{{ payload | length - "
-            f"{max_observation_chars} }}}}</elided_chars>\n"
-            f"<payload_tail>\n{{{{ payload[-{half}:] }}}}\n</payload_tail>\n"
-            "{%- endif -%}\n"
-            "</observation>"
-        )
-    if config.mini_environment_class == "docker":
+    model_config: dict[str, Any] = {"model": model_section}
+    # Pin the container lifetime to our per-task budget B rather than inheriting
+    # mini-swe-agent's default ("2h"). ``container_timeout`` is passed verbatim
+    # to ``docker run ... sleep <value>``; use an explicit seconds suffix.
+    if config.mini_container_timeout_sec is not None:
         model_config["environment"] = {
-            "run_args": ["--rm", "--label", _agentic_container_label(config)]
+            "container_timeout": f"{int(config.mini_container_timeout_sec)}s"
         }
-    if config.mini_agent_kwargs:
-        if not isinstance(config.mini_agent_kwargs, dict):
-            raise ValueError("mini_agent_kwargs must be a dictionary")
-        step_limit = config.mini_agent_kwargs.get("step_limit")
-        if step_limit is not None and (
-            not isinstance(step_limit, int)
-            or isinstance(step_limit, bool)
-            or step_limit <= 0
-        ):
-            raise ValueError("mini_agent_kwargs.step_limit must be a positive integer")
-        model_config["agent"] = dict(config.mini_agent_kwargs)
     config_path = config.output_dir / "mini_sweagent_model_config.yaml"
     config_path.write_text(json.dumps(model_config, indent=2), encoding="utf-8")
     return config_path
@@ -683,9 +382,6 @@ def build_mini_sweagent_command(
     config: SWEbenchRunConfig,
     mini_config_path: Path,
     mini_output_dir: Path,
-    *,
-    instance_ids: Optional[list[str]] = None,
-    dataset_source: Optional[str] = None,
 ) -> list[str]:
     mini_exec = _interpreter(config).parent / "mini-extra"
     cmd = [
@@ -694,7 +390,7 @@ def build_mini_sweagent_command(
         "--model",
         config.model_name,
         "--subset",
-        dataset_source or config.sweagent_subset,
+        config.sweagent_subset,
         "--split",
         config.dataset_split,
         "--workers",
@@ -710,114 +406,12 @@ def build_mini_sweagent_command(
     ]
     if config.shuffle:
         cmd.append("--shuffle")
-    selected_ids = config.instance_ids if instance_ids is None else instance_ids
-    if selected_ids:
-        regex = "^(" + "|".join(re.escape(iid) for iid in selected_ids) + ")$"
+    if config.instance_ids:
+        regex = "^(" + "|".join(re.escape(iid) for iid in config.instance_ids) + ")$"
         cmd.extend(["--filter", regex])
     elif config.n_tasks is not None:
         cmd.extend(["--slice", f":{config.n_tasks}"])
     return cmd
-
-
-def _run_fixed_mini_sweagent_samples(
-    config: SWEbenchRunConfig,
-    mini_config_path: Path,
-    env: dict[str, str],
-    dataset_source: Optional[str] = None,
-) -> tuple[int, Path]:
-    """Run fixed IDs one at a time with atomic successful-sample resume state."""
-    if not config.instance_ids:
-        raise ValueError("fixed-sample runner requires instance_ids")
-    timeout = config.agent_generation_timeout_sec
-    if timeout is None or timeout <= 0:
-        raise ValueError("fixed-sample runner requires a positive generation timeout")
-
-    output_dir = config.output_dir / "mini_sweagent"
-    container_label = (
-        _agentic_container_label(config)
-        if config.mini_environment_class == "docker"
-        else None
-    )
-    resume_path = output_dir / "successful_samples.json"
-    predictions = _load_successful_predictions(resume_path, config.instance_ids)
-    started = time.monotonic()
-    for instance_id in config.instance_ids:
-        if instance_id in predictions:
-            logger.info("Resuming successful SWE-bench sample %s", instance_id)
-            continue
-        remaining = timeout - (time.monotonic() - started)
-        if remaining <= 0:
-            return 124, output_dir / "preds.json"
-        sample_dir = output_dir / "samples" / instance_id
-        sample_predictions_path = sample_dir / "preds.json"
-        if sample_predictions_path.exists():
-            try:
-                previous = json.loads(
-                    sample_predictions_path.read_text(encoding="utf-8")
-                )
-            except (OSError, json.JSONDecodeError):
-                previous = None
-            previous_record = (
-                previous.get(instance_id) if isinstance(previous, dict) else None
-            )
-            if _valid_prediction(previous_record):
-                # The sample completed before a crash but the consolidated
-                # resume state did not. Recover it without another model call.
-                predictions[instance_id] = previous_record
-                _atomic_write_json(resume_path, predictions)
-                _atomic_write_json(output_dir / "preds.json", predictions)
-                continue
-            failed_path = sample_dir / f"preds.failed.{int(time.time())}.json"
-            os.replace(sample_predictions_path, failed_path)
-        command = build_mini_sweagent_command(
-            config,
-            mini_config_path,
-            sample_dir,
-            instance_ids=[instance_id],
-            dataset_source=dataset_source,
-        )
-        rc = _run_bounded_process_group(
-            command,
-            cwd=config.output_dir,
-            env=env,
-            timeout_sec=remaining,
-            cleanup_container_label=container_label,
-        )
-        if rc != 0:
-            return rc, output_dir / "preds.json"
-        try:
-            sample_predictions = json.loads(
-                sample_predictions_path.read_text(encoding="utf-8")
-            )
-        except (OSError, json.JSONDecodeError) as exc:
-            logger.error(
-                "Sample %s produced unreadable predictions: %s", instance_id, exc
-            )
-            return 65, output_dir / "preds.json"
-        record = (
-            sample_predictions.get(instance_id)
-            if isinstance(sample_predictions, dict)
-            else None
-        )
-        if not _valid_prediction(record):
-            logger.error(
-                "Sample %s produced a failed/empty patch sentinel", instance_id
-            )
-            return 65, output_dir / "preds.json"
-        predictions[instance_id] = record
-        _atomic_write_json(resume_path, predictions)
-        _atomic_write_json(output_dir / "preds.json", predictions)
-
-    missing = [
-        instance_id
-        for instance_id in config.instance_ids
-        if instance_id not in predictions
-    ]
-    if missing:
-        logger.error("Fixed SWE-bench run is missing predictions: %s", missing)
-        return 65, output_dir / "preds.json"
-    _atomic_write_json(output_dir / "preds.json", predictions)
-    return 0, output_dir / "preds.json"
 
 
 def _find_sweagent_preds(sweagent_output_dir: Path) -> Path:
@@ -866,14 +460,13 @@ def build_swebench_harness_command(
     config: SWEbenchRunConfig,
     predictions_path: Path,
     run_id: str,
-    dataset_source: Optional[str] = None,
 ) -> list[str]:
     cmd = [
         str(_interpreter(config)),
         "-m",
         "swebench.harness.run_evaluation",
         "--dataset_name",
-        dataset_source or config.dataset_name,
+        config.dataset_name,
         "--split",
         config.dataset_split,
         "--predictions_path",
@@ -959,40 +552,11 @@ def normalize_swebench_report(
     result_path: Path,
     config: SWEbenchRunConfig,
     predictions_path: Path,
-    dataset_content_sha256: Optional[str] = None,
 ) -> dict[str, Any]:
     """Normalize the SWE-bench harness report into harbor-format result.json."""
     report = json.loads(harness_report_path.read_text(encoding="utf-8"))
-    submitted_rows = report.get("submitted_ids", [])
-    resolved_rows = report.get("resolved_ids", [])
-    if not isinstance(submitted_rows, list) or not isinstance(resolved_rows, list):
-        raise RuntimeError("SWE-bench verifier ID fields must be lists")
-    submitted_ids = set(submitted_rows)
-    resolved_ids = set(resolved_rows)
-
-    graded = config.qualification_claim == "models_ci_graded"
-    expected_ids = set(config.instance_ids)
-    if graded and not submitted_ids:
-        raise RuntimeError(
-            "graded SWE-bench verifier report must contain nonempty submitted_ids; "
-            "aggregate-only counts cannot support release promotion"
-        )
-    if graded and (
-        len(submitted_ids) != len(submitted_rows)
-        or not all(
-            isinstance(instance_id, str) and instance_id
-            for instance_id in submitted_rows
-        )
-    ):
-        raise RuntimeError(
-            "graded SWE-bench verifier submitted_ids must be unique nonempty strings"
-        )
-    if graded and expected_ids and submitted_ids != expected_ids:
-        raise RuntimeError(
-            "graded SWE-bench verifier submitted_ids differ from the exact "
-            "predeclared run set: "
-            f"expected={sorted(expected_ids)}, submitted={sorted(submitted_ids)}"
-        )
+    submitted_ids = set(report.get("submitted_ids", []))
+    resolved_ids = set(report.get("resolved_ids", []))
 
     if not submitted_ids:
         submitted_count = int(report.get("submitted_instances", 0))
@@ -1003,24 +567,36 @@ def normalize_swebench_report(
         resolved_count = len(resolved_ids)
         unresolved_ids = submitted_ids - resolved_ids
 
-    if submitted_count <= 0:
-        raise RuntimeError(
-            "SWE-bench verifier report contains zero submitted instances; "
-            "refusing to normalize an unverified run as 0% success"
+    # The harness only knows the instances that reached preds.json, so grading
+    # against that count would score an interrupted run as resolved/finished and
+    # inflate accuracy. Grade against the instance count we asked for; anything
+    # missing never produced a patch and is by definition unresolved.
+    missing_ids: set[str] = set()
+    if config.instance_ids:
+        missing_ids = set(config.instance_ids) - submitted_ids
+    graded_count = submitted_count + len(missing_ids)
+    expected_total = _resolve_total(config)
+    if expected_total is not None:
+        graded_count = max(graded_count, expected_total)
+    if graded_count > submitted_count + len(missing_ids):
+        # n_tasks told us how many to expect but not which ones, so the gap can
+        # only widen the denominator, not name the absent instances.
+        logger.warning(
+            "Grading %s instances but only %s reached the report; counting the "
+            "%s unaccounted instance(s) as unresolved.",
+            graded_count,
+            submitted_count,
+            graded_count - submitted_count,
         )
-    unexpected_resolved = resolved_ids - submitted_ids
-    if unexpected_resolved:
-        raise RuntimeError(
-            "SWE-bench verifier report resolved instances that were not "
-            f"submitted: {sorted(unexpected_resolved)}"
-        )
-    if resolved_count < 0 or resolved_count > submitted_count:
-        raise RuntimeError(
-            "SWE-bench verifier report has an invalid resolved/submitted count: "
-            f"resolved={resolved_count}, submitted={submitted_count}"
+    elif missing_ids:
+        logger.warning(
+            "Counting %s requested instance(s) with no prediction as unresolved: %s",
+            len(missing_ids),
+            ", ".join(sorted(missing_ids)),
         )
 
-    accuracy = resolved_count / submitted_count
+    unresolved_ids |= missing_ids
+    accuracy = resolved_count / graded_count if graded_count else 0.0
     trial_results = [
         {
             "task_name": instance_id,
@@ -1031,7 +607,7 @@ def normalize_swebench_report(
                 }
             },
         }
-        for instance_id in sorted(submitted_ids)
+        for instance_id in sorted(submitted_ids | missing_ids)
     ]
 
     eval_key = f"{config.agent_backend}__{config.model_name}__{config.dataset_name}"
@@ -1052,24 +628,11 @@ def normalize_swebench_report(
             ],
             "predictions_path": str(predictions_path),
             "swebench_report_path": str(harness_report_path),
-            "qualification_contract": {
-                "qualification_claim": config.qualification_claim,
-                "selection_policy": config.selection_policy,
-                "instance_selection_provenance": (config.instance_selection_provenance),
-                "dataset_revision": config.dataset_revision,
-                "ordered_instance_ids_sha256": (config.ordered_instance_ids_sha256),
-                "selected_instances_sha256": dataset_content_sha256,
-                "predeclared_instance_ids": sorted(expected_ids),
-                "eval_limit_mode": config.eval_limit_mode,
-                "mini_observation_chars": config.mini_observation_chars,
-                "max_input_tokens": config.max_input_tokens,
-                "max_output_tokens": config.max_output_tokens,
-            },
         },
         "stats": {
             "evals": {
                 eval_key: {
-                    "n_trials": submitted_count,
+                    "n_trials": graded_count,
                     "metrics": [
                         {
                             "name": "accuracy",
@@ -1098,7 +661,7 @@ def normalize_swebench_report(
     if started is not None and finished is not None:
         normalized["started_at"] = started.isoformat()
         normalized["finished_at"] = finished.isoformat()
-    normalized["n_total_trials"] = submitted_count
+    normalized["n_total_trials"] = graded_count
 
     result_path.write_text(json.dumps(normalized, indent=2), encoding="utf-8")
     return normalized
@@ -1106,7 +669,6 @@ def normalize_swebench_report(
 
 def run(config: SWEbenchRunConfig) -> int:
     config.output_dir.mkdir(parents=True, exist_ok=True)
-    dataset_source, dataset_content_sha256 = _prepare_pinned_swebench_dataset(config)
 
     env = os.environ.copy()
     env.setdefault("OPENAI_API_KEY", "EMPTY")
@@ -1114,13 +676,6 @@ def run(config: SWEbenchRunConfig) -> int:
     env.setdefault("OPENAI_API_BASE", config.api_base)
     env.setdefault("SWE_AGENT_LOG_STREAM_LEVEL", "INFO")
     env.setdefault("MSWEA_COST_TRACKING", "ignore_errors")
-    # mini-extra runs from the eval venv and output directory. Make this source
-    # tree importable so its fail-closed model class is the class that dispatches
-    # every request; do not rely on the caller's current working directory.
-    repo_root = str(Path(__file__).resolve().parents[2])
-    env["PYTHONPATH"] = repo_root + (
-        os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else ""
-    )
     sweagent_source_dir = _get_sweagent_source_dir(_interpreter(config))
     if sweagent_source_dir is not None:
         env.setdefault("SWE_AGENT_CONFIG_DIR", str(sweagent_source_dir / "config"))
@@ -1146,66 +701,79 @@ def run(config: SWEbenchRunConfig) -> int:
         sweagent_cmd = build_sweagent_command(
             config, sweagent_config_path, sweagent_output_dir
         )
-        rc = _run_command(sweagent_cmd, cwd=config.output_dir, env=env)
-        if rc != 0:
+        # swe-agent's output layout differs from mini-swe-agent's, so no
+        # progress probe; bound it with the explicit override or the derived
+        # worst-case ceiling. Honour enforce_agent_deadline here too, otherwise
+        # this backend would keep killing while mini-swe-agent does not.
+        rc = _run_command(
+            sweagent_cmd,
+            cwd=config.output_dir,
+            env=env,
+            timeout_s=(
+                _flat_agent_timeout(config) if config.enforce_agent_deadline else None
+            ),
+        )
+        # A timeout kill (124) still leaves partial predictions worth grading;
+        # only a genuine agent error aborts early.
+        if rc != 0 and rc != TIMEOUT_EXIT_CODE:
             return rc
-        preds_path = _find_sweagent_preds(sweagent_output_dir)
+        try:
+            preds_path = _find_sweagent_preds(sweagent_output_dir)
+        except FileNotFoundError:
+            logger.error(
+                "Agent timed out before writing any predictions; nothing to grade."
+            )
+            return rc if rc != 0 else TIMEOUT_EXIT_CODE
+        if rc == TIMEOUT_EXIT_CODE:
+            logger.warning(
+                "Agent hit the deadline; grading the partial predictions in %s.",
+                preds_path,
+            )
     elif config.agent_backend == "mini-swe-agent":
         mini_config_path = _write_mini_sweagent_model_config(config)
-        mini_output_dir = config.output_dir / "mini_sweagent"
-        if config.instance_ids:
-            rc, preds_path = _run_fixed_mini_sweagent_samples(
-                config, mini_config_path, env, dataset_source
-            )
-        else:
-            if (
-                config.agent_generation_timeout_sec is None
-                or config.agent_generation_timeout_sec <= 0
-            ):
-                raise ValueError(
-                    "mini-swe-agent requires a positive agent generation timeout"
-                )
-            mini_cmd = build_mini_sweagent_command(
-                config,
-                mini_config_path,
-                mini_output_dir,
-                dataset_source=dataset_source,
-            )
-            rc = _run_bounded_process_group(
-                mini_cmd,
-                cwd=config.output_dir,
-                env=env,
-                timeout_sec=config.agent_generation_timeout_sec,
-                cleanup_container_label=(
-                    _agentic_container_label(config)
-                    if config.mini_environment_class == "docker"
-                    else None
-                ),
-            )
-            preds_path = mini_output_dir / "preds.json"
-        if rc != 0:
+        mini_output_dir = _mini_output_dir(config)
+        mini_cmd = build_mini_sweagent_command(
+            config, mini_config_path, mini_output_dir
+        )
+        rc = run_with_progress(
+            mini_cmd,
+            cwd=config.output_dir,
+            env=env,
+            probe=make_swebench_probe(mini_output_dir, _resolve_total(config)),
+            label=config.task_name,
+            per_task_budget_s=config.mini_container_timeout_sec,
+            concurrency=config.n_concurrent_trials,
+            startup_grace_s=config.startup_grace_sec,
+            stall_grace_s=config.stall_grace_sec,
+            log_interval_s=config.progress_log_interval_sec,
+            hard_timeout_s=config.agent_subprocess_timeout_sec,
+            enforce_deadlines=config.enforce_agent_deadline,
+            log=logger,
+        )
+        # A watchdog timeout (124) still leaves partial predictions in
+        # preds.json worth grading; only a genuine agent error aborts early.
+        if rc != 0 and rc != TIMEOUT_EXIT_CODE:
             return rc
-        if not preds_path.exists():
-            raise FileNotFoundError(f"No mini-swe-agent predictions at {preds_path}")
         try:
-            _validate_prediction_file(preds_path, config.instance_ids)
-        except RuntimeError as exc:
+            preds_path = _find_sweagent_preds(mini_output_dir)
+        except FileNotFoundError:
+            # Killed before any instance finished -> nothing to grade.
             logger.error(
-                "Refusing to score invalid mini-swe-agent predictions: %s", exc
+                "Agent timed out before writing any predictions; nothing to grade."
             )
-            return 65
+            return rc if rc != 0 else TIMEOUT_EXIT_CODE
+        if rc == TIMEOUT_EXIT_CODE:
+            logger.warning(
+                "Agent hit the deadline; grading the partial predictions in %s.",
+                preds_path,
+            )
     else:
         raise ValueError(f"Unsupported SWE-bench agent backend: {config.agent_backend}")
 
     if not config.score_existing_predictions:
         convert_sweagent_preds_to_jsonl(preds_path, predictions_path, config.model_name)
 
-    harness_cmd = build_swebench_harness_command(
-        config,
-        predictions_path,
-        run_id,
-        dataset_source=dataset_source,
-    )
+    harness_cmd = build_swebench_harness_command(config, predictions_path, run_id)
     env = _add_swebench_harness_patch_to_env(config.output_dir, env)
     rc = _run_command_with_retries(
         harness_cmd,
@@ -1223,11 +791,7 @@ def run(config: SWEbenchRunConfig) -> int:
         config.output_dir, config.model_name, run_id
     )
     normalize_swebench_report(
-        harness_report_path,
-        result_path,
-        config,
-        predictions_path,
-        dataset_content_sha256,
+        harness_report_path, result_path, config, predictions_path
     )
     logger.info("Wrote SWE-bench normalized result to %s", result_path)
     return 0

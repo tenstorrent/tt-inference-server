@@ -13,7 +13,7 @@ from sqlite3 import IntegrityError
 from threading import Lock
 from typing import Any, Callable, Dict, Optional
 
-from config.constants import JobTypes
+from config.constants import JobTypes, job_database_path
 from config.settings import get_settings
 from domain.base_request import BaseRequest
 from fastapi import HTTPException
@@ -124,7 +124,7 @@ class JobManager:
         if self._settings.enable_job_persistence:
             from utils.job_database import JobDatabase
 
-            self.db = JobDatabase(db_path=Path(self._settings.job_database_path))
+            self.db = JobDatabase(db_path=Path(job_database_path()))
             self._logger.info("Job persistence enabled with database")
             self._restore_jobs_from_db()
 

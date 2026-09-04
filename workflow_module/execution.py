@@ -38,12 +38,13 @@ from .blocks_sink import BlockAccumulator, get_default_accumulator
 logger = logging.getLogger(__name__)
 
 
+# Vendor-invariant identity fields every report carries. Vendor provenance
+# fields (e.g. Tenstorrent's tt_metal_commit / vllm_commit) are supplied by
+# the registered TargetPack via ``extra_spec_metadata_fields``.
 _SPEC_METADATA_FIELDS: Tuple[Tuple[str, str], ...] = (
     ("model_id", "model_id"),
     ("model_repo", "hf_model_repo"),
     ("inference_engine", "inference_engine"),
-    ("tt_metal_commit", "tt_metal_commit"),
-    ("vllm_commit", "vllm_commit"),
 )
 
 
@@ -408,16 +409,22 @@ class WorkflowExecution(ABC):
 
         Single source of truth for both media and LLM reports: every field is
         written whenever the spec is available (``None`` when the spec omits
-        it, e.g. ``tt_metal_commit`` for a media image) so the report metadata
-        schema is stable across workflows. ``model_impl`` comes from the
-        nested ``impl.impl_name`` (the hyphenated display name, e.g.
-        ``tt-transformers``); the rest map verbatim per
-        :data:`_SPEC_METADATA_FIELDS`.
+        it) so the report metadata schema is stable across workflows.
+        ``model_impl`` comes from the nested ``impl.impl_name`` (the
+        hyphenated display name, e.g. ``tt-transformers``). Field mapping:
+        engine-generic identity fields per :data:`_SPEC_METADATA_FIELDS`,
+        plus vendor provenance fields from the registered target pack's
+        ``extra_spec_metadata_fields``.
         """
+        from .target_pack import get_target_pack
+
         spec = self._load_runtime_model_spec()
         if not spec:
             return
-        for meta_key, spec_key in _SPEC_METADATA_FIELDS:
+        fields = _SPEC_METADATA_FIELDS + tuple(
+            get_target_pack().extra_spec_metadata_fields()
+        )
+        for meta_key, spec_key in fields:
             meta[meta_key] = spec.get(spec_key)
         impl = spec.get("impl")
         meta["model_impl"] = impl.get("impl_name") if isinstance(impl, dict) else None

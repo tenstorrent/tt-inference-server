@@ -79,8 +79,6 @@ class ServerLaunchSpec:
             raise ValueError(f"unknown server mode: {self.mode!r}") from e
 
 
-_UNKNOWN_MODE = object()
-
 # The dispatch watchdog's signature. tt-metal raises this when the device stops
 # draining its fetch queue, which on Galaxy has shown up intermittently during the
 # model's prefill warmup sweep. It is worth naming explicitly so a retry says *why*
@@ -287,8 +285,9 @@ def _teardown_server(spec: ServerLaunchSpec, payload: Any) -> None:
 class ServerCommand(Command):
     """Bring up the inference server as the first step of a run.
 
-    Wraps ``workflows.run_docker_server`` / ``run_local_server`` so server
-    bring-up is a command in the same list the :class:`WorkflowRunner` executes.
+    Delegates to the registered :class:`ServerLifecycle` (vendor adapter:
+    docker/local launchers) so server bring-up is a command in the same list
+    the :class:`WorkflowRunner` executes.
     """
 
     name = "server"
@@ -318,13 +317,6 @@ class ServerCommand(Command):
                 _teardown_server(spec, None)
                 continue
 
-            if payload is _UNKNOWN_MODE:
-                return CommandResult(
-                    command_name=self.name,
-                    return_code=1,
-                    error=f"unknown server mode: {spec.mode!r}",
-                )
-
             ready_error = _wait_until_ready(spec, payload)
             if ready_error is None:
                 if attempt > 1:
@@ -352,25 +344,17 @@ class ServerCommand(Command):
         )
 
     def _launch_once(self, spec: ServerLaunchSpec) -> Any:
-        from workflows.run_docker_server import run_docker_server
-        from workflows.run_local_server import run_local_server
+        # Deferred: the seam's lazy default imports the adapter-side provider,
+        # which imports this module for ServerMode.
+        from .server_lifecycle import get_server_lifecycle
 
-        if spec.mode is ServerMode.DOCKER:
-            return run_docker_server(
-                spec.model_spec,
-                spec.runtime_config,
-                spec.setup_config,
-                spec.json_fpath,
-            )
-        if spec.mode is ServerMode.LOCAL:
-            return run_local_server(
-                spec.model_spec,
-                spec.runtime_config,
-                spec.json_fpath,
-                spec.setup_config,
-            )
-        # ServerLaunchSpec rejects unknown modes
-        return _UNKNOWN_MODE  # pragma: no cover
+        return get_server_lifecycle().launch(
+            spec.mode,
+            spec.model_spec,
+            spec.runtime_config,
+            spec.setup_config,
+            spec.json_fpath,
+        )
 
 
 class VenvCommand(Command):
@@ -402,25 +386,24 @@ class VenvCommand(Command):
         import os
         import sys
 
-        from workflows.utils import run_command
+        from .proc import run_command
+        from .venv_provisioner import get_venv_provisioner
 
         if self.venv_type is None:
             python = sys.executable
         else:
-            from workflows.workflow_venvs import VENV_CONFIGS
+            provisioner = get_venv_provisioner()
 
             # Provision the primary venv plus any dependency venvs the workflow
             # needs before running.
             for venv_type in [self.venv_type, *self.dependency_venvs]:
-                try:
-                    venv_config = VENV_CONFIGS[venv_type]
-                except KeyError:
+                if not provisioner.has_venv(venv_type):
                     return CommandResult(
                         command_name=self.name,
                         return_code=1,
                         error=f"no venv config for {venv_type!r}",
                     )
-                if not venv_config.setup(model_spec=self.model_spec):
+                if not provisioner.provision(venv_type, model_spec=self.model_spec):
                     return CommandResult(
                         command_name=self.name,
                         return_code=1,
@@ -429,7 +412,7 @@ class VenvCommand(Command):
                             f"{getattr(venv_type, 'name', venv_type)}"
                         ),
                     )
-            python = str(VENV_CONFIGS[self.venv_type].venv_python)
+            python = provisioner.venv_python(self.venv_type)
 
         cmd = [python, *[str(a) for a in self.argv]]
         env = {**os.environ, **self.env} if self.env else None
