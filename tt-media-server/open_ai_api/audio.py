@@ -123,7 +123,7 @@ async def handle_audio_request(audio_request, service):
             try:
                 service.scheduler.check_is_model_ready()
             except Exception:
-                raise HTTPException(status_code=405, detail="Model is not ready")
+                raise HTTPException(status_code=503, detail="Model is not ready")
 
             async def result_stream():
                 async for partial in service.process_streaming_request(audio_request):
