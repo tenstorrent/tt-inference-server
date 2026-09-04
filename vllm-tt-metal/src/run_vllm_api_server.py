@@ -378,6 +378,13 @@ def register_tt_models(impl_id=None):
         "models.tt_transformers.tt.generator_vllm:TTArceeForCausalLM",
     )
 
+    # EXAONE-4.5 - Text (the HF checkpoint is multimodal; the TT class serves
+    # its text decoder only — hybrid LLLG sliding/full attention, TP over the mesh)
+    ModelRegistry.register_model(
+        "TTExaone4_5_ForConditionalGeneration",
+        "models.tt_transformers.tt.generator_vllm:Exaone4_5_ForConditionalGeneration",
+    )
+
 
 def model_setup(model_spec_json):
     # step 1: validate env vars passed in
