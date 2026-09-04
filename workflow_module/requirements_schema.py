@@ -209,6 +209,61 @@ class Scenario:
 
 
 @dataclass(frozen=True)
+class AgenticSweepPoint:
+    """One concurrency point in an agentic trace-replay sweep.
+
+    Only :attr:`concurrency` drives the run. The document's expected
+    measurements for the point are kept verbatim in :attr:`reference` so what
+    we measure can be graded against them, the same way :class:`SweepPoint`
+    carries a benchmark point's references.
+    """
+
+    concurrency: int
+    reference: Mapping[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "AgenticSweepPoint":
+        if data.get("concurrency") is None:
+            raise RequirementsError("agenticSweep[]: missing required 'concurrency'")
+        return cls(concurrency=int(data["concurrency"]), reference=dict(data))
+
+
+@dataclass(frozen=True)
+class AgenticWorkload:
+    """An agentic trace-replay workload: a concurrency sweep plus its SLOs.
+
+    The agentic counterpart to :class:`Scenario`. It sweeps concurrency alone
+    rather than (ISL, OSL, concurrency), because the prompt sizes come from the
+    replayed traces instead of the document.
+    """
+
+    id: str
+    name: Optional[str] = None
+    slo: Optional[Slo] = None
+    sweep: List[AgenticSweepPoint] = field(default_factory=list)
+    max_concurrency: Optional[int] = None
+    traces: List[Mapping[str, Any]] = field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "AgenticWorkload":
+        workload_id = data.get("id") or data.get("name")
+        if not workload_id:
+            raise RequirementsError("workloads[]: missing required 'id'")
+        agentic = data.get("agenticWorkload")
+        traces = agentic.get("traces", []) if isinstance(agentic, Mapping) else []
+        return cls(
+            id=str(workload_id),
+            name=data.get("name"),
+            slo=Slo.from_dict(data.get("slo")),
+            sweep=[
+                AgenticSweepPoint.from_dict(p) for p in data.get("agenticSweep", [])
+            ],
+            max_concurrency=_as_optional_int(data.get("maxConcurrency")),
+            traces=[dict(t) for t in traces if isinstance(t, Mapping)],
+        )
+
+
+@dataclass(frozen=True)
 class ModelInfo:
     """Model identity from the requirements document."""
 
@@ -260,27 +315,37 @@ class RequirementsDoc:
     deployment: Deployment
     accuracy_evals: List[AccuracyEval] = field(default_factory=list)
     scenarios: List[Scenario] = field(default_factory=list)
+    agentic_workloads: List[AgenticWorkload] = field(default_factory=list)
     meta: Mapping[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "RequirementsDoc":
         schema_version = str(data.get("schemaVersion", ""))
         _check_schema_version(schema_version)
-        model_data = data.get("model")
+        # Later 2.x revisions wrap identity (model, deployment, meta) in a
+        # "document" envelope and carry the agentic sweep in a sibling
+        # "workloads" list; earlier ones put identity at the top level. Read
+        # identity from whichever is present so both shapes load.
+        envelope = data.get("document")
+        identity = envelope if isinstance(envelope, Mapping) else data
+        model_data = identity.get("model")
         if not isinstance(model_data, Mapping):
             raise RequirementsError("requirements: missing required 'model' object")
         return cls(
-            id=str(
-                data.get("id") or data.get("model", {}).get("name") or "requirements"
-            ),
+            id=str(identity.get("id") or model_data.get("name") or "requirements"),
             schema_version=schema_version,
             model=ModelInfo.from_dict(model_data),
-            deployment=Deployment.from_dict(data.get("deployment")),
+            deployment=Deployment.from_dict(identity.get("deployment")),
             accuracy_evals=[
                 AccuracyEval.from_dict(e) for e in data.get("accuracyEvals", [])
             ],
             scenarios=[Scenario.from_dict(s) for s in data.get("scenarios", [])],
-            meta=dict(data.get("meta", {})),
+            agentic_workloads=[
+                AgenticWorkload.from_dict(w)
+                for w in data.get("workloads", [])
+                if isinstance(w, Mapping) and w.get("kind") == "agentic"
+            ],
+            meta=dict(identity.get("meta", {})),
         )
 
 
@@ -324,12 +389,14 @@ def load_requirements(path: Union[str, Path]) -> RequirementsDoc:
         )
     doc = RequirementsDoc.from_dict(data)
     logger.info(
-        "Loaded requirements id=%s model=%s hardware=%s (%d evals, %d scenarios)",
+        "Loaded requirements id=%s model=%s hardware=%s "
+        "(%d evals, %d scenarios, %d agentic workloads)",
         doc.id,
         doc.model.name,
         doc.deployment.hardware,
         len(doc.accuracy_evals),
         len(doc.scenarios),
+        len(doc.agentic_workloads),
     )
     return doc
 
@@ -382,6 +449,8 @@ __all__ = [
     "Slo",
     "SweepPoint",
     "Scenario",
+    "AgenticSweepPoint",
+    "AgenticWorkload",
     "ModelInfo",
     "Deployment",
     "RequirementsDoc",

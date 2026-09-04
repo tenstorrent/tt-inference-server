@@ -185,3 +185,98 @@ def test_invalid_comparator_rejected(tmp_path):
     path.write_text(json.dumps(doc_dict))
     with pytest.raises(RequirementsError, match="comparator"):
         load_requirements(path)
+
+
+def _agentic_doc(**overrides):
+    """A schema 2.6 document: identity nested, agentic sweep in workloads."""
+    workload = {
+        "kind": "agentic",
+        "id": "w1",
+        "name": "New agentic scenario",
+        "slo": {"ttftMs": 2000, "tpotMs": 20, "e2elMs": 20000},
+        "agenticWorkload": {"traces": [{"name": "AgentX - Claude Code"}]},
+        "agenticSweep": [
+            {"concurrency": 1, "e2elP90Ms": 16475.15},
+            {"concurrency": 8, "e2elP90Ms": 12242.25},
+        ],
+        "maxConcurrency": 64,
+    }
+    workload.update(overrides)
+    return {
+        "schemaVersion": "2.6.0",
+        "document": {
+            "id": "doc-1",
+            "meta": {"customer": "Ant"},
+            "model": {"name": "google/gemma-4-31B-it", "contextLength": 131072},
+            "deployment": {"hardware": "SC24", "maxConcurrencyPerInstance": 1},
+        },
+        "workloads": [workload],
+    }
+
+
+def _write(tmp_path, doc_dict):
+    path = tmp_path / "doc.json"
+    path.write_text(json.dumps(doc_dict))
+    return path
+
+
+def test_reads_identity_from_the_document_envelope(tmp_path):
+    """Schema 2.6 nests model/deployment/meta under 'document'."""
+    doc = load_requirements(_write(tmp_path, _agentic_doc()))
+
+    assert doc.id == "doc-1"
+    assert doc.model.name == "google/gemma-4-31B-it"
+    assert doc.deployment.hardware == "SC24"
+    assert doc.meta["customer"] == "Ant"
+
+
+def test_parses_the_agentic_sweep_and_its_slos(tmp_path):
+    doc = load_requirements(_write(tmp_path, _agentic_doc()))
+
+    (workload,) = doc.agentic_workloads
+    assert [p.concurrency for p in workload.sweep] == [1, 8]
+    assert workload.max_concurrency == 64
+    assert (workload.slo.ttft_ms, workload.slo.tpot_ms, workload.slo.e2el_ms) == (
+        2000,
+        20,
+        20000,
+    )
+
+
+def test_keeps_sweep_point_expectations_for_grading(tmp_path):
+    """Values we do not drive the run with still have to survive for grading."""
+    doc = load_requirements(_write(tmp_path, _agentic_doc()))
+
+    assert doc.agentic_workloads[0].sweep[0].reference["e2elP90Ms"] == 16475.15
+
+
+def test_ignores_non_agentic_workloads(tmp_path):
+    """A text workload is a benchmark scenario, not a trace replay."""
+    doc_dict = _agentic_doc()
+    doc_dict["workloads"].append({"kind": "text", "id": "w2"})
+
+    doc = load_requirements(_write(tmp_path, doc_dict))
+
+    assert [w.id for w in doc.agentic_workloads] == ["w1"]
+
+
+def test_sweep_point_without_concurrency_rejected(tmp_path):
+    doc_dict = _agentic_doc(agenticSweep=[{"e2elP90Ms": 1.0}])
+
+    with pytest.raises(RequirementsError, match="concurrency"):
+        load_requirements(_write(tmp_path, doc_dict))
+
+
+def test_flat_documents_still_load(tmp_path):
+    """Earlier 2.x revisions put identity at the top level and have no sweep."""
+    doc_dict = {
+        "schemaVersion": "2.1.0",
+        "model": {"name": "a/b"},
+        "deployment": {"hardware": "SC8"},
+    }
+
+    doc = load_requirements(_write(tmp_path, doc_dict))
+
+    assert doc.model.name == "a/b"
+    assert doc.deployment.hardware == "SC8"
+    assert doc.agentic_workloads == []
