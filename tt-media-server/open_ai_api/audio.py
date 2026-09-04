@@ -3,11 +3,13 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import json
+import time
 from typing import Optional
 
 from config.constants import AudioTasks, ResponseFormat
 from config.settings import settings
 from domain.audio_processing_request import AudioProcessingRequest
+from domain.audio_text_response import AudioTextResponse
 from fastapi import (
     APIRouter,
     Depends,
@@ -23,6 +25,26 @@ from fastapi.responses import StreamingResponse
 from model_services.base_service import BaseService
 from resolver.service_resolver import service_resolver
 from security.api_key_checker import get_api_key
+from telemetry.audio_metrics import (
+    STATUS_ERROR,
+    STATUS_SUCCESS,
+    SttStreamProgress,
+    char_count,
+    record_stt_request,
+)
+
+# One task per deployment: settings.audio_task decides which router is live.
+STT_TASK = (
+    "translation"
+    if settings.audio_task.lower() == AudioTasks.TRANSLATE.value
+    else "transcription"
+)
+
+
+def _stt_language() -> str:
+    """Configured input language; one value per deployment (whisper_runner
+    labels its encoder metrics the same way)."""
+    return settings.audio_language or "unknown"
 
 
 async def parse_audio_request(
@@ -113,36 +135,112 @@ async def translate_audio(
 
 
 async def handle_audio_request(audio_request, service):
-    try:
-        if not audio_request.stream:
+    start = time.perf_counter()
+    is_text_format = audio_request.response_format.lower() == ResponseFormat.TEXT.value
+
+    if not audio_request.stream:
+        status = STATUS_SUCCESS
+        result = None
+        try:
             result = await service.process_request(audio_request)
-            if audio_request.response_format.lower() == ResponseFormat.TEXT.value:
+            if is_text_format:
                 return Response(content=result.text, media_type="text/plain")
             return get_dict_response(result)
-        else:
-            try:
-                service.scheduler.check_is_model_ready()
-            except Exception:
-                raise HTTPException(status_code=405, detail="Model is not ready")
-
-            async def result_stream():
-                async for partial in service.process_streaming_request(audio_request):
-                    if (
-                        audio_request.response_format.lower()
-                        == ResponseFormat.TEXT.value
-                    ):
-                        yield partial.text + "\n"
-                    else:
-                        yield json.dumps(get_dict_response(partial)) + "\n"
-
-            media_type = (
-                "text/plain"
-                if (audio_request.response_format.lower() == ResponseFormat.TEXT.value)
-                else "application/x-ndjson"
+        except HTTPException:
+            status = STATUS_ERROR
+            raise
+        except Exception as e:
+            status = STATUS_ERROR
+            raise HTTPException(status_code=500, detail=str(e))
+        finally:
+            record_stt_request(
+                model_type=settings.model_runner,
+                task=STT_TASK,
+                language=_stt_language(),
+                streaming=False,
+                status=status,
+                duration_seconds=time.perf_counter() - start,
+                # The full submitted duration (stamped by pre_process), NOT
+                # result.duration: after VAD fan-out the result carries
+                # speech-only seconds, which would make RTF incomparable
+                # with the streaming path and inflate it on silent audio.
+                audio_seconds=getattr(audio_request, "_duration", None)
+                or getattr(result, "duration", None),
+                characters=char_count(getattr(result, "text", None)),
+                sample_rate=getattr(audio_request, "_source_sample_rate", None),
+                channels=getattr(audio_request, "_source_channels", None),
             )
-            return StreamingResponse(result_stream(), media_type=media_type)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+
+    try:
+        service.scheduler.check_is_model_ready()
+    except Exception:
+        record_stt_request(
+            model_type=settings.model_runner,
+            task=STT_TASK,
+            language=_stt_language(),
+            streaming=True,
+            status=STATUS_ERROR,
+            duration_seconds=time.perf_counter() - start,
+        )
+        raise HTTPException(status_code=405, detail="Model is not ready")
+
+    async def result_stream():
+        # Partial chunks carry incremental text; the final AudioTextResponse
+        # (yielded for non-text formats) carries the full transcript and the
+        # input audio duration, so it supersedes the accumulated count.
+        streamed_characters = 0
+        final_result = None
+        status = STATUS_ERROR
+        progress = SttStreamProgress(
+            model_type=settings.model_runner,
+            task=STT_TASK,
+            language=_stt_language(),
+            start=start,
+        )
+        try:
+            async for partial in service.process_streaming_request(audio_request):
+                if isinstance(partial, AudioTextResponse):
+                    # Finalization is the wait after the last partial, a proxy
+                    # for "end-of-speech → final transcript" — the true metric
+                    # needs an end-of-audio marker the protocol doesn't have.
+                    final_result = partial
+                    progress.on_final()
+                else:
+                    streamed_characters += char_count(partial.text) or 0
+                    progress.on_update()
+                if is_text_format:
+                    yield partial.text + "\n"
+                else:
+                    yield json.dumps(get_dict_response(partial)) + "\n"
+            status = STATUS_SUCCESS
+        finally:
+            # Same denominator as the non-streaming path: the full submitted
+            # duration stamped by pre_process, so RTF is comparable across
+            # the streaming label. The final result's duration is only a
+            # fallback (for whisper streaming it is the same value).
+            audio_seconds = getattr(audio_request, "_duration", None) or (
+                final_result.duration if final_result is not None else None
+            )
+            if final_result is not None:
+                characters = char_count(final_result.text)
+            else:
+                # text format never yields the final result.
+                characters = streamed_characters
+            record_stt_request(
+                model_type=settings.model_runner,
+                task=STT_TASK,
+                language=_stt_language(),
+                streaming=True,
+                status=status,
+                duration_seconds=time.perf_counter() - start,
+                audio_seconds=audio_seconds,
+                characters=characters,
+                sample_rate=getattr(audio_request, "_source_sample_rate", None),
+                channels=getattr(audio_request, "_source_channels", None),
+            )
+
+    media_type = "text/plain" if is_text_format else "application/x-ndjson"
+    return StreamingResponse(result_stream(), media_type=media_type)
 
 
 def get_dict_response(obj):
