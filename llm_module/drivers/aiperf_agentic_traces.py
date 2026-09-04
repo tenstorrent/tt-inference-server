@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from ..agentic_traces import AgenticTracesRun
+from ..agentic_traces.sweep_export import write_agentic_sweep
 from ..config import DriverContext, ServerConnection
 from ._subprocess import load_json, run_command, safe_filename_part
 from .aiperf_prefix_cache import (
@@ -178,6 +179,16 @@ class AIPerfAgenticTracesDriver:
             output_dir=self.output_dir,
             model_id=self.model_id or self.model_repo,
             label=trace_run.filesafe_label(),
+        )
+        # This point's requirements-shaped view, written now rather than at the
+        # end of the sweep: each point costs an hour, so a later failure must
+        # not take the ones already measured with it.
+        write_agentic_sweep(
+            [payload],
+            self.output_dir,
+            filename=(
+                f"agentic_sweep_{safe_filename_part(trace_run.filesafe_label())}.json"
+            ),
         )
         _log_run_summary(trace_run, metrics)
         return AgenticTracesDriverResult(

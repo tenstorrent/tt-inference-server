@@ -14,7 +14,12 @@ One point per run, so a sweep over several concurrencies yields several points.
 
 from __future__ import annotations
 
+import json
+import logging
+from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+
+logger = logging.getLogger(__name__)
 
 # agenticSweep key -> the metric key produced by ``parse_aiperf_output``.
 #
@@ -40,8 +45,14 @@ _SWEEP_FIELD_TO_METRIC: Tuple[Tuple[str, str], ...] = (
     ("inputTokensP95", "p95_isl"),
     ("outputTokensMean", "mean_osl"),
     ("outputTokensP95", "p95_osl"),
-    # Percentiles of a rate, so these read the slow tail off the bottom of the
-    # distribution; see the note in ``parse_aiperf_output``.
+)
+
+# Emitted after the cache-hit rate, following the document's own field order so
+# a measured point and an expected one diff cleanly line for line.
+#
+# Percentiles of a rate, so these read the slow tail off the bottom of the
+# distribution; see the note in ``parse_aiperf_output``.
+_INTVTY_FIELD_TO_METRIC: Tuple[Tuple[str, str], ...] = (
     ("e2eNormIntvtyP75Tps", "p75_e2e_norm_intvty"),
     ("e2eNormIntvtyP90Tps", "p90_e2e_norm_intvty"),
 )
@@ -99,15 +110,20 @@ def to_agentic_sweep_point(
         if value is not None:
             point[field] = value
 
-    goodput_pct = _goodput_pct(metrics)
-    if goodput_pct is not None:
-        point["goodputPct"] = goodput_pct
-
     for metric in _CACHE_HIT_METRICS:
         value = _number(metrics.get(metric))
         if value is not None:
             point["kvCacheHitRatePct"] = value
             break
+
+    for field, metric in _INTVTY_FIELD_TO_METRIC:
+        value = _number(metrics.get(metric))
+        if value is not None:
+            point[field] = value
+
+    goodput_pct = _goodput_pct(metrics)
+    if goodput_pct is not None:
+        point["goodputPct"] = goodput_pct
 
     return point
 
@@ -125,4 +141,24 @@ def to_agentic_sweep(runs: Sequence[Mapping[str, Any]]) -> List[Dict[str, Any]]:
     return sorted(points, key=lambda point: point["concurrency"])
 
 
-__all__ = ["to_agentic_sweep", "to_agentic_sweep_point"]
+def write_agentic_sweep(
+    runs: Sequence[Mapping[str, Any]],
+    output_dir: Path,
+    filename: str = "agentic_sweep.json",
+) -> Path:
+    """Write ``runs`` as an ``agenticSweep`` JSON file and return its path.
+
+    Wrapped in the document's own ``{"agenticSweep": [...]}`` object so the file
+    can be pasted straight into a requirements document beside the expected
+    sweep. Always a list, even for a single point, so a file written mid-sweep
+    has the same shape as the final one and consumers need no special case.
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+    path = output_dir / filename
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump({"agenticSweep": to_agentic_sweep(runs)}, handle, indent=2)
+    logger.info("Agentic sweep written to: %s", path)
+    return path
+
+
+__all__ = ["to_agentic_sweep", "to_agentic_sweep_point", "write_agentic_sweep"]
