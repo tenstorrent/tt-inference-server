@@ -16,6 +16,8 @@ run could otherwise be reported as a clean pass:
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -340,3 +342,69 @@ class TestTraceSourceDispatch:
         # The orchestrator creates the output root; the (mocked) driver would
         # create its own per-run artifact subtree.
         assert (tmp_path / "agentic_traces").is_dir()
+
+
+class TestAgenticSweepFile:
+    """The combined ``agentic_sweep.json`` the sweep leaves behind.
+
+    Must agree with the driver's per-run file and the report section, which are
+    both InferenceX-only: ``agenticSweep`` is defined over AIPerf's metric set,
+    so a swo-bench point would be half-empty in ways that read as measured
+    zeroes against a document's expectations.
+    """
+
+    def _sweep(self, tmp_path):
+        path = Path(tmp_path) / "agentic_traces" / "agentic_sweep.json"
+        return json.loads(path.read_text())["agenticSweep"] if path.exists() else None
+
+    def _both_drivers(self):
+        aiperf_driver = MagicMock()
+        aiperf_driver.run.return_value = AgenticTracesDriverResult(
+            return_code=0,
+            payload={**_ok_payload("aiperf"), "concurrency": 8},
+            raw_path=None,
+        )
+        swo_driver = MagicMock()
+        swo_driver.run.return_value = AgenticTracesDriverResult(
+            return_code=0,
+            payload={**_ok_payload("swo"), "concurrency": 99},
+            raw_path=None,
+        )
+        return patch.multiple(
+            agentic_traces_tests,
+            AIPerfAgenticTracesDriver=MagicMock(return_value=aiperf_driver),
+            SwoBenchAgenticTracesDriver=MagicMock(return_value=swo_driver),
+        )
+
+    def test_inferencex_run_is_written(self, tmp_path):
+        outcome = AgenticTracesDriverResult(
+            return_code=0, payload={**_ok_payload(), "concurrency": 4}, raw_path=None
+        )
+        patcher, _driver = _driver_returning(outcome)
+        with patcher:
+            run_agentic_traces(_ctx(tmp_path=tmp_path), mode="ci", inter_run_sleep_s=0)
+
+        assert [p["concurrency"] for p in self._sweep(tmp_path)] == [4]
+
+    def test_swarmone_run_is_left_out(self, tmp_path):
+        with self._both_drivers():
+            run_agentic_traces(
+                _ctx(tmp_path=tmp_path),
+                mode="ci",
+                trace_sources="swarmone",
+                inter_run_sleep_s=0,
+            )
+
+        # Nothing InferenceX ran, so there is no sweep to write at all.
+        assert self._sweep(tmp_path) is None
+
+    def test_mixed_sweep_keeps_only_the_inferencex_point(self, tmp_path):
+        with self._both_drivers():
+            run_agentic_traces(
+                _ctx(tmp_path=tmp_path),
+                mode="ci",
+                trace_sources="inferencex_agentx,swarmone",
+                inter_run_sleep_s=0,
+            )
+
+        assert [p["concurrency"] for p in self._sweep(tmp_path)] == [8]

@@ -445,3 +445,39 @@ class TestMixedSweep:
         out = _render(_swo_record(), _record())
         latency = out.split("#### Per-run Throughput")[0]
         assert latency.index("| inferencex_agentx ") < latency.index("| swarmone ")
+
+
+class TestMeasuredAgenticSweep:
+    """The report also carries the sweep in the requirements document's shape.
+
+    The tables are for reading; this block is for diffing a measured point
+    against the expected one a document declares, so it must stay valid JSON
+    under the document's own key.
+    """
+
+    def test_sweep_block_is_included_by_default(self):
+        out = _render(_record())
+
+        assert "#### Measured `agenticSweep`" in out
+
+    def test_sweep_block_is_parseable_json_under_the_documents_key(self):
+        import json
+
+        out = _render(_record(concurrency=8))
+        body = out.split("```json", 1)[1].split("```", 1)[0]
+
+        assert [p["concurrency"] for p in json.loads(body)["agenticSweep"]] == [8]
+
+    def test_one_point_per_run_ordered_by_concurrency(self):
+        import json
+
+        out = _render(_record(concurrency=16), _record(concurrency=4))
+        body = out.split("```json", 1)[1].split("```", 1)[0]
+
+        assert [p["concurrency"] for p in json.loads(body)["agenticSweep"]] == [4, 16]
+
+    def test_swarmone_runs_are_left_out_of_the_sweep(self):
+        """agenticSweep is defined over AIPerf's metrics; swo-bench has none."""
+        out = _render(_swo_record())
+
+        assert "#### Measured `agenticSweep`" not in out

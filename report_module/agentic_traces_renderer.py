@@ -28,6 +28,7 @@ bottom of this module).
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
@@ -576,9 +577,45 @@ def render_agentic_traces(block: Block, metadata: Mapping[str, Any]) -> str:
             f"can be traced back to what produced it.\n\n{config}"
         )
 
+    sweep = _agentic_sweep_block(rows)
+    if sweep:
+        parts.append(sweep)
+
     parts.append(_definitions_block(rows))
 
     return "\n\n".join(parts)
+
+
+def _agentic_sweep_block(rows: Sequence[Mapping[str, Any]]) -> str:
+    """Emit the measured sweep in the requirements document's own shape.
+
+    The tables above are for reading; this is for comparing. A requirements
+    document states its expectations as an ``agenticSweep``, so emitting the
+    measurement in that same shape lets the expected point and the observed one
+    diff field for field instead of being eyeballed across a table.
+
+    Only the InferenceX rows: ``agenticSweep`` is defined over AIPerf's metric
+    set, and a swo-bench row would render as a point with nothing in it.
+    """
+    # Imported here, not at module scope: llm_module imports report_module.schema,
+    # so a module-level import back would close the cycle.
+    from llm_module.agentic_traces.sweep_export import to_agentic_sweep
+
+    inferencex_rows = [
+        row for row in rows if str(row.get("trace_source") or "") == INFERENCEX_SOURCE
+    ]
+    if not inferencex_rows:
+        return ""
+    sweep = to_agentic_sweep(inferencex_rows)
+    body = json.dumps({"agenticSweep": sweep}, indent=2)
+    return (
+        "#### Measured `agenticSweep`\n\n"
+        "The same runs in the shape a requirements document states its "
+        "expectations in, one object per concurrency, so an expected point and "
+        "the measured one line up field for field. Written alongside the raw "
+        "results as `agentic_sweep.json` too.\n\n"
+        f"```json\n{body}\n```"
+    )
 
 
 def _definitions_block(rows: Sequence[Mapping[str, Any]]) -> str:

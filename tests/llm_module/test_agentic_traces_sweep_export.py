@@ -21,9 +21,12 @@ ones that would silently break that comparison:
 
 from __future__ import annotations
 
+import json
+
 from llm_module.agentic_traces.sweep_export import (
     to_agentic_sweep,
     to_agentic_sweep_point,
+    write_agentic_sweep,
 )
 
 # Shaped like ``parse_aiperf_output`` output for a single completed run.
@@ -157,3 +160,28 @@ class TestToAgenticSweep:
 
     def test_empty_when_no_runs_completed(self):
         assert to_agentic_sweep([]) == []
+
+
+class TestWriteAgenticSweep:
+    def test_writes_a_list_even_for_one_point(self, tmp_path):
+        """A file written mid-sweep must not need special-casing to read."""
+        path = write_agentic_sweep([{**_METRICS, "concurrency": 4}], tmp_path)
+
+        assert json.loads(path.read_text()) == {
+            "agenticSweep": [to_agentic_sweep_point(_METRICS, concurrency=4)]
+        }
+
+    def test_orders_points_by_concurrency(self, tmp_path):
+        path = write_agentic_sweep(
+            [{**_METRICS, "concurrency": c} for c in (16, 1, 8)], tmp_path
+        )
+
+        points = json.loads(path.read_text())["agenticSweep"]
+        assert [p["concurrency"] for p in points] == [1, 8, 16]
+
+    def test_creates_the_output_directory(self, tmp_path):
+        path = write_agentic_sweep(
+            [{**_METRICS, "concurrency": 1}], tmp_path / "nested" / "dir"
+        )
+
+        assert path.exists()
