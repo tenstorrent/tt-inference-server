@@ -52,9 +52,17 @@ def test_qwen3_asr_galaxy_keeps_throttle_zero_and_32_workers():
 
 
 def test_audio_min_split_duration_default_is_single_runner_window():
-    """Clips at/under this length stay whole (measured: 3s fan-out chunking
-    costs +2.4 WER on short librispeech clips vs keeping them whole)."""
-    assert Settings().audio_min_split_duration_seconds == 30
+    """Clips at/under this length stay whole (measured: splitting genuinely short
+    clips only adds boundary errors for no speedup)."""
+    assert Settings().audio_min_split_duration_seconds == 15
+
+
+def test_short_clip_tier_defaults():
+    """15-30s clips split with the accuracy-preserving 15s window (on-device A/B:
+    JA surface CER unchanged vs whole, EN WER +0.11)."""
+    s = Settings()
+    assert s.audio_short_clip_max_seconds == 30
+    assert s.audio_short_clip_chunk_seconds == 15
 
 
 def test_qwen3_asr_duration_cap_is_one_full_galaxy_wave():

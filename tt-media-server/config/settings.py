@@ -145,11 +145,23 @@ class Settings(BaseSettings):
     # Audio processing settings
     allow_audio_preprocessing: bool = True
     audio_chunk_duration_seconds: Optional[int] = None
-    # Clips at/under this length already fit one device runner's window, so
-    # fan-out chunking gives them no speedup and only adds boundary errors
-    # (measured +2.4 WER at 3s chunks on librispeech test-other). Only clips
-    # longer than this are split for device-runner fan-out.
-    audio_min_split_duration_seconds: int = 30
+    # Qwen3-ASR fan-out is two-tier (see model_services.audio_service):
+    #  - clips at/under audio_min_split_duration_seconds stay whole (one runner);
+    #  - clips in (min_split, short_clip_max] use the gentler
+    #    audio_short_clip_chunk_seconds window;
+    #  - longer clips use audio_chunk_duration_seconds (worker-count default,
+    #    10s on DP=32) for maximum fan-out.
+    # On-device A/B on ~25s clips: 15s chunks recover almost all the accuracy of
+    # keeping whole (EN WER 1.83% vs 1.72%; JA surface 8.79% == whole, reading
+    # 2.00% vs 1.97%) while still fanning across 2 runners (~24x vs ~16x), whereas
+    # 10s chunks cost more for little extra RTR here (EN 2.01%, JA reading 2.43%).
+    # Genuinely short clips (<=15s) already fit one runner's window, so splitting
+    # them only adds boundary errors for no speedup.
+    audio_min_split_duration_seconds: int = 15
+    # Upper bound of the "short clip" tier that uses audio_short_clip_chunk_seconds.
+    audio_short_clip_max_seconds: int = 30
+    # Chunk window for the short-clip tier (accuracy-preserving, still 2 runners).
+    audio_short_clip_chunk_seconds: int = 15
     max_audio_duration_seconds: float = 60.0
     max_audio_duration_with_preprocessing_seconds: float = (
         300.0  # 5 minutes when preprocessing enabled
