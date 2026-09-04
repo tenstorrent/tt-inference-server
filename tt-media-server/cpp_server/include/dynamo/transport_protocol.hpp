@@ -221,6 +221,12 @@ struct GenerateRequest {
   Json::Value mm_processor_kwargs;
 
   Json::Value raw;  // Full parsed JSON body, for any field we don't yet map.
+
+  // Transport headers from the TCP request frame (filled by
+  // DynamoTransportServer, not parse_generate_request). Carries the trace
+  // propagation headers the Dynamo frontend forwards (traceparent /
+  // sentry-trace / baggage) for Sentry distributed tracing.
+  std::unordered_map<std::string, std::string> headers;
 };
 
 GenerateRequest parse_generate_request(const std::vector<uint8_t>& body_bytes);

@@ -16,8 +16,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional
 
 from utils.url_helpers import build_base_url
-from workflows.workflow_types import EvalLimitMode, WorkflowVenvType
-from workflows.workflow_venvs import VENV_CONFIGS
+from workflow_module.engine_types import EvalLimitMode
+from workflow_module.engine_types import WorkflowVenvType
+from workflow_module.venv_provisioner import get_venv_provisioner
 
 if TYPE_CHECKING:
     from reference_config.evals.eval_config import EvalTask
@@ -195,7 +196,7 @@ def build_eval_command(
     else:
         base_url = f"{host_with_port}/v1"
     eval_class = task.eval_class
-    task_venv_config = VENV_CONFIGS[task.workflow_venv_type]
+    task_venv_path = get_venv_provisioner().venv_path(task.workflow_venv_type)
     if task.use_chat_api:
         api_url = f"{base_url}/chat/completions"
     else:
@@ -234,9 +235,10 @@ def build_eval_command(
     effective_gen_kwargs = _clamp_max_gen_toks(
         task.gen_kwargs, device_max_context, task.task_name
     )
-    effective_gen_kwargs = _inject_seed_into_gen_kwargs(
-        effective_gen_kwargs, getattr(task, "seed", None)
-    )
+    if getattr(task, "propagate_seed_to_gen_kwargs", True):
+        effective_gen_kwargs = _inject_seed_into_gen_kwargs(
+            effective_gen_kwargs, getattr(task, "seed", None)
+        )
 
     optional_model_args = []
     if effective_max_concurrent:
@@ -273,9 +275,30 @@ def build_eval_command(
         WorkflowVenvType.EVALS_VISION,
         WorkflowVenvType.EVALS_AUDIO,
     ]:
-        lm_eval_exec = task_venv_config.venv_path / "bin" / "lmms-eval"
+        lm_eval_exec = task_venv_path / "bin" / "lmms-eval"
     else:
-        lm_eval_exec = task_venv_config.venv_path / "bin" / "lm_eval"
+        lm_eval_exec = task_venv_path / "bin" / "lm_eval"
+
+    lm_eval_prefix = [str(lm_eval_exec)]
+    # TODO: remove this once diffusiongemma vLLM can ignore the seed gen kwarg
+    # https://github.com/tenstorrent/tt-inference-server/issues/4993
+    if not getattr(task, "propagate_seed_to_gen_kwargs", True):
+        if task.workflow_venv_type in [
+            WorkflowVenvType.EVALS_VISION,
+            WorkflowVenvType.EVALS_AUDIO,
+        ]:
+            raise ValueError(
+                f"propagate_seed_to_gen_kwargs=False on {task.task_name} needs "
+                "the lm-eval no-server-seed wrapper, which lmms-eval tasks "
+                "cannot use"
+            )
+        # The pinned lm-eval adapters always copy their model seed into OpenAI
+        # payloads, independently of --gen_kwargs. Use the scoped wrapper so
+        # --seed still controls harness RNGs without reaching the server.
+        lm_eval_prefix = [
+            str(task_venv_path / "bin" / "python"),
+            str(Path(__file__).with_name("lm_eval_no_server_seed.py")),
+        ]
 
     model_kwargs_list = [f"{k}={v}" for k, v in task.model_kwargs.items()]
     model_kwargs_list += optional_model_args
@@ -292,7 +315,7 @@ def build_eval_command(
     # fmt: off
     if task.workflow_venv_type == WorkflowVenvType.EVALS_VISION:
         cmd = [
-            str(lm_eval_exec),
+            *lm_eval_prefix,
             "--tasks", task.task_name,
             "--model", eval_class,
             "--model_args", (
@@ -311,7 +334,7 @@ def build_eval_command(
         ]
     elif task.workflow_venv_type == WorkflowVenvType.EVALS_AUDIO:
         cmd = [
-            str(lm_eval_exec),
+            *lm_eval_prefix,
             "--model", eval_class,
             "--model_args", (
                 f"model={model_spec.hf_model_repo},"
@@ -325,7 +348,7 @@ def build_eval_command(
         ]
     else:
         cmd = [
-            str(lm_eval_exec),
+            *lm_eval_prefix,
             "--tasks", task.task_name,
             "--model", eval_class,
             "--model_args", (
@@ -351,14 +374,14 @@ def build_eval_command(
             # relative to cwd. Give each invocation its own staging dir with a
             # symlink that masquerades as it, so parallel runs don't race.
             meta_data_dir = (
-                task_venv_config.venv_path
+                task_venv_path
                 / "llama-cookbook/end-to-end-use-cases/benchmarks/llm_eval_harness/meta_eval"
                 / f"work_dir_{model_spec.model_name}"
             )
             staging_dir = Path(
                 tempfile.mkdtemp(
                     prefix=f"meta_eval_{model_spec.model_name}_",
-                    dir=task_venv_config.venv_path,
+                    dir=task_venv_path,
                 )
             )
             atexit.register(shutil.rmtree, staging_dir, ignore_errors=True)
@@ -367,8 +390,8 @@ def build_eval_command(
             cmd.append(staging_work_dir)
             os.chdir(staging_dir)
         else:
-            cmd.append(task_venv_config.venv_path / task.include_path)
-            os.chdir(task_venv_config.venv_path)
+            cmd.append(task_venv_path / task.include_path)
+            os.chdir(task_venv_path)
     if task.apply_chat_template:
         cmd.append("--apply_chat_template")  # Flag argument (no value)
 

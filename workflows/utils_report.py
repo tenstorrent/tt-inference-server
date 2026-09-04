@@ -17,6 +17,16 @@ class PerformanceTarget:
     ttft_ms: float = None
     tput_user: float = None
     tput: float = None
+    # Optional latency/throughput targets. Populated by requirements-driven
+    # runs from a sweep point's reference measurements and the scenario's
+    # SLOs (tpot/e2el, lower-is-better) and scalar targets (tput_total =
+    # system throughput, goodput = % of requests meeting the run's --goodput
+    # SLO constraints; both higher-is-better). Left None for catalog perf
+    # references, where they grade as NA (see llm_module/target_checks.py).
+    tpot_ms: float = None
+    e2el_ms: float = None
+    tput_total: float = None
+    goodput: float = None
     tolerance: float = 0.0
 
 
@@ -108,6 +118,11 @@ class BenchmarkTaskParams:
     image_width: int = None
     images_per_prompt: int = 0
     task_type: str = "text"
+    # When set, this entry describes the device running with this
+    # data_parallel_size, and its targets are already expressed for the WHOLE
+    # device. get_perf_reference() uses such an entry as-is: no subdevice
+    # remap, no data-parallel scaling.
+    data_parallel: int = None
     theoretical_ttft_ms: float = None
     theoretical_tput_user: float = None
     targets: Dict[str, PerformanceTarget] = field(default_factory=dict)
@@ -128,6 +143,22 @@ class BenchmarkTaskParams:
     # outputs; None means run with --no-structured-output (the baseline).
     structured_dataset: str = None
     structured_output_ratio: float = None
+
+    # Acceptance severity for this sweep point ("must"/"should"), set by
+    # requirements-driven runs. None means the default (must) — a failing
+    # target blocks acceptance. Carried onto the emitted benchmark block so
+    # acceptance can downgrade "should" failures to informational.
+    priority: str = None
+    # Per-metric acceptance severity, keyed by PerformanceTarget attribute
+    # (e.g. {"tput_total": "should"}). Requirements-driven runs set this when
+    # a sweep point mixes must- and should-priority targets, so acceptance can
+    # downgrade individual metric failures instead of the whole block.
+    target_priorities: dict = None
+
+    # ``vllm bench serve --goodput`` SLO constraint string for this sweep
+    # point ("ttft:2000 tpot:20 e2el:20000", milliseconds), derived from the
+    # requirements scenario's SLOs. None means goodput is not measured.
+    goodput: str = None
 
     def __post_init__(self):
         self._infer_data()

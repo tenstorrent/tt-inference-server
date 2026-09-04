@@ -6,10 +6,13 @@
 #include <algorithm>
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
+#include <limits>
 #include <stdexcept>
 #include <thread>
 #include <utility>
 
+#include "config/defaults.hpp"
 #include "runtime/worker/single_process_worker_metrics.hpp"
 #include "utils/logger.hpp"
 #include "utils/tts_prompt_compiler.hpp"
@@ -29,6 +32,30 @@ sched::GenerationParams toSchedulerGeneration(
   return out;
 }
 
+/** Microseconds elapsed since `start`, saturating at uint32 (~71 min) so a
+ *  pathological stall cannot wrap the IPC field into a small value. */
+uint32_t elapsedUsSince(std::chrono::steady_clock::time_point start) {
+  const auto us = std::chrono::duration_cast<std::chrono::microseconds>(
+                      std::chrono::steady_clock::now() - start)
+                      .count();
+  if (us <= 0) return 0;
+  return static_cast<uint32_t>(
+      std::min<int64_t>(us, std::numeric_limits<uint32_t>::max()));
+}
+
+/** Bounded metrics dimension for "which voice produced these tokens". A
+ *  cloned voice costs more per token than the default speaker, and the TTS
+ *  API exposes no voice ID to label by. */
+tt::worker::tts::VoiceSource voiceSourceOf(const ipc::tts::TtsIpcTask& task) {
+  if (!task.voiceWavPcm.empty()) {
+    return tt::worker::tts::VoiceSource::VoiceSample;
+  }
+  if (task.description.has_value() && !task.description->empty()) {
+    return tt::worker::tts::VoiceSource::Description;
+  }
+  return tt::worker::tts::VoiceSource::Default;
+}
+
 }  // namespace
 
 BlazeTtsRunner::BlazeTtsRunner(
@@ -41,6 +68,7 @@ BlazeTtsRunner::BlazeTtsRunner(
       taskQueue(taskQueue),
       audioQueue(audioQueue),
       cancelQueue(cancelQueue),
+      voiceSampleCache(config::defaults::TTS_VOICE_SAMPLE_CACHE_SIZE),
       outputHangTimeout(this->config.outputHangTimeoutMs) {
   if (!this->scheduler) {
     throw std::invalid_argument("BlazeTtsRunner: scheduler must not be null");
@@ -59,6 +87,15 @@ BlazeTtsRunner::BlazeTtsRunner(
   for (uint32_t i = 0; i < slots.size(); ++i) {
     slots[i].slotId = i;
   }
+  vocodeSweepSlots.reserve(slots.size());
+
+  // The output sample rate is fixed for the runner's lifetime, and it is what
+  // turns the frame counter into audio seconds on the reader side. Safe here:
+  // SingleProcessWorkerMetrics::initialize() runs in startWorker() before any
+  // runner is constructed, and the call is a no-op on a non-TTS layout.
+  tt::worker::SingleProcessWorkerMetrics::instance().publishAudioSampleRate(
+      this->config.audioSampleRateHz);
+
   this->scheduler->start();
   lastOutputTime = std::chrono::steady_clock::now();
 }
@@ -151,11 +188,33 @@ void BlazeTtsRunner::drainTokenOutputs() {
 void BlazeTtsRunner::drainAudioOutputs() {
   sched::AudioOutput output;
   size_t drained = 0;
+  // Accumulated per sweep, not per chunk: one sweep is one vocode batch's
+  // worth of output, so the sweep's frames are attributed to the number of
+  // distinct streams it covered (see BatchBucket).
+  uint64_t sweepFrames = 0;
+  uint64_t sweepChunks = 0;
+  vocodeSweepSlots.clear();
+
   while (drained < config.audioQueueCapacity &&
          scheduler->tryPopAudio(output)) {
-    handleAudioOutput(output);
+    const uint64_t frames = handleAudioOutput(output);
+    if (frames > 0) {
+      sweepFrames += frames;
+      ++sweepChunks;
+      if (std::find(vocodeSweepSlots.begin(), vocodeSweepSlots.end(),
+                    output.slotId) == vocodeSweepSlots.end()) {
+        vocodeSweepSlots.push_back(output.slotId);
+      }
+    }
     ++drained;
   }
+
+  if (sweepFrames > 0) {
+    tt::worker::SingleProcessWorkerMetrics::instance().onVocodedAudio(
+        tt::worker::tts::batchBucketOf(vocodeSweepSlots.size()), sweepFrames,
+        sweepChunks);
+  }
+
   if (drained < config.audioQueueCapacity) {
     for (const auto& slot : slots) {
       maybeFinalizeCompletedSlot(slot.slotId);
@@ -218,20 +277,47 @@ void BlazeTtsRunner::drainTasks() {
 
 void BlazeTtsRunner::handleTask(ipc::tts::TtsIpcTask task) {
   if (!task.voiceWavPcm.empty()) {
-    sched::VoiceEncodeRequest request;
-    request.requestId = task.task_id;
-    request.wavPcm = std::move(task.voiceWavPcm);
-    if (!scheduler->enqueueVoiceEncode(std::move(request))) {
-      sendFinish(task.task_id, domain::tts::TtsFinishReason::Error,
-                 "TTS scheduler voice encoder queue is full");
+    if (voiceSampleCache.exists(task.voiceWavPcm)) {
+      try {
+        const auto cachedSpeechIds = voiceSampleCache.get(task.voiceWavPcm);
+        // Cache hit: no voice encode runs, so its timing stays 0 and the main
+        // process reports no voice_encode sample for this request at all.
+        const auto compileStart = std::chrono::steady_clock::now();
+        compilePromptTokens(task, cachedSpeechIds);
+        conditioningByTask[task.task_id].promptCompileUs =
+            elapsedUsSince(compileStart);
+      } catch (const std::exception& e) {
+        sendFinish(task.task_id, domain::tts::TtsFinishReason::Error, e.what());
+        return;
+      }
+    } else {
+      sched::VoiceEncodeRequest request;
+      request.requestId = task.task_id;
+      request.wavPcm = task.voiceWavPcm;
+      // Stamped before the enqueue so the measurement covers the queue wait as
+      // well as the device work — from the request's point of view both are
+      // time spent preparing speaker conditioning.
+      const auto encodeStart = std::chrono::steady_clock::now();
+      if (!scheduler->enqueueVoiceEncode(std::move(request))) {
+        sendFinish(task.task_id, domain::tts::TtsFinishReason::Error,
+                   "TTS scheduler voice encoder queue is full");
+        return;
+      }
+      conditioningByTask[task.task_id].voiceEncodeStart = encodeStart;
+      pendingVoiceEncodes.emplace(task.task_id, std::move(task));
       return;
     }
-    const uint32_t taskId = task.task_id;
-    pendingVoiceEncodes.emplace(taskId, std::move(task));
-    return;
   }
 
   allocateTask(std::move(task));
+}
+
+void BlazeTtsRunner::compilePromptTokens(
+    ipc::tts::TtsIpcTask& task, const std::vector<uint32_t>& speechIds) {
+  const auto& tokenizer =
+      tt::utils::tts_tokenizer::tokenizerForPath(config.tokenizerPath);
+  task.promptTokens = tt::utils::tts_prompt_compiler::compilePromptTokens(
+      tokenizer, task.text, task.description, speechIds, config.bosToken);
 }
 
 void BlazeTtsRunner::allocateTask(ipc::tts::TtsIpcTask task) {
@@ -286,6 +372,12 @@ void BlazeTtsRunner::handleVoiceEncodeResult(
   auto task = std::move(pending->second);
   pendingVoiceEncodes.erase(pending);
 
+  if (auto timing = conditioningByTask.find(task.task_id);
+      timing != conditioningByTask.end()) {
+    timing->second.voiceEncodeUs =
+        elapsedUsSince(timing->second.voiceEncodeStart);
+  }
+
   switch (result.status) {
     case sched::VoiceEncodeStatus::Completed:
       break;
@@ -299,10 +391,11 @@ void BlazeTtsRunner::handleVoiceEncodeResult(
   }
 
   try {
-    const auto& tokenizer =
-        tt::utils::tts_tokenizer::tokenizerForPath(config.tokenizerPath);
-    task.promptTokens = tt::utils::tts_prompt_compiler::compilePromptTokens(
-        tokenizer, task.text, task.description, result.speechIds);
+    voiceSampleCache.add(task.voiceWavPcm, result.speechIds);
+    const auto compileStart = std::chrono::steady_clock::now();
+    compilePromptTokens(task, result.speechIds);
+    conditioningByTask[task.task_id].promptCompileUs =
+        elapsedUsSince(compileStart);
   } catch (const std::exception& e) {
     sendFinish(task.task_id, domain::tts::TtsFinishReason::Error, e.what());
     return;
@@ -368,6 +461,7 @@ void BlazeTtsRunner::handleAllocateAck(
   slot->task_id = task.task_id;
   slot->completionPending = false;
   slot->audioLastReceived = false;
+  slot->voiceSource = voiceSourceOf(task);
 
   sched::TtsSubmit submit;
   submit.requestId = task.task_id;
@@ -415,21 +509,38 @@ void BlazeTtsRunner::handleTokenOutput(const sched::TokenOutput& output) {
       "[BlazeTtsRunner] Drained speech token taskId={} slotId={} "
       "tokenId={} final={}",
       output.taskId, output.slotId, output.tokenId, output.final);
+
+  // Every drained TokenOutput is one codec token off the decoder, terminal one
+  // included: the engine stamps is_complete on a real token, not on a synthetic
+  // sentinel. This is the single point where the runner sees the token stream.
+  auto* slot = findSlot(output.slotId);
+  if (slot == nullptr) {
+    return;
+  }
+  tt::worker::SingleProcessWorkerMetrics::instance().onCodecToken(
+      slot->voiceSource);
+
   if (output.final) {
-    if (auto* slot = findSlot(output.slotId)) {
-      slot->completionPending = true;
-      maybeFinalizeCompletedSlot(output.slotId);
-    }
+    slot->completionPending = true;
+    maybeFinalizeCompletedSlot(output.slotId);
   }
 }
 
-void BlazeTtsRunner::handleAudioOutput(const sched::AudioOutput& output) {
+uint64_t BlazeTtsRunner::handleAudioOutput(const sched::AudioOutput& output) {
   lastOutputTime = std::chrono::steady_clock::now();
   if (shouldDropOutput(output.slotId, "audio")) {
-    return;
+    return 0;
   }
 
+  uint64_t frames = 0;
   if (!output.samplesBf16.empty()) {
+    // Frames, not sample words: samplesBf16 is interleaved across channels, so
+    // dividing by the channel count is what makes the counter mean "audio
+    // duration" independently of the output format. Engines that leave
+    // channels unset are treated as mono rather than dropped.
+    const uint16_t channels = output.channels > 0 ? output.channels : 1;
+    frames = static_cast<uint64_t>(output.samplesBf16.size()) / channels;
+
     ipc::tts::TtsAudioChunkMessage message;
     message.task_id = output.taskId;
     message.chunkIndex = output.chunkIndex;
@@ -449,6 +560,7 @@ void BlazeTtsRunner::handleAudioOutput(const sched::AudioOutput& output) {
       maybeFinalizeCompletedSlot(output.slotId);
     }
   }
+  return frames;
 }
 
 bool BlazeTtsRunner::sendFinish(uint32_t taskId,
@@ -458,6 +570,17 @@ bool BlazeTtsRunner::sendFinish(uint32_t taskId,
   PendingTerminalMessage terminal{
       ipc::tts::TtsAudioChunkMessage::finish(taskId, reason, std::move(error)),
       slotIdToEvict};
+
+  // Hand this task's worker-side conditioning timings to the main process and
+  // drop the bookkeeping. Erasing here — rather than on any of the individual
+  // terminal paths — is what keeps the map bounded: every task reaches exactly
+  // one sendFinish, whether it completed, errored, or was cancelled.
+  if (auto timing = conditioningByTask.find(taskId);
+      timing != conditioningByTask.end()) {
+    terminal.message.voiceEncodeUs = timing->second.voiceEncodeUs;
+    terminal.message.promptCompileUs = timing->second.promptCompileUs;
+    conditioningByTask.erase(timing);
+  }
 
   if (slotIdToEvict.has_value()) {
     if (auto* slot = findSlot(*slotIdToEvict)) {

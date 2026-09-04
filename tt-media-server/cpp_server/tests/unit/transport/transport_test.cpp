@@ -7,13 +7,11 @@
 #include <memory>
 #include <vector>
 
-#include "transport/device_dram_storage_backend.hpp"
 #include "transport/host_dram_storage_backend.hpp"
 #include "transport/i_storage_backend.hpp"
 #include "transport/i_transfer_engine.hpp"
 #include "transport/mooncake_transfer_engine.hpp"
 #include "transport/transfer_types.hpp"
-#include "transport/umd_device_access.hpp"
 
 namespace tt::transport {
 namespace {
@@ -32,10 +30,6 @@ TEST(StorageBackend, ReportMediumThroughInterface) {
   std::unique_ptr<IStorageBackend> host =
       std::make_unique<HostDramStorageBackend>();
   EXPECT_EQ(host->medium(), StorageMedium::HOST_DRAM);
-
-  auto device = std::make_unique<DeviceDramStorageBackend>(
-      std::make_shared<UmdDeviceAccess>(/*device_id=*/0));
-  EXPECT_EQ(device->medium(), StorageMedium::DEVICE_DRAM);
 }
 
 // The host-DRAM backend stages bytes via memcpy: writeFrom then readInto a
@@ -72,31 +66,14 @@ TEST(HostDramStorageBackend, ZeroLengthSucceedsNullFails) {
   EXPECT_FALSE(backend.writeFrom(addr, /*hostBuffer=*/nullptr, buffer.size()));
 }
 
-// The device-DRAM custom backend delegates to UMD; placeholder reports failure.
-#ifndef USE_METAL_CPP_LIB
-// Without the real UMD backend in the build, the device-DRAM storage methods
-// report failure (no device) without crashing. With USE_METAL_CPP_LIB compiled
-// in, readInto/writeFrom touch real device DRAM, so that path is exercised by
-// the integration tests instead.
-TEST(DeviceDramStorageBackend, MethodsReportNotImplemented) {
-  DeviceDramStorageBackend backend(
-      std::make_shared<UmdDeviceAccess>(/*device_id=*/0));
-  std::vector<uint8_t> buffer(64, 0);
-  const auto addr = makeNocAddr(/*channel=*/0, /*local_addr=*/0);
-  EXPECT_FALSE(backend.readInto(addr, buffer.size(), buffer.data()));
-  EXPECT_FALSE(backend.writeFrom(addr, buffer.data(), buffer.size()));
-}
-#endif  // USE_METAL_CPP_LIB
-
 // The Transfer Engine composes a storage backend and reports its medium, and
 // exposes that same backend through storage() for the bounce-buffer flow.
 TEST(MooncakeTransferEngine, ComposesStorageBackend) {
-  auto storage = std::make_shared<DeviceDramStorageBackend>(
-      std::make_shared<UmdDeviceAccess>(/*device_id=*/0));
+  auto storage = std::make_shared<HostDramStorageBackend>();
   std::unique_ptr<ITransferEngine> engine =
       std::make_unique<MooncakeTransferEngine>(storage);
   ASSERT_NE(engine, nullptr);
-  EXPECT_EQ(engine->storageMedium(), StorageMedium::DEVICE_DRAM);
+  EXPECT_EQ(engine->storageMedium(), StorageMedium::HOST_DRAM);
   EXPECT_EQ(engine->storage(), storage);
 }
 
@@ -118,19 +95,6 @@ TEST(MooncakeTransferEngine, MethodsReportFailureWithoutMooncake) {
   EXPECT_EQ(engine.submitAndWait(request).state, TransferState::FAILED);
 }
 #endif  // TT_TRANSPORT_WITH_MOONCAKE
-
-#ifndef USE_METAL_CPP_LIB
-// The UMD access wrapper constructs and its placeholder I/O reports failure.
-// With USE_METAL_CPP_LIB compiled in, read/write touch real device DRAM, so
-// that path is exercised by the integration tests instead.
-TEST(UmdDeviceAccess, MethodsReportNotImplemented) {
-  UmdDeviceAccess device(/*device_id=*/0);
-  std::vector<uint8_t> buffer(64, 0);
-  const NocAddr addr = makeNocAddr(/*channel=*/0, /*local_addr=*/0);
-  EXPECT_FALSE(device.read(addr, buffer.size(), buffer.data()));
-  EXPECT_FALSE(device.write(addr, buffer.data(), buffer.size()));
-}
-#endif  // USE_METAL_CPP_LIB
 
 }  // namespace
 }  // namespace tt::transport

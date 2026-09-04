@@ -43,6 +43,8 @@ drogon_found() {
 
 APT_PKGS=(
     libjsoncpp-dev uuid-dev zlib1g-dev libssl-dev libboost-all-dev
+    # sentry-native's curl transport (distributed tracing export)
+    libcurl4-openssl-dev
 )
 if [ "${RUNTIME_ONLY}" = 0 ]; then
     APT_PKGS+=(build-essential cmake g++ pkg-config curl git wget gnupg ca-certificates ccache)

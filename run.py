@@ -27,6 +27,7 @@ from workflows.log_setup import setup_run_logger  # noqa: E402
 from workflows.model_spec import (  # noqa: E402
     MODEL_SPECS,
     ModelSpec,
+    derive_custom_weights_spec,
     export_model_specs_json,
     get_runtime_model_spec,
 )
@@ -36,7 +37,14 @@ from workflows.multihost_orchestrator import (
     is_multihost_deployment,
     setup_multihost_config,
 )
+from workflows.requirements_cli import (
+    add_requirements_argument,
+    apply_requirements,
+    register_requirements_providers,
+    requirements_mode_in_argv,
+)
 from workflows.run_docker_server import (
+    collect_tt_triage_logs,
     format_docker_command,
     generate_docker_run_command,
 )
@@ -100,6 +108,12 @@ def parse_arguments():
         valid_models.add(config.model_name)
 
     valid_impls = {config.impl.impl_name for _, config in MODEL_SPECS.items()}
+
+    # A requirements-driven run supplies the model from the document, which may
+    # name a model the catalog has never heard of, so the ``choices`` gate is
+    # dropped when --requirements-json is present.
+    requirements_mode = requirements_mode_in_argv()
+
     # required
     parser = argparse.ArgumentParser(
         description="A CLI for running workflows with optional docker, device, and workflow-args.",
@@ -110,11 +124,13 @@ def parse_arguments():
         "--model",
         required=False,
         default=None,
-        choices=valid_models,
+        choices=None if requirements_mode else valid_models,
         help="Model to run. Required for every workflow except prefill_decode, "
         "which serves a mock stack chosen by --served-model and only needs a "
-        "placeholder spec (auto-picked when --model is omitted).",
+        "placeholder spec (auto-picked when --model is omitted). Defaults from "
+        "the document when --requirements-json is given.",
     )
+    add_requirements_argument(parser)
     parser.add_argument(
         "--workflow",
         required=True,
@@ -258,9 +274,11 @@ def parse_arguments():
         "--vllm-dir",
         type=str,
         default=os.getenv("vllm_dir"),
-        help="[for --local-server] Host path to the vLLM source tree to export as vllm_dir "
-        "and append to PYTHONPATH. Defaults to vllm_dir from the environment when set, "
-        "otherwise tt-metal-home/vllm.",
+        help="[DEPRECATED, ignored] Formerly the host path to a vLLM source tree, exported "
+        "as vllm_dir and appended to PYTHONPATH. vLLM is now an ordinary installed package "
+        "in the tt-metal venv and the TT platform comes from the separately installed "
+        "vllm-tt-plugin, so no source tree is needed. Accepted for backwards compatibility; "
+        "will be removed in a future release.",
     )
     parser.add_argument(
         "--limit-samples-mode",
@@ -275,6 +293,15 @@ def parse_arguments():
         "Accepts a JSON string '{\"task_name\": [int, ...]}' or a path to a JSON file. "
         "Indices are zero-based. Mutually exclusive with --limit-samples-mode. "
         "Text/LLM evals only.",
+    )
+    parser.add_argument(
+        "--repeat-evals",
+        type=int,
+        default=1,
+        metavar="N",
+        help="Run --workflow evals N times, keeping each run's report under "
+        "run_NN/ and writing an aggregated summary/ (reuses the workflow engine's "
+        "--repeat). Default 1 (no summary).",
     )
     parser.add_argument(
         "--skip-system-sw-validation",
@@ -370,6 +397,15 @@ def parse_arguments():
         "For --local-server, tensor cache/logs still use the host volume path.",
     )
     parser.add_argument(
+        "--custom-weights",
+        type=str,
+        default=None,
+        help="Label giving custom weights their own identity, derived from the "
+        "base --model spec. Gets its own volume/cache subtree. With "
+        "--host-weights-dir the bytes come from local disk; without it the label "
+        "is the HuggingFace repo to download. Requires --model.",
+    )
+    parser.add_argument(
         "--image-user",
         type=str,
         default="1000",
@@ -463,6 +499,22 @@ def parse_arguments():
         "tt-media-server/cpp_server/tokenizers/. Overrides the model derived from "
         "--model; lets you serve a model with no catalog entry. Defaults to the "
         "--model's HF repo, then run_stack.sh's built-in default.",
+    )
+
+    agentic_group = parser.add_argument_group(
+        "Agentic evals",
+        "Arguments for --workflow agentic (accuracy evals: tau3 / terminal-bench / "
+        "swe-bench), routed to the workflow engine",
+    )
+    agentic_group.add_argument(
+        "--agentic-benchmark",
+        type=str,
+        default=None,
+        help="Comma-separated agentic benchmark(s) to run under --workflow agentic. "
+        "Aliases: tau3 (tau3_bench_*), tb2.0 (terminal_bench_2), tb2.1 "
+        "(terminal_bench_2_1), swebench (swe_bench_*). Raw task names are also "
+        "accepted. When unset (or 'all'), runs every EVALS_AGENTIC task configured "
+        "for the model.",
     )
 
     agentic_traces_group = parser.add_argument_group(
@@ -648,6 +700,12 @@ def parse_arguments():
         )
     args.device = args.tt_device or args.device
 
+    # Before any model/device defaulting below: the document supplies both, and
+    # an off-catalog model would fail infer_default_device().
+    args.requirements_doc = None
+    if args.requirements_json:
+        apply_requirements(args, parser)
+
     if args.server_url and (args.docker_server or args.local_server):
         parser.error(
             "--server-url cannot be used together with --docker-server or --local-server. "
@@ -660,6 +718,19 @@ def parse_arguments():
             args.server_url = normalize_server_url(args.server_url)
         except ValueError as e:
             parser.error(str(e))
+    if args.custom_weights is not None:
+        if not args.custom_weights.strip():
+            parser.error("--custom-weights cannot be empty.")
+        if args.model is None:
+            parser.error(
+                "--custom-weights requires a base --model to inherit its spec "
+                "(impl, device configs, engine, docker image) from."
+            )
+        if args.runtime_model_spec_json:
+            parser.error(
+                "--custom-weights cannot be combined with --runtime-model-spec-json; "
+                "the runtime spec JSON is used as-is and already fixes the model identity."
+            )
     args.engine = (
         InferenceEngine.from_string(args.engine).value if args.engine else None
     )
@@ -689,8 +760,12 @@ def parse_arguments():
         args.device = infer_default_device(args.model, args.engine)
     args.tt_device = args.device
 
-    if not args.vllm_dir and args.tt_metal_home:
-        args.vllm_dir = str(Path(args.tt_metal_home).expanduser() / "vllm")
+    if args.vllm_dir:
+        logger.warning(
+            "--vllm-dir (or the vllm_dir env var) is deprecated and ignored: vLLM is "
+            "installed into the tt-metal venv as an ordinary package and the TT platform "
+            "is provided by vllm-tt-plugin, so no vLLM source tree is used."
+        )
 
     # indirectly set additional flags for CI-mode
     if args.ci_mode:
@@ -723,6 +798,23 @@ def parse_arguments():
     if args.served_model and args.workflow != "prefill_decode":
         parser.error(
             "--served-model requires --workflow prefill_decode "
+            f"(got --workflow {args.workflow})."
+        )
+
+    if args.agentic_benchmark and args.workflow != "agentic":
+        parser.error(
+            "--agentic-benchmark selects which agentic eval(s) to run and requires "
+            f"--workflow agentic (got --workflow {args.workflow})."
+        )
+
+    if args.repeat_evals is not None and args.repeat_evals < 1:
+        parser.error(
+            f"--repeat-evals must be a positive integer (got {args.repeat_evals})."
+        )
+
+    if args.repeat_evals and args.repeat_evals > 1 and args.workflow != "evals":
+        parser.error(
+            "--repeat-evals applies to --workflow evals "
             f"(got --workflow {args.workflow})."
         )
 
@@ -881,7 +973,6 @@ def format_cli_args_summary(runtime_config):
         f"  no_auth:                    {runtime_config.no_auth}",
         f"  tt_metal_python_venv_dir:   {runtime_config.tt_metal_python_venv_dir}",
         f"  tt_metal_home:              {runtime_config.tt_metal_home}",
-        f"  vllm_dir:                   {runtime_config.vllm_dir}",
         f"  service_port:               {runtime_config.service_port}",
         f"  bind_host:                  {runtime_config.bind_host}",
         f"  docker_override_image:      {runtime_config.override_docker_image}",
@@ -899,6 +990,9 @@ def format_cli_args_summary(runtime_config):
         f"  host_volume:                {runtime_config.host_volume}",
         f"  host_hf_cache:              {runtime_config.host_hf_cache}",
         f"  host_weights_dir:           {runtime_config.host_weights_dir}",
+        f"  custom_weights:             {runtime_config.custom_weights}"
+        if runtime_config.custom_weights
+        else None,
         f"  image_user:                 {runtime_config.image_user}",
         "",
     ]
@@ -942,12 +1036,53 @@ def resolve_runtime(args):
         model_spec = ModelSpec.from_json(args.runtime_model_spec_json)
         runtime_config = RuntimeConfig.from_args(args)
     else:
-        model_spec, resolved_impl, resolved_engine = get_runtime_model_spec(
-            model=args.model,
-            device=args.device,
-            engine=args.engine,
-            impl=args.impl,
-        )
+        try:
+            model_spec, resolved_impl, resolved_engine = get_runtime_model_spec(
+                model=args.model,
+                device=args.device,
+                engine=args.engine,
+                impl=args.impl,
+            )
+        except ValueError:
+            # A requirements document may name a model the catalog has no entry
+            # for: wrap the registered provider with the requirements-backed one
+            # (which synthesizes a spec from the document's context length +
+            # concurrency) and register it for the rest of this process.
+            # Catalog models still resolve above, so non-requirements runs keep
+            # failing loudly.
+            if args.requirements_doc is None:
+                raise
+            from workflow_module.model_catalog import (
+                get_model_spec_provider,
+                register_model_spec_provider,
+            )
+            from workflows.requirements_target_pack import (
+                RequirementsModelSpecProvider,
+            )
+
+            provider = RequirementsModelSpecProvider(
+                get_model_spec_provider(), args.requirements_doc
+            )
+            register_model_spec_provider(provider)
+            model_spec = provider.resolve(args.model, args.device)
+            resolved_impl = model_spec.impl.impl_name
+            resolved_engine = model_spec.inference_engine
+        if args.custom_weights:
+            # With --host-weights-dir, point vLLM's --model at the container
+            # mount so weights load offline (the label is not a real HF repo).
+            # Must match setup_host's readonly weights mount path.
+            local_model_path = None
+            if args.host_weights_dir:
+                from workflows.setup_host import SetupConfig
+
+                local_model_path = str(
+                    SetupConfig.containter_user_home
+                    / "readonly_weights_mount"
+                    / Path(args.host_weights_dir).name
+                )
+            model_spec = derive_custom_weights_spec(
+                model_spec, args.custom_weights, local_model_path=local_model_path
+            )
         runtime_config = RuntimeConfig.from_args(
             args, impl=resolved_impl, engine=resolved_engine
         )
@@ -973,6 +1108,11 @@ def handle_maintenance_args(args):
 def main():
     # step 00: handle maintenance args
     args = parse_arguments()
+    if args.requirements_doc is not None:
+        # Overlay the document before anything resolves a spec or looks up
+        # validation content; the dispatched child processes register it again
+        # from --requirements-json, which is forwarded in their argv.
+        register_requirements_providers(args.requirements_doc)
     handle_maintenance_args(args)
     # Export repo-root model_spec.json from pristine MODEL_SPECS
     repo_root = Path(__file__).resolve().parent
@@ -990,7 +1130,8 @@ def main():
     tt_inference_server_sha = get_current_commit_sha()
 
     # step 3: setup logging and finalize run_id
-    run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    run_start = datetime.now()
+    run_timestamp = run_start.strftime("%Y-%m-%d_%H-%M-%S")
     run_id = get_run_id(
         timestamp=run_timestamp,
         model_id=model_id,
@@ -1061,7 +1202,9 @@ def main():
     server_launch = None
     if runtime_config.docker_server:
         docker_json_fpath = None
-        if runtime_config.dev_mode:
+        # dev mode and --custom-weights both need the container to use this spec
+        # rather than resolving --model against the baked catalog.
+        if runtime_config.dev_mode or runtime_config.custom_weights:
             docker_json_fpath = json_fpath
         if runtime_config.print_docker_cmd:
             if is_multihost_deployment(runtime_config):
@@ -1153,7 +1296,19 @@ def main():
         )
         main_return_code = 0
     else:
-        main_return_code = WorkflowRunner(commands).run()
+        runner = WorkflowRunner(commands)
+        main_return_code = runner.run()
+        if runtime_config.docker_server:
+            # tt-metal writes a tt-triage report into the cache_root volume when
+            # it detects a device hang; copy it under workflow_logs/ so CI's
+            # existing artifact upload picks it up. Runs on success too -- the
+            # report is simply absent when nothing hung.
+            collect_tt_triage_logs(
+                setup_config=setup_config,
+                model_spec=model_spec,
+                dest_dir=log_path / "tt_triage",
+                since_ts=run_start.timestamp(),
+            )
     if main_return_code == 0:
         logger.info("Completed run.py.")
     else:

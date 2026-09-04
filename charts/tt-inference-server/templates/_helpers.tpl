@@ -31,6 +31,21 @@ Validate required values and that model/engine/device/impl resolves.
   {{- $available := keys $deviceEntry.impls | sortAlpha | join ", " }}
   {{- fail (printf "No impl '%s' for model '%s' on engine '%s' device '%s'. Available impls: %s" $impl .Values.model $engine .Values.device $available) }}
 {{- end }}
+
+{{/*
+media/forge fall back to a well-known built-in key when API_KEY is unset, which
+looks authenticated but is not, so make the operator pick. vLLM needs no gate:
+it is open unless VLLM_API_KEY is set, which is what auth.apiKey sets.
+*/}}
+{{- $auth := .Values.auth | default dict }}
+{{- if and (dig "apiKey" "" $auth) (dig "disabled" false $auth) }}
+  {{- fail "auth.apiKey and auth.disabled are contradictory: the server would honour NO_AUTH and serve unauthenticated while the key sits in the release Secret. Set one." }}
+{{- end }}
+{{- if or (eq $engine "media") (eq $engine "forge") }}
+  {{- if and (not (dig "apiKey" "" $auth)) (not (dig "disabled" false $auth)) }}
+    {{- fail (printf "engine '%s' authenticates its inference routes with a bearer key, and leaving it unset would silently use the server image's built-in default. Set auth.apiKey=<key> (stored in the release Secret as API_KEY), or auth.disabled=true to run without auth." $engine) }}
+  {{- end }}
+{{- end }}
 {{- end }}
 
 {{/*
@@ -146,6 +161,25 @@ with `with (include … | trim)`.
 {{- end }}
 
 {{/*
+hugepages-1Gi request/limit: hugepages.size when set, else one 1Gi page per ASIC
+of the device (deviceChipCounts). Empty for a device with no chip count (gpu/cpu,
+or a shape the map does not cover), which drops the request entirely.
+*/}}
+{{- define "tt-inference-server.hugepagesSize" -}}
+{{- $override := dig "size" "" (.Values.hugepages | default dict) -}}
+{{- if $override -}}
+{{- $override -}}
+{{- else -}}
+{{- $chips := index (.Values.deviceChipCounts | default dict) (.Values.device | lower) -}}
+{{- if $chips -}}{{- printf "%dGi" (int $chips) -}}{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "tt-inference-server.cacheRoot" -}}
+/home/container_app_user/cache_root
+{{- end -}}
+
+{{/*
 Cache hostPath — defaults to /opt/cache/<model>-<device>-<impl>. Includes impl
 so two impls on the same device don't share a cache directory.
 */}}
@@ -159,6 +193,35 @@ so two impls on the same device don't share a cache directory.
 {{- printf "/opt/cache/%s-%s-%s" $model $device $impl }}
 {{- end }}
 {{- end }}
+
+{{/*
+DRA board count for .Values.device, read from the generated
+.Values.deviceBoardCounts map (single source of truth). Returns:
+  - device in the map  -> its board count
+  - gpu/cpu (non-TT)   -> "" (no ResourceClaim)
+  - anything else      -> fail (e.g. galaxy_t3k; unsupported, fail closed)
+*/}}
+{{- define "tt-inference-server.draDeviceCount" -}}
+{{- $counts := .Values.deviceBoardCounts | default dict -}}
+{{- $nonTT := list "gpu" "cpu" -}}
+{{- $d := .Values.device | lower -}}
+{{- if hasKey $counts $d -}}
+{{- index $counts $d -}}
+{{- else if has $d $nonTT -}}
+{{- else -}}
+{{- fail (printf "device '%s' is not supported via DRA in this chart. Topology-sensitive partitions (e.g. galaxy_t3k) are future work and need the tt-dra-driver to publish topology attributes. Supported: %s." $d (keys $counts | sortAlpha | join ", ")) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+DRA boardName for .Values.device, from the generated .Values.deviceBoardNames map.
+The ResourceClaim selects boards by this attribute (CEL). Returns "" for non-TT
+devices (gpu/cpu); only used when draDeviceCount is non-empty.
+*/}}
+{{- define "tt-inference-server.draBoardName" -}}
+{{- $names := .Values.deviceBoardNames | default dict -}}
+{{- index $names (.Values.device | lower) | default "" -}}
+{{- end -}}
 
 {{/*
 Chart name helpers
@@ -207,25 +270,16 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
-Compose the final affinity object.
+Compose the final affinity object — user-supplied affinity, passed through as-is.
 
-Always prepends a hardcoded device-collision podAntiAffinity term to any
-user-supplied affinity. The term label-selects every pod of this chart
-across releases and uses topologyKey=kubernetes.io/hostname to enforce
-1:1 Pod-to-Node placement (issue #2801). Operators can freely add
-nodeAffinity / podAffinity / extra anti-affinity terms via .Values.affinity
-without losing the guarantee; the chart's term is unconditional and not
-values-driven so it cannot be disabled accidentally.
+Under DRA the scheduler prevents device collisions by allocation (two Pods can
+never be assigned the same board), so multiple Pods may run on one Node (e.g. 4
+single-n300 Pods on a T3K). Operators can supply their own nodeAffinity /
+podAffinity / podAntiAffinity via .Values.affinity.
 */}}
 {{- define "tt-inference-server.affinity" -}}
 {{- $cfg := include "tt-inference-server.resolvedConfig" . | fromYaml -}}
-{{- $aff := deepCopy (default (dict) $cfg.affinity) -}}
-{{- $autoTerm := dict
-     "labelSelector" (dict "matchLabels" (dict "app.kubernetes.io/name" (include "tt-inference-server.name" .)))
-     "topologyKey"   "kubernetes.io/hostname" -}}
-{{- $paa := default (dict) (index $aff "podAntiAffinity") -}}
-{{- $req := default (list) (index $paa "requiredDuringSchedulingIgnoredDuringExecution") -}}
-{{- $_   := set $paa "requiredDuringSchedulingIgnoredDuringExecution" (prepend $req $autoTerm) -}}
-{{- $_   := set $aff "podAntiAffinity" $paa -}}
-{{- toYaml $aff -}}
+{{- with $cfg.affinity -}}
+{{- toYaml . -}}
+{{- end -}}
 {{- end -}}

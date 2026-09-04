@@ -61,6 +61,7 @@ jobs:
               - 'workflows/helm_generator/**'
               - 'charts/tt-inference-server/values.yaml'
               - 'tests/test_helm_generator/test_values_in_sync.py'
+              - '.github/scripts/helm_install_gate.sh'
 
   lint:
     needs: detect-changes
@@ -1096,6 +1097,13 @@ jobs:
           import yaml
           with open('charts/tt-inference-server/values.yaml') as f:
               v = yaml.safe_load(f)
+          # A device is renderable iff the chart can produce a manifest for it:
+          # it has a DRA board count (deviceBoardCounts), or it is a
+          # non-Tenstorrent device (gpu/cpu, no ResourceClaim). Devices absent
+          # from both (topology-sensitive partitions like galaxy_t3k) fail the
+          # render on purpose — skip them. Derived from the same source the chart
+          # uses (deviceBoardCounts), so it can never drift from the template.
+          supported = set(v.get('deviceBoardCounts', {})) | {"gpu", "cpu"}
           # models[model][engine][device]; skip scalar metadata (e.g. defaultEngine)
           for model, engines in v['models'].items():
               for engine, devices in engines.items():
@@ -1103,6 +1111,8 @@ jobs:
                       continue
                   for device, dev_cfg in devices.items():
                       if not isinstance(dev_cfg, dict):
+                          continue
+                      if device not in supported:
                           continue
                       print(f"{model},{engine},{device}")
           EOF
@@ -1117,28 +1127,193 @@ jobs:
           FAILED=0
           while IFS=',' read -r model engine device; do
             echo "--- Validating: $model / $engine / $device"
-            if ! helm template ci-test charts/tt-inference-server \
+            # Satisfies the chart's fail-closed auth check for media/forge rows,
+            # and renders the Secret's key branch for kubeconform.
+            RENDERED=$(helm template ci-test charts/tt-inference-server \
                 --set "model=$model" \
                 --set "engine=$engine" \
                 --set "device=$device" \
-                | kubeconform -strict -summary; then
-              echo "FAILED: $model / $engine / $device"
+                --set auth.apiKey=ci-render-key) || { echo "FAILED (render): $model / $engine / $device"; FAILED=1; continue; }
+            if ! echo "$RENDERED" | kubeconform -strict -summary; then
+              echo "FAILED (kubeconform): $model / $engine / $device"
               FAILED=1
             fi
           done < /tmp/helm-matrix.txt
           exit $FAILED
 
-      - name: Verify safety invariants
+      - name: Verify DRA claim structure, board counts, and safety invariants
         run: |
           set -e
-          RENDERED=$(helm template ttis charts/tt-inference-server \
-            --set model=Llama-3.1-8B-Instruct --set device=galaxy)
-          echo "$RENDERED" | grep -qE '^[[:space:]]*type: Recreate$' \
-            || { echo "::error::Deployment must use 'strategy: type: Recreate' (see issue #2801)"; exit 1; }
-          echo "$RENDERED" | grep -qE '^[[:space:]]*podAntiAffinity:[[:space:]]*$' \
-            || { echo "::error::podAntiAffinity block missing — device-collision protection broken (see #2801)"; exit 1; }
-          echo "$RENDERED" | grep -qE 'topologyKey: kubernetes.io/hostname' \
-            || { echo "::error::Chart's podAntiAffinity term has wrong topologyKey — device-collision scope broken (see #2801)"; exit 1; }
+          # Check the DRA claim structure and per-device board count across
+          # representative shapes (1 / 4 / 32 boards), plus the safety invariants
+          # (no privileged, no hostPath on /dev/tenstorrent). The invariants are
+          # device-independent, so checking these representative renders covers them.
+          # device:expected-count
+          for pair in n300:1 t3k:4 galaxy:32; do
+            device="${pair%%:*}"; want="${pair##*:}"
+            echo "--- DRA structure: Llama-3.1-8B-Instruct / $device (expect count $want)"
+            RENDERED=$(helm template ttis charts/tt-inference-server \
+              --set model=Llama-3.1-8B-Instruct --set device="$device")
+            echo "$RENDERED" | grep -qE '^[[:space:]]*kind: ResourceClaimTemplate$' \
+              || { echo "::error::ResourceClaimTemplate missing for $device"; exit 1; }
+            echo "$RENDERED" | grep -qE '^[[:space:]]*deviceClassName: tenstorrent.com$' \
+              || { echo "::error::deviceClassName missing/incorrect for $device"; exit 1; }
+            echo "$RENDERED" | grep -qE "^[[:space:]]*count: ${want}\$" \
+              || { echo "::error::$device must request $want board(s) via DRA"; exit 1; }
+            echo "$RENDERED" | grep -qE 'resourceClaimTemplateName:' \
+              || { echo "::error::Pod does not reference the ResourceClaimTemplate for $device"; exit 1; }
+            echo "$RENDERED" | grep -qE '^[[:space:]]*privileged: true$' \
+              && { echo "::error::privileged:true present for $device"; exit 1; } || true
+            echo "$RENDERED" | grep -qE '^[[:space:]]*path: /dev/tenstorrent$' \
+              && { echo "::error::hostPath /dev/tenstorrent present for $device"; exit 1; } || true
+          done
+
+      - name: Verify auth wiring and the HF cache location
+        run: |
+          set -e
+          # media/forge fall back to the image's built-in key when API_KEY is
+          # unset, so the chart fails closed until the operator picks.
+          echo "--- media/forge with neither auth.apiKey nor auth.disabled must fail"
+          if helm template ttis charts/tt-inference-server \
+              --set model=Qwen3-Embedding-4B --set device=n150 >/dev/null 2>&1; then
+            echo "::error::a forge row rendered with no auth values — the fail-closed auth check is gone"
+            exit 1
+          fi
+
+          echo "--- auth.apiKey -> API_KEY in the Secret (media/forge)"
+          helm template ttis charts/tt-inference-server \
+            --set model=Qwen3-Embedding-4B --set device=n150 --set auth.apiKey=k \
+            --show-only templates/secret.yaml | grep -qE '^[[:space:]]*API_KEY: "k"$' \
+            || { echo "::error::auth.apiKey did not land as API_KEY for a forge row"; exit 1; }
+
+          echo "--- auth.disabled -> NO_AUTH in the ConfigMap (media/forge)"
+          helm template ttis charts/tt-inference-server \
+            --set model=Qwen3-Embedding-4B --set device=n150 --set auth.disabled=true \
+            --show-only templates/configmap.yaml | grep -qE '^[[:space:]]*NO_AUTH: "1"$' \
+            || { echo "::error::auth.disabled did not set NO_AUTH for a forge row"; exit 1; }
+
+          echo "--- auth.apiKey -> VLLM_API_KEY in the Secret (vllm)"
+          helm template ttis charts/tt-inference-server \
+            --set model=Qwen3-8B --set device=n150 --set engine=vllm --set auth.apiKey=k \
+            --show-only templates/secret.yaml | grep -qE '^[[:space:]]*VLLM_API_KEY: "k"$' \
+            || { echo "::error::auth.apiKey did not land as VLLM_API_KEY for a vllm row"; exit 1; }
+
+          echo "--- HF_HOME points at the persistent cache volume (media/forge only)"
+          helm template ttis charts/tt-inference-server \
+            --set model=Qwen3-Embedding-4B --set device=n150 --set auth.disabled=true \
+            --show-only templates/configmap.yaml \
+            | grep -qE '^[[:space:]]*HF_HOME: "/home/container_app_user/cache_root/huggingface"$' \
+            || { echo "::error::HF_HOME must point into the cache volume, or weights are re-downloaded on every restart"; exit 1; }
+          helm template ttis charts/tt-inference-server \
+            --set model=Qwen3-8B --set device=n150 --set engine=vllm --set auth.apiKey=k \
+            | grep -qE '^[[:space:]]*HF_HOME:' \
+            && { echo "::error::HF_HOME set for a vllm row — those images own their weight location"; exit 1; } || true
+
+      - name: Verify hugepages are sized per device
+        run: |
+          set -e
+          # One 1Gi page per ASIC, from deviceChipCounts. device:expected
+          for pair in n150:1Gi n300:2Gi t3k:8Gi galaxy:32Gi; do
+            device="${pair%%:*}"; want="${pair##*:}"
+            helm template ttis charts/tt-inference-server \
+              --set model=Llama-3.1-8B-Instruct --set device="$device" \
+              | grep -qE "^[[:space:]]*hugepages-1Gi: ${want}\$" \
+              || { echo "::error::$device must request $want of hugepages"; exit 1; }
+          done
+          helm template ttis charts/tt-inference-server \
+            --set model=Llama-3.1-8B-Instruct --set device=n150 --set hugepages.size=4Gi \
+            | grep -qE '^[[:space:]]*hugepages-1Gi: 4Gi$' \
+            || { echo "::error::hugepages.size did not override the per-device size"; exit 1; }
+          helm template ttis charts/tt-inference-server \
+            --set model=Llama-3.1-8B-Instruct --set device=n150 --set hugepages.enabled=false \
+            | grep -q hugepages \
+            && { echo "::error::hugepages.enabled=false left a hugepages reference"; exit 1; } || true
+
+          echo "--- contradictory auth values must fail"
+          if helm template ttis charts/tt-inference-server \
+              --set model=Qwen3-Embedding-4B --set device=n150 \
+              --set auth.apiKey=k --set auth.disabled=true >/dev/null 2>&1; then
+            echo "::error::auth.apiKey together with auth.disabled rendered instead of failing"
+            exit 1
+          fi
+
+          echo "--- sizing hugepages through resources must fail (request/limit must match)"
+          if helm template ttis charts/tt-inference-server \
+              --set model=Llama-3.1-8B-Instruct --set device=n150 \
+              --set defaults.resources.requests.hugepages-1Gi=64Gi >/dev/null 2>&1; then
+            echo "::error::resources.requests.hugepages-1Gi rendered instead of pointing at hugepages.size"
+            exit 1
+          fi
+
+          echo "--- a non-Tenstorrent device gets no hugepages plumbing at all"
+          helm template ttis charts/tt-inference-server \
+            --set model=Llama-3.1-8B-Instruct --set device=gpu | grep -qi hugepage \
+            && { echo "::error::a gpu row still references hugepages"; exit 1; } || true
+
+      - name: Verify startupProbe budget derives from progressDeadlineSeconds
+        run: |
+          set -e
+          # startupProbe is always rendered and its failureThreshold is computed as
+          # ceil(progressDeadlineSeconds / periodSeconds) (periodSeconds default 15).
+          # model:device:expected-failureThreshold (pd 5400 -> 360, pd 7200 -> 480)
+          for triple in gpt-oss-20b:t3k:360 gpt-oss-120b:t3k:480; do
+            model="${triple%%:*}"; rest="${triple#*:}"; device="${rest%%:*}"; want="${rest##*:}"
+            echo "--- startupProbe: $model / $device (expect failureThreshold $want)"
+            RENDERED=$(helm template ttis charts/tt-inference-server \
+              --set model="$model" --set device="$device")
+            echo "$RENDERED" | grep -qE '^[[:space:]]*startupProbe:$' \
+              || { echo "::error::startupProbe missing for $model/$device"; exit 1; }
+            echo "$RENDERED" | grep -qE "^[[:space:]]*failureThreshold: ${want}\$" \
+              || { echo "::error::$model/$device startupProbe.failureThreshold must be $want"; exit 1; }
+          done
+
+  # Install gate (kind, no hardware). Sibling of helm-chart-validate: that job
+  # proves the manifests render, this one proves a real API server installs them.
+  # On a k8s 1.34 kind node (DRA GA), it installs the chart and asserts the DRA
+  # ResourceClaimTemplate is accepted, the Pod is schedulable but Pending only
+  # because no Tenstorrent device exists, and the CRD-gated PodMonitor / hugepages
+  # toggle apply live. Assumes a working DRA layer (stubbed DeviceClass) — it does
+  # NOT re-test the driver handing out /dev/tenstorrent (tt-operator's dra-smoke,
+  # on real silicon). See .github/scripts/helm_install_gate.sh.
+  helm-install-kind:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.helm-inputs == 'true' || needs.detect-changes.outputs.charts == 'true' }}
+    name: Helm Chart Install Gate (kind)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: latest
+
+      # kind on k8s 1.34 so the API server serves resource.k8s.io/v1 (DRA GA) —
+      # the version floor for the chart's ResourceClaimTemplate.
+      - name: Create kind cluster (k8s 1.34, DRA GA)
+        uses: helm/kind-action@v1
+        with:
+          # kind >= 0.30 is required to serve the kindest/node:v1.34.0 image.
+          kind_version: v0.30.0
+          cluster_name: ttis-install-gate
+          node_image: kindest/node:v1.34.0
+
+      - name: Install gate
+        run: bash .github/scripts/helm_install_gate.sh
+
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          kubectl get pods -A -o wide || true
+          kubectl get deviceclass,resourceclaimtemplate,resourceclaim -A || true
+          for ns in ttis-core ttis-hugepages ttis-podmonitor; do
+            echo "== namespace $ns =="
+            kubectl -n "$ns" describe pods || true
+            kubectl -n "$ns" get events --sort-by=.lastTimestamp | tail -30 || true
+          done
 
   ci-gate:
     name: CI Gate
@@ -1160,6 +1335,7 @@ jobs:
       - prefill-gateway-format-check
       - prefill-gateway-build
       - helm-chart-validate
+      - helm-install-kind
     if: always()
     steps:
       - name: Check results
@@ -1222,7 +1398,7 @@ jobs:
                   echo "job condition evaluated false"
                 fi
                 ;;
-              helm-chart-validate)
+              helm-chart-validate|helm-install-kind)
                 if [[ "$CHARTS" != "true" && "$HELM_INPUTS" != "true" ]]; then
                   echo "chart and Helm generator inputs did not change"
                 else
@@ -1251,6 +1427,7 @@ jobs:
             prefill-gateway-format-check
             prefill-gateway-build
             helm-chart-validate
+            helm-install-kind
           )
           declare -A JOBS=(
             [detect-changes]="${{ needs.detect-changes.result }}"
@@ -1268,6 +1445,7 @@ jobs:
             [prefill-gateway-format-check]="${{ needs.prefill-gateway-format-check.result }}"
             [prefill-gateway-build]="${{ needs.prefill-gateway-build.result }}"
             [helm-chart-validate]="${{ needs.helm-chart-validate.result }}"
+            [helm-install-kind]="${{ needs.helm-install-kind.result }}"
           )
           {
             echo "## Test Gate Results"

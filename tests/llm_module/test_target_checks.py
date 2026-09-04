@@ -37,7 +37,7 @@ def _record(ttft=350.0, tpot=69.8, tput=13.9, **extra):
         "output_sequence_length": 128.0,
         "mean_ttft_ms": ttft,
         "mean_tpot_ms": tpot,
-        "tps_decode_throughput": tput,
+        "tps_output_throughput": tput,
     }
     record.update(extra)
     return record
@@ -97,6 +97,15 @@ class TestBuildTargetChecks:
         assert build_target_checks(tolerant, record)[1] == ReportCheckTypes.PASS
         assert build_target_checks(strict, record)[1] == ReportCheckTypes.FAIL
 
+    def test_exact_match_meets_a_zero_tolerance_target(self):
+        # Contractual gates are gte/lte: hitting the number exactly is a pass.
+        targets = {"target": PerformanceTarget(ttft_ms=100.0, tput=25.0)}
+        record = _record(ttft=100.0, tput=25.0)
+        checks, verdict = build_target_checks(targets, record)
+        assert checks["target"]["ttft_check"] == ReportCheckTypes.PASS
+        assert checks["target"]["tput_check"] == ReportCheckTypes.PASS
+        assert verdict == ReportCheckTypes.PASS
+
     def test_undefined_target_and_unmeasured_metric_are_na_not_failures(self):
         targets = {"target": PerformanceTarget(ttft_ms=89.0)}  # no tput targets
         checks, _ = build_target_checks(targets, {"mean_ttft_ms": None})
@@ -104,6 +113,85 @@ class TestBuildTargetChecks:
         assert checks["target"]["ttft_check"] == ReportCheckTypes.NA
         assert checks["target"]["tput_check"] == ReportCheckTypes.NA
         assert checks["target"]["tput_user_check"] == ReportCheckTypes.NA
+
+    def test_tput_falls_back_to_the_legacy_decode_key(self):
+        """aiperf / genai-perf still emit tps_decode_throughput."""
+        record = _record(tps_decode_throughput=25.0)
+        del record["tps_output_throughput"]
+        checks, verdict = build_target_checks(TARGETS, record)
+
+        assert checks["target"]["tput_ratio"] == pytest.approx(25.0 / 17.0)
+        assert checks["target"]["tput_check"] == ReportCheckTypes.PASS
+        assert verdict == ReportCheckTypes.FAIL  # ttft still fails
+
+    def test_grades_requirements_slo_metrics(self):
+        # SLO targets (tpot/e2el, lower-is-better) from a requirements doc.
+        targets = {
+            "target": PerformanceTarget(tpot_ms=20.0, e2el_ms=20000.0, goodput=99.0)
+        }
+        record = _record(tpot=15.0)
+        # goodput_pct is the vLLM parser's derived % of requests meeting the
+        # run's --goodput SLOs.
+        record.update({"mean_e2el_ms": 5000.0, "goodput_pct": 100.0})
+        checks, verdict = build_target_checks(targets, record)
+        assert checks["target"]["tpot_check"] == ReportCheckTypes.PASS
+        assert checks["target"]["e2el_check"] == ReportCheckTypes.PASS
+        assert checks["target"]["goodput_check"] == ReportCheckTypes.PASS
+        assert verdict == ReportCheckTypes.PASS
+
+    def test_goodput_below_target_fails(self):
+        targets = {"target": PerformanceTarget(goodput=99.0)}
+        checks, verdict = build_target_checks(targets, _record(goodput_pct=36.0))
+        assert checks["target"]["goodput_check"] == ReportCheckTypes.FAIL
+        assert checks["target"]["goodput_ratio"] == pytest.approx(36.0 / 99.0)
+        assert verdict == ReportCheckTypes.FAIL
+
+    def test_goodput_is_na_when_the_run_measured_none(self):
+        # No --goodput constraints on the run => no request_goodput in the
+        # result => NA (visible), never a silent pass or a spurious failure.
+        targets = {"target": PerformanceTarget(goodput=99.0)}
+        checks, verdict = build_target_checks(targets, _record())
+        assert checks["target"]["goodput"] == 99.0
+        assert checks["target"]["goodput_check"] == ReportCheckTypes.NA
+        assert verdict == ReportCheckTypes.NA
+
+    def test_slo_metric_failure_fails_verdict(self):
+        targets = {"target": PerformanceTarget(tpot_ms=20.0)}
+        checks, verdict = build_target_checks(targets, _record(tpot=50.0))
+        assert checks["target"]["tpot_check"] == ReportCheckTypes.FAIL
+        assert verdict == ReportCheckTypes.FAIL
+
+
+class TestPriorityStamping:
+    def test_should_priority_is_stamped_onto_block(self):
+        cfg = LLMRunConfig(
+            isl=128,
+            osl=128,
+            max_concurrency=1,
+            num_prompts=8,
+            targets={"target": PerformanceTarget(ttft_ms=89.0)},
+            priority="should",
+        )
+        block = apply_target_checks(_block(), cfg)
+        assert block.data["priority"] == "should"
+
+    def test_absent_priority_leaves_block_unstamped(self):
+        block = apply_target_checks(_block(), _cfg(TARGETS))
+        assert "priority" not in block.data
+
+    def test_target_priorities_stamped_with_field_names(self):
+        # PerformanceTarget attribute names are translated to target_checks
+        # field names (ttft_ms -> ttft) so acceptance can route per-metric.
+        cfg = LLMRunConfig(
+            isl=128,
+            osl=128,
+            max_concurrency=1,
+            num_prompts=8,
+            targets={"target": PerformanceTarget(ttft_ms=89.0, goodput=99.0)},
+            target_priorities={"ttft_ms": "must", "goodput": "should"},
+        )
+        block = apply_target_checks(_block(), cfg)
+        assert block.data["target_priorities"] == {"ttft": "must", "goodput": "should"}
 
 
 class TestApplyTargetChecks:
@@ -209,3 +297,41 @@ class TestAcceptanceIntegration:
         assert category.failed == 2
         assert sum("ISL 1024" in key for key in blockers) > 0
         assert sum("ISL 128" in key for key in blockers) > 0
+
+    def test_should_metric_failure_is_informational_not_a_blocker(self):
+        # A sweep point mixing must/should targets: only the should-priority
+        # goodput target fails, so the point does not block acceptance.
+        cfg = LLMRunConfig(
+            isl=128,
+            osl=128,
+            max_concurrency=64,
+            num_prompts=8,
+            targets={"target": PerformanceTarget(ttft_ms=1000.0, goodput=99.0)},
+            priority="must",
+            target_priorities={"ttft_ms": "must", "goodput": "should"},
+        )
+        block = apply_target_checks(_block(_record(ttft=500.0, goodput_pct=36.0)), cfg)
+        accepted, blockers, category = self._benchmarks(block)
+
+        assert accepted is True
+        assert not any("goodput" in key for key in blockers)
+        assert category.failed == 0
+
+    def test_must_metric_failure_still_blocks_alongside_a_should_failure(self):
+        cfg = LLMRunConfig(
+            isl=128,
+            osl=128,
+            max_concurrency=64,
+            num_prompts=8,
+            targets={"target": PerformanceTarget(ttft_ms=1000.0, goodput=99.0)},
+            priority="must",
+            target_priorities={"ttft_ms": "must", "goodput": "should"},
+        )
+        block = apply_target_checks(_block(_record(ttft=5000.0, goodput_pct=36.0)), cfg)
+        accepted, blockers, category = self._benchmarks(block)
+
+        assert accepted is False
+        assert any("ttft_check" in key for key in blockers)
+        # the should-priority goodput failure is waived, not a blocker
+        assert not any("goodput" in key for key in blockers)
+        assert category.failed == 1

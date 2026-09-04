@@ -9,19 +9,20 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 from datetime import datetime, timezone
 from glob import glob
 from pathlib import Path
-from typing import List, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
-from reference_config.evals.eval_config import accept_eval_score, resolve_eval_reference
 from llm_module import HttpServerController, RemoteOpenAIController
 from llm_module.eval_command import build_eval_command
 from llm_module.eval_configs import get_llm_eval_tasks
 from report_module.schema import Block
 from workflow_module import accept_blocks
-from workflows.utils import run_command
-from workflows.workflow_types import EvalLimitMode
+from workflow_module.engine_types import EvalLimitMode
+from workflow_module.proc import run_command
+from workflow_module.target_pack import get_target_pack
 
 from .._test_common import ReportCheckTypes, TestStatus, block_id
 from ..context import MediaContext
@@ -201,7 +202,7 @@ def _score_one(
         ratio_to_reference: Union[float, str] = score / reference
         # Sample-count-aware for subset references, ratio for full-set.
         accuracy_check = ReportCheckTypes.from_result(
-            accept_eval_score(ref, score, n_total=n_total)
+            get_target_pack().accept_eval_score(ref, score, n_total=n_total)
         )
     else:
         ratio_to_reference = "N/A"
@@ -216,7 +217,11 @@ def _score_one(
 
 
 def blocks_for_task(
-    ctx: MediaContext, task, results: dict, sample_counts: dict = None
+    ctx: MediaContext,
+    task,
+    results: dict,
+    sample_counts: Optional[dict] = None,
+    elapsed_seconds: Optional[float] = None,
 ) -> List[Block]:
     """Score ``task`` against ``results`` and build one Block per task/subtask.
 
@@ -224,7 +229,9 @@ def blocks_for_task(
     A task with a score but no matching results still returns ``[]`` so the
     caller can surface a FAIL block for a task that ran but scored nothing.
     ``sample_counts`` maps task_name -> effective sample count for the
-    sample-count-aware acceptance check on subset references.
+    sample-count-aware acceptance check on subset references. When the caller
+    supplies the task subprocess wall time, the same counts produce the mean
+    wall-clock seconds per evaluated sample.
     """
     if not task.score:
         reason = "no eval score defined"
@@ -236,13 +243,45 @@ def blocks_for_task(
     # Under --ci-mode / --limit-samples-mode, compare the subset score against
     # the matching subset reference (mode_reference_scores) instead of the
     # full-dataset gpu_reference_score.
-    ref = resolve_eval_reference(task.score, _limit_mode(ctx))
+    ref = get_target_pack().resolve_eval_reference(task.score, _limit_mode(ctx))
+
+    target_keys = _target_keys(task, results)
+    total_samples = sum(
+        count
+        for key in target_keys
+        if isinstance((count := sample_counts.get(key)), int)
+        and not isinstance(count, bool)
+        and count > 0
+    )
+    mean_seconds_per_task = (
+        elapsed_seconds / total_samples
+        if isinstance(elapsed_seconds, (int, float))
+        and not isinstance(elapsed_seconds, bool)
+        and elapsed_seconds >= 0
+        and total_samples > 0
+        else None
+    )
 
     blocks: List[Block] = []
-    for t_key in _target_keys(task, results):
+    for t_key in target_keys:
         score, ratio_pub, ratio_ref, accuracy_check = _score_one(
             task, results, t_key, ref, n_total=sample_counts.get(t_key)
         )
+        data = {
+            "task_name": t_key,
+            "tolerance": ref["tolerance"],
+            "published_score": task.score.published_score,
+            "published_score_ref": task.score.published_score_ref,
+            "gpu_reference_score": ref["reference_score"],
+            "gpu_reference_score_ref": ref["reference_ref"],
+            "score": score,
+            "ratio_to_published": ratio_pub,
+            "ratio_to_reference": ratio_ref,
+            "accuracy_check": accuracy_check,
+            "priority": getattr(task, "priority", "must"),
+        }
+        if mean_seconds_per_task is not None:
+            data["mean_seconds_per_task"] = mean_seconds_per_task
         blocks.append(
             Block(
                 kind="evals",
@@ -255,18 +294,7 @@ def blocks_for_task(
                     "published_score": task.score.published_score,
                     "published_score_ref": task.score.published_score_ref,
                 },
-                data={
-                    "task_name": t_key,
-                    "tolerance": ref["tolerance"],
-                    "published_score": task.score.published_score,
-                    "published_score_ref": task.score.published_score_ref,
-                    "gpu_reference_score": ref["reference_score"],
-                    "gpu_reference_score_ref": ref["reference_ref"],
-                    "score": score,
-                    "ratio_to_published": ratio_pub,
-                    "ratio_to_reference": ratio_ref,
-                    "accuracy_check": accuracy_check,
-                },
+                data=data,
             )
         )
     return blocks
@@ -288,6 +316,7 @@ def _fail_block(ctx: MediaContext, task, error: str) -> Block:
             "score": None,
             "accuracy_check": ReportCheckTypes.FAIL,
             "error": error,
+            "priority": getattr(task, "priority", "must"),
         },
     )
 
@@ -365,7 +394,7 @@ def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
     emits FAIL Blocks rather than silently dropping the task, so a release run
     surfaces the failure.
     """
-    tasks = get_llm_eval_tasks(ctx.model_spec, ctx.runtime_config)
+    tasks = get_llm_eval_tasks(ctx.model_spec, ctx.runtime_config, device=ctx.device)
     if not tasks:
         logger.info(
             "No standard eval tasks for model=%s; nothing to run.",
@@ -405,6 +434,7 @@ def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
     )
     ran_tasks = []
     rc_by_task = {}
+    elapsed_seconds_by_task = {}
     skipped_blocks: List[Block] = []
     for task in tasks:
         min_ctx = getattr(task, "min_context_required", None)
@@ -425,7 +455,9 @@ def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
             rc_by_task[task.task_name] = 1
             ran_tasks.append(task)
             break
+        started_at = time.perf_counter()
         rc_by_task[task.task_name] = _run_eval_task(ctx, task, auth_token)
+        elapsed_seconds_by_task[task.task_name] = time.perf_counter() - started_at
         ran_tasks.append(task)
 
     result_files = discover_eval_results(ctx.output_path, ctx.model_spec)
@@ -433,7 +465,13 @@ def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
     sample_counts = collect_sample_counts(result_files)
     blocks: List[Block] = list(skipped_blocks)
     for task in ran_tasks:
-        task_blocks = blocks_for_task(ctx, task, results, sample_counts)
+        task_blocks = blocks_for_task(
+            ctx,
+            task,
+            results,
+            sample_counts,
+            elapsed_seconds=elapsed_seconds_by_task.get(task.task_name),
+        )
         if task_blocks:
             blocks.extend(task_blocks)
         else:

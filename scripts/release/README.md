@@ -123,6 +123,13 @@ This will build all missing `dev` containers for the given `model_spec.py` and p
 python3 scripts/build_docker_images.py --push
 ```
 
+> **Note:** this script takes `vllm_commit` straight from the model spec catalogue (it has no
+> `--vllm-commit` override) and passes it to `TT_VLLM_COMMIT_SHA_OR_TAG`, which the Dockerfile now
+> resolves against [`tenstorrent/vllm-tt-plugin`](https://github.com/tenstorrent/vllm-tt-plugin).
+> Any spec still pinned to a `tenstorrent/vllm` fork commit will fail at `git checkout` in the
+> builder. Repin those `vllm_commit` values to plugin commits before a bulk build. Note that CI is
+> unaffected — it goes through `build_single_docker.sh` with an explicitly resolved SHA.
+
 #### outputs
 
 - `workflow_logs/docker_build_logs/build_summary_{date}_{time}.json`: list of all outcomes of docker image script, includes `build_attempted`, `build_succeeded`, and `remote_exists` which list the status of docker images.
@@ -171,6 +178,11 @@ Only if needed, will see in `release_logs/release_artifacts_summary.md` if any i
 ```bash
 python3 scripts/build_docker_images.py --push --release
 ```
+
+> **Note:** as in step 3b of the dev release, `vllm_commit` comes straight from the model spec
+> catalogue and is resolved against
+> [`tenstorrent/vllm-tt-plugin`](https://github.com/tenstorrent/vllm-tt-plugin). Specs still pinned
+> to a `tenstorrent/vllm` fork commit will fail at `git checkout` in the builder.
 
 #### outputs
 

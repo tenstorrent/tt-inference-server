@@ -5,6 +5,10 @@
 
 aiohttp
 asyncio
+# MP4 (h264+aac) muxing for the LTX audio-video pipelines. Version-matched to
+# tt-metal models/tt_dit/pipelines/ltx/requirements.txt; av has no deps of its
+# own, so unlike diffusers it needs no --no-deps handling here.
+av==17.0.1
 colorama
 fastapi
 faster_fifo

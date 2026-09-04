@@ -58,6 +58,7 @@ RUN apt-get update && apt-get install -y \
     unzip \
     zip \
     curl \
+    libcurl4-openssl-dev \
     iputils-ping \
     rsync \
     && rm -rf /var/lib/apt/lists/* \
@@ -113,6 +114,13 @@ RUN /bin/bash -c "cd ${APP_DIR}/server && source tt_model_runners/forge_runners/
 USER ${CONTAINER_APP_USERNAME}
 ENV TT_METAL_HOME="${APP_DIR}/server/venv-worker/lib/python3.12/site-packages/pjrt_plugin_tt/tt-metal"
 ENV PYTHON_ENV_DIR="${APP_DIR}/server/venv-worker"
+
+# Dedicated CPU venv for merging LoRA adapters under the *inference* transformers version
+ENV ADAPTER_MERGE_VENV_DIR="${APP_DIR}/server/merge-venv"
+ENV ADAPTER_MERGE_PYTHON="${ADAPTER_MERGE_VENV_DIR}/bin/python"
+COPY "tt-vllm-plugin/pyproject.toml" "/tmp/tt-vllm-plugin-pyproject.toml"
+RUN python3.12 "${APP_DIR}/server/scripts/build_merge_venv.py" \
+    "${ADAPTER_MERGE_VENV_DIR}" "/tmp/tt-vllm-plugin-pyproject.toml"
 
 # spinup inference server
 WORKDIR "${APP_DIR}"

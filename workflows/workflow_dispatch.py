@@ -41,6 +41,11 @@ _ENGINE_WORKFLOW_NAMES = {
 
 _ENGINE_EVAL_WORKFLOWS = frozenset({WorkflowType.EVALS, WorkflowType.RELEASE})
 
+_ENGINE_BENCHMARK_WORKFLOWS = frozenset({WorkflowType.BENCHMARKS, WorkflowType.RELEASE})
+
+# Media/forge model types whose benchmark client is `vllm bench serve`.
+_ENGINE_VLLM_CLIENT_BENCHMARK_TYPES = frozenset({ModelType.EMBEDDING})
+
 
 _ENGINE_EVAL_VENV_BY_MODEL_TYPE = {
     ModelType.AUDIO: WorkflowVenvType.EVALS_AUDIO,
@@ -94,6 +99,21 @@ def _is_llm_benchmark_run(wf, model_spec, runtime_config) -> bool:
     )
 
 
+def _eval_config_for(model_spec):
+    """The active target pack's eval config for ``model_spec``, or None.
+
+    Venv provisioning has to plan against the same content the run will
+    execute, so this goes through the pack: a requirements-driven run gets the
+    document's accuracy evals, everything else gets the catalog's.
+    """
+    try:
+        from workflow_module.target_pack import get_target_pack
+    except Exception as e:  # pragma: no cover - defensive
+        logger.warning("Could not import the target pack (%s); skipping evals.", e)
+        return None
+    return get_target_pack().eval_config(model_spec.model_name)
+
+
 def _llm_release_includes_agentic(model_spec) -> bool:
     """True if an LLM release should also run agentic evals.
 
@@ -106,12 +126,7 @@ def _llm_release_includes_agentic(model_spec) -> bool:
     """
     if model_spec.model_type not in _LLM_LIKE_TYPES:
         return False
-    try:
-        from reference_config.evals.eval_config import EVAL_CONFIGS
-    except Exception as e:  # pragma: no cover - defensive
-        logger.warning("Could not import EVAL_CONFIGS (%s); skipping agentic.", e)
-        return False
-    cfg = EVAL_CONFIGS.get(model_spec.model_name)
+    cfg = _eval_config_for(model_spec)
     if cfg is None:
         return False
     return any(
@@ -369,6 +384,7 @@ def _engine_run_argv(
     if runtime_config.docker_server:
         argv.append("--docker-server")
     _extend_if_set(argv, "--server-url", getattr(runtime_config, "server_url", None))
+    _forward_requirements(argv, runtime_config)
     if wf == WorkflowType.SERVING_BENCH:
         _extend_if_set(
             argv, "--serving-bench-suites", runtime_config.serving_bench_suites
@@ -378,6 +394,12 @@ def _engine_run_argv(
         # need the bearer token to reach a JWT-protected server; run.py mints it
         # from --jwt-secret/$JWT_SECRET.
         _forward_jwt(argv, runtime_config)
+        # --repeat-evals (v1) drives the engine's generic --repeat loop, which
+        # writes run_NN/ reports plus an aggregated summary/.
+        if wf == WorkflowType.EVALS:
+            repeat_evals = getattr(runtime_config, "repeat_evals", None)
+            if repeat_evals and int(repeat_evals) > 1:
+                argv.extend(["--repeat", str(int(repeat_evals))])
         if wf == WorkflowType.RELEASE:
             _forward_prefix_cache(argv, runtime_config)
             _forward_spec_decode(argv, runtime_config)
@@ -412,6 +434,7 @@ def _base_engine_argv(
         argv.append("--docker-server")
     if getattr(runtime_config, "server_url", None):
         argv.extend(["--server-url", runtime_config.server_url])
+    _forward_requirements(argv, runtime_config)
     return argv
 
 
@@ -420,6 +443,18 @@ def _resolve_launcher(repo_root, filename, label):
     if not launcher.is_file():
         raise FileNotFoundError(f"{label} launcher not found at {launcher}.")
     return launcher
+
+
+def _forward_requirements(cmd, runtime_config) -> None:
+    """Forward --requirements-json to a child.
+
+    The runtime-config JSON already carries the path, but the child needs it on
+    the command line: argparse decides whether the catalog gate applies to
+    --model and which target pack to register *before* that JSON is read.
+    """
+    _extend_if_set(
+        cmd, "--requirements-json", getattr(runtime_config, "requirements_json", None)
+    )
 
 
 def _forward_jwt(cmd, runtime_config) -> None:
@@ -529,6 +564,11 @@ def _build_agentic_cmd(repo_root, model_spec, runtime_config, json_fpath, output
     launcher = _resolve_launcher(repo_root, "run_agentic.py", "agentic")
     cmd = _base_engine_argv(
         launcher, model_spec, runtime_config, json_fpath, output_dir, "agentic"
+    )
+    _extend_if_set(
+        cmd,
+        "--agentic-benchmark",
+        getattr(runtime_config, "agentic_benchmark", None),
     )
     _forward_jwt(cmd, runtime_config)
     return cmd
@@ -683,17 +723,12 @@ def _selected_eval_tasks(tasks, runtime_config):
 
 
 def _llm_eval_venv_types(model_spec, runtime_config=None) -> List[WorkflowVenvType]:
-    """Standard eval venvs the run will actually use (from EVAL_CONFIGS).
+    """Standard eval venvs the run will actually use.
 
     Honors --eval-samples / smoke-test so a single-task run doesn't provision
     the (heavy) venvs of tasks it won't execute.
     """
-    try:
-        from reference_config.evals.eval_config import EVAL_CONFIGS
-    except Exception as e:  # pragma: no cover - defensive
-        logger.warning("Could not import EVAL_CONFIGS (%s); skipping eval venvs.", e)
-        return []
-    cfg = EVAL_CONFIGS.get(model_spec.model_name)
+    cfg = _eval_config_for(model_spec)
     if cfg is None:
         return []
     tasks = _selected_eval_tasks(cfg.tasks, runtime_config)
@@ -715,6 +750,15 @@ def _engine_dependency_venv_types(
             venv_types.append(eval_venv)
         if model_spec.model_type in _LLM_LIKE_TYPES:
             venv_types.extend(_llm_eval_venv_types(model_spec, runtime_config))
+    if (
+        wf in _ENGINE_BENCHMARK_WORKFLOWS
+        and model_spec.model_type in _ENGINE_VLLM_CLIENT_BENCHMARK_TYPES
+    ):
+        from reference_config.benchmarking.benchmark_config import (
+            select_vllm_benchmark_venv,
+        )
+
+        venv_types.append(select_vllm_benchmark_venv(model_spec))
     # The release benchmark child runs the default perf tool (vllm) in-process
     # under WORKFLOW_RUN_SCRIPT, so its tool venv must exist up front.
     if wf == WorkflowType.RELEASE and model_spec.model_type in _LLM_LIKE_TYPES:

@@ -9,3 +9,5 @@
 
 mteb>=2.6.6
 openai
+# mteb's OpenAIModel imports tiktoken but does not declare it.
+tiktoken==0.13.0

@@ -10,6 +10,7 @@ import time
 import aiohttp
 
 from report_module.schema import Block
+from workflow_module.target_pack import get_target_pack
 from .._test_common import BaseTest, TestConfig
 from typing import TYPE_CHECKING
 
@@ -19,9 +20,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Constants
-ACCURACY_REFERENCE_PATH = (
-    "reference_config/evals/eval_targets/model_accuracy_reference.json"
-)
+ACCURACY_REFERENCE_PATH = get_target_pack().accuracy_targets_path()
 
 # Base payload with default parameters
 default_payload = {

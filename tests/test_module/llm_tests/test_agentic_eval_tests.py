@@ -6,14 +6,18 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from llm_module import DriverContext, ServerConnection
 from llm_module.drivers.agentic import (
+    SWEbenchAgenticDriver,
+    TerminalBenchAgenticDriver,
     build_swebench_config,
     build_terminal_bench_config,
     resolve_instance_ids,
@@ -31,7 +35,11 @@ from llm_module.parsers.agentic import (
     compute_accuracy_check,
     extract_harbor_metrics,
 )
-from test_module.llm_tests.agentic_eval_tests import _select_agentic_tasks
+from test_module.llm_tests.agentic_eval_tests import (
+    _filter_agentic_tasks_by_benchmark,
+    _parse_agentic_benchmark,
+    _select_agentic_tasks,
+)
 from workflows.workflow_types import EvalLimitMode, ReportCheckTypes, WorkflowVenvType
 
 
@@ -65,6 +73,11 @@ class FakeTerminalBenchConfig:
     agent_import_path: Optional[str] = None
     environment_env: Dict[str, str] = field(default_factory=dict)
     verifier_env: Dict[str, str] = field(default_factory=dict)
+    per_task_overhead_sec: int = 20 * 60
+    startup_grace_sec: int = 10 * 60
+    stall_grace_sec: int = 5 * 60
+    progress_log_interval_sec: int = 5 * 60
+    enforce_agent_deadline: bool = False
 
 
 @dataclass
@@ -87,6 +100,13 @@ class FakeSWEbenchConfig:
     mini_model_class: str = "litellm"
     mini_environment_class: str = "docker"
     swebench_timeout_sec: Optional[int] = None
+    llm_timeout_sec: Optional[int] = 10 * 60
+    mini_container_timeout_sec: int = 2 * 60 * 60
+    startup_grace_sec: int = 10 * 60
+    stall_grace_sec: int = 5 * 60
+    progress_log_interval_sec: int = 5 * 60
+    agent_subprocess_timeout_sec: Optional[int] = None
+    enforce_agent_deadline: bool = False
     shuffle: bool = True
     random_delay_multiplier: float = 0.3
     instance_ids_map: Dict[EvalLimitMode, List[str]] = field(default_factory=dict)
@@ -154,6 +174,19 @@ HARBOR_RESULT_FIXTURE = {
     },
 }
 
+HARBOR_ZERO_TRIALS_FIXTURE = {
+    "stats": {
+        "evals": {
+            "terminal_bench_2": {
+                "metrics": [],
+                "n_trials": 0,
+                "n_errors": 5,
+                "pass_at_k": {"1": 0.0},
+            }
+        },
+    },
+}
+
 
 class TestAgenticParser:
     def test_parse_harbor_result_to_evals_block(self):
@@ -174,6 +207,21 @@ class TestAgenticParser:
         assert block.data["accuracy_check"] == ReportCheckTypes.PASS
         assert "success" not in block.data
         assert "accuracy" not in block.data
+
+    def test_zero_trial_harbor_result_stays_na(self):
+        # Shared by every EVALS_AGENTIC catalog task. A Harbor setup failure
+        # (n_trials=0, no score metric) must keep the historical N/A row rather
+        # than success=False/FAIL, so ENFORCED models are not newly blocked.
+        block = AgenticEvalParser(
+            task_name="terminal_bench_2", score=FakeScore()
+        ).parse(HARBOR_ZERO_TRIALS_FIXTURE, device="N150")
+
+        assert block.targets["n_trials"] == 0
+        assert block.targets["pass_at_1"] == 0.0
+        assert block.data["score"] is None
+        assert block.data["accuracy_check"] == ReportCheckTypes.NA
+        assert "success" not in block.data
+        assert "error" not in block.data
 
     def test_mean_seconds_per_task_from_harbor_timing(self):
         raw = {
@@ -426,10 +474,48 @@ class TestTerminalBenchHarness:
             n_tasks=1,
         )
 
-        with patch("llm_module.agentic.terminal_bench.subprocess.run") as run_cmd:
-            run_cmd.return_value.returncode = 17
+        with patch("llm_module.agentic.terminal_bench.run_with_progress") as run_cmd:
+            run_cmd.return_value = 17
 
             assert run_terminal_bench(cfg) == 17
+
+    def test_timeout_still_annotates_partial_results(self, tmp_path):
+        # A watchdog timeout (124) must still annotate harbor's partial,
+        # already-graded result.json and report success (rc 0).
+        task = _terminal_task()
+        cfg = build_terminal_bench_config(
+            task,
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+        result_path = cfg.jobs_dir / cfg.task_name / "result.json"
+        result_path.parent.mkdir(parents=True)
+        result_path.write_text('{"n_total_trials": 5}', encoding="utf-8")
+
+        with patch(
+            "llm_module.agentic.terminal_bench.run_with_progress", return_value=124
+        ):
+            assert run_terminal_bench(cfg) == 0
+
+        annotated = json.loads(result_path.read_text(encoding="utf-8"))
+        assert annotated["_result_format"] == "harbor"
+
+    def test_timeout_without_result_file_returns_124(self, tmp_path):
+        # Killed before harbor wrote any results -> nothing to annotate, so the
+        # timeout code propagates.
+        task = _terminal_task()
+        cfg = build_terminal_bench_config(
+            task,
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+
+        with patch(
+            "llm_module.agentic.terminal_bench.run_with_progress", return_value=124
+        ):
+            assert run_terminal_bench(cfg) == 124
 
     def test_harbor_config_includes_adapter_and_env_overrides(self, tmp_path):
         task = _terminal_task()
@@ -450,8 +536,8 @@ class TestTerminalBenchHarness:
             n_tasks=1,
         )
 
-        with patch("llm_module.agentic.terminal_bench.subprocess.run") as run_cmd:
-            run_cmd.return_value.returncode = 17
+        with patch("llm_module.agentic.terminal_bench.run_with_progress") as run_cmd:
+            run_cmd.return_value = 17
 
             assert run_terminal_bench(cfg) == 17
 
@@ -480,10 +566,57 @@ class TestSWEbenchHarness:
             n_tasks=1,
         )
 
-        with patch("llm_module.agentic.swebench.subprocess.run") as run_cmd:
-            run_cmd.return_value.returncode = 23
+        with patch("llm_module.agentic.swebench.run_with_progress") as run_cmd:
+            run_cmd.return_value = 23
 
             assert run_swebench(cfg) == 23
+
+    def test_agent_timeout_still_grades_partial_predictions(
+        self, tmp_path, monkeypatch
+    ):
+        # A watchdog timeout (124) must not short-circuit grading: the partial
+        # preds.json is still scored by the harness.
+        monkeypatch.setenv("SWEBENCH_HARNESS_MAX_ATTEMPTS", "1")
+        task = _swebench_task()
+        cfg = build_swebench_config(
+            task,
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+        preds_path = cfg.output_dir / "mini_sweagent" / "preds.json"
+        preds_path.parent.mkdir(parents=True)
+        preds_path.write_text(
+            '{"django__django-11299": {"model_patch": ""}}',
+            encoding="utf-8",
+        )
+
+        with patch(
+            "llm_module.agentic.swebench.run_with_progress", return_value=124
+        ), patch("llm_module.agentic.swebench.subprocess.run") as run_cmd:
+            run_cmd.return_value = SimpleNamespace(returncode=5)
+
+            # Harness reached (returns its own rc), proving grading was not
+            # skipped by the 124.
+            assert run_swebench(cfg) == 5
+            run_cmd.assert_called()
+
+    def test_agent_timeout_without_predictions_returns_124(self, tmp_path):
+        # Killed before any instance finished -> nothing to grade, so the
+        # harness is never invoked and the timeout code propagates.
+        task = _swebench_task()
+        cfg = build_swebench_config(
+            task,
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+
+        with patch(
+            "llm_module.agentic.swebench.run_with_progress", return_value=124
+        ), patch("llm_module.agentic.swebench.subprocess.run") as run_cmd:
+            assert run_swebench(cfg) == 124
+            run_cmd.assert_not_called()
 
     def test_harness_failure_returns_nonzero_without_result_file(
         self, tmp_path, monkeypatch
@@ -505,11 +638,10 @@ class TestSWEbenchHarness:
             encoding="utf-8",
         )
 
-        with patch("llm_module.agentic.swebench.subprocess.run") as run_cmd:
-            run_cmd.side_effect = [
-                SimpleNamespace(returncode=0),
-                SimpleNamespace(returncode=31),
-            ]
+        with patch(
+            "llm_module.agentic.swebench.run_with_progress", return_value=0
+        ), patch("llm_module.agentic.swebench.subprocess.run") as run_cmd:
+            run_cmd.return_value = SimpleNamespace(returncode=31)
 
             assert run_swebench(cfg) == 31
 
@@ -533,16 +665,19 @@ class TestSWEbenchHarness:
             encoding="utf-8",
         )
 
-        with patch("llm_module.agentic.swebench.subprocess.run") as run_cmd:
+        with patch(
+            "llm_module.agentic.swebench.run_with_progress", return_value=0
+        ) as agent_cmd, patch("llm_module.agentic.swebench.subprocess.run") as run_cmd:
             run_cmd.side_effect = [
-                SimpleNamespace(returncode=0),  # agent
                 SimpleNamespace(returncode=1),  # harness attempt 1
                 SimpleNamespace(returncode=1),  # harness attempt 2 (last)
             ]
 
             assert run_swebench(cfg) == 1
-            # 1 agent invocation + 2 harness attempts.
-            assert run_cmd.call_count == 3
+            # Agent runs once via the progress watchdog.
+            assert agent_cmd.call_count == 1
+            # Harness retried twice via subprocess.run.
+            assert run_cmd.call_count == 2
 
 
 class TestRunCommandWithRetries:
@@ -665,6 +800,80 @@ class TestSWEbenchReportNormalization:
         assert "started_at" not in normalized
         assert extract_harbor_metrics(normalized).get("mean_seconds_per_task") is None
 
+    def _normalize_with_report(self, tmp_path, report, instance_ids=None, **cfg_kwargs):
+        cfg = build_swebench_config(
+            _swebench_task(),
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            **cfg_kwargs,
+        )
+        if instance_ids is not None:
+            cfg = replace(cfg, instance_ids=instance_ids)
+        cfg.output_dir.mkdir(parents=True, exist_ok=True)
+        harness_report = cfg.output_dir / "harness_report.json"
+        harness_report.write_text(json.dumps(report), encoding="utf-8")
+        return normalize_swebench_report(
+            harness_report,
+            cfg.output_dir / "result.json",
+            cfg,
+            cfg.output_dir / "predictions.jsonl",
+        )
+
+    def _accuracy(self, normalized):
+        (evaluation,) = normalized["stats"]["evals"].values()
+        return evaluation["pass_at_k"]["1"]
+
+    def test_unfinished_instances_count_against_accuracy(self, tmp_path):
+        # 5 requested, only 2 finished, 1 of those resolved. Grading the 2 that
+        # happen to be in the report would report 50%; the run scored 1 of 5.
+        normalized = self._normalize_with_report(
+            tmp_path,
+            {"submitted_ids": ["a", "b"], "resolved_ids": ["a"]},
+            n_tasks=5,
+        )
+
+        assert self._accuracy(normalized) == 1 / 5
+        assert normalized["n_total_trials"] == 5
+
+    def test_named_missing_instances_are_reported_unresolved(self, tmp_path):
+        normalized = self._normalize_with_report(
+            tmp_path,
+            {"submitted_ids": ["a"], "resolved_ids": ["a"]},
+            instance_ids=["a", "b", "c"],
+        )
+
+        (evaluation,) = normalized["stats"]["evals"].values()
+        assert self._accuracy(normalized) == 1 / 3
+        assert evaluation["reward_stats"]["reward"]["0.0"] == ["b", "c"]
+        # Absent instances still get a zero-reward trial so per-task views agree.
+        assert [t["task_name"] for t in normalized["trial_results"]] == ["a", "b", "c"]
+        assert [
+            t["verifier_result"]["rewards"]["reward"]
+            for t in normalized["trial_results"]
+        ] == [1.0, 0.0, 0.0]
+
+    def test_complete_run_accuracy_is_unchanged(self, tmp_path):
+        normalized = self._normalize_with_report(
+            tmp_path,
+            {"submitted_ids": ["a", "b", "c", "d"], "resolved_ids": ["a", "c"]},
+            n_tasks=4,
+        )
+
+        assert self._accuracy(normalized) == 0.5
+        assert normalized["n_total_trials"] == 4
+
+    def test_extra_predictions_do_not_shrink_the_denominator(self, tmp_path):
+        # n_tasks is a cap, not a promise; if the harness graded more than we
+        # asked for, the larger count wins rather than clipping the denominator.
+        normalized = self._normalize_with_report(
+            tmp_path,
+            {"submitted_ids": ["a", "b", "c"], "resolved_ids": ["a"]},
+            n_tasks=2,
+        )
+
+        assert self._accuracy(normalized) == 1 / 3
+        assert normalized["n_total_trials"] == 3
+
 
 class TestAgenticLimitResolution:
     def test_fractional_agentic_limits_become_one_task(self):
@@ -716,6 +925,141 @@ class TestSelectAgenticTasks:
         ctx = self._ctx_with_tasks([t_agentic, t_other])
 
         assert _select_agentic_tasks(ctx) == [t_agentic]
+
+
+class TestAgenticBenchmarkSelection:
+    def _ctx(self, tasks, agentic_benchmark):
+        ctx = MagicMock()
+        ctx.all_params.tasks = tasks
+        ctx.model_spec.model_name = "test-llm"
+        ctx.runtime_config = SimpleNamespace(agentic_benchmark=agentic_benchmark)
+        return ctx
+
+    def _tasks(self):
+        return [
+            _terminal_task(task_name="terminal_bench_2"),
+            _terminal_task(task_name="terminal_bench_2_1"),
+            _terminal_task(task_name="tau3_bench_banking"),
+            _swebench_task(task_name="swe_bench_verified"),
+        ]
+
+    def test_parse_aliases(self):
+        prefixes, exacts = _parse_agentic_benchmark("tau3,tb2.0,swebench")
+        assert "tau3_bench_" in prefixes
+        assert "swe_bench_" in prefixes
+        assert "terminal_bench_2" in exacts
+
+    def test_parse_all_and_blank_yield_no_matchers(self):
+        assert _parse_agentic_benchmark("all") == ([], set())
+        assert _parse_agentic_benchmark("  ") == ([], set())
+
+    def test_tb20_excludes_tb21(self):
+        tasks = self._tasks()
+        ctx = self._ctx(tasks, "tb2.0")
+        selected = _select_agentic_tasks(ctx)
+        assert [t.task_name for t in selected] == ["terminal_bench_2"]
+
+    def test_tb21_selects_only_21(self):
+        ctx = self._ctx(self._tasks(), "tb2.1")
+        assert [t.task_name for t in _select_agentic_tasks(ctx)] == [
+            "terminal_bench_2_1"
+        ]
+
+    def test_tau3_prefix_selects_family(self):
+        ctx = self._ctx(self._tasks(), "tau3")
+        assert [t.task_name for t in _select_agentic_tasks(ctx)] == [
+            "tau3_bench_banking"
+        ]
+
+    def test_swebench_prefix(self):
+        ctx = self._ctx(self._tasks(), "swebench")
+        assert [t.task_name for t in _select_agentic_tasks(ctx)] == [
+            "swe_bench_verified"
+        ]
+
+    def test_comma_separated_union(self):
+        ctx = self._ctx(self._tasks(), "tau3,swebench")
+        assert [t.task_name for t in _select_agentic_tasks(ctx)] == [
+            "tau3_bench_banking",
+            "swe_bench_verified",
+        ]
+
+    def test_raw_task_name_accepted(self):
+        ctx = self._ctx(self._tasks(), "swe_bench_verified")
+        assert [t.task_name for t in _select_agentic_tasks(ctx)] == [
+            "swe_bench_verified"
+        ]
+
+    def test_all_returns_everything(self):
+        tasks = self._tasks()
+        ctx = self._ctx(tasks, "all")
+        assert _select_agentic_tasks(ctx) == tasks
+
+    def test_no_match_raises(self):
+        ctx = self._ctx(self._tasks(), "does_not_exist")
+        with pytest.raises(RuntimeError, match="matched no EVALS_AGENTIC tasks"):
+            _select_agentic_tasks(ctx)
+
+    def test_filter_direct(self):
+        tasks = self._tasks()
+        selected = _filter_agentic_tasks_by_benchmark(tasks, "tb2.1")
+        assert [t.task_name for t in selected] == ["terminal_bench_2_1"]
+
+
+class TestAgenticRunTimestamp:
+    """The harnesses (harbor job, sweagent output) refuse to start a new run in
+    an existing folder, so each run stamps its per-task folder to stay
+    collision-free; the driver's result_path must point at the stamped folder."""
+
+    STAMP = "20260813T120000"
+
+    def test_terminal_bench_config_stamps_job_folder(self):
+        cfg = build_terminal_bench_config(
+            _terminal_task(),
+            _server(),
+            _driver_context(),
+            n_tasks=1,
+            run_stamp=self.STAMP,
+        )
+        # jobs_dir stays the shared agentic/ parent; the job folder is stamped.
+        assert cfg.jobs_dir == Path("/tmp/out/eval_Qwen__Qwen3.6-27B/agentic")
+        assert cfg.task_name == f"terminal_bench_2_{self.STAMP}"
+        assert cfg.jobs_dir / cfg.task_name == Path(
+            f"/tmp/out/eval_Qwen__Qwen3.6-27B/agentic/terminal_bench_2_{self.STAMP}"
+        )
+
+    def test_swebench_config_stamps_output_dir(self):
+        cfg = build_swebench_config(
+            _swebench_task(),
+            _server(),
+            _driver_context(),
+            n_tasks=1,
+            run_stamp=self.STAMP,
+        )
+        assert cfg.output_dir == Path(
+            f"/tmp/out/eval_Qwen__Qwen3.6-27B/agentic/swe_bench_verified_{self.STAMP}"
+        )
+
+    def test_terminal_driver_result_path_matches_stamped_folder(self):
+        driver = TerminalBenchAgenticDriver(_terminal_task())
+        driver._run_stamp = self.STAMP
+        assert driver.result_path(_server(), _driver_context()) == Path(
+            f"/tmp/out/eval_Qwen__Qwen3.6-27B/agentic/terminal_bench_2_{self.STAMP}/result.json"
+        )
+
+    def test_swebench_driver_result_path_matches_stamped_folder(self):
+        driver = SWEbenchAgenticDriver(_swebench_task())
+        driver._run_stamp = self.STAMP
+        assert driver.result_path(_server(), _driver_context()) == Path(
+            f"/tmp/out/eval_Qwen__Qwen3.6-27B/agentic/swe_bench_verified_{self.STAMP}/result.json"
+        )
+
+    def test_no_stamp_preserves_legacy_layout(self):
+        cfg = build_terminal_bench_config(
+            _terminal_task(), _server(), _driver_context(), n_tasks=1
+        )
+        assert cfg.task_name == "terminal_bench_2"
+        assert cfg.jobs_dir == Path("/tmp/out/eval_Qwen__Qwen3.6-27B/agentic")
 
 
 class TestAgenticBridge:

@@ -20,9 +20,17 @@ from workflows.helm_generator.merge import (
     format_change_summary,
     merge_spec,
     set_default_engine,
+    set_device_board_counts,
+    set_device_chip_counts,
+    set_device_board_names,
 )
 from workflows.helm_generator.schema import HelmModelSpec
 from workflows.helm_generator.yaml_io import dump_values, dumps_values, load_values
+from workflows.device_utils import (
+    dra_device_board_counts,
+    dra_device_board_names,
+    dra_device_chip_counts,
+)
 from workflows.model_spec import IMAGE_PINNED_MODEL_SPECS, ModelSpec
 from workflows.utils import get_repo_root_path
 
@@ -146,6 +154,24 @@ def map_specs(
     return out
 
 
+def _catalog_device_keys(doc: object) -> set:
+    """Device keys that actually appear in the values.yaml models catalogue
+    (models.<model>.<engine>.<device> where <device> has an impls block).
+    """
+    used: set = set()
+    models = getattr(doc, "get", lambda _k, _d=None: None)("models") or {}
+    for _model, engines in models.items():
+        if not isinstance(engines, dict):
+            continue
+        for _engine, devices in engines.items():
+            if not isinstance(devices, dict):
+                continue
+            for device, cfg in devices.items():
+                if isinstance(cfg, dict) and "impls" in cfg:
+                    used.add(device)
+    return used
+
+
 def generate(
     *,
     values_path: Path,
@@ -181,6 +207,34 @@ def generate(
     for model_name, engine in default_engines.items():
         if set_default_engine(doc, model_name, engine):
             logger.info("%s: defaultEngine=%s", model_name, engine)
+
+    # deviceBoardCounts: DRA board count for each device the catalogue offers.
+    # Restricted to devices present in models so the map is exactly "devices this
+    # chart can DRA-deploy" (devices with no known board count, e.g. galaxy_t3k,
+    # are simply absent and fail closed in tt-inference-server.draDeviceCount).
+    used_devices = _catalog_device_keys(doc)
+    board_counts = {
+        k: v for k, v in dra_device_board_counts().items() if k in used_devices
+    }
+    if set_device_board_counts(doc, board_counts):
+        logger.info("updated deviceBoardCounts")
+
+    # deviceChipCounts: ASIC count per device, sizing the hugepages request —
+    # same single source of truth and catalogue restriction as deviceBoardCounts.
+    chip_counts = {
+        k: v for k, v in dra_device_chip_counts().items() if k in used_devices
+    }
+    if set_device_chip_counts(doc, chip_counts):
+        logger.info("updated deviceChipCounts")
+
+    # deviceBoardNames: the tt-dra-driver boardName the ResourceClaim selects (CEL)
+    # for each device the catalogue offers — same single source of truth and same
+    # catalogue restriction as deviceBoardCounts.
+    board_names = {
+        k: v for k, v in dra_device_board_names().items() if k in used_devices
+    }
+    if set_device_board_names(doc, board_names):
+        logger.info("updated deviceBoardNames")
 
     if dry_run:
         sys.stdout.write(dumps_values(doc))
