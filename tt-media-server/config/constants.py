@@ -52,6 +52,7 @@ class SupportedModels(Enum):
     MISTRAL_SMALL_3_1_24B_INSTRUCT_2503 = (
         "mistralai/Mistral-Small-3.1-24B-Instruct-2503"
     )
+    DEVSTRAL_2_123B = "mistralai/Devstral-2-123B-Instruct-2512"
     FALCON3_7B_INSTRUCT = "tiiuae/Falcon3-7B-Instruct"
     Z_IMAGE_TURBO = "Tongyi-MAI/Z-Image-Turbo"
     YOLOX_NANO = "Megvii-BaseDetection/YOLOX-Nano"
@@ -108,6 +109,7 @@ class ModelNames(Enum):
     GEMMA_1_1_2B_IT = "gemma-1.1-2b-it"
     GEMMA_4_31B_IT = "gemma-4-31b-it"
     MISTRAL_SMALL_3_1_24B_INSTRUCT_2503 = "Mistral-Small-3.1-24B-Instruct-2503"
+    DEVSTRAL_2_123B = "Devstral-2-123B-Instruct-2512"
     FALCON3_7B_INSTRUCT = "Falcon3-7B-Instruct"
     YOLOX_NANO = "yolox_nano"
     Z_IMAGE_TURBO = "Z-Image-Turbo"
@@ -144,6 +146,7 @@ class ModelRunners(Enum):
     VLLMForge_GEMMA4_31B = "vllm_forge_gemma4_31b"
     VLLMForge_QWEN_32B = "vllm_forge_qwen_32b"
     VLLMForge_MISTRAL_SMALL_31_24B = "vllm_forge_mistral_small_31_24b"
+    VLLMForge_DEVSTRAL_123B = "vllm_forge_devstral_123b"
     QWEN_EMBEDDING_8B = "qwen_embedding_8b"
     BGELargeEN_V1_5 = "bge_large_en_v1_5"
     BGEM3 = "bge-m3"
@@ -199,6 +202,7 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.VLLMForge_GEMMA4_31B,
         ModelRunners.VLLMForge_QWEN_32B,
         ModelRunners.VLLMForge_MISTRAL_SMALL_31_24B,
+        ModelRunners.VLLMForge_DEVSTRAL_123B,
         ModelRunners.LLM_TEST,
         ModelRunners.LLAMA_RUNNER,
         ModelRunners.LORA_SINGLE_CHIP,
@@ -376,6 +380,7 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.VLLMForge_MISTRAL_SMALL_31_24B: {
         ModelNames.MISTRAL_SMALL_3_1_24B_INSTRUCT_2503
     },
+    ModelRunners.VLLMForge_DEVSTRAL_123B: {ModelNames.DEVSTRAL_2_123B},
     ModelRunners.QWEN_EMBEDDING_8B: {ModelNames.QWEN_3_EMBEDDING_8B},
     ModelRunners.BGELargeEN_V1_5: {ModelNames.BGE_LARGE_EN_V1_5},
     ModelRunners.BGEM3: {ModelNames.BGE_M3},
@@ -1341,6 +1346,16 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
         # Dims env-driven via dev/llm.yaml env_vars (see gemma entry above); this
         # entry only carries the TP mesh topology.
+        "max_batch_size": 1,
+        "queue_for_multiprocessing": QueueType.FasterFifo.value,
+    },
+    (ModelRunners.VLLMForge_DEVSTRAL_123B, DeviceTypes.BLACKHOLE_GALAXY): {
+        # Devstral-2-123B on the BH Galaxy as a 4x8 DP+TP mesh. Plugin owns the 2D
+        # split, so hand it ONE worker over all 32 devices. is_galaxy=False + static
+        # device_ids bypasses settings._set_device_pairs_overrides().
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
         "max_batch_size": 1,
         "queue_for_multiprocessing": QueueType.FasterFifo.value,
     },

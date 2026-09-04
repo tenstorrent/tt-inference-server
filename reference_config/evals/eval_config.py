@@ -3116,6 +3116,72 @@ _eval_config_list = [
         ],
     ),
     EvalConfig(
+        hf_model_repo="mistralai/Devstral-2-123B-Instruct-2512",
+        tasks=[
+            # Short non-agentic evals for a shippable green; 192K agentic swe_bench
+            # dropped (bfp8 KV crashes the (4,8) mesh; forge decode too slow).
+            EvalTask(
+                task_name="humaneval_plus",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                # Completion-style: continues the signature+docstring as code
+                # (chat template -> prose -> pass@1=0).
+                apply_chat_template=False,
+                num_fewshot=0,
+                allow_code_execution=True,
+                score=EvalTaskScore(
+                    published_score=72.05,
+                    published_score_ref="https://arxiv.org/abs/2505.09388",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["pass@1,create_test"],
+                        "unit": "percent",
+                    },
+                ),
+                gen_kwargs={
+                    "max_gen_toks": 1024,
+                    "do_sample": "false",
+                    "stream": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.1,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="mbpp_plus",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                # Completion-style task -- see humaneval_plus above.
+                apply_chat_template=False,
+                num_fewshot=3,
+                allow_code_execution=True,
+                score=EvalTaskScore(
+                    published_score=72.05,
+                    published_score_ref="https://arxiv.org/abs/2505.09388",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["pass_at_1,none"],
+                        "unit": "percent",
+                    },
+                ),
+                gen_kwargs={
+                    "max_gen_toks": 1024,
+                    "do_sample": "false",
+                    "stream": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.1,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # gsm8k_cot removed: bare `dataset_path: gsm8k` rejected by the
+            # installed datasets (HfUriError; canonical repo is openai/gsm8k).
+        ],
+    ),
+    EvalConfig(
         hf_model_repo="mistralai/Mistral-7B-Instruct-v0.3",
         tasks=[
             EvalTask(
