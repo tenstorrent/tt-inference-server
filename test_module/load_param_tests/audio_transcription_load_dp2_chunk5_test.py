@@ -4,7 +4,8 @@
 
 """
 DP2 load test with chunk_duration_seconds=5 and 60s audio.
-Start server with: AUDIO_CHUNK_DURATION_SECONDS=5
+The request sets chunk_duration_seconds so the media-server worker splits
+to 5s regardless of the server's AUDIO_CHUNK_DURATION_SECONDS default.
 More segments per request (60/5 ≈ 12) → more tasks in queue.
 """
 
@@ -34,7 +35,7 @@ class AudioTranscriptionLoadDp2Chunk5Test(AudioTranscriptionLoadTest):
     KIND = "audio_transcription_load_dp2_chunk5"
     TASK_TYPE = "audio"
 
-    """DP2 burst load, 60s audio, chunk 5s. Server: AUDIO_CHUNK_DURATION_SECONDS=5."""
+    """DP2 burst load, 60s audio, chunk 5s via request.chunk_duration_seconds."""
 
     async def _run_specific_test_async(self):
         self.url = f"{self.base_url}/v1/audio/transcriptions"
@@ -46,6 +47,7 @@ class AudioTranscriptionLoadDp2Chunk5Test(AudioTranscriptionLoadTest):
             "stream": False,
             "is_preprocessing_enabled": True,
             "prompt": "",
+            "chunk_duration_seconds": CHUNK_DURATION_SECONDS,
         }
 
         (

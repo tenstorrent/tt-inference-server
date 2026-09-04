@@ -13,7 +13,8 @@
         ],
         "AUDIO": [
             "distil-large-v3",
-            "whisper-large-v3"
+            "whisper-large-v3",
+            "Qwen3-ASR-1.7B"
         ],
         "CNN": [
             "resnet-50",
@@ -87,6 +88,7 @@
             "sd35": "Stable Diffusion 3.5 tests",
             "whisper": "Whisper model tests",
             "distil_whisper": "Distil Whisper model tests",
+            "qwen3_asr": "Qwen3-ASR model tests",
             "flux_dev": "FLUX.1-dev model tests",
             "flux_schnell": "FLUX.1-schnell model tests",
             "motif": "Motif image generation model tests",
@@ -190,6 +192,18 @@
                 "t3k",
                 "galaxy",
                 "blackhole_galaxy"
+            ]
+        },
+        "qwen3_asr": {
+            "id_name": "qwen3-asr",
+            "weights": [
+                "Qwen3-ASR-1.7B"
+            ],
+            "category": "AUDIO",
+            "compatible_devices": [
+                "n150",
+                "n300",
+                "galaxy"
             ]
         },
         "wan": {

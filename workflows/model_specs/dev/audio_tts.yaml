@@ -79,6 +79,33 @@ templates:
         TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
   status: COMPLETE
 
+# tt-metal pin for image build: tvardhineni/qwen3_asr_wh @ 62fba73
+# (full: 62fba73f5224051b000f042c87c27adf17a1ede0). Models CI / --docker-server
+# build from this SHA (--dev-mode, --override-docker-image until prod promotion).
+# Dev specs omit version/tt_metal_commit by design; the prod audio_tts.yaml pin is
+# set at promotion by the release process. Same pattern as tt-inference-server#4988.
+- weights:
+    - Qwen/Qwen3-ASR-1.7B
+  impl: qwen3_asr
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: AUDIO
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: N150
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+    - device: N300
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+    - device: GALAXY
+      max_concurrency: 32  # DP=32: 32 single-chip instances, batch=1 each
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+  status: EXPERIMENTAL
+
 - weights:
     - microsoft/speecht5_tts
   impl: speecht5_tts

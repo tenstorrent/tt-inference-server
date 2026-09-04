@@ -29,6 +29,25 @@ from utils.logger import TTLogger
 logger = TTLogger()
 
 
+def audio_chunk_duration_for_worker_count(worker_count: int) -> int:
+    """Default media-server chunk length so one request can occupy many runners.
+
+    Real-time-rate scales as ``ceil(input_duration / chunk_duration, worker_count)``,
+    so smaller chunks fan a long clip across more device runners. But chunks that
+    are too short cut words mid-utterance and hurt accuracy: on-device A/B on a
+    glued 90s clip showed 3s costs EN WER 4.78%/JA CER 13.4% for no RTR gain over
+    10s (EN 0.80%/JA 10.0%, both ~95x RTR), because per-chunk overhead already
+    saturates parallelism well before 3s. 10s on 8+ workers (Galaxy DP=32) keeps
+    near-linear speedup while staying close to whole-clip accuracy; larger windows
+    on smaller meshes where fewer runners are available.
+    """
+    if worker_count >= 8:
+        return 10
+    if worker_count >= 4:
+        return 15
+    return 30
+
+
 class Settings(BaseSettings):
     # General settings
     environment: str = "development"
@@ -125,10 +144,32 @@ class Settings(BaseSettings):
     # Audio processing settings
     allow_audio_preprocessing: bool = True
     audio_chunk_duration_seconds: Optional[int] = None
+    # Qwen3-ASR fan-out is two-tier (see model_services.audio_service):
+    #  - clips at/under audio_min_split_duration_seconds stay whole (one runner);
+    #  - clips in (min_split, short_clip_max] use the gentler
+    #    audio_short_clip_chunk_seconds window;
+    #  - longer clips use audio_chunk_duration_seconds (worker-count default,
+    #    10s on DP=32) for maximum fan-out.
+    # On-device A/B on ~25s clips: 15s chunks recover almost all the accuracy of
+    # keeping whole (EN WER 1.83% vs 1.72%; JA surface 8.79% == whole, reading
+    # 2.00% vs 1.97%) while still fanning across 2 runners (~24x vs ~16x), whereas
+    # 10s chunks cost more for little extra RTR here (EN 2.01%, JA reading 2.43%).
+    # Genuinely short clips (<=15s) already fit one runner's window, so splitting
+    # them only adds boundary errors for no speedup.
+    audio_min_split_duration_seconds: int = 15
+    # Upper bound of the "short clip" tier that uses audio_short_clip_chunk_seconds.
+    audio_short_clip_max_seconds: int = 30
+    # Chunk window for the short-clip tier (accuracy-preserving, still 2 runners).
+    audio_short_clip_chunk_seconds: int = 15
     max_audio_duration_seconds: float = 60.0
     max_audio_duration_with_preprocessing_seconds: float = (
         300.0  # 5 minutes when preprocessing enabled
     )
+    # Qwen3-ASR fans a long clip out across the 32 Galaxy runners in 10s windows,
+    # so one wave = 32 * 10 = 320s. Capping here lets a single request saturate all
+    # 32 runners in one pass; audio beyond this is truncated (raise it if longer
+    # clips must be supported, at the cost of spilling into extra runner waves).
+    max_audio_duration_qwen3_asr_seconds: float = 320.0
     max_audio_size_bytes: int = 50 * 1024 * 1024
     default_sample_rate: int = 16000
     audio_task: str = AudioTasks.TRANSCRIBE.value
@@ -379,9 +420,18 @@ class Settings(BaseSettings):
 
     def _calculate_audio_chunk_duration(self):
         worker_count = len(self.device_ids.replace(" ", "").split("),("))
-        self.audio_chunk_duration_seconds = (
-            # temporary setup until we get dynamic chunking
-            15 if worker_count >= 8 else 15 if worker_count >= 4 else 15
+        # Worker-count scaling is a Qwen3-ASR fan-out optimization only. Whisper
+        # and other ASR models keep the original fixed 15s chunk so their proven
+        # production behaviour is untouched.
+        if self.model_runner == ModelRunners.TT_QWEN3_ASR.value:
+            self.audio_chunk_duration_seconds = audio_chunk_duration_for_worker_count(
+                worker_count
+            )
+        else:
+            self.audio_chunk_duration_seconds = 15
+        logger.info(
+            f"Audio chunk duration={self.audio_chunk_duration_seconds}s "
+            f"for {worker_count} workers (runner={self.model_runner})"
         )
 
     def _set_config_overrides(self, model_to_run: str, device: str):

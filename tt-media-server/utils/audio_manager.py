@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import List, NamedTuple, Optional
 
 import numpy as np
-from config.constants import AudioInputFormat, SupportedModels
+from config.constants import AudioInputFormat, ModelRunners, SupportedModels
 from config.settings import settings
 from domain.audio_text_response import AudioTextResponse, AudioTextSegment
 from telemetry.telemetry_client import (
@@ -420,6 +420,46 @@ class AudioManager:
             model_type=settings.model_runner, format=audio_format.value
         ).observe(time.perf_counter() - start)
         return prepared
+
+    def chunk_audio_by_duration(
+        self, duration, target_chunk_duration=None, speaker="SPEAKER_00"
+    ):
+        """Split ``[0, duration]`` into contiguous ``target_chunk_duration`` windows.
+
+        Qwen3-ASR-only fan-out helper (see AudioService.audio_worker_function):
+        lets one long request occupy many device runners. ``target_chunk_duration``
+        None/<=0 keeps the clip whole (single chunk); the caller's length threshold
+        decides whether a clip is long enough to be worth splitting. Not used by
+        the Whisper/shared VAD path.
+        """
+        return self._split_span_to_chunks(
+            0.0, float(duration), speaker, target_chunk_duration
+        )
+
+    def _split_span_to_chunks(self, start, end, speaker, target_chunk_duration):
+        """Hard-split ``[start, end]`` into contiguous ``target_chunk_duration`` windows."""
+        if (
+            target_chunk_duration is None
+            or target_chunk_duration <= 0
+            or end - start <= target_chunk_duration + 1e-6
+        ):
+            return [
+                {"start": float(start), "end": float(end), "text": "", "speaker": speaker}
+            ]
+        chunks = []
+        t = float(start)
+        end = float(end)
+        while t < end - 1e-6:
+            chunk_end = min(t + target_chunk_duration, end)
+            if chunk_end - t <= 1e-6:
+                break
+            chunks.append(
+                {"start": t, "end": chunk_end, "text": "", "speaker": speaker}
+            )
+            t = chunk_end
+        return chunks or [
+            {"start": float(start), "end": float(end), "text": "", "speaker": speaker}
+        ]
 
     @log_execution_time("Applying VAD and optional diarization")
     def apply_diarization_with_vad(self, audio_array, enable_diarization):
@@ -933,12 +973,19 @@ class AudioManager:
     def _validate_and_truncate_duration(self, audio_array, should_preprocess):
         duration_seconds = len(audio_array) / settings.default_sample_rate
 
-        # Use extended duration limit when preprocessing is allowed and requested
-        max_duration = (
-            settings.max_audio_duration_with_preprocessing_seconds
-            if should_preprocess and self._diarization_model is not None
-            else settings.max_audio_duration_seconds
-        )
+        # Qwen3-ASR fans a long clip out across device runners using fixed-duration
+        # windows, so it handles long audio without depending on the diarization
+        # model. Cap is one full Galaxy wave (320s = 32 runners * 10s). Without this
+        # Qwen branch, clips >max_audio_duration_seconds (60s) were silently
+        # truncated on boxes where the diarization model isn't loaded, dropping the
+        # tail (measured: 91.5s clip -> only first 60s transcribed, 86/251 words
+        # deleted). Whisper/other ASR keep the original diarization-gated limit.
+        if settings.model_runner == ModelRunners.TT_QWEN3_ASR.value:
+            max_duration = settings.max_audio_duration_qwen3_asr_seconds
+        elif should_preprocess and self._diarization_model is not None:
+            max_duration = settings.max_audio_duration_with_preprocessing_seconds
+        else:
+            max_duration = settings.max_audio_duration_seconds
 
         if duration_seconds > max_duration:
             max_samples = int(max_duration * settings.default_sample_rate)

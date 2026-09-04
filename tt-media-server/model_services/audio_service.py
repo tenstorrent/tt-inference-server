@@ -17,22 +17,69 @@ def create_audio_worker_context():
     return AudioManager()
 
 
+def qwen3_asr_chunk_plan(duration, chunk_override, settings):
+    """Pick the fan-out chunk window for a Qwen3-ASR clip (None => keep whole).
+
+    Two-tier so we only pay word-boundary accuracy cost where it buys speed we
+    need (measured: chunking is never free, and Japanese is ~2.7x more sensitive
+    to boundaries than English):
+      * duration <= audio_min_split_duration_seconds -> whole (one runner);
+      * short-clip tier (<= audio_short_clip_max_seconds) -> the gentler
+        audio_short_clip_chunk_seconds window (~2 runners, ~no accuracy cost);
+      * longer -> audio_chunk_duration_seconds (worker-count default, 10s on
+        DP=32) for maximum fan-out.
+    An explicit per-request ``chunk_override`` always wins once the clip is long
+    enough to split (keeps the Dp2Chunk5/Chunk30 spec tests meaningful).
+    """
+    if duration <= settings.audio_min_split_duration_seconds:
+        return None
+    if chunk_override:
+        return chunk_override
+    if duration > settings.audio_short_clip_max_seconds:
+        return settings.audio_chunk_duration_seconds
+    return settings.audio_short_clip_chunk_seconds
+
+
 def audio_worker_function(
-    audio_manager, audio_file_data, is_preprocessing_enabled, perform_diarization=False
+    audio_manager,
+    audio_file_data,
+    is_preprocessing_enabled,
+    perform_diarization=False,
+    chunk_duration_seconds=None,
 ):
     """Process audio data using the initialized AudioManager"""
     from config.settings import settings
+
+    from config.constants import ModelRunners
 
     should_preprocess = settings.allow_audio_preprocessing and is_preprocessing_enabled
 
     # Process audio
     prepared = audio_manager.to_audio_array(audio_file_data, should_preprocess)
     audio_array = prepared.audio_array
-    segments = (
-        audio_manager.apply_diarization_with_vad(audio_array, perform_diarization)
-        if should_preprocess
-        else None
-    )
+
+    # Qwen3-ASR-only duration fan-out: split a long clip into contiguous windows so
+    # it occupies many device runners (linear RTR speedup on Galaxy DP=32). Short
+    # clips already fit one runner, so splitting them only adds boundary errors
+    # (measured +2.4 WER at 3s on librispeech) -> keep them whole. This path is
+    # deliberately NOT taken for Whisper/other ASR: their VAD chunking below is
+    # left exactly as in production. Diarization requests also use the shared path.
+    is_qwen3_asr = settings.model_runner == ModelRunners.TT_QWEN3_ASR.value
+    if is_qwen3_asr and not perform_diarization:
+        target = qwen3_asr_chunk_plan(
+            prepared.duration, chunk_duration_seconds, settings
+        )
+        if target:
+            segments = audio_manager.chunk_audio_by_duration(prepared.duration, target)
+        else:
+            # Keep whole: one runner transcribes the clip (validated WER 2.63%).
+            segments = None
+    elif should_preprocess:
+        segments = audio_manager.apply_diarization_with_vad(
+            audio_array, perform_diarization
+        )
+    else:
+        segments = None
 
     return (
         audio_array,
@@ -75,6 +122,7 @@ class AudioService(BaseService):
                 request.file,
                 request.is_preprocessing_enabled,
                 request.perform_diarization,
+                request.chunk_duration_seconds,
             )
 
             request._audio_array = audio_array
@@ -116,7 +164,19 @@ class AudioService(BaseService):
             f"end={segment['end']}, speaker={segment.get('speaker_id', 'N/A')}"
         )
 
-        field_values = original_request.model_dump()
+        from config.constants import ModelRunners
+
+        # Qwen3-ASR only: skip copying the encoded audio payload. It is cleared
+        # below anyway, but model_dump() would deep-copy the full base64 clip
+        # once per segment first (~13MB x 32 segments for a 320s request), which
+        # is serial work on the event loop and made fan-out cost scale with
+        # duration x segment count (320s measured 103x -> 306x once removed).
+        # Whisper keeps the original dump so its production path is untouched.
+        if settings.model_runner == ModelRunners.TT_QWEN3_ASR.value:
+            field_values = original_request.model_dump(exclude={"file"})
+            field_values["file"] = ""  # placeholder; required field, cleared below
+        else:
+            field_values = original_request.model_dump()
         new_request = type(original_request)(**field_values)
         new_request.is_preprocessing_enabled = False  # Skip double preprocessing
         new_request._segments = [segment]  # Single segment

@@ -251,9 +251,17 @@ def _run_audio_transcription_benchmark(
     return status_list
 
 
-def _is_whisper(ctx: MediaContext) -> bool:
-    impl = getattr(ctx.model_spec, "impl", None)
-    return getattr(impl, "impl_name", None) == "whisper"
+def _uses_lmms_eval(ctx: MediaContext) -> bool:
+    """True when the model's EvalConfig routes accuracy through lmms-eval.
+
+    Keyed on the task's ``eval_class`` rather than the implementation name: the
+    harness is a property of the eval registration, not of what the model is
+    called. Gating on ``impl_name == "whisper"`` silently dropped every other
+    ASR model onto the no-accuracy path below, where ``score`` is a TTFT and
+    ``accuracy_check`` is hardcoded NA.
+    """
+    tasks = getattr(ctx.all_params, "tasks", None) or []
+    return bool(tasks) and getattr(tasks[0], "eval_class", None) == "whisper_tt"
 
 
 def _wer_from_task_block(task_block: dict) -> Optional[float]:
@@ -338,8 +346,12 @@ def _audio_eval_fail_block(ctx: MediaContext, task, error: str) -> Block:
     )
 
 
-def _run_whisper_lmms_eval(ctx: MediaContext) -> Block:
-    """Run the real lmms-eval librispeech_test_other WER eval via WhisperEvalTest."""
+def _run_lmms_eval_wer(ctx: MediaContext) -> Block:
+    """Run the real lmms-eval librispeech_test_other WER eval via WhisperEvalTest.
+
+    WhisperEvalTest is an lmms-eval driver pointed at /v1/audio/transcriptions,
+    so it works for any ASR model serving that endpoint, not just whisper.
+    """
     from .._test_common import TestConfig
     from .whisper_eval_test import WhisperEvalTest
 
@@ -356,6 +368,8 @@ def _run_whisper_lmms_eval(ctx: MediaContext) -> Block:
     test.test_limit = None
     test.debug_mode = False
     test.mock_mode = False
+    device = getattr(ctx.device, "name", None) or getattr(ctx.device, "value", None)
+    test.device_name = str(device or "unknown").lower()
 
     if not test.lmms_eval_exec:
         logger.error(
@@ -441,8 +455,8 @@ def run_audio_eval(ctx: MediaContext) -> Block:
     )
     require_health(ctx, HardwareRequirement.ANY_CHIP)
 
-    if _is_whisper(ctx):
-        return _run_whisper_lmms_eval(ctx)
+    if _uses_lmms_eval(ctx):
+        return _run_lmms_eval_wer(ctx)
 
     try:
         num_calls = get_num_calls(ctx)

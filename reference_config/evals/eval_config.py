@@ -4448,6 +4448,45 @@ _eval_config_list = [
             )
         ],
     ),
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen3-ASR-1.7B",
+        tasks=[
+            EvalTask(
+                task_name="librispeech_test_other",
+                eval_class="whisper_tt",
+                batch_size=1,
+                max_concurrent=1,
+                apply_chat_template=False,
+                workflow_venv_type=WorkflowVenvType.EVALS_AUDIO,
+                score=EvalTaskScore(
+                    # N150 full librispeech_test_other (2939 samples), tt-metal
+                    # 62fba73, Models CI run 33605859543. WER 3.5381 → 96.46.
+                    # Galaxy at 12.32 / 87.68 fails this gate (ratio 0.91).
+                    published_score=96.46,
+                    gpu_reference_score=96.46,
+                    published_score_ref=(
+                        "N150 Models CI tt-metal 62fba73 "
+                        "https://github.com/tenstorrent/tt-shield/actions/runs/33605859543"
+                    ),
+                    gpu_reference_score_ref=(
+                        "N150 Models CI tt-metal 62fba73 "
+                        "https://github.com/tenstorrent/tt-shield/actions/runs/33605859543"
+                    ),
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "wer,none",
+                        ],
+                        "unit": "WER",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.20,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            )
+        ],
+    ),
     # VIDEO models (Mochi, Wan2.2 T2V/I2V) are served by the v2 engine (routed
     # via workflows/workflow_dispatch.can_dispatch_to_engine); the actual eval runs in v2's
     # test_module, and ModelType.VIDEO is not in EVAL_TASK_TYPES (evals/run_evals.py),

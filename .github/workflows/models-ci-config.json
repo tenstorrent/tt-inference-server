@@ -780,6 +780,23 @@
         }
       }
     },
+    "Qwen3-ASR-1.7B": {
+      "inference_engine": "MEDIA",
+      "ci": {
+        "nightly": {
+          "devices": [
+            "N150",
+            "N300",
+            "GALAXY"
+          ]
+        },
+        "release": {
+          "devices": [
+            "N150"
+          ]
+        }
+      }
+    },
     "Z-Image-Turbo": {
       "inference_engine": "MEDIA",
       "ci": {

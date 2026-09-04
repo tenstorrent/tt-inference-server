@@ -50,6 +50,36 @@ def _audio_avg(status_list: list[AudioTestStatus], attr: str) -> Optional[float]
     return sum(valid) / len(valid) if valid else None
 
 
+# Below this, the first->last chunk window is not a measurable decode interval:
+# it means the response arrived as one burst (parallel segment fan-out, or a
+# single non-incremental chunk) rather than token-by-token.
+_MIN_STREAMING_WINDOW_S = 0.05
+
+
+def _is_qwen3_asr(ctx: MediaContext) -> bool:
+    impl = getattr(ctx.model_spec, "impl", None)
+    return getattr(impl, "impl_name", None) == "qwen3-asr"
+
+
+def _squash(text: str) -> str:
+    return " ".join(text.split()).lower()
+
+
+def _join_stream_chunks(chunk_texts: list[str]) -> str:
+    """Rebuild the transcript from streamed chunks.
+
+    Two shapes reach us: token-level deltas followed by a final chunk repeating
+    the whole transcript, and one complete text per audio segment. Summing
+    tokens over every chunk counts the first shape twice, so reconstruct the
+    transcript first and count it once.
+    """
+    if len(chunk_texts) > 1:
+        deltas = "".join(chunk_texts[:-1])
+        if _squash(deltas) == _squash(chunk_texts[-1]):
+            return chunk_texts[-1].strip()
+    return " ".join(t.strip() for t in chunk_texts if t.strip())
+
+
 async def _transcribe_audio_streaming_off(
     ctx: MediaContext,
     is_preprocessing_enabled: bool,
@@ -140,7 +170,6 @@ async def _transcribe_audio_streaming_on(
     url = f"{ctx.base_url}/v1/audio/transcriptions"
     start_time = time.monotonic()
     ttft: Optional[float] = None
-    total_text = ""
     total_tokens = 0
     chunk_texts: list[str] = []
     audio_duration: Optional[float] = None
@@ -179,7 +208,6 @@ async def _transcribe_audio_streaming_on(
                     chunk_tokens = count_tokens(hf_model_repo, text)
 
                     if text.strip():
-                        total_text += text + " "
                         chunk_texts.append(text)
                         total_tokens += chunk_tokens
 
@@ -204,10 +232,30 @@ async def _transcribe_audio_streaming_on(
         end_time = time.monotonic()
         total_duration = end_time - start_time
         content_streaming_time = total_duration - (ttft if ttft is not None else 0)
-        final_tokens = total_tokens
-        final_tps = (
-            final_tokens / content_streaming_time if content_streaming_time > 0 else 0
-        )
+        if _is_qwen3_asr(ctx):
+            # Count the reconstructed transcript once instead of summing
+            # per-chunk counts, which double-counts a server that resends the
+            # full text last.
+            total_text = _join_stream_chunks(chunk_texts)
+            final_tokens = count_tokens(hf_model_repo, total_text)
+            # Parallel segment fan-out delivers every chunk at once, leaving
+            # content_streaming_time at ~0: previously a divide-by-zero reported
+            # as 0, or a meaningless spike. Fall back to the request duration.
+            tps_window = (
+                content_streaming_time
+                if content_streaming_time >= _MIN_STREAMING_WINDOW_S
+                else total_duration
+            )
+            final_tps = final_tokens / tps_window if tps_window > 0 else 0.0
+        else:
+            # Whisper is production grade and its reported T/S/U is the baseline
+            # its targets were calibrated against, so leave it exactly as it was.
+            final_tokens = total_tokens
+            final_tps = (
+                final_tokens / content_streaming_time
+                if content_streaming_time > 0
+                else 0
+            )
         final_tokens_per_user_per_sec = final_tps
 
         rtr = None
@@ -254,9 +302,17 @@ async def _transcribe_audio(
 
 
 def _run_audio_transcription_benchmark(
-    ctx: MediaContext, num_calls: int, audio_b64: Optional[str] = None
+    ctx: MediaContext,
+    num_calls: int,
+    audio_b64: Optional[str] = None,
+    warmup: bool = True,
 ) -> list[AudioTestStatus]:
     logger.info(f"Running audio transcription benchmark with {num_calls} calls.")
+    if warmup:
+        # First call absorbs compile/trace capture. Discard it so 30s vs 60s
+        # RTR is comparable (same contract as AudioTranscriptionLoadTest).
+        logger.info("Warmup transcription (discarded).")
+        asyncio.run(_transcribe_audio(ctx, audio_b64=audio_b64))
     status_list: list[AudioTestStatus] = []
     for i in range(num_calls):
         logger.info(f"Transcribing audio {i + 1}/{num_calls}...")
@@ -309,13 +365,20 @@ def _audio_target_checks(
     )
 
 
-def _is_whisper(ctx: MediaContext) -> bool:
+# ASR impls that serve /v1/audio/transcriptions and can take the 30s+60s sweep.
+# Anything not listed here is benchmarked on the single default clip only, so a
+# new ASR model must be added or it silently loses its 60s (chunking) coverage
+# and gates on the lighter 30s pass.
+_TRANSCRIPTION_SWEEP_IMPLS = frozenset({"whisper", "qwen3-asr"})
+
+
+def _supports_transcription_sweep(ctx: MediaContext) -> bool:
     impl = getattr(ctx.model_spec, "impl", None)
-    return getattr(impl, "impl_name", None) == "whisper"
+    return getattr(impl, "impl_name", None) in _TRANSCRIPTION_SWEEP_IMPLS
 
 
-def _run_whisper_benchmark_sweep(ctx: MediaContext, num_calls: int) -> Block:
-    """Multi-size audio benchmark for whisper: runs 30s and 60s clips and
+def _run_transcription_benchmark_sweep(ctx: MediaContext, num_calls: int) -> Block:
+    """Multi-size audio benchmark for ASR: runs 30s and 60s clips and
     emits one ``benchmarks`` block with a row per size.
 
     Target checks are computed from the 60s (heavier) pass and placed at
@@ -328,13 +391,15 @@ def _run_whisper_benchmark_sweep(ctx: MediaContext, num_calls: int) -> Block:
 
     records = []
     metrics_by_label: dict[str, tuple] = {}
+    logger.info("Warmup transcription on 30s clip (discarded) before sweep.")
+    asyncio.run(_transcribe_audio(ctx, audio_b64=dataset30s["file"]))
     for label, audio_b64 in (
         ("Benchmarks 30s", dataset30s["file"]),
         ("Benchmarks 60s", dataset60s["file"]),
     ):
-        logger.info("Running whisper benchmark sweep: %s", label)
+        logger.info("Running transcription benchmark sweep: %s", label)
         status_list = _run_audio_transcription_benchmark(
-            ctx, num_calls, audio_b64=audio_b64
+            ctx, num_calls, audio_b64=audio_b64, warmup=False
         )
         ttft_value = _audio_avg(status_list, "ttft")
         rtr_value = _audio_avg(status_list, "rtr")
@@ -390,8 +455,8 @@ def run_audio_benchmark(ctx: MediaContext) -> Block:
 
     try:
         num_calls = get_num_calls(ctx)
-        if _is_whisper(ctx):
-            return _run_whisper_benchmark_sweep(ctx, num_calls)
+        if _supports_transcription_sweep(ctx):
+            return _run_transcription_benchmark_sweep(ctx, num_calls)
         status_list = _run_audio_transcription_benchmark(ctx, num_calls)
     except Exception as e:
         logger.error(f"Benchmark execution encountered an error: {e}")
