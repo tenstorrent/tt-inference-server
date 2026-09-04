@@ -1,0 +1,65 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+#
+# Expected LoRA training-loss trajectory for meta-llama/Llama-3.1-8B on SST-2,
+# single-chip P150, run through the forge server's `trainer-training-lora`
+# runner (tt-blacksmith LoraLLMTrainer).
+#
+# IMPORTANT: these values are NOT tt-blacksmith's golden CSVs. The forge runner
+# builds its LoraLLMConfig directly from the TrainingRequest below (seed=0,
+# deterministic=False) rather than through tt-blacksmith's pytest test-mode, so
+# the trajectory differs. Regenerate from a known-good P150 run whenever the
+# blacksmith pin (tt-media-server/.../forge_runners/requirements.txt) or the
+# tt-forge pin changes.
+#
+# Regenerated from a green single-chip P150 run on 2026-09-01 (job
+# af3eab19-fc5b-48cc-9387-2db7f5c8ca4a): values below are the observed
+# train_loss/val_loss from GET /v1/jobs/{id}/metrics. Because the runner is
+# non-deterministic (deterministic=False), treat these as a reference
+# trajectory, not exact goldens — re-regenerate if the blacksmith/forge pins
+# move.
+
+# Hyperparameters forwarded verbatim into the TrainingRequest POST body. Kept
+# small so a nightly P150 job stays bounded while still exercising the full
+# submit -> train -> checkpoint -> metrics path.
+request:
+  dataset_loader: SST2
+  dataset_max_sequence_length: 64
+  batch_size: 8
+  learning_rate: 0.0001
+  num_epochs: 1
+  max_steps: 15
+  steps_freq: 5
+  val_steps_freq: 5
+  save_interval: 0
+  lora_r: 4
+  lora_alpha: 8
+  lora_target_modules: ["q_proj", "v_proj"]
+  lora_task_type: CAUSAL_LM
+  dtype: torch.bfloat16
+  optimizer: adamw
+
+# Tolerances around the observed trajectory. Tightened from the initial
+# placeholder run (rtol 0.5 / atol 0.1) now that the values are real, but kept
+# generous enough to absorb run-to-run noise from deterministic=False. Loosen
+# again if the nightly P150 gate flakes.
+tolerances:
+  rtol: 0.15
+  atol: 0.2
+
+checks:
+  # Final training loss must not exceed the first recorded value (+atol).
+  require_decreasing: true
+  # Absolute ceiling on the final training loss (guards against a diverged run
+  # that happens to be "decreasing"). Tune after regeneration.
+  final_train_loss_max: 5.0
+
+# Per-checkpoint expectations (steps must line up with steps_freq / val_steps_freq).
+expected_losses:
+  - {global_step: 5,  metric_name: train_loss, value: 5.73}
+  - {global_step: 10, metric_name: train_loss, value: 5.12}
+  - {global_step: 15, metric_name: train_loss, value: 3.66}
+  - {global_step: 5,  metric_name: val_loss,   value: 5.10}
+  - {global_step: 10, metric_name: val_loss,   value: 3.88}
+  - {global_step: 15, metric_name: val_loss,   value: 2.35}

@@ -73,7 +73,7 @@ async def submit_fine_tuning_request(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail={str(e)})
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/jobs")

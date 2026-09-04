@@ -37,6 +37,7 @@ _ENGINE_WORKFLOW_NAMES = {
     WorkflowType.AGENTIC_TRACES: "agentic_traces",
     WorkflowType.SERVING_BENCH: "serving_bench",
     WorkflowType.PREFILL_DECODE: "prefill_decode",
+    WorkflowType.TRAINING_TESTS: "training_tests",
 }
 
 _ENGINE_EVAL_WORKFLOWS = frozenset({WorkflowType.EVALS, WorkflowType.RELEASE})
@@ -156,8 +157,21 @@ def _is_llm_spec_test_run(wf, model_spec) -> bool:
     return model_spec.model_type in _LLM_LIKE_TYPES and wf == WorkflowType.SPEC_TESTS
 
 
+def _is_training_run(wf, model_spec) -> bool:
+    """``--workflow training_tests`` on a TRAINING model routes to the training
+    driver (``launchers/run_training_test.py``): it submits a LoRA job to the
+    running forge server and grades the loss trajectory. Not the generic workflow
+    engine — the launcher runs in the current interpreter as an HTTP client."""
+    return (
+        wf == WorkflowType.TRAINING_TESTS
+        and model_spec.model_type == ModelType.TRAINING
+    )
+
+
 def can_dispatch_to_engine(model_spec, runtime_config) -> bool:
     wf = WorkflowType.from_string(runtime_config.workflow)
+    if _is_training_run(wf, model_spec):
+        return True
     # Agentic evals, agentic trace replay, serving-bench benchmark suites, the
     # prefill/decode smoke suite, and the prefix-cache / spec-decode benchmarks
     # are workflow-engine-only features with no v1 driver. They route to the
@@ -221,6 +235,17 @@ def build_engine_commands(model_spec, runtime_config, json_fpath) -> list:
     )
     ensure_readwriteable_dir(output_dir)
 
+    if _is_training_run(wf, model_spec):
+        return [
+            VenvCommand(
+                None,
+                _build_training_cmd(
+                    repo_root, model_spec, runtime_config, json_fpath, output_dir
+                ),
+                env=_engine_env(),
+                label=engine_workflow,
+            )
+        ]
     if wf == WorkflowType.AGENTIC:
         return [
             VenvCommand(
@@ -558,6 +583,25 @@ def _stress_argv(repo_root, model_spec, runtime_config, json_fpath):
         "--device",
         runtime_config.device,
     ]
+
+
+def _build_training_cmd(repo_root, model_spec, runtime_config, json_fpath, output_dir):
+    """Argv for the training driver launcher (VenvCommand runs it in the current
+    interpreter, which is the HTTP client for the running forge server)."""
+    from workflows.training.registry import expected_config_path
+
+    launcher = _resolve_launcher(repo_root, "run_training_test.py", "training_tests")
+    cmd = _base_engine_argv(
+        launcher, model_spec, runtime_config, json_fpath, output_dir, "training_tests"
+    )
+    cmd.extend(
+        [
+            "--expected-config",
+            str(expected_config_path(model_spec.model_name, runtime_config.device)),
+        ]
+    )
+    _forward_jwt(cmd, runtime_config)
+    return cmd
 
 
 def _build_agentic_cmd(repo_root, model_spec, runtime_config, json_fpath, output_dir):
