@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
+import math
 import os
 
 from config.constants import DeviceTypes, ModelRunners
@@ -10,6 +11,12 @@ from telemetry.telemetry_client import get_telemetry_client
 
 from utils.logger import TTLogger
 from utils.torch_utils import set_torch_thread_limits
+
+_TRAINER_RUNNERS = {
+    ModelRunners.TRAINING_LORA.value,
+    ModelRunners.TRAINER_TRAINING_LORA.value,
+    ModelRunners.TRAINING_GEMMA_LORA.value,
+}
 
 _BH_DEVICE_MESH_DESCRIPTORS = {
     "p150": "p150_mesh_graph_descriptor.textproto",
@@ -35,8 +42,25 @@ def setup_runner_environment(
     setup_cpu_threading_limits(cpu_threads, num_torch_threads)
 
     if device_id:
-        os.environ["TT_VISIBLE_DEVICES"] = str(device_id)
-        _logger.info(f"setup_runner_environment: TT_VISIBLE_DEVICES={device_id}")
+        is_single_chip_trainer = (
+            settings.model_runner in _TRAINER_RUNNERS
+            and math.prod(settings.device_mesh_shape) == 1
+        )
+        if is_single_chip_trainer:
+            # tt-xla#5521: a single-chip trainer owns the whole board (to keep the
+            # ethernet fabric intact) but runs 1x1. Setting TT_VISIBLE_DEVICES to the
+            # full "0,1,2,3" makes UMD build a *constrained* descriptor, which it then
+            # double-applies to the compiler's single-chip mock device and rejects
+            # every id except 0. Leaving it unset avoids the constrained path entirely
+            # — same as running the training script by hand.
+            os.environ.pop("TT_VISIBLE_DEVICES", None)
+            _logger.info(
+                "setup_runner_environment: TT_VISIBLE_DEVICES left unset "
+                "(single-chip trainer owns full board)"
+            )
+        else:
+            os.environ["TT_VISIBLE_DEVICES"] = str(device_id)
+            _logger.info(f"setup_runner_environment: TT_VISIBLE_DEVICES={device_id}")
 
     if settings.enable_telemetry:
         get_telemetry_client()
