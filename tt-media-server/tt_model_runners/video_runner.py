@@ -582,6 +582,21 @@ def _run_inference_loop(
             )
             if rank == 0:
                 encode_queue.put(_EncodeJob(task_id=req.task_id, error=str(e)))
+        finally:
+            # No rank may start the next request while another is still finishing
+            # this one. The broadcast above does not guarantee that: MPI lets the
+            # root return from ``bcast`` before every rank has received, so rank 0
+            # (and any rank that finished early) would run the next request's
+            # mesh collectives against devices whose hosts are still busy with
+            # this one. Seen on the quad with ref2va: ranks 2 and 3 were still
+            # JIT-compiling decoder kernels the other two hosts already had
+            # cached, ranks 0 and 1 entered the next request's vision tower, and
+            # their devices hit "device timeout in fetch queue wait, potential
+            # hang detected" after 120 s on a perfectly healthy mesh. A host-side
+            # barrier once per request is cheap and makes the loop lockstep at
+            # both ends; success and failure paths alike, so the barrier count
+            # stays symmetric across ranks.
+            comm.barrier()
 
 
 def run_all_ranks() -> None:

@@ -1234,3 +1234,100 @@ def _tiny_png_b64() -> str:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+class TestInferenceLoopRankBarrier:
+    """Every rank barriers exactly once per served request, after its inference, on success and
+    on failure alike.
+
+    ``bcast`` lets the root return before the other ranks have received, so without this barrier a
+    rank that finished early -- rank 0 included -- runs the next request's mesh collectives while a
+    lagging host is still finishing this one. On the quad (ref2va, 2026-09-04) ranks 2 and 3 were
+    still JIT-compiling decoder kernels the other two hosts had cached, ranks 0 and 1 entered the
+    next request's vision tower, and their devices reported "device timeout in fetch queue wait,
+    potential hang detected" on a healthy mesh. Skipped iterations barrier on no rank, so the count
+    stays symmetric: every rank sees the same ``skip`` flag from the same broadcast.
+    """
+
+    @staticmethod
+    def _comm(rank, script, order=None):
+        comm = MagicMock()
+        comm.Get_rank.return_value = rank
+        comm.bcast.side_effect = script
+        if order is not None:
+            comm.barrier.side_effect = lambda: order.append("barrier")
+        return comm
+
+    @staticmethod
+    def _run(comm, runner, shm, encode_queue):
+        import tt_model_runners.video_runner as vr
+
+        vr._shutdown = False
+        _run_inference_loop(comm, runner, shm, encode_queue)
+
+    def test_rank0_barriers_once_after_inference(self):
+        import queue as _queue
+
+        req = _make_request()
+        order = []
+        runner = MagicMock()
+        runner.requires_image_conditioning = False
+        runner.run.side_effect = lambda _reqs: (order.append("run"), MagicMock())[1]
+        comm = self._comm(0, [(req, None, False), (None, None, False)], order)
+        shm = MagicMock()
+        shm.read_request.side_effect = [req, None]
+        encode_queue: _queue.Queue = _queue.Queue()
+
+        self._run(comm, runner, shm, encode_queue)
+
+        assert order == ["run", "barrier"]
+        assert comm.barrier.call_count == 1
+        assert encode_queue.get_nowait().task_id == req.task_id
+
+    def test_rank0_barriers_even_when_inference_raises(self):
+        import queue as _queue
+
+        req = _make_request()
+        runner = MagicMock()
+        runner.requires_image_conditioning = False
+        runner.run.side_effect = RuntimeError("Out of Memory: DRAM buffer")
+        comm = self._comm(0, [(req, None, False), (None, None, False)])
+        shm = MagicMock()
+        shm.read_request.side_effect = [req, None]
+        encode_queue: _queue.Queue = _queue.Queue()
+
+        self._run(comm, runner, shm, encode_queue)
+
+        # The failing rank still joins the barrier, or the healthy ranks would wait on it forever.
+        assert comm.barrier.call_count == 1
+        job = encode_queue.get_nowait()
+        assert job.task_id == req.task_id
+        assert "Out of Memory" in job.error
+
+    def test_other_ranks_barrier_after_their_own_inference(self):
+        req = _make_request()
+        order = []
+        runner = MagicMock()
+        runner.run.side_effect = lambda _reqs: (order.append("run"), MagicMock())[1]
+        comm = self._comm(2, [(req, None, False), (None, None, False)], order)
+
+        self._run(comm, runner, None, None)
+
+        assert order == ["run", "barrier"]
+        assert comm.barrier.call_count == 1
+
+    def test_skipped_iteration_barriers_on_no_rank(self):
+        import queue as _queue
+
+        req = _make_request()
+        for rank in (0, 1):
+            runner = MagicMock()
+            comm = self._comm(rank, [(req, [], True), (None, None, False)])
+            shm = MagicMock()
+            shm.read_request.side_effect = [req, None]
+            encode_queue = _queue.Queue() if rank == 0 else None
+
+            self._run(comm, runner, shm if rank == 0 else None, encode_queue)
+
+            runner.run.assert_not_called()
+            comm.barrier.assert_not_called()
