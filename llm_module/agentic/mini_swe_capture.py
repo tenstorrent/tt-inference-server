@@ -99,9 +99,7 @@ def make_get_sb_environment_wrapper(original: Callable[..., Any]) -> Callable[..
     def wrapper(config: dict, instance: dict) -> Any:
         env = original(config, instance)
         try:
-            register_environment(
-                (instance or {}).get("instance_id", ""), env
-            )
+            register_environment((instance or {}).get("instance_id", ""), env)
         except Exception:  # noqa: BLE001 -- registration must never break a run
             logger.warning(
                 "mini-swe capture: failed to register environment", exc_info=True
@@ -116,7 +114,9 @@ def make_update_preds_file_wrapper(original: Callable[..., Any]) -> Callable[...
     """Wrap ``update_preds_file`` to backfill an empty crash result with the
     recovered in-container diff before it is persisted."""
 
-    def wrapper(output_path: Any, instance_id: str, model_name: str, result: str) -> Any:
+    def wrapper(
+        output_path: Any, instance_id: str, model_name: str, result: str
+    ) -> Any:
         env = pop_environment(instance_id)
         if not result and env is not None:
             recovered = recover_patch_from_env(env)
@@ -151,8 +151,7 @@ def install() -> bool:
         from minisweagent.run.benchmarks import swebench as runner
     except Exception:  # noqa: BLE001 -- absence of the dep must not break import
         logger.warning(
-            "mini-swe capture: minisweagent runner not importable; capture "
-            "inactive",
+            "mini-swe capture: minisweagent runner not importable; capture inactive",
             exc_info=True,
         )
         return False

@@ -27,7 +27,9 @@ class _FakeEnv:
     """Stands in for a live DockerEnvironment. ``execute`` returns the same dict
     shape the real environment does (``output`` / ``returncode``)."""
 
-    def __init__(self, diff: str, returncode: int = 0, raise_exc: Exception | None = None):
+    def __init__(
+        self, diff: str, returncode: int = 0, raise_exc: Exception | None = None
+    ):
         self._diff = diff
         self._rc = returncode
         self._raise = raise_exc
@@ -70,7 +72,10 @@ def test_recover_patch_nonzero_returncode_is_empty():
 
 
 def test_recover_patch_swallows_execute_exception():
-    assert cap.recover_patch_from_env(_FakeEnv(diff="", raise_exc=RuntimeError("boom"))) == ""
+    assert (
+        cap.recover_patch_from_env(_FakeEnv(diff="", raise_exc=RuntimeError("boom")))
+        == ""
+    )
 
 
 # --- integration level: full crash path through a faithful fake runner ---------
