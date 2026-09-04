@@ -30,7 +30,7 @@ templates:
       max_context: 1024
 - weights:
     - meta-llama/Llama-3.1-8B
-  impl: trainer_training_lora
+  impl: training_lora
   model_type: TRAINING
   inference_engine: FORGE
   status: EXPERIMENTAL

@@ -11,7 +11,7 @@ templates:
   version: "0.19.0"
   tt_metal_commit: "REPLACE_ME"
   docker_image: "tt-media-server-forge:local"
-  impl: trainer_training_lora
+  impl: training_lora
   model_type: TRAINING
   inference_engine: FORGE
   status: EXPERIMENTAL
