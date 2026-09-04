@@ -85,7 +85,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model", required=True, choices=valid_models)
     parser.add_argument("--workflow", required=True, choices=valid_workflows)
     parser.add_argument("--device", required=True, choices=valid_devices)
-    parser.add_argument("--service-port", type=int, default=8000)
+    parser.add_argument(
+        "--service-port",
+        type=int,
+        default=None,
+        help=(
+            "Service port of the inference server. Defaults to 443 when "
+            "--server-url is an https URL without an explicit port, else 8000."
+        ),
+    )
     parser.add_argument(
         "--server-url",
         type=str,
@@ -94,7 +102,8 @@ def parse_args() -> argparse.Namespace:
             "Base URL of an already-running inference server to target "
             "(e.g. 'http://192.168.1.10'). Overrides the default localhost "
             "host; combine with --service-port unless the URL carries an "
-            "explicit port. Propagated from v1 run.py --server-url through "
+            "explicit port (an https URL without a port defaults to 443). "
+            "Propagated from v1 run.py --server-url through "
             "the workflow dispatch."
         ),
     )
@@ -472,6 +481,13 @@ def parse_args() -> argparse.Namespace:
             args.server_url = normalize_server_url(args.server_url)
         except ValueError as e:
             parser.error(str(e))
+    if args.service_port is None:
+        # run.py always forwards --service-port when dispatching, so this
+        # default only fires on direct invocations: 443 for an https
+        # --server-url without a port, else 8000.
+        from utils.url_helpers import default_service_port
+
+        args.service_port = int(default_service_port(args.server_url))
     if args.prefix_cache and args.workflow not in ("benchmarks", "release"):
         parser.error(
             "--prefix-cache currently requires --workflow benchmarks or release "

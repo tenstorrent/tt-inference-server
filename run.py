@@ -171,15 +171,17 @@ def parse_arguments():
     parser.add_argument(
         "--service-port",
         type=str,
-        help="SERVICE_PORT",
-        default=os.getenv("SERVICE_PORT", "8000"),
+        default=None,
+        help="SERVICE_PORT. Defaults to the SERVICE_PORT env var, then 443 when "
+        "--server-url is an https URL without an explicit port, else 8000.",
     )
     parser.add_argument(
         "--server-url",
         type=str,
         default=None,
         help="Base URL of an already-running inference server to target (e.g. 'http://192.168.1.10'). "
-        "Overrides the default http://127.0.0.1. Use together with --service-port when not using --docker-server or --local-server.",
+        "Overrides the default http://127.0.0.1. Use together with --service-port when not using --docker-server or --local-server. "
+        "An explicit port in the URL wins; an https URL without a port defaults to 443 unless --service-port is given.",
     )
     parser.add_argument(
         "--bind-host",
@@ -698,6 +700,14 @@ def parse_arguments():
             args.server_url = normalize_server_url(args.server_url)
         except ValueError as e:
             parser.error(str(e))
+    if args.service_port is None:
+        # Precedence: explicit --service-port > SERVICE_PORT env > 443 for an
+        # https --server-url without a port > 8000.
+        from utils.url_helpers import default_service_port
+
+        args.service_port = os.getenv("SERVICE_PORT") or default_service_port(
+            args.server_url
+        )
     if args.custom_weights is not None:
         if not args.custom_weights.strip():
             parser.error("--custom-weights cannot be empty.")
