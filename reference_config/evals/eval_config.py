@@ -1007,7 +1007,7 @@ _eval_config_list = [
             EvalTask(
                 task_name="r1_gpqa_diamond",
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                max_concurrent=64,
+                max_concurrent=32,
                 # This vLLM server only exposes /v1/chat/completions; the legacy
                 # text /v1/completions endpoint returns 404. use_chat_api switches
                 # lm-eval's eval_class from "local-completions" to
@@ -1064,7 +1064,7 @@ _eval_config_list = [
                 agentic_eval_config=TerminalBenchEvalConfig(
                     dataset="terminal-bench/terminal-bench-2-1",
                     agent="terminus-2",
-                    n_concurrent_trials=64,
+                    n_concurrent_trials=32,
                     n_attempts=1,
                     n_tasks=89,
                     override_cpus=16,
@@ -1193,7 +1193,7 @@ _eval_config_list = [
                     sweagent_subset="verified",
                     dataset_split="test",
                     agent_backend="mini-swe-agent",
-                    n_concurrent_trials=64,
+                    n_concurrent_trials=32,
                     max_workers=24,
                     n_tasks=None,
                     temperature=1.0,
