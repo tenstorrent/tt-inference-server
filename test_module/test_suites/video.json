@@ -138,6 +138,57 @@
                     "description": "Video generation param test"
                 }
             ]
+        },
+        {
+            "models": [
+                "minimax_h3"
+            ],
+            "devices": [
+                "blackhole_galaxy"
+            ],
+            "num_of_devices": 1,
+            "test_cases": [
+                {
+                    "template": "MiniMaxH3CreateContractTest",
+                    "enabled": true,
+                    "description": "Validate the MiniMax-H3 V1 request contract",
+                    "targets": {
+                        "profile": "validation",
+                        "request_timeout": 60
+                    }
+                },
+                {
+                    "template": "MiniMaxH3LifecycleDownloadTest",
+                    "enabled": true,
+                    "description": "Validate successful MiniMax-H3 create, query, list, download, video, and audio lifecycle",
+                    "targets": {
+                        "poll_timeout": 1800,
+                        "download_timeout": 600,
+                        "sample_count": 8
+                    }
+                },
+                {
+                    "template": "MiniMaxH3CancelLifecycleTest",
+                    "enabled": true,
+                    "description": "Create and cancel a MiniMax-H3 job, then verify query and list state",
+                    "targets": {
+                        "poll_timeout": 300,
+                        "poll_interval": 1
+                    }
+                },
+                {
+                    "template": "MiniMaxH3VideoQualityTest",
+                    "enabled": true,
+                    "description": "Run one structural MiniMax-H3 video quality sample",
+                    "targets": {
+                        "samples_per_prompt": 1,
+                        "sample_count": 8,
+                        "enable_clip": false,
+                        "poll_timeout": 1800,
+                        "download_timeout": 600
+                    }
+                }
+            ]
         }
     ]
 }

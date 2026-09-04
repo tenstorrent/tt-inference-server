@@ -4508,6 +4508,26 @@ _eval_config_list = [
         ],
     ),
     EvalConfig(
+        hf_model_repo="MiniMax-H3",
+        tasks=[
+            EvalTask(
+                task_name="minimax_h3_video_quality",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    # MiniMax-H3 quality is graded by its dedicated workflow
+                    # runner. This metadata entry satisfies the shared
+                    # EVALS/RELEASE registration contract.
+                    published_score=0.0,
+                    published_score_ref="https://huggingface.co/MiniMaxAI/MiniMax-H3",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
         hf_model_repo="Qwen/Qwen2.5-Coder-32B-Instruct",
         tasks=[
             EvalTask(
