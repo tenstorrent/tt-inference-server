@@ -104,8 +104,7 @@ class BaseService(ABC):
                     seg_req.stream = False
                     segment_requests.append(seg_req)
                 tasks = [
-                    asyncio.ensure_future(self.process(req))
-                    for req in segment_requests
+                    asyncio.ensure_future(self.process(req)) for req in segment_requests
                 ]
                 # Each segment result only knows its own window length, but
                 # `duration` is read by clients (and the benchmark harness) as the

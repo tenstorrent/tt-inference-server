@@ -204,7 +204,9 @@ def test_multibyte_character_split_across_tokens_is_not_corrupted(qwen_runner_mo
     marker = qwen_runner_module.TTQwen3AsrRunner._ASR_MARKER
     text = "木曜日停戦会談は何の進展もないまま終了しました。"
     # 2 bytes per token guarantees every 3-byte kanji straddles a boundary.
-    stream = _bound_stream_window_text(qwen_runner_module, _payloads_for(marker, text, 2))
+    stream = _bound_stream_window_text(
+        qwen_runner_module, _payloads_for(marker, text, 2)
+    )
 
     deltas = list(stream(np.zeros(SR, dtype=np.float32), 128))
 
@@ -216,7 +218,9 @@ def test_ascii_still_streams_incrementally(qwen_runner_module):
     """The placeholder guard must not batch single-byte text into one chunk."""
     marker = qwen_runner_module.TTQwen3AsrRunner._ASR_MARKER
     text = "the quick brown fox"
-    stream = _bound_stream_window_text(qwen_runner_module, _payloads_for(marker, text, 3))
+    stream = _bound_stream_window_text(
+        qwen_runner_module, _payloads_for(marker, text, 3)
+    )
 
     deltas = list(stream(np.zeros(SR, dtype=np.float32), 128))
 
@@ -229,7 +233,9 @@ def test_no_text_is_dropped_when_generation_ends(qwen_runner_module):
     marker = qwen_runner_module.TTQwen3AsrRunner._ASR_MARKER
     text = "終了"
     # 1 byte per token: the final character is incomplete until the very last id.
-    stream = _bound_stream_window_text(qwen_runner_module, _payloads_for(marker, text, 1))
+    stream = _bound_stream_window_text(
+        qwen_runner_module, _payloads_for(marker, text, 1)
+    )
 
     deltas = list(stream(np.zeros(SR, dtype=np.float32), 128))
 
