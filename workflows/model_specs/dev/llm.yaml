@@ -611,6 +611,16 @@ templates:
         tool-call-parser: gemma4
         default-chat-template-kwargs: '{"enable_thinking": true}'
         reasoning-parser: gemma4
+        # Scheduler-driven chunked prefill: the spec default pins the token
+        # budget to max_context (49152), which admits any whole prompt in one
+        # step and makes chunked prefill inert. 4096 splits long prompts into
+        # fixed-size chunks (bounded activation transients, a bounded compiled
+        # per-shape program set, and TTFT for queued requests). Must stay a
+        # multiple of 1024 (the model's resumed-prefill alignment: sliding
+        # window and chunked-SDPA chunk sizes). Requires vllm-tt-plugin >=
+        # bef89e4 (capability-gated chunked prefill) and the tt-metal autoport
+        # with supports_chunked_prefill; older plugins force it off anyway.
+        max_num_batched_tokens: '4096'
   status: EXPERIMENTAL
   has_builtin_warmup: true
   env_vars:
