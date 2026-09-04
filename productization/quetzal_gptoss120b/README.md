@@ -52,4 +52,39 @@ scored result. No patch. PCC **not measured**.
   the qualified Llama row) targeting the S8192 candidate. **Not** wired into `dev/llm.yaml` here.
 - `quetzal_gptoss120b_serve_attempt_76030.log` — raw serve traceback.
 
+## Update — LEGITIMATE unblock attempt (job 76034, real device receipt)
+
+Per coordinator direction, the topology-admission gate was legitimately unblocked (no
+fabricated receipt). Fetched the qualified quetzal source `071e23cd` (which ships the
+producer), cloned it in-allocation, and ran the **real** `serving.topology_evidence`
+bounded-mesh device smoke (mesh opened/closed/synchronized, exit 0) →
+`serving.topology_admission`. This produced a genuine
+`quetzal.topology-admission-result.v1` receipt (Ring/links=2, chip_count 4, mesh [2,2],
+descriptor `f4c9fb5a…`, zero holders) whose pinned evidence SHAs (`smoke bf3311c6`,
+`selection 1852bfcc`, `emit f296b704`) match the consumer's hardcoded constants.
+
+With that receipt, the canonical serve advanced through **three** fail-closed gates:
+
+1. ✅ topology admission (real device receipt)
+2. ✅ quetzal source identity — installed quetzal `3a3873fe` (the candidate's actual
+   compile `source_git_commit`) and set `TT_QUETZAL_COMMIT_SHA=3a3873fe` truthfully
+3. ✅ bundle-manifest trusted-root proof (`QUETZAL_BUNDLE_MANIFEST_SHA256=012daa4f…`)
+
+**New terminal blocker** — `run_vllm_api_server.py:512 _validate_quetzal_auxiliary_references`:
+`RuntimeError: QUETZAL_AUXILIARY_ROOTS_JSON is invalid JSON`. The S8192 candidate's v2
+bundle declares an auxiliary `streamed_cache` (`openai_gpt-oss-120b-streamed-cache`,
+sha256 `2eef319a…`, 217 MoE expert tensorbins) whose digest-addressed read-only root is
+**not staged** on `/mnt` (only the unrelated S1024 package's `2b2e528a` root exists).
+Behind it, the candidate's `qualification_manifest` has an **empty `charter_pcc`**, so the
+validator would next raise *"Quetzal TT-Metal runtime mismatch: package requires None"*.
+Both are because the S8192 artifact is an unsealed **investigating** candidate — its own
+manifest says "canonical TTIS endpoint, bounded SWE … remain". Sealing it (staging the
+auxiliary, forging a `charter_pcc`) is a qualification/trusted-root step and was **not**
+fabricated.
+
+Net: the topology gate is genuinely cleared; the wall is now the artifact's unsealed
+qualification state, not the topology contract. See
+`quetzal_gptoss120b_swe_LEGIT_UNBLOCK_76034_20260904.json` and
+`topology_receipt_and_serve_logs_76034.txt`.
+
 Do **not** auto-merge. This documents a blocker; it does not claim qualification.
