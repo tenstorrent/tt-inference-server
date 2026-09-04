@@ -4814,25 +4814,29 @@ _eval_config_list = [
                     "timeout": "3600",
                 },
                 # Same thinking-mode sampling as the GPQA task; stream=false is
-                # required by lm-eval's local-chat-completions parser. 32K of
-                # output leaves ~16K for the 5-shot prompt inside the QB2
-                # 49152-token serving window.
+                # required by lm-eval's local-chat-completions parser. 8K of
+                # output bounds per-question thinking: with the 32K budget of a
+                # first attempt the model averaged ~650 s/question on batch-1
+                # QB2 hardware (tt-shield run 33777700648), which no sample cap
+                # can rescue. Truncated reasoning costs some accuracy; treat
+                # the score as indicative.
                 gen_kwargs={
                     "stream": "false",
-                    "max_gen_toks": 32768,
+                    "max_gen_toks": 8192,
                     "until": [],
                     "do_sample": "true",
                     "temperature": 1.0,
                     "top_k": 20,
                     "top_p": 0.95,
                 },
-                # Absolute counts, not fractions: mmlu_pro has ~12K test
-                # questions, so even 0.05 would be ~600 sequential batch-1
-                # reasoning samples. 40 keeps a nightly run bounded; treat the
-                # small-N score as indicative, not a tight accuracy gate.
+                # mmlu_pro is a GROUP of 14 subject subtasks and lm-eval
+                # applies the limit PER SUBTASK: an int here multiplies by 14.
+                # 3/subtask = ~42 questions per nightly run, 1/subtask = 14 on
+                # smoke. (A first attempt set 40, which became 560 scheduled
+                # samples and a ~99-hour ETA.)
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 40,
-                    EvalLimitMode.SMOKE_TEST: 4,
+                    EvalLimitMode.CI_NIGHTLY: 3,
+                    EvalLimitMode.SMOKE_TEST: 1,
                 },
             ),
         ],
