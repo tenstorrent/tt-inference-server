@@ -260,6 +260,52 @@ def _add_swebench_harness_patch_to_env(
     return patched_env
 
 
+def _write_mini_swe_capture_patch(output_dir: Path) -> Path:
+    """Generate a sitecustomize that installs the in-container patch-capture shim.
+
+    The pinned mini-swe-agent runner discards a real container ``git diff`` on any
+    mid-run crash (``process_instance`` sets ``result = ""`` in its exception
+    handler) and its ``--rm`` container is then torn down, so completed agent work
+    is scored as an empty patch. ``llm_module.agentic.mini_swe_capture`` wraps the
+    runner's ``get_sb_environment`` / ``update_preds_file`` seams to snapshot that
+    diff while the container is still alive. This is injected into the agent
+    subprocess on ``PYTHONPATH`` (the same committed mechanism as the harness
+    patch above); ``repo_root`` is already on the agent's ``PYTHONPATH``, so the
+    ``llm_module`` import resolves.
+    """
+    patch_dir = output_dir / "mini_swe_capture_patch"
+    patch_dir.mkdir(parents=True, exist_ok=True)
+    patch_path = patch_dir / "sitecustomize.py"
+    patch_path.write_text(
+        """
+# Injected via PYTHONPATH by llm_module.agentic.swebench for the mini-swe-agent
+# subprocess. Recovers an in-container agent edit that the pinned runner would
+# otherwise discard as an empty patch on a mid-run crash. Real logic lives in the
+# committed module llm_module/agentic/mini_swe_capture.py.
+try:
+    from llm_module.agentic.mini_swe_capture import install as _ttis_install
+
+    _ttis_install()
+except Exception:  # noqa: BLE001
+    pass
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return patch_dir
+
+
+def _add_mini_swe_capture_patch_to_env(
+    output_dir: Path, env: dict[str, str]
+) -> dict[str, str]:
+    patched_env = dict(env)
+    patch_dir = _write_mini_swe_capture_patch(output_dir)
+    python_path = patched_env.get("PYTHONPATH")
+    patched_env["PYTHONPATH"] = (
+        str(patch_dir) if not python_path else f"{patch_dir}{os.pathsep}{python_path}"
+    )
+    return patched_env
+
+
 def _write_sweagent_model_config(config: SWEbenchRunConfig) -> Path:
     model_config: dict[str, Any] = {
         "agent": {
@@ -735,10 +781,15 @@ def run(config: SWEbenchRunConfig) -> int:
         mini_cmd = build_mini_sweagent_command(
             config, mini_config_path, mini_output_dir
         )
+        # Agent-only env: inject the in-container patch-capture shim so a mid-run
+        # crash recovers the agent's edit instead of discarding it as an empty
+        # patch. Kept separate from ``env`` so the later verifier step's harness
+        # patch is unaffected.
+        agent_env = _add_mini_swe_capture_patch_to_env(config.output_dir, env)
         rc = run_with_progress(
             mini_cmd,
             cwd=config.output_dir,
-            env=env,
+            env=agent_env,
             probe=make_swebench_probe(mini_output_dir, _resolve_total(config)),
             label=config.task_name,
             per_task_budget_s=config.mini_container_timeout_sec,
