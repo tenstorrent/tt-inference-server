@@ -2915,6 +2915,25 @@
                     }
                 }
             }
+        ],
+        "p300x2": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 5.0,
+                        "tput_user": 300.0,
+                        "tput": 9100.0
+                    }
+                }
+            }
         ]
     },
     "gemma-1.1-2b-it": {
