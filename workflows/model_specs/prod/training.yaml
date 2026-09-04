@@ -10,8 +10,8 @@ templates:
     - meta-llama/Llama-3.1-8B
   version: "0.19.0"
   tt_metal_commit: "REPLACE_ME"
-  docker_image: "ghcr.io/tenstorrent/tt-studio/studio_images:training-llama-3.1-8b-20260828"
-  impl: training_lora
+  docker_image: "tt-media-server-forge:local"
+  impl: trainer_training_lora
   model_type: TRAINING
   inference_engine: FORGE
   status: EXPERIMENTAL
@@ -28,5 +28,8 @@ templates:
       max_concurrency: 1
       max_context: 1024
     - device: P300
+      max_concurrency: 1
+      max_context: 1024
+    - device: P300X2          # add this
       max_concurrency: 1
       max_context: 1024

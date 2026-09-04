@@ -1614,6 +1614,12 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_2.value,
         "max_batch_size": 1,
     },
+    (ModelRunners.TRAINER_TRAINING_LORA, DeviceTypes.P300X2): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
+        "max_batch_size": 1,
+    },
 }
 
 for runner in [
