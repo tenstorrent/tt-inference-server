@@ -4823,12 +4823,6 @@ _eval_config_list = [
         ],
     ),
     EvalConfig(
-        # TTS evals do not go through an lm-eval harness: run_tts_eval drives the
-        # in-repo TTSQualityTest (LibriTTS-R text -> /v1/audio/speech -> whisper-base
-        # -> WER) and computes accuracy_check itself from DEFAULT_WER_THRESHOLD. This
-        # entry supplies the report metadata that task carries (task name, displayed
-        # target, tolerance); workflow_venv_type and score_func are inert for TTS and
-        # mirror the speecht5 entry above only for consistency.
         hf_model_repo="coqui/XTTS-v2",
         tasks=[
             EvalTask(
@@ -4838,9 +4832,6 @@ _eval_config_list = [
                 max_concurrent=None,
                 apply_chat_template=False,
                 score=EvalTaskScore(
-                    # Displayed target on the same 0-100 intelligibility scale as the
-                    # reported score (100 * (1 - WER)), so 80.0 is the equivalent of the
-                    # eval's 20% WER gate. Not a literature figure - hence no ref.
                     published_score=80.0,
                     published_score_ref="",
                     score_func=lambda results: 0.0,

@@ -28,27 +28,24 @@ WARMUP_TIMEOUT_SECONDS = 6000
 
 # XTTS-v2 was trained on utterances of <= ~250 characters; longer single-shot prompts
 # audibly degrade (multi-second mid-utterance silences, rushed pace) and the model hard-caps
-# at ~400 text tokens per generate. Long request texts are therefore split at sentence
-# boundaries into chunks of at most this size (utils/text_chunking.py, shared with the
-# speecht5 runner) and synthesized per chunk, with a short silence stitched between chunks.
+# at ~400 text tokens per generation. Long request texts are therefore split at sentence
+# boundaries into chunks of at most this size (utils/text_chunking.py) and synthesized per chunk,
+# with a short silence stitched between chunks.
 CHUNK_CHAR_LIMIT = 240
 INTER_CHUNK_SILENCE_SECONDS = 0.25
 
 # Default reference voice: the coqui/XTTS-v2 HF repo ships language sample clips; the
-# English one is used when no XTTS_REF_AUDIO is configured, so the documented
-# run.py --docker-server flow works with zero extra configuration.
+# English one is the server's default voice; per-request `reference_audio` overrides it.
 DEFAULT_VOICE_HF_FILE = "samples/en_sample.wav"
 
 # Per-request reference clips are truncated to REF_CLIP_MAX_SECONDS (coqui's
-# gpt_cond_len default — stock coqui conditions on up to 30 s, not just 6) and then
-# quantized DOWN to whole REF_CLIP_SECONDS chunks (clips under one chunk are padded up
-# to it). Blocks 1+2 JIT-compile per shape: full 6 s chunks reuse the shape warmup
-# compiled, and quantizing means Block 2 sees at most five clip durations instead of
-# one ~40 s first-compile per unique upload length.
+# gpt_cond_len default — stock coqui conditions on up to 30 s) and then quantized
+# DOWN to whole REF_CLIP_SECONDS chunks (clips under one chunk are padded up
+# to it).
 REF_CLIP_SECONDS = 6.0
 REF_CLIP_MAX_SECONDS = 30.0
 # Computed voices are two small host tensors (~130 KB); cache per worker, keyed by the
-# decoded clip's content hash, so repeat requests with the same voice skip Blocks 1+2.
+# decoded clip's content hash.
 VOICE_CACHE_SIZE = 16
 
 
@@ -94,42 +91,31 @@ class XttsV2Runner(BaseMetalDeviceRunner):
                     f"Device {self.device_id}: Device cleanup failed: {str(e)}"
                 ) from e
 
-    def _resolve_reference_audio_path(self) -> str:
-        """Reference-voice precedence: $XTTS_REF_AUDIO (explicit) > an en_sample.wav in
-        the downloaded weights dir > fetch the coqui repo's English sample from HF hub.
-        The fallbacks make the stock deployment flow work without extra env/mounts."""
-        ref_path = os.environ.get("XTTS_REF_AUDIO")
-        if ref_path:
-            if not os.path.exists(ref_path):
-                raise RuntimeError(f"XTTS_REF_AUDIO does not exist: {ref_path}")
-            return ref_path
+    def _load_reference_audio(self):
+        """Load the default-voice clip as (tensor, sample_rate).
+
+        The coqui repo's English sample voice: from the downloaded weights snapshot when
+        present, else a one-time (HF-cached) hub fetch. Per-request voices come in via
+        the request's `reference_audio` field instead."""
+        ref_path = None
         if settings.model_weights_path:
             candidate = os.path.join(settings.model_weights_path, DEFAULT_VOICE_HF_FILE)
             if os.path.exists(candidate):
-                return candidate
-        from huggingface_hub import hf_hub_download
+                ref_path = candidate
+        if ref_path is None:
+            from huggingface_hub import hf_hub_download
 
-        self.logger.info(
-            f"Device {self.device_id}: XTTS_REF_AUDIO not set; fetching default voice "
-            f"{DEFAULT_VOICE_HF_FILE} from coqui/XTTS-v2"
-        )
-        return hf_hub_download(repo_id="coqui/XTTS-v2", filename=DEFAULT_VOICE_HF_FILE)
-
-    def _load_reference_audio(self):
-        """Load the reference voice clip as (tensor, sample_rate).
-
-        Supports a serialized torch tensor (.pt, assumed 22050 Hz) or any
-        soundfile-readable audio file (.wav etc.), downmixed to mono."""
-        ref_path = self._resolve_reference_audio_path()
-        if ref_path.endswith(".pt") or ref_path.endswith(".pth"):
-            ref_audio = torch.load(ref_path, map_location="cpu", weights_only=True)
-            sample_rate = 22050
-        else:
-            data, sample_rate = sf.read(ref_path, dtype="float32")
-            if data.ndim > 1:
-                data = data.mean(axis=1)  # downmix to mono
-            ref_audio = torch.from_numpy(data)
-        return ref_audio, sample_rate
+            self.logger.info(
+                f"Device {self.device_id}: fetching default voice "
+                f"{DEFAULT_VOICE_HF_FILE} from coqui/XTTS-v2"
+            )
+            ref_path = hf_hub_download(
+                repo_id="coqui/XTTS-v2", filename=DEFAULT_VOICE_HF_FILE
+            )
+        data, sample_rate = sf.read(ref_path, dtype="float32")
+        if data.ndim > 1:
+            data = data.mean(axis=1)  # downmix to mono
+        return torch.from_numpy(data), sample_rate
 
     @log_execution_time(
         "XTTS-v2 warmup",
@@ -156,10 +142,7 @@ class XttsV2Runner(BaseMetalDeviceRunner):
                 )
 
             # Checkpoint precedence: explicit $XTTS_CKPT (dev override) > the server's own
-            # weights-download location (settings.model_weights_path holds the downloaded
-            # coqui/XTTS-v2 snapshot when the generic weights step ran; it may also be the
-            # bare HF repo id, which the exists() check skips) > None, which lets the model
-            # class fetch from HF hub itself.
+            # weights-download location.
             ckpt_path = os.environ.get("XTTS_CKPT")
             if not ckpt_path and settings.model_weights_path:
                 candidate = os.path.join(settings.model_weights_path, "model.pth")
@@ -226,7 +209,7 @@ class XttsV2Runner(BaseMetalDeviceRunner):
         data = data.mean(axis=1)  # downmix to mono
         if len(data) < chunk:  # short clip: pad to the warmup-compiled 6 s shape
             data = np.pad(data, (0, chunk - len(data)))
-        else:  # quantize down to whole 6 s chunks so Block 1 stays on the warm shape
+        else:  # quantize down to whole 6 s chunks
             data = data[: (len(data) // chunk) * chunk]
         t0 = time.time()
         voice = self.pipeline.compute_voice(torch.from_numpy(data), sr)

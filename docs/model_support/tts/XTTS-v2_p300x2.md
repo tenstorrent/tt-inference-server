@@ -53,7 +53,6 @@ speecht5).
 
 | Env var | Required | Purpose |
 |---------|----------|---------|
-| `XTTS_REF_AUDIO` | no | Reference voice clip the server clones at warmup (a `.wav`, or a torch-saved tensor `.pt` @ 22050 Hz). Defaults to the English sample voice shipped in the coqui/XTTS-v2 HF repo (`samples/en_sample.wav`). For voice cloning, use a clean, mono clip of **~6 seconds** — short or noisy clips audibly degrade output. |
 | `XTTS_CKPT` | no | Explicit path to `model.pth`. Defaults to the server's downloaded weights, else the model fetches from HF hub. |
 
 Notes:
@@ -64,17 +63,19 @@ Notes:
   Region variants normalize to their base code (`pt-br` → `pt`, `zh-cn` → `zh`); an
   unsupported code is rejected at the API (422). The ja/ko/zh romanizers
   (`cutlet`/`hangul-romanize`/`pypinyin`) ship in the image and load on a language's
-  first request. The reference voice is cloned across languages — see `XTTS_REF_AUDIO`.
+  first request. The default (or per-request) reference voice is cloned across languages.
 - Long request texts are split at sentence boundaries (including CJK `。！？`) and
   synthesized per chunk with a short stitched pause. The per-chunk budget follows coqui's
   per-language character limits (en 240, ja 71, zh 82, ko 95, …), so non-Latin scripts
   produce more, shorter chunks — one request may take several seconds per ~10 s of audio.
 - Fixing the request's `seed` makes identical text reproduce identical audio; omitting it draws randomly per request.
-- **Voice cloning:** the default voice comes from `XTTS_REF_AUDIO` at warmup; a request can
+- **Voice cloning:** the default voice is the English sample voice shipped in the
+  coqui/XTTS-v2 HF repo (`samples/en_sample.wav`), computed at warmup; a request can
   override it by sending `reference_audio` (a base64-encoded audio file, ~6 s clean mono
-  recommended). The clip is normalized to 6 s and the computed voice is cached per worker by
-  content hash, so the first request with a new voice pays the conditioning cost (~1 s) and
-  repeats don't. `speaker_id` is rejected (no named-speaker registry yet).
+  recommended). Up to the first 30 s of the clip are used, in whole 6 s chunks, and the
+  computed voice is cached per worker by content hash, so the first request with a new voice
+  pays the conditioning cost (~1 s) and repeats don't. `speaker_id` is rejected (no
+  named-speaker registry yet).
 - All four workers warm up in parallel on first start (each JIT-compiles into its own
   `built/<device_id>` cache), so first-start warmup is CPU-bound and slower than a single-chip
   start; subsequent starts hit the caches.

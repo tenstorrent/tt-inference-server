@@ -147,16 +147,6 @@ templates:
       max_concurrency: 1
       max_context: 65536  # 64 * 1024
       default_impl: true
-  status: EXPERIMENTAL
-
-- weights:
-    - coqui/XTTS-v2
-  impl: xtts-v2
-  min_disk_gb: 15
-  min_ram_gb: 8
-  model_type: TEXT_TO_SPEECH
-  inference_engine: MEDIA
-  device_model_specs:
     - device: P150
       max_concurrency: 1
       max_context: 65536  # 64 * 1024

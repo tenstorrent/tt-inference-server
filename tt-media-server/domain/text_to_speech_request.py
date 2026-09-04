@@ -43,10 +43,8 @@ class TextToSpeechRequest(BaseRequest):
     )
     speaker_id: Optional[str] = None  # ID for pre-configured speaker embeddings
 
-    # Voice cloning (XTTS-v2): base64-encoded reference AUDIO FILE (any soundfile-readable
-    # format) whose voice the synthesis should clone. The runner normalizes the clip to
-    # ~6 s and caches the computed voice by content hash, so repeats are free. Distinct
-    # from speaker_embedding, which carries a precomputed embedding vector (SpeechT5).
+    # Voice cloning: base64-encoded reference AUDIO FILE (any soundfile-readable
+    # format) whose voice the synthesis should clone.
     reference_audio: Optional[str] = None
 
     @field_validator("reference_audio", mode="before")
@@ -57,8 +55,7 @@ class TextToSpeechRequest(BaseRequest):
         if not isinstance(v, str) or not v.strip():
             raise ValueError("reference_audio must be a base64-encoded audio file")
         # Cap the base64 string at 16 MB (~12 MB of audio file bytes after decoding).
-        # Deliberately generous: a 6 s WAV is ~1 MB, but the runner only conditions on
-        # the first 6 s anyway.
+        # Deliberately generous: a 30 s WAV is ~5 MB.
         if len(v) > 16 * 1024 * 1024:
             raise ValueError("reference_audio exceeds the 16 MB base64 limit")
         return v
@@ -81,11 +78,8 @@ class TextToSpeechRequest(BaseRequest):
             )
         return base
 
-    # Optional sampling seed for stochastic TTS models (e.g. XTTS-v2): fixing it makes
+    # Optional sampling seed for stochastic TTS models: fixing it makes
     # identical text reproduce identical audio. None lets the model draw randomly.
-    # Runners with deterministic synthesis (e.g. SpeechT5) ignore it. Bounded so an
-    # out-of-range value 422s at the API instead of overflowing torch's generator
-    # mid-inference (runners may add small chunk offsets on top).
     seed: Optional[int] = Field(default=None, ge=0, lt=2**31)
 
     # Response format: wav (default), mp3, ogg, json, or verbose_json

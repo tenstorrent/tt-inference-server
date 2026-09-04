@@ -1,5 +1,5 @@
 {
-    "_description": "Test suites for TTS model category (SpeechT5, XTTS-v2)",
+    "_description": "Test suites for TTS model category",
     "_category": "TTS",
     "test_matrices": [
         {

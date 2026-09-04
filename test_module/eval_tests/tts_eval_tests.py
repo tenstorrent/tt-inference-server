@@ -184,11 +184,6 @@ def run_tts_eval(ctx: MediaContext) -> Block:
     )
     require_health(ctx, HardwareRequirement.ANY_CHIP)
 
-    # ctx.all_params is [] when the model has no EvalConfig registered in
-    # reference_config/evals/eval_config.py (command_factory._resolve_eval_config
-    # returns None and logs a warning). Report that as an NA block with the reason,
-    # the way a missing toolchain is reported below, instead of surfacing an
-    # AttributeError from .tasks on a list.
     task = _resolve_eval_task(ctx)
     if task is None:
         reason = (
