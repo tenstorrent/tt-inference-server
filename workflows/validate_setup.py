@@ -161,10 +161,13 @@ def validate_runtime_args(model_spec, runtime_config):
         from reference_config.agentic_traces.agentic_traces_config import (
             TraceSource,
             default_run_specs,
-            get_agentic_traces_config,
+            get_agentic_traces_config_or_template,
         )
 
-        agentic_traces_config = get_agentic_traces_config(model_spec)
+        # The _or_template variant borrows the Kimi K2.7-Code config for
+        # requirements-driven runs; a plain --workflow agentic_traces still
+        # fails here when the model has no entry.
+        agentic_traces_config = get_agentic_traces_config_or_template(model_spec)
         assert agentic_traces_config is not None, (
             f"Model:={model_spec.model_name} (model_id={model_spec.model_id}) has "
             "no AGENTIC_TRACES_CONFIGS entry. Add one to "

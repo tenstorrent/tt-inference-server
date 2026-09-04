@@ -379,3 +379,100 @@ def test_target_pack_delegates_unspecified_content(pack):
     assert pack.extra_spec_metadata_fields() == (
         TenstorrentTargetPack().extra_spec_metadata_fields()
     )
+
+
+# --- agentic traces: template fallback for off-catalog models ----------------
+
+_KIMI_TEMPLATE_MODEL_ID = "id_tt-transformers_Kimi-K2.7-Code_super_cluster"
+
+
+def _synthesized_spec():
+    return TenstorrentModelSpecProvider().synthesize(
+        model_name="acme/tiny-llm",
+        hf_model_repo="acme/tiny-llm",
+        device="super_cluster",
+        max_context=8192,
+        max_concurrency=16,
+    )
+
+
+def test_agentic_traces_borrows_kimi_template_for_synthesized_spec():
+    from reference_config.agentic_traces.agentic_traces_config import (
+        AGENTIC_TRACES_CONFIGS,
+        get_agentic_traces_config,
+        get_agentic_traces_config_or_template,
+    )
+
+    spec = _synthesized_spec()
+    # Strict lookup still refuses: the synthesized model_id has no entry.
+    assert get_agentic_traces_config(spec) is None
+
+    config = get_agentic_traces_config_or_template(spec)
+    template = AGENTIC_TRACES_CONFIGS[_KIMI_TEMPLATE_MODEL_ID]
+    assert config is not None
+    assert config.model_id == spec.model_id  # retargeted, not Kimi's id
+    assert config.runs == template.runs
+    assert config.inferencex_git_ref == template.inferencex_git_ref
+
+
+def test_agentic_traces_template_fallback_leaves_catalog_models_strict():
+    from types import SimpleNamespace
+
+    from reference_config.agentic_traces.agentic_traces_config import (
+        get_agentic_traces_config_or_template,
+    )
+
+    # A catalog spec with no entry still gets None outside requirements mode:
+    # a plain --workflow agentic_traces refuses rather than silently measuring
+    # against a borrowed run shape. (pytest's argv has no --requirements-json.)
+    spec = SimpleNamespace(
+        model_id="id_tt-transformers_Some-Model_t3k",
+        impl=SimpleNamespace(impl_id="tt-transformers"),
+    )
+    assert get_agentic_traces_config_or_template(spec) is None
+
+
+def test_agentic_traces_borrows_template_for_catalog_spec_in_requirements_mode(
+    monkeypatch,
+):
+    import sys
+    from types import SimpleNamespace
+
+    from reference_config.agentic_traces.agentic_traces_config import (
+        get_agentic_traces_config_or_template,
+    )
+
+    # Being in the catalog says the model can be served, not that it is
+    # onboarded to agentic traces -- a model added for evals has no entry. A
+    # requirements document that asks for an agentic sweep has already said it
+    # wants one, so it borrows rather than refusing.
+    spec = SimpleNamespace(
+        model_id="id_tt-transformers_Some-Model_t3k",
+        impl=SimpleNamespace(impl_id="tt-transformers"),
+    )
+    monkeypatch.setattr(sys, "argv", ["run.py", "--requirements-json", "doc.json"])
+    config = get_agentic_traces_config_or_template(spec)
+    assert config is not None
+    assert config.model_id == spec.model_id  # retargeted, not Kimi's id
+
+
+def test_agentic_traces_template_fallback_preserves_own_entry():
+    from types import SimpleNamespace
+
+    from reference_config.agentic_traces.agentic_traces_config import (
+        AGENTIC_TRACES_CONFIGS,
+        get_agentic_traces_config_or_template,
+    )
+
+    spec = SimpleNamespace(model_id=_KIMI_TEMPLATE_MODEL_ID, impl=None)
+    assert (
+        get_agentic_traces_config_or_template(spec)
+        is AGENTIC_TRACES_CONFIGS[_KIMI_TEMPLATE_MODEL_ID]
+    )
+
+
+def test_requirements_pack_agentic_traces_config_uses_template(pack):
+    spec = _synthesized_spec()
+    config = pack.agentic_traces_config(spec)
+    assert config is not None
+    assert config.model_id == spec.model_id
