@@ -220,6 +220,13 @@ class SWEbenchEvalConfig:
     shuffle: bool = True
     random_delay_multiplier: float = 0.3
     instance_ids_map: Dict[EvalLimitMode, List[str]] = field(default_factory=dict)
+    # Opt-in reproducibility pin (see SWEbenchRunConfig). ``dataset_revision``
+    # pins the SWE-bench dataset to an exact, immutable Hub revision;
+    # ``expected_digest`` is the sha256 over the canonical JSON of the selected,
+    # ordered rows and, when set, is enforced fail-closed before any agent runs.
+    # Both None (default) leaves eval behavior unchanged.
+    dataset_revision: Optional[str] = None
+    expected_digest: Optional[str] = None
 
 
 @dataclass(frozen=True)

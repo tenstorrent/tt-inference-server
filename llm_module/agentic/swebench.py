@@ -4,12 +4,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
 import subprocess
 import sys
 import re
+import tempfile
 import time
 
 from dataclasses import dataclass, field
@@ -102,10 +104,148 @@ class SWEbenchRunConfig:
     # (standalone ``run_agentic.py`` re-execs into the EVALS_AGENTIC venv); set
     # on the release path where the harness runs as a child of the engine.
     venv_python: Optional[Path] = None
+    # Opt-in reproducibility pin. Off by default (both None): when
+    # ``dataset_revision`` is None the run path below is byte-for-byte
+    # unchanged. When set, the SWE-bench dataset is loaded at that exact,
+    # immutable Hub revision, the selected rows are materialized into a local
+    # content-addressed snapshot, and both the agent and the grading harness
+    # read that snapshot instead of a mutable Hub alias -- so a graded run is
+    # reproducible and comparable across runs. ``expected_digest`` is the
+    # sha256 over the canonical JSON of the selected, ordered rows; when set it
+    # is enforced and the run fails closed before any agent starts if the
+    # pinned revision no longer yields those exact bytes.
+    dataset_revision: Optional[str] = None
+    expected_digest: Optional[str] = None
 
 
 def _interpreter(config: SWEbenchRunConfig) -> Path:
     return Path(config.venv_python) if config.venv_python else Path(sys.executable)
+
+
+def _load_hf_dataset(name: str, *, split: str, revision: Optional[str] = None):
+    """Thin, patchable wrapper over ``datasets.load_dataset``.
+
+    ``datasets`` is imported lazily so the dependency is only required when
+    dataset pinning is actually requested, and so tests can patch this single
+    seam without installing it.
+    """
+    from datasets import load_dataset
+
+    return load_dataset(name, split=split, revision=revision)
+
+
+def _canonical_selected_rows(rows: list[dict[str, Any]]) -> bytes:
+    """Deterministic byte image of the selected rows for content addressing."""
+    return json.dumps(
+        rows, ensure_ascii=True, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+
+
+def _prepare_pinned_swebench_dataset(
+    config: SWEbenchRunConfig,
+) -> tuple[Optional[str], Optional[str]]:
+    """Opt-in: materialize one revision-pinned, content-bound local dataset.
+
+    Returns ``(dataset_source, content_sha256)``. When pinning is off (no
+    ``dataset_revision``) returns ``(None, None)`` and the caller's run path is
+    unchanged -- the agent and harness keep resolving the mutable Hub alias
+    exactly as before. When a revision is set, the dataset is loaded at that
+    exact revision, the selected rows are written to a local snapshot directory
+    that both consumers read (so neither independently re-resolves the alias),
+    and a provenance receipt is emitted next to it. The run fails closed only
+    when ``expected_digest`` is set and the pinned revision no longer produces
+    those exact selected bytes.
+    """
+    if not config.dataset_revision:
+        return None, None
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+", config.dataset_split):
+        raise RuntimeError("SWE-bench dataset split is not a safe local name")
+
+    source = _load_hf_dataset(
+        config.dataset_name,
+        split=config.dataset_split,
+        revision=config.dataset_revision,
+    )
+    rows_by_id: dict[str, dict[str, Any]] = {}
+    for raw in source:
+        row = dict(raw)
+        instance_id = row.get("instance_id")
+        if instance_id is None:
+            continue
+        if instance_id in rows_by_id:
+            raise RuntimeError(
+                f"pinned SWE-bench dataset repeats instance {instance_id!r}"
+            )
+        rows_by_id[instance_id] = row
+
+    if config.instance_ids:
+        missing = [iid for iid in config.instance_ids if iid not in rows_by_id]
+        if missing:
+            raise RuntimeError(
+                f"pinned SWE-bench dataset is missing selected instances: {missing}"
+            )
+        ordered_rows = [rows_by_id[iid] for iid in config.instance_ids]
+    else:
+        # No explicit selection: pin the whole split in a canonical order so the
+        # digest is stable regardless of the Hub's row ordering.
+        ordered_rows = [rows_by_id[iid] for iid in sorted(rows_by_id)]
+
+    content_sha256 = hashlib.sha256(_canonical_selected_rows(ordered_rows)).hexdigest()
+    if config.expected_digest and config.expected_digest != content_sha256:
+        raise RuntimeError(
+            "pinned SWE-bench selected-instance content digest mismatch: "
+            f"expected={config.expected_digest!r}, actual={content_sha256!r}"
+        )
+
+    snapshot_dir = config.output_dir / "pinned_swebench_dataset"
+    snapshot_dir.mkdir(parents=True, exist_ok=True)
+    snapshot_path = snapshot_dir / f"{config.dataset_split}.jsonl"
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        dir=snapshot_dir,
+        prefix=".dataset.",
+        delete=False,
+    ) as stream:
+        temporary = Path(stream.name)
+        for row in ordered_rows:
+            stream.write(
+                json.dumps(
+                    row, ensure_ascii=True, sort_keys=True, separators=(",", ":")
+                )
+                + "\n"
+            )
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(temporary, snapshot_path)
+
+    reloaded = [
+        dict(row)
+        for row in _load_hf_dataset(str(snapshot_dir), split=config.dataset_split)
+    ]
+    reloaded_sha256 = hashlib.sha256(_canonical_selected_rows(reloaded)).hexdigest()
+    if reloaded_sha256 != content_sha256:
+        raise RuntimeError("local SWE-bench snapshot changed during materialization")
+
+    receipt = {
+        "schema": "ttis.pinned-swebench-dataset/v1",
+        "dataset_name": config.dataset_name,
+        "dataset_split": config.dataset_split,
+        "dataset_revision": config.dataset_revision,
+        "ordered_instance_ids": [row.get("instance_id") for row in ordered_rows],
+        "expected_digest": config.expected_digest,
+        "content_sha256": content_sha256,
+        "snapshot_dir": str(snapshot_dir),
+    }
+    # Keep the receipt outside the dataset directory: Hugging Face treats every
+    # JSON/JSONL file in a local dataset directory as data, so a receipt beside
+    # ``<split>.jsonl`` would make the agent and verifier load different schemas
+    # on their second open.
+    (config.output_dir / "pinned_swebench_dataset_receipt.json").write_text(
+        json.dumps(receipt, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return str(snapshot_dir), content_sha256
 
 
 def _mini_output_dir(config: SWEbenchRunConfig) -> Path:
@@ -382,6 +522,8 @@ def build_mini_sweagent_command(
     config: SWEbenchRunConfig,
     mini_config_path: Path,
     mini_output_dir: Path,
+    *,
+    dataset_source: Optional[str] = None,
 ) -> list[str]:
     mini_exec = _interpreter(config).parent / "mini-extra"
     cmd = [
@@ -390,7 +532,7 @@ def build_mini_sweagent_command(
         "--model",
         config.model_name,
         "--subset",
-        config.sweagent_subset,
+        dataset_source or config.sweagent_subset,
         "--split",
         config.dataset_split,
         "--workers",
@@ -460,13 +602,15 @@ def build_swebench_harness_command(
     config: SWEbenchRunConfig,
     predictions_path: Path,
     run_id: str,
+    *,
+    dataset_source: Optional[str] = None,
 ) -> list[str]:
     cmd = [
         str(_interpreter(config)),
         "-m",
         "swebench.harness.run_evaluation",
         "--dataset_name",
-        config.dataset_name,
+        dataset_source or config.dataset_name,
         "--split",
         config.dataset_split,
         "--predictions_path",
@@ -670,6 +814,12 @@ def normalize_swebench_report(
 def run(config: SWEbenchRunConfig) -> int:
     config.output_dir.mkdir(parents=True, exist_ok=True)
 
+    # Opt-in reproducibility pin. ``dataset_source`` is None unless a revision
+    # was requested, in which case both the agent and the grading harness read
+    # the pinned local snapshot instead of a mutable Hub alias. This fails
+    # closed here, before any agent starts, on a digest mismatch.
+    dataset_source, _dataset_content_sha256 = _prepare_pinned_swebench_dataset(config)
+
     env = os.environ.copy()
     env.setdefault("OPENAI_API_KEY", "EMPTY")
     env.setdefault("OPENAI_BASE_URL", config.api_base)
@@ -733,7 +883,7 @@ def run(config: SWEbenchRunConfig) -> int:
         mini_config_path = _write_mini_sweagent_model_config(config)
         mini_output_dir = _mini_output_dir(config)
         mini_cmd = build_mini_sweagent_command(
-            config, mini_config_path, mini_output_dir
+            config, mini_config_path, mini_output_dir, dataset_source=dataset_source
         )
         rc = run_with_progress(
             mini_cmd,
@@ -773,7 +923,9 @@ def run(config: SWEbenchRunConfig) -> int:
     if not config.score_existing_predictions:
         convert_sweagent_preds_to_jsonl(preds_path, predictions_path, config.model_name)
 
-    harness_cmd = build_swebench_harness_command(config, predictions_path, run_id)
+    harness_cmd = build_swebench_harness_command(
+        config, predictions_path, run_id, dataset_source=dataset_source
+    )
     env = _add_swebench_harness_patch_to_env(config.output_dir, env)
     rc = _run_command_with_retries(
         harness_cmd,

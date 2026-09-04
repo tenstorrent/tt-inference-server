@@ -218,6 +218,8 @@ def build_swebench_config(
         random_delay_multiplier=cfg.random_delay_multiplier,
         score_existing_predictions=False,
         instance_ids=resolve_instance_ids(task, runtime_config),
+        dataset_revision=cfg.dataset_revision,
+        expected_digest=cfg.expected_digest,
         venv_python=venv_python,
     )
 
