@@ -8,7 +8,7 @@ import vllm.envs as envs
 from vllm.inputs import ProcessorInputs, PromptType
 from vllm.logger import init_logger
 from vllm.platforms.interface import Platform, PlatformEnum
-from vllm.sampling_params import SamplingParams
+from vllm.sampling_params import SamplingParams, SamplingType
 
 if TYPE_CHECKING:
     from vllm.config import ModelConfig, VllmConfig
@@ -209,6 +209,28 @@ class TTPlatform(Platform):
             if params.prompt_logprobs is not None:
                 raise ValueError(
                     f"Currently not supporting prompt_logprobs on {cls.device_name}"
+                )
+            if getattr(cls, "sample_on_device_mode", None) in (
+                "all",
+                "decode_only",
+            ) and cls.compat_sampling_required(params):
+                raise ValueError(
+                    "Sampling options that require vLLM compatibility sampling "
+                    "are unsupported with TT sample_on_device_mode="
+                    f"{cls.sample_on_device_mode!r}"
+                )
+            if (
+                getattr(cls, "sample_on_device_mode", None) in (
+                    "all",
+                    "decode_only",
+                )
+                and not getattr(cls, "non_greedy_decoding_on_device", False)
+                and params.sampling_type is not SamplingType.GREEDY
+            ):
+                raise ValueError(
+                    "Non-greedy sampling is unsupported by this TT model with "
+                    "sample_on_device_mode="
+                    f"{cls.sample_on_device_mode!r}"
                 )
 
     @staticmethod
