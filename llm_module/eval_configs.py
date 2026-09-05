@@ -2,15 +2,14 @@
 #
 # SPDX-FileCopyrightText: 2026 Tenstorrent AI ULC
 
-"""Select the standard (lm-eval / lmms-eval) eval tasks for an LLM model."""
+"""Select standard and agentic eval tasks for an LLM model."""
 
 from __future__ import annotations
 
 import logging
 from typing import List
 
-from workflow_module.engine_types import EvalLimitMode
-from workflow_module.engine_types import WorkflowVenvType
+from workflow_module.engine_types import EvalLimitMode, WorkflowVenvType
 
 from .eval_command import _get_limit_mode, _parse_eval_samples_mapping
 
@@ -25,6 +24,149 @@ _STANDARD_EVAL_VENVS = frozenset(
         WorkflowVenvType.EVALS_VISION,
     }
 )
+
+# Aliases accepted by --agentic-benchmark. Keep selection beside context
+# reachability so release planning and the runtime agentic runner cannot choose
+# different task sets.
+_AGENTIC_BENCHMARK_PREFIX_ALIASES = {
+    "tau3": "tau3_bench_",
+    "swebench": "swe_bench_",
+}
+_AGENTIC_BENCHMARK_EXACT_ALIASES = {
+    "tb2.0": "terminal_bench_2",
+    "tb2.1": "terminal_bench_2_1",
+}
+
+
+def parse_agentic_benchmark(value: str) -> tuple:
+    """Parse --agentic-benchmark into task-name prefix and exact matchers."""
+    prefixes: list[str] = []
+    exacts = set()
+    for token in (part.strip().lower() for part in value.split(",")):
+        if not token or token == "all":
+            continue
+        if token in _AGENTIC_BENCHMARK_PREFIX_ALIASES:
+            prefixes.append(_AGENTIC_BENCHMARK_PREFIX_ALIASES[token])
+        elif token in _AGENTIC_BENCHMARK_EXACT_ALIASES:
+            exacts.add(_AGENTIC_BENCHMARK_EXACT_ALIASES[token])
+        else:
+            exacts.add(token)
+    return prefixes, exacts
+
+
+def filter_agentic_tasks_by_benchmark(tasks: list, selection: str) -> list:
+    """Return exactly the configured agentic tasks selected by the CLI."""
+    prefixes, exacts = parse_agentic_benchmark(selection)
+    if not prefixes and not exacts:
+        return tasks
+    selected = [
+        task
+        for task in tasks
+        if task.task_name in exacts
+        or any(task.task_name.startswith(prefix) for prefix in prefixes)
+    ]
+    if not selected:
+        available = [task.task_name for task in tasks]
+        raise RuntimeError(
+            f"--agentic-benchmark {selection!r} matched no EVALS_AGENTIC tasks. "
+            f"Available for this model: {available}. Aliases: "
+            f"{sorted(_AGENTIC_BENCHMARK_PREFIX_ALIASES)} + "
+            f"{sorted(_AGENTIC_BENCHMARK_EXACT_ALIASES)}."
+        )
+    logger.info(
+        "--agentic-benchmark %r selected %d of %d agentic task(s): %s",
+        selection,
+        len(selected),
+        len(tasks),
+        [task.task_name for task in selected],
+    )
+    return selected
+
+
+def _positive_token_budget(value):
+    if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+        return value
+    return None
+
+
+def agentic_task_required_context(task):
+    """Return a task's declared per-request context envelope, if known.
+
+    SWE-bench declares its limits directly. TerminalBench places the same
+    fields in ``agent_kwargs.model_info``. ``min_context_required`` remains an
+    optional explicit floor and wins when it reserves more headroom than the
+    harness input/output envelope.
+
+    An incomplete legacy task has no derived envelope and remains reachable
+    unless it declares ``min_context_required``. This preserves existing tasks
+    while making every fully declared agentic contract context-aware.
+    """
+    explicit = _positive_token_budget(getattr(task, "min_context_required", None))
+    max_input = max_output = None
+
+    swebench = getattr(task, "swebench_eval_config", None)
+    terminal = getattr(task, "agentic_eval_config", None)
+    if swebench is not None:
+        max_input = _positive_token_budget(getattr(swebench, "max_input_tokens", None))
+        max_output = _positive_token_budget(
+            getattr(swebench, "max_output_tokens", None)
+        )
+    elif terminal is not None:
+        agent_kwargs = getattr(terminal, "agent_kwargs", None)
+        model_info = (
+            agent_kwargs.get("model_info") if isinstance(agent_kwargs, dict) else None
+        )
+        if isinstance(model_info, dict):
+            max_input = _positive_token_budget(model_info.get("max_input_tokens"))
+            max_output = _positive_token_budget(model_info.get("max_output_tokens"))
+
+    envelope = (
+        max_input + max_output
+        if max_input is not None and max_output is not None
+        else None
+    )
+    if explicit is None:
+        return envelope
+    if envelope is None:
+        return explicit
+    return max(explicit, envelope)
+
+
+def filter_reachable_agentic_tasks(tasks: list, model_spec) -> list:
+    """Drop agentic tasks whose request envelope exceeds device max context."""
+    available = getattr(
+        getattr(model_spec, "device_model_spec", None), "max_context", None
+    )
+    if not isinstance(available, int) or isinstance(available, bool):
+        return tasks
+
+    selected = []
+    for task in tasks:
+        required = agentic_task_required_context(task)
+        if required is not None and available < required:
+            logger.info(
+                "Skipping agentic eval task %s: device max_context=%d is below "
+                "its required request context=%d",
+                task.task_name,
+                available,
+                required,
+            )
+            continue
+        selected.append(task)
+    return selected
+
+
+def select_agentic_eval_tasks(tasks: list, model_spec, runtime_config=None) -> list:
+    """Apply agentic type, explicit benchmark, and context selection."""
+    agentic = [
+        task
+        for task in tasks
+        if task.workflow_venv_type == WorkflowVenvType.EVALS_AGENTIC
+    ]
+    selection = getattr(runtime_config, "agentic_benchmark", None)
+    if isinstance(selection, str) and selection.strip():
+        agentic = filter_agentic_tasks_by_benchmark(agentic, selection)
+    return filter_reachable_agentic_tasks(agentic, model_spec)
 
 
 def _select_tasks(tasks: list, runtime_config) -> list:
@@ -103,4 +245,11 @@ def get_llm_eval_tasks(model_spec, runtime_config=None, device=None) -> List:
     return _select_tasks(standard, runtime_config)
 
 
-__all__ = ["get_llm_eval_tasks"]
+__all__ = [
+    "agentic_task_required_context",
+    "filter_agentic_tasks_by_benchmark",
+    "filter_reachable_agentic_tasks",
+    "get_llm_eval_tasks",
+    "parse_agentic_benchmark",
+    "select_agentic_eval_tasks",
+]

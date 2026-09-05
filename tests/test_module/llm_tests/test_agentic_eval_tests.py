@@ -896,11 +896,21 @@ class TestAgenticLimitResolution:
 
 
 class TestSelectAgenticTasks:
-    def _ctx_with_tasks(self, tasks):
+    def _ctx_with_tasks(self, tasks, *, max_context=None, agentic_benchmark=None):
         ctx = MagicMock()
         ctx.all_params.tasks = tasks
         ctx.model_spec.model_name = "test-llm"
+        if max_context is not None:
+            ctx.model_spec.device_model_spec = SimpleNamespace(max_context=max_context)
+        ctx.runtime_config = SimpleNamespace(agentic_benchmark=agentic_benchmark)
         return ctx
+
+    @staticmethod
+    def _swe_192k_task():
+        task = _swebench_task()
+        task.swebench_eval_config.max_input_tokens = 160 * 1024
+        task.swebench_eval_config.max_output_tokens = 32 * 1024
+        return task
 
     def test_returns_only_agentic_tasks(self):
         t1 = _terminal_task()
@@ -925,6 +935,69 @@ class TestSelectAgenticTasks:
         ctx = self._ctx_with_tasks([t_agentic, t_other])
 
         assert _select_agentic_tasks(ctx) == [t_agentic]
+
+    def test_32k_context_excludes_192k_agentic_envelope(self):
+        task = self._swe_192k_task()
+
+        selected = _select_agentic_tasks(
+            self._ctx_with_tasks([task], max_context=32 * 1024)
+        )
+
+        assert selected == []
+
+    def test_sufficient_context_includes_192k_agentic_envelope(self):
+        task = self._swe_192k_task()
+
+        selected = _select_agentic_tasks(
+            self._ctx_with_tasks([task], max_context=192 * 1024)
+        )
+
+        assert selected == [task]
+
+    def test_exact_32768_token_envelope_is_reachable(self):
+        task = _swebench_task()
+        task.swebench_eval_config.max_input_tokens = 24 * 1024
+        task.swebench_eval_config.max_output_tokens = 8 * 1024
+
+        selected = _select_agentic_tasks(
+            self._ctx_with_tasks([task], max_context=32 * 1024)
+        )
+
+        assert selected == [task]
+
+    def test_32769_token_envelope_is_rejected_by_32768_context(self):
+        task = _swebench_task()
+        task.swebench_eval_config.max_input_tokens = 24 * 1024 + 1
+        task.swebench_eval_config.max_output_tokens = 8 * 1024
+
+        selected = _select_agentic_tasks(
+            self._ctx_with_tasks([task], max_context=32 * 1024)
+        )
+
+        assert selected == []
+
+    def test_native_256k_context_keeps_192k_agentic_task_reachable(self):
+        task = self._swe_192k_task()
+
+        selected = _select_agentic_tasks(
+            self._ctx_with_tasks([task], max_context=256 * 1024)
+        )
+
+        assert selected == [task]
+
+    def test_explicit_selection_uses_the_same_context_reachability(self):
+        terminal = _terminal_task()
+        swe = self._swe_192k_task()
+
+        selected = _select_agentic_tasks(
+            self._ctx_with_tasks(
+                [terminal, swe],
+                max_context=32 * 1024,
+                agentic_benchmark="swebench",
+            )
+        )
+
+        assert selected == []
 
 
 class TestAgenticBenchmarkSelection:
