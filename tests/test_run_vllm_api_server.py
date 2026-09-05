@@ -115,6 +115,48 @@ def _canonical_json(value):
     return (json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n").encode()
 
 
+def test_prepare_quetzal_bundle_env_rebases_local_package_paths(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    catalog_root = Path("/container/quetzal/packages/sha256-test")
+    local_root = tmp_path / "sha256-test"
+    local_root.mkdir()
+    env_vars = {
+        "QUETZAL_PACKAGE_ROOT": str(catalog_root),
+        "QZ_MODELS_ROOT": str(catalog_root),
+        "QZ_QUALIFICATION_MANIFEST": str(catalog_root / "qualification_manifest.yaml"),
+        "QUETZAL_WEIGHTS": str(catalog_root / "compiled_weights/full/weights.pt"),
+        "QUETZAL_BUNDLE_MANIFEST_SHA256": "a" * 64,
+        "VLLM_PLUGINS": "quetzal_model_registry,tt",
+    }
+    for name in env_vars:
+        # Register each key with monkeypatch before the code under test writes
+        # os.environ directly, so teardown restores the original environment.
+        monkeypatch.setenv(name, "")
+    model_spec = {
+        "impl": {"impl_id": "quetzal"},
+        "device_model_spec": {"env_vars": env_vars},
+    }
+
+    run_vllm_api_server_module.prepare_quetzal_bundle_env(model_spec, str(local_root))
+
+    assert model_spec["env_vars"]["QUETZAL_PACKAGE_ROOT"] == str(local_root)
+    assert model_spec["env_vars"]["QUETZAL_WEIGHTS"] == str(
+        local_root / "compiled_weights/full/weights.pt"
+    )
+    assert os.environ["QUETZAL_PACKAGE_ROOT"] == str(local_root)
+    assert os.environ["VLLM_PLUGINS"] == "quetzal_model_registry,tt"
+
+
+def test_prepare_quetzal_bundle_env_rejects_override_for_native_impl(
+    tmp_path, run_vllm_api_server_module
+):
+    with pytest.raises(RuntimeError, match="requires impl=quetzal"):
+        run_vllm_api_server_module.prepare_quetzal_bundle_env(
+            {"impl": {"impl_id": "tt_transformers"}}, str(tmp_path)
+        )
+
+
 def test_admit_quetzal_bundle_is_noop_for_native_impl(
     monkeypatch, run_vllm_api_server_module
 ):
@@ -125,7 +167,10 @@ def test_admit_quetzal_bundle_is_noop_for_native_impl(
     )
 
 
-def test_admit_quetzal_bundle_rejects_missing_root(run_vllm_api_server_module):
+def test_admit_quetzal_bundle_rejects_missing_root(
+    monkeypatch, run_vllm_api_server_module
+):
+    monkeypatch.delenv("QUETZAL_PACKAGE_ROOT", raising=False)
     with pytest.raises(RuntimeError, match="requires QUETZAL_PACKAGE_ROOT"):
         run_vllm_api_server_module.admit_quetzal_bundle(
             {"impl": {"impl_id": "quetzal"}}
@@ -702,7 +747,55 @@ def _weights_spec():
     return {
         "model_name": "Mistral-7B-Instruct-v0.3",
         "hf_model_repo": "mistralai/Mistral-7B-Instruct-v0.3",
+        "device_model_spec": {"vllm_args": {"revision": "pinned-revision"}},
     }
+
+
+def test_ensure_weights_available_resolves_pinned_offline_snapshot(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    monkeypatch.delenv("MODEL_WEIGHTS_DIR", raising=False)
+    monkeypatch.setenv("HF_HOME", str(tmp_path / "huggingface"))
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    monkeypatch.delenv("TRANSFORMERS_OFFLINE", raising=False)
+    snapshot_path = tmp_path / "huggingface" / "hub" / "cached-snapshot"
+    run_vllm_api_server_module.snapshot_download.return_value = str(snapshot_path)
+    spec = _weights_spec()
+
+    result = run_vllm_api_server_module.ensure_weights_available(spec)
+
+    run_vllm_api_server_module.snapshot_download.assert_called_once_with(
+        repo_id=spec["hf_model_repo"],
+        revision="pinned-revision",
+        local_files_only=True,
+    )
+    assert result == snapshot_path
+    assert os.environ["MODEL_WEIGHTS_DIR"] == str(snapshot_path)
+
+
+def test_ensure_weights_available_reports_pinned_offline_cache_miss(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    monkeypatch.delenv("MODEL_WEIGHTS_DIR", raising=False)
+    monkeypatch.setenv("HF_HOME", str(tmp_path / "huggingface"))
+    monkeypatch.delenv("HF_HUB_OFFLINE", raising=False)
+    monkeypatch.setenv("TRANSFORMERS_OFFLINE", "true")
+    run_vllm_api_server_module.snapshot_download.side_effect = RuntimeError(
+        "snapshot absent"
+    )
+    spec = _weights_spec()
+
+    with pytest.raises(RuntimeError) as error:
+        run_vllm_api_server_module.ensure_weights_available(spec)
+
+    message = str(error.value)
+    assert f"{spec['hf_model_repo']}@pinned-revision" in message
+    assert f"HF_HOME={tmp_path / 'huggingface'}" in message
+    run_vllm_api_server_module.snapshot_download.assert_called_once_with(
+        repo_id=spec["hf_model_repo"],
+        revision="pinned-revision",
+        local_files_only=True,
+    )
 
 
 def test_ensure_weights_available_resumes_partial_download(
@@ -712,6 +805,8 @@ def test_ensure_weights_available_resumes_partial_download(
     snapshot_download so missing files are fetched, rather than being treated
     as complete."""
     monkeypatch.delenv("MODEL_WEIGHTS_DIR", raising=False)
+    monkeypatch.delenv("HF_HUB_OFFLINE", raising=False)
+    monkeypatch.delenv("TRANSFORMERS_OFFLINE", raising=False)
     monkeypatch.setenv("CACHE_ROOT", str(tmp_path))
     spec = _weights_spec()
     weights_path = tmp_path / "weights" / spec["model_name"]
@@ -734,6 +829,8 @@ def test_ensure_weights_available_falls_back_when_hub_unreachable(
     """If the hub is unreachable but weights already exist locally, startup
     proceeds with the existing weights instead of crashing."""
     monkeypatch.delenv("MODEL_WEIGHTS_DIR", raising=False)
+    monkeypatch.delenv("HF_HUB_OFFLINE", raising=False)
+    monkeypatch.delenv("TRANSFORMERS_OFFLINE", raising=False)
     monkeypatch.setenv("CACHE_ROOT", str(tmp_path))
     run_vllm_api_server_module.snapshot_download.side_effect = RuntimeError("offline")
     spec = _weights_spec()
@@ -753,6 +850,8 @@ def test_ensure_weights_available_raises_when_unreachable_and_no_weights(
     """If the hub is unreachable and nothing is cached locally, the failure
     must surface rather than starting with no weights."""
     monkeypatch.delenv("MODEL_WEIGHTS_DIR", raising=False)
+    monkeypatch.delenv("HF_HUB_OFFLINE", raising=False)
+    monkeypatch.delenv("TRANSFORMERS_OFFLINE", raising=False)
     monkeypatch.setenv("CACHE_ROOT", str(tmp_path))
     run_vllm_api_server_module.snapshot_download.side_effect = RuntimeError("offline")
 

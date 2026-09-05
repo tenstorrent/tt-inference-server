@@ -25,6 +25,7 @@ from workflows.multihost_orchestrator import (
     is_multihost_deployment,
     setup_multihost_config,
 )
+from workflows.quetzal_package import resolve_quetzal_package_mount
 from workflows.utils import (
     default_dotenv_path,
     ensure_readwriteable_dir,
@@ -335,6 +336,7 @@ _RESERVED_WRAPPER_FLAGS = {
     "service-port",
     "port",
     "host",
+    "quetzal-package-root",
 }
 
 
@@ -427,6 +429,7 @@ def generate_docker_run_command(
     device = DeviceTypes.from_string(runtime_config.device)
     mesh_device_str = device.to_mesh_device_str()
     container_name = f"tt-inference-server-{short_uuid()}"
+    quetzal_package_mount = resolve_quetzal_package_mount(model_spec, runtime_config)
 
     # TODO: remove this once https://github.com/tenstorrent/tt-metal/issues/23785 has been closed
     device_cache_dir = (
@@ -491,11 +494,24 @@ def generate_docker_run_command(
             "--mount", f"type=bind,src={setup_config.host_model_weights_mount_dir},dst={setup_config.container_model_weights_mount_dir},readonly"
         ])
 
+    if quetzal_package_mount:
+        docker_command.extend([
+            "--mount",
+            "type=bind,"
+            f"src={quetzal_package_mount.host_root},"
+            f"dst={quetzal_package_mount.runtime_root},readonly",
+        ])
+
     if runtime_config.interactive:
         docker_command.append("-itd")
     # fmt: on
 
     docker_env_vars = {}
+    if quetzal_package_mount:
+        # Plugin selection and bundle admission happen while the server wrapper
+        # imports/starts vLLM, so the catalog environment must be present on the
+        # container itself, not only exported later by the wrapper.
+        docker_env_vars.update({k: str(v) for k, v in model_spec.env_vars.items()})
     if setup_config:
         if (
             setup_config.container_model_weights_path
@@ -606,6 +622,8 @@ def generate_docker_run_command(
     if model_spec.inference_engine == InferenceEngine.VLLM.value:
         docker_command.extend(["--model", model_spec.hf_model_repo])
         docker_command.extend(["--tt-device", runtime_config.device])
+        if quetzal_package_mount:
+            docker_command.extend(["--impl", runtime_config.impl])
         if runtime_config.no_auth:
             docker_command.append("--no-auth")
         if runtime_config.disable_trace_capture:

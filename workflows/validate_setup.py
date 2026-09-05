@@ -8,8 +8,8 @@ import stat
 from pathlib import Path
 
 from reference_config.benchmarking.benchmark_config import get_benchmark_config
-from workflows.workflow_dispatch import can_dispatch_to_engine
 from workflows.model_spec import MODEL_SPECS
+from workflows.quetzal_package import resolve_quetzal_package_mount
 from workflows.utils import (
     MIN_SUPPORTED_IMAGE_VERSION,
     check_path_permissions_for_uid,
@@ -21,6 +21,7 @@ from workflows.utils import (
     resolve_hf_snapshot_dir,
     run_command,
 )
+from workflows.workflow_dispatch import can_dispatch_to_engine
 from workflows.workflow_types import (
     DeviceTypes,
     InferenceEngine,
@@ -138,6 +139,7 @@ def validate_runtime_args(model_spec, runtime_config):
     assert not (args.docker_server and args.local_server), (
         "Cannot run --docker-server and --local-server"
     )
+    resolve_quetzal_package_mount(model_spec, runtime_config)
 
     if workflow_type == WorkflowType.EVALS:
         assert _has_eval_config(model_spec.model_name), (
@@ -502,6 +504,8 @@ def validate_bind_mount_permissions(args):
         checks.append(("--host-hf-cache", args.host_hf_cache, False))
     if getattr(args, "host_weights_dir", None):
         checks.append(("--host-weights-dir", args.host_weights_dir, False))
+    if getattr(args, "quetzal_models_root", None):
+        checks.append(("--quetzal-models-root", args.quetzal_models_root, False))
 
     for flag, host_path, need_write in checks:
         ok, reason = check_path_permissions_for_uid(

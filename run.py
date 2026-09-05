@@ -397,6 +397,16 @@ def parse_arguments():
         "For --local-server, tensor cache/logs still use the host volume path.",
     )
     parser.add_argument(
+        "--quetzal-models-root",
+        type=str,
+        default=None,
+        help=(
+            "Host path to the selected immutable Quetzal package directory. "
+            "Required with --impl quetzal for Docker and local servers; Docker "
+            "mounts it read-only at the model spec's QUETZAL_PACKAGE_ROOT."
+        ),
+    )
+    parser.add_argument(
         "--custom-weights",
         type=str,
         default=None,
@@ -990,6 +1000,7 @@ def format_cli_args_summary(runtime_config):
         f"  host_volume:                {runtime_config.host_volume}",
         f"  host_hf_cache:              {runtime_config.host_hf_cache}",
         f"  host_weights_dir:           {runtime_config.host_weights_dir}",
+        f"  quetzal_models_root:        {runtime_config.quetzal_models_root}",
         f"  custom_weights:             {runtime_config.custom_weights}"
         if runtime_config.custom_weights
         else None,
