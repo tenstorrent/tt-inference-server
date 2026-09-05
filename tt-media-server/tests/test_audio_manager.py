@@ -16,7 +16,7 @@ from config.constants import AudioInputFormat
 # audio_manager no longer imports torch/whisperx at module load time; those
 # packages live in the separate audio_venv and are only invoked through the
 # persistent worker subprocess. We can import freely without any workaround.
-from utils.audio_manager import AudioManager, AudioVenvWorker
+from utils.audio_manager import AudioManager, AudioTooLongError, AudioVenvWorker
 
 
 class DummySettings:
@@ -25,6 +25,7 @@ class DummySettings:
     max_audio_size_bytes = 1000000
     max_audio_duration_seconds = 60
     max_audio_duration_with_preprocessing_seconds = 120
+    max_audio_duration_qwen3_asr_seconds = 320
     audio_chunk_duration_seconds = 10
     model_service = "AUDIO"
     model_runner = "tt-whisper"
@@ -106,15 +107,83 @@ def test_validate_file_size():
 
 
 @patch("utils.audio_manager.settings", new=DummySettings())
-def test_validate_and_truncate_duration():
+def test_validate_duration_rejects_over_limit():
+    """Over-length audio errors instead of being silently truncated.
+
+    Truncating returned 200 with a head-only transcript and no signal to the
+    caller that the tail was dropped.
+    """
     manager = AudioManager()
     arr = np.zeros(DummySettings.default_sample_rate * 70, dtype=np.float32)
-    truncated, duration = manager._validate_and_truncate_duration(arr, False)
-    assert duration == DummySettings.max_audio_duration_seconds
-    assert (
-        len(truncated)
-        == DummySettings.default_sample_rate * DummySettings.max_audio_duration_seconds
-    )
+    with pytest.raises(AudioTooLongError) as excinfo:
+        manager._validate_duration(arr, False)
+    assert "70.00s" in str(excinfo.value)
+    assert str(DummySettings.max_audio_duration_seconds) in str(excinfo.value)
+
+
+@patch("utils.audio_manager.settings", new=DummySettings())
+def test_validate_duration_accepts_at_and_under_limit():
+    manager = AudioManager()
+    for seconds in (1, DummySettings.max_audio_duration_seconds):
+        arr = np.zeros(DummySettings.default_sample_rate * seconds, dtype=np.float32)
+        out, duration = manager._validate_duration(arr, False)
+        assert duration == seconds
+        assert len(out) == len(arr)
+
+
+class DummyQwenSettings(DummySettings):
+    model_runner = "qwen3-asr"
+
+
+@patch("utils.audio_manager.settings", new=DummyQwenSettings())
+def test_validate_duration_qwen3_asr_limit():
+    """Qwen3-ASR uses its own 320s cap (one 32-runner x 10s wave)."""
+    manager = AudioManager()
+    ok = np.zeros(DummySettings.default_sample_rate * 320, dtype=np.float32)
+    _, duration = manager._validate_duration(ok, False)
+    assert duration == 320
+
+    too_long = np.zeros(DummySettings.default_sample_rate * 321, dtype=np.float32)
+    with pytest.raises(AudioTooLongError):
+        manager._validate_duration(too_long, False)
+
+
+def _wav_bytes_of_seconds(seconds, sample_rate=16000):
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sample_rate)
+        wf.writeframes(b"\x00" * (2 * sample_rate * seconds))
+    return buffer.getvalue()
+
+
+class DummyBigFileSettings(DummySettings):
+    # Duration is what this test exercises; keep the byte cap out of the way so
+    # _validate_file_size does not fire first on the larger WAV.
+    max_audio_size_bytes = 100_000_000
+
+
+@patch("utils.audio_manager.settings", new=DummyBigFileSettings())
+def test_to_audio_array_propagates_too_long_error():
+    """The generic handler in to_audio_array must not flatten this.
+
+    It wraps every exception into ValueError("Failed to process audio data: ..."),
+    which the route maps to 500. AudioTooLongError has to survive intact so it
+    reaches the 400 branch with its actionable message.
+    """
+    manager = AudioManager()
+    over = _wav_bytes_of_seconds(DummySettings.max_audio_duration_seconds + 5)
+    with pytest.raises(AudioTooLongError) as excinfo:
+        manager.to_audio_array(over, False)
+    assert "Failed to process audio data" not in str(excinfo.value)
+    assert "exceeds the maximum" in str(excinfo.value)
+
+
+@patch("utils.audio_manager.settings", new=DummySettings())
+def test_audio_too_long_error_is_value_error():
+    """Existing `except ValueError` callers keep catching it."""
+    assert issubclass(AudioTooLongError, ValueError)
 
 
 @patch("utils.audio_manager.settings", new=DummySettings())
