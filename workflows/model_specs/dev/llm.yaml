@@ -1462,6 +1462,59 @@ templates:
       tool_call_parser_name: deepseek_v3
 
 - weights:
+    - meta-llama/Llama-3.2-1B-Instruct
+  model_display_name: Llama-3.2-1B Quetzal canary
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 1
+      max_context: 8192
+      default_impl: false
+      env_vars:
+        ARCH_NAME: blackhole
+        MESH_DEVICE: P150x4
+        QUETZAL_VLLM: "1"
+        QUETZAL_MODEL: meta-llama/Llama-3.2-1B-Instruct
+        QUETZAL_HF_REVISION: 9213176726f574b556790deb65791e0c5aa438b6
+        QUETZAL_REQUIRED_SOURCE_REVISION: 4901ec4116b5ba5e69da9d02593f8ad75ff3abea
+        QUETZAL_REQUIRED_TT_METAL_COMMIT: f9377427c7f8ddbd3f4df1b2e47279a8b7626b46
+        QUETZAL_TT_METAL_PATCHSET_STATUS: none
+        QUETZAL_PACKAGE_ID: sha256-39b457511b7f55b51b9eed44dae0013d21a085e63b0a28ce8324dc25e1949e4a-1f7aaded6376be65d2f1f280547dd2160b334165792a87bab1ba14ecd8a3a032
+        QUETZAL_BUNDLE_MANIFEST_SHA256: 5e7c882ddd59777a4623689207b0ec9593a0550027ef123349fb188301eea63d
+        QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/packages/sha256-39b457511b7f55b51b9eed44dae0013d21a085e63b0a28ce8324dc25e1949e4a-1f7aaded6376be65d2f1f280547dd2160b334165792a87bab1ba14ecd8a3a032
+        QZ_MODELS_ROOT: /home/container_app_user/quetzal/packages/sha256-39b457511b7f55b51b9eed44dae0013d21a085e63b0a28ce8324dc25e1949e4a-1f7aaded6376be65d2f1f280547dd2160b334165792a87bab1ba14ecd8a3a032
+        QZ_QUALIFICATION_MANIFEST: /home/container_app_user/quetzal/packages/sha256-39b457511b7f55b51b9eed44dae0013d21a085e63b0a28ce8324dc25e1949e4a-1f7aaded6376be65d2f1f280547dd2160b334165792a87bab1ba14ecd8a3a032/qualification_manifest.yaml
+        QUETZAL_PREFILL_GENERATED_PY: /home/container_app_user/quetzal/packages/sha256-39b457511b7f55b51b9eed44dae0013d21a085e63b0a28ce8324dc25e1949e4a-1f7aaded6376be65d2f1f280547dd2160b334165792a87bab1ba14ecd8a3a032/compiled/meta-llama_Llama-3.2-1B-Instruct/full/prefill/generated.py
+        QUETZAL_DECODE_GENERATED_PY: /home/container_app_user/quetzal/packages/sha256-39b457511b7f55b51b9eed44dae0013d21a085e63b0a28ce8324dc25e1949e4a-1f7aaded6376be65d2f1f280547dd2160b334165792a87bab1ba14ecd8a3a032/compiled/meta-llama_Llama-3.2-1B-Instruct/full/decode/generated.py
+        QUETZAL_PREFILL_METADATA_JSON: /home/container_app_user/quetzal/packages/sha256-39b457511b7f55b51b9eed44dae0013d21a085e63b0a28ce8324dc25e1949e4a-1f7aaded6376be65d2f1f280547dd2160b334165792a87bab1ba14ecd8a3a032/compiled/meta-llama_Llama-3.2-1B-Instruct/full/prefill/metadata.json
+        QUETZAL_DECODE_METADATA_JSON: /home/container_app_user/quetzal/packages/sha256-39b457511b7f55b51b9eed44dae0013d21a085e63b0a28ce8324dc25e1949e4a-1f7aaded6376be65d2f1f280547dd2160b334165792a87bab1ba14ecd8a3a032/compiled/meta-llama_Llama-3.2-1B-Instruct/full/decode/metadata.json
+        QUETZAL_WEIGHTS: /home/container_app_user/quetzal/packages/sha256-39b457511b7f55b51b9eed44dae0013d21a085e63b0a28ce8324dc25e1949e4a-1f7aaded6376be65d2f1f280547dd2160b334165792a87bab1ba14ecd8a3a032/compiled_weights/meta-llama_Llama-3.2-1B-Instruct/full/weights.pt
+        QZ_MMAP_WEIGHTS: "1"
+        TTQ_STREAM_WEIGHTS: "1"
+        HF_HUB_OFFLINE: "1"
+        TRANSFORMERS_OFFLINE: "1"
+        VLLM_PLUGINS: quetzal_model_registry,tt
+        TT_VLLM_BUILTIN_MODELS: "0"
+      vllm_args:
+        block_size: 64
+        max_model_len: 8192
+        max_num_seqs: 1
+        revision: 9213176726f574b556790deb65791e0c5aa438b6
+        tokenizer_revision: 9213176726f574b556790deb65791e0c5aa438b6
+        enable-auto-tool-choice: true
+        tool-call-parser: llama3_json
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        l1_small_size: 16384
+        trace_region_size: 90000000
+  status: EXPERIMENTAL
+  has_builtin_warmup: false
+  metadata:
+    meta-llama/Llama-3.2-1B-Instruct:
+      tool_call_parser_name: llama3_json
+
+- weights:
     - meta-llama/Llama-3.2-1B
     - meta-llama/Llama-3.2-1B-Instruct
   model_display_name: Llama-3.2-1B
