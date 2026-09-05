@@ -4806,22 +4806,26 @@ _eval_config_list = [
                     },
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                # Chat endpoint for the same reason as r1_gpqa_diamond above:
-                # only the server-side template applies enable_thinking=true.
-                use_chat_api=True,
+                # Deliberately NOT use_chat_api, unlike r1_gpqa_diamond above:
+                # the server-side chat rendering inserts a stray space token
+                # at the system-turn boundary for conversations with system
+                # content, and this checkpoint degenerates into repeated-token
+                # output on that malformed prompt (bringup run 33842850459
+                # scored 30.95 because 29/42 responses collapsed; replaying
+                # the server-rendered token ids reproduces it exactly, while
+                # the reference rendering of the same conversation reasons
+                # correctly and stops on its own). The completions path with
+                # the classic no-thinking 5-shot CoT methodology -- the same
+                # shape every other model's mmlu_pro entry uses -- answered
+                # correctly and deterministically in local replays. Note the
+                # published 85.2 may assume thinking, so expect this score to
+                # undershoot it; grade as indicative.
                 model_kwargs={
                     "max_length": 49152,
                     "timeout": "3600",
                 },
-                # Same thinking-mode sampling as the GPQA task; stream=false is
-                # required by lm-eval's local-chat-completions parser. 8K of
-                # output bounds per-question thinking: with the 32K budget of a
-                # first attempt the model averaged ~650 s/question on batch-1
-                # QB2 hardware (tt-shield run 33777700648), which no sample cap
-                # can rescue. Truncated reasoning costs some accuracy; treat
-                # the score as indicative.
                 gen_kwargs={
-                    "stream": "false",
+                    "stream": "true",
                     "max_gen_toks": 8192,
                     "until": [],
                     "do_sample": "true",
