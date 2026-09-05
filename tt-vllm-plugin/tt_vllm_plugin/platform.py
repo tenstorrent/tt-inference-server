@@ -210,6 +210,15 @@ class TTPlatform(Platform):
                 raise ValueError(
                     f"Currently not supporting prompt_logprobs on {cls.device_name}"
                 )
+            if getattr(cls, "sample_on_device_mode", None) in (
+                "all",
+                "decode_only",
+            ) and cls.compat_sampling_required(params):
+                raise ValueError(
+                    "Sampling options that require vLLM compatibility sampling "
+                    "are unsupported with TT sample_on_device_mode="
+                    f"{cls.sample_on_device_mode!r}"
+                )
 
     @staticmethod
     def compat_sampling_required(sampling_params) -> bool:
