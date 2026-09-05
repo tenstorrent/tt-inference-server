@@ -482,7 +482,7 @@ def test_requirements_pack_agentic_traces_config_uses_template(pack):
 # --- agentic sweep -----------------------------------------------------------
 
 
-def _agentic_pack(concurrencies, slo=None):
+def _agentic_pack(concurrencies, slo=None, sweep=None):
     """A pack whose document sweeps ``concurrencies`` for an agentic workload."""
     from workflow_module.requirements_schema import RequirementsDoc
 
@@ -498,7 +498,10 @@ def _agentic_pack(concurrencies, slo=None):
                 "kind": "agentic",
                 "id": "w1",
                 "slo": slo or {},
-                "agenticSweep": [{"concurrency": c} for c in concurrencies],
+                "agenticSweep": (
+                    sweep if sweep is not None
+                    else [{"concurrency": c} for c in concurrencies]
+                ),
             }
         ],
     }
@@ -565,3 +568,55 @@ def test_vllm_goodput_keys_are_unchanged_by_the_aiperf_mapping():
     (scenario,) = load_requirements(_FIXTURE).scenarios
 
     assert _goodput_constraints(scenario) == "ttft:2000 tpot:20 e2el:20000"
+
+
+def test_replace_agentic_runs_attaches_the_expected_sweep_to_every_run():
+    """Every run carries the whole sweep, so the report can call out the
+    points a truncated sweep never measured."""
+    from reference_config.agentic_traces.agentic_traces_config import (
+        replace_agentic_runs,
+    )
+
+    base = _base_config()
+    sweep = [{"concurrency": 1, "ttftMeanMs": 800.0}, {"concurrency": 8}]
+
+    swept = replace_agentic_runs(base, [1, 8], expected_sweep=sweep)
+
+    assert all(run.expected_sweep == sweep for run in swept.runs)
+
+
+def test_agentic_config_carries_the_documents_expected_sweep():
+    """The pack hands the run specs the document's expected points, so the
+    report can grade measured against expected field for field."""
+    from types import SimpleNamespace
+
+    sweep = [
+        {"concurrency": 1, "ttftMeanMs": 800.0, "goodputPct": 90.0},
+        {"concurrency": 8, "ttftMeanMs": 700.0, "goodputPct": 90.0},
+    ]
+    pack = _agentic_pack([], sweep=sweep)
+    spec = SimpleNamespace(
+        model_id="id_off-catalog",
+        impl=SimpleNamespace(impl_id="requirements_synthesized"),
+    )
+
+    config = pack.agentic_traces_config(spec)
+
+    assert config.runs
+    assert all(run.expected_sweep == sweep for run in config.runs)
+
+
+def test_agentic_expected_sweep_dedupes_first_workload_wins():
+    """Two workloads sharing an operating point grade against the first,
+    matching the concurrency dedupe that keeps the run from replaying twice."""
+    sweep = [
+        {"concurrency": 8, "ttftMeanMs": 700.0},
+        {"concurrency": 1, "ttftMeanMs": 800.0},
+        {"concurrency": 1, "ttftMeanMs": 999.0},
+    ]
+    pack = _agentic_pack([], sweep=sweep)
+
+    assert pack._agentic_expected_sweep() == [
+        {"concurrency": 1, "ttftMeanMs": 800.0},
+        {"concurrency": 8, "ttftMeanMs": 700.0},
+    ]

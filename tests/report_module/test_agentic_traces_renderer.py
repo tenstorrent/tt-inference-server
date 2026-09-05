@@ -481,3 +481,61 @@ class TestMeasuredAgenticSweep:
         out = _render(_swo_record())
 
         assert "#### Measured `agenticSweep`" not in out
+
+
+class TestRequirementsTargets:
+    """Grading against the document's expected sweep, when one drove the run."""
+
+    _POINT = {
+        "concurrency": 1,
+        "ttftMeanMs": 8000.0,  # record measures 7868.93 -> pass
+        "tpotMeanMs": 3.0,  # record measures 11.8 -> fail
+        "goodputPct": 90.0,  # record measures none -> ungraded
+        "inputTokensMean": 999999.0,  # never graded
+    }
+
+    def test_absent_when_no_expectations_are_attached(self):
+        out = _render(_record())
+
+        assert "#### Requirements Targets" not in out
+
+    def test_grades_each_field_with_direction(self):
+        out = _render(_record(expected_sweep=[dict(self._POINT)]))
+
+        assert "#### Requirements Targets" in out
+        assert "**c1**: 1/2 targets met ❌" in out
+        # latency passes at/below target; rate-style fields at/above
+        assert "**7,869** / 8,000 ✅" in out
+        assert "**11.80** / 3.00 ❌" in out
+        # expected but unmeasured reads as a gap, not a failure
+        assert "**N/A** / 90.00 ➖" in out
+
+    def test_token_shape_fields_are_not_graded(self):
+        out = _render(_record(expected_sweep=[dict(self._POINT)]))
+
+        # Scoped to the grading section: the measured-sweep JSON block above
+        # it legitimately carries the token-shape fields.
+        section = out.split("#### Requirements Targets", 1)[1]
+        assert "inputTokensMean" not in section
+
+    def test_unmeasured_document_points_are_called_out(self):
+        """A truncated sweep must not read as a complete one that scored less."""
+        sweep = [dict(self._POINT), {"concurrency": 64, "ttftMeanMs": 700.0}]
+        out = _render(_record(expected_sweep=sweep))
+
+        assert "c64" in out
+        assert "never measured" in out
+
+    def test_each_measured_point_renders_its_own_column(self):
+        sweep = [dict(self._POINT), {**self._POINT, "concurrency": 4}]
+        out = _render(
+            _record(concurrency=1, expected_sweep=sweep),
+            _record(concurrency=4, expected_sweep=sweep),
+        )
+
+        assert "c1 (1/2)" in out and "c4 (1/2)" in out
+
+    def test_swarmone_rows_do_not_gain_a_section(self):
+        out = _render(_swo_record())
+
+        assert "#### Requirements Targets" not in out

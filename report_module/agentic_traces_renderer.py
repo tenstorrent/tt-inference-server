@@ -581,6 +581,10 @@ def render_agentic_traces(block: Block, metadata: Mapping[str, Any]) -> str:
     if sweep:
         parts.append(sweep)
 
+    targets = _targets_block(rows)
+    if targets:
+        parts.append(targets)
+
     parts.append(_definitions_block(rows))
 
     return "\n\n".join(parts)
@@ -616,6 +620,111 @@ def _agentic_sweep_block(rows: Sequence[Mapping[str, Any]]) -> str:
         "results as `agentic_sweep.json` too.\n\n"
         f"```json\n{body}\n```"
     )
+
+
+def _targets_block(rows: Sequence[Mapping[str, Any]]) -> str:
+    """Grade the measured sweep against the requirements document's targets.
+
+    When a requirements document drove the run, each InferenceX payload
+    carries the document's expected ``agenticSweep`` (see ``expected_sweep``
+    in the driver payload), so the measured point and the expected one grade
+    field for field here, and the points a truncated sweep never reached are
+    called out rather than silently absent. Catalog runs carry no
+    expectations and get no section.
+
+    Grading is exact (tolerance 0), matching how the document grades
+    benchmark targets: latencies gate at or below the target, rates at or
+    above. The token-shape fields (input/output token mean/p95) describe the
+    trace mix rather than the server, so they are never graded.
+    """
+    # Same import-cycle guard as ``_agentic_sweep_block``.
+    from llm_module.agentic_traces.sweep_export import (
+        expected_sweep_from_record,
+        grade_agentic_sweep,
+        to_agentic_sweep,
+    )
+
+    inferencex_rows = [
+        row for row in rows if str(row.get("trace_source") or "") == INFERENCEX_SOURCE
+    ]
+    expected_sweep: List[Dict[str, Any]] = []
+    for row in inferencex_rows:
+        sweep = expected_sweep_from_record(row)
+        if sweep:
+            expected_sweep = sweep
+            break
+    if not expected_sweep:
+        return ""
+
+    verdicts, missing = grade_agentic_sweep(
+        to_agentic_sweep(inferencex_rows), expected_sweep
+    )
+    if not verdicts and not missing:
+        return ""
+
+    parts = [
+        "#### Requirements Targets\n",
+        "Measured against the expected `agenticSweep` points from the "
+        "requirements document, exact (tolerance 0): latencies pass at or "
+        "below the target (↓), rates at or above (↑). Cells read "
+        "**measured** / target.",
+    ]
+
+    if verdicts:
+        summary = "; ".join(
+            f"**c{point.concurrency}**: {point.met}/{point.graded} targets met "
+            f"{'✅' if point.passed else '❌'}"
+            for point in verdicts
+        )
+        parts.append(summary)
+
+        headers = ["Metric"] + [
+            f"c{point.concurrency} ({point.met}/{point.graded})" for point in verdicts
+        ]
+        fields = [verdict.field for verdict in verdicts[0].verdicts]
+        table_rows: List[Dict[str, str]] = []
+        for field in fields:
+            per_point = [
+                next(v for v in point.verdicts if v.field == field)
+                for point in verdicts
+            ]
+            entry: Dict[str, str] = {"Metric": _target_field_label(per_point[0])}
+            for header, verdict in zip(headers[1:], per_point):
+                entry[header] = _target_cell(verdict)
+            table_rows.append(entry)
+        parts.append(build_markdown_table(table_rows))
+
+    if missing:
+        listed = ", ".join(f"c{concurrency}" for concurrency in missing)
+        parts.append(
+            f"The document also expects {listed}, which this sweep never "
+            "measured — those points are ungraded, not passed."
+        )
+    return "\n\n".join(parts)
+
+
+def _target_field_label(verdict: Any) -> str:
+    direction = "↓" if verdict.lower_is_better else "↑"
+    return f"`{verdict.field}` {direction}"
+
+
+def _target_cell(verdict: Any) -> str:
+    measured = (
+        _fmt_target_number(verdict.field, verdict.measured)
+        if verdict.measured is not None
+        else NA
+    )
+    target = _fmt_target_number(verdict.field, verdict.target)
+    glyph = {True: "✅", False: "❌", None: "➖"}[verdict.passed]
+    return f"**{measured}** / {target} {glyph}"
+
+
+def _fmt_target_number(field: str, value: float) -> str:
+    if field.endswith("Ms"):
+        return f"{value:,.0f}" if abs(value) >= 100 else f"{value:,.2f}"
+    if field == "reqThroughputRps":
+        return f"{value:.3f}"
+    return f"{value:,.2f}"
 
 
 def _definitions_block(rows: Sequence[Mapping[str, Any]]) -> str:

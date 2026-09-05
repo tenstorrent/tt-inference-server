@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field, replace
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from llm_module.agentic_traces.schema import TraceSource
 from workflows.utils import map_configs_by_attr
@@ -86,6 +86,11 @@ class AgenticTracesRunSpec:
     # goodput, since AIPerf reports it only when the bars are passed. Catalog
     # entries leave this empty; a requirements document supplies its SLOs.
     goodput: str = ""
+    # The document's expected ``agenticSweep``, kept verbatim (one camelCase
+    # point per concurrency) so the report can grade the measurement against
+    # it -- including the points a truncated sweep never reached. Empty for
+    # catalog runs, which have no expectations to grade against.
+    expected_sweep: List[Dict[str, Any]] = field(default_factory=list)
     # SwarmOne (``swo-bench replay``) knobs. Ignored by the InferenceX/AIPerf
     # driver, so they can stay at their defaults on ``inferencex_agentx`` specs.
     # ``task`` selects a single task from a multi-task swo-bench scenario (its
@@ -491,6 +496,7 @@ def replace_agentic_runs(
     config: AgenticTracesConfig,
     concurrencies: Sequence[int],
     goodput: str = "",
+    expected_sweep: Sequence[Mapping[str, Any]] = (),
 ) -> AgenticTracesConfig:
     """Replay ``config``'s runs at each of ``concurrencies``, grading ``goodput``.
 
@@ -501,12 +507,20 @@ def replace_agentic_runs(
     document with no agentic sweep keeps the catalog's single operating point.
 
     ``goodput`` applies to every run, since the SLOs are the workload's and do
-    not move with the operating point.
+    not move with the operating point. Every run carries the whole
+    ``expected_sweep`` rather than only its own point, so the report can call
+    out the points a truncated sweep never measured.
     """
     if not concurrencies:
         return config
+    expected = [dict(point) for point in expected_sweep]
     runs = tuple(
-        replace(run, concurrency=concurrency, goodput=goodput or run.goodput)
+        replace(
+            run,
+            concurrency=concurrency,
+            goodput=goodput or run.goodput,
+            expected_sweep=list(expected),
+        )
         for run in config.runs
         for concurrency in concurrencies
     )
