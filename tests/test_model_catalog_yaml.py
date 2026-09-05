@@ -18,6 +18,7 @@ from workflows.model_spec import (
     _build_template,
     get_model_spec_map,
     load_templates_from_yaml,
+    quetzal_impl,
     tt_transformers_impl,
 )
 from workflows.workflow_types import (
@@ -33,6 +34,7 @@ from workflows.workflow_types import (
 def test_impl_registry_is_populated():
     """Every ImplSpec instance defined at module scope must be in _IMPL_REGISTRY."""
     assert _IMPL_REGISTRY["tt_transformers"] is tt_transformers_impl
+    assert _IMPL_REGISTRY["quetzal"] is quetzal_impl
     # impl_id of each registry entry must match its key
     for impl_id, impl in _IMPL_REGISTRY.items():
         assert impl.impl_id == impl_id

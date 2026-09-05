@@ -7,6 +7,7 @@ import json
 import logging
 import multiprocessing
 import os
+import re
 import runpy
 import shlex
 import sys
@@ -33,6 +34,172 @@ logger = logging.getLogger(__name__)
 
 
 DEFAULT_VLLM_SERVER_PORT = "8000"
+QUETZAL_IMPL_ID = "quetzal"
+QUETZAL_ARTIFACT_ENV_VARS = (
+    "QZ_QUALIFICATION_MANIFEST",
+    "QUETZAL_PREFILL_GENERATED_PY",
+    "QUETZAL_DECODE_GENERATED_PY",
+    "QUETZAL_PREFILL_METADATA_JSON",
+    "QUETZAL_DECODE_METADATA_JSON",
+    "QUETZAL_WEIGHTS",
+)
+QUETZAL_INSTALLED_MANIFEST_DIR = ".quetzal-bundle-manifests"
+
+
+def _quetzal_auxiliary_roots() -> Optional[dict]:
+    """Return the v2 auxiliary-name to immutable-root mapping, when present."""
+    raw = os.getenv("QUETZAL_AUXILIARY_ROOTS_JSON", "").strip()
+    if not raw:
+        return None
+    try:
+        roots = json.loads(raw)
+    except json.JSONDecodeError as error:
+        raise RuntimeError("QUETZAL_AUXILIARY_ROOTS_JSON is not valid JSON") from error
+    if (
+        not isinstance(roots, dict)
+        or not roots
+        or not all(
+            isinstance(name, str) and name and isinstance(path, str) and path
+            for name, path in roots.items()
+        )
+    ):
+        raise RuntimeError(
+            "QUETZAL_AUXILIARY_ROOTS_JSON must map auxiliary names to paths"
+        )
+    return roots
+
+
+def _quetzal_manifest_sha256() -> str:
+    expected_sha256 = os.getenv("QUETZAL_BUNDLE_MANIFEST_SHA256", "")
+    if not re.fullmatch(r"[0-9a-f]{64}", expected_sha256):
+        raise RuntimeError(
+            "impl=quetzal requires QUETZAL_BUNDLE_MANIFEST_SHA256 as a "
+            "lowercase SHA-256"
+        )
+    return expected_sha256
+
+
+def _admit_installed_quetzal_bundle(
+    root: Path, expected_sha256: str, auxiliary_roots: Optional[dict]
+) -> dict:
+    """Verify an installed/shared Quetzal bundle against its pinned proof."""
+    from serving.artifact_bundle import (
+        _canonical_json,
+        _sha256_file,
+        _validate_manifest,
+        _verify_or_admit_auxiliary_references,
+    )
+
+    proof = root / QUETZAL_INSTALLED_MANIFEST_DIR / f"{expected_sha256}.json"
+    if proof.is_symlink() or not proof.is_file():
+        raise RuntimeError(
+            f"Quetzal trusted-root proof is missing or not a regular file: {proof}"
+        )
+    actual_sha256, size = _sha256_file(proof)
+    if size > 16 * 1024 * 1024 or actual_sha256 != expected_sha256:
+        raise RuntimeError("Quetzal trusted-root proof digest mismatch")
+    raw = proof.read_bytes()
+    try:
+        manifest = _validate_manifest(json.loads(raw))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise RuntimeError("Quetzal trusted-root proof is not valid JSON") from error
+    if raw != _canonical_json(manifest):
+        raise RuntimeError("Quetzal trusted-root proof is not canonical JSON")
+
+    inventory = {
+        f"{tree['role']}/{tree['name']}/{row['path']}": row
+        for tree in manifest["trees"]
+        for row in tree["files"]
+    }
+    root_resolved = root.resolve(strict=True)
+    verified = 0
+    for env_name in QUETZAL_ARTIFACT_ENV_VARS:
+        value = os.getenv(env_name)
+        if not value:
+            raise RuntimeError(f"impl=quetzal requires {env_name}")
+        member = Path(value)
+        if member.is_symlink():
+            raise RuntimeError(f"{env_name} may not be a symlink: {member}")
+        try:
+            resolved = member.resolve(strict=True)
+            relative = resolved.relative_to(root_resolved).as_posix()
+        except OSError as error:
+            raise RuntimeError(f"{env_name} is missing: {member}") from error
+        except ValueError as error:
+            raise RuntimeError(
+                f"{env_name} escapes the package root: {member}"
+            ) from error
+        if env_name == "QZ_QUALIFICATION_MANIFEST":
+            row = manifest["qualification_manifest"]
+        else:
+            row = inventory.get(relative)
+        digest, file_size = _sha256_file(resolved)
+        if (
+            not isinstance(row, dict)
+            or row.get("size") != file_size
+            or row.get("sha256") != digest
+        ):
+            raise RuntimeError(
+                f"{env_name} failed trusted-root verification: {relative}"
+            )
+        verified += 1
+
+    auxiliary = _verify_or_admit_auxiliary_references(
+        manifest, auxiliary_roots, hash_payloads=True
+    )
+    result = {
+        "schema": manifest["schema"],
+        "manifest_sha256": actual_sha256,
+        "total_bytes": manifest["total_bytes"],
+        "total_files": manifest["total_files"],
+        "verified_artifacts": verified,
+    }
+    if auxiliary is not None:
+        result["auxiliary"] = auxiliary
+    return result
+
+
+def admit_quetzal_bundle(model_spec: dict) -> None:
+    """Verify the selected Quetzal bundle by content hash before device use."""
+    if model_spec.get("impl", {}).get("impl_id") != QUETZAL_IMPL_ID:
+        return
+
+    package_root = os.getenv("QUETZAL_PACKAGE_ROOT")
+    if not package_root:
+        raise RuntimeError(
+            "impl=quetzal requires QUETZAL_PACKAGE_ROOT (the content-addressed "
+            "package directory)"
+        )
+    root = Path(package_root)
+    if root.is_symlink() or not root.is_dir():
+        raise RuntimeError(f"QUETZAL_PACKAGE_ROOT is not a directory: {package_root}")
+
+    expected_sha256 = _quetzal_manifest_sha256()
+    auxiliary_roots = _quetzal_auxiliary_roots()
+    try:
+        from serving.artifact_bundle import verify_bundle
+    except Exception as error:  # pragma: no cover - depends on the runtime image
+        raise RuntimeError(
+            "impl=quetzal requires the tt-quetzalcoatlus serving package in the "
+            f"runtime image, but it could not be imported: {error}"
+        ) from error
+
+    if (root / "manifest.json").is_file():
+        result = verify_bundle(
+            root,
+            expected_sha256=expected_sha256,
+            auxiliary_roots=auxiliary_roots,
+        )
+    else:
+        result = _admit_installed_quetzal_bundle(root, expected_sha256, auxiliary_roots)
+    logger.info(
+        "Quetzal content-address admission succeeded: schema=%s files=%s "
+        "manifest_sha256=%s auxiliary=%s",
+        result.get("schema"),
+        result.get("total_files"),
+        result.get("manifest_sha256"),
+        result.get("auxiliary"),
+    )
 
 
 def parse_args():
@@ -768,6 +935,8 @@ def main():
         device_type = normalize_device_type(device_type)
     elif args.device:
         device_type = normalize_device_type(args.device)
+
+    admit_quetzal_bundle(model_spec)
 
     if device_type and not os.getenv("TT_CACHE_PATH"):
         set_cache_paths(model_spec, device_type)
