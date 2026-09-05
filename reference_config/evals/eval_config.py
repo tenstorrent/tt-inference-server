@@ -5027,6 +5027,60 @@ _eval_config_list = [
                     "until": ["</s>"],
                 },
             ),
+            EvalTask(
+                task_name="swe_bench_verified_32k",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                # Generated Quetzal currently exposes deterministic on-device
+                # argmax only. Keep this as a separate 32K completion task so
+                # the native 128K stochastic recipe above remains unchanged.
+                swebench_eval_config=SWEbenchEvalConfig(
+                    dataset_name="SWE-bench/SWE-bench_Verified",
+                    sweagent_subset="verified",
+                    dataset_split="test",
+                    agent_backend="mini-swe-agent",
+                    n_concurrent_trials=1,
+                    max_workers=1,
+                    n_tasks=None,
+                    temperature=0.0,
+                    top_p=1.0,
+                    max_input_tokens=24 * 1024,
+                    max_output_tokens=8 * 1024,
+                    completion_kwargs={
+                        "extra_body": {
+                            "top_k": 0,
+                        },
+                    },
+                    llm_timeout_sec=30 * 60,
+                    shuffle=False,
+                    random_delay_multiplier=0.0,
+                    instance_ids_map={
+                        EvalLimitMode.SMOKE_TEST: [
+                            "django__django-11299",
+                        ],
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-11299",
+                            "astropy__astropy-14096",
+                            "matplotlib__matplotlib-25332",
+                            "sympy__sympy-13551",
+                            "scikit-learn__scikit-learn-14629",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 1,
+                },
+            ),
         ],
     ),
     EvalConfig(
