@@ -41,14 +41,35 @@ filesystem and fails closed with *"mutable (write bits set)"*. Historically this
 was worked around ad-hoc with `fuse-overlayfs -o ro`.
 
 The serve path now admits the package **by content hash** instead: for
-`impl=quetzal`, `run_vllm_api_server.py` calls
-`serving.artifact_bundle.verify_bundle(QUETZAL_PACKAGE_ROOT,
-QUETZAL_BUNDLE_MANIFEST_SHA256)` before any device use. That reads and hashes
-every payload against the manifest, so it is **independent of file write bits**
-and works on a writable FS. It fails closed: a missing `QUETZAL_PACKAGE_ROOT`,
-a missing wheel, or a hash mismatch aborts before the device is opened. This is
-not an adapter around the plugin's gate — it selects the content-addressed
-admission path the Quetzal package already implements.
+`impl=quetzal`, `run_vllm_api_server.py::admit_quetzal_bundle` authenticates the
+package against its trusted-root manifest by SHA-256 (pinned to
+`QUETZAL_BUNDLE_MANIFEST_SHA256`) before any device use. It is **independent of
+file write bits** and works on a writable FS, and it fails closed: a missing
+`QUETZAL_PACKAGE_ROOT`, a missing wheel, a hash mismatch, or a v2 bundle whose
+`QUETZAL_AUXILIARY_ROOTS_JSON` is missing/mismatched aborts before the device is
+opened. This is not an adapter around the plugin's gate — it selects the
+content-addressed admission path the Quetzal package already implements.
+
+Two package layouts are admitted, both through `serving.artifact_bundle`:
+
+* **Portable object-store bundle** (`<root>/manifest.json` + `objects/`): handed
+  to `verify_bundle(root, expected_sha256=…, auxiliary_roots=…)`, which reads and
+  hashes every payload; `auxiliary_roots` authenticates any v2 externals. This is
+  the portable Llama-1B (v1) case.
+* **Installed / shared bundle** (the read-only shared layout used by gpt-oss and
+  the MoE models): there is no root `manifest.json` — the trusted-root proof is
+  `<root>/.quetzal-bundle-manifests/<QUETZAL_BUNDLE_MANIFEST_SHA256>.json` and the
+  payloads sit at their logical paths. `admit_quetzal_bundle` authenticates that
+  proof by its pinned SHA-256, then verifies every serve-loaded artifact (the
+  `QUETZAL_*`/`QZ_*` members) and any v2 `streamed_cache` auxiliary against the
+  trusted inventory, reusing `serving.artifact_bundle`'s own manifest validator
+  and hashing primitives.
+
+For a **v2** bundle (external MoE `streamed_cache`), the catalog row must set
+`QUETZAL_AUXILIARY_ROOTS_JSON` to the JSON map of auxiliary name → immutable,
+digest-addressed root (`{"…-streamed-cache": "…/sha256-<tree-digest>"}`); the
+admission hashes those external payloads too and fails closed if the digest,
+size, or content-addressed basename does not match the trusted proof.
 
 ### Fallback: read-only mount (if content-address admission is unavailable)
 
