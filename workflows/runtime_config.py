@@ -120,6 +120,8 @@ class RuntimeConfig:
     host_volume: Optional[str] = None
     host_hf_cache: Optional[str] = None
     host_weights_dir: Optional[str] = None
+    # Host path to the selected immutable Quetzal package directory.
+    quetzal_models_root: Optional[str] = None
     # Label giving custom weights a distinct identity; see derive_custom_weights_spec.
     custom_weights: Optional[str] = None
     image_user: str = "1000"
@@ -219,6 +221,7 @@ class RuntimeConfig:
             host_volume=args.host_volume,
             host_hf_cache=args.host_hf_cache,
             host_weights_dir=args.host_weights_dir,
+            quetzal_models_root=getattr(args, "quetzal_models_root", None),
             custom_weights=getattr(args, "custom_weights", None),
             image_user=args.image_user,
             skip_system_sw_validation=args.skip_system_sw_validation,

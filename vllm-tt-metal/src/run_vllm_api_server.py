@@ -43,7 +43,60 @@ QUETZAL_ARTIFACT_ENV_VARS = (
     "QUETZAL_DECODE_METADATA_JSON",
     "QUETZAL_WEIGHTS",
 )
+QUETZAL_PACKAGE_PATH_ENV_VARS = (
+    "QUETZAL_PACKAGE_ROOT",
+    "QZ_MODELS_ROOT",
+    *QUETZAL_ARTIFACT_ENV_VARS,
+)
 QUETZAL_INSTALLED_MANIFEST_DIR = ".quetzal-bundle-manifests"
+
+
+def prepare_quetzal_bundle_env(
+    model_spec: dict, package_root_override: Optional[str]
+) -> None:
+    """Export admission env and rebase catalog paths for a local package."""
+    is_quetzal = model_spec.get("impl", {}).get("impl_id") == QUETZAL_IMPL_ID
+    if not is_quetzal:
+        if package_root_override:
+            raise RuntimeError("--quetzal-package-root requires impl=quetzal")
+        return
+
+    nested_env = model_spec.get("device_model_spec", {}).get("env_vars", {})
+    top_level_env = model_spec.get("env_vars", {})
+    env_vars = {**nested_env, **top_level_env}
+    if package_root_override:
+        catalog_root_value = env_vars.get("QUETZAL_PACKAGE_ROOT")
+        if not catalog_root_value:
+            raise RuntimeError(
+                "impl=quetzal model spec must define QUETZAL_PACKAGE_ROOT"
+            )
+        catalog_root = Path(catalog_root_value)
+        supplied_root = Path(package_root_override).expanduser()
+        if supplied_root.is_symlink() or not supplied_root.is_dir():
+            raise RuntimeError(
+                "--quetzal-package-root must be an existing real directory: "
+                f"{supplied_root}"
+            )
+        replacement_root = supplied_root.resolve()
+        rebased = {}
+        for name in QUETZAL_PACKAGE_PATH_ENV_VARS:
+            value = env_vars.get(name)
+            if not value:
+                continue
+            try:
+                relative = Path(value).relative_to(catalog_root)
+            except ValueError as error:
+                raise RuntimeError(
+                    f"impl=quetzal {name} must be inside QUETZAL_PACKAGE_ROOT: {value}"
+                ) from error
+            rebased[name] = str(replacement_root / relative)
+        env_vars.update(rebased)
+        model_spec["env_vars"] = {**top_level_env, **rebased}
+
+    # Admission precedes the generic runtime env export. Export the selected
+    # Quetzal spec now so the hash gate sees the same paths the plugin will use.
+    for name, value in env_vars.items():
+        os.environ[name] = str(value)
 
 
 def _quetzal_auxiliary_roots() -> Optional[dict]:
@@ -231,6 +284,15 @@ def parse_args():
         "--impl",
         type=str,
         help="Implementation name override (e.g. tt-transformers).",
+    )
+    parser.add_argument(
+        "--quetzal-package-root",
+        type=str,
+        default=None,
+        help=(
+            "Runtime path override for the selected Quetzal package. Used by "
+            "run.py local-server path rebasing."
+        ),
     )
     parser.add_argument(
         "--no-auth",
@@ -936,6 +998,7 @@ def main():
     elif args.device:
         device_type = normalize_device_type(args.device)
 
+    prepare_quetzal_bundle_env(model_spec, getattr(args, "quetzal_package_root", None))
     admit_quetzal_bundle(model_spec)
 
     if device_type and not os.getenv("TT_CACHE_PATH"):

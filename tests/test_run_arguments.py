@@ -594,6 +594,17 @@ class TestModelSpecCliArgsCompatibility:
         assert args.host_hf_cache == "/home/user/.cache/huggingface"
         assert args.image_user == "15863"
 
+    def test_quetzal_models_root_parsing(self, base_args):
+        with patch(
+            "sys.argv",
+            ["run.py"]
+            + base_args
+            + ["--quetzal-models-root", "/mnt/models/sha256-package"],
+        ):
+            args = parse_arguments()
+
+        assert args.quetzal_models_root == "/mnt/models/sha256-package"
+
 
 class TestArgsInference:
     """Tests for argument inference and validation."""

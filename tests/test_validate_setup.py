@@ -169,6 +169,7 @@ class TestValidateBindMountPermissions:
             "host_volume": None,
             "host_hf_cache": None,
             "host_weights_dir": None,
+            "quetzal_models_root": None,
         }
         defaults.update(overrides)
         return Namespace(**defaults)
@@ -253,6 +254,21 @@ class TestValidateBindMountPermissions:
         d.mkdir()
         args = self._make_args(host_weights_dir=str(d))
         validate_bind_mount_permissions(args)
+
+    def test_quetzal_package_mount_requires_read_only_access(self, tmp_path):
+        package = tmp_path / "package"
+        package.mkdir()
+        args = self._make_args(quetzal_models_root=str(package))
+
+        with patch(
+            "workflows.validate_setup.check_path_permissions_for_uid",
+            return_value=(True, ""),
+        ) as check_permissions:
+            validate_bind_mount_permissions(args)
+
+        check_permissions.assert_called_once_with(
+            str(package), os.getuid(), need_write=False
+        )
 
     def test_host_weights_dir_not_readable_raises_when_fix_fails(self, tmp_path):
         d = tmp_path / "weights_noperm"
