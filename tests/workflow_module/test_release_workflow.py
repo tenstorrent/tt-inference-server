@@ -116,6 +116,28 @@ class TestReleaseWorkflowChildSelection:
             "agentic",
         ]
 
+    def test_llm_omits_agentic_child_when_all_tasks_exceed_context(self):
+        ctx = _make_ctx(ModelType.LLM, agentic=True)
+        task = ctx.all_params.tasks[0]
+        task.task_name = "swe_bench_verified"
+        task.agentic_eval_config = None
+        task.swebench_eval_config = SimpleNamespace(
+            max_input_tokens=160 * 1024,
+            max_output_tokens=32 * 1024,
+        )
+        task.min_context_required = None
+        ctx.model_spec.device_model_spec = SimpleNamespace(max_context=32 * 1024)
+        ctx.runtime_config = SimpleNamespace(agentic_benchmark=None)
+
+        outcomes, classes, _acc, _meta = _run_release(ctx)
+
+        classes["agentic"].assert_not_called()
+        assert [outcome.task_type for outcome in outcomes] == [
+            "evals",
+            "benchmarks",
+            "spec_tests",
+        ]
+
     def test_agentic_traces_child_is_opt_in(self):
         """Without --agentic-traces the options are None, so no child runs: a
         full-mode replay is roughly an hour of profiling per configured run."""

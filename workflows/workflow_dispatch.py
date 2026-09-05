@@ -114,7 +114,7 @@ def _eval_config_for(model_spec):
     return get_target_pack().eval_config(model_spec.model_name)
 
 
-def _llm_release_includes_agentic(model_spec) -> bool:
+def _llm_release_includes_agentic(model_spec, runtime_config=None) -> bool:
     """True if an LLM release should also run agentic evals.
 
     Agentic evals (Terminal-Bench-2 / SWE-bench Verified) now run in-process as
@@ -129,9 +129,9 @@ def _llm_release_includes_agentic(model_spec) -> bool:
     cfg = _eval_config_for(model_spec)
     if cfg is None:
         return False
-    return any(
-        task.workflow_venv_type == WorkflowVenvType.EVALS_AGENTIC for task in cfg.tasks
-    )
+    from llm_module.eval_configs import select_agentic_eval_tasks
+
+    return bool(select_agentic_eval_tasks(cfg.tasks, model_spec, runtime_config))
 
 
 def _is_llm_eval_run(wf, model_spec) -> bool:
@@ -774,7 +774,7 @@ def _engine_dependency_venv_types(
             venv_types.append(WorkflowVenvType.AGENTIC_TRACES)
         # The agentic release child resolves harbor/sweagent from the
         # EVALS_AGENTIC venv, so it must exist before the engine subprocess runs.
-        if _llm_release_includes_agentic(model_spec):
+        if _llm_release_includes_agentic(model_spec, runtime_config):
             venv_types.append(WorkflowVenvType.EVALS_AGENTIC)
     return venv_types
 

@@ -155,7 +155,9 @@ def test_release_provisions_prefix_cache_and_spec_decode_venvs(monkeypatch):
         workflow_dispatch, "_llm_eval_venv_types", lambda ms, rc=None: []
     )
     monkeypatch.setattr(
-        workflow_dispatch, "_llm_release_includes_agentic", lambda ms: False
+        workflow_dispatch,
+        "_llm_release_includes_agentic",
+        lambda ms, rc=None: False,
     )
 
     venvs = workflow_dispatch._engine_dependency_venv_types(
@@ -177,7 +179,9 @@ def test_release_provisions_agentic_traces_venv_only_when_opted_in(monkeypatch):
         workflow_dispatch, "_llm_eval_venv_types", lambda ms, rc=None: []
     )
     monkeypatch.setattr(
-        workflow_dispatch, "_llm_release_includes_agentic", lambda ms: False
+        workflow_dispatch,
+        "_llm_release_includes_agentic",
+        lambda ms, rc=None: False,
     )
 
     opted_out = workflow_dispatch._engine_dependency_venv_types(
@@ -475,7 +479,9 @@ def test_release_child_forwards_the_metrics_urls(monkeypatch, tmp_path):
         workflow_dispatch, "get_default_workflow_root_log_dir", lambda: tmp_path
     )
     monkeypatch.setattr(
-        workflow_dispatch, "_llm_release_includes_agentic", lambda ms: False
+        workflow_dispatch,
+        "_llm_release_includes_agentic",
+        lambda ms, rc=None: False,
     )
 
     argv = workflow_dispatch.build_engine_commands(spec, rc, "/tmp/spec.json")[0].argv

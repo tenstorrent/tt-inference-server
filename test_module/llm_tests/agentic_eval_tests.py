@@ -18,10 +18,15 @@ from llm_module import (
     ServerConnection,
     make_agentic_driver,
 )
+from llm_module.eval_configs import (
+    filter_agentic_tasks_by_benchmark,
+    parse_agentic_benchmark,
+    select_agentic_eval_tasks,
+)
 from report_module.schema import Block
 from utils.auth_helpers import setup_tests_auth
-from workflow_module.engine_types import WorkflowVenvType
 from workflow_module import accept_blocks
+from workflow_module.engine_types import WorkflowVenvType
 
 from .._test_common import sweep_envelope
 from ..context import MediaContext
@@ -29,67 +34,14 @@ from ..context import MediaContext
 logger = logging.getLogger(__name__)
 
 
-# Aliases accepted by --agentic-benchmark, mapped to the EVALS_AGENTIC task
-# names they select. ``_PREFIX_ALIASES`` match by task_name prefix (a family of
-# tasks, e.g. every tau3_bench_* variant); ``_EXACT_ALIASES`` match one task
-# exactly (tb2.0 must not also pick up terminal_bench_2_1).
-_AGENTIC_BENCHMARK_PREFIX_ALIASES = {
-    "tau3": "tau3_bench_",
-    "swebench": "swe_bench_",
-}
-_AGENTIC_BENCHMARK_EXACT_ALIASES = {
-    "tb2.0": "terminal_bench_2",
-    "tb2.1": "terminal_bench_2_1",
-}
-
-
+# Retain the private bridge names imported by existing focused tests while the
+# implementation lives at the shared selection boundary.
 def _parse_agentic_benchmark(value: str) -> tuple:
-    """Parse a comma-separated --agentic-benchmark value into (prefixes, exacts).
-
-    Recognized aliases map to task-name prefixes/exact names; anything else is
-    treated as a raw task name matched exactly. Returns empty matchers for
-    "all"/blank so callers can skip filtering.
-    """
-    prefixes: list[str] = []
-    exacts: set = set()
-    for token in (t.strip().lower() for t in value.split(",")):
-        if not token or token == "all":
-            continue
-        if token in _AGENTIC_BENCHMARK_PREFIX_ALIASES:
-            prefixes.append(_AGENTIC_BENCHMARK_PREFIX_ALIASES[token])
-        elif token in _AGENTIC_BENCHMARK_EXACT_ALIASES:
-            exacts.add(_AGENTIC_BENCHMARK_EXACT_ALIASES[token])
-        else:
-            exacts.add(token)
-    return prefixes, exacts
+    return parse_agentic_benchmark(value)
 
 
-def _filter_agentic_tasks_by_benchmark(agentic: list, selection: str) -> list:
-    """Keep only the EVALS_AGENTIC tasks selected by --agentic-benchmark."""
-    prefixes, exacts = _parse_agentic_benchmark(selection)
-    if not prefixes and not exacts:
-        return agentic
-    selected = [
-        t
-        for t in agentic
-        if t.task_name in exacts or any(t.task_name.startswith(p) for p in prefixes)
-    ]
-    if not selected:
-        available = [t.task_name for t in agentic]
-        raise RuntimeError(
-            f"--agentic-benchmark {selection!r} matched no EVALS_AGENTIC tasks. "
-            f"Available for this model: {available}. Aliases: "
-            f"{sorted(_AGENTIC_BENCHMARK_PREFIX_ALIASES)} + "
-            f"{sorted(_AGENTIC_BENCHMARK_EXACT_ALIASES)}."
-        )
-    logger.info(
-        "--agentic-benchmark %r selected %d of %d agentic task(s): %s",
-        selection,
-        len(selected),
-        len(agentic),
-        [t.task_name for t in selected],
-    )
-    return selected
+def _filter_agentic_tasks_by_benchmark(tasks: list, selection: str) -> list:
+    return filter_agentic_tasks_by_benchmark(tasks, selection)
 
 
 def _select_agentic_tasks(ctx: MediaContext) -> list:
@@ -104,12 +56,11 @@ def _select_agentic_tasks(ctx: MediaContext) -> list:
     would leave no way to run agentic evals in CI.
 
     When ``--agentic-benchmark`` is set, the agentic tasks are further narrowed
-    to the selected benchmark(s).
+    to the selected benchmark(s). Tasks whose declared input/output envelope
+    exceeds the selected device's max context are omitted in both the default
+    and explicit-selection paths.
     """
     tasks = getattr(ctx.all_params, "tasks", []) or []
-    agentic = [
-        t for t in tasks if t.workflow_venv_type == WorkflowVenvType.EVALS_AGENTIC
-    ]
     non_agentic = [
         t for t in tasks if t.workflow_venv_type != WorkflowVenvType.EVALS_AGENTIC
     ]
@@ -120,10 +71,11 @@ def _select_agentic_tasks(ctx: MediaContext) -> list:
             len(non_agentic),
             [t.task_name for t in non_agentic],
         )
-    selection = getattr(getattr(ctx, "runtime_config", None), "agentic_benchmark", None)
-    if isinstance(selection, str) and selection.strip():
-        agentic = _filter_agentic_tasks_by_benchmark(agentic, selection)
-    return agentic
+    return select_agentic_eval_tasks(
+        tasks,
+        ctx.model_spec,
+        getattr(ctx, "runtime_config", None),
+    )
 
 
 def _server_connection(ctx: MediaContext) -> ServerConnection:
@@ -205,15 +157,16 @@ def _require_openai_server(ctx: MediaContext) -> None:
 
 def run_llm_agentic_eval(ctx: MediaContext) -> List[Block]:
     """Run every EVALS_AGENTIC task for this model; return one Block per task."""
-    _configure_openai_env(ctx)
-    _require_openai_server(ctx)
-
     agentic_tasks = _select_agentic_tasks(ctx)
     if not agentic_tasks:
         raise RuntimeError(
-            f"No EVALS_AGENTIC tasks configured for {ctx.model_spec.model_name!r}. "
-            "Check reference_config/evals/eval_config.py."
+            "No context-reachable EVALS_AGENTIC tasks selected for "
+            f"{ctx.model_spec.model_name!r}. Check the task request envelopes "
+            "and DeviceModelSpec.max_context."
         )
+
+    _configure_openai_env(ctx)
+    _require_openai_server(ctx)
 
     runtime_config = getattr(ctx, "runtime_config", None)
     server = _server_connection(ctx)
