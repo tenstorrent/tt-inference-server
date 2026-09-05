@@ -374,7 +374,15 @@ training_lora_impl = ImplSpec(
     code_path="tt-media-server/tt_model_runners/forge_training_runners/training_lora_runner.py",
 )
 
+quetzal_impl = ImplSpec(
+    impl_id="quetzal",
+    impl_name="quetzal",
+    repo_url="https://github.com/tenstorrent/tt-quetzalcoatlus",
+    code_path="serving",
+)
+
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
+    "quetzal": quetzal_impl,
     "tt_transformers": tt_transformers_impl,
     "llama3_70b_galaxy": llama3_70b_galaxy_impl,
     "qwen3_32b_galaxy": qwen3_32b_galaxy_impl,
