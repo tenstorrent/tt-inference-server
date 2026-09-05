@@ -747,7 +747,55 @@ def _weights_spec():
     return {
         "model_name": "Mistral-7B-Instruct-v0.3",
         "hf_model_repo": "mistralai/Mistral-7B-Instruct-v0.3",
+        "device_model_spec": {"vllm_args": {"revision": "pinned-revision"}},
     }
+
+
+def test_ensure_weights_available_resolves_pinned_offline_snapshot(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    monkeypatch.delenv("MODEL_WEIGHTS_DIR", raising=False)
+    monkeypatch.setenv("HF_HOME", str(tmp_path / "huggingface"))
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    monkeypatch.delenv("TRANSFORMERS_OFFLINE", raising=False)
+    snapshot_path = tmp_path / "huggingface" / "hub" / "cached-snapshot"
+    run_vllm_api_server_module.snapshot_download.return_value = str(snapshot_path)
+    spec = _weights_spec()
+
+    result = run_vllm_api_server_module.ensure_weights_available(spec)
+
+    run_vllm_api_server_module.snapshot_download.assert_called_once_with(
+        repo_id=spec["hf_model_repo"],
+        revision="pinned-revision",
+        local_files_only=True,
+    )
+    assert result == snapshot_path
+    assert os.environ["MODEL_WEIGHTS_DIR"] == str(snapshot_path)
+
+
+def test_ensure_weights_available_reports_pinned_offline_cache_miss(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    monkeypatch.delenv("MODEL_WEIGHTS_DIR", raising=False)
+    monkeypatch.setenv("HF_HOME", str(tmp_path / "huggingface"))
+    monkeypatch.delenv("HF_HUB_OFFLINE", raising=False)
+    monkeypatch.setenv("TRANSFORMERS_OFFLINE", "true")
+    run_vllm_api_server_module.snapshot_download.side_effect = RuntimeError(
+        "snapshot absent"
+    )
+    spec = _weights_spec()
+
+    with pytest.raises(RuntimeError) as error:
+        run_vllm_api_server_module.ensure_weights_available(spec)
+
+    message = str(error.value)
+    assert f"{spec['hf_model_repo']}@pinned-revision" in message
+    assert f"HF_HOME={tmp_path / 'huggingface'}" in message
+    run_vllm_api_server_module.snapshot_download.assert_called_once_with(
+        repo_id=spec["hf_model_repo"],
+        revision="pinned-revision",
+        local_files_only=True,
+    )
 
 
 def test_ensure_weights_available_resumes_partial_download(
@@ -757,6 +805,8 @@ def test_ensure_weights_available_resumes_partial_download(
     snapshot_download so missing files are fetched, rather than being treated
     as complete."""
     monkeypatch.delenv("MODEL_WEIGHTS_DIR", raising=False)
+    monkeypatch.delenv("HF_HUB_OFFLINE", raising=False)
+    monkeypatch.delenv("TRANSFORMERS_OFFLINE", raising=False)
     monkeypatch.setenv("CACHE_ROOT", str(tmp_path))
     spec = _weights_spec()
     weights_path = tmp_path / "weights" / spec["model_name"]
@@ -779,6 +829,8 @@ def test_ensure_weights_available_falls_back_when_hub_unreachable(
     """If the hub is unreachable but weights already exist locally, startup
     proceeds with the existing weights instead of crashing."""
     monkeypatch.delenv("MODEL_WEIGHTS_DIR", raising=False)
+    monkeypatch.delenv("HF_HUB_OFFLINE", raising=False)
+    monkeypatch.delenv("TRANSFORMERS_OFFLINE", raising=False)
     monkeypatch.setenv("CACHE_ROOT", str(tmp_path))
     run_vllm_api_server_module.snapshot_download.side_effect = RuntimeError("offline")
     spec = _weights_spec()
@@ -798,6 +850,8 @@ def test_ensure_weights_available_raises_when_unreachable_and_no_weights(
     """If the hub is unreachable and nothing is cached locally, the failure
     must surface rather than starting with no weights."""
     monkeypatch.delenv("MODEL_WEIGHTS_DIR", raising=False)
+    monkeypatch.delenv("HF_HUB_OFFLINE", raising=False)
+    monkeypatch.delenv("TRANSFORMERS_OFFLINE", raising=False)
     monkeypatch.setenv("CACHE_ROOT", str(tmp_path))
     run_vllm_api_server_module.snapshot_download.side_effect = RuntimeError("offline")
 

@@ -51,6 +51,11 @@ QUETZAL_PACKAGE_PATH_ENV_VARS = (
 QUETZAL_INSTALLED_MANIFEST_DIR = ".quetzal-bundle-manifests"
 
 
+def _env_truthy(name: str) -> bool:
+    """True when an env var is set to a truthy value (1/true/yes/on)."""
+    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def prepare_quetzal_bundle_env(
     model_spec: dict, package_root_override: Optional[str]
 ) -> None:
@@ -531,6 +536,32 @@ def ensure_weights_available(model_spec: dict) -> Path:
         logger.info(f"Using pre-mounted weights from MODEL_WEIGHTS_DIR: {weights_path}")
         return weights_path
 
+    hf_repo = model_spec.get("hf_weights_repo") or model_spec["hf_model_repo"]
+    revision = (
+        model_spec.get("device_model_spec", {}).get("vllm_args", {}).get("revision")
+    )
+
+    # In offline mode, resolve the exact catalog-pinned snapshot from HF_HOME.
+    # Passing local_dir would instead target cache_root/weights and cannot reuse a
+    # standard Hugging Face cache even when the requested revision is present.
+    offline = _env_truthy("HF_HUB_OFFLINE") or _env_truthy("TRANSFORMERS_OFFLINE")
+    if offline:
+        try:
+            snapshot_path = Path(
+                snapshot_download(
+                    repo_id=hf_repo, revision=revision, local_files_only=True
+                )
+            )
+        except Exception as error:
+            raise RuntimeError(
+                "Offline weights requested (HF_HUB_OFFLINE/TRANSFORMERS_OFFLINE) "
+                f"but {hf_repo}@{revision or 'main'} is not in the HF cache "
+                f"(HF_HOME={os.getenv('HF_HOME')}): {error}"
+            ) from error
+        logger.info(f"Using offline HF cache snapshot for {hf_repo}: {snapshot_path}")
+        os.environ["MODEL_WEIGHTS_DIR"] = str(snapshot_path)
+        return snapshot_path
+
     # Default: download weights into cache_root.
     # snapshot_download resumes partial downloads and skips files already present, so
     # always invoke it: a partially-downloaded directory looks non-empty but would crash
@@ -539,7 +570,6 @@ def ensure_weights_available(model_spec: dict) -> Path:
     cache_root = Path(os.getenv("CACHE_ROOT", "/home/container_app_user/cache_root"))
     model_name = model_spec["model_name"]
     weights_path = cache_root / "weights" / model_name
-    hf_repo = model_spec.get("hf_weights_repo") or model_spec["hf_model_repo"]
 
     weights_path.mkdir(parents=True, exist_ok=True)
     logger.info(f"Downloading weights from {hf_repo} to {weights_path}")
