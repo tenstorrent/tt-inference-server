@@ -511,7 +511,23 @@ class RequirementsTargetPack(TargetPack):
             base,
             self._agentic_concurrencies(),
             goodput=self.agentic_traces_goodput() or "",
+            expected_sweep=self._agentic_expected_sweep(),
         )
+
+    def _agentic_expected_sweep(self) -> List[Dict[str, Any]]:
+        """The document's expected sweep points, verbatim and in order.
+
+        ``AgenticSweepPoint.reference`` is the point as the document stated
+        it, so what a run measures can be graded against its own operating
+        point in the report. First workload wins on a shared concurrency,
+        matching the dedupe in ``_agentic_concurrencies``.
+        """
+        points: Dict[int, Dict[str, Any]] = {}
+        for workload in self._doc.agentic_workloads:
+            for point in workload.sweep:
+                if point.concurrency > 0:
+                    points.setdefault(point.concurrency, dict(point.reference))
+        return [points[c] for c in sorted(points)]
 
     def _agentic_concurrencies(self) -> List[int]:
         """Concurrencies the document's agentic workloads ask for, in order.

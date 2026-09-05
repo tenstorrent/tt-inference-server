@@ -763,6 +763,10 @@ def _build_payload(
         # The SLO bars goodput was graded against, so a goodput number is
         # never read without the definition of "good" that produced it.
         "goodput_slo": run.goodput,
+        # The document's expected sweep, so the report can grade each measured
+        # point against its target -- and call out the points a truncated
+        # sweep never measured. Empty when nothing grades the run.
+        "expected_sweep": [dict(point) for point in run.expected_sweep],
         "failed_request_threshold": run.failed_request_threshold,
         "trajectory_start_min_ratio": run.trajectory_start_min_ratio,
         "trajectory_start_max_ratio": run.trajectory_start_max_ratio,

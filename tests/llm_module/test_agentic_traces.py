@@ -1378,3 +1378,62 @@ class TestSwoBenchParser:
         assert block.data["mode"] == "ci"
         assert block.targets["device"] == "super_cluster"
         assert block.targets["timestamp"] == "2026-07-27 12:00:00"
+
+
+class TestExpectedSweepPlumbing:
+    """The document's expected sweep rides spec -> run -> payload, so the
+    report can grade the measurement against it (goodput_slo precedent)."""
+
+    _SWEEP = [{"concurrency": 4, "ttftMeanMs": 700.0}, {"concurrency": 8}]
+
+    def test_build_runs_carries_the_specs_expected_sweep(self):
+        config = AgenticTracesConfig(
+            model_id="id_test",
+            inferencex_git_ref="abc123",
+            runs=(
+                AgenticTracesRunSpec(concurrency=4, expected_sweep=list(self._SWEEP)),
+            ),
+        )
+
+        run = build_runs(config, _FakeModelSpec())[0]
+
+        assert run.expected_sweep == list(self._SWEEP)
+
+    def test_build_runs_defaults_to_no_expectation(self):
+        config = AgenticTracesConfig(
+            model_id="id_test",
+            inferencex_git_ref="abc123",
+            runs=(AgenticTracesRunSpec(),),
+        )
+
+        assert build_runs(config, _FakeModelSpec())[0].expected_sweep == []
+
+    def test_payload_carries_the_expected_sweep(self):
+        from llm_module.drivers.aiperf_agentic_traces import _build_payload
+
+        config = AgenticTracesConfig(
+            model_id="id_test",
+            inferencex_git_ref="abc123",
+            runs=(
+                AgenticTracesRunSpec(concurrency=4, expected_sweep=list(self._SWEEP)),
+            ),
+        )
+        run = build_runs(config, _FakeModelSpec())[0]
+
+        payload = _build_payload(
+            run=run, metrics={}, model_repo="org/model", artifact_dir=Path("/tmp/a")
+        )
+
+        assert payload["expected_sweep"] == list(self._SWEEP)
+
+    def test_payload_defaults_to_empty_expectation(self):
+        from llm_module.drivers.aiperf_agentic_traces import _build_payload
+
+        config = AGENTIC_TRACES_CONFIGS[KIMI_MODEL_ID]
+        run = build_runs(config, _FakeModelSpec(), mode=AgenticTracesMode.CI)[0]
+
+        payload = _build_payload(
+            run=run, metrics={}, model_repo="org/model", artifact_dir=Path("/tmp/a")
+        )
+
+        assert payload["expected_sweep"] == []
