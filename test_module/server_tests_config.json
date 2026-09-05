@@ -41,6 +41,7 @@
         "LLM": [
             "Qwen3-32B",
             "Llama-3.1-8B-Instruct",
+            "Llama-3.2-1B-Instruct",
             "Llama-3.3-70B-Instruct",
             "gpt-oss-20b",
             "diffusiongemma-26B-A4B-it",
@@ -436,6 +437,16 @@
                 "p300x2",
                 "galaxy",
                 "galaxy_t3k"
+            ]
+        },
+        "llama_3_2_1b": {
+            "id_name": "llama-3.2-1b",
+            "weights": [
+                "Llama-3.2-1B-Instruct"
+            ],
+            "category": "LLM",
+            "compatible_devices": [
+                "p300x2"
             ]
         },
         "mistral_small_24b": {
