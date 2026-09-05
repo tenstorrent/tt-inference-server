@@ -33,6 +33,7 @@ def _parse_launcher_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--workflow", required=True)
     parser.add_argument("--device", required=True)
     parser.add_argument("--requirements-json", default=None)
+    parser.add_argument("--runtime-model-spec-json", default=None)
     args, _ = parser.parse_known_args(argv)
     if args.workflow != "agentic":
         parser.error(
@@ -42,12 +43,29 @@ def _parse_launcher_args(argv: list[str]) -> argparse.Namespace:
     return args
 
 
+def _resolve_model_spec(args: argparse.Namespace):
+    """Prefer the exact runtime spec already resolved by ``run.py``."""
+    from workflows.model_spec import ModelSpec, get_runtime_model_spec
+
+    if args.runtime_model_spec_json:
+        try:
+            return ModelSpec.from_json(args.runtime_model_spec_json)
+        except Exception as e:  # noqa: BLE001 - fall back to catalog resolution
+            logger.warning(
+                "Could not load model_spec from %s (%s); falling back to catalog "
+                "resolution by (model, device).",
+                args.runtime_model_spec_json,
+                e,
+            )
+    model_spec, _, _ = get_runtime_model_spec(model=args.model, device=args.device)
+    return model_spec
+
+
 def main() -> int:
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
-    from workflow_module.model_catalog import get_model_spec_provider
     from workflows.workflow_types import WorkflowVenvType
 
     args = _parse_launcher_args(sys.argv[1:])
@@ -59,7 +77,7 @@ def main() -> int:
 
         register_requirements_providers(load_requirements(args.requirements_json))
     # EVALS_AGENTIC setup depends on the model, so resolve the spec first.
-    model_spec = get_model_spec_provider().resolve(model=args.model, device=args.device)
+    model_spec = _resolve_model_spec(args)
     return setup_venv_and_exec(
         WorkflowVenvType.EVALS_AGENTIC,
         logger,
