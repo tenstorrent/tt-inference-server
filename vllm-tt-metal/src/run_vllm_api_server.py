@@ -70,9 +70,13 @@ def _quetzal_auxiliary_roots() -> Optional[dict]:
         roots = json.loads(raw)
     except json.JSONDecodeError as e:
         raise RuntimeError("QUETZAL_AUXILIARY_ROOTS_JSON is not valid JSON") from e
-    if not isinstance(roots, dict) or not roots or not all(
-        isinstance(name, str) and isinstance(path, str)
-        for name, path in roots.items()
+    if (
+        not isinstance(roots, dict)
+        or not roots
+        or not all(
+            isinstance(name, str) and isinstance(path, str)
+            for name, path in roots.items()
+        )
     ):
         raise RuntimeError(
             "QUETZAL_AUXILIARY_ROOTS_JSON must map auxiliary names to paths"
@@ -209,9 +213,7 @@ def admit_quetzal_bundle(model_spec: dict) -> None:
         )
     root = Path(package_root)
     if root.is_symlink() or not root.is_dir():
-        raise RuntimeError(
-            f"QUETZAL_PACKAGE_ROOT is not a directory: {package_root}"
-        )
+        raise RuntimeError(f"QUETZAL_PACKAGE_ROOT is not a directory: {package_root}")
     expected_sha = os.getenv("QUETZAL_BUNDLE_MANIFEST_SHA256")
     auxiliary_roots = _quetzal_auxiliary_roots()
 
@@ -232,9 +234,7 @@ def admit_quetzal_bundle(model_spec: dict) -> None:
     else:
         # Installed / shared read-only layout: proof under
         # .quetzal-bundle-manifests/, payloads at logical paths.
-        result = _admit_installed_quetzal_bundle(
-            root, expected_sha, auxiliary_roots
-        )
+        result = _admit_installed_quetzal_bundle(root, expected_sha, auxiliary_roots)
     logger.info(
         "Quetzal content-address admit OK: schema=%s files=%s "
         "manifest_sha256=%s auxiliary=%s",

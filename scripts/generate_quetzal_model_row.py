@@ -24,6 +24,7 @@ Example
       --manifest-sha256 <hex> \
       >> workflows/model_specs/dev/llm.yaml
 """
+
 from __future__ import annotations
 
 import argparse
@@ -61,17 +62,12 @@ def _select_profile(profiles: list[dict], model: str) -> dict:
         row
         for row in profiles
         if any(
-            w == model or w.rsplit("/", 1)[-1] == base
-            for w in row.get("weights", [])
+            w == model or w.rsplit("/", 1)[-1] == base for w in row.get("weights", [])
         )
     ]
     if not matches:
-        available = sorted(
-            w for row in profiles for w in row.get("weights", [])
-        )
-        raise SystemExit(
-            f"no profile for {model!r} in catalog; available: {available}"
-        )
+        available = sorted(w for row in profiles for w in row.get("weights", []))
+        raise SystemExit(f"no profile for {model!r} in catalog; available: {available}")
     if len(matches) > 1:
         raise SystemExit(f"ambiguous: {len(matches)} profiles match {model!r}")
     return matches[0]
@@ -134,7 +130,9 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
 
     if not _PACKAGE_ID_RE.fullmatch(args.package_id):
-        raise SystemExit(f"--package-id is not a content-addressed id: {args.package_id}")
+        raise SystemExit(
+            f"--package-id is not a content-addressed id: {args.package_id}"
+        )
 
     profiles = _load_profiles(args.catalog)
     profile = _select_profile(profiles, args.model)
