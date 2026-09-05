@@ -4,6 +4,7 @@
 
 import asyncio
 import logging
+import os
 import time
 from typing import TYPE_CHECKING
 
@@ -22,7 +23,7 @@ DEFAULT_INPUT = "The quick brown fox jumps over the lazy dog"
 headers = {
     "accept": "application/json",
     "Content-Type": "application/json",
-    "Authorization": "Bearer your-secret-key",
+    "Authorization": f"Bearer {os.getenv('API_KEY', 'your-secret-key')}",
 }
 
 

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -72,7 +73,7 @@ def _generate_image(
     logger.info("🌅 Generating image")
     headers = {
         "accept": "application/json",
-        "Authorization": "Bearer your-secret-key",
+        "Authorization": f"Bearer {os.getenv('API_KEY', 'your-secret-key')}",
         "Content-Type": "application/json",
     }
     payload = {
@@ -112,7 +113,7 @@ def _generate_image_img2img(
     logger.info("🌆 Generating image with img2img")
     headers = {
         "accept": "application/json",
-        "Authorization": "Bearer your-secret-key",
+        "Authorization": f"Bearer {os.getenv('API_KEY', 'your-secret-key')}",
         "Content-Type": "application/json",
     }
     with open(f"{ctx.test_payloads_path}/image_client_img2img_payload", "r") as f:
@@ -159,7 +160,7 @@ def _generate_image_inpainting(
     logger.info("🏞️ Generating image with inpainting")
     headers = {
         "accept": "application/json",
-        "Authorization": "Bearer your-secret-key",
+        "Authorization": f"Bearer {os.getenv('API_KEY', 'your-secret-key')}",
         "Content-Type": "application/json",
     }
     with open(f"{ctx.test_payloads_path}/image_client_inpainting_payload", "r") as f:
@@ -338,7 +339,7 @@ def _generate_image_z_image_turbo(
 ) -> tuple[bool, float]:
     headers = {
         "accept": "application/json",
-        "Authorization": "Bearer your-secret-key",
+        "Authorization": f"Bearer {os.getenv('API_KEY', 'your-secret-key')}",
         "Content-Type": "application/json",
     }
     payload = {

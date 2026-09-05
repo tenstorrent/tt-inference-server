@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import sys
 import time
 from pathlib import Path
@@ -73,7 +74,7 @@ async def _generate_image_eval_async(
     logger.info(f"🌅 Generating image for prompt: {prompt}")
     headers = {
         "accept": "application/json",
-        "Authorization": "Bearer your-secret-key",
+        "Authorization": f"Bearer {os.getenv('API_KEY', 'your-secret-key')}",
         "Content-Type": "application/json",
     }
     payload = {
@@ -181,7 +182,7 @@ async def _generate_image_img2img_eval_async(
     logger.info(f"🌆 Generating img2img image for prompt: {prompt}")
     headers = {
         "accept": "application/json",
-        "Authorization": "Bearer your-secret-key",
+        "Authorization": f"Bearer {os.getenv('API_KEY', 'your-secret-key')}",
         "Content-Type": "application/json",
     }
     payload = {
@@ -282,7 +283,7 @@ async def _generate_image_inpainting_eval_async(
     logger.info(f"🏞️ Generating inpainting image for prompt: {prompt}")
     headers = {
         "accept": "application/json",
-        "Authorization": "Bearer your-secret-key",
+        "Authorization": f"Bearer {os.getenv('API_KEY', 'your-secret-key')}",
         "Content-Type": "application/json",
     }
     payload = {

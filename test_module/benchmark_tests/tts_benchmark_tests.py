@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+import os
 import sys
 import time
 from pathlib import Path
@@ -73,7 +74,7 @@ async def _generate_speech(
 
     headers = {
         "accept": "application/json",
-        "Authorization": "Bearer your-secret-key",
+        "Authorization": f"Bearer {os.getenv('API_KEY', 'your-secret-key')}",
         "Content-Type": "application/json",
     }
     payload = {"text": text, "response_format": "json"}

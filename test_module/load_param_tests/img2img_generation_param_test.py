@@ -5,6 +5,7 @@
 import asyncio
 import json
 import logging
+import os
 import time
 from pathlib import Path
 
@@ -33,7 +34,7 @@ STRENGTH = 0.5
 headers = {
     "accept": "application/json",
     "Content-Type": "application/json",
-    "Authorization": "Bearer your-secret-key",
+    "Authorization": f"Bearer {os.getenv('API_KEY', 'your-secret-key')}",
 }
 
 

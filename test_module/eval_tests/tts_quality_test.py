@@ -13,6 +13,7 @@ import base64
 import io
 import json
 import logging
+import os
 import re
 import shutil
 import time
@@ -33,7 +34,7 @@ DEFAULT_DATASET_SPLIT = "test.clean"
 headers = {
     "accept": "application/json",
     "Content-Type": "application/json",
-    "Authorization": "Bearer your-secret-key",
+    "Authorization": f"Bearer {os.getenv('API_KEY', 'your-secret-key')}",
 }
 
 

@@ -17,8 +17,7 @@ from .._test_common import BaseTest, TestConfig
 if TYPE_CHECKING:
     from ..context import MediaContext
 
-DEFAULT_API_KEY = "your-secret-key"
-
+DEFAULT_API_KEY = os.getenv("API_KEY", "your-secret-key")
 HEADERS = {
     "accept": "application/json",
     "Content-Type": "application/json",

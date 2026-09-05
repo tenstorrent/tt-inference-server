@@ -4,6 +4,7 @@
 
 import asyncio
 import logging
+import os
 import time
 from typing import TYPE_CHECKING
 
@@ -30,7 +31,7 @@ payload = {
 headers = {
     "accept": "application/json",
     "Content-Type": "application/json",
-    "Authorization": "Bearer your-secret-key",
+    "Authorization": f"Bearer {os.getenv('API_KEY', 'your-secret-key')}",
 }
 
 
