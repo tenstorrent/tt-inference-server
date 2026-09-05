@@ -167,8 +167,10 @@ class Settings(BaseSettings):
     )
     # Qwen3-ASR fans a long clip out across the 32 Galaxy runners in 10s windows,
     # so one wave = 32 * 10 = 320s. Capping here lets a single request saturate all
-    # 32 runners in one pass; audio beyond this is truncated (raise it if longer
-    # clips must be supported, at the cost of spilling into extra runner waves).
+    # 32 runners in one pass; audio beyond this is REJECTED with 400 (raise it if
+    # longer clips must be supported, at the cost of spilling into extra runner
+    # waves). It used to be truncated silently, which returned a head-only
+    # transcript the caller could not distinguish from a complete one.
     max_audio_duration_qwen3_asr_seconds: float = 320.0
     max_audio_size_bytes: int = 50 * 1024 * 1024
     default_sample_rate: int = 16000

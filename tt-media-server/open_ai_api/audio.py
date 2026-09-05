@@ -32,6 +32,7 @@ from telemetry.audio_metrics import (
     char_count,
     record_stt_request,
 )
+from utils.audio_manager import AudioTooLongError
 
 # One task per deployment: settings.audio_task decides which router is live.
 STT_TASK = (
@@ -151,6 +152,14 @@ async def handle_audio_request(audio_request, service):
         except HTTPException:
             status = STATUS_ERROR
             raise
+        except AudioTooLongError as e:
+            # Client submitted audio past the runner's cap - a request error, not
+            # a server fault. Mirrors the download-cap mapping in
+            # open_ai_api/video.py. Must precede the generic handler below:
+            # AudioTooLongError subclasses ValueError, so `except Exception`
+            # would otherwise swallow it into a 500.
+            status = STATUS_ERROR
+            raise HTTPException(status_code=400, detail=str(e))
         except Exception as e:
             status = STATUS_ERROR
             raise HTTPException(status_code=500, detail=str(e))
