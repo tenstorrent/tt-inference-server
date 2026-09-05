@@ -208,12 +208,15 @@ def test_dispatch_forwards_requirements_to_children(
         assert argv[argv.index("--requirements-json") + 1] == args.requirements_json
 
 
-def test_release_provisions_venvs_for_the_documents_evals(monkeypatch, restore_seams):
-    """The document's evals decide the venvs, not the (absent) catalog entry.
+def test_release_provisions_only_reachable_document_eval_venvs(
+    monkeypatch, restore_seams
+):
+    """The document's reachable evals decide the venvs.
 
-    The fixture asks for GPQA-Diamond plus two agentic harnesses, so a release
-    run has to build both the standard and the agentic eval venvs even though
-    the catalog has no eval config for this model at all.
+    The fixture asks for GPQA-Diamond plus two agentic harnesses, but declares a
+    128K context. The borrowed agentic templates require larger request
+    envelopes, so release provisions only the standard eval venv instead of
+    paying to install an agentic venv that cannot run.
     """
     import run
     from workflows.workflow_dispatch import _engine_dependency_venv_types
@@ -225,7 +228,7 @@ def test_release_provisions_venvs_for_the_documents_evals(monkeypatch, restore_s
         model_spec, WorkflowType.RELEASE, runtime_config
     )
     assert WorkflowVenvType.EVALS_COMMON in venv_types
-    assert WorkflowVenvType.EVALS_AGENTIC in venv_types
+    assert WorkflowVenvType.EVALS_AGENTIC not in venv_types
 
 
 def test_validation_accepts_the_off_catalog_requirements_model(
