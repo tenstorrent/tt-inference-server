@@ -5,6 +5,10 @@ on:
     branches: ["main"]
     paths:
       - ".github/workflows/models-ci-config.json"
+      - ".github/workflows/models-ci-config-schema.json"
+      - ".github/workflows/validate-models-ci-config.yml"
+      - "scripts/validate_models_ci_config.py"
+      - "tests/test_models_ci_config_identity.py"
 
 jobs:
   validate:
@@ -24,24 +28,5 @@ jobs:
       - name: Install jsonschema
         run: pip install jsonschema
 
-      - name: Validate against schema
-        run: |
-          python - <<'EOF'
-          import json
-          import jsonschema
-          import sys
-
-          with open(".github/workflows/models-ci-config-schema.json") as f:
-              schema = json.load(f)
-
-          with open(".github/workflows/models-ci-config.json") as f:
-              config = json.load(f)
-
-          try:
-              jsonschema.validate(instance=config, schema=schema)
-              print("✅ models-ci-config.json is valid")
-          except jsonschema.ValidationError as e:
-              print(f"❌ Validation failed: {e.message}")
-              print(f"   Path: {' -> '.join(str(p) for p in e.absolute_path)}")
-              sys.exit(1)
-          EOF
+      - name: Validate schema and implementation identities
+        run: python scripts/validate_models_ci_config.py
