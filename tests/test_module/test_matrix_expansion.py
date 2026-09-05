@@ -30,6 +30,22 @@ def test_diffusiongemma_llm_suite_uses_model_specific_conformance_test():
     assert {"param", "e2e", "slow", "heavy"} <= set(template["markers"])
 
 
+def test_llama_3_2_1b_p300x2_uses_vllm_param_conformance_suite():
+    suites = load_suite_files_by_category("llm")
+    matching = [
+        suite
+        for suite in suites
+        if suite["weights"] == ["Llama-3.2-1B-Instruct"]
+    ]
+
+    assert [(suite["id"], suite["device"]) for suite in matching] == [
+        ("llama-3.2-1b-p300x2", "p300x2")
+    ]
+    assert [case["template"] for case in matching[0]["test_cases"]] == [
+        "VLLMParamConformanceTest"
+    ]
+
+
 class TestImageMatrixExpansionSDXL:
     SDXL_SUITE_IDS = {
         "sdxl-n150",
