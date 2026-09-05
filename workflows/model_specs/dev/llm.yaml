@@ -2442,3 +2442,88 @@ templates:
     Qwen/Qwen3.5-27B:
       reasoning_parser_name: qwen3
       tool_call_parser_name: qwen3_coder
+
+# ---------------------------------------------------------------------------
+# Quetzal-generated (compiled) serve lane — meta-llama/Llama-3.2-1B-Instruct,
+# QB2 / P300X2 (four Blackhole chips driven as a P150x4 mesh).
+#
+# GENERATED, not hand-authored: emit this block with
+#   scripts/generate_quetzal_model_row.py \
+#       --catalog <tt-quetzalcoatlus>/serving/catalog/dev_llm_quetzal.yaml \
+#       --package-id sha256-...-... --model meta-llama/Llama-3.2-1B-Instruct
+# rather than editing the paths by hand — every QZ_/QUETZAL_ path is derived
+# from the one package id, so a stale copy is the classic mis-serve.
+#
+# All package paths are content-addressed under the package id. On a container
+# serve the package is bind-mounted read-only at QUETZAL_PACKAGE_ROOT; on a
+# bare Exabox node it is staged/admitted by content hash (verify_bundle +
+# QUETZAL_BUNDLE_MANIFEST_SHA256) — see docs/quetzal_bare_node_serve.md.
+#
+# default_impl is false: upstream already ships a native tt-metal impl for this
+# pair, so a Quetzal run MUST pass `--impl quetzal`; omission keeps the native
+# default.
+- weights:
+    - meta-llama/Llama-3.2-1B-Instruct
+  impl: quetzal
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 1
+      max_context: 4096
+      default_impl: false
+      env_vars:
+        ARCH_NAME: blackhole
+        MESH_DEVICE: P150x4
+        QUETZAL_VLLM: "1"
+        QUETZAL_MODEL: meta-llama/Llama-3.2-1B-Instruct
+        QUETZAL_HF_REVISION: 9213176726f574b556790deb65791e0c5aa438b6
+        # Pin the Quetzal source that emitted this package. The serve-required
+        # KV-cache-key patch (e2e_pcc.discover_cache_keys `cache_layers_<N>_keys`)
+        # lives IN the Quetzal package at this commit — referenced, not vendored.
+        QUETZAL_REQUIRED_SOURCE_REVISION: efa39286d1b94350ad97cba814b66d8601897524
+        TT_QUETZAL_COMMIT_SHA: efa39286d1b94350ad97cba814b66d8601897524
+        QUETZAL_REQUIRED_TT_METAL_COMMIT: 1c2aff5064f19936d70127c80fe9333d687cc427
+        TT_METAL_COMMIT_SHA_OR_TAG: 1c2aff5064f19936d70127c80fe9333d687cc427
+        QUETZAL_PACKAGE_ID: sha256-189fd3bbb381699ec59223d227e4b72854d8e0521db58d621f06866718bb9879-2e154513ea47ccc8cfde7b4512a258ef02c78ac0283115d2a6aaacb6f05d8f8f
+        QUETZAL_BUNDLE_MANIFEST_SHA256: c6a1426cfa7ff599d5b6271301a415544ae3ac0e7b4e4c1fdb5a5e4d1441c422
+        QUETZAL_PACKAGE_ROOT: /home/container_app_user/cache_root/quetzal/packages/sha256-189fd3bbb381699ec59223d227e4b72854d8e0521db58d621f06866718bb9879-2e154513ea47ccc8cfde7b4512a258ef02c78ac0283115d2a6aaacb6f05d8f8f
+        QZ_MODELS_ROOT: /home/container_app_user/cache_root/quetzal/packages/sha256-189fd3bbb381699ec59223d227e4b72854d8e0521db58d621f06866718bb9879-2e154513ea47ccc8cfde7b4512a258ef02c78ac0283115d2a6aaacb6f05d8f8f
+        QZ_QUALIFICATION_MANIFEST: /home/container_app_user/cache_root/quetzal/packages/sha256-189fd3bbb381699ec59223d227e4b72854d8e0521db58d621f06866718bb9879-2e154513ea47ccc8cfde7b4512a258ef02c78ac0283115d2a6aaacb6f05d8f8f/qualification_manifest.yaml
+        QUETZAL_PREFILL_GENERATED_PY: /home/container_app_user/cache_root/quetzal/packages/sha256-189fd3bbb381699ec59223d227e4b72854d8e0521db58d621f06866718bb9879-2e154513ea47ccc8cfde7b4512a258ef02c78ac0283115d2a6aaacb6f05d8f8f/compiled/meta-llama_Llama-3.2-1B-Instruct/full/prefill/generated.py
+        QUETZAL_DECODE_GENERATED_PY: /home/container_app_user/cache_root/quetzal/packages/sha256-189fd3bbb381699ec59223d227e4b72854d8e0521db58d621f06866718bb9879-2e154513ea47ccc8cfde7b4512a258ef02c78ac0283115d2a6aaacb6f05d8f8f/compiled/meta-llama_Llama-3.2-1B-Instruct/full/decode/generated.py
+        QUETZAL_PREFILL_METADATA_JSON: /home/container_app_user/cache_root/quetzal/packages/sha256-189fd3bbb381699ec59223d227e4b72854d8e0521db58d621f06866718bb9879-2e154513ea47ccc8cfde7b4512a258ef02c78ac0283115d2a6aaacb6f05d8f8f/compiled/meta-llama_Llama-3.2-1B-Instruct/full/prefill/metadata.json
+        QUETZAL_DECODE_METADATA_JSON: /home/container_app_user/cache_root/quetzal/packages/sha256-189fd3bbb381699ec59223d227e4b72854d8e0521db58d621f06866718bb9879-2e154513ea47ccc8cfde7b4512a258ef02c78ac0283115d2a6aaacb6f05d8f8f/compiled/meta-llama_Llama-3.2-1B-Instruct/full/decode/metadata.json
+        QUETZAL_WEIGHTS: /home/container_app_user/cache_root/quetzal/packages/sha256-189fd3bbb381699ec59223d227e4b72854d8e0521db58d621f06866718bb9879-2e154513ea47ccc8cfde7b4512a258ef02c78ac0283115d2a6aaacb6f05d8f8f/compiled_weights/meta-llama_Llama-3.2-1B-Instruct/full/weights.pt
+        QZ_MMAP_WEIGHTS: "1"
+        # Weights + tokenizer resolve offline from the package / HF cache.
+        HF_HUB_OFFLINE: "1"
+        TRANSFORMERS_OFFLINE: "1"
+        # Load the TT platform and the generated registry hook only; the
+        # handcrafted tt_model_registry is excluded so it cannot compete for the
+        # architecture alias.
+        VLLM_PLUGINS: quetzal_model_registry,tt
+        TT_VLLM_BUILTIN_MODELS: "0"
+      vllm_args:
+        block_size: 64
+        max_model_len: 4096
+        max_num_seqs: 1
+        revision: 9213176726f574b556790deb65791e0c5aa438b6
+        tokenizer_revision: 9213176726f574b556790deb65791e0c5aa438b6
+        # Tool calling for SWE/agentic. vLLM requires --tool-call-parser
+        # alongside --enable-auto-tool-choice; llama3_json is the built-in parser
+        # matching the catalog metadata tool_call_parser_name. Omitting it is the
+        # documented landmine that silently voids agentic/SWE scores.
+        enable-auto-tool-choice: true
+        tool-call-parser: llama3_json
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        l1_small_size: 16384
+        trace_region_size: 90000000
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  metadata:
+    meta-llama/Llama-3.2-1B-Instruct:
+      tool_call_parser_name: llama3_json

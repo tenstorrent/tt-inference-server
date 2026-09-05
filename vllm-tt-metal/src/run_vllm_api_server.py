@@ -33,6 +33,56 @@ logger = logging.getLogger(__name__)
 
 
 DEFAULT_VLLM_SERVER_PORT = "8000"
+QUETZAL_IMPL_ID = "quetzal"
+
+
+def _env_truthy(name: str) -> bool:
+    """True when an env var is set to a truthy value (1/true/yes/on)."""
+    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def admit_quetzal_bundle(model_spec: dict) -> None:
+    """Content-address admission for an impl=quetzal package.
+
+    On a bare Exabox node the Quetzal package lives on a writable filesystem, so
+    the plugin's read-only-mountpoint (write-bit) admission fails closed by
+    design. Instead of the ad-hoc `fuse-overlayfs -o ro` remount, admit the
+    package the way the Quetzal package itself does: verify every payload against
+    the manifest by SHA-256 (serving.artifact_bundle.verify_bundle), pinned to
+    the catalog's QUETZAL_BUNDLE_MANIFEST_SHA256. This is content-address
+    admission that is independent of file write bits — the AUDIT.md action item.
+
+    Fail-closed: an impl=quetzal spec without a package root, or a package whose
+    hashes do not match, aborts before any device use. This is not an adapter
+    around the plugin's own gate — it selects the content-addressed admission
+    path that already exists in the Quetzal package.
+    """
+    if model_spec.get("impl", {}).get("impl_id") != QUETZAL_IMPL_ID:
+        return
+
+    package_root = os.getenv("QUETZAL_PACKAGE_ROOT")
+    if not package_root:
+        raise RuntimeError(
+            "impl=quetzal requires QUETZAL_PACKAGE_ROOT (the content-addressed "
+            "package directory). Stage the bundle first; see "
+            "docs/quetzal_bare_node_serve.md."
+        )
+    expected_sha = os.getenv("QUETZAL_BUNDLE_MANIFEST_SHA256")
+
+    try:
+        from serving.artifact_bundle import verify_bundle
+    except Exception as e:  # pragma: no cover - depends on installed wheel
+        raise RuntimeError(
+            "impl=quetzal requires the tt-quetzalcoatlus wheel (serving package) "
+            f"installed in the image, but it could not be imported: {e}"
+        ) from e
+
+    result = verify_bundle(package_root, expected_sha256=expected_sha)
+    logger.info(
+        "Quetzal content-address admit OK: %s files, manifest_sha256=%s",
+        result.get("total_files"),
+        result.get("manifest_sha256"),
+    )
 
 
 def parse_args():
@@ -302,6 +352,36 @@ def ensure_weights_available(model_spec: dict) -> Path:
         logger.info(f"Using pre-mounted weights from MODEL_WEIGHTS_DIR: {weights_path}")
         return weights_path
 
+    hf_repo = model_spec.get("hf_weights_repo") or model_spec["hf_model_repo"]
+    # Pin the exact checkpoint revision when the spec declares one, so an offline
+    # cache resolves the same commit the artifact was generated against.
+    revision = (
+        model_spec.get("device_model_spec", {}).get("vllm_args", {}).get("revision")
+    )
+
+    # Offline path (HF_HUB_OFFLINE / TRANSFORMERS_OFFLINE): resolve the checkpoint
+    # from the populated HF cache (HF_HOME) rather than copying into a fresh
+    # local_dir. snapshot_download(local_dir=...) re-plans a download and fails
+    # closed with no network even when every file is already cached; passing
+    # local_files_only=True with no local_dir returns the cached snapshot path.
+    offline = _env_truthy("HF_HUB_OFFLINE") or _env_truthy("TRANSFORMERS_OFFLINE")
+    if offline:
+        try:
+            snapshot_path = Path(
+                snapshot_download(
+                    repo_id=hf_repo, revision=revision, local_files_only=True
+                )
+            )
+        except Exception as e:
+            raise RuntimeError(
+                f"Offline weights requested (HF_HUB_OFFLINE/TRANSFORMERS_OFFLINE) "
+                f"but {hf_repo}@{revision or 'main'} is not in the HF cache "
+                f"(HF_HOME={os.getenv('HF_HOME')}): {e}"
+            ) from e
+        logger.info(f"Using offline HF cache snapshot for {hf_repo}: {snapshot_path}")
+        os.environ["MODEL_WEIGHTS_DIR"] = str(snapshot_path)
+        return snapshot_path
+
     # Default: download weights into cache_root.
     # snapshot_download resumes partial downloads and skips files already present, so
     # always invoke it: a partially-downloaded directory looks non-empty but would crash
@@ -310,12 +390,11 @@ def ensure_weights_available(model_spec: dict) -> Path:
     cache_root = Path(os.getenv("CACHE_ROOT", "/home/container_app_user/cache_root"))
     model_name = model_spec["model_name"]
     weights_path = cache_root / "weights" / model_name
-    hf_repo = model_spec.get("hf_weights_repo") or model_spec["hf_model_repo"]
 
     weights_path.mkdir(parents=True, exist_ok=True)
     logger.info(f"Downloading weights from {hf_repo} to {weights_path}")
     try:
-        snapshot_download(repo_id=hf_repo, local_dir=weights_path)
+        snapshot_download(repo_id=hf_repo, revision=revision, local_dir=weights_path)
     except Exception as e:
         if any(weights_path.iterdir()):
             logger.warning(
@@ -768,6 +847,9 @@ def main():
         device_type = normalize_device_type(device_type)
     elif args.device:
         device_type = normalize_device_type(args.device)
+
+    # Admit an impl=quetzal package by content hash before any device use.
+    admit_quetzal_bundle(model_spec)
 
     if device_type and not os.getenv("TT_CACHE_PATH"):
         set_cache_paths(model_spec, device_type)

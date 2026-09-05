@@ -374,7 +374,20 @@ training_lora_impl = ImplSpec(
     code_path="tt-media-server/tt_model_runners/forge_training_runners/training_lora_runner.py",
 )
 
+# Quetzal-generated (compiled) serving lane. The served model class is bound
+# inside the vLLM process by the vllm-tt-plugin registration hook via the
+# `quetzal_model_registry` entry point (gated by QUETZAL_VLLM=1 in the model
+# spec env_vars); code_path is documentation-only and is never dereferenced by
+# the dev catalog. See docs/quetzal_bare_node_serve.md.
+quetzal_impl = ImplSpec(
+    impl_id="quetzal",
+    impl_name="quetzal",
+    repo_url="https://github.com/tenstorrent/tt-quetzalcoatlus",
+    code_path="serving",
+)
+
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
+    "quetzal": quetzal_impl,
     "tt_transformers": tt_transformers_impl,
     "llama3_70b_galaxy": llama3_70b_galaxy_impl,
     "qwen3_32b_galaxy": qwen3_32b_galaxy_impl,
