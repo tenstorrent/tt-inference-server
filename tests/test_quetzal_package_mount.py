@@ -175,6 +175,7 @@ def test_local_server_rebases_catalog_paths_to_host_package(tmp_path):
     )
     assert env["VLLM_PLUGINS"] == "quetzal_model_registry,tt"
     assert command[command.index("--impl") + 1] == "quetzal"
+    assert command.count("--quetzal-package-root") == 1
     assert command[command.index("--quetzal-package-root") + 1] == str(
         package.resolve()
     )
