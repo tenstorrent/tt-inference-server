@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 BENCHMARK_RESULT_START = "============ Serving Benchmark Result ============"
 BENCHMARK_RESULT_END = "=================================================="
-OPENAI_API_KEY = "your-secret-key"
+OPENAI_API_KEY = os.getenv("API_KEY", "your-secret-key")
 
 
 def _embedding_params(ctx: MediaContext) -> tuple[str, int, int, int]:

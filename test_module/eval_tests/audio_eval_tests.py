@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import sys
 import time
 from pathlib import Path
@@ -58,7 +59,7 @@ async def _transcribe_audio_streaming_off(
 
     headers = {
         "accept": "application/json",
-        "Authorization": "Bearer your-secret-key",
+        "Authorization": f"Bearer {os.getenv('API_KEY', 'your-secret-key')}",
         "Content-Type": "application/json",
     }
     payload = {
@@ -116,7 +117,7 @@ async def _transcribe_audio_streaming_on(
     hf_model_repo = ctx.model_spec.hf_model_repo
     headers = {
         "accept": "application/json",
-        "Authorization": "Bearer your-secret-key",
+        "Authorization": f"Bearer {os.getenv('API_KEY', 'your-secret-key')}",
         "Content-Type": "application/json",
     }
     payload = {

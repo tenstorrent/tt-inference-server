@@ -124,7 +124,7 @@ def _analyze_image(ctx: MediaContext, image_path: Path) -> tuple[bool, float]:
 
     headers = {
         "accept": "application/json",
-        "Authorization": "Bearer your-secret-key",
+        "Authorization": f"Bearer {os.getenv('API_KEY', 'your-secret-key')}",
         "Content-Type": "application/json",
     }
     payload = {"prompt": image_payload}
@@ -291,7 +291,7 @@ def _yolox_detect(ctx: MediaContext, image_jpeg: bytes) -> tuple[list, float]:
     encoded = base64.b64encode(image_jpeg).decode("ascii")
     headers = {
         "accept": "application/json",
-        "Authorization": "Bearer your-secret-key",
+        "Authorization": f"Bearer {os.getenv('API_KEY', 'your-secret-key')}",
         "Content-Type": "application/json",
     }
     payload = {

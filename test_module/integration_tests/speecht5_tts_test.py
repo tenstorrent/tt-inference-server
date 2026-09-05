@@ -18,8 +18,7 @@ from ._metrics_smoke import assert_series_present, fetch_metrics_body
 if TYPE_CHECKING:
     from ..context import MediaContext
 
-DEFAULT_API_KEY = "your-secret-key"
-
+DEFAULT_API_KEY = os.getenv("API_KEY", "your-secret-key")
 HEADERS = {
     "accept": "application/json",
     "Content-Type": "application/json",

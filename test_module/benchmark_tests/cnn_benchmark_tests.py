@@ -9,6 +9,7 @@ import base64
 import itertools
 import json
 import logging
+import os
 import sys
 import time
 from pathlib import Path
@@ -174,7 +175,7 @@ def _analyze_image(ctx: MediaContext, image_path: Path) -> tuple[bool, float]:
 
     headers = {
         "accept": "application/json",
-        "Authorization": "Bearer your-secret-key",
+        "Authorization": f"Bearer {os.getenv('API_KEY', 'your-secret-key')}",
         "Content-Type": "application/json",
     }
     payload = {"prompt": image_payload}

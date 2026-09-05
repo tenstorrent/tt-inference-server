@@ -24,6 +24,7 @@ import base64
 import copy
 import json
 import logging
+import os
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -57,7 +58,7 @@ WARMUP_AND_MEASURE_ITERATIONS = 2
 HEADERS = {
     "accept": "application/json",
     "Content-Type": "application/json",
-    "Authorization": "Bearer your-secret-key",
+    "Authorization": f"Bearer {os.getenv('API_KEY', 'your-secret-key')}",
 }
 
 

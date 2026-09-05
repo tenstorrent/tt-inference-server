@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -26,7 +27,7 @@ from ..context import HardwareRequirement, MediaContext, require_health
 logger = logging.getLogger(__name__)
 
 
-OPENAI_API_KEY = "your-secret-key"
+OPENAI_API_KEY = os.getenv("API_KEY", "your-secret-key")
 MTEB_TASKS = ["STS12"]
 EMBEDDING_DIMENSIONS = 1000
 

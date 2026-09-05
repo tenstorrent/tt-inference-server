@@ -5,6 +5,7 @@
 import asyncio
 import json
 import logging
+import os
 import shutil
 import time
 from pathlib import Path
@@ -28,7 +29,7 @@ DEFAULT_DATASET_SPLIT = "test.clean"
 headers = {
     "accept": "application/json",
     "Content-Type": "application/json",
-    "Authorization": "Bearer your-secret-key",
+    "Authorization": f"Bearer {os.getenv('API_KEY', 'your-secret-key')}",
 }
 
 
