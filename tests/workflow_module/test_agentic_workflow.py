@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import json
 from unittest.mock import MagicMock, patch
 
 
@@ -15,6 +16,7 @@ from workflow_module.workflows import (
     WORKFLOW_REGISTRY,
     get_workflow_class,
 )
+from workflow_module.execution import OrchestratorMetadata
 
 
 def _fake_block() -> Block:
@@ -23,6 +25,19 @@ def _fake_block() -> Block:
         task_type="llm",
         title="Agentic Eval — test_task",
         data={"success": True, "accuracy_check": 1, "accuracy": 0.6},
+    )
+
+
+def _fake_subprocess_failure_block(return_code: int = 1) -> Block:
+    return Block(
+        kind="evals",
+        task_type="llm",
+        title="Agentic Eval — failed_task",
+        data={
+            "success": False,
+            "accuracy_check": 3,
+            "subprocess_rc": return_code,
+        },
     )
 
 
@@ -93,3 +108,35 @@ class TestAgenticWorkflowRunTasks:
 
         assert len(outcomes) == 1
         assert outcomes[0].exit_code == 1
+
+    def test_subprocess_failure_block_fails_experimental_model_acceptance(
+        self, tmp_path
+    ):
+        spec_path = tmp_path / "runtime_model_spec.json"
+        spec_path.write_text(
+            json.dumps({"runtime_model_spec": {"status": "EXPERIMENTAL"}}),
+            encoding="utf-8",
+        )
+        wf = AgenticWorkflow(
+            _make_ctx(),
+            orchestrator_metadata=OrchestratorMetadata(
+                runtime_model_spec_json=str(spec_path)
+            ),
+        )
+        block = _fake_subprocess_failure_block(return_code=1)
+        with patch(
+            "test_module.llm_tests.agentic_eval_tests.run_llm_agentic_eval",
+            return_value=[block],
+        ):
+            outcomes = wf.run_tasks()
+
+        assert outcomes[0].exit_code == 1
+        assert outcomes[0].block_kind == "evals"
+
+        accepted, blockers = wf.apply_acceptance_criteria(
+            MagicMock(sections=[block], metadata={}), outcomes
+        )
+        assert accepted is False
+        assert blockers["task:evaluation"] == (
+            "Task 'evaluation' failed (exit=1) after producing a report block."
+        )
