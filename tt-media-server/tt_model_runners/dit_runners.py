@@ -1403,6 +1403,11 @@ class TTMiniMaxH3Runner(TTDiTRunner):
                 dit_fsdp=self.dit_fsdp,
                 trace_denoise=_minimax_h3_env_bool("MINIMAX_H3_TRACE_DENOISE"),
                 bucket_denoise=_minimax_h3_env_bool("MINIMAX_H3_BUCKET_DENOISE"),
+                # MINIMAX_H3_CONSTRUCTION_WARMUP=0 skips the construction-time warmup that metal 56cdeeb9095 added:
+                # on 2026-09-06 that warmup made later fl2va/ref2va requests hang in the conditioner (bisected on
+                # OM quad2); with it off the first request per rung binds and captures instead (the previous
+                # behaviour: slower first requests, fast start).
+                warmup=os.environ.get("MINIMAX_H3_CONSTRUCTION_WARMUP", "1") != "0",
             )
         except Exception as e:
             log_exception_chain(
