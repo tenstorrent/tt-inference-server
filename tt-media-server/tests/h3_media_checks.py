@@ -310,9 +310,14 @@ def judge(path: Path, *, expect_seconds: float | None = None, expect_canvas: tup
             v.reasons.append(f"audio looks like noise: mean {v.audio.mean_db} dB max {v.audio.max_db} dB, "
                              f"{(share or 0) * 100:.1f}% of samples at full scale "
                              f"(corrupted tracks sit at the rails: > {AUDIO_RAIL_SHARE * 100:.0f}% or mean > {AUDIO_MEAN_DB_NOISE} dB)")
-        elif v.audio.clipped or v.audio.loud:
+        elif v.audio.loud:
             v.notes.append(f"audio is loud but not railed: mean {v.audio.mean_db} dB max {v.audio.max_db} dB "
                            f"({(v.audio.rail_share or 0) * 100:.2f}% at full scale)")
+        elif v.audio.clipped:
+            # 2026-09-06, metal 8fb0c4c0483: fl2va 13 s / 15 s tracks carried 1-3 full-scale samples in the first
+            # 200 ms (an onset click) over an otherwise -33 dB track; the old tree never did.  Recorded, not failed.
+            v.notes.append(f"audio touches full scale: max {v.audio.max_db} dB with {v.audio.at_full_scale} sample(s) "
+                           f"in the 0 dB bin (mean {v.audio.mean_db} dB) -- an isolated click, not a railed track")
         elif v.audio.silent:
             v.ok = False
             v.reasons.append(f"audio is silent (mean {v.audio.mean_db} dB)")
