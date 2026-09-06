@@ -5027,6 +5027,176 @@ _eval_config_list = [
                     "until": ["</s>"],
                 },
             ),
+            # Temporary three-task agentic suite for gpt-oss-120b (see #4903).
+            # Token budgets fit the Galaxy/P300x2 131072 max_context
+            # (96K input + 32K output).
+            EvalTask(
+                task_name="terminal_bench_2_1",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # Terminus-2 on Terminal-Bench 2.0 leaderboard; closest
+                    # published Terminus-2 number pending a TB 2.1 GPU ref.
+                    published_score=18.7,
+                    published_score_ref="https://www.tbench.ai/leaderboard/terminal-bench/2.0",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4903",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2-1",
+                    agent="terminus-2",
+                    n_concurrent_trials=4,
+                    n_attempts=1,
+                    n_tasks=3,
+                    override_cpus=16,
+                    override_memory_mb=32 * 1024,
+                    agent_timeout_sec=2 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            "max_input_tokens": 96 * 1024,
+                            "max_output_tokens": 32 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 32 * 1024,
+                            "timeout": 60 * 60,
+                            "extra_body": {
+                                "reasoning_effort": "medium",
+                            },
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.SMOKE_TEST: [
+                            "terminal-bench/break-filter-js-from-html",
+                            "terminal-bench/cobol-modernization",
+                            "terminal-bench/compile-compcert",
+                        ],
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/break-filter-js-from-html",
+                            "terminal-bench/cobol-modernization",
+                            "terminal-bench/compile-compcert",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 3,
+                    EvalLimitMode.CI_NIGHTLY: 3,
+                },
+            ),
+            EvalTask(
+                task_name="tau3_bench_banking",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4903",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                    tolerance=0.10,
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="sierra-research/tau3-bench",
+                    agent="tau3_llm_agent",
+                    agent_import_path="adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent",
+                    task_names=["sierra-research/tau3-bench__tau3-banking_knowledge-*"],
+                    n_concurrent_trials=4,
+                    n_attempts=1,
+                    n_tasks=3,
+                    override_cpus=4,
+                    override_memory_mb=8 * 1024,
+                    agent_timeout_sec=3600,
+                    agent_kwargs={
+                        "tau2_trial_index": 0,
+                        "temperature": 1.0,
+                        "max_steps": 200,
+                        "tool_timeout_sec": 900,
+                        "read_timeout_sec": 120,
+                    },
+                    environment_env={
+                        "TAU2_USER_MODEL": "openai/openai/gpt-oss-120b",
+                        "TAU2_USER_REASONING_EFFORT": "medium",
+                        "TAU2_USER_LLM_ARGS_JSON": '{"reasoning_effort": "medium", "extra_body": {"reasoning_effort": "medium"}}',
+                    },
+                    verifier_env={
+                        "TAU2_NL_ASSERTIONS_MODEL": "openai/openai/gpt-oss-120b",
+                    },
+                    task_names_map={
+                        EvalLimitMode.SMOKE_TEST: [
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-031",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-032",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-052",
+                        ],
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-031",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-032",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-052",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 3,
+                    EvalLimitMode.CI_NIGHTLY: 3,
+                },
+            ),
+            EvalTask(
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=62.4,  # SWE-Bench Verified, reasoning=high
+                    published_score_ref="https://cdn.openai.com/pdf/419b6906-9da6-406c-a19d-1bb078ac7637/oai_gpt-oss_model_card.pdf",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4903",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                swebench_eval_config=SWEbenchEvalConfig(
+                    dataset_name="SWE-bench/SWE-bench_Verified",
+                    sweagent_subset="verified",
+                    dataset_split="test",
+                    agent_backend="mini-swe-agent",
+                    n_concurrent_trials=4,
+                    max_workers=24,
+                    n_tasks=3,
+                    temperature=1.0,
+                    top_p=0.95,
+                    max_input_tokens=96 * 1024,
+                    max_output_tokens=32 * 1024,
+                    completion_kwargs={
+                        "extra_body": {
+                            "reasoning_effort": "medium",
+                        },
+                    },
+                    instance_ids_map={
+                        EvalLimitMode.SMOKE_TEST: [
+                            "django__django-10880",
+                            "django__django-10914",
+                            "django__django-11299",
+                        ],
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-10880",
+                            "django__django-10914",
+                            "django__django-11299",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 3,
+                    EvalLimitMode.CI_NIGHTLY: 3,
+                },
+            ),
         ],
     ),
     EvalConfig(
