@@ -34,7 +34,9 @@ ASPECT_RATIOS = ("21:9", "16:9", "4:3", "1:1", "3:4", "9:16")
 DURATIONS_S = tuple(range(4, 16))
 # t2va/fl2va trace-bucket ladder at the (4, 32) preset; a request pads to the smallest rung >= its
 # packed length.  Only used to LABEL rows (the pipeline logs the rung it chose).
-BUCKET_LADDER = (22528, 31744, 44032, 61440, 86016, 118784)
+BUCKET_LADDER = (22528, 31744, 44032, 61440, 86016, 119808)   # top rung 118784 -> 119808 in metal 8fb0c4c0483
+# ref2va has its own ladder since metal e9dfcbdae42 (JIT-compile bucket + ref2va trace region).
+REF2VA_BUCKET_LADDER = (61440, 86016, 118784, 176128, 245760, 322560)
 WORKER_LOG = os.environ.get("H3_LIVE_WORKER_LOG") or (
     os.path.join(os.environ["H3_DEPLOY_DIR"], "workers.log") if os.environ.get("H3_DEPLOY_DIR") else None
 )
@@ -78,9 +80,10 @@ def packed_length_estimate(aspect: str, seconds: float, *, task: str = "t2va", k
     return n
 
 
-def expected_rung(aspect: str, seconds: float, **kw) -> int | None:
-    n = packed_length_estimate(aspect, seconds, **kw)
-    return next((r for r in BUCKET_LADDER if n <= r), None)
+def expected_rung(aspect: str, seconds: float, task: str = "t2va", **kw) -> int | None:
+    n = packed_length_estimate(aspect, seconds, task=task, **kw)
+    ladder = REF2VA_BUCKET_LADDER if task == "ref2va" else BUCKET_LADDER
+    return next((r for r in ladder if n <= r), None)
 
 
 @dataclass(frozen=True)
@@ -134,7 +137,8 @@ class Result:
     rung: int | None = None            # from the worker log: "packed sequence N -> bucket R"
     captured: bool | None = None       # worker log: "capturing trace..." inside this request's window
     compiled_kernels: int | None = None  # worker log: BuildKernels lines inside the window
-    steps: int | None = None           # worker log: "<task> WxH, F frames (..), .. N steps, anchors=.."
+    steps: int | None = None           # worker log: "<task> WxH, F frames (..), .. N steps, anchors=.." / "reference_resize_mode=.."
+    pre_captured: bool | None = None   # the rung was captured at construction (metal >= 56cdeeb9095 warms the ladder in __init__)
 
     @property
     def ok(self) -> bool:
@@ -258,6 +262,28 @@ def _worker_window(job_id: str) -> list[str]:
     return lines[start:end + 1]
 
 
+def _construction_captured() -> bool:
+    """True when the CURRENT worker process captured traces before serving anything (rank-0 'capturing
+    trace...' / 'Capturing bucket traces' lines ahead of the first 'Starting inference for task'): metal
+    >= 56cdeeb9095 binds and captures the whole bucket ladder in the pipeline constructor, so every served
+    request is a traced replay and the bind/capture/replay distinction below no longer exists."""
+    if not WORKER_LOG or not os.path.exists(WORKER_LOG):
+        return False
+    try:
+        text = Path(WORKER_LOG).read_text(errors="replace")
+    except OSError:
+        return False
+    text = re.sub(r"\x1b\[[0-9;]*m", "", text)
+    for ln in text.split("\n"):
+        if not ln.startswith("[1,0]"):
+            continue
+        if "Starting inference for task" in ln:
+            return False
+        if "capturing trace" in ln or "Capturing bucket traces" in ln:
+            return True
+    return False
+
+
 def enrich_from_worker_log(res: Result) -> None:
     if not res.job_id:
         return
@@ -268,8 +294,10 @@ def enrich_from_worker_log(res: Result) -> None:
     if m:
         res.rung = int(m.group(1))
     res.captured = any("capturing trace" in ln for ln in win)
+    if res.rung is not None and not res.captured:
+        res.pre_captured = _construction_captured()
     res.compiled_kernels = sum(1 for ln in win if "BuildKernels | compiled" in ln)
-    m = next((re.search(r"(\d+) steps, (?:anchors|references)=", ln) for ln in win if " steps, " in ln), None)
+    m = next((re.search(r"(\d+) steps, (?:anchors|references|reference_resize_mode)=", ln) for ln in win if " steps, " in ln), None)
     if m:
         res.steps = int(m.group(1))
 
@@ -346,11 +374,12 @@ def _audio_only(r: Result) -> bool:
 
 def replay_flags(results: list[Result]) -> list[bool]:
     """For each result (in order): True when it was a traced REPLAY -- its rung had already been served
-    earlier in this process and this request did not capture.  Binds and captures are False."""
+    earlier in this process (or was captured at construction, ``pre_captured``) and this request did not
+    capture.  Binds and captures are False."""
     seen: set[int] = set()
     flags = []
     for r in results:
-        is_replay = r.rung is not None and r.rung in seen and r.captured is False
+        is_replay = r.rung is not None and r.captured is False and (r.rung in seen or r.pre_captured is True)
         flags.append(is_replay)
         if r.rung is not None:
             seen.add(r.rung)

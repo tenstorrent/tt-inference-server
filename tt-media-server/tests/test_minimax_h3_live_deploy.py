@@ -37,7 +37,7 @@ pytestmark = [pytest.mark.live]
 OUT = Path(os.environ.get("H3_LIVE_OUT_DIR") or os.path.join(tempfile.gettempdir(), f"h3-live-{os.environ.get('USER', 'x')}")) / "deploy"
 ON_SERVER_HOST = live.Disk.enabled or os.environ.get("H3_LIVE_ON_SERVER_HOST") == "1"
 
-BUDGET_READY_S = float(os.environ.get("H3_LIVE_BUDGET_READY_S", "150"))
+BUDGET_READY_S = float(os.environ.get("H3_LIVE_BUDGET_READY_S", "400"))   # metal 8fb0c4c0483 warms all six rungs at construction: 197-222 s measured 2026-09-06 on a warm kernel cache (was ~45 s); a partially cold cache adds minutes
 BUDGET_FIRST_S = float(os.environ.get("H3_LIVE_BUDGET_FIRST_S", "120"))        # warm kernel cache
 BUDGET_FIRST_COLD_S = float(os.environ.get("H3_LIVE_BUDGET_FIRST_COLD_S", "600"))  # BuildKernels seen
 BUDGET_WARM_S = float(os.environ.get("H3_LIVE_BUDGET_WARM_S", "60"))
@@ -165,7 +165,7 @@ class TestRecovery:
 class TestTraceResidency:
     def test_all_rungs_bound_then_replayed(self, assets, served_task, deployment, report):
         """Bind all six rungs (smallest canvas/duration that lands on each), then serve each again so
-        six captures are resident at once.  Guards the trace region (150 MB today, 450 MB upstream):
+        six captures are resident at once.  Guards the trace region (1,005 MB since server cce5708f):
         an overflow fails the job in end_trace_capture and leaks its budget.  Status-only: the audio
         replay bug (xfail elsewhere) is expected to show in the second pass."""
         _fresh_or_skip("t2va", served_task, deployment)
@@ -176,7 +176,7 @@ class TestTraceResidency:
         assert not not_done, "requests did not complete with 6 rungs resident:\n  " + "\n  ".join(not_done)
         rungs = sorted({r.rung for r in results if r.rung})
         if rungs:
-            assert rungs == [22528, 31744, 44032, 61440, 86016, 118784], f"rungs walked: {rungs}"
+            assert rungs == [22528, 31744, 44032, 61440, 86016, 119808], f"rungs walked: {rungs}"
         content_bad = failures(results)
         if content_bad:
             print(f"[trace-residency] {len(content_bad)} outputs with corrupted content (known audio replay bug):\n  " + "\n  ".join(content_bad))
