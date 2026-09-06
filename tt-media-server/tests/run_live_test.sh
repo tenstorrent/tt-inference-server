@@ -2,17 +2,25 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 #
-# run_live_test.sh -- run tests/test_minimax_h3_live.py against a MiniMax-H3 deployment.
+# run_live_test.sh -- run the live MiniMax-H3 suites (tests/test_minimax_h3_live*.py) against a deployment.
 #
 # Works from any checkout, for any user: every path is derived from where this
-# script lives or taken from the environment. The full set owns the whole mesh for
-# about 1h20 -- run it inside tmux.
+# script lives or taken from the environment. Everything together owns the whole mesh for
+# several hours -- run it inside tmux, and pick a tier:
 #
-#   bash tests/run_live_test.sh                     # everything: fl2va + ref2va, 1 compile + 3 gens per combo
-#   bash tests/run_live_test.sh -k Fl2va            # one class only
-#   bash tests/run_live_test.sh -k "img6 or vid1"   # chosen combinations
-#   H3_LIVE_REPEATS=1 bash tests/run_live_test.sh   # fewer warm generations
-#   bash tests/run_live_test.sh --collect-only -q   # list the cases, touches nothing
+#   bash tests/run_live_test.sh -m h3_tier1                         # deployment health (~15 min)
+#   bash tests/run_live_test.sh tests/test_minimax_h3_live_shapes.py -k T2va   # shapes/rungs/audio, t2va (~45 min)
+#   bash tests/run_live_test.sh tests/test_minimax_h3_live.py -k Ref2va       # ref2va reference matrix (~1 h)
+#   bash tests/run_live_test.sh -m h3_tier3                         # trace residency + everything long
+#   bash tests/run_live_test.sh                                     # all live modules
+#   bash tests/run_live_test.sh -k "img6 or vid1"                   # chosen combinations
+#   H3_LIVE_REPEATS=1 bash tests/run_live_test.sh                   # fewer warm generations
+#   bash tests/run_live_test.sh --collect-only -q                   # list the cases, touches nothing
+#
+# Modules: test_minimax_h3_live.py (fl2va/ref2va combos + DELETE contract), test_minimax_h3_live_shapes.py
+# (durations x aspects, rung orders, audio/video content checks, fl2va two keyframes),
+# test_minimax_h3_live_deploy.py (warmup envs, time budgets, failed-job recovery, trace residency).
+# Any argument that names a tests/ path replaces the default module list.
 #
 # Environment (all optional):
 #   H3_LIVE_URL         server, default http://localhost:8000
@@ -99,8 +107,18 @@ if [ -n "$H3_CTL" ]; then
   export H3_LIVE_START_CMD="bash $H3_CTL start {task}"
   export H3_LIVE_WAIT_CMD="bash $H3_CTL wait-ready 1800"
   export H3_LIVE_RESET_CMD="bash $H3_CTL reset"
+  export H3_LIVE_CTL=$H3_CTL
 fi
 export H3_LIVE_REPORT=$REPORT
+export H3_LIVE_OUT_DIR=$OUT                                # shapes/deploy modules keep their mp4s under here
+[ -n "$H3_DEPLOY_DIR" ] && export H3_DEPLOY_DIR H3_LIVE_WORKER_LOG=$H3_DEPLOY_DIR/workers.log   # rung / capture / JIT facts
+
+# explicit tests/ paths on the command line replace the default module list
+TARGETS=()
+for a in "$@"; do case "$a" in tests/*) TARGETS+=("$a") ;; esac; done
+if [ ${#TARGETS[@]} -eq 0 ]; then TARGETS=(tests/test_minimax_h3_live*.py); fi
+ARGS=()
+for a in "$@"; do case "$a" in tests/*) ;; *) ARGS+=("$a") ;; esac; done
 
 echo "server:   $H3_LIVE_URL"
 echo "control:  ${H3_CTL:-none (served task is probed; no restarts, no resets)}"
@@ -110,9 +128,9 @@ echo "python:   $PYTHON"
 echo "log:      $LOG"
 echo "report:   $REPORT"
 cd "$TMS" || exit 1
-"$PYTHON" -m pytest tests/test_minimax_h3_live.py -s -v -p no:cacheprovider \
+"$PYTHON" -m pytest "${TARGETS[@]}" -s -v -p no:cacheprovider -rxXs \
   -o asyncio_default_fixture_loop_scope=function \
-  --basetemp="$OUT/pytest-tmp.$TS" "$@" 2>&1 | tee "$LOG"
+  --basetemp="$OUT/pytest-tmp.$TS" "${ARGS[@]}" 2>&1 | tee "$LOG"
 rc=${PIPESTATUS[0]}
 echo "pytest exit=$rc   log: $LOG   report: $REPORT"
 exit "$rc"

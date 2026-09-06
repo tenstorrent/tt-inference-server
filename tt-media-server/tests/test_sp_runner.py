@@ -209,6 +209,43 @@ class TestWriteImageSideFile:
         assert payload["duration_seconds"] == 5
         assert payload["references"]["videos"] == [{"b64": "vid"}]
 
+    def test_t2v_request_with_duration_writes_object_payload(self, tmp_video_dir):
+        """The SHM ``VideoRequest`` has no slot for ``duration_seconds`` /
+        ``aspect_ratio``; a t2va request that sets them gets an object
+        side-file carrying just those fields, which the runner peer maps back
+        onto the request. Before this, ``duration_seconds: 9`` was accepted
+        (202) and the worker silently generated the 5 s default."""
+        request = _MockT2VRequest(task_id="t2v-dur-9")
+        request.duration_seconds = 9
+
+        path = SPRunner._write_image_side_file(request, "t2v-dur-9")
+
+        assert path.endswith("tt_img_t2v-dur-9.json")
+        with open(path) as f:
+            payload = json.load(f)
+        assert payload == {"duration_seconds": 9}
+
+    def test_i2v_request_with_aspect_ratio_wraps_entries_in_object(
+        self, tmp_video_dir
+    ):
+        """An i2v request that also sets aspect/duration switches the wire
+        format from a bare list to an object; the list stays under
+        ``image_prompts`` unchanged."""
+        prompts = [_ImagePromptStub(image="b64-frame-0", frame_pos=0)]
+        request = _MockI2VRequest(task_id="i2v-ar", image_prompts=prompts)
+        request.aspect_ratio = "9:16"
+        request.duration_seconds = 10
+
+        path = SPRunner._write_image_side_file(request, "i2v-ar")
+
+        with open(path) as f:
+            payload = json.load(f)
+        assert payload == {
+            "aspect_ratio": "9:16",
+            "duration_seconds": 10,
+            "image_prompts": [{"image": "b64-frame-0", "frame_pos": 0}],
+        }
+
     def test_path_is_under_video_file_dir(self, tmp_video_dir):
         """Side-file location must be configurable via ``TT_VIDEO_FILE_DIR``
         for tests + multi-tenant deployments. The helper uses

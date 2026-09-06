@@ -314,6 +314,39 @@ class TestVideoRequestToGenerateRequest:
         assert len(gen.references.images) == 1
 
 
+    def test_object_payload_with_image_prompts_maps_fields_and_entries(self):
+        from domain.video_i2v_generate_request import VideoI2VGenerateRequest
+
+        req = _make_request()
+        gen = video_request_to_generate_request(
+            req,
+            image_prompts={
+                "aspect_ratio": "9:16",
+                "duration_seconds": 10,
+                "image_prompts": [{"image": _tiny_png_b64(), "frame_pos": 0}],
+            },
+        )
+        assert isinstance(gen, VideoI2VGenerateRequest)
+        assert gen.aspect_ratio == "9:16"
+        assert gen.duration_seconds == 10
+        assert len(gen.image_prompts) == 1
+        assert gen.image_prompts[0].frame_pos == 0
+
+    def test_object_payload_with_only_request_fields_maps_to_t2v(self):
+        """A t2va request carrying ``duration_seconds`` arrives as an object
+        with no conditioning; it must become a plain request WITH the field,
+        not the 5 s default."""
+        from domain.video_generate_request import VideoGenerateRequest
+
+        req = _make_request()
+        gen = video_request_to_generate_request(
+            req, image_prompts={"duration_seconds": 9}
+        )
+        assert type(gen) is VideoGenerateRequest
+        assert gen.duration_seconds == 9
+        assert gen.aspect_ratio is None
+
+
 class TestHandleSigterm:
     def test_sets_shutdown_flag(self):
         import tt_model_runners.video_runner as vr
@@ -516,6 +549,45 @@ class TestRank0LoadImagePrompts:
         assert job.error is not None
         assert "empty list" in job.error
         assert str(side_path) in job.error
+
+
+    def test_accepts_object_side_file_with_only_request_fields(self, tmp_path):
+        """t2va with ``duration_seconds``: the side-file is an object without
+        conditioning and must pass through unchanged for a T2V runner."""
+        import queue as _queue
+
+        side_path = tmp_path / "tt_img_dur.json"
+        side_path.write_text(json.dumps({"duration_seconds": 9}))
+        req = _make_request(image_path=str(side_path))
+        encode_queue: _queue.Queue = _queue.Queue()
+
+        prompts, skip = _rank0_load_image_prompts(req, encode_queue)
+
+        assert prompts == {"duration_seconds": 9}
+        assert skip is False
+        assert encode_queue.qsize() == 0
+
+    def test_rejects_object_side_file_without_conditioning_when_runner_requires_image(
+        self, tmp_path
+    ):
+        """The same object on an I2V runner is a text-only request routed to
+        an I2V model: reject it the way an empty image_path is rejected."""
+        import queue as _queue
+
+        side_path = tmp_path / "tt_img_dur_i2v.json"
+        side_path.write_text(json.dumps({"duration_seconds": 9}))
+        req = _make_request(image_path=str(side_path))
+        encode_queue: _queue.Queue = _queue.Queue()
+
+        prompts, skip = _rank0_load_image_prompts(
+            req, encode_queue, requires_image=True
+        )
+
+        assert prompts == []
+        assert skip is True
+        job = encode_queue.get_nowait()
+        assert job.task_id == req.task_id
+        assert "carries no image conditioning" in job.error
 
 
 class TestI2VInferenceLoopSideFile:
