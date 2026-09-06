@@ -105,7 +105,7 @@ export H3_LIVE_API_KEY=${H3_API_KEY:-your-secret-key}
 [ -n "${H3_LIVE_VIDEO_DIR:-}" ] && export H3_LIVE_VIDEO_DIR
 if [ -n "$H3_CTL" ]; then
   export H3_LIVE_START_CMD="bash $H3_CTL start {task}"
-  export H3_LIVE_WAIT_CMD="bash $H3_CTL wait-ready 1800"
+  export H3_LIVE_WAIT_CMD="bash $H3_CTL wait-ready 3600"   # construction-time warmup: t2va/fl2va ~200 s, ref2va 961 s on a cold kernel cache (2026-09-06)
   export H3_LIVE_RESET_CMD="bash $H3_CTL reset"
   export H3_LIVE_CTL=$H3_CTL
   # rank hosts (for the opt-in chaos test) and the side-file dir, from the deployment's env
@@ -119,7 +119,7 @@ export H3_LIVE_OUT_DIR=$OUT                                # shapes/deploy modul
 # explicit tests/ paths on the command line replace the default module list
 TARGETS=()
 for a in "$@"; do case "$a" in tests/*) TARGETS+=("$a") ;; esac; done
-if [ ${#TARGETS[@]} -eq 0 ]; then TARGETS=(tests/test_minimax_h3_live*.py); fi
+if [ ${#TARGETS[@]} -eq 0 ]; then for f in "$TMS"/tests/test_minimax_h3_live*.py; do TARGETS+=("tests/$(basename "$f")"); done; fi   # glob under $TMS: the caller may run this from anywhere
 ARGS=()
 for a in "$@"; do case "$a" in tests/*) ;; *) ARGS+=("$a") ;; esac; done
 

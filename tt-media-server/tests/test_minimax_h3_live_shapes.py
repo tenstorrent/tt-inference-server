@@ -39,7 +39,7 @@ pytestmark = [pytest.mark.live, pytest.mark.h3_tier2]
 OUT = Path(os.environ.get("H3_LIVE_OUT_DIR") or os.path.join(tempfile.gettempdir(), f"h3-live-{os.environ.get('USER', 'x')}")) / "shapes"
 
 AUDIO_REPLAY_BUG = pytest.mark.xfail(
-    strict=True,
+    strict=False,   # non-strict since metal 8fb0c4c0483 (vocoder rebuilds the tpad mask per decode): an XPASS here is the fix landing
     reason="rung replay audio corruption: a request whose duration first appears after the rung's trace "
     "capture returns full-scale-noise audio (max_volume 0.0 dB), video intact, byte-identical on repeat "
     "(quad1 2026-09-05, metal 439b4bb8d5b; the audio decoder allocates per length under a live capture)",
@@ -67,7 +67,7 @@ class TestT2vaShapes:
         _state["t2va_ladder_process"] = all(r.ok for r in results)
         _assert_all_ok(results, "t2va ladder pass 1")
         rungs = sorted({r.rung for r in results if r.rung})
-        assert rungs == [44032, 61440, 86016, 118784] or not any(r.rung for r in results), f"unexpected rungs {rungs}"
+        assert rungs == [44032, 61440, 86016, 119808] or not any(r.rung for r in results), f"unexpected rungs {rungs}"
 
     @AUDIO_REPLAY_BUG
     def test_duration_ladder_second_pass_replays(self, assets, served_task, deployment, report):
@@ -84,14 +84,14 @@ class TestT2vaShapes:
 
     def test_aspect_ratios_echo_the_canvas(self, assets, served_task, deployment, report):
         """All six ratios at 5 s and the three canvases at 15 s: correct WxH, valid content, no OOM
-        (binds rungs 22528/31744/44032/118784/86016 in one process)."""
+        (binds rungs 22528/31744/44032/119808/86016 in one process)."""
         _fresh_or_skip("t2va", served_task, deployment)
         results = run_sequence(ASPECT_SPECS, assets, deployment, report, OUT / "t2va-aspects")
         _assert_all_ok(results, "t2va aspect ratios")
 
     @AUDIO_REPLAY_BUG
     def test_audio_survives_replay_of_a_length_seen_after_capture(self, assets, served_task, deployment, report):
-        """Minimal repro: 12 s binds rung 118784, 13 s captures it, 13 s again replays -> bad audio (two replays
+        """Minimal repro: 12 s binds rung 119808, 13 s captures it, 13 s again replays -> bad audio (two replays
         so one lucky replay cannot flip the strict xfail)."""
         _fresh_or_skip("t2va", served_task, deployment)
         results = run_sequence([Spec("t2va", "16:9", 12), Spec("t2va", "16:9", 13), Spec("t2va", "16:9", 13), Spec("t2va", "16:9", 13)],
@@ -198,7 +198,7 @@ class TestRungAudioMap:
 
     @pytest.mark.parametrize(("rung", "bind_s", "capture_s"), [
         pytest.param(44032, 4, 5, id="44032"), pytest.param(61440, 6, 7, id="61440"),
-        pytest.param(86016, 9, 10, id="86016"), pytest.param(118784, 12, 13, id="118784"),
+        pytest.param(86016, 9, 10, id="86016"), pytest.param(119808, 12, 13, id="119808"),
     ])
     def test_replay_of_capture_duration(self, rung, bind_s, capture_s, assets, served_task, deployment, report):
         _fresh_or_skip("t2va", served_task, deployment)

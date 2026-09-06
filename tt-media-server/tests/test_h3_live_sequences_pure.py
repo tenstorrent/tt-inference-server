@@ -25,8 +25,8 @@ def test_expected_canvas_matches_the_served_canvases(aspect, canvas):
 
 @pytest.mark.parametrize(("aspect", "seconds", "rung"), [
     ("16:9", 4, 44032), ("16:9", 5, 44032), ("16:9", 6, 61440), ("16:9", 8, 61440), ("16:9", 9, 86016),
-    ("16:9", 11, 86016), ("16:9", 12, 118784), ("16:9", 15, 118784),
-    ("4:3", 5, 31744), ("1:1", 5, 22528), ("1:1", 15, 86016), ("21:9", 15, 118784),
+    ("16:9", 11, 86016), ("16:9", 12, 119808), ("16:9", 15, 119808),
+    ("4:3", 5, 31744), ("1:1", 5, 22528), ("1:1", 15, 86016), ("21:9", 15, 119808),
 ])
 def test_expected_rung_matches_the_pipeline_log(aspect, seconds, rung):
     # 'packed sequence N -> bucket R' lines from the 2026-09-05 sweep (t2va, ~37-token prompt)

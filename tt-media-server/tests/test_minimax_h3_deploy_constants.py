@@ -21,11 +21,12 @@ def _const(name: str) -> int:
     return int(m.group(1).replace("_", ""))
 
 
-@pytest.mark.xfail(strict=True, reason="quad workers open the mesh with a 150 MB trace region; tt-metal's own 4x32 H3 tests "
-                   "use 450_000_000 and the bucketed design keeps up to six denoise captures resident. An overflow "
-                   "is a TT_FATAL in end_trace_capture that fails the job and leaks that capture's budget.")
+# Was xfail(strict) against the 150 MB region; fixed upstream in cce5708f ("update for bucketed tracing"):
+# 150_000_000 -> 1_005_000_000. Kept as a plain tripwire: the bucketed design keeps up to six denoise
+# captures resident and an overflow is a TT_FATAL in end_trace_capture that fails the job and leaks that
+# capture's budget.
 def test_trace_region_matches_what_upstream_validates():
-    assert _const("MINIMAX_H3_TRACE_REGION_BYTES") >= 450_000_000
+    assert _const("MINIMAX_H3_TRACE_REGION_BYTES") >= 1_005_000_000   # cce5708f: six t2va/fl2va + six ref2va rungs captured at construction
 
 
 def test_trace_region_is_at_least_the_measured_minimum():
