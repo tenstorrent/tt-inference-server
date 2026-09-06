@@ -47,7 +47,14 @@ AUDIO_REPLAY_BUG = pytest.mark.xfail(
 T2VA_LADDER = [Spec("t2va", "16:9", s) for s in DURATIONS_S]
 FL2VA_LADDER = [Spec("fl2va", "16:9", s, keyframes=(0,)) for s in DURATIONS_S]
 ASPECT_SPECS = [Spec("t2va", a, 5) for a in ASPECT_RATIOS] + [Spec("t2va", a, 15) for a in ("21:9", "9:16", "1:1")]
-FL2VA_ASPECT_SPECS = [Spec("fl2va", a, 5, keyframes=(0,)) for a in ASPECT_RATIOS] + [Spec("fl2va", a, 15, keyframes=(0,)) for a in ("21:9", "1:1")]
+# H3_LIVE_SKIP_ASPECTS="1:1,3:4" removes canvases from the fl2va specs below (aspects, two keyframes, full matrix).
+# 2026-09-06, metal 8fb0c4c0483: the fl2va conditioner (text encoder, model_qwen3vl qkv_proj) hangs the mesh
+# intermittently -- 3 of ~30 requests, seen at 1:1 (594 and 1205 presentation tokens) and 3:4 (1589) -- and a hung
+# mesh costs the 300 s op timeout per request and a chip reset.  The knob keeps the rest of the canvas coverage
+# runnable while that is open; nothing is skipped by default.
+SKIP_ASPECTS = tuple(a.strip() for a in os.environ.get("H3_LIVE_SKIP_ASPECTS", "").split(",") if a.strip())
+FL2VA_ASPECTS = tuple(a for a in ASPECT_RATIOS if a not in SKIP_ASPECTS)
+FL2VA_ASPECT_SPECS = [Spec("fl2va", a, 5, keyframes=(0,)) for a in FL2VA_ASPECTS] + [Spec("fl2va", a, 15, keyframes=(0,)) for a in ("21:9", "1:1") if a in FL2VA_ASPECTS]
 
 _state: dict = {"t2va_ladder_process": False}
 
@@ -136,10 +143,12 @@ class TestFl2vaShapes:
     def test_first_and_last_keyframes(self, aspect, prompt_len, assets, served_task, deployment, report):
         """Both keyframes (frame_pos 0 and -1), the API's documented fl2va request, at every canvas, with the
         suite's short prompt (~26 tokens) and a long one (>= 33).  Two keyframes at a 1008-rows/frame canvas
-        are ~2016 vision tokens, so: long prompt -> the worker refuses the request (prompt cap 2048);
-        short prompt -> admitted, but the text padded to 3072 rows overruns the 2048-row prompt arena
-        into the audio rows and the audio comes back as noise.  Each symptom is an xfail with its own
-        reason; a clean completion passes (the fix landed); any other outcome fails."""
+        are ~2016 vision tokens: until metal cfcb53a2404 (prompt cap 2048 -> 4160) the long prompt was refused
+        (2053 > 2048) and the short one was admitted but its text, padded to 3072 rows, overran the prompt
+        arena into the audio rows (noise audio).  Each symptom stays an xfail with its own reason; a clean
+        completion passes (2026-09-06 on 8fb0c4c0483: 21:9, 16:9, 4:3, 3:4, 9:16 pass); anything else fails."""
+        if aspect in SKIP_ASPECTS:
+            pytest.skip(f"{aspect} skipped via H3_LIVE_SKIP_ASPECTS (fl2va conditioner hang)")
         _need_task("fl2va", served_task, deployment)
         prompt = live.PROMPT if prompt_len == "short" else self.LONG_PROMPT
         spec = Spec("fl2va", aspect, 5, keyframes=(0, -1), prompt=prompt, label=f"fl2va {aspect} 5s+first+last ({prompt_len} prompt)")
@@ -165,7 +174,8 @@ class TestFullMatrix:
 
     def _run(self, task, keyframes, assets, served_task, deployment, report):
         _fresh_or_skip(task, served_task, deployment)
-        specs = [Spec(task, a, s, keyframes=keyframes) for a, s in self.MATRIX]
+        aspects = FL2VA_ASPECTS if task == "fl2va" else ASPECT_RATIOS
+        specs = [Spec(task, a, s, keyframes=keyframes) for a, s in self.MATRIX if a in aspects]
         results = run_sequence(specs, assets, deployment, report, OUT / f"{task}-full-matrix")
         hard = failures(results, ignore_replay_audio=True)
         assert not hard, f"{task} full matrix: {len(hard)}/{len(results)} requests bad (status/echo/video, or noise audio on a bind/capture):\n  " + "\n  ".join(hard)
