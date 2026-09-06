@@ -179,7 +179,7 @@ templates:
         fabric_config: FABRIC_1D
         trace_region_size: 512000000
         l1_small_size: 24576
-        sample_on_device_mode: all  # block-output contract: model-owned sampler end-to-end
+        sample_on_device_mode: decode_only  # spec: prefill anchor host-sampled, decode model-owned
       vllm_args:
         max_num_seqs: 1
         # False booleans are dropped by the launcher's arg emitter; the
@@ -223,7 +223,7 @@ templates:
         fabric_config: FABRIC_1D
         trace_region_size: 512000000
         l1_small_size: 24576
-        sample_on_device_mode: all  # block-output contract: model-owned sampler end-to-end
+        sample_on_device_mode: decode_only  # spec: prefill anchor host-sampled, decode model-owned
       vllm_args:
         max_num_seqs: 1
         # False booleans are dropped by the launcher's arg emitter; the
