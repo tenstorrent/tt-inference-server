@@ -52,7 +52,6 @@ from telemetry.image_metrics import ImageStageRecorder, sampler_name
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
 from tt_model_runners.minimax_h3_policy import (
-    MINIMAX_H3_ASPECT_RATIOS,
     MINIMAX_H3_DEFAULT_ASPECT_RATIO,
     MINIMAX_H3_DEFAULT_DURATION_S,
     MINIMAX_H3_DURATIONS_S,
@@ -1318,22 +1317,7 @@ class TTWan22I2VLightningRunner(TTDiTRunner):
     def _build_warmup_video_request(self) -> VideoI2VGenerateRequest:
         return _wan22_i2v_warmup_request()
 
-
-# The prompt the pipeline is warmed with. Its *token count* is the load-bearing part, not its
-# content: every program in the 50-block stack is keyed on the padded packed length, which the
-# prompt length feeds into, so warming at a two-word prompt and serving hundred-token ones can
-# warm nothing. Roughly 100 tokens is representative of a real request.
-MINIMAX_H3_WARMUP_PASSES = 1
-
-MINIMAX_H3_WARMUP_PROMPT = (
-    "A red fox steps through wet grass at dawn, breath fogging in the cold air, while the camera "
-    "tracks slowly alongside. Birdsong rises in the background and the fox pauses, ears turning "
-    "toward a rustle in the undergrowth, before trotting on through the low golden light."
-)
-
-# Reserved only for shapes whose preset enables `trace_denoise` (4x32); matches the model tests'
-# `_ring_8k_trace`.
-MINIMAX_H3_TRACE_REGION_BYTES = 150_000_000
+MINIMAX_H3_TRACE_REGION_BYTES = 1_005_000_000
 
 
 def _minimax_h3_device_params(mesh_shape: tuple, *, l1_small_size: int = 65536) -> dict:
@@ -1363,27 +1347,10 @@ def _minimax_h3_device_params(mesh_shape: tuple, *, l1_small_size: int = 65536) 
 
 
 class TTMiniMaxH3Runner(TTDiTRunner):
-    """MiniMax-H3 `t2va`: text in, a video **and its soundtrack** out.
-
-    Two things make this runner differ from the Wan2.2 one it is otherwise modelled on, and both
-    are silent-failure modes rather than crashes:
-
-    1. **Warmup has to be the real shape at a realistic prompt length.** The base class warms with
-       a throwaway two-word prompt at `num_inference_steps=2`. For H3 that warms nothing useful --
-       the program cache is keyed on the padded packed length, and the AdaLN modulation table is
-       cached per *step count*, so a 2-step warm builds a schedule no request will ever use. The
-       cost of getting it wrong is ~210 s per request instead of ~73 s, with nothing in the logs
-       saying so. `warmup` is overridden and the padded length is asserted.
-
-    2. **The audio has to reach the client.** `t2va` returns a soundtrack alongside the video and
-       the delivered MP4 has to carry both; a silent track is a bug. The muxing happens here and
-       the runner returns a *path*, which `VideoService.post_process` passes straight through.
-
-    One shape only in v1, validated at the boundary. A request at an unwarmed shape would compile
-    inside the request rather than fail, which is worse than a clear error.
-    """
+    """MiniMax-H3 `t2va`: text in, a video **and its soundtrack** out."""
 
     pipeline_task = "t2va"
+    dit_fsdp = False
 
     def __init__(self, device_id: str):
         super().__init__(device_id)
@@ -1418,6 +1385,7 @@ class TTMiniMaxH3Runner(TTDiTRunner):
                 mesh_device=self.ttnn_device,
                 weights_dir=self._weights_dir(),
                 task=self.pipeline_task,
+                dit_fsdp=self.dit_fsdp,
             )
         except Exception as e:
             log_exception_chain(
@@ -1435,13 +1403,7 @@ class TTMiniMaxH3Runner(TTDiTRunner):
         return _minimax_h3_device_params(self.settings.device_mesh_shape)
 
     async def warmup(self) -> bool:
-        """Build the pipeline, then warm it at the exact shape and step count that will be served.
-
-        Deliberately not the base class's implementation: this calls the pipeline's own `warmup`,
-        which runs one full generation at the target working point, rather than a 2-step throwaway.
-        It is slow (minutes) and that is why the readiness probe's delay is generous -- readiness
-        must mean *warm*, or the first real request pays the compile.
-        """
+        """Load the pipeline. Construction runs `_warmup_on_init`; skip the base 2-step throwaway."""
         self.logger.info(f"Device {self.device_id}: Loading MiniMax-H3...")
 
         def distribute_block():
@@ -1468,95 +1430,8 @@ class TTMiniMaxH3Runner(TTDiTRunner):
             )
             raise
 
-        # Nothing is warmed by default. All 18 published working points are servable, and warming
-        # them costs 4-16 min each (measured, worst at the 15 s / 1 MPix points), so an eager
-        # warmup would trade hours of startup for a latency win on whichever shapes it guessed.
-        # Instead the first request at a given shape compiles, once, and says so in the log.
-        #
-        #   MINIMAX_H3_WARM_SHAPES unset  -> warm nothing (default).
-        #   "all"                         -> all 6 ratios x 3 durations. Hours of startup.
-        #   "16:9@5,9:16@10,..."          -> an explicit subset, for shapes worth pre-paying.
-        shapes = self._warmup_shapes()
-        if shapes:
-            self.logger.info(
-                f"Device {self.device_id}: Model loaded, warming {len(shapes)} shape(s): "
-                + ", ".join(f"{w}x{h}/{f}f" for h, w, f in shapes)
-            )
-        else:
-            self.logger.info(
-                f"Device {self.device_id}: Model loaded, warming nothing "
-                "(MINIMAX_H3_WARM_SHAPES unset). The first request at each shape compiles."
-            )
-        # The first served request pays ~12 s on its first denoise step against a 1.05 s steady
-        # step, then settles to 1.1 s. A second warmup pass does NOT absorb it (measured: still
-        # 11.9 s after two passes), so this stays at 1 until the cause is found.
-        self._warm_padded_lens = set()
-        for height, width, num_frames in shapes:
-            for pass_index in range(MINIMAX_H3_WARMUP_PASSES):
-                await asyncio.to_thread(
-                    lambda h=height, w=width, f=num_frames: self.pipeline.warmup(
-                        prompt=MINIMAX_H3_WARMUP_PROMPT,
-                        num_frames=f,
-                        height=h,
-                        width=w,
-                        num_inference_steps=MINIMAX_H3_NUM_INFERENCE_STEPS,
-                        **self._warmup_extra_kwargs(h, w, f),
-                    )
-                )
-                self.logger.info(
-                    f"Device {self.device_id}: {width}x{height}/{num_frames}f warmup pass "
-                    f"{pass_index + 1}/{MINIMAX_H3_WARMUP_PASSES} done"
-                )
-            self._warm_padded_lens.add(self.pipeline.last_padded_len)
-            self.logger.info(
-                f"Device {self.device_id}: warm at padded_len={self.pipeline.last_padded_len} "
-                f"({width}x{height}, {num_frames} frames, {MINIMAX_H3_NUM_INFERENCE_STEPS} steps)"
-            )
+        self.logger.info(f"Device {self.device_id}: Model loaded")
         return True
-
-    def _warmup_shapes(self) -> list[tuple[int, int, int]]:
-        """`(height, width, num_frames)` per shape to warm, from MINIMAX_H3_WARM_SHAPES."""
-        from models.tt_dit.pipelines.minimax_h3.packing import (
-            MINIMAX_H3_FPS,
-            align_num_frames,
-            resolve_canvas_size,
-        )
-
-        def shape(ratio, seconds):
-            height, width = resolve_canvas_size(*ratio)
-            return height, width, align_num_frames(round(seconds * MINIMAX_H3_FPS))
-
-        spec = (os.environ.get("MINIMAX_H3_WARM_SHAPES") or "").strip()
-        if not spec:
-            return []
-        if spec.lower() == "all":
-            return [
-                shape(ratio, seconds)
-                for ratio in MINIMAX_H3_ASPECT_RATIOS
-                for seconds in MINIMAX_H3_DURATIONS_S
-            ]
-
-        shapes: list[tuple[int, int, int]] = []
-        for entry in spec.split(","):
-            entry = entry.strip()
-            if not entry:
-                continue
-            ratio_text, _, seconds_text = entry.partition("@")
-            ratio = minimax_h3_parse_aspect_ratio(ratio_text)
-            seconds = (
-                int(seconds_text) if seconds_text else MINIMAX_H3_DEFAULT_DURATION_S
-            )
-            if seconds not in MINIMAX_H3_DURATIONS_S:
-                raise ValueError(
-                    f"MINIMAX_H3_WARM_SHAPES entry {entry!r}: duration must be one of "
-                    f"{', '.join(str(d) for d in MINIMAX_H3_DURATIONS_S)}"
-                )
-            candidate = shape(ratio, seconds)
-            if candidate not in shapes:
-                shapes.append(candidate)
-        if not shapes:
-            raise ValueError("MINIMAX_H3_WARM_SHAPES was set but parsed to no shapes")
-        return shapes
 
     def _resolve_shape(self, request: VideoGenerateRequest) -> tuple[int, int, int]:
         """`(height, width, num_frames)` for this request, or raise with what is served.
@@ -1627,22 +1502,6 @@ class TTMiniMaxH3Runner(TTDiTRunner):
             **self._pipeline_extra_kwargs(request),
         )
 
-        # `_warm_padded_lens` is what is known resident: seeded by warmup (possibly empty) and
-        # extended as shapes are served, so this fires once per shape -- when compilation actually
-        # happened -- rather than on every request of an un-pre-warmed deployment.
-        warm = getattr(self, "_warm_padded_lens", None)
-        served = self.pipeline.last_padded_len
-        if warm is not None and served not in warm:
-            # Not fatal -- the video is fine -- but this request compiled rather than replayed, and
-            # the latency looks inexplicable unless it is said out loud. Recorded afterwards so the
-            # next request at this shape is quiet.
-            self.logger.warning(
-                f"Device {self.device_id}: padded_len {served} was not resident "
-                f"(resident: {sorted(warm) or 'none'}); this request paid compilation. "
-                "Pre-pay it with MINIMAX_H3_WARM_SHAPES if this shape is served often."
-            )
-            warm.add(served)
-
         self.logger.debug(f"Device {self.device_id}: Inference completed")
         # (1, 3, F, H, W) in [0, 1] -> (F, H, W, 3), which is what the exporter's rawvideo pipe
         # wants. Without the permute it reads the width as a channel count and raises.
@@ -1662,17 +1521,9 @@ class TTMiniMaxH3Runner(TTDiTRunner):
         # character. Same shape as the Prodia runner's `return [VideoManager().export_to_mp4(...)]`.
         return [path]
 
-    def _warmup_extra_kwargs(self, height: int, width: int, num_frames: int) -> dict:
-        """Extra ``pipeline.warmup`` kwargs. FL2VA/Ref2VA add dummy media so padded_len matches."""
-        return {}
-
     def _pipeline_extra_kwargs(self, request: VideoGenerateRequest) -> dict:
         """Extra ``pipeline(...)`` kwargs beyond prompt/shape/steps/seed."""
         return {}
-
-    @staticmethod
-    def _dummy_rgb(width: int, height: int) -> Image.Image:
-        return Image.new("RGB", (width, height), color=0)
 
 
 class TTMiniMaxH3FL2VARunner(TTMiniMaxH3Runner):
@@ -1687,10 +1538,6 @@ class TTMiniMaxH3FL2VARunner(TTMiniMaxH3Runner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.image_manager = ImageManager()
-
-    def _warmup_extra_kwargs(self, height: int, width: int, num_frames: int) -> dict:
-        # A t2va-shaped warm misses the keyframe vision block (~1010 rows).
-        return {"image": self._dummy_rgb(width, height)}
 
     def _pipeline_extra_kwargs(self, request: VideoI2VGenerateRequest) -> dict:
         first, last = None, None
@@ -1720,6 +1567,8 @@ class TTMiniMaxH3Ref2VARunner(TTMiniMaxH3Runner):
     """
 
     pipeline_task = "ref2va"
+    # transformer_ref is ~62 GB SP-replicated; without FSDP each 32 GB chip OOMs on 4x32 activations.
+    dit_fsdp = True
 
     def __init__(self, device_id: str):
         super().__init__(device_id)
@@ -1729,13 +1578,6 @@ class TTMiniMaxH3Ref2VARunner(TTMiniMaxH3Runner):
         return _minimax_h3_device_params(
             self.settings.device_mesh_shape, l1_small_size=16384
         )
-
-    def _warmup_extra_kwargs(self, height: int, width: int, num_frames: int) -> dict:
-        from models.tt_dit.pipelines.minimax_h3.packing_ref2va import MiniMaxH3Reference
-
-        return {
-            "references": [MiniMaxH3Reference(image=self._dummy_rgb(width, height))]
-        }
 
     def _pipeline_extra_kwargs(self, request) -> dict:
         from domain.video_ref2va_generate_request import VideoRef2VAGenerateRequest
