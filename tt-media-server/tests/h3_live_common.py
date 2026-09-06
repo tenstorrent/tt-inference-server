@@ -353,6 +353,13 @@ REF2VA_COMBOS = [
     pytest.param(Combo("img7", "ref2va", images=7), marks=NEEDS_SERVING_FIXES, id="img7"),
     pytest.param(Combo("img9", "ref2va", images=9, note="policy maximum images; 36,946 presentation tokens"),
                  marks=NEEDS_SERVING_FIXES, id="img9"),
+    # From upstream 5d7e015a: the two heaviest mixes the policy admits short of 9 images + 3 clips.
+    # Non-strict like the three above: metal 8fb0c4c0483 re-sized the ref2va arena caps and the
+    # outcome on it is what this run measures.
+    pytest.param(Combo("img8", "ref2va", images=8), marks=NEEDS_SERVING_FIXES, id="img8"),
+    pytest.param(Combo("mix_6i_3v", "ref2va", images=6, videos=3,
+                       note="79,872 condition video rows: heaviest mixed case short of 9 + 3"),
+                 marks=NEEDS_SERVING_FIXES, id="mix_6i_3v"),
 ]
 SECOND_REQUEST_OOM = pytest.mark.xfail(
     reason="tt-inference-server#5044: at the 176,128 rung the DiT's per-rung resident state leaves "
