@@ -43,7 +43,7 @@ class WhisperEvalTest(BaseTest):
     # Class-level configuration - use same settings as run_evals.py
     model_name: str = "whisper_tt"  # eval_class from eval_config.py
     hf_model_repo: str = "distil-whisper/distil-large-v3"
-    api_key: str = "your-secret-key"
+    api_key: str = os.getenv("API_KEY", "your-secret-key")
     base_url: str = "http://127.0.0.1:8000"
     batch_size: int = 1
     test_limit: int = None  # Remove limit to match real run_evals.py behavior

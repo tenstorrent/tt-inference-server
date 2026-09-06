@@ -5,6 +5,7 @@
 import asyncio
 import base64
 import logging
+import os
 import time
 from pathlib import Path
 
@@ -58,7 +59,7 @@ min_confidence_50_payload = {
 headers = {
     "accept": "application/json",
     "Content-Type": "application/json",
-    "Authorization": "Bearer your-secret-key",
+    "Authorization": f"Bearer {os.getenv('API_KEY', 'your-secret-key')}",
 }
 
 
@@ -204,7 +205,7 @@ class CnnParamTest(BaseTest):
 
                     multipart_headers = {
                         "accept": "application/json",
-                        "Authorization": "Bearer your-secret-key",
+                        "Authorization": f"Bearer {os.getenv('API_KEY', 'your-secret-key')}",
                     }
 
                     async with session.post(

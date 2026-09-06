@@ -10,6 +10,7 @@ from threading import Lock
 
 from config.settings import settings
 from telemetry.multiprocess_setup import mark_worker_dead
+from utils.errors import reconstruct_worker_error
 from utils.logger import TTLogger
 from utils.runner_utils import setup_cpu_threading_limits
 
@@ -56,7 +57,9 @@ def _process_worker_tasks(
         except Exception as e:
             logger.error(f"Error in {worker_name} worker: {e}")
             if "task_id" in locals():
-                error_queue.put((task_id, str(e)))
+                # Class name rides along so the parent can rebuild the real type;
+                # a multiprocessing.Queue cannot carry the exception object.
+                error_queue.put((task_id, str(e), type(e).__name__))
 
     logger.info(f"{worker_name} worker stopped")
 
@@ -151,7 +154,11 @@ class CpuWorkloadHandler:
         """Listen for errors from worker processes"""
         while self.listener_running:
             try:
-                task_id, error = await asyncio.to_thread(self.error_queue.get)
+                payload = await asyncio.to_thread(self.error_queue.get)
+                # Shutdown sentinel is (None, None); worker failures are
+                # (task_id, message, type_name).
+                task_id, error = payload[0], payload[1]
+                error_type = payload[2] if len(payload) > 2 else None
 
                 if task_id is None:  # Shutdown signal
                     break
@@ -162,7 +169,7 @@ class CpuWorkloadHandler:
                     future = self.result_futures.pop(task_id, None)
 
                 if future and not future.cancelled():
-                    future.set_exception(Exception(error))
+                    future.set_exception(reconstruct_worker_error(error_type, error))
 
             except Exception as e:
                 self.logger.error(f"Error in {self.name} error listener: {e}")

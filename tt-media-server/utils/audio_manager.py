@@ -29,6 +29,11 @@ from telemetry.telemetry_client import (
 )
 
 from utils.decorators import log_execution_time
+
+# Defined in utils.errors so cpu_workload_handler can rebuild it across the
+# worker-process boundary without importing this module. Re-exported here for
+# existing callers.
+from utils.errors import AudioTooLongError
 from utils.ffmpeg_utils import decode_to_wav as ffmpeg_decode_to_wav
 from utils.logger import TTLogger
 
@@ -402,7 +407,7 @@ class AudioManager:
                 source_sample_rate,
                 source_channels,
             ) = self._convert_to_audio_array(audio_bytes, audio_format)
-            audio_array, duration_seconds = self._validate_and_truncate_duration(
+            audio_array, duration_seconds = self._validate_duration(
                 audio_array, should_preprocess
             )
             prepared = PreparedAudio(
@@ -411,6 +416,10 @@ class AudioManager:
                 source_sample_rate=source_sample_rate,
                 source_channels=source_channels,
             )
+        except AudioTooLongError:
+            # Already specific and actionable - let it reach the route layer
+            # intact so it maps to 400 instead of a generic 500.
+            raise
         except Exception as e:
             self._logger.error(f"Failed to decode audio data: {e}")
             raise ValueError(f"Failed to process audio data: {str(e)}")
@@ -444,7 +453,12 @@ class AudioManager:
             or end - start <= target_chunk_duration + 1e-6
         ):
             return [
-                {"start": float(start), "end": float(end), "text": "", "speaker": speaker}
+                {
+                    "start": float(start),
+                    "end": float(end),
+                    "text": "",
+                    "speaker": speaker,
+                }
             ]
         chunks = []
         t = float(start)
@@ -970,15 +984,23 @@ class AudioManager:
             self._logger.error(f"Failed to decode {format_name} file: {e}")
             raise ValueError(f"Could not decode {format_name} file: {str(e)}")
 
-    def _validate_and_truncate_duration(self, audio_array, should_preprocess):
+    def _validate_duration(self, audio_array, should_preprocess):
+        """Reject audio longer than the active runner's cap.
+
+        Previously this truncated and returned the shortened array, so an
+        over-length clip came back 200 with a transcript covering only the head
+        and no indication the tail was dropped (measured on Qwen3-ASR: a 600s
+        clip returned byte-identical output to a 320s one). Callers cannot
+        detect that, so it is an error now.
+        """
         duration_seconds = len(audio_array) / settings.default_sample_rate
 
         # Qwen3-ASR fans a long clip out across device runners using fixed-duration
         # windows, so it handles long audio without depending on the diarization
-        # model. Cap is one full Galaxy wave (320s = 32 runners * 10s). Without this
-        # Qwen branch, clips >max_audio_duration_seconds (60s) were silently
-        # truncated on boxes where the diarization model isn't loaded, dropping the
-        # tail (measured: 91.5s clip -> only first 60s transcribed, 86/251 words
+        # model. Cap is one full Galaxy wave (320s = 32 runners * 10s). The Qwen
+        # branch exists because clips >max_audio_duration_seconds (60s) were being
+        # cut on boxes where the diarization model isn't loaded, dropping the tail
+        # (measured: 91.5s clip -> only first 60s transcribed, 86/251 words
         # deleted). Whisper/other ASR keep the original diarization-gated limit.
         if settings.model_runner == ModelRunners.TT_QWEN3_ASR.value:
             max_duration = settings.max_audio_duration_qwen3_asr_seconds
@@ -988,11 +1010,14 @@ class AudioManager:
             max_duration = settings.max_audio_duration_seconds
 
         if duration_seconds > max_duration:
-            max_samples = int(max_duration * settings.default_sample_rate)
-            self._logger.warning(
-                f"Audio truncated from {duration_seconds:.2f}s to {max_duration}s"
+            self._logger.error(
+                f"Audio duration {duration_seconds:.2f}s exceeds maximum {max_duration}s"
             )
-            return audio_array[:max_samples], max_duration
+            raise AudioTooLongError(
+                f"Audio duration {duration_seconds:.2f}s exceeds the maximum "
+                f"supported duration of {max_duration}s for this model. "
+                f"Split the audio into shorter segments and submit them separately."
+            )
         return audio_array, duration_seconds
 
     @log_execution_time("Normalizing speaker IDs")

@@ -23,6 +23,7 @@ from fastapi.responses import StreamingResponse
 from model_services.base_service import BaseService
 from resolver.service_resolver import service_resolver
 from security.api_key_checker import get_api_key
+from utils.errors import AudioTooLongError
 
 
 async def parse_audio_request(
@@ -143,6 +144,10 @@ async def handle_audio_request(audio_request, service):
                 else "application/x-ndjson"
             )
             return StreamingResponse(result_stream(), media_type=media_type)
+    except AudioTooLongError as e:
+        # Client submitted audio past the runner's cap - a request error, not a
+        # server fault. Mirrors the download-cap mapping in open_ai_api/video.py.
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

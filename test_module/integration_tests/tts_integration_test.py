@@ -17,6 +17,7 @@ Note: Basic TTS functionality is covered by speecht5_tts_test.py
 from __future__ import annotations
 
 import logging
+import os
 import time
 from typing import TYPE_CHECKING
 
@@ -34,7 +35,7 @@ logger = logging.getLogger(__name__)
 HEADERS = {
     "accept": "application/json",
     "Content-Type": "application/json",
-    "Authorization": "Bearer your-secret-key",
+    "Authorization": f"Bearer {os.getenv('API_KEY', 'your-secret-key')}",
 }
 
 

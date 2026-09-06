@@ -15,6 +15,7 @@ import asyncio
 import base64
 import json
 import logging
+import os
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -51,7 +52,7 @@ HTTP_ACCEPTED = 202
 _HEADERS = {
     "accept": "application/json",
     "Content-Type": "application/json",
-    "Authorization": "Bearer your-secret-key",
+    "Authorization": f"Bearer {os.getenv('API_KEY', 'your-secret-key')}",
 }
 
 

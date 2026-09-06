@@ -4,6 +4,7 @@
 
 import asyncio
 import logging
+import os
 import time
 
 import aiohttp
@@ -50,7 +51,7 @@ response_format_ogg_payload = {
 headers = {
     "accept": "application/json",
     "Content-Type": "application/json",
-    "Authorization": "Bearer your-secret-key",
+    "Authorization": f"Bearer {os.getenv('API_KEY', 'your-secret-key')}",
 }
 
 

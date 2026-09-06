@@ -5,6 +5,7 @@
 import asyncio
 import json
 import logging
+import os
 import time
 
 import aiohttp
@@ -65,7 +66,7 @@ different_prompt_payload = {
 headers = {
     "accept": "application/json",
     "Content-Type": "application/json",
-    "Authorization": "Bearer your-secret-key",
+    "Authorization": f"Bearer {os.getenv('API_KEY', 'your-secret-key')}",
 }
 
 
