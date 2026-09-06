@@ -41,7 +41,7 @@ BUDGET_READY_S = float(os.environ.get("H3_LIVE_BUDGET_READY_S", "150"))
 BUDGET_FIRST_S = float(os.environ.get("H3_LIVE_BUDGET_FIRST_S", "120"))        # warm kernel cache
 BUDGET_FIRST_COLD_S = float(os.environ.get("H3_LIVE_BUDGET_FIRST_COLD_S", "600"))  # BuildKernels seen
 BUDGET_WARM_S = float(os.environ.get("H3_LIVE_BUDGET_WARM_S", "60"))
-COLD_JIT_KERNELS = int(os.environ.get("H3_LIVE_COLD_JIT_KERNELS", "50"))
+COLD_JIT_KERNELS = int(os.environ.get("H3_LIVE_COLD_JIT_KERNELS", "500"))   # a new-canvas bind on a warm cache compiles ~140; a cold cache ~1800
 
 REQUIRED_WORKER_ENV = {"TT_METAL_SHM_TRACKING_DISABLED": "1", "TT_METAL_LOGS_PATH": None}  # None: any non-empty value
 
@@ -112,6 +112,8 @@ class TestBudgets:
         """Fresh workers + API to model_ready within the budget (measured 30-60 s on quad1)."""
         if not deployment.controllable:
             pytest.skip("needs deployment control (H3_LIVE_START_CMD) to time a fresh start")
+        if deployment.poisoned:
+            deployment.fresh("t2va")   # absorb the session's first chip reset (~110 s); it is not startup time
         t0 = time.time()
         deployment.fresh("t2va")
         ready_s = round(time.time() - t0, 1)

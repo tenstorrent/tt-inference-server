@@ -110,6 +110,7 @@ pytestmark = pytest.mark.live
 class TestFl2va:
     """Keyframe layouts on a MiniMax-H3 FL2VA deployment (MODEL_RUNNER=tt-minimax-h3-fl2va)."""
 
+    @pytest.mark.h3_tier1
     def test_routing_and_delete_negatives(self, served_task, deployment):
         _need_task("fl2va", served_task, deployment)
         _routing("fl2va")
@@ -130,6 +131,7 @@ class TestFl2va:
 class TestRef2va:
     """Reference mixes on a MiniMax-H3 Ref2VA deployment (MODEL_RUNNER=tt-minimax-h3-ref2va)."""
 
+    @pytest.mark.h3_tier1
     def test_routing_and_delete_negatives(self, served_task, deployment):
         _need_task("ref2va", served_task, deployment)
         _routing("ref2va")
