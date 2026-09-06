@@ -9,4 +9,7 @@ asyncio_mode = "auto"
 markers = [
     "performance: marks tests as performance tests (requires running server)",
     "live: real-hardware tests against a running MiniMax-H3 deployment (opt-in via H3_LIVE_URL)",
+    "h3_tier1: live MiniMax-H3 deployment health -- envs, time budgets, failed-job recovery (~15 min)",
+    "h3_tier2: live MiniMax-H3 shape / rung-order / content coverage per task (~45 min per task)",
+    "h3_tier3: live MiniMax-H3 long runs -- trace residency, full OOM matrix (hours)",
 ]
