@@ -7,7 +7,9 @@ import sys
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-os.environ.setdefault("H3_LIVE_URL", "http://unit-test.invalid")  # h3_live_common reads it at import; never contacted
+# h3_live_common is importable without H3_LIVE_URL (require_live() is only called by live modules);
+# never set the variable here -- under `pytest tests/` this file is collected before the live modules
+# and would switch them on against a bogus URL.
 import h3_live_common as live  # noqa: E402
 import h3_live_sequences as seq  # noqa: E402
 

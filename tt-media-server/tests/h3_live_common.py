@@ -30,6 +30,8 @@ from typing import Any
 
 import pytest
 
+import h3_media_checks as media
+
 LIVE_URL = os.environ.get("H3_LIVE_URL", "").rstrip("/")
 
 
@@ -534,6 +536,12 @@ def _generate_repeatedly(combo: Combo, a: Assets, deployment: Deployment, report
             row["probe"] = ffprobe(dl)
             if row["probe"]:
                 assert row["probe"].get("video") and row["probe"].get("audio"), f"H3 must emit video + audio: {row['probe']}"
+            # content, not just container: combos send no duration/aspect, so 5 s at 16:9 is the served shape
+            verdict = media.judge(dl, expect_seconds=5, expect_canvas=(1344, 768))
+            row["content_ok"], row["content_reasons"] = verdict.ok, verdict.reasons
+            row["audio_mean_db"] = verdict.audio.mean_db if verdict.audio else None
+            row["audio_max_db"] = verdict.audio.max_db if verdict.audio else None
+            assert verdict.ok, f"{combo.name} {label}: output content is broken: {verdict.summary()}"
             if Disk.enabled:
                 time.sleep(1)
                 row["remux_copies"] = Disk.remux_copies()

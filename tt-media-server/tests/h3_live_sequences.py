@@ -85,12 +85,14 @@ def expected_rung(aspect: str, seconds: float, **kw) -> int | None:
 
 @dataclass(frozen=True)
 class Spec:
-    """One request: ``task`` t2va|fl2va, ``aspect`` like "16:9", integer ``seconds`` 4..15,
-    fl2va ``keyframes`` as frame_pos values ((0,) first only, (0, -1) both), ``seed``."""
+    """One request: ``task`` t2va|fl2va|ref2va, ``aspect`` like "16:9", integer ``seconds`` 4..15,
+    fl2va ``keyframes`` as frame_pos values ((0,) first only, (0, -1) both), ref2va ``ref_images``
+    (count of the image reference), ``seed``, ``prompt``."""
     task: str = "t2va"
     aspect: str = "16:9"
     seconds: int = 5
     keyframes: tuple[int, ...] = ()
+    ref_images: int = 0
     seed: int = 7
     prompt: str = live.PROMPT
     label: str = ""
@@ -98,13 +100,16 @@ class Spec:
     @property
     def tag(self) -> str:
         kf = {(): "", (0,): "+first", (-1,): "+last", (0, -1): "+first+last"}.get(self.keyframes, f"+kf{self.keyframes}")
-        return self.label or f"{self.task} {self.aspect} {self.seconds}s{kf}"
+        refs = f"+{self.ref_images}img" if self.ref_images else ""
+        return self.label or f"{self.task} {self.aspect} {self.seconds}s{kf}{refs}"
 
     def body(self, assets: live.Assets) -> dict:
         b = {"prompt": self.prompt, "seed": self.seed, "aspect_ratio": self.aspect, "duration_seconds": self.seconds}
         if self.task == "fl2va":
             pick = {0: assets.key_first, -1: assets.key_last}
             b["image_prompts"] = [{"image": pick[p], "frame_pos": p} for p in self.keyframes]
+        elif self.task == "ref2va":
+            b["references"] = {"images": [{"b64": assets.img} for _ in range(max(1, self.ref_images))]}
         return b
 
 
@@ -252,20 +257,38 @@ def run_sequence(specs: Iterable[Spec], assets: live.Assets, deployment: live.De
     return results
 
 
-def failures(results: list[Result], *, ignore_audio: bool = False) -> list[str]:
-    """Descriptions of the results that are not ok.  ``ignore_audio=True`` drops results whose ONLY
-    problem is the audio-noise verdict (the known rung-replay bug), so a long matrix can be strict on
-    status / duration / canvas / video while that bug is still open."""
-    out = []
+def _audio_only(r: Result) -> bool:
+    return r.status == "completed" and r.verdict is not None and not r.verdict.ok and all(
+        "audio looks like noise" in x for x in r.verdict.reasons)
+
+
+def replay_flags(results: list[Result]) -> list[bool]:
+    """For each result (in order): True when it was a traced REPLAY -- its rung had already been served
+    earlier in this process and this request did not capture.  Binds and captures are False."""
+    seen: set[int] = set()
+    flags = []
     for r in results:
+        is_replay = r.rung is not None and r.rung in seen and r.captured is False
+        flags.append(is_replay)
+        if r.rung is not None:
+            seen.add(r.rung)
+    return flags
+
+
+def failures(results: list[Result], *, ignore_replay_audio: bool = False) -> list[str]:
+    """Descriptions of the results that are not ok.  ``ignore_replay_audio=True`` drops results whose
+    ONLY problem is the audio-noise verdict AND that were traced replays (the known rung-replay bug), so
+    a long matrix stays strict on status / duration / canvas / video -- and on audio for binds and
+    captures, where noise would be a different bug."""
+    out = []
+    for r, is_replay in zip(results, replay_flags(results)):
         if r.ok:
             continue
-        if ignore_audio and r.status == "completed" and r.verdict and all("audio looks like noise" in x for x in r.verdict.reasons):
+        if ignore_replay_audio and is_replay and _audio_only(r):
             continue
         out.append(r.describe())
     return out
 
 
-def audio_only_failures(results: list[Result]) -> list[str]:
-    return [r.describe() for r in results if r.status == "completed" and r.verdict and not r.verdict.ok
-            and all("audio looks like noise" in x for x in r.verdict.reasons)]
+def replay_audio_failures(results: list[Result]) -> list[str]:
+    return [r.describe() for r, is_replay in zip(results, replay_flags(results)) if is_replay and _audio_only(r)]

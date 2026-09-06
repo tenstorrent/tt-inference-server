@@ -38,7 +38,7 @@ chips (`tt-smi -glx_reset_auto`) after a failed or hung job, and never leaves th
 | issue (where seen) | test | state |
 |---|---|---|
 | slow warmup; fixed by `TT_METAL_SHM_TRACKING_DISABLED=1` + `TT_METAL_LOGS_PATH` (first request 173 s -> 42 s) | `live_deploy::TestDeploymentKnobs::test_worker_env_has_the_warmup_knobs`, `TestBudgets::test_first_and_warm_request` (budget 120 s warm cache / 600 s after a rebuild, detected via `BuildKernels` lines), `test_time_to_ready` | strict |
-| fl2va first+last keyframes at a 1008-row canvas: rejected (`prompt tokens 2053 > 2048`) with a >= ~33-token prompt, or ADMITTED with a shorter prompt and the audio comes back as noise (text padded to 3072 rows overruns the 2048-row prompt arena into the audio rows) | `live_shapes::TestFl2vaShapes::test_first_and_last_keyframes[21:9/16:9/9:16]` | xfail(strict) until the cap/resize fix lands; `[4:3/1:1/3:4]` strict (two keyframes fit under the cap) |
+| fl2va first+last keyframes at a 1008-row canvas: rejected (`prompt tokens 2053 > 2048`) with a >= 33-token prompt, or ADMITTED with a shorter prompt and the audio comes back as noise (text padded to 3072 rows overruns the 2048-row prompt arena into the audio rows) | `live_shapes::TestFl2vaShapes::test_first_and_last_keyframes[<aspect>-<short|long>]` | verdict by symptom: cap refusal -> xfail A, admitted-but-noise-audio -> xfail B, clean -> pass (fix landed), anything else -> FAIL; 768/576-row canvases pass today |
 | fl2va one keyframe must work at every duration / canvas | `test_one_keyframe_duration_ladder`, `test_one_keyframe_aspect_ratios` | strict |
 | "9 s produces no audio" / audio full-scale noise on rung replays (quad1 2026-09-05) | `TestT2vaShapes::test_audio_survives_replay_of_a_length_seen_after_capture` (12 s, 13 s, 13 s), `test_duration_ladder_second_pass_replays` | xfail(strict); every completed output in every live test is also judged by `h3_media_checks` |
 | garbage video frames (old metal tree) | `h3_media_checks.judge` on every output (entropy > 7.5 bits or > 0.14 B/px at q3) | strict |
@@ -50,11 +50,15 @@ chips (`tt-smi -glx_reset_auto`) after a failed or hung job, and never leaves th
 | a failed job must not poison the worker process | `live_deploy::TestRecovery::test_failed_job_does_not_poison_the_process` | strict |
 | out-of-policy duration must be a 422 at the API, not a failed job | `live_deploy::TestApiContract::test_out_of_policy_duration_is_refused_at_admission` | xfail(strict) |
 | identical trees / cache overlay / weights on all ranks (`h3ctl.sh check`) | `live_deploy::TestHygiene::test_check_passes_on_all_ranks` | strict |
-| every duration x every aspect ratio in one process (t2va, fl2va one keyframe) | `live_shapes::TestFullMatrix::test_t2va`, `test_fl2va_one_keyframe` (tier 3, 72 requests each) | strict on status/echo/video; audio-noise outputs reported as xfail |
+| every duration x every aspect ratio in one process (t2va, fl2va one keyframe) | `live_shapes::TestFullMatrix::test_t2va`, `test_fl2va_one_keyframe` (tier 3, 72 requests each) | strict on status/echo/video and on bind/capture audio; noise audio on traced REPLAYS reported as xfail |
 | trace region 150 MB vs six resident captures (upstream validates 450 MB) | `live_deploy::TestTraceResidency::test_all_rungs_bound_then_replayed` | strict on status (tier 3) |
 | ref2va reference-count limits, second-request OOM (#5044 table) | `test_minimax_h3_live.py::TestRef2va` (`SECOND_REQUEST_OOM` xfail on img8 / mix_6i_3v) | as before |
 | DELETE contract, cancel, routing 422 for endpoints the deployment does not serve | `test_minimax_h3_live.py` (both classes) | strict |
 | t2va output determinism | `test_same_seed_is_byte_identical` | strict |
+| ref2va honours `duration_seconds` / `aspect_ratio` | `live_shapes::TestRef2vaShapes::test_duration_and_aspect_echo` | strict |
+| which rungs corrupt audio on the replay of their capture duration | `live_shapes::TestRungAudioMap::test_replay_of_capture_duration[44032/61440/86016/118784]` (tier 3) | strict on status/echo/video; replay audio noise -> xfail |
+| old-suite fl2va/ref2va combo outputs judged for content (a 41 MB 5 s ref2va clip passed the stream check on 2026-09-04) | `_generate_repeatedly` now calls `h3_media_checks.judge` | strict |
+| tt-metal python tree drift between ranks (the H3 fixes are .py-only) | `h3ctl.sh check` compares `models/tt_dit/**.py` too; `live_deploy::TestHygiene` runs it | strict |
 
 ## Content heuristics (h3_media_checks)
 
@@ -75,4 +79,10 @@ Every judged output also has to echo the request: duration = `expected_frames(se
 * Each sequence request prints `tag: status in Ns rung=R [capture] [jit=N] | OK/BAD dur=... audio mean/max=... frames[...]`.
 * The JSON report (`H3_LIVE_REPORT`) has one row per request with `rung`, `captured`,
   `compiled_kernels`, `sha256`, `audio_mean_db`/`audio_max_db`, `content_ok`, `content_reasons`.
-* An **XPASS** on a strict xfail means a known bug got fixed: remove the mark in the same PR.
+* An **XPASS** on a strict xfail means a known bug got fixed: remove the mark in the same PR. Tests that
+  decide by symptom (two keyframes, full matrix, rung audio map) use imperative `pytest.xfail` and simply
+  PASS once the bug is gone.
+* `pytest tests/` (what CI runs) must keep skipping every live module: nothing may set `H3_LIVE_URL` at
+  import time; `test_h3_live_sequences_pure.py` imports `h3_live_common` without it.
+* Cold-JIT detection: >= 500 `BuildKernels | compiled` lines in the request's worker-log window
+  (a new-canvas bind on a warm cache compiles ~140, a cold cache ~1800).
