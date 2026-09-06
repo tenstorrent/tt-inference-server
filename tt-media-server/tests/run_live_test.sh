@@ -20,7 +20,8 @@
 # Modules: test_minimax_h3_live.py (fl2va/ref2va combos + DELETE contract), test_minimax_h3_live_shapes.py
 # (durations x aspects, rung orders, audio/video content checks, fl2va two keyframes),
 # test_minimax_h3_live_deploy.py (warmup envs, time budgets, failed-job recovery, trace residency).
-# Any argument that names a tests/ path replaces the default module list.
+# Any argument that names a tests/*.py module replaces the default module list; node ids go through
+# --deselect=<nodeid> (one argument) or -k.
 #
 # Environment (all optional):
 #   H3_LIVE_URL         server, default http://localhost:8000
@@ -118,10 +119,10 @@ export H3_LIVE_OUT_DIR=$OUT                                # shapes/deploy modul
 
 # explicit tests/ paths on the command line replace the default module list
 TARGETS=()
-for a in "$@"; do case "$a" in tests/*) TARGETS+=("$a") ;; esac; done
+for a in "$@"; do case "$a" in tests/*.py) TARGETS+=("$a") ;; esac; done   # module paths only; pass node ids via --deselect=... / -k
 if [ ${#TARGETS[@]} -eq 0 ]; then for f in "$TMS"/tests/test_minimax_h3_live*.py; do TARGETS+=("tests/$(basename "$f")"); done; fi   # glob under $TMS: the caller may run this from anywhere
 ARGS=()
-for a in "$@"; do case "$a" in tests/*) ;; *) ARGS+=("$a") ;; esac; done
+for a in "$@"; do case "$a" in tests/*.py) ;; *) ARGS+=("$a") ;; esac; done
 
 echo "server:   $H3_LIVE_URL"
 echo "control:  ${H3_CTL:-none (served task is probed; no restarts, no resets)}"
