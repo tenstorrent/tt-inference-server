@@ -314,7 +314,8 @@ class TestOutputContract:
         p = res.verdict.probe
         assert p.color_space and p.color_primaries and p.color_transfer, f"untagged colour: space={p.color_space} primaries={p.color_primaries} transfer={p.color_transfer}"
 
-    @pytest.mark.xfail(strict=True, reason="the mux uses -shortest and the 40 Hz audio grid is shorter than 17n+5 frames at 4, 6 and "
+    @pytest.mark.xfail(strict=False,  # 2026-09-06 quad2 on metal 8fb0c4c0483: XPASS -- the 4 s clip carried all 107 frames; confirm on quad1 before dropping the mark
+                       reason="the mux uses -shortest and the 40 Hz audio grid is shorter than 17n+5 frames at 4, 6 and "
                        "15 s, so those clips carry 17n+4 video frames (the last frame -- an fl2va last keyframe -- is dropped)")
     def test_all_frames_are_delivered_at_4s(self, assets, served_task, deployment, report):
         _need_task("t2va", served_task, deployment)
