@@ -150,3 +150,8 @@ Every judged output also has to echo the request: duration = `expected_frames(se
   439b4bb8d5b, b25d5e74729, e9dfcbdae42 pass the single-keyframe 4:3/3:4/1:1 probe, 56cdeeb9095 and 8fb0c4c0483 hang, and
   8fb0c4c0483 with `warmup=False` passes again. ref2va's first video-reference request hangs the same way. Harness fixes from the run: rail-share audio rule, construction-warmup replay flags,
   ladder 119808, budgets, stop-on-hang, skip-aspects knob, run_live_test.sh glob/argument fixes.
+  ref2va (quad2, 22:05-23:14, `MINIMAX_H3_CONSTRUCTION_WARMUP=0` because the construction warmup hangs every request with
+  visual references): `test_minimax_h3_live.py -k Ref2va` 7 passed / 1 xfailed (cancel orphan) / 7 XPASS -- every limit
+  combination (mix_3i_3v, img7, img8, img9, mix_6i_3v, and the img8 / mix_6i_3v repeats) completed 4 generations, so the
+  second-request OOM is gone at the new arena caps; marks removed. Each combination's fresh start is ~40 s without the
+  warmup and the first generation binds/captures (~2 min), warm ones ~40 s.
