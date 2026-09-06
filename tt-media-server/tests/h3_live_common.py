@@ -332,6 +332,11 @@ FL2VA_COMBOS = [
 # Pass only with metal zni/h3-ref2va-serving-fixes (piecewise VAE readback, transient conditioner
 # gathers, arena caps sized to the policy) -- measured 4/4 on OM Quad1 2026-09-04 on that tree. The
 # upstream tip (439b4bb8d5b) does not carry those commits and OOMs here, so the mark is non-strict.
+# 2026-09-06, metal 8fb0c4c0483 (ref2va arena caps 57344/149632/2432, dit_fsdp) with the construction-time warmup OFF
+# (MINIMAX_H3_CONSTRUCTION_WARMUP=0, see dit_runners.py): mix_3i_3v, img7, img8, img9 and mix_6i_3v all completed
+# 1 compile + 3 warm generations + DELETE on quad2 (7 XPASS), so the marks below are no longer applied. Caveat: the
+# image fixtures are 512x512 and stay 512 under reference_resize_mode='match', so img7/img8/img9 no longer probe the
+# image-count limit -- regenerate them at >= 1344x768 to restore that coverage; the video mixes still carry weight.
 NEEDS_SERVING_FIXES = pytest.mark.xfail(
     reason="needs metal zni/h3-ref2va-serving-fixes: on the pristine upstream tip 3 img + 3 vid and 7 images "
     "OOM on the second request, 9 images on the first (2.87 GB whole-wave VAE readback + persistent "
@@ -349,17 +354,17 @@ REF2VA_COMBOS = [
     # zni/h3-ref2va-serving-fixes (piecewise VAE readback, transient conditioner gathers,
     # policy-sized arena caps); measured 4/4 on OM Quad1 2026-09-04.
     pytest.param(Combo("mix_3i_3v", "ref2va", images=3, videos=3, note="67,584 condition rows, needs the 92,160 cap"),
-                 marks=NEEDS_SERVING_FIXES, id="mix_3i_3v"),
-    pytest.param(Combo("img7", "ref2va", images=7), marks=NEEDS_SERVING_FIXES, id="img7"),
+                 id="mix_3i_3v"),
+    pytest.param(Combo("img7", "ref2va", images=7), id="img7"),
     pytest.param(Combo("img9", "ref2va", images=9, note="policy maximum images; 36,946 presentation tokens"),
-                 marks=NEEDS_SERVING_FIXES, id="img9"),
+                 id="img9"),
     # From upstream 5d7e015a: the two heaviest mixes the policy admits short of 9 images + 3 clips.
     # Non-strict like the three above: metal 8fb0c4c0483 re-sized the ref2va arena caps and the
     # outcome on it is what this run measures.
-    pytest.param(Combo("img8", "ref2va", images=8), marks=NEEDS_SERVING_FIXES, id="img8"),
+    pytest.param(Combo("img8", "ref2va", images=8), id="img8"),
     pytest.param(Combo("mix_6i_3v", "ref2va", images=6, videos=3,
                        note="79,872 condition video rows: heaviest mixed case short of 9 + 3"),
-                 marks=NEEDS_SERVING_FIXES, id="mix_6i_3v"),
+                 id="mix_6i_3v"),
 ]
 SECOND_REQUEST_OOM = pytest.mark.xfail(
     reason="tt-inference-server#5044: at the 176,128 rung the DiT's per-rung resident state leaves "
@@ -368,10 +373,10 @@ SECOND_REQUEST_OOM = pytest.mark.xfail(
     strict=False,
 )
 REF2VA_LIMIT_COMBOS = [
-    pytest.param(Combo("img8", "ref2va", images=8), marks=SECOND_REQUEST_OOM, id="img8"),
+    pytest.param(Combo("img8", "ref2va", images=8), id="img8"),
     # 6 images + 3 clips = 79,872 condition video rows: the heaviest mixed case the policy admits
     # short of 9 + 3; admitted by the 92,160 cap, first request completes (413 s), second OOMs.
-    pytest.param(Combo("mix_6i_3v", "ref2va", images=6, videos=3), marks=SECOND_REQUEST_OOM, id="mix_6i_3v"),
+    pytest.param(Combo("mix_6i_3v", "ref2va", images=6, videos=3), id="mix_6i_3v"),
 ]
 REF2VA_OVER_LIMIT = Combo("img9", "ref2va", images=9, note="OOMs on the first request")
 
