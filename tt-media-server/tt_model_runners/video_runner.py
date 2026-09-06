@@ -193,11 +193,19 @@ def _create_dit_runner(model_runner: str, rank: int):
     return runner_class("")
 
 
+_SIDE_FILE_KEYS = frozenset(
+    {"image_prompts", "references", "aspect_ratio", "duration_seconds"}
+)
+
+
 def _read_image_prompts_side_file(path: str, task_id: str):
     """Load the side-file written by ``SPRunner._write_image_side_file``.
 
-    I2V: JSON array of ``{"image", "frame_pos"}``.
+    I2V: JSON array of ``{"image", "frame_pos"}``, or an object with
+    ``image_prompts`` plus ``aspect_ratio`` / ``duration_seconds``.
     Ref2VA: JSON object with ``references`` (and optional aspect/duration).
+    T2VA: JSON object with only ``aspect_ratio`` / ``duration_seconds`` -- the
+    SHM ``VideoRequest`` has no slot for them, so every task ships them here.
     Returns the parsed value, or ``None`` on failure.
     """
     try:
@@ -210,13 +218,23 @@ def _read_image_prompts_side_file(path: str, task_id: str):
         return None
     if isinstance(data, list):
         return data
-    if isinstance(data, dict) and "references" in data:
+    if isinstance(data, dict) and _SIDE_FILE_KEYS.intersection(data):
         return data
     _log.warning(
         f"Rank 0: side-file {path!r} for task {task_id} is not an I2V list "
-        f"or a Ref2VA object (got {type(data).__name__})"
+        f"or an object with any of {sorted(_SIDE_FILE_KEYS)} "
+        f"(got {type(data).__name__})"
     )
     return None
+
+
+def _side_payload_has_conditioning(payload) -> bool:
+    """True when a parsed side-file carries image conditioning (i2v entries or
+    ref2va references); False for a payload that only carries request fields
+    such as ``duration_seconds``."""
+    if isinstance(payload, dict):
+        return bool(payload.get("image_prompts") or payload.get("references"))
+    return bool(payload)
 
 
 def _enqueue_rank0_error(
@@ -277,6 +295,14 @@ def _rank0_load_image_prompts(
             f"I2V conditioning side-file is an empty list: "
             f"{raw_req.image_path!r} for task {raw_req.task_id}",
         )
+    if requires_image and not _side_payload_has_conditioning(prompts):
+        return _enqueue_rank0_error(
+            encode_queue,
+            raw_req.task_id,
+            f"I2V request {raw_req.task_id} carries no image conditioning "
+            f"(side-file {raw_req.image_path!r} has only request fields); a "
+            f"text-only request was routed to an I2V runner. Rejecting.",
+        )
     return prompts, False
 
 
@@ -284,7 +310,11 @@ def video_request_to_generate_request(
     req: VideoRequest,
     image_prompts: Optional[List[dict]] = None,
 ) -> VideoGenerateRequest:
-    """Map SHM VideoRequest (+ optional broadcast image_prompts) to a runner request.
+    """Map SHM VideoRequest (+ optional broadcast side-file payload) to a runner request.
+
+    ``image_prompts`` is the parsed side-file: a list of i2v entries, or an
+    object carrying ``aspect_ratio`` / ``duration_seconds`` and, optionally,
+    ``image_prompts`` or ``references``.
 
     Uses the intersection of field names so we never pass SHM-only fields (e.g.
     height, width, image_path) unless they exist on the target request schema.
@@ -294,17 +324,22 @@ def video_request_to_generate_request(
     common = shm_names & gen_names
     base_kwargs = {name: getattr(req, name) for name in common}
 
-    if isinstance(image_prompts, dict) and "references" in image_prompts:
-        from domain.video_ref2va_generate_request import VideoRef2VAGenerateRequest
+    if isinstance(image_prompts, dict):
+        # Object payload: request fields the SHM struct cannot carry, plus the
+        # conditioning under ``references`` (ref2va) or ``image_prompts`` (i2v).
+        for name in ("aspect_ratio", "duration_seconds"):
+            if image_prompts.get(name) is not None:
+                base_kwargs[name] = image_prompts[name]
+        if "references" in image_prompts:
+            from domain.video_ref2va_generate_request import (
+                VideoRef2VAGenerateRequest,
+            )
 
-        if image_prompts.get("aspect_ratio") is not None:
-            base_kwargs["aspect_ratio"] = image_prompts["aspect_ratio"]
-        if image_prompts.get("duration_seconds") is not None:
-            base_kwargs["duration_seconds"] = image_prompts["duration_seconds"]
-        return VideoRef2VAGenerateRequest(
-            **base_kwargs,
-            references=image_prompts["references"],
-        )
+            return VideoRef2VAGenerateRequest(
+                **base_kwargs,
+                references=image_prompts["references"],
+            )
+        image_prompts = image_prompts.get("image_prompts")
     if image_prompts:
         return VideoI2VGenerateRequest(
             **base_kwargs,
