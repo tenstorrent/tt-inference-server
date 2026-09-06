@@ -182,11 +182,10 @@ templates:
         sample_on_device_mode: decode_only  # spec: prefill anchor host-sampled, decode model-owned
       vllm_args:
         max_num_seqs: 1
-        # Sync scheduling: async is coherent but gives no overlap until the
-        # fused decoder's step is split into non-blocking submit + deferred
-        # collect (dec.step blocks on the device readback today). The async
-        # infra is in place -- flip to async_scheduling + GEMMA4_SPEC_ASYNC=1
-        # once that split lands.
+        # Sync default: the async submit/accept split is in place and coherent,
+        # but block-output disables the steady-decode overlap (output_tokens set)
+        # and dFlash's step is serially dependent, so async gives no gain yet.
+        # The real lever is reducing the ~135ms/iter vLLM host overhead.
         no-async-scheduling: true
         enable-auto-tool-choice: true
         tool-call-parser: gemma4
@@ -229,11 +228,10 @@ templates:
         sample_on_device_mode: decode_only  # spec: prefill anchor host-sampled, decode model-owned
       vllm_args:
         max_num_seqs: 1
-        # Sync scheduling: async is coherent but gives no overlap until the
-        # fused decoder's step is split into non-blocking submit + deferred
-        # collect (dec.step blocks on the device readback today). The async
-        # infra is in place -- flip to async_scheduling + GEMMA4_SPEC_ASYNC=1
-        # once that split lands.
+        # Sync default: the async submit/accept split is in place and coherent,
+        # but block-output disables the steady-decode overlap (output_tokens set)
+        # and dFlash's step is serially dependent, so async gives no gain yet.
+        # The real lever is reducing the ~135ms/iter vLLM host overhead.
         no-async-scheduling: true
         enable-auto-tool-choice: true
         tool-call-parser: gemma4
