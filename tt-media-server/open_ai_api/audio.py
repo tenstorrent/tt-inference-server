@@ -32,7 +32,7 @@ from telemetry.audio_metrics import (
     char_count,
     record_stt_request,
 )
-from utils.audio_manager import AudioTooLongError
+from utils.errors import AudioTooLongError
 
 # One task per deployment: settings.audio_task decides which router is live.
 STT_TASK = (

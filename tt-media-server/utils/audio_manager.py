@@ -30,6 +30,11 @@ from telemetry.telemetry_client import (
 )
 
 from utils.decorators import log_execution_time
+
+# Defined in utils.errors so cpu_workload_handler can rebuild it across the
+# worker-process boundary without importing this module. Re-exported here for
+# existing callers.
+from utils.errors import AudioTooLongError
 from utils.ffmpeg_utils import decode_to_wav as ffmpeg_decode_to_wav
 from utils.logger import TTLogger
 
@@ -42,14 +47,6 @@ AUDIO_VENV_PYTHON = os.getenv(
 
 # Path to the diarize.py script invoked inside the audio venv.
 DIARIZE_SCRIPT = Path(__file__).parent / "diarize.py"
-
-
-class AudioTooLongError(ValueError):
-    """Submitted audio exceeds the runner's maximum duration.
-
-    Subclasses ValueError so existing `except ValueError` callers still catch it;
-    the route layer maps it to 400 rather than the generic 500.
-    """
 
 
 class PreparedAudio(NamedTuple):
