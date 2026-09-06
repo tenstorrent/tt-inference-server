@@ -154,6 +154,93 @@ templates:
 
 - weights:
     - google/gemma-4-31B-it
+  impl: gemma4_mtp
+  # TT-native MTP speculative serving (it-assistant KV-shared drafter, K=5).
+  # B=1 latency profile: speculation only pays bandwidth-bound (measured 4k:
+  # code 67.5 tok/s/u vs 28.8 plain; prose is checkpoint-bound ~parity). The
+  # plugin routes Gemma4 to Gemma4MTPForCausalLM via TT_GEMMA4_SPEC; each
+  # engine step emits a VARIABLE accepted-prefix+bonus row (<= K+1), padded on
+  # the wire and stripped by the runner (tt_spec_variable_output).
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P150X8
+      max_concurrency: 1  # spec sessions are B=1 (fused trace per request)
+      max_context: 65536
+      env_vars:
+        MESH_DEVICE: "P150x8"
+        TT_GEMMA4_SPEC: "mtp"
+        GEMMA4_SPEC_DRAFT_LEN: "5"
+        GEMMA4_MTP_SERVE_HORIZON: "2048"
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+        GEMMA4_MAX_TOKENS_ALL_USERS: "65536"  # B=1 x max_context pool
+        GEMMA4_VLLM_SINGLE_CHUNK: "0"
+        GEMMA4_CHUNKED_PREFILL_TRACE: "1"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 512000000
+        l1_small_size: 24576
+        sample_on_device_mode: all  # block-output contract: model-owned sampler end-to-end
+      vllm_args:
+        max_num_seqs: 1
+        # False booleans are dropped by the launcher's arg emitter; the
+        # negative flag form actually reaches vLLM (block-output requires sync).
+        no-async-scheduling: true  # host acceptance loop each step
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: gemma4
+        enable_chunked_prefill: true
+        max_num_batched_tokens: 65536
+        long_prefill_token_threshold: 4096
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+
+- weights:
+    - google/gemma-4-31B-it
+  impl: gemma4_dflash
+  # TT-native dFlash speculative serving (z-lab block-diffusion drafter,
+  # verify V=7). B=1 latency profile; strongest on code-like content (4k:
+  # 68.4 tok/s/u vs 28.8 plain; prose ~parity -- acceptance is content/
+  # checkpoint-bound). Prefill runs UNTRACED for this profile (the residual
+  # tap hook is python-side; traced prefill replays skip it) and each request
+  # pays a one-time fused-trace capture (~3 s) at first decode.
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P150X8
+      max_concurrency: 1  # spec sessions are B=1 (fused trace per request)
+      max_context: 65536  # dFlash serving profile is unbounded-KV (<100k)
+      env_vars:
+        MESH_DEVICE: "P150x8"
+        TT_GEMMA4_SPEC: "dflash"
+        GEMMA4_DFLASH_SHARD_ARGMAX: "1"  # bypass TTSampling in-body (server sampler is not argmax-forced)
+        GEMMA4_DFLASH_VERIFY: "7"
+        GEMMA4_DFLASH_SERVE_HORIZON: "2048"
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+        GEMMA4_MAX_TOKENS_ALL_USERS: "65536"  # B=1 x max_context pool
+        GEMMA4_VLLM_SINGLE_CHUNK: "0"
+        GEMMA4_CHUNKED_PREFILL_TRACE: "1"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 512000000
+        l1_small_size: 24576
+        sample_on_device_mode: all  # block-output contract: model-owned sampler end-to-end
+      vllm_args:
+        max_num_seqs: 1
+        # False booleans are dropped by the launcher's arg emitter; the
+        # negative flag form actually reaches vLLM (block-output requires sync).
+        no-async-scheduling: true  # host acceptance loop each step
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: gemma4
+        enable_chunked_prefill: true
+        max_num_batched_tokens: 65536
+        long_prefill_token_threshold: 4096
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+
+- weights:
+    - google/gemma-4-31B-it
   impl: tt_transformers
   # Dev specs omit tt_metal_commit/vllm_commit (base ModelSpecTemplate rejects
   # them; only prod specs carry commits). The image is supplied at runtime via
