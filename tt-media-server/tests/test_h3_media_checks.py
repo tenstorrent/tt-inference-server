@@ -100,3 +100,20 @@ def test_missing_stream_fails_fast(tmp_path):
                     "-c:v", "libx264", "-pix_fmt", "yuv420p", str(p)], check=True, capture_output=True)
     v = mc.judge(p)
     assert not v.ok and "audio=0" in v.reasons[0]
+
+
+def test_probe_reports_fps_codecs_and_stream_durations(clips):
+    p = mc.probe(clips["clean"])
+    assert abs(p.fps - 24) < 0.01 and p.video_codec == "h264" and p.audio_codec == "aac"
+    assert p.video_duration_s and p.audio_duration_s and abs(p.video_duration_s - p.audio_duration_s) < mc.AUDIO_VIDEO_DRIFT_S
+
+
+def test_audio_video_length_mismatch_is_rejected(clips, tmp_path):
+    """A soundtrack that stops halfway (or a missing one padded with silence) must not pass as valid."""
+    short = tmp_path / "short_audio.mp4"
+    subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-y",
+                    "-f", "lavfi", "-i", "testsrc2=size=640x360:rate=24:duration=5",
+                    "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=32000:duration=2,volume=-24dB",
+                    "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p", "-c:a", "aac", str(short)], check=True, capture_output=True)
+    v = mc.judge(short, check_video=False)
+    assert not v.ok and any("out of step" in r for r in v.reasons), v.summary()

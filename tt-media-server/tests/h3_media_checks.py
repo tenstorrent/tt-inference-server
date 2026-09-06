@@ -24,7 +24,10 @@ live tests judge the decoded samples themselves:
   bits/pixel/frame (CRF 23; short busy clips are the high end), tiled-noise garbage at 0.77-0.88;
   ``VIDEO_MAX_BITS_PER_PIXEL_FRAME`` (0.6) flags a clip from ffprobe alone, before any frame is decoded.
 * geometry: served duration and canvas must echo the request (durations round UP to ``17n + 5``
-  frames at 24 fps -- ``expected_frames`` / ``expected_duration_s`` reproduce the server's math).
+  frames at 24 fps -- ``expected_frames`` / ``expected_duration_s`` reproduce the server's math);
+  the video stream must be 24 fps and the audio stream within 0.35 s of the video (the audio grid is
+  40 Hz and the mux uses ``-shortest``, so the two differ by at most one frame on a healthy clip).
+  Codecs, pixel format, sample rate and channel count are recorded in the probe, not asserted.
 
 Everything degrades to a *skipped* sub-check (not a failure) when ffmpeg/ffprobe are missing.
 """
@@ -74,6 +77,9 @@ def _run(cmd: list[str], timeout: int = 120) -> str:
     return (p.stdout or "") + (p.stderr or "")
 
 
+AUDIO_VIDEO_DRIFT_S = 0.35   # the audio grid is 40 Hz and the mux uses -shortest: <= 1 video frame apart
+
+
 @dataclass
 class Probe:
     duration_s: float | None = None
@@ -84,6 +90,17 @@ class Probe:
     audio_streams: int = 0
     bit_rate: int | None = None
     sample_rate: int | None = None
+    fps: float | None = None
+    video_codec: str | None = None
+    pix_fmt: str | None = None
+    audio_codec: str | None = None
+    channels: int | None = None
+    video_duration_s: float | None = None
+    audio_duration_s: float | None = None
+    color_space: str | None = None
+    color_primaries: str | None = None
+    color_transfer: str | None = None
+    color_range: str | None = None
 
 
 def probe(path: Path) -> Probe:
@@ -97,11 +114,24 @@ def probe(path: Path) -> Probe:
         if s.get("codec_type") == "video":
             pr.video_streams += 1
             pr.width, pr.height = int(s.get("width", 0)), int(s.get("height", 0))
-            if s.get("nb_frames", "").isdigit():
+            if str(s.get("nb_frames", "")).isdigit():
                 pr.nb_frames = int(s["nb_frames"])
+            pr.video_codec, pr.pix_fmt = s.get("codec_name"), s.get("pix_fmt")
+            pr.color_space, pr.color_primaries = s.get("color_space"), s.get("color_primaries")
+            pr.color_transfer, pr.color_range = s.get("color_transfer"), s.get("color_range")
+            rate = s.get("r_frame_rate") or s.get("avg_frame_rate") or ""
+            if "/" in rate:
+                num, den = rate.split("/")
+                pr.fps = float(num) / float(den) if float(den) else None
+            if s.get("duration"):
+                pr.video_duration_s = float(s["duration"])
         elif s.get("codec_type") == "audio":
             pr.audio_streams += 1
             pr.sample_rate = int(s.get("sample_rate", 0) or 0)
+            pr.audio_codec = s.get("codec_name")
+            pr.channels = int(s.get("channels", 0) or 0)
+            if s.get("duration"):
+                pr.audio_duration_s = float(s["duration"])
     return pr
 
 
@@ -192,6 +222,30 @@ class Verdict:
                 + (" :: " + "; ".join(self.reasons) if self.reasons else ""))
 
 
+def frames_dropped(pr: Probe, expect_seconds: float) -> int | None:
+    """How many of the 17n+5 frames the container is short of (the ``-shortest`` mux drops one at 4/6/15 s)."""
+    if pr.nb_frames is None:
+        return None
+    return expected_frames(expect_seconds) - pr.nb_frames
+
+
+def keyframe_ssim(path: Path, image_b64: str, t: float) -> float | None:
+    """SSIM between the frame at ``t`` and a keyframe image (base64), both scaled to 640x360 -- the
+    fl2va conditioning oracle: the first output frame must resemble the FIRST keyframe more than the last."""
+    import base64
+    with tempfile.TemporaryDirectory() as d:
+        key = Path(d) / "key.img"
+        key.write_bytes(base64.b64decode(image_b64))
+        frame = Path(d) / "frame.png"
+        _run(["ffmpeg", "-nostdin", "-v", "error", "-ss", f"{t:.3f}", "-i", str(path), "-frames:v", "1", str(frame)])
+        if not frame.exists():
+            return None
+        out = _run(["ffmpeg", "-nostdin", "-v", "info", "-i", str(frame), "-i", str(key),
+                    "-lavfi", "[0:v]scale=640:360[a];[1:v]scale=640:360[b];[a][b]ssim", "-f", "null", "-"])
+    m = re.findall(r"All:([0-9.]+)", out)
+    return float(m[-1]) if m else None
+
+
 def judge(path: Path, *, expect_seconds: float | None = None, expect_canvas: tuple[int, int] | None = None,
           sample_times: tuple[float, ...] | None = None, check_video: bool = True, check_audio: bool = True) -> Verdict:
     """Decide whether an H3 output is a valid video+audio clip that matches the request."""
@@ -212,6 +266,13 @@ def judge(path: Path, *, expect_seconds: float | None = None, expect_canvas: tup
     if expect_canvas is not None and (v.probe.width, v.probe.height) != tuple(expect_canvas):
         v.ok = False
         v.reasons.append(f"canvas {v.probe.width}x{v.probe.height}, expected {expect_canvas[0]}x{expect_canvas[1]}")
+    if v.probe.fps is not None and abs(v.probe.fps - FPS) > 0.01:
+        v.ok = False
+        v.reasons.append(f"frame rate {v.probe.fps:.3f}, H3 serves {FPS} fps")
+    if v.probe.video_duration_s and v.probe.audio_duration_s and abs(v.probe.video_duration_s - v.probe.audio_duration_s) > AUDIO_VIDEO_DRIFT_S:
+        v.ok = False
+        v.reasons.append(f"audio {v.probe.audio_duration_s:.2f} s vs video {v.probe.video_duration_s:.2f} s: streams out of step "
+                         f"(a truncated or missing soundtrack)")
     if check_audio:
         v.audio = audio_stats(path)
         if v.audio.clipped or v.audio.loud:

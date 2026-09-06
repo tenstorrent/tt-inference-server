@@ -108,6 +108,9 @@ if [ -n "$H3_CTL" ]; then
   export H3_LIVE_WAIT_CMD="bash $H3_CTL wait-ready 1800"
   export H3_LIVE_RESET_CMD="bash $H3_CTL reset"
   export H3_LIVE_CTL=$H3_CTL
+  # rank hosts (for the opt-in chaos test) and the side-file dir, from the deployment's env
+  H3_LIVE_HOSTS=$(bash -c "source '$H3_DEPLOY_DIR/env_h3.sh' 2>/dev/null && echo \$H3_HOSTS") && export H3_LIVE_HOSTS
+  export H3_LIVE_SIDEFILE_DIR=${TT_VIDEO_FILE_DIR:-/dev/shm}
 fi
 export H3_LIVE_REPORT=$REPORT
 export H3_LIVE_OUT_DIR=$OUT                                # shapes/deploy modules keep their mp4s under here

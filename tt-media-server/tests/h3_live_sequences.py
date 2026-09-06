@@ -93,6 +93,7 @@ class Spec:
     seconds: int = 5
     keyframes: tuple[int, ...] = ()
     ref_images: int = 0
+    ref_videos: int = 0
     seed: int = 7
     prompt: str = live.PROMPT
     label: str = ""
@@ -100,7 +101,7 @@ class Spec:
     @property
     def tag(self) -> str:
         kf = {(): "", (0,): "+first", (-1,): "+last", (0, -1): "+first+last"}.get(self.keyframes, f"+kf{self.keyframes}")
-        refs = f"+{self.ref_images}img" if self.ref_images else ""
+        refs = (f"+{self.ref_images}img" if self.ref_images else "") + (f"+{self.ref_videos}vid" if self.ref_videos else "")
         return self.label or f"{self.task} {self.aspect} {self.seconds}s{kf}{refs}"
 
     def body(self, assets: live.Assets) -> dict:
@@ -109,7 +110,12 @@ class Spec:
             pick = {0: assets.key_first, -1: assets.key_last}
             b["image_prompts"] = [{"image": pick[p], "frame_pos": p} for p in self.keyframes]
         elif self.task == "ref2va":
-            b["references"] = {"images": [{"b64": assets.img} for _ in range(max(1, self.ref_images))]}
+            refs: dict = {}
+            if self.ref_images or not self.ref_videos:
+                refs["images"] = [{"b64": assets.img} for _ in range(max(1, self.ref_images))]
+            if self.ref_videos:
+                refs["videos"] = [{"b64": assets.vid} for _ in range(self.ref_videos)]
+            b["references"] = refs
         return b
 
 
@@ -128,6 +134,7 @@ class Result:
     rung: int | None = None            # from the worker log: "packed sequence N -> bucket R"
     captured: bool | None = None       # worker log: "capturing trace..." inside this request's window
     compiled_kernels: int | None = None  # worker log: BuildKernels lines inside the window
+    steps: int | None = None           # worker log: "<task> WxH, F frames (..), .. N steps, anchors=.."
 
     @property
     def ok(self) -> bool:
@@ -138,7 +145,7 @@ class Result:
         return {
             "combo": self.spec.tag, "task": self.spec.task, "request": "seq", "status": self.status, "wall_s": self.wall_s,
             "job_id": self.job_id, "mp4_bytes": self.mp4_bytes, "sha256": self.sha256, "error": self.error,
-            "rung": self.rung, "captured": self.captured, "compiled_kernels": self.compiled_kernels,
+            "rung": self.rung, "captured": self.captured, "compiled_kernels": self.compiled_kernels, "steps": self.steps,
             "probe": {"video": bool(v and v.probe and v.probe.video_streams), "audio": bool(v and v.probe and v.probe.audio_streams),
                       "width": v.probe.width if v and v.probe else None, "height": v.probe.height if v and v.probe else None,
                       "frames": v.probe.nb_frames if v and v.probe else None, "duration": v.probe.duration_s if v and v.probe else 0} if v else None,
@@ -155,6 +162,78 @@ class Result:
         if self.error:
             s += f" | ERR {self.error[:160]}"
         return s
+
+
+# --------------------------------------------------------------------------- host-side evidence
+
+SIDEFILE_DIR = os.environ.get("H3_LIVE_SIDEFILE_DIR", "/dev/shm")
+
+
+def count_side_files() -> int | None:
+    """Number of ``tt_img_*`` side-files the SP runner has on tmpfs (None when not on the server host)."""
+    if not (live.Disk.enabled or os.environ.get("H3_LIVE_ON_SERVER_HOST") == "1"):
+        return None
+    try:
+        return sum(1 for n in os.listdir(SIDEFILE_DIR) if n.startswith("tt_img_"))
+    except OSError:
+        return None
+
+
+# Lines a healthy run prints anyway; everything else that says critical/fatal/timeout/traceback is news.
+BENIGN_LOG_PATTERNS = (
+    "DRAM Auto slice could not find valid slice configuration",   # matmul config search fallback, caught
+    "Attempting fallback to width-slicing",
+    "distributed across mesh device unevenly",
+    "Padding out_channels",
+    "depthwise conv1d needs C-chunking",
+)
+# Per-request refusals are the API's business (tests send them on purpose); they are not process alarms.
+REQUEST_REFUSAL_PATTERNS = (
+    "validation error for",              # pydantic ValidationError re-raised by the worker
+    "ValidationError",
+    "request exceeds the arena caps",
+    "duration_seconds must be",
+    "aspect_ratio must be",
+    "must be one of",
+    "ERROR for task",                    # the per-job error line itself
+    "[run] failed after",
+)
+ALARM_LOG_PATTERN = re.compile(r"critical|TT_FATAL|TT_THROW|Traceback|TIMEOUT|Permission denied|hang detected|Out of Memory|Not enough space", re.I)
+
+
+def worker_log_alarms(start_offset: int = 0) -> list[str]:
+    """Alarming worker-log lines (all ranks) from byte ``start_offset`` on -- process-level signals only:
+    known-benign matmul fallbacks are dropped, and a Traceback whose exception (within the next 15 lines)
+    is a per-request refusal (pydantic validation, arena caps, duration/aspect policy) is dropped too."""
+    if not WORKER_LOG or not os.path.exists(WORKER_LOG):
+        return []
+    try:
+        with open(WORKER_LOG, "rb") as f:
+            f.seek(start_offset)
+            text = f.read().decode(errors="replace")
+    except OSError:
+        return []
+    text = re.sub(r"\x1b\[[0-9;]*m", "", text)
+    lines = text.split("\n")
+    out = []
+    for i, ln in enumerate(lines):
+        if not ALARM_LOG_PATTERN.search(ln) or any(b in ln for b in BENIGN_LOG_PATTERNS):
+            continue
+        if any(b in ln for b in REQUEST_REFUSAL_PATTERNS):
+            continue
+        if "Traceback" in ln:
+            tail = "\n".join(lines[i:i + 16])
+            if any(b in tail for b in REQUEST_REFUSAL_PATTERNS):
+                continue
+        out.append(ln.strip()[:220])
+    return out
+
+
+def worker_log_size() -> int:
+    try:
+        return os.path.getsize(WORKER_LOG) if WORKER_LOG and os.path.exists(WORKER_LOG) else 0
+    except OSError:
+        return 0
 
 
 # --------------------------------------------------------------------------- worker-log facts
@@ -190,6 +269,9 @@ def enrich_from_worker_log(res: Result) -> None:
         res.rung = int(m.group(1))
     res.captured = any("capturing trace" in ln for ln in win)
     res.compiled_kernels = sum(1 for ln in win if "BuildKernels | compiled" in ln)
+    m = next((re.search(r"(\d+) steps, (?:anchors|references)=", ln) for ln in win if " steps, " in ln), None)
+    if m:
+        res.steps = int(m.group(1))
 
 
 # --------------------------------------------------------------------------- the runner
