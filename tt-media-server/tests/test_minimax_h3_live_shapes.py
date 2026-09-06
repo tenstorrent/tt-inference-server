@@ -344,8 +344,9 @@ class TestFl2vaConditioning:
         assert f_first > f_last, f"first frame is closer to the LAST keyframe ({f_first:.3f} vs {f_last:.3f}): swapped or ignored"
         assert l_last > l_first, f"last frame is closer to the FIRST keyframe ({l_last:.3f} vs {l_first:.3f}): swapped or dropped"
 
-    @pytest.mark.xfail(strict=True, reason="fl2va is not deterministic for a fixed seed across bind/capture in one process "
-                       "(identical bodies: md5 differ, PSNR 22.6 dB / SSIM 0.84 on 2026-09-05 sweepB r02 vs r13)")
+    # Was xfail(strict) on 439b4bb8d5b: identical bodies gave md5-different clips (PSNR 22.6 dB) when one request bound the
+    # rung and the other replayed it. Since metal 56cdeeb9095 every request is a replay of the construction capture and
+    # the pair is byte-identical (quad2 2026-09-06 19:06, XPASS) -- the nondeterminism was bind-vs-replay, not the seed.
     def test_same_seed_is_byte_identical(self, assets, served_task, deployment, report):
         _fresh_or_skip("fl2va", served_task, deployment)
         a, b = run_sequence([Spec("fl2va", "16:9", 5, keyframes=(0,)), Spec("fl2va", "16:9", 5, keyframes=(0,))], assets, deployment, report, OUT / "fl2va-determinism")
