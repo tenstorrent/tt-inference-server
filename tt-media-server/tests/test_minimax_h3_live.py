@@ -107,6 +107,16 @@ pytestmark = pytest.mark.live
 
 
 
+class TestT2va:
+    """The t2va deployment must refuse the two conditioned endpoints (a wrong MODEL once made it accept
+    i2v/ref2va bodies and silently drop the conditioning)."""
+
+    @pytest.mark.h3_tier1
+    def test_routing_and_delete_negatives(self, served_task, deployment):
+        _need_task("t2va", served_task, deployment)
+        _routing("t2va")
+
+
 class TestFl2va:
     """Keyframe layouts on a MiniMax-H3 FL2VA deployment (MODEL_RUNNER=tt-minimax-h3-fl2va)."""
 
