@@ -37,6 +37,10 @@ def clips(tmp_path_factory) -> dict:
         # random-noise frames (the old-tree tiled garbage), audio fine
         "noise_video": _clip(d / "noise_video.mp4", 5.167, "nullsrc", "sine=frequency=440:sample_rate=32000:duration={dur},volume=-24dB"),
         "silent": _clip(d / "silent.mp4", 5.167, "testsrc2", "anullsrc=sample_rate=32000:duration={dur}"),
+        # loud but legitimate: 440 Hz bursts at -0.9 dB peak, 20 % duty -> mean ~ -11 dB, nothing at the rails
+        # (the 3:4 5 s drone the model produces on both metal trees: mean -13..-15 dB, max -0.8..-1.3 dB)
+        "loud_tone": _clip(d / "loud_tone.mp4", 5.167, "testsrc2",
+                           "aevalsrc='0.9*sin(440*2*PI*t)*lt(mod(t\\,1)\\,0.2)':sample_rate=32000:duration={dur}"),
         "portrait_9s": _clip(d / "portrait.mp4", 9.417, "testsrc2", "sine=frequency=440:sample_rate=32000:duration={dur},volume=-24dB", size="768x1344"),
     }
 
@@ -71,7 +75,18 @@ def test_clean_clip_passes(clips):
 def test_full_scale_noise_audio_is_rejected(clips):
     v = mc.judge(clips["noise_audio"], expect_seconds=5)
     assert not v.ok and any("audio looks like noise" in r for r in v.reasons), v.summary()
-    assert v.audio.clipped
+    assert v.audio.clipped and v.audio.railed, (v.audio.rail_share, v.audio.mean_db)
+
+
+def test_loud_tonal_audio_is_not_noise(clips):
+    """2026-09-06: a 3:4 5 s t2va soundtrack at mean -14.7 dB / max -1.3 dB was flagged as noise by the old
+    loudness-only rule, although the same spec produced the same loud drone on the previous metal tree and
+    the waveform never touches the rails.  Loud is a note, railed is the failure."""
+    v = mc.judge(clips["loud_tone"], expect_seconds=5)
+    assert v.ok, v.summary()
+    assert v.audio.clipped or v.audio.loud, (v.audio.mean_db, v.audio.max_db)
+    assert not v.audio.railed and (v.audio.rail_share or 0) < mc.AUDIO_RAIL_SHARE, v.audio.rail_share
+    assert any("loud but not railed" in n for n in v.notes), v.notes
 
 
 def test_noise_video_frames_are_rejected(clips):

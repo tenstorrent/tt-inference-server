@@ -8,10 +8,15 @@ four t2va requests while the video was byte-identical to a clean run, and an old
 tiled-noise video frames. ``ffprobe`` stream checks ("has video + audio") pass on all of those, so the
 live tests judge the decoded samples themselves:
 
-* audio: ``volumedetect`` mean/max.  Clean H3 soundtracks measured mean -28..-53 dB, max -10..-35 dB
-  (77 clean samples); corrupted ones mean -0.3..-13 dB, max 0.0 dB.  A track is *clipped* when the
-  max is above ``AUDIO_MAX_DB_CLIPPED`` (-1.0 dB) and *loud* when the mean is above
-  ``AUDIO_MEAN_DB_LOUD`` (-15 dB); either fails the check.  Pure silence (mean < -80) is reported too.
+* audio: ``volumedetect`` mean/max plus its 0 dB histogram bin.  The corrupted tracks are not white
+  noise: they are waveforms stuck at the rails (spectrally tonal, 9-100 % of the samples at full scale,
+  mean -0.3..-10 dB, max 0.0 dB; 12 samples 2026-09-05/06).  Legitimate soundtracks can be LOUD -- a
+  3:4 5 s drone measured mean -13..-15 dB with peaks at -0.8..-1.3 dB on both the old and the new
+  metal tree -- but never sit at the rails (<= 0.03 % of samples at 0 dB; clean tracks 0 %).  So a
+  track is *railed* (fails) when more than ``AUDIO_RAIL_SHARE`` (1 %) of its samples are in the 0 dB
+  bin or its mean is above ``AUDIO_MEAN_DB_NOISE`` (-8 dB); *clipped* (max > ``AUDIO_MAX_DB_CLIPPED``)
+  and *loud* (mean > ``AUDIO_MEAN_DB_LOUD``) are recorded as notes only.  Pure silence (mean < -80)
+  is reported too.
 * video: per-frame ``entropy`` (ffmpeg ``entropy`` filter, normal mode, Y plane) and the size of a
   fixed-quality JPEG of the frame.  Calibrated 2026-09-05/06 on quad1 outputs: clean H3 frames measure
   0.068-0.115 bytes/pixel at ``-q:v 3`` (672 px wide; 16 clips, 6 canvases, two prompts) with Y-entropy
@@ -45,8 +50,10 @@ FPS = 24
 FRAMES_PER_CHUNK = 17
 FRAMES_CHUNK_OFFSET = 5
 
-AUDIO_MAX_DB_CLIPPED = -1.0
-AUDIO_MEAN_DB_LOUD = -15.0
+AUDIO_MAX_DB_CLIPPED = -1.0             # note only: legit drones peak at -0.8 dB
+AUDIO_MEAN_DB_LOUD = -15.0              # note only
+AUDIO_MEAN_DB_NOISE = -8.0              # fails: no legitimate track measured above -13 dB; corrupted -0.3..-4 dB
+AUDIO_RAIL_SHARE = 0.01                 # fails: share of samples in volumedetect's 0 dB bin; corrupted 9-100 %, legit <= 0.03 %
 AUDIO_MEAN_DB_SILENT = -80.0
 VIDEO_MAX_BYTES_PER_PIXEL = 0.20        # alone: unmistakable garbage
 VIDEO_HIGH_ENTROPY = 7.7                # only together with a raised byte rate
@@ -139,6 +146,21 @@ def probe(path: Path) -> Probe:
 class AudioStats:
     mean_db: float | None = None
     max_db: float | None = None
+    n_samples: int | None = None
+    at_full_scale: int | None = None    # volumedetect histogram_0db: samples within 0.5 dB of full scale
+
+    @property
+    def rail_share(self) -> float | None:
+        if not self.n_samples or self.at_full_scale is None:
+            return None
+        return self.at_full_scale / self.n_samples
+
+    @property
+    def railed(self) -> bool:
+        """The corruption signature: the waveform sits at the rails, or the mean is where no real track is."""
+        share = self.rail_share
+        return (share is not None and share > AUDIO_RAIL_SHARE) or (
+            self.mean_db is not None and self.mean_db > AUDIO_MEAN_DB_NOISE)
 
     @property
     def clipped(self) -> bool:
@@ -162,6 +184,11 @@ def audio_stats(path: Path) -> AudioStats:
     m = re.search(r"max_volume:\s*(-?[0-9.]+) dB", out)
     if m:
         st.max_db = float(m.group(1))
+    m = re.search(r"n_samples:\s*(\d+)", out)
+    if m:
+        st.n_samples = int(m.group(1))
+    m = re.search(r"histogram_0db:\s*(\d+)", out)
+    st.at_full_scale = int(m.group(1)) if m else (0 if st.n_samples else None)
     return st
 
 
@@ -208,6 +235,7 @@ def frame_stats(path: Path, t: float) -> FrameStats:
 class Verdict:
     ok: bool
     reasons: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)     # observations that do not fail the verdict (loud audio, ...)
     probe: Probe | None = None
     audio: AudioStats | None = None
     frames: list[FrameStats] = field(default_factory=list)
@@ -219,7 +247,8 @@ class Verdict:
         return (f"{'OK' if self.ok else 'BAD'} dur={self.probe.duration_s if self.probe else '?'} "
                 f"{self.probe.width if self.probe else '?'}x{self.probe.height if self.probe else '?'} "
                 f"audio mean/max={a.mean_db if a else '?'}/{a.max_db if a else '?'} dB bppf={self.bits_per_pixel_frame} frames[{fr}]"
-                + (" :: " + "; ".join(self.reasons) if self.reasons else ""))
+                + (" :: " + "; ".join(self.reasons) if self.reasons else "")
+                + (" (note: " + "; ".join(self.notes) + ")" if self.notes else ""))
 
 
 def frames_dropped(pr: Probe, expect_seconds: float) -> int | None:
@@ -275,10 +304,15 @@ def judge(path: Path, *, expect_seconds: float | None = None, expect_canvas: tup
                          f"(a truncated or missing soundtrack)")
     if check_audio:
         v.audio = audio_stats(path)
-        if v.audio.clipped or v.audio.loud:
+        if v.audio.railed:
             v.ok = False
-            v.reasons.append(f"audio looks like noise: mean {v.audio.mean_db} dB max {v.audio.max_db} dB "
-                             f"(clean H3 tracks: mean < {AUDIO_MEAN_DB_LOUD}, max < {AUDIO_MAX_DB_CLIPPED})")
+            share = v.audio.rail_share
+            v.reasons.append(f"audio looks like noise: mean {v.audio.mean_db} dB max {v.audio.max_db} dB, "
+                             f"{(share or 0) * 100:.1f}% of samples at full scale "
+                             f"(corrupted tracks sit at the rails: > {AUDIO_RAIL_SHARE * 100:.0f}% or mean > {AUDIO_MEAN_DB_NOISE} dB)")
+        elif v.audio.clipped or v.audio.loud:
+            v.notes.append(f"audio is loud but not railed: mean {v.audio.mean_db} dB max {v.audio.max_db} dB "
+                           f"({(v.audio.rail_share or 0) * 100:.2f}% at full scale)")
         elif v.audio.silent:
             v.ok = False
             v.reasons.append(f"audio is silent (mean {v.audio.mean_db} dB)")
