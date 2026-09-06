@@ -748,7 +748,14 @@ class SPRunner(BaseDeviceRunner):
 
     @staticmethod
     def _write_image_side_file(request, task_id: str) -> str:
-        """Spill ``request.image_prompts`` to a JSON side-file on tmpfs.
+        """Spill ``request.image_prompts`` (and the request fields the SHM
+        ``VideoRequest`` cannot carry: ``aspect_ratio``, ``duration_seconds``,
+        ``references``) to a JSON side-file on tmpfs.
+
+        Wire formats the runner peer accepts (``_read_image_prompts_side_file``):
+        a bare list of ``{"image", "frame_pos"}`` (i2v, nothing else set), or an
+        object with any of ``image_prompts`` / ``references`` / ``aspect_ratio`` /
+        ``duration_seconds``. Returns "" when there is nothing to send.
 
         Atomic publish: write to a temp file in the same directory and then
         ``os.rename`` to the final path. The runner peer never observes a
@@ -757,6 +764,19 @@ class SPRunner(BaseDeviceRunner):
         """
         image_prompts = getattr(request, "image_prompts", None)
         references = getattr(request, "references", None)
+        # The SHM ``VideoRequest`` has no slot for ``aspect_ratio`` /
+        # ``duration_seconds``, so they ride in the side-file for EVERY task
+        # that sets them, not only ref2va. Without this a t2va/fl2va
+        # ``duration_seconds: 9`` was accepted (202) and the worker generated
+        # the 5 s default (quad1, 2026-09-05).
+        extras = {
+            key: value
+            for key, value in (
+                ("aspect_ratio", getattr(request, "aspect_ratio", None)),
+                ("duration_seconds", getattr(request, "duration_seconds", None)),
+            )
+            if value is not None
+        }
         if references:
             refs_payload = (
                 references.model_dump(exclude_none=True)
@@ -769,10 +789,14 @@ class SPRunner(BaseDeviceRunner):
                 "references": refs_payload,
             }
         elif image_prompts:
-            payload = [
+            entries = [
                 {"image": entry.image, "frame_pos": entry.frame_pos}
                 for entry in image_prompts
             ]
+            # A bare list stays the wire format when nothing else rides along.
+            payload = {**extras, "image_prompts": entries} if extras else entries
+        elif extras:
+            payload = extras
         else:
             return ""
 
