@@ -174,7 +174,12 @@ templates:
         GEMMA4_PAGE_BLOCK_SIZE: "64"
         GEMMA4_MAX_TOKENS_ALL_USERS: "65536"  # B=1 x max_context pool
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
-        GEMMA4_CHUNKED_PREFILL_TRACE: "1"
+        # dFlash taps are captured by a PYTHON hook in the eager forward; a TRACED
+        # chunk replay skips it (empty taps -> request fails at ISL > one chunk).
+        # Force eager chunked prefill so every chunk fires the hook. Both this and
+        # the wrapper's enable_trace=False are needed (they gate different traces).
+        GEMMA4_CHUNKED_PREFILL_TRACE: "0"
+        GEMMA4_GEN_PREFILL_CHUNK: "4096"  # model-internal prefill chunking (memory-safe to 32k; eager, tap hook fires per chunk)
       override_tt_config:
         fabric_config: FABRIC_1D
         trace_region_size: 512000000
@@ -191,9 +196,62 @@ templates:
         tool-call-parser: gemma4
         default-chat-template-kwargs: '{"enable_thinking": true}'
         reasoning-parser: gemma4
-        enable_chunked_prefill: true
+        # B=1 single-stream spec: full prefill in ONE forward so the dFlash
+        # residual-tap hook (and MTP setup) see the whole prompt. vLLM chunked
+        # prefill / prefix caching split or skip the prefill forward, which
+        # breaks the stateful drafter (empty taps -> request fails). The model
+        # chunks the prefill internally (GEMMA4_GEN_PREFILL_CHUNK) for memory.
+        enable_chunked_prefill: false
+        no-enable-prefix-caching: true
         max_num_batched_tokens: 65536
-        long_prefill_token_threshold: 4096
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+
+- weights:
+    - google/gemma-4-12B-it
+  impl: gemma4_mtp
+  # 12B MTP speculative serving (google/gemma-4-12B-it-assistant KV-shared
+  # drafter, K=5). Same B=1 profile as 31B MTP. 12B has no z-lab dFlash
+  # checkpoint, so MTP is the only spec path for this size.
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P150X8
+      max_concurrency: 1  # spec sessions are B=1 (fused trace per request)
+      max_context: 65536
+      env_vars:
+        MESH_DEVICE: "P150x8"
+        TT_GEMMA4_SPEC: "mtp"
+        GEMMA4_SPEC_DRAFT_LEN: "5"
+        GEMMA4_MTP_SERVE_HORIZON: "2048"
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+        GEMMA4_MAX_TOKENS_ALL_USERS: "65536"  # B=1 x max_context pool
+        GEMMA4_VLLM_SINGLE_CHUNK: "0"
+        # dFlash taps are captured by a PYTHON hook in the eager forward; a TRACED
+        # chunk replay skips it (empty taps -> request fails at ISL > one chunk).
+        # Force eager chunked prefill so every chunk fires the hook. Both this and
+        # the wrapper's enable_trace=False are needed (they gate different traces).
+        GEMMA4_CHUNKED_PREFILL_TRACE: "0"
+        GEMMA4_GEN_PREFILL_CHUNK: "4096"  # model-internal prefill chunking (memory-safe to 32k; eager, tap hook fires per chunk)
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 512000000
+        l1_small_size: 24576
+        sample_on_device_mode: decode_only  # spec: prefill anchor host-sampled, decode model-owned
+      vllm_args:
+        max_num_seqs: 1
+        no-async-scheduling: true
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: gemma4
+        # B=1 single-stream spec: full prefill in ONE forward so the dFlash
+        # residual-tap hook (and MTP setup) see the whole prompt. vLLM chunked
+        # prefill / prefix caching split or skip the prefill forward, which
+        # breaks the stateful drafter (empty taps -> request fails). The model
+        # chunks the prefill internally (GEMMA4_GEN_PREFILL_CHUNK) for memory.
+        enable_chunked_prefill: false
+        no-enable-prefix-caching: true
+        max_num_batched_tokens: 65536
   status: EXPERIMENTAL
   has_builtin_warmup: true
 
@@ -220,7 +278,12 @@ templates:
         GEMMA4_PAGE_BLOCK_SIZE: "64"
         GEMMA4_MAX_TOKENS_ALL_USERS: "65536"  # B=1 x max_context pool
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
-        GEMMA4_CHUNKED_PREFILL_TRACE: "1"
+        # dFlash taps are captured by a PYTHON hook in the eager forward; a TRACED
+        # chunk replay skips it (empty taps -> request fails at ISL > one chunk).
+        # Force eager chunked prefill so every chunk fires the hook. Both this and
+        # the wrapper's enable_trace=False are needed (they gate different traces).
+        GEMMA4_CHUNKED_PREFILL_TRACE: "0"
+        GEMMA4_GEN_PREFILL_CHUNK: "4096"  # model-internal prefill chunking (memory-safe to 32k; eager, tap hook fires per chunk)
       override_tt_config:
         fabric_config: FABRIC_1D
         trace_region_size: 512000000
@@ -237,9 +300,14 @@ templates:
         tool-call-parser: gemma4
         default-chat-template-kwargs: '{"enable_thinking": true}'
         reasoning-parser: gemma4
-        enable_chunked_prefill: true
+        # B=1 single-stream spec: full prefill in ONE forward so the dFlash
+        # residual-tap hook (and MTP setup) see the whole prompt. vLLM chunked
+        # prefill / prefix caching split or skip the prefill forward, which
+        # breaks the stateful drafter (empty taps -> request fails). The model
+        # chunks the prefill internally (GEMMA4_GEN_PREFILL_CHUNK) for memory.
+        enable_chunked_prefill: false
+        no-enable-prefix-caching: true
         max_num_batched_tokens: 65536
-        long_prefill_token_threshold: 4096
   status: EXPERIMENTAL
   has_builtin_warmup: true
 
@@ -305,9 +373,14 @@ templates:
         # chunked 4k prompts hit pre-gate batched prefill and 32x more scheduler
         # rounds starved decode under async scheduling. 65536/4096 measured
         # coherent and faster on QB2/LB (2026-08-31 battery; galaxy re-run 09-01).
-        enable_chunked_prefill: true
+        # B=1 single-stream spec: full prefill in ONE forward so the dFlash
+        # residual-tap hook (and MTP setup) see the whole prompt. vLLM chunked
+        # prefill / prefix caching split or skip the prefill forward, which
+        # breaks the stateful drafter (empty taps -> request fails). The model
+        # chunks the prefill internally (GEMMA4_GEN_PREFILL_CHUNK) for memory.
+        enable_chunked_prefill: false
+        no-enable-prefix-caching: true
         max_num_batched_tokens: 65536
-        long_prefill_token_threshold: 4096
     # LoudBox (8x P150). Metal policy: unbounded through 64k; auto-bounded at
     # ≥128k (generator_trace). Prefill chunk default 4096; at ≥128k + bounded
     # → 2048. Scheduler tokens stay 2048 to match metal at long ISL. B=32 needs
@@ -344,9 +417,14 @@ templates:
         # chunked 4k prompts hit pre-gate batched prefill and 32x more scheduler
         # rounds starved decode under async scheduling. 65536/4096 measured
         # coherent and faster on QB2/LB (2026-08-31 battery; galaxy re-run 09-01).
-        enable_chunked_prefill: true
+        # B=1 single-stream spec: full prefill in ONE forward so the dFlash
+        # residual-tap hook (and MTP setup) see the whole prompt. vLLM chunked
+        # prefill / prefix caching split or skip the prefill forward, which
+        # breaks the stateful drafter (empty taps -> request fails). The model
+        # chunks the prefill internally (GEMMA4_GEN_PREFILL_CHUNK) for memory.
+        enable_chunked_prefill: false
+        no-enable-prefix-caching: true
         max_num_batched_tokens: 65536
-        long_prefill_token_threshold: 4096
     # BH Galaxy (32x P150) native, DP=4 (2026-09-03 bring-up): the plugin's
     # standard-DP discovery opens the native 8x4 mesh, create_submeshes
     # reshapes to (4,8) and yields four physical-COLUMN (1,8) engines, each a
@@ -370,7 +448,12 @@ templates:
         GEMMA4_PAGE_BLOCK_SIZE: "64"
         GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
-        GEMMA4_CHUNKED_PREFILL_TRACE: "1"
+        # dFlash taps are captured by a PYTHON hook in the eager forward; a TRACED
+        # chunk replay skips it (empty taps -> request fails at ISL > one chunk).
+        # Force eager chunked prefill so every chunk fires the hook. Both this and
+        # the wrapper's enable_trace=False are needed (they gate different traces).
+        GEMMA4_CHUNKED_PREFILL_TRACE: "0"
+        GEMMA4_GEN_PREFILL_CHUNK: "4096"  # model-internal prefill chunking (memory-safe to 32k; eager, tap hook fires per chunk)
       override_tt_config:
         fabric_config: FABRIC_1D
         trace_region_size: 512000000
@@ -388,9 +471,14 @@ templates:
         default-chat-template-kwargs: '{"enable_thinking": true}'
         reasoning-parser: gemma4
         # Token-chunked prefill; 65536/4096 parity with P150X8/P300X2.
-        enable_chunked_prefill: true
+        # B=1 single-stream spec: full prefill in ONE forward so the dFlash
+        # residual-tap hook (and MTP setup) see the whole prompt. vLLM chunked
+        # prefill / prefix caching split or skip the prefill forward, which
+        # breaks the stateful drafter (empty taps -> request fails). The model
+        # chunks the prefill internally (GEMMA4_GEN_PREFILL_CHUNK) for memory.
+        enable_chunked_prefill: false
+        no-enable-prefix-caching: true
         max_num_batched_tokens: 65536
-        long_prefill_token_threshold: 4096
     # GPU (H100 NVL) bring-your-own vLLM server (see docs/gpu_workflows.md); used
     # to collect GPU reference eval scores for GPQA-Diamond, Terminal-Bench 2.0,
     # and SWE-Bench Verified. Dev-only; no tt_metal_commit/version pin needed
@@ -424,7 +512,12 @@ templates:
         GEMMA4_PAGE_BLOCK_SIZE: "64"
         GEMMA4_MAX_TOKENS_ALL_USERS: "131072"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
-        GEMMA4_CHUNKED_PREFILL_TRACE: "1"
+        # dFlash taps are captured by a PYTHON hook in the eager forward; a TRACED
+        # chunk replay skips it (empty taps -> request fails at ISL > one chunk).
+        # Force eager chunked prefill so every chunk fires the hook. Both this and
+        # the wrapper's enable_trace=False are needed (they gate different traces).
+        GEMMA4_CHUNKED_PREFILL_TRACE: "0"
+        GEMMA4_GEN_PREFILL_CHUNK: "4096"  # model-internal prefill chunking (memory-safe to 32k; eager, tap hook fires per chunk)
         # KNOWN BAD ON WORMHOLE — concurrent decode returns nondeterministic
         # garbage. Measured on T3K 12B (distinct arithmetic prompts, temp 0,
         # 3 repeats): every request completes, but correctness swings run to run
@@ -469,9 +562,14 @@ templates:
         # the parity re-run banked 9x b32@4k throughput (1.26 -> 11.7 tok/s/u)
         # and cleared the corruption bands the old 2048/2048 scheduler shadow
         # had masked.
-        enable_chunked_prefill: true
+        # B=1 single-stream spec: full prefill in ONE forward so the dFlash
+        # residual-tap hook (and MTP setup) see the whole prompt. vLLM chunked
+        # prefill / prefix caching split or skip the prefill forward, which
+        # breaks the stateful drafter (empty taps -> request fails). The model
+        # chunks the prefill internally (GEMMA4_GEN_PREFILL_CHUNK) for memory.
+        enable_chunked_prefill: false
+        no-enable-prefix-caching: true
         max_num_batched_tokens: 65536
-        long_prefill_token_threshold: 4096
     - device: GPU
       max_concurrency: 32
       max_context: 204800  # 200 * 1024; native ctx is 256K but a single H100 NVL (94GB, bf16 KV) caps servable ctx at ~205K (KV cache = 210,605 tokens)
@@ -511,7 +609,12 @@ templates:
         GEMMA4_PAGE_BLOCK_SIZE: "64"
         GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
-        GEMMA4_CHUNKED_PREFILL_TRACE: "1"
+        # dFlash taps are captured by a PYTHON hook in the eager forward; a TRACED
+        # chunk replay skips it (empty taps -> request fails at ISL > one chunk).
+        # Force eager chunked prefill so every chunk fires the hook. Both this and
+        # the wrapper's enable_trace=False are needed (they gate different traces).
+        GEMMA4_CHUNKED_PREFILL_TRACE: "0"
+        GEMMA4_GEN_PREFILL_CHUNK: "4096"  # model-internal prefill chunking (memory-safe to 32k; eager, tap hook fires per chunk)
       override_tt_config:
         fabric_config: FABRIC_1D
         # B=32 decode traces (match 31B QB2 headroom).
@@ -539,9 +642,14 @@ templates:
         default-chat-template-kwargs: '{"enable_thinking": true}'
         reasoning-parser: gemma4
         # Token-chunked prefill (tenstorrent/vllm#448). Match metal 4096.
-        enable_chunked_prefill: true
+        # B=1 single-stream spec: full prefill in ONE forward so the dFlash
+        # residual-tap hook (and MTP setup) see the whole prompt. vLLM chunked
+        # prefill / prefix caching split or skip the prefill forward, which
+        # breaks the stateful drafter (empty taps -> request fails). The model
+        # chunks the prefill internally (GEMMA4_GEN_PREFILL_CHUNK) for memory.
+        enable_chunked_prefill: false
+        no-enable-prefix-caching: true
         max_num_batched_tokens: 65536
-        long_prefill_token_threshold: 4096
     # LoudBox: metal isl_sweep unbounded through 256k PASS for 12B; multi-chunk
     # prefill (4096) matches demo policy (no auto-bound until >256k).
     - device: P150X8
@@ -627,9 +735,14 @@ templates:
         tool-call-parser: gemma4
         default-chat-template-kwargs: '{"enable_thinking": true}'
         reasoning-parser: gemma4
-        enable_chunked_prefill: true
+        # B=1 single-stream spec: full prefill in ONE forward so the dFlash
+        # residual-tap hook (and MTP setup) see the whole prompt. vLLM chunked
+        # prefill / prefix caching split or skip the prefill forward, which
+        # breaks the stateful drafter (empty taps -> request fails). The model
+        # chunks the prefill internally (GEMMA4_GEN_PREFILL_CHUNK) for memory.
+        enable_chunked_prefill: false
+        no-enable-prefix-caching: true
         max_num_batched_tokens: 65536
-        long_prefill_token_threshold: 4096
     # GPU (H100 NVL) bring-your-own vLLM server (see docs/gpu_workflows.md); used
     # to collect GPU reference eval scores for GPQA-Diamond, Terminal-Bench 2.0,
     # and SWE-Bench Verified. Dev-only; no tt_metal_commit/version pin needed
@@ -715,9 +828,14 @@ templates:
         # the parity re-run banked 9x b32@4k throughput (1.26 -> 11.7 tok/s/u)
         # and cleared the corruption bands the old 2048/2048 scheduler shadow
         # had masked.
-        enable_chunked_prefill: true
+        # B=1 single-stream spec: full prefill in ONE forward so the dFlash
+        # residual-tap hook (and MTP setup) see the whole prompt. vLLM chunked
+        # prefill / prefix caching split or skip the prefill forward, which
+        # breaks the stateful drafter (empty taps -> request fails). The model
+        # chunks the prefill internally (GEMMA4_GEN_PREFILL_CHUNK) for memory.
+        enable_chunked_prefill: false
+        no-enable-prefix-caching: true
         max_num_batched_tokens: 65536
-        long_prefill_token_threshold: 4096
     # WH N300 (1x2 = one n300 card, 24 GB). 12B is the only Gemma4 variant that
     # fits a single WH card — 26B-A4B and 31B OOM here even at 4k. Measured
     # batch-1: 4k TTFT 11.4 s / 12.0 tok/s, 32k 60 s / 12.7 tok/s, 64k 99 s /
@@ -741,7 +859,12 @@ templates:
         GEMMA4_PAGE_BLOCK_SIZE: "64"
         GEMMA4_MAX_TOKENS_ALL_USERS: "8192"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
-        GEMMA4_CHUNKED_PREFILL_TRACE: "1"
+        # dFlash taps are captured by a PYTHON hook in the eager forward; a TRACED
+        # chunk replay skips it (empty taps -> request fails at ISL > one chunk).
+        # Force eager chunked prefill so every chunk fires the hook. Both this and
+        # the wrapper's enable_trace=False are needed (they gate different traces).
+        GEMMA4_CHUNKED_PREFILL_TRACE: "0"
+        GEMMA4_GEN_PREFILL_CHUNK: "4096"  # model-internal prefill chunking (memory-safe to 32k; eager, tap hook fires per chunk)
         # KNOWN BAD ON WORMHOLE — concurrent decode returns nondeterministic
         # garbage. Measured on T3K 12B (distinct arithmetic prompts, temp 0,
         # 3 repeats): every request completes, but correctness swings run to run
@@ -2051,7 +2174,12 @@ templates:
         GEMMA4_PAGE_BLOCK_SIZE: "64"
         GEMMA4_MAX_TOKENS_ALL_USERS: "32768"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
-        GEMMA4_CHUNKED_PREFILL_TRACE: "1"
+        # dFlash taps are captured by a PYTHON hook in the eager forward; a TRACED
+        # chunk replay skips it (empty taps -> request fails at ISL > one chunk).
+        # Force eager chunked prefill so every chunk fires the hook. Both this and
+        # the wrapper's enable_trace=False are needed (they gate different traces).
+        GEMMA4_CHUNKED_PREFILL_TRACE: "0"
+        GEMMA4_GEN_PREFILL_CHUNK: "4096"  # model-internal prefill chunking (memory-safe to 32k; eager, tap hook fires per chunk)
         # KNOWN BAD ON WORMHOLE — concurrent decode returns nondeterministic
         # garbage. Measured on T3K 12B (distinct arithmetic prompts, temp 0,
         # 3 repeats): every request completes, but correctness swings run to run
