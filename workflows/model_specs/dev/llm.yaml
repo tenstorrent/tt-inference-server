@@ -182,9 +182,12 @@ templates:
         sample_on_device_mode: decode_only  # spec: prefill anchor host-sampled, decode model-owned
       vllm_args:
         max_num_seqs: 1
-        # False booleans are dropped by the launcher's arg emitter; the
-        # negative flag form actually reaches vLLM (block-output requires sync).
-        no-async-scheduling: true  # host acceptance loop each step
+        # Sync scheduling: async is coherent but gives no overlap until the
+        # fused decoder's step is split into non-blocking submit + deferred
+        # collect (dec.step blocks on the device readback today). The async
+        # infra is in place -- flip to async_scheduling + GEMMA4_SPEC_ASYNC=1
+        # once that split lands.
+        no-async-scheduling: true
         enable-auto-tool-choice: true
         tool-call-parser: gemma4
         default-chat-template-kwargs: '{"enable_thinking": true}'
@@ -226,9 +229,12 @@ templates:
         sample_on_device_mode: decode_only  # spec: prefill anchor host-sampled, decode model-owned
       vllm_args:
         max_num_seqs: 1
-        # False booleans are dropped by the launcher's arg emitter; the
-        # negative flag form actually reaches vLLM (block-output requires sync).
-        no-async-scheduling: true  # host acceptance loop each step
+        # Sync scheduling: async is coherent but gives no overlap until the
+        # fused decoder's step is split into non-blocking submit + deferred
+        # collect (dec.step blocks on the device readback today). The async
+        # infra is in place -- flip to async_scheduling + GEMMA4_SPEC_ASYNC=1
+        # once that split lands.
+        no-async-scheduling: true
         enable-auto-tool-choice: true
         tool-call-parser: gemma4
         default-chat-template-kwargs: '{"enable_thinking": true}'
