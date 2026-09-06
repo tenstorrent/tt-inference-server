@@ -350,6 +350,14 @@ def run_one(spec: Spec, assets: live.Assets, deployment: live.Deployment, out_di
     return res
 
 
+DEVICE_HANG_PATTERN = re.compile(r"fetch queue wait|potential hang detected|TIMEOUT: device timeout|TT_THROW", re.I)
+
+
+def device_hung(res: Result) -> bool:
+    """A failed result whose error is a device-level timeout/throw: the whole mesh is stuck, not this request."""
+    return res.status == "failed" and bool(res.error) and bool(DEVICE_HANG_PATTERN.search(res.error))
+
+
 def run_sequence(specs: Iterable[Spec], assets: live.Assets, deployment: live.Deployment, report: live.Report | None,
                  out_dir: Path, *, fresh: str | None = None, stop_on_failure: bool = False, judge: bool = True) -> list[Result]:
     """Run ``specs`` in order on one worker process.  ``fresh="t2va"`` starts fresh workers first
@@ -362,6 +370,12 @@ def run_sequence(specs: Iterable[Spec], assets: live.Assets, deployment: live.De
         results.append(res)
         if report is not None:
             report.add(**res.row())
+        if device_hung(res):
+            # The mesh is stuck (every later request in this process would burn the 300 s op timeout
+            # and fail the same way -- 2026-09-06 fl2va 1:1 then 3:4 then 9:16): stop here, the
+            # deployment is already marked poisoned and the next fresh start resets the chips.
+            print(f"  [sequence] device hang on {spec.tag}: skipping the rest of this sequence", flush=True)
+            break
         if stop_on_failure and not res.ok:
             break
     return results
