@@ -21,14 +21,13 @@ This rebuilds that answer without re-running anything:
 Inclusion is decided by SHAPE, never by test name, so a new exabox test needs no
 change here:
 
-* no ``sections``                    -> skipped (this is what drops ``sanity``,
-                                        whose results are a flat ad-hoc dict)
-* ``--limit-samples-mode smoke-test`` -> skipped (the evals smoke run scores a
-                                        handful of samples; it is a health check
-                                        and it collides with the full run on
-                                        every identity field, so merging both
-                                        would assert two different scores for
-                                        one task)
+* no ``sections`` -> skipped. This is what drops ``sanity``, whose results are
+  a flat ad-hoc dict rather than a ReportSchema.
+
+The evals smoke run IS merged, deliberately: collecting every result matters
+more than the duplicate rows it produces. Smoke and full measure the same task
+and match on ``kind``, ``title``, ``id`` and ``task_name``, so the merged
+report shows two scores for one task with nothing to tell them apart.
 
 Everything else is merged whether it passed or failed: a report that missed its
 acceptance criteria is still a real measurement.
@@ -76,6 +75,8 @@ REPORT_GLOB = "report_*.json"
 #: with no ``sections``, so the shape filter drops it either way.
 EXTRA_GLOBS = ("sanity_results_*.json",)
 
+#: Kept for reference and for tests. No longer filters anything — see
+#: mergeable() for why the evals smoke run is merged.
 SMOKE_FLAG = "--limit-samples-mode smoke-test"
 
 #: The merged report presents itself as a release, so every existing consumer
@@ -190,9 +191,14 @@ def mergeable(payload: Mapping[str, Any]) -> Tuple[bool, str]:
     sections = payload.get("sections")
     if not isinstance(sections, list) or not sections:
         return False, "no report sections"
-    run_command = str((payload.get("metadata") or {}).get("run_command") or "")
-    if SMOKE_FLAG in run_command:
-        return False, "evals smoke run"
+    # The evals smoke run used to be dropped here. It is now merged like any
+    # other report: collecting every result is worth more than avoiding the
+    # duplicate rows. Be aware of what that costs — smoke and full measure the
+    # same task and are identical in `kind`, `title`, `id` and `task_name`, so
+    # the merged report carries two different scores for one task with nothing
+    # to distinguish them, and both reach the database that way. Marking them
+    # apart needs a sample-mode field on the eval block, which the schema does
+    # not have. Re-adding the filter is a two-line change if that changes.
     return True, "included"
 
 

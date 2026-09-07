@@ -112,10 +112,33 @@ def test_sanity_is_skipped_for_having_no_sections():
     assert reason == "no report sections"
 
 
-def test_evals_smoke_run_is_skipped_by_its_flag():
+def test_evals_smoke_run_is_merged_like_any_other_report():
+    """Smoke used to be dropped: its score comes from a handful of samples and
+    it collides with the full run on every identity field, so a merged report
+    carried two different scores for one task with nothing to tell them apart.
+    That is now accepted deliberately — collecting every report matters more
+    than avoiding the duplicate rows."""
     keep, reason = mergeable(_report(args=f"--dev-mode {SMOKE_FLAG}"))
-    assert keep is False
-    assert reason == "evals smoke run"
+    assert keep is True
+    assert reason == "included"
+
+
+def test_smoke_and_full_both_survive_deduplication(tmp_path):
+    """They differ in run_command, so they are two identities, not one test run
+    twice — de-duplication must not collapse them into one."""
+    _write(tmp_path, "a", "report_evals_0_100.json",
+           _report(args=f"--dev-mode {SMOKE_FLAG}", score=100.0))
+    _write(tmp_path, "b", "report_evals_0_200.json",
+           _report(args="--dev-mode", score=83.0))
+
+    sources, _ = load_test_reports(discover_test_reports(tmp_path))
+    kept, superseded = deduplicate(sources)
+    assert len(kept) == 2
+    assert superseded == []
+
+    _, stats = merge_reports(tmp_path, tmp_path / "out")
+    assert stats["merged"] == 2
+    assert stats["sections"] == 2
 
 
 def test_a_failed_test_is_still_merged():
