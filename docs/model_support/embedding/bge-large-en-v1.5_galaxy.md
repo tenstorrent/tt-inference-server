@@ -6,6 +6,12 @@
 - [Search other embedding models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
+`bge-large-en-v1.5` is also supported on hardware:
+
+- [WH LoudBox/QuietBox](bge-large-en-v1.5_t3k.md)
+- [N150](bge-large-en-v1.5_n150.md)
+- [N300](bge-large-en-v1.5_n300.md)
+
 ## Quickstart - Deploy bge-large-en-v1.5 Inference Server on WH Galaxy
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.

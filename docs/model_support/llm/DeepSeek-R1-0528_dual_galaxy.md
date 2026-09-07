@@ -6,6 +6,11 @@
 - [Search other llm models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
+`DeepSeek-R1-0528` is also supported on hardware:
+
+- [Quad WH Galaxy](DeepSeek-R1-0528_quad_galaxy.md)
+- [WH Galaxy](DeepSeek-R1-0528_galaxy.md)
+
 ## Quickstart - Deploy DeepSeek-R1-0528 Inference Server on Dual WH Galaxy
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.

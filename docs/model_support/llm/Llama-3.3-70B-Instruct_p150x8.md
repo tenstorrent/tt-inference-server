@@ -1,5 +1,14 @@
 # Llama-3.3-70B-Instruct Tenstorrent Support on BH LoudBox
 
+Supported weights variants for this model implementation are:
+
+- `Llama-3.3-70B-Instruct`: [meta-llama/Llama-3.3-70B-Instruct](https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct) **(default)** 
+- `Llama-3.1-70B`: [meta-llama/Llama-3.1-70B](https://huggingface.co/meta-llama/Llama-3.1-70B)
+- `Llama-3.1-70B-Instruct`: [meta-llama/Llama-3.1-70B-Instruct](https://huggingface.co/meta-llama/Llama-3.1-70B-Instruct)
+- `DeepSeek-R1-Distill-Llama-70B`: [deepseek-ai/DeepSeek-R1-Distill-Llama-70B](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Llama-70B)
+
+Weight variants use more than one released configuration; see the configuration table below.
+
 #### Useful links
 
 - [BH LoudBox details](https://tenstorrent.com/hardware/tt-loudbox)
@@ -9,7 +18,9 @@
 `Llama-3.3-70B-Instruct` is also supported on hardware:
 
 - [WH Galaxy](Llama-3.3-70B-Instruct_galaxy.md)
+- [BH 4xP150](Llama-3.3-70B-Instruct_p150x4.md)
 - [BH QuietBox 2](Llama-3.3-70B-Instruct_p300x2.md)
+- [WH LoudBox/QuietBox](Llama-3.3-70B-Instruct_t3k.md)
 
 ## Quickstart - Deploy Llama-3.3-70B-Instruct Inference Server on BH LoudBox
 
@@ -51,3 +62,9 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | tt-metal Commit | `555f240` |
 | vLLM Commit | `22be241` |
 | Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-555f240-22be241` |
+
+#### Additional released configurations
+
+| Weights | Implementation | Max Batch Size | Max Context Length | tt-metal Commit | vLLM Commit | Docker Image |
+|---|---|---|---|---|---|---|
+| [meta-llama/Llama-3.1-70B](https://huggingface.co/meta-llama/Llama-3.1-70B), [meta-llama/Llama-3.1-70B-Instruct](https://huggingface.co/meta-llama/Llama-3.1-70B-Instruct), [deepseek-ai/DeepSeek-R1-Distill-Llama-70B](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Llama-70B) | `tt-transformers` | 32 | 131072 | `555f240` | `22be241` | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.1-555f240-22be241` |
