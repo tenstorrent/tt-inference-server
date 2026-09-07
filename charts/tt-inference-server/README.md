@@ -304,18 +304,14 @@ All fields under `defaults` apply to every model/engine/device/impl unless overr
 | `QwQ-32B` | galaxy, t3k |
 | `Qwen2.5-72B` | galaxy, t3k |
 | `Qwen2.5-72B-Instruct` | galaxy, t3k |
-| `Qwen2.5-VL-72B-Instruct` | gpu |
 | `Qwen3-32B` | galaxy, p150x8, p300x2, t3k |
 | `Qwen3-8B` | galaxy, n150, n300, t3k |
 | `Qwen3-VL-32B-Instruct` | t3k |
 | `Qwen3.6-27B` | p300x2 |
 | `diffusiongemma-26B-A4B-it` | p300x2 |
-| `gemma-3-27b-it` | galaxy, p300x2 |
-| `gemma-3-4b-it` | p150, t3k |
+| `gemma-3-27b-it` | galaxy |
 | `gemma-4-31B-it` | p300x2 |
 | `gpt-oss-120b` | galaxy, p300x2, t3k |
-| `medgemma-27b-it` | p300x2 |
-| `medgemma-4b-it` | p150, t3k |
 
 ### Media
 
@@ -323,38 +319,29 @@ All fields under `defaults` apply to every model/engine/device/impl unless overr
 |---|---|
 | `FLUX.1-dev` | galaxy, p150x4, p150x8, p300, p300x2, t3k |
 | `FLUX.1-schnell` | galaxy, p150x4, p150x8, p300, p300x2, t3k |
-| `Llama-3.1-70B` | t3k |
 | `Qwen3-Embedding-8B` | galaxy, n150, n300, t3k |
-| `Wan2.2-I2V-A14B-Diffusers` | galaxy, p150x4, p150x8, p300x2, t3k |
 | `Wan2.2-T2V-A14B-Diffusers` | galaxy, p150x4, p150x8, p300x2, t3k |
 | `Z-Image-Turbo` | p300x2 |
 | `bge-large-en-v1.5` | galaxy, n150, n300, t3k |
-| `distil-large-v3` | galaxy, n150, n300, p150, p300, p300x2, t3k |
+| `distil-large-v3` | galaxy, n150, n300, p150, p300x2, t3k |
 | `mochi-1-preview` | galaxy, p150x4, p150x8, p300x2, t3k |
-| `speecht5_tts` | p150, p300, p300x2 |
+| `speecht5_tts` | p150, p300x2 |
 | `stable-diffusion-3.5-large` | galaxy, t3k |
-| `stable-diffusion-xl-1.0-inpainting-0.1` | p150, p150x4, p150x8, p300x2 |
-| `stable-diffusion-xl-base-1.0` | galaxy, n150, n300, p150, p150x4, p150x8, p300x2, t3k |
-| `stable-diffusion-xl-base-1.0-img-2-img` | galaxy, n150, n300, p150, p150x4, p150x8, p300x2, t3k |
-| `whisper-large-v3` | galaxy, n150, n300, p150, p300, p300x2, t3k |
+| `stable-diffusion-xl-base-1.0` | galaxy, n150, n300, t3k |
+| `stable-diffusion-xl-base-1.0-img-2-img` | galaxy, n150, n300, t3k |
+| `whisper-large-v3` | galaxy, n150, n300, p150, p300x2, t3k |
 
 ### Forge
 
 | Model | Devices |
 |---|---|
-| `Falcon3-7B-Instruct` | n150, n300, p150 |
-| `Llama-3.1-8B-Instruct` | n150, n300, p150 |
-| `Llama-3.2-3B` | p150 |
-| `Llama-3.2-3B-Instruct` | n150, n300, p150 |
-| `Qwen3-4B` | p150 |
-| `Qwen3-8B` | n150, n300, p150 |
+| `Falcon3-7B-Instruct` | p150 |
 | `Qwen3-Embedding-0.6B` | p300x2 |
 | `Qwen3-Embedding-4B` | p300x2 |
 | `bge-m3` | p300x2 |
 | `mobilenetv2` | n150, n300 |
 | `resnet-50` | n150, n300 |
 | `segformer` | n150, n300 |
-| `stable-diffusion-xl-base-1.0` | p150x8, p300x2 |
 | `vit` | n150, n300 |
 | `vovnet` | n150, n300 |
 | `yolox_nano` | p150 |
