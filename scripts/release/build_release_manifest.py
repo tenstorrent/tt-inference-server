@@ -103,8 +103,7 @@ def cmd_live(args) -> None:
     out = args.output or _default_output(version)
     rm.write_manifest(manifest, out)
     print(
-        f"{rm.with_v(version)}: {len(manifest['changed'])} released leaves "
-        f"-> {out}",
+        f"{rm.with_v(version)}: {len(manifest['changed'])} released leaves -> {out}",
         file=sys.stderr,
     )
 
@@ -126,7 +125,9 @@ def main() -> None:
     sub = ap.add_subparsers(dest="mode", required=True)
 
     live = sub.add_parser("live", help="build the current release's manifest")
-    live.add_argument("--version", default=None, help="release version (default: VERSION)")
+    live.add_argument(
+        "--version", default=None, help="release version (default: VERSION)"
+    )
     live.add_argument("--tt-shield-run-id", default=None)
     live.add_argument("--tt-shield-repo", default="tenstorrent/tt-shield")
     live.add_argument("--token", default=None)
@@ -135,8 +136,14 @@ def main() -> None:
         type=Path,
         default=REPO_ROOT / ".github" / "workflows" / "models-ci-config.json",
     )
-    live.add_argument("--dev-dir", type=Path, default=REPO_ROOT / "workflows" / "model_specs" / "dev")
-    live.add_argument("--prod-dir", type=Path, default=REPO_ROOT / "workflows" / "model_specs" / "prod")
+    live.add_argument(
+        "--dev-dir", type=Path, default=REPO_ROOT / "workflows" / "model_specs" / "dev"
+    )
+    live.add_argument(
+        "--prod-dir",
+        type=Path,
+        default=REPO_ROOT / "workflows" / "model_specs" / "prod",
+    )
     live.add_argument("--base-ref", default="origin/main")
     live.add_argument("--output", type=Path, default=None)
     live.set_defaults(func=cmd_live)
