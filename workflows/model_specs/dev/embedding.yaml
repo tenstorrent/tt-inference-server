@@ -57,7 +57,7 @@ templates:
         VLLM__MAX_NUM_SEQS: "8"
         MAX_BATCH_SIZE: "8"
         DEFAULT_THROTTLE_LEVEL: "0"
-        BENCHMARK_MAX_CONCURRENCY: "512"
+        BENCHMARK_MAX_CONCURRENCY: "256"
         # >= 10-20x concurrency so the startup transient (client ramp, single-
         # request batches) is <2% of the run and the average measures steady state.
         BENCHMARK_NUM_PROMPTS: "10000"
