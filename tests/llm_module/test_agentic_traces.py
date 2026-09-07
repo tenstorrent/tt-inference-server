@@ -627,7 +627,12 @@ class TestOutputParsing:
         assert metrics["mean_tpot_ms"] == 15.02
         assert metrics["median_e2el_ms"] == 10016.63
         assert metrics["output_token_throughput_per_user"] == 119.49
-        assert metrics["e2e_output_token_throughput_per_user"] == 40.41
+        assert metrics["mean_e2e_norm_intvty"] == 40.41
+        # E2E normalized interactivity is a rate, so its slow tail is the
+        # bottom of the distribution: p90 reads AIPerf's p10, not its p90.
+        assert metrics["p75_e2e_norm_intvty"] == 3019.83
+        assert metrics["p90_e2e_norm_intvty"] == 2215.77
+        assert metrics["p95_e2e_norm_intvty"] == 1813.5
         assert metrics["measured_benchmark_duration"] == 3605.47
 
     def test_distinguishes_successful_from_completed_counts(self, tmp_path):
