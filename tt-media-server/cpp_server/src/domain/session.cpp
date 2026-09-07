@@ -45,8 +45,6 @@ bool Session::clearInFlight() {
   parentThinkCount_ = 0;
   onComplete_ = nullptr;
   onNoHashes_ = nullptr;
-  inThinkingBlock_ = false;
-  accumulatedThinkTokens_ = 0;
   return true;
 }
 
@@ -71,37 +69,15 @@ void Session::initTokenAccumulator(
   generatedTokens_.clear();
   being_generated_ = true;
 
-  // Initialize thinking token tracking
+  // Thinking-token accounting inputs for finalizeAndRegisterHashes().
   auto [thinkStart, thinkEnd] = utils::tokenizers::thinkTokenIds();
   thinkStartTokenId_ = thinkStart;
   thinkEndTokenId_ = thinkEnd;
-  const auto markersInHistory = utils::tokenizers::thinkMarkersInHistory();
-  thinkStartInHistory_ = markersInHistory.start;
-  thinkEndInHistory_ = markersInHistory.end;
-  inThinkingBlock_ = false;
-  accumulatedThinkTokens_ = parentThinkCount_;
+  markersInHistory_ = utils::tokenizers::thinkMarkersInHistory();
 }
 
 void Session::addGeneratedToken(uint32_t tokenId) {
   generatedTokens_.push_back(tokenId);
-
-  // Track thinking state using the same marker rules as prefix hashing.
-  const bool thinkingEnabled =
-      thinkStartTokenId_ != utils::tokenizers::kNoTokenId &&
-      thinkEndTokenId_ != utils::tokenizers::kNoTokenId;
-  if (!thinkingEnabled) return;
-
-  if (tokenId == thinkStartTokenId_) {
-    inThinkingBlock_ = true;
-    // The delimiter occupies a KV row. It is this counter's job unless the
-    // chat template re-renders it into later prompts (mirrors the hasher).
-    if (!thinkStartInHistory_) ++accumulatedThinkTokens_;
-  } else if (tokenId == thinkEndTokenId_) {
-    inThinkingBlock_ = false;
-    if (!thinkEndInHistory_) ++accumulatedThinkTokens_;
-  } else if (inThinkingBlock_) {
-    ++accumulatedThinkTokens_;  // Reasoning content
-  }
 }
 
 void Session::finalizeAndRegisterHashes() {
@@ -115,8 +91,8 @@ void Session::finalizeAndRegisterHashes() {
   // Compute new block info continuing from parent (avoids re-hashing matched
   // prefix). Uses thinking-aware hashing to exclude thinking tokens from hash.
   auto newBlocks = utils::getPrefixCacheHashesByBlocksWithThinking(
-      allDeltaTokens, thinkStartTokenId_, thinkEndTokenId_,
-      thinkStartInHistory_, thinkEndInHistory_, parentHash_, parentThinkCount_);
+      allDeltaTokens, thinkStartTokenId_, thinkEndTokenId_, markersInHistory_,
+      parentHash_, parentThinkCount_);
 
   // Only register if new blocks were formed
   if (!newBlocks.empty()) {

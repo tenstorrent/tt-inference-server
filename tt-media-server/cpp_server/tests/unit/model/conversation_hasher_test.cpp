@@ -177,18 +177,10 @@ TEST_F(ConversationHasherTest, RenderLastUserTurn_BosIncludedOnlyWithoutPrior) {
       << "Continuations must not duplicate BOS already in the KV cache";
 }
 
-// ---------------------------------------------------------------------------
-// Think-row accounting (getPrefixCacheHashesByBlocksWithThinking)
-//
-// accumulatedThinkTokens is the correction that turns a block-aligned match
-// back into a KV row index: matched_tokens + accumulatedThinkTokens ==
-// kv_position_id, the first free KV index. So it must count every row the NEXT
-// turn's prompt will not re-supply — the reasoning content always, and each
-// delimiter only when this model's chat template drops it from history.
-//
-// The hashes must be identical under every policy: matching has to work across
-// a prompt that no longer carries the reasoning at all.
-// ---------------------------------------------------------------------------
+// Think-row accounting: matched_tokens + accumulatedThinkTokens ==
+// kv_position_id, so the count must cover every row the NEXT turn's prompt
+// will not re-supply — the reasoning always, each delimiter only when the
+// chat template drops it from history. Hashes stay policy-independent.
 
 namespace {
 
@@ -216,16 +208,15 @@ std::vector<uint32_t> tokensWithOneThinkBlock() {
 
 std::vector<BlockHashInfo> hashWithPolicy(bool startInHistory,
                                           bool endInHistory) {
-  return getPrefixCacheHashesByBlocksWithThinking(tokensWithOneThinkBlock(),
-                                                  kThinkStart, kThinkEnd,
-                                                  startInHistory, endInHistory);
+  return getPrefixCacheHashesByBlocksWithThinking(
+      tokensWithOneThinkBlock(), kThinkStart, kThinkEnd,
+      {.start = startInHistory, .end = endInHistory});
 }
 
 }  // namespace
 
 TEST(ConversationHasherThinkRows, CountsDelimitersDroppedFromHistory) {
-  // DeepSeek / Gemma / MiniMax-M2.7 shape: the next prompt carries neither
-  // delimiter, so both rows are this counter's responsibility.
+  // DeepSeek / Gemma / MiniMax-M2.7 shape: neither delimiter comes back.
   auto blocks =
       hashWithPolicy(/*startInHistory=*/false, /*endInHistory=*/false);
   ASSERT_EQ(blocks.size(), 2u);
@@ -237,8 +228,8 @@ TEST(ConversationHasherThinkRows, CountsDelimitersDroppedFromHistory) {
 }
 
 TEST(ConversationHasherThinkRows, SkipsDelimitersKeptInHistory) {
-  // Kimi / GLM-5.2 shape: the template re-renders `<think></think>`, so those
-  // two rows arrive with the next prompt and must NOT be counted again.
+  // Kimi / GLM-5.2 shape: `<think></think>` is re-rendered, so those two rows
+  // arrive with the next prompt and must NOT be counted again.
   auto blocks = hashWithPolicy(/*startInHistory=*/true, /*endInHistory=*/true);
   ASSERT_EQ(blocks.size(), 2u);
   EXPECT_EQ(blocks[1].accumulatedThinkTokens, 2u)
@@ -254,8 +245,8 @@ TEST(ConversationHasherThinkRows, CountsEachDelimiterIndependently) {
 }
 
 TEST(ConversationHasherThinkRows, PolicyNeverChangesTheHashes) {
-  // The fingerprint side must stay policy-independent, otherwise a prompt that
-  // renders the delimiters differently stops matching its own session.
+  // Otherwise a prompt that renders the delimiters differently stops matching
+  // its own session.
   auto dropped = hashWithPolicy(false, false);
   auto kept = hashWithPolicy(true, true);
   auto mixed = hashWithPolicy(false, true);
@@ -268,9 +259,8 @@ TEST(ConversationHasherThinkRows, PolicyNeverChangesTheHashes) {
 }
 
 TEST(ConversationHasherThinkRows, MatchedPlusThinkEqualsKvRows) {
-  // The invariant the accounting exists to uphold, stated directly: for a
-  // prompt that re-renders neither delimiter, the matched (hashed) token count
-  // plus the think rows must equal the number of KV rows consumed.
+  // With neither delimiter re-rendered, hashed tokens + think rows must equal
+  // the KV rows consumed.
   const size_t firstBlockSize = tt::config::prefixCacheFirstBlockSize();
   const size_t blockSize = tt::config::prefixCacheBlockSize();
   const auto tokens = tokensWithOneThinkBlock();

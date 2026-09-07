@@ -119,10 +119,8 @@ PrefixCachingInfo computePrefixCachingInfoFromTokens(
 
   // Hash non-thinking tokens into per-block hashes, tracking think rows.
   auto [thinkStart, thinkEnd] = tokenizers::thinkTokenIds();
-  const auto markersInHistory = tokenizers::thinkMarkersInHistory();
   info.blocks = getPrefixCacheHashesByBlocksWithThinking(
-      tokens, thinkStart, thinkEnd, markersInHistory.start,
-      markersInHistory.end);
+      tokens, thinkStart, thinkEnd, tokenizers::thinkMarkersInHistory());
 
   TT_LOG_INFO("[TokenHasher] tokens={} blocks={}", tokens.size(),
               info.blocks.size());
@@ -187,7 +185,7 @@ std::vector<uint64_t> getPrefixCacheHashesByBlocks(
 
 std::vector<BlockHashInfo> getPrefixCacheHashesByBlocksWithThinking(
     std::span<const uint32_t> tokens, uint32_t thinkStartId,
-    uint32_t thinkEndId, bool thinkStartInHistory, bool thinkEndInHistory,
+    uint32_t thinkEndId, tokenizers::ThinkMarkersInHistory markersInHistory,
     uint64_t parentHash, uint32_t parentThinkCount) {
   const bool filterThinking = (thinkStartId != tokenizers::kNoTokenId &&
                                thinkEndId != tokenizers::kNoTokenId);
@@ -211,15 +209,14 @@ std::vector<BlockHashInfo> getPrefixCacheHashesByBlocksWithThinking(
       // Mirror the session-side think marker state machine.
       if (token == thinkStartId) {
         inThinking = true;
-        // Never hashed (a later prompt may not carry it), but it does occupy a
-        // KV row — count that row unless the template re-renders the marker,
-        // in which case the later prompt supplies it.
-        if (!thinkStartInHistory) ++thinkCount;
+        // Not hashed, but it occupies a KV row unless the template
+        // re-renders it, in which case the later prompt supplies that row.
+        if (!markersInHistory.start) ++thinkCount;
         continue;
       }
       if (token == thinkEndId) {
         inThinking = false;
-        if (!thinkEndInHistory) ++thinkCount;  // Same as thinkStartId above
+        if (!markersInHistory.end) ++thinkCount;
         continue;
       }
       if (inThinking) {

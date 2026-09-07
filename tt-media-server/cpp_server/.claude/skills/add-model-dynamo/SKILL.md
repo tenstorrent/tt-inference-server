@@ -104,9 +104,23 @@ python3 render_think_history.py <hf-id>     # omit the id to sweep every model
    | a bare closing tag (GLM-5.1, MiniMax-M3) | `false, true` |
    | empty `<think></think>` (Kimi, GLM-5.2) | `true, true` |
 
-   Known limitation: the flags are static, so a client that DOES echo
-   `reasoning_content` back changes the rendering (the script prints that case
-   too) and the accounting is off by the reasoning length for that request.
+   Known limitations — the flags are static, but the rendering they describe is
+   not, so they are only right for the Dynamo path with a non-echoing client:
+
+   - **Two renderers, one flag.** These values describe the model's own
+     `chat_template.jinja`, which is what the Dynamo frontend applies before
+     sending `token_ids`. The local Drogon route (`/v1/chat/completions` →
+     `ChatCompletionRequest::toLLMRequest`) instead renders through
+     `DeepseekTokenizer::applyChatTemplate`, which every `ModelType` currently
+     shares and which emits a past assistant turn as `<｜Assistant｜>content` —
+     no delimiters, for any model. So on that path the true flags are always
+     `false, false`, and any model registered otherwise (Kimi, GLM-5.1/5.2,
+     MiniMax-M3) undercounts 1–2 KV rows per turn there. Fixing it properly
+     means giving those models real templates rather than adjusting the flags.
+   - **Echoed reasoning.** A client that DOES send `reasoning_content` back
+     changes the rendering again (the script prints that case too); the
+     accounting is then off by the reasoning length for that request.
+
    Pin whatever you choose in `ConversationHasherThinkRows`
    (`tests/unit/model/conversation_hasher_test.cpp`).
 

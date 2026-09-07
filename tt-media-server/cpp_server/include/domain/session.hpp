@@ -209,15 +209,11 @@ class Session {
       onComplete_;
   std::function<void(const std::string&)> onNoHashes_;
 
-  // Thinking token tracking
-  bool inThinkingBlock_ = false;
-  uint32_t accumulatedThinkTokens_ = 0;
-  uint32_t thinkStartTokenId_ = 0;
-  uint32_t thinkEndTokenId_ = 0;
-  // Whether this model's chat template re-renders each delimiter into later
-  // turns' prompts; a delimiter it drops is a KV row only this counter tracks.
-  bool thinkStartInHistory_ = false;
-  bool thinkEndInHistory_ = false;
+  // Thinking-token accounting, resolved per model in initTokenAccumulator()
+  // and consumed by finalizeAndRegisterHashes().
+  uint32_t thinkStartTokenId_ = utils::tokenizers::kNoTokenId;
+  uint32_t thinkEndTokenId_ = utils::tokenizers::kNoTokenId;
+  utils::tokenizers::ThinkMarkersInHistory markersInHistory_;
 
   static std::string generateUuid();
 };

@@ -1,8 +1,8 @@
+#!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-#!/usr/bin/env python3
 """Derive thinkStartInHistory / thinkEndInHistory for a model's StaticTokenizerInfo.
 
 Renders each model's chat template for a two-turn conversation and reports which
