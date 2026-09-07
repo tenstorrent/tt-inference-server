@@ -284,6 +284,7 @@ const StaticTokenizerInfo& deepseekR1Info() {
       /*assistantHeaderSequence=*/{128804},
       /*thinkStartTokenId=*/128798,
       /*thinkEndTokenId=*/128799,
+      // History renders as `content.split('</think>')[-1]`: no delimiters.
       /*thinkStartInHistory=*/false,
       /*thinkEndInHistory=*/false,
   };
@@ -308,6 +309,7 @@ const StaticTokenizerInfo& kimiK26Info() {
       /*assistantHeaderSequence=*/{163588},
       /*thinkStartTokenId=*/163606,  // <think>
       /*thinkEndTokenId=*/163607,    // </think>
+      // History keeps both delimiters (renders `<think></think>`).
       /*thinkStartInHistory=*/true,
       /*thinkEndInHistory=*/true,
   };
@@ -326,6 +328,7 @@ const StaticTokenizerInfo& kimiK27CodeInfo() {
       /*assistantHeaderSequence=*/{163588},
       /*thinkStartTokenId=*/163606,  // <think>
       /*thinkEndTokenId=*/163607,    // </think>
+      // History keeps both delimiters (renders `<think></think>`).
       /*thinkStartInHistory=*/true,
       /*thinkEndInHistory=*/true,
   };
@@ -358,6 +361,7 @@ const StaticTokenizerInfo& minimaxM27Info() {
       /*assistantHeaderSequence=*/{},
       /*thinkStartTokenId=*/200050,  // <think>
       /*thinkEndTokenId=*/200051,    // </think>
+      // History renders as the answer alone: no delimiters.
       /*thinkStartInHistory=*/false,
       /*thinkEndInHistory=*/false,
   };
@@ -380,6 +384,8 @@ const StaticTokenizerInfo& minimaxM3Info() {
       /*assistantHeaderSequence=*/{},
       /*thinkStartTokenId=*/200059,  // <mm:think>
       /*thinkEndTokenId=*/200060,    // </mm:think>
+      // History is prefixed with a bare `</mm:think>`; the opening tag only
+      // survives when the client echoes reasoning back.
       /*thinkStartInHistory=*/false,
       /*thinkEndInHistory=*/true,
   };
@@ -401,6 +407,7 @@ const StaticTokenizerInfo& glm51Info() {
       /*assistantHeaderSequence=*/{},
       /*thinkStartTokenId=*/154841,  // <think>
       /*thinkEndTokenId=*/154842,    // </think>
+      // History is prefixed with a bare `</think>`; opening tag dropped.
       /*thinkStartInHistory=*/false,
       /*thinkEndInHistory=*/true,
   };
@@ -421,6 +428,7 @@ const StaticTokenizerInfo& glm52Info() {
       /*assistantHeaderSequence=*/{},
       /*thinkStartTokenId=*/154841,  // <think>
       /*thinkEndTokenId=*/154842,    // </think>
+      // History keeps both delimiters (renders `<think></think>`).
       /*thinkStartInHistory=*/true,
       /*thinkEndInHistory=*/true,
   };
@@ -439,6 +447,8 @@ const StaticTokenizerInfo& deepseekV4ProInfo() {
       /*assistantHeaderSequence=*/{128804},  // <｜Assistant｜>
       /*thinkStartTokenId=*/128821,          // <think>
       /*thinkEndTokenId=*/128822,            // </think>
+      // The HF repo ships no chat template (fetch_tokenizers.sh), so history
+      // is rendered by DeepseekTokenizer, which emits no delimiters.
       /*thinkStartInHistory=*/false,
       /*thinkEndInHistory=*/false,
   };
@@ -463,6 +473,8 @@ const StaticTokenizerInfo& gemma431bItInfo() {
       /*assistantHeaderSequence=*/{},
       /*thinkStartTokenId=*/100,  // <|channel>
       /*thinkEndTokenId=*/101,    // <channel|>
+      // strip_thinking() removes the whole `<|channel>…<channel|>` span from
+      // history, delimiters included, in both thinking modes.
       /*thinkStartInHistory=*/false,
       /*thinkEndInHistory=*/false,
   };
