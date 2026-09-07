@@ -950,6 +950,16 @@ templates:
         trace_region_size: 200000000
         l1_small_size: 24576
         sample_on_device_mode: decode_only
+      # Run new autoport Python on a REUSED image instead of paying a ~1 h
+      # rebuild. The test stage never checks out tt-metal, so these paths are
+      # sparse-cloned on the runner and bind-mounted over the image's copy.
+      # Only sound for Python-only deltas: the image carries compiled tt-metal,
+      # so keep the paths narrow enough that a C++ change cannot ride along.
+      # Remove both keys once the image is rebuilt at a commit that has them.
+      tt_metal_source_ref: mvasiljevic/qwen38-deltanet-kda
+      tt_metal_source_paths:
+        - models/autoports/qwen_qwen3_6_27b
+        - models/autoports/vllm_bundles
   status: EXPERIMENTAL
   has_builtin_warmup: true
   metadata:

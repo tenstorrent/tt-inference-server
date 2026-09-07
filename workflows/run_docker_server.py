@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+import tempfile
 import atexit
 import io
 import json
@@ -120,6 +121,50 @@ def _get_cpp_media_server_docker_env_vars(model_spec):
         f"IS_GALAXY={is_galaxy}, DEVICE_IDS={device_ids}"
     )
     return env_vars
+
+
+def _tt_metal_source_mounts(model_spec, user_home_path) -> List[str]:
+    """Sparse-clone tt-metal paths named by the spec and mount them over the image.
+
+    The test stage never checks out tt-metal -- it enters only through the image,
+    baked at --tt-metal-commit -- so without this a one-line Python change in a
+    model costs a full image rebuild. The image is a ``src-dev`` image with
+    tt-metal source on disk, so a bind mount shadows it cleanly.
+
+    Verified against a real CI image: with the mount, the file inside the
+    container is the working-tree version (different md5, different signature);
+    without it, the image's. A probe that cannot tell those apart will report a
+    false pass, so this logs both the ref and the resolved commit.
+
+    ONLY sound for Python-only deltas -- see DeviceModelSpec.tt_metal_source_ref.
+    """
+    device_spec = getattr(model_spec, "device_model_spec", None)
+    ref = getattr(device_spec, "tt_metal_source_ref", None)
+    paths = list(getattr(device_spec, "tt_metal_source_paths", []) or [])
+    if not ref or not paths:
+        return []
+
+    repo = getattr(device_spec, "tt_metal_source_repo", "https://github.com/tenstorrent/tt-metal")
+    checkout = Path(tempfile.mkdtemp(prefix="tt-metal-src-"))
+    logger.info(f"tt-metal source override: {repo}@{ref} paths={paths} -> {checkout}")
+    subprocess.run(
+        ["git", "clone", "--depth", "1", "--filter=blob:none", "--sparse", "--branch", ref, repo, str(checkout)],
+        check=True,
+    )
+    subprocess.run(["git", "-C", str(checkout), "sparse-checkout", "set", *paths], check=True)
+    resolved = subprocess.run(
+        ["git", "-C", str(checkout), "rev-parse", "HEAD"], check=True, capture_output=True, text=True
+    ).stdout.strip()
+    logger.info(f"tt-metal source override resolved {ref} -> {resolved}")
+
+    mounts: List[str] = []
+    for entry in paths:
+        src = checkout / entry
+        if not src.is_dir():
+            raise ValueError(f"tt_metal_source_paths entry {entry!r} is not a directory at {repo}@{ref}")
+        mounts += ["--mount", f"type=bind,src={src},dst={user_home_path}/tt-metal/{entry},readonly"]
+        logger.info(f"  mounting {entry}")
+    return mounts
 
 
 def _media_server_dev_mounts(repo_root_path, user_home_path, model_spec) -> List[str]:
@@ -565,6 +610,9 @@ def generate_docker_run_command(
         logger.warning(
             "No runtime model spec JSON path provided while in dev mode, using default model spec."
         )
+
+    # Independent of dev_mode: this is how a reused image runs new model code.
+    docker_command += _tt_metal_source_mounts(model_spec, user_home_path)
 
     if runtime_config.dev_mode:
         # fmt: off

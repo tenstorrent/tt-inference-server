@@ -486,6 +486,20 @@ class DeviceModelSpec:
     # Uniform default of 3 across all image models; override per model in the YAML spec
     image_benchmark_num_batches: int = 3
 
+    # Bind-mount tt-metal source over the image's copy instead of rebuilding.
+    # The test stage checks out tt-shield and tt-inference-server fresh but never
+    # tt-metal, which enters only through the image at --tt-metal-commit, so a
+    # one-line Python change otherwise costs a full image build. Setting a ref
+    # here makes run_docker_server sparse-clone the listed paths and mount them.
+    #
+    # ONLY sound for Python-only deltas. The image carries compiled tt-metal, so
+    # mounting a tree whose C++ also changed pairs new Python with older
+    # binaries -- a confusing failure rather than a loud one. Keep the paths
+    # narrow (models/autoports/<model>) so a C++ change cannot ride along.
+    tt_metal_source_ref: Optional[str] = None
+    tt_metal_source_paths: List[str] = field(default_factory=list)
+    tt_metal_source_repo: str = "https://github.com/tenstorrent/tt-metal"
+
     def __post_init__(self):
         self.validate_data()
         self._infer_data()
