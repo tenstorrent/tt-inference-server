@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from ..agentic_traces import AgenticTracesRun
+from ..agentic_traces.sweep_export import write_agentic_sweep
 from ..config import DriverContext, ServerConnection
 from ._subprocess import load_json, run_command, safe_filename_part
 from .aiperf_prefix_cache import (
@@ -178,6 +179,16 @@ class AIPerfAgenticTracesDriver:
             output_dir=self.output_dir,
             model_id=self.model_id or self.model_repo,
             label=trace_run.filesafe_label(),
+        )
+        # This point's requirements-shaped view, written now rather than at the
+        # end of the sweep: each point costs an hour, so a later failure must
+        # not take the ones already measured with it.
+        write_agentic_sweep(
+            [payload],
+            self.output_dir,
+            filename=(
+                f"agentic_sweep_{safe_filename_part(trace_run.filesafe_label())}.json"
+            ),
         )
         _log_run_summary(trace_run, metrics)
         return AgenticTracesDriverResult(
@@ -764,6 +775,10 @@ def _build_payload(
         # The SLO bars goodput was graded against, so a goodput number is
         # never read without the definition of "good" that produced it.
         "goodput_slo": run.goodput,
+        # The document's expected sweep, so the report can grade each measured
+        # point against its target -- and call out the points a truncated
+        # sweep never measured. Empty when nothing grades the run.
+        "expected_sweep": [dict(point) for point in run.expected_sweep],
         "failed_request_threshold": run.failed_request_threshold,
         "trajectory_start_min_ratio": run.trajectory_start_min_ratio,
         "trajectory_start_max_ratio": run.trajectory_start_max_ratio,
