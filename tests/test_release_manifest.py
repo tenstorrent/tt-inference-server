@@ -74,7 +74,9 @@ def _prod_leaf(identity, version, tt, vllm, status):
 
 def test_build_live_manifest_from_rows_and_prod():
     identity = ("meta-llama/Llama-3.1-8B-Instruct", "T3K", "vLLM", "tt_transformers")
-    current_prod = {identity: _prod_leaf(identity, "0.22.0", "abc1234", "def5678", "READY")}
+    current_prod = {
+        identity: _prod_leaf(identity, "0.22.0", "abc1234", "def5678", "READY")
+    }
     rows = [
         {
             "identity": identity,

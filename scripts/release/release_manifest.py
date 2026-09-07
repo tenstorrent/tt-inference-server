@@ -184,4 +184,3 @@ def build_live_manifest(
         run_id=run_id,
         entries=entries,
     )
-
