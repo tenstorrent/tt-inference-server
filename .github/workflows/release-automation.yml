@@ -103,7 +103,7 @@ jobs:
       - name: Install Python dependencies
         # requirements-dev.txt provides ruamel.yaml + jsonschema for the helm
         # generator and PyYAML for the promote /
-        # export scripts. 
+        # export scripts.
         # One environment serves all four commands — CI does not .venv.
         run: |
           python -m pip install --upgrade pip
@@ -758,3 +758,23 @@ jobs:
           fi
           gh release upload "${TAG}" "${ASSET}" --repo "${{ github.repository }}" --clobber
           echo "Uploaded $(basename "${ASSET}") as an asset on Release '${TAG}'."
+
+      - name: "Upload release manifest as a Release asset"
+        env:
+          GH_TOKEN: ${{ secrets.TMP_VCANKOVIC_SHIELD_CRANE_PAT }}
+          TMP_VCANKOVIC_SHIELD_CRANE_PAT: ${{ secrets.TMP_VCANKOVIC_SHIELD_CRANE_PAT }}
+        run: |
+          TAG="v${RELEASE_VERSION}${TAG_SUFFIX}"
+          ASSET="${RUNNER_TEMP}/v${RELEASE_VERSION}-release-manifest.json"
+          python3 scripts/release/build_release_manifest.py \
+            --generated "$(date -u +%Y-%m-%d)" \
+            live \
+            --version "${RELEASE_VERSION}" \
+            --tt-shield-run-id "${TT_SHIELD_RUN_ID}" \
+            --output "${ASSET}"
+          if [ ! -f "${ASSET}" ]; then
+            echo "::warning::release manifest was not generated - nothing to upload."
+            exit 0
+          fi
+          gh release upload "${TAG}" "${ASSET}" --repo "${{ github.repository }}" --clobber
+          echo "Uploaded v${RELEASE_VERSION}-release-manifest.json as an asset on Release '${TAG}'."
