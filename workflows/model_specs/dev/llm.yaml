@@ -2375,7 +2375,7 @@ templates:
   inference_engine: MEDIA
   device_model_specs:
     - device: SUPER_CLUSTER
-      max_concurrency: 64
+      max_concurrency: 16  # capped to fit the standalone-decode deployment's 32 slots
       max_context: 1048576  # 1024 * 1024;
       default_impl: true
   status: FUNCTIONAL
@@ -2397,7 +2397,7 @@ templates:
   inference_engine: MEDIA
   device_model_specs:
     - device: SUPER_CLUSTER
-      max_concurrency: 80
+      max_concurrency: 16  # capped to fit the standalone-decode deployment's 32 slots
       max_context: 1048576  # 1024 * 1024;
       default_impl: true
   status: EXPERIMENTAL
